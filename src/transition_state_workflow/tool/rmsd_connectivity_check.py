@@ -16,7 +16,8 @@ from transition_state_workflow.chem.geometry import (
     parse_angle_spec,
     parse_bond_spec,
 )
-from transition_state_workflow.chem.gaussian_log import atomic_symbol, read_lines
+from transition_state_workflow.chem.gaussian_log import orientation_blocks as gaussian_orientation_blocks
+from transition_state_workflow.chem.gaussian_log import read_lines
 from transition_state_workflow.util.cli import emit_json, run_cli, warn
 
 
@@ -62,38 +63,7 @@ def read_xyz(path: Path) -> Structure:
 
 
 def orientation_blocks(lines: list[str], marker: str) -> list[list[Atom]]:
-    blocks: list[list[Atom]] = []
-    for i, line in enumerate(lines):
-        if marker not in line:
-            continue
-        j = i + 1
-        dash_count = 0
-        while j < len(lines):
-            if lines[j].strip().startswith("----"):
-                dash_count += 1
-                if dash_count == 2:
-                    j += 1
-                    break
-            j += 1
-        atoms: list[Atom] = []
-        while j < len(lines) and not lines[j].strip().startswith("----"):
-            parts = lines[j].split()
-            if len(parts) >= 6:
-                try:
-                    atoms.append(
-                        Atom(
-                            atomic_symbol(int(parts[1])),
-                            float(parts[3]),
-                            float(parts[4]),
-                            float(parts[5]),
-                        )
-                    )
-                except ValueError:
-                    pass
-            j += 1
-        if atoms:
-            blocks.append(atoms)
-    return blocks
+    return gaussian_orientation_blocks(lines, marker)
 
 
 def read_gaussian(path: Path) -> Structure:

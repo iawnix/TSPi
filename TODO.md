@@ -62,6 +62,8 @@ Do not edit the installed skill at
       calculator-construction layer with compatibility imports.
 - [x] Move shared bond/angle spec parsing into `chem/geometry.py`; keep NEB and
       connectivity CLIs as thin error-adapter wrappers.
+- [x] Reuse `chem/gaussian_log.py` orientation-block parsing from Gaussian
+      backend and connectivity tools instead of keeping duplicate parsers.
 - [x] Introduce `remote/` contracts with `RemoteTransport`,
       `RemoteWorkspace`, and sync-plan abstractions.
 - [x] Add concrete `OpenSSHTransport`.
@@ -208,3 +210,11 @@ Do not edit the installed skill at
   tests `60 passed, 1 skipped`; full pytest `202 passed, 2 skipped`; script
   help smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-geometry-smoke.pLTbEU/tssearch_smoke`.
+- 2026-06-13: Removed duplicate Gaussian orientation-block parsing from
+  `backends/gaussian.py` and `tool/rmsd_connectivity_check.py`; both now reuse
+  `chem/gaussian_log.py` while preserving their previous return contracts.
+- 2026-06-13: Gaussian orientation parser checkpoint validation passed:
+  `git diff --check`; targeted parser/connectivity/imaginary/import/no-undefined
+  tests `22 passed, 1 skipped`; full pytest `202 passed, 2 skipped`; script
+  help smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-orientation-smoke.lY7Elx/tssearch_smoke`.

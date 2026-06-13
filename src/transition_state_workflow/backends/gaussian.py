@@ -8,7 +8,7 @@ from typing import Any
 
 from transition_state_workflow.backends.base import FilesystemBackendAdapter
 from transition_state_workflow.backends.contracts import BackendOutput
-from transition_state_workflow.chem.gaussian_log import atomic_symbol
+from transition_state_workflow.chem.gaussian_log import orientation_blocks as gaussian_orientation_blocks
 
 
 def split_gaussian_job_sections(lines: list[str]) -> list[dict[str, object]]:
@@ -183,33 +183,10 @@ def parse_gaussian_convergence(lines: list[str]) -> tuple[dict[str, dict[str, st
 def orientation_blocks(lines: list[str], marker: str) -> list[list[tuple[str, float, float, float]]]:
     """Parse Gaussian orientation blocks with element symbols and coordinates."""
 
-    blocks: list[list[tuple[str, float, float, float]]] = []
-    for i, line in enumerate(lines):
-        if marker not in line:
-            continue
-        j = i + 1
-        dash_count = 0
-        while j < len(lines):
-            if lines[j].strip().startswith("----"):
-                dash_count += 1
-                if dash_count == 2:
-                    j += 1
-                    break
-            j += 1
-        atoms: list[tuple[str, float, float, float]] = []
-        while j < len(lines) and not lines[j].strip().startswith("----"):
-            parts = lines[j].split()
-            if len(parts) >= 6:
-                try:
-                    atomic_number = int(parts[1])
-                    element = atomic_symbol(atomic_number)
-                    atoms.append((element, float(parts[3]), float(parts[4]), float(parts[5])))
-                except (ValueError, IndexError):
-                    pass
-            j += 1
-        if atoms:
-            blocks.append(atoms)
-    return blocks
+    return [
+        [(atom.element, atom.x, atom.y, atom.z) for atom in block]
+        for block in gaussian_orientation_blocks(lines, marker)
+    ]
 
 
 def final_gaussian_geometry(lines: list[str]) -> list[tuple[str, float, float, float]]:
