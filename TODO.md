@@ -74,6 +74,9 @@ Do not edit the installed skill at
 - [x] Move state-writing backtrack and start-node logic into `core/`, with
       legacy `tool/record_backtrack.py` and `tool/start_node.py` kept as
       compatibility re-exports.
+- [x] Move next-action planning logic into `core/plan_next.py`; keep
+      `tool/plan_next.py` as the ChemGate-injecting compatibility layer so
+      existing CLI behavior still validates workspace and evidence gates.
 - [ ] Update `SKILL.md` and `references/` after code boundaries exist; do not
       describe future architecture as current behavior before tests prove it.
 - [ ] Run compatibility validation after each checkpoint:
@@ -103,3 +106,6 @@ Do not edit the installed skill at
 - 2026-06-13: Moved actual backtrack-event and start-node state writers into
   `core/backtrack.py` and `core/start_node.py`; old `tool/` modules remain
   compatibility imports.
+- 2026-06-13: Moved actual plan-next planning implementation into
+  `core/plan_next.py`; `tool/plan_next.py` now only injects ChemGate validator
+  and TS/Freq evidence predicates for compatibility.
