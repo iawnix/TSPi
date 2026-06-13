@@ -12,7 +12,7 @@ import sys
 from pathlib import Path
 
 from transition_state_workflow.util.cli import CliError, run_cli, warn
-from transition_state_workflow.util.remote_exec import OpenSSHRemoteExecutor, RemoteTarget
+from transition_state_workflow.remote.exec import OpenSSHRemoteExecutor, RemoteTarget
 
 
 DEFAULT_FETCH_PATTERNS = (

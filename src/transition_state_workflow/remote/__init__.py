@@ -15,6 +15,12 @@ from transition_state_workflow.remote.gaussian_runner import (
     nested_compute_ssh_argv,
     remote_runner_text,
 )
+from transition_state_workflow.remote.exec import (
+    OpenSSHRemoteExecutor,
+    RemoteTarget,
+    bash_lc_command,
+    command_text,
+)
 from transition_state_workflow.remote.openssh import OpenSSHTransport
 from transition_state_workflow.remote.sync_cli import main as sync_cli_main
 from transition_state_workflow.remote.sync import build_metadata_sync_plan, execute_sync_plan, verify_sync_plan
@@ -28,17 +34,21 @@ from transition_state_workflow.remote.contracts import (
 
 __all__ = [
     "OpenSSHTransport",
+    "OpenSSHRemoteExecutor",
     "DEFAULT_FETCH_PATTERNS",
     "GaussianRunLayout",
     "RemoteCommandResult",
     "RemoteNodeLayout",
     "RemoteTransport",
+    "RemoteTarget",
     "RemoteWorkspace",
     "SyncEntry",
     "SyncPlan",
+    "bash_lc_command",
     "build_metadata_sync_plan",
     "build_run_layout",
     "checkpoint_name",
+    "command_text",
     "execute_sync_plan",
     "fetch_list_command",
     "infer_node_id_from_input",

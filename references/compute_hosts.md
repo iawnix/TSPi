@@ -46,7 +46,7 @@ export PATH=$QBICS_HOME:$PATH
 Remote command construction:
 
 - Prefer `scripts/run_remote_gaussian.py` for Gaussian. It builds login-host to
-  compute-host SSH commands with `remote_exec.py`, using local
+  compute-host SSH commands with `remote/exec.py`, using local
   `subprocess.run(..., shell=False)` and a single final compute-host
   `bash -lc` command.
 - For ad hoc compute-host commands that need shell operators, generate the SSH
@@ -57,7 +57,7 @@ Remote command construction:
 python - <<'PY'
 from pathlib import Path
 
-from transition_state_workflow.util.remote_exec import (
+from transition_state_workflow.remote.exec import (
     OpenSSHRemoteExecutor,
     RemoteTarget,
     command_text,
@@ -81,7 +81,7 @@ Always verify with:
 python - <<'PY'
 from pathlib import Path
 
-from transition_state_workflow.util.remote_exec import (
+from transition_state_workflow.remote.exec import (
     OpenSSHRemoteExecutor,
     RemoteTarget,
     command_text,

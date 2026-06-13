@@ -11,7 +11,7 @@ import subprocess
 
 from transition_state_workflow.util.cli import emit_json, run_cli
 from transition_state_workflow.util.node_layout import NodeLayout, resolve_node_layout
-from transition_state_workflow.util.remote_exec import command_text
+from transition_state_workflow.remote.exec import command_text
 
 
 def timestamp() -> str:

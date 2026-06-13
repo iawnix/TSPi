@@ -161,7 +161,7 @@ def test_nested_compute_ssh_quotes_shell_metacharacters_as_compute_command() -> 
     assert "$!" in login_shell_command
     assert login_shell_command != remote_command
 def test_remote_exec_uses_subprocess_without_shell() -> None:
-    source = (SKILL_ROOT / "src" / "transition_state_workflow" / "util" / "remote_exec.py").read_text(
+    source = (SKILL_ROOT / "src" / "transition_state_workflow" / "remote" / "exec.py").read_text(
         encoding="utf-8"
     )
     forbidden = ["os." + "system", "shell" + "=" + "True"]

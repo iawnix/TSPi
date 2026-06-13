@@ -61,7 +61,7 @@ def test_user_facing_docs_avoid_migration_framing() -> None:
 
 def test_compute_host_docs_match_remote_executor_quoting_model() -> None:
     text = (REFERENCES / "compute_hosts.md").read_text(encoding="utf-8")
-    assert "remote_exec.py" in text
+    assert "remote/exec.py" in text
     assert "OpenSSHRemoteExecutor" in text
     assert ("ssh compute-" + "0-30 " + '"') not in text
     assert "subprocess.run(..., shell=False)" in text

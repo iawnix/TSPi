@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 from transition_state_workflow.util.cli import CliError, run_cli
-from transition_state_workflow.util.remote_exec import (
+from transition_state_workflow.remote.exec import (
     OpenSSHRemoteExecutor,
     RemoteTarget,
     command_text,

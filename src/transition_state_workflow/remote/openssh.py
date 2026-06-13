@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Sequence
 
 from transition_state_workflow.remote.contracts import RemoteCommandResult, RemoteTransport
-from transition_state_workflow.util.remote_exec import OpenSSHRemoteExecutor, RemoteTarget, command_text
+from transition_state_workflow.remote.exec import OpenSSHRemoteExecutor, RemoteTarget, command_text
 
 
 class OpenSSHTransport:

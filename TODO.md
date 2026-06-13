@@ -91,6 +91,8 @@ Do not edit the installed skill at
 - [x] Move remote Gaussian execution/layout/background/download logic into
       `remote/gaussian_runner.py`, with the legacy `tool/` import path kept as
       a compatibility wrapper.
+- [x] Move the underlying OpenSSH executor into `remote/exec.py`, with
+      `util/remote_exec.py` kept as a compatibility wrapper.
 - [ ] Update `SKILL.md` and `references/` after code boundaries exist; do not
       describe future architecture as current behavior before tests prove it.
 - [ ] Run compatibility validation after each checkpoint:
@@ -139,3 +141,5 @@ Do not edit the installed skill at
 - 2026-06-13: Moved remote Gaussian execution implementation into
   `remote/gaussian_runner.py`; `tool/run_remote_gaussian.py` remains a
   compatibility import for existing scripts and tests.
+- 2026-06-13: Moved the underlying `OpenSSHRemoteExecutor` implementation into
+  `remote/exec.py`; `util/remote_exec.py` remains a compatibility import.

@@ -97,7 +97,7 @@ stdout and driver stderr under `GAUSS_SCRDIR` first, then copies the completed
 
 Remote Gaussian jobs consume compute resources. Start them only after the user has authorized that compute work in the task context.
 
-The Python remote runner is backed by `src/transition_state_workflow/util/remote_exec.py`.
+The Python remote runner is backed by `src/transition_state_workflow/remote/exec.py`.
 Local execution must stay argv-based through `subprocess.run(..., shell=False)`.
 Operators such as `&&`, `>`, `2>&1`, `< /dev/null`, `&`, and `$!` belong only
 inside the final compute-host `bash -lc` command; do not hand-write nested SSH
