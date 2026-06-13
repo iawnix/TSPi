@@ -112,6 +112,16 @@ def test_target_architecture_has_no_reverse_dependencies() -> None:
     assert not violations, "reverse architecture dependencies:\n" + "\n".join(violations)
 
 
+def test_chem_layer_has_no_tool_or_runtime_boundary_dependencies() -> None:
+    forbidden = {"backends", "cli", "core", "gate", "remote", "tool", "tools", "web"}
+    offenders: list[str] = []
+    for source_file in sorted((PACKAGE / "chem").rglob("*.py")):
+        bad = sorted(internal_imports(source_file) & forbidden)
+        if bad:
+            offenders.append(f"{source_file.relative_to(ROOT)} imports forbidden layers: {', '.join(bad)}")
+    assert not offenders, "chem layer imports non-chem boundaries:\n" + "\n".join(offenders)
+
+
 def test_legacy_tool_package_is_not_imported_by_non_web_new_architecture_layers() -> None:
     offenders: list[str] = []
     for layer in ("backends", "cli", "core", "gate", "remote", "tools"):
@@ -194,10 +204,18 @@ def test_ase_neb_leaf_helpers_live_in_tools_with_tool_compatibility() -> None:
 
 
 def test_ase_neb_geometry_mechanism_live_in_tools_with_tool_compatibility() -> None:
+    from transition_state_workflow.chem import geometry as chem_geometry
+    from transition_state_workflow.chem import mechanism as chem_mechanism
     from transition_state_workflow.tool.ase_neb import geometry as old_geometry
     from transition_state_workflow.tool.ase_neb import mechanism as old_mechanism
     from transition_state_workflow.tools.ase_neb import geometry, mechanism
 
+    assert geometry.changed_bonds is chem_geometry.changed_bonds
+    assert geometry.bonded_pairs is chem_geometry.bonded_pairs
+    assert geometry.infer_angles is chem_geometry.infer_angles
+    assert geometry.fragment_labels is chem_geometry.fragment_labels
+    assert mechanism.classify_validation_system is chem_mechanism.classify_validation_system
+    assert mechanism.ENDPOINT_READY_STATES is chem_mechanism.ENDPOINT_READY_STATES
     assert old_geometry.read_xyz is geometry.read_xyz
     assert old_geometry.changed_bonds is geometry.changed_bonds
     assert old_geometry.infer_angles is geometry.infer_angles

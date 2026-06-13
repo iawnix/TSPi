@@ -148,7 +148,7 @@ Do not edit the installed skill at
       the new path, and validate old/new import identity, pure helper behavior,
       public script help, full tests, and a strict workspace smoke before
       pushing.
-- [ ] Promote reusable geometry and mechanism primitives out of the ASE NEB
+- [x] Promote reusable geometry and mechanism primitives out of the ASE NEB
       tool package:
       plan before code changes is to split the current `tools/ase_neb/geometry.py`
       and `tools/ase_neb/mechanism.py` into generic chemistry primitives and
@@ -483,3 +483,15 @@ Do not edit the installed skill at
   help smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-ase-geometry-mechanism-smoke.pGQaIE/tssearch_smoke` with validator
   summary `0 errors, 0 warnings`.
+- 2026-06-14: Promoted reusable geometry/connectivity primitives from
+  `tools/ase_neb/geometry.py` into `chem/geometry.py`, added shared
+  mechanism-preflight helpers in `chem/mechanism.py`, and reduced
+  `tools/ase_neb/geometry.py` / `tools/ase_neb/mechanism.py` to ASE NEB
+  adapters over the shared chemistry layer.
+- 2026-06-14: Shared chemistry primitive extraction validation passed:
+  `git diff --check`; `py_compile` for `chem`, `tools/ase_neb`, `tool/ase_neb`,
+  and `tool/ase_neb_framework.py`; targeted ASE NEB/import/architecture/reference
+  tests `83 passed, 1 skipped`; full pytest `220 passed, 2 skipped`; script
+  help smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-shared-chem-smoke.HVNjtR/tssearch_smoke` with validator summary
+  `0 errors, 0 warnings`.

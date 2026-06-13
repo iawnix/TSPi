@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from transition_state_workflow.chem.geometry import COVALENT_RADII
+from transition_state_workflow.chem.mechanism import METALS
 
 CONFIG_VERSION = 1
 SUPPORTED_CALCULATORS = {"xtb", "gaussian", "gaussian_external"}
@@ -24,14 +25,6 @@ VALID_NODE_STATUSES = {
     "closed",
 }
 ACTIVE_NODE_STATUSES = {"pending", "running", "ambiguous"}
-
-METALS = {
-    "Li", "Be", "Na", "Mg", "Al", "K", "Ca", "Sc", "Ti", "V", "Cr", "Mn", "Fe",
-    "Co", "Ni", "Cu", "Zn", "Ga", "Rb", "Sr", "Y", "Zr", "Nb", "Mo", "Tc", "Ru",
-    "Rh", "Pd", "Ag", "Cd", "In", "Sn", "Cs", "Ba", "La", "Ce", "Pr", "Nd",
-    "Sm", "Eu", "Gd", "Tb", "Dy", "Ho", "Er", "Tm", "Yb", "Lu", "Hf", "Ta",
-    "W", "Re", "Os", "Ir", "Pt", "Au", "Hg", "Tl", "Pb", "Bi",
-}
 
 __all__ = [
     "COVALENT_RADII",

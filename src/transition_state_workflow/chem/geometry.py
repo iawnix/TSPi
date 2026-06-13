@@ -48,17 +48,33 @@ class Atom:
     z: float
 
 
+def read_xyz_with_comment(path: Path) -> tuple[list[Atom], str]:
+    """Read a single-frame XYZ file and return atoms plus the comment line."""
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines:
+        raise ValueError(f"empty XYZ file: {path}")
+    try:
+        natoms = int(lines[0].strip())
+    except ValueError as exc:
+        raise ValueError(f"invalid XYZ atom count in {path}") from exc
+    if len(lines) < natoms + 2:
+        raise ValueError(f"XYZ file has too few coordinate lines: {path}")
+    comment = lines[1] if len(lines) > 1 else ""
+    atoms: list[Atom] = []
+    for line in lines[2: 2 + natoms]:
+        parts = line.split()
+        if len(parts) < 4:
+            raise ValueError(f"invalid XYZ coordinate line: {line}")
+        element, x, y, z = parts[:4]
+        atoms.append(Atom(element, float(x), float(y), float(z)))
+    return atoms, comment
+
+
 def read_xyz(path: Path) -> list[Atom]:
     """Read a single-frame XYZ file into a list of :class:`Atom`."""
 
-    lines = path.read_text(encoding="utf-8").splitlines()
-    natoms = int(lines[0].strip())
-    atoms: list[Atom] = []
-    for line in lines[2 : 2 + natoms]:
-        element, x, y, z = line.split()[:4]
-        atoms.append(Atom(element, float(x), float(y), float(z)))
-    if len(atoms) != natoms:
-        raise ValueError(f"XYZ atom count mismatch in {path}")
+    atoms, _ = read_xyz_with_comment(path)
     return atoms
 
 
@@ -149,18 +165,156 @@ def parse_angle_spec(spec: str) -> tuple[int, int, int]:
     return i, j, k
 
 
+def bond_label(bond: tuple[int, int]) -> str:
+    """Return a compact 1-based bond label."""
+
+    return f"{bond[0]}-{bond[1]}"
+
+
+def angle_label(angle: tuple[int, int, int]) -> str:
+    """Return a compact 1-based angle label."""
+
+    return f"{angle[0]}-{angle[1]}-{angle[2]}"
+
+
+def covalent_cutoff(a: Atom, b: Atom, scale: float = 1.25) -> float:
+    """Return a covalent-radius distance cutoff for two atoms."""
+
+    ra = COVALENT_RADII.get(a.element, 0.77)
+    rb = COVALENT_RADII.get(b.element, 0.77)
+    return scale * (ra + rb)
+
+
+def bonded_pairs(atoms: list[Atom], *, scale: float = 1.25) -> set[tuple[int, int]]:
+    """Infer covalent-radius bonded pairs using 1-based atom indices."""
+
+    pairs: set[tuple[int, int]] = set()
+    for i, atom_i in enumerate(atoms, start=1):
+        for j, atom_j in enumerate(atoms[i:], start=i + 1):
+            if distance(atom_i, atom_j) <= covalent_cutoff(atom_i, atom_j, scale=scale):
+                pairs.add((i, j))
+    return pairs
+
+
 def bond_set(atoms: list[Atom], scale: float = 1.25) -> set[tuple[int, int]]:
     """Infer a simple covalent-radius bond set using 1-based atom indices."""
 
-    bonds: set[tuple[int, int]] = set()
-    for i, atom_i in enumerate(atoms):
-        radius_i = COVALENT_RADII.get(atom_i.element, 0.77)
-        for j in range(i + 1, len(atoms)):
-            atom_j = atoms[j]
-            radius_j = COVALENT_RADII.get(atom_j.element, 0.77)
-            if distance(atom_i, atom_j) <= scale * (radius_i + radius_j):
-                bonds.add((i + 1, j + 1))
-    return bonds
+    return bonded_pairs(atoms, scale=scale)
+
+
+def changed_bonds(
+    reactant: list[Atom],
+    product: list[Atom],
+    *,
+    user_bonds: list[tuple[int, int]] | None = None,
+) -> dict[str, list[tuple[int, int]]]:
+    """Return user-specified, formed, and broken bonds between two structures."""
+
+    if user_bonds:
+        return {"user": sorted(set(user_bonds)), "formed": [], "broken": []}
+    r_pairs = bonded_pairs(reactant)
+    p_pairs = bonded_pairs(product)
+    formed = sorted(p_pairs - r_pairs)
+    broken = sorted(r_pairs - p_pairs)
+    changed = sorted(set(formed) | set(broken))
+    if changed:
+        return {"user": [], "formed": formed, "broken": broken}
+
+    scored: list[tuple[float, tuple[int, int]]] = []
+    for i, atom_i in enumerate(reactant, start=1):
+        for j, atom_j in enumerate(reactant[i:], start=i + 1):
+            r_dist = distance(atom_i, atom_j)
+            p_dist = distance(product[i - 1], product[j - 1])
+            scale = max(covalent_cutoff(atom_i, atom_j), 0.1)
+            score = abs(p_dist - r_dist) / scale
+            if score >= 0.20:
+                scored.append((score, (i, j)))
+    return {"user": [bond for _, bond in sorted(scored, reverse=True)[:6]], "formed": [], "broken": []}
+
+
+def neighbor_map(atoms: list[Atom]) -> dict[int, set[int]]:
+    """Return a covalent-radius neighbor map keyed by 1-based atom index."""
+
+    pairs = bonded_pairs(atoms)
+    neighbors: dict[int, set[int]] = {i: set() for i in range(1, len(atoms) + 1)}
+    for i, j in pairs:
+        neighbors[i].add(j)
+        neighbors[j].add(i)
+    return neighbors
+
+
+def infer_angles(
+    reactant: list[Atom],
+    product: list[Atom],
+    bonds: list[tuple[int, int]],
+    *,
+    user_angles: list[tuple[int, int, int]] | None = None,
+) -> list[tuple[int, int, int]]:
+    """Infer local reaction-center angles from endpoint connectivity."""
+
+    if user_angles:
+        return sorted(set(user_angles))
+    r_neighbors = neighbor_map(reactant)
+    p_neighbors = neighbor_map(product)
+    angles: set[tuple[int, int, int]] = set()
+    for i, j in bonds:
+        for center, edge in ((i, j), (j, i)):
+            neighbors = (r_neighbors.get(center, set()) | p_neighbors.get(center, set())) - {edge}
+            for other in sorted(neighbors):
+                angles.add((other, center, edge))
+        if not angles and len(reactant) >= 3:
+            k = next((idx for idx in range(1, len(reactant) + 1) if idx not in {i, j}), None)
+            if k:
+                angles.add((i, j, k))
+    return sorted(angles)[:12]
+
+
+def atom_indices_from_bonds_angles(
+    bonds: list[tuple[int, int]],
+    angles: list[tuple[int, int, int]],
+) -> list[int]:
+    """Return sorted unique atom indices present in bond and angle specs."""
+
+    indices: set[int] = set()
+    for bond in bonds:
+        indices.update(bond)
+    for angle in angles:
+        indices.update(angle)
+    return sorted(indices)
+
+
+def fragment_labels(atoms: list[Atom]) -> list[str]:
+    """Return formula-plus-indices labels for covalent connected components."""
+
+    neighbors = neighbor_map(atoms)
+    seen: set[int] = set()
+    fragments: list[list[int]] = []
+    for start in range(1, len(atoms) + 1):
+        if start in seen:
+            continue
+        stack = [start]
+        seen.add(start)
+        component: list[int] = []
+        while stack:
+            current = stack.pop()
+            component.append(current)
+            for neighbor in sorted(neighbors[current]):
+                if neighbor not in seen:
+                    seen.add(neighbor)
+                    stack.append(neighbor)
+        fragments.append(sorted(component))
+    labels: list[str] = []
+    for component in fragments:
+        counts: dict[str, int] = {}
+        for index in component:
+            symbol = atoms[index - 1].element
+            counts[symbol] = counts.get(symbol, 0) + 1
+        formula = "".join(
+            f"{symbol}{counts[symbol] if counts[symbol] > 1 else ''}"
+            for symbol in sorted(counts)
+        )
+        labels.append(f"{formula}:{','.join(str(index) for index in component)}")
+    return labels
 
 
 def bond_labels(bonds: set[tuple[int, int]], atoms: list[Atom]) -> list[str]:

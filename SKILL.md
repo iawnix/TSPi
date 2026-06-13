@@ -270,8 +270,10 @@ Python tooling follows a package layout:
 - `src/transition_state_workflow/chem/`: reusable Gaussian parsing and geometry
   helpers shared by workflow tools (single source for `PERIODIC_TABLE`,
   `COVALENT_RADII`, `Atom`, XYZ/orientation parsing, bond/angle spec parsing,
-  vector math, bond length, angle/dihedral geometry, Gaussian orientation
-  blocks, standard frequency-line parsing, and termination checks).
+  vector math, bond length, angle/dihedral geometry, covalent-radius
+  connectivity, reaction-center bond/angle inference, fragment labels, shared
+  mechanism preflight helpers, endpoint-readiness vocabulary, Gaussian
+  orientation blocks, standard frequency-line parsing, and termination checks).
 - `src/transition_state_workflow/config/`: canonical state model, vocabularies,
   and the v2 contract checks shared by the validator and normalizer.
 - `src/transition_state_workflow/cli/`: public CLI contracts and re-exports for
@@ -287,10 +289,10 @@ Python tooling follows a package layout:
   vocabulary, registry, node-scoped local command execution via
   `NodeExecutionTool`, and Gaussian TS descriptor extraction via
   `TSDescriptorExtractionTool`. `tools/ase_neb/` owns the ASE NEB leaf support
-  helpers and pure preflight logic shared by the candidate-generation
-  implementation: constants, `ConfigError`, config-value coercers,
-  geometry/connectivity heuristics, mechanism preflight, and endpoint-readiness
-  summaries.
+  helpers and adapters shared by the candidate-generation implementation:
+  constants, `ConfigError`, config-value coercers, ASE-to-`Atom` conversion,
+  NEB-facing geometry parser error adaptation, config-field extraction, and
+  NEB-facing mechanism/endpoint summary adapters over `chem/`.
 - `src/transition_state_workflow/backends/`: Gaussian, xTB, ASE, and QBICS
   adapter boundaries for program-specific input/output metadata. The Gaussian
   backend owns TS/Freq input rendering/preparation, TS/Freq log parsing, and
