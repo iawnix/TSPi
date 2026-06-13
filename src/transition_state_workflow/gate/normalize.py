@@ -21,29 +21,32 @@ from transition_state_workflow.config.state_contract import (
 )
 from transition_state_workflow.base.pathway_model import read_pathway_model_optional, summarize_pathway_model
 from transition_state_workflow.util.json_io import read_json_object_required
-from transition_state_workflow.util.cli import configure_cli_logging, emit_json, log
+from transition_state_workflow.util.cli import CLIBase, CLIResult, log
 from transition_state_workflow.util.path_utils import clean_string, first_nonempty_string, list_or_empty
 
 
-def main() -> int:
+class NormalizeWorkspaceCLI(CLIBase):
+    """Strict workspace normalizer command-line interface."""
+
+    description = "Emit strict ts-explorer-graph-v2 JSON for a v2 TS-search workspace."
+
+    def add_arguments(self, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("--source", required=True, type=Path, help="tssearch workspace root.")
+        parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON.")
+
+    def execute(self, args: argparse.Namespace) -> CLIResult:
+        try:
+            payload = normalize_ts_workspace_to_explorer_graph(args.source)
+        except Exception as exc:
+            log(f"ERROR ts_normalize_view: {exc}")
+            return CLIResult(exit_code=1)
+        return CLIResult(payload=payload, pretty=args.pretty)
+
+
+def main(argv: list[str] | None = None) -> int:
     """Run the strict workspace normalizer command-line interface."""
 
-    parser = argparse.ArgumentParser(
-        description="Emit strict ts-explorer-graph-v2 JSON for a v2 TS-search workspace.",
-    )
-    parser.add_argument("--source", required=True, type=Path, help="tssearch workspace root.")
-    parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON.")
-    parser.add_argument("--verbose", action="store_true", help="Write diagnostic logs to stderr.")
-    parser.add_argument("--quiet", action="store_true", help="Only write errors to stderr.")
-    args = parser.parse_args()
-    configure_cli_logging(verbose=args.verbose, quiet=args.quiet)
-    try:
-        payload = normalize_ts_workspace_to_explorer_graph(args.source)
-    except Exception as exc:
-        log(f"ERROR ts_normalize_view: {exc}")
-        return 1
-    emit_json(payload, pretty=args.pretty)
-    return 0
+    return NormalizeWorkspaceCLI().main(argv)
 
 
 def normalize_ts_workspace_to_explorer_graph(workspace_directory: Path) -> dict[str, Any]:

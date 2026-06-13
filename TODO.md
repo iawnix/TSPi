@@ -66,6 +66,11 @@ Do not edit the installed skill at
       ownership to a web/API boundary that cannot import job execution modules.
 - [x] Replace ad hoc logging imports with one package-level logging policy and
       one CLI diagnostics path.
+- [x] Introduce `CLIBase`/`CLIResult` for shared argparse logging setup, JSON
+      payload rendering, and standard `CliError` envelopes.
+- [x] Migrate gate validator and normalizer CLIs onto `CLIBase` while keeping
+      `validate_ts_workspace_contract` and `normalize_ts_workspace_to_explorer_graph`
+      as business functions for non-CLI callers.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
@@ -161,3 +166,12 @@ Do not edit the installed skill at
   `45 passed`; full pytest `197 passed, 2 skipped`; script help smoke
   `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-smoke.p984TM/tssearch_smoke`.
+- 2026-06-13: Added `CLIBase` and `CLIResult` to the unified CLI core,
+  re-exported them from `transition_state_workflow.cli`, and migrated the
+  gate validator/normalizer entrypoints to the base class without changing
+  their JSON output contract.
+- 2026-06-13: CLIBase checkpoint validation passed:
+  `git diff --check`; targeted CLI/gate/import/no-undefined tests
+  `86 passed, 1 skipped`; full pytest `199 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-cli-smoke.kCw7Wo/tssearch_smoke`.

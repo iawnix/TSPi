@@ -36,7 +36,7 @@ from transition_state_workflow.base.pathway_model import (
     derive_pathway_status,
 )
 from transition_state_workflow.gate.normalize import normalize_ts_workspace_to_explorer_graph
-from transition_state_workflow.util.cli import configure_cli_logging, emit_json
+from transition_state_workflow.util.cli import CLIBase, CLIResult
 from transition_state_workflow.util.path_utils import clean_string, list_or_empty, relative_path_or_absolute
 
 
@@ -61,24 +61,30 @@ ENGINE_ROOT_ARTIFACT_SUFFIXES = {".chk", ".fchk", ".rwf", ".mwfn", ".trj", ".gbw
 GAUSSIAN_INPUT_SUFFIXES = {".gjf", ".com"}
 
 
-def main() -> int:
+class ValidateWorkspaceCLI(CLIBase):
+    """Workspace contract validator command-line interface."""
+
+    description = "Validate a tssearch_<system> workspace."
+
+    def add_arguments(self, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("--source", required=True, type=Path, help="tssearch workspace root.")
+        parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON.")
+        parser.add_argument("--strict", action="store_true", help="Exit nonzero on warnings as well as errors.")
+
+    def execute(self, args: argparse.Namespace) -> CLIResult:
+        payload = validate_ts_workspace_contract(args.source)
+        exit_code = 0
+        if payload["summary"]["errors"]:
+            exit_code = 1
+        elif args.strict and payload["summary"]["warnings"]:
+            exit_code = 1
+        return CLIResult(exit_code=exit_code, payload=payload, pretty=args.pretty)
+
+
+def main(argv: list[str] | None = None) -> int:
     """Run the workspace contract validator command-line interface."""
 
-    parser = argparse.ArgumentParser(description="Validate a tssearch_<system> workspace.")
-    parser.add_argument("--source", required=True, type=Path, help="tssearch workspace root.")
-    parser.add_argument("--pretty", action="store_true", help="Pretty-print JSON.")
-    parser.add_argument("--strict", action="store_true", help="Exit nonzero on warnings as well as errors.")
-    parser.add_argument("--verbose", action="store_true", help="Write diagnostic logs to stderr.")
-    parser.add_argument("--quiet", action="store_true", help="Only write errors to stderr.")
-    args = parser.parse_args()
-    configure_cli_logging(verbose=args.verbose, quiet=args.quiet)
-    payload = validate_ts_workspace_contract(args.source)
-    emit_json(payload, pretty=args.pretty)
-    if payload["summary"]["errors"]:
-        return 1
-    if args.strict and payload["summary"]["warnings"]:
-        return 1
-    return 0
+    return ValidateWorkspaceCLI().main(argv)
 
 
 def validate_ts_workspace_contract(workspace_directory: Path) -> dict[str, Any]:

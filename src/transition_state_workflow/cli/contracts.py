@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Mapping, Protocol, Sequence
 
+from transition_state_workflow.util.cli import CLIBase, CLIResult
+
 
 @dataclass(frozen=True)
 class CommandResult:

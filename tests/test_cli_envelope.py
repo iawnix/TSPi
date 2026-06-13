@@ -14,6 +14,8 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SKILL_ROOT / "src"))
 
 from transition_state_workflow.util.cli import (  # noqa: E402
+    CLIBase,
+    CLIResult,
     CliError,
     EXIT_ERROR,
     EXIT_OK,
@@ -28,6 +30,23 @@ from transition_state_workflow.util.cli import (  # noqa: E402
     run_cli,
     warn,
 )
+
+
+class EchoCLI(CLIBase):
+    description = "Echo a test payload."
+
+    def add_arguments(self, parser) -> None:  # type: ignore[no-untyped-def]
+        parser.add_argument("--pretty", action="store_true")
+
+    def execute(self, args) -> CLIResult:  # type: ignore[no-untyped-def]
+        return CLIResult(payload={"ok": True, "quiet": bool(args.quiet)}, pretty=args.pretty)
+
+
+class FailingCLI(CLIBase):
+    description = "Fail with a package CLI error."
+
+    def execute(self, args) -> CLIResult:  # type: ignore[no-untyped-def]
+        raise CliError("base failure")
 
 
 def test_emit_json_writes_canonical_ascii_to_stdout(capsys: pytest.CaptureFixture[str]) -> None:
@@ -74,6 +93,26 @@ def test_run_cli_returns_main_exit_code_on_success() -> None:
         return 0
 
     assert run_cli(main, []) == EXIT_OK
+
+
+def test_cli_base_emits_payload_and_configures_common_logging(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    rc = EchoCLI().main(["--pretty", "--quiet"])
+    captured = capsys.readouterr()
+    assert rc == EXIT_OK
+    assert json.loads(captured.out) == {"ok": True, "quiet": True}
+    assert captured.err == ""
+
+
+def test_cli_base_uses_standard_error_envelope(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    rc = FailingCLI().main([])
+    captured = capsys.readouterr()
+    assert rc == EXIT_ERROR
+    assert captured.out == ""
+    assert json.loads(captured.err) == {"ok": False, "error": "base failure"}
 
 
 def test_run_cli_translates_cli_error_to_envelope_on_stderr(

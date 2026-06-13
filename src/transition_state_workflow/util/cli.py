@@ -15,6 +15,8 @@ no tool re-implements it:
 
 from __future__ import annotations
 
+import argparse
+from dataclasses import dataclass
 import json
 import logging
 import sys
@@ -34,6 +36,78 @@ class CliError(Exception):
     def __init__(self, message: str, *, exit_code: int = EXIT_ERROR) -> None:
         super().__init__(message)
         self.exit_code = exit_code
+
+
+@dataclass(frozen=True)
+class CLIResult:
+    """Result returned by :class:`CLIBase` command implementations."""
+
+    exit_code: int = EXIT_OK
+    payload: Any | None = None
+    pretty: bool | None = None
+
+
+class CLIBase:
+    """Small argparse-based base class for package command entrypoints.
+
+    Subclasses own command-specific arguments and execution. This base owns the
+    shared parts: parser construction, ``--verbose``/``--quiet`` logging
+    configuration, JSON payload emission, and :func:`run_cli` error envelopes.
+    """
+
+    description: str | None = None
+    add_logging_options: bool = True
+
+    def build_parser(self) -> argparse.ArgumentParser:
+        """Build an ``argparse`` parser for this command."""
+
+        parser = argparse.ArgumentParser(description=self.description)
+        self.add_arguments(parser)
+        if self.add_logging_options:
+            self.add_common_logging_arguments(parser)
+        return parser
+
+    def add_arguments(self, parser: argparse.ArgumentParser) -> None:
+        """Add command-specific arguments to ``parser``."""
+
+    def add_common_logging_arguments(self, parser: argparse.ArgumentParser) -> None:
+        """Add standard logging verbosity switches."""
+
+        parser.add_argument("--verbose", action="store_true", help="Write diagnostic logs to stderr.")
+        parser.add_argument("--quiet", action="store_true", help="Only write errors to stderr.")
+
+    def configure(self, args: argparse.Namespace) -> None:
+        """Configure package logging from parsed args."""
+
+        configure_cli_logging(
+            verbose=bool(getattr(args, "verbose", False)),
+            quiet=bool(getattr(args, "quiet", False)),
+        )
+
+    def execute(self, args: argparse.Namespace) -> CLIResult | int:
+        """Run the command after parsing and logging setup."""
+
+        raise NotImplementedError
+
+    def render_result(self, result: CLIResult | int) -> int:
+        """Emit any payload and return the command exit code."""
+
+        if isinstance(result, int):
+            return result
+        if result.payload is not None:
+            emit_json(result.payload, pretty=bool(result.pretty))
+        return result.exit_code
+
+    def _main(self, argv: list[str] | None) -> int:
+        parser = self.build_parser()
+        args = parser.parse_args(argv)
+        self.configure(args)
+        return self.render_result(self.execute(args))
+
+    def main(self, argv: list[str] | None = None) -> int:
+        """Run this CLI with the package-standard error envelope."""
+
+        return run_cli(self._main, argv)
 
 
 def configure_cli_logging(*, verbose: bool = False, quiet: bool = False) -> logging.Logger:

@@ -272,6 +272,8 @@ Python tooling follows a package layout:
   `COVALENT_RADII`, XYZ/orientation parsing, frequency and termination checks).
 - `src/transition_state_workflow/config/`: canonical state model, vocabularies,
   and the v2 contract checks shared by the validator and normalizer.
+- `src/transition_state_workflow/cli/`: public CLI contracts and re-exports for
+  `CLIBase`, `CLIResult`, `Command`, and `CommandResult`.
 - `src/transition_state_workflow/core/`: ChemKernel-facing planning and
   workspace state writers: workspace initialization, decision-card/node
   templates, evidence registry append, start-node, backtrack lifecycle, and
@@ -291,12 +293,13 @@ Python tooling follows a package layout:
   status/tail/fetch, and `sync.py`/`sync_cli.py` handle explicit metadata
   mirror synchronization.
 - `src/transition_state_workflow/util/`: cross-cutting helpers —
-  `cli.py` (the unified CLI core: `emit_json` for JSON stdout,
-  `emit_stdout` for legacy text transcripts, `log`/`warn` plus raw relay
-  helpers for stderr diagnostics, and `run_cli`/`CliError`, which render
-  failures as a one-line `{"ok": false, "error": ...}` envelope),
-  `json_io.py`, `path_utils.py`, `node_layout.py` (node directory resolution),
-  and compatibility forwarding modules such as `remote_exec.py`.
+  `cli.py` (the unified CLI core: `CLIBase`/`CLIResult` for argparse command
+  entrypoints, `emit_json` for JSON stdout, `emit_stdout` for legacy text
+  transcripts, `log`/`warn` plus raw relay helpers for stderr diagnostics, and
+  `run_cli`/`CliError`, which render failures as a one-line
+  `{"ok": false, "error": ...}` envelope), `json_io.py`, `path_utils.py`,
+  `node_layout.py` (node directory resolution), and compatibility forwarding
+  modules such as `remote_exec.py`.
 - `src/transition_state_workflow/tool/`: concrete chemistry tool CLIs and
   compatibility entrypoints. The NEB toolkit lives in the `tool/ase_neb/`
   subpackage, split by concern into layered modules
