@@ -15,7 +15,7 @@ from transition_state_workflow.config.state_contract import (
     WORKSPACE_NODE_SCHEMA,
 )
 from transition_state_workflow.tool.explorer_registry import register_workspace
-from transition_state_workflow.tool.finalize_node import (
+from transition_state_workflow.gate.finalize import (
     finalize_ts_workspace_node_from_cli_args,
     register_finalize_node_parser,
 )

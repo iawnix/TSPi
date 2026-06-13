@@ -69,6 +69,8 @@ Do not edit the installed skill at
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
+- [x] Move node finalization logic into `gate/finalize.py`, with legacy
+      `tool/finalize_node.py` kept as a compatibility re-export.
 - [ ] Update `SKILL.md` and `references/` after code boundaries exist; do not
       describe future architecture as current behavior before tests prove it.
 - [ ] Run compatibility validation after each checkpoint:
@@ -93,3 +95,5 @@ Do not edit the installed skill at
 - 2026-06-13: Moved actual evidence-gate, normalizer, validator, and pathway
   model logic into `gate/` and `base/`; old `tool/` import paths remain
   compatibility re-exports.
+- 2026-06-13: Moved actual finalize-node implementation into
+  `gate/finalize.py`; `tool/finalize_node.py` remains a compatibility import.
