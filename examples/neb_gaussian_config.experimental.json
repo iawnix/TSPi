@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "reactant": "reactant.xyz",
+  "product": "product.xyz",
+  "output": "tssearch_example_gaussian_experimental",
+  "project": {
+    "system_slug": "example_gaussian_experimental"
+  },
+  "images": 5,
+  "interpolation": "idpp",
+  "neb": {
+    "climb": false,
+    "dynamic": false,
+    "k": 0.1,
+    "method": "improvedtangent",
+    "remove_rotation_and_translation": true
+  },
+  "optimizer": {
+    "name": "FIRE",
+    "fmax": 0.08,
+    "steps": 80
+  },
+  "calculator": {
+    "type": "gaussian",
+    "allow_neb": false,
+    "executable": "g16",
+    "scratch_root": "/tmp/gaussian_neb",
+    "params": {
+      "method": "PM6",
+      "charge": -1,
+      "mult": 1,
+      "nprocshared": 8,
+      "mem": "16GB"
+    }
+  }
+}

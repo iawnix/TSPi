@@ -1,0 +1,4 @@
+interface:
+  display_name: "Transition-State Workflow"
+  short_description: "Rigorous tree-based TS search and validation"
+  default_prompt: "Use $transition-state-workflow to plan, run, validate, and reflect on this transition-state search."

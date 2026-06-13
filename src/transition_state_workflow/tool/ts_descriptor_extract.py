@@ -1,0 +1,552 @@
+#!/usr/bin/env python3
+"""Extract compact descriptors from a Gaussian TS/frequency result."""
+
+from __future__ import annotations
+
+import argparse
+import csv
+import json
+import math
+import re
+from collections import Counter
+from pathlib import Path
+
+from transition_state_workflow.chem.gaussian_log import terminated_normally
+from transition_state_workflow.chem.geometry import Atom, COVALENT_RADII, distance, read_xyz
+from transition_state_workflow.util.cli import CliError, emit_json, run_cli
+
+HARTREE_TO_EV = 27.211386245988
+
+
+def vector(a: Atom, b: Atom) -> tuple[float, float, float]:
+    return (b.x - a.x, b.y - a.y, b.z - a.z)
+
+
+def dot(u: tuple[float, float, float], v: tuple[float, float, float]) -> float:
+    return u[0] * v[0] + u[1] * v[1] + u[2] * v[2]
+
+
+def cross(u: tuple[float, float, float], v: tuple[float, float, float]) -> tuple[float, float, float]:
+    return (
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    )
+
+
+def norm(u: tuple[float, float, float]) -> float:
+    return math.sqrt(dot(u, u))
+
+
+def angle(a: Atom, b: Atom, c: Atom) -> float:
+    ba = vector(b, a)
+    bc = vector(b, c)
+    denom = norm(ba) * norm(bc)
+    if denom == 0:
+        return float("nan")
+    value = max(-1.0, min(1.0, dot(ba, bc) / denom))
+    return math.degrees(math.acos(value))
+
+
+def dihedral(a: Atom, b: Atom, c: Atom, d: Atom) -> float:
+    b0 = vector(b, a)
+    b1 = vector(b, c)
+    b2 = vector(c, d)
+    b1_norm = norm(b1)
+    if b1_norm == 0:
+        return float("nan")
+    b1u = (b1[0] / b1_norm, b1[1] / b1_norm, b1[2] / b1_norm)
+    v = tuple(b0[i] - dot(b0, b1u) * b1u[i] for i in range(3))
+    w = tuple(b2[i] - dot(b2, b1u) * b1u[i] for i in range(3))
+    x = dot(v, w)
+    y = dot(cross(b1u, v), w)
+    return math.degrees(math.atan2(y, x))
+
+
+def parse_last_scf_energy(lines: list[str]) -> float | None:
+    energies = []
+    for line in lines:
+        match = re.search(r"SCF Done:\s+E\([^)]+\)\s*=\s*([-+]?\d+\.\d+)", line)
+        if match:
+            energies.append(float(match.group(1)))
+    return energies[-1] if energies else None
+
+
+def parse_charge_multiplicity(lines: list[str]) -> tuple[int | None, int | None]:
+    for line in lines:
+        match = re.search(r"Charge\s*=\s*(-?\d+)\s+Multiplicity\s*=\s*(\d+)", line)
+        if match:
+            return int(match.group(1)), int(match.group(2))
+    return None, None
+
+
+# Standard ``Frequencies --`` lines carry exactly two dashes; ``freq=hpmodes`` also
+# prints high-precision ``Frequencies ---`` lines that must be skipped to avoid
+# double-counting and a ``float('-')`` crash. (Red. masses/Frc consts/IR Inten use
+# distinct labels between the two blocks, so only Frequencies needs the guard.)
+STANDARD_FREQUENCY_LINE = re.compile(r"\s*Frequencies\s+--\s+(.*)")
+
+
+def parse_freq_metadata(lines: list[str]) -> dict[str, object]:
+    frequencies: list[float] = []
+    red_masses: list[float] = []
+    force_constants: list[float] = []
+    ir_intensities: list[float] = []
+    for line in lines:
+        freq_match = STANDARD_FREQUENCY_LINE.match(line)
+        if freq_match:
+            frequencies.extend(float(value) for value in freq_match.group(1).split())
+        elif "Red. masses --" in line:
+            red_masses.extend(float(value) for value in line.split("--", 1)[1].split())
+        elif "Frc consts  --" in line:
+            force_constants.extend(float(value) for value in line.split("--", 1)[1].split())
+        elif "IR Inten    --" in line:
+            ir_intensities.extend(float(value) for value in line.split("--", 1)[1].split())
+    imaginary = [freq for freq in frequencies if freq < 0.0]
+    return {
+        "frequency_count": len(frequencies),
+        "imaginary_frequency_count": len(imaginary),
+        "imaginary_frequency_cm-1": imaginary[0] if imaginary else None,
+        "imaginary_reduced_mass_amu": red_masses[0] if red_masses else None,
+        "imaginary_force_constant_mdyne_per_angstrom": force_constants[0] if force_constants else None,
+        "imaginary_ir_intensity_km_per_mol": ir_intensities[0] if ir_intensities else None,
+    }
+
+
+def parse_imaginary_vectors(lines: list[str], natoms: int) -> list[tuple[float, float, float]]:
+    for i, line in enumerate(lines):
+        if "Frequencies --" not in line:
+            continue
+        freqs = [float(value) for value in line.split("--", 1)[1].split()]
+        if not freqs or freqs[0] >= 0.0:
+            continue
+        j = i + 1
+        while j < len(lines) and not re.match(r"\s*Atom\s+AN\s+", lines[j]):
+            j += 1
+        if j >= len(lines):
+            raise ValueError("Imaginary frequency block has no displacement table")
+        vectors: list[tuple[float, float, float]] = []
+        for row in lines[j + 1 : j + 1 + natoms]:
+            parts = row.split()
+            if len(parts) < 5:
+                raise ValueError("Malformed imaginary frequency displacement row")
+            vectors.append((float(parts[2]), float(parts[3]), float(parts[4])))
+        return vectors
+    raise ValueError("No imaginary frequency displacement block found")
+
+
+def parse_last_mulliken(lines: list[str]) -> dict[int, float]:
+    return parse_charge_table(lines, "Mulliken charges:", "Sum of Mulliken charges")
+
+
+def parse_charge_table(lines: list[str], header: str, stop_prefix: str | None = None) -> dict[int, float]:
+    blocks: list[dict[int, float]] = []
+    i = 0
+    while i < len(lines):
+        if lines[i].strip() != header:
+            i += 1
+            continue
+        i += 1
+        block: dict[int, float] = {}
+        while i < len(lines):
+            if stop_prefix and stop_prefix in lines[i]:
+                break
+            parts = lines[i].split()
+            if len(parts) == 3 and parts[0].isdigit():
+                block[int(parts[0])] = float(parts[2])
+            elif block and (not parts or not parts[0].isdigit()):
+                break
+            i += 1
+        if block:
+            blocks.append(block)
+    return blocks[-1] if blocks else {}
+
+
+def parse_frontier_orbitals(lines: list[str]) -> dict[str, float | int | None]:
+    blocks: list[dict[str, list[float]]] = []
+    current: dict[str, list[float]] = {"alpha_occ": [], "alpha_virt": [], "beta_occ": [], "beta_virt": []}
+    saw_virt = False
+    for line in lines:
+        label = None
+        if "Alpha  occ. eigenvalues --" in line or "Alpha occ. eigenvalues --" in line:
+            label = "alpha_occ"
+        elif "Alpha virt. eigenvalues --" in line:
+            label = "alpha_virt"
+        elif "Beta  occ. eigenvalues --" in line or "Beta occ. eigenvalues --" in line:
+            label = "beta_occ"
+        elif "Beta virt. eigenvalues --" in line:
+            label = "beta_virt"
+        if label is None:
+            continue
+        if label.endswith("occ") and saw_virt and any(current.values()):
+            blocks.append(current)
+            current = {"alpha_occ": [], "alpha_virt": [], "beta_occ": [], "beta_virt": []}
+            saw_virt = False
+        values = [float(value) for value in re.findall(r"[-+]?\d+\.\d+", line.split("--", 1)[1])]
+        current[label].extend(values)
+        if label.endswith("virt"):
+            saw_virt = True
+    if any(current.values()):
+        blocks.append(current)
+
+    selected = None
+    for block in reversed(blocks):
+        if block["alpha_occ"] and block["alpha_virt"]:
+            selected = block
+            break
+    if not selected:
+        return {}
+
+    alpha_homo = selected["alpha_occ"][-1]
+    alpha_lumo = selected["alpha_virt"][0]
+    result: dict[str, float | int | None] = {
+        "alpha_homo_hartree": alpha_homo,
+        "alpha_lumo_hartree": alpha_lumo,
+        "alpha_gap_hartree": alpha_lumo - alpha_homo,
+        "alpha_homo_ev": alpha_homo * HARTREE_TO_EV,
+        "alpha_lumo_ev": alpha_lumo * HARTREE_TO_EV,
+        "alpha_gap_ev": (alpha_lumo - alpha_homo) * HARTREE_TO_EV,
+        "alpha_occupied_count": len(selected["alpha_occ"]),
+        "alpha_virtual_count": len(selected["alpha_virt"]),
+    }
+    if selected["beta_occ"] and selected["beta_virt"]:
+        beta_homo = selected["beta_occ"][-1]
+        beta_lumo = selected["beta_virt"][0]
+        result.update(
+            {
+                "beta_homo_hartree": beta_homo,
+                "beta_lumo_hartree": beta_lumo,
+                "beta_gap_hartree": beta_lumo - beta_homo,
+                "beta_homo_ev": beta_homo * HARTREE_TO_EV,
+                "beta_lumo_ev": beta_lumo * HARTREE_TO_EV,
+                "beta_gap_ev": (beta_lumo - beta_homo) * HARTREE_TO_EV,
+                "beta_occupied_count": len(selected["beta_occ"]),
+                "beta_virtual_count": len(selected["beta_virt"]),
+            }
+        )
+    return result
+
+
+def parse_last_dipole(lines: list[str]) -> dict[str, float]:
+    dipoles: list[dict[str, float]] = []
+    pattern = re.compile(
+        r"X=\s*([-+]?\d+\.\d+)\s+Y=\s*([-+]?\d+\.\d+)\s+Z=\s*([-+]?\d+\.\d+)\s+Tot=\s*([-+]?\d+\.\d+)"
+    )
+    for i, line in enumerate(lines):
+        if "Dipole moment" not in line:
+            continue
+        if i + 1 < len(lines):
+            match = pattern.search(lines[i + 1])
+            if match:
+                dipoles.append(
+                    {
+                        "x_debye": float(match.group(1)),
+                        "y_debye": float(match.group(2)),
+                        "z_debye": float(match.group(3)),
+                        "total_debye": float(match.group(4)),
+                    }
+                )
+    return dipoles[-1] if dipoles else {}
+
+
+def formula(atoms: list[Atom]) -> str:
+    counts = Counter(atom.element for atom in atoms)
+    order = ["C", "H", "N", "O"]
+    parts = []
+    for element in order:
+        if element in counts:
+            value = counts.pop(element)
+            parts.append(element if value == 1 else f"{element}{value}")
+    for element in sorted(counts):
+        value = counts[element]
+        parts.append(element if value == 1 else f"{element}{value}")
+    return "".join(parts)
+
+
+def pair_key(pair: tuple[int, int], atoms: list[Atom]) -> str:
+    i, j = pair
+    return f"{i}:{atoms[i - 1].element}-{j}:{atoms[j - 1].element}"
+
+
+def atom_key(index: int, atoms: list[Atom]) -> str:
+    return f"{index}:{atoms[index - 1].element}"
+
+
+def parse_index_group(text: str, expected: int) -> tuple[int, ...]:
+    parts = tuple(int(part) for part in text.split("-"))
+    if len(parts) != expected:
+        raise ValueError(f"Expected {expected} atom indices in {text!r}")
+    return parts
+
+
+def scaled_mode_distances(atoms: list[Atom], minus_atoms: list[Atom], plus_atoms: list[Atom], pairs: list[tuple[int, int]]) -> list[dict[str, object]]:
+    rows = []
+    for pair in pairs:
+        i, j = pair
+        ts_d = distance(atoms[i - 1], atoms[j - 1])
+        minus_d = distance(minus_atoms[i - 1], minus_atoms[j - 1])
+        plus_d = distance(plus_atoms[i - 1], plus_atoms[j - 1])
+        rows.append(
+            {
+                "pair": pair_key(pair, atoms),
+                "ts_distance_angstrom": ts_d,
+                "minus_scaled_distance_angstrom": minus_d,
+                "plus_scaled_distance_angstrom": plus_d,
+                "plus_minus_delta_angstrom": plus_d - minus_d,
+                "plus_minus_delta_percent_of_ts": 100.0 * (plus_d - minus_d) / ts_d if ts_d else None,
+            }
+        )
+    return rows
+
+
+def mode_pair_derivatives(atoms: list[Atom], vectors: list[tuple[float, float, float]], pairs: list[tuple[int, int]]) -> list[dict[str, object]]:
+    rows = []
+    for pair in pairs:
+        i, j = pair
+        a = atoms[i - 1]
+        b = atoms[j - 1]
+        rij = vector(a, b)
+        rij_norm = norm(rij)
+        if rij_norm == 0:
+            projection = float("nan")
+        else:
+            unit = (rij[0] / rij_norm, rij[1] / rij_norm, rij[2] / rij_norm)
+            dv = tuple(vectors[j - 1][k] - vectors[i - 1][k] for k in range(3))
+            projection = dot(dv, unit)
+        rows.append(
+            {
+                "pair": pair_key(pair, atoms),
+                "mode_distance_derivative_arbitrary_units": projection,
+                "interpretation": "positive mode sign lengthens this distance" if projection > 0 else "positive mode sign shortens this distance",
+            }
+        )
+    return rows
+
+
+def coordination_shell(atoms: list[Atom], center_index: int, scale: float) -> list[dict[str, object]]:
+    center = atoms[center_index - 1]
+    rows = []
+    for idx, atom in enumerate(atoms, start=1):
+        if idx == center_index or atom.element == "H":
+            continue
+        cutoff = scale * (COVALENT_RADII.get(center.element, 0.77) + COVALENT_RADII.get(atom.element, 0.77))
+        d = distance(center, atom)
+        rows.append(
+            {
+                "atom": f"{idx}:{atom.element}",
+                "distance_angstrom": d,
+                "covalent_cutoff_angstrom": cutoff,
+                "within_cutoff": d <= cutoff,
+            }
+        )
+    rows.sort(key=lambda row: row["distance_angstrom"])
+    return rows
+
+
+def focus_charge_dict(atoms: list[Atom], charges: dict[int, float], focus_atoms: set[int]) -> dict[str, float | None]:
+    return {atom_key(index, atoms): charges.get(index) for index in sorted(focus_atoms)}
+
+
+def angle_descriptors(atoms: list[Atom], angle_specs: list[tuple[int, int, int]]) -> dict[str, float]:
+    out: dict[str, float] = {}
+    for i, j, k in angle_specs:
+        key = f"{atom_key(i, atoms)}-{atom_key(j, atoms)}-{atom_key(k, atoms)}"
+        out[key] = angle(atoms[i - 1], atoms[j - 1], atoms[k - 1])
+    return out
+
+
+def dihedral_descriptors(atoms: list[Atom], dihedral_specs: list[tuple[int, int, int, int]]) -> dict[str, float]:
+    out: dict[str, float] = {}
+    for i, j, k, l in dihedral_specs:
+        key = f"{atom_key(i, atoms)}-{atom_key(j, atoms)}-{atom_key(k, atoms)}-{atom_key(l, atoms)}"
+        out[key] = dihedral(atoms[i - 1], atoms[j - 1], atoms[k - 1], atoms[l - 1])
+    return out
+
+
+def _run(argv: list[str] | None) -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--ts-out", type=Path, required=True)
+    parser.add_argument("--ts-xyz", type=Path, required=True)
+    parser.add_argument("--minus-xyz", type=Path, required=True)
+    parser.add_argument("--plus-xyz", type=Path, required=True)
+    parser.add_argument("-o", "--output-dir", type=Path, required=True)
+    parser.add_argument("--pairs", nargs="*", default=[], help="Reaction-center atom pairs, e.g. 1-23 1-54 23-54.")
+    parser.add_argument("--focus-atoms", nargs="*", default=[], help="Atom indices to include in the compact charge summary.")
+    parser.add_argument("--center-index", type=int, help="Optional coordination center atom index.")
+    parser.add_argument("--angles", nargs="*", default=[], help="Optional angle descriptors as i-j-k atom indices.")
+    parser.add_argument("--dihedrals", nargs="*", default=[], help="Optional dihedral descriptors as i-j-k-l atom indices.")
+    parser.add_argument("--bond-scale", type=float, default=1.25)
+    args = parser.parse_args(argv)
+
+    lines = args.ts_out.read_text(encoding="utf-8", errors="replace").splitlines()
+    atoms = read_xyz(args.ts_xyz)
+    minus_atoms = read_xyz(args.minus_xyz)
+    plus_atoms = read_xyz(args.plus_xyz)
+    pairs = [parse_index_group(item, 2) for item in args.pairs]
+    angle_specs = [parse_index_group(item, 3) for item in args.angles]
+    dihedral_specs = [parse_index_group(item, 4) for item in args.dihedrals]
+    focus_atoms = {int(item) for item in args.focus_atoms}
+    for pair in pairs:
+        focus_atoms.update(pair)
+    if args.center_index:
+        focus_atoms.add(args.center_index)
+    vectors = parse_imaginary_vectors(lines, len(atoms))
+    vector_norms = [norm(vector) for vector in vectors]
+    norm2_sum = sum(value * value for value in vector_norms)
+    charges = parse_last_mulliken(lines)
+    mulliken_h_summed = parse_charge_table(
+        lines,
+        "Mulliken charges with hydrogens summed into heavy atoms:",
+    )
+    apt_charges = parse_charge_table(lines, "APT charges:", "Sum of APT charges")
+    apt_h_summed = parse_charge_table(
+        lines,
+        "APT charges with hydrogens summed into heavy atoms:",
+    )
+
+    mode_rows = []
+    for idx, (atom, vec_norm) in enumerate(zip(atoms, vector_norms), start=1):
+        mode_rows.append(
+            {
+                "atom_index": idx,
+                "element": atom.element,
+                "mode_vector_norm": vec_norm,
+                "mode_participation_percent": 100.0 * vec_norm * vec_norm / norm2_sum if norm2_sum else 0.0,
+                "mulliken_charge": charges.get(idx),
+            }
+        )
+    mode_rows.sort(key=lambda row: row["mode_participation_percent"], reverse=True)
+
+    charge, multiplicity = parse_charge_multiplicity(lines)
+    freq_metadata = parse_freq_metadata(lines)
+    key_distances = scaled_mode_distances(atoms, minus_atoms, plus_atoms, pairs)
+    pair_derivatives = mode_pair_derivatives(atoms, vectors, pairs)
+    shell = coordination_shell(atoms, args.center_index, args.bond_scale) if args.center_index else []
+
+    descriptor = {
+        "source": {
+            "ts_out": str(args.ts_out),
+            "ts_xyz": str(args.ts_xyz),
+            "minus_xyz": str(args.minus_xyz),
+            "plus_xyz": str(args.plus_xyz),
+        },
+        "validation": {
+            "normal_termination": terminated_normally(lines),
+            "stationary_point_found": any("Stationary point found" in line for line in lines),
+            **freq_metadata,
+        },
+        "system": {
+            "natoms": len(atoms),
+            "formula": formula(atoms),
+            "charge": charge,
+            "multiplicity": multiplicity,
+            "final_scf_energy_hartree": parse_last_scf_energy(lines),
+            "dipole": parse_last_dipole(lines),
+            "frontier_orbitals": parse_frontier_orbitals(lines),
+        },
+        "reaction_center": {
+            "tracked_pairs": key_distances,
+            "imaginary_mode_pair_derivatives": pair_derivatives,
+            "angles_degrees": angle_descriptors(atoms, angle_specs),
+            "dihedral_degrees": dihedral_descriptors(atoms, dihedral_specs),
+            "mulliken_charges": focus_charge_dict(atoms, charges, focus_atoms),
+            "mulliken_h_summed_charges": focus_charge_dict(atoms, mulliken_h_summed, focus_atoms),
+            "apt_charges": focus_charge_dict(atoms, apt_charges, focus_atoms),
+            "apt_h_summed_charges": focus_charge_dict(atoms, apt_h_summed, focus_atoms),
+        },
+        "coordination": {
+            "center": atom_key(args.center_index, atoms) if args.center_index else None,
+            "bond_scale": args.bond_scale,
+            "within_cutoff": [row for row in shell if row["within_cutoff"]],
+            "nearest_heavy_atoms": shell[:12],
+        },
+        "imaginary_mode": {
+            "top_atom_participation": mode_rows[:15],
+            "focus_atom_participation_percent": sum(
+                mode_rows_item["mode_participation_percent"]
+                for mode_rows_item in mode_rows
+                if mode_rows_item["atom_index"] in focus_atoms
+            ),
+        },
+    }
+
+    args.output_dir.mkdir(parents=True, exist_ok=True)
+    (args.output_dir / "ts_descriptors.json").write_text(json.dumps(descriptor, indent=2), encoding="utf-8")
+
+    with (args.output_dir / "reaction_center_distances.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(
+            handle,
+            fieldnames=[
+                "pair",
+                "ts_distance_angstrom",
+                "minus_scaled_distance_angstrom",
+                "plus_scaled_distance_angstrom",
+                "plus_minus_delta_angstrom",
+                "plus_minus_delta_percent_of_ts",
+            ],
+        )
+        writer.writeheader()
+        writer.writerows(key_distances)
+
+    with (args.output_dir / "mode_participation.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(mode_rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(mode_rows)
+
+    charge_rows = []
+    all_indices = sorted(set(charges) | set(mulliken_h_summed) | set(apt_charges) | set(apt_h_summed))
+    for idx in all_indices:
+        atom = atoms[idx - 1]
+        charge_rows.append(
+            {
+                "atom_index": idx,
+                "element": atom.element,
+                "mulliken": charges.get(idx),
+                "mulliken_h_summed": mulliken_h_summed.get(idx),
+                "apt": apt_charges.get(idx),
+                "apt_h_summed": apt_h_summed.get(idx),
+            }
+        )
+    with (args.output_dir / "atomic_charges.csv").open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(charge_rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(charge_rows)
+
+    emit_json(
+        {
+            "validation": descriptor["validation"],
+            "system": descriptor["system"],
+            "tracked_pairs": key_distances,
+            "reaction_center_charges": {
+                "mulliken": descriptor["reaction_center"]["mulliken_charges"],
+                "mulliken_h_summed": descriptor["reaction_center"]["mulliken_h_summed_charges"],
+                "apt": descriptor["reaction_center"]["apt_charges"],
+                "apt_h_summed": descriptor["reaction_center"]["apt_h_summed_charges"],
+            },
+            "top_mode_atoms": mode_rows[:8],
+            "outputs": {
+                "json": str(args.output_dir / "ts_descriptors.json"),
+                "distances_csv": str(args.output_dir / "reaction_center_distances.csv"),
+                "mode_csv": str(args.output_dir / "mode_participation.csv"),
+                "charges_csv": str(args.output_dir / "atomic_charges.csv"),
+            },
+        }
+    )
+    return 0
+
+
+def _run_translated(argv: list[str] | None) -> int:
+    try:
+        return _run(argv)
+    except ValueError as exc:
+        # Malformed --pairs/--angles specs and bad XYZ files raise ValueError;
+        # surface them as a tidy CLI error envelope instead of a traceback.
+        raise CliError(str(exc)) from exc
+
+
+def main(argv: list[str] | None = None) -> int:
+    return run_cli(_run_translated, argv)
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

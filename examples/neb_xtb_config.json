@@ -1,0 +1,51 @@
+{
+  "version": 1,
+  "reactant": "reactant.xyz",
+  "product": "product.xyz",
+  "output": "tssearch_example_xtb",
+  "project": {
+    "system_slug": "example_xtb"
+  },
+  "endpoint_validation": {
+    "reactant_state": "reference_hypothesis",
+    "product_state": "reference_hypothesis",
+    "level": "",
+    "evidence": ""
+  },
+  "images": 9,
+  "interpolation": "idpp",
+  "neb": {
+    "climb": true,
+    "dynamic": false,
+    "k": 0.1,
+    "method": "improvedtangent",
+    "remove_rotation_and_translation": true
+  },
+  "optimizer": {
+    "name": "FIRE",
+    "fmax": 0.05,
+    "steps": 500
+  },
+  "calculator": {
+    "type": "xtb",
+    "method": "GFN2-xTB",
+    "charge": -1,
+    "uhf": 0,
+    "env": {
+      "OMP_NUM_THREADS": 4,
+      "MKL_NUM_THREADS": 4,
+      "OPENBLAS_NUM_THREADS": 4
+    }
+  },
+  "refinement": {
+    "gaussian": {
+      "route": "# M062X/def2SVP opt=(ts,calcfc,noeigen,maxcycle=100) freq nosymm empiricaldispersion=gd3 scf=xqc",
+      "charge": -1,
+      "multiplicity": 1,
+      "nprocshared": 24,
+      "mem": "64GB",
+      "chk": "ts_candidate.chk",
+      "title": "TS candidate from xTB NEB"
+    }
+  }
+}

@@ -1,0 +1,711 @@
+#!/usr/bin/env python3
+"""Initialize and maintain chemistry-hypothesis TS-search workspaces."""
+
+from __future__ import annotations
+
+import argparse
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from transition_state_workflow.config.state_contract import (
+    EVIDENCE_REGISTRY_SCHEMA,
+    TREE_SCHEMA,
+    VALID_EVIDENCE_STATES,
+    WORKSPACE_NODE_SCHEMA,
+)
+from transition_state_workflow.tool.explorer_registry import register_workspace
+from transition_state_workflow.tool.finalize_node import (
+    finalize_ts_workspace_node_from_cli_args,
+    register_finalize_node_parser,
+)
+from transition_state_workflow.tool.pathway_model import (
+    initialize_pathway_model_if_missing,
+    pathway_bind_step_from_cli_args,
+    pathway_init_from_cli_args,
+    register_pathway_parsers,
+    validate_pathway_step_reference,
+)
+from transition_state_workflow.tool.plan_next import build_plan_next_packet, register_plan_next_parser
+from transition_state_workflow.tool.record_backtrack import (
+    record_backtrack_from_cli_args,
+    register_record_backtrack_parser,
+    register_update_backtrack_parser,
+    update_backtrack_from_cli_args,
+)
+from transition_state_workflow.tool.start_node import (
+    register_start_node_parser,
+    start_ts_workspace_node_from_cli_args,
+)
+from transition_state_workflow.util.json_io import read_json_object_required, write_json_object
+from transition_state_workflow.util.cli import configure_cli_logging, emit_json
+from transition_state_workflow.util.path_utils import portable_record_path, relative_path_or_absolute, safe_identifier_token
+
+
+def main() -> int:
+    """Run the TS hypothesis workspace command-line interface."""
+
+    parser = argparse.ArgumentParser(
+        description="Create TS-search hypothesis workspace artifacts.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    init = sub.add_parser("init", help="Initialize a tssearch_<system> workspace.")
+    init.add_argument("--root", required=True, type=Path, help="Workspace directory.")
+    init.add_argument("--system", required=True, help="Short system label.")
+    init.add_argument("--charge", required=True, type=int, help="Total charge.")
+    init.add_argument("--multiplicity", required=True, type=int, help="Spin multiplicity.")
+    init.add_argument("--reaction-class", default="unknown", help="Initial reaction-class hypothesis.")
+    init.add_argument(
+        "--key-atoms",
+        nargs="*",
+        default=[],
+        help="Reaction-center atom labels or indices.",
+    )
+    init.add_argument(
+        "--bond-change",
+        action="append",
+        default=[],
+        help="Expected bond change as role:atomA-atomB, e.g. breaking:O7-H5.",
+    )
+    init.add_argument("--force", action="store_true", help="Overwrite existing scaffold files.")
+    init.add_argument(
+        "--no-explorer-register",
+        action="store_true",
+        help="Skip registering this workspace in the persistent explorer registry.",
+    )
+    init.add_argument(
+        "--explorer-register",
+        action="store_true",
+        help="Register this workspace in the persistent explorer registry.",
+    )
+    init.add_argument(
+        "--explorer-registry",
+        type=Path,
+        default=None,
+        help="Explorer registry path. Passing this path also opts into registration.",
+    )
+    init.add_argument("--verbose", action="store_true", help="Write diagnostic logs to stderr.")
+    init.add_argument("--quiet", action="store_true", help="Only write errors to stderr.")
+
+    card = sub.add_parser("decision-card", help="Create templates for one branch node.")
+    card.add_argument("--root", required=True, type=Path, help="Workspace directory.")
+    card.add_argument("--node-id", required=True, help="Node id under nodes/.")
+    card.add_argument("--stage", required=True, help="Workflow stage.")
+    card.add_argument("--parent-id", default=None, help="Parent node id.")
+    card.add_argument("--pathway-id", default="", help="Optional pathway id for multi-step aggregation.")
+    card.add_argument("--step-id", default="", help="Optional elementary step id within --pathway-id.")
+    card.add_argument(
+        "--input-ref",
+        action="append",
+        default=[],
+        help=(
+            "Additional input/dependency node id for multi-input routes such as QST2, "
+            "endpoint-pair validation, or IRC reference checks. May be repeated."
+        ),
+    )
+    card.add_argument("--hypothesis", required=True, help="Chemical hypothesis being tested.")
+    card.add_argument("--operation", required=True, help="Operation or route chosen for this test.")
+    card.add_argument("--force", action="store_true", help="Overwrite existing node templates.")
+    card.add_argument("--verbose", action="store_true", help="Write diagnostic logs to stderr.")
+    card.add_argument("--quiet", action="store_true", help="Only write errors to stderr.")
+
+    evidence = sub.add_parser("add-evidence", help="Append one evidence registry record.")
+    evidence.add_argument("--root", required=True, type=Path, help="Workspace directory.")
+    evidence.add_argument("--kind", required=True, help="Evidence kind.")
+    evidence.add_argument("--path", required=True, help="Evidence path.")
+    evidence.add_argument("--node-id", required=True, help="Node id.")
+    evidence.add_argument("--claim", required=True, help="Short source-backed claim.")
+    evidence.add_argument(
+        "--evidence-state",
+        default="prepared",
+        choices=sorted(VALID_EVIDENCE_STATES),
+        help="How this evidence relates to the current hypothesis.",
+    )
+    evidence.add_argument("--verbose", action="store_true", help="Write diagnostic logs to stderr.")
+    evidence.add_argument("--quiet", action="store_true", help="Only write errors to stderr.")
+
+    register_start_node_parser(sub)
+    register_record_backtrack_parser(sub)
+    register_update_backtrack_parser(sub)
+    register_pathway_parsers(sub)
+    register_finalize_node_parser(sub)
+    register_plan_next_parser(sub)
+
+    args = parser.parse_args()
+    configure_cli_logging(verbose=getattr(args, "verbose", False), quiet=getattr(args, "quiet", False))
+    if args.command == "init":
+        initialize_ts_hypothesis_workspace_from_cli_args(args)
+    elif args.command == "decision-card":
+        create_ts_branch_decision_artifacts_from_cli_args(args)
+    elif args.command == "add-evidence":
+        append_ts_workspace_evidence_record_from_cli_args(args)
+    elif args.command == "start-node":
+        start_ts_workspace_node_from_cli_args(args)
+    elif args.command == "record-backtrack":
+        record_backtrack_from_cli_args(args)
+    elif args.command == "update-backtrack":
+        update_backtrack_from_cli_args(args)
+    elif args.command == "pathway-init":
+        pathway_init_from_cli_args(args)
+    elif args.command == "pathway-bind-step":
+        pathway_bind_step_from_cli_args(args)
+    elif args.command == "finalize-node":
+        finalize_ts_workspace_node_from_cli_args(args)
+    elif args.command == "plan-next":
+        packet = build_plan_next_packet(
+            args.root,
+            max_suggestions=args.max_suggestions,
+            alternative_mechanism=args.alternative_mechanism,
+        )
+        if args.write_decision_cards:
+            packet["written_decision_cards"] = write_suggested_decision_cards_from_plan(args, packet)
+        emit_json(packet, pretty=args.pretty)
+    else:
+        parser.error(f"unsupported command: {args.command}")
+    return 0
+
+
+def initialize_ts_hypothesis_workspace_from_cli_args(args: argparse.Namespace) -> None:
+    """Create the root v2 files for a chemistry-hypothesis TS workspace."""
+
+    root = args.root.resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "nodes").mkdir(exist_ok=True)
+    (root / "reports").mkdir(exist_ok=True)
+    now = utc_timestamp()
+
+    manifest = {
+        "system": args.system,
+        "created_at": now,
+        "charge": args.charge,
+        "multiplicity": args.multiplicity,
+        "root": str(root),
+        "node_schema": WORKSPACE_NODE_SCHEMA,
+        "current_accepted_ts": None,
+    }
+    tree = {
+        "schema": TREE_SCHEMA,
+        "nodes": {},
+        "active_frontier": [],
+        "closed_nodes": [],
+        "accepted_nodes": [],
+        "events": [],
+        "backtrack_events": [],
+    }
+    mechanism = {
+        "schema": "tssearch-mechanism-model-v1",
+        "system": args.system,
+        "charge": args.charge,
+        "multiplicity": args.multiplicity,
+        "reaction_class": args.reaction_class,
+        "reaction_class_confidence": "low" if args.reaction_class == "unknown" else "provisional",
+        "key_atoms": list(args.key_atoms),
+        "expected_bond_changes": [parse_expected_bond_change_spec(item) for item in args.bond_change],
+        "expected_angle_changes": [],
+        "electronic_hypotheses": [],
+        "analysis_plan": default_mechanism_analysis_plan(),
+        "mechanism_analysis": default_mechanism_analysis(),
+        "validated_facts": [],
+        "refuted_hypotheses": [],
+        "open_questions": [
+            "Are reactant and product references true minima at the chosen charge, multiplicity, and level?",
+            "Which reaction-center coordinate should define the first candidate-generation branch?",
+        ],
+        "tool_implications": [],
+        "updated_at": now,
+    }
+    evidence_registry = {
+        "schema": EVIDENCE_REGISTRY_SCHEMA,
+        "system": args.system,
+        "records": [],
+        "updated_at": now,
+    }
+    knowledge_base = f"""# TS Search Knowledge Base: {args.system}
+
+## Current Mechanism Model
+
+- Charge: {args.charge}
+- Multiplicity: {args.multiplicity}
+- Reaction class hypothesis: {args.reaction_class}
+
+## Validated Facts
+
+- None yet.
+
+## Refuted Hypotheses
+
+- None yet.
+
+## Open Questions
+
+- Are reactant and product references true minima at the chosen charge, multiplicity, and level?
+- Which reaction-center coordinate should define the first candidate-generation branch?
+
+## Next Chemical Decision
+
+- Complete mechanism preflight and endpoint optimization before promoting any TS candidate.
+"""
+    write_json_object(root / "manifest.json", manifest, overwrite_existing=args.force)
+    write_json_object(root / "tree.json", tree, overwrite_existing=args.force)
+    write_json_object(root / "mechanism_model.json", mechanism, overwrite_existing=args.force)
+    write_json_object(root / "evidence_registry.json", evidence_registry, overwrite_existing=args.force)
+    initialize_pathway_model_if_missing(root, system=args.system, timestamp=now, mode="unknown")
+    write_text_file_if_allowed(root / "knowledge_base.md", knowledge_base, overwrite_existing=args.force)
+
+    registry_note = "explorer registration skipped (--no-explorer-register)"
+    workspace_id = ""
+    should_register = (bool(args.explorer_register) or args.explorer_registry is not None) and not args.no_explorer_register
+    if should_register:
+        registry_file, workspace_id = register_workspace(
+            root,
+            display_name=args.system,
+            registry_path=args.explorer_registry,
+        )
+        registry_note = f"registered as `{workspace_id}` in `{registry_file}`"
+
+    skill_scripts = Path(__file__).resolve().parents[3] / "scripts"
+    explorer_checklist = f"""# Explorer Monitoring Checklist
+
+This workspace is monitored by the persistent explorer service; one service
+watches every registered TS search. Status: {registry_note}.
+
+1. Ensure the persistent service is running (start once, keep it running):
+
+```bash
+python {skill_scripts / "ts_explorer_server.py"} serve --host 127.0.0.1 --port 8765
+```
+
+With no arguments it serves the persistent registry and hot-reloads it, so
+newly initialized workspaces appear without a restart.
+
+2. Open this workspace:
+
+```text
+http://127.0.0.1:8765/  (select `{workspace_id or root.name}` in the workspace list)
+```
+
+3. Validate before trusting the explorer view as evidence:
+
+```bash
+python {skill_scripts / "ts_validate_workspace.py"} --source {root} --pretty
+```
+"""
+    write_text_file_if_allowed(root / "reports" / "explorer_launch_checklist.md", explorer_checklist, overwrite_existing=args.force)
+
+
+def create_ts_branch_decision_artifacts_from_cli_args(args: argparse.Namespace) -> None:
+    """Create node.json and markdown templates for one planned TS branch."""
+
+    root = args.root.resolve()
+    ensure_workspace_root_has_manifest_and_tree(root)
+    tree_path = root / "tree.json"
+    tree = read_json_object_required(tree_path)
+    nodes = dict(tree.get("nodes") or {})
+    pathway_id = clean_optional_node_ref(args.pathway_id)
+    step_id = clean_optional_node_ref(args.step_id)
+    if bool(pathway_id) != bool(step_id):
+        raise SystemExit("--pathway-id and --step-id must be provided together")
+    if pathway_id:
+        validate_pathway_step_reference(root, pathway_id, step_id)
+    input_refs = normalize_input_refs(args.input_ref or ())
+    validate_branch_references(
+        node_id=args.node_id,
+        parent_id=args.parent_id,
+        input_refs=input_refs,
+        existing_nodes=nodes,
+    )
+    node_dir = root / "nodes" / args.node_id
+    node_dir.mkdir(parents=True, exist_ok=True)
+    (node_dir / "inputs").mkdir(exist_ok=True)
+    (node_dir / "outputs").mkdir(exist_ok=True)
+    (node_dir / "parsed").mkdir(exist_ok=True)
+    (node_dir / "scratch").mkdir(exist_ok=True)
+    now = utc_timestamp()
+
+    hypothesis_rel = relative_path_or_absolute(root, node_dir / "hypothesis.md")
+    decision_rel = relative_path_or_absolute(root, node_dir / "decision_card.md")
+    input_dir_rel = relative_path_or_absolute(root, node_dir / "inputs")
+    output_dir_rel = relative_path_or_absolute(root, node_dir / "outputs")
+    scratch_dir_rel = relative_path_or_absolute(root, node_dir / "scratch")
+    node_payload = {
+        "schema": WORKSPACE_NODE_SCHEMA,
+        "node_id": args.node_id,
+        "parent_id": args.parent_id,
+        "stage": args.stage,
+        "operation": args.operation,
+        "lifecycle_state": "prepared",
+        "run_state": "not_started",
+        "claim_status": "not_evaluated",
+        "outcome": "none",
+        "outcome_code": None,
+        "claim_level": "none",
+        "hypothesis": args.hypothesis,
+        "changed_variables": {"operation": args.operation},
+        "artifact_policy": {
+            "input_dir": input_dir_rel,
+            "output_dir": output_dir_rel,
+            "run_cwd": output_dir_rel,
+            "scratch_dir": scratch_dir_rel,
+            "engine_outputs": "write engine logs, checkpoints, restart files, trajectories, and candidates under output_dir or scratch_dir, never workspace root",
+        },
+        "evidence": {
+            "hypothesis": hypothesis_rel,
+            "decision_card": decision_rel,
+        },
+        "decision": "prepared_for_execution",
+        "display": {
+            "title": args.node_id,
+            "subtitle": args.stage,
+            "badges": ["prepared"],
+            "metrics": {},
+            "primary_file": decision_rel,
+            "summary": "Prepared branch; no job has run and no TS claim exists.",
+        },
+    }
+    if input_refs:
+        node_payload["input_refs"] = input_refs
+    if pathway_id:
+        node_payload["pathway_id"] = pathway_id
+        node_payload["elementary_step_id"] = step_id
+    hypothesis_md = f"""# Hypothesis: {args.node_id}
+
+## Chemical Hypothesis
+
+{args.hypothesis}
+
+## Reaction-Center Expectations
+
+- Fill in expected bond, angle, fragment, spin, or charge changes before execution.
+
+## Mechanism Analysis Plan / Required Diagnostics
+
+- Reaction type:
+- Reaction center:
+- Electronic / spin / charge:
+- Orbital / population:
+- Energy / barrier expectation:
+
+## Evidence That Would Support This Hypothesis
+
+- Fill in measurable criteria.
+
+## Evidence That Would Refute This Hypothesis
+
+- Fill in closure or backtracking criteria.
+"""
+    decision_card_md = f"""# TS Decision Card: {args.node_id}
+
+## Chemical Hypothesis
+
+{args.hypothesis}
+
+## Why This Tool
+
+Chosen operation/route: {args.operation}
+
+Explain why this is the lowest-cost chemically meaningful test now.
+
+## Input / Dependency Nodes
+
+{format_input_refs_markdown(input_refs)}
+
+## Pathway Step
+
+{format_pathway_step_markdown(pathway_id, step_id)}
+
+## Expected Supporting Evidence
+
+- Reaction-center geometry changes match the hypothesis.
+- Electronic state, charge, and spin remain chemically consistent.
+
+## Refutation Criteria
+
+- Candidate collapses to an endpoint or conformer.
+- Imaginary mode does not follow the intended reaction coordinate.
+- Connectivity check fails against optimized references.
+
+## Cost And Risk
+
+- Compute cost:
+- Numerical risk:
+- Chemical risk:
+
+## Next If Supported
+
+- Promote only to the next validation layer allowed by evidence gates.
+
+## Next If Refuted
+
+- Update mechanism_model.json and branch from the closest chemically meaningful ancestor.
+
+## Created
+
+{now}
+"""
+    reflection_md = """# Reflection
+
+## Computational Outcome
+
+Not run yet.
+
+## Mechanistic Implication
+
+Pending.
+
+## Knowledge Update
+
+- Validated facts:
+- Refuted hypotheses:
+- Open questions:
+
+## Next Branch
+
+Pending.
+"""
+
+    write_json_object(node_dir / "node.json", node_payload, overwrite_existing=args.force)
+    write_text_file_if_allowed(node_dir / "hypothesis.md", hypothesis_md, overwrite_existing=args.force)
+    write_text_file_if_allowed(node_dir / "decision_card.md", decision_card_md, overwrite_existing=args.force)
+    write_text_file_if_allowed(node_dir / "reflection.md", reflection_md, overwrite_existing=args.force)
+
+    if args.node_id not in nodes or args.force:
+        tree_node_payload = {
+            "parent_id": args.parent_id,
+            "stage": args.stage,
+            "node_path": relative_path_or_absolute(root, node_dir / "node.json"),
+        }
+        if input_refs:
+            tree_node_payload["input_refs"] = input_refs
+        if pathway_id:
+            tree_node_payload["pathway_id"] = pathway_id
+            tree_node_payload["elementary_step_id"] = step_id
+        nodes[args.node_id] = tree_node_payload
+    tree["nodes"] = nodes
+    events = list(tree.get("events") or [])
+    event_id = next_event_id(
+        f"evt_{safe_identifier_token(args.node_id)}_prepare",
+        {str(item.get("event_id") or "") for item in events if isinstance(item, dict)},
+    )
+    events.append(
+        {
+            "event_id": event_id,
+            "time": now,
+            "node_id": args.node_id,
+            "event_type": "prepare_node",
+            "decision": "prepared_for_execution",
+            "reason": f"Prepared branch to test: {args.hypothesis}",
+            "evidence_refs": [],
+        }
+    )
+    tree["events"] = events
+    write_json_object(tree_path, tree, overwrite_existing=True)
+
+
+def write_suggested_decision_cards_from_plan(args: argparse.Namespace, packet: dict[str, Any]) -> list[dict[str, Any]]:
+    """Materialize planner-suggested decision-card nodes when explicitly requested."""
+
+    root = args.root.resolve()
+    written: list[dict[str, Any]] = []
+    for suggestion in packet.get("suggested_decision_cards", []):
+        if not isinstance(suggestion, dict) or suggestion.get("kind") != "decision_card":
+            continue
+        node_id = str(suggestion.get("node_id") or "").strip()
+        if not node_id:
+            continue
+        node_dir = root / "nodes" / node_id
+        if node_dir.exists() and not args.force:
+            written.append({"node_id": node_id, "status": "skipped_existing", "path": relative_path_or_absolute(root, node_dir)})
+            continue
+        create_ts_branch_decision_artifacts_from_cli_args(
+            argparse.Namespace(
+                root=root,
+                node_id=node_id,
+                stage=str(suggestion.get("stage") or ""),
+                parent_id=suggestion.get("parent_id"),
+                input_ref=list(suggestion.get("input_refs") or []),
+                pathway_id=str(suggestion.get("pathway_id") or ""),
+                step_id=str(suggestion.get("step_id") or ""),
+                hypothesis=str(suggestion.get("hypothesis") or ""),
+                operation=str(suggestion.get("operation") or ""),
+                force=bool(args.force),
+            )
+        )
+        written.append({"node_id": node_id, "status": "written", "path": relative_path_or_absolute(root, node_dir)})
+    return written
+
+
+def validate_branch_references(
+    *,
+    node_id: str,
+    parent_id: str | None,
+    input_refs: list[str],
+    existing_nodes: dict[str, Any],
+) -> None:
+    """Reject branch references that would break the hypothesis tree."""
+
+    parent_id = clean_optional_node_ref(parent_id)
+    if parent_id == node_id:
+        raise SystemExit(f"node cannot be its own parent: {node_id}")
+    if parent_id and parent_id not in existing_nodes:
+        raise SystemExit(f"parent node does not exist in tree.json: {parent_id}")
+    for input_ref in input_refs:
+        if input_ref == node_id:
+            raise SystemExit(f"node cannot depend on itself through --input-ref: {node_id}")
+        if input_ref not in existing_nodes:
+            raise SystemExit(f"input reference node does not exist in tree.json: {input_ref}")
+    if parent_graph_would_cycle(node_id=node_id, parent_id=parent_id, existing_nodes=existing_nodes):
+        raise SystemExit(f"parent link would create a cycle for node: {node_id}")
+
+
+def parent_graph_would_cycle(*, node_id: str, parent_id: str, existing_nodes: dict[str, Any]) -> bool:
+    """Return true if setting node_id -> parent_id would create a parent cycle."""
+
+    seen = {node_id}
+    current = parent_id
+    while current:
+        if current in seen:
+            return True
+        seen.add(current)
+        payload = existing_nodes.get(current)
+        if not isinstance(payload, dict):
+            return False
+        current = clean_optional_node_ref(payload.get("parent_id"))
+    return False
+
+
+def clean_optional_node_ref(value: object) -> str:
+    """Normalize optional node references from CLI or tree JSON."""
+
+    return str(value or "").strip()
+
+
+def append_ts_workspace_evidence_record_from_cli_args(args: argparse.Namespace) -> None:
+    """Append one evidence registry record for a v2 workspace node."""
+
+    root = args.root.resolve()
+    ensure_workspace_root_has_manifest_and_tree(root)
+    registry_path = root / "evidence_registry.json"
+    registry = read_json_object_required(registry_path)
+    records = list(registry.get("records") or [])
+    evidence_id = f"ev_{safe_identifier_token(args.node_id)}_{len(records) + 1:04d}"
+    path_payload = portable_record_path(root, args.path)
+    records.append(
+        {
+            "evidence_id": evidence_id,
+            "kind": args.kind,
+            "path": path_payload["path"],
+            "node_id": args.node_id,
+            "claim": args.claim,
+            "evidence_state": args.evidence_state,
+            "external_path": path_payload["external_path"],
+            "external_unavailable": path_payload["external_unavailable"],
+            "created_at": utc_timestamp(),
+        }
+    )
+    registry["records"] = records
+    registry["updated_at"] = utc_timestamp()
+    write_json_object(registry_path, registry, overwrite_existing=True)
+
+
+def ensure_workspace_root_has_manifest_and_tree(root: Path) -> None:
+    """Abort when root is missing the files required for a TS workspace."""
+
+    missing = [name for name in ("manifest.json", "tree.json") if not (root / name).exists()]
+    if missing:
+        raise SystemExit(f"not a TS-search workspace, missing: {', '.join(missing)}")
+
+
+def parse_expected_bond_change_spec(raw: str) -> dict[str, str]:
+    """Parse a role:atomA-atomB bond-change specification."""
+
+    if ":" not in raw:
+        raise SystemExit(f"bond change must be role:atomA-atomB, got {raw!r}")
+    role, bond = raw.split(":", 1)
+    role = role.strip()
+    bond = bond.strip()
+    if not role or not bond:
+        raise SystemExit(f"bond change must be role:atomA-atomB, got {raw!r}")
+    return {"bond": bond, "role": role}
+
+
+def default_mechanism_analysis() -> dict[str, list[dict[str, object]]]:
+    """Return empty structured mechanism-analysis buckets."""
+
+    return {
+        "reaction_type": [],
+        "reaction_center": [],
+        "electronic": [],
+        "orbital": [],
+        "energy": [],
+    }
+
+
+def default_mechanism_analysis_plan() -> dict[str, list[dict[str, object]]]:
+    """Return empty hypothesis-stage analysis-plan buckets."""
+
+    return {
+        "reaction_type": [],
+        "reaction_center": [],
+        "electronic": [],
+        "orbital": [],
+        "energy": [],
+    }
+
+
+def normalize_input_refs(raw_refs: tuple[str, ...] | list[str]) -> list[str]:
+    """Return stable, de-duplicated dependency node ids from CLI input."""
+
+    refs: list[str] = []
+    for raw in raw_refs:
+        ref = str(raw or "").strip()
+        if ref and ref not in refs:
+            refs.append(ref)
+    return refs
+
+
+def format_input_refs_markdown(input_refs: list[str]) -> str:
+    """Return decision-card text for multi-input dependency nodes."""
+
+    if not input_refs:
+        return "- None recorded."
+    return "\n".join(f"- `{ref}`" for ref in input_refs)
+
+
+def format_pathway_step_markdown(pathway_id: str, step_id: str) -> str:
+    """Return decision-card text for optional pathway metadata."""
+
+    if not pathway_id:
+        return "- None recorded."
+    return f"- Pathway: `{pathway_id}`\n- Elementary step: `{step_id}`"
+
+
+def next_event_id(base: str, taken_ids: set[str]) -> str:
+    """Return an unused timeline event id based on a stable base token."""
+
+    event_id = safe_identifier_token(base)
+    if event_id not in taken_ids:
+        return event_id
+    index = 2
+    while f"{event_id}_{index:02d}" in taken_ids:
+        index += 1
+    return f"{event_id}_{index:02d}"
+
+
+def write_text_file_if_allowed(file_path: Path, text: str, *, overwrite_existing: bool) -> bool:
+    """Write text when overwrite rules allow it."""
+
+    if file_path.exists() and not overwrite_existing:
+        return False
+    file_path.write_text(text.rstrip() + "\n", encoding="utf-8")
+    return True
+
+
+def utc_timestamp() -> str:
+    """Return an ISO-8601 UTC timestamp for workspace records."""
+
+    return datetime.now(timezone.utc).isoformat()
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

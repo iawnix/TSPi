@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "reactant": "reactant.xyz",
+  "product": "product.xyz",
+  "output": "tssearch_example_gaussian_external_experimental",
+  "project": {
+    "system_slug": "example_gaussian_external_experimental"
+  },
+  "images": 5,
+  "interpolation": "idpp",
+  "neb": {
+    "climb": false,
+    "dynamic": false,
+    "k": 0.1,
+    "method": "improvedtangent",
+    "remove_rotation_and_translation": true
+  },
+  "optimizer": {
+    "name": "BFGS",
+    "fmax": 0.08,
+    "steps": 1
+  },
+  "calculator": {
+    "type": "gaussian_external",
+    "allow_neb": false,
+    "command": "g16",
+    "route": "# HF/sto-3g force nosymm",
+    "charge": 0,
+    "multiplicity": 1,
+    "nprocshared": 4,
+    "mem": "4GB",
+    "require_normal_termination": true,
+    "output_suffix": ".out"
+  },
+  "candidate_selection": {
+    "min_barrier_ev": 0.03,
+    "allow_endpoint_candidate": false
+  }
+}
