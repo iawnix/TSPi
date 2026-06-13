@@ -251,6 +251,7 @@ Do not edit the installed skill at
 - `d69d612` `refactor: move gaussian gen preflight into backend`
 - `ba5cdd7` `refactor: move ase neb leaf helpers into tools`
 - `5db4717` `refactor: move ase neb geometry mechanism into tools`
+- `350aac6` `refactor: share chemistry geometry mechanism primitives`
 
 ## Completion Log
 
