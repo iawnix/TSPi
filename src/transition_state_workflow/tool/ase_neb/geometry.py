@@ -7,11 +7,15 @@ fragment labelling. No workspace or ASE state lives here.
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Any
 
-from transition_state_workflow.chem.geometry import Atom, distance
+from transition_state_workflow.chem.geometry import (
+    Atom,
+    distance,
+    parse_angle_spec as parse_geometry_angle_spec,
+    parse_bond_spec as parse_geometry_bond_spec,
+)
 from transition_state_workflow.tool.ase_neb.constants import COVALENT_RADII
 from transition_state_workflow.tool.ase_neb.errors import ConfigError
 
@@ -37,23 +41,17 @@ def read_xyz(path: Path) -> tuple[list[Atom], str]:
 
 
 def parse_bond_spec(spec: str) -> tuple[int, int]:
-    parts = re.split(r"[-:,]", spec.strip())
-    if len(parts) != 2:
-        raise ConfigError(f"invalid bond spec '{spec}', expected i-j")
-    i, j = int(parts[0]), int(parts[1])
-    if i < 1 or j < 1 or i == j:
-        raise ConfigError(f"invalid bond spec '{spec}'")
-    return tuple(sorted((i, j)))
+    try:
+        return parse_geometry_bond_spec(spec)
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
 
 
 def parse_angle_spec(spec: str) -> tuple[int, int, int]:
-    parts = re.split(r"[-:,]", spec.strip())
-    if len(parts) != 3:
-        raise ConfigError(f"invalid angle spec '{spec}', expected i-j-k")
-    i, j, k = (int(part) for part in parts)
-    if min(i, j, k) < 1 or len({i, j, k}) != 3:
-        raise ConfigError(f"invalid angle spec '{spec}'")
-    return i, j, k
+    try:
+        return parse_geometry_angle_spec(spec)
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
 
 
 def bond_label(bond: tuple[int, int]) -> str:

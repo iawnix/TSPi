@@ -269,7 +269,8 @@ Python tooling follows a package layout:
 - `src/transition_state_workflow/base/`: shared data models.
 - `src/transition_state_workflow/chem/`: reusable Gaussian parsing and geometry
   helpers shared by workflow tools (single source for `PERIODIC_TABLE`,
-  `COVALENT_RADII`, XYZ/orientation parsing, frequency and termination checks).
+  `COVALENT_RADII`, `Atom`, XYZ/orientation parsing, bond/angle spec parsing,
+  frequency and termination checks).
 - `src/transition_state_workflow/config/`: canonical state model, vocabularies,
   and the v2 contract checks shared by the validator and normalizer.
 - `src/transition_state_workflow/cli/`: public CLI contracts and re-exports for

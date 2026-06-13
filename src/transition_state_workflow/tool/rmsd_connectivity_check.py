@@ -7,11 +7,15 @@ import argparse
 import csv
 import json
 import math
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
-from transition_state_workflow.chem.geometry import Atom, COVALENT_RADII
+from transition_state_workflow.chem.geometry import (
+    Atom,
+    COVALENT_RADII,
+    parse_angle_spec,
+    parse_bond_spec,
+)
 from transition_state_workflow.chem.gaussian_log import atomic_symbol, read_lines
 from transition_state_workflow.util.cli import emit_json, run_cli, warn
 
@@ -135,23 +139,23 @@ def read_structure(path_string: str) -> Structure:
 
 
 def parse_bond(spec: str) -> tuple[int, int]:
-    parts = re.split(r"[-:,]", spec.strip())
-    if len(parts) != 2:
-        raise ValueError(f"Invalid bond spec '{spec}', expected i-j")
-    i, j = int(parts[0]), int(parts[1])
-    if i == j or i < 1 or j < 1:
-        raise ValueError(f"Invalid bond spec '{spec}'")
-    return tuple(sorted((i, j)))
+    try:
+        return parse_bond_spec(spec)
+    except ValueError as exc:
+        message = str(exc)
+        if message.startswith("invalid "):
+            message = "Invalid " + message[len("invalid ") :]
+        raise ValueError(message) from exc
 
 
 def parse_angle(spec: str) -> tuple[int, int, int]:
-    parts = re.split(r"[-:,]", spec.strip())
-    if len(parts) != 3:
-        raise ValueError(f"Invalid angle spec '{spec}', expected i-j-k")
-    i, j, k = (int(part) for part in parts)
-    if min(i, j, k) < 1 or len({i, j, k}) != 3:
-        raise ValueError(f"Invalid angle spec '{spec}'")
-    return i, j, k
+    try:
+        return parse_angle_spec(spec)
+    except ValueError as exc:
+        message = str(exc)
+        if message.startswith("invalid "):
+            message = "Invalid " + message[len("invalid ") :]
+        raise ValueError(message) from exc
 
 
 def validate_indices(natoms: int, bonds: list[tuple[int, int]], angles: list[tuple[int, int, int]]) -> None:

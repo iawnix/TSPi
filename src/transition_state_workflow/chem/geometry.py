@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import math
 from pathlib import Path
+import re
 
 
 COVALENT_RADII = {
@@ -71,6 +72,30 @@ def distance(a: Atom, b: Atom) -> float:
     """Return interatomic distance in Angstrom."""
 
     return math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2)
+
+
+def parse_bond_spec(spec: str) -> tuple[int, int]:
+    """Parse a 1-based bond spec like ``1-2``, ``1:2``, or ``1,2``."""
+
+    parts = re.split(r"[-:,]", spec.strip())
+    if len(parts) != 2:
+        raise ValueError(f"invalid bond spec '{spec}', expected i-j")
+    i, j = int(parts[0]), int(parts[1])
+    if i < 1 or j < 1 or i == j:
+        raise ValueError(f"invalid bond spec '{spec}'")
+    return tuple(sorted((i, j)))
+
+
+def parse_angle_spec(spec: str) -> tuple[int, int, int]:
+    """Parse a 1-based angle spec like ``1-2-3``, ``1:2:3``, or ``1,2,3``."""
+
+    parts = re.split(r"[-:,]", spec.strip())
+    if len(parts) != 3:
+        raise ValueError(f"invalid angle spec '{spec}', expected i-j-k")
+    i, j, k = (int(part) for part in parts)
+    if min(i, j, k) < 1 or len({i, j, k}) != 3:
+        raise ValueError(f"invalid angle spec '{spec}'")
+    return i, j, k
 
 
 def bond_set(atoms: list[Atom], scale: float = 1.25) -> set[tuple[int, int]]:

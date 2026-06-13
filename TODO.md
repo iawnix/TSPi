@@ -60,6 +60,8 @@ Do not edit the installed skill at
 - [x] Move external-Gaussian NEB energy/force output parsers into
       `backends/gaussian.py`; keep `tool/ase_neb/gaussian_calc.py` as the
       calculator-construction layer with compatibility imports.
+- [x] Move shared bond/angle spec parsing into `chem/geometry.py`; keep NEB and
+      connectivity CLIs as thin error-adapter wrappers.
 - [x] Introduce `remote/` contracts with `RemoteTransport`,
       `RemoteWorkspace`, and sync-plan abstractions.
 - [x] Add concrete `OpenSSHTransport`.
@@ -198,3 +200,11 @@ Do not edit the installed skill at
   `74 passed, 1 skipped`; full pytest `202 passed, 2 skipped`; script help
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-force-smoke.N8TbRc/tssearch_smoke`.
+- 2026-06-13: Moved bond/angle spec parsing into `chem/geometry.py`; NEB keeps
+  `ConfigError` wrapping and connectivity keeps `ValueError` wrapping while
+  both use the same parser.
+- 2026-06-13: Geometry parser checkpoint validation passed:
+  `git diff --check`; targeted geometry/connectivity/ASE/import/no-undefined
+  tests `60 passed, 1 skipped`; full pytest `202 passed, 2 skipped`; script
+  help smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-geometry-smoke.pLTbEU/tssearch_smoke`.

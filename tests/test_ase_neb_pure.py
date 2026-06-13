@@ -19,6 +19,10 @@ import pytest
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SKILL_ROOT / "src"))
 
+from transition_state_workflow.chem.geometry import (  # noqa: E402
+    parse_angle_spec as parse_chem_angle_spec,
+    parse_bond_spec as parse_chem_bond_spec,
+)
 from transition_state_workflow.tool.ase_neb.coerce import (  # noqa: E402
     as_mapping,
     as_positive_int,
@@ -109,7 +113,9 @@ def test_changed_bonds_uses_user_bonds_verbatim_when_supplied() -> None:
 def test_parse_bond_and_angle_specs_accept_dash_colon_comma() -> None:
     assert parse_bond_spec("4-12") == (4, 12)
     assert parse_bond_spec("4:12") == (4, 12)
+    assert parse_chem_bond_spec("4,12") == (4, 12)
     assert parse_angle_spec("4-12-7") == (4, 12, 7)
+    assert parse_chem_angle_spec("4:12:7") == (4, 12, 7)
     with pytest.raises(ConfigError):
         parse_bond_spec("4-4")  # i == j
 
