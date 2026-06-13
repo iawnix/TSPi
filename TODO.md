@@ -148,6 +148,32 @@ Do not edit the installed skill at
       the new path, and validate old/new import identity, pure helper behavior,
       public script help, full tests, and a strict workspace smoke before
       pushing.
+- [ ] Promote reusable geometry and mechanism primitives out of the ASE NEB
+      tool package:
+      plan before code changes is to split the current `tools/ase_neb/geometry.py`
+      and `tools/ase_neb/mechanism.py` into generic chemistry primitives and
+      ASE-NEB-specific adapters. Generic atom/XYZ parsing, covalent-radius
+      connectivity, changed-bond detection, neighbor maps, angle inference, and
+      fragment labels should live under `chem/geometry.py`. Generic
+      reaction-center classification, coarse mechanism-hypothesis inference,
+      electronic-state/risk-flag derivation, and endpoint-readiness vocabulary
+      should live under a shared chemistry module such as `chem/mechanism.py`.
+      Keep ASE object coercion, config-field extraction, `ConfigError`
+      adaptation, and NEB policy wording in `tools/ase_neb/`; keep old
+      `tool/ase_neb/geometry.py` and `tool/ase_neb/mechanism.py` as thin
+      compatibility re-exports. Validate that non-NEB callers can import the
+      shared primitives without importing ASE, tool-layer modules, or workspace
+      writers.
+- [ ] Move ASE runtime loading before moving ASE image IO:
+      plan before code changes is to move `require_ase`, `require_xtb`,
+      `require_gaussian_calculator`, and `import_ase_bits` from
+      `tool/ase_neb/gaussian_calc.py` into `backends/ase.py`, keep the old
+      `gaussian_calc.py` helper names as compatibility imports, and only then
+      move `tool/ase_neb/images.py` to `tools/ase_neb/images.py`. This avoids
+      creating a reverse dependency from the new ChemTool layer back into the
+      old `tool/` package. Validate old/new import identity, ASE-free config
+      validation, public script help, full tests, and a strict workspace smoke
+      before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
