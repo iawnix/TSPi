@@ -47,15 +47,18 @@ Do not edit the installed skill at
       capability vocabulary:
       `candidate_generation`, `optimization`, `tsfreq_validation`,
       `connectivity_check`, and `descriptor_analysis`.
-- [ ] Add a concrete `ChemTool` registry grouped by capability.
+- [x] Add a concrete `ChemTool` registry grouped by capability.
 - [x] Introduce `backends/` contracts for Gaussian, xTB, ASE, and QBICS
       input/output adapters so program-specific parsing can be moved out of
       control-flow code.
-- [ ] Add concrete Gaussian, xTB, ASE, and QBICS backend adapter modules.
+- [x] Add concrete Gaussian, xTB, ASE, and QBICS backend adapter modules.
+      Current modules expose the adapter boundary and filesystem artifact
+      metadata; migration of program-specific parsers remains separate work.
 - [x] Introduce `remote/` contracts with `RemoteTransport`,
       `RemoteWorkspace`, and sync-plan abstractions.
-- [ ] Add concrete `OpenSSHTransport`, future `SFTPTransport`, and future
-      `MCPTransport` modules.
+- [x] Add concrete `OpenSSHTransport`.
+- [ ] Add future `SFTPTransport` and `MCPTransport` modules.
+- [x] Add explicit metadata sync plan/run/verify service for remote mirrors.
 - [ ] Split local mirror synchronization from remote Gaussian execution:
       sync should be an explicit service step with plan, run, verify, and
       explorer-registry update phases.
@@ -75,3 +78,6 @@ Do not edit the installed skill at
 - 2026-06-13: Baseline copied, committed, pushed, and validated.
 - 2026-06-13: Added initial architecture contracts for `base`, `core`, `gate`,
   `tools`, `backends`, `remote`, and `cli`; added import-boundary tests.
+- 2026-06-13: Added `ChemToolRegistry`, backend adapter registry and Gaussian/
+  xTB/ASE/QBICS adapter boundaries, `OpenSSHTransport`, and metadata sync
+  planning tests. Existing CLI behavior is unchanged.
