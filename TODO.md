@@ -87,6 +87,9 @@ Do not edit the installed skill at
       as business functions for non-CLI callers.
 - [x] Migrate the Gaussian TS/Freq parser artifact-writing CLI onto `CLIBase`
       while preserving `parse_log` and `build_parser` compatibility imports.
+- [x] Migrate the Gaussian Gen/GenECP preflight CLI onto `CLIBase` while
+      preserving `warnings_for`, `fix_lines`, and `build_parser` compatibility
+      imports.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
@@ -249,3 +252,11 @@ Do not edit the installed skill at
   `34 passed, 1 skipped`; full pytest `205 passed, 2 skipped`; script help
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-parser-cli-smoke.O6AGUr/tssearch_smoke`.
+- 2026-06-13: Migrated `tool/gaussian_gen_preflight.py` to `CLIBase` for shared
+  argparse logging/error behavior while keeping Gen/GenECP warning detection,
+  repair output, and compatibility imports unchanged.
+- 2026-06-13: Gaussian preflight CLIBase checkpoint validation passed:
+  `git diff --check`; targeted preflight/CLI/import/no-undefined tests
+  `25 passed, 2 skipped`; full pytest `206 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-preflight-cli-smoke.xjAGD2/tssearch_smoke`.

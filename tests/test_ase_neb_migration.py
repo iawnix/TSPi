@@ -269,6 +269,22 @@ def test_migrated_gaussian_preflight_fix(tmp_path: Path) -> None:
     assert "H C 0" in text
 
 
+def test_migrated_gaussian_preflight_keeps_pretty_json(tmp_path: Path) -> None:
+    source = tmp_path / "ok.gjf"
+    source.write_text(
+        "%chk=ok.chk\n"
+        "# M062X/6-31G(d) opt\n\n"
+        "ok\n\n"
+        "0 1\n"
+        "H 0 0 0\n\n\n",
+        encoding="utf-8",
+    )
+
+    result = run_cli(str(GAUSSIAN_PREFLIGHT_CLI), str(source))
+    assert result.stdout.count("\n") > 1
+    assert json.loads(result.stdout) == {"fixed": False, "output": None, "warnings": []}
+
+
 def test_migrated_descriptor_extract_smoke(tmp_path: Path) -> None:
     ts_out = tmp_path / "ts.out"
     ts_xyz = tmp_path / "ts.xyz"
