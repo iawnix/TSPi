@@ -146,3 +146,6 @@ Do not edit the installed skill at
 - 2026-06-13: Added optional `ParamikoSFTPTransport` and injected-callable
   `MCPTransport` adapters under `remote/`, with tests for command and file
   transfer behavior.
+- 2026-06-13: Updated remote Gaussian wrapper scripts to import the remote
+  package directly while leaving old `tool/` imports available for
+  compatibility.
