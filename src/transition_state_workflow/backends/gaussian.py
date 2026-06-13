@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+from typing import Any
 
 from transition_state_workflow.backends.base import FilesystemBackendAdapter
 from transition_state_workflow.backends.contracts import BackendOutput
@@ -59,6 +60,65 @@ def parse_float(pattern: str, text: str) -> float | None:
     if isinstance(value, tuple):
         value = value[-1]
     return float(value.replace("D", "E"))
+
+
+def parse_gaussian_energy_hartree(output_path: Path) -> float:
+    """Return the last SCF energy from a Gaussian output in hartree."""
+
+    scf_re = re.compile(
+        r"SCF Done:\s+E\([^)]+\)\s+=\s+([-+]?\d+\.\d+(?:[DEde][-+]?\d+)?)"
+    )
+    energy = None
+    with output_path.open("r", errors="ignore") as handle:
+        for line in handle:
+            match = scf_re.search(line)
+            if match:
+                energy = float(match.group(1).replace("D", "E").replace("d", "E"))
+    if energy is None:
+        raise RuntimeError(f"cannot find SCF Done energy in Gaussian output: {output_path}")
+    return energy
+
+
+def parse_gaussian_forces_hartree_per_bohr(output_path: Path, natoms: int) -> Any:
+    """Return the final Gaussian force block as hartree/bohr rows."""
+
+    import numpy as np
+
+    lines = output_path.read_text(errors="ignore").splitlines()
+    starts = [
+        index
+        for index, line in enumerate(lines)
+        if "Forces (Hartrees/Bohr)" in line
+    ]
+    if not starts:
+        raise RuntimeError(f"cannot find Gaussian force block: {output_path}")
+
+    force_line_re = re.compile(
+        r"^\s*\d+\s+\d+\s+"
+        r"([-+]?\d+\.\d+(?:[DEde][-+]?\d+)?)\s+"
+        r"([-+]?\d+\.\d+(?:[DEde][-+]?\d+)?)\s+"
+        r"([-+]?\d+\.\d+(?:[DEde][-+]?\d+)?)"
+    )
+    data: list[list[float]] = []
+    for line in lines[starts[-1] :]:
+        match = force_line_re.match(line)
+        if not match:
+            continue
+        data.append(
+            [
+                float(match.group(1).replace("D", "E").replace("d", "E")),
+                float(match.group(2).replace("D", "E").replace("d", "E")),
+                float(match.group(3).replace("D", "E").replace("d", "E")),
+            ]
+        )
+        if len(data) == natoms:
+            break
+    if len(data) != natoms:
+        raise RuntimeError(
+            f"Gaussian force block incomplete in {output_path}: "
+            f"got {len(data)} rows, expected {natoms}"
+        )
+    return np.array(data, dtype=float)
 
 
 # Standard ``Frequencies --`` lines carry exactly two dashes; ``freq=hpmodes``

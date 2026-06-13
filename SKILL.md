@@ -286,7 +286,8 @@ Python tooling follows a package layout:
 - `src/transition_state_workflow/backends/`: Gaussian, xTB, ASE, and QBICS
   adapter boundaries for program-specific input/output metadata. The Gaussian
   backend owns TS/Freq log parsing and exposes parsed summary/status properties
-  through `GaussianBackendAdapter.parse()`.
+  through `GaussianBackendAdapter.parse()`; it also owns external-Gaussian NEB
+  SCF-energy and force-block parsers used by the ASE calculator adapter.
 - `src/transition_state_workflow/remote/`: remote execution and synchronization
   boundary. `exec.py` owns the argv-only OpenSSH executor, `openssh.py` adapts
   it to `RemoteTransport`, `sftp.py` provides optional Paramiko SSH/SFTP,

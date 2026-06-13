@@ -2,8 +2,8 @@
 
 Chemistry-stack imports stay lazy so config validation and input generation work
 on machines without ASE/xTB installed. This module owns calculator construction
-(xTB, the ASE Gaussian calculator, and the external-Gaussian force calculator)
-plus the Gaussian energy/force parsers those calculators rely on.
+(xTB, the ASE Gaussian calculator, and the external-Gaussian force calculator).
+Gaussian output parsing is delegated to the Gaussian backend adapter.
 """
 
 from __future__ import annotations
@@ -17,6 +17,10 @@ import subprocess
 from pathlib import Path
 from typing import Any, Iterator
 
+from transition_state_workflow.backends.gaussian import (
+    parse_gaussian_energy_hartree,
+    parse_gaussian_forces_hartree_per_bohr,
+)
 from transition_state_workflow.tool.ase_neb.constants import (
     HARTREE_PER_BOHR_TO_EV_PER_ANG,
     HARTREE_TO_EV,
@@ -64,61 +68,6 @@ def import_ase_bits() -> dict[str, Any]:
         "DyNEB": DyNEB,
         "optimizers": {"FIRE": FIRE, "BFGS": BFGS, "LBFGS": LBFGS, "MDMin": MDMin},
     }
-
-
-def parse_gaussian_energy_hartree(output_path: Path) -> float:
-    scf_re = re.compile(
-        r"SCF Done:\s+E\([^)]+\)\s+=\s+([-+]?\d+\.\d+(?:[DEde][-+]?\d+)?)"
-    )
-    energy = None
-    with output_path.open("r", errors="ignore") as handle:
-        for line in handle:
-            match = scf_re.search(line)
-            if match:
-                energy = float(match.group(1).replace("D", "E").replace("d", "E"))
-    if energy is None:
-        raise RuntimeError(f"cannot find SCF Done energy in Gaussian output: {output_path}")
-    return energy
-
-
-def parse_gaussian_forces_hartree_per_bohr(output_path: Path, natoms: int) -> Any:
-    import numpy as np
-
-    lines = output_path.read_text(errors="ignore").splitlines()
-    starts = [
-        index
-        for index, line in enumerate(lines)
-        if "Forces (Hartrees/Bohr)" in line
-    ]
-    if not starts:
-        raise RuntimeError(f"cannot find Gaussian force block: {output_path}")
-
-    force_line_re = re.compile(
-        r"^\s*\d+\s+\d+\s+"
-        r"([-+]?\d+\.\d+(?:[DEde][-+]?\d+)?)\s+"
-        r"([-+]?\d+\.\d+(?:[DEde][-+]?\d+)?)\s+"
-        r"([-+]?\d+\.\d+(?:[DEde][-+]?\d+)?)"
-    )
-    data: list[list[float]] = []
-    for line in lines[starts[-1] :]:
-        match = force_line_re.match(line)
-        if not match:
-            continue
-        data.append(
-            [
-                float(match.group(1).replace("D", "E").replace("d", "E")),
-                float(match.group(2).replace("D", "E").replace("d", "E")),
-                float(match.group(3).replace("D", "E").replace("d", "E")),
-            ]
-        )
-        if len(data) == natoms:
-            break
-    if len(data) != natoms:
-        raise RuntimeError(
-            f"Gaussian force block incomplete in {output_path}: "
-            f"got {len(data)} rows, expected {natoms}"
-        )
-    return np.array(data, dtype=float)
 
 
 def extract_gaussian_tail_from_template(template_path: Path) -> str:

@@ -57,6 +57,9 @@ Do not edit the installed skill at
 - [x] Move Gaussian TS/Freq log parsing into `backends/gaussian.py`; keep
       `tool/parse_gaussian_ts_result.py` as the artifact-writing CLI and
       compatibility import path.
+- [x] Move external-Gaussian NEB energy/force output parsers into
+      `backends/gaussian.py`; keep `tool/ase_neb/gaussian_calc.py` as the
+      calculator-construction layer with compatibility imports.
 - [x] Introduce `remote/` contracts with `RemoteTransport`,
       `RemoteWorkspace`, and sync-plan abstractions.
 - [x] Add concrete `OpenSSHTransport`.
@@ -187,3 +190,11 @@ Do not edit the installed skill at
   tests `34 passed, 1 skipped`; full pytest `201 passed, 2 skipped`; script
   help smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-backend-smoke.cFU7bo/tssearch_smoke`.
+- 2026-06-13: Moved external-Gaussian NEB SCF-energy and force-block parsers
+  from `tool/ase_neb/gaussian_calc.py` into `backends/gaussian.py`. The old
+  imports remain available for the external Gaussian calculator path.
+- 2026-06-13: External Gaussian force-parser checkpoint validation passed:
+  `git diff --check`; targeted parser/ASE/backend/import/no-undefined tests
+  `74 passed, 1 skipped`; full pytest `202 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-force-smoke.N8TbRc/tssearch_smoke`.

@@ -23,7 +23,12 @@ from transition_state_workflow.chem.gaussian_log import (  # noqa: E402
 )
 from transition_state_workflow.backends.gaussian import (  # noqa: E402
     GaussianBackendAdapter,
+    parse_gaussian_energy_hartree,
+    parse_gaussian_forces_hartree_per_bohr,
     parse_gaussian_tsfreq_log,
+)
+from transition_state_workflow.tool.ase_neb.gaussian_calc import (  # noqa: E402
+    parse_gaussian_energy_hartree as legacy_parse_gaussian_energy_hartree,
 )
 from transition_state_workflow.tool.parse_gaussian_ts_result import parse_log  # noqa: E402
 
@@ -158,6 +163,31 @@ def test_gaussian_backend_adapter_extracts_tsfreq_summary(tmp_path: Path) -> Non
     assert output.properties["status"] == "validated_ts"
     assert output.properties["imaginary_frequency_count"] == 1
     assert output.properties["summary"]["frequency_count"] == 3
+
+
+def test_gaussian_backend_parses_external_force_energy_output(tmp_path: Path) -> None:
+    output = _write_log(
+        tmp_path,
+        "\n".join(
+            [
+                " SCF Done:  E(RB3LYP) =  -7.612300D+01 A.U. after 1 cycles",
+                " Center     Atomic                   Forces (Hartrees/Bohr)",
+                " Number     Number              X              Y              Z",
+                " -------------------------------------------------------------------",
+                "      1        6       1.000000D-03  -2.000000D-03   3.000000D-03",
+                "      2        1      -4.000000D-03   5.000000D-03  -6.000000D-03",
+                "",
+            ]
+        ),
+    )
+
+    forces = parse_gaussian_forces_hartree_per_bohr(output, natoms=2)
+
+    assert parse_gaussian_energy_hartree(output) == pytest.approx(-76.123)
+    assert legacy_parse_gaussian_energy_hartree(output) == pytest.approx(-76.123)
+    assert forces.shape == (2, 3)
+    assert forces[0, 0] == pytest.approx(0.001)
+    assert forces[1, 2] == pytest.approx(-0.006)
 
 
 def test_parse_log_handles_hpmodes_block_without_double_counting(tmp_path: Path) -> None:
