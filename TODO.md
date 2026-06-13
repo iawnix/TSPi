@@ -57,6 +57,9 @@ Do not edit the installed skill at
 - [x] Move Gaussian TS/Freq log parsing into `backends/gaussian.py`; keep
       `tool/parse_gaussian_ts_result.py` as the artifact-writing CLI and
       compatibility import path.
+- [x] Move Gaussian TS/Freq input rendering/preparation into
+      `backends/gaussian.py`; keep `tool/prepare_gaussian_ts_input.py` as the
+      CLI and compatibility import path.
 - [x] Move external-Gaussian NEB energy/force output parsers into
       `backends/gaussian.py`; keep `tool/ase_neb/gaussian_calc.py` as the
       calculator-construction layer with compatibility imports.
@@ -90,6 +93,8 @@ Do not edit the installed skill at
 - [x] Migrate the Gaussian Gen/GenECP preflight CLI onto `CLIBase` while
       preserving `warnings_for`, `fix_lines`, and `build_parser` compatibility
       imports.
+- [x] Migrate the Gaussian TS/Freq input-preparation CLI onto `CLIBase` while
+      preserving pretty JSON output and old helper import names.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
@@ -260,3 +265,13 @@ Do not edit the installed skill at
   `25 passed, 2 skipped`; full pytest `206 passed, 2 skipped`; script help
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-preflight-cli-smoke.xjAGD2/tssearch_smoke`.
+- 2026-06-13: Moved Gaussian TS/Freq input rendering and XYZ frame selection
+  into `backends/gaussian.py`. `GaussianBackendAdapter.prepare()` can now write
+  `.gjf` inputs from an XYZ/output request; `tool/prepare_gaussian_ts_input.py`
+  is a `CLIBase` wrapper that preserves the existing script arguments, pretty
+  JSON payload, and legacy helper import names.
+- 2026-06-13: Gaussian input backend checkpoint validation passed:
+  `git diff --check`; targeted backend/prepare-CLI/import/no-undefined tests
+  `52 passed, 2 skipped`; full pytest `209 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-gaussian-input-smoke.W0eUn9/tssearch_smoke`.

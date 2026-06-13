@@ -287,9 +287,10 @@ Python tooling follows a package layout:
   vocabulary, and registry for execution tools.
 - `src/transition_state_workflow/backends/`: Gaussian, xTB, ASE, and QBICS
   adapter boundaries for program-specific input/output metadata. The Gaussian
-  backend owns TS/Freq log parsing and exposes parsed summary/status properties
-  through `GaussianBackendAdapter.parse()`; it also owns external-Gaussian NEB
-  SCF-energy and force-block parsers used by the ASE calculator adapter.
+  backend owns TS/Freq input rendering/preparation, TS/Freq log parsing, and
+  parsed summary/status properties through `GaussianBackendAdapter`; it also
+  owns external-Gaussian NEB SCF-energy and force-block parsers used by the ASE
+  calculator adapter.
 - `src/transition_state_workflow/remote/`: remote execution and synchronization
   boundary. `exec.py` owns the argv-only OpenSSH executor, `openssh.py` adapts
   it to `RemoteTransport`, `sftp.py` provides optional Paramiko SSH/SFTP,
@@ -308,8 +309,10 @@ Python tooling follows a package layout:
 - `src/transition_state_workflow/tool/`: concrete chemistry tool CLIs and
   compatibility entrypoints. `parse_gaussian_ts_result.py` writes parser
   artifacts through `CLIBase` while delegating Gaussian TS/Freq parsing to
-  `backends/gaussian.py`; `gaussian_gen_preflight.py` also uses `CLIBase` for
-  shared argument parsing, logging, JSON output, and error envelopes.
+  `backends/gaussian.py`; `prepare_gaussian_ts_input.py` and
+  `gaussian_gen_preflight.py` also use `CLIBase` for shared argument parsing,
+  logging, JSON output, and error envelopes while delegating Gaussian-specific
+  input handling to the backend.
   The NEB toolkit lives in the `tool/ase_neb/` subpackage, split by concern into
   layered modules
   (`constants`/`errors`/`coerce` leaves; `geometry`/`gaussian_calc`;

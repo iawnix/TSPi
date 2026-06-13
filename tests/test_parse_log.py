@@ -24,6 +24,8 @@ from transition_state_workflow.chem.gaussian_log import (  # noqa: E402
 )
 from transition_state_workflow.backends.gaussian import (  # noqa: E402
     GaussianBackendAdapter,
+    GaussianInputRequest,
+    render_gaussian_input,
     parse_gaussian_energy_hartree,
     parse_gaussian_forces_hartree_per_bohr,
     parse_gaussian_tsfreq_log,
@@ -165,6 +167,62 @@ def test_gaussian_backend_adapter_extracts_tsfreq_summary(tmp_path: Path) -> Non
     assert output.properties["status"] == "validated_ts"
     assert output.properties["imaginary_frequency_count"] == 1
     assert output.properties["summary"]["frequency_count"] == 3
+
+
+def test_gaussian_backend_renders_tsfreq_input() -> None:
+    text = render_gaussian_input(
+        GaussianInputRequest(
+            title="candidate",
+            coords=[("H", 0.0, 0.0, 0.0), ("H", 0.0, 0.0, 0.74)],
+            route="M062X/6-31G(d) opt=(ts,calcfc) freq",
+            charge=0,
+            multiplicity=1,
+            nproc=8,
+            mem="16GB",
+            chk="candidate.chk",
+            extra_sections=("H 0\n6-31G(d)\n****",),
+        )
+    )
+
+    assert text.startswith("%chk=candidate.chk\n%nprocshared=8\n%mem=16GB\n#P M062X/6-31G(d)")
+    assert "candidate\n\n0 1\n" in text
+    assert "H         0.00000000       0.00000000       0.74000000" in text
+    assert "H 0\n6-31G(d)\n****\n\n" in text
+
+
+def test_gaussian_backend_prepare_writes_input_from_xyz(tmp_path: Path) -> None:
+    xyz = tmp_path / "candidate.xyz"
+    output = tmp_path / "candidate.gjf"
+    xyz.write_text(
+        "2\n"
+        "from xyz\n"
+        "H 0 0 0\n"
+        "H 0 0 0.74\n",
+        encoding="utf-8",
+    )
+
+    prepared = GaussianBackendAdapter().prepare(
+        {
+            "xyz": xyz,
+            "output": output,
+            "route": "M062X/6-31G(d) opt=(ts,calcfc) freq",
+            "charge": 0,
+            "multiplicity": 1,
+            "nproc": 4,
+            "mem": "8GB",
+            "chk": "candidate.chk",
+            "command_argv": ["g16", str(output)],
+        }
+    )
+
+    text = output.read_text(encoding="utf-8")
+    assert prepared.backend == "gaussian"
+    assert prepared.files == (output,)
+    assert prepared.command_argv == ("g16", str(output))
+    assert prepared.metadata["frame"] == 0
+    assert prepared.metadata["atoms"] == 2
+    assert prepared.metadata["chk"] == "candidate.chk"
+    assert text.startswith("%chk=candidate.chk\n%nprocshared=4\n%mem=8GB\n#P M062X/6-31G(d)")
 
 
 def test_parse_gaussian_ts_result_cli_writes_artifacts(

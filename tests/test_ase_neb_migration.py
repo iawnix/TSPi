@@ -28,6 +28,7 @@ from transition_state_workflow.gate.validate import validate_ts_workspace_contra
 
 ASE_NEB_CLI = SKILL_ROOT / "scripts" / "ase_neb_framework.py"
 GAUSSIAN_PREFLIGHT_CLI = SKILL_ROOT / "scripts" / "gaussian_gen_preflight.py"
+PREPARE_GAUSSIAN_CLI = SKILL_ROOT / "scripts" / "prepare_gaussian_ts_input.py"
 DESCRIPTOR_CLI = SKILL_ROOT / "scripts" / "ts_descriptor_extract.py"
 
 
@@ -283,6 +284,40 @@ def test_migrated_gaussian_preflight_keeps_pretty_json(tmp_path: Path) -> None:
     result = run_cli(str(GAUSSIAN_PREFLIGHT_CLI), str(source))
     assert result.stdout.count("\n") > 1
     assert json.loads(result.stdout) == {"fixed": False, "output": None, "warnings": []}
+
+
+def test_migrated_prepare_gaussian_uses_backend_and_keeps_cli_contract(tmp_path: Path) -> None:
+    xyz = tmp_path / "candidate.xyz"
+    output = tmp_path / "candidate.gjf"
+    xyz.write_text(
+        "2\n"
+        "candidate title\n"
+        "H 0 0 0\n"
+        "H 0 0 0.74\n",
+        encoding="utf-8",
+    )
+
+    result = run_cli(
+        str(PREPARE_GAUSSIAN_CLI),
+        str(xyz),
+        str(output),
+        "--route",
+        "M062X/6-31G(d) opt=(ts,calcfc) freq",
+        "--nproc",
+        "4",
+        "--mem",
+        "8GB",
+        "--chk",
+        "candidate.chk",
+    )
+
+    payload = json.loads(result.stdout)
+    text = output.read_text(encoding="utf-8")
+    assert result.stdout.count("\n") > 1
+    assert payload == {"atoms": 2, "chk": "candidate.chk", "frame": 0, "output": str(output)}
+    assert text.startswith("%chk=candidate.chk\n%nprocshared=4\n%mem=8GB\n#P M062X/6-31G(d)")
+    assert "candidate title\n\n0 1\n" in text
+    assert "H         0.00000000       0.00000000       0.74000000" in text
 
 
 def test_migrated_descriptor_extract_smoke(tmp_path: Path) -> None:

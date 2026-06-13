@@ -2,13 +2,174 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Mapping
 
 from transition_state_workflow.backends.base import FilesystemBackendAdapter
-from transition_state_workflow.backends.contracts import BackendOutput
+from transition_state_workflow.backends.contracts import BackendInput, BackendOutput
 from transition_state_workflow.chem.gaussian_log import orientation_blocks as gaussian_orientation_blocks
+
+GaussianCoord = tuple[str, float, float, float]
+GaussianFrame = tuple[str, list[GaussianCoord]]
+
+
+@dataclass(frozen=True)
+class GaussianInputRequest:
+    """Backend-owned Gaussian input-generation request."""
+
+    title: str
+    coords: list[GaussianCoord]
+    route: str
+    charge: int
+    multiplicity: int
+    nproc: int | None = None
+    mem: str | None = None
+    chk: str | None = None
+    extra_sections: tuple[str, ...] = ()
+
+
+def read_xyz_frames(path: Path) -> list[GaussianFrame]:
+    """Read one or more XYZ/extXYZ frames for Gaussian input preparation."""
+
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if not lines:
+        raise ValueError(f"{path} is empty")
+
+    frames: list[GaussianFrame] = []
+    i = 0
+    while i < len(lines):
+        while i < len(lines) and not lines[i].strip():
+            i += 1
+        if i >= len(lines):
+            break
+        try:
+            natoms = int(lines[i].strip())
+        except ValueError as exc:
+            raise ValueError(
+                f"{path} is not a standard XYZ/extXYZ file: line {i + 1} is not an atom count"
+            ) from exc
+        if natoms <= 0:
+            raise ValueError(f"Bad atom count on line {i + 1}: {natoms}")
+
+        title_line = i + 1
+        title = lines[title_line].strip() if title_line < len(lines) and lines[title_line].strip() else path.stem
+        coord_start = i + 2
+        coord_end = coord_start + natoms
+        if coord_end > len(lines):
+            raise ValueError(f"Frame {len(frames)} expected {natoms} atoms, but file ended early")
+
+        coords: list[GaussianCoord] = []
+        for lineno, line in enumerate(lines[coord_start:coord_end], start=coord_start + 1):
+            parts = line.split()
+            if len(parts) < 4:
+                raise ValueError(f"Bad coordinate line {lineno}: {line!r}")
+            try:
+                coords.append((parts[0], float(parts[1]), float(parts[2]), float(parts[3])))
+            except ValueError as exc:
+                raise ValueError(f"Bad coordinate value on line {lineno}: {line!r}") from exc
+        frames.append((title, coords))
+        i = coord_end
+
+    if not frames:
+        raise ValueError(f"{path} does not contain any XYZ frames")
+    return frames
+
+
+def select_frame(frames: list[GaussianFrame], selector: str) -> tuple[int, str, list[GaussianCoord]]:
+    """Select a Gaussian input frame using the CLI-compatible selector syntax."""
+
+    selector = selector.strip().lower()
+    if selector == "only":
+        if len(frames) != 1:
+            raise ValueError(
+                f"Input contains {len(frames)} XYZ frames; use --frame first, --frame last, "
+                "or --frame <zero-based-index> to choose the TS candidate explicitly"
+            )
+        index = 0
+    elif selector == "first":
+        index = 0
+    elif selector == "last":
+        index = len(frames) - 1
+    else:
+        try:
+            index = int(selector)
+        except ValueError as exc:
+            raise ValueError("Frame selector must be 'only', 'first', 'last', or an integer index") from exc
+        if index < 0:
+            index += len(frames)
+        if not 0 <= index < len(frames):
+            raise ValueError(f"Frame index {selector!r} is out of range for {len(frames)} frames")
+    title, coords = frames[index]
+    return index, title, coords
+
+
+def read_xyz_frame(path: Path, frame: str = "only") -> tuple[int, str, list[GaussianCoord]]:
+    """Read and select one XYZ/extXYZ frame."""
+
+    return select_frame(read_xyz_frames(path), frame)
+
+
+def normalize_route(route: str) -> str:
+    """Normalize a Gaussian route section, adding ``#P`` when omitted."""
+
+    route = route.strip()
+    if not route:
+        raise ValueError("Gaussian route section cannot be empty")
+    if route.startswith("#"):
+        return route
+    return f"#P {route}"
+
+
+def route_requires_extra_section(route: str) -> bool:
+    """Return whether a route uses Gen/GenECP-style extra input sections."""
+
+    normalized = normalize_route(route).lower()
+    return bool(re.search(r"(^|[\s/#(),])gen(ecp)?($|[\s/#(),])", normalized))
+
+
+def render_gaussian_input(request: GaussianInputRequest) -> str:
+    """Render a Gaussian input file from backend-neutral geometry fields."""
+
+    if request.nproc is not None and request.nproc <= 0:
+        raise ValueError("--nproc must be positive")
+    if request.multiplicity <= 0:
+        raise ValueError("--multiplicity must be positive")
+
+    lines: list[str] = []
+    if request.chk:
+        lines.append(f"%chk={request.chk}")
+    if request.nproc is not None:
+        lines.append(f"%nprocshared={request.nproc}")
+    if request.mem:
+        lines.append(f"%mem={request.mem}")
+    lines.extend(
+        [
+            normalize_route(request.route),
+            "",
+            request.title,
+            "",
+            f"{request.charge} {request.multiplicity}",
+        ]
+    )
+    for element, x, y, z in request.coords:
+        lines.append(f"{element:<3s} {x:16.8f} {y:16.8f} {z:16.8f}")
+    lines.append("")
+    for section in request.extra_sections:
+        section_lines = section.rstrip().splitlines()
+        if section_lines:
+            lines.extend(section_lines)
+            lines.append("")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def write_gaussian_input(path: Path, request: GaussianInputRequest) -> None:
+    """Write a Gaussian input file from a prepared backend request."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(render_gaussian_input(request), encoding="utf-8")
 
 
 def split_gaussian_job_sections(lines: list[str]) -> list[dict[str, object]]:
@@ -274,6 +435,50 @@ class GaussianBackendAdapter(FilesystemBackendAdapter):
     """Backend boundary for Gaussian input generation and output parsing."""
 
     name = "gaussian"
+
+    def prepare(self, request: Mapping[str, Any]) -> BackendInput:
+        """Prepare Gaussian input artifacts when an XYZ/output request is supplied."""
+
+        if "xyz" not in request or "output" not in request:
+            return super().prepare(request)
+
+        metadata = request.get("metadata", {})
+        if not isinstance(metadata, Mapping):
+            raise ValueError("backend request metadata must be a mapping")
+
+        output = Path(request["output"])
+        frame_index, source_title, coords = read_xyz_frame(Path(request["xyz"]), str(request.get("frame", "only")))
+        title = str(request.get("title") or source_title or output.stem)
+        chk = str(request.get("chk") or f"{output.stem}.chk")
+        route = str(request.get("route") or "#P B3LYP/6-31G(d) opt=(ts,calcfc,noeigen,maxcycles=100) freq")
+        extra_sections = tuple(str(section) for section in request.get("extra_sections", ()))
+        nproc_value = request.get("nproc", 32)
+        mem_value = request.get("mem", "64GB")
+        input_request = GaussianInputRequest(
+            title=title,
+            coords=coords,
+            route=route,
+            charge=int(request.get("charge", 0)),
+            multiplicity=int(request.get("multiplicity", 1)),
+            nproc=int(nproc_value) if nproc_value is not None else None,
+            mem=str(mem_value) if mem_value is not None else None,
+            chk=chk,
+            extra_sections=extra_sections,
+        )
+        write_gaussian_input(output, input_request)
+        command_argv = tuple(str(item) for item in request.get("command_argv", ()))
+        return BackendInput(
+            backend=self.name,
+            files=(output,),
+            command_argv=command_argv,
+            metadata={
+                **dict(metadata),
+                "frame": frame_index,
+                "atoms": len(coords),
+                "chk": chk,
+                "route_requires_extra_section": route_requires_extra_section(route),
+            },
+        )
 
     def parse(self, artifacts: tuple[Path, ...]) -> BackendOutput:
         """Parse Gaussian output artifacts when a log file is present."""
