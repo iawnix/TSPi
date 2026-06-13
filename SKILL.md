@@ -284,7 +284,8 @@ Python tooling follows a package layout:
   logic: evidence gates, workspace validation, normalized explorer views, and
   `finalize-node`.
 - `src/transition_state_workflow/tools/`: ChemTool protocol, capability
-  vocabulary, and registry for execution tools.
+  vocabulary, registry, and node-scoped local command execution via
+  `NodeExecutionTool`.
 - `src/transition_state_workflow/backends/`: Gaussian, xTB, ASE, and QBICS
   adapter boundaries for program-specific input/output metadata. The Gaussian
   backend owns TS/Freq input rendering/preparation, TS/Freq log parsing, and
@@ -312,7 +313,8 @@ Python tooling follows a package layout:
   `backends/gaussian.py`; `prepare_gaussian_ts_input.py` and
   `gaussian_gen_preflight.py` also use `CLIBase` for shared argument parsing,
   logging, JSON output, and error envelopes while delegating Gaussian-specific
-  input handling to the backend.
+  input handling to the backend. `node_exec.py` is a CLIBase compatibility
+  entrypoint over `tools/node_exec.py`.
   The NEB toolkit lives in the `tool/ase_neb/` subpackage, split by concern into
   layered modules
   (`constants`/`errors`/`coerce` leaves; `geometry`/`gaussian_calc`;

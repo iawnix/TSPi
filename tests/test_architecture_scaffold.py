@@ -14,6 +14,7 @@ from transition_state_workflow.remote.mcp import MCPTransport
 from transition_state_workflow.remote.openssh import OpenSSHTransport
 from transition_state_workflow.remote.sftp import ParamikoSFTPTransport
 from transition_state_workflow.remote.sync import build_metadata_sync_plan, execute_sync_plan, verify_sync_plan
+from transition_state_workflow.tools import NodeExecutionTool
 from transition_state_workflow.tools.contracts import ChemTool, ToolCapability, ToolRequest, ToolResult
 from transition_state_workflow.tools.registry import ChemToolRegistry
 
@@ -121,6 +122,18 @@ def test_tool_registry_rejects_invalid_tools() -> None:
         registry.register(DummyTool(name="", capabilities=frozenset({ToolCapability.OPTIMIZATION})))
     with pytest.raises(ValueError, match="at least one capability"):
         registry.register(DummyTool(name="empty", capabilities=frozenset()))
+
+
+def test_node_execution_tool_registers_for_execution_capabilities() -> None:
+    registry = ChemToolRegistry()
+    node_exec = NodeExecutionTool()
+
+    registry.register(node_exec)
+
+    assert registry.get("node-exec") is node_exec
+    assert node_exec in registry.by_capability(ToolCapability.CANDIDATE_GENERATION)
+    assert node_exec in registry.by_capability(ToolCapability.OPTIMIZATION)
+    assert node_exec in registry.by_capability(ToolCapability.TSFREQ_VALIDATION)
 
 
 def test_default_backend_registry_exposes_named_adapters(tmp_path: Path) -> None:

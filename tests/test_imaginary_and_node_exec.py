@@ -14,6 +14,8 @@ from conftest import (
     run_cli,
     validate_workspace,
 )
+from transition_state_workflow.tools.contracts import ToolCapability, ToolRequest
+from transition_state_workflow.tools.node_exec import NodeExecutionTool
 
 
 def minimal_gaussian_freq_log() -> str:
@@ -183,3 +185,52 @@ def test_node_exec_runs_fixed_name_engine_outputs_inside_node_outputs(tmp_path: 
     validation = validate_workspace(root, strict=True)
     assert validation["summary"]["errors"] == 0
     assert validation["summary"]["warnings"] == 0
+
+
+def test_node_exec_dry_run_keeps_legacy_json_contract(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_unit"
+    initialize_workspace(root)
+
+    result = run_cli(
+        str(NODE_EXEC_CLI),
+        "--workspace",
+        str(root),
+        "--node-id",
+        "n010_candidate",
+        "--dry-run",
+        "--",
+        "xtb",
+        "input.xyz",
+    )
+
+    payload = json.loads(result.stdout)
+    assert result.stdout.count("\n") > 1
+    assert payload["cwd"] == str(root / "nodes" / "n010_candidate" / "outputs")
+    assert payload["command"] == "xtb input.xyz"
+    assert payload["env"]["TS_NODE_INPUTS"] == str(root / "nodes" / "n010_candidate" / "inputs")
+    assert payload["env"]["TS_NODE_OUTPUTS"] == str(root / "nodes" / "n010_candidate" / "outputs")
+    assert payload["env"]["TS_NODE_SCRATCH"] == str(root / "nodes" / "n010_candidate" / "scratch")
+
+
+def test_node_execution_tool_runs_as_chemtool_boundary(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_unit"
+    initialize_workspace(root)
+    code = "from pathlib import Path; Path('tool.out').write_text('ok\\n', encoding='utf-8')"
+
+    result = NodeExecutionTool().run(
+        ToolRequest(
+            root_directory=root,
+            node_id="n010_candidate",
+            capability=ToolCapability.CANDIDATE_GENERATION,
+            parameters={"command": [sys.executable, "-c", code]},
+        )
+    )
+
+    outputs = root / "nodes" / "n010_candidate" / "outputs"
+    assert result.ok is True
+    assert result.tool_name == "node-exec"
+    assert result.capability == ToolCapability.CANDIDATE_GENERATION
+    assert result.properties["returncode"] == 0
+    assert result.properties["cwd"] == str(outputs)
+    assert result.artifacts == (outputs / "run_metadata.txt",)
+    assert (outputs / "tool.out").read_text(encoding="utf-8") == "ok\n"

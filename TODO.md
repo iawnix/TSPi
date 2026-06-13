@@ -48,6 +48,9 @@ Do not edit the installed skill at
       `candidate_generation`, `optimization`, `tsfreq_validation`,
       `connectivity_check`, and `descriptor_analysis`.
 - [x] Add a concrete `ChemTool` registry grouped by capability.
+- [x] Move node-scoped local command execution into `tools/node_exec.py` with
+      `NodeExecutionTool`; keep `tool/node_exec.py` as the CLI/compatibility
+      entrypoint.
 - [x] Introduce `backends/` contracts for Gaussian, xTB, ASE, and QBICS
       input/output adapters so program-specific parsing can be moved out of
       control-flow code.
@@ -95,6 +98,8 @@ Do not edit the installed skill at
       imports.
 - [x] Migrate the Gaussian TS/Freq input-preparation CLI onto `CLIBase` while
       preserving pretty JSON output and old helper import names.
+- [x] Migrate the node execution CLI onto `CLIBase` while preserving
+      node-scoped cwd/env/metadata behavior and dry-run JSON output.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
@@ -275,3 +280,12 @@ Do not edit the installed skill at
   `52 passed, 2 skipped`; full pytest `209 passed, 2 skipped`; script help
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-gaussian-input-smoke.W0eUn9/tssearch_smoke`.
+- 2026-06-13: Moved node-scoped local command execution into
+  `tools/node_exec.py` and added `NodeExecutionTool` for ChemTool registry use.
+  `tool/node_exec.py` now keeps the existing script arguments and compatibility
+  helper names while delegating execution to the tools layer through `CLIBase`.
+- 2026-06-13: Node execution ChemTool checkpoint validation passed:
+  `git diff --check`; targeted node-exec/tools/import/no-undefined tests
+  `34 passed, 1 skipped`; full pytest `212 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-node-exec-smoke.sj5zP0/tssearch_smoke`.
