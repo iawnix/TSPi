@@ -104,6 +104,13 @@ Do not edit the installed skill at
       `gate/connectivity.py`, with `tool/rmsd_connectivity_check.py` kept as a
       compatibility re-export and `scripts/rmsd_connectivity_check.py` pointing
       at the gate module directly.
+- [x] Split descriptor extraction into the ChemTool layer:
+      plan before code changes is to move Gaussian TS descriptor extraction
+      from `tool/ts_descriptor_extract.py` to `tools/descriptors.py`, expose a
+      `TSDescriptorExtractionTool` under `ToolCapability.DESCRIPTOR_ANALYSIS`,
+      keep `tool/ts_descriptor_extract.py` as a compatibility re-export, point
+      `scripts/ts_descriptor_extract.py` at the new tools module, and validate
+      old helper imports plus CLI output artifacts before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
@@ -175,6 +182,7 @@ Do not edit the installed skill at
 - `b63b845` `refactor: move node exec to chemtool layer`
 - `f960c95` `docs: align node exec references with refactor`
 - `90394a4` `refactor: move connectivity checker into gate`
+- `d21df8e` `docs: record connectivity migration checkpoint`
 
 ## Completion Log
 
@@ -350,3 +358,13 @@ Do not edit the installed skill at
   `22 passed`; full pytest `214 passed, 2 skipped`; script help smoke
   `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-connectivity-smoke.JhDw02/tssearch_smoke`.
+- 2026-06-14: Moved Gaussian TS descriptor extraction from
+  `tool/ts_descriptor_extract.py` to `tools/descriptors.py`, added
+  `TSDescriptorExtractionTool` for `ToolCapability.DESCRIPTOR_ANALYSIS`, pointed
+  the script at the tools module, and kept the old `tool/` path as a thin
+  compatibility re-export.
+- 2026-06-14: Descriptor ChemTool migration validation passed:
+  `git diff --check`; targeted architecture/import/parser/descriptor/reference
+  tests `40 passed, 1 skipped`; full pytest `216 passed, 2 skipped`; script
+  help smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-descriptor-tool-smoke.O1PKCy/tssearch_smoke`.

@@ -14,7 +14,7 @@ from transition_state_workflow.remote.mcp import MCPTransport
 from transition_state_workflow.remote.openssh import OpenSSHTransport
 from transition_state_workflow.remote.sftp import ParamikoSFTPTransport
 from transition_state_workflow.remote.sync import build_metadata_sync_plan, execute_sync_plan, verify_sync_plan
-from transition_state_workflow.tools import NodeExecutionTool
+from transition_state_workflow.tools import NodeExecutionTool, TSDescriptorExtractionTool
 from transition_state_workflow.tools.contracts import ChemTool, ToolCapability, ToolRequest, ToolResult
 from transition_state_workflow.tools.registry import ChemToolRegistry
 
@@ -134,6 +134,61 @@ def test_node_execution_tool_registers_for_execution_capabilities() -> None:
     assert node_exec in registry.by_capability(ToolCapability.CANDIDATE_GENERATION)
     assert node_exec in registry.by_capability(ToolCapability.OPTIMIZATION)
     assert node_exec in registry.by_capability(ToolCapability.TSFREQ_VALIDATION)
+
+
+def test_descriptor_extraction_tool_registers_for_descriptor_analysis(tmp_path: Path) -> None:
+    ts_out = tmp_path / "ts.out"
+    ts_xyz = tmp_path / "ts.xyz"
+    minus_xyz = tmp_path / "minus.xyz"
+    plus_xyz = tmp_path / "plus.xyz"
+    output = tmp_path / "descriptors"
+    ts_out.write_text(
+        " Charge = 0 Multiplicity = 1\n"
+        " SCF Done:  E(RM062X) =  -1.000000 A.U. after 1 cycles\n"
+        " Stationary point found.\n"
+        " Frequencies --   -100.0000\n"
+        " Red. masses --      1.0000\n"
+        " Frc consts  --      0.1000\n"
+        " IR Inten    --      0.0000\n"
+        "  Atom  AN      X      Y      Z\n"
+        "    1    1    0.1000  0.0000  0.0000\n"
+        "    2    1   -0.1000  0.0000  0.0000\n"
+        " Mulliken charges:\n"
+        "    1  H   0.100\n"
+        "    2  H  -0.100\n"
+        " Sum of Mulliken charges = 0.000\n"
+        " Normal termination of Gaussian 16\n",
+        encoding="utf-8",
+    )
+    ts_xyz.write_text("2\nts\nH 0 0 0\nH 0 0 0.74\n", encoding="utf-8")
+    minus_xyz.write_text("2\nminus\nH -0.1 0 0\nH 0.1 0 0.74\n", encoding="utf-8")
+    plus_xyz.write_text("2\nplus\nH 0.1 0 0\nH -0.1 0 0.74\n", encoding="utf-8")
+
+    tool = TSDescriptorExtractionTool()
+    registry = ChemToolRegistry()
+    registry.register(tool)
+    result = tool.run(
+        ToolRequest(
+            root_directory=tmp_path,
+            node_id="n010_descriptor",
+            capability=ToolCapability.DESCRIPTOR_ANALYSIS,
+            parameters={
+                "ts_out": ts_out,
+                "ts_xyz": ts_xyz,
+                "minus_xyz": minus_xyz,
+                "plus_xyz": plus_xyz,
+                "output_dir": output,
+                "pairs": ("1-2",),
+            },
+        )
+    )
+
+    assert registry.by_capability(ToolCapability.DESCRIPTOR_ANALYSIS) == (tool,)
+    assert result.ok is True
+    assert result.tool_name == "ts-descriptor-extract"
+    assert result.capability == ToolCapability.DESCRIPTOR_ANALYSIS
+    assert output / "ts_descriptors.json" in result.artifacts
+    assert result.properties["validation"]["imaginary_frequency_count"] == 1
 
 
 def test_default_backend_registry_exposes_named_adapters(tmp_path: Path) -> None:
