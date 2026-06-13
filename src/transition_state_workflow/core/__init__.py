@@ -14,6 +14,7 @@ from transition_state_workflow.core.plan_next import (
     build_plan_next_packet,
 )
 from transition_state_workflow.core.start_node import NodeStartRequest, start_ts_workspace_node
+from transition_state_workflow.core.workspace_state import append_ts_workspace_evidence_record
 
 __all__ = [
     "BacktrackRequest",
@@ -23,6 +24,7 @@ __all__ = [
     "PLAN_SCHEMA",
     "TsfreqEvidencePredicate",
     "WorkspaceValidator",
+    "append_ts_workspace_evidence_record",
     "build_plan_next_packet",
     "record_backtrack",
     "start_ts_workspace_node",

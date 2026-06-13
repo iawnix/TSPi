@@ -77,6 +77,8 @@ Do not edit the installed skill at
 - [x] Move next-action planning logic into `core/plan_next.py`; keep
       `tool/plan_next.py` as the ChemGate-injecting compatibility layer so
       existing CLI behavior still validates workspace and evidence gates.
+- [x] Move evidence-registry append logic into `core/workspace_state.py`, with
+      the existing `add-evidence` CLI dispatch preserved.
 - [ ] Update `SKILL.md` and `references/` after code boundaries exist; do not
       describe future architecture as current behavior before tests prove it.
 - [ ] Run compatibility validation after each checkpoint:
@@ -109,3 +111,6 @@ Do not edit the installed skill at
 - 2026-06-13: Moved actual plan-next planning implementation into
   `core/plan_next.py`; `tool/plan_next.py` now only injects ChemGate validator
   and TS/Freq evidence predicates for compatibility.
+- 2026-06-13: Moved the `add-evidence` registry writer into
+  `core/workspace_state.py`; the workspace CLI still exposes the same
+  subcommand and argument contract.

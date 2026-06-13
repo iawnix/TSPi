@@ -37,9 +37,10 @@ from transition_state_workflow.core.start_node import (
     register_start_node_parser,
     start_ts_workspace_node_from_cli_args,
 )
+from transition_state_workflow.core.workspace_state import append_ts_workspace_evidence_record_from_cli_args
 from transition_state_workflow.util.json_io import read_json_object_required, write_json_object
 from transition_state_workflow.util.cli import configure_cli_logging, emit_json
-from transition_state_workflow.util.path_utils import portable_record_path, relative_path_or_absolute, safe_identifier_token
+from transition_state_workflow.util.path_utils import relative_path_or_absolute, safe_identifier_token
 
 
 def main() -> int:
@@ -578,34 +579,6 @@ def clean_optional_node_ref(value: object) -> str:
     """Normalize optional node references from CLI or tree JSON."""
 
     return str(value or "").strip()
-
-
-def append_ts_workspace_evidence_record_from_cli_args(args: argparse.Namespace) -> None:
-    """Append one evidence registry record for a v2 workspace node."""
-
-    root = args.root.resolve()
-    ensure_workspace_root_has_manifest_and_tree(root)
-    registry_path = root / "evidence_registry.json"
-    registry = read_json_object_required(registry_path)
-    records = list(registry.get("records") or [])
-    evidence_id = f"ev_{safe_identifier_token(args.node_id)}_{len(records) + 1:04d}"
-    path_payload = portable_record_path(root, args.path)
-    records.append(
-        {
-            "evidence_id": evidence_id,
-            "kind": args.kind,
-            "path": path_payload["path"],
-            "node_id": args.node_id,
-            "claim": args.claim,
-            "evidence_state": args.evidence_state,
-            "external_path": path_payload["external_path"],
-            "external_unavailable": path_payload["external_unavailable"],
-            "created_at": utc_timestamp(),
-        }
-    )
-    registry["records"] = records
-    registry["updated_at"] = utc_timestamp()
-    write_json_object(registry_path, registry, overwrite_existing=True)
 
 
 def ensure_workspace_root_has_manifest_and_tree(root: Path) -> None:
