@@ -1,6 +1,7 @@
 """Remote transport and synchronization interfaces."""
 
 from transition_state_workflow.remote.openssh import OpenSSHTransport
+from transition_state_workflow.remote.sync_cli import main as sync_cli_main
 from transition_state_workflow.remote.sync import build_metadata_sync_plan, execute_sync_plan, verify_sync_plan
 from transition_state_workflow.remote.contracts import (
     RemoteCommandResult,
@@ -19,5 +20,6 @@ __all__ = [
     "SyncPlan",
     "build_metadata_sync_plan",
     "execute_sync_plan",
+    "sync_cli_main",
     "verify_sync_plan",
 ]

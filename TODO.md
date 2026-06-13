@@ -59,7 +59,7 @@ Do not edit the installed skill at
 - [x] Add concrete `OpenSSHTransport`.
 - [ ] Add future `SFTPTransport` and `MCPTransport` modules.
 - [x] Add explicit metadata sync plan/run/verify service for remote mirrors.
-- [ ] Split local mirror synchronization from remote Gaussian execution:
+- [x] Split local mirror synchronization from remote Gaussian execution:
       sync should be an explicit service step with plan, run, verify, and
       explorer-registry update phases.
 - [ ] Keep explorer service hot-registration behavior but move registry/server
@@ -81,3 +81,6 @@ Do not edit the installed skill at
 - 2026-06-13: Added `ChemToolRegistry`, backend adapter registry and Gaussian/
   xTB/ASE/QBICS adapter boundaries, `OpenSSHTransport`, and metadata sync
   planning tests. Existing CLI behavior is unchanged.
+- 2026-06-13: Added `scripts/ts_remote_sync.py` with explicit `plan`, `run`,
+  `verify`, and `register` stages for remote workspace mirror sync. Existing
+  Gaussian remote runner remains unchanged.
