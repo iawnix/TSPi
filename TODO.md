@@ -224,6 +224,7 @@ Do not edit the installed skill at
 - `6800d39` `refactor: move descriptor parsers into gaussian backend`
 - `d69d612` `refactor: move gaussian gen preflight into backend`
 - `ba5cdd7` `refactor: move ase neb leaf helpers into tools`
+- `5db4717` `refactor: move ase neb geometry mechanism into tools`
 
 ## Completion Log
 
