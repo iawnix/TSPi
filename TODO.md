@@ -174,6 +174,7 @@ Do not edit the installed skill at
 - `84a0821` `refactor: move gaussian input prep to backend`
 - `b63b845` `refactor: move node exec to chemtool layer`
 - `f960c95` `docs: align node exec references with refactor`
+- `90394a4` `refactor: move connectivity checker into gate`
 
 ## Completion Log
 
