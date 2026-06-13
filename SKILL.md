@@ -272,18 +272,38 @@ Python tooling follows a package layout:
   `COVALENT_RADII`, XYZ/orientation parsing, frequency and termination checks).
 - `src/transition_state_workflow/config/`: canonical state model, vocabularies,
   and the v2 contract checks shared by the validator and normalizer.
+- `src/transition_state_workflow/core/`: ChemKernel-facing planning and
+  workspace state writers: workspace initialization, decision-card/node
+  templates, evidence registry append, start-node, backtrack lifecycle, and
+  `plan-next` planning packets.
+- `src/transition_state_workflow/gate/`: ChemGate-facing read and closure
+  logic: evidence gates, workspace validation, normalized explorer views, and
+  `finalize-node`.
+- `src/transition_state_workflow/tools/`: ChemTool protocol, capability
+  vocabulary, and registry for execution tools.
+- `src/transition_state_workflow/backends/`: Gaussian, xTB, ASE, and QBICS
+  adapter boundaries for program-specific input/output metadata.
+- `src/transition_state_workflow/remote/`: remote execution and synchronization
+  boundary. `exec.py` owns the argv-only OpenSSH executor, `openssh.py` adapts
+  it to `RemoteTransport`, `sftp.py` provides optional Paramiko SSH/SFTP,
+  `mcp.py` provides an injected MCP transport boundary, `gaussian_runner.py`
+  runs node-scoped remote Gaussian jobs, `gaussian_monitor.py` handles
+  status/tail/fetch, and `sync.py`/`sync_cli.py` handle explicit metadata
+  mirror synchronization.
 - `src/transition_state_workflow/util/`: cross-cutting helpers —
   `cli.py` (the unified CLI core: `emit_json` to stdout, `log`/`warn` to stderr,
   and `run_cli`/`CliError`, which render failures as a one-line
   `{"ok": false, "error": ...}` envelope), `json_io.py`, `path_utils.py`,
-  `node_layout.py` (node directory resolution), and `remote_exec.py` (argv-only
-  OpenSSH executor; shell syntax only ever runs inside the selected remote shell).
-- `src/transition_state_workflow/tool/`: command implementations. The NEB
-  toolkit lives in the `tool/ase_neb/` subpackage, split by concern into layered
-  modules (`constants`/`errors`/`coerce` leaves; `geometry`/`gaussian_calc`;
+  `node_layout.py` (node directory resolution), and compatibility forwarding
+  modules such as `remote_exec.py`.
+- `src/transition_state_workflow/tool/`: concrete chemistry tool CLIs and
+  compatibility entrypoints. The NEB toolkit lives in the `tool/ase_neb/`
+  subpackage, split by concern into layered modules
+  (`constants`/`errors`/`coerce` leaves; `geometry`/`gaussian_calc`;
   `config`/`mechanism`/`images`; `workspace`; `node_writers`/`driver`/
   `validation`/`external_gaussian`). `tool/ase_neb_framework.py` is the thin CLI
-  on top. The dependency direction is strictly downward (verified acyclic).
+  on top. The dependency direction is strictly downward and covered by import
+  boundary tests.
 - `src/transition_state_workflow/web/static/`: static explorer UI assets
   loaded by the optional web service. State labels/colors come only from
   `config/state_contract.py`, shipped through the normalizer; the UI keeps no

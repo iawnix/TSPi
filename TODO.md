@@ -93,7 +93,7 @@ Do not edit the installed skill at
       a compatibility wrapper.
 - [x] Move the underlying OpenSSH executor into `remote/exec.py`, with
       `util/remote_exec.py` kept as a compatibility wrapper.
-- [ ] Update `SKILL.md` and `references/` after code boundaries exist; do not
+- [x] Update `SKILL.md` and `references/` after code boundaries exist; do not
       describe future architecture as current behavior before tests prove it.
 - [ ] Run compatibility validation after each checkpoint:
       full pytest, script help smoke tests, strict workspace validator smoke,
@@ -149,3 +149,6 @@ Do not edit the installed skill at
 - 2026-06-13: Updated remote Gaussian wrapper scripts to import the remote
   package directly while leaving old `tool/` imports available for
   compatibility.
+- 2026-06-13: Updated `SKILL.md`, `references/compute_hosts.md`, and
+  `references/gaussian_validation.md` to describe the current core/gate/remote
+  layout and `remote/exec.py` executor ownership.
