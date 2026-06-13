@@ -34,13 +34,13 @@ from transition_state_workflow.tool.ase_neb.external_gaussian import (
     dry_run_gaussian_neb_inputs,
 )
 from transition_state_workflow.tool.ase_neb.gaussian_calc import import_ase_bits, temporary_env
-from transition_state_workflow.tool.ase_neb.geometry import parse_angle_spec, parse_bond_spec
+from transition_state_workflow.tools.ase_neb.geometry import parse_angle_spec, parse_bond_spec
 from transition_state_workflow.tool.ase_neb.images import (
     build_images_from_endpoints,
     load_endpoint_images,
     write_image_set,
 )
-from transition_state_workflow.tool.ase_neb.mechanism import ENDPOINT_STATE_CHOICES
+from transition_state_workflow.tools.ase_neb.mechanism import ENDPOINT_STATE_CHOICES
 from transition_state_workflow.tool.ase_neb.node_writers import (
     write_input_check_node,
     write_neb_node_metadata,

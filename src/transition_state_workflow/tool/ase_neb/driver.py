@@ -17,7 +17,7 @@ from transition_state_workflow.tool.ase_neb.gaussian_calc import (
     create_calculator,
     import_ase_bits,
 )
-from transition_state_workflow.tool.ase_neb.mechanism import endpoint_validation_summary
+from transition_state_workflow.tools.ase_neb.mechanism import endpoint_validation_summary
 from transition_state_workflow.tool.ase_neb.workspace import write_json
 
 

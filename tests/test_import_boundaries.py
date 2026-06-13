@@ -191,3 +191,19 @@ def test_ase_neb_leaf_helpers_live_in_tools_with_tool_compatibility() -> None:
     for name in ("constants.py", "errors.py", "coerce.py"):
         compat_source = PACKAGE / "tool" / "ase_neb" / name
         assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
+
+
+def test_ase_neb_geometry_mechanism_live_in_tools_with_tool_compatibility() -> None:
+    from transition_state_workflow.tool.ase_neb import geometry as old_geometry
+    from transition_state_workflow.tool.ase_neb import mechanism as old_mechanism
+    from transition_state_workflow.tools.ase_neb import geometry, mechanism
+
+    assert old_geometry.read_xyz is geometry.read_xyz
+    assert old_geometry.changed_bonds is geometry.changed_bonds
+    assert old_geometry.infer_angles is geometry.infer_angles
+    assert old_mechanism.classify_validation_system is mechanism.classify_validation_system
+    assert old_mechanism.endpoint_validation_summary is mechanism.endpoint_validation_summary
+    assert old_mechanism.infer_mechanism_preflight is mechanism.infer_mechanism_preflight
+    for name in ("geometry.py", "mechanism.py"):
+        compat_source = PACKAGE / "tool" / "ase_neb" / name
+        assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4

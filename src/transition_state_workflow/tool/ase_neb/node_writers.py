@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any
 
 from transition_state_workflow.tool.ase_neb.config import ProjectContext, level_slug_from_calculator
-from transition_state_workflow.tool.ase_neb.mechanism import (
+from transition_state_workflow.tools.ase_neb.mechanism import (
     endpoint_validation_summary,
     infer_mechanism_preflight,
 )

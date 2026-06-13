@@ -138,6 +138,16 @@ Do not edit the installed skill at
       these leaf helpers from `tools/ase_neb`, and validate old/new import
       identity plus existing ASE NEB CLI and pure-function behavior before
       pushing.
+- [x] Move ASE NEB geometry and mechanism pure logic into the ChemTool layer:
+      plan before code changes is to move `tool/ase_neb/geometry.py` to
+      `tools/ase_neb/geometry.py` first, keep the old geometry path as a thin
+      compatibility re-export, and update remaining ASE NEB modules/tests to
+      import geometry helpers from `tools/ase_neb`. Then move
+      `tool/ase_neb/mechanism.py` to `tools/ase_neb/mechanism.py`, keep the
+      old mechanism path as a thin compatibility re-export, update callers to
+      the new path, and validate old/new import identity, pure helper behavior,
+      public script help, full tests, and a strict workspace smoke before
+      pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
@@ -434,3 +444,15 @@ Do not edit the installed skill at
   validator and normalizer smoke on
   `/tmp/tswf-ase-leaf-smoke.q5rqmC/tssearch_smoke` with validator summary
   `0 errors, 0 warnings`.
+- 2026-06-14: Moved ASE NEB geometry/connectivity helpers and mechanism
+  preflight/endpoint-readiness helpers into `tools/ase_neb/`. The old
+  `tool/ase_neb/geometry.py` and `tool/ase_neb/mechanism.py` paths remain thin
+  compatibility re-exports, while ASE NEB callers import the pure helpers from
+  the ChemTool layer.
+- 2026-06-14: ASE NEB geometry/mechanism ChemTool validation passed:
+  `git diff --check`; `py_compile` for `tools/ase_neb`, `tool/ase_neb`, and
+  `tool/ase_neb_framework.py`; targeted ASE NEB/import/architecture/reference
+  tests `82 passed, 1 skipped`; full pytest `219 passed, 2 skipped`; script
+  help smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-ase-geometry-mechanism-smoke.pGQaIE/tssearch_smoke` with validator
+  summary `0 errors, 0 warnings`.

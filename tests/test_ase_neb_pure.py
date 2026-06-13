@@ -47,7 +47,7 @@ from transition_state_workflow.tool.ase_neb.external_gaussian import (  # noqa: 
     continue_node_id_from_images,
     external_gaussian_level_slug,
 )
-from transition_state_workflow.tool.ase_neb.geometry import (  # noqa: E402
+from transition_state_workflow.tools.ase_neb.geometry import (  # noqa: E402
     Atom,
     angle_label,
     atom_indices_from_bonds_angles,
@@ -63,7 +63,7 @@ from transition_state_workflow.tool.ase_neb.geometry import (  # noqa: E402
     parse_bond_spec,
     read_xyz,
 )
-from transition_state_workflow.tool.ase_neb.mechanism import (  # noqa: E402
+from transition_state_workflow.tools.ase_neb.mechanism import (  # noqa: E402
     ENDPOINT_READY_STATES,
     classify_validation_system,
     endpoint_validation_summary,

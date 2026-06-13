@@ -287,8 +287,10 @@ Python tooling follows a package layout:
   vocabulary, registry, node-scoped local command execution via
   `NodeExecutionTool`, and Gaussian TS descriptor extraction via
   `TSDescriptorExtractionTool`. `tools/ase_neb/` owns the ASE NEB leaf support
-  helpers shared by the candidate-generation implementation: constants,
-  `ConfigError`, and config-value coercers.
+  helpers and pure preflight logic shared by the candidate-generation
+  implementation: constants, `ConfigError`, config-value coercers,
+  geometry/connectivity heuristics, mechanism preflight, and endpoint-readiness
+  summaries.
 - `src/transition_state_workflow/backends/`: Gaussian, xTB, ASE, and QBICS
   adapter boundaries for program-specific input/output metadata. The Gaussian
   backend owns TS/Freq input rendering/preparation, TS/Freq log parsing, and
@@ -326,12 +328,12 @@ Python tooling follows a package layout:
   `gate/connectivity.py`.
   The remaining ASE NEB candidate-generation implementation lives in the
   `tool/ase_neb/` subpackage for now, split by concern into
-  layered modules (`geometry`/`gaussian_calc`; `config`/`mechanism`/`images`;
-  `workspace`; `node_writers`/`driver`/`validation`/`external_gaussian`), with
-  `constants`/`errors`/`coerce` kept there only as compatibility re-exports
-  over `tools/ase_neb/`. `tool/ase_neb_framework.py` is the thin CLI on top.
-  The dependency direction is strictly downward and covered by import boundary
-  tests.
+  layered modules (`gaussian_calc`; `config`/`images`; `workspace`;
+  `node_writers`/`driver`/`validation`/`external_gaussian`), with
+  `constants`/`errors`/`coerce`/`geometry`/`mechanism` present as compatibility
+  re-exports over `tools/ase_neb/`. `tool/ase_neb_framework.py` is the thin CLI
+  on top. The dependency direction is strictly downward and covered by import
+  boundary tests.
 - `src/transition_state_workflow/web/static/`: static explorer UI assets
   loaded by the optional web service. State labels/colors come only from
   `config/state_contract.py`, shipped through the normalizer; the UI keeps no

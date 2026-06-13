@@ -19,7 +19,7 @@ from transition_state_workflow.tool.ase_neb.config import (
     level_slug_from_gaussian_config,
 )
 from transition_state_workflow.tools.ase_neb.errors import ConfigError
-from transition_state_workflow.tool.ase_neb.geometry import (
+from transition_state_workflow.tools.ase_neb.geometry import (
     angle_label,
     atom_indices_from_bonds_angles,
     bond_label,
@@ -27,7 +27,7 @@ from transition_state_workflow.tool.ase_neb.geometry import (
     infer_angles,
     read_xyz,
 )
-from transition_state_workflow.tool.ase_neb.mechanism import classify_validation_system
+from transition_state_workflow.tools.ase_neb.mechanism import classify_validation_system
 from transition_state_workflow.tool.ase_neb.workspace import (
     next_node_id,
     node_record,
