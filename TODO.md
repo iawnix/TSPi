@@ -203,6 +203,7 @@ Do not edit the installed skill at
 - `d21df8e` `docs: record connectivity migration checkpoint`
 - `83cc6c1` `refactor: move descriptor extraction into chemtool`
 - `6800d39` `refactor: move descriptor parsers into gaussian backend`
+- `d69d612` `refactor: move gaussian gen preflight into backend`
 
 ## Completion Log
 
