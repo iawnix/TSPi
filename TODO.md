@@ -79,6 +79,9 @@ Do not edit the installed skill at
       existing CLI behavior still validates workspace and evidence gates.
 - [x] Move evidence-registry append logic into `core/workspace_state.py`, with
       the existing `add-evidence` CLI dispatch preserved.
+- [x] Move decision-card/node-template creation and plan-suggestion materialize
+      logic into `core/workspace_state.py`, keeping the existing workspace CLI
+      command names and arguments.
 - [ ] Update `SKILL.md` and `references/` after code boundaries exist; do not
       describe future architecture as current behavior before tests prove it.
 - [ ] Run compatibility validation after each checkpoint:
@@ -114,3 +117,7 @@ Do not edit the installed skill at
 - 2026-06-13: Moved the `add-evidence` registry writer into
   `core/workspace_state.py`; the workspace CLI still exposes the same
   subcommand and argument contract.
+- 2026-06-13: Moved `decision-card` node-template creation and
+  `plan-next --write-decision-cards` materialization into
+  `core/workspace_state.py`; `tool/hypothesis_workspace.py` now dispatches to
+  core for those writes.
