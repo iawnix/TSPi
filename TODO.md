@@ -183,6 +183,7 @@ Do not edit the installed skill at
 - `f960c95` `docs: align node exec references with refactor`
 - `90394a4` `refactor: move connectivity checker into gate`
 - `d21df8e` `docs: record connectivity migration checkpoint`
+- `83cc6c1` `refactor: move descriptor extraction into chemtool`
 
 ## Completion Log
 
