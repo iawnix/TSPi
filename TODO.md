@@ -62,7 +62,7 @@ Do not edit the installed skill at
 - [x] Split local mirror synchronization from remote Gaussian execution:
       sync should be an explicit service step with plan, run, verify, and
       explorer-registry update phases.
-- [ ] Keep explorer service hot-registration behavior but move registry/server
+- [x] Keep explorer service hot-registration behavior but move registry/server
       ownership to a web/API boundary that cannot import job execution modules.
 - [ ] Replace ad hoc logging imports with one package-level logging policy and
       one CLI diagnostics path.
@@ -84,3 +84,6 @@ Do not edit the installed skill at
 - 2026-06-13: Added `scripts/ts_remote_sync.py` with explicit `plan`, `run`,
   `verify`, and `register` stages for remote workspace mirror sync. Existing
   Gaussian remote runner remains unchanged.
+- 2026-06-13: Moved explorer server ownership to `web/server.py` and static
+  assets to `web/assets.py`; legacy `tool/` paths remain compatibility
+  re-exports, and boundary tests block web imports of job execution modules.

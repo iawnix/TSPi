@@ -1,12 +1,5 @@
-"""Static asset loading for the TS hypothesis explorer service."""
+"""Compatibility re-export for TS explorer static asset helpers."""
 
-from __future__ import annotations
+from transition_state_workflow.web.assets import read_explorer_index_html
 
-from pathlib import Path
-
-
-def read_explorer_index_html() -> str:
-    """Return the bundled explorer HTML document."""
-
-    asset_path = Path(__file__).resolve().parents[1] / "web" / "static" / "index.html"
-    return asset_path.read_text(encoding="utf-8")
+__all__ = ["read_explorer_index_html"]
