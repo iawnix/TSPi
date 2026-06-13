@@ -119,6 +119,16 @@ Do not edit the installed skill at
       `tool/ts_descriptor_extract.py`, and validate backend helper ownership,
       old helper imports, CLI output artifacts, script help, and full tests
       before pushing.
+- [x] Move Gaussian Gen/GenECP preflight parsing and repair into the Gaussian
+      backend:
+      plan before code changes is to move `route_indices`, `split_tail`,
+      `link0_end`, `warnings_for`, and `fix_lines` from
+      `tool/gaussian_gen_preflight.py` to `backends/gaussian.py`; keep
+      `tool/gaussian_gen_preflight.py` as the CLIBase argument/JSON wrapper
+      and compatibility import path; point the public script at the same CLI;
+      add import-boundary and parser behavior coverage; then validate
+      preflight CLI behavior, script help, full tests, and workspace smoke
+      before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
@@ -389,3 +399,14 @@ Do not edit the installed skill at
   help smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-backend-descriptor-smoke.AzxVay/tssearch_smoke` with validator
   summary `0 errors, 0 warnings`.
+- 2026-06-14: Moved Gaussian Gen/GenECP preflight parsing and repair helpers
+  from `tool/gaussian_gen_preflight.py` to `backends/gaussian.py`. The old
+  `tool/` module now keeps CLIBase argument/JSON behavior and compatibility
+  helper imports while backend owns Gaussian input-format logic.
+- 2026-06-14: Gaussian Gen/GenECP backend preflight validation passed:
+  `git diff --check`; `py_compile` for backend and CLI modules; targeted
+  import/preflight/architecture/parser/reference tests `49 passed, 1 skipped`;
+  full pytest `217 passed, 2 skipped`; script help smoke `18 scripts`; strict
+  workspace validator and normalizer smoke on
+  `/tmp/tswf-gen-preflight-smoke.BGkUdk/tssearch_smoke` with validator summary
+  `0 errors, 0 warnings`.

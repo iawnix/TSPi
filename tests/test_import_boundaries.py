@@ -165,3 +165,14 @@ def test_descriptor_extractor_lives_in_tools_with_tool_compatibility() -> None:
     assert ts_descriptor_extract.parse_imaginary_vectors is gaussian.parse_imaginary_vectors
     compat_source = PACKAGE / "tool" / "ts_descriptor_extract.py"
     assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 6
+
+
+def test_gaussian_gen_preflight_helpers_live_in_backend_with_tool_compatibility() -> None:
+    from transition_state_workflow.backends import gaussian
+    from transition_state_workflow.tool import gaussian_gen_preflight
+
+    assert gaussian_gen_preflight.route_indices is gaussian.route_indices
+    assert gaussian_gen_preflight.split_tail is gaussian.split_tail
+    assert gaussian_gen_preflight.link0_end is gaussian.link0_end
+    assert gaussian_gen_preflight.warnings_for is gaussian.warnings_for
+    assert gaussian_gen_preflight.fix_lines is gaussian.fix_lines

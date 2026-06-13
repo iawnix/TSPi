@@ -294,7 +294,8 @@ Python tooling follows a package layout:
   owns external-Gaussian NEB SCF-energy and force-block parsers used by the ASE
   calculator adapter, plus the Gaussian descriptor text parsers for frequency
   metadata, imaginary-mode vectors, charge tables, frontier orbitals, and
-  dipole moments used by `TSDescriptorExtractionTool`.
+  dipole moments used by `TSDescriptorExtractionTool`; it also owns Gen/GenECP
+  preflight parsing and repair helpers used by `gaussian_gen_preflight.py`.
 - `src/transition_state_workflow/remote/`: remote execution and synchronization
   boundary. `exec.py` owns the argv-only OpenSSH executor, `openssh.py` adapts
   it to `RemoteTransport`, `sftp.py` provides optional Paramiko SSH/SFTP,
