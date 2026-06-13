@@ -21,11 +21,11 @@ from transition_state_workflow.backends.gaussian import (
     parse_gaussian_energy_hartree,
     parse_gaussian_forces_hartree_per_bohr,
 )
-from transition_state_workflow.tool.ase_neb.constants import (
+from transition_state_workflow.tools.ase_neb.constants import (
     HARTREE_PER_BOHR_TO_EV_PER_ANG,
     HARTREE_TO_EV,
 )
-from transition_state_workflow.tool.ase_neb.errors import ConfigError
+from transition_state_workflow.tools.ase_neb.errors import ConfigError
 
 
 def require_ase() -> None:

@@ -12,7 +12,7 @@ import math
 from pathlib import Path
 from typing import Any
 
-from transition_state_workflow.tool.ase_neb.errors import ConfigError
+from transition_state_workflow.tools.ase_neb.errors import ConfigError
 from transition_state_workflow.tool.ase_neb.gaussian_calc import (
     create_calculator,
     import_ase_bits,

@@ -26,8 +26,8 @@ from transition_state_workflow.tool.ase_neb.config import (
     safe_slug,
     utc_timestamp,
 )
-from transition_state_workflow.tool.ase_neb.constants import VALID_NODE_STATUSES
-from transition_state_workflow.tool.ase_neb.errors import ConfigError
+from transition_state_workflow.tools.ase_neb.constants import VALID_NODE_STATUSES
+from transition_state_workflow.tools.ase_neb.errors import ConfigError
 
 
 def write_json(path: Path, data: Any) -> None:

@@ -16,8 +16,8 @@ from transition_state_workflow.chem.geometry import (
     parse_angle_spec as parse_geometry_angle_spec,
     parse_bond_spec as parse_geometry_bond_spec,
 )
-from transition_state_workflow.tool.ase_neb.constants import COVALENT_RADII
-from transition_state_workflow.tool.ase_neb.errors import ConfigError
+from transition_state_workflow.tools.ase_neb.constants import COVALENT_RADII
+from transition_state_workflow.tools.ase_neb.errors import ConfigError
 
 
 def read_xyz(path: Path) -> tuple[list[Atom], str]:

@@ -18,7 +18,7 @@ from transition_state_workflow.tool.ase_neb.config import (
     ProjectContext,
     level_slug_from_gaussian_config,
 )
-from transition_state_workflow.tool.ase_neb.errors import ConfigError
+from transition_state_workflow.tools.ase_neb.errors import ConfigError
 from transition_state_workflow.tool.ase_neb.geometry import (
     angle_label,
     atom_indices_from_bonds_angles,

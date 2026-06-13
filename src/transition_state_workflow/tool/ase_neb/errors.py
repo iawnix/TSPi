@@ -1,7 +1,3 @@
-"""Shared error type for the NEB toolkit."""
+"""Compatibility wrapper for ASE NEB errors."""
 
-from __future__ import annotations
-
-
-class ConfigError(ValueError):
-    """Raised when a NEB config is invalid."""
+from transition_state_workflow.tools.ase_neb.errors import *  # noqa: F401,F403

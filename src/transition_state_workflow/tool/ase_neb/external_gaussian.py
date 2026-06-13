@@ -21,7 +21,7 @@ from transition_state_workflow.tool.ase_neb.driver import (
     make_neb_object,
     write_path_summary,
 )
-from transition_state_workflow.tool.ase_neb.errors import ConfigError
+from transition_state_workflow.tools.ase_neb.errors import ConfigError
 from transition_state_workflow.tool.ase_neb.gaussian_calc import (
     ExternalGaussianForceCalculator,
     extract_gaussian_tail_from_template,

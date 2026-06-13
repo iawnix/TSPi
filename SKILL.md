@@ -286,7 +286,9 @@ Python tooling follows a package layout:
 - `src/transition_state_workflow/tools/`: ChemTool protocol, capability
   vocabulary, registry, node-scoped local command execution via
   `NodeExecutionTool`, and Gaussian TS descriptor extraction via
-  `TSDescriptorExtractionTool`.
+  `TSDescriptorExtractionTool`. `tools/ase_neb/` owns the ASE NEB leaf support
+  helpers shared by the candidate-generation implementation: constants,
+  `ConfigError`, and config-value coercers.
 - `src/transition_state_workflow/backends/`: Gaussian, xTB, ASE, and QBICS
   adapter boundaries for program-specific input/output metadata. The Gaussian
   backend owns TS/Freq input rendering/preparation, TS/Freq log parsing, and
@@ -322,13 +324,14 @@ Python tooling follows a package layout:
   compatibility entrypoint over `tools/descriptors.py`;
   `rmsd_connectivity_check.py` is a compatibility entrypoint over
   `gate/connectivity.py`.
-  The NEB toolkit lives in the `tool/ase_neb/` subpackage, split by concern into
-  layered modules
-  (`constants`/`errors`/`coerce` leaves; `geometry`/`gaussian_calc`;
-  `config`/`mechanism`/`images`; `workspace`; `node_writers`/`driver`/
-  `validation`/`external_gaussian`). `tool/ase_neb_framework.py` is the thin CLI
-  on top. The dependency direction is strictly downward and covered by import
-  boundary tests.
+  The remaining ASE NEB candidate-generation implementation lives in the
+  `tool/ase_neb/` subpackage for now, split by concern into
+  layered modules (`geometry`/`gaussian_calc`; `config`/`mechanism`/`images`;
+  `workspace`; `node_writers`/`driver`/`validation`/`external_gaussian`), with
+  `constants`/`errors`/`coerce` kept there only as compatibility re-exports
+  over `tools/ase_neb/`. `tool/ase_neb_framework.py` is the thin CLI on top.
+  The dependency direction is strictly downward and covered by import boundary
+  tests.
 - `src/transition_state_workflow/web/static/`: static explorer UI assets
   loaded by the optional web service. State labels/colors come only from
   `config/state_contract.py`, shipped through the normalizer; the UI keeps no

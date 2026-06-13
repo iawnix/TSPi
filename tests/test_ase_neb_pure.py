@@ -26,7 +26,7 @@ from transition_state_workflow.chem.geometry import (  # noqa: E402
     parse_bond_spec as parse_chem_bond_spec,
     vector_norm,
 )
-from transition_state_workflow.tool.ase_neb.coerce import (  # noqa: E402
+from transition_state_workflow.tools.ase_neb.coerce import (  # noqa: E402
     as_mapping,
     as_positive_int,
 )
@@ -38,7 +38,7 @@ from transition_state_workflow.tool.ase_neb.config import (  # noqa: E402
     normalize_config,
     safe_slug,
 )
-from transition_state_workflow.tool.ase_neb.errors import ConfigError  # noqa: E402
+from transition_state_workflow.tools.ase_neb.errors import ConfigError  # noqa: E402
 from transition_state_workflow.tool.ase_neb.driver import (  # noqa: E402
     evaluate_neb_candidate_quality,
     force_max,

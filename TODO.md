@@ -129,6 +129,15 @@ Do not edit the installed skill at
       add import-boundary and parser behavior coverage; then validate
       preflight CLI behavior, script help, full tests, and workspace smoke
       before pushing.
+- [x] Start ASE NEB migration by moving leaf support modules into the ChemTool
+      layer:
+      plan before code changes is to create `tools/ase_neb/`, move
+      `constants`, `errors`, and `coerce` from `tool/ase_neb/` into that
+      package, keep old `tool/ase_neb/{constants,errors,coerce}.py` as
+      compatibility re-exports, update the remaining ASE NEB modules to import
+      these leaf helpers from `tools/ase_neb`, and validate old/new import
+      identity plus existing ASE NEB CLI and pure-function behavior before
+      pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
@@ -410,4 +419,17 @@ Do not edit the installed skill at
   full pytest `217 passed, 2 skipped`; script help smoke `18 scripts`; strict
   workspace validator and normalizer smoke on
   `/tmp/tswf-gen-preflight-smoke.BGkUdk/tssearch_smoke` with validator summary
+  `0 errors, 0 warnings`.
+- 2026-06-14: Started ASE NEB migration by moving leaf support modules
+  `constants`, `errors`, and `coerce` into `tools/ase_neb/`. The old
+  `tool/ase_neb/` leaf files now compatibility re-export the new ChemTool-layer
+  definitions, and remaining ASE NEB modules import these helpers from
+  `tools/ase_neb`.
+- 2026-06-14: ASE NEB leaf-module migration validation passed:
+  `git diff --check`; `py_compile` for `tools/ase_neb`, `tool/ase_neb`, and
+  `tool/ase_neb_framework.py`; targeted ASE NEB/import/architecture tests
+  `74 passed, 1 skipped`; reference/import retest `15 passed`; full pytest
+  `218 passed, 2 skipped`; script help smoke `18 scripts`; strict workspace
+  validator and normalizer smoke on
+  `/tmp/tswf-ase-leaf-smoke.q5rqmC/tssearch_smoke` with validator summary
   `0 errors, 0 warnings`.

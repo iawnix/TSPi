@@ -176,3 +176,18 @@ def test_gaussian_gen_preflight_helpers_live_in_backend_with_tool_compatibility(
     assert gaussian_gen_preflight.link0_end is gaussian.link0_end
     assert gaussian_gen_preflight.warnings_for is gaussian.warnings_for
     assert gaussian_gen_preflight.fix_lines is gaussian.fix_lines
+
+
+def test_ase_neb_leaf_helpers_live_in_tools_with_tool_compatibility() -> None:
+    from transition_state_workflow.tool.ase_neb import coerce as old_coerce
+    from transition_state_workflow.tool.ase_neb import constants as old_constants
+    from transition_state_workflow.tool.ase_neb import errors as old_errors
+    from transition_state_workflow.tools.ase_neb import coerce, constants, errors
+
+    assert old_errors.ConfigError is errors.ConfigError
+    assert old_coerce.as_mapping is coerce.as_mapping
+    assert old_coerce.as_positive_int is coerce.as_positive_int
+    assert old_constants.CONFIG_VERSION is constants.CONFIG_VERSION
+    for name in ("constants.py", "errors.py", "coerce.py"):
+        compat_source = PACKAGE / "tool" / "ase_neb" / name
+        assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4

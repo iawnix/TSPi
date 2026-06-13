@@ -20,14 +20,14 @@ from transition_state_workflow.tool.ase_neb.config import (
     resolve_config_paths,
     validate_config,
 )
-from transition_state_workflow.tool.ase_neb.constants import OPTIMIZER_NAMES
+from transition_state_workflow.tools.ase_neb.constants import OPTIMIZER_NAMES
 from transition_state_workflow.tool.ase_neb.driver import (
     attach_calculators,
     evaluate_neb_candidate_quality,
     make_neb_object,
     write_path_summary,
 )
-from transition_state_workflow.tool.ase_neb.errors import ConfigError
+from transition_state_workflow.tools.ase_neb.errors import ConfigError
 from transition_state_workflow.tool.ase_neb.external_gaussian import (
     ExternalGaussianRun,
     continue_gaussian_neb_from_images,

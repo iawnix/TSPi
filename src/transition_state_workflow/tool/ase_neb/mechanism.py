@@ -10,8 +10,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from transition_state_workflow.tool.ase_neb.coerce import as_mapping
-from transition_state_workflow.tool.ase_neb.constants import METALS
+from transition_state_workflow.tools.ase_neb.coerce import as_mapping
+from transition_state_workflow.tools.ase_neb.constants import METALS
 from transition_state_workflow.tool.ase_neb.geometry import (
     Atom,
     angle_label,
