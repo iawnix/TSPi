@@ -7,10 +7,128 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from transition_state_workflow.base.pathway_model import validate_pathway_step_reference
-from transition_state_workflow.config.state_contract import WORKSPACE_NODE_SCHEMA
+from transition_state_workflow.base.pathway_model import initialize_pathway_model_if_missing, validate_pathway_step_reference
+from transition_state_workflow.config.state_contract import (
+    EVIDENCE_REGISTRY_SCHEMA,
+    TREE_SCHEMA,
+    WORKSPACE_NODE_SCHEMA,
+)
 from transition_state_workflow.util.json_io import read_json_object_required, write_json_object
 from transition_state_workflow.util.path_utils import portable_record_path, relative_path_or_absolute, safe_identifier_token
+
+
+def initialize_ts_hypothesis_workspace_files_from_cli_args(args: argparse.Namespace) -> Path:
+    """Create the root v2 files for a chemistry-hypothesis TS workspace."""
+
+    return initialize_ts_hypothesis_workspace_files(
+        root=args.root,
+        system=args.system,
+        charge=args.charge,
+        multiplicity=args.multiplicity,
+        reaction_class=args.reaction_class,
+        key_atoms=tuple(args.key_atoms or ()),
+        bond_changes=tuple(args.bond_change or ()),
+        force=bool(args.force),
+    )
+
+
+def initialize_ts_hypothesis_workspace_files(
+    *,
+    root: Path,
+    system: str,
+    charge: int,
+    multiplicity: int,
+    reaction_class: str,
+    key_atoms: tuple[str, ...],
+    bond_changes: tuple[str, ...],
+    force: bool,
+) -> Path:
+    """Create core TS-search workspace files and return the resolved root."""
+
+    source = root.resolve()
+    source.mkdir(parents=True, exist_ok=True)
+    (source / "nodes").mkdir(exist_ok=True)
+    (source / "reports").mkdir(exist_ok=True)
+    now = utc_timestamp()
+
+    manifest = {
+        "system": system,
+        "created_at": now,
+        "charge": charge,
+        "multiplicity": multiplicity,
+        "root": str(source),
+        "node_schema": WORKSPACE_NODE_SCHEMA,
+        "current_accepted_ts": None,
+    }
+    tree = {
+        "schema": TREE_SCHEMA,
+        "nodes": {},
+        "active_frontier": [],
+        "closed_nodes": [],
+        "accepted_nodes": [],
+        "events": [],
+        "backtrack_events": [],
+    }
+    mechanism = {
+        "schema": "tssearch-mechanism-model-v1",
+        "system": system,
+        "charge": charge,
+        "multiplicity": multiplicity,
+        "reaction_class": reaction_class,
+        "reaction_class_confidence": "low" if reaction_class == "unknown" else "provisional",
+        "key_atoms": list(key_atoms),
+        "expected_bond_changes": [parse_expected_bond_change_spec(item) for item in bond_changes],
+        "expected_angle_changes": [],
+        "electronic_hypotheses": [],
+        "analysis_plan": default_mechanism_analysis_plan(),
+        "mechanism_analysis": default_mechanism_analysis(),
+        "validated_facts": [],
+        "refuted_hypotheses": [],
+        "open_questions": [
+            "Are reactant and product references true minima at the chosen charge, multiplicity, and level?",
+            "Which reaction-center coordinate should define the first candidate-generation branch?",
+        ],
+        "tool_implications": [],
+        "updated_at": now,
+    }
+    evidence_registry = {
+        "schema": EVIDENCE_REGISTRY_SCHEMA,
+        "system": system,
+        "records": [],
+        "updated_at": now,
+    }
+    knowledge_base = f"""# TS Search Knowledge Base: {system}
+
+## Current Mechanism Model
+
+- Charge: {charge}
+- Multiplicity: {multiplicity}
+- Reaction class hypothesis: {reaction_class}
+
+## Validated Facts
+
+- None yet.
+
+## Refuted Hypotheses
+
+- None yet.
+
+## Open Questions
+
+- Are reactant and product references true minima at the chosen charge, multiplicity, and level?
+- Which reaction-center coordinate should define the first candidate-generation branch?
+
+## Next Chemical Decision
+
+- Complete mechanism preflight and endpoint optimization before promoting any TS candidate.
+"""
+    write_json_object(source / "manifest.json", manifest, overwrite_existing=force)
+    write_json_object(source / "tree.json", tree, overwrite_existing=force)
+    write_json_object(source / "mechanism_model.json", mechanism, overwrite_existing=force)
+    write_json_object(source / "evidence_registry.json", evidence_registry, overwrite_existing=force)
+    initialize_pathway_model_if_missing(source, system=system, timestamp=now, mode="unknown")
+    write_text_file_if_allowed(source / "knowledge_base.md", knowledge_base, overwrite_existing=force)
+    return source
 
 
 def append_ts_workspace_evidence_record_from_cli_args(args: argparse.Namespace) -> None:
@@ -404,6 +522,43 @@ def ensure_workspace_root_has_manifest_and_tree(root: Path) -> None:
     missing = [name for name in ("manifest.json", "tree.json") if not (root / name).exists()]
     if missing:
         raise SystemExit(f"not a TS-search workspace, missing: {', '.join(missing)}")
+
+
+def parse_expected_bond_change_spec(raw: str) -> dict[str, str]:
+    """Parse a role:atomA-atomB bond-change specification."""
+
+    if ":" not in raw:
+        raise SystemExit(f"bond change must be role:atomA-atomB, got {raw!r}")
+    role, bond = raw.split(":", 1)
+    role = role.strip()
+    bond = bond.strip()
+    if not role or not bond:
+        raise SystemExit(f"bond change must be role:atomA-atomB, got {raw!r}")
+    return {"bond": bond, "role": role}
+
+
+def default_mechanism_analysis() -> dict[str, list[dict[str, object]]]:
+    """Return empty structured mechanism-analysis buckets."""
+
+    return {
+        "reaction_type": [],
+        "reaction_center": [],
+        "electronic": [],
+        "orbital": [],
+        "energy": [],
+    }
+
+
+def default_mechanism_analysis_plan() -> dict[str, list[dict[str, object]]]:
+    """Return empty hypothesis-stage analysis-plan buckets."""
+
+    return {
+        "reaction_type": [],
+        "reaction_center": [],
+        "electronic": [],
+        "orbital": [],
+        "energy": [],
+    }
 
 
 def utc_timestamp() -> str:

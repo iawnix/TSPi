@@ -17,6 +17,8 @@ from transition_state_workflow.core.start_node import NodeStartRequest, start_ts
 from transition_state_workflow.core.workspace_state import (
     append_ts_workspace_evidence_record,
     create_ts_branch_decision_artifacts_from_cli_args,
+    initialize_ts_hypothesis_workspace_files,
+    initialize_ts_hypothesis_workspace_files_from_cli_args,
     write_suggested_decision_cards_from_plan,
 )
 
@@ -31,6 +33,8 @@ __all__ = [
     "append_ts_workspace_evidence_record",
     "build_plan_next_packet",
     "create_ts_branch_decision_artifacts_from_cli_args",
+    "initialize_ts_hypothesis_workspace_files",
+    "initialize_ts_hypothesis_workspace_files_from_cli_args",
     "record_backtrack",
     "start_ts_workspace_node",
     "update_backtrack_state",

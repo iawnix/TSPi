@@ -4,14 +4,10 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 from pathlib import Path
 
 from transition_state_workflow.config.state_contract import (
-    EVIDENCE_REGISTRY_SCHEMA,
-    TREE_SCHEMA,
     VALID_EVIDENCE_STATES,
-    WORKSPACE_NODE_SCHEMA,
 )
 from transition_state_workflow.tool.explorer_registry import register_workspace
 from transition_state_workflow.gate.finalize import (
@@ -19,7 +15,6 @@ from transition_state_workflow.gate.finalize import (
     register_finalize_node_parser,
 )
 from transition_state_workflow.base.pathway_model import (
-    initialize_pathway_model_if_missing,
     pathway_bind_step_from_cli_args,
     pathway_init_from_cli_args,
     register_pathway_parsers,
@@ -38,9 +33,10 @@ from transition_state_workflow.core.start_node import (
 from transition_state_workflow.core.workspace_state import (
     append_ts_workspace_evidence_record_from_cli_args,
     create_ts_branch_decision_artifacts_from_cli_args,
+    initialize_ts_hypothesis_workspace_files_from_cli_args,
     write_suggested_decision_cards_from_plan,
+    write_text_file_if_allowed,
 )
-from transition_state_workflow.util.json_io import read_json_object_required, write_json_object
 from transition_state_workflow.util.cli import configure_cli_logging, emit_json
 
 
@@ -171,89 +167,7 @@ def main() -> int:
 def initialize_ts_hypothesis_workspace_from_cli_args(args: argparse.Namespace) -> None:
     """Create the root v2 files for a chemistry-hypothesis TS workspace."""
 
-    root = args.root.resolve()
-    root.mkdir(parents=True, exist_ok=True)
-    (root / "nodes").mkdir(exist_ok=True)
-    (root / "reports").mkdir(exist_ok=True)
-    now = utc_timestamp()
-
-    manifest = {
-        "system": args.system,
-        "created_at": now,
-        "charge": args.charge,
-        "multiplicity": args.multiplicity,
-        "root": str(root),
-        "node_schema": WORKSPACE_NODE_SCHEMA,
-        "current_accepted_ts": None,
-    }
-    tree = {
-        "schema": TREE_SCHEMA,
-        "nodes": {},
-        "active_frontier": [],
-        "closed_nodes": [],
-        "accepted_nodes": [],
-        "events": [],
-        "backtrack_events": [],
-    }
-    mechanism = {
-        "schema": "tssearch-mechanism-model-v1",
-        "system": args.system,
-        "charge": args.charge,
-        "multiplicity": args.multiplicity,
-        "reaction_class": args.reaction_class,
-        "reaction_class_confidence": "low" if args.reaction_class == "unknown" else "provisional",
-        "key_atoms": list(args.key_atoms),
-        "expected_bond_changes": [parse_expected_bond_change_spec(item) for item in args.bond_change],
-        "expected_angle_changes": [],
-        "electronic_hypotheses": [],
-        "analysis_plan": default_mechanism_analysis_plan(),
-        "mechanism_analysis": default_mechanism_analysis(),
-        "validated_facts": [],
-        "refuted_hypotheses": [],
-        "open_questions": [
-            "Are reactant and product references true minima at the chosen charge, multiplicity, and level?",
-            "Which reaction-center coordinate should define the first candidate-generation branch?",
-        ],
-        "tool_implications": [],
-        "updated_at": now,
-    }
-    evidence_registry = {
-        "schema": EVIDENCE_REGISTRY_SCHEMA,
-        "system": args.system,
-        "records": [],
-        "updated_at": now,
-    }
-    knowledge_base = f"""# TS Search Knowledge Base: {args.system}
-
-## Current Mechanism Model
-
-- Charge: {args.charge}
-- Multiplicity: {args.multiplicity}
-- Reaction class hypothesis: {args.reaction_class}
-
-## Validated Facts
-
-- None yet.
-
-## Refuted Hypotheses
-
-- None yet.
-
-## Open Questions
-
-- Are reactant and product references true minima at the chosen charge, multiplicity, and level?
-- Which reaction-center coordinate should define the first candidate-generation branch?
-
-## Next Chemical Decision
-
-- Complete mechanism preflight and endpoint optimization before promoting any TS candidate.
-"""
-    write_json_object(root / "manifest.json", manifest, overwrite_existing=args.force)
-    write_json_object(root / "tree.json", tree, overwrite_existing=args.force)
-    write_json_object(root / "mechanism_model.json", mechanism, overwrite_existing=args.force)
-    write_json_object(root / "evidence_registry.json", evidence_registry, overwrite_existing=args.force)
-    initialize_pathway_model_if_missing(root, system=args.system, timestamp=now, mode="unknown")
-    write_text_file_if_allowed(root / "knowledge_base.md", knowledge_base, overwrite_existing=args.force)
+    root = initialize_ts_hypothesis_workspace_files_from_cli_args(args)
 
     registry_note = "explorer registration skipped (--no-explorer-register)"
     workspace_id = ""
@@ -294,66 +208,6 @@ python {skill_scripts / "ts_validate_workspace.py"} --source {root} --pretty
 ```
 """
     write_text_file_if_allowed(root / "reports" / "explorer_launch_checklist.md", explorer_checklist, overwrite_existing=args.force)
-
-
-def ensure_workspace_root_has_manifest_and_tree(root: Path) -> None:
-    """Abort when root is missing the files required for a TS workspace."""
-
-    missing = [name for name in ("manifest.json", "tree.json") if not (root / name).exists()]
-    if missing:
-        raise SystemExit(f"not a TS-search workspace, missing: {', '.join(missing)}")
-
-
-def parse_expected_bond_change_spec(raw: str) -> dict[str, str]:
-    """Parse a role:atomA-atomB bond-change specification."""
-
-    if ":" not in raw:
-        raise SystemExit(f"bond change must be role:atomA-atomB, got {raw!r}")
-    role, bond = raw.split(":", 1)
-    role = role.strip()
-    bond = bond.strip()
-    if not role or not bond:
-        raise SystemExit(f"bond change must be role:atomA-atomB, got {raw!r}")
-    return {"bond": bond, "role": role}
-
-
-def default_mechanism_analysis() -> dict[str, list[dict[str, object]]]:
-    """Return empty structured mechanism-analysis buckets."""
-
-    return {
-        "reaction_type": [],
-        "reaction_center": [],
-        "electronic": [],
-        "orbital": [],
-        "energy": [],
-    }
-
-
-def default_mechanism_analysis_plan() -> dict[str, list[dict[str, object]]]:
-    """Return empty hypothesis-stage analysis-plan buckets."""
-
-    return {
-        "reaction_type": [],
-        "reaction_center": [],
-        "electronic": [],
-        "orbital": [],
-        "energy": [],
-    }
-
-
-def write_text_file_if_allowed(file_path: Path, text: str, *, overwrite_existing: bool) -> bool:
-    """Write text when overwrite rules allow it."""
-
-    if file_path.exists() and not overwrite_existing:
-        return False
-    file_path.write_text(text.rstrip() + "\n", encoding="utf-8")
-    return True
-
-
-def utc_timestamp() -> str:
-    """Return an ISO-8601 UTC timestamp for workspace records."""
-
-    return datetime.now(timezone.utc).isoformat()
 
 
 if __name__ == "__main__":

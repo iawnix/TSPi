@@ -82,6 +82,9 @@ Do not edit the installed skill at
 - [x] Move decision-card/node-template creation and plan-suggestion materialize
       logic into `core/workspace_state.py`, keeping the existing workspace CLI
       command names and arguments.
+- [x] Move core `init` workspace file creation into `core/workspace_state.py`;
+      keep explorer registration and explorer checklist generation in the CLI/
+      web boundary.
 - [ ] Update `SKILL.md` and `references/` after code boundaries exist; do not
       describe future architecture as current behavior before tests prove it.
 - [ ] Run compatibility validation after each checkpoint:
@@ -121,3 +124,6 @@ Do not edit the installed skill at
   `plan-next --write-decision-cards` materialization into
   `core/workspace_state.py`; `tool/hypothesis_workspace.py` now dispatches to
   core for those writes.
+- 2026-06-13: Moved core `init` workspace file creation into
+  `core/workspace_state.py`; `tool/hypothesis_workspace.py` now handles only
+  CLI dispatch plus explorer registration/checklist for init.
