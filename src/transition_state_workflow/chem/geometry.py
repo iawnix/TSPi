@@ -68,10 +68,61 @@ def vector_norm(vector: tuple[float, float, float]) -> float:
     return math.sqrt(vector[0] ** 2 + vector[1] ** 2 + vector[2] ** 2)
 
 
+def vector(a: Atom, b: Atom) -> tuple[float, float, float]:
+    """Return the vector from atom ``a`` to atom ``b``."""
+
+    return (b.x - a.x, b.y - a.y, b.z - a.z)
+
+
+def dot(u: tuple[float, float, float], v: tuple[float, float, float]) -> float:
+    """Return the dot product of two 3D vectors."""
+
+    return u[0] * v[0] + u[1] * v[1] + u[2] * v[2]
+
+
+def cross(u: tuple[float, float, float], v: tuple[float, float, float]) -> tuple[float, float, float]:
+    """Return the cross product of two 3D vectors."""
+
+    return (
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    )
+
+
 def distance(a: Atom, b: Atom) -> float:
     """Return interatomic distance in Angstrom."""
 
     return math.sqrt((a.x - b.x) ** 2 + (a.y - b.y) ** 2 + (a.z - b.z) ** 2)
+
+
+def angle_degrees(a: Atom, b: Atom, c: Atom) -> float:
+    """Return the angle a-b-c in degrees."""
+
+    ba = vector(b, a)
+    bc = vector(b, c)
+    denom = vector_norm(ba) * vector_norm(bc)
+    if denom == 0:
+        return float("nan")
+    value = max(-1.0, min(1.0, dot(ba, bc) / denom))
+    return math.degrees(math.acos(value))
+
+
+def dihedral_degrees(a: Atom, b: Atom, c: Atom, d: Atom) -> float:
+    """Return the dihedral angle a-b-c-d in degrees."""
+
+    b0 = vector(b, a)
+    b1 = vector(b, c)
+    b2 = vector(c, d)
+    b1_norm = vector_norm(b1)
+    if b1_norm == 0:
+        return float("nan")
+    b1u = (b1[0] / b1_norm, b1[1] / b1_norm, b1[2] / b1_norm)
+    v = tuple(b0[i] - dot(b0, b1u) * b1u[i] for i in range(3))
+    w = tuple(b2[i] - dot(b2, b1u) * b1u[i] for i in range(3))
+    x = dot(v, w)
+    y = dot(cross(b1u, v), w)
+    return math.degrees(math.atan2(y, x))
 
 
 def parse_bond_spec(spec: str) -> tuple[int, int]:

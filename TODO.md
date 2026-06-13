@@ -66,6 +66,8 @@ Do not edit the installed skill at
       backend and connectivity tools instead of keeping duplicate parsers.
 - [x] Reuse `chem/gaussian_log.py` standard frequency-line parsing from
       descriptor extraction so `freq=hpmodes` handling is centralized.
+- [x] Move reusable vector, angle, and dihedral geometry calculations into
+      `chem/geometry.py`; keep descriptor extraction as composition/output code.
 - [x] Introduce `remote/` contracts with `RemoteTransport`,
       `RemoteWorkspace`, and sync-plan abstractions.
 - [x] Add concrete `OpenSSHTransport`.
@@ -229,3 +231,11 @@ Do not edit the installed skill at
   `18 passed, 2 skipped`; full pytest `203 passed, 2 skipped`; script help
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-descriptor-smoke.ulYEPL/tssearch_smoke`.
+- 2026-06-13: Moved descriptor vector, angle, and dihedral math into
+  `chem/geometry.py`; `tool/ts_descriptor_extract.py` now reuses those helpers
+  for bond-length, angle, dihedral, and mode-projection descriptors.
+- 2026-06-13: Geometry math checkpoint validation passed:
+  `git diff --check`; targeted geometry/descriptor/import/no-undefined tests
+  `66 passed, 2 skipped`; full pytest `204 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-geom-math-smoke.xenPe2/tssearch_smoke`.

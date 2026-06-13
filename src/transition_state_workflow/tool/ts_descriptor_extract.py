@@ -6,61 +6,25 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import math
 import re
 from collections import Counter
 from pathlib import Path
 
 from transition_state_workflow.chem.gaussian_log import standard_frequency_values, terminated_normally
-from transition_state_workflow.chem.geometry import Atom, COVALENT_RADII, distance, read_xyz
+from transition_state_workflow.chem.geometry import (
+    Atom,
+    COVALENT_RADII,
+    angle_degrees as angle,
+    dihedral_degrees as dihedral,
+    distance,
+    dot,
+    read_xyz,
+    vector,
+    vector_norm as norm,
+)
 from transition_state_workflow.util.cli import CliError, emit_json, run_cli
 
 HARTREE_TO_EV = 27.211386245988
-
-
-def vector(a: Atom, b: Atom) -> tuple[float, float, float]:
-    return (b.x - a.x, b.y - a.y, b.z - a.z)
-
-
-def dot(u: tuple[float, float, float], v: tuple[float, float, float]) -> float:
-    return u[0] * v[0] + u[1] * v[1] + u[2] * v[2]
-
-
-def cross(u: tuple[float, float, float], v: tuple[float, float, float]) -> tuple[float, float, float]:
-    return (
-        u[1] * v[2] - u[2] * v[1],
-        u[2] * v[0] - u[0] * v[2],
-        u[0] * v[1] - u[1] * v[0],
-    )
-
-
-def norm(u: tuple[float, float, float]) -> float:
-    return math.sqrt(dot(u, u))
-
-
-def angle(a: Atom, b: Atom, c: Atom) -> float:
-    ba = vector(b, a)
-    bc = vector(b, c)
-    denom = norm(ba) * norm(bc)
-    if denom == 0:
-        return float("nan")
-    value = max(-1.0, min(1.0, dot(ba, bc) / denom))
-    return math.degrees(math.acos(value))
-
-
-def dihedral(a: Atom, b: Atom, c: Atom, d: Atom) -> float:
-    b0 = vector(b, a)
-    b1 = vector(b, c)
-    b2 = vector(c, d)
-    b1_norm = norm(b1)
-    if b1_norm == 0:
-        return float("nan")
-    b1u = (b1[0] / b1_norm, b1[1] / b1_norm, b1[2] / b1_norm)
-    v = tuple(b0[i] - dot(b0, b1u) * b1u[i] for i in range(3))
-    w = tuple(b2[i] - dot(b2, b1u) * b1u[i] for i in range(3))
-    x = dot(v, w)
-    y = dot(cross(b1u, v), w)
-    return math.degrees(math.atan2(y, x))
 
 
 def parse_last_scf_energy(lines: list[str]) -> float | None:

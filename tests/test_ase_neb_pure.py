@@ -20,8 +20,11 @@ SKILL_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SKILL_ROOT / "src"))
 
 from transition_state_workflow.chem.geometry import (  # noqa: E402
+    angle_degrees,
+    dihedral_degrees,
     parse_angle_spec as parse_chem_angle_spec,
     parse_bond_spec as parse_chem_bond_spec,
+    vector_norm,
 )
 from transition_state_workflow.tool.ase_neb.coerce import (  # noqa: E402
     as_mapping,
@@ -83,6 +86,17 @@ def test_distance_and_covalent_cutoff_are_symmetric() -> None:
     b = Atom("H", 1.09, 0.0, 0.0)
     assert distance(a, b) == pytest.approx(1.09)
     assert covalent_cutoff(a, b) == pytest.approx(covalent_cutoff(b, a))
+
+
+def test_core_geometry_reports_angles_dihedrals_and_vector_norms() -> None:
+    a = Atom("C", 1.0, 0.0, 0.0)
+    b = Atom("C", 0.0, 0.0, 0.0)
+    c = Atom("C", 0.0, 1.0, 0.0)
+    d = Atom("C", 0.0, 1.0, 1.0)
+
+    assert vector_norm((0.0, 3.0, 4.0)) == pytest.approx(5.0)
+    assert angle_degrees(a, b, c) == pytest.approx(90.0)
+    assert dihedral_degrees(a, b, c, d) == pytest.approx(-90.0)
 
 
 def test_bonded_pairs_finds_one_c_h_bond_at_typical_distance() -> None:
