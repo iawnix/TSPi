@@ -32,6 +32,8 @@ FORBIDDEN_WEB_TOOL_MODULES = {
     "transition_state_workflow.tool.ts_descriptor_extract",
     "transition_state_workflow.tool.validate_workspace",
     "transition_state_workflow.tool.finalize_node",
+    "transition_state_workflow.tool.record_backtrack",
+    "transition_state_workflow.tool.start_node",
 }
 
 

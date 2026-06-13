@@ -71,6 +71,9 @@ Do not edit the installed skill at
       compatibility re-exports.
 - [x] Move node finalization logic into `gate/finalize.py`, with legacy
       `tool/finalize_node.py` kept as a compatibility re-export.
+- [x] Move state-writing backtrack and start-node logic into `core/`, with
+      legacy `tool/record_backtrack.py` and `tool/start_node.py` kept as
+      compatibility re-exports.
 - [ ] Update `SKILL.md` and `references/` after code boundaries exist; do not
       describe future architecture as current behavior before tests prove it.
 - [ ] Run compatibility validation after each checkpoint:
@@ -97,3 +100,6 @@ Do not edit the installed skill at
   compatibility re-exports.
 - 2026-06-13: Moved actual finalize-node implementation into
   `gate/finalize.py`; `tool/finalize_node.py` remains a compatibility import.
+- 2026-06-13: Moved actual backtrack-event and start-node state writers into
+  `core/backtrack.py` and `core/start_node.py`; old `tool/` modules remain
+  compatibility imports.
