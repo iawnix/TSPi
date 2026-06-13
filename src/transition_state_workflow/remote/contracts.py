@@ -53,3 +53,13 @@ class RemoteTransport(Protocol):
 
     def download(self, remote_path: str, local_path: Path) -> None:
         """Download one file."""
+
+
+class RemoteFileTransfer(Protocol):
+    """Transport-neutral file-transfer boundary."""
+
+    def upload(self, local_path: Path, remote_path: str) -> None:
+        """Upload one file."""
+
+    def download(self, remote_path: str, local_path: Path) -> None:
+        """Download one file."""

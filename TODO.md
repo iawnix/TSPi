@@ -57,7 +57,7 @@ Do not edit the installed skill at
 - [x] Introduce `remote/` contracts with `RemoteTransport`,
       `RemoteWorkspace`, and sync-plan abstractions.
 - [x] Add concrete `OpenSSHTransport`.
-- [ ] Add future `SFTPTransport` and `MCPTransport` modules.
+- [x] Add future `SFTPTransport` and `MCPTransport` modules.
 - [x] Add explicit metadata sync plan/run/verify service for remote mirrors.
 - [x] Split local mirror synchronization from remote Gaussian execution:
       sync should be an explicit service step with plan, run, verify, and
@@ -143,3 +143,6 @@ Do not edit the installed skill at
   compatibility import for existing scripts and tests.
 - 2026-06-13: Moved the underlying `OpenSSHRemoteExecutor` implementation into
   `remote/exec.py`; `util/remote_exec.py` remains a compatibility import.
+- 2026-06-13: Added optional `ParamikoSFTPTransport` and injected-callable
+  `MCPTransport` adapters under `remote/`, with tests for command and file
+  transfer behavior.

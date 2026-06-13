@@ -10,7 +10,9 @@ import pytest
 from transition_state_workflow.backends import default_backend_registry
 from transition_state_workflow.backends.contracts import BackendOutput
 from transition_state_workflow.remote.contracts import RemoteCommandResult, RemoteWorkspace
+from transition_state_workflow.remote.mcp import MCPTransport
 from transition_state_workflow.remote.openssh import OpenSSHTransport
+from transition_state_workflow.remote.sftp import ParamikoSFTPTransport
 from transition_state_workflow.remote.sync import build_metadata_sync_plan, execute_sync_plan, verify_sync_plan
 from transition_state_workflow.tools.contracts import ChemTool, ToolCapability, ToolRequest, ToolResult
 from transition_state_workflow.tools.registry import ChemToolRegistry
@@ -47,6 +49,51 @@ class RecordingTransport:
     def download(self, remote_path: str, local_path: Path) -> None:
         self.downloads.append((remote_path, local_path))
         local_path.write_text(f"downloaded {remote_path}\n", encoding="utf-8")
+
+
+class FakeChannel:
+    def recv_exit_status(self) -> int:
+        return 7
+
+
+class FakeStream:
+    def __init__(self, payload: bytes) -> None:
+        self.payload = payload
+        self.channel = FakeChannel()
+
+    def read(self) -> bytes:
+        return self.payload
+
+
+class FakeSFTP:
+    def __init__(self, calls: list[tuple[str, str, str]]) -> None:
+        self.calls = calls
+
+    def put(self, local_path: str, remote_path: str) -> None:
+        self.calls.append(("put", local_path, remote_path))
+
+    def get(self, remote_path: str, local_path: str) -> None:
+        self.calls.append(("get", remote_path, local_path))
+
+    def close(self) -> None:
+        self.calls.append(("close", "", ""))
+
+
+class FakeParamikoClient:
+    def __init__(self) -> None:
+        self.commands: list[str] = []
+        self.sftp_calls: list[tuple[str, str, str]] = []
+        self.closed = False
+
+    def exec_command(self, command: str):
+        self.commands.append(command)
+        return None, FakeStream(b"stdout"), FakeStream(b"stderr")
+
+    def open_sftp(self) -> FakeSFTP:
+        return FakeSFTP(self.sftp_calls)
+
+    def close(self) -> None:
+        self.closed = True
 
 
 def test_tool_registry_indexes_by_capability() -> None:
@@ -141,3 +188,52 @@ def test_openssh_transport_dry_run_returns_command_result() -> None:
     assert result.returncode == 0
     assert result.stdout == ""
     assert result.stderr == ""
+
+
+def test_paramiko_sftp_transport_uses_injected_client(tmp_path: Path) -> None:
+    client = FakeParamikoClient()
+    transport = ParamikoSFTPTransport(client)
+    local_file = tmp_path / "local.txt"
+    local_file.write_text("x", encoding="utf-8")
+
+    result = transport.run(["echo", "ready"], cwd="/remote/work dir")
+    transport.upload(local_file, "/remote/in.txt")
+    transport.download("/remote/out.txt", tmp_path / "downloads" / "out.txt")
+    transport.close()
+
+    assert result == RemoteCommandResult(returncode=7, stdout="stdout", stderr="stderr")
+    assert client.commands == ["cd '/remote/work dir' && echo ready"]
+    assert ("put", str(local_file), "/remote/in.txt") in client.sftp_calls
+    assert ("get", "/remote/out.txt", str(tmp_path / "downloads" / "out.txt")) in client.sftp_calls
+    assert client.closed is True
+
+
+def test_mcp_transport_normalizes_command_and_file_tools(tmp_path: Path) -> None:
+    calls: list[tuple[str, object, object]] = []
+
+    def run_command(argv, cwd):
+        calls.append(("run", tuple(argv), cwd))
+        return {"returncode": 3, "stdout": "out", "stderr": "err"}
+
+    def upload_file(local_path: Path, remote_path: str) -> None:
+        calls.append(("upload", local_path.name, remote_path))
+
+    def download_file(remote_path: str, local_path: Path) -> None:
+        calls.append(("download", remote_path, local_path.name))
+
+    transport = MCPTransport(
+        run_command=run_command,
+        upload_file=upload_file,
+        download_file=download_file,
+    )
+
+    result = transport.run(["hostname"], cwd="/remote")
+    transport.upload(tmp_path / "input.txt", "/remote/input.txt")
+    transport.download("/remote/output.txt", tmp_path / "out" / "output.txt")
+
+    assert result == RemoteCommandResult(returncode=3, stdout="out", stderr="err")
+    assert calls == [
+        ("run", ("hostname",), "/remote"),
+        ("upload", "input.txt", "/remote/input.txt"),
+        ("download", "/remote/output.txt", "output.txt"),
+    ]

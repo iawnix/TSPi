@@ -21,11 +21,14 @@ from transition_state_workflow.remote.exec import (
     bash_lc_command,
     command_text,
 )
+from transition_state_workflow.remote.mcp import MCPTransport
 from transition_state_workflow.remote.openssh import OpenSSHTransport
+from transition_state_workflow.remote.sftp import ParamikoSFTPTransport
 from transition_state_workflow.remote.sync_cli import main as sync_cli_main
 from transition_state_workflow.remote.sync import build_metadata_sync_plan, execute_sync_plan, verify_sync_plan
 from transition_state_workflow.remote.contracts import (
     RemoteCommandResult,
+    RemoteFileTransfer,
     RemoteTransport,
     RemoteWorkspace,
     SyncEntry,
@@ -33,11 +36,14 @@ from transition_state_workflow.remote.contracts import (
 )
 
 __all__ = [
+    "MCPTransport",
     "OpenSSHTransport",
     "OpenSSHRemoteExecutor",
+    "ParamikoSFTPTransport",
     "DEFAULT_FETCH_PATTERNS",
     "GaussianRunLayout",
     "RemoteCommandResult",
+    "RemoteFileTransfer",
     "RemoteNodeLayout",
     "RemoteTransport",
     "RemoteTarget",
