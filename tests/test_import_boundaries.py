@@ -13,7 +13,7 @@ FORBIDDEN_INTERNAL_IMPORTS = {
     "base": {"backends", "cli", "core", "gate", "remote", "tool", "tools", "web"},
     "backends": {"cli", "core", "gate", "remote", "tool", "tools", "web"},
     "core": {"backends", "cli", "gate", "remote", "tool", "tools", "web"},
-    "gate": {"cli", "core", "remote", "tool", "tools", "web"},
+    "gate": {"cli", "core", "remote", "tools", "web"},
     "remote": {"backends", "cli", "core", "gate", "tool", "tools", "web"},
     "tools": {"cli", "core", "gate", "tool", "web"},
     "web": {"cli", "remote", "tools"},
@@ -30,6 +30,7 @@ FORBIDDEN_WEB_TOOL_MODULES = {
     "transition_state_workflow.tool.rmsd_connectivity_check",
     "transition_state_workflow.tool.run_remote_gaussian",
     "transition_state_workflow.tool.ts_descriptor_extract",
+    "transition_state_workflow.tool.validate_workspace",
 }
 
 

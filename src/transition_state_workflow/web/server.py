@@ -19,7 +19,7 @@ from typing import Any
 from transition_state_workflow.base.workspace import ExplorerServerConfig, ExplorerWorkspaceConfig
 from transition_state_workflow.base.explorer_registry import default_registry_path
 from transition_state_workflow.web.assets import read_explorer_index_html
-from transition_state_workflow.tool.pathway_model import summarize_pathway_model
+from transition_state_workflow.base.pathway_model import summarize_pathway_model
 from transition_state_workflow.util.cli import configure_cli_logging, emit_json
 from transition_state_workflow.util.path_utils import (
     clean_string,
@@ -30,12 +30,12 @@ from transition_state_workflow.util.path_utils import (
 )
 
 try:
-    from transition_state_workflow.tool.normalize_view import normalize_ts_workspace_to_explorer_graph
+    from transition_state_workflow.gate.normalize import normalize_ts_workspace_to_explorer_graph
 except Exception:  # pragma: no cover - surfaced at request time
     normalize_ts_workspace_to_explorer_graph = None
 
 try:
-    from transition_state_workflow.tool.validate_workspace import validate_ts_workspace_contract
+    from transition_state_workflow.gate.validate import validate_ts_workspace_contract
 except Exception:  # pragma: no cover - validator is advisory for the web service
     validate_ts_workspace_contract = None
 

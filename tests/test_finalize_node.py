@@ -43,7 +43,7 @@ from conftest import (
 
 from transition_state_workflow.base.workspace import ExplorerWorkspaceConfig  # noqa: E402
 from transition_state_workflow.tool.explorer_server import infer_gaussian_file_notes, summarize_explorer_workspace_config  # noqa: E402
-from transition_state_workflow.tool.pathway_model import derive_pathway_status  # noqa: E402
+from transition_state_workflow.base.pathway_model import derive_pathway_status  # noqa: E402
 from transition_state_workflow.tool import run_remote_gaussian as remote_gaussian  # noqa: E402
 from transition_state_workflow.tool import remote_gaussian_monitor  # noqa: E402
 from transition_state_workflow.util import remote_exec  # noqa: E402

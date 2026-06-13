@@ -23,12 +23,12 @@ from transition_state_workflow.config.state_contract import (
     derive_claim_level,
     valid_outcomes_for_claim_status,
 )
-from transition_state_workflow.tool.evidence_gates import accepted_ts_missing_evidence_gates
-from transition_state_workflow.tool.pathway_model import (
+from transition_state_workflow.base.pathway_model import (
     bind_pathway_step_to_accepted_ts,
     mark_pathway_step_status,
     validate_pathway_step_reference,
 )
+from transition_state_workflow.gate.evidence import accepted_ts_missing_evidence_gates
 from transition_state_workflow.util.json_io import read_json_object_required, write_json_object
 from transition_state_workflow.util.path_utils import (
     clean_string,

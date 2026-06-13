@@ -23,7 +23,7 @@ from transition_state_workflow.tool.ase_neb.workspace import (  # noqa: E402
     upsert_tree_node,
     write_json,
 )
-from transition_state_workflow.tool.validate_workspace import validate_ts_workspace_contract  # noqa: E402
+from transition_state_workflow.gate.validate import validate_ts_workspace_contract  # noqa: E402
 
 
 ASE_NEB_CLI = SKILL_ROOT / "scripts" / "ase_neb_framework.py"

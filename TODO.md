@@ -66,6 +66,9 @@ Do not edit the installed skill at
       ownership to a web/API boundary that cannot import job execution modules.
 - [ ] Replace ad hoc logging imports with one package-level logging policy and
       one CLI diagnostics path.
+- [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
+      `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
+      compatibility re-exports.
 - [ ] Update `SKILL.md` and `references/` after code boundaries exist; do not
       describe future architecture as current behavior before tests prove it.
 - [ ] Run compatibility validation after each checkpoint:
@@ -87,3 +90,6 @@ Do not edit the installed skill at
 - 2026-06-13: Moved explorer server ownership to `web/server.py` and static
   assets to `web/assets.py`; legacy `tool/` paths remain compatibility
   re-exports, and boundary tests block web imports of job execution modules.
+- 2026-06-13: Moved actual evidence-gate, normalizer, validator, and pathway
+  model logic into `gate/` and `base/`; old `tool/` import paths remain
+  compatibility re-exports.

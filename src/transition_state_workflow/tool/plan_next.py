@@ -7,14 +7,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from transition_state_workflow.tool.evidence_gates import (
+from transition_state_workflow.gate.evidence import (
     TSFREQ_KINDS,
     load_record_payload,
     normalized_token,
     supports_tsfreq_gate,
 )
-from transition_state_workflow.tool.pathway_model import read_pathway_model_optional, summarize_pathway_model
-from transition_state_workflow.tool.validate_workspace import validate_ts_workspace_contract
+from transition_state_workflow.base.pathway_model import read_pathway_model_optional, summarize_pathway_model
+from transition_state_workflow.gate.validate import validate_ts_workspace_contract
 from transition_state_workflow.util.json_io import read_json_object_optional, read_json_object_required
 from transition_state_workflow.util.path_utils import clean_string, list_or_empty, safe_identifier_token
 

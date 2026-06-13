@@ -19,7 +19,7 @@ from transition_state_workflow.tool.finalize_node import (
     finalize_ts_workspace_node_from_cli_args,
     register_finalize_node_parser,
 )
-from transition_state_workflow.tool.pathway_model import (
+from transition_state_workflow.base.pathway_model import (
     initialize_pathway_model_if_missing,
     pathway_bind_step_from_cli_args,
     pathway_init_from_cli_args,
