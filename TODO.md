@@ -88,6 +88,9 @@ Do not edit the installed skill at
 - [x] Move remote Gaussian monitor/status/tail/fetch logic into
       `remote/gaussian_monitor.py`, with the legacy `tool/` import path kept as
       a compatibility wrapper.
+- [x] Move remote Gaussian execution/layout/background/download logic into
+      `remote/gaussian_runner.py`, with the legacy `tool/` import path kept as
+      a compatibility wrapper.
 - [ ] Update `SKILL.md` and `references/` after code boundaries exist; do not
       describe future architecture as current behavior before tests prove it.
 - [ ] Run compatibility validation after each checkpoint:
@@ -132,4 +135,7 @@ Do not edit the installed skill at
   CLI dispatch plus explorer registration/checklist for init.
 - 2026-06-13: Moved remote Gaussian status/tail/fetch implementation into
   `remote/gaussian_monitor.py`; `tool/remote_gaussian_monitor.py` remains a
+  compatibility import for existing scripts and tests.
+- 2026-06-13: Moved remote Gaussian execution implementation into
+  `remote/gaussian_runner.py`; `tool/run_remote_gaussian.py` remains a
   compatibility import for existing scripts and tests.
