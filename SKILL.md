@@ -307,7 +307,8 @@ Python tooling follows a package layout:
   modules such as `remote_exec.py`.
 - `src/transition_state_workflow/tool/`: concrete chemistry tool CLIs and
   compatibility entrypoints. `parse_gaussian_ts_result.py` writes parser
-  artifacts while delegating Gaussian TS/Freq parsing to `backends/gaussian.py`.
+  artifacts through `CLIBase` while delegating Gaussian TS/Freq parsing to
+  `backends/gaussian.py`.
   The NEB toolkit lives in the `tool/ase_neb/` subpackage, split by concern into
   layered modules
   (`constants`/`errors`/`coerce` leaves; `geometry`/`gaussian_calc`;

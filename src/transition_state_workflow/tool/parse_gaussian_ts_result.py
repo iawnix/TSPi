@@ -19,7 +19,7 @@ from transition_state_workflow.backends.gaussian import (
     select_gaussian_job_section,
     split_gaussian_job_sections,
 )
-from transition_state_workflow.util.cli import emit_json, run_cli
+from transition_state_workflow.util.cli import CLIBase, CLIResult
 
 
 split_job_sections = split_gaussian_job_sections
@@ -43,42 +43,47 @@ def parse_log(log_path: Path, section_index: int | None = None) -> dict[str, obj
     return parse_gaussian_tsfreq_log(log_path, section_index=section_index)
 
 
+class ParseGaussianTSResultCLI(CLIBase):
+    """Gaussian TS/Freq parser artifact writer command."""
+
+    description = __doc__
+
+    def add_arguments(self, parser: argparse.ArgumentParser) -> None:
+        parser.add_argument("log", type=Path, help="Gaussian output file (.out, or legacy .log)")
+        parser.add_argument("-o", "--output-dir", type=Path, default=None, help="Directory for parsed artifacts")
+        parser.add_argument("--section-index", type=int, default=None, help="Evaluate a specific zero-based job section")
+        parser.add_argument("--strict", action="store_true", help="Return a non-zero exit code if TS validation fails")
+
+    def execute(self, args: argparse.Namespace) -> CLIResult:
+        output_dir = args.output_dir or args.log.with_suffix("").with_name(f"{args.log.stem}_parsed")
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        parsed = parse_log(args.log, section_index=args.section_index)
+        summary = parsed["summary"]
+        frequencies = parsed["frequencies"]
+        atoms = parsed["atoms"]
+
+        (output_dir / "validation_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        (output_dir / "frequencies_cm-1.txt").write_text(
+            "\n".join(f"{freq:.6f}" for freq in frequencies) + ("\n" if frequencies else ""),
+            encoding="utf-8",
+        )
+        if atoms:
+            final_xyz = output_dir / f"{args.log.stem}_final.xyz"
+            write_xyz(final_xyz, atoms, f"Final geometry extracted from {args.log.name}")
+
+        exit_code = 2 if args.strict and summary["status"] != "validated_ts" else 0
+        return CLIResult(exit_code=exit_code, payload={"output_dir": str(output_dir), "summary": summary})
+
+
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("log", type=Path, help="Gaussian output file (.out, or legacy .log)")
-    parser.add_argument("-o", "--output-dir", type=Path, default=None, help="Directory for parsed artifacts")
-    parser.add_argument("--section-index", type=int, default=None, help="Evaluate a specific zero-based job section")
-    parser.add_argument("--strict", action="store_true", help="Return a non-zero exit code if TS validation fails")
-    return parser
+    """Build the CLI parser for compatibility with older imports."""
 
-
-def _run(argv: list[str] | None) -> int:
-    args = build_parser().parse_args(argv)
-    output_dir = args.output_dir or args.log.with_suffix("").with_name(f"{args.log.stem}_parsed")
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    parsed = parse_log(args.log, section_index=args.section_index)
-    summary = parsed["summary"]
-    frequencies = parsed["frequencies"]
-    atoms = parsed["atoms"]
-
-    (output_dir / "validation_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
-    (output_dir / "frequencies_cm-1.txt").write_text(
-        "\n".join(f"{freq:.6f}" for freq in frequencies) + ("\n" if frequencies else ""),
-        encoding="utf-8",
-    )
-    if atoms:
-        final_xyz = output_dir / f"{args.log.stem}_final.xyz"
-        write_xyz(final_xyz, atoms, f"Final geometry extracted from {args.log.name}")
-
-    emit_json({"output_dir": str(output_dir), "summary": summary})
-    if args.strict and summary["status"] != "validated_ts":
-        return 2
-    return 0
+    return ParseGaussianTSResultCLI().build_parser()
 
 
 def main(argv: list[str] | None = None) -> int:
-    return run_cli(_run, argv)
+    return ParseGaussianTSResultCLI().main(argv)
 
 
 if __name__ == "__main__":

@@ -85,6 +85,8 @@ Do not edit the installed skill at
 - [x] Migrate gate validator and normalizer CLIs onto `CLIBase` while keeping
       `validate_ts_workspace_contract` and `normalize_ts_workspace_to_explorer_graph`
       as business functions for non-CLI callers.
+- [x] Migrate the Gaussian TS/Freq parser artifact-writing CLI onto `CLIBase`
+      while preserving `parse_log` and `build_parser` compatibility imports.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
@@ -239,3 +241,11 @@ Do not edit the installed skill at
   `66 passed, 2 skipped`; full pytest `204 passed, 2 skipped`; script help
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-geom-math-smoke.xenPe2/tssearch_smoke`.
+- 2026-06-13: Migrated `tool/parse_gaussian_ts_result.py` to `CLIBase` for
+  shared argparse logging/error behavior while keeping artifact writes and JSON
+  output unchanged.
+- 2026-06-13: Gaussian parser CLIBase checkpoint validation passed:
+  `git diff --check`; targeted parser/CLI/import/no-undefined tests
+  `34 passed, 1 skipped`; full pytest `205 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-parser-cli-smoke.O6AGUr/tssearch_smoke`.

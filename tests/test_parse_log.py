@@ -7,6 +7,7 @@ convergence quirks, hpmodes safety) against small in-memory log fixtures.
 
 from __future__ import annotations
 
+import json
 import sys
 from pathlib import Path
 
@@ -30,6 +31,7 @@ from transition_state_workflow.backends.gaussian import (  # noqa: E402
 from transition_state_workflow.tool.ase_neb.gaussian_calc import (  # noqa: E402
     parse_gaussian_energy_hartree as legacy_parse_gaussian_energy_hartree,
 )
+from transition_state_workflow.tool.parse_gaussian_ts_result import main as parse_cli_main  # noqa: E402
 from transition_state_workflow.tool.parse_gaussian_ts_result import parse_log  # noqa: E402
 
 
@@ -163,6 +165,25 @@ def test_gaussian_backend_adapter_extracts_tsfreq_summary(tmp_path: Path) -> Non
     assert output.properties["status"] == "validated_ts"
     assert output.properties["imaginary_frequency_count"] == 1
     assert output.properties["summary"]["frequency_count"] == 3
+
+
+def test_parse_gaussian_ts_result_cli_writes_artifacts(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    log = _write_log(tmp_path, _build_log(frequencies=_STD_FREQ_ONE_IMAG))
+    output_dir = tmp_path / "parsed"
+
+    rc = parse_cli_main([str(log), "-o", str(output_dir), "--strict"])
+    captured = capsys.readouterr()
+    payload = json.loads(captured.out)
+
+    assert rc == 0
+    assert payload["output_dir"] == str(output_dir)
+    assert payload["summary"]["status"] == "validated_ts"
+    assert (output_dir / "validation_summary.json").exists()
+    assert (output_dir / "frequencies_cm-1.txt").exists()
+    assert (output_dir / "freq_final.xyz").exists()
 
 
 def test_gaussian_backend_parses_external_force_energy_output(tmp_path: Path) -> None:
