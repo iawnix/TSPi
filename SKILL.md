@@ -291,11 +291,12 @@ Python tooling follows a package layout:
   status/tail/fetch, and `sync.py`/`sync_cli.py` handle explicit metadata
   mirror synchronization.
 - `src/transition_state_workflow/util/`: cross-cutting helpers —
-  `cli.py` (the unified CLI core: `emit_json` to stdout, `log`/`warn` to stderr,
-  and `run_cli`/`CliError`, which render failures as a one-line
-  `{"ok": false, "error": ...}` envelope), `json_io.py`, `path_utils.py`,
-  `node_layout.py` (node directory resolution), and compatibility forwarding
-  modules such as `remote_exec.py`.
+  `cli.py` (the unified CLI core: `emit_json` for JSON stdout,
+  `emit_stdout` for legacy text transcripts, `log`/`warn` plus raw relay
+  helpers for stderr diagnostics, and `run_cli`/`CliError`, which render
+  failures as a one-line `{"ok": false, "error": ...}` envelope),
+  `json_io.py`, `path_utils.py`, `node_layout.py` (node directory resolution),
+  and compatibility forwarding modules such as `remote_exec.py`.
 - `src/transition_state_workflow/tool/`: concrete chemistry tool CLIs and
   compatibility entrypoints. The NEB toolkit lives in the `tool/ase_neb/`
   subpackage, split by concern into layered modules

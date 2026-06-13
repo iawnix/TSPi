@@ -18,8 +18,13 @@ from transition_state_workflow.util.cli import (  # noqa: E402
     EXIT_ERROR,
     EXIT_OK,
     configure_cli_logging,
+    emit_captured_streams,
     emit_json,
+    emit_stderr,
+    emit_stdout,
     log,
+    relay_stderr,
+    relay_stdout,
     run_cli,
     warn,
 )
@@ -42,6 +47,26 @@ def test_emit_json_with_pretty_false_is_one_line(capsys: pytest.CaptureFixture[s
     assert "\n" in captured.out  # the trailing newline
     assert captured.out.count("\n") == 1
     assert "\n" not in captured.out.rstrip()
+
+
+def test_emit_stdout_and_stderr_write_through_cli_boundary(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    emit_stdout("plain stdout")
+    emit_stderr("plain stderr")
+    captured = capsys.readouterr()
+    assert captured.out == "plain stdout\n"
+    assert captured.err == "plain stderr\n"
+
+
+def test_relay_streams_preserve_existing_newlines(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    relay_stdout("out a\nout b\n")
+    relay_stderr("err a\nerr b\n")
+    captured = capsys.readouterr()
+    assert captured.out == "out a\nout b\n"
+    assert captured.err == "err a\nerr b\n"
 
 
 def test_run_cli_returns_main_exit_code_on_success() -> None:
@@ -109,6 +134,18 @@ def test_warn_writes_to_stderr_with_warning_prefix(
     captured = capsys.readouterr()
     assert "warning: something off" in captured.err
     assert captured.out == ""
+
+
+def test_emit_captured_streams_writes_labeled_blocks_to_stderr(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    emit_captured_streams("remote command", "stdout text\n", "stderr text\n")
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "--- remote command stdout ---" in captured.err
+    assert "stdout text" in captured.err
+    assert "--- remote command stderr ---" in captured.err
+    assert "stderr text" in captured.err
 
 
 def test_quiet_mode_suppresses_log_but_keeps_warn(

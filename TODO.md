@@ -64,7 +64,7 @@ Do not edit the installed skill at
       explorer-registry update phases.
 - [x] Keep explorer service hot-registration behavior but move registry/server
       ownership to a web/API boundary that cannot import job execution modules.
-- [ ] Replace ad hoc logging imports with one package-level logging policy and
+- [x] Replace ad hoc logging imports with one package-level logging policy and
       one CLI diagnostics path.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
@@ -152,3 +152,12 @@ Do not edit the installed skill at
 - 2026-06-13: Updated `SKILL.md`, `references/compute_hosts.md`, and
   `references/gaussian_validation.md` to describe the current core/gate/remote
   layout and `remote/exec.py` executor ownership.
+- 2026-06-13: Unified package CLI diagnostics in `util/cli.py` and moved
+  remote/web stdout, warning, captured-stream, and service-log output onto that
+  boundary. Added regression tests blocking remote/web direct `print()` or
+  `sys.stdout`/`sys.stderr` writes.
+- 2026-06-13: Logging checkpoint validation passed:
+  `git diff --check`; targeted CLI/remote/web/import/reference tests
+  `45 passed`; full pytest `197 passed, 2 skipped`; script help smoke
+  `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-smoke.p984TM/tssearch_smoke`.

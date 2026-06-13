@@ -11,7 +11,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from transition_state_workflow.util.cli import CliError, run_cli, warn
+from transition_state_workflow.util.cli import CliError, relay_stderr, relay_stdout, run_cli, warn
 from transition_state_workflow.remote.exec import OpenSSHRemoteExecutor, RemoteTarget
 
 
@@ -275,10 +275,8 @@ find . -maxdepth 1 -type f \\( {clauses} \\) -printf '%f\\n' | sort
 def print_result(result: subprocess.CompletedProcess[str]) -> None:
     """Relay captured remote output streams."""
 
-    if result.stdout:
-        sys.stdout.write(result.stdout)
-    if result.stderr:
-        sys.stderr.write(result.stderr)
+    relay_stdout(result.stdout)
+    relay_stderr(result.stderr)
 
 
 def run_status(args: argparse.Namespace, layout: RemoteNodeLayout) -> int:

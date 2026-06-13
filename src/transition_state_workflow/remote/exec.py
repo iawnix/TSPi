@@ -10,7 +10,11 @@ from dataclasses import dataclass
 from pathlib import Path
 import shlex
 import subprocess
-import sys
+
+from transition_state_workflow.util.cli import (
+    emit_captured_streams,
+    emit_stdout,
+)
 
 
 def command_text(argv: list[str]) -> str:
@@ -22,12 +26,7 @@ def command_text(argv: list[str]) -> str:
 def print_captured_streams(label: str, stdout: str | None, stderr: str | None) -> None:
     """Write captured command output to stderr for actionable failures."""
 
-    if stdout:
-        print(f"--- {label} stdout ---", file=sys.stderr)
-        print(stdout.rstrip(), file=sys.stderr)
-    if stderr:
-        print(f"--- {label} stderr ---", file=sys.stderr)
-        print(stderr.rstrip(), file=sys.stderr)
+    emit_captured_streams(label, stdout, stderr)
 
 
 def bash_lc_command(command: str) -> str:
@@ -90,7 +89,7 @@ class OpenSSHRemoteExecutor:
     ) -> subprocess.CompletedProcess[str]:
         """Run argv locally without a shell, optionally capturing output."""
 
-        print(command_text(argv))
+        emit_stdout(command_text(argv))
         if self.dry_run:
             return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
         return subprocess.run(argv, check=True, text=True, capture_output=capture_output)

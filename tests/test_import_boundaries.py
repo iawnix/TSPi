@@ -73,6 +73,32 @@ def full_internal_imports(source_file: Path) -> set[str]:
     return imported
 
 
+def raw_cli_output_violations(source_file: Path) -> list[str]:
+    """Return direct stdout/stderr writes that bypass util.cli."""
+
+    violations: list[str] = []
+    tree = ast.parse(source_file.read_text(encoding="utf-8"), filename=str(source_file))
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id == "print":
+            violations.append(f"{source_file.relative_to(ROOT)}:{node.lineno} uses print()")
+            continue
+        if not isinstance(node, ast.Call) or not isinstance(node.func, ast.Attribute):
+            continue
+        if node.func.attr not in {"write", "flush"}:
+            continue
+        value = node.func.value
+        if (
+            isinstance(value, ast.Attribute)
+            and value.attr in {"stdout", "stderr"}
+            and isinstance(value.value, ast.Name)
+            and value.value.id == "sys"
+        ):
+            violations.append(
+                f"{source_file.relative_to(ROOT)}:{node.lineno} writes sys.{value.attr}.{node.func.attr}()"
+            )
+    return violations
+
+
 def test_target_architecture_has_no_reverse_dependencies() -> None:
     violations: list[str] = []
     for layer, forbidden in FORBIDDEN_INTERNAL_IMPORTS.items():
@@ -106,3 +132,11 @@ def test_web_boundary_does_not_import_job_execution_modules() -> None:
         if bad:
             offenders.append(f"{source_file.relative_to(ROOT)} imports job modules: {', '.join(bad)}")
     assert not offenders, "web boundary imports job execution modules:\n" + "\n".join(offenders)
+
+
+def test_remote_and_web_cli_output_goes_through_util_cli() -> None:
+    offenders: list[str] = []
+    for layer in ("remote", "web"):
+        for source_file in sorted((PACKAGE / layer).rglob("*.py")):
+            offenders.extend(raw_cli_output_violations(source_file))
+    assert not offenders, "remote/web bypass util.cli output helpers:\n" + "\n".join(offenders)

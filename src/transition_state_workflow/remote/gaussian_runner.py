@@ -9,11 +9,10 @@ import posixpath
 import re
 import shlex
 import subprocess
-import sys
 import tempfile
 from pathlib import Path
 
-from transition_state_workflow.util.cli import CliError, run_cli
+from transition_state_workflow.util.cli import CliError, emit_stdout, run_cli, warn
 from transition_state_workflow.remote.exec import (
     OpenSSHRemoteExecutor,
     RemoteTarget,
@@ -23,7 +22,7 @@ from transition_state_workflow.remote.exec import (
 
 
 def run(argv: list[str], dry_run: bool) -> None:
-    print(command_text(argv))
+    emit_stdout(command_text(argv))
     if dry_run:
         return
     subprocess.run(argv, check=True)
@@ -291,7 +290,7 @@ def download_remote_file(args: argparse.Namespace, layout: GaussianRunLayout, na
     except subprocess.CalledProcessError:
         if not tolerate_missing:
             raise
-        print(f"warning: missing remote file {remote_path}", file=sys.stderr)
+        warn(f"missing remote file {remote_path}")
         return False
     return True
 
@@ -306,7 +305,7 @@ def download_output_file(args: argparse.Namespace, layout: GaussianRunLayout, to
         except subprocess.CalledProcessError as exc:
             errors.append(exc)
             if tolerate_missing:
-                print(f"warning: missing remote file {remote_path}", file=sys.stderr)
+                warn(f"missing remote file {remote_path}")
             continue
         return
     if errors and not tolerate_missing:
@@ -421,11 +420,11 @@ def submit_background(args: argparse.Namespace, layout: GaussianRunLayout, runne
         print_captured_streams("background submit", submit_result.stdout, submit_result.stderr)
         raise CliError("background submission could not verify runner.nohup or run_metadata.txt") from exc
 
-    print(f"submitted in background on {args.compute_host}, remote_pid={pid}")
+    emit_stdout(f"submitted in background on {args.compute_host}, remote_pid={pid}")
     metadata_path = posixpath.join(layout.remote_run_dir, "run_metadata.txt")
     poll_argv = nested_compute_ssh_argv(args, f"tail -n 5 {shlex.quote(metadata_path)}")
-    print(f"poll:  {command_text(poll_argv)}")
-    print("fetch: re-run this command with --fetch-only when run_metadata.txt has an end= line")
+    emit_stdout(f"poll:  {command_text(poll_argv)}")
+    emit_stdout("fetch: re-run this command with --fetch-only when run_metadata.txt has an end= line")
     return 0
 
 
@@ -449,9 +448,9 @@ def _run(argv: list[str] | None) -> int:
         runner_path = Path(tmp) / "run_gaussian_on_compute.sh"
         runner_path.write_text(runner, encoding="utf-8")
         if args.dry_run:
-            print("--- run_gaussian_on_compute.sh ---")
-            print(runner.rstrip())
-            print("--- commands ---")
+            emit_stdout("--- run_gaussian_on_compute.sh ---")
+            emit_stdout(runner.rstrip())
+            emit_stdout("--- commands ---")
 
         # Remote mkdir/chmod run as a single shell snippet on the login host with
         # every path shlex-quoted, so a directory containing spaces or shell

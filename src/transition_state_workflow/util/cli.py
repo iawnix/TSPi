@@ -41,9 +41,10 @@ def configure_cli_logging(*, verbose: bool = False, quiet: bool = False) -> logg
 
     Machine-readable command output goes to stdout via :func:`emit_json`; logs,
     warnings, and diagnostics go to stderr through this logger. ``quiet=True``
-    raises the package level to ERROR (warnings still suppressed below);
-    ``verbose=True`` lowers it to DEBUG. Tools that never call this still get
-    INFO-level output on stderr via the bootstrap handler installed at import.
+    raises the package level to WARNING, so informational diagnostics are
+    hidden but warnings remain visible. ``verbose=True`` lowers it to DEBUG.
+    Tools that never call this still get INFO-level output on stderr via the
+    bootstrap handler installed at import.
     """
 
     # quiet -> hide informational ``log()`` lines but keep ``warn()`` visible.
@@ -62,11 +63,51 @@ def configure_cli_logging(*, verbose: bool = False, quiet: bool = False) -> logg
 def emit_json(payload: Any, *, pretty: bool = True) -> None:
     """Write a result payload to stdout as canonical JSON.
 
-    This is the single stdout result writer for the whole package.
+    This is the preferred stdout result writer for the whole package.
     """
 
     text = json.dumps(payload, ensure_ascii=True, indent=2 if pretty else None, sort_keys=True)
     sys.stdout.write(text + "\n")
+
+
+def emit_stdout(message: str = "", *, end: str = "\n", flush: bool = False) -> None:
+    """Write a CLI text line to stdout.
+
+    Most tools should prefer :func:`emit_json`; this helper exists for legacy
+    text protocols such as dry-run command transcripts and long-running service
+    startup messages, so stdout writes still have one package-owned path.
+    """
+
+    sys.stdout.write(message + end)
+    if flush:
+        sys.stdout.flush()
+
+
+def emit_stderr(message: str = "", *, end: str = "\n", flush: bool = False) -> None:
+    """Write a raw diagnostic line to stderr.
+
+    Prefer :func:`log` and :func:`warn` for ordinary messages. This helper is
+    for relaying already-formatted subprocess output or HTTP access-log lines
+    without adding another prefix.
+    """
+
+    sys.stderr.write(message + end)
+    if flush:
+        sys.stderr.flush()
+
+
+def relay_stdout(text: str | None) -> None:
+    """Relay captured stdout text without changing its bytes."""
+
+    if text:
+        sys.stdout.write(text)
+
+
+def relay_stderr(text: str | None) -> None:
+    """Relay captured stderr text without changing its bytes."""
+
+    if text:
+        sys.stderr.write(text)
 
 
 _LOGGER = logging.getLogger("transition_state_workflow")
@@ -122,15 +163,26 @@ def warn(message: str) -> None:
 
     The default handler prefixes nothing; tools that want a ``warning:`` prefix
     in their output should rely on the WARNING log level the handler emits. The
-    package logger writes at WARNING level even under ``quiet=True`` (which
-    only suppresses below ERROR), so warnings still surface.
+    package logger writes at WARNING level even under ``quiet=True`` so
+    warnings still surface.
     """
 
     _LOGGER.warning("warning: %s", message)
 
 
+def emit_captured_streams(label: str, stdout: str | None, stderr: str | None) -> None:
+    """Write captured command output to stderr for actionable failures."""
+
+    if stdout:
+        emit_stderr(f"--- {label} stdout ---")
+        emit_stderr(stdout.rstrip())
+    if stderr:
+        emit_stderr(f"--- {label} stderr ---")
+        emit_stderr(stderr.rstrip())
+
+
 def _emit_error_envelope(message: str, *, exit_code: int) -> int:
-    print(json.dumps({"ok": False, "error": message}, ensure_ascii=True), file=sys.stderr)
+    emit_stderr(json.dumps({"ok": False, "error": message}, ensure_ascii=True))
     return exit_code
 
 

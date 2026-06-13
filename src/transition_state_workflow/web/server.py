@@ -7,7 +7,6 @@ import argparse
 import json
 import mimetypes
 import posixpath
-import sys
 import threading
 import time
 import urllib.parse
@@ -20,7 +19,7 @@ from transition_state_workflow.base.workspace import ExplorerServerConfig, Explo
 from transition_state_workflow.base.explorer_registry import default_registry_path
 from transition_state_workflow.web.assets import read_explorer_index_html
 from transition_state_workflow.base.pathway_model import summarize_pathway_model
-from transition_state_workflow.util.cli import configure_cli_logging, emit_json
+from transition_state_workflow.util.cli import configure_cli_logging, emit_json, emit_stdout, log, warn
 from transition_state_workflow.util.path_utils import (
     clean_string,
     first_nonempty_string,
@@ -262,7 +261,7 @@ class ExplorerWorkspaceDirectory:
                 path, self._config.allow_source_workspace_writes
             )
         except (SystemExit, OSError, ValueError) as exc:
-            sys.stderr.write(f"workspace registry reload failed, keeping previous list: {exc}\n")
+            warn(f"workspace registry reload failed, keeping previous list: {exc}")
             self._registry_mtime_ns = current
             return
         self._registry_workspaces = tuple(reloaded)
@@ -381,7 +380,7 @@ def load_explorer_registry_workspace_configs(
         except SystemExit as exc:
             # A long-lived service must not die because one registered
             # workspace is missing or mid-sync; skip it and keep serving.
-            sys.stderr.write(f"skipping registry workspace {workspace_id!r}: {exc}\n")
+            warn(f"skipping registry workspace {workspace_id!r}: {exc}")
     return out
 
 
@@ -484,23 +483,22 @@ def serve_forever(config: ExplorerServerConfig, *, open_url_file: Path | None = 
     if open_url_file is not None:
         open_url_file.parent.mkdir(parents=True, exist_ok=True)
         open_url_file.write_text(url + "\n", encoding="utf-8")
-    print(f"{APP_NAME}: {url}", flush=True)
-    print(f"workspaces: {len(workspaces)}", flush=True)
+    emit_stdout(f"{APP_NAME}: {url}", flush=True)
+    emit_stdout(f"workspaces: {len(workspaces)}", flush=True)
     if config.workspace_registry_path is not None:
-        print(f"registry (hot-reloaded): {config.workspace_registry_path}", flush=True)
+        emit_stdout(f"registry (hot-reloaded): {config.workspace_registry_path}", flush=True)
     default_id = directory.default_workspace_id()
     if default_id:
-        print(f"default_workspace: {default_id}", flush=True)
+        emit_stdout(f"default_workspace: {default_id}", flush=True)
     if _build_allowed_hosts(config) is None:
-        print(
-            f"WARNING: bound to wildcard host {config.bind_host!r}; Host header "
-            "validation disabled — DNS rebinding protection requires a loopback bind.",
-            file=sys.stderr, flush=True,
+        warn(
+            f"bound to wildcard host {config.bind_host!r}; Host header "
+            "validation disabled; DNS rebinding protection requires a loopback bind."
         )
     try:
         server.serve_forever()
     except KeyboardInterrupt:
-        print("\nStopped.", flush=True)
+        emit_stdout("\nStopped.", flush=True)
     finally:
         server.server_close()
     return 0
@@ -563,9 +561,7 @@ def make_handler(
 
             if not self._host_ok():
                 host = (self.headers.get("Host") or "").strip()
-                sys.stderr.write(
-                    f"refused Host {host!r} from {self.client_address[0]}\n"
-                )
+                warn(f"refused Host {host!r} from {self.client_address[0]}")
                 self.send_error_json(
                     HTTPStatus.FORBIDDEN,
                     "bad_host",
@@ -663,7 +659,7 @@ def make_handler(
         def log_message(self, fmt: str, *args: Any) -> None:
             """Write HTTP access logs to stderr."""
 
-            sys.stderr.write("%s - - [%s] %s\n" % (self.client_address[0], self.log_date_time_string(), fmt % args))
+            log("%s - - [%s] %s" % (self.client_address[0], self.log_date_time_string(), fmt % args))
 
         def send_json(self, payload: Any, http_status: HTTPStatus = HTTPStatus.OK) -> None:
             """Send a JSON response body."""
