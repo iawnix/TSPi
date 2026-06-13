@@ -21,6 +21,10 @@ from transition_state_workflow.chem.gaussian_log import (  # noqa: E402
     split_job_sections,
     terminated_normally,
 )
+from transition_state_workflow.backends.gaussian import (  # noqa: E402
+    GaussianBackendAdapter,
+    parse_gaussian_tsfreq_log,
+)
 from transition_state_workflow.tool.parse_gaussian_ts_result import parse_log  # noqa: E402
 
 
@@ -130,6 +134,30 @@ def test_parse_log_validates_ts_with_one_imaginary_frequency(tmp_path: Path) -> 
     assert summary["stationary_point_found"] is True
     assert summary["final_convergence_satisfied"] is True
     assert summary["validation_failures"] == []
+
+
+def test_backend_gaussian_parser_matches_legacy_parse_log(tmp_path: Path) -> None:
+    log = _write_log(tmp_path, _build_log(frequencies=_STD_FREQ_ONE_IMAG))
+
+    legacy = parse_log(log)
+    backend = parse_gaussian_tsfreq_log(log)
+
+    assert backend["summary"] == legacy["summary"]
+    assert backend["frequencies"] == legacy["frequencies"]
+    assert backend["atoms"] == legacy["atoms"]
+
+
+def test_gaussian_backend_adapter_extracts_tsfreq_summary(tmp_path: Path) -> None:
+    log = _write_log(tmp_path, _build_log(frequencies=_STD_FREQ_ONE_IMAG))
+
+    output = GaussianBackendAdapter().parse((log,))
+
+    assert output.properties["artifact_count"] == 1
+    assert output.properties["existing_artifacts"] == 1
+    assert output.properties["parser"] == "gaussian_tsfreq"
+    assert output.properties["status"] == "validated_ts"
+    assert output.properties["imaginary_frequency_count"] == 1
+    assert output.properties["summary"]["frequency_count"] == 3
 
 
 def test_parse_log_handles_hpmodes_block_without_double_counting(tmp_path: Path) -> None:

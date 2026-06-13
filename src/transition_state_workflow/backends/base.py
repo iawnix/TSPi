@@ -9,7 +9,7 @@ from transition_state_workflow.backends.contracts import BackendInput, BackendOu
 
 
 class FilesystemBackendAdapter:
-    """Minimal adapter that records declared files without parsing chemistry yet."""
+    """Base adapter that records declared files and generic artifact metadata."""
 
     name: str
 
@@ -29,7 +29,7 @@ class FilesystemBackendAdapter:
         )
 
     def parse(self, artifacts: tuple[Path, ...]) -> BackendOutput:
-        """Return artifact existence metadata until program-specific parsers move here."""
+        """Return generic artifact existence metadata."""
 
         return BackendOutput(
             backend=self.name,

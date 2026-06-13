@@ -52,8 +52,11 @@ Do not edit the installed skill at
       input/output adapters so program-specific parsing can be moved out of
       control-flow code.
 - [x] Add concrete Gaussian, xTB, ASE, and QBICS backend adapter modules.
-      Current modules expose the adapter boundary and filesystem artifact
-      metadata; migration of program-specific parsers remains separate work.
+      Gaussian now parses TS/Freq logs; xTB, ASE, and QBICS currently expose
+      adapter boundaries plus filesystem artifact metadata.
+- [x] Move Gaussian TS/Freq log parsing into `backends/gaussian.py`; keep
+      `tool/parse_gaussian_ts_result.py` as the artifact-writing CLI and
+      compatibility import path.
 - [x] Introduce `remote/` contracts with `RemoteTransport`,
       `RemoteWorkspace`, and sync-plan abstractions.
 - [x] Add concrete `OpenSSHTransport`.
@@ -175,3 +178,12 @@ Do not edit the installed skill at
   `86 passed, 1 skipped`; full pytest `199 passed, 2 skipped`; script help
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-cli-smoke.kCw7Wo/tssearch_smoke`.
+- 2026-06-13: Moved Gaussian TS/Freq log parsing into the Gaussian backend
+  adapter. The old `tool/parse_gaussian_ts_result.py` module now delegates to
+  backend parser functions while preserving `parse_log`, `parse_frequencies`,
+  and `parse_convergence` compatibility imports.
+- 2026-06-13: Gaussian backend parser checkpoint validation passed:
+  `git diff --check`; targeted Gaussian parser/backend/import/no-undefined
+  tests `34 passed, 1 skipped`; full pytest `201 passed, 2 skipped`; script
+  help smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-backend-smoke.cFU7bo/tssearch_smoke`.
