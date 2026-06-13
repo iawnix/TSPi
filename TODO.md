@@ -100,6 +100,10 @@ Do not edit the installed skill at
       preserving pretty JSON output and old helper import names.
 - [x] Migrate the node execution CLI onto `CLIBase` while preserving
       node-scoped cwd/env/metadata behavior and dry-run JSON output.
+- [x] Move structural endpoint connectivity checking into
+      `gate/connectivity.py`, with `tool/rmsd_connectivity_check.py` kept as a
+      compatibility re-export and `scripts/rmsd_connectivity_check.py` pointing
+      at the gate module directly.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
@@ -169,6 +173,7 @@ Do not edit the installed skill at
 - `2f2fd31` `refactor: move gaussian preflight cli to base`
 - `84a0821` `refactor: move gaussian input prep to backend`
 - `b63b845` `refactor: move node exec to chemtool layer`
+- `f960c95` `docs: align node exec references with refactor`
 
 ## Completion Log
 
@@ -335,3 +340,12 @@ Do not edit the installed skill at
   `31 passed`; full pytest `213 passed, 2 skipped`; script help smoke
   `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-doc-smoke.whuBAt/tssearch_smoke`.
+- 2026-06-14: Moved structural endpoint connectivity checking from
+  `tool/rmsd_connectivity_check.py` to `gate/connectivity.py`. The script now
+  imports the gate module directly, while the old `tool/` path remains a thin
+  compatibility re-export covered by import-boundary tests.
+- 2026-06-14: Connectivity gate migration validation passed:
+  `git diff --check`; targeted import/connectivity/reference tests
+  `22 passed`; full pytest `214 passed, 2 skipped`; script help smoke
+  `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-connectivity-smoke.JhDw02/tssearch_smoke`.

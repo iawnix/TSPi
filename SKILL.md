@@ -281,8 +281,8 @@ Python tooling follows a package layout:
   templates, evidence registry append, start-node, backtrack lifecycle, and
   `plan-next` planning packets.
 - `src/transition_state_workflow/gate/`: ChemGate-facing read and closure
-  logic: evidence gates, workspace validation, normalized explorer views, and
-  `finalize-node`.
+  logic: evidence gates, workspace validation, normalized explorer views,
+  structural endpoint connectivity checking, and `finalize-node`.
 - `src/transition_state_workflow/tools/`: ChemTool protocol, capability
   vocabulary, registry, and node-scoped local command execution via
   `NodeExecutionTool`.
@@ -314,7 +314,8 @@ Python tooling follows a package layout:
   `gaussian_gen_preflight.py` also use `CLIBase` for shared argument parsing,
   logging, JSON output, and error envelopes while delegating Gaussian-specific
   input handling to the backend. `node_exec.py` is a CLIBase compatibility
-  entrypoint over `tools/node_exec.py`.
+  entrypoint over `tools/node_exec.py`; `rmsd_connectivity_check.py` is a
+  compatibility entrypoint over `gate/connectivity.py`.
   The NEB toolkit lives in the `tool/ase_neb/` subpackage, split by concern into
   layered modules
   (`constants`/`errors`/`coerce` leaves; `geometry`/`gaussian_calc`;

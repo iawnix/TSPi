@@ -140,3 +140,13 @@ def test_remote_and_web_cli_output_goes_through_util_cli() -> None:
         for source_file in sorted((PACKAGE / layer).rglob("*.py")):
             offenders.extend(raw_cli_output_violations(source_file))
     assert not offenders, "remote/web bypass util.cli output helpers:\n" + "\n".join(offenders)
+
+
+def test_connectivity_checker_lives_in_gate_with_tool_compatibility() -> None:
+    from transition_state_workflow.gate import connectivity
+    from transition_state_workflow.tool import rmsd_connectivity_check
+
+    assert rmsd_connectivity_check.main is connectivity.main
+    assert rmsd_connectivity_check.build_parser is connectivity.build_parser
+    compat_source = PACKAGE / "tool" / "rmsd_connectivity_check.py"
+    assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 6

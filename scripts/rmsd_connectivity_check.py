@@ -11,7 +11,7 @@ SKILL_ROOT_DIRECTORY = Path(__file__).resolve().parents[1]
 SRC_DIRECTORY = SKILL_ROOT_DIRECTORY / "src"
 sys.path.insert(0, str(SRC_DIRECTORY))
 
-from transition_state_workflow.tool.rmsd_connectivity_check import main  # noqa: E402
+from transition_state_workflow.gate.connectivity import main  # noqa: E402
 
 
 if __name__ == "__main__":
