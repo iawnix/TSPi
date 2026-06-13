@@ -85,6 +85,9 @@ Do not edit the installed skill at
 - [x] Move core `init` workspace file creation into `core/workspace_state.py`;
       keep explorer registration and explorer checklist generation in the CLI/
       web boundary.
+- [x] Move remote Gaussian monitor/status/tail/fetch logic into
+      `remote/gaussian_monitor.py`, with the legacy `tool/` import path kept as
+      a compatibility wrapper.
 - [ ] Update `SKILL.md` and `references/` after code boundaries exist; do not
       describe future architecture as current behavior before tests prove it.
 - [ ] Run compatibility validation after each checkpoint:
@@ -127,3 +130,6 @@ Do not edit the installed skill at
 - 2026-06-13: Moved core `init` workspace file creation into
   `core/workspace_state.py`; `tool/hypothesis_workspace.py` now handles only
   CLI dispatch plus explorer registration/checklist for init.
+- 2026-06-13: Moved remote Gaussian status/tail/fetch implementation into
+  `remote/gaussian_monitor.py`; `tool/remote_gaussian_monitor.py` remains a
+  compatibility import for existing scripts and tests.
