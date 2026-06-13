@@ -172,7 +172,7 @@ the branch that produced them.
 Prefer the node-scoped wrapper for local or already-staged remote runs:
 
 ```bash
-python /home/iaw/.codex/skills/transition-state-workflow/scripts/ts_node_exec.py \
+python scripts/ts_node_exec.py \
   --workspace /path/to/tssearch_system \
   --node-id n120_xtb_candidate \
   -- xtb ../inputs/candidate.xyz --opt --chrg <charge> --uhf <unpaired>

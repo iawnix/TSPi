@@ -90,3 +90,10 @@ def test_primary_docs_link_mechanism_analysis_sources() -> None:
         REFERENCES / "qbics_dmecp.md",
     ):
         assert source_name in path.read_text(encoding="utf-8")
+
+
+def test_user_facing_docs_use_repo_local_script_examples() -> None:
+    installed_script_prefix = "/home/iaw/.codex/skills/transition-state-workflow/scripts/"
+    for path in USER_FACING_DOCS:
+        text = path.read_text(encoding="utf-8")
+        assert installed_script_prefix not in text, f"{path.name}: use repo-local scripts/ examples"

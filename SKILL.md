@@ -327,9 +327,10 @@ Python tooling follows a package layout:
   `config/state_contract.py`, shipped through the normalizer; the UI keeps no
   vocabulary of its own.
 - `scripts/*.py`: thin CLI wrappers only; do not put workflow logic there.
-  The convention is stdout = JSON result (`emit_json`), stderr = diagnostics
-  and the failure envelope; most tools route their `main` through
-  `util.cli.run_cli` for that.
+  Most tools emit JSON result payloads on stdout through `emit_json`, with
+  diagnostics and failure envelopes on stderr through `util.cli.run_cli`.
+  `ts_node_exec.py --dry-run` emits JSON; normal `ts_node_exec.py` execution
+  relays the wrapped engine stdout/stderr while writing node-scoped metadata.
 
 - `references/hypothesis_workspace.md`: chemistry hypothesis workspace,
   evidence registry, decision cards, and knowledge-update rules.

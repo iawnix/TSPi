@@ -129,10 +129,46 @@ Do not edit the installed skill at
       `util/remote_exec.py` kept as a compatibility wrapper.
 - [x] Update `SKILL.md` and `references/` after code boundaries exist; do not
       describe future architecture as current behavior before tests prove it.
-- [ ] Run compatibility validation after each checkpoint:
-      full pytest, script help smoke tests, strict workspace validator smoke,
-      and normalized view smoke.
-- [ ] Push every completed checkpoint to Gitea and record commit ids here.
+- [x] Run compatibility validation after each completed checkpoint through the
+      node-exec ChemTool checkpoint: full pytest, script help smoke tests,
+      strict workspace validator smoke, and normalized view smoke are recorded
+      in the completion log below.
+- [x] Push every completed checkpoint through the node-exec ChemTool checkpoint
+      to Gitea and record commit ids here.
+
+## Checkpoint Commits
+
+- `f72c33d` `chore: import transition-state workflow skill snapshot`
+- `206aaf5` `docs: track refactor plan in todo`
+- `f2b62da` `refactor: scaffold architecture contracts`
+- `189c579` `refactor: add tool backend remote registries`
+- `0b837e9` `refactor: add explicit remote sync cli`
+- `ec633d2` `refactor: move explorer server to web boundary`
+- `e3d71de` `refactor: move gate logic out of tool layer`
+- `322e4e1` `refactor: move finalize logic into gate layer`
+- `4a02864` `refactor: move workspace state writers into core`
+- `d1c8826` `refactor: move plan-next logic into core`
+- `bd67f68` `refactor: move evidence registry writer into core`
+- `4d7be78` `refactor: move decision card writer into core`
+- `bf57b02` `refactor: move workspace init writer into core`
+- `680dce6` `refactor: move remote gaussian monitor into remote layer`
+- `ac4142f` `refactor: move remote gaussian runner into remote layer`
+- `d6879f6` `refactor: move openssh executor into remote layer`
+- `5c8796c` `feat: add sftp and mcp remote transports`
+- `7a9e4eb` `refactor: point remote scripts at remote package`
+- `ac7fdc4` `docs: update architecture layout references`
+- `1c2a704` `refactor: centralize cli diagnostics`
+- `ac6a00a` `refactor: add cli base for gate commands`
+- `576204f` `refactor: move gaussian parser into backend`
+- `57c737f` `refactor: move gaussian force parsers into backend`
+- `85c3ccf` `refactor: share geometry spec parsers`
+- `303c7b1` `refactor: reuse gaussian orientation parser`
+- `c50f017` `refactor: share descriptor frequency parsing`
+- `2221591` `refactor: share geometry descriptor math`
+- `ac34ca0` `refactor: move gaussian parser cli to base`
+- `2f2fd31` `refactor: move gaussian preflight cli to base`
+- `84a0821` `refactor: move gaussian input prep to backend`
+- `b63b845` `refactor: move node exec to chemtool layer`
 
 ## Completion Log
 
@@ -289,3 +325,13 @@ Do not edit the installed skill at
   `34 passed, 1 skipped`; full pytest `212 passed, 2 skipped`; script help
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-node-exec-smoke.sj5zP0/tssearch_smoke`.
+- 2026-06-14: Replaced installed-skill `ts_node_exec.py` examples in candidate
+  generation and QBICS references with repo-local `scripts/ts_node_exec.py`,
+  clarified that normal node execution relays wrapped engine stdout/stderr
+  while dry-run emits JSON, and added a reference contract regression for
+  repo-local script examples.
+- 2026-06-14: Docs/code consistency repair validation passed:
+  `git diff --check`; targeted reference/import/CLI/node-exec tests
+  `31 passed`; full pytest `213 passed, 2 skipped`; script help smoke
+  `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-doc-smoke.whuBAt/tssearch_smoke`.

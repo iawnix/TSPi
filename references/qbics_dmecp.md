@@ -76,7 +76,7 @@ node-scoped.
 Prefer the node-scoped wrapper for direct QBICS invocations:
 
 ```bash
-python /home/iaw/.codex/skills/transition-state-workflow/scripts/ts_node_exec.py \
+python scripts/ts_node_exec.py \
   --workspace /path/to/tssearch_system \
   --node-id n490_qbics_dmecp_candidate \
   -- qbics-linux-cpu-mpi ../inputs/qbics_input.inp
