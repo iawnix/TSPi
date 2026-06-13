@@ -292,7 +292,9 @@ Python tooling follows a package layout:
   backend owns TS/Freq input rendering/preparation, TS/Freq log parsing, and
   parsed summary/status properties through `GaussianBackendAdapter`; it also
   owns external-Gaussian NEB SCF-energy and force-block parsers used by the ASE
-  calculator adapter.
+  calculator adapter, plus the Gaussian descriptor text parsers for frequency
+  metadata, imaginary-mode vectors, charge tables, frontier orbitals, and
+  dipole moments used by `TSDescriptorExtractionTool`.
 - `src/transition_state_workflow/remote/`: remote execution and synchronization
   boundary. `exec.py` owns the argv-only OpenSSH executor, `openssh.py` adapts
   it to `RemoteTransport`, `sftp.py` provides optional Paramiko SSH/SFTP,

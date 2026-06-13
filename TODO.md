@@ -111,6 +111,14 @@ Do not edit the installed skill at
       keep `tool/ts_descriptor_extract.py` as a compatibility re-export, point
       `scripts/ts_descriptor_extract.py` at the new tools module, and validate
       old helper imports plus CLI output artifacts before pushing.
+- [x] Extract Gaussian descriptor parser helpers into the Gaussian backend:
+      plan before code changes is to move Gaussian-specific descriptor text
+      parsers from `tools/descriptors.py` to `backends/gaussian.py`, keep
+      descriptor composition, ChemTool execution, and artifact output in
+      `tools/descriptors.py`, preserve compatibility imports through
+      `tool/ts_descriptor_extract.py`, and validate backend helper ownership,
+      old helper imports, CLI output artifacts, script help, and full tests
+      before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
@@ -369,3 +377,14 @@ Do not edit the installed skill at
   tests `40 passed, 1 skipped`; full pytest `216 passed, 2 skipped`; script
   help smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-descriptor-tool-smoke.O1PKCy/tssearch_smoke`.
+- 2026-06-14: Moved Gaussian-specific descriptor text parsers from
+  `tools/descriptors.py` to `backends/gaussian.py`. `tools/descriptors.py`
+  now keeps descriptor composition, `TSDescriptorExtractionTool`, and artifact
+  output while old helper imports remain available through the compatibility
+  path.
+- 2026-06-14: Gaussian descriptor backend parser validation passed:
+  `git diff --check`; targeted import/parser/architecture/descriptor/reference
+  tests `57 passed, 1 skipped`; full pytest `216 passed, 2 skipped`; script
+  help smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-backend-descriptor-smoke.AzxVay/tssearch_smoke` with validator
+  summary `0 errors, 0 warnings`.

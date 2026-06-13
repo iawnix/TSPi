@@ -153,10 +153,15 @@ def test_connectivity_checker_lives_in_gate_with_tool_compatibility() -> None:
 
 
 def test_descriptor_extractor_lives_in_tools_with_tool_compatibility() -> None:
+    from transition_state_workflow.backends import gaussian
     from transition_state_workflow.tool import ts_descriptor_extract
     from transition_state_workflow.tools import descriptors
 
     assert ts_descriptor_extract.main is descriptors.main
-    assert ts_descriptor_extract.parse_freq_metadata is descriptors.parse_freq_metadata
+    assert descriptors.parse_freq_metadata is gaussian.parse_freq_metadata
+    assert descriptors.parse_imaginary_vectors is gaussian.parse_imaginary_vectors
+    assert descriptors.parse_charge_table is gaussian.parse_charge_table
+    assert ts_descriptor_extract.parse_freq_metadata is gaussian.parse_freq_metadata
+    assert ts_descriptor_extract.parse_imaginary_vectors is gaussian.parse_imaginary_vectors
     compat_source = PACKAGE / "tool" / "ts_descriptor_extract.py"
     assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 6

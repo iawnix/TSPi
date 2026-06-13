@@ -9,10 +9,14 @@ from typing import Any, Mapping
 
 from transition_state_workflow.backends.base import FilesystemBackendAdapter
 from transition_state_workflow.backends.contracts import BackendInput, BackendOutput
-from transition_state_workflow.chem.gaussian_log import orientation_blocks as gaussian_orientation_blocks
+from transition_state_workflow.chem.gaussian_log import (
+    orientation_blocks as gaussian_orientation_blocks,
+    standard_frequency_values,
+)
 
 GaussianCoord = tuple[str, float, float, float]
 GaussianFrame = tuple[str, list[GaussianCoord]]
+HARTREE_TO_EV = 27.211386245988
 
 
 @dataclass(frozen=True)
@@ -280,6 +284,201 @@ def parse_gaussian_forces_hartree_per_bohr(output_path: Path, natoms: int) -> An
             f"got {len(data)} rows, expected {natoms}"
         )
     return np.array(data, dtype=float)
+
+
+def parse_last_scf_energy(lines: list[str]) -> float | None:
+    """Return the final SCF energy from Gaussian text lines."""
+
+    energies = []
+    for line in lines:
+        match = re.search(r"SCF Done:\s+E\([^)]+\)\s*=\s*([-+]?\d+\.\d+)", line)
+        if match:
+            energies.append(float(match.group(1)))
+    return energies[-1] if energies else None
+
+
+def parse_charge_multiplicity(lines: list[str]) -> tuple[int | None, int | None]:
+    """Return the first Gaussian charge/multiplicity declaration."""
+
+    for line in lines:
+        match = re.search(r"Charge\s*=\s*(-?\d+)\s+Multiplicity\s*=\s*(\d+)", line)
+        if match:
+            return int(match.group(1)), int(match.group(2))
+    return None, None
+
+
+def parse_freq_metadata(lines: list[str]) -> dict[str, object]:
+    """Parse compact frequency metadata used by TS descriptor extraction."""
+
+    frequencies: list[float] = []
+    red_masses: list[float] = []
+    force_constants: list[float] = []
+    ir_intensities: list[float] = []
+    for line in lines:
+        freq_values = standard_frequency_values(line)
+        if freq_values is not None:
+            frequencies.extend(freq_values)
+        elif "Red. masses --" in line:
+            red_masses.extend(float(value) for value in line.split("--", 1)[1].split())
+        elif "Frc consts  --" in line:
+            force_constants.extend(float(value) for value in line.split("--", 1)[1].split())
+        elif "IR Inten    --" in line:
+            ir_intensities.extend(float(value) for value in line.split("--", 1)[1].split())
+    imaginary = [freq for freq in frequencies if freq < 0.0]
+    return {
+        "frequency_count": len(frequencies),
+        "imaginary_frequency_count": len(imaginary),
+        "imaginary_frequency_cm-1": imaginary[0] if imaginary else None,
+        "imaginary_reduced_mass_amu": red_masses[0] if red_masses else None,
+        "imaginary_force_constant_mdyne_per_angstrom": force_constants[0] if force_constants else None,
+        "imaginary_ir_intensity_km_per_mol": ir_intensities[0] if ir_intensities else None,
+    }
+
+
+def parse_imaginary_vectors(lines: list[str], natoms: int) -> list[tuple[float, float, float]]:
+    """Parse the displacement vectors for the first imaginary frequency."""
+
+    for i, line in enumerate(lines):
+        freqs = standard_frequency_values(line)
+        if freqs is None:
+            continue
+        if not freqs or freqs[0] >= 0.0:
+            continue
+        j = i + 1
+        while j < len(lines) and not re.match(r"\s*Atom\s+AN\s+", lines[j]):
+            j += 1
+        if j >= len(lines):
+            raise ValueError("Imaginary frequency block has no displacement table")
+        vectors: list[tuple[float, float, float]] = []
+        for row in lines[j + 1 : j + 1 + natoms]:
+            parts = row.split()
+            if len(parts) < 5:
+                raise ValueError("Malformed imaginary frequency displacement row")
+            vectors.append((float(parts[2]), float(parts[3]), float(parts[4])))
+        return vectors
+    raise ValueError("No imaginary frequency displacement block found")
+
+
+def parse_last_mulliken(lines: list[str]) -> dict[int, float]:
+    """Return the final Mulliken charge table."""
+
+    return parse_charge_table(lines, "Mulliken charges:", "Sum of Mulliken charges")
+
+
+def parse_charge_table(lines: list[str], header: str, stop_prefix: str | None = None) -> dict[int, float]:
+    """Return the final Gaussian charge table matching ``header``."""
+
+    blocks: list[dict[int, float]] = []
+    i = 0
+    while i < len(lines):
+        if lines[i].strip() != header:
+            i += 1
+            continue
+        i += 1
+        block: dict[int, float] = {}
+        while i < len(lines):
+            if stop_prefix and stop_prefix in lines[i]:
+                break
+            parts = lines[i].split()
+            if len(parts) == 3 and parts[0].isdigit():
+                block[int(parts[0])] = float(parts[2])
+            elif block and (not parts or not parts[0].isdigit()):
+                break
+            i += 1
+        if block:
+            blocks.append(block)
+    return blocks[-1] if blocks else {}
+
+
+def parse_frontier_orbitals(lines: list[str]) -> dict[str, float | int | None]:
+    """Parse the final alpha/beta frontier orbital block from Gaussian text."""
+
+    blocks: list[dict[str, list[float]]] = []
+    current: dict[str, list[float]] = {"alpha_occ": [], "alpha_virt": [], "beta_occ": [], "beta_virt": []}
+    saw_virt = False
+    for line in lines:
+        label = None
+        if "Alpha  occ. eigenvalues --" in line or "Alpha occ. eigenvalues --" in line:
+            label = "alpha_occ"
+        elif "Alpha virt. eigenvalues --" in line:
+            label = "alpha_virt"
+        elif "Beta  occ. eigenvalues --" in line or "Beta occ. eigenvalues --" in line:
+            label = "beta_occ"
+        elif "Beta virt. eigenvalues --" in line:
+            label = "beta_virt"
+        if label is None:
+            continue
+        if label.endswith("occ") and saw_virt and any(current.values()):
+            blocks.append(current)
+            current = {"alpha_occ": [], "alpha_virt": [], "beta_occ": [], "beta_virt": []}
+            saw_virt = False
+        values = [float(value) for value in re.findall(r"[-+]?\d+\.\d+", line.split("--", 1)[1])]
+        current[label].extend(values)
+        if label.endswith("virt"):
+            saw_virt = True
+    if any(current.values()):
+        blocks.append(current)
+
+    selected = None
+    for block in reversed(blocks):
+        if block["alpha_occ"] and block["alpha_virt"]:
+            selected = block
+            break
+    if not selected:
+        return {}
+
+    alpha_homo = selected["alpha_occ"][-1]
+    alpha_lumo = selected["alpha_virt"][0]
+    result: dict[str, float | int | None] = {
+        "alpha_homo_hartree": alpha_homo,
+        "alpha_lumo_hartree": alpha_lumo,
+        "alpha_gap_hartree": alpha_lumo - alpha_homo,
+        "alpha_homo_ev": alpha_homo * HARTREE_TO_EV,
+        "alpha_lumo_ev": alpha_lumo * HARTREE_TO_EV,
+        "alpha_gap_ev": (alpha_lumo - alpha_homo) * HARTREE_TO_EV,
+        "alpha_occupied_count": len(selected["alpha_occ"]),
+        "alpha_virtual_count": len(selected["alpha_virt"]),
+    }
+    if selected["beta_occ"] and selected["beta_virt"]:
+        beta_homo = selected["beta_occ"][-1]
+        beta_lumo = selected["beta_virt"][0]
+        result.update(
+            {
+                "beta_homo_hartree": beta_homo,
+                "beta_lumo_hartree": beta_lumo,
+                "beta_gap_hartree": beta_lumo - beta_homo,
+                "beta_homo_ev": beta_homo * HARTREE_TO_EV,
+                "beta_lumo_ev": beta_lumo * HARTREE_TO_EV,
+                "beta_gap_ev": (beta_lumo - beta_homo) * HARTREE_TO_EV,
+                "beta_occupied_count": len(selected["beta_occ"]),
+                "beta_virtual_count": len(selected["beta_virt"]),
+            }
+        )
+    return result
+
+
+def parse_last_dipole(lines: list[str]) -> dict[str, float]:
+    """Return the final Gaussian dipole moment block."""
+
+    dipoles: list[dict[str, float]] = []
+    pattern = re.compile(
+        r"X=\s*([-+]?\d+\.\d+)\s+Y=\s*([-+]?\d+\.\d+)\s+Z=\s*([-+]?\d+\.\d+)\s+Tot=\s*([-+]?\d+\.\d+)"
+    )
+    for i, line in enumerate(lines):
+        if "Dipole moment" not in line:
+            continue
+        if i + 1 < len(lines):
+            match = pattern.search(lines[i + 1])
+            if match:
+                dipoles.append(
+                    {
+                        "x_debye": float(match.group(1)),
+                        "y_debye": float(match.group(2)),
+                        "z_debye": float(match.group(3)),
+                        "total_debye": float(match.group(4)),
+                    }
+                )
+    return dipoles[-1] if dipoles else {}
 
 
 # Standard ``Frequencies --`` lines carry exactly two dashes; ``freq=hpmodes``
