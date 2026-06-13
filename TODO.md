@@ -34,24 +34,28 @@ Do not edit the installed skill at
 - [x] Run baseline validation before refactor.
       Result: `PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=src python3 -m pytest -q -p no:cacheprovider`
       -> `177 passed, 2 skipped`.
-- [ ] Add import-boundary tests that lock the intended dependency direction:
+- [x] Add import-boundary tests that lock the intended dependency direction:
       `base/config/util` leaves, `chem/backends` adapters, `core` planning,
       `gate` validation/finalization, `tools` execution, `remote` transport,
       and `web` read-only rendering.
-- [ ] Introduce `core/` with `ChemKernel` interfaces for node planning,
+- [x] Introduce `core/` with `ChemKernel` interfaces for node planning,
       workspace mutation, branch decisions, and pathway-aware state writes.
-- [ ] Introduce `gate/` with `ChemGate` interfaces for evidence classification,
+- [x] Introduce `gate/` with `ChemGate` interfaces for evidence classification,
       `finalize-node`, workspace validation, normalized state derivation, and
       accepted-TS gates.
-- [ ] Introduce `tools/` with a `ChemTool` protocol, tool-result envelope, and
-      registry grouped by capability:
+- [x] Introduce `tools/` with a `ChemTool` protocol, tool-result envelope, and
+      capability vocabulary:
       `candidate_generation`, `optimization`, `tsfreq_validation`,
       `connectivity_check`, and `descriptor_analysis`.
-- [ ] Introduce `backends/` for Gaussian, xTB, ASE, and QBICS input/output
-      adapters so program-specific parsing does not live in control-flow code.
-- [ ] Introduce `remote/` with `RemoteTransport`, `OpenSSHTransport`,
-      future `SFTPTransport`, future `MCPTransport`, `RemoteWorkspace`, and
-      sync-plan abstractions.
+- [ ] Add a concrete `ChemTool` registry grouped by capability.
+- [x] Introduce `backends/` contracts for Gaussian, xTB, ASE, and QBICS
+      input/output adapters so program-specific parsing can be moved out of
+      control-flow code.
+- [ ] Add concrete Gaussian, xTB, ASE, and QBICS backend adapter modules.
+- [x] Introduce `remote/` contracts with `RemoteTransport`,
+      `RemoteWorkspace`, and sync-plan abstractions.
+- [ ] Add concrete `OpenSSHTransport`, future `SFTPTransport`, and future
+      `MCPTransport` modules.
 - [ ] Split local mirror synchronization from remote Gaussian execution:
       sync should be an explicit service step with plan, run, verify, and
       explorer-registry update phases.
@@ -69,3 +73,5 @@ Do not edit the installed skill at
 ## Completion Log
 
 - 2026-06-13: Baseline copied, committed, pushed, and validated.
+- 2026-06-13: Added initial architecture contracts for `base`, `core`, `gate`,
+  `tools`, `backends`, `remote`, and `cli`; added import-boundary tests.
