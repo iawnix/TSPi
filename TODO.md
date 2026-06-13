@@ -64,6 +64,8 @@ Do not edit the installed skill at
       connectivity CLIs as thin error-adapter wrappers.
 - [x] Reuse `chem/gaussian_log.py` orientation-block parsing from Gaussian
       backend and connectivity tools instead of keeping duplicate parsers.
+- [x] Reuse `chem/gaussian_log.py` standard frequency-line parsing from
+      descriptor extraction so `freq=hpmodes` handling is centralized.
 - [x] Introduce `remote/` contracts with `RemoteTransport`,
       `RemoteWorkspace`, and sync-plan abstractions.
 - [x] Add concrete `OpenSSHTransport`.
@@ -218,3 +220,12 @@ Do not edit the installed skill at
   tests `22 passed, 1 skipped`; full pytest `202 passed, 2 skipped`; script
   help smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-orientation-smoke.lY7Elx/tssearch_smoke`.
+- 2026-06-13: Descriptor frequency metadata and imaginary-vector parsing now
+  reuse `chem/gaussian_log.standard_frequency_values`, avoiding a duplicate
+  hpmodes guard and preventing `Frequencies ---` rows from being interpreted as
+  standard imaginary-mode vectors.
+- 2026-06-13: Descriptor frequency parser checkpoint validation passed:
+  `git diff --check`; targeted descriptor/parser/import/no-undefined tests
+  `18 passed, 2 skipped`; full pytest `203 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-descriptor-smoke.ulYEPL/tssearch_smoke`.

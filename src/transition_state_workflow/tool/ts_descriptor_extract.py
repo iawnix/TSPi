@@ -11,7 +11,7 @@ import re
 from collections import Counter
 from pathlib import Path
 
-from transition_state_workflow.chem.gaussian_log import terminated_normally
+from transition_state_workflow.chem.gaussian_log import standard_frequency_values, terminated_normally
 from transition_state_workflow.chem.geometry import Atom, COVALENT_RADII, distance, read_xyz
 from transition_state_workflow.util.cli import CliError, emit_json, run_cli
 
@@ -80,22 +80,15 @@ def parse_charge_multiplicity(lines: list[str]) -> tuple[int | None, int | None]
     return None, None
 
 
-# Standard ``Frequencies --`` lines carry exactly two dashes; ``freq=hpmodes`` also
-# prints high-precision ``Frequencies ---`` lines that must be skipped to avoid
-# double-counting and a ``float('-')`` crash. (Red. masses/Frc consts/IR Inten use
-# distinct labels between the two blocks, so only Frequencies needs the guard.)
-STANDARD_FREQUENCY_LINE = re.compile(r"\s*Frequencies\s+--\s+(.*)")
-
-
 def parse_freq_metadata(lines: list[str]) -> dict[str, object]:
     frequencies: list[float] = []
     red_masses: list[float] = []
     force_constants: list[float] = []
     ir_intensities: list[float] = []
     for line in lines:
-        freq_match = STANDARD_FREQUENCY_LINE.match(line)
-        if freq_match:
-            frequencies.extend(float(value) for value in freq_match.group(1).split())
+        freq_values = standard_frequency_values(line)
+        if freq_values is not None:
+            frequencies.extend(freq_values)
         elif "Red. masses --" in line:
             red_masses.extend(float(value) for value in line.split("--", 1)[1].split())
         elif "Frc consts  --" in line:
@@ -115,9 +108,9 @@ def parse_freq_metadata(lines: list[str]) -> dict[str, object]:
 
 def parse_imaginary_vectors(lines: list[str], natoms: int) -> list[tuple[float, float, float]]:
     for i, line in enumerate(lines):
-        if "Frequencies --" not in line:
+        freqs = standard_frequency_values(line)
+        if freqs is None:
             continue
-        freqs = [float(value) for value in line.split("--", 1)[1].split()]
         if not freqs or freqs[0] >= 0.0:
             continue
         j = i + 1

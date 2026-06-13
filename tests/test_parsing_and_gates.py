@@ -30,6 +30,7 @@ from transition_state_workflow.tool.parse_gaussian_ts_result import (  # noqa: E
 )
 from transition_state_workflow.tool.ts_descriptor_extract import (  # noqa: E402
     parse_freq_metadata,
+    parse_imaginary_vectors,
 )
 
 
@@ -66,6 +67,21 @@ def test_descriptor_metadata_counts_hpmodes_once() -> None:
     meta = parse_freq_metadata(HPMODES_BLOCK)
     assert meta["frequency_count"] == 3
     assert meta["imaginary_frequency_count"] == 1
+
+
+def test_descriptor_imaginary_vectors_skip_hpmodes_frequency_line() -> None:
+    vectors = parse_imaginary_vectors(
+        [
+            " Frequencies ---  -1969.5123    45.1234    90.5678",
+            " Frequencies --   -1969.51     45.12     90.57",
+            " Atom  AN      X      Y      Z        X      Y      Z        X      Y      Z",
+            "    1   6   0.100  0.200  0.300   0.0  0.0  0.0   0.0  0.0  0.0",
+            "    2   1  -0.100 -0.200 -0.300   0.0  0.0  0.0   0.0  0.0  0.0",
+        ],
+        natoms=2,
+    )
+
+    assert vectors == [(0.1, 0.2, 0.3), (-0.1, -0.2, -0.3)]
 
 
 def test_parse_convergence_tolerates_overflow() -> None:
