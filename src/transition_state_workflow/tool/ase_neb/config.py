@@ -14,6 +14,11 @@ import re
 from pathlib import Path
 from typing import Any
 
+from transition_state_workflow.backends.ase import (
+    require_ase,
+    require_gaussian_calculator,
+    require_xtb,
+)
 from transition_state_workflow.config.state_contract import TREE_SCHEMA
 from transition_state_workflow.tools.ase_neb.coerce import as_mapping, as_positive_int
 from transition_state_workflow.tools.ase_neb.constants import (
@@ -23,11 +28,6 @@ from transition_state_workflow.tools.ase_neb.constants import (
     SUPPORTED_INTERPOLATION,
 )
 from transition_state_workflow.tools.ase_neb.errors import ConfigError
-from transition_state_workflow.tool.ase_neb.gaussian_calc import (
-    require_ase,
-    require_gaussian_calculator,
-    require_xtb,
-)
 
 
 @dataclass(frozen=True)

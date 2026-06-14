@@ -15,6 +15,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from transition_state_workflow.backends.ase import import_ase_bits
 from transition_state_workflow.tool.ase_neb.config import input_node_id, safe_slug
 from transition_state_workflow.tool.ase_neb.driver import (
     evaluate_neb_candidate_quality,
@@ -25,9 +26,8 @@ from transition_state_workflow.tools.ase_neb.errors import ConfigError
 from transition_state_workflow.tool.ase_neb.gaussian_calc import (
     ExternalGaussianForceCalculator,
     extract_gaussian_tail_from_template,
-    import_ase_bits,
 )
-from transition_state_workflow.tool.ase_neb.images import read_xyz_images_from_dir, write_image_set
+from transition_state_workflow.tools.ase_neb.images import read_xyz_images_from_dir, write_image_set
 from transition_state_workflow.tool.ase_neb.workspace import (
     append_evidence_record,
     ensure_tree_skeleton,

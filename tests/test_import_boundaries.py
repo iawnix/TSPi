@@ -225,3 +225,25 @@ def test_ase_neb_geometry_mechanism_live_in_tools_with_tool_compatibility() -> N
     for name in ("geometry.py", "mechanism.py"):
         compat_source = PACKAGE / "tool" / "ase_neb" / name
         assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
+
+
+def test_ase_runtime_loader_lives_in_backend_with_tool_compatibility() -> None:
+    from transition_state_workflow.backends import ase
+    from transition_state_workflow.tool.ase_neb import gaussian_calc
+
+    assert gaussian_calc.require_ase is ase.require_ase
+    assert gaussian_calc.require_xtb is ase.require_xtb
+    assert gaussian_calc.require_gaussian_calculator is ase.require_gaussian_calculator
+    assert gaussian_calc.import_ase_bits is ase.import_ase_bits
+
+
+def test_ase_neb_images_live_in_tools_with_tool_compatibility() -> None:
+    from transition_state_workflow.tool.ase_neb import images as old_images
+    from transition_state_workflow.tools.ase_neb import images
+
+    assert old_images.load_endpoint_images is images.load_endpoint_images
+    assert old_images.build_images_from_endpoints is images.build_images_from_endpoints
+    assert old_images.write_image_set is images.write_image_set
+    assert old_images.read_xyz_images_from_dir is images.read_xyz_images_from_dir
+    compat_source = PACKAGE / "tool" / "ase_neb" / "images.py"
+    assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4

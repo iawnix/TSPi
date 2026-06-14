@@ -292,7 +292,8 @@ Python tooling follows a package layout:
   helpers and adapters shared by the candidate-generation implementation:
   constants, `ConfigError`, config-value coercers, ASE-to-`Atom` conversion,
   NEB-facing geometry parser error adaptation, config-field extraction, and
-  NEB-facing mechanism/endpoint summary adapters over `chem/`.
+  NEB-facing mechanism/endpoint summary adapters over `chem/`, plus ASE image
+  loading/interpolation/write/read helpers.
 - `src/transition_state_workflow/backends/`: Gaussian, xTB, ASE, and QBICS
   adapter boundaries for program-specific input/output metadata. The Gaussian
   backend owns TS/Freq input rendering/preparation, TS/Freq log parsing, and
@@ -302,6 +303,9 @@ Python tooling follows a package layout:
   metadata, imaginary-mode vectors, charge tables, frontier orbitals, and
   dipole moments used by `TSDescriptorExtractionTool`; it also owns Gen/GenECP
   preflight parsing and repair helpers used by `gaussian_gen_preflight.py`.
+  The ASE backend owns lazy ASE/xTB/Gaussian-calculator runtime loading through
+  `require_ase`, `require_xtb`, `require_gaussian_calculator`, and
+  `import_ase_bits`.
 - `src/transition_state_workflow/remote/`: remote execution and synchronization
   boundary. `exec.py` owns the argv-only OpenSSH executor, `openssh.py` adapts
   it to `RemoteTransport`, `sftp.py` provides optional Paramiko SSH/SFTP,
@@ -330,12 +334,12 @@ Python tooling follows a package layout:
   `gate/connectivity.py`.
   The remaining ASE NEB candidate-generation implementation lives in the
   `tool/ase_neb/` subpackage for now, split by concern into
-  layered modules (`gaussian_calc`; `config`/`images`; `workspace`;
+  layered modules (`gaussian_calc`; `config`; `workspace`;
   `node_writers`/`driver`/`validation`/`external_gaussian`), with
-  `constants`/`errors`/`coerce`/`geometry`/`mechanism` present as compatibility
-  re-exports over `tools/ase_neb/`. `tool/ase_neb_framework.py` is the thin CLI
-  on top. The dependency direction is strictly downward and covered by import
-  boundary tests.
+  `constants`/`errors`/`coerce`/`geometry`/`mechanism`/`images` present as
+  compatibility re-exports over `tools/ase_neb/`. `tool/ase_neb_framework.py`
+  is the thin CLI on top. The dependency direction is strictly downward and
+  covered by import boundary tests.
 - `src/transition_state_workflow/web/static/`: static explorer UI assets
   loaded by the optional web service. State labels/colors come only from
   `config/state_contract.py`, shipped through the normalizer; the UI keeps no

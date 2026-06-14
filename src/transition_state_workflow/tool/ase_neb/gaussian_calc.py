@@ -17,6 +17,12 @@ import subprocess
 from pathlib import Path
 from typing import Any, Iterator
 
+from transition_state_workflow.backends.ase import (
+    import_ase_bits,
+    require_ase,
+    require_gaussian_calculator,
+    require_xtb,
+)
 from transition_state_workflow.backends.gaussian import (
     parse_gaussian_energy_hartree,
     parse_gaussian_forces_hartree_per_bohr,
@@ -26,48 +32,6 @@ from transition_state_workflow.tools.ase_neb.constants import (
     HARTREE_TO_EV,
 )
 from transition_state_workflow.tools.ase_neb.errors import ConfigError
-
-
-def require_ase() -> None:
-    try:
-        import ase  # noqa: F401
-    except ModuleNotFoundError as exc:
-        raise SystemExit("ASE is required for prepare/run; install ase first") from exc
-
-
-def require_xtb() -> None:
-    try:
-        import xtb  # noqa: F401
-    except ModuleNotFoundError as exc:
-        raise SystemExit("xTB Python bindings are required for calculator.type=xtb") from exc
-
-
-def require_gaussian_calculator() -> None:
-    try:
-        from ase.calculators.gaussian import Gaussian  # noqa: F401
-    except ModuleNotFoundError as exc:
-        raise SystemExit("ASE Gaussian calculator is required for calculator.type=gaussian") from exc
-
-
-def import_ase_bits() -> dict[str, Any]:
-    require_ase()
-    from ase.io import read, write
-    from ase.optimize import BFGS, FIRE, LBFGS, MDMin
-
-    try:
-        from ase.mep import DyNEB, NEB
-    except ImportError:  # pragma: no cover - older ASE fallback
-        from ase.neb import NEB  # type: ignore[no-redef]
-
-        DyNEB = None
-
-    return {
-        "read": read,
-        "write": write,
-        "NEB": NEB,
-        "DyNEB": DyNEB,
-        "optimizers": {"FIRE": FIRE, "BFGS": BFGS, "LBFGS": LBFGS, "MDMin": MDMin},
-    }
 
 
 def extract_gaussian_tail_from_template(template_path: Path) -> str:

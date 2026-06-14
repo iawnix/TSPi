@@ -164,7 +164,7 @@ Do not edit the installed skill at
       compatibility re-exports. Validate that non-NEB callers can import the
       shared primitives without importing ASE, tool-layer modules, or workspace
       writers.
-- [ ] Move ASE runtime loading before moving ASE image IO:
+- [x] Move ASE runtime loading before moving ASE image IO:
       plan before code changes is to move `require_ase`, `require_xtb`,
       `require_gaussian_calculator`, and `import_ase_bits` from
       `tool/ase_neb/gaussian_calc.py` into `backends/ase.py`, keep the old
@@ -496,3 +496,17 @@ Do not edit the installed skill at
   help smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-shared-chem-smoke.HVNjtR/tssearch_smoke` with validator summary
   `0 errors, 0 warnings`.
+- 2026-06-14: Moved ASE runtime loading helpers
+  `require_ase`, `require_xtb`, `require_gaussian_calculator`, and
+  `import_ase_bits` into `backends/ase.py`; `tool/ase_neb/gaussian_calc.py`
+  keeps compatibility helper names. Moved ASE NEB image IO from
+  `tool/ase_neb/images.py` to `tools/ase_neb/images.py`; the old path is a
+  thin compatibility re-export.
+- 2026-06-14: ASE runtime/image IO boundary validation passed:
+  `git diff --check`; `py_compile` for `backends/ase.py`, `tools/ase_neb`,
+  `tool/ase_neb`, and `tool/ase_neb_framework.py`; targeted
+  import/ASE NEB/architecture/reference/parser tests `102 passed, 1 skipped`;
+  full pytest `222 passed, 2 skipped`; script help smoke `18 scripts`; strict
+  workspace validator and normalizer smoke on
+  `/tmp/tswf-ase-runtime-images-smoke2.XIypWO/tssearch_smoke` with validator
+  summary `0 errors, 0 warnings`.
