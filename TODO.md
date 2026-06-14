@@ -544,7 +544,7 @@ Do not edit the installed skill at
       file I/O. Validate py_compile, import boundaries, workspace/finalize/
       pathway/backtrack behavior tests, full pytest, public script help, and
       strict workspace smoke before pushing.
-- [ ] Extract generic hypothesis-workspace init scaffolding into
+- [x] Extract generic hypothesis-workspace init scaffolding into
       `core/workspace/`:
       plan before code changes is to move only reusable workspace-root
       creation and initial state payload mechanics out of
@@ -714,6 +714,9 @@ Do not edit the installed skill at
 - `26ef11d` `docs: record core workspace boundary fix`
 - `2904988` `docs: plan workspace-state primitive reuse`
 - `b51099d` `refactor: reuse core workspace primitives`
+- `5da3797` `docs: record workspace-state primitive reuse`
+- `4f87412` `docs: plan workspace init scaffold extraction`
+- `94f771c` `refactor: extract workspace init scaffold primitives`
 
 ## Completion Log
 
@@ -1417,3 +1420,23 @@ Do not edit the installed skill at
   validator, normalizer, and plan-next smoke on
   `/tmp/tswf-workspace-state-smoke.gmvytB/tssearch_smoke` with validator
   summary `0 errors, 0 warnings` and plan schema `ts-next-action-plan-v1`.
+- 2026-06-14: Extracted generic hypothesis-workspace initialization
+  scaffolding into `core/workspace/scaffold.py`. The new primitives create
+  `nodes/` and `reports/`, build/write the initial `manifest.json`, empty
+  `tree.json`, and empty `evidence_registry.json`, and preserve the existing
+  `--force`/overwrite behavior. `core/workspace_state.py` now keeps only the
+  hypothesis command policy for init: mechanism-model defaults, knowledge-base
+  text, pathway initialization, bond-change parsing, and reaction-class
+  confidence. `SKILL.md` now describes `scaffold.py` as the owner of initial
+  workspace root files.
+  Commit: `94f771c refactor: extract workspace init scaffold primitives`.
+- 2026-06-14: Workspace init scaffold extraction validation passed:
+  `git diff --check`; `py_compile` for `core/workspace/*.py`,
+  `core/workspace_state.py`, `tests/test_workspace_primitives.py`, and
+  `tests/test_import_boundaries.py`; focused workspace/import tests
+  `25 passed`; workspace/finalize/pathway/backtrack/contract/CLI-envelope
+  behavior tests `89 passed`; full pytest `254 passed, 2 skipped`; script
+  help smoke `18 scripts`; strict workspace validator, normalizer, and
+  plan-next smoke on `/tmp/tswf-workspace-init-scaffold-smoke.c4FUcS/tssearch_smoke`
+  with validator summary `0 errors, 0 warnings`, plan schema
+  `ts-next-action-plan-v1`, and manifest node schema `ts-node-v2`.
