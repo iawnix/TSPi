@@ -417,6 +417,26 @@ Do not edit the installed skill at
       `cli`, `remote`, or `web`. Validate old/new import identity, public
       script help, targeted ASE NEB/parsing tests, full pytest, and a strict
       workspace smoke before pushing.
+- [ ] Promote `core/plan_next.py` into a ChemKernel planning subpackage:
+      plan before code changes is to replace the current thick
+      `core/plan_next.py` module with `core/plan_next/` while keeping
+      `transition_state_workflow.core.plan_next` as the public facade and
+      preserving existing imports from `tool/plan_next.py` and
+      `cli/hypothesis_workspace.py`. Split planning responsibilities into
+      cohesive core-only modules: `contracts.py` for `PLAN_SCHEMA` and stable
+      packet constants; `cli.py` for argparse registration only; `loader.py`
+      for workspace/tree/node/evidence reads and conservative validation
+      hooks; `pathway.py` for pathway-plan inference and pathway node filters;
+      `phase.py` for planning-state, phase, and focus inference;
+      `suggestions.py` for decision-card, finalization, reframe, and backtrack
+      action suggestions; `context.py` for failed/reframe/evidence/context
+      summaries and ranking; and `ids.py` for node id sorting and next-id
+      helpers. Keep the subpackage within ChemKernel boundaries: no imports
+      from `backends`, `gate`, `tool`, `tools`, `remote`, or `web`, and no
+      workspace mutation beyond the existing plan-materialization flow owned
+      by `core/workspace_state.py`. Validate compatibility imports, import
+      boundaries, workspace/finalize/pathway/backtrack tests, full pytest,
+      public script help, and a strict workspace smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
