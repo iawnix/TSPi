@@ -521,18 +521,37 @@ def test_ase_neb_execution_lives_in_backend_with_compatibility() -> None:
     assert results.write_path_summary is ase_neb.write_path_summary
     assert results.write_candidate_quality_artifacts is ase_neb.write_candidate_quality_artifacts
 
-    backend_imports = full_internal_imports(PACKAGE / "backends" / "ase_neb.py")
     forbidden = {
+        "transition_state_workflow.cli",
         "transition_state_workflow.core",
         "transition_state_workflow.gate",
+        "transition_state_workflow.remote",
         "transition_state_workflow.tool",
         "transition_state_workflow.tools",
+        "transition_state_workflow.web",
     }
-    assert not [
-        name
-        for name in backend_imports
-        if any(name == prefix or name.startswith(f"{prefix}.") for prefix in forbidden)
-    ]
+    backend_package = PACKAGE / "backends" / "ase_neb"
+    assert backend_package.is_dir()
+    for expected_module in (
+        "__init__.py",
+        "contracts.py",
+        "images.py",
+        "gaussian_external.py",
+        "results.py",
+        "runtime.py",
+    ):
+        assert (backend_package / expected_module).is_file()
+    backend_offenders: list[str] = []
+    for source_file in sorted(backend_package.rglob("*.py")):
+        backend_imports = full_internal_imports(source_file)
+        bad = sorted(
+            name
+            for name in backend_imports
+            if any(name == prefix or name.startswith(f"{prefix}.") for prefix in forbidden)
+        )
+        if bad:
+            backend_offenders.append(f"{source_file.relative_to(ROOT)} imports {', '.join(bad)}")
+    assert not backend_offenders, "ASE NEB backend package reverse imports:\n" + "\n".join(backend_offenders)
 
     driver_imports = full_internal_imports(PACKAGE / "tool" / "ase_neb" / "driver.py")
     assert "transition_state_workflow.tools.ase_neb.workspace" not in driver_imports

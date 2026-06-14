@@ -321,11 +321,16 @@ Python tooling follows a package layout:
   preflight parsing and repair helpers used by `gaussian_gen_preflight.py`.
   The ASE backend owns lazy ASE/xTB/Gaussian-calculator runtime loading through
   `require_ase`, `require_xtb`, `require_gaussian_calculator`, and
-  `import_ase_bits`. `backends/ase_neb.py` owns ASE image loading,
-  interpolation, NEB object construction, calculator attachment, the
-  external-Gaussian calculator request/force calculator, path/force tables,
-  trajectory snapshots, candidate geometry metadata, candidate-quality artifact
-  annotations, and summary payloads.
+  `import_ase_bits`. `backends/ase_neb/` is the ASE NEB backend subpackage:
+  `contracts.py` owns errors, constants, and request/result dataclasses;
+  `images.py` owns endpoint/image/XYZ loading, interpolation, and image-set
+  IO; `gaussian_external.py` owns the external-Gaussian calculator request
+  support, force calculator, template-tail handling, and dry-run input
+  rendering; `results.py` owns path/force tables, trajectory snapshots,
+  candidate geometry metadata, candidate-quality artifact annotations, and
+  summary payloads; `runtime.py` owns NEB object construction, calculator
+  attachment, optimizer execution, and standard/external run APIs. The package
+  `__init__.py` preserves the public `backends.ase_neb` import surface.
 - `src/transition_state_workflow/remote/`: remote execution and synchronization
   boundary. `exec.py` owns the argv-only OpenSSH executor, `openssh.py` adapts
   it to `RemoteTransport`, `sftp.py` provides optional Paramiko SSH/SFTP,
