@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -14,7 +13,13 @@ from transition_state_workflow.config.state_contract import (
     WORKSPACE_NODE_SCHEMA,
 )
 from transition_state_workflow.util.json_io import read_json_object_required, write_json_object
-from transition_state_workflow.util.path_utils import portable_record_path, relative_path_or_absolute, safe_identifier_token
+from transition_state_workflow.util.path_utils import relative_path_or_absolute, safe_identifier_token
+from transition_state_workflow.core.workspace import (
+    append_portable_evidence_record,
+    ensure_workspace_root_has_manifest_and_tree,
+    utc_timestamp,
+    write_text_file_if_allowed,
+)
 
 
 def initialize_ts_hypothesis_workspace_files_from_cli_args(args: argparse.Namespace) -> Path:
@@ -155,31 +160,14 @@ def append_ts_workspace_evidence_record(
 ) -> str:
     """Append one evidence registry record and return its evidence id."""
 
-    source = root.resolve()
-    ensure_workspace_root_has_manifest_and_tree(source)
-    registry_path = source / "evidence_registry.json"
-    registry = read_json_object_required(registry_path)
-    records = list(registry.get("records") or [])
-    evidence_id = f"ev_{safe_identifier_token(node_id)}_{len(records) + 1:04d}"
-    path_payload = portable_record_path(source, path)
-    now = utc_timestamp()
-    records.append(
-        {
-            "evidence_id": evidence_id,
-            "kind": kind,
-            "path": path_payload["path"],
-            "node_id": node_id,
-            "claim": claim,
-            "evidence_state": evidence_state,
-            "external_path": path_payload["external_path"],
-            "external_unavailable": path_payload["external_unavailable"],
-            "created_at": now,
-        }
+    return append_portable_evidence_record(
+        root=root,
+        kind=kind,
+        path=path,
+        node_id=node_id,
+        claim=claim,
+        evidence_state=evidence_state,
     )
-    registry["records"] = records
-    registry["updated_at"] = utc_timestamp()
-    write_json_object(registry_path, registry, overwrite_existing=True)
-    return evidence_id
 
 
 def create_ts_branch_decision_artifacts_from_cli_args(args: argparse.Namespace) -> None:
@@ -507,23 +495,6 @@ def next_event_id(base: str, taken_ids: set[str]) -> str:
     return f"{event_id}_{index:02d}"
 
 
-def write_text_file_if_allowed(file_path: Path, text: str, *, overwrite_existing: bool) -> bool:
-    """Write text when overwrite rules allow it."""
-
-    if file_path.exists() and not overwrite_existing:
-        return False
-    file_path.write_text(text.rstrip() + "\n", encoding="utf-8")
-    return True
-
-
-def ensure_workspace_root_has_manifest_and_tree(root: Path) -> None:
-    """Abort when root is missing the files required for a TS workspace."""
-
-    missing = [name for name in ("manifest.json", "tree.json") if not (root / name).exists()]
-    if missing:
-        raise SystemExit(f"not a TS-search workspace, missing: {', '.join(missing)}")
-
-
 def parse_expected_bond_change_spec(raw: str) -> dict[str, str]:
     """Parse a role:atomA-atomB bond-change specification."""
 
@@ -548,7 +519,6 @@ def default_mechanism_analysis() -> dict[str, list[dict[str, object]]]:
         "energy": [],
     }
 
-
 def default_mechanism_analysis_plan() -> dict[str, list[dict[str, object]]]:
     """Return empty hypothesis-stage analysis-plan buckets."""
 
@@ -559,9 +529,3 @@ def default_mechanism_analysis_plan() -> dict[str, list[dict[str, object]]]:
         "orbital": [],
         "energy": [],
     }
-
-
-def utc_timestamp() -> str:
-    """Return an ISO-8601 UTC timestamp for workspace records."""
-
-    return datetime.now(timezone.utc).isoformat()

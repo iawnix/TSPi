@@ -31,8 +31,8 @@ from transition_state_workflow.core.workspace_state import (
     create_ts_branch_decision_artifacts_from_cli_args,
     initialize_ts_hypothesis_workspace_files_from_cli_args,
     write_suggested_decision_cards_from_plan,
-    write_text_file_if_allowed,
 )
+from transition_state_workflow.core.workspace import write_text_file_if_allowed
 from transition_state_workflow.gate.evidence import record_supports_tsfreq_reframe
 from transition_state_workflow.gate.finalize import (
     finalize_ts_workspace_node_from_cli_args,

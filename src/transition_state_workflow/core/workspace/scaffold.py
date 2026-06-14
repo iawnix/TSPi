@@ -55,6 +55,14 @@ def ensure_tree_skeleton(
         write_markdown(readme, readme_body)
 
 
+def ensure_workspace_root_has_manifest_and_tree(root: Path) -> None:
+    """Abort when root is missing the files required for a TS workspace."""
+
+    missing = [name for name in ("manifest.json", "tree.json") if not (root / name).exists()]
+    if missing:
+        raise SystemExit(f"not a TS-search workspace, missing: {', '.join(missing)}")
+
+
 def write_reflection_template(
     node_dir: Path,
     *,
@@ -145,6 +153,7 @@ def finalize_node_report_and_tree(
 
 __all__ = [
     "ensure_tree_skeleton",
+    "ensure_workspace_root_has_manifest_and_tree",
     "finalize_node_report_and_tree",
     "write_final_reflection",
     "write_reflection_template",

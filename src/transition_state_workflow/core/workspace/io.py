@@ -21,6 +21,15 @@ def write_markdown(path: Path, text: str) -> None:
     path.write_text(text.rstrip() + "\n", encoding="utf-8")
 
 
+def write_text_file_if_allowed(file_path: Path, text: str, *, overwrite_existing: bool) -> bool:
+    """Write text when overwrite rules allow it."""
+
+    if file_path.exists() and not overwrite_existing:
+        return False
+    file_path.write_text(text.rstrip() + "\n", encoding="utf-8")
+    return True
+
+
 def relative_artifact_path(root: Path, path: Path | str | None) -> str:
     """Return a workspace-relative artifact path when possible."""
 
@@ -35,4 +44,4 @@ def relative_artifact_path(root: Path, path: Path | str | None) -> str:
         return str(artifact)
 
 
-__all__ = ["write_json", "write_markdown", "relative_artifact_path"]
+__all__ = ["write_json", "write_markdown", "write_text_file_if_allowed", "relative_artifact_path"]
