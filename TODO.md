@@ -358,6 +358,21 @@ Do not edit the installed skill at
       old public functions and `ConfigError` behavior. Add import-boundary and
       behavior tests, then validate public script help, full tests, and strict
       workspace smoke before pushing.
+- [ ] Split imaginary-mode follow-up across backend, gate, and core:
+      plan before code changes is to move Gaussian-specific log/template
+      reading, imaginary-mode extraction, IRC status parsing, final-geometry
+      extraction, and endpoint-opt `.gjf` rendering out of
+      `tool/imaginary_mode_follow.py` into `backends/gaussian.py`; move the
+      endpoint/IRC connection-screen decision logic into `gate/connectivity.py`;
+      and move node-scoped/legacy artifact layout writing for imaginary-mode
+      endpoint follow-up into a core module such as `core/imaginary_mode_follow.py`.
+      The public `tool/imaginary_mode_follow.py` and
+      `scripts/ts_imaginary_mode_follow.py` should remain CLI adapters with the
+      same commands, return codes, and JSON payloads. Add import-boundary tests
+      that backend/gate/core do not import the legacy tool layer, add behavior
+      tests for old/new helper ownership, then validate public script help,
+      targeted imaginary-mode tests, full pytest, and a strict workspace smoke
+      before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
