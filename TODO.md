@@ -658,7 +658,7 @@ Do not edit the installed skill at
       targeted import/CLI tests, full pytest, all public script `--help`
       smoke tests, strict workspace validator/normalizer/plan-next smoke, and
       practical ASE NEB config/help dry smokes before marking v1 ready.
-- [ ] Remove the remaining legacy `tool/` package:
+- [x] Remove the remaining legacy `tool/` package:
       plan before code changes is to delete
       `src/transition_state_workflow/tool/` entirely after migrating every
       remaining test/import reference to the real owner modules. Test imports
@@ -846,6 +846,9 @@ Do not edit the installed skill at
 - `4b97a74` `refactor: move imaginary mode cli into cli layer`
 - `6a1c94a` `refactor: move gaussian clis into cli layer`
 - `d504496` `refactor: move node exec cli into cli layer`
+- `5176333` `docs: record v1 cli cleanup gate`
+- `dd928ed` `docs: plan legacy tool package removal`
+- `88636d6` `refactor: remove legacy tool package`
 
 ## Completion Log
 
@@ -1660,3 +1663,22 @@ Do not edit the installed skill at
   plan-next smoke on `/tmp/tswf-v1-release-smoke.xnQ3f2/tssearch_smoke` with
   validator summary `0 errors, 0 warnings`, normalize schema
   `ts-explorer-graph-v2`, and plan schema `ts-next-action-plan-v1`.
+- 2026-06-15: Removed the remaining legacy `tool/` package. Deleted
+  `src/transition_state_workflow/tool/` entirely after moving all tests and
+  remaining imports to current owners: explorer helpers to `web/server.py`,
+  remote Gaussian checks to `remote/gaussian_runner.py` and
+  `remote/gaussian_monitor.py`, descriptor parser helpers to
+  `tools/descriptors.py`, connectivity and workspace validation checks to
+  `gate/`, and workspace/plan-next checks to `cli/` plus `core/plan_next`.
+  `SKILL.md` no longer documents a `tool/` directory.
+  Commit: `88636d6 refactor: remove legacy tool package`.
+- 2026-06-15: Legacy `tool/` package removal validation passed:
+  `git diff --check`; `py_compile` for all `src` and `tests` Python files;
+  AST audit confirmed no `transition_state_workflow.tool` imports in `src`,
+  `tests`, or `scripts`; import-boundary tests `28 passed`; focused remote/
+  finalize/pathway/parser tests `74 passed`; full pytest `260 passed,
+  2 skipped`; public script help smoke `18 scripts`; strict workspace
+  init/decision-card/validate/normalize/plan-next smoke on
+  `/tmp/tswf-remove-tool-smoke.AdzLvx/tssearch_smoke` with validator summary
+  `0 errors, 0 warnings`, normalize schema `ts-explorer-graph-v2`, and plan
+  schema `ts-next-action-plan-v1`.
