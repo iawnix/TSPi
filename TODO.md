@@ -399,6 +399,24 @@ Do not edit the installed skill at
       Add import-boundary/compatibility tests, then validate public script help,
       targeted ASE NEB/parsing tests, full pytest, and strict workspace smoke
       before pushing.
+- [ ] Promote the ASE NEB backend file into a backend subpackage:
+      plan before code changes is to replace the current thick
+      `backends/ase_neb.py` module with `backends/ase_neb/` while keeping
+      `transition_state_workflow.backends.ase_neb` as the public facade.
+      Split backend-internal responsibilities into cohesive modules:
+      `contracts.py` for errors, constants, and request/result dataclasses;
+      `images.py` for endpoint/image/XYZ loading, interpolation, and image-set
+      IO; `gaussian_external.py` for external-Gaussian force calculators,
+      template-tail handling, and dry-run input rendering; `results.py` for
+      force tables, path summaries, and backend-owned candidate artifacts; and
+      `runtime.py` for calculator construction, NEB object creation,
+      optimizer execution, and standard/external NEB run APIs. Preserve all old
+      public imports through `backends.ase_neb`, `tools/ase_neb/*`, and
+      `tool/ase_neb/*`, and add import-boundary coverage that no module in the
+      ASE NEB backend subpackage imports `core`, `gate`, `tool`, `tools`,
+      `cli`, `remote`, or `web`. Validate old/new import identity, public
+      script help, targeted ASE NEB/parsing tests, full pytest, and a strict
+      workspace smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
