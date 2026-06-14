@@ -247,11 +247,19 @@ Do not edit the installed skill at
 - `90394a4` `refactor: move connectivity checker into gate`
 - `d21df8e` `docs: record connectivity migration checkpoint`
 - `83cc6c1` `refactor: move descriptor extraction into chemtool`
+- `fc254ce` `docs: record descriptor migration checkpoint`
 - `6800d39` `refactor: move descriptor parsers into gaussian backend`
+- `ba9c6a2` `docs: record descriptor backend checkpoint`
 - `d69d612` `refactor: move gaussian gen preflight into backend`
+- `d04f981` `docs: record gaussian gen preflight checkpoint`
 - `ba5cdd7` `refactor: move ase neb leaf helpers into tools`
+- `bbfb11e` `docs: record ase neb leaf checkpoint`
 - `5db4717` `refactor: move ase neb geometry mechanism into tools`
+- `e37b59d` `docs: record ase neb geometry mechanism checkpoint`
+- `9bf43b1` `docs: plan shared geometry mechanism extraction`
 - `350aac6` `refactor: share chemistry geometry mechanism primitives`
+- `1fbb43a` `docs: record shared chemistry primitive checkpoint`
+- `c7e5a9e` `refactor: move ase runtime and image io boundaries`
 
 ## Completion Log
 
