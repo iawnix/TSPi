@@ -494,6 +494,23 @@ Do not edit the installed skill at
       py_compile, import boundaries, pathway/backtrack/finalize/workspace
       tests, full pytest, public script help, and strict workspace smoke before
       pushing.
+- [ ] Split ChemKernel plan-next packet assembly from workspace snapshot
+      loading:
+      plan before code changes is to reduce coupling in `core/plan_next`
+      without moving scientific policy to generic helpers. Keep
+      `phase.py` as the owner of phase/gate/focus policy, `pathway.py` as the
+      owner of pathway planning policy, `suggestions.py` as the owner of
+      next-action suggestion payloads, and `context.py` as the owner of ranked
+      context items. Move the public `build_plan_next_packet` implementation
+      from `core/plan_next/__init__.py` into a dedicated packet orchestrator,
+      and extract workspace loading plus node-claim classification into a
+      reusable core snapshot module. Reduce `__init__.py` to a compatibility
+      facade with stable exports so existing imports from
+      `transition_state_workflow.core.plan_next`, `tool/plan_next.py`, and
+      `scripts/ts_hypothesis_workspace.py` continue to work. Validate
+      py_compile, import boundaries, plan-next/finalize/pathway/backtrack
+      behavior tests, full pytest, public script help, and strict workspace
+      smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
