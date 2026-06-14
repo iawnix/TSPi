@@ -325,7 +325,7 @@ Do not edit the installed skill at
       helpers directly, keep old public imports working, then validate targeted
       ASE/import tests, full tests, script help, and strict workspace smoke
       before pushing.
-- [ ] Move NEB candidate validation policy into ChemGate:
+- [x] Move NEB candidate validation policy into ChemGate:
       plan before code changes is to create `gate/neb_candidate.py` for
       backend-agnostic NEB candidate validation policy: displacement ladder
       selection, connectivity threshold policy, IRC requirement policy, and
@@ -451,6 +451,9 @@ Do not edit the installed skill at
 - `110af47` `docs: record ase neb runtime backend checkpoint`
 - `1962952` `docs: plan ase neb preparation backend migration`
 - `0e2ba4e` `refactor: move ase neb preparation into backend`
+- `89b3983` `docs: record ase neb preparation checkpoint`
+- `dd0c639` `docs: plan neb candidate gate migration`
+- `69980ba` `refactor: move neb candidate policy into gate`
 
 ## Completion Log
 
@@ -898,4 +901,20 @@ Do not edit the installed skill at
   `18 passed, 1 skipped`; full pytest `233 passed, 2 skipped`; script help
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-ase-prepare-backend-smoke.bHku6f/tssearch_smoke` with validator
+  summary `0 errors, 0 warnings`.
+- 2026-06-14: Moved backend-agnostic NEB candidate validation policy into
+  `gate/neb_candidate.py`: displacement ladders, connectivity threshold
+  policy, IRC requirement policy, and validation-policy payload construction
+  now live in ChemGate. `tool/ase_neb/validation.py` keeps the old import path,
+  adapts gate `ValueError` failures back to `ConfigError`, and continues to
+  own the remaining CLI/workspace orchestration until the later core split.
+- 2026-06-14: NEB candidate gate validation passed:
+  `git diff --check`; `py_compile` for `gate/neb_candidate.py`,
+  `tool/ase_neb/validation.py`, `tests/test_import_boundaries.py`, and
+  `tests/test_ase_neb_pure.py`; targeted import/ASE NEB/parsing tests
+  `90 passed, 1 skipped`; reference/no-undefined/architecture tests
+  `18 passed, 1 skipped`; reference-doc contract test `7 passed`; full pytest
+  `236 passed, 2 skipped`; script help smoke `18 scripts`; strict workspace
+  validator and normalizer smoke on
+  `/tmp/tswf-neb-candidate-gate-smoke.bR0Q9B/tssearch_smoke` with validator
   summary `0 errors, 0 warnings`.
