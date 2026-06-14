@@ -393,3 +393,27 @@ def test_ase_neb_execution_lives_in_backend_with_compatibility() -> None:
         PACKAGE / "tools" / "ase_neb" / "results.py",
     ):
         assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
+
+
+def test_ase_neb_framework_delegates_to_workflow_module() -> None:
+    from transition_state_workflow.tool import ase_neb_framework
+    from transition_state_workflow.tool.ase_neb import workflow
+
+    assert ase_neb_framework.prepare is workflow.prepare
+    assert ase_neb_framework.run_neb is workflow.run_neb
+    assert ase_neb_framework.load_config_for_cli is workflow.load_config_for_cli
+    assert ase_neb_framework.make_gaussian_refine_from_cli is workflow.make_gaussian_refine_from_cli
+    assert ase_neb_framework.evaluate_neb_candidate_quality is workflow.evaluate_neb_candidate_quality
+
+    framework_source = PACKAGE / "tool" / "ase_neb_framework.py"
+    framework_imports = full_internal_imports(framework_source)
+    forbidden_direct = {
+        "transition_state_workflow.backends",
+        "transition_state_workflow.core",
+    }
+    assert not [
+        name
+        for name in framework_imports
+        if any(name == prefix or name.startswith(f"{prefix}.") for prefix in forbidden_direct)
+    ]
+    assert len(framework_source.read_text(encoding="utf-8").splitlines()) <= 260
