@@ -271,6 +271,9 @@ Do not edit the installed skill at
 - `350aac6` `refactor: share chemistry geometry mechanism primitives`
 - `1fbb43a` `docs: record shared chemistry primitive checkpoint`
 - `c7e5a9e` `refactor: move ase runtime and image io boundaries`
+- `18afbb5` `docs: record ase runtime image boundary checkpoint`
+- `5077030` `docs: plan ase neb config migration`
+- `8b73e20` `refactor: move ase neb config into tools`
 
 ## Completion Log
 
