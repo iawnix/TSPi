@@ -278,8 +278,12 @@ Python tooling follows a package layout:
   orientation blocks, standard frequency-line parsing, and termination checks).
 - `src/transition_state_workflow/config/`: canonical state model, vocabularies,
   and the v2 contract checks shared by the validator and normalizer.
-- `src/transition_state_workflow/cli/`: public CLI contracts and re-exports for
-  `CLIBase`, `CLIResult`, `Command`, and `CommandResult`.
+- `src/transition_state_workflow/cli/`: public CLI contracts and command
+  assembly. It re-exports `CLIBase`, `CLIResult`, `Command`, and
+  `CommandResult`, and owns `hypothesis_workspace.py`, the argparse
+  construction and subcommand dispatch for `ts_hypothesis_workspace.py`,
+  including explorer-registration CLI policy and the explorer launch
+  checklist text.
 - `src/transition_state_workflow/core/`: ChemKernel-facing planning and
   workspace state writers: workspace initialization, decision-card/node
   templates, evidence registry append, start-node, backtrack lifecycle,
@@ -341,6 +345,8 @@ Python tooling follows a package layout:
   input handling to the backend. `node_exec.py` is a CLIBase compatibility
   entrypoint over `tools/node_exec.py`; `ts_descriptor_extract.py` is a
   compatibility entrypoint over `tools/descriptors.py`;
+  `hypothesis_workspace.py` is a compatibility entrypoint over
+  `cli/hypothesis_workspace.py`;
   `rmsd_connectivity_check.py` is a compatibility entrypoint over
   `gate/connectivity.py`. `tool/ase_neb/gaussian_calc.py`,
   `tool/ase_neb/driver.py`, `tool/ase_neb/images.py`,

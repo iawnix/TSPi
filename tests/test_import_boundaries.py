@@ -184,6 +184,35 @@ def test_descriptor_extractor_lives_in_tools_with_tool_compatibility() -> None:
     assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 6
 
 
+def test_hypothesis_workspace_cli_lives_in_cli_with_tool_compatibility() -> None:
+    from transition_state_workflow.cli import hypothesis_workspace
+    from transition_state_workflow.gate import evidence
+    from transition_state_workflow.tool import hypothesis_workspace as old_workspace
+    from transition_state_workflow.tool import plan_next
+
+    assert old_workspace.main is hypothesis_workspace.main
+    assert old_workspace.build_parser is hypothesis_workspace.build_parser
+    assert (
+        old_workspace.initialize_ts_hypothesis_workspace_from_cli_args
+        is hypothesis_workspace.initialize_ts_hypothesis_workspace_from_cli_args
+    )
+    assert plan_next.record_supports_tsfreq_reframe is evidence.record_supports_tsfreq_reframe
+
+    cli_imports = full_internal_imports(PACKAGE / "cli" / "hypothesis_workspace.py")
+    assert "transition_state_workflow.tool" not in {
+        name.split(".", 2)[0] + "." + name.split(".", 2)[1]
+        for name in cli_imports
+        if name.startswith("transition_state_workflow.")
+    }
+
+    script_source = (ROOT / "scripts" / "ts_hypothesis_workspace.py").read_text(encoding="utf-8")
+    assert "transition_state_workflow.cli.hypothesis_workspace import main" in script_source
+    assert "transition_state_workflow.tool.hypothesis_workspace import main" not in script_source
+
+    compat_source = PACKAGE / "tool" / "hypothesis_workspace.py"
+    assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 5
+
+
 def test_gaussian_gen_preflight_helpers_live_in_backend_with_tool_compatibility() -> None:
     from transition_state_workflow.backends import gaussian
     from transition_state_workflow.tool import gaussian_gen_preflight

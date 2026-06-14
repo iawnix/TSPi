@@ -11,7 +11,7 @@ SKILL_ROOT_DIRECTORY = Path(__file__).resolve().parents[1]
 SRC_DIRECTORY = SKILL_ROOT_DIRECTORY / "src"
 sys.path.insert(0, str(SRC_DIRECTORY))
 
-from transition_state_workflow.tool.hypothesis_workspace import main  # noqa: E402
+from transition_state_workflow.cli.hypothesis_workspace import main  # noqa: E402
 
 
 if __name__ == "__main__":

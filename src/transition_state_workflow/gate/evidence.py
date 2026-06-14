@@ -61,6 +61,18 @@ def accepted_ts_evidence_gate_hits(
     return hits
 
 
+def record_supports_tsfreq_reframe(root: Path, record: Mapping[str, object]) -> bool:
+    """Return true when an evidence record can support TS/Freq reuse planning."""
+
+    if clean_string(record.get("evidence_state")) != "supports":
+        return False
+    payload = load_record_payload(root, record)
+    if supports_tsfreq_gate(record, payload):
+        return True
+    kind = normalized_token(record.get("kind"))
+    return kind in TSFREQ_KINDS
+
+
 def load_record_payload(root: Path, record: Mapping[str, object]) -> dict[str, Any]:
     """Load a JSON evidence payload when the registry path points to one."""
 
