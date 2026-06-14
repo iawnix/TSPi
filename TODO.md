@@ -511,7 +511,7 @@ Do not edit the installed skill at
       py_compile, import boundaries, plan-next/finalize/pathway/backtrack
       behavior tests, full pytest, public script help, and strict workspace
       smoke before pushing.
-- [ ] Remove the ASE-NEB-named workspace writer from `core`:
+- [x] Remove the ASE-NEB-named workspace writer from `core`:
       plan before code changes is to correct the architecture boundary rather
       than preserve a beta-era internal import path. Create a
       `core/workspace/` package for generic workspace primitives: stable JSON/
@@ -1334,5 +1334,26 @@ Do not edit the installed skill at
   `69 passed, 1 skipped`; script help smoke `18 scripts`; strict workspace
   validator, normalizer, and plan-next smoke on
   `/tmp/tswf-plan-next-packet-smoke.TgtDgk/tssearch_smoke` with validator
+  summary `0 errors, 0 warnings` and plan schema `ts-next-action-plan-v1`;
+  full pytest `253 passed, 2 skipped`.
+- 2026-06-14: Removed the ASE-NEB-named workspace writer from `core`.
+  Generic workspace primitives now live in `core/workspace/`: `io.py` owns
+  JSON/Markdown/path helpers, `nodes.py` owns node-record construction and
+  node-id allocation, `tree.py` owns tree read/write and metadata updates,
+  `evidence.py` owns evidence-registry append/update, `scaffold.py` owns
+  workspace skeletons plus report/reflection tail writing, and `naming.py`
+  owns workspace-safe slugs/timestamps. Deleted the beta-internal compatibility
+  files `core/ase_neb_workspace.py`, `tools/ase_neb/workspace.py`, and
+  `tool/ase_neb/workspace.py`. ASE NEB CLI workflow now composes the generic
+  core workspace primitives for project scaffolding instead of importing a
+  core ASE-NEB workspace writer. Commit:
+  `f7aa6d3 refactor: move workspace writers out of ase neb`.
+- 2026-06-14: Core workspace boundary fix validation passed:
+  `git diff --check`; `py_compile` for `core/workspace/*.py`, ASE NEB core/
+  CLI callers, and updated tests; import-boundary tests `24 passed`; ASE NEB
+  pure/migration tests `67 passed, 1 skipped`; finalize/pathway/backtrack/
+  contract/CLI-envelope behavior tests `88 passed`; script help smoke
+  `18 scripts`; strict workspace validator, normalizer, and plan-next smoke on
+  `/tmp/tswf-core-workspace-smoke.QOgiH4/tssearch_smoke` with validator
   summary `0 errors, 0 warnings` and plan schema `ts-next-action-plan-v1`;
   full pytest `253 passed, 2 skipped`.
