@@ -28,7 +28,7 @@ from transition_state_workflow.tools.ase_neb.geometry import (
     read_xyz,
 )
 from transition_state_workflow.tools.ase_neb.mechanism import classify_validation_system
-from transition_state_workflow.tool.ase_neb.workspace import (
+from transition_state_workflow.tools.ase_neb.workspace import (
     next_node_id,
     node_record,
     read_tree,

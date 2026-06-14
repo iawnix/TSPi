@@ -185,7 +185,7 @@ Do not edit the installed skill at
       `require_deps=True`. Validate old/new import identity, compatibility
       wrapper length, no new architecture layer imports of `tool/`, public
       script help, full tests, and a strict workspace smoke before pushing.
-- [ ] Move ASE NEB workspace persistence into the ChemTool layer:
+- [x] Move ASE NEB workspace persistence into the ChemTool layer:
       plan before code changes is to move the NEB workspace I/O adapter from
       `tool/ase_neb/workspace.py` to `tools/ase_neb/workspace.py`: JSON/
       Markdown writing helpers, v2 node-record construction, tree/evidence
@@ -557,4 +557,17 @@ Do not edit the installed skill at
   `17 passed, 1 skipped`; full pytest `223 passed, 2 skipped`; script help
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-ase-config-smoke.yvnB71/tssearch_smoke` with validator summary
+  `0 errors, 0 warnings`.
+- 2026-06-14: Moved ASE NEB workspace persistence from
+  `tool/ase_neb/workspace.py` to `tools/ase_neb/workspace.py`; the old path is
+  a thin compatibility re-export, and ASE NEB callers import workspace helpers
+  from the ChemTool layer.
+- 2026-06-14: ASE NEB workspace ChemTool validation passed:
+  `git diff --check`; `py_compile` for `tools/ase_neb/workspace.py`,
+  `tool/ase_neb/workspace.py`, `tool/ase_neb_framework.py`, `tool/ase_neb`,
+  and `tools/ase_neb`; targeted import/ASE NEB/architecture/reference tests
+  `87 passed, 1 skipped`; targeted parser/no-undefined tests
+  `17 passed, 1 skipped`; full pytest `224 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-ase-workspace-smoke.8UUqcJ/tssearch_smoke` with validator summary
   `0 errors, 0 warnings`.

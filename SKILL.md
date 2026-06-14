@@ -293,8 +293,10 @@ Python tooling follows a package layout:
   constants, `ConfigError`, config-value coercers, ASE-to-`Atom` conversion,
   NEB-facing geometry parser error adaptation, config file reading and
   normalization, config-field extraction, node/level slug helpers, and
-  NEB-facing mechanism/endpoint summary adapters over `chem/`, plus ASE image
-  loading/interpolation/write/read helpers.
+  NEB-facing mechanism/endpoint summary adapters over `chem/`, ASE image
+  loading/interpolation/write/read helpers, and NEB workspace persistence
+  helpers for node records, tree/evidence registry updates, project scaffold,
+  and report/reflection tail writing.
 - `src/transition_state_workflow/backends/`: Gaussian, xTB, ASE, and QBICS
   adapter boundaries for program-specific input/output metadata. The Gaussian
   backend owns TS/Freq input rendering/preparation, TS/Freq log parsing, and
@@ -335,12 +337,12 @@ Python tooling follows a package layout:
   `gate/connectivity.py`.
   The remaining ASE NEB candidate-generation implementation lives in the
   `tool/ase_neb/` subpackage for now, split by concern into
-  layered modules (`gaussian_calc`; `workspace`; `node_writers`/`driver`/
-  `validation`/`external_gaussian`), with `constants`/`errors`/`coerce`/
-  `geometry`/`mechanism`/`images`/`config` present as compatibility re-exports
-  over `tools/ase_neb/`. `tool/ase_neb_framework.py` is the thin CLI on top.
-  The dependency direction is strictly downward and covered by import boundary
-  tests.
+  layered modules (`gaussian_calc`; `node_writers`/`driver`/`validation`/
+  `external_gaussian`), with `constants`/`errors`/`coerce`/`geometry`/
+  `mechanism`/`images`/`config`/`workspace` present as compatibility
+  re-exports over `tools/ase_neb/`. `tool/ase_neb_framework.py` is the thin CLI
+  on top. The dependency direction is strictly downward and covered by import
+  boundary tests.
 - `src/transition_state_workflow/web/static/`: static explorer UI assets
   loaded by the optional web service. State labels/colors come only from
   `config/state_contract.py`, shipped through the normalizer; the UI keeps no

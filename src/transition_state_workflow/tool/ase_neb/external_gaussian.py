@@ -28,7 +28,7 @@ from transition_state_workflow.tool.ase_neb.gaussian_calc import (
     extract_gaussian_tail_from_template,
 )
 from transition_state_workflow.tools.ase_neb.images import read_xyz_images_from_dir, write_image_set
-from transition_state_workflow.tool.ase_neb.workspace import (
+from transition_state_workflow.tools.ase_neb.workspace import (
     append_evidence_record,
     ensure_tree_skeleton,
     finalize_node_report_and_tree,

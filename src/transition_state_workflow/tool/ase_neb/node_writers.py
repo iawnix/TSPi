@@ -16,7 +16,7 @@ from transition_state_workflow.tools.ase_neb.mechanism import (
     endpoint_validation_summary,
     infer_mechanism_preflight,
 )
-from transition_state_workflow.tool.ase_neb.workspace import (
+from transition_state_workflow.tools.ase_neb.workspace import (
     append_evidence_record,
     finalize_node_report_and_tree,
     node_record,

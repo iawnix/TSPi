@@ -16,7 +16,7 @@ from transition_state_workflow.backends.ase import import_ase_bits
 from transition_state_workflow.tools.ase_neb.errors import ConfigError
 from transition_state_workflow.tool.ase_neb.gaussian_calc import create_calculator
 from transition_state_workflow.tools.ase_neb.mechanism import endpoint_validation_summary
-from transition_state_workflow.tool.ase_neb.workspace import write_json
+from transition_state_workflow.tools.ase_neb.workspace import write_json
 
 
 def make_neb_object(cfg: dict[str, Any], images: list[Any]) -> Any:

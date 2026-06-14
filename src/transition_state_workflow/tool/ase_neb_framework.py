@@ -57,7 +57,7 @@ from transition_state_workflow.tool.ase_neb.validation import (
     resolve_candidate,
     write_gaussian_input,
 )
-from transition_state_workflow.tool.ase_neb.workspace import (
+from transition_state_workflow.tools.ase_neb.workspace import (
     ensure_project_scaffold,
     write_json,
     write_reflection_template,

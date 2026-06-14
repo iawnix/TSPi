@@ -73,7 +73,7 @@ from transition_state_workflow.tool.ase_neb.validation import (  # noqa: E402
     irc_policy,
     threshold_policy,
 )
-from transition_state_workflow.tool.ase_neb.workspace import (  # noqa: E402
+from transition_state_workflow.tools.ase_neb.workspace import (  # noqa: E402
     next_node_id,
     node_record,
 )
@@ -457,7 +457,7 @@ def test_write_external_gaussian_neb_node_full_artifacts(tmp_path: Path) -> None
     from transition_state_workflow.tool.ase_neb.external_gaussian import (
         write_external_gaussian_neb_node,
     )
-    from transition_state_workflow.tool.ase_neb.workspace import read_tree
+    from transition_state_workflow.tools.ase_neb.workspace import read_tree
 
     root = tmp_path / "tssearch_ext"
     cfg = {
@@ -524,7 +524,7 @@ def test_ensure_external_gaussian_project_writes_skeleton_with_entry(tmp_path: P
 def test_finalize_node_report_and_tree_writes_report_template_and_registers(tmp_path: Path) -> None:
     import json
 
-    from transition_state_workflow.tool.ase_neb.workspace import (
+    from transition_state_workflow.tools.ase_neb.workspace import (
         finalize_node_report_and_tree,
         read_tree,
     )
@@ -555,7 +555,7 @@ def test_finalize_node_report_and_tree_writes_report_template_and_registers(tmp_
 
 
 def test_finalize_node_report_and_tree_writes_full_reflection_when_texts_given(tmp_path: Path) -> None:
-    from transition_state_workflow.tool.ase_neb.workspace import finalize_node_report_and_tree
+    from transition_state_workflow.tools.ase_neb.workspace import finalize_node_report_and_tree
 
     root = tmp_path / "ws"
     (root / "nodes" / "n020_y").mkdir(parents=True)
@@ -584,7 +584,7 @@ def test_finalize_node_report_and_tree_writes_full_reflection_when_texts_given(t
 def test_ensure_tree_skeleton_is_idempotent_and_omits_entry_by_default(tmp_path: Path) -> None:
     import json
 
-    from transition_state_workflow.tool.ase_neb.workspace import ensure_tree_skeleton
+    from transition_state_workflow.tools.ase_neb.workspace import ensure_tree_skeleton
 
     root = tmp_path / "ws"
     ensure_tree_skeleton(root, system_slug="sys", readme_body="# test\n")

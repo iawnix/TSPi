@@ -261,3 +261,17 @@ def test_ase_neb_config_lives_in_tools_with_tool_compatibility() -> None:
     assert old_config.neb_node_id is config.neb_node_id
     compat_source = PACKAGE / "tool" / "ase_neb" / "config.py"
     assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
+
+
+def test_ase_neb_workspace_lives_in_tools_with_tool_compatibility() -> None:
+    from transition_state_workflow.tool.ase_neb import workspace as old_workspace
+    from transition_state_workflow.tools.ase_neb import workspace
+
+    assert old_workspace.write_json is workspace.write_json
+    assert old_workspace.node_record is workspace.node_record
+    assert old_workspace.read_tree is workspace.read_tree
+    assert old_workspace.append_evidence_record is workspace.append_evidence_record
+    assert old_workspace.ensure_project_scaffold is workspace.ensure_project_scaffold
+    assert old_workspace.finalize_node_report_and_tree is workspace.finalize_node_report_and_tree
+    compat_source = PACKAGE / "tool" / "ase_neb" / "workspace.py"
+    assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
