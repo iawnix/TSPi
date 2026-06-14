@@ -1,0 +1,91 @@
+"""Node-state checks for ChemGate workspace validation."""
+
+from __future__ import annotations
+
+from pathlib import Path
+from typing import Any
+
+from transition_state_workflow.config.state_contract import (
+    CLAIM_LEVEL_RANK,
+    MAXIMUM_CLAIM_LEVEL_BY_CLAIM_STATUS,
+    VALID_CLAIM_LEVELS,
+    VALID_CLAIM_STATUSES,
+    VALID_LIFECYCLE_STATES,
+    VALID_OUTCOMES,
+    VALID_RUN_STATES,
+    check_node_contract_violations,
+    valid_outcomes_for_claim_status,
+)
+from transition_state_workflow.util.path_utils import clean_string, list_or_empty, relative_path_or_absolute
+
+from .contracts import Finding
+
+
+def validate_nodes_v2(
+    source: Path,
+    node_json_by_id: dict[str, dict[str, Any]],
+    findings: list[Finding],
+) -> None:
+    """Validate required v2 fields and forbid legacy node-level aliases."""
+
+    for node_id, node_json in node_json_by_id.items():
+        node_path = relative_path_or_absolute(source, source / "nodes" / node_id / "node.json")
+        for code, message in check_node_contract_violations(node_id, node_json):
+            findings.append(
+                Finding("error", code, message, path=node_path, node_id=node_id)
+            )
+
+
+def validate_normalized_nodes(graph: dict[str, Any], findings: list[Finding]) -> None:
+    """Validate normalized node state combinations and claim-level invariants."""
+
+    for node in list_or_empty(graph.get("nodes")):
+        if not isinstance(node, dict):
+            continue
+        node_id = clean_string(node.get("id"))
+        lifecycle = clean_string(node.get("lifecycle_state"))
+        run_state = clean_string(node.get("run_state"))
+        claim = clean_string(node.get("claim_status"))
+        outcome = clean_string(node.get("outcome"))
+        claim_level = clean_string(node.get("claim_level"))
+        outcome_code = node.get("outcome_code")
+        if lifecycle not in VALID_LIFECYCLE_STATES:
+            findings.append(Finding("error", "invalid_lifecycle_state", f"invalid lifecycle_state: {lifecycle}", node_id=node_id))
+        if run_state not in VALID_RUN_STATES:
+            findings.append(Finding("error", "invalid_run_state", f"invalid run_state: {run_state}", node_id=node_id))
+        if claim not in VALID_CLAIM_STATUSES:
+            findings.append(Finding("error", "invalid_claim_status", f"invalid claim_status: {claim}", node_id=node_id))
+        if outcome not in VALID_OUTCOMES:
+            findings.append(Finding("error", "invalid_outcome", f"invalid outcome: {outcome}", node_id=node_id))
+        valid_outcomes = valid_outcomes_for_claim_status(claim)
+        if valid_outcomes and outcome and outcome not in valid_outcomes:
+            findings.append(
+                Finding(
+                    "error",
+                    "claim_outcome_conflict",
+                    f"outcome {outcome!r} is not valid for claim_status {claim!r}",
+                    node_id=node_id,
+                )
+            )
+        if claim_level not in VALID_CLAIM_LEVELS:
+            findings.append(Finding("error", "invalid_claim_level", f"invalid claim_level: {claim_level}", node_id=node_id))
+        max_level = MAXIMUM_CLAIM_LEVEL_BY_CLAIM_STATUS.get(claim)
+        if max_level and CLAIM_LEVEL_RANK.get(claim_level, 99) > CLAIM_LEVEL_RANK[max_level]:
+            findings.append(Finding("error", "claim_level_exceeds_claim_status", f"claim_level {claim_level} exceeds claim_status {claim}", node_id=node_id))
+        if claim == "accepted_ts" and claim_level != "accepted_ts":
+            findings.append(Finding("error", "accepted_claim_level_conflict", "accepted_ts requires claim_level=accepted_ts", node_id=node_id))
+        if claim == "not_evaluated" and claim_level != "none":
+            findings.append(Finding("error", "not_evaluated_claim_level_conflict", "not_evaluated requires claim_level=none", node_id=node_id))
+        if outcome == "administrative_stop":
+            if run_state != "stopped" or claim != "not_evaluated" or claim_level != "none":
+                findings.append(Finding("error", "administrative_stop_state_conflict", "administrative_stop requires stopped/not_evaluated/none", node_id=node_id))
+        if outcome != "none" and not outcome_code and outcome in {"chemical_failure", "numerical_failure", "wrong_mode", "wrong_endpoint", "administrative_stop", "parser_refused"}:
+            findings.append(Finding("warning", "missing_outcome_code", f"outcome {outcome} should include outcome_code", node_id=node_id))
+        if outcome == "chemical_failure" and claim == "not_evaluated":
+            findings.append(Finding("error", "chemical_failure_not_evaluated", "chemical_failure cannot have claim_status=not_evaluated", node_id=node_id))
+
+
+__all__ = [
+    "validate_nodes_v2",
+    "validate_normalized_nodes",
+]

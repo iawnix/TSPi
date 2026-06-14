@@ -184,6 +184,56 @@ def test_descriptor_extractor_lives_in_tools_with_tool_compatibility() -> None:
     assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 6
 
 
+def test_workspace_validator_lives_in_gate_package_with_tool_compatibility() -> None:
+    from transition_state_workflow.gate import validate
+    from transition_state_workflow.tool import validate_workspace
+
+    assert validate_workspace.validate_ts_workspace_contract is validate.validate_ts_workspace_contract
+    assert validate_workspace.main is validate.main
+
+    validate_package = PACKAGE / "gate" / "validate"
+    assert validate_package.is_dir()
+    assert not (PACKAGE / "gate" / "validate.py").exists()
+    for expected_module in (
+        "__init__.py",
+        "__main__.py",
+        "artifacts.py",
+        "cli.py",
+        "contracts.py",
+        "evidence.py",
+        "finalization.py",
+        "io.py",
+        "mechanism.py",
+        "nodes.py",
+        "tree.py",
+        "workspace.py",
+    ):
+        assert (validate_package / expected_module).is_file()
+
+    forbidden = {
+        "transition_state_workflow.backends",
+        "transition_state_workflow.cli",
+        "transition_state_workflow.core",
+        "transition_state_workflow.remote",
+        "transition_state_workflow.tool",
+        "transition_state_workflow.tools",
+        "transition_state_workflow.web",
+    }
+    offenders: list[str] = []
+    for source_file in sorted(validate_package.rglob("*.py")):
+        bad = sorted(
+            name
+            for name in full_internal_imports(source_file)
+            if any(name == prefix or name.startswith(f"{prefix}.") for prefix in forbidden)
+        )
+        if bad:
+            offenders.append(f"{source_file.relative_to(ROOT)} imports {', '.join(bad)}")
+    assert not offenders, "validator package reverse imports:\n" + "\n".join(offenders)
+
+    script_source = (ROOT / "scripts" / "ts_validate_workspace.py").read_text(encoding="utf-8")
+    assert "transition_state_workflow.gate.validate import main" in script_source
+
+
 def test_hypothesis_workspace_cli_lives_in_cli_with_tool_compatibility() -> None:
     from transition_state_workflow.cli import hypothesis_workspace
     from transition_state_workflow.core import plan_next as core_plan_next
