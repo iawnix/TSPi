@@ -477,7 +477,7 @@ Do not edit the installed skill at
       focused tests, import-boundary tests, validator/workspace/finalize/
       pathway/backtrack tests, full pytest, script help, and strict workspace
       smoke before pushing.
-- [ ] Split validator pathway and event policy owners out of `tree.py`:
+- [x] Split validator pathway and event policy owners out of `tree.py`:
       plan before code changes is to move independent validation policies, not
       to reduce line count mechanically. Create `gate/validate/pathway.py` for
       `pathway_model.json`, pathway step, accepted-step binding, and pathway
@@ -635,6 +635,9 @@ Do not edit the installed skill at
 - `bc5e830` `docs: record validator package split`
 - `08f28ed` `docs: plan validator common primitives`
 - `edec3a1` `refactor: extract validator common checks`
+- `d3218b9` `docs: record validator common checkpoint`
+- `4aed706` `docs: plan validator policy split`
+- `10e9d53` `refactor: split validator pathway event policies`
 
 ## Completion Log
 
@@ -1258,5 +1261,24 @@ Do not edit the installed skill at
   architecture/import/validator/workspace tests `134 passed, 1 skipped`;
   script help smoke `18 scripts`; strict workspace validator and normalizer
   smoke on `/tmp/tswf-validator-common-smoke.eeMfih/tssearch_smoke` with
+  validator summary `0 errors, 0 warnings`; full pytest
+  `253 passed, 2 skipped`.
+- 2026-06-14: Split validator pathway and event policy owners out of
+  `gate/validate/tree.py`. `pathway.py` now owns `pathway_model.json`,
+  pathway-step references, accepted-step binding, and pathway accepted-TS
+  evidence-gate checks. `events.py` now owns `tree.events`,
+  `tree.backtrack_events`, normalized graph event checks, and active-backtrack
+  cardinality. `tree.py` now stays focused on tree top-level fields, parent
+  graph, index drift, and `manifest.current_accepted_ts` consistency. Public
+  `transition_state_workflow.gate.validate` imports and workspace validator
+  behavior remain compatible.
+  Commit: `10e9d53 refactor: split validator pathway event policies`.
+- 2026-06-14: Validator pathway/event policy split validation passed:
+  `git diff --check`; `py_compile` for `gate/validate/*.py` and
+  `tests/test_import_boundaries.py`; targeted import/pathway/backtrack/
+  finalize/workspace/CLI tests `116 passed`; reference/no-undefined/
+  architecture/import/validator/workspace tests `134 passed, 1 skipped`;
+  script help smoke `18 scripts`; strict workspace validator and normalizer
+  smoke on `/tmp/tswf-validator-policy-smoke.dsVUE2/tssearch_smoke` with
   validator summary `0 errors, 0 warnings`; full pytest
   `253 passed, 2 skipped`.
