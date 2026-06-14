@@ -595,7 +595,7 @@ Do not edit the installed skill at
       validate py_compile, focused reference/import tests, workspace/finalize/
       pathway/backtrack behavior tests, full pytest, public script help, and
       strict workspace smoke before pushing.
-- [ ] Remove beta-era ASE NEB compatibility import paths:
+- [x] Remove beta-era ASE NEB compatibility import paths:
       plan before code changes is to delete the internal compatibility
       re-export modules under `src/transition_state_workflow/tool/ase_neb/`
       and `src/transition_state_workflow/tool/ase_neb_framework.py` now that
@@ -772,6 +772,9 @@ Do not edit the installed skill at
 - `109bbd1` `docs: record prepared branch workspace split`
 - `d30b623` `docs: plan branch reference validation split`
 - `e3c0fcd` `refactor: move branch reference checks into workspace core`
+- `f74d6fd` `docs: record branch reference validation split`
+- `d043037` `docs: plan ase neb compatibility cleanup`
+- `12236a6` `refactor: remove ase neb tool compatibility paths`
 
 ## Completion Log
 
@@ -1536,3 +1539,22 @@ Do not edit the installed skill at
   with validator summary `0 errors, 0 warnings`, plan schema
   `ts-next-action-plan-v1`, child parent `n010_candidate`, child input refs
   `['n010_candidate']`, and tree event count `2`.
+- 2026-06-15: Removed beta-era ASE NEB internal compatibility import paths.
+  Deleted `src/transition_state_workflow/tool/ase_neb/` source modules and
+  `src/transition_state_workflow/tool/ase_neb_framework.py`; public
+  `scripts/ase_neb_framework.py` continues to dispatch through
+  `cli/ase_neb_framework.py`. Tests now import ASE NEB execution from
+  `backends/ase_neb`, validation adapters from `cli/ase_neb_validation.py`,
+  external-Gaussian continuation adapters from `cli/ase_neb_external.py`, and
+  state writers from `core/ase_neb_*`. `SKILL.md` now documents the current
+  backend/CLI/core/gate ownership directly instead of describing removed
+  compatibility paths.
+  Commit: `12236a6 refactor: remove ase neb tool compatibility paths`.
+- 2026-06-15: ASE NEB compatibility cleanup validation passed:
+  `git diff --check`; `py_compile` for all `src` and `tests` Python files;
+  targeted import/ASE NEB/parser tests `119 passed, 1 skipped`; full pytest
+  `257 passed, 2 skipped`; script help smoke `18 scripts`; strict workspace
+  init/decision-card/validate/normalize/plan-next smoke on
+  `/tmp/tswf-ase-compat-smoke.e6ya0t/tssearch_smoke` with validator summary
+  `0 errors, 0 warnings`, normalize schema `ts-explorer-graph-v2`, and plan
+  schema `ts-next-action-plan-v1`.
