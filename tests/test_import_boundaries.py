@@ -141,6 +141,21 @@ def test_legacy_tool_package_is_not_imported_by_non_web_new_architecture_layers(
     assert not offenders, "new architecture layers import legacy tool package:\n" + "\n".join(offenders)
 
 
+def test_legacy_tool_package_is_removed_and_unimported() -> None:
+    assert not (PACKAGE / "tool").exists()
+    offenders: list[str] = []
+    for root in (PACKAGE, ROOT / "tests", ROOT / "scripts"):
+        for source_file in sorted(root.rglob("*.py")):
+            bad = sorted(
+                name
+                for name in full_internal_imports(source_file)
+                if name == "transition_state_workflow.tool" or name.startswith("transition_state_workflow.tool.")
+            )
+            if bad:
+                offenders.append(f"{source_file.relative_to(ROOT)} imports {', '.join(bad)}")
+    assert not offenders, "legacy tool package imports remain:\n" + "\n".join(offenders)
+
+
 def test_public_scripts_do_not_import_legacy_tool_package() -> None:
     offenders: list[str] = []
     for source_file in sorted((ROOT / "scripts").glob("*.py")):
@@ -172,29 +187,27 @@ def test_remote_and_web_cli_output_goes_through_util_cli() -> None:
     assert not offenders, "remote/web bypass util.cli output helpers:\n" + "\n".join(offenders)
 
 
-def test_connectivity_checker_lives_in_gate_with_tool_compatibility() -> None:
+def test_connectivity_checker_lives_in_gate_without_tool_compatibility() -> None:
     from transition_state_workflow.gate import connectivity
-    from transition_state_workflow.tool import rmsd_connectivity_check
 
-    assert rmsd_connectivity_check.main is connectivity.main
-    assert rmsd_connectivity_check.build_parser is connectivity.build_parser
-    compat_source = PACKAGE / "tool" / "rmsd_connectivity_check.py"
-    assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 6
+    assert connectivity.main is not None
+    assert connectivity.build_parser is not None
+    script_source = (ROOT / "scripts" / "rmsd_connectivity_check.py").read_text(encoding="utf-8")
+    assert "transition_state_workflow.gate.connectivity import main" in script_source
+    assert "transition_state_workflow.tool." not in script_source
 
 
-def test_descriptor_extractor_lives_in_tools_with_tool_compatibility() -> None:
+def test_descriptor_extractor_lives_in_tools_without_tool_compatibility() -> None:
     from transition_state_workflow.backends import gaussian
-    from transition_state_workflow.tool import ts_descriptor_extract
     from transition_state_workflow.tools import descriptors
 
-    assert ts_descriptor_extract.main is descriptors.main
+    assert descriptors.main is not None
     assert descriptors.parse_freq_metadata is gaussian.parse_freq_metadata
     assert descriptors.parse_imaginary_vectors is gaussian.parse_imaginary_vectors
     assert descriptors.parse_charge_table is gaussian.parse_charge_table
-    assert ts_descriptor_extract.parse_freq_metadata is gaussian.parse_freq_metadata
-    assert ts_descriptor_extract.parse_imaginary_vectors is gaussian.parse_imaginary_vectors
-    compat_source = PACKAGE / "tool" / "ts_descriptor_extract.py"
-    assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 6
+    script_source = (ROOT / "scripts" / "ts_descriptor_extract.py").read_text(encoding="utf-8")
+    assert "transition_state_workflow.tools.descriptors import main" in script_source
+    assert "transition_state_workflow.tool." not in script_source
 
 
 def test_node_exec_cli_lives_in_cli_without_tool_compatibility() -> None:
@@ -219,12 +232,11 @@ def test_node_exec_cli_lives_in_cli_without_tool_compatibility() -> None:
     assert "transition_state_workflow.tool.node_exec" not in script_source
 
 
-def test_workspace_validator_lives_in_gate_package_with_tool_compatibility() -> None:
+def test_workspace_validator_lives_in_gate_package_without_tool_compatibility() -> None:
     from transition_state_workflow.gate import validate
-    from transition_state_workflow.tool import validate_workspace
 
-    assert validate_workspace.validate_ts_workspace_contract is validate.validate_ts_workspace_contract
-    assert validate_workspace.main is validate.main
+    assert validate.validate_ts_workspace_contract is not None
+    assert validate.main is not None
 
     validate_package = PACKAGE / "gate" / "validate"
     assert validate_package.is_dir()
@@ -272,23 +284,17 @@ def test_workspace_validator_lives_in_gate_package_with_tool_compatibility() -> 
     assert "transition_state_workflow.gate.validate import main" in script_source
 
 
-def test_hypothesis_workspace_cli_lives_in_cli_with_tool_compatibility() -> None:
+def test_hypothesis_workspace_cli_lives_in_cli_without_tool_compatibility() -> None:
     from transition_state_workflow.cli import hypothesis_workspace
     from transition_state_workflow.core import plan_next as core_plan_next
     from transition_state_workflow.gate import evidence
-    from transition_state_workflow.tool import hypothesis_workspace as old_workspace
-    from transition_state_workflow.tool import plan_next
 
-    assert old_workspace.main is hypothesis_workspace.main
-    assert old_workspace.build_parser is hypothesis_workspace.build_parser
-    assert (
-        old_workspace.initialize_ts_hypothesis_workspace_from_cli_args
-        is hypothesis_workspace.initialize_ts_hypothesis_workspace_from_cli_args
-    )
+    assert hypothesis_workspace.main is not None
+    assert hypothesis_workspace.build_parser is not None
+    assert hypothesis_workspace.initialize_ts_hypothesis_workspace_from_cli_args is not None
     assert hypothesis_workspace.build_core_plan_next_packet is core_plan_next.build_plan_next_packet
-    assert plan_next.register_plan_next_parser is core_plan_next.register_plan_next_parser
-    assert plan_next.PLAN_SCHEMA == core_plan_next.PLAN_SCHEMA
-    assert plan_next.record_supports_tsfreq_reframe is evidence.record_supports_tsfreq_reframe
+    assert hypothesis_workspace.register_plan_next_parser is core_plan_next.register_plan_next_parser
+    assert hypothesis_workspace.record_supports_tsfreq_reframe is evidence.record_supports_tsfreq_reframe
 
     plan_next_package = PACKAGE / "core" / "plan_next"
     assert plan_next_package.is_dir()
@@ -318,9 +324,6 @@ def test_hypothesis_workspace_cli_lives_in_cli_with_tool_compatibility() -> None
     script_source = (ROOT / "scripts" / "ts_hypothesis_workspace.py").read_text(encoding="utf-8")
     assert "transition_state_workflow.cli.hypothesis_workspace import main" in script_source
     assert "transition_state_workflow.tool.hypothesis_workspace import main" not in script_source
-
-    compat_source = PACKAGE / "tool" / "hypothesis_workspace.py"
-    assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 5
 
 
 def test_gaussian_cli_helpers_live_in_cli_and_backend_without_tool_compatibility() -> None:

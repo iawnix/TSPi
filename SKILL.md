@@ -379,15 +379,6 @@ Python tooling follows a package layout:
   `{"ok": false, "error": ...}` envelope), `json_io.py`, `path_utils.py`,
   `node_layout.py` (node directory resolution), and compatibility forwarding
   modules such as `remote_exec.py`.
-- `src/transition_state_workflow/tool/`: legacy import shims for older
-  in-package callers only. Public scripts do not import this package.
-  Remaining shim modules forward to their current owners: read-only gates live
-  under `gate/`, workspace mutation under `core/`, remote Gaussian execution
-  and monitoring under `remote/`, explorer rendering under `web/`, and
-  descriptor extraction under `tools/`. ASE NEB and the public Gaussian,
-  imaginary-mode, and node-exec command assemblies no longer keep `tool/`
-  import paths. The dependency direction and public-script boundary are covered
-  by import boundary tests.
 - `src/transition_state_workflow/web/static/`: static explorer UI assets
   loaded by the optional web service. State labels/colors come only from
   `config/state_contract.py`, shipped through the normalizer; the UI keeps no

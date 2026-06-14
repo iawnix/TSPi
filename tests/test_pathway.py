@@ -21,9 +21,9 @@ from conftest import (
     validate_workspace_allow_errors,
 )
 
-from transition_state_workflow.base.workspace import ExplorerWorkspaceConfig  # noqa: E402
-from transition_state_workflow.tool.explorer_server import summarize_explorer_workspace_config  # noqa: E402
 from transition_state_workflow.base.pathway_model import derive_pathway_status  # noqa: E402
+from transition_state_workflow.base.workspace import ExplorerWorkspaceConfig  # noqa: E402
+from transition_state_workflow.web.server import summarize_explorer_workspace_config  # noqa: E402
 
 
 def test_pathway_plan_tags_first_step_suggestion_and_normalized_graph(tmp_path: Path) -> None:

@@ -28,7 +28,7 @@ from transition_state_workflow.cli.parse_gaussian_ts_result import (  # noqa: E4
     parse_convergence,
     parse_frequencies,
 )
-from transition_state_workflow.tool.ts_descriptor_extract import (  # noqa: E402
+from transition_state_workflow.tools.descriptors import (  # noqa: E402
     parse_freq_metadata,
     parse_imaginary_vectors,
 )

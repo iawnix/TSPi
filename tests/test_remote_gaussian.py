@@ -23,8 +23,8 @@ from conftest import (
 
 from transition_state_workflow.util.cli import CliError  # noqa: E402
 
-from transition_state_workflow.tool import run_remote_gaussian as remote_gaussian  # noqa: E402
-from transition_state_workflow.tool import remote_gaussian_monitor  # noqa: E402
+from transition_state_workflow.remote import gaussian_monitor as remote_gaussian_monitor  # noqa: E402
+from transition_state_workflow.remote import gaussian_runner as remote_gaussian  # noqa: E402
 from transition_state_workflow.util import remote_exec  # noqa: E402
 
 
