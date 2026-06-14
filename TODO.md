@@ -373,7 +373,7 @@ Do not edit the installed skill at
       tests for old/new helper ownership, then validate public script help,
       targeted imaginary-mode tests, full pytest, and a strict workspace smoke
       before pushing.
-- [ ] Move TS hypothesis workspace CLI assembly out of the legacy tool layer:
+- [x] Move TS hypothesis workspace CLI assembly out of the legacy tool layer:
       plan before code changes is to create a dedicated
       `cli/hypothesis_workspace.py` module that owns argparse construction,
       subcommand dispatch, explorer-registration CLI policy, and the
@@ -508,6 +508,9 @@ Do not edit the installed skill at
 - `1c9df0c` `docs: record ase neb validation split checkpoint`
 - `56ff2ef` `docs: plan imaginary mode follow split`
 - `12fc211` `refactor: split imaginary mode follow boundaries`
+- `583b0c2` `docs: record imaginary mode follow split checkpoint`
+- `6d30953` `docs: plan workspace cli split`
+- `cfbb981` `refactor: move workspace cli assembly into cli layer`
 
 ## Completion Log
 
@@ -1023,3 +1026,23 @@ Do not edit the installed skill at
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-imaginary-follow-split-smoke.WtVMpm/tssearch_smoke` with validator
   summary `0 errors, 0 warnings`.
+- 2026-06-14: Moved TS hypothesis workspace CLI assembly into
+  `cli/hypothesis_workspace.py`: argparse construction, subcommand dispatch,
+  explorer-registration CLI policy, and explorer launch checklist text now
+  live in the CLI layer. `scripts/ts_hypothesis_workspace.py` imports the new
+  CLI owner directly, while `tool/hypothesis_workspace.py` remains an
+  executable compatibility re-export. The TS/Freq reframe predicate used by
+  `plan-next` now lives in `gate/evidence.py`, so the new CLI composes
+  ChemKernel planning with ChemGate validation without importing the legacy
+  tool layer.
+  Commit: `cfbb981 refactor: move workspace cli assembly into cli layer`.
+- 2026-06-14: Workspace CLI split validation passed:
+  `git diff --check`; `py_compile` for `cli/hypothesis_workspace.py`,
+  `tool/hypothesis_workspace.py`, `gate/evidence.py`, `tool/plan_next.py`, and
+  `tests/test_import_boundaries.py`; import-boundary tests `23 passed`;
+  workspace/finalize tests `67 passed`; pathway/backtrack tests `17 passed`;
+  reference/no-undefined/architecture tests `18 passed, 1 skipped`; full
+  pytest `248 passed, 2 skipped`; script help smoke `18 scripts`; strict
+  workspace validator and normalizer smoke on
+  `/tmp/tswf-workspace-cli-smoke.QZXyjK/tssearch_smoke` with validator summary
+  `0 errors, 0 warnings`.
