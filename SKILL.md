@@ -310,12 +310,13 @@ Python tooling follows a package layout:
   subpackage: `cli.py` owns the validator CLI, `common.py` owns shared
   read-only validation primitives such as id/reference/object-list checks,
   `workspace.py` owns `validate_ts_workspace_contract` orchestration,
-  `tree.py` owns tree/index/parent/pathway/event checks, `nodes.py` owns
-  node-state checks, `evidence.py` owns evidence-registry checks,
-  `finalization.py` owns reflection/finalization artifact checks,
-  `mechanism.py` owns mechanism-model checks, `artifacts.py` owns portable
-  path and engine-artifact policy, and `io.py` owns JSON/file/node-dir
-  helpers. The package `__init__.py`
+  `tree.py` owns tree/index/parent/manifest checks, `pathway.py` owns
+  pathway-model and pathway-step checks, `events.py` owns timeline and
+  backtrack event checks, `nodes.py` owns node-state checks, `evidence.py`
+  owns evidence-registry checks, `finalization.py` owns reflection/
+  finalization artifact checks, `mechanism.py` owns mechanism-model checks,
+  `artifacts.py` owns portable path and engine-artifact policy, and `io.py`
+  owns JSON/file/node-dir helpers. The package `__init__.py`
   preserves the public `gate.validate` import surface.
 - `src/transition_state_workflow/tools/`: ChemTool protocol, capability
   vocabulary, registry, node-scoped local command execution via

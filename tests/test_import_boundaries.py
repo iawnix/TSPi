@@ -202,10 +202,12 @@ def test_workspace_validator_lives_in_gate_package_with_tool_compatibility() -> 
         "common.py",
         "contracts.py",
         "evidence.py",
+        "events.py",
         "finalization.py",
         "io.py",
         "mechanism.py",
         "nodes.py",
+        "pathway.py",
         "tree.py",
         "workspace.py",
     ):

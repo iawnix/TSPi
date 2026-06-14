@@ -34,6 +34,7 @@ from .evidence import (
     validate_evidence,
     validate_node_evidence_registry_coverage,
 )
+from .events import validate_events, validate_tree_events
 from .finalization import (
     candidate_has_endpoint_gate,
     iter_upstream_nodes,
@@ -44,13 +45,11 @@ from .finalization import (
 from .io import collect_node_dirs, read_json_optional, require_file, walk_values
 from .mechanism import validate_mechanism_model
 from .nodes import validate_nodes_v2, validate_normalized_nodes
+from .pathway import validate_pathway_model
 from .tree import (
-    validate_events,
     validate_indexes,
     validate_manifest_accepted_ts,
     validate_parent_graph,
-    validate_pathway_model,
-    validate_tree_events,
     validate_tree_top_level_contract,
 )
 from .workspace import validate_ts_workspace_contract

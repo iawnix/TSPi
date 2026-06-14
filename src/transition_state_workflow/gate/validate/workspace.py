@@ -13,17 +13,16 @@ from .artifacts import validate_engine_artifact_policy, validate_paths_are_porta
 from .common import clean_string_list, validate_known_node_ref
 from .contracts import Finding
 from .evidence import validate_evidence
+from .events import validate_events, validate_tree_events
 from .finalization import validate_node_finalization_artifacts
 from .io import collect_node_dirs, read_json_optional, require_file
 from .mechanism import validate_mechanism_model
 from .nodes import validate_nodes_v2, validate_normalized_nodes
+from .pathway import validate_pathway_model
 from .tree import (
-    validate_events,
     validate_indexes,
     validate_manifest_accepted_ts,
     validate_parent_graph,
-    validate_pathway_model,
-    validate_tree_events,
     validate_tree_top_level_contract,
 )
 
