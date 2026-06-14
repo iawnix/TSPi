@@ -13,14 +13,13 @@ from pathlib import Path
 from typing import Any
 
 from transition_state_workflow.backends.ase_neb import (
+    AseNebConfigError,
     ExternalGaussianCalculatorRequest,
-    evaluate_neb_candidate_quality,
-    import_ase_bits,
-    make_neb_object,
+    ExternalGaussianNebRuntimeRequest,
     read_xyz_images_from_dir,
-    write_candidate_quality_artifacts,
-    write_image_set,
-    write_path_summary,
+    require_external_gaussian_force_route,
+    run_external_gaussian_neb_continuation,
+    write_external_gaussian_dry_run_input,
 )
 from transition_state_workflow.core.ase_neb_external import (
     continue_node_id_from_images,
@@ -76,6 +75,17 @@ class ExternalGaussianRun:
             output_suffix=self.output_suffix,
         )
 
+    def runtime_request(self) -> ExternalGaussianNebRuntimeRequest:
+        """Return the backend runtime request for the ASE NEB continuation."""
+
+        return ExternalGaussianNebRuntimeRequest(
+            calculator_request=self.calculator_request(),
+            neb_cfg=self.neb_cfg,
+            optimizer_cfg=self.optimizer_cfg,
+            candidate_selection=self.candidate_selection,
+            endpoint_validation=self.endpoint_validation,
+        )
+
     def cfg(self, *, dry_run_inputs: bool = False) -> dict[str, Any]:
         """Return the node ``config.json`` payload for this run."""
 
@@ -117,8 +127,17 @@ class ExternalGaussianRun:
 
 
 def _require_force_route(route: str) -> None:
-    if "force" not in route.lower():
-        raise ConfigError("external Gaussian NEB route must include force")
+    try:
+        require_external_gaussian_force_route(route)
+    except AseNebConfigError as exc:
+        raise ConfigError(str(exc)) from exc
+
+
+def _read_xyz_images_from_dir(xyz_dir: Path, pattern: str) -> tuple[list[Any], list[Path]]:
+    try:
+        return read_xyz_images_from_dir(xyz_dir, pattern, index=0)
+    except AseNebConfigError as exc:
+        raise ConfigError(str(exc)) from exc
 
 
 def dry_run_gaussian_neb_inputs(run: ExternalGaussianRun) -> dict[str, Any]:
@@ -132,7 +151,7 @@ def dry_run_gaussian_neb_inputs(run: ExternalGaussianRun) -> dict[str, Any]:
     _require_force_route(run.route)
     ensure_external_gaussian_project(run.project_root)
     node_id = continue_node_id_from_images(run.project_root, run.route)
-    images, source_files = read_xyz_images_from_dir(run.xyz_dir, run.pattern, index=0)
+    images, source_files = _read_xyz_images_from_dir(run.xyz_dir, run.pattern)
     cfg = run.cfg(dry_run_inputs=True)
     parent_node = run.parent_node_id
     if parent_node is None:
@@ -147,21 +166,21 @@ def dry_run_gaussian_neb_inputs(run: ExternalGaussianRun) -> dict[str, Any]:
         cfg=cfg,
         source_files=source_files,
     )
-    write_image_set(images, node_dir, "initial")
-    calculator_request = run.calculator_request()
-    calc = calculator_request.calculator(
-        image_index=0,
-        image_dir=node_dir / "calculators" / "image_000",
-        tail=calculator_request.tail(),
-    )
-    calc.write_input(images[0])
+    try:
+        first_input = write_external_gaussian_dry_run_input(
+            node_dir=node_dir,
+            images=images,
+            calculator_request=run.calculator_request(),
+        )
+    except AseNebConfigError as exc:
+        raise ConfigError(str(exc)) from exc
     return {
         "ok": True,
         "dry_run": True,
         "node_id": node_id,
         "node_dir": str(node_dir),
         "image_count": len(images),
-        "first_input": str(calc.gjf),
+        "first_input": str(first_input),
     }
 
 
@@ -171,9 +190,7 @@ def continue_gaussian_neb_from_images(run: ExternalGaussianRun, *, allow_gaussia
     _require_force_route(run.route)
     ensure_external_gaussian_project(run.project_root)
     node_id = continue_node_id_from_images(run.project_root, run.route)
-    images, source_files = read_xyz_images_from_dir(run.xyz_dir, run.pattern, index=0)
-    calculator_request = run.calculator_request()
-    tail = calculator_request.tail()
+    images, source_files = _read_xyz_images_from_dir(run.xyz_dir, run.pattern)
     cfg = run.cfg()
     parent_node_id = run.parent_node_id
     if parent_node_id is None:
@@ -188,38 +205,14 @@ def continue_gaussian_neb_from_images(run: ExternalGaussianRun, *, allow_gaussia
         cfg=cfg,
         source_files=source_files,
     )
-    write_image_set(images, node_dir, "initial")
-    calc_root = node_dir / "calculators"
-    for index, image in enumerate(images):
-        image.calc = calculator_request.calculator(
-            image_index=index,
-            image_dir=calc_root / f"image_{index:03d}",
-            tail=tail,
+    try:
+        summary = run_external_gaussian_neb_continuation(
+            node_dir=node_dir,
+            images=images,
+            runtime=run.runtime_request(),
         )
-    neb = make_neb_object({"neb": run.neb_cfg}, images)
-    bits = import_ase_bits()
-    optimizer_cls = bits["optimizers"][run.optimizer_cfg["name"]]
-    (node_dir / "logs").mkdir(parents=True, exist_ok=True)
-    opt = optimizer_cls(
-        neb,
-        trajectory=str(node_dir / "trajectories" / "gaussian_external_neb.traj"),
-        logfile=str(node_dir / "logs" / "gaussian_external_neb.log"),
-    )
-    optimizer_converged = bool(
-        opt.run(fmax=float(run.optimizer_cfg["fmax"]), steps=int(run.optimizer_cfg["steps"]))
-    )
-    write_image_set(images, node_dir, "final")
-    summary = write_path_summary(node_dir, images, status="succeeded")
-    summary["optimizer_converged"] = optimizer_converged
-    summary["candidate_quality"] = evaluate_neb_candidate_quality(
-        summary,
-        {
-            "candidate_selection": run.candidate_selection,
-            "endpoint_validation": run.endpoint_validation,
-        },
-        optimizer_converged=optimizer_converged,
-    )
-    write_candidate_quality_artifacts(node_dir, summary)
+    except AseNebConfigError as exc:
+        raise ConfigError(str(exc)) from exc
     final_status = "succeeded" if summary["candidate_quality"]["accepted_for_promotion"] else "ambiguous"
     write_external_gaussian_neb_node(
         run.project_root,
@@ -235,6 +228,7 @@ def continue_gaussian_neb_from_images(run: ExternalGaussianRun, *, allow_gaussia
 
 __all__ = [
     "ExternalGaussianCalculatorRequest",
+    "ExternalGaussianNebRuntimeRequest",
     "ExternalGaussianRun",
     "external_gaussian_level_slug",
     "continue_node_id_from_images",

@@ -343,6 +343,7 @@ def test_ase_neb_execution_lives_in_backend_with_compatibility() -> None:
     from transition_state_workflow.tools.ase_neb import results
 
     assert external_gaussian.ExternalGaussianCalculatorRequest is ase_neb.ExternalGaussianCalculatorRequest
+    assert external_gaussian.ExternalGaussianNebRuntimeRequest is ase_neb.ExternalGaussianNebRuntimeRequest
     assert gaussian_calc.create_calculator is ase_neb.create_calculator
     assert gaussian_calc.ExternalGaussianForceCalculator is ase_neb.ExternalGaussianForceCalculator
     assert driver.make_neb_object is ase_neb.make_neb_object
@@ -371,6 +372,17 @@ def test_ase_neb_execution_lives_in_backend_with_compatibility() -> None:
     assert "transition_state_workflow.tools.ase_neb.workspace" not in driver_imports
     assert "transition_state_workflow.tools.ase_neb.node_writers" not in driver_imports
     assert "transition_state_workflow.tool.ase_neb.node_writers" not in driver_imports
+
+    external_source = (PACKAGE / "tool" / "ase_neb" / "external_gaussian.py").read_text(
+        encoding="utf-8"
+    )
+    for runtime_detail in (
+        "import_ase_bits",
+        "make_neb_object",
+        "write_path_summary",
+        "write_candidate_quality_artifacts",
+    ):
+        assert runtime_detail not in external_source
 
     result_imports = full_internal_imports(PACKAGE / "tools" / "ase_neb" / "results.py")
     assert "transition_state_workflow.tools.ase_neb.workspace" not in result_imports

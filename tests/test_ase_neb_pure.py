@@ -44,10 +44,13 @@ from transition_state_workflow.tool.ase_neb.driver import (  # noqa: E402
     force_max,
 )
 from transition_state_workflow.tool.ase_neb.external_gaussian import (  # noqa: E402
+    AseNebConfigError,
     ExternalGaussianCalculatorRequest,
+    ExternalGaussianNebRuntimeRequest,
     ExternalGaussianRun,
     continue_node_id_from_images,
     external_gaussian_level_slug,
+    require_external_gaussian_force_route,
 )
 from transition_state_workflow.tools.ase_neb.geometry import (  # noqa: E402
     Atom,
@@ -469,6 +472,12 @@ def test_external_gaussian_calculator_request_reads_tail_file(tmp_path: Path) ->
     assert request.tail() == "H C 0\n6-31G\n****\n"
 
 
+def test_external_gaussian_force_route_validation_lives_in_backend() -> None:
+    require_external_gaussian_force_route("# wb97xd/def2tzvp force")
+    with pytest.raises(AseNebConfigError):
+        require_external_gaussian_force_route("# wb97xd/def2tzvp opt")
+
+
 def test_external_gaussian_run_delegates_runtime_request(tmp_path: Path) -> None:
     tail_file = tmp_path / "tail.gjf"
     tail_file.write_text("basis\n", encoding="utf-8")
@@ -500,6 +509,13 @@ def test_external_gaussian_run_delegates_runtime_request(tmp_path: Path) -> None
     assert runtime.multiplicity == 2
     assert runtime.tail() == "basis\n"
     assert run.tail() == runtime.tail()
+    neb_runtime = run.runtime_request()
+    assert isinstance(neb_runtime, ExternalGaussianNebRuntimeRequest)
+    assert neb_runtime.calculator_request == runtime
+    assert neb_runtime.quality_config() == {
+        "candidate_selection": {"min_barrier_ev": 0.1},
+        "endpoint_validation": {"reactant_state": "validated_minimum"},
+    }
     assert run.cfg()["source_xyz_dir"] == str(run.xyz_dir)
     assert run.cfg()["output_suffix"] == "log"
 
