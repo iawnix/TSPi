@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Parse a Gaussian TS/frequency log and emit validation artifacts."""
+"""CLI for parsing Gaussian TS/frequency logs into validation artifacts."""
 
 from __future__ import annotations
 

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Prepare a Gaussian TS/frequency input from an XYZ-like structure file."""
+"""CLI for preparing Gaussian TS/frequency inputs from XYZ-like structures."""
 
 from __future__ import annotations
 

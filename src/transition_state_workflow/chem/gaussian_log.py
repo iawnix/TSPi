@@ -151,7 +151,7 @@ def split_job_sections(lines: list[str]) -> list[list[str]]:
     Jobs are separated by a ``--Link1--`` line or a fresh ``Entering Link 1``
     banner that follows a prior job's termination. A single-job log returns one
     block. This mirrors the section logic in
-    ``tool/parse_gaussian_ts_result.split_job_sections`` but returns plain line
+    ``backends.gaussian.split_gaussian_job_sections`` but returns plain line
     blocks for the common "look at the final job" question.
     """
 

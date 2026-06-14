@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Preflight and optionally repair Gaussian Gen/GenECP inputs."""
+"""CLI for preflighting and optionally repairing Gaussian Gen/GenECP inputs."""
 
 from __future__ import annotations
 

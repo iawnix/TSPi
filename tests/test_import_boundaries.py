@@ -288,15 +288,51 @@ def test_hypothesis_workspace_cli_lives_in_cli_with_tool_compatibility() -> None
     assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 5
 
 
-def test_gaussian_gen_preflight_helpers_live_in_backend_with_tool_compatibility() -> None:
+def test_gaussian_cli_helpers_live_in_cli_and_backend_without_tool_compatibility() -> None:
     from transition_state_workflow.backends import gaussian
-    from transition_state_workflow.tool import gaussian_gen_preflight
+    from transition_state_workflow.cli import gaussian_gen_preflight
+    from transition_state_workflow.cli import parse_gaussian_ts_result
+    from transition_state_workflow.cli import prepare_gaussian_ts_input
 
     assert gaussian_gen_preflight.route_indices is gaussian.route_indices
     assert gaussian_gen_preflight.split_tail is gaussian.split_tail
     assert gaussian_gen_preflight.link0_end is gaussian.link0_end
     assert gaussian_gen_preflight.warnings_for is gaussian.warnings_for
     assert gaussian_gen_preflight.fix_lines is gaussian.fix_lines
+    assert parse_gaussian_ts_result.parse_log is not gaussian.parse_gaussian_tsfreq_log
+    assert parse_gaussian_ts_result.parse_frequencies is gaussian.parse_gaussian_frequencies
+    assert prepare_gaussian_ts_input.read_xyz_frame is gaussian.read_xyz_frame
+    assert prepare_gaussian_ts_input.write_gaussian_input is gaussian.write_gaussian_input
+
+    removed_modules = (
+        "transition_state_workflow.tool.gaussian_gen_preflight",
+        "transition_state_workflow.tool.parse_gaussian_ts_result",
+        "transition_state_workflow.tool.prepare_gaussian_ts_input",
+    )
+    for module_name in removed_modules:
+        try:
+            importlib.import_module(module_name)
+        except ModuleNotFoundError:
+            pass
+        else:  # pragma: no cover - assertion message is the point of this branch.
+            raise AssertionError(f"legacy {module_name} import path should be removed")
+
+    for module_path in (
+        PACKAGE / "tool" / "gaussian_gen_preflight.py",
+        PACKAGE / "tool" / "parse_gaussian_ts_result.py",
+        PACKAGE / "tool" / "prepare_gaussian_ts_input.py",
+    ):
+        assert not module_path.exists()
+
+    expected_script_imports = {
+        "scripts/gaussian_gen_preflight.py": "transition_state_workflow.cli.gaussian_gen_preflight import main",
+        "scripts/parse_gaussian_ts_result.py": "transition_state_workflow.cli.parse_gaussian_ts_result import main",
+        "scripts/prepare_gaussian_ts_input.py": "transition_state_workflow.cli.prepare_gaussian_ts_input import main",
+    }
+    for script, expected_import in expected_script_imports.items():
+        script_source = (ROOT / script).read_text(encoding="utf-8")
+        assert expected_import in script_source
+        assert "transition_state_workflow.tool." not in script_source
 
 
 def test_ase_neb_legacy_tool_import_paths_are_removed() -> None:

@@ -32,8 +32,8 @@ from transition_state_workflow.backends.gaussian import (  # noqa: E402
     parse_gaussian_forces_hartree_per_bohr,
     parse_gaussian_tsfreq_log,
 )
-from transition_state_workflow.tool.parse_gaussian_ts_result import main as parse_cli_main  # noqa: E402
-from transition_state_workflow.tool.parse_gaussian_ts_result import parse_log  # noqa: E402
+from transition_state_workflow.cli.parse_gaussian_ts_result import main as parse_cli_main  # noqa: E402
+from transition_state_workflow.cli.parse_gaussian_ts_result import parse_log  # noqa: E402
 
 
 # --- multi-job termination semantics ---------------------------------------
