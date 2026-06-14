@@ -658,6 +658,24 @@ Do not edit the installed skill at
       targeted import/CLI tests, full pytest, all public script `--help`
       smoke tests, strict workspace validator/normalizer/plan-next smoke, and
       practical ASE NEB config/help dry smokes before marking v1 ready.
+- [ ] Remove the remaining legacy `tool/` package:
+      plan before code changes is to delete
+      `src/transition_state_workflow/tool/` entirely after migrating every
+      remaining test/import reference to the real owner modules. Test imports
+      should move as follows: explorer helpers to `web/server.py`, remote
+      Gaussian runner/monitor checks to `remote/gaussian_runner.py` and
+      `remote/gaussian_monitor.py`, descriptor parser helpers to
+      `tools/descriptors.py`, connectivity checks to `gate/connectivity.py`,
+      workspace validation to `gate/validate`, workspace CLI checks to
+      `cli/hypothesis_workspace.py`, plan-next checks to `core/plan_next.py`
+      plus the injected gate predicate owner, and finalize/start/backtrack
+      checks to `gate/finalize.py` or `core/*` owners. Add import-boundary
+      tests that `src/transition_state_workflow/tool` no longer exists and
+      that `src`, `tests`, and `scripts` contain no AST imports of
+      `transition_state_workflow.tool`. Update `SKILL.md` so the package layout
+      no longer documents a `tool/` directory. Validate py_compile, focused
+      import/remote/finalize/pathway/parser tests, full pytest, public script
+      help smoke, and strict workspace smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
