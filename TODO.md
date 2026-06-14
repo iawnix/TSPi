@@ -232,6 +232,20 @@ Do not edit the installed skill at
       workspace mutation. Keep compatibility imports until callers and tests
       prove the new core path is complete, then validate docs, import
       boundaries, public script help, full tests, and a strict workspace smoke.
+- [ ] Reclassify ASE NEB execution as an ASE backend adapter:
+      plan before code changes is to stop treating ASE NEB as a ChemTool-owned
+      implementation package. ASE is a backend that can drive xTB, Gaussian, or
+      other calculators, while core owns chemistry hypotheses, workspace state,
+      mechanism reflection, and tree maintenance. Move ASE NEB execution
+      primitives, calculator construction, external-Gaussian force calculator,
+      image-path result artifact writers, and NEB path-summary helpers into a
+      backend module such as `backends/ase_neb.py` or an ASE backend package.
+      Keep `tools/ase_neb/` as compatibility/adapter surface only for this
+      checkpoint, and keep `tool/ase_neb/*` public imports working. Add import
+      boundary tests that backend code does not import `core`, `tools`, or
+      `tool`, and that ASE NEB state writes still route through core. Validate
+      old/new import identity, public script help, full tests, and a strict
+      workspace smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
