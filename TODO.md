@@ -287,6 +287,9 @@ Do not edit the installed skill at
 - `18afbb5` `docs: record ase runtime image boundary checkpoint`
 - `5077030` `docs: plan ase neb config migration`
 - `8b73e20` `refactor: move ase neb config into tools`
+- `37d3357` `docs: record ase neb config checkpoint`
+- `ffe95b8` `docs: plan ase neb workspace migration`
+- `202ee15` `refactor: move ase neb workspace into tools`
 
 ## Completion Log
 
