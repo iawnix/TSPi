@@ -417,7 +417,7 @@ Do not edit the installed skill at
       `cli`, `remote`, or `web`. Validate old/new import identity, public
       script help, targeted ASE NEB/parsing tests, full pytest, and a strict
       workspace smoke before pushing.
-- [ ] Promote `core/plan_next.py` into a ChemKernel planning subpackage:
+- [x] Promote `core/plan_next.py` into a ChemKernel planning subpackage:
       plan before code changes is to replace the current thick
       `core/plan_next.py` module with `core/plan_next/` while keeping
       `transition_state_workflow.core.plan_next` as the public facade and
@@ -1139,3 +1139,23 @@ Do not edit the installed skill at
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-ase-backend-package-smoke.IDjUTq/tssearch_smoke` with validator
   summary `0 errors, 0 warnings`.
+- 2026-06-14: Promoted `core/plan_next.py` into the `core/plan_next/`
+  ChemKernel planning subpackage. The public
+  `transition_state_workflow.core.plan_next` import surface is preserved by
+  the package facade while implementation is split across `cli.py`,
+  `contracts.py`, `loader.py`, `pathway.py`, `phase.py`, `suggestions.py`,
+  `context.py`, and `ids.py`. `tool/plan_next.py` remains the ChemGate-
+  injecting compatibility layer, and `cli/hypothesis_workspace.py` continues
+  to import the core facade directly.
+  Commit: `47c90be refactor: split plan-next into core package`.
+- 2026-06-14: Plan-next package split validation passed:
+  `git diff --check`; `py_compile` for `core/plan_next/`, `core/__init__.py`,
+  `tool/plan_next.py`, `cli/hypothesis_workspace.py`, and
+  `tests/test_import_boundaries.py`; import-boundary tests `23 passed`;
+  workspace/finalize/pathway/backtrack tests `73 passed`;
+  reference/no-undefined/architecture/import/workspace tests
+  `114 passed, 1 skipped`; full pytest `248 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator, normalizer, and plan-next
+  smoke on `/tmp/tswf-plan-next-package-smoke.hbknQs/tssearch_smoke` with
+  validator summary `0 errors, 0 warnings` and plan schema
+  `ts-next-action-plan-v1`.
