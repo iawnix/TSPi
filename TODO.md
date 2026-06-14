@@ -437,6 +437,27 @@ Do not edit the installed skill at
       by `core/workspace_state.py`. Validate compatibility imports, import
       boundaries, workspace/finalize/pathway/backtrack tests, full pytest,
       public script help, and a strict workspace smoke before pushing.
+- [ ] Promote `gate/validate.py` into a ChemGate validation subpackage:
+      plan before code changes is to replace the current thick
+      `gate/validate.py` module with `gate/validate/` while keeping
+      `transition_state_workflow.gate.validate` as the public facade and
+      preserving `scripts/ts_validate_workspace.py`, `tool/validate_workspace.py`,
+      `cli/hypothesis_workspace.py`, and compatibility imports. Split
+      validation responsibilities into cohesive ChemGate-only modules:
+      `contracts.py` for validation constants and finding helpers; `cli.py`
+      for `ValidateWorkspaceCLI` and `main`; `workspace.py` for the
+      `validate_ts_workspace_contract` orchestration; `tree.py` for tree,
+      index, parent-graph, pathway, and event checks; `nodes.py` for node v2
+      contract and normalized-node checks; `evidence.py` for evidence registry
+      and coverage checks; `finalization.py` for reflection/finalization
+      artifact checks; `mechanism.py` for mechanism-model checks;
+      `artifacts.py` for portable path, engine artifact, and Gaussian
+      checkpoint policy; and `io.py` for JSON/file/node-dir walking helpers.
+      Keep the subpackage within ChemGate boundaries: no imports from `core`,
+      `backends`, `tool`, `tools`, `remote`, or `web`. Validate compatibility
+      imports, import boundaries, validator/normalizer/finalize/workspace
+      tests, full pytest, public script help, and a strict workspace smoke
+      before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
