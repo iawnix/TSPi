@@ -561,7 +561,7 @@ Do not edit the installed skill at
       import boundaries, workspace/finalize/pathway/backtrack behavior tests,
       full pytest, public script help, and strict workspace smoke before
       pushing.
-- [ ] Extract prepared branch workspace writes into `core/workspace/branch.py`:
+- [x] Extract prepared branch workspace writes into `core/workspace/branch.py`:
       plan before code changes is to move generic prepared-branch state
       mutation out of `core/workspace_state.py` without moving chemistry or CLI
       policy. Add a `core/workspace/branch.py` module that owns creation of
@@ -734,6 +734,9 @@ Do not edit the installed skill at
 - `5da3797` `docs: record workspace-state primitive reuse`
 - `4f87412` `docs: plan workspace init scaffold extraction`
 - `94f771c` `refactor: extract workspace init scaffold primitives`
+- `424b43b` `docs: record workspace init scaffold extraction`
+- `84ce6f8` `docs: plan prepared branch workspace split`
+- `98c2e14` `refactor: move prepared branch writes into workspace core`
 
 ## Completion Log
 
@@ -1457,3 +1460,23 @@ Do not edit the installed skill at
   plan-next smoke on `/tmp/tswf-workspace-init-scaffold-smoke.c4FUcS/tssearch_smoke`
   with validator summary `0 errors, 0 warnings`, plan schema
   `ts-next-action-plan-v1`, and manifest node schema `ts-node-v2`.
+- 2026-06-14: Extracted prepared branch state writes into
+  `core/workspace/branch.py`. The new branch primitive owns creation of
+  `nodes/<node_id>/{inputs,outputs,parsed,scratch}`, prepared `node.json`
+  payload construction/writing, tree node-entry updates, and `prepare_node`
+  event id allocation/append. `core/workspace_state.py` now keeps the command
+  policy: CLI argument adaptation, branch reference validation, pathway checks,
+  hypothesis/decision/reflection markdown text, and chemistry wording.
+  `SKILL.md` now documents `branch.py` as the prepared-branch state writer.
+  Commit: `98c2e14 refactor: move prepared branch writes into workspace core`.
+- 2026-06-14: Prepared branch split validation passed:
+  `git diff --check`; `py_compile` for `core/workspace/*.py`,
+  `core/workspace_state.py`, `tests/test_workspace_primitives.py`, and
+  `tests/test_import_boundaries.py`; focused workspace/import tests
+  `26 passed`; workspace/finalize/pathway/backtrack/contract/CLI-envelope
+  behavior tests `90 passed`; full pytest `255 passed, 2 skipped`; script
+  help smoke `18 scripts`; strict workspace validator, normalizer, and
+  plan-next smoke on `/tmp/tswf-prepared-branch-smoke.E3X4A1/tssearch_smoke`
+  with validator summary `0 errors, 0 warnings`, plan schema
+  `ts-next-action-plan-v1`, prepared node lifecycle `prepared`, and tree event
+  count `1`.
