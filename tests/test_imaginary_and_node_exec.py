@@ -14,6 +14,8 @@ from conftest import (
     run_cli,
     validate_workspace,
 )
+from transition_state_workflow.backends.gaussian import prepare_gaussian_imaginary_mode_follow_data
+from transition_state_workflow.gate.connectivity import endpoint_connection_screen
 from transition_state_workflow.tools.contracts import ToolCapability, ToolRequest
 from transition_state_workflow.tools.node_exec import NodeExecutionTool
 
@@ -38,6 +40,50 @@ def minimal_gaussian_freq_log() -> str:
     2    1   -0.1000  0.0000  0.0000
  Normal termination of Gaussian 16
 """
+
+
+def minimal_gaussian_geometry_log(distance: float) -> str:
+    return f""" Charge = 0 Multiplicity = 1
+ Standard orientation:
+ ---------------------------------------------------------------------
+ Center     Atomic      Atomic             Coordinates (Angstroms)
+ Number     Number       Type             X           Y           Z
+ ---------------------------------------------------------------------
+      1          1           0        0.000000    0.000000    0.000000
+      2          1           0        0.000000    0.000000    {distance:.6f}
+ ---------------------------------------------------------------------
+ Normal termination of Gaussian 16
+"""
+
+
+def test_gaussian_backend_prepares_imaginary_mode_follow_data(tmp_path: Path) -> None:
+    freq_output = tmp_path / "candidate_tsfreq.out"
+    freq_output.write_text(minimal_gaussian_freq_log(), encoding="utf-8")
+
+    follow = prepare_gaussian_imaginary_mode_follow_data(freq_output, scale=0.20)
+
+    assert follow.summary["is_ts_frequency_validated"] is True
+    assert follow.summary["claim_status_suggestion"] == "tsfreq_validated"
+    assert follow.mode is not None
+    assert follow.mode.frequency == -100.0
+    assert follow.minus_atoms is not None
+    assert follow.plus_atoms is not None
+    assert len(follow.scan_frames) == 5
+
+
+def test_connectivity_gate_endpoint_screen_detects_bond_change(tmp_path: Path) -> None:
+    minus_log = tmp_path / "minus.out"
+    plus_log = tmp_path / "plus.out"
+    minus_log.write_text(minimal_gaussian_geometry_log(0.74), encoding="utf-8")
+    plus_log.write_text(minimal_gaussian_geometry_log(2.00), encoding="utf-8")
+
+    screen = endpoint_connection_screen(minus_log, plus_log, bond_scale=1.25)
+
+    assert screen.summary["simple_connection_screen_supported"] is True
+    assert screen.summary["connectivity_diff_count"] == 1
+    assert screen.summary["broken_from_minus_to_plus"] == ["1:H-2:H"]
+
+
 def test_imaginary_mode_follow_prepare_writes_node_scoped_artifacts(tmp_path: Path) -> None:
     root = tmp_path / "tssearch_unit"
     initialize_workspace(root)

@@ -41,6 +41,13 @@ from transition_state_workflow.core.ase_neb_workspace import (
     ensure_project_scaffold as ensure_ase_neb_project_scaffold,
     node_record as ase_neb_node_record,
 )
+from transition_state_workflow.core.imaginary_mode_follow import (
+    resolve_make_opt_output_path,
+    resolve_output_layout as resolve_imaginary_mode_output_layout,
+    write_endpoint_connectivity_summary,
+    write_irc_connectivity_artifacts,
+    write_prepare_artifacts as write_imaginary_mode_prepare_artifacts,
+)
 from transition_state_workflow.core.workspace_state import (
     append_ts_workspace_evidence_record,
     create_ts_branch_decision_artifacts_from_cli_args,
@@ -76,13 +83,18 @@ __all__ = [
     "latest_promotable_candidate",
     "prepare_gaussian_refine_node_layout",
     "record_backtrack",
+    "resolve_imaginary_mode_output_layout",
+    "resolve_make_opt_output_path",
     "resolve_candidate",
     "start_ts_workspace_node",
     "update_backtrack_state",
+    "write_endpoint_connectivity_summary",
     "write_external_gaussian_neb_node",
     "write_external_image_input_node",
     "write_gaussian_refine_node_state",
+    "write_imaginary_mode_prepare_artifacts",
     "write_input_check_node",
+    "write_irc_connectivity_artifacts",
     "write_neb_node_metadata",
     "write_suggested_decision_cards_from_plan",
 ]

@@ -379,6 +379,61 @@ def test_ase_neb_validation_state_writers_live_in_core_with_tool_compatibility()
         assert moved_detail not in validation_source
 
 
+def test_imaginary_mode_follow_split_across_backend_gate_core() -> None:
+    from transition_state_workflow.backends import gaussian
+    from transition_state_workflow.core import imaginary_mode_follow as core_follow
+    from transition_state_workflow.gate import connectivity
+    from transition_state_workflow.tool import imaginary_mode_follow
+
+    assert imaginary_mode_follow.endpoint_template_from_gjf is gaussian.endpoint_template_from_gjf
+    assert imaginary_mode_follow.resolve_output_layout is core_follow.resolve_output_layout
+    assert imaginary_mode_follow.write_prepare_artifacts is core_follow.write_prepare_artifacts
+    assert imaginary_mode_follow.endpoint_connection_screen is connectivity.endpoint_connection_screen
+    assert imaginary_mode_follow.irc_connection_screen is connectivity.irc_connection_screen
+
+    for source_file, forbidden in (
+        (
+            PACKAGE / "backends" / "gaussian.py",
+            {
+                "transition_state_workflow.core",
+                "transition_state_workflow.gate",
+                "transition_state_workflow.tool",
+                "transition_state_workflow.tools",
+            },
+        ),
+        (
+            PACKAGE / "gate" / "connectivity.py",
+            {
+                "transition_state_workflow.backends",
+                "transition_state_workflow.core",
+                "transition_state_workflow.tool",
+                "transition_state_workflow.tools",
+            },
+        ),
+        (
+            PACKAGE / "core" / "imaginary_mode_follow.py",
+            {
+                "transition_state_workflow.backends",
+                "transition_state_workflow.gate",
+                "transition_state_workflow.remote",
+                "transition_state_workflow.tool",
+                "transition_state_workflow.tools",
+                "transition_state_workflow.web",
+            },
+        ),
+    ):
+        imports = full_internal_imports(source_file)
+        assert not [
+            name
+            for name in imports
+            if any(name == prefix or name.startswith(f"{prefix}.") for prefix in forbidden)
+        ]
+
+    tool_imports = full_internal_imports(PACKAGE / "tool" / "imaginary_mode_follow.py")
+    assert "transition_state_workflow.chem.gaussian_log" not in tool_imports
+    assert "transition_state_workflow.chem.geometry" not in tool_imports
+
+
 def test_ase_neb_external_state_writers_live_in_core_with_tool_compatibility() -> None:
     from transition_state_workflow.core import ase_neb_external as core_external
     from transition_state_workflow.tool.ase_neb import external_gaussian

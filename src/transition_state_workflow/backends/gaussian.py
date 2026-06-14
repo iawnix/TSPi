@@ -9,14 +9,26 @@ from typing import Any, Mapping
 
 from transition_state_workflow.backends.base import FilesystemBackendAdapter
 from transition_state_workflow.backends.contracts import BackendInput, BackendOutput
+from transition_state_workflow.chem.geometry import Atom
 from transition_state_workflow.chem.gaussian_log import (
+    Mode as GaussianMode,
+    displaced_atoms,
+    endpoint_route as gaussian_endpoint_route,
+    final_geometry as final_gaussian_atoms,
+    parse_charge_multiplicity as parse_gaussian_charge_multiplicity,
+    parse_gjf_template,
+    parse_modes as parse_gaussian_modes,
+    read_lines as read_gaussian_lines,
     orientation_blocks as gaussian_orientation_blocks,
     standard_frequency_values,
+    terminated_normally as gaussian_terminated_normally,
+    write_gjf,
 )
 
 GaussianCoord = tuple[str, float, float, float]
 GaussianFrame = tuple[str, list[GaussianCoord]]
 HARTREE_TO_EV = 27.211386245988
+QST_ROUTE_TOKENS = ("qst2", "qst3")
 
 
 @dataclass(frozen=True)
@@ -32,6 +44,21 @@ class GaussianInputRequest:
     mem: str | None = None
     chk: str | None = None
     extra_sections: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class GaussianImaginaryModeFollowData:
+    """Backend-owned data needed to prepare imaginary-mode follow-up artifacts."""
+
+    freq_output: Path
+    atoms: list[Atom]
+    modes: list[GaussianMode]
+    imaginary_modes: list[GaussianMode]
+    mode: GaussianMode | None
+    minus_atoms: list[Atom] | None
+    plus_atoms: list[Atom] | None
+    scan_frames: tuple[tuple[float, list[Atom], str], ...]
+    summary: dict[str, object]
 
 
 def read_xyz_frames(path: Path) -> list[GaussianFrame]:
@@ -371,6 +398,113 @@ def write_gaussian_refinement_input(
         encoding="utf-8",
     )
     return output_path
+
+
+def prepare_gaussian_imaginary_mode_follow_data(
+    freq_output: Path,
+    *,
+    scale: float,
+) -> GaussianImaginaryModeFollowData:
+    """Extract the Gaussian TS/Freq mode data needed for endpoint follow-up."""
+
+    lines = read_gaussian_lines(freq_output)
+    atoms = final_gaussian_atoms(lines)
+    charge, multiplicity = parse_gaussian_charge_multiplicity(lines)
+    modes = parse_gaussian_modes(lines, len(atoms))
+    imaginary = [mode for mode in modes if mode.frequency < 0.0]
+    summary: dict[str, object] = {
+        "freq_output": str(freq_output),
+        "natoms": len(atoms),
+        "charge": charge,
+        "multiplicity": multiplicity,
+        "frequency_count": len(modes),
+        "imaginary_frequency_count": len(imaginary),
+        "imaginary_frequencies_cm-1": [mode.frequency for mode in imaginary],
+        "normal_termination": gaussian_terminated_normally(lines),
+        "stationary_point_found": any("Stationary point found" in line for line in lines),
+        "is_ts_frequency_validated": False,
+    }
+    if len(imaginary) != 1:
+        return GaussianImaginaryModeFollowData(
+            freq_output=freq_output,
+            atoms=atoms,
+            modes=modes,
+            imaginary_modes=imaginary,
+            mode=None,
+            minus_atoms=None,
+            plus_atoms=None,
+            scan_frames=(),
+            summary=summary,
+        )
+
+    mode = imaginary[0]
+    is_validated = bool(summary["normal_termination"] and summary["stationary_point_found"])
+    summary["is_ts_frequency_validated"] = is_validated
+    summary["claim_status_suggestion"] = "tsfreq_validated" if is_validated else "ambiguous"
+    summary["imaginary_mode_index"] = mode.index
+    summary["imaginary_mode_frequency_cm-1"] = mode.frequency
+    summary["mode_scale_angstrom_max_atom_displacement"] = scale
+    minus_atoms = displaced_atoms(atoms, mode, -scale)
+    plus_atoms = displaced_atoms(atoms, mode, scale)
+    scan_frames = tuple(
+        (
+            multiplier,
+            displaced_atoms(atoms, mode, multiplier * scale),
+            f"mode {mode.index}, frequency {mode.frequency:.4f} cm-1, scale {multiplier * scale:.4f}",
+        )
+        for multiplier in (-1.0, -0.5, 0.0, 0.5, 1.0)
+    )
+    return GaussianImaginaryModeFollowData(
+        freq_output=freq_output,
+        atoms=atoms,
+        modes=modes,
+        imaginary_modes=imaginary,
+        mode=mode,
+        minus_atoms=minus_atoms,
+        plus_atoms=plus_atoms,
+        scan_frames=scan_frames,
+        summary=summary,
+    )
+
+
+def endpoint_template_from_gjf(path: Path) -> tuple[dict[str, object], bool]:
+    """Return a Gaussian template safe for single-geometry endpoint Opt jobs."""
+
+    template = parse_gjf_template(path)
+    route = str(template.get("route", "")).lower()
+    if any(token in route for token in QST_ROUTE_TOKENS):
+        return {**template, "tail": []}, True
+    return template, False
+
+
+def parse_gaussian_input_template(path: Path) -> dict[str, object]:
+    """Parse a Gaussian input template without endpoint-follow-up policy changes."""
+
+    return parse_gjf_template(path)
+
+
+def write_gaussian_endpoint_opt_input(
+    path: Path,
+    atoms: list[Atom],
+    *,
+    template: Mapping[str, object],
+    route: str,
+    chk: str,
+    nproc: int | None,
+    mem: str | None,
+    title: str,
+) -> Path:
+    """Write one Gaussian endpoint-optimization input from prepared atoms."""
+
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_gjf(path, atoms, dict(template), route, chk, nproc, mem, title)
+    return path
+
+
+def final_gaussian_atoms_from_log(path: Path) -> list[Atom]:
+    """Return the final Gaussian orientation atoms from an output log."""
+
+    return final_gaussian_atoms(read_gaussian_lines(path))
 
 
 def split_gaussian_job_sections(lines: list[str]) -> list[dict[str, object]]:

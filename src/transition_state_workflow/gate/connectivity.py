@@ -13,11 +13,16 @@ from pathlib import Path
 from transition_state_workflow.chem.geometry import (
     Atom,
     COVALENT_RADII,
+    bond_labels,
+    bond_set,
     parse_angle_spec,
     parse_bond_spec,
 )
+from transition_state_workflow.chem.gaussian_log import final_geometry as gaussian_final_geometry
+from transition_state_workflow.chem.gaussian_log import frequency_summary, parse_irc_status
 from transition_state_workflow.chem.gaussian_log import orientation_blocks as gaussian_orientation_blocks
 from transition_state_workflow.chem.gaussian_log import read_lines
+from transition_state_workflow.chem.gaussian_log import terminated_normally
 from transition_state_workflow.util.cli import emit_json, run_cli, warn
 
 
@@ -26,6 +31,21 @@ class Structure:
     path: str
     atoms: list[Atom]
     metadata: dict[str, object]
+
+
+@dataclass(frozen=True)
+class EndpointConnectionScreen:
+    summary: dict[str, object]
+    minus_atoms: list[Atom]
+    plus_atoms: list[Atom]
+    ts_atoms: list[Atom] | None = None
+
+
+@dataclass(frozen=True)
+class IrcConnectionScreen:
+    summary: dict[str, object]
+    forward_atoms: list[Atom]
+    reverse_atoms: list[Atom]
 
 
 def read_xyz(path: Path) -> Structure:
@@ -126,6 +146,100 @@ def parse_angle(spec: str) -> tuple[int, int, int]:
         if message.startswith("invalid "):
             message = "Invalid " + message[len("invalid ") :]
         raise ValueError(message) from exc
+
+
+def endpoint_connection_screen(
+    minus_log: Path,
+    plus_log: Path,
+    *,
+    bond_scale: float,
+    ts_log: Path | None = None,
+) -> EndpointConnectionScreen:
+    """Compare two endpoint optimization logs by simple bond-connectivity change."""
+
+    minus_lines = read_lines(minus_log)
+    plus_lines = read_lines(plus_log)
+    minus_atoms = gaussian_final_geometry(minus_lines)
+    plus_atoms = gaussian_final_geometry(plus_lines)
+    minus_bonds = bond_set(minus_atoms, bond_scale)
+    plus_bonds = bond_set(plus_atoms, bond_scale)
+    broken_minus_to_plus = minus_bonds - plus_bonds
+    formed_minus_to_plus = plus_bonds - minus_bonds
+    summary: dict[str, object] = {
+        "minus_log": str(minus_log),
+        "plus_log": str(plus_log),
+        "minus_normal_termination": terminated_normally(minus_lines),
+        "plus_normal_termination": terminated_normally(plus_lines),
+        "minus_frequency_summary": frequency_summary(minus_lines),
+        "plus_frequency_summary": frequency_summary(plus_lines),
+        "minus_bond_count": len(minus_bonds),
+        "plus_bond_count": len(plus_bonds),
+        "bond_scale": bond_scale,
+        "formed_from_minus_to_plus": bond_labels(formed_minus_to_plus, plus_atoms),
+        "broken_from_minus_to_plus": bond_labels(broken_minus_to_plus, minus_atoms),
+        "connectivity_diff_count": len(formed_minus_to_plus) + len(broken_minus_to_plus),
+    }
+    summary["simple_connection_screen_supported"] = bool(
+        summary["minus_normal_termination"]
+        and summary["plus_normal_termination"]
+        and (
+            not summary["minus_frequency_summary"]["has_frequency_analysis"]  # type: ignore[index]
+            or summary["minus_frequency_summary"]["imaginary_frequency_count"] == 0  # type: ignore[index]
+        )
+        and (
+            not summary["plus_frequency_summary"]["has_frequency_analysis"]  # type: ignore[index]
+            or summary["plus_frequency_summary"]["imaginary_frequency_count"] == 0  # type: ignore[index]
+        )
+        and summary["connectivity_diff_count"]
+    )
+    ts_atoms = None
+    if ts_log:
+        ts_atoms = gaussian_final_geometry(read_lines(ts_log))
+        ts_bonds = bond_set(ts_atoms, bond_scale)
+        summary["ts_bond_count"] = len(ts_bonds)
+        summary["minus_vs_ts_diff_count"] = len(minus_bonds ^ ts_bonds)
+        summary["plus_vs_ts_diff_count"] = len(plus_bonds ^ ts_bonds)
+    return EndpointConnectionScreen(summary=summary, minus_atoms=minus_atoms, plus_atoms=plus_atoms, ts_atoms=ts_atoms)
+
+
+def irc_connection_screen(
+    forward_log: Path,
+    reverse_log: Path,
+    *,
+    bond_scale: float,
+) -> IrcConnectionScreen:
+    """Compare forward/reverse Gaussian IRC outputs by final connectivity."""
+
+    forward_lines = read_lines(forward_log)
+    reverse_lines = read_lines(reverse_log)
+    forward_atoms = gaussian_final_geometry(forward_lines)
+    reverse_atoms = gaussian_final_geometry(reverse_lines)
+    forward_bonds = bond_set(forward_atoms, bond_scale)
+    reverse_bonds = bond_set(reverse_atoms, bond_scale)
+    formed_reverse_to_forward = forward_bonds - reverse_bonds
+    broken_reverse_to_forward = reverse_bonds - forward_bonds
+    forward_status = parse_irc_status(forward_lines)
+    reverse_status = parse_irc_status(reverse_lines)
+    both_reached_minima = bool(
+        forward_status["normal_termination"]
+        and reverse_status["normal_termination"]
+        and forward_status["pes_minimum_detected"]
+        and reverse_status["pes_minimum_detected"]
+    )
+    summary: dict[str, object] = {
+        "forward_log": str(forward_log),
+        "reverse_log": str(reverse_log),
+        "forward": forward_status,
+        "reverse": reverse_status,
+        "forward_bond_count": len(forward_bonds),
+        "reverse_bond_count": len(reverse_bonds),
+        "bond_scale": bond_scale,
+        "formed_from_reverse_to_forward": bond_labels(formed_reverse_to_forward, forward_atoms),
+        "broken_from_reverse_to_forward": bond_labels(broken_reverse_to_forward, reverse_atoms),
+        "connectivity_diff_count": len(formed_reverse_to_forward) + len(broken_reverse_to_forward),
+    }
+    summary["irc_connection_screen_supported"] = bool(both_reached_minima and summary["connectivity_diff_count"])
+    return IrcConnectionScreen(summary=summary, forward_atoms=forward_atoms, reverse_atoms=reverse_atoms)
 
 
 def validate_indices(natoms: int, bonds: list[tuple[int, int]], angles: list[tuple[int, int, int]]) -> None:
