@@ -342,6 +342,43 @@ def test_ase_neb_refinement_input_rendering_lives_in_gaussian_backend() -> None:
     assert "transition_state_workflow.backends.gaussian" in validation_imports
 
 
+def test_ase_neb_validation_state_writers_live_in_core_with_tool_compatibility() -> None:
+    from transition_state_workflow.core import ase_neb_validation as core_validation
+    from transition_state_workflow.tool.ase_neb import validation
+
+    assert validation.find_project_input is core_validation.find_project_input
+    assert validation.latest_promotable_candidate is core_validation.latest_promotable_candidate
+    assert validation.latest_node_with_stage is core_validation.latest_node_with_stage
+    assert validation.create_validation_plan_node is core_validation.create_validation_plan_node
+
+    core_imports = full_internal_imports(PACKAGE / "core" / "ase_neb_validation.py")
+    forbidden = {
+        "transition_state_workflow.backends",
+        "transition_state_workflow.gate",
+        "transition_state_workflow.remote",
+        "transition_state_workflow.tool",
+        "transition_state_workflow.tools",
+        "transition_state_workflow.web",
+    }
+    assert not [
+        name
+        for name in core_imports
+        if any(name == prefix or name.startswith(f"{prefix}.") for prefix in forbidden)
+    ]
+
+    validation_source = (PACKAGE / "tool" / "ase_neb" / "validation.py").read_text(encoding="utf-8")
+    for moved_detail in (
+        "json.loads",
+        "shutil.copyfile",
+        "read_tree(",
+        "node_record(",
+        "upsert_tree_node(",
+        "write_markdown(",
+        "write_reflection_template(",
+    ):
+        assert moved_detail not in validation_source
+
+
 def test_ase_neb_external_state_writers_live_in_core_with_tool_compatibility() -> None:
     from transition_state_workflow.core import ase_neb_external as core_external
     from transition_state_workflow.tool.ase_neb import external_gaussian

@@ -80,14 +80,24 @@ from transition_state_workflow.gate.neb_candidate import (  # noqa: E402
 )
 from transition_state_workflow.tool.ase_neb.validation import (  # noqa: E402
     build_validation_policy,
+    create_gaussian_refine_node as create_tool_gaussian_refine_node,
+    default_validation_parent as tool_default_validation_parent,
     displacement_ladder,
     irc_policy,
+    resolve_candidate as tool_resolve_candidate,
     threshold_policy,
     write_gaussian_input as write_ase_neb_gaussian_input,
+)
+from transition_state_workflow.core.ase_neb_validation import (  # noqa: E402
+    create_validation_plan_node as create_core_validation_plan_node,
+    latest_promotable_candidate as core_latest_promotable_candidate,
+    resolve_candidate as core_resolve_candidate,
 )
 from transition_state_workflow.core.ase_neb_workspace import (  # noqa: E402
     next_node_id,
     node_record,
+    read_tree,
+    write_json,
 )
 
 
@@ -334,6 +344,93 @@ def test_validation_gaussian_input_adapter_preserves_config_error(tmp_path: Path
 
     with pytest.raises(ConfigError):
         write_ase_neb_gaussian_input(bad_xyz, tmp_path / "candidate.gjf", {})
+
+
+def test_core_validation_resolves_promotable_candidate_and_tool_errors(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_unit"
+    candidate_dir = root / "nodes" / "n010_neb_xtb" / "candidates"
+    candidate_dir.mkdir(parents=True)
+    xyz = candidate_dir / "cand_001.xyz"
+    xyz.write_text("2\ncandidate\nH 0 0 0\nH 0 0 0.74\n", encoding="utf-8")
+    write_json(
+        candidate_dir / "cand_001.json",
+        {
+            "candidate_id": "cand_001",
+            "xyz": "nodes/n010_neb_xtb/candidates/cand_001.xyz",
+            "candidate_quality": {"accepted_for_promotion": True},
+        },
+    )
+
+    assert core_latest_promotable_candidate(root) == ("n010_neb_xtb", "cand_001")
+    assert core_resolve_candidate(root, source_node_id=None, candidate_id=None) == (
+        "n010_neb_xtb",
+        "cand_001",
+        xyz,
+    )
+    assert tool_default_validation_parent(root) == "n010_neb_xtb"
+
+    with pytest.raises(ConfigError):
+        tool_resolve_candidate(tmp_path / "empty", source_node_id=None, candidate_id=None)
+
+
+def test_tool_gaussian_refine_node_uses_core_state_writer(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_unit"
+    candidate = tmp_path / "candidate.xyz"
+    candidate.write_text("2\ncandidate\nH 0 0 0\nH 0 0 0.74\n", encoding="utf-8")
+
+    node_id, gjf = create_tool_gaussian_refine_node(
+        root,
+        source_node_id="n010_neb_xtb",
+        candidate_id="cand_001",
+        candidate_xyz=candidate,
+        gaussian_cfg={
+            "route": "# M062X/6-31G(d) opt=(ts,calcfc) freq",
+            "charge": 0,
+            "multiplicity": 1,
+        },
+    )
+
+    node_dir = root / "nodes" / node_id
+    node = json.loads((node_dir / "node.json").read_text(encoding="utf-8"))
+    assert gjf == node_dir / "inputs" / "ts_candidate_ts_freq.gjf"
+    assert gjf.exists()
+    assert (node_dir / "structures" / "source_candidate.xyz").exists()
+    assert node["stage"] == "gaussian_tsfreq_input"
+    assert node["parent_id"] == "n010_neb_xtb"
+    assert node["inputs"]["ts_freq_gjf"] == str(gjf)
+    assert "run_gaussian_tsfreq" in (node_dir / "reflection.md").read_text(encoding="utf-8")
+    tree = read_tree(root)
+    assert tree["nodes"][node_id]["parent_id"] == "n010_neb_xtb"
+    assert node_id in tree["active_frontier"]
+
+
+def test_core_validation_plan_node_writes_policy_state(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_unit"
+    reactant = tmp_path / "reactant.xyz"
+    product = tmp_path / "product.xyz"
+    reactant.write_text("2\nr\nH 0 0 0\nH 0.74 0 0\n", encoding="utf-8")
+    product.write_text("2\np\nH 0 0 0\nH 2.00 0 0\n", encoding="utf-8")
+    policy = build_gate_validation_policy(
+        reactant,
+        product,
+        user_bonds=[(1, 2)],
+        system_class_override="h_transfer",
+    )
+
+    node_id, policy_path = create_core_validation_plan_node(
+        root,
+        parent_node_id="n020_gaussian_tsfreq",
+        policy=policy,
+    )
+
+    node_dir = root / "nodes" / node_id
+    node = json.loads((node_dir / "node.json").read_text(encoding="utf-8"))
+    assert policy_path == node_dir / "validation_policy.json"
+    assert node["stage"] == "validation_plan"
+    assert node["parent_id"] == "n020_gaussian_tsfreq"
+    assert node["policy_file"] == str(policy_path)
+    assert "run_mode_endpoint_validation" in (node_dir / "reflection.md").read_text(encoding="utf-8")
+    assert read_tree(root)["nodes"][node_id]["stage"] == "validation_plan"
 
 
 # --- config -----------------------------------------------------------------
