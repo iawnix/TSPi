@@ -20,7 +20,7 @@ from transition_state_workflow.config.state_contract import (
     WORKSPACE_NODE_SCHEMA,
     derive_claim_level,
 )
-from transition_state_workflow.tool.ase_neb.config import (
+from transition_state_workflow.tools.ase_neb.config import (
     ProjectContext,
     project_context,
     safe_slug,

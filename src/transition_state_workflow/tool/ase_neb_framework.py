@@ -14,7 +14,7 @@ from pathlib import Path
 from typing import Any
 
 from transition_state_workflow.backends.ase import import_ase_bits
-from transition_state_workflow.tool.ase_neb.config import (
+from transition_state_workflow.tools.ase_neb.config import (
     ProjectContext,
     normalize_config,
     read_text_config,

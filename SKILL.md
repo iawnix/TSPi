@@ -291,7 +291,8 @@ Python tooling follows a package layout:
   `TSDescriptorExtractionTool`. `tools/ase_neb/` owns the ASE NEB leaf support
   helpers and adapters shared by the candidate-generation implementation:
   constants, `ConfigError`, config-value coercers, ASE-to-`Atom` conversion,
-  NEB-facing geometry parser error adaptation, config-field extraction, and
+  NEB-facing geometry parser error adaptation, config file reading and
+  normalization, config-field extraction, node/level slug helpers, and
   NEB-facing mechanism/endpoint summary adapters over `chem/`, plus ASE image
   loading/interpolation/write/read helpers.
 - `src/transition_state_workflow/backends/`: Gaussian, xTB, ASE, and QBICS
@@ -334,12 +335,12 @@ Python tooling follows a package layout:
   `gate/connectivity.py`.
   The remaining ASE NEB candidate-generation implementation lives in the
   `tool/ase_neb/` subpackage for now, split by concern into
-  layered modules (`gaussian_calc`; `config`; `workspace`;
-  `node_writers`/`driver`/`validation`/`external_gaussian`), with
-  `constants`/`errors`/`coerce`/`geometry`/`mechanism`/`images` present as
-  compatibility re-exports over `tools/ase_neb/`. `tool/ase_neb_framework.py`
-  is the thin CLI on top. The dependency direction is strictly downward and
-  covered by import boundary tests.
+  layered modules (`gaussian_calc`; `workspace`; `node_writers`/`driver`/
+  `validation`/`external_gaussian`), with `constants`/`errors`/`coerce`/
+  `geometry`/`mechanism`/`images`/`config` present as compatibility re-exports
+  over `tools/ase_neb/`. `tool/ase_neb_framework.py` is the thin CLI on top.
+  The dependency direction is strictly downward and covered by import boundary
+  tests.
 - `src/transition_state_workflow/web/static/`: static explorer UI assets
   loaded by the optional web service. State labels/colors come only from
   `config/state_contract.py`, shipped through the normalizer; the UI keeps no

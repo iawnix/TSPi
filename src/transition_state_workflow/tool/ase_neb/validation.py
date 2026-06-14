@@ -14,7 +14,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from transition_state_workflow.tool.ase_neb.config import (
+from transition_state_workflow.tools.ase_neb.config import (
     ProjectContext,
     level_slug_from_gaussian_config,
 )

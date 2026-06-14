@@ -30,7 +30,7 @@ from transition_state_workflow.tools.ase_neb.coerce import (  # noqa: E402
     as_mapping,
     as_positive_int,
 )
-from transition_state_workflow.tool.ase_neb.config import (  # noqa: E402
+from transition_state_workflow.tools.ase_neb.config import (  # noqa: E402
     input_node_id,
     level_slug_from_calculator,
     level_slug_from_gaussian_config,

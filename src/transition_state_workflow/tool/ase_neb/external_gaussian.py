@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from transition_state_workflow.backends.ase import import_ase_bits
-from transition_state_workflow.tool.ase_neb.config import input_node_id, safe_slug
+from transition_state_workflow.tools.ase_neb.config import input_node_id, safe_slug
 from transition_state_workflow.tool.ase_neb.driver import (
     evaluate_neb_candidate_quality,
     make_neb_object,

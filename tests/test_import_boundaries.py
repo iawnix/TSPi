@@ -247,3 +247,17 @@ def test_ase_neb_images_live_in_tools_with_tool_compatibility() -> None:
     assert old_images.read_xyz_images_from_dir is images.read_xyz_images_from_dir
     compat_source = PACKAGE / "tool" / "ase_neb" / "images.py"
     assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
+
+
+def test_ase_neb_config_lives_in_tools_with_tool_compatibility() -> None:
+    from transition_state_workflow.tool.ase_neb import config as old_config
+    from transition_state_workflow.tools.ase_neb import config
+
+    assert old_config.ProjectContext is config.ProjectContext
+    assert old_config.safe_slug is config.safe_slug
+    assert old_config.normalize_config is config.normalize_config
+    assert old_config.resolve_config_paths is config.resolve_config_paths
+    assert old_config.validate_config is config.validate_config
+    assert old_config.neb_node_id is config.neb_node_id
+    compat_source = PACKAGE / "tool" / "ase_neb" / "config.py"
+    assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4

@@ -174,7 +174,7 @@ Do not edit the installed skill at
       old `tool/` package. Validate old/new import identity, ASE-free config
       validation, public script help, full tests, and a strict workspace smoke
       before pushing.
-- [ ] Move ASE NEB config parsing into the ChemTool layer:
+- [x] Move ASE NEB config parsing into the ChemTool layer:
       plan before code changes is to move `ProjectContext`, config file
       reading, normalization, path resolution, level/node slug helpers, and
       `validate_config` from `tool/ase_neb/config.py` to
@@ -529,3 +529,16 @@ Do not edit the installed skill at
   workspace validator and normalizer smoke on
   `/tmp/tswf-ase-runtime-images-smoke2.XIypWO/tssearch_smoke` with validator
   summary `0 errors, 0 warnings`.
+- 2026-06-14: Moved ASE NEB config parsing and normalization from
+  `tool/ase_neb/config.py` to `tools/ase_neb/config.py`; the old path is a
+  thin compatibility re-export, and ASE NEB callers import config helpers from
+  the ChemTool layer.
+- 2026-06-14: ASE NEB config ChemTool validation passed:
+  `git diff --check`; `py_compile` for `tools/ase_neb/config.py`,
+  `tool/ase_neb/config.py`, `tool/ase_neb_framework.py`, `tool/ase_neb`, and
+  `tools/ase_neb`; targeted import/ASE NEB/architecture/reference tests
+  `86 passed, 1 skipped`; targeted parser/no-undefined tests
+  `17 passed, 1 skipped`; full pytest `223 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-ase-config-smoke.yvnB71/tssearch_smoke` with validator summary
+  `0 errors, 0 warnings`.
