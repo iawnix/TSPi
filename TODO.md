@@ -385,6 +385,20 @@ Do not edit the installed skill at
       behavior. Add import-boundary/compatibility tests, then validate public
       script help, targeted workspace/finalize tests, full pytest, and a strict
       workspace smoke before pushing.
+- [ ] Move ASE NEB framework CLI assembly out of the legacy tool layer:
+      plan before code changes is to create a dedicated
+      `cli/ase_neb_framework.py` module that owns argparse construction,
+      command dispatch, and `ConfigError` to `CliError` translation for
+      `scripts/ase_neb_framework.py`. The existing
+      `tool/ase_neb/workflow.py` should keep tool-layer orchestration around
+      backend runtime, core state writers, and gate policy helpers;
+      `tool/ase_neb_framework.py` should become an executable compatibility
+      entrypoint/re-export preserving old public helper imports such as
+      `prepare`, `run_neb`, `load_config_for_cli`,
+      `make_gaussian_refine_from_cli`, and `evaluate_neb_candidate_quality`.
+      Add import-boundary/compatibility tests, then validate public script help,
+      targeted ASE NEB/parsing tests, full pytest, and strict workspace smoke
+      before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
