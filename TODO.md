@@ -223,7 +223,7 @@ Do not edit the installed skill at
       driver imports do not touch workspace/node-writer modules, and validate
       public script help, full tests, and a strict workspace smoke before
       pushing.
-- [ ] Move ASE NEB workspace and node-state writing out of the ChemTool layer:
+- [x] Move ASE NEB workspace and node-state writing out of the ChemTool layer:
       plan before code changes is to promote the generic parts of
       `tools/ase_neb/workspace.py` into a core workspace writer boundary and
       replace `tools/ase_neb/node_writers.py` with a thin mapper from ASE NEB
@@ -330,6 +330,8 @@ Do not edit the installed skill at
 - `458b47f` `docs: record ase neb node writer checkpoint`
 - `a434900` `docs: plan ase neb result boundary correction`
 - `979b4a1` `refactor: isolate ase neb result artifacts`
+- `f9e7b52` `docs: record ase neb result boundary checkpoint`
+- `77a9035` `refactor: move ase neb state writers into core`
 
 ## Completion Log
 
@@ -642,4 +644,21 @@ Do not edit the installed skill at
   pytest `226 passed, 2 skipped`; script help smoke `18 scripts`; strict
   workspace validator and normalizer smoke on
   `/tmp/tswf-ase-result-smoke.Y48M22/tssearch_smoke` with validator summary
+  `0 errors, 0 warnings`.
+- 2026-06-14: Moved ASE NEB workspace and node-state writing into
+  `core/ase_neb_workspace.py` and `core/ase_neb_nodes.py`, with shared
+  project-context and naming helpers in `base/ase_neb.py`. The
+  `tools/ase_neb/workspace.py`, `tools/ase_neb/node_writers.py`,
+  `tool/ase_neb/workspace.py`, and `tool/ase_neb/node_writers.py` modules now
+  forward to core; the ASE NEB CLI, external-Gaussian continuation, and
+  validation-node writer call core state helpers directly.
+- 2026-06-14: ASE NEB core-state writer validation passed:
+  `git diff --check`; `py_compile` for `base/ase_neb.py`,
+  `core/ase_neb_workspace.py`, `core/ase_neb_nodes.py`, compatibility
+  forwarders, ASE NEB CLI, external-Gaussian continuation, and validation
+  modules; targeted import/ASE NEB/reference tests `78 passed, 1 skipped`;
+  earlier focused architecture/ASE tests `89 passed, 2 skipped`; full pytest
+  `226 passed, 2 skipped`; script help smoke `18 scripts`; strict workspace
+  validator and normalizer smoke on
+  `/tmp/tswf-ase-core-smoke.UXuVPt/tssearch_smoke` with validator summary
   `0 errors, 0 warnings`.
