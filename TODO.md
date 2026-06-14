@@ -529,6 +529,21 @@ Do not edit the installed skill at
       to work. Validate py_compile, import boundaries, ASE NEB migration/pure
       tests, workspace/finalize behavior tests, full pytest, public script
       help, and strict workspace smoke before pushing.
+- [ ] Make `core/workspace_state.py` compose `core/workspace/` primitives:
+      plan before code changes is to keep `workspace_state.py` as the
+      hypothesis-workspace command/business assembly layer while moving
+      duplicated generic mechanisms into the `core/workspace/` package.
+      Preserve public CLI behavior and existing evidence-id/path semantics for
+      `ts_hypothesis_workspace.py add-evidence`. Add reusable primitives for
+      overwrite-aware text writes, required workspace-root checks, and portable
+      evidence-registry append/update under `core/workspace/`; then update
+      `workspace_state.py` and `cli/hypothesis_workspace.py` to import those
+      primitives instead of defining their own. Keep decision-card markdown,
+      mechanism-model defaults, pathway setup, and branch-reference validation
+      in `workspace_state.py` because those are command policy, not generic
+      file I/O. Validate py_compile, import boundaries, workspace/finalize/
+      pathway/backtrack behavior tests, full pytest, public script help, and
+      strict workspace smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
