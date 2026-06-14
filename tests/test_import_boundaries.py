@@ -186,6 +186,7 @@ def test_descriptor_extractor_lives_in_tools_with_tool_compatibility() -> None:
 
 def test_hypothesis_workspace_cli_lives_in_cli_with_tool_compatibility() -> None:
     from transition_state_workflow.cli import hypothesis_workspace
+    from transition_state_workflow.core import plan_next as core_plan_next
     from transition_state_workflow.gate import evidence
     from transition_state_workflow.tool import hypothesis_workspace as old_workspace
     from transition_state_workflow.tool import plan_next
@@ -196,7 +197,26 @@ def test_hypothesis_workspace_cli_lives_in_cli_with_tool_compatibility() -> None
         old_workspace.initialize_ts_hypothesis_workspace_from_cli_args
         is hypothesis_workspace.initialize_ts_hypothesis_workspace_from_cli_args
     )
+    assert hypothesis_workspace.build_core_plan_next_packet is core_plan_next.build_plan_next_packet
+    assert plan_next.register_plan_next_parser is core_plan_next.register_plan_next_parser
+    assert plan_next.PLAN_SCHEMA == core_plan_next.PLAN_SCHEMA
     assert plan_next.record_supports_tsfreq_reframe is evidence.record_supports_tsfreq_reframe
+
+    plan_next_package = PACKAGE / "core" / "plan_next"
+    assert plan_next_package.is_dir()
+    assert not (PACKAGE / "core" / "plan_next.py").exists()
+    for expected_module in (
+        "__init__.py",
+        "cli.py",
+        "contracts.py",
+        "loader.py",
+        "pathway.py",
+        "phase.py",
+        "suggestions.py",
+        "context.py",
+        "ids.py",
+    ):
+        assert (plan_next_package / expected_module).is_file()
 
     cli_imports = full_internal_imports(PACKAGE / "cli" / "hypothesis_workspace.py")
     assert "transition_state_workflow.tool" not in {

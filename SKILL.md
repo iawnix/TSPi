@@ -294,7 +294,15 @@ Python tooling follows a package layout:
   templates, evidence registry append, start-node, backtrack lifecycle,
   ASE NEB project scaffold and node/evidence/tree/report/reflection writers,
   external-Gaussian continuation state writers, and `plan-next` planning
-  packets.
+  packets. `core/plan_next/` is the ChemKernel planning subpackage:
+  `cli.py` owns parser registration, `contracts.py` owns the packet schema and
+  injected validator/evidence predicate contracts, `loader.py` owns read-only
+  workspace/tree/node/evidence loading, `pathway.py` owns pathway-step
+  planning scope, `phase.py` owns phase/focus inference, `suggestions.py`
+  owns suggested decision/finalization/reframe/backtrack actions,
+  `context.py` owns context summaries and ranking, and `ids.py` owns node id
+  sorting and next-id helpers. The package `__init__.py` preserves the public
+  `core.plan_next` import surface and builds the final planning packet.
 - `src/transition_state_workflow/gate/`: ChemGate-facing read and closure
   logic: evidence gates, workspace validation, normalized explorer views,
   structural endpoint connectivity checking, NEB candidate validation policy,
