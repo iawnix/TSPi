@@ -288,6 +288,18 @@ Do not edit the installed skill at
       path, add backend/compatibility tests that do not require Gaussian, and
       validate import boundaries, public script help, full tests, and a strict
       workspace smoke before pushing.
+- [x] Thin `ase_neb_framework.py` by moving command implementation into the
+      ASE NEB workflow module:
+      plan before code changes is to create `tool/ase_neb/workflow.py` for the
+      command implementation and main-path orchestration that must compose core
+      state writers, backend ASE runtime/result producers, config parsing, and
+      validation-node helpers. Keep `ase_neb_framework.py` as the public parser
+      and CLI dispatch module, preserve old public imports such as `prepare`,
+      `run_neb`, `load_config_for_cli`, `make_gaussian_refine_from_cli`, and
+      `evaluate_neb_candidate_quality`, and add import-boundary coverage that
+      `ase_neb_framework.py` no longer imports backend/core runtime modules
+      directly. Validate the ASE NEB CLI, compatibility imports, script help,
+      full tests, and a strict workspace smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
@@ -396,6 +408,7 @@ Do not edit the installed skill at
 - `5c0c4a1` `docs: record external gaussian core checkpoint`
 - `dd1bfd3` `refactor: move external gaussian runtime request into backend`
 - `ed6b539` `refactor: move external gaussian continuation runtime into backend`
+- `52a70e1` `refactor: move ase neb cli workflow out of framework`
 
 ## Completion Log
 
@@ -796,3 +809,19 @@ Do not edit the installed skill at
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-ase-continuation-backend-smoke.LlFK1C/tssearch_smoke` with
   validator summary `0 errors, 0 warnings`.
+- 2026-06-14: Moved ASE NEB command implementation and main-path orchestration
+  out of `tool/ase_neb_framework.py` into `tool/ase_neb/workflow.py`.
+  `ase_neb_framework.py` now keeps parser construction, dispatch, shared error
+  translation, and compatibility re-exports for `prepare`, `run_neb`,
+  `load_config_for_cli`, `make_gaussian_refine_from_cli`, and
+  `evaluate_neb_candidate_quality`; it no longer imports backend or core
+  runtime/state modules directly.
+- 2026-06-14: ASE NEB framework thin-wrapper validation passed:
+  `git diff --check`; `py_compile` for `tool/ase_neb_framework.py`,
+  `tool/ase_neb/workflow.py`, `tests/test_import_boundaries.py`, and
+  `tests/test_parsing_and_gates.py`; targeted import/ASE NEB/parsing tests
+  `85 passed, 1 skipped`; reference/no-undefined/architecture tests
+  `18 passed, 1 skipped`; full pytest `231 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-ase-framework-smoke.5wnxnJ/tssearch_smoke` with validator summary
+  `0 errors, 0 warnings`.
