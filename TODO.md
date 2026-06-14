@@ -338,6 +338,26 @@ Do not edit the installed skill at
       `core`, `backends`, `remote`, or `web` modules, and validate old/new
       policy behavior plus public script help, full tests, and strict workspace
       smoke before pushing.
+- [ ] Move Gaussian refinement input rendering out of the ASE NEB validation
+      adapter:
+      plan before code changes is to move `gaussian_refinement_defaults` and
+      the ASE-NEB-promoted Gaussian TS/Freq `.gjf` rendering logic from
+      `tool/ase_neb/validation.py` into `backends/gaussian.py`. The Gaussian
+      backend should own program-input rendering from XYZ plus Gaussian config;
+      `tool/ase_neb/validation.py` should keep old helper names only as
+      compatibility/error-adapter wrappers. Preserve existing generated input
+      text where practical, add backend/compatibility tests, and validate
+      script help, full tests, and strict workspace smoke before pushing.
+- [ ] Move ASE NEB validation node/workspace writers into core:
+      plan before code changes is to create `core/ase_neb_validation.py` for
+      validation/refinement workspace state: promotable-candidate lookup,
+      validation-parent inference, Gaussian TS/Freq node state writing, and
+      validation-plan node/evidence/report/reflection/tree writing. Core must
+      not import `backends`, `tool`, or `tools`; the tool adapter may compose
+      the Gaussian backend input renderer with core state writers to preserve
+      old public functions and `ConfigError` behavior. Add import-boundary and
+      behavior tests, then validate public script help, full tests, and strict
+      workspace smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
