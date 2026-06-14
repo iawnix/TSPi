@@ -313,6 +313,18 @@ Do not edit the installed skill at
       backend runtime internals directly, keep old public imports working, then
       validate targeted ASE/import tests, full tests, script help, and strict
       workspace smoke before pushing.
+- [ ] Move endpoint-based ASE NEB preparation into the backend:
+      plan before code changes is to add a structured backend preparation
+      result/API in `backends/ase_neb.py` that owns endpoint image loading,
+      endpoint atom-order validation, NEB interpolation, and writing the
+      backend-owned initial image/path artifacts. Keep
+      `tool/ase_neb/workflow.py` as orchestration only: create the project
+      scaffold, pass endpoint objects to core input-check state writers, write
+      pending NEB metadata, and keep CLI behavior unchanged. Add boundary tests
+      that workflow no longer imports or names the low-level image preparation
+      helpers directly, keep old public imports working, then validate targeted
+      ASE/import tests, full tests, script help, and strict workspace smoke
+      before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
