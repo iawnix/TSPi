@@ -313,7 +313,7 @@ Do not edit the installed skill at
       backend runtime internals directly, keep old public imports working, then
       validate targeted ASE/import tests, full tests, script help, and strict
       workspace smoke before pushing.
-- [ ] Move endpoint-based ASE NEB preparation into the backend:
+- [x] Move endpoint-based ASE NEB preparation into the backend:
       plan before code changes is to add a structured backend preparation
       result/API in `backends/ase_neb.py` that owns endpoint image loading,
       endpoint atom-order validation, NEB interpolation, and writing the
@@ -435,6 +435,9 @@ Do not edit the installed skill at
 - `ed6b539` `refactor: move external gaussian continuation runtime into backend`
 - `52a70e1` `refactor: move ase neb cli workflow out of framework`
 - `dd19631` `refactor: move ase neb runtime into backend request`
+- `110af47` `docs: record ase neb runtime backend checkpoint`
+- `1962952` `docs: plan ase neb preparation backend migration`
+- `0e2ba4e` `refactor: move ase neb preparation into backend`
 
 ## Completion Log
 
@@ -866,4 +869,20 @@ Do not edit the installed skill at
   `18 passed, 1 skipped`; full pytest `232 passed, 2 skipped`; script help
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-ase-main-backend-smoke.lYLrqf/tssearch_smoke` with validator
+  summary `0 errors, 0 warnings`.
+- 2026-06-14: Moved endpoint-based ASE NEB preparation into
+  `backends/ase_neb.py` as `AseNebPreparationResult` plus
+  `prepare_ase_neb_initial_path`. The backend now owns endpoint image loading,
+  atom-order validation, NEB interpolation, and initial image/path artifact
+  writing. `tool/ase_neb/workflow.py` now keeps only project scaffold creation,
+  core input-check state writing, pending NEB metadata, and CLI orchestration
+  around that backend preparation result.
+- 2026-06-14: ASE NEB preparation backend validation passed:
+  `git diff --check`; `py_compile` for `backends/ase_neb.py`,
+  `tool/ase_neb/workflow.py`, `tests/test_import_boundaries.py`, and
+  `tests/test_ase_neb_pure.py`; targeted import/ASE NEB/parsing tests
+  `87 passed, 1 skipped`; reference/no-undefined/architecture tests
+  `18 passed, 1 skipped`; full pytest `233 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-ase-prepare-backend-smoke.bHku6f/tssearch_smoke` with validator
   summary `0 errors, 0 warnings`.
