@@ -267,7 +267,7 @@ Do not say "TS found" for:
 Python tooling follows a package layout:
 
 - `src/transition_state_workflow/base/`: shared data models, including ASE NEB
-  workspace context and stable node/level naming helpers used by both core and
+  project context and stable node/level naming helpers used by both core and
   tool adapters.
 - `src/transition_state_workflow/chem/`: reusable Gaussian parsing and geometry
   helpers shared by workflow tools (single source for `PERIODIC_TABLE`,
@@ -292,17 +292,24 @@ Python tooling follows a package layout:
 - `src/transition_state_workflow/core/`: ChemKernel-facing planning and
   workspace state writers: workspace initialization, decision-card/node
   templates, evidence registry append, start-node, backtrack lifecycle,
-  ASE NEB project scaffold and node/evidence/tree/report/reflection writers,
-  external-Gaussian continuation state writers, and `plan-next` planning
-  packets. `core/plan_next/` is the ChemKernel planning subpackage:
+  generic node/evidence/tree/report/reflection writers, ASE NEB result-to-node
+  mapping, external-Gaussian continuation state writers, and `plan-next`
+  planning packets. `core/workspace/` owns generic TS-search workspace
+  primitives: `io.py` owns JSON/Markdown/path helpers, `nodes.py` owns
+  node-record construction and node-id allocation, `tree.py` owns tree
+  read/write and metadata updates, `evidence.py` owns evidence-registry
+  append/update, `scaffold.py` owns workspace skeletons plus report/reflection
+  tail writing, and `naming.py` owns workspace-safe slugs and timestamps.
+  `core/plan_next/` is the ChemKernel planning subpackage:
   `cli.py` owns parser registration, `contracts.py` owns the packet schema and
   injected validator/evidence predicate contracts, `loader.py` owns read-only
   workspace/tree/node/evidence loading, `pathway.py` owns pathway-step
   planning scope, `phase.py` owns phase/focus inference, `suggestions.py`
   owns suggested decision/finalization/reframe/backtrack actions,
-  `context.py` owns context summaries and ranking, and `ids.py` owns node id
-  sorting and next-id helpers. The package `__init__.py` preserves the public
-  `core.plan_next` import surface and builds the final planning packet.
+  `context.py` owns context summaries and ranking, `snapshot.py` owns read-only
+  workspace snapshots and node claim grouping, `packet.py` builds the final
+  planning packet, and `ids.py` owns node id sorting and next-id helpers. The
+  package `__init__.py` preserves the public `core.plan_next` import surface.
 - `src/transition_state_workflow/gate/`: ChemGate-facing read and closure
   logic: evidence gates, workspace validation, normalized explorer views,
   structural endpoint connectivity checking, NEB candidate validation policy,
@@ -327,8 +334,9 @@ Python tooling follows a package layout:
   NEB-facing geometry parser error adaptation, config file reading and
   normalization, config-field extraction, node/level slug helpers, and
   NEB-facing mechanism/endpoint summary adapters over `chem/`. Image IO and
-  result helpers in this package forward to the ASE NEB backend; `workspace.py`
-  and `node_writers.py` forward to the core state writers.
+  result helpers in this package forward to the ASE NEB backend;
+  `node_writers.py` forwards to the core state writers. There is no
+  `tools/ase_neb/workspace.py`; workspace mutation is owned by `core/workspace/`.
 - `src/transition_state_workflow/backends/`: Gaussian, xTB, ASE, and QBICS
   adapter boundaries for program-specific input/output metadata. The Gaussian
   backend owns TS/Freq input rendering/preparation, TS/Freq log parsing, and

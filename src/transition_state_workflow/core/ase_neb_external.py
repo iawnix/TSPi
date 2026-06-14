@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 from transition_state_workflow.base.ase_neb import input_node_id, safe_slug
-from transition_state_workflow.core.ase_neb_workspace import (
+from transition_state_workflow.core.workspace import (
     append_evidence_record,
     ensure_tree_skeleton,
     finalize_node_report_and_tree,

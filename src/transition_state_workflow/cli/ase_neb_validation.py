@@ -26,7 +26,7 @@ from transition_state_workflow.core.ase_neb_validation import (
     resolve_candidate as _resolve_candidate,
     write_gaussian_refine_node_state,
 )
-from transition_state_workflow.core.ase_neb_workspace import update_tree_node_metadata
+from transition_state_workflow.core.workspace import update_tree_node_metadata
 from transition_state_workflow.gate.neb_candidate import (
     build_validation_policy as _build_validation_policy,
     displacement_ladder,

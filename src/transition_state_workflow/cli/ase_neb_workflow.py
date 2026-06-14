@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 from pathlib import Path
+import shutil
 from typing import Any
 
 from transition_state_workflow.backends.ase_neb import (
@@ -22,10 +23,7 @@ from transition_state_workflow.core.ase_neb_nodes import (
     write_input_check_node,
     write_neb_node_metadata,
 )
-from transition_state_workflow.core.ase_neb_workspace import (
-    ensure_project_scaffold,
-    write_reflection_template,
-)
+from transition_state_workflow.core.workspace import ensure_tree_skeleton, write_json, write_reflection_template
 from transition_state_workflow.cli.ase_neb_external import (
     ExternalGaussianRun,
     continue_gaussian_neb_from_images,
@@ -45,6 +43,7 @@ from transition_state_workflow.cli.ase_neb_validation import (
 from transition_state_workflow.tools.ase_neb.config import (
     ProjectContext,
     normalize_config,
+    project_context,
     read_text_config,
     resolve_config_paths,
     validate_config,
@@ -54,8 +53,39 @@ from transition_state_workflow.tools.ase_neb.geometry import parse_angle_spec, p
 from transition_state_workflow.util.cli import CliError, emit_json, log
 
 
+def ensure_ase_neb_project_scaffold(
+    cfg: dict[str, Any],
+    *,
+    config_path: Path | None = None,
+) -> ProjectContext:
+    """Create the workspace scaffold and ASE NEB input copies for a run."""
+
+    ctx = project_context(cfg)
+    system_slug = cfg["project"]["system_slug"]
+    ensure_tree_skeleton(
+        ctx.root,
+        system_slug=system_slug,
+        readme_body=f"""# TS Search: {system_slug}
+
+Status: candidate_search
+
+This directory is a structured transition-state search tree. NEB outputs are
+candidates only; accepted transition states require Gaussian frequency and
+connectivity evidence.
+""",
+    )
+    write_json(ctx.root / "inputs" / "config.normalized.json", cfg)
+    if config_path is not None and config_path.exists():
+        shutil.copyfile(config_path, ctx.root / "inputs" / "config.original.json")
+    for key in ("reactant", "product"):
+        source = Path(str(cfg[key]))
+        if source.exists():
+            shutil.copyfile(source, ctx.root / "inputs" / f"{key}{source.suffix or '.xyz'}")
+    return ctx
+
+
 def prepare(cfg: dict[str, Any], *, config_path: Path | None = None) -> ProjectContext:
-    ctx = ensure_project_scaffold(cfg, config_path=config_path)
+    ctx = ensure_ase_neb_project_scaffold(cfg, config_path=config_path)
     preparation = prepare_ase_neb_initial_path(cfg, ctx.neb_node)
     write_input_check_node(ctx, cfg, preparation.reactant, preparation.product)
     write_neb_node_metadata(ctx, cfg, status="pending")
@@ -283,6 +313,7 @@ __all__ = [
     "command_reflect",
     "command_run",
     "command_validate",
+    "ensure_ase_neb_project_scaffold",
     "evaluate_neb_candidate_quality",
     "load_config_for_cli",
     "make_gaussian_refine_from_cli",

@@ -17,7 +17,7 @@ from transition_state_workflow.chem.mechanism import (
     endpoint_readiness_summary,
     infer_mechanism_preflight_from_geometry,
 )
-from transition_state_workflow.core.ase_neb_workspace import (
+from transition_state_workflow.core.workspace import (
     append_evidence_record,
     finalize_node_report_and_tree,
     node_record,

@@ -39,7 +39,6 @@ FORBIDDEN_WEB_TOOL_MODULES = {
 
 TOOLS_CORE_COMPATIBILITY_SHIMS = {
     PACKAGE / "tools" / "ase_neb" / "node_writers.py",
-    PACKAGE / "tools" / "ase_neb" / "workspace.py",
 }
 
 
@@ -379,22 +378,44 @@ def test_ase_neb_config_lives_in_tools_with_tool_compatibility() -> None:
     assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
 
 
-def test_ase_neb_workspace_lives_in_core_with_compatibility() -> None:
-    from transition_state_workflow.core import ase_neb_workspace as core_workspace
-    from transition_state_workflow.tool.ase_neb import workspace as old_workspace
-    from transition_state_workflow.tools.ase_neb import workspace
+def test_workspace_primitives_live_in_core_workspace_without_ase_neb_compatibility() -> None:
+    from transition_state_workflow.core import workspace
 
-    assert workspace.write_json is core_workspace.write_json
-    assert workspace.node_record is core_workspace.node_record
-    assert workspace.read_tree is core_workspace.read_tree
-    assert workspace.append_evidence_record is core_workspace.append_evidence_record
-    assert old_workspace.ensure_project_scaffold is core_workspace.ensure_project_scaffold
-    assert old_workspace.finalize_node_report_and_tree is core_workspace.finalize_node_report_and_tree
-    for compat_source in (
+    assert workspace.write_json is not None
+    assert workspace.node_record is not None
+    assert workspace.read_tree is not None
+    assert workspace.append_evidence_record is not None
+    assert workspace.ensure_tree_skeleton is not None
+    assert workspace.finalize_node_report_and_tree is not None
+
+    workspace_package = PACKAGE / "core" / "workspace"
+    assert workspace_package.is_dir()
+    for expected_module in (
+        "__init__.py",
+        "evidence.py",
+        "io.py",
+        "naming.py",
+        "nodes.py",
+        "scaffold.py",
+        "tree.py",
+    ):
+        assert (workspace_package / expected_module).is_file()
+
+    removed_modules = (
+        PACKAGE / "core" / "ase_neb_workspace.py",
         PACKAGE / "tools" / "ase_neb" / "workspace.py",
         PACKAGE / "tool" / "ase_neb" / "workspace.py",
-    ):
-        assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
+    )
+    for path in removed_modules:
+        assert not path.exists()
+
+    old_import = "transition_state_workflow.core.ase_neb_workspace"
+    offenders = [
+        str(path.relative_to(ROOT))
+        for path in PACKAGE.rglob("*.py")
+        if old_import in path.read_text(encoding="utf-8")
+    ]
+    assert not offenders
 
 
 def test_ase_neb_node_writers_live_in_core_with_compatibility() -> None:

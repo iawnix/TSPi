@@ -36,11 +36,6 @@ from transition_state_workflow.core.ase_neb_external import (
     write_external_gaussian_neb_node,
     write_external_image_input_node,
 )
-from transition_state_workflow.core.ase_neb_workspace import (
-    append_evidence_record as append_ase_neb_evidence_record,
-    ensure_project_scaffold as ensure_ase_neb_project_scaffold,
-    node_record as ase_neb_node_record,
-)
 from transition_state_workflow.core.imaginary_mode_follow import (
     resolve_make_opt_output_path,
     resolve_output_layout as resolve_imaginary_mode_output_layout,
@@ -65,16 +60,13 @@ __all__ = [
     "PLAN_SCHEMA",
     "TsfreqEvidencePredicate",
     "WorkspaceValidator",
-    "append_ase_neb_evidence_record",
     "append_ts_workspace_evidence_record",
-    "ase_neb_node_record",
     "build_plan_next_packet",
     "continue_node_id_from_images",
     "create_ts_branch_decision_artifacts_from_cli_args",
     "create_validation_plan_node",
     "default_validation_parent",
     "ensure_external_gaussian_project",
-    "ensure_ase_neb_project_scaffold",
     "external_gaussian_level_slug",
     "find_project_input",
     "initialize_ts_hypothesis_workspace_files",

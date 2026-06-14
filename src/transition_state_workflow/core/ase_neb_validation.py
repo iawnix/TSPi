@@ -10,7 +10,7 @@ import shutil
 from typing import Any
 
 from transition_state_workflow.base.ase_neb import level_slug_from_gaussian_config
-from transition_state_workflow.core.ase_neb_workspace import (
+from transition_state_workflow.core.workspace import (
     finalize_node_report_and_tree,
     next_node_id,
     node_record,

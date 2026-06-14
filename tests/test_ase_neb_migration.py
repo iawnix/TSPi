@@ -16,7 +16,7 @@ from transition_state_workflow.config.state_contract import (  # noqa: E402
     TREE_SCHEMA,
     WORKSPACE_NODE_SCHEMA,
 )
-from transition_state_workflow.core.ase_neb_workspace import (  # noqa: E402
+from transition_state_workflow.core.workspace import (  # noqa: E402
     append_evidence_record,
     node_record,
     update_tree_node_metadata,
