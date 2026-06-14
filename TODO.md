@@ -232,7 +232,7 @@ Do not edit the installed skill at
       workspace mutation. Keep compatibility imports until callers and tests
       prove the new core path is complete, then validate docs, import
       boundaries, public script help, full tests, and a strict workspace smoke.
-- [ ] Reclassify ASE NEB execution as an ASE backend adapter:
+- [x] Reclassify ASE NEB execution as an ASE backend adapter:
       plan before code changes is to stop treating ASE NEB as a ChemTool-owned
       implementation package. ASE is a backend that can drive xTB, Gaussian, or
       other calculators, while core owns chemistry hypotheses, workspace state,
@@ -346,6 +346,9 @@ Do not edit the installed skill at
 - `979b4a1` `refactor: isolate ase neb result artifacts`
 - `f9e7b52` `docs: record ase neb result boundary checkpoint`
 - `77a9035` `refactor: move ase neb state writers into core`
+- `e92d9da` `docs: record ase neb core state checkpoint`
+- `5c5d500` `docs: plan ase neb backend reclassification`
+- `2a14cbc` `refactor: move ase neb execution into backend`
 
 ## Completion Log
 
@@ -675,4 +678,22 @@ Do not edit the installed skill at
   `226 passed, 2 skipped`; script help smoke `18 scripts`; strict workspace
   validator and normalizer smoke on
   `/tmp/tswf-ase-core-smoke.UXuVPt/tssearch_smoke` with validator summary
+  `0 errors, 0 warnings`.
+- 2026-06-14: Reclassified ASE NEB runtime execution as backend code in
+  `backends/ase_neb.py`: ASE image IO, NEB object construction, calculator
+  attachment, external-Gaussian force calculation, path tables, force tables,
+  trajectory snapshots, candidate geometry metadata, and summary payloads now
+  live in the backend. `tools/ase_neb/images.py`, `tools/ase_neb/results.py`,
+  `tool/ase_neb/driver.py`, and `tool/ase_neb/gaussian_calc.py` remain thin
+  compatibility adapters; ASE NEB CLI orchestration and external-Gaussian
+  continuation call backend result producers and core state writers separately.
+- 2026-06-14: ASE NEB backend reclassification validation passed:
+  `git diff --check`; `py_compile` for `backends/ase_neb.py`, ASE NEB CLI,
+  external-Gaussian continuation, compatibility wrappers, constants, and
+  errors; `tests/test_import_boundaries.py` `16 passed`; ASE NEB pure tests
+  `48 passed`; ASE NEB compatibility tests `7 passed, 1 skipped`; Gaussian
+  parser tests `17 passed`; reference/architecture/no-undefined tests
+  `18 passed, 1 skipped`; full pytest `226 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-ase-backend-smoke.PovSte/tssearch_smoke` with validator summary
   `0 errors, 0 warnings`.

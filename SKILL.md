@@ -291,16 +291,14 @@ Python tooling follows a package layout:
 - `src/transition_state_workflow/tools/`: ChemTool protocol, capability
   vocabulary, registry, node-scoped local command execution via
   `NodeExecutionTool`, and Gaussian TS descriptor extraction via
-  `TSDescriptorExtractionTool`. `tools/ase_neb/` owns the ASE NEB leaf support
-  helpers and adapters shared by the candidate-generation implementation:
+  `TSDescriptorExtractionTool`. `tools/ase_neb/` owns the ASE NEB tool-facing
+  helpers and compatibility adapters:
   constants, `ConfigError`, config-value coercers, ASE-to-`Atom` conversion,
   NEB-facing geometry parser error adaptation, config file reading and
   normalization, config-field extraction, node/level slug helpers, and
-  NEB-facing mechanism/endpoint summary adapters over `chem/`, ASE image
-  loading/interpolation/write/read helpers, NEB result artifact writers for
-  path/force tables, trajectory snapshots, candidate geometry metadata, and
-  summary payloads. `workspace.py` and `node_writers.py` are compatibility
-  forwarding modules over the core state writers.
+  NEB-facing mechanism/endpoint summary adapters over `chem/`. Image IO and
+  result helpers in this package forward to the ASE NEB backend; `workspace.py`
+  and `node_writers.py` forward to the core state writers.
 - `src/transition_state_workflow/backends/`: Gaussian, xTB, ASE, and QBICS
   adapter boundaries for program-specific input/output metadata. The Gaussian
   backend owns TS/Freq input rendering/preparation, TS/Freq log parsing, and
@@ -312,7 +310,10 @@ Python tooling follows a package layout:
   preflight parsing and repair helpers used by `gaussian_gen_preflight.py`.
   The ASE backend owns lazy ASE/xTB/Gaussian-calculator runtime loading through
   `require_ase`, `require_xtb`, `require_gaussian_calculator`, and
-  `import_ase_bits`.
+  `import_ase_bits`. `backends/ase_neb.py` owns ASE image loading,
+  interpolation, NEB object construction, calculator attachment, the
+  external-Gaussian force calculator, path/force tables, trajectory snapshots,
+  candidate geometry metadata, and summary payloads.
 - `src/transition_state_workflow/remote/`: remote execution and synchronization
   boundary. `exec.py` owns the argv-only OpenSSH executor, `openssh.py` adapts
   it to `RemoteTransport`, `sftp.py` provides optional Paramiko SSH/SFTP,
@@ -338,17 +339,13 @@ Python tooling follows a package layout:
   entrypoint over `tools/node_exec.py`; `ts_descriptor_extract.py` is a
   compatibility entrypoint over `tools/descriptors.py`;
   `rmsd_connectivity_check.py` is a compatibility entrypoint over
-  `gate/connectivity.py`.
-  The remaining ASE NEB candidate-generation implementation lives in the
-  `tool/ase_neb/` subpackage for now, split by concern into
-  layered modules (`gaussian_calc`; `driver`/`validation`/`external_gaussian`),
-  with `constants`/`errors`/`coerce`/`geometry`/`mechanism`/`images`/`config`/
-  `workspace`/`node_writers` present as compatibility entrypoints.
-  `driver.py` builds ASE NEB objects, attaches calculators, and scores
-  candidate quality; path summaries and candidate result artifacts are
-  implemented in `tools/ase_neb/results.py` while remaining available through
-  the driver function names. `tool/ase_neb_framework.py` is the thin CLI on top
-  and calls core state writers for workspace mutation. The dependency direction
+  `gate/connectivity.py`. `tool/ase_neb/gaussian_calc.py`,
+  `tool/ase_neb/driver.py`, `tool/ase_neb/images.py`,
+  `tools/ase_neb/images.py`, and `tools/ase_neb/results.py` forward to the ASE
+  NEB backend. `validation.py` and `external_gaussian.py` remain CLI
+  orchestration modules: they call backend execution helpers for candidate
+  artifacts and core state writers for workspace mutation.
+  `tool/ase_neb_framework.py` is the thin CLI on top. The dependency direction
   is covered by import boundary tests.
 - `src/transition_state_workflow/web/static/`: static explorer UI assets
   loaded by the optional web service. State labels/colors come only from
