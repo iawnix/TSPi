@@ -477,6 +477,23 @@ Do not edit the installed skill at
       focused tests, import-boundary tests, validator/workspace/finalize/
       pathway/backtrack tests, full pytest, script help, and strict workspace
       smoke before pushing.
+- [ ] Split validator pathway and event policy owners out of `tree.py`:
+      plan before code changes is to move independent validation policies, not
+      to reduce line count mechanically. Create `gate/validate/pathway.py` for
+      `pathway_model.json`, pathway step, accepted-step binding, and pathway
+      accepted-TS evidence-gate checks. Create `gate/validate/events.py` for
+      `tree.events`, `tree.backtrack_events`, and normalized graph event/
+      backtrack checks. Keep `tree.py` responsible for only tree top-level
+      fields, parent graph, tree index drift, and manifest/current-accepted
+      consistency. Continue using `gate/validate/common.py` for duplicated
+      id/reference/list/object mechanics, but keep pathway semantics, event
+      lifecycle rules, active-backtrack cardinality, and accepted-TS evidence
+      policy in their strategy owner modules. Preserve the public
+      `transition_state_workflow.gate.validate` facade and compatibility
+      imports from scripts and `tool/validate_workspace.py`. Validate
+      py_compile, import boundaries, pathway/backtrack/finalize/workspace
+      tests, full pytest, public script help, and strict workspace smoke before
+      pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
