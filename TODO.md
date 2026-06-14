@@ -338,7 +338,7 @@ Do not edit the installed skill at
       `core`, `backends`, `remote`, or `web` modules, and validate old/new
       policy behavior plus public script help, full tests, and strict workspace
       smoke before pushing.
-- [ ] Move Gaussian refinement input rendering out of the ASE NEB validation
+- [x] Move Gaussian refinement input rendering out of the ASE NEB validation
       adapter:
       plan before code changes is to move `gaussian_refinement_defaults` and
       the ASE-NEB-promoted Gaussian TS/Freq `.gjf` rendering logic from
@@ -348,7 +348,7 @@ Do not edit the installed skill at
       compatibility/error-adapter wrappers. Preserve existing generated input
       text where practical, add backend/compatibility tests, and validate
       script help, full tests, and strict workspace smoke before pushing.
-- [ ] Move ASE NEB validation node/workspace writers into core:
+- [x] Move ASE NEB validation node/workspace writers into core:
       plan before code changes is to create `core/ase_neb_validation.py` for
       validation/refinement workspace state: promotable-candidate lookup,
       validation-parent inference, Gaussian TS/Freq node state writing, and
@@ -937,4 +937,35 @@ Do not edit the installed skill at
   `236 passed, 2 skipped`; script help smoke `18 scripts`; strict workspace
   validator and normalizer smoke on
   `/tmp/tswf-neb-candidate-gate-smoke.bR0Q9B/tssearch_smoke` with validator
+  summary `0 errors, 0 warnings`.
+- 2026-06-14: Moved ASE-NEB-promoted Gaussian TS/Freq refinement input
+  rendering into `backends/gaussian.py` via `gaussian_refinement_defaults`,
+  `render_gaussian_refinement_input`, and `write_gaussian_refinement_input`.
+  `tool/ase_neb/validation.py` now keeps `gaussian_refinement_defaults` and
+  `write_gaussian_input` as compatibility/error-adapter wrappers, preserving
+  existing `.gjf` text behavior where practical.
+  Commit: `f97d138 refactor: move gaussian refinement input rendering into backend`.
+- 2026-06-14: Gaussian refinement input backend validation passed:
+  `git diff --check`; `py_compile` for `backends/gaussian.py`,
+  `tool/ase_neb/validation.py`, `tests/test_import_boundaries.py`,
+  `tests/test_ase_neb_pure.py`, and `tests/test_parse_log.py`; targeted
+  import/ASE NEB/parsing tests `111 passed, 1 skipped`;
+  reference/no-undefined/architecture tests `18 passed, 1 skipped`; full
+  pytest `240 passed, 2 skipped`.
+- 2026-06-14: Moved ASE NEB validation workspace state into
+  `core/ase_neb_validation.py`: promotable-candidate lookup, candidate
+  resolution, validation-parent inference, Gaussian TS/Freq node state writing,
+  and validation-plan node/report/reflection/tree writing. The old
+  `tool/ase_neb/validation.py` now composes the Gaussian backend input writer
+  with core state writers and preserves `ConfigError` behavior for CLI callers.
+  Commit: `b2244e1 refactor: move ase neb validation state writers into core`.
+- 2026-06-14: ASE NEB validation state-writer validation passed:
+  `git diff --check`; `py_compile` for `core/ase_neb_validation.py`,
+  `core/__init__.py`, `tool/ase_neb/validation.py`,
+  `tests/test_import_boundaries.py`, `tests/test_ase_neb_pure.py`, and
+  `tests/test_parse_log.py`; targeted import/ASE NEB/parsing tests
+  `115 passed, 1 skipped`; reference/no-undefined/architecture tests
+  `18 passed, 1 skipped`; full pytest `244 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-ase-validation-split-smoke.AdQV9Y/tssearch_smoke` with validator
   summary `0 errors, 0 warnings`.
