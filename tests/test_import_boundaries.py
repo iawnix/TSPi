@@ -342,6 +342,8 @@ def test_ase_neb_execution_lives_in_backend_with_compatibility() -> None:
     from transition_state_workflow.tool.ase_neb import gaussian_calc
     from transition_state_workflow.tools.ase_neb import results
 
+    assert driver.AseNebPreparationResult is ase_neb.AseNebPreparationResult
+    assert driver.prepare_ase_neb_initial_path is ase_neb.prepare_ase_neb_initial_path
     assert driver.AseNebRuntimeRequest is ase_neb.AseNebRuntimeRequest
     assert driver.run_ase_neb_candidate_path is ase_neb.run_ase_neb_candidate_path
     assert external_gaussian.ExternalGaussianCalculatorRequest is ase_neb.ExternalGaussianCalculatorRequest
@@ -396,6 +398,9 @@ def test_ase_neb_execution_lives_in_backend_with_compatibility() -> None:
         "attach_calculators",
         "make_neb_object",
         "temporary_env",
+        "load_endpoint_images",
+        "build_images_from_endpoints",
+        "write_image_set",
         "write_path_summary",
         "write_candidate_quality_artifacts",
     ):

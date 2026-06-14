@@ -165,6 +165,19 @@ class AseNebRuntimeRequest:
         return self.cfg["calculator"].get("env", {})
 
 
+@dataclass(frozen=True)
+class AseNebPreparationResult:
+    """Endpoint/image artifacts produced while preparing one ASE NEB path."""
+
+    reactant: Any
+    product: Any
+    images: list[Any]
+
+    @property
+    def initial_image_count(self) -> int:
+        return len(self.images)
+
+
 class ExternalGaussianForceCalculator:
     """ASE Calculator that runs an external Gaussian command for energy/forces."""
 
@@ -452,6 +465,15 @@ def write_image_set(images: list[Any], node_dir: Path, prefix: str) -> None:
     for index, image in enumerate(images):
         write(image_dir / f"{prefix}_image_{index:02d}.xyz", image)
     write(traj_dir / f"{prefix}_path.xyz", images)
+
+
+def prepare_ase_neb_initial_path(cfg: dict[str, Any], node_dir: Path) -> AseNebPreparationResult:
+    """Load endpoints, interpolate the initial path, and write backend artifacts."""
+
+    reactant, product = load_endpoint_images(cfg)
+    images = build_images_from_endpoints(cfg, reactant, product)
+    write_image_set(images, node_dir, "initial")
+    return AseNebPreparationResult(reactant=reactant, product=product, images=images)
 
 
 def read_image_set(node_dir: Path, prefix: str, image_count: int) -> list[Any]:
@@ -889,6 +911,7 @@ __all__ = [
     "extract_gaussian_tail_from_template",
     "require_external_gaussian_force_route",
     "AseNebRuntimeRequest",
+    "AseNebPreparationResult",
     "ExternalGaussianCalculatorRequest",
     "ExternalGaussianNebRuntimeRequest",
     "ExternalGaussianForceCalculator",
@@ -898,6 +921,7 @@ __all__ = [
     "build_images_from_endpoints",
     "build_images",
     "write_image_set",
+    "prepare_ase_neb_initial_path",
     "read_image_set",
     "natural_path_key",
     "check_image_consistency",

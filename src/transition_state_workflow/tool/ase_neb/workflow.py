@@ -14,11 +14,9 @@ from typing import Any
 
 from transition_state_workflow.backends.ase_neb import (
     AseNebRuntimeRequest,
-    build_images_from_endpoints,
     evaluate_neb_candidate_quality,
-    load_endpoint_images,
+    prepare_ase_neb_initial_path,
     run_ase_neb_candidate_path,
-    write_image_set,
 )
 from transition_state_workflow.core.ase_neb_nodes import (
     write_input_check_node,
@@ -58,10 +56,8 @@ from transition_state_workflow.util.cli import CliError, emit_json, log
 
 def prepare(cfg: dict[str, Any], *, config_path: Path | None = None) -> ProjectContext:
     ctx = ensure_project_scaffold(cfg, config_path=config_path)
-    reactant, product = load_endpoint_images(cfg)
-    write_input_check_node(ctx, cfg, reactant, product)
-    images = build_images_from_endpoints(cfg, reactant, product)
-    write_image_set(images, ctx.neb_node, "initial")
+    preparation = prepare_ase_neb_initial_path(cfg, ctx.neb_node)
+    write_input_check_node(ctx, cfg, preparation.reactant, preparation.product)
     write_neb_node_metadata(ctx, cfg, status="pending")
     return ctx
 

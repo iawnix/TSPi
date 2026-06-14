@@ -40,6 +40,7 @@ from transition_state_workflow.tools.ase_neb.config import (  # noqa: E402
 )
 from transition_state_workflow.tools.ase_neb.errors import ConfigError  # noqa: E402
 from transition_state_workflow.tool.ase_neb.driver import (  # noqa: E402
+    AseNebPreparationResult,
     AseNebRuntimeRequest,
     evaluate_neb_candidate_quality,
     force_max,
@@ -445,6 +446,18 @@ def test_ase_neb_runtime_request_exposes_optimizer_and_env() -> None:
     assert runtime.env == {"OMP_NUM_THREADS": "2"}
     assert runtime.trajectory_name == "neb.traj"
     assert runtime.logfile_name == "neb.log"
+
+
+def test_ase_neb_preparation_result_reports_initial_image_count() -> None:
+    result = AseNebPreparationResult(
+        reactant="reactant",
+        product="product",
+        images=["reactant", "midpoint", "product"],
+    )
+
+    assert result.initial_image_count == 3
+    assert result.reactant == "reactant"
+    assert result.product == "product"
 
 
 # --- external Gaussian (pure helpers) --------------------------------------
