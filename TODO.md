@@ -246,6 +246,22 @@ Do not edit the installed skill at
       `tool`, and that ASE NEB state writes still route through core. Validate
       old/new import identity, public script help, full tests, and a strict
       workspace smoke before pushing.
+- [x] Move external-Gaussian NEB continuation state writers into core:
+      plan before code changes is to split `tool/ase_neb/external_gaussian.py`
+      so it no longer owns workspace mutation. Move
+      `external_gaussian_level_slug`, `continue_node_id_from_images`,
+      `ensure_external_gaussian_project`, `write_external_image_input_node`,
+      and `write_external_gaussian_neb_node` into a core module such as
+      `core/ase_neb_external.py`, using only `base` and core workspace helpers.
+      Keep the old `tool/ase_neb/external_gaussian.py` public imports working
+      while reducing it to orchestration: read images, ask backend to produce
+      path/result artifacts, ask core to write node/tree/evidence/report state,
+      and return the CLI payload. Move candidate-quality summary/candidate JSON
+      artifact updates into the ASE NEB backend result boundary. Add
+      import-boundary tests that core external-Gaussian writers do not import
+      `backends`, `tools`, or `tool`, and that old imports keep object identity.
+      Validate external-Gaussian dry-run behavior, import boundaries, public
+      script help, full tests, and a strict workspace smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
@@ -349,6 +365,8 @@ Do not edit the installed skill at
 - `e92d9da` `docs: record ase neb core state checkpoint`
 - `5c5d500` `docs: plan ase neb backend reclassification`
 - `2a14cbc` `refactor: move ase neb execution into backend`
+- `c3da905` `docs: record ase neb backend checkpoint`
+- `f445633` `refactor: move external gaussian neb state writers into core`
 
 ## Completion Log
 
@@ -697,3 +715,22 @@ Do not edit the installed skill at
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-ase-backend-smoke.PovSte/tssearch_smoke` with validator summary
   `0 errors, 0 warnings`.
+- 2026-06-14: Moved external-Gaussian NEB continuation state writing into
+  `core/ase_neb_external.py`: level/node id helpers, external-Gaussian project
+  scaffold, source-image input node writing, NEB node metadata, evidence,
+  report, reflection, and tree updates now live in core. The old
+  `tool/ase_neb/external_gaussian.py` import names remain available, but that
+  module now orchestrates backend result production plus core workspace writes.
+  Candidate-quality annotations for `candidate.json` and `summary.json` now
+  live in the ASE NEB backend result boundary and are shared by main ASE NEB
+  and external-Gaussian continuation paths.
+- 2026-06-14: External-Gaussian NEB core-state split validation passed:
+  `git diff --check`; `py_compile` for `backends/ase_neb.py`,
+  `core/__init__.py`, `core/ase_neb_external.py`,
+  `tool/ase_neb/external_gaussian.py`, `tool/ase_neb_framework.py`, and
+  `tests/test_import_boundaries.py`; targeted import/ASE NEB/reference/
+  no-undefined/architecture tests `90 passed, 2 skipped`; full pytest
+  `227 passed, 2 skipped`; script help smoke `18 scripts`; strict workspace
+  validator and normalizer smoke on
+  `/tmp/tswf-ase-external-core-smoke.6sQdCb/tssearch_smoke` with validator
+  summary `0 errors, 0 warnings`.

@@ -284,7 +284,8 @@ Python tooling follows a package layout:
   workspace state writers: workspace initialization, decision-card/node
   templates, evidence registry append, start-node, backtrack lifecycle,
   ASE NEB project scaffold and node/evidence/tree/report/reflection writers,
-  and `plan-next` planning packets.
+  external-Gaussian continuation state writers, and `plan-next` planning
+  packets.
 - `src/transition_state_workflow/gate/`: ChemGate-facing read and closure
   logic: evidence gates, workspace validation, normalized explorer views,
   structural endpoint connectivity checking, and `finalize-node`.
@@ -313,7 +314,8 @@ Python tooling follows a package layout:
   `import_ase_bits`. `backends/ase_neb.py` owns ASE image loading,
   interpolation, NEB object construction, calculator attachment, the
   external-Gaussian force calculator, path/force tables, trajectory snapshots,
-  candidate geometry metadata, and summary payloads.
+  candidate geometry metadata, candidate-quality artifact annotations, and
+  summary payloads.
 - `src/transition_state_workflow/remote/`: remote execution and synchronization
   boundary. `exec.py` owns the argv-only OpenSSH executor, `openssh.py` adapts
   it to `RemoteTransport`, `sftp.py` provides optional Paramiko SSH/SFTP,
@@ -344,7 +346,8 @@ Python tooling follows a package layout:
   `tools/ase_neb/images.py`, and `tools/ase_neb/results.py` forward to the ASE
   NEB backend. `validation.py` and `external_gaussian.py` remain CLI
   orchestration modules: they call backend execution helpers for candidate
-  artifacts and core state writers for workspace mutation.
+  artifacts and core state writers, including `core/ase_neb_external.py`, for
+  workspace mutation.
   `tool/ase_neb_framework.py` is the thin CLI on top. The dependency direction
   is covered by import boundary tests.
 - `src/transition_state_workflow/web/static/`: static explorer UI assets
