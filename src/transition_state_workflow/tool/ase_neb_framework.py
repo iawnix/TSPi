@@ -9,7 +9,6 @@ chemistry stack installed.
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +20,7 @@ from transition_state_workflow.backends.ase_neb import (
     load_endpoint_images,
     make_neb_object,
     temporary_env,
+    write_candidate_quality_artifacts,
     write_image_set,
     write_path_summary,
 )
@@ -57,7 +57,6 @@ from transition_state_workflow.tool.ase_neb.validation import (
 )
 from transition_state_workflow.core.ase_neb_workspace import (
     ensure_project_scaffold,
-    write_json,
     write_reflection_template,
 )
 from transition_state_workflow.util.cli import CliError, emit_json, log, run_cli
@@ -119,17 +118,7 @@ def run_neb(
         cfg,
         optimizer_converged=optimizer_converged,
     )
-    candidate_json = Path(str(summary["candidate_json"]))
-    if candidate_json.exists():
-        candidate_data = json.loads(candidate_json.read_text(encoding="utf-8"))
-        candidate_data["candidate_quality"] = summary["candidate_quality"]
-        candidate_data["candidate_state"] = (
-            "candidate"
-            if summary["candidate_quality"]["accepted_for_promotion"]
-            else "rejected"
-        )
-        write_json(candidate_json, candidate_data)
-    write_json(ctx.neb_node / "summary.json", summary)
+    write_candidate_quality_artifacts(ctx.neb_node, summary)
     status = "succeeded" if summary["candidate_quality"]["accepted_for_promotion"] else "ambiguous"
     write_neb_node_metadata(ctx, cfg, status=status, summary=summary)
     if summary["candidate_quality"]["accepted_for_promotion"]:

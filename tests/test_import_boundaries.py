@@ -307,6 +307,34 @@ def test_ase_neb_node_writers_live_in_core_with_compatibility() -> None:
         assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
 
 
+def test_ase_neb_external_state_writers_live_in_core_with_tool_compatibility() -> None:
+    from transition_state_workflow.core import ase_neb_external as core_external
+    from transition_state_workflow.tool.ase_neb import external_gaussian
+
+    assert external_gaussian.external_gaussian_level_slug is core_external.external_gaussian_level_slug
+    assert external_gaussian.continue_node_id_from_images is core_external.continue_node_id_from_images
+    assert external_gaussian.ensure_external_gaussian_project is core_external.ensure_external_gaussian_project
+    assert external_gaussian.write_external_image_input_node is core_external.write_external_image_input_node
+    assert external_gaussian.write_external_gaussian_neb_node is core_external.write_external_gaussian_neb_node
+
+    core_imports = full_internal_imports(PACKAGE / "core" / "ase_neb_external.py")
+    forbidden = {
+        "transition_state_workflow.backends",
+        "transition_state_workflow.gate",
+        "transition_state_workflow.remote",
+        "transition_state_workflow.tool",
+        "transition_state_workflow.tools",
+        "transition_state_workflow.web",
+    }
+    assert not [
+        name
+        for name in core_imports
+        if any(name == prefix or name.startswith(f"{prefix}.") for prefix in forbidden)
+    ]
+    tool_imports = full_internal_imports(PACKAGE / "tool" / "ase_neb" / "external_gaussian.py")
+    assert "transition_state_workflow.core.ase_neb_workspace" not in tool_imports
+
+
 def test_ase_neb_execution_lives_in_backend_with_compatibility() -> None:
     from transition_state_workflow.backends import ase_neb
     from transition_state_workflow.tool.ase_neb import driver
@@ -322,6 +350,7 @@ def test_ase_neb_execution_lives_in_backend_with_compatibility() -> None:
     assert results.collect_path_data is ase_neb.collect_path_data
     assert results.write_forces_table is ase_neb.write_forces_table
     assert results.write_path_summary is ase_neb.write_path_summary
+    assert results.write_candidate_quality_artifacts is ase_neb.write_candidate_quality_artifacts
 
     backend_imports = full_internal_imports(PACKAGE / "backends" / "ase_neb.py")
     forbidden = {

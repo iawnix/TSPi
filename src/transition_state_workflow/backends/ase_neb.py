@@ -12,6 +12,7 @@ from __future__ import annotations
 import contextlib
 import csv
 from dataclasses import dataclass
+import json
 import math
 import os
 import re
@@ -561,6 +562,23 @@ def write_path_summary(node_dir: Path, images: list[Any], *, status: str) -> dic
     return summary
 
 
+def write_candidate_quality_artifacts(node_dir: Path, summary: dict[str, Any]) -> None:
+    """Write candidate-quality annotations into backend-owned result artifacts."""
+
+    quality = summary.get("candidate_quality", {})
+    candidate_json_value = summary.get("candidate_json")
+    if candidate_json_value:
+        candidate_json = Path(str(candidate_json_value))
+        if candidate_json.is_file():
+            candidate_data = json.loads(candidate_json.read_text(encoding="utf-8"))
+            candidate_data["candidate_quality"] = quality
+            candidate_data["candidate_state"] = (
+                "candidate" if quality.get("accepted_for_promotion") else "rejected"
+            )
+            write_json_artifact(candidate_json, candidate_data)
+    write_json_artifact(node_dir / "summary.json", summary)
+
+
 def make_neb_object(cfg: dict[str, Any], images: list[Any]) -> Any:
     bits = import_ase_bits()
     neb_cfg = cfg["neb"]
@@ -665,6 +683,7 @@ __all__ = [
     "write_json_artifact",
     "write_forces_table",
     "write_path_summary",
+    "write_candidate_quality_artifacts",
     "make_neb_object",
     "attach_calculators",
     "evaluate_neb_candidate_quality",

@@ -18,6 +18,13 @@ from transition_state_workflow.core.ase_neb_nodes import (
     write_input_check_node,
     write_neb_node_metadata,
 )
+from transition_state_workflow.core.ase_neb_external import (
+    continue_node_id_from_images,
+    ensure_external_gaussian_project,
+    external_gaussian_level_slug,
+    write_external_gaussian_neb_node,
+    write_external_image_input_node,
+)
 from transition_state_workflow.core.ase_neb_workspace import (
     append_evidence_record as append_ase_neb_evidence_record,
     ensure_project_scaffold as ensure_ase_neb_project_scaffold,
@@ -43,13 +50,18 @@ __all__ = [
     "append_ts_workspace_evidence_record",
     "ase_neb_node_record",
     "build_plan_next_packet",
+    "continue_node_id_from_images",
     "create_ts_branch_decision_artifacts_from_cli_args",
+    "ensure_external_gaussian_project",
     "ensure_ase_neb_project_scaffold",
+    "external_gaussian_level_slug",
     "initialize_ts_hypothesis_workspace_files",
     "initialize_ts_hypothesis_workspace_files_from_cli_args",
     "record_backtrack",
     "start_ts_workspace_node",
     "update_backtrack_state",
+    "write_external_gaussian_neb_node",
+    "write_external_image_input_node",
     "write_input_check_node",
     "write_neb_node_metadata",
     "write_suggested_decision_cards_from_plan",
