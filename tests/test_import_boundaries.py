@@ -37,6 +37,11 @@ FORBIDDEN_WEB_TOOL_MODULES = {
     "transition_state_workflow.tool.start_node",
 }
 
+TOOLS_CORE_COMPATIBILITY_SHIMS = {
+    PACKAGE / "tools" / "ase_neb" / "node_writers.py",
+    PACKAGE / "tools" / "ase_neb" / "workspace.py",
+}
+
 
 def internal_imports(source_file: Path) -> set[str]:
     """Return imported top-level transition_state_workflow package names."""
@@ -107,6 +112,8 @@ def test_target_architecture_has_no_reverse_dependencies() -> None:
             continue
         for source_file in sorted(layer_root.rglob("*.py")):
             bad = sorted(internal_imports(source_file) & forbidden)
+            if layer == "tools" and source_file in TOOLS_CORE_COMPATIBILITY_SHIMS:
+                bad = [item for item in bad if item != "core"]
             if bad:
                 violations.append(f"{source_file.relative_to(ROOT)} imports forbidden layers: {', '.join(bad)}")
     assert not violations, "reverse architecture dependencies:\n" + "\n".join(violations)
@@ -263,28 +270,36 @@ def test_ase_neb_config_lives_in_tools_with_tool_compatibility() -> None:
     assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
 
 
-def test_ase_neb_workspace_lives_in_tools_with_tool_compatibility() -> None:
+def test_ase_neb_workspace_lives_in_core_with_compatibility() -> None:
+    from transition_state_workflow.core import ase_neb_workspace as core_workspace
     from transition_state_workflow.tool.ase_neb import workspace as old_workspace
     from transition_state_workflow.tools.ase_neb import workspace
 
-    assert old_workspace.write_json is workspace.write_json
-    assert old_workspace.node_record is workspace.node_record
-    assert old_workspace.read_tree is workspace.read_tree
-    assert old_workspace.append_evidence_record is workspace.append_evidence_record
-    assert old_workspace.ensure_project_scaffold is workspace.ensure_project_scaffold
-    assert old_workspace.finalize_node_report_and_tree is workspace.finalize_node_report_and_tree
-    compat_source = PACKAGE / "tool" / "ase_neb" / "workspace.py"
-    assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
+    assert workspace.write_json is core_workspace.write_json
+    assert workspace.node_record is core_workspace.node_record
+    assert workspace.read_tree is core_workspace.read_tree
+    assert workspace.append_evidence_record is core_workspace.append_evidence_record
+    assert old_workspace.ensure_project_scaffold is core_workspace.ensure_project_scaffold
+    assert old_workspace.finalize_node_report_and_tree is core_workspace.finalize_node_report_and_tree
+    for compat_source in (
+        PACKAGE / "tools" / "ase_neb" / "workspace.py",
+        PACKAGE / "tool" / "ase_neb" / "workspace.py",
+    ):
+        assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
 
 
-def test_ase_neb_node_writers_live_in_tools_with_tool_compatibility() -> None:
+def test_ase_neb_node_writers_live_in_core_with_compatibility() -> None:
+    from transition_state_workflow.core import ase_neb_nodes as core_nodes
     from transition_state_workflow.tool.ase_neb import node_writers as old_node_writers
     from transition_state_workflow.tools.ase_neb import node_writers
 
-    assert old_node_writers.write_input_check_node is node_writers.write_input_check_node
-    assert old_node_writers.write_neb_node_metadata is node_writers.write_neb_node_metadata
-    compat_source = PACKAGE / "tool" / "ase_neb" / "node_writers.py"
-    assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
+    assert node_writers.write_input_check_node is core_nodes.write_input_check_node
+    assert old_node_writers.write_neb_node_metadata is core_nodes.write_neb_node_metadata
+    for compat_source in (
+        PACKAGE / "tools" / "ase_neb" / "node_writers.py",
+        PACKAGE / "tool" / "ase_neb" / "node_writers.py",
+    ):
+        assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
 
 
 def test_ase_neb_results_live_in_tools_without_workspace_driver_imports() -> None:

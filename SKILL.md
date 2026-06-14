@@ -266,7 +266,9 @@ Do not say "TS found" for:
 
 Python tooling follows a package layout:
 
-- `src/transition_state_workflow/base/`: shared data models.
+- `src/transition_state_workflow/base/`: shared data models, including ASE NEB
+  workspace context and stable node/level naming helpers used by both core and
+  tool adapters.
 - `src/transition_state_workflow/chem/`: reusable Gaussian parsing and geometry
   helpers shared by workflow tools (single source for `PERIODIC_TABLE`,
   `COVALENT_RADII`, `Atom`, XYZ/orientation parsing, bond/angle spec parsing,
@@ -280,8 +282,9 @@ Python tooling follows a package layout:
   `CLIBase`, `CLIResult`, `Command`, and `CommandResult`.
 - `src/transition_state_workflow/core/`: ChemKernel-facing planning and
   workspace state writers: workspace initialization, decision-card/node
-  templates, evidence registry append, start-node, backtrack lifecycle, and
-  `plan-next` planning packets.
+  templates, evidence registry append, start-node, backtrack lifecycle,
+  ASE NEB project scaffold and node/evidence/tree/report/reflection writers,
+  and `plan-next` planning packets.
 - `src/transition_state_workflow/gate/`: ChemGate-facing read and closure
   logic: evidence gates, workspace validation, normalized explorer views,
   structural endpoint connectivity checking, and `finalize-node`.
@@ -296,9 +299,8 @@ Python tooling follows a package layout:
   NEB-facing mechanism/endpoint summary adapters over `chem/`, ASE image
   loading/interpolation/write/read helpers, NEB result artifact writers for
   path/force tables, trajectory snapshots, candidate geometry metadata, and
-  summary payloads, plus NEB workspace persistence helpers for node records,
-  tree/evidence registry updates, project scaffold, report/reflection tail
-  writing, and main-path input-check/NEB-node writers.
+  summary payloads. `workspace.py` and `node_writers.py` are compatibility
+  forwarding modules over the core state writers.
 - `src/transition_state_workflow/backends/`: Gaussian, xTB, ASE, and QBICS
   adapter boundaries for program-specific input/output metadata. The Gaussian
   backend owns TS/Freq input rendering/preparation, TS/Freq log parsing, and
@@ -341,13 +343,13 @@ Python tooling follows a package layout:
   `tool/ase_neb/` subpackage for now, split by concern into
   layered modules (`gaussian_calc`; `driver`/`validation`/`external_gaussian`),
   with `constants`/`errors`/`coerce`/`geometry`/`mechanism`/`images`/`config`/
-  `workspace`/`node_writers` present as compatibility re-exports over
-  `tools/ase_neb/`. `driver.py` builds ASE NEB objects, attaches calculators,
-  and scores candidate quality; path summaries and candidate result artifacts
-  are implemented in `tools/ase_neb/results.py` while remaining available
-  through the driver function names. `tool/ase_neb_framework.py` is the
-  thin CLI on top. The dependency direction is strictly downward and covered by
-  import boundary tests.
+  `workspace`/`node_writers` present as compatibility entrypoints.
+  `driver.py` builds ASE NEB objects, attaches calculators, and scores
+  candidate quality; path summaries and candidate result artifacts are
+  implemented in `tools/ase_neb/results.py` while remaining available through
+  the driver function names. `tool/ase_neb_framework.py` is the thin CLI on top
+  and calls core state writers for workspace mutation. The dependency direction
+  is covered by import boundary tests.
 - `src/transition_state_workflow/web/static/`: static explorer UI assets
   loaded by the optional web service. State labels/colors come only from
   `config/state_contract.py`, shipped through the normalizer; the UI keeps no

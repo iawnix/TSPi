@@ -2,9 +2,8 @@
 
 A self-contained second pipeline that refines an *existing* NEB image directory
 with external Gaussian single-point forces. It has its own project scaffold,
-input-check node, and NEB node writers — parallel to the main path's
-``ensure_project_scaffold`` / ``node_writers`` but rooted in supplied images
-rather than reactant/product endpoints.
+input-check node, and NEB node-state writes rooted in supplied images rather
+than reactant/product endpoints.
 """
 
 from __future__ import annotations
@@ -28,7 +27,7 @@ from transition_state_workflow.tool.ase_neb.gaussian_calc import (
     extract_gaussian_tail_from_template,
 )
 from transition_state_workflow.tools.ase_neb.images import read_xyz_images_from_dir, write_image_set
-from transition_state_workflow.tools.ase_neb.workspace import (
+from transition_state_workflow.core.ase_neb_workspace import (
     append_evidence_record,
     ensure_tree_skeleton,
     finalize_node_report_and_tree,
