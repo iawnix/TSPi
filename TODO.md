@@ -399,7 +399,7 @@ Do not edit the installed skill at
       Add import-boundary/compatibility tests, then validate public script help,
       targeted ASE NEB/parsing tests, full pytest, and strict workspace smoke
       before pushing.
-- [ ] Promote the ASE NEB backend file into a backend subpackage:
+- [x] Promote the ASE NEB backend file into a backend subpackage:
       plan before code changes is to replace the current thick
       `backends/ase_neb.py` module with `backends/ase_neb/` while keeping
       `transition_state_workflow.backends.ase_neb` as the public facade.
@@ -1102,3 +1102,20 @@ Do not edit the installed skill at
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-ase-cli-smoke.LVJB23/tssearch_smoke` with validator summary
   `0 errors, 0 warnings`.
+- 2026-06-14: Promoted the ASE NEB backend from the single
+  `backends/ase_neb.py` file into the `backends/ase_neb/` backend subpackage.
+  The package keeps `transition_state_workflow.backends.ase_neb` as the public
+  facade while splitting implementation into `contracts.py`, `images.py`,
+  `gaussian_external.py`, `results.py`, and `runtime.py`. The legacy
+  `tools/ase_neb/*` and `tool/ase_neb/*` compatibility imports continue to
+  resolve through the facade.
+  Commit: `c7c98f3 refactor: split ase neb backend into package`.
+- 2026-06-14: ASE NEB backend package split validation passed:
+  `git diff --check`; `py_compile` for the new `backends/ase_neb/` package and
+  `tests/test_import_boundaries.py`; import-boundary tests `23 passed`;
+  targeted ASE NEB/parsing tests `94 passed, 1 skipped`;
+  reference/no-undefined/architecture/import/ASE NEB/parsing tests
+  `135 passed, 2 skipped`; full pytest `248 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-ase-backend-package-smoke.IDjUTq/tssearch_smoke` with validator
+  summary `0 errors, 0 warnings`.
