@@ -437,7 +437,7 @@ Do not edit the installed skill at
       by `core/workspace_state.py`. Validate compatibility imports, import
       boundaries, workspace/finalize/pathway/backtrack tests, full pytest,
       public script help, and a strict workspace smoke before pushing.
-- [ ] Promote `gate/validate.py` into a ChemGate validation subpackage:
+- [x] Promote `gate/validate.py` into a ChemGate validation subpackage:
       plan before code changes is to replace the current thick
       `gate/validate.py` module with `gate/validate/` while keeping
       `transition_state_workflow.gate.validate` as the public facade and
@@ -587,6 +587,15 @@ Do not edit the installed skill at
 - `9147834` `docs: record workspace cli split checkpoint`
 - `993eb59` `docs: plan ase neb cli split`
 - `27620f7` `refactor: move ase neb cli adapters into cli layer`
+- `92af38b` `docs: record ase neb cli split checkpoint`
+- `c28f5de` `docs: plan ase neb backend package split`
+- `c7c98f3` `refactor: split ase neb backend into package`
+- `81ff3c5` `docs: record ase neb backend package split`
+- `a6d8aa3` `docs: plan plan-next package split`
+- `47c90be` `refactor: split plan-next into core package`
+- `b8f5997` `docs: record plan-next package split`
+- `8fa958c` `docs: plan validator package split`
+- `ce1c074` `refactor: split workspace validator into gate package`
 
 ## Completion Log
 
@@ -1180,3 +1189,16 @@ Do not edit the installed skill at
   smoke on `/tmp/tswf-plan-next-package-smoke.hbknQs/tssearch_smoke` with
   validator summary `0 errors, 0 warnings` and plan schema
   `ts-next-action-plan-v1`.
+- 2026-06-14: Promoted `gate/validate.py` into the `gate/validate/` ChemGate
+  validation subpackage. The public `transition_state_workflow.gate.validate`
+  import surface is preserved by the package facade while implementation is
+  split across `cli.py`, `contracts.py`, `workspace.py`, `tree.py`,
+  `nodes.py`, `evidence.py`, `finalization.py`, `mechanism.py`,
+  `artifacts.py`, and `io.py`. `scripts/ts_validate_workspace.py` and
+  `tool/validate_workspace.py` continue to use the same public gate facade.
+  Commit: `ce1c074 refactor: split workspace validator into gate package`.
+- 2026-06-14: Workspace validator package split validation passed:
+  `git diff --check`; script help smoke `18 scripts`; strict workspace
+  validator and normalizer smoke on
+  `/tmp/tswf-validator-package-smoke.EoQnzV/tssearch_smoke` with validator
+  summary `0 errors, 0 warnings`; full pytest `249 passed, 2 skipped`.
