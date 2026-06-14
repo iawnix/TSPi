@@ -494,7 +494,7 @@ Do not edit the installed skill at
       py_compile, import boundaries, pathway/backtrack/finalize/workspace
       tests, full pytest, public script help, and strict workspace smoke before
       pushing.
-- [ ] Split ChemKernel plan-next packet assembly from workspace snapshot
+- [x] Split ChemKernel plan-next packet assembly from workspace snapshot
       loading:
       plan before code changes is to reduce coupling in `core/plan_next`
       without moving scientific policy to generic helpers. Keep
@@ -1299,3 +1299,22 @@ Do not edit the installed skill at
   smoke on `/tmp/tswf-validator-policy-smoke.dsVUE2/tssearch_smoke` with
   validator summary `0 errors, 0 warnings`; full pytest
   `253 passed, 2 skipped`.
+- 2026-06-14: Split ChemKernel plan-next packet assembly from read-only
+  workspace snapshot loading. `core/plan_next/__init__.py` is now a
+  compatibility facade; `packet.py` owns `build_plan_next_packet`
+  orchestration; `snapshot.py` owns workspace reads, validator injection
+  capture, and node claim grouping. Phase/gate/focus policy remains in
+  `phase.py`; pathway planning policy remains in `pathway.py`; suggestions
+  and context ranking remain in `suggestions.py` and `context.py`.
+  Commit: `482a50a refactor: split plan-next packet snapshot`.
+- 2026-06-14: Plan-next packet/snapshot split validation passed:
+  `git diff --check`; `py_compile` for `core/plan_next/__init__.py`,
+  `core/plan_next/packet.py`, `core/plan_next/snapshot.py`, and
+  `tests/test_import_boundaries.py`; import-boundary tests `24 passed`;
+  finalize/pathway/backtrack plan-next behavior tests `61 passed`;
+  reference/no-undefined/architecture/import/contract/CLI-envelope tests
+  `69 passed, 1 skipped`; script help smoke `18 scripts`; strict workspace
+  validator, normalizer, and plan-next smoke on
+  `/tmp/tswf-plan-next-packet-smoke.TgtDgk/tssearch_smoke` with validator
+  summary `0 errors, 0 warnings` and plan schema `ts-next-action-plan-v1`;
+  full pytest `253 passed, 2 skipped`.
