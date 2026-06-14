@@ -610,6 +610,54 @@ Do not edit the installed skill at
       directly rather than as compatibility migration. Validate py_compile,
       import boundaries, ASE NEB targeted tests, full pytest, public script
       help, and strict workspace smoke before pushing.
+- [ ] Move imaginary-mode follow-up CLI out of the legacy tool layer:
+      plan before code changes is to create
+      `src/transition_state_workflow/cli/imaginary_mode_follow.py` as the
+      argparse/dispatch owner for `scripts/ts_imaginary_mode_follow.py`.
+      Keep Gaussian log/template parsing in `backends/gaussian.py`, connection
+      screening in `gate/connectivity.py`, and node-scoped artifact writing in
+      `core/imaginary_mode_follow.py`. Update the public script to import the
+      new CLI module directly, delete `tool/imaginary_mode_follow.py` instead
+      of keeping a beta compatibility re-export, and update tests to assert
+      the old module is gone. Validate py_compile, import boundaries, targeted
+      imaginary-mode tests, public script help, full pytest, and a strict
+      workspace smoke before pushing.
+- [ ] Move Gaussian parser/preflight/input CLIs out of the legacy tool layer:
+      plan before code changes is to create dedicated CLI modules under
+      `src/transition_state_workflow/cli/` for
+      `parse_gaussian_ts_result.py`, `gaussian_gen_preflight.py`, and
+      `prepare_gaussian_ts_input.py`. These modules should own only CLIBase
+      argument parsing, file I/O, JSON/text output, and error-envelope policy;
+      Gaussian-specific parsing, rendering, preflight warnings, and repair
+      logic stay in `backends/gaussian.py`. Update public scripts to import
+      the new CLI modules directly, delete the three old `tool/` modules,
+      update old compatibility tests into new owner/boundary tests, and
+      validate Gaussian parser/preflight/input behavior, public script help,
+      full pytest, and a strict workspace smoke before pushing.
+- [ ] Move node-exec CLI assembly out of the legacy tool layer:
+      plan before code changes is to create
+      `src/transition_state_workflow/cli/node_exec.py` for argparse dispatch,
+      CLIBase integration, dry-run JSON shape, and process-output relay policy.
+      Keep command execution, node-scoped cwd/env construction, metadata
+      writing, and `NodeExecutionTool` behavior in
+      `src/transition_state_workflow/tools/node_exec.py`. Update
+      `scripts/ts_node_exec.py` to import the new CLI module directly, delete
+      `tool/node_exec.py`, replace old compatibility assertions with
+      no-legacy-import assertions, and validate targeted node-exec tests,
+      public script help, full pytest, and a strict workspace smoke before
+      pushing.
+- [ ] Add the first-version release gate:
+      plan before code changes is to make the repository describe the current
+      architecture directly. Update `SKILL.md` and references so public
+      scripts point to `cli/`, `gate/`, `remote/`, `tools/`, and `web/`
+      owners rather than remaining non-ASE `tool/` compatibility entrypoints.
+      Add or update tests that no public script imports
+      `transition_state_workflow.tool`, no architecture layer imports the
+      legacy tool package, and only intentionally retained internal shims
+      remain. Run `git diff --check`, py_compile for all `src` and `tests`,
+      targeted import/CLI tests, full pytest, all public script `--help`
+      smoke tests, strict workspace validator/normalizer/plan-next smoke, and
+      practical ASE NEB config/help dry smokes before marking v1 ready.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
