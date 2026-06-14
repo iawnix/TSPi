@@ -561,6 +561,23 @@ Do not edit the installed skill at
       import boundaries, workspace/finalize/pathway/backtrack behavior tests,
       full pytest, public script help, and strict workspace smoke before
       pushing.
+- [ ] Extract prepared branch workspace writes into `core/workspace/branch.py`:
+      plan before code changes is to move generic prepared-branch state
+      mutation out of `core/workspace_state.py` without moving chemistry or CLI
+      policy. Add a `core/workspace/branch.py` module that owns creation of
+      `nodes/<node_id>/{inputs,outputs,parsed,scratch}`, construction and
+      writing of the prepared `node.json` envelope, optional input/pathway
+      metadata attachment, `tree.json` node entry updates, and `prepare_node`
+      event append with stable event-id allocation. Keep in
+      `workspace_state.py` the CLI argument adaptation, parent/input/pathway
+      validation, hypothesis/decision/reflection markdown text, pathway-step
+      checks, and chemistry wording. Update `core/workspace/__init__.py` and
+      import-boundary tests to lock the new branch primitive exports. Preserve
+      current `ts_hypothesis_workspace.py decision-card` and
+      `plan-next --write-decision-cards` behavior, then validate py_compile,
+      focused branch/import tests, workspace/finalize/pathway/backtrack
+      behavior tests, full pytest, public script help, and strict workspace
+      smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
