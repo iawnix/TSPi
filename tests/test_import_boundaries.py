@@ -362,13 +362,16 @@ def test_neb_candidate_policy_lives_in_gate_with_tool_compatibility() -> None:
 
 def test_ase_neb_refinement_input_rendering_lives_in_gaussian_backend() -> None:
     from transition_state_workflow.backends import gaussian
+    from transition_state_workflow.cli import ase_neb_validation
     from transition_state_workflow.tool.ase_neb import validation
 
     assert validation.gaussian_refinement_defaults() == gaussian.gaussian_refinement_defaults()
+    assert validation.gaussian_refinement_defaults is ase_neb_validation.gaussian_refinement_defaults
 
-    validation_imports = full_internal_imports(PACKAGE / "tool" / "ase_neb" / "validation.py")
+    validation_imports = full_internal_imports(PACKAGE / "cli" / "ase_neb_validation.py")
     assert "transition_state_workflow.tools.ase_neb.geometry" not in validation_imports
     assert "transition_state_workflow.backends.gaussian" in validation_imports
+    assert len((PACKAGE / "tool" / "ase_neb" / "validation.py").read_text(encoding="utf-8").splitlines()) <= 3
 
 
 def test_ase_neb_validation_state_writers_live_in_core_with_tool_compatibility() -> None:
@@ -464,10 +467,12 @@ def test_imaginary_mode_follow_split_across_backend_gate_core() -> None:
 
 
 def test_ase_neb_external_state_writers_live_in_core_with_tool_compatibility() -> None:
+    from transition_state_workflow.cli import ase_neb_external
     from transition_state_workflow.core import ase_neb_external as core_external
     from transition_state_workflow.tool.ase_neb import external_gaussian
 
     assert external_gaussian.external_gaussian_level_slug is core_external.external_gaussian_level_slug
+    assert external_gaussian.continue_gaussian_neb_from_images is ase_neb_external.continue_gaussian_neb_from_images
     assert external_gaussian.continue_node_id_from_images is core_external.continue_node_id_from_images
     assert external_gaussian.ensure_external_gaussian_project is core_external.ensure_external_gaussian_project
     assert external_gaussian.write_external_image_input_node is core_external.write_external_image_input_node
@@ -489,6 +494,7 @@ def test_ase_neb_external_state_writers_live_in_core_with_tool_compatibility() -
     ]
     tool_imports = full_internal_imports(PACKAGE / "tool" / "ase_neb" / "external_gaussian.py")
     assert "transition_state_workflow.core.ase_neb_workspace" not in tool_imports
+    assert len((PACKAGE / "tool" / "ase_neb" / "external_gaussian.py").read_text(encoding="utf-8").splitlines()) <= 3
 
 
 def test_ase_neb_execution_lives_in_backend_with_compatibility() -> None:
@@ -565,22 +571,32 @@ def test_ase_neb_execution_lives_in_backend_with_compatibility() -> None:
     for compat_source in (
         PACKAGE / "tool" / "ase_neb" / "driver.py",
         PACKAGE / "tool" / "ase_neb" / "gaussian_calc.py",
+        PACKAGE / "tool" / "ase_neb" / "workflow.py",
         PACKAGE / "tools" / "ase_neb" / "results.py",
     ):
         assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
 
 
-def test_ase_neb_framework_delegates_to_workflow_module() -> None:
+def test_ase_neb_framework_cli_lives_in_cli_with_tool_compatibility() -> None:
+    from transition_state_workflow.cli import ase_neb_framework as cli_framework
+    from transition_state_workflow.cli import ase_neb_workflow
     from transition_state_workflow.tool import ase_neb_framework
     from transition_state_workflow.tool.ase_neb import workflow
 
+    assert ase_neb_framework.main is cli_framework.main
+    assert ase_neb_framework.build_parser is cli_framework.build_parser
     assert ase_neb_framework.prepare is workflow.prepare
     assert ase_neb_framework.run_neb is workflow.run_neb
     assert ase_neb_framework.load_config_for_cli is workflow.load_config_for_cli
     assert ase_neb_framework.make_gaussian_refine_from_cli is workflow.make_gaussian_refine_from_cli
     assert ase_neb_framework.evaluate_neb_candidate_quality is workflow.evaluate_neb_candidate_quality
+    assert workflow.prepare is ase_neb_workflow.prepare
+    assert workflow.command_run is ase_neb_workflow.command_run
+    assert cli_framework.prepare is workflow.prepare
+    assert cli_framework.run_neb is workflow.run_neb
 
     framework_source = PACKAGE / "tool" / "ase_neb_framework.py"
+    cli_source = PACKAGE / "cli" / "ase_neb_framework.py"
     framework_imports = full_internal_imports(framework_source)
     forbidden_direct = {
         "transition_state_workflow.backends",
@@ -591,4 +607,15 @@ def test_ase_neb_framework_delegates_to_workflow_module() -> None:
         for name in framework_imports
         if any(name == prefix or name.startswith(f"{prefix}.") for prefix in forbidden_direct)
     ]
-    assert len(framework_source.read_text(encoding="utf-8").splitlines()) <= 260
+    cli_imports = full_internal_imports(cli_source)
+    assert "transition_state_workflow.cli.ase_neb_workflow" in cli_imports
+    assert not any(
+        name == "transition_state_workflow.tool" or name.startswith("transition_state_workflow.tool.")
+        for name in cli_imports
+    )
+
+    script_source = (ROOT / "scripts" / "ase_neb_framework.py").read_text(encoding="utf-8")
+    assert "transition_state_workflow.cli.ase_neb_framework import main" in script_source
+    assert "transition_state_workflow.tool.ase_neb_framework import main" not in script_source
+
+    assert len(framework_source.read_text(encoding="utf-8").splitlines()) <= 5

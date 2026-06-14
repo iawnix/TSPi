@@ -283,7 +283,12 @@ Python tooling follows a package layout:
   `CommandResult`, and owns `hypothesis_workspace.py`, the argparse
   construction and subcommand dispatch for `ts_hypothesis_workspace.py`,
   including explorer-registration CLI policy and the explorer launch
-  checklist text.
+  checklist text. It also owns `ase_neb_framework.py`, the argparse
+  construction, command dispatch, and CLI error translation for
+  `scripts/ase_neb_framework.py`; `ase_neb_workflow.py`,
+  `ase_neb_validation.py`, and `ase_neb_external.py` are the command-adapter
+  layer that composes ASE backend result producers, ChemGate policy helpers,
+  and ChemKernel state writers for ASE NEB commands.
 - `src/transition_state_workflow/core/`: ChemKernel-facing planning and
   workspace state writers: workspace initialization, decision-card/node
   templates, evidence registry append, start-node, backtrack lifecycle,
@@ -348,16 +353,14 @@ Python tooling follows a package layout:
   `hypothesis_workspace.py` is a compatibility entrypoint over
   `cli/hypothesis_workspace.py`;
   `rmsd_connectivity_check.py` is a compatibility entrypoint over
-  `gate/connectivity.py`. `tool/ase_neb/gaussian_calc.py`,
-  `tool/ase_neb/driver.py`, `tool/ase_neb/images.py`,
+  `gate/connectivity.py`. `tool/ase_neb_framework.py`,
+  `tool/ase_neb/workflow.py`, `tool/ase_neb/validation.py`, and
+  `tool/ase_neb/external_gaussian.py` are executable/import compatibility
+  entrypoints over the corresponding `cli/` modules.
+  `tool/ase_neb/gaussian_calc.py`, `tool/ase_neb/driver.py`,
+  `tool/ase_neb/images.py`,
   `tools/ase_neb/images.py`, and `tools/ase_neb/results.py` forward to the ASE
-  NEB backend. `validation.py` and `external_gaussian.py` remain CLI
-  orchestration modules: they keep workspace-scoped request fields, call
-  ChemGate policy helpers, call backend execution helpers for candidate
-  artifacts, and call core state writers, including
-  `core/ase_neb_external.py`, for workspace mutation.
-  `tool/ase_neb_framework.py` is the thin CLI on top. The dependency direction
-  is covered by import boundary tests.
+  NEB backend. The dependency direction is covered by import boundary tests.
 - `src/transition_state_workflow/web/static/`: static explorer UI assets
   loaded by the optional web service. State labels/colors come only from
   `config/state_contract.py`, shipped through the normalizer; the UI keeps no
