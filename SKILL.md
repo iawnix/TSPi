@@ -283,12 +283,15 @@ Python tooling follows a package layout:
   `CommandResult`, and owns `hypothesis_workspace.py`, the argparse
   construction and subcommand dispatch for `ts_hypothesis_workspace.py`,
   including explorer-registration CLI policy and the explorer launch
-  checklist text. It also owns `ase_neb_framework.py`, the argparse
-  construction, command dispatch, and CLI error translation for
-  `scripts/ase_neb_framework.py`; `ase_neb_workflow.py`,
-  `ase_neb_validation.py`, and `ase_neb_external.py` are the command-adapter
-  layer that composes ASE backend result producers, ChemGate policy helpers,
-  and ChemKernel state writers for ASE NEB commands.
+  checklist text. It also owns `ase_neb_framework.py`, `node_exec.py`,
+  `imaginary_mode_follow.py`, `parse_gaussian_ts_result.py`,
+  `prepare_gaussian_ts_input.py`, and `gaussian_gen_preflight.py`; these
+  modules hold argparse construction, command dispatch, CLIBase integration,
+  stdout/stderr contracts, and CLI error translation for their matching
+  scripts. `ase_neb_workflow.py`, `ase_neb_validation.py`, and
+  `ase_neb_external.py` are the command-adapter layer that composes ASE
+  backend result producers, ChemGate policy helpers, and ChemKernel state
+  writers for ASE NEB commands.
 - `src/transition_state_workflow/core/`: ChemKernel-facing planning and
   workspace state writers: workspace initialization, decision-card/node
   templates, evidence registry append, start-node, backtrack lifecycle,
@@ -376,26 +379,15 @@ Python tooling follows a package layout:
   `{"ok": false, "error": ...}` envelope), `json_io.py`, `path_utils.py`,
   `node_layout.py` (node directory resolution), and compatibility forwarding
   modules such as `remote_exec.py`.
-- `src/transition_state_workflow/tool/`: concrete chemistry tool CLIs and
-  remaining non-ASE compatibility entrypoints. `parse_gaussian_ts_result.py` writes parser
-  artifacts through `CLIBase` while delegating Gaussian TS/Freq parsing to
-  `backends/gaussian.py`; `prepare_gaussian_ts_input.py` and
-  `gaussian_gen_preflight.py` also use `CLIBase` for shared argument parsing,
-  logging, JSON output, and error envelopes while delegating Gaussian-specific
-  input handling to the backend. `node_exec.py` is a CLIBase compatibility
-  entrypoint over `tools/node_exec.py`; `ts_descriptor_extract.py` is a
-  compatibility entrypoint over `tools/descriptors.py`;
-  `hypothesis_workspace.py` is a compatibility entrypoint over
-  `cli/hypothesis_workspace.py`;
-  `rmsd_connectivity_check.py` is a compatibility entrypoint over
-  `gate/connectivity.py`. ASE NEB no longer has beta-era internal
-  `tool/ase_neb*` import paths: public command dispatch is
-  `scripts/ase_neb_framework.py` -> `cli/ase_neb_framework.py`, backend
-  execution lives under `backends/ase_neb/`, validation policy lives in
-  `gate/neb_candidate.py`, and workspace mutation lives in `core/`.
-  `tools/ase_neb/images.py` and `tools/ase_neb/results.py` forward to the ASE
-  NEB backend for tool-facing adapter imports. The dependency direction is
-  covered by import boundary tests.
+- `src/transition_state_workflow/tool/`: legacy import shims for older
+  in-package callers only. Public scripts do not import this package.
+  Remaining shim modules forward to their current owners: read-only gates live
+  under `gate/`, workspace mutation under `core/`, remote Gaussian execution
+  and monitoring under `remote/`, explorer rendering under `web/`, and
+  descriptor extraction under `tools/`. ASE NEB and the public Gaussian,
+  imaginary-mode, and node-exec command assemblies no longer keep `tool/`
+  import paths. The dependency direction and public-script boundary are covered
+  by import boundary tests.
 - `src/transition_state_workflow/web/static/`: static explorer UI assets
   loaded by the optional web service. State labels/colors come only from
   `config/state_contract.py`, shipped through the normalizer; the UI keeps no

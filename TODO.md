@@ -610,7 +610,7 @@ Do not edit the installed skill at
       directly rather than as compatibility migration. Validate py_compile,
       import boundaries, ASE NEB targeted tests, full pytest, public script
       help, and strict workspace smoke before pushing.
-- [ ] Move imaginary-mode follow-up CLI out of the legacy tool layer:
+- [x] Move imaginary-mode follow-up CLI out of the legacy tool layer:
       plan before code changes is to create
       `src/transition_state_workflow/cli/imaginary_mode_follow.py` as the
       argparse/dispatch owner for `scripts/ts_imaginary_mode_follow.py`.
@@ -622,7 +622,7 @@ Do not edit the installed skill at
       the old module is gone. Validate py_compile, import boundaries, targeted
       imaginary-mode tests, public script help, full pytest, and a strict
       workspace smoke before pushing.
-- [ ] Move Gaussian parser/preflight/input CLIs out of the legacy tool layer:
+- [x] Move Gaussian parser/preflight/input CLIs out of the legacy tool layer:
       plan before code changes is to create dedicated CLI modules under
       `src/transition_state_workflow/cli/` for
       `parse_gaussian_ts_result.py`, `gaussian_gen_preflight.py`, and
@@ -634,7 +634,7 @@ Do not edit the installed skill at
       update old compatibility tests into new owner/boundary tests, and
       validate Gaussian parser/preflight/input behavior, public script help,
       full pytest, and a strict workspace smoke before pushing.
-- [ ] Move node-exec CLI assembly out of the legacy tool layer:
+- [x] Move node-exec CLI assembly out of the legacy tool layer:
       plan before code changes is to create
       `src/transition_state_workflow/cli/node_exec.py` for argparse dispatch,
       CLIBase integration, dry-run JSON shape, and process-output relay policy.
@@ -646,7 +646,7 @@ Do not edit the installed skill at
       no-legacy-import assertions, and validate targeted node-exec tests,
       public script help, full pytest, and a strict workspace smoke before
       pushing.
-- [ ] Add the first-version release gate:
+- [x] Add the first-version release gate:
       plan before code changes is to make the repository describe the current
       architecture directly. Update `SKILL.md` and references so public
       scripts point to `cli/`, `gate/`, `remote/`, `tools/`, and `web/`
@@ -823,6 +823,11 @@ Do not edit the installed skill at
 - `f74d6fd` `docs: record branch reference validation split`
 - `d043037` `docs: plan ase neb compatibility cleanup`
 - `12236a6` `refactor: remove ase neb tool compatibility paths`
+- `900b7f0` `docs: record ase neb compatibility cleanup`
+- `fd05ad6` `docs: plan v1 cli compatibility cleanup`
+- `4b97a74` `refactor: move imaginary mode cli into cli layer`
+- `6a1c94a` `refactor: move gaussian clis into cli layer`
+- `d504496` `refactor: move node exec cli into cli layer`
 
 ## Completion Log
 
@@ -1606,3 +1611,34 @@ Do not edit the installed skill at
   `/tmp/tswf-ase-compat-smoke.e6ya0t/tssearch_smoke` with validator summary
   `0 errors, 0 warnings`, normalize schema `ts-explorer-graph-v2`, and plan
   schema `ts-next-action-plan-v1`.
+- 2026-06-15: Moved the imaginary-mode follow-up CLI out of the legacy `tool/`
+  layer. `scripts/ts_imaginary_mode_follow.py` now imports
+  `cli/imaginary_mode_follow.py`; Gaussian parsing remains in
+  `backends/gaussian.py`, connectivity screening remains in
+  `gate/connectivity.py`, and node-scoped artifact writing remains in
+  `core/imaginary_mode_follow.py`. Deleted
+  `src/transition_state_workflow/tool/imaginary_mode_follow.py`.
+  Commit: `4b97a74 refactor: move imaginary mode cli into cli layer`.
+- 2026-06-15: Moved Gaussian parser/preflight/input command assembly out of
+  the legacy `tool/` layer. Public scripts now import
+  `cli/parse_gaussian_ts_result.py`, `cli/gaussian_gen_preflight.py`, and
+  `cli/prepare_gaussian_ts_input.py`; Gaussian parsing, rendering, Gen/GenECP
+  warnings, and repair logic remain in `backends/gaussian.py`. Deleted the
+  three old `tool/` modules.
+  Commit: `6a1c94a refactor: move gaussian clis into cli layer`.
+- 2026-06-15: Moved node-exec command assembly out of the legacy `tool/`
+  layer. `scripts/ts_node_exec.py` now imports `cli/node_exec.py`, while
+  command execution, node-scoped cwd/env construction, metadata writing, and
+  `NodeExecutionTool` stay in `tools/node_exec.py`. Deleted
+  `src/transition_state_workflow/tool/node_exec.py`.
+  Commit: `d504496 refactor: move node exec cli into cli layer`.
+- 2026-06-15: First-version release gate passed for the CLI compatibility
+  cleanup. Validation run: `git diff --check`; `py_compile` for all `src` and
+  `tests` Python files; import-boundary tests `27 passed`; targeted
+  imaginary/Gaussian/node-exec tests passed; full pytest `259 passed,
+  2 skipped`; public script help smoke `18 scripts`; AST check confirmed no
+  public script imports `transition_state_workflow.tool`; ASE NEB help/config
+  smoke passed; strict workspace init/decision-card/validate/normalize/
+  plan-next smoke on `/tmp/tswf-v1-release-smoke.xnQ3f2/tssearch_smoke` with
+  validator summary `0 errors, 0 warnings`, normalize schema
+  `ts-explorer-graph-v2`, and plan schema `ts-next-action-plan-v1`.

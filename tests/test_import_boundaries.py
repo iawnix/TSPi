@@ -141,6 +141,19 @@ def test_legacy_tool_package_is_not_imported_by_non_web_new_architecture_layers(
     assert not offenders, "new architecture layers import legacy tool package:\n" + "\n".join(offenders)
 
 
+def test_public_scripts_do_not_import_legacy_tool_package() -> None:
+    offenders: list[str] = []
+    for source_file in sorted((ROOT / "scripts").glob("*.py")):
+        bad = sorted(
+            name
+            for name in full_internal_imports(source_file)
+            if name == "transition_state_workflow.tool" or name.startswith("transition_state_workflow.tool.")
+        )
+        if bad:
+            offenders.append(f"{source_file.relative_to(ROOT)} imports {', '.join(bad)}")
+    assert not offenders, "public scripts import legacy tool package:\n" + "\n".join(offenders)
+
+
 def test_web_boundary_does_not_import_job_execution_modules() -> None:
     offenders: list[str] = []
     web_root = PACKAGE / "web"
