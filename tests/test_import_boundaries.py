@@ -184,6 +184,28 @@ def test_descriptor_extractor_lives_in_tools_with_tool_compatibility() -> None:
     assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 6
 
 
+def test_node_exec_cli_lives_in_cli_without_tool_compatibility() -> None:
+    from transition_state_workflow.cli import node_exec
+    from transition_state_workflow.tools import node_exec as tool_node_exec
+
+    assert node_exec.NodeExecutionRequest is tool_node_exec.NodeExecutionRequest
+    assert node_exec.dry_run_payload is tool_node_exec.dry_run_payload
+    assert node_exec.render_command is tool_node_exec.render_command
+    assert node_exec.run_node_command is tool_node_exec.run_node_command
+
+    assert not (PACKAGE / "tool" / "node_exec.py").exists()
+    try:
+        importlib.import_module("transition_state_workflow.tool.node_exec")
+    except ModuleNotFoundError:
+        pass
+    else:  # pragma: no cover - assertion message is the point of this branch.
+        raise AssertionError("legacy tool.node_exec import path should be removed")
+
+    script_source = (ROOT / "scripts" / "ts_node_exec.py").read_text(encoding="utf-8")
+    assert "transition_state_workflow.cli.node_exec import main" in script_source
+    assert "transition_state_workflow.tool.node_exec" not in script_source
+
+
 def test_workspace_validator_lives_in_gate_package_with_tool_compatibility() -> None:
     from transition_state_workflow.gate import validate
     from transition_state_workflow.tool import validate_workspace

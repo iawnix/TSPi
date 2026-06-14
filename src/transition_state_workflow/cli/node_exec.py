@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run an engine command from a node-scoped output directory."""
+"""CLI for running engine commands from node-scoped output directories."""
 
 from __future__ import annotations
 
