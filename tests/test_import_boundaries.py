@@ -381,6 +381,11 @@ def test_ase_neb_config_lives_in_tools_with_tool_compatibility() -> None:
 def test_workspace_primitives_live_in_core_workspace_without_ase_neb_compatibility() -> None:
     from transition_state_workflow.core import workspace
 
+    assert workspace.BranchReferenceError is not None
+    assert workspace.clean_optional_node_ref is not None
+    assert workspace.normalize_branch_input_refs is not None
+    assert workspace.parent_graph_would_cycle is not None
+    assert workspace.validate_branch_references is not None
     assert workspace.write_prepared_branch_state is not None
     assert workspace.prepared_branch_node_payload is not None
     assert workspace.prepared_branch_tree_entry is not None
@@ -410,6 +415,7 @@ def test_workspace_primitives_live_in_core_workspace_without_ase_neb_compatibili
         "io.py",
         "naming.py",
         "nodes.py",
+        "references.py",
         "scaffold.py",
         "tree.py",
     ):

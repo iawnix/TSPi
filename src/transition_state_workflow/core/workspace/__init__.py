@@ -19,6 +19,13 @@ from transition_state_workflow.core.workspace.io import (
 )
 from transition_state_workflow.core.workspace.naming import utc_timestamp, workspace_slug
 from transition_state_workflow.core.workspace.nodes import VALID_NODE_STATUSES, next_node_id, node_record
+from transition_state_workflow.core.workspace.references import (
+    BranchReferenceError,
+    clean_optional_node_ref,
+    normalize_branch_input_refs,
+    parent_graph_would_cycle,
+    validate_branch_references,
+)
 from transition_state_workflow.core.workspace.scaffold import (
     ensure_workspace_directories,
     ensure_tree_skeleton,
@@ -40,10 +47,12 @@ from transition_state_workflow.core.workspace.tree import (
 
 __all__ = [
     "BRANCH_WORK_DIRS",
+    "BranchReferenceError",
     "PreparedBranchWrite",
     "VALID_NODE_STATUSES",
     "append_evidence_record",
     "append_portable_evidence_record",
+    "clean_optional_node_ref",
     "ensure_branch_directories",
     "ensure_workspace_directories",
     "ensure_tree_skeleton",
@@ -55,6 +64,8 @@ __all__ = [
     "next_branch_event_id",
     "next_node_id",
     "node_record",
+    "normalize_branch_input_refs",
+    "parent_graph_would_cycle",
     "prepared_branch_event",
     "prepared_branch_node_payload",
     "prepared_branch_tree_entry",
@@ -63,6 +74,7 @@ __all__ = [
     "update_tree_node_metadata",
     "upsert_tree_node",
     "utc_timestamp",
+    "validate_branch_references",
     "workspace_slug",
     "write_final_reflection",
     "write_initial_workspace_files",

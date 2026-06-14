@@ -5,12 +5,19 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from transition_state_workflow.config.state_contract import (
     EVIDENCE_REGISTRY_SCHEMA,
     TREE_SCHEMA,
     WORKSPACE_NODE_SCHEMA,
 )
 from transition_state_workflow.core.workspace import (
+    BranchReferenceError,
+    clean_optional_node_ref,
+    normalize_branch_input_refs,
+    parent_graph_would_cycle,
+    validate_branch_references,
     write_initial_workspace_files,
     write_prepared_branch_state,
 )
@@ -110,3 +117,61 @@ def test_write_prepared_branch_state_writes_node_tree_and_event(tmp_path: Path) 
         "evt_n010_branch_prepare",
         "evt_n010_branch_prepare_02",
     ]
+
+
+def test_branch_reference_helpers_validate_parent_and_input_refs() -> None:
+    existing_nodes = {
+        "n001_root": {"parent_id": None},
+        "n010_parent": {"parent_id": "n001_root"},
+        "n020_child": {"parent_id": "n010_parent"},
+    }
+
+    assert clean_optional_node_ref(" n010_parent ") == "n010_parent"
+    assert clean_optional_node_ref(None) == ""
+    assert normalize_branch_input_refs(("n001_root", "", "n001_root", " n010_parent ")) == [
+        "n001_root",
+        "n010_parent",
+    ]
+    validate_branch_references(
+        node_id="n030_new",
+        parent_id="n020_child",
+        input_refs=["n001_root"],
+        existing_nodes=existing_nodes,
+    )
+    assert parent_graph_would_cycle(node_id="n001_root", parent_id="n020_child", existing_nodes=existing_nodes)
+
+    invalid_cases = (
+        {
+            "node_id": "n030_new",
+            "parent_id": "missing",
+            "input_refs": [],
+            "message": "parent node does not exist in tree.json: missing",
+        },
+        {
+            "node_id": "n030_new",
+            "parent_id": None,
+            "input_refs": ["missing"],
+            "message": "input reference node does not exist in tree.json: missing",
+        },
+        {
+            "node_id": "n030_new",
+            "parent_id": None,
+            "input_refs": ["n030_new"],
+            "message": "node cannot depend on itself through --input-ref: n030_new",
+        },
+        {
+            "node_id": "n001_root",
+            "parent_id": "n020_child",
+            "input_refs": [],
+            "message": "parent link would create a cycle for node: n001_root",
+        },
+    )
+    for case in invalid_cases:
+        with pytest.raises(BranchReferenceError) as exc_info:
+            validate_branch_references(
+                node_id=str(case["node_id"]),
+                parent_id=case["parent_id"],
+                input_refs=list(case["input_refs"]),
+                existing_nodes=existing_nodes,
+            )
+        assert str(exc_info.value) == case["message"]

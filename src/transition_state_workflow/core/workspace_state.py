@@ -10,9 +10,13 @@ from transition_state_workflow.base.pathway_model import initialize_pathway_mode
 from transition_state_workflow.util.json_io import read_json_object_required, write_json_object
 from transition_state_workflow.util.path_utils import relative_path_or_absolute
 from transition_state_workflow.core.workspace import (
+    BranchReferenceError,
     append_portable_evidence_record,
+    clean_optional_node_ref,
     ensure_workspace_root_has_manifest_and_tree,
+    normalize_branch_input_refs,
     utc_timestamp,
+    validate_branch_references,
     write_initial_workspace_files,
     write_prepared_branch_state,
     write_text_file_if_allowed,
@@ -158,13 +162,16 @@ def create_ts_branch_decision_artifacts_from_cli_args(args: argparse.Namespace) 
         raise SystemExit("--pathway-id and --step-id must be provided together")
     if pathway_id:
         validate_pathway_step_reference(root, pathway_id, step_id)
-    input_refs = normalize_input_refs(args.input_ref or ())
-    validate_branch_references(
-        node_id=args.node_id,
-        parent_id=args.parent_id,
-        input_refs=input_refs,
-        existing_nodes=nodes,
-    )
+    input_refs = normalize_branch_input_refs(args.input_ref or ())
+    try:
+        validate_branch_references(
+            node_id=args.node_id,
+            parent_id=args.parent_id,
+            input_refs=input_refs,
+            existing_nodes=nodes,
+        )
+    except BranchReferenceError as exc:
+        raise SystemExit(str(exc)) from exc
     now = utc_timestamp()
     branch_write = write_prepared_branch_state(
         root=root,
@@ -312,62 +319,6 @@ def write_suggested_decision_cards_from_plan(args: argparse.Namespace, packet: d
         )
         written.append({"node_id": node_id, "status": "written", "path": relative_path_or_absolute(root, node_dir)})
     return written
-
-
-def validate_branch_references(
-    *,
-    node_id: str,
-    parent_id: str | None,
-    input_refs: list[str],
-    existing_nodes: dict[str, Any],
-) -> None:
-    """Reject branch references that would break the hypothesis tree."""
-
-    parent_id = clean_optional_node_ref(parent_id)
-    if parent_id == node_id:
-        raise SystemExit(f"node cannot be its own parent: {node_id}")
-    if parent_id and parent_id not in existing_nodes:
-        raise SystemExit(f"parent node does not exist in tree.json: {parent_id}")
-    for input_ref in input_refs:
-        if input_ref == node_id:
-            raise SystemExit(f"node cannot depend on itself through --input-ref: {node_id}")
-        if input_ref not in existing_nodes:
-            raise SystemExit(f"input reference node does not exist in tree.json: {input_ref}")
-    if parent_graph_would_cycle(node_id=node_id, parent_id=parent_id, existing_nodes=existing_nodes):
-        raise SystemExit(f"parent link would create a cycle for node: {node_id}")
-
-
-def parent_graph_would_cycle(*, node_id: str, parent_id: str, existing_nodes: dict[str, Any]) -> bool:
-    """Return true if setting node_id -> parent_id would create a parent cycle."""
-
-    seen = {node_id}
-    current = parent_id
-    while current:
-        if current in seen:
-            return True
-        seen.add(current)
-        payload = existing_nodes.get(current)
-        if not isinstance(payload, dict):
-            return False
-        current = clean_optional_node_ref(payload.get("parent_id"))
-    return False
-
-
-def clean_optional_node_ref(value: object) -> str:
-    """Normalize optional node references from CLI or tree JSON."""
-
-    return str(value or "").strip()
-
-
-def normalize_input_refs(raw_refs: tuple[str, ...] | list[str]) -> list[str]:
-    """Return stable, de-duplicated dependency node ids from CLI input."""
-
-    refs: list[str] = []
-    for raw in raw_refs:
-        ref = str(raw or "").strip()
-        if ref and ref not in refs:
-            refs.append(ref)
-    return refs
 
 
 def format_input_refs_markdown(input_refs: list[str]) -> str:
