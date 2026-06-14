@@ -13,7 +13,17 @@ import json
 from pathlib import Path
 from typing import Any
 
-from transition_state_workflow.backends.ase import import_ase_bits
+from transition_state_workflow.backends.ase_neb import (
+    attach_calculators,
+    build_images_from_endpoints,
+    evaluate_neb_candidate_quality,
+    import_ase_bits,
+    load_endpoint_images,
+    make_neb_object,
+    temporary_env,
+    write_image_set,
+    write_path_summary,
+)
 from transition_state_workflow.tools.ase_neb.config import (
     ProjectContext,
     normalize_config,
@@ -22,25 +32,13 @@ from transition_state_workflow.tools.ase_neb.config import (
     validate_config,
 )
 from transition_state_workflow.tools.ase_neb.constants import OPTIMIZER_NAMES
-from transition_state_workflow.tool.ase_neb.driver import (
-    attach_calculators,
-    evaluate_neb_candidate_quality,
-    make_neb_object,
-)
-from transition_state_workflow.tools.ase_neb.results import write_path_summary
 from transition_state_workflow.tools.ase_neb.errors import ConfigError
 from transition_state_workflow.tool.ase_neb.external_gaussian import (
     ExternalGaussianRun,
     continue_gaussian_neb_from_images,
     dry_run_gaussian_neb_inputs,
 )
-from transition_state_workflow.tool.ase_neb.gaussian_calc import temporary_env
 from transition_state_workflow.tools.ase_neb.geometry import parse_angle_spec, parse_bond_spec
-from transition_state_workflow.tools.ase_neb.images import (
-    build_images_from_endpoints,
-    load_endpoint_images,
-    write_image_set,
-)
 from transition_state_workflow.tools.ase_neb.mechanism import ENDPOINT_STATE_CHOICES
 from transition_state_workflow.core.ase_neb_nodes import (
     write_input_check_node,

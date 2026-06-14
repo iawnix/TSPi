@@ -1,7 +1,9 @@
-"""Shared error type for the NEB toolkit."""
+"""Compatibility error type for ASE NEB adapters."""
 
 from __future__ import annotations
 
+from transition_state_workflow.backends.ase_neb import AseNebConfigError
 
-class ConfigError(ValueError):
-    """Raised when a NEB config is invalid."""
+ConfigError = AseNebConfigError
+
+__all__ = ["ConfigError"]

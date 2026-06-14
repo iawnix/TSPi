@@ -244,16 +244,21 @@ def test_ase_runtime_loader_lives_in_backend_with_tool_compatibility() -> None:
     assert gaussian_calc.import_ase_bits is ase.import_ase_bits
 
 
-def test_ase_neb_images_live_in_tools_with_tool_compatibility() -> None:
+def test_ase_neb_images_live_in_backend_with_tool_compatibility() -> None:
+    from transition_state_workflow.backends import ase_neb
     from transition_state_workflow.tool.ase_neb import images as old_images
     from transition_state_workflow.tools.ase_neb import images
 
-    assert old_images.load_endpoint_images is images.load_endpoint_images
-    assert old_images.build_images_from_endpoints is images.build_images_from_endpoints
-    assert old_images.write_image_set is images.write_image_set
-    assert old_images.read_xyz_images_from_dir is images.read_xyz_images_from_dir
-    compat_source = PACKAGE / "tool" / "ase_neb" / "images.py"
-    assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
+    assert images.load_endpoint_images is ase_neb.load_endpoint_images
+    assert images.build_images_from_endpoints is ase_neb.build_images_from_endpoints
+    assert images.write_image_set is ase_neb.write_image_set
+    assert images.read_xyz_images_from_dir is ase_neb.read_xyz_images_from_dir
+    assert old_images.load_endpoint_images is ase_neb.load_endpoint_images
+    for compat_source in (
+        PACKAGE / "tools" / "ase_neb" / "images.py",
+        PACKAGE / "tool" / "ase_neb" / "images.py",
+    ):
+        assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
 
 
 def test_ase_neb_config_lives_in_tools_with_tool_compatibility() -> None:
@@ -302,14 +307,34 @@ def test_ase_neb_node_writers_live_in_core_with_compatibility() -> None:
         assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
 
 
-def test_ase_neb_results_live_in_tools_without_workspace_driver_imports() -> None:
+def test_ase_neb_execution_lives_in_backend_with_compatibility() -> None:
+    from transition_state_workflow.backends import ase_neb
     from transition_state_workflow.tool.ase_neb import driver
+    from transition_state_workflow.tool.ase_neb import gaussian_calc
     from transition_state_workflow.tools.ase_neb import results
 
-    assert driver.force_max is results.force_max
-    assert driver.collect_path_data is results.collect_path_data
-    assert driver.write_forces_table is results.write_forces_table
-    assert driver.write_path_summary is results.write_path_summary
+    assert gaussian_calc.create_calculator is ase_neb.create_calculator
+    assert gaussian_calc.ExternalGaussianForceCalculator is ase_neb.ExternalGaussianForceCalculator
+    assert driver.make_neb_object is ase_neb.make_neb_object
+    assert driver.attach_calculators is ase_neb.attach_calculators
+    assert driver.evaluate_neb_candidate_quality is ase_neb.evaluate_neb_candidate_quality
+    assert driver.force_max is ase_neb.force_max
+    assert results.collect_path_data is ase_neb.collect_path_data
+    assert results.write_forces_table is ase_neb.write_forces_table
+    assert results.write_path_summary is ase_neb.write_path_summary
+
+    backend_imports = full_internal_imports(PACKAGE / "backends" / "ase_neb.py")
+    forbidden = {
+        "transition_state_workflow.core",
+        "transition_state_workflow.gate",
+        "transition_state_workflow.tool",
+        "transition_state_workflow.tools",
+    }
+    assert not [
+        name
+        for name in backend_imports
+        if any(name == prefix or name.startswith(f"{prefix}.") for prefix in forbidden)
+    ]
 
     driver_imports = full_internal_imports(PACKAGE / "tool" / "ase_neb" / "driver.py")
     assert "transition_state_workflow.tools.ase_neb.workspace" not in driver_imports
@@ -319,3 +344,9 @@ def test_ase_neb_results_live_in_tools_without_workspace_driver_imports() -> Non
     result_imports = full_internal_imports(PACKAGE / "tools" / "ase_neb" / "results.py")
     assert "transition_state_workflow.tools.ase_neb.workspace" not in result_imports
     assert "transition_state_workflow.tools.ase_neb.node_writers" not in result_imports
+    for compat_source in (
+        PACKAGE / "tool" / "ase_neb" / "driver.py",
+        PACKAGE / "tool" / "ase_neb" / "gaussian_calc.py",
+        PACKAGE / "tools" / "ase_neb" / "results.py",
+    ):
+        assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
