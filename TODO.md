@@ -185,6 +185,19 @@ Do not edit the installed skill at
       `require_deps=True`. Validate old/new import identity, compatibility
       wrapper length, no new architecture layer imports of `tool/`, public
       script help, full tests, and a strict workspace smoke before pushing.
+- [ ] Move ASE NEB workspace persistence into the ChemTool layer:
+      plan before code changes is to move the NEB workspace I/O adapter from
+      `tool/ase_neb/workspace.py` to `tools/ase_neb/workspace.py`: JSON/
+      Markdown writing helpers, v2 node-record construction, tree/evidence
+      registry updates, NEB project scaffold creation, node id generation, and
+      shared report/reflection tail writing. Keep `tool/ase_neb/workspace.py`
+      as a thin compatibility re-export and update ASE NEB callers to import
+      workspace helpers from `tools/ase_neb/workspace.py`. This is still the
+      ASE NEB tool adapter boundary; broader core extraction should happen
+      later only when it can preserve the current dependency direction without
+      making `tools/` import `core`. Validate old/new import identity,
+      compatibility wrapper length, import boundaries, public script help, full
+      tests, and a strict workspace smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
