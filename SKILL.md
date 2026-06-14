@@ -294,9 +294,11 @@ Python tooling follows a package layout:
   NEB-facing geometry parser error adaptation, config file reading and
   normalization, config-field extraction, node/level slug helpers, and
   NEB-facing mechanism/endpoint summary adapters over `chem/`, ASE image
-  loading/interpolation/write/read helpers, and NEB workspace persistence
-  helpers for node records, tree/evidence registry updates, project scaffold,
-  report/reflection tail writing, and main-path input-check/NEB-node writers.
+  loading/interpolation/write/read helpers, NEB result artifact writers for
+  path/force tables, trajectory snapshots, candidate geometry metadata, and
+  summary payloads, plus NEB workspace persistence helpers for node records,
+  tree/evidence registry updates, project scaffold, report/reflection tail
+  writing, and main-path input-check/NEB-node writers.
 - `src/transition_state_workflow/backends/`: Gaussian, xTB, ASE, and QBICS
   adapter boundaries for program-specific input/output metadata. The Gaussian
   backend owns TS/Freq input rendering/preparation, TS/Freq log parsing, and
@@ -340,9 +342,12 @@ Python tooling follows a package layout:
   layered modules (`gaussian_calc`; `driver`/`validation`/`external_gaussian`),
   with `constants`/`errors`/`coerce`/`geometry`/`mechanism`/`images`/`config`/
   `workspace`/`node_writers` present as compatibility re-exports over
-  `tools/ase_neb/`. `tool/ase_neb_framework.py` is the thin CLI on top. The
-  dependency direction is strictly downward and covered by import boundary
-  tests.
+  `tools/ase_neb/`. `driver.py` builds ASE NEB objects, attaches calculators,
+  and scores candidate quality; path summaries and candidate result artifacts
+  are implemented in `tools/ase_neb/results.py` while remaining available
+  through the driver function names. `tool/ase_neb_framework.py` is the
+  thin CLI on top. The dependency direction is strictly downward and covered by
+  import boundary tests.
 - `src/transition_state_workflow/web/static/`: static explorer UI assets
   loaded by the optional web service. State labels/colors come only from
   `config/state_contract.py`, shipped through the normalizer; the UI keeps no

@@ -285,3 +285,22 @@ def test_ase_neb_node_writers_live_in_tools_with_tool_compatibility() -> None:
     assert old_node_writers.write_neb_node_metadata is node_writers.write_neb_node_metadata
     compat_source = PACKAGE / "tool" / "ase_neb" / "node_writers.py"
     assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
+
+
+def test_ase_neb_results_live_in_tools_without_workspace_driver_imports() -> None:
+    from transition_state_workflow.tool.ase_neb import driver
+    from transition_state_workflow.tools.ase_neb import results
+
+    assert driver.force_max is results.force_max
+    assert driver.collect_path_data is results.collect_path_data
+    assert driver.write_forces_table is results.write_forces_table
+    assert driver.write_path_summary is results.write_path_summary
+
+    driver_imports = full_internal_imports(PACKAGE / "tool" / "ase_neb" / "driver.py")
+    assert "transition_state_workflow.tools.ase_neb.workspace" not in driver_imports
+    assert "transition_state_workflow.tools.ase_neb.node_writers" not in driver_imports
+    assert "transition_state_workflow.tool.ase_neb.node_writers" not in driver_imports
+
+    result_imports = full_internal_imports(PACKAGE / "tools" / "ase_neb" / "results.py")
+    assert "transition_state_workflow.tools.ase_neb.workspace" not in result_imports
+    assert "transition_state_workflow.tools.ase_neb.node_writers" not in result_imports

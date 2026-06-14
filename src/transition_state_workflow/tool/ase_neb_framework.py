@@ -26,8 +26,8 @@ from transition_state_workflow.tool.ase_neb.driver import (
     attach_calculators,
     evaluate_neb_candidate_quality,
     make_neb_object,
-    write_path_summary,
 )
+from transition_state_workflow.tools.ase_neb.results import write_path_summary
 from transition_state_workflow.tools.ase_neb.errors import ConfigError
 from transition_state_workflow.tool.ase_neb.external_gaussian import (
     ExternalGaussianRun,

@@ -1,22 +1,25 @@
-"""NEB driver primitives: build the NEB object, run forces, score candidates.
+"""NEB driver primitives: build the NEB object and score candidates.
 
-These functions only need ASE images and a candidate-selection cfg. They do not
-mutate workspace bookkeeping — the orchestrating ``run_neb`` and continuation
-paths call them and then hand the result to the workspace writers.
+These functions only need ASE images and a candidate-selection cfg. Result
+artifact writing is provided by ``tools.ase_neb.results`` and workspace state
+mutation remains with the orchestrating CLI/core boundary.
 """
 
 from __future__ import annotations
 
-import csv
-import math
 from pathlib import Path
 from typing import Any
 
 from transition_state_workflow.backends.ase import import_ase_bits
 from transition_state_workflow.tools.ase_neb.errors import ConfigError
+from transition_state_workflow.tools.ase_neb.results import (
+    collect_path_data,
+    force_max,
+    write_forces_table,
+    write_path_summary,
+)
 from transition_state_workflow.tool.ase_neb.gaussian_calc import create_calculator
 from transition_state_workflow.tools.ase_neb.mechanism import endpoint_validation_summary
-from transition_state_workflow.tools.ase_neb.workspace import write_json
 
 
 def make_neb_object(cfg: dict[str, Any], images: list[Any]) -> Any:
@@ -43,115 +46,6 @@ def attach_calculators(cfg: dict[str, Any], images: list[Any], output: Path) -> 
     calc_root = output / "calculators"
     for index, image in enumerate(images):
         image.calc = create_calculator(calc_cfg, index, calc_root)
-
-
-def force_max(forces: Any) -> float:
-    if forces is None:
-        return math.nan
-    max_force = 0.0
-    for vector in forces:
-        value = math.sqrt(sum(float(component) ** 2 for component in vector))
-        max_force = max(max_force, value)
-    return max_force
-
-
-def collect_path_data(images: list[Any]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for index, image in enumerate(images):
-        energy = float(image.get_potential_energy())
-        try:
-            fmax = force_max(image.get_forces())
-        except Exception:
-            fmax = math.nan
-        rows.append({"image": index, "energy_ev": energy, "fmax_ev_a": fmax})
-    e0 = rows[0]["energy_ev"]
-    for row in rows:
-        row["relative_energy_ev"] = row["energy_ev"] - e0
-    return rows
-
-
-def write_forces_table(node_dir: Path, images: list[Any]) -> Path:
-    path = node_dir / "tables" / "forces.csv"
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(
-            handle,
-            fieldnames=["image", "atom_index", "symbol", "fx_ev_a", "fy_ev_a", "fz_ev_a"],
-        )
-        writer.writeheader()
-        for image_index, image in enumerate(images):
-            symbols = image.get_chemical_symbols()
-            try:
-                forces = image.get_forces()
-            except Exception:
-                forces = []
-            for atom_index, vector in enumerate(forces):
-                writer.writerow(
-                    {
-                        "image": image_index,
-                        "atom_index": atom_index,
-                        "symbol": symbols[atom_index],
-                        "fx_ev_a": float(vector[0]),
-                        "fy_ev_a": float(vector[1]),
-                        "fz_ev_a": float(vector[2]),
-                    }
-                )
-    return path
-
-
-def write_path_summary(node_dir: Path, images: list[Any], *, status: str) -> dict[str, Any]:
-    bits = import_ase_bits()
-    write = bits["write"]
-    rows = collect_path_data(images)
-    tables_dir = node_dir / "tables"
-    candidates_dir = node_dir / "candidates"
-    trajectories_dir = node_dir / "trajectories"
-    tables_dir.mkdir(parents=True, exist_ok=True)
-    candidates_dir.mkdir(parents=True, exist_ok=True)
-    trajectories_dir.mkdir(parents=True, exist_ok=True)
-    energy_csv = tables_dir / "energies.csv"
-    with energy_csv.open("w", newline="", encoding="utf-8") as handle:
-        writer = csv.DictWriter(
-            handle,
-            fieldnames=["image", "energy_ev", "relative_energy_ev", "fmax_ev_a"],
-        )
-        writer.writeheader()
-        writer.writerows(rows)
-
-    ts_row = max(rows, key=lambda row: row["relative_energy_ev"])
-    ts_index = int(ts_row["image"])
-    candidate_id = "cand_001"
-    candidate_xyz = candidates_dir / f"{candidate_id}_img{ts_index:02d}.xyz"
-    candidate_json = candidates_dir / f"{candidate_id}.json"
-    write(trajectories_dir / "final_path.xyz", images)
-    write(candidate_xyz, images[ts_index])
-    forces_csv = write_forces_table(node_dir, images)
-    candidate_data = {
-        "candidate_id": candidate_id,
-        "source_image": ts_index,
-        "source": "neb_maximum",
-        "candidate_state": "candidate",
-        "xyz": str(candidate_xyz),
-        "energy_ev": ts_row["energy_ev"],
-        "relative_energy_ev": ts_row["relative_energy_ev"],
-        "note": "Candidate requires Gaussian TS/Freq and connectivity validation.",
-    }
-    write_json(candidate_json, candidate_data)
-    summary = {
-        "run_status": status,
-        "images": len(images),
-        "candidate_id": candidate_id,
-        "ts_candidate_index": ts_index,
-        "barrier_ev_relative_to_reactant": ts_row["relative_energy_ev"],
-        "reaction_energy_ev": rows[-1]["relative_energy_ev"],
-        "energies_csv": str(energy_csv),
-        "forces_csv": str(forces_csv),
-        "candidate_json": str(candidate_json),
-        "ts_candidate_xyz": str(candidate_xyz),
-        "note": "NEB maximum is a TS candidate, not a validated transition state.",
-    }
-    write_json(node_dir / "summary.json", summary)
-    return summary
 
 
 def evaluate_neb_candidate_quality(
