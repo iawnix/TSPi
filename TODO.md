@@ -578,7 +578,7 @@ Do not edit the installed skill at
       focused branch/import tests, workspace/finalize/pathway/backtrack
       behavior tests, full pytest, public script help, and strict workspace
       smoke before pushing.
-- [ ] Extract generic branch reference validation into
+- [x] Extract generic branch reference validation into
       `core/workspace/references.py`:
       plan before code changes is to move node-reference mechanics out of
       `core/workspace_state.py` without moving pathway or chemistry policy.
@@ -754,6 +754,9 @@ Do not edit the installed skill at
 - `424b43b` `docs: record workspace init scaffold extraction`
 - `84ce6f8` `docs: plan prepared branch workspace split`
 - `98c2e14` `refactor: move prepared branch writes into workspace core`
+- `109bbd1` `docs: record prepared branch workspace split`
+- `d30b623` `docs: plan branch reference validation split`
+- `e3c0fcd` `refactor: move branch reference checks into workspace core`
 
 ## Completion Log
 
@@ -1497,3 +1500,24 @@ Do not edit the installed skill at
   with validator summary `0 errors, 0 warnings`, plan schema
   `ts-next-action-plan-v1`, prepared node lifecycle `prepared`, and tree event
   count `1`.
+- 2026-06-14: Extracted generic branch reference validation into
+  `core/workspace/references.py`. The new module owns optional node-id
+  normalization, input-ref de-duplication, parent-cycle detection, and
+  parent/input-ref existence validation. It raises `BranchReferenceError`;
+  `core/workspace_state.py` now translates that typed core error back into the
+  existing CLI `SystemExit` message. Pathway-step validation, paired
+  `--pathway-id`/`--step-id` policy, decision-card markdown formatting, and
+  chemistry wording remain in `workspace_state.py`. `SKILL.md` now documents
+  `references.py` as the owner of branch parent/input reference mechanics.
+  Commit: `e3c0fcd refactor: move branch reference checks into workspace core`.
+- 2026-06-14: Branch reference validation split passed:
+  `git diff --check`; `py_compile` for `core/workspace/*.py`,
+  `core/workspace_state.py`, `tests/test_workspace_primitives.py`, and
+  `tests/test_import_boundaries.py`; focused workspace/import tests
+  `27 passed`; workspace/finalize/pathway/backtrack/contract/CLI-envelope
+  behavior tests `91 passed`; full pytest `256 passed, 2 skipped`; script
+  help smoke `18 scripts`; strict workspace validator, normalizer, and
+  plan-next smoke on `/tmp/tswf-branch-reference-smoke.bWkB0H/tssearch_smoke`
+  with validator summary `0 errors, 0 warnings`, plan schema
+  `ts-next-action-plan-v1`, child parent `n010_candidate`, child input refs
+  `['n010_candidate']`, and tree event count `2`.
