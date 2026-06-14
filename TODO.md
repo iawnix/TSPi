@@ -373,6 +373,18 @@ Do not edit the installed skill at
       tests for old/new helper ownership, then validate public script help,
       targeted imaginary-mode tests, full pytest, and a strict workspace smoke
       before pushing.
+- [ ] Move TS hypothesis workspace CLI assembly out of the legacy tool layer:
+      plan before code changes is to create a dedicated
+      `cli/hypothesis_workspace.py` module that owns argparse construction,
+      subcommand dispatch, explorer-registration CLI policy, and the
+      explorer-launch checklist text. `core/workspace_state.py` should keep
+      only workspace/tree/evidence state mutation, `base/explorer_registry.py`
+      should remain the registry writer, and `tool/hypothesis_workspace.py`
+      should become a compatibility entrypoint/re-export preserving the
+      existing public functions and `scripts/ts_hypothesis_workspace.py`
+      behavior. Add import-boundary/compatibility tests, then validate public
+      script help, targeted workspace/finalize tests, full pytest, and a strict
+      workspace smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
