@@ -198,7 +198,7 @@ Do not edit the installed skill at
       making `tools/` import `core`. Validate old/new import identity,
       compatibility wrapper length, import boundaries, public script help, full
       tests, and a strict workspace smoke before pushing.
-- [ ] Move ASE NEB main-path node writers into the ChemTool layer:
+- [x] Move ASE NEB main-path node writers into the ChemTool layer:
       plan before code changes is to move `write_input_check_node` and
       `write_neb_node_metadata` from `tool/ase_neb/node_writers.py` to
       `tools/ase_neb/node_writers.py`. These functions translate a
@@ -586,3 +586,16 @@ Do not edit the installed skill at
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-ase-workspace-smoke.8UUqcJ/tssearch_smoke` with validator summary
   `0 errors, 0 warnings`.
+- 2026-06-14: Moved ASE NEB main-path node writers from
+  `tool/ase_neb/node_writers.py` to `tools/ase_neb/node_writers.py`; the old
+  path is a thin compatibility re-export, and the ASE NEB CLI imports node
+  writers from the ChemTool layer.
+- 2026-06-14: ASE NEB node-writer ChemTool validation passed:
+  `git diff --check`; `py_compile` for `tools/ase_neb/node_writers.py`,
+  `tool/ase_neb/node_writers.py`, `tool/ase_neb_framework.py`, `tool/ase_neb`,
+  and `tools/ase_neb`; targeted import/ASE NEB/architecture/reference tests
+  `88 passed, 1 skipped`; targeted parser/no-undefined tests
+  `17 passed, 1 skipped`; full pytest `225 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-ase-node-writers-smoke.Vnf8nh/tssearch_smoke` with validator
+  summary `0 errors, 0 warnings`.

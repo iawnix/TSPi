@@ -42,7 +42,7 @@ from transition_state_workflow.tools.ase_neb.images import (
     write_image_set,
 )
 from transition_state_workflow.tools.ase_neb.mechanism import ENDPOINT_STATE_CHOICES
-from transition_state_workflow.tool.ase_neb.node_writers import (
+from transition_state_workflow.tools.ase_neb.node_writers import (
     write_input_check_node,
     write_neb_node_metadata,
 )
