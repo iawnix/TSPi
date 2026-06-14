@@ -385,7 +385,7 @@ Do not edit the installed skill at
       behavior. Add import-boundary/compatibility tests, then validate public
       script help, targeted workspace/finalize tests, full pytest, and a strict
       workspace smoke before pushing.
-- [ ] Move ASE NEB framework CLI assembly out of the legacy tool layer:
+- [x] Move ASE NEB framework CLI assembly out of the legacy tool layer:
       plan before code changes is to create a dedicated
       `cli/ase_neb_framework.py` module that owns argparse construction,
       command dispatch, and `ConfigError` to `CliError` translation for
@@ -525,6 +525,9 @@ Do not edit the installed skill at
 - `583b0c2` `docs: record imaginary mode follow split checkpoint`
 - `6d30953` `docs: plan workspace cli split`
 - `cfbb981` `refactor: move workspace cli assembly into cli layer`
+- `9147834` `docs: record workspace cli split checkpoint`
+- `993eb59` `docs: plan ase neb cli split`
+- `27620f7` `refactor: move ase neb cli adapters into cli layer`
 
 ## Completion Log
 
@@ -1059,4 +1062,25 @@ Do not edit the installed skill at
   pytest `248 passed, 2 skipped`; script help smoke `18 scripts`; strict
   workspace validator and normalizer smoke on
   `/tmp/tswf-workspace-cli-smoke.QZXyjK/tssearch_smoke` with validator summary
+  `0 errors, 0 warnings`.
+- 2026-06-14: Moved ASE NEB CLI adapters into `cli/`: parser/dispatch/error
+  translation now lives in `cli/ase_neb_framework.py`; ASE NEB command
+  adapters now live in `cli/ase_neb_workflow.py`,
+  `cli/ase_neb_validation.py`, and `cli/ase_neb_external.py`. The extra
+  workflow/validation/external move was required by the import-boundary rule
+  that new architecture layers, including `cli`, must not import the legacy
+  `tool` package. `scripts/ase_neb_framework.py` imports the new CLI owner
+  directly, while `tool/ase_neb_framework.py`,
+  `tool/ase_neb/workflow.py`, `tool/ase_neb/validation.py`, and
+  `tool/ase_neb/external_gaussian.py` remain compatibility re-exports.
+  Commit: `27620f7 refactor: move ase neb cli adapters into cli layer`.
+- 2026-06-14: ASE NEB CLI adapter split validation passed:
+  `git diff --check`; `py_compile` for `cli/ase_neb_framework.py`,
+  `cli/ase_neb_workflow.py`, `cli/ase_neb_validation.py`,
+  `cli/ase_neb_external.py`, the corresponding tool compatibility shims, and
+  ASE/import/parsing tests; targeted import/ASE NEB/parsing tests `92 passed`;
+  reference/no-undefined/architecture/import/ASE NEB/parsing tests
+  `110 passed, 1 skipped`; full pytest `248 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-ase-cli-smoke.LVJB23/tssearch_smoke` with validator summary
   `0 errors, 0 warnings`.
