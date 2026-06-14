@@ -302,6 +302,9 @@ Do not edit the installed skill at
 - `37d3357` `docs: record ase neb config checkpoint`
 - `ffe95b8` `docs: plan ase neb workspace migration`
 - `202ee15` `refactor: move ase neb workspace into tools`
+- `04200b9` `docs: record ase neb workspace checkpoint`
+- `3060d69` `docs: plan ase neb node writer migration`
+- `c3bbb71` `refactor: move ase neb node writers into tools`
 
 ## Completion Log
 
