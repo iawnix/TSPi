@@ -595,6 +595,21 @@ Do not edit the installed skill at
       validate py_compile, focused reference/import tests, workspace/finalize/
       pathway/backtrack behavior tests, full pytest, public script help, and
       strict workspace smoke before pushing.
+- [ ] Remove beta-era ASE NEB compatibility import paths:
+      plan before code changes is to delete the internal compatibility
+      re-export modules under `src/transition_state_workflow/tool/ase_neb/`
+      and `src/transition_state_workflow/tool/ase_neb_framework.py` now that
+      their real owners exist under `backends/ase_neb/`,
+      `cli/ase_neb_*`, `core/ase_neb_*`, `gate/neb_candidate.py`, and
+      `tools/ase_neb/`. Public script entrypoints such as
+      `scripts/ase_neb_framework.py` must continue to work and should import
+      the `cli` package directly. Tests should stop protecting old/new import
+      identity and instead assert that old internal paths are gone, no source
+      imports them, and new backend/CLI/core/gate owners preserve behavior.
+      Update `SKILL.md` and reference docs so current architecture is described
+      directly rather than as compatibility migration. Validate py_compile,
+      import boundaries, ASE NEB targeted tests, full pytest, public script
+      help, and strict workspace smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
