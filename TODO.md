@@ -262,6 +262,19 @@ Do not edit the installed skill at
       `backends`, `tools`, or `tool`, and that old imports keep object identity.
       Validate external-Gaussian dry-run behavior, import boundaries, public
       script help, full tests, and a strict workspace smoke before pushing.
+- [x] Split external-Gaussian NEB runtime request out of the tool layer:
+      plan before code changes is to keep workspace-scoped fields such as
+      `project_root`, `xyz_dir`, `pattern`, and `parent_node_id` in the tool
+      orchestration request, but move backend runtime fields and behavior into
+      `backends/ase_neb.py`. Add an `ExternalGaussianCalculatorRequest` (or
+      equivalent) that owns route, charge, multiplicity, template/tail
+      resolution, Gaussian command settings, normal-termination policy, output
+      suffix, and calculator construction. Keep `ExternalGaussianRun` available
+      from `tool/ase_neb/external_gaussian.py` for public callers, but make it
+      delegate calculator construction and tail resolution to the backend
+      request. Add tests for old/new import identity and tail-file/template
+      behavior without requiring ASE, then validate import boundaries, public
+      script help, full tests, and a strict workspace smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
@@ -367,6 +380,8 @@ Do not edit the installed skill at
 - `2a14cbc` `refactor: move ase neb execution into backend`
 - `c3da905` `docs: record ase neb backend checkpoint`
 - `f445633` `refactor: move external gaussian neb state writers into core`
+- `5c0c4a1` `docs: record external gaussian core checkpoint`
+- `dd1bfd3` `refactor: move external gaussian runtime request into backend`
 
 ## Completion Log
 
@@ -733,4 +748,20 @@ Do not edit the installed skill at
   `227 passed, 2 skipped`; script help smoke `18 scripts`; strict workspace
   validator and normalizer smoke on
   `/tmp/tswf-ase-external-core-smoke.6sQdCb/tssearch_smoke` with validator
+  summary `0 errors, 0 warnings`.
+- 2026-06-14: Moved external-Gaussian runtime request behavior into
+  `backends/ase_neb.py` as `ExternalGaussianCalculatorRequest`, which owns
+  route/charge/multiplicity, template or tail-file resolution, Gaussian command
+  settings, normal-termination policy, output suffix, and calculator
+  construction. `tool/ase_neb/external_gaussian.py` still exposes
+  `ExternalGaussianRun` for workspace-scoped orchestration, but it delegates
+  tail resolution and calculator creation to the backend request.
+- 2026-06-14: External-Gaussian runtime-request split validation passed:
+  `git diff --check`; `py_compile` for `backends/ase_neb.py`,
+  `tool/ase_neb/external_gaussian.py`, `tests/test_ase_neb_pure.py`, and
+  `tests/test_import_boundaries.py`; targeted import/ASE NEB tests
+  `74 passed, 1 skipped`; reference/no-undefined/architecture tests
+  `18 passed, 1 skipped`; full pytest `229 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-ase-runtime-request-smoke.VAqNHi/tssearch_smoke` with validator
   summary `0 errors, 0 warnings`.

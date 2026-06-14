@@ -313,9 +313,9 @@ Python tooling follows a package layout:
   `require_ase`, `require_xtb`, `require_gaussian_calculator`, and
   `import_ase_bits`. `backends/ase_neb.py` owns ASE image loading,
   interpolation, NEB object construction, calculator attachment, the
-  external-Gaussian force calculator, path/force tables, trajectory snapshots,
-  candidate geometry metadata, candidate-quality artifact annotations, and
-  summary payloads.
+  external-Gaussian calculator request/force calculator, path/force tables,
+  trajectory snapshots, candidate geometry metadata, candidate-quality artifact
+  annotations, and summary payloads.
 - `src/transition_state_workflow/remote/`: remote execution and synchronization
   boundary. `exec.py` owns the argv-only OpenSSH executor, `openssh.py` adapts
   it to `RemoteTransport`, `sftp.py` provides optional Paramiko SSH/SFTP,
@@ -345,9 +345,9 @@ Python tooling follows a package layout:
   `tool/ase_neb/driver.py`, `tool/ase_neb/images.py`,
   `tools/ase_neb/images.py`, and `tools/ase_neb/results.py` forward to the ASE
   NEB backend. `validation.py` and `external_gaussian.py` remain CLI
-  orchestration modules: they call backend execution helpers for candidate
-  artifacts and core state writers, including `core/ase_neb_external.py`, for
-  workspace mutation.
+  orchestration modules: they keep workspace-scoped request fields, call
+  backend execution helpers for candidate artifacts, and call core state
+  writers, including `core/ase_neb_external.py`, for workspace mutation.
   `tool/ase_neb_framework.py` is the thin CLI on top. The dependency direction
   is covered by import boundary tests.
 - `src/transition_state_workflow/web/static/`: static explorer UI assets
