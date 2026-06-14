@@ -198,6 +198,18 @@ Do not edit the installed skill at
       making `tools/` import `core`. Validate old/new import identity,
       compatibility wrapper length, import boundaries, public script help, full
       tests, and a strict workspace smoke before pushing.
+- [ ] Move ASE NEB main-path node writers into the ChemTool layer:
+      plan before code changes is to move `write_input_check_node` and
+      `write_neb_node_metadata` from `tool/ase_neb/node_writers.py` to
+      `tools/ase_neb/node_writers.py`. These functions translate a
+      `ProjectContext`, normalized config, endpoint objects, and NEB summaries
+      into node/evidence/report/reflection artifacts through the workspace
+      adapter, so they belong with the ASE NEB ChemTool implementation rather
+      than the legacy CLI package. Keep `tool/ase_neb/node_writers.py` as a
+      thin compatibility re-export, update callers to import the new path, and
+      validate old/new import identity, wrapper length, import boundaries,
+      public script help, full tests, and a strict workspace smoke before
+      pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
