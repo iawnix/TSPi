@@ -199,6 +199,7 @@ def test_workspace_validator_lives_in_gate_package_with_tool_compatibility() -> 
         "__main__.py",
         "artifacts.py",
         "cli.py",
+        "common.py",
         "contracts.py",
         "evidence.py",
         "finalization.py",

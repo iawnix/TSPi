@@ -8,6 +8,7 @@ from typing import Any
 from transition_state_workflow.config.state_contract import VALID_EVIDENCE_STATES
 from transition_state_workflow.util.path_utils import clean_string, list_or_empty, relative_path_or_absolute
 
+from .common import iter_object_records, register_unique_id, validate_known_node_ref
 from .contracts import Finding, PRE_EXECUTION_EVIDENCE_KEYS, REGISTRY_REQUIRED_SUFFIXES
 
 
@@ -17,17 +18,31 @@ def validate_evidence(source: Path, evidence: dict[str, Any], node_ids: list[str
     records = list_or_empty(evidence.get("records"))
     seen_ids: set[str] = set()
     known_nodes = set(node_ids)
-    for index, item in enumerate(records):
-        if not isinstance(item, dict):
-            findings.append(Finding("error", "evidence_record_not_object", "evidence record is not an object", path="evidence_registry.json"))
-            continue
+    for index, item in iter_object_records(
+        records,
+        findings,
+        code="evidence_record_not_object",
+        message_template="evidence record is not an object",
+        path="evidence_registry.json",
+    ):
         evidence_id = clean_string(item.get("evidence_id")) or f"record[{index}]"
-        if evidence_id in seen_ids:
-            findings.append(Finding("error", "duplicate_evidence_id", f"duplicate evidence_id {evidence_id}", path="evidence_registry.json"))
-        seen_ids.add(evidence_id)
+        register_unique_id(
+            evidence_id,
+            seen_ids,
+            findings,
+            duplicate_code="duplicate_evidence_id",
+            duplicate_message_template="duplicate evidence_id {value}",
+            path="evidence_registry.json",
+        )
         node_id = clean_string(item.get("node_id"))
-        if node_id and node_id not in known_nodes:
-            findings.append(Finding("error", "evidence_missing_node", "evidence references missing node", path="evidence_registry.json", node_id=node_id))
+        validate_known_node_ref(
+            node_id,
+            known_nodes,
+            findings,
+            code="evidence_missing_node",
+            message="evidence references missing node",
+            path="evidence_registry.json",
+        )
         state = clean_string(item.get("evidence_state"))
         if state and state not in VALID_EVIDENCE_STATES:
             findings.append(Finding("warning", "unknown_evidence_state", f"unknown evidence state: {state}", path="evidence_registry.json", node_id=node_id))

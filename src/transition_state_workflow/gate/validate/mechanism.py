@@ -10,6 +10,7 @@ from transition_state_workflow.config.state_contract import (
 )
 from transition_state_workflow.util.path_utils import clean_string, list_or_empty
 
+from .common import clean_string_list, iter_object_records
 from .contracts import Finding
 
 
@@ -61,23 +62,19 @@ def validate_mechanism_model(_source: Any, mechanism: dict[str, Any], findings: 
                 )
             )
             continue
-        for index, record in enumerate(records):
-            if not isinstance(record, dict):
-                findings.append(
-                    Finding(
-                        "error",
-                        "mechanism_analysis_record_not_object",
-                        f"mechanism_analysis.{layer}[{index}] is not an object",
-                        path="mechanism_model.json",
-                    )
-                )
-                continue
+        for index, record in iter_object_records(
+            records,
+            findings,
+            code="mechanism_analysis_record_not_object",
+            message_template=f"mechanism_analysis.{layer}[{{index}}] is not an object",
+            path="mechanism_model.json",
+        ):
             status = clean_string(record.get("status"))
             summary = clean_string(record.get("summary"))
             source_text = clean_string(record.get("source"))
             details = record.get("details") if isinstance(record.get("details"), dict) else {}
             details_source = clean_string(details.get("source"))
-            evidence_refs = [clean_string(item) for item in list_or_empty(record.get("evidence_refs")) if clean_string(item)]
+            evidence_refs = clean_string_list(list_or_empty(record.get("evidence_refs")))
             if status not in MECHANISM_ANALYSIS_STATUSES:
                 findings.append(
                     Finding(

@@ -10,6 +10,7 @@ from transition_state_workflow.gate.normalize import normalize_ts_workspace_to_e
 from transition_state_workflow.util.path_utils import clean_string, list_or_empty, relative_path_or_absolute
 
 from .artifacts import validate_engine_artifact_policy, validate_paths_are_portable
+from .common import clean_string_list, validate_known_node_ref
 from .contracts import Finding
 from .evidence import validate_evidence
 from .finalization import validate_node_finalization_artifacts
@@ -60,6 +61,7 @@ def validate_ts_workspace_contract(workspace_directory: Path) -> dict[str, Any]:
     tree_node_ids = {str(key) for key in tree_nodes}
     dir_node_ids = collect_node_dirs(source)
     node_ids = sorted(tree_node_ids | dir_node_ids)
+    known_node_ids = set(node_ids)
     if not isinstance(tree.get("nodes"), dict):
         findings.append(Finding("error", "tree_nodes_not_object", "tree.json nodes must be an object", path="tree.json"))
 
@@ -107,16 +109,28 @@ def validate_ts_workspace_contract(workspace_directory: Path) -> dict[str, Any]:
             )
         parent = parent_tree or parent_node
         parent_by_node[node_id] = parent
-        if parent and parent not in node_ids:
-            findings.append(Finding("error", "missing_parent", f"parent node does not exist: {parent}", path=relative_path_or_absolute(source, node_path), node_id=node_id))
-        input_refs = [
-            clean_string(value)
-            for value in list_or_empty(node_json.get("input_refs")) + list_or_empty(tree_payload.get("input_refs"))
-            if clean_string(value)
-        ]
+        validate_known_node_ref(
+            parent,
+            known_node_ids,
+            findings,
+            code="missing_parent",
+            message=f"parent node does not exist: {parent}",
+            path=relative_path_or_absolute(source, node_path),
+            node_id=node_id,
+        )
+        input_refs = clean_string_list(
+            list_or_empty(node_json.get("input_refs")) + list_or_empty(tree_payload.get("input_refs"))
+        )
         for input_ref in sorted(set(input_refs)):
-            if input_ref not in node_ids:
-                findings.append(Finding("error", "missing_input_ref", f"input reference node does not exist: {input_ref}", path=relative_path_or_absolute(source, node_path), node_id=node_id))
+            validate_known_node_ref(
+                input_ref,
+                known_node_ids,
+                findings,
+                code="missing_input_ref",
+                message=f"input reference node does not exist: {input_ref}",
+                path=relative_path_or_absolute(source, node_path),
+                node_id=node_id,
+            )
         input_refs_by_node[node_id] = sorted(set(input_refs))
 
     validate_parent_graph(parent_by_node, findings)

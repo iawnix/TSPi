@@ -18,6 +18,15 @@ from transition_state_workflow.config.state_contract import (
 from transition_state_workflow.gate.evidence import accepted_ts_missing_evidence_gates
 from transition_state_workflow.util.path_utils import clean_string, list_or_empty, relative_path_or_absolute
 
+from .common import (
+    clean_string_set,
+    evidence_ids_from_records,
+    iter_object_records,
+    register_unique_id,
+    require_list_field,
+    validate_evidence_refs,
+    validate_known_node_ref,
+)
 from .contracts import Finding
 from .evidence import group_evidence_records_by_node
 
@@ -84,12 +93,12 @@ def validate_parent_graph(parent_by_node: dict[str, str], findings: list[Finding
 def validate_indexes(tree: dict[str, Any], graph: dict[str, Any], findings: list[Finding]) -> None:
     """Validate tree index arrays against normalized graph node state."""
 
-    active = set(clean_string(item) for item in list_or_empty(tree.get("active_frontier")) if clean_string(item))
-    closed = set(clean_string(item) for item in list_or_empty(tree.get("closed_nodes")) if clean_string(item))
-    accepted = set(clean_string(item) for item in list_or_empty(tree.get("accepted_nodes")) if clean_string(item))
-    graph_active = set(clean_string(item) for item in list_or_empty(graph.get("active_frontier")) if clean_string(item))
-    graph_closed = set(clean_string(item) for item in list_or_empty(graph.get("closed_nodes")) if clean_string(item))
-    graph_accepted = set(clean_string(item) for item in list_or_empty(graph.get("accepted_nodes")) if clean_string(item))
+    active = clean_string_set(list_or_empty(tree.get("active_frontier")))
+    closed = clean_string_set(list_or_empty(tree.get("closed_nodes")))
+    accepted = clean_string_set(list_or_empty(tree.get("accepted_nodes")))
+    graph_active = clean_string_set(list_or_empty(graph.get("active_frontier")))
+    graph_closed = clean_string_set(list_or_empty(graph.get("closed_nodes")))
+    graph_accepted = clean_string_set(list_or_empty(graph.get("accepted_nodes")))
     node_by_id = {clean_string(node.get("id")): node for node in list_or_empty(graph.get("nodes")) if isinstance(node, dict)}
     if active != graph_active:
         findings.append(Finding("warning", "active_index_drift", "tree active_frontier differs from normalized active_frontier", path="tree.json"))
@@ -149,7 +158,7 @@ def validate_manifest_accepted_ts(
                 node_id=current,
             )
         )
-    accepted_nodes = {clean_string(item) for item in list_or_empty(tree.get("accepted_nodes")) if clean_string(item)}
+    accepted_nodes = clean_string_set(list_or_empty(tree.get("accepted_nodes")))
     if current not in accepted_nodes:
         findings.append(
             Finding(
@@ -197,47 +206,71 @@ def validate_pathway_model(
     mode = clean_string(model.get("mode"))
     if mode not in PATHWAY_MODES:
         findings.append(Finding("error", "pathway_mode_invalid", f"invalid pathway mode: {mode}", path="pathway_model.json"))
-    pathways = list_or_empty(model.get("pathways"))
-    if not isinstance(model.get("pathways"), list):
-        findings.append(Finding("error", "pathways_not_list", "pathway_model.json pathways must be a list", path="pathway_model.json"))
-        pathways = []
+    pathways = require_list_field(
+        model,
+        "pathways",
+        findings,
+        code="pathways_not_list",
+        message="pathway_model.json pathways must be a list",
+        path="pathway_model.json",
+    )
 
     pathway_ids: set[str] = set()
     step_index: dict[tuple[str, str], dict[str, Any]] = {}
     accepted_step_by_node: dict[str, tuple[str, str]] = {}
     records_by_node = group_evidence_records_by_node(evidence)
     known_nodes = set(node_json_by_id)
-    for p_index, pathway in enumerate(pathways):
-        if not isinstance(pathway, dict):
-            findings.append(Finding("error", "pathway_not_object", f"pathways[{p_index}] is not an object", path="pathway_model.json"))
-            continue
-        pathway_id = clean_string(pathway.get("pathway_id"))
+    for p_index, pathway in iter_object_records(
+        pathways,
+        findings,
+        code="pathway_not_object",
+        message_template="pathways[{index}] is not an object",
+        path="pathway_model.json",
+    ):
+        pathway_id = register_unique_id(
+            pathway.get("pathway_id"),
+            pathway_ids,
+            findings,
+            missing_code="pathway_missing_id",
+            missing_message=f"pathways[{p_index}] missing pathway_id",
+            duplicate_code="duplicate_pathway_id",
+            duplicate_message_template="duplicate pathway_id: {value}",
+            path="pathway_model.json",
+        )
         if not pathway_id:
-            findings.append(Finding("error", "pathway_missing_id", f"pathways[{p_index}] missing pathway_id", path="pathway_model.json"))
             continue
-        if pathway_id in pathway_ids:
-            findings.append(Finding("error", "duplicate_pathway_id", f"duplicate pathway_id: {pathway_id}", path="pathway_model.json"))
-        pathway_ids.add(pathway_id)
         status = clean_string(pathway.get("status")) or "hypothesis"
         if status not in PATHWAY_STATUSES:
             findings.append(Finding("error", "pathway_status_invalid", f"invalid pathway status: {status}", path="pathway_model.json"))
-        steps = list_or_empty(pathway.get("steps"))
-        if not isinstance(pathway.get("steps"), list):
-            findings.append(Finding("error", "pathway_steps_not_list", f"pathway {pathway_id} steps must be a list", path="pathway_model.json"))
-            steps = []
+        steps = require_list_field(
+            pathway,
+            "steps",
+            findings,
+            code="pathway_steps_not_list",
+            message=f"pathway {pathway_id} steps must be a list",
+            path="pathway_model.json",
+        )
         step_ids: set[str] = set()
-        for s_index, step in enumerate(steps):
-            if not isinstance(step, dict):
-                findings.append(Finding("error", "pathway_step_not_object", f"{pathway_id}.steps[{s_index}] is not an object", path="pathway_model.json"))
-                continue
-            step_id = clean_string(step.get("step_id"))
+        for s_index, step in iter_object_records(
+            steps,
+            findings,
+            code="pathway_step_not_object",
+            message_template=f"{pathway_id}.steps[{{index}}] is not an object",
+            path="pathway_model.json",
+        ):
+            step_id = register_unique_id(
+                step.get("step_id"),
+                step_ids,
+                findings,
+                missing_code="pathway_step_missing_id",
+                missing_message=f"{pathway_id}.steps[{s_index}] missing step_id",
+                duplicate_code="duplicate_pathway_step_id",
+                duplicate_message_template=f"duplicate step_id in {pathway_id}: {{value}}",
+                path="pathway_model.json",
+            )
             if not step_id:
-                findings.append(Finding("error", "pathway_step_missing_id", f"{pathway_id}.steps[{s_index}] missing step_id", path="pathway_model.json"))
                 continue
             key = (pathway_id, step_id)
-            if step_id in step_ids:
-                findings.append(Finding("error", "duplicate_pathway_step_id", f"duplicate step_id in {pathway_id}: {step_id}", path="pathway_model.json"))
-            step_ids.add(step_id)
             step_index[key] = step
             step_status = clean_string(step.get("status")) or "missing"
             if step_status not in STEP_STATUSES:
@@ -247,8 +280,28 @@ def validate_pathway_model(
                 findings.append(Finding("error", "pathway_step_missing_accepted_node", "accepted pathway step is missing accepted_ts_node", path="pathway_model.json"))
             if accepted_node:
                 node = node_json_by_id.get(accepted_node)
-                if accepted_node not in known_nodes or not node:
-                    findings.append(Finding("error", "pathway_step_missing_node", "pathway step accepted_ts_node is missing", path="pathway_model.json", node_id=accepted_node))
+                validate_known_node_ref(
+                    accepted_node,
+                    known_nodes,
+                    findings,
+                    code="pathway_step_missing_node",
+                    message="pathway step accepted_ts_node is missing",
+                    path="pathway_model.json",
+                    node_id=accepted_node,
+                    allow_empty=False,
+                )
+                if not node:
+                    if accepted_node in known_nodes:
+                        findings.append(
+                            Finding(
+                                "error",
+                                "pathway_step_missing_node",
+                                "pathway step accepted_ts_node is missing",
+                                path="pathway_model.json",
+                                node_id=accepted_node,
+                            )
+                        )
+                    continue
                 elif clean_string(node.get("claim_status")) != "accepted_ts":
                     findings.append(Finding("error", "pathway_step_node_not_accepted_ts", "pathway step accepted_ts_node is not claim_status=accepted_ts", path="pathway_model.json", node_id=accepted_node))
                 else:
@@ -288,16 +341,14 @@ def validate_pathway_model(
                             )
                         )
             status_node = clean_string(step.get("status_node"))
-            if status_node and status_node not in known_nodes:
-                findings.append(
-                    Finding(
-                        "error",
-                        "pathway_step_status_node_missing",
-                        "pathway step status_node is missing",
-                        path="pathway_model.json",
-                        node_id=status_node,
-                    )
-                )
+            validate_known_node_ref(
+                status_node,
+                known_nodes,
+                findings,
+                code="pathway_step_status_node_missing",
+                message="pathway step status_node is missing",
+                path="pathway_model.json",
+            )
         if steps:
             derived_status = derive_pathway_status([step for step in steps if isinstance(step, dict)])
             if status != derived_status:
@@ -349,47 +400,86 @@ def validate_tree_events(
     if "backtrack_edges" in tree:
         findings.append(Finding("error", "legacy_backtrack_edges", "tree.json contains legacy backtrack_edges; use backtrack_events[]", path="tree.json"))
     known_nodes = set(node_ids)
-    evidence_ids = {clean_string(item.get("evidence_id")) for item in list_or_empty(evidence.get("records")) if isinstance(item, dict)}
+    evidence_ids = evidence_ids_from_records(evidence)
     seen_event_ids: set[str] = set()
-    for index, event in enumerate(list_or_empty(tree.get("events"))):
-        if not isinstance(event, dict):
-            findings.append(Finding("error", "event_not_object", f"events[{index}] is not an object", path="tree.json"))
-            continue
-        event_id = clean_string(event.get("event_id"))
+    for _index, event in iter_object_records(
+        list_or_empty(tree.get("events")),
+        findings,
+        code="event_not_object",
+        message_template="events[{index}] is not an object",
+        path="tree.json",
+    ):
         node_id = clean_string(event.get("node_id"))
-        if not event_id:
-            findings.append(Finding("error", "event_missing_id", "event missing event_id", path="tree.json", node_id=node_id))
-        elif event_id in seen_event_ids:
-            findings.append(Finding("error", "duplicate_event_id", f"duplicate event_id: {event_id}", path="tree.json", node_id=node_id))
-        else:
-            seen_event_ids.add(event_id)
-        if node_id and node_id not in known_nodes:
-            findings.append(Finding("error", "event_missing_node", "event references missing node", path="tree.json", node_id=node_id))
+        register_unique_id(
+            event.get("event_id"),
+            seen_event_ids,
+            findings,
+            missing_code="event_missing_id",
+            missing_message="event missing event_id",
+            duplicate_code="duplicate_event_id",
+            duplicate_message_template="duplicate event_id: {value}",
+            path="tree.json",
+            node_id=node_id,
+        )
+        validate_known_node_ref(
+            node_id,
+            known_nodes,
+            findings,
+            code="event_missing_node",
+            message="event references missing node",
+            path="tree.json",
+        )
         if "evidence" in event:
             findings.append(Finding("error", "legacy_event_evidence", "event uses legacy evidence; use evidence_refs", path="tree.json", node_id=node_id))
-        for ref in list_or_empty(event.get("evidence_refs")):
-            ref_id = clean_string(ref)
-            if ref_id and ref_id not in evidence_ids:
-                findings.append(Finding("warning", "event_missing_evidence_ref", f"event references missing evidence_id {ref_id}", path="tree.json", node_id=node_id))
+        validate_evidence_refs(
+            event,
+            evidence_ids,
+            findings,
+            code="event_missing_evidence_ref",
+            message_template="event references missing evidence_id {ref_id}",
+            path="tree.json",
+            node_id=node_id,
+        )
     seen_backtrack_ids: set[str] = set()
     active_backtrack_ids: list[str] = []
-    for index, event in enumerate(list_or_empty(tree.get("backtrack_events"))):
-        if not isinstance(event, dict):
-            findings.append(Finding("error", "backtrack_event_not_object", f"backtrack_events[{index}] is not an object", path="tree.json"))
-            continue
-        event_id = clean_string(event.get("id"))
+    for index, event in iter_object_records(
+        list_or_empty(tree.get("backtrack_events")),
+        findings,
+        code="backtrack_event_not_object",
+        message_template="backtrack_events[{index}] is not an object",
+        path="tree.json",
+    ):
         from_node = clean_string(event.get("from_node"))
         to_node = clean_string(event.get("to_node"))
-        if not event_id:
-            findings.append(Finding("error", "backtrack_missing_id", "backtrack event missing id", path="tree.json", node_id=from_node))
-        elif event_id in seen_backtrack_ids:
-            findings.append(Finding("error", "duplicate_backtrack_event_id", f"duplicate backtrack event id: {event_id}", path="tree.json", node_id=from_node))
-        else:
-            seen_backtrack_ids.add(event_id)
-        if from_node not in known_nodes:
-            findings.append(Finding("error", "backtrack_missing_from_node", "backtrack from_node is missing", path="tree.json", node_id=from_node))
-        if to_node not in known_nodes:
-            findings.append(Finding("error", "backtrack_missing_to_node", "backtrack to_node is missing", path="tree.json", node_id=to_node))
+        event_id = register_unique_id(
+            event.get("id"),
+            seen_backtrack_ids,
+            findings,
+            missing_code="backtrack_missing_id",
+            missing_message="backtrack event missing id",
+            duplicate_code="duplicate_backtrack_event_id",
+            duplicate_message_template="duplicate backtrack event id: {value}",
+            path="tree.json",
+            node_id=from_node,
+        )
+        validate_known_node_ref(
+            from_node,
+            known_nodes,
+            findings,
+            code="backtrack_missing_from_node",
+            message="backtrack from_node is missing",
+            path="tree.json",
+            allow_empty=False,
+        )
+        validate_known_node_ref(
+            to_node,
+            known_nodes,
+            findings,
+            code="backtrack_missing_to_node",
+            message="backtrack to_node is missing",
+            path="tree.json",
+            allow_empty=False,
+        )
         state = clean_string(event.get("event_state")) or "active"
         if state not in VALID_BACKTRACK_EVENT_STATES:
             findings.append(Finding("warning", "invalid_backtrack_event_state", f"invalid backtrack event_state: {state}", path="tree.json", node_id=from_node))
@@ -397,10 +487,15 @@ def validate_tree_events(
             active_backtrack_ids.append(event_id or f"backtrack_events[{index}]")
         if "evidence" in event:
             findings.append(Finding("error", "legacy_backtrack_evidence", "backtrack event uses legacy evidence; use evidence_refs", path="tree.json", node_id=from_node))
-        for ref in list_or_empty(event.get("evidence_refs")):
-            ref_id = clean_string(ref)
-            if ref_id and ref_id not in evidence_ids:
-                findings.append(Finding("warning", "backtrack_missing_evidence_ref", f"backtrack references missing evidence_id {ref_id}", path="tree.json", node_id=from_node))
+        validate_evidence_refs(
+            event,
+            evidence_ids,
+            findings,
+            code="backtrack_missing_evidence_ref",
+            message_template="backtrack references missing evidence_id {ref_id}",
+            path="tree.json",
+            node_id=from_node,
+        )
     if len(active_backtrack_ids) > 1:
         findings.append(
             Finding(
@@ -416,7 +511,7 @@ def validate_events(graph: dict[str, Any], node_ids: list[str], findings: list[F
     """Validate normalized graph events after normalizer processing."""
 
     known_nodes = set(node_ids)
-    evidence_ids = {clean_string(item.get("evidence_id")) for item in list_or_empty(graph.get("evidence", {}).get("records")) if isinstance(item, dict)}
+    evidence_ids = evidence_ids_from_records(graph.get("evidence", {}))
     for event in list_or_empty(graph.get("events")):
         if not isinstance(event, dict):
             continue
@@ -424,12 +519,21 @@ def validate_events(graph: dict[str, Any], node_ids: list[str], findings: list[F
         node_id = clean_string(event.get("node_id"))
         if not event_id:
             findings.append(Finding("error", "event_missing_id", "event missing event_id"))
-        if node_id and node_id not in known_nodes:
-            findings.append(Finding("error", "event_missing_node", "event references missing node", node_id=node_id))
-        for ref in list_or_empty(event.get("evidence_refs")):
-            ref_id = clean_string(ref)
-            if ref_id and ref_id not in evidence_ids:
-                findings.append(Finding("warning", "event_missing_evidence_ref", f"event references missing evidence_id {ref_id}", node_id=node_id))
+        validate_known_node_ref(
+            node_id,
+            known_nodes,
+            findings,
+            code="event_missing_node",
+            message="event references missing node",
+        )
+        validate_evidence_refs(
+            event,
+            evidence_ids,
+            findings,
+            code="event_missing_evidence_ref",
+            message_template="event references missing evidence_id {ref_id}",
+            node_id=node_id,
+        )
     active_backtrack_ids: list[str] = []
     for index, event in enumerate(list_or_empty(graph.get("backtrack_events"))):
         if not isinstance(event, dict):
@@ -437,19 +541,35 @@ def validate_events(graph: dict[str, Any], node_ids: list[str], findings: list[F
         event_id = clean_string(event.get("id")) or f"backtrack_events[{index}]"
         from_node = clean_string(event.get("from_node"))
         to_node = clean_string(event.get("to_node"))
-        if from_node not in known_nodes:
-            findings.append(Finding("error", "backtrack_missing_from_node", "backtrack from_node is missing", node_id=from_node))
-        if to_node not in known_nodes:
-            findings.append(Finding("error", "backtrack_missing_to_node", "backtrack to_node is missing", node_id=to_node))
+        validate_known_node_ref(
+            from_node,
+            known_nodes,
+            findings,
+            code="backtrack_missing_from_node",
+            message="backtrack from_node is missing",
+            allow_empty=False,
+        )
+        validate_known_node_ref(
+            to_node,
+            known_nodes,
+            findings,
+            code="backtrack_missing_to_node",
+            message="backtrack to_node is missing",
+            allow_empty=False,
+        )
         state = clean_string(event.get("event_state"))
         if state not in VALID_BACKTRACK_EVENT_STATES:
             findings.append(Finding("warning", "invalid_backtrack_event_state", f"invalid backtrack event_state: {state}", node_id=from_node))
         elif state == "active":
             active_backtrack_ids.append(event_id)
-        for ref in list_or_empty(event.get("evidence_refs")):
-            ref_id = clean_string(ref)
-            if ref_id and ref_id not in evidence_ids:
-                findings.append(Finding("warning", "backtrack_missing_evidence_ref", f"backtrack references missing evidence_id {ref_id}", node_id=from_node))
+        validate_evidence_refs(
+            event,
+            evidence_ids,
+            findings,
+            code="backtrack_missing_evidence_ref",
+            message_template="backtrack references missing evidence_id {ref_id}",
+            node_id=from_node,
+        )
     if len(active_backtrack_ids) > 1:
         findings.append(
             Finding(
