@@ -578,6 +578,23 @@ Do not edit the installed skill at
       focused branch/import tests, workspace/finalize/pathway/backtrack
       behavior tests, full pytest, public script help, and strict workspace
       smoke before pushing.
+- [ ] Extract generic branch reference validation into
+      `core/workspace/references.py`:
+      plan before code changes is to move node-reference mechanics out of
+      `core/workspace_state.py` without moving pathway or chemistry policy.
+      Add a `core/workspace/references.py` module that owns optional node-id
+      normalization, stable input-ref de-duplication, parent-cycle detection,
+      and parent/input-ref existence validation for branch creation. The core
+      primitive should raise a typed reference error rather than `SystemExit`;
+      `workspace_state.py` should keep CLI argument adaptation and translate
+      that error into the current CLI message/exit behavior. Keep
+      `validate_pathway_step_reference`, the `--pathway-id`/`--step-id` paired
+      requirement, decision-card markdown formatting, and all chemistry text in
+      `workspace_state.py`. Update `core/workspace/__init__.py`,
+      import-boundary tests, and focused workspace primitive tests, then
+      validate py_compile, focused reference/import tests, workspace/finalize/
+      pathway/backtrack behavior tests, full pytest, public script help, and
+      strict workspace smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
