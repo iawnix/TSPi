@@ -74,6 +74,54 @@ def extract_gaussian_tail_from_template(template_path: Path) -> str:
     return tail + "\n"
 
 
+@dataclass(frozen=True)
+class ExternalGaussianCalculatorRequest:
+    """Backend request for one external-Gaussian force-calculator family."""
+
+    route: str
+    charge: int
+    multiplicity: int
+    template_gjf: Path | None
+    tail_file: Path | None
+    command: str
+    mem: str | None
+    nprocshared: int | None
+    require_normal_termination: bool
+    output_suffix: str
+
+    def tail(self) -> str:
+        """Resolve the post-coordinate Gaussian section for generated inputs."""
+
+        if self.tail_file:
+            return self.tail_file.read_text(encoding="utf-8").rstrip() + "\n"
+        if self.template_gjf:
+            return extract_gaussian_tail_from_template(self.template_gjf)
+        return ""
+
+    def calculator(
+        self,
+        *,
+        image_index: int,
+        image_dir: Path,
+        tail: str | None = None,
+    ) -> "ExternalGaussianForceCalculator":
+        """Build an external-Gaussian force calculator for one image."""
+
+        return ExternalGaussianForceCalculator(
+            image_index=image_index,
+            image_dir=image_dir,
+            route=self.route,
+            charge=self.charge,
+            multiplicity=self.multiplicity,
+            mem=self.mem,
+            nprocshared=self.nprocshared,
+            tail=self.tail() if tail is None else tail,
+            command=self.command,
+            require_normal_termination=self.require_normal_termination,
+            output_suffix=self.output_suffix,
+        )
+
+
 class ExternalGaussianForceCalculator:
     """ASE Calculator that runs an external Gaussian command for energy/forces."""
 
@@ -666,6 +714,7 @@ __all__ = [
     "parse_gaussian_energy_hartree",
     "parse_gaussian_forces_hartree_per_bohr",
     "extract_gaussian_tail_from_template",
+    "ExternalGaussianCalculatorRequest",
     "ExternalGaussianForceCalculator",
     "create_calculator",
     "temporary_env",

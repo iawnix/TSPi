@@ -13,9 +13,8 @@ from pathlib import Path
 from typing import Any
 
 from transition_state_workflow.backends.ase_neb import (
-    ExternalGaussianForceCalculator,
+    ExternalGaussianCalculatorRequest,
     evaluate_neb_candidate_quality,
-    extract_gaussian_tail_from_template,
     import_ase_bits,
     make_neb_object,
     read_xyz_images_from_dir,
@@ -61,6 +60,22 @@ class ExternalGaussianRun:
     require_normal_termination: bool
     output_suffix: str
 
+    def calculator_request(self) -> ExternalGaussianCalculatorRequest:
+        """Return the backend runtime request for Gaussian force calculators."""
+
+        return ExternalGaussianCalculatorRequest(
+            route=self.route,
+            charge=self.charge,
+            multiplicity=self.multiplicity,
+            template_gjf=self.template_gjf,
+            tail_file=self.tail_file,
+            command=self.command,
+            mem=self.mem,
+            nprocshared=self.nprocshared,
+            require_normal_termination=self.require_normal_termination,
+            output_suffix=self.output_suffix,
+        )
+
     def cfg(self, *, dry_run_inputs: bool = False) -> dict[str, Any]:
         """Return the node ``config.json`` payload for this run."""
 
@@ -89,27 +104,15 @@ class ExternalGaussianRun:
     def tail(self) -> str:
         """Resolve the post-coordinate Gaussian section (template or tail file)."""
 
-        if self.tail_file:
-            return self.tail_file.read_text(encoding="utf-8").rstrip() + "\n"
-        if self.template_gjf:
-            return extract_gaussian_tail_from_template(self.template_gjf)
-        return ""
+        return self.calculator_request().tail()
 
-    def calculator(self, *, image_index: int, image_dir: Path, tail: str) -> ExternalGaussianForceCalculator:
+    def calculator(self, *, image_index: int, image_dir: Path, tail: str | None = None) -> Any:
         """Build an external-Gaussian force calculator for one image."""
 
-        return ExternalGaussianForceCalculator(
+        return self.calculator_request().calculator(
             image_index=image_index,
             image_dir=image_dir,
-            route=self.route,
-            charge=self.charge,
-            multiplicity=self.multiplicity,
-            mem=self.mem,
-            nprocshared=self.nprocshared,
             tail=tail,
-            command=self.command,
-            require_normal_termination=self.require_normal_termination,
-            output_suffix=self.output_suffix,
         )
 
 
@@ -145,10 +148,11 @@ def dry_run_gaussian_neb_inputs(run: ExternalGaussianRun) -> dict[str, Any]:
         source_files=source_files,
     )
     write_image_set(images, node_dir, "initial")
-    calc = run.calculator(
+    calculator_request = run.calculator_request()
+    calc = calculator_request.calculator(
         image_index=0,
         image_dir=node_dir / "calculators" / "image_000",
-        tail=run.tail(),
+        tail=calculator_request.tail(),
     )
     calc.write_input(images[0])
     return {
@@ -168,7 +172,8 @@ def continue_gaussian_neb_from_images(run: ExternalGaussianRun, *, allow_gaussia
     ensure_external_gaussian_project(run.project_root)
     node_id = continue_node_id_from_images(run.project_root, run.route)
     images, source_files = read_xyz_images_from_dir(run.xyz_dir, run.pattern, index=0)
-    tail = run.tail()
+    calculator_request = run.calculator_request()
+    tail = calculator_request.tail()
     cfg = run.cfg()
     parent_node_id = run.parent_node_id
     if parent_node_id is None:
@@ -186,7 +191,7 @@ def continue_gaussian_neb_from_images(run: ExternalGaussianRun, *, allow_gaussia
     write_image_set(images, node_dir, "initial")
     calc_root = node_dir / "calculators"
     for index, image in enumerate(images):
-        image.calc = run.calculator(
+        image.calc = calculator_request.calculator(
             image_index=index,
             image_dir=calc_root / f"image_{index:03d}",
             tail=tail,
@@ -229,6 +234,7 @@ def continue_gaussian_neb_from_images(run: ExternalGaussianRun, *, allow_gaussia
 
 
 __all__ = [
+    "ExternalGaussianCalculatorRequest",
     "ExternalGaussianRun",
     "external_gaussian_level_slug",
     "continue_node_id_from_images",

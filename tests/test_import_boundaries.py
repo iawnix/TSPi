@@ -338,9 +338,11 @@ def test_ase_neb_external_state_writers_live_in_core_with_tool_compatibility() -
 def test_ase_neb_execution_lives_in_backend_with_compatibility() -> None:
     from transition_state_workflow.backends import ase_neb
     from transition_state_workflow.tool.ase_neb import driver
+    from transition_state_workflow.tool.ase_neb import external_gaussian
     from transition_state_workflow.tool.ase_neb import gaussian_calc
     from transition_state_workflow.tools.ase_neb import results
 
+    assert external_gaussian.ExternalGaussianCalculatorRequest is ase_neb.ExternalGaussianCalculatorRequest
     assert gaussian_calc.create_calculator is ase_neb.create_calculator
     assert gaussian_calc.ExternalGaussianForceCalculator is ase_neb.ExternalGaussianForceCalculator
     assert driver.make_neb_object is ase_neb.make_neb_object

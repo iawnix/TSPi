@@ -44,6 +44,8 @@ from transition_state_workflow.tool.ase_neb.driver import (  # noqa: E402
     force_max,
 )
 from transition_state_workflow.tool.ase_neb.external_gaussian import (  # noqa: E402
+    ExternalGaussianCalculatorRequest,
+    ExternalGaussianRun,
     continue_node_id_from_images,
     external_gaussian_level_slug,
 )
@@ -446,6 +448,60 @@ def test_continue_node_id_from_images_builds_node_id(tmp_path: Path) -> None:
     node_id = continue_node_id_from_images(tmp_path, "# wb97xd/def2tzvp force")
     assert node_id.startswith("n")
     assert "neb_gaussian_external_wb97xd_def2tzvp_from_images" in node_id
+
+
+def test_external_gaussian_calculator_request_reads_tail_file(tmp_path: Path) -> None:
+    tail_file = tmp_path / "tail.gjf"
+    tail_file.write_text("H C 0\n6-31G\n****\n", encoding="utf-8")
+    request = ExternalGaussianCalculatorRequest(
+        route="# wb97xd/def2tzvp force",
+        charge=0,
+        multiplicity=1,
+        template_gjf=None,
+        tail_file=tail_file,
+        command="g16",
+        mem="8GB",
+        nprocshared=4,
+        require_normal_termination=True,
+        output_suffix=".out",
+    )
+
+    assert request.tail() == "H C 0\n6-31G\n****\n"
+
+
+def test_external_gaussian_run_delegates_runtime_request(tmp_path: Path) -> None:
+    tail_file = tmp_path / "tail.gjf"
+    tail_file.write_text("basis\n", encoding="utf-8")
+    run = ExternalGaussianRun(
+        project_root=tmp_path / "tssearch_ext",
+        xyz_dir=tmp_path / "images",
+        pattern="final_*.xyz",
+        route="# wb97xd/def2tzvp force",
+        charge=1,
+        multiplicity=2,
+        template_gjf=None,
+        tail_file=tail_file,
+        command="g16",
+        mem="4GB",
+        nprocshared=2,
+        neb_cfg={"climb": True},
+        optimizer_cfg={"name": "BFGS", "fmax": 0.05, "steps": 1},
+        candidate_selection={"min_barrier_ev": 0.1},
+        endpoint_validation={"reactant_state": "validated_minimum"},
+        parent_node_id="n000_input_check",
+        require_normal_termination=False,
+        output_suffix="log",
+    )
+
+    runtime = run.calculator_request()
+    assert isinstance(runtime, ExternalGaussianCalculatorRequest)
+    assert runtime.route == run.route
+    assert runtime.charge == 1
+    assert runtime.multiplicity == 2
+    assert runtime.tail() == "basis\n"
+    assert run.tail() == runtime.tail()
+    assert run.cfg()["source_xyz_dir"] == str(run.xyz_dir)
+    assert run.cfg()["output_suffix"] == "log"
 
 
 def test_write_external_gaussian_neb_node_full_artifacts(tmp_path: Path) -> None:
