@@ -210,6 +210,28 @@ Do not edit the installed skill at
       validate old/new import identity, wrapper length, import boundaries,
       public script help, full tests, and a strict workspace smoke before
       pushing.
+- [ ] Constrain ASE NEB execution code to result production:
+      plan before code changes is to add a structured ASE NEB result boundary
+      under `tools/ase_neb/results.py`, use it for path-energy tables,
+      force tables, candidate geometry metadata, and summary payloads, and make
+      `tool/ase_neb/driver.py` stop importing any workspace writer. The
+      driver may write tool-owned result artifacts under the supplied output
+      directory, but it must return a result/summary object and leave
+      `node.json`, `tree.json`, `evidence_registry.json`, reports, and
+      reflections to core/CLI orchestration. Keep the public
+      `write_path_summary` function compatible for now, add tests that ASE NEB
+      driver imports do not touch workspace/node-writer modules, and validate
+      public script help, full tests, and a strict workspace smoke before
+      pushing.
+- [ ] Move ASE NEB workspace and node-state writing out of the ChemTool layer:
+      plan before code changes is to promote the generic parts of
+      `tools/ase_neb/workspace.py` into a core workspace writer boundary and
+      replace `tools/ase_neb/node_writers.py` with a thin mapper from ASE NEB
+      result payloads to core node/evidence write requests. The ASE NEB tool
+      should expose result artifacts only; ChemKernel/core should own all
+      workspace mutation. Keep compatibility imports until callers and tests
+      prove the new core path is complete, then validate docs, import
+      boundaries, public script help, full tests, and a strict workspace smoke.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
