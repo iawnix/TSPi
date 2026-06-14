@@ -210,7 +210,7 @@ Do not edit the installed skill at
       validate old/new import identity, wrapper length, import boundaries,
       public script help, full tests, and a strict workspace smoke before
       pushing.
-- [ ] Constrain ASE NEB execution code to result production:
+- [x] Constrain ASE NEB execution code to result production:
       plan before code changes is to add a structured ASE NEB result boundary
       under `tools/ase_neb/results.py`, use it for path-energy tables,
       force tables, candidate geometry metadata, and summary payloads, and make
@@ -327,6 +327,9 @@ Do not edit the installed skill at
 - `04200b9` `docs: record ase neb workspace checkpoint`
 - `3060d69` `docs: plan ase neb node writer migration`
 - `c3bbb71` `refactor: move ase neb node writers into tools`
+- `458b47f` `docs: record ase neb node writer checkpoint`
+- `a434900` `docs: plan ase neb result boundary correction`
+- `979b4a1` `refactor: isolate ase neb result artifacts`
 
 ## Completion Log
 
@@ -624,3 +627,19 @@ Do not edit the installed skill at
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-ase-node-writers-smoke.Vnf8nh/tssearch_smoke` with validator
   summary `0 errors, 0 warnings`.
+- 2026-06-14: Isolated ASE NEB path/result artifact writing into
+  `tools/ase_neb/results.py`. `tool/ase_neb/driver.py` now builds ASE NEB
+  objects, attaches calculators, scores candidate quality, and compatibility
+  exposes the result helper names without importing workspace or node-writer
+  modules. The ASE NEB CLI and external-Gaussian continuation path now call the
+  result writer from the ChemTool package directly.
+- 2026-06-14: ASE NEB result-boundary validation passed:
+  `git diff --check`; `py_compile` for `tools/ase_neb/results.py`,
+  `tool/ase_neb/driver.py`, `tool/ase_neb_framework.py`,
+  `tool/ase_neb/external_gaussian.py`, and `tests/test_import_boundaries.py`;
+  targeted import/ASE NEB/reference tests `78 passed, 1 skipped`; targeted
+  architecture/no-undefined/parser/gate tests `37 passed, 1 skipped`; full
+  pytest `226 passed, 2 skipped`; script help smoke `18 scripts`; strict
+  workspace validator and normalizer smoke on
+  `/tmp/tswf-ase-result-smoke.Y48M22/tssearch_smoke` with validator summary
+  `0 errors, 0 warnings`.
