@@ -458,6 +458,25 @@ Do not edit the installed skill at
       imports, import boundaries, validator/normalizer/finalize/workspace
       tests, full pytest, public script help, and a strict workspace smoke
       before pushing.
+- [ ] Extract shared validator primitives before further tree/pathway/event
+      work:
+      plan before code changes is to reduce duplicated validation mechanisms,
+      not to split files by size. Create a ChemGate-local
+      `gate/validate/common.py` for reusable read-only checks that are already
+      repeated across validator modules: clean non-empty id sets, object-list
+      iteration with consistent not-object findings, unique id registration,
+      known-node reference checks, and evidence-ref checks. Migrate existing
+      call sites in `tree.py`, `evidence.py`, `mechanism.py`, and `workspace.py`
+      only where the shared primitive removes duplicated logic without hiding
+      the scientific policy. Keep policy-specific decisions in their current
+      owners: pathway step semantics stay in pathway/tree validation, accepted
+      TS evidence gates stay in the gate evidence path, and node state rules
+      stay in `nodes.py`/`config/state_contract.py`. Preserve the
+      `transition_state_workflow.gate.validate` public facade and legacy
+      `tool/validate_workspace.py` compatibility. Validate helper behavior with
+      focused tests, import-boundary tests, validator/workspace/finalize/
+      pathway/backtrack tests, full pytest, script help, and strict workspace
+      smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
