@@ -288,7 +288,8 @@ Python tooling follows a package layout:
   packets.
 - `src/transition_state_workflow/gate/`: ChemGate-facing read and closure
   logic: evidence gates, workspace validation, normalized explorer views,
-  structural endpoint connectivity checking, and `finalize-node`.
+  structural endpoint connectivity checking, NEB candidate validation policy,
+  and `finalize-node`.
 - `src/transition_state_workflow/tools/`: ChemTool protocol, capability
   vocabulary, registry, node-scoped local command execution via
   `NodeExecutionTool`, and Gaussian TS descriptor extraction via
@@ -346,8 +347,9 @@ Python tooling follows a package layout:
   `tools/ase_neb/images.py`, and `tools/ase_neb/results.py` forward to the ASE
   NEB backend. `validation.py` and `external_gaussian.py` remain CLI
   orchestration modules: they keep workspace-scoped request fields, call
-  backend execution helpers for candidate artifacts, and call core state
-  writers, including `core/ase_neb_external.py`, for workspace mutation.
+  ChemGate policy helpers, call backend execution helpers for candidate
+  artifacts, and call core state writers, including
+  `core/ase_neb_external.py`, for workspace mutation.
   `tool/ase_neb_framework.py` is the thin CLI on top. The dependency direction
   is covered by import boundary tests.
 - `src/transition_state_workflow/web/static/`: static explorer UI assets

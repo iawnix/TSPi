@@ -75,7 +75,11 @@ from transition_state_workflow.tools.ase_neb.mechanism import (  # noqa: E402
     classify_validation_system,
     endpoint_validation_summary,
 )
+from transition_state_workflow.gate.neb_candidate import (  # noqa: E402
+    build_validation_policy as build_gate_validation_policy,
+)
 from transition_state_workflow.tool.ase_neb.validation import (  # noqa: E402
+    build_validation_policy,
     displacement_ladder,
     irc_policy,
     threshold_policy,
@@ -268,6 +272,39 @@ def test_irc_policy_is_optional_for_strong_endpoint_in_small_rigid() -> None:
         flags=[],
     )
     assert policy["policy"] == "optional_after_strong_endpoint_match"
+
+
+def test_validation_policy_gate_matches_tool_adapter(tmp_path: Path) -> None:
+    reactant = tmp_path / "reactant.xyz"
+    product = tmp_path / "product.xyz"
+    reactant.write_text("2\nr\nH 0 0 0\nH 0.74 0 0\n", encoding="utf-8")
+    product.write_text("2\np\nH 0 0 0\nH 2.00 0 0\n", encoding="utf-8")
+
+    kwargs = {
+        "user_bonds": [(1, 2)],
+        "system_class_override": "h_transfer",
+        "imaginary_frequency": -50.0,
+        "publication_grade": False,
+        "force_irc": False,
+        "risk_flags": [],
+    }
+    gate_policy = build_gate_validation_policy(reactant, product, **kwargs)
+    tool_policy = build_validation_policy(reactant, product, **kwargs)
+
+    assert tool_policy == gate_policy
+    assert gate_policy["system_class"] == "h_transfer"
+    assert gate_policy["reaction_center"]["tracked_bonds"] == ["1-2"]
+    assert 0.08 in gate_policy["imaginary_mode_follow"]["displacement_ladder_max_atom_a"]
+
+
+def test_validation_policy_tool_adapter_preserves_config_error(tmp_path: Path) -> None:
+    reactant = tmp_path / "reactant.xyz"
+    product = tmp_path / "product.xyz"
+    reactant.write_text("2\nr\nH 0 0 0\nH 0.74 0 0\n", encoding="utf-8")
+    product.write_text("1\np\nH 0 0 0\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        build_validation_policy(reactant, product)
 
 
 # --- config -----------------------------------------------------------------

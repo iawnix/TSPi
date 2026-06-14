@@ -307,6 +307,30 @@ def test_ase_neb_node_writers_live_in_core_with_compatibility() -> None:
         assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
 
 
+def test_neb_candidate_policy_lives_in_gate_with_tool_compatibility() -> None:
+    from transition_state_workflow.gate import neb_candidate
+    from transition_state_workflow.tool.ase_neb import validation
+
+    assert validation.displacement_ladder is neb_candidate.displacement_ladder
+    assert validation.threshold_policy is neb_candidate.threshold_policy
+    assert validation.irc_policy is neb_candidate.irc_policy
+
+    gate_imports = full_internal_imports(PACKAGE / "gate" / "neb_candidate.py")
+    forbidden = {
+        "transition_state_workflow.backends",
+        "transition_state_workflow.core",
+        "transition_state_workflow.remote",
+        "transition_state_workflow.tool",
+        "transition_state_workflow.tools",
+        "transition_state_workflow.web",
+    }
+    assert not [
+        name
+        for name in gate_imports
+        if any(name == prefix or name.startswith(f"{prefix}.") for prefix in forbidden)
+    ]
+
+
 def test_ase_neb_external_state_writers_live_in_core_with_tool_compatibility() -> None:
     from transition_state_workflow.core import ase_neb_external as core_external
     from transition_state_workflow.tool.ase_neb import external_gaussian
