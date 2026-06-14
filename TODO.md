@@ -458,7 +458,7 @@ Do not edit the installed skill at
       imports, import boundaries, validator/normalizer/finalize/workspace
       tests, full pytest, public script help, and a strict workspace smoke
       before pushing.
-- [ ] Extract shared validator primitives before further tree/pathway/event
+- [x] Extract shared validator primitives before further tree/pathway/event
       work:
       plan before code changes is to reduce duplicated validation mechanisms,
       not to split files by size. Create a ChemGate-local
@@ -615,6 +615,9 @@ Do not edit the installed skill at
 - `b8f5997` `docs: record plan-next package split`
 - `8fa958c` `docs: plan validator package split`
 - `ce1c074` `refactor: split workspace validator into gate package`
+- `bc5e830` `docs: record validator package split`
+- `08f28ed` `docs: plan validator common primitives`
+- `edec3a1` `refactor: extract validator common checks`
 
 ## Completion Log
 
@@ -1221,3 +1224,22 @@ Do not edit the installed skill at
   validator and normalizer smoke on
   `/tmp/tswf-validator-package-smoke.EoQnzV/tssearch_smoke` with validator
   summary `0 errors, 0 warnings`; full pytest `249 passed, 2 skipped`.
+- 2026-06-14: Extracted shared ChemGate validator primitives into
+  `gate/validate/common.py` without moving scientific policy out of its
+  current owner modules. The shared helpers now cover clean non-empty string
+  lists/sets, list-field validation, object-record iteration, unique id
+  registration, known-node reference checks, and evidence-ref checks.
+  `tree.py`, `evidence.py`, `mechanism.py`, and `workspace.py` now compose
+  those helpers while pathway semantics, accepted-TS evidence gates, and node
+  state rules remain in their existing owner modules.
+  Commit: `edec3a1 refactor: extract validator common checks`.
+- 2026-06-14: Validator common primitive validation passed:
+  `git diff --check`; `py_compile` for `gate/validate/*.py`,
+  `tests/test_validator_common.py`, and `tests/test_import_boundaries.py`;
+  focused common/import tests `28 passed`; validator/workspace/finalize/
+  pathway/backtrack/CLI tests `92 passed`; reference/no-undefined/
+  architecture/import/validator/workspace tests `134 passed, 1 skipped`;
+  script help smoke `18 scripts`; strict workspace validator and normalizer
+  smoke on `/tmp/tswf-validator-common-smoke.eeMfih/tssearch_smoke` with
+  validator summary `0 errors, 0 warnings`; full pytest
+  `253 passed, 2 skipped`.
