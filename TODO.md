@@ -174,6 +174,17 @@ Do not edit the installed skill at
       old `tool/` package. Validate old/new import identity, ASE-free config
       validation, public script help, full tests, and a strict workspace smoke
       before pushing.
+- [ ] Move ASE NEB config parsing into the ChemTool layer:
+      plan before code changes is to move `ProjectContext`, config file
+      reading, normalization, path resolution, level/node slug helpers, and
+      `validate_config` from `tool/ase_neb/config.py` to
+      `tools/ase_neb/config.py`. Keep `tool/ase_neb/config.py` as a thin
+      compatibility re-export, update ASE NEB callers to import config helpers
+      from `tools/ase_neb/config.py`, and keep dependency checks lazy through
+      `backends/ase.py` so importing config remains ASE-free unless
+      `require_deps=True`. Validate old/new import identity, compatibility
+      wrapper length, no new architecture layer imports of `tool/`, public
+      script help, full tests, and a strict workspace smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
