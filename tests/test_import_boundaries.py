@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import importlib
 from pathlib import Path
 
 
@@ -533,9 +534,9 @@ def test_ase_neb_validation_state_writers_live_in_core_with_cli_adapter() -> Non
 
 def test_imaginary_mode_follow_split_across_backend_gate_core() -> None:
     from transition_state_workflow.backends import gaussian
+    from transition_state_workflow.cli import imaginary_mode_follow
     from transition_state_workflow.core import imaginary_mode_follow as core_follow
     from transition_state_workflow.gate import connectivity
-    from transition_state_workflow.tool import imaginary_mode_follow
 
     assert imaginary_mode_follow.endpoint_template_from_gjf is gaussian.endpoint_template_from_gjf
     assert imaginary_mode_follow.resolve_output_layout is core_follow.resolve_output_layout
@@ -581,9 +582,17 @@ def test_imaginary_mode_follow_split_across_backend_gate_core() -> None:
             if any(name == prefix or name.startswith(f"{prefix}.") for prefix in forbidden)
         ]
 
-    tool_imports = full_internal_imports(PACKAGE / "tool" / "imaginary_mode_follow.py")
-    assert "transition_state_workflow.chem.gaussian_log" not in tool_imports
-    assert "transition_state_workflow.chem.geometry" not in tool_imports
+    assert not (PACKAGE / "tool" / "imaginary_mode_follow.py").exists()
+    try:
+        importlib.import_module("transition_state_workflow.tool.imaginary_mode_follow")
+    except ModuleNotFoundError:
+        pass
+    else:  # pragma: no cover - assertion message is the point of this branch.
+        raise AssertionError("legacy tool.imaginary_mode_follow import path should be removed")
+
+    script_source = (ROOT / "scripts" / "ts_imaginary_mode_follow.py").read_text(encoding="utf-8")
+    assert "transition_state_workflow.cli.imaginary_mode_follow import main" in script_source
+    assert "transition_state_workflow.tool.imaginary_mode_follow" not in script_source
 
 
 def test_ase_neb_external_state_writers_live_in_core_with_cli_adapter() -> None:

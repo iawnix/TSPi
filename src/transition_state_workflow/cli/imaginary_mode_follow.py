@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Follow Gaussian imaginary modes with node-scoped TS-workflow artifacts."""
+"""CLI for following Gaussian imaginary modes with node-scoped artifacts."""
 
 from __future__ import annotations
 
