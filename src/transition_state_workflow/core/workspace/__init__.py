@@ -1,5 +1,15 @@
 """Core TS-search workspace primitives."""
 
+from transition_state_workflow.core.workspace.branch import (
+    BRANCH_WORK_DIRS,
+    PreparedBranchWrite,
+    ensure_branch_directories,
+    next_branch_event_id,
+    prepared_branch_event,
+    prepared_branch_node_payload,
+    prepared_branch_tree_entry,
+    write_prepared_branch_state,
+)
 from transition_state_workflow.core.workspace.evidence import append_evidence_record, append_portable_evidence_record
 from transition_state_workflow.core.workspace.io import (
     relative_artifact_path,
@@ -29,9 +39,12 @@ from transition_state_workflow.core.workspace.tree import (
 )
 
 __all__ = [
+    "BRANCH_WORK_DIRS",
+    "PreparedBranchWrite",
     "VALID_NODE_STATUSES",
     "append_evidence_record",
     "append_portable_evidence_record",
+    "ensure_branch_directories",
     "ensure_workspace_directories",
     "ensure_tree_skeleton",
     "ensure_workspace_root_has_manifest_and_tree",
@@ -39,8 +52,12 @@ __all__ = [
     "initial_evidence_registry",
     "initial_workspace_manifest",
     "initial_workspace_tree",
+    "next_branch_event_id",
     "next_node_id",
     "node_record",
+    "prepared_branch_event",
+    "prepared_branch_node_payload",
+    "prepared_branch_tree_entry",
     "read_tree",
     "relative_artifact_path",
     "update_tree_node_metadata",
@@ -51,6 +68,7 @@ __all__ = [
     "write_initial_workspace_files",
     "write_json",
     "write_markdown",
+    "write_prepared_branch_state",
     "write_reflection_template",
     "write_text_file_if_allowed",
     "write_tree",

@@ -7,14 +7,14 @@ from pathlib import Path
 from typing import Any
 
 from transition_state_workflow.base.pathway_model import initialize_pathway_model_if_missing, validate_pathway_step_reference
-from transition_state_workflow.config.state_contract import WORKSPACE_NODE_SCHEMA
 from transition_state_workflow.util.json_io import read_json_object_required, write_json_object
-from transition_state_workflow.util.path_utils import relative_path_or_absolute, safe_identifier_token
+from transition_state_workflow.util.path_utils import relative_path_or_absolute
 from transition_state_workflow.core.workspace import (
     append_portable_evidence_record,
     ensure_workspace_root_has_manifest_and_tree,
     utc_timestamp,
     write_initial_workspace_files,
+    write_prepared_branch_state,
     write_text_file_if_allowed,
 )
 
@@ -165,59 +165,21 @@ def create_ts_branch_decision_artifacts_from_cli_args(args: argparse.Namespace) 
         input_refs=input_refs,
         existing_nodes=nodes,
     )
-    node_dir = root / "nodes" / args.node_id
-    node_dir.mkdir(parents=True, exist_ok=True)
-    (node_dir / "inputs").mkdir(exist_ok=True)
-    (node_dir / "outputs").mkdir(exist_ok=True)
-    (node_dir / "parsed").mkdir(exist_ok=True)
-    (node_dir / "scratch").mkdir(exist_ok=True)
     now = utc_timestamp()
-
-    hypothesis_rel = relative_path_or_absolute(root, node_dir / "hypothesis.md")
-    decision_rel = relative_path_or_absolute(root, node_dir / "decision_card.md")
-    input_dir_rel = relative_path_or_absolute(root, node_dir / "inputs")
-    output_dir_rel = relative_path_or_absolute(root, node_dir / "outputs")
-    scratch_dir_rel = relative_path_or_absolute(root, node_dir / "scratch")
-    node_payload = {
-        "schema": WORKSPACE_NODE_SCHEMA,
-        "node_id": args.node_id,
-        "parent_id": args.parent_id,
-        "stage": args.stage,
-        "operation": args.operation,
-        "lifecycle_state": "prepared",
-        "run_state": "not_started",
-        "claim_status": "not_evaluated",
-        "outcome": "none",
-        "outcome_code": None,
-        "claim_level": "none",
-        "hypothesis": args.hypothesis,
-        "changed_variables": {"operation": args.operation},
-        "artifact_policy": {
-            "input_dir": input_dir_rel,
-            "output_dir": output_dir_rel,
-            "run_cwd": output_dir_rel,
-            "scratch_dir": scratch_dir_rel,
-            "engine_outputs": "write engine logs, checkpoints, restart files, trajectories, and candidates under output_dir or scratch_dir, never workspace root",
-        },
-        "evidence": {
-            "hypothesis": hypothesis_rel,
-            "decision_card": decision_rel,
-        },
-        "decision": "prepared_for_execution",
-        "display": {
-            "title": args.node_id,
-            "subtitle": args.stage,
-            "badges": ["prepared"],
-            "metrics": {},
-            "primary_file": decision_rel,
-            "summary": "Prepared branch; no job has run and no TS claim exists.",
-        },
-    }
-    if input_refs:
-        node_payload["input_refs"] = input_refs
-    if pathway_id:
-        node_payload["pathway_id"] = pathway_id
-        node_payload["elementary_step_id"] = step_id
+    branch_write = write_prepared_branch_state(
+        root=root,
+        node_id=args.node_id,
+        parent_id=args.parent_id,
+        stage=args.stage,
+        operation=args.operation,
+        hypothesis=args.hypothesis,
+        input_refs=input_refs,
+        pathway_id=pathway_id,
+        step_id=step_id,
+        timestamp=now,
+        overwrite_existing=args.force,
+    )
+    node_dir = branch_write.node_dir
     hypothesis_md = f"""# Hypothesis: {args.node_id}
 
 ## Chemical Hypothesis
@@ -314,42 +276,9 @@ Pending.
 Pending.
 """
 
-    write_json_object(node_dir / "node.json", node_payload, overwrite_existing=args.force)
     write_text_file_if_allowed(node_dir / "hypothesis.md", hypothesis_md, overwrite_existing=args.force)
     write_text_file_if_allowed(node_dir / "decision_card.md", decision_card_md, overwrite_existing=args.force)
     write_text_file_if_allowed(node_dir / "reflection.md", reflection_md, overwrite_existing=args.force)
-
-    if args.node_id not in nodes or args.force:
-        tree_node_payload = {
-            "parent_id": args.parent_id,
-            "stage": args.stage,
-            "node_path": relative_path_or_absolute(root, node_dir / "node.json"),
-        }
-        if input_refs:
-            tree_node_payload["input_refs"] = input_refs
-        if pathway_id:
-            tree_node_payload["pathway_id"] = pathway_id
-            tree_node_payload["elementary_step_id"] = step_id
-        nodes[args.node_id] = tree_node_payload
-    tree["nodes"] = nodes
-    events = list(tree.get("events") or [])
-    event_id = next_event_id(
-        f"evt_{safe_identifier_token(args.node_id)}_prepare",
-        {str(item.get("event_id") or "") for item in events if isinstance(item, dict)},
-    )
-    events.append(
-        {
-            "event_id": event_id,
-            "time": now,
-            "node_id": args.node_id,
-            "event_type": "prepare_node",
-            "decision": "prepared_for_execution",
-            "reason": f"Prepared branch to test: {args.hypothesis}",
-            "evidence_refs": [],
-        }
-    )
-    tree["events"] = events
-    write_json_object(tree_path, tree, overwrite_existing=True)
 
 
 def write_suggested_decision_cards_from_plan(args: argparse.Namespace, packet: dict[str, Any]) -> list[dict[str, Any]]:
@@ -455,18 +384,6 @@ def format_pathway_step_markdown(pathway_id: str, step_id: str) -> str:
     if not pathway_id:
         return "- None recorded."
     return f"- Pathway: `{pathway_id}`\n- Elementary step: `{step_id}`"
-
-
-def next_event_id(base: str, taken_ids: set[str]) -> str:
-    """Return an unused timeline event id based on a stable base token."""
-
-    event_id = safe_identifier_token(base)
-    if event_id not in taken_ids:
-        return event_id
-    index = 2
-    while f"{event_id}_{index:02d}" in taken_ids:
-        index += 1
-    return f"{event_id}_{index:02d}"
 
 
 def parse_expected_bond_change_spec(raw: str) -> dict[str, str]:

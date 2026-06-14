@@ -381,6 +381,11 @@ def test_ase_neb_config_lives_in_tools_with_tool_compatibility() -> None:
 def test_workspace_primitives_live_in_core_workspace_without_ase_neb_compatibility() -> None:
     from transition_state_workflow.core import workspace
 
+    assert workspace.write_prepared_branch_state is not None
+    assert workspace.prepared_branch_node_payload is not None
+    assert workspace.prepared_branch_tree_entry is not None
+    assert workspace.prepared_branch_event is not None
+    assert workspace.next_branch_event_id is not None
     assert workspace.write_json is not None
     assert workspace.node_record is not None
     assert workspace.read_tree is not None
@@ -400,6 +405,7 @@ def test_workspace_primitives_live_in_core_workspace_without_ase_neb_compatibili
     assert workspace_package.is_dir()
     for expected_module in (
         "__init__.py",
+        "branch.py",
         "evidence.py",
         "io.py",
         "naming.py",
