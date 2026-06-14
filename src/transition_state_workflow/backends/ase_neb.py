@@ -148,6 +148,23 @@ class ExternalGaussianNebRuntimeRequest:
         }
 
 
+@dataclass(frozen=True)
+class AseNebRuntimeRequest:
+    """Backend request for one standard ASE-managed NEB candidate run."""
+
+    cfg: dict[str, Any]
+    trajectory_name: str = "neb.traj"
+    logfile_name: str = "neb.log"
+
+    @property
+    def optimizer_cfg(self) -> dict[str, Any]:
+        return self.cfg["optimizer"]
+
+    @property
+    def env(self) -> dict[str, Any]:
+        return self.cfg["calculator"].get("env", {})
+
+
 class ExternalGaussianForceCalculator:
     """ASE Calculator that runs an external Gaussian command for energy/forces."""
 
@@ -435,6 +452,17 @@ def write_image_set(images: list[Any], node_dir: Path, prefix: str) -> None:
     for index, image in enumerate(images):
         write(image_dir / f"{prefix}_image_{index:02d}.xyz", image)
     write(traj_dir / f"{prefix}_path.xyz", images)
+
+
+def read_image_set(node_dir: Path, prefix: str, image_count: int) -> list[Any]:
+    """Read a numbered image set previously written by :func:`write_image_set`."""
+
+    bits = import_ase_bits()
+    read = bits["read"]
+    return [
+        read(node_dir / "images" / f"{prefix}_image_{index:02d}.xyz")
+        for index in range(int(image_count))
+    ]
 
 
 def natural_path_key(path: Path) -> list[Any]:
@@ -749,6 +777,51 @@ def evaluate_neb_candidate_quality(
     }
 
 
+def run_ase_neb_candidate_path(
+    *,
+    node_dir: Path,
+    runtime: AseNebRuntimeRequest,
+) -> dict[str, Any]:
+    """Run a prepared endpoint-based ASE NEB path and write backend result artifacts."""
+
+    cfg = runtime.cfg
+    images = read_image_set(node_dir, "initial", int(cfg["images"]))
+    attach_calculators(cfg, images, node_dir)
+    neb = make_neb_object(cfg, images)
+
+    bits = import_ase_bits()
+    optimizer_name = runtime.optimizer_cfg["name"]
+    try:
+        optimizer_cls = bits["optimizers"][optimizer_name]
+    except KeyError as exc:
+        raise AseNebConfigError(f"unsupported ASE optimizer: {optimizer_name}") from exc
+
+    (node_dir / "logs").mkdir(parents=True, exist_ok=True)
+    opt = optimizer_cls(
+        neb,
+        trajectory=str(node_dir / "trajectories" / runtime.trajectory_name),
+        logfile=str(node_dir / "logs" / runtime.logfile_name),
+    )
+    with temporary_env(runtime.env):
+        optimizer_converged = bool(
+            opt.run(
+                fmax=float(runtime.optimizer_cfg["fmax"]),
+                steps=int(runtime.optimizer_cfg["steps"]),
+            )
+        )
+
+    write_image_set(images, node_dir, "final")
+    summary = write_path_summary(node_dir, images, status="succeeded")
+    summary["optimizer_converged"] = optimizer_converged
+    summary["candidate_quality"] = evaluate_neb_candidate_quality(
+        summary,
+        cfg,
+        optimizer_converged=optimizer_converged,
+    )
+    write_candidate_quality_artifacts(node_dir, summary)
+    return summary
+
+
 def run_external_gaussian_neb_continuation(
     *,
     node_dir: Path,
@@ -815,6 +888,7 @@ __all__ = [
     "parse_gaussian_forces_hartree_per_bohr",
     "extract_gaussian_tail_from_template",
     "require_external_gaussian_force_route",
+    "AseNebRuntimeRequest",
     "ExternalGaussianCalculatorRequest",
     "ExternalGaussianNebRuntimeRequest",
     "ExternalGaussianForceCalculator",
@@ -824,6 +898,7 @@ __all__ = [
     "build_images_from_endpoints",
     "build_images",
     "write_image_set",
+    "read_image_set",
     "natural_path_key",
     "check_image_consistency",
     "read_xyz_images_from_dir",
@@ -839,5 +914,6 @@ __all__ = [
     "make_neb_object",
     "attach_calculators",
     "evaluate_neb_candidate_quality",
+    "run_ase_neb_candidate_path",
     "run_external_gaussian_neb_continuation",
 ]

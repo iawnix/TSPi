@@ -13,16 +13,12 @@ from pathlib import Path
 from typing import Any
 
 from transition_state_workflow.backends.ase_neb import (
-    attach_calculators,
+    AseNebRuntimeRequest,
     build_images_from_endpoints,
     evaluate_neb_candidate_quality,
-    import_ase_bits,
     load_endpoint_images,
-    make_neb_object,
-    temporary_env,
-    write_candidate_quality_artifacts,
+    run_ase_neb_candidate_path,
     write_image_set,
-    write_path_summary,
 )
 from transition_state_workflow.core.ase_neb_nodes import (
     write_input_check_node,
@@ -86,37 +82,10 @@ def run_neb(
         )
 
     ctx = prepare(cfg, config_path=config_path)
-    bits = import_ase_bits()
-    read = bits["read"]
-    images = [
-        read(ctx.neb_node / "images" / f"initial_image_{i:02d}.xyz")
-        for i in range(cfg["images"])
-    ]
-    attach_calculators(cfg, images, ctx.neb_node)
-    neb = make_neb_object(cfg, images)
-
-    optimizer_cfg = cfg["optimizer"]
-    optimizer_cls = bits["optimizers"][optimizer_cfg["name"]]
-    (ctx.neb_node / "logs").mkdir(parents=True, exist_ok=True)
-    opt = optimizer_cls(
-        neb,
-        trajectory=str(ctx.neb_node / "trajectories" / "neb.traj"),
-        logfile=str(ctx.neb_node / "logs" / "neb.log"),
+    summary = run_ase_neb_candidate_path(
+        node_dir=ctx.neb_node,
+        runtime=AseNebRuntimeRequest(cfg=cfg),
     )
-    with temporary_env(cfg["calculator"].get("env", {})):
-        optimizer_converged = bool(
-            opt.run(fmax=float(optimizer_cfg["fmax"]), steps=int(optimizer_cfg["steps"]))
-        )
-
-    write_image_set(images, ctx.neb_node, "final")
-    summary = write_path_summary(ctx.neb_node, images, status="succeeded")
-    summary["optimizer_converged"] = optimizer_converged
-    summary["candidate_quality"] = evaluate_neb_candidate_quality(
-        summary,
-        cfg,
-        optimizer_converged=optimizer_converged,
-    )
-    write_candidate_quality_artifacts(ctx.neb_node, summary)
     status = "succeeded" if summary["candidate_quality"]["accepted_for_promotion"] else "ambiguous"
     write_neb_node_metadata(ctx, cfg, status=status, summary=summary)
     if summary["candidate_quality"]["accepted_for_promotion"]:

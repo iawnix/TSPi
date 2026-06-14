@@ -40,6 +40,7 @@ from transition_state_workflow.tools.ase_neb.config import (  # noqa: E402
 )
 from transition_state_workflow.tools.ase_neb.errors import ConfigError  # noqa: E402
 from transition_state_workflow.tool.ase_neb.driver import (  # noqa: E402
+    AseNebRuntimeRequest,
     evaluate_neb_candidate_quality,
     force_max,
 )
@@ -432,6 +433,18 @@ def test_evaluate_neb_candidate_quality_passes_internal_max_at_steady_endpoints(
     out = evaluate_neb_candidate_quality(summary, cfg, optimizer_converged=True)
     assert out["accepted_for_promotion"] is True
     assert out["outcome_code"] is None
+
+
+def test_ase_neb_runtime_request_exposes_optimizer_and_env() -> None:
+    cfg = {
+        "optimizer": {"name": "BFGS", "fmax": 0.05, "steps": 5},
+        "calculator": {"type": "xtb", "env": {"OMP_NUM_THREADS": "2"}},
+    }
+    runtime = AseNebRuntimeRequest(cfg=cfg)
+    assert runtime.optimizer_cfg == cfg["optimizer"]
+    assert runtime.env == {"OMP_NUM_THREADS": "2"}
+    assert runtime.trajectory_name == "neb.traj"
+    assert runtime.logfile_name == "neb.log"
 
 
 # --- external Gaussian (pure helpers) --------------------------------------
