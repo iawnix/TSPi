@@ -358,7 +358,7 @@ Do not edit the installed skill at
       old public functions and `ConfigError` behavior. Add import-boundary and
       behavior tests, then validate public script help, full tests, and strict
       workspace smoke before pushing.
-- [ ] Split imaginary-mode follow-up across backend, gate, and core:
+- [x] Split imaginary-mode follow-up across backend, gate, and core:
       plan before code changes is to move Gaussian-specific log/template
       reading, imaginary-mode extraction, IRC status parsing, final-geometry
       extraction, and endpoint-opt `.gjf` rendering out of
@@ -489,6 +489,13 @@ Do not edit the installed skill at
 - `89b3983` `docs: record ase neb preparation checkpoint`
 - `dd0c639` `docs: plan neb candidate gate migration`
 - `69980ba` `refactor: move neb candidate policy into gate`
+- `aa6ba80` `docs: record neb candidate gate checkpoint`
+- `b0617a8` `docs: plan ase neb validation writer split`
+- `f97d138` `refactor: move gaussian refinement input rendering into backend`
+- `b2244e1` `refactor: move ase neb validation state writers into core`
+- `1c9df0c` `docs: record ase neb validation split checkpoint`
+- `56ff2ef` `docs: plan imaginary mode follow split`
+- `12fc211` `refactor: split imaginary mode follow boundaries`
 
 ## Completion Log
 
@@ -983,4 +990,24 @@ Do not edit the installed skill at
   `18 passed, 1 skipped`; full pytest `244 passed, 2 skipped`; script help
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-ase-validation-split-smoke.AdQV9Y/tssearch_smoke` with validator
+  summary `0 errors, 0 warnings`.
+- 2026-06-14: Split imaginary-mode follow-up across backend/gate/core:
+  Gaussian-specific TS/Freq mode extraction, QST-safe endpoint-template
+  handling, final-geometry extraction, and endpoint-opt `.gjf` writing now live
+  in `backends/gaussian.py`; endpoint and IRC connection-screen summaries now
+  live in `gate/connectivity.py`; node-scoped/legacy layout resolution and
+  artifact writing now live in `core/imaginary_mode_follow.py`.
+  `tool/imaginary_mode_follow.py` remains the public CLI adapter preserving
+  `prepare`, `compare`, `irc-compare`, and `make-opt` JSON/return-code
+  behavior.
+  Commit: `12fc211 refactor: split imaginary mode follow boundaries`.
+- 2026-06-14: Imaginary-mode follow-up split validation passed:
+  `git diff --check`; `py_compile` for `backends/gaussian.py`,
+  `gate/connectivity.py`, `core/imaginary_mode_follow.py`, `core/__init__.py`,
+  `tool/imaginary_mode_follow.py`, `tests/test_import_boundaries.py`, and
+  `tests/test_imaginary_and_node_exec.py`; targeted imaginary/import/Gaussian
+  tests `56 passed`; reference/no-undefined/architecture tests
+  `18 passed, 1 skipped`; full pytest `247 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-imaginary-follow-split-smoke.WtVMpm/tssearch_smoke` with validator
   summary `0 errors, 0 warnings`.
