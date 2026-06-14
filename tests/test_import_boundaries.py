@@ -387,9 +387,14 @@ def test_workspace_primitives_live_in_core_workspace_without_ase_neb_compatibili
     assert workspace.append_evidence_record is not None
     assert workspace.append_portable_evidence_record is not None
     assert workspace.write_text_file_if_allowed is not None
+    assert workspace.ensure_workspace_directories is not None
     assert workspace.ensure_tree_skeleton is not None
     assert workspace.ensure_workspace_root_has_manifest_and_tree is not None
     assert workspace.finalize_node_report_and_tree is not None
+    assert workspace.initial_evidence_registry is not None
+    assert workspace.initial_workspace_manifest is not None
+    assert workspace.initial_workspace_tree is not None
+    assert workspace.write_initial_workspace_files is not None
 
     workspace_package = PACKAGE / "core" / "workspace"
     assert workspace_package.is_dir()

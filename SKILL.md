@@ -298,8 +298,9 @@ Python tooling follows a package layout:
   primitives: `io.py` owns JSON/Markdown/path helpers, `nodes.py` owns
   node-record construction and node-id allocation, `tree.py` owns tree
   read/write and metadata updates, `evidence.py` owns evidence-registry
-  append/update, `scaffold.py` owns workspace skeletons plus report/reflection
-  tail writing, and `naming.py` owns workspace-safe slugs and timestamps.
+  append/update, `scaffold.py` owns initial workspace root files, workspace
+  skeletons, and report/reflection tail writing, and `naming.py` owns
+  workspace-safe slugs and timestamps.
   `core/plan_next/` is the ChemKernel planning subpackage:
   `cli.py` owns parser registration, `contracts.py` owns the packet schema and
   injected validator/evidence predicate contracts, `loader.py` owns read-only

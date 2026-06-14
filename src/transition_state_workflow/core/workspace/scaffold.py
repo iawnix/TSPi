@@ -5,11 +5,97 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from transition_state_workflow.config.state_contract import EVIDENCE_REGISTRY_SCHEMA, WORKSPACE_NODE_SCHEMA
+from transition_state_workflow.config.state_contract import EVIDENCE_REGISTRY_SCHEMA, TREE_SCHEMA, WORKSPACE_NODE_SCHEMA
+from transition_state_workflow.util.json_io import write_json_object
 
 from .io import write_json, write_markdown
 from .naming import utc_timestamp
 from .tree import read_tree, update_tree_node_metadata, upsert_tree_node, write_tree
+
+
+def ensure_workspace_directories(root: Path, directories: tuple[str, ...] = ("nodes", "reports")) -> None:
+    """Create a TS-search workspace root and requested child directories."""
+
+    root.mkdir(parents=True, exist_ok=True)
+    for dirname in directories:
+        (root / dirname).mkdir(exist_ok=True)
+
+
+def initial_workspace_manifest(
+    *,
+    root: Path,
+    system: str,
+    charge: int,
+    multiplicity: int,
+    created_at: str,
+) -> dict[str, Any]:
+    """Build the initial manifest payload for a TS-search workspace."""
+
+    return {
+        "system": system,
+        "created_at": created_at,
+        "charge": charge,
+        "multiplicity": multiplicity,
+        "root": str(root),
+        "node_schema": WORKSPACE_NODE_SCHEMA,
+        "current_accepted_ts": None,
+    }
+
+
+def initial_workspace_tree() -> dict[str, Any]:
+    """Build the initial empty hypothesis tree payload."""
+
+    return {
+        "schema": TREE_SCHEMA,
+        "nodes": {},
+        "active_frontier": [],
+        "closed_nodes": [],
+        "accepted_nodes": [],
+        "events": [],
+        "backtrack_events": [],
+    }
+
+
+def initial_evidence_registry(*, system: str, updated_at: str) -> dict[str, Any]:
+    """Build the initial empty evidence registry payload."""
+
+    return {
+        "schema": EVIDENCE_REGISTRY_SCHEMA,
+        "system": system,
+        "records": [],
+        "updated_at": updated_at,
+    }
+
+
+def write_initial_workspace_files(
+    root: Path,
+    *,
+    system: str,
+    charge: int,
+    multiplicity: int,
+    timestamp: str,
+    overwrite_existing: bool,
+) -> None:
+    """Create root directories and initial root JSON files for a TS workspace."""
+
+    ensure_workspace_directories(root)
+    write_json_object(
+        root / "manifest.json",
+        initial_workspace_manifest(
+            root=root,
+            system=system,
+            charge=charge,
+            multiplicity=multiplicity,
+            created_at=timestamp,
+        ),
+        overwrite_existing=overwrite_existing,
+    )
+    write_json_object(root / "tree.json", initial_workspace_tree(), overwrite_existing=overwrite_existing)
+    write_json_object(
+        root / "evidence_registry.json",
+        initial_evidence_registry(system=system, updated_at=timestamp),
+        overwrite_existing=overwrite_existing,
+    )
 
 
 def ensure_tree_skeleton(
@@ -152,9 +238,14 @@ def finalize_node_report_and_tree(
 
 
 __all__ = [
+    "ensure_workspace_directories",
     "ensure_tree_skeleton",
     "ensure_workspace_root_has_manifest_and_tree",
     "finalize_node_report_and_tree",
+    "initial_evidence_registry",
+    "initial_workspace_manifest",
+    "initial_workspace_tree",
     "write_final_reflection",
+    "write_initial_workspace_files",
     "write_reflection_template",
 ]

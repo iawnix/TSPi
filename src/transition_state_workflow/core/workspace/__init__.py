@@ -10,10 +10,15 @@ from transition_state_workflow.core.workspace.io import (
 from transition_state_workflow.core.workspace.naming import utc_timestamp, workspace_slug
 from transition_state_workflow.core.workspace.nodes import VALID_NODE_STATUSES, next_node_id, node_record
 from transition_state_workflow.core.workspace.scaffold import (
+    ensure_workspace_directories,
     ensure_tree_skeleton,
     ensure_workspace_root_has_manifest_and_tree,
     finalize_node_report_and_tree,
+    initial_evidence_registry,
+    initial_workspace_manifest,
+    initial_workspace_tree,
     write_final_reflection,
+    write_initial_workspace_files,
     write_reflection_template,
 )
 from transition_state_workflow.core.workspace.tree import (
@@ -27,9 +32,13 @@ __all__ = [
     "VALID_NODE_STATUSES",
     "append_evidence_record",
     "append_portable_evidence_record",
+    "ensure_workspace_directories",
     "ensure_tree_skeleton",
     "ensure_workspace_root_has_manifest_and_tree",
     "finalize_node_report_and_tree",
+    "initial_evidence_registry",
+    "initial_workspace_manifest",
+    "initial_workspace_tree",
     "next_node_id",
     "node_record",
     "read_tree",
@@ -39,6 +48,7 @@ __all__ = [
     "utc_timestamp",
     "workspace_slug",
     "write_final_reflection",
+    "write_initial_workspace_files",
     "write_json",
     "write_markdown",
     "write_reflection_template",

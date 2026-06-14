@@ -7,17 +7,14 @@ from pathlib import Path
 from typing import Any
 
 from transition_state_workflow.base.pathway_model import initialize_pathway_model_if_missing, validate_pathway_step_reference
-from transition_state_workflow.config.state_contract import (
-    EVIDENCE_REGISTRY_SCHEMA,
-    TREE_SCHEMA,
-    WORKSPACE_NODE_SCHEMA,
-)
+from transition_state_workflow.config.state_contract import WORKSPACE_NODE_SCHEMA
 from transition_state_workflow.util.json_io import read_json_object_required, write_json_object
 from transition_state_workflow.util.path_utils import relative_path_or_absolute, safe_identifier_token
 from transition_state_workflow.core.workspace import (
     append_portable_evidence_record,
     ensure_workspace_root_has_manifest_and_tree,
     utc_timestamp,
+    write_initial_workspace_files,
     write_text_file_if_allowed,
 )
 
@@ -51,29 +48,15 @@ def initialize_ts_hypothesis_workspace_files(
     """Create core TS-search workspace files and return the resolved root."""
 
     source = root.resolve()
-    source.mkdir(parents=True, exist_ok=True)
-    (source / "nodes").mkdir(exist_ok=True)
-    (source / "reports").mkdir(exist_ok=True)
     now = utc_timestamp()
-
-    manifest = {
-        "system": system,
-        "created_at": now,
-        "charge": charge,
-        "multiplicity": multiplicity,
-        "root": str(source),
-        "node_schema": WORKSPACE_NODE_SCHEMA,
-        "current_accepted_ts": None,
-    }
-    tree = {
-        "schema": TREE_SCHEMA,
-        "nodes": {},
-        "active_frontier": [],
-        "closed_nodes": [],
-        "accepted_nodes": [],
-        "events": [],
-        "backtrack_events": [],
-    }
+    write_initial_workspace_files(
+        source,
+        system=system,
+        charge=charge,
+        multiplicity=multiplicity,
+        timestamp=now,
+        overwrite_existing=force,
+    )
     mechanism = {
         "schema": "tssearch-mechanism-model-v1",
         "system": system,
@@ -94,12 +77,6 @@ def initialize_ts_hypothesis_workspace_files(
             "Which reaction-center coordinate should define the first candidate-generation branch?",
         ],
         "tool_implications": [],
-        "updated_at": now,
-    }
-    evidence_registry = {
-        "schema": EVIDENCE_REGISTRY_SCHEMA,
-        "system": system,
-        "records": [],
         "updated_at": now,
     }
     knowledge_base = f"""# TS Search Knowledge Base: {system}
@@ -127,10 +104,7 @@ def initialize_ts_hypothesis_workspace_files(
 
 - Complete mechanism preflight and endpoint optimization before promoting any TS candidate.
 """
-    write_json_object(source / "manifest.json", manifest, overwrite_existing=force)
-    write_json_object(source / "tree.json", tree, overwrite_existing=force)
     write_json_object(source / "mechanism_model.json", mechanism, overwrite_existing=force)
-    write_json_object(source / "evidence_registry.json", evidence_registry, overwrite_existing=force)
     initialize_pathway_model_if_missing(source, system=system, timestamp=now, mode="unknown")
     write_text_file_if_allowed(source / "knowledge_base.md", knowledge_base, overwrite_existing=force)
     return source
