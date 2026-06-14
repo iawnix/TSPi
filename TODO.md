@@ -300,6 +300,19 @@ Do not edit the installed skill at
       `ase_neb_framework.py` no longer imports backend/core runtime modules
       directly. Validate the ASE NEB CLI, compatibility imports, script help,
       full tests, and a strict workspace smoke before pushing.
+- [x] Move main ASE NEB runtime execution out of the workflow module:
+      plan before code changes is to add an `AseNebRuntimeRequest` and
+      `run_ase_neb_candidate_path` backend API in `backends/ase_neb.py` for the
+      standard endpoint-based ASE NEB run. That backend API should own reading
+      prepared initial images, attaching calculators, constructing the NEB
+      object, running the optimizer, writing final images/path summaries, and
+      writing candidate-quality result artifacts. Keep `tool/ase_neb/workflow.py`
+      as orchestration only: Gaussian opt-in policy, `prepare()`/pending node
+      creation, final core node metadata, optional Gaussian refinement input,
+      and CLI JSON. Add boundary tests that workflow no longer imports or names
+      backend runtime internals directly, keep old public imports working, then
+      validate targeted ASE/import tests, full tests, script help, and strict
+      workspace smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
@@ -409,6 +422,7 @@ Do not edit the installed skill at
 - `dd1bfd3` `refactor: move external gaussian runtime request into backend`
 - `ed6b539` `refactor: move external gaussian continuation runtime into backend`
 - `52a70e1` `refactor: move ase neb cli workflow out of framework`
+- `dd19631` `refactor: move ase neb runtime into backend request`
 
 ## Completion Log
 
@@ -825,3 +839,19 @@ Do not edit the installed skill at
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-ase-framework-smoke.5wnxnJ/tssearch_smoke` with validator summary
   `0 errors, 0 warnings`.
+- 2026-06-14: Moved the standard endpoint-based ASE NEB runtime execution out
+  of `tool/ase_neb/workflow.py` and into `backends/ase_neb.py` as
+  `AseNebRuntimeRequest` plus `run_ase_neb_candidate_path`. The backend now
+  owns reading prepared initial images, calculator attachment, NEB object
+  construction, optimizer execution, final image/result artifact writing, and
+  candidate-quality artifact updates. `workflow.py` now keeps the policy and
+  state orchestration around that backend request.
+- 2026-06-14: ASE NEB main-runtime backend validation passed:
+  `git diff --check`; `py_compile` for `backends/ase_neb.py`,
+  `tool/ase_neb/workflow.py`, `tests/test_import_boundaries.py`, and
+  `tests/test_ase_neb_pure.py`; targeted import/ASE NEB/parsing tests
+  `86 passed, 1 skipped`; reference/no-undefined/architecture tests
+  `18 passed, 1 skipped`; full pytest `232 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-ase-main-backend-smoke.lYLrqf/tssearch_smoke` with validator
+  summary `0 errors, 0 warnings`.
