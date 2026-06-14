@@ -544,6 +544,23 @@ Do not edit the installed skill at
       file I/O. Validate py_compile, import boundaries, workspace/finalize/
       pathway/backtrack behavior tests, full pytest, public script help, and
       strict workspace smoke before pushing.
+- [ ] Extract generic hypothesis-workspace init scaffolding into
+      `core/workspace/`:
+      plan before code changes is to move only reusable workspace-root
+      creation and initial state payload mechanics out of
+      `core/workspace_state.py`. Add generic primitives under
+      `core/workspace/` for creating the `nodes/` and `reports/` directories,
+      building/writing the initial `manifest.json`, building/writing the empty
+      `tree.json`, and building/writing the empty `evidence_registry.json`
+      while preserving current overwrite behavior. Keep mechanism-model
+      defaults, `knowledge_base.md` text, pathway-model initialization,
+      reaction-class confidence, bond-change parsing, and CLI argument policy
+      in `workspace_state.py` because those are chemistry/hypothesis command
+      policy rather than generic workspace scaffolding. Update import-boundary
+      tests to lock the new primitive exports, then validate py_compile,
+      import boundaries, workspace/finalize/pathway/backtrack behavior tests,
+      full pytest, public script help, and strict workspace smoke before
+      pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
