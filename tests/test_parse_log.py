@@ -32,9 +32,6 @@ from transition_state_workflow.backends.gaussian import (  # noqa: E402
     parse_gaussian_forces_hartree_per_bohr,
     parse_gaussian_tsfreq_log,
 )
-from transition_state_workflow.tool.ase_neb.gaussian_calc import (  # noqa: E402
-    parse_gaussian_energy_hartree as legacy_parse_gaussian_energy_hartree,
-)
 from transition_state_workflow.tool.parse_gaussian_ts_result import main as parse_cli_main  # noqa: E402
 from transition_state_workflow.tool.parse_gaussian_ts_result import parse_log  # noqa: E402
 
@@ -295,7 +292,6 @@ def test_gaussian_backend_parses_external_force_energy_output(tmp_path: Path) ->
     forces = parse_gaussian_forces_hartree_per_bohr(output, natoms=2)
 
     assert parse_gaussian_energy_hartree(output) == pytest.approx(-76.123)
-    assert legacy_parse_gaussian_energy_hartree(output) == pytest.approx(-76.123)
     assert forces.shape == (2, 3)
     assert forces[0, 0] == pytest.approx(0.001)
     assert forces[1, 2] == pytest.approx(-0.006)

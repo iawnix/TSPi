@@ -298,26 +298,56 @@ def test_gaussian_gen_preflight_helpers_live_in_backend_with_tool_compatibility(
     assert gaussian_gen_preflight.fix_lines is gaussian.fix_lines
 
 
-def test_ase_neb_leaf_helpers_live_in_tools_with_tool_compatibility() -> None:
-    from transition_state_workflow.tool.ase_neb import coerce as old_coerce
-    from transition_state_workflow.tool.ase_neb import constants as old_constants
-    from transition_state_workflow.tool.ase_neb import errors as old_errors
+def test_ase_neb_legacy_tool_import_paths_are_removed() -> None:
+    removed_paths = (
+        PACKAGE / "tool" / "ase_neb" / "__init__.py",
+        PACKAGE / "tool" / "ase_neb" / "coerce.py",
+        PACKAGE / "tool" / "ase_neb" / "config.py",
+        PACKAGE / "tool" / "ase_neb" / "constants.py",
+        PACKAGE / "tool" / "ase_neb" / "driver.py",
+        PACKAGE / "tool" / "ase_neb" / "errors.py",
+        PACKAGE / "tool" / "ase_neb" / "external_gaussian.py",
+        PACKAGE / "tool" / "ase_neb" / "gaussian_calc.py",
+        PACKAGE / "tool" / "ase_neb" / "geometry.py",
+        PACKAGE / "tool" / "ase_neb" / "images.py",
+        PACKAGE / "tool" / "ase_neb" / "mechanism.py",
+        PACKAGE / "tool" / "ase_neb" / "node_writers.py",
+        PACKAGE / "tool" / "ase_neb" / "validation.py",
+        PACKAGE / "tool" / "ase_neb" / "workflow.py",
+        PACKAGE / "tool" / "ase_neb_framework.py",
+    )
+    for path in removed_paths:
+        assert not path.exists()
+
+    old_prefixes = (
+        "transition_state_workflow.tool.ase_neb",
+        "transition_state_workflow.tool.ase_neb_framework",
+    )
+    offenders: list[str] = []
+    for source_file in sorted(list(PACKAGE.rglob("*.py")) + list((ROOT / "scripts").rglob("*.py"))):
+        imports = full_internal_imports(source_file)
+        bad = [
+            name
+            for name in imports
+            if any(name == prefix or name.startswith(f"{prefix}.") for prefix in old_prefixes)
+        ]
+        if bad:
+            offenders.append(f"{source_file.relative_to(ROOT)} imports {', '.join(sorted(bad))}")
+    assert not offenders, "removed ASE NEB tool paths are still imported:\n" + "\n".join(offenders)
+
+
+def test_ase_neb_leaf_helpers_live_in_tools() -> None:
     from transition_state_workflow.tools.ase_neb import coerce, constants, errors
 
-    assert old_errors.ConfigError is errors.ConfigError
-    assert old_coerce.as_mapping is coerce.as_mapping
-    assert old_coerce.as_positive_int is coerce.as_positive_int
-    assert old_constants.CONFIG_VERSION is constants.CONFIG_VERSION
-    for name in ("constants.py", "errors.py", "coerce.py"):
-        compat_source = PACKAGE / "tool" / "ase_neb" / name
-        assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
+    assert errors.ConfigError is not None
+    assert coerce.as_mapping is not None
+    assert coerce.as_positive_int is not None
+    assert constants.CONFIG_VERSION is not None
 
 
-def test_ase_neb_geometry_mechanism_live_in_tools_with_tool_compatibility() -> None:
+def test_ase_neb_geometry_mechanism_live_in_tools() -> None:
     from transition_state_workflow.chem import geometry as chem_geometry
     from transition_state_workflow.chem import mechanism as chem_mechanism
-    from transition_state_workflow.tool.ase_neb import geometry as old_geometry
-    from transition_state_workflow.tool.ase_neb import mechanism as old_mechanism
     from transition_state_workflow.tools.ase_neb import geometry, mechanism
 
     assert geometry.changed_bonds is chem_geometry.changed_bonds
@@ -326,56 +356,37 @@ def test_ase_neb_geometry_mechanism_live_in_tools_with_tool_compatibility() -> N
     assert geometry.fragment_labels is chem_geometry.fragment_labels
     assert mechanism.classify_validation_system is chem_mechanism.classify_validation_system
     assert mechanism.ENDPOINT_READY_STATES is chem_mechanism.ENDPOINT_READY_STATES
-    assert old_geometry.read_xyz is geometry.read_xyz
-    assert old_geometry.changed_bonds is geometry.changed_bonds
-    assert old_geometry.infer_angles is geometry.infer_angles
-    assert old_mechanism.classify_validation_system is mechanism.classify_validation_system
-    assert old_mechanism.endpoint_validation_summary is mechanism.endpoint_validation_summary
-    assert old_mechanism.infer_mechanism_preflight is mechanism.infer_mechanism_preflight
-    for name in ("geometry.py", "mechanism.py"):
-        compat_source = PACKAGE / "tool" / "ase_neb" / name
-        assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
 
 
-def test_ase_runtime_loader_lives_in_backend_with_tool_compatibility() -> None:
+def test_ase_runtime_loader_lives_in_backend() -> None:
     from transition_state_workflow.backends import ase
-    from transition_state_workflow.tool.ase_neb import gaussian_calc
 
-    assert gaussian_calc.require_ase is ase.require_ase
-    assert gaussian_calc.require_xtb is ase.require_xtb
-    assert gaussian_calc.require_gaussian_calculator is ase.require_gaussian_calculator
-    assert gaussian_calc.import_ase_bits is ase.import_ase_bits
+    assert ase.require_ase is not None
+    assert ase.require_xtb is not None
+    assert ase.require_gaussian_calculator is not None
+    assert ase.import_ase_bits is not None
 
 
-def test_ase_neb_images_live_in_backend_with_tool_compatibility() -> None:
+def test_ase_neb_images_live_in_backend() -> None:
     from transition_state_workflow.backends import ase_neb
-    from transition_state_workflow.tool.ase_neb import images as old_images
     from transition_state_workflow.tools.ase_neb import images
 
     assert images.load_endpoint_images is ase_neb.load_endpoint_images
     assert images.build_images_from_endpoints is ase_neb.build_images_from_endpoints
     assert images.write_image_set is ase_neb.write_image_set
     assert images.read_xyz_images_from_dir is ase_neb.read_xyz_images_from_dir
-    assert old_images.load_endpoint_images is ase_neb.load_endpoint_images
-    for compat_source in (
-        PACKAGE / "tools" / "ase_neb" / "images.py",
-        PACKAGE / "tool" / "ase_neb" / "images.py",
-    ):
-        assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
+    assert len((PACKAGE / "tools" / "ase_neb" / "images.py").read_text(encoding="utf-8").splitlines()) <= 4
 
 
-def test_ase_neb_config_lives_in_tools_with_tool_compatibility() -> None:
-    from transition_state_workflow.tool.ase_neb import config as old_config
+def test_ase_neb_config_lives_in_tools() -> None:
     from transition_state_workflow.tools.ase_neb import config
 
-    assert old_config.ProjectContext is config.ProjectContext
-    assert old_config.safe_slug is config.safe_slug
-    assert old_config.normalize_config is config.normalize_config
-    assert old_config.resolve_config_paths is config.resolve_config_paths
-    assert old_config.validate_config is config.validate_config
-    assert old_config.neb_node_id is config.neb_node_id
-    compat_source = PACKAGE / "tool" / "ase_neb" / "config.py"
-    assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
+    assert config.ProjectContext is not None
+    assert config.safe_slug is not None
+    assert config.normalize_config is not None
+    assert config.resolve_config_paths is not None
+    assert config.validate_config is not None
+    assert config.neb_node_id is not None
 
 
 def test_workspace_primitives_live_in_core_workspace_without_ase_neb_compatibility() -> None:
@@ -438,27 +449,23 @@ def test_workspace_primitives_live_in_core_workspace_without_ase_neb_compatibili
     assert not offenders
 
 
-def test_ase_neb_node_writers_live_in_core_with_compatibility() -> None:
+def test_ase_neb_node_writers_live_in_core_with_tools_adapter() -> None:
     from transition_state_workflow.core import ase_neb_nodes as core_nodes
-    from transition_state_workflow.tool.ase_neb import node_writers as old_node_writers
     from transition_state_workflow.tools.ase_neb import node_writers
 
     assert node_writers.write_input_check_node is core_nodes.write_input_check_node
-    assert old_node_writers.write_neb_node_metadata is core_nodes.write_neb_node_metadata
-    for compat_source in (
-        PACKAGE / "tools" / "ase_neb" / "node_writers.py",
-        PACKAGE / "tool" / "ase_neb" / "node_writers.py",
-    ):
-        assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
+    assert node_writers.write_neb_node_metadata is core_nodes.write_neb_node_metadata
+    adapter_source = PACKAGE / "tools" / "ase_neb" / "node_writers.py"
+    assert len(adapter_source.read_text(encoding="utf-8").splitlines()) <= 4
 
 
-def test_neb_candidate_policy_lives_in_gate_with_tool_compatibility() -> None:
+def test_neb_candidate_policy_lives_in_gate_with_cli_adapter() -> None:
+    from transition_state_workflow.cli import ase_neb_validation
     from transition_state_workflow.gate import neb_candidate
-    from transition_state_workflow.tool.ase_neb import validation
 
-    assert validation.displacement_ladder is neb_candidate.displacement_ladder
-    assert validation.threshold_policy is neb_candidate.threshold_policy
-    assert validation.irc_policy is neb_candidate.irc_policy
+    assert ase_neb_validation.displacement_ladder is neb_candidate.displacement_ladder
+    assert ase_neb_validation.threshold_policy is neb_candidate.threshold_policy
+    assert ase_neb_validation.irc_policy is neb_candidate.irc_policy
 
     gate_imports = full_internal_imports(PACKAGE / "gate" / "neb_candidate.py")
     forbidden = {
@@ -479,25 +486,22 @@ def test_neb_candidate_policy_lives_in_gate_with_tool_compatibility() -> None:
 def test_ase_neb_refinement_input_rendering_lives_in_gaussian_backend() -> None:
     from transition_state_workflow.backends import gaussian
     from transition_state_workflow.cli import ase_neb_validation
-    from transition_state_workflow.tool.ase_neb import validation
 
-    assert validation.gaussian_refinement_defaults() == gaussian.gaussian_refinement_defaults()
-    assert validation.gaussian_refinement_defaults is ase_neb_validation.gaussian_refinement_defaults
+    assert ase_neb_validation.gaussian_refinement_defaults() == gaussian.gaussian_refinement_defaults()
 
     validation_imports = full_internal_imports(PACKAGE / "cli" / "ase_neb_validation.py")
     assert "transition_state_workflow.tools.ase_neb.geometry" not in validation_imports
     assert "transition_state_workflow.backends.gaussian" in validation_imports
-    assert len((PACKAGE / "tool" / "ase_neb" / "validation.py").read_text(encoding="utf-8").splitlines()) <= 3
 
 
-def test_ase_neb_validation_state_writers_live_in_core_with_tool_compatibility() -> None:
+def test_ase_neb_validation_state_writers_live_in_core_with_cli_adapter() -> None:
+    from transition_state_workflow.cli import ase_neb_validation
     from transition_state_workflow.core import ase_neb_validation as core_validation
-    from transition_state_workflow.tool.ase_neb import validation
 
-    assert validation.find_project_input is core_validation.find_project_input
-    assert validation.latest_promotable_candidate is core_validation.latest_promotable_candidate
-    assert validation.latest_node_with_stage is core_validation.latest_node_with_stage
-    assert validation.create_validation_plan_node is core_validation.create_validation_plan_node
+    assert ase_neb_validation.find_project_input is core_validation.find_project_input
+    assert ase_neb_validation.latest_promotable_candidate is core_validation.latest_promotable_candidate
+    assert ase_neb_validation.latest_node_with_stage is core_validation.latest_node_with_stage
+    assert ase_neb_validation.create_validation_plan_node is core_validation.create_validation_plan_node
 
     core_imports = full_internal_imports(PACKAGE / "core" / "ase_neb_validation.py")
     forbidden = {
@@ -514,7 +518,7 @@ def test_ase_neb_validation_state_writers_live_in_core_with_tool_compatibility()
         if any(name == prefix or name.startswith(f"{prefix}.") for prefix in forbidden)
     ]
 
-    validation_source = (PACKAGE / "tool" / "ase_neb" / "validation.py").read_text(encoding="utf-8")
+    validation_source = (PACKAGE / "cli" / "ase_neb_validation.py").read_text(encoding="utf-8")
     for moved_detail in (
         "json.loads",
         "shutil.copyfile",
@@ -582,17 +586,15 @@ def test_imaginary_mode_follow_split_across_backend_gate_core() -> None:
     assert "transition_state_workflow.chem.geometry" not in tool_imports
 
 
-def test_ase_neb_external_state_writers_live_in_core_with_tool_compatibility() -> None:
+def test_ase_neb_external_state_writers_live_in_core_with_cli_adapter() -> None:
     from transition_state_workflow.cli import ase_neb_external
     from transition_state_workflow.core import ase_neb_external as core_external
-    from transition_state_workflow.tool.ase_neb import external_gaussian
 
-    assert external_gaussian.external_gaussian_level_slug is core_external.external_gaussian_level_slug
-    assert external_gaussian.continue_gaussian_neb_from_images is ase_neb_external.continue_gaussian_neb_from_images
-    assert external_gaussian.continue_node_id_from_images is core_external.continue_node_id_from_images
-    assert external_gaussian.ensure_external_gaussian_project is core_external.ensure_external_gaussian_project
-    assert external_gaussian.write_external_image_input_node is core_external.write_external_image_input_node
-    assert external_gaussian.write_external_gaussian_neb_node is core_external.write_external_gaussian_neb_node
+    assert ase_neb_external.external_gaussian_level_slug is core_external.external_gaussian_level_slug
+    assert ase_neb_external.continue_node_id_from_images is core_external.continue_node_id_from_images
+    assert ase_neb_external.ensure_external_gaussian_project is core_external.ensure_external_gaussian_project
+    assert ase_neb_external.write_external_image_input_node is core_external.write_external_image_input_node
+    assert ase_neb_external.write_external_gaussian_neb_node is core_external.write_external_gaussian_neb_node
 
     core_imports = full_internal_imports(PACKAGE / "core" / "ase_neb_external.py")
     forbidden = {
@@ -608,30 +610,26 @@ def test_ase_neb_external_state_writers_live_in_core_with_tool_compatibility() -
         for name in core_imports
         if any(name == prefix or name.startswith(f"{prefix}.") for prefix in forbidden)
     ]
-    tool_imports = full_internal_imports(PACKAGE / "tool" / "ase_neb" / "external_gaussian.py")
-    assert "transition_state_workflow.core.ase_neb_workspace" not in tool_imports
-    assert len((PACKAGE / "tool" / "ase_neb" / "external_gaussian.py").read_text(encoding="utf-8").splitlines()) <= 3
+    cli_imports = full_internal_imports(PACKAGE / "cli" / "ase_neb_external.py")
+    assert "transition_state_workflow.core.ase_neb_workspace" not in cli_imports
 
 
-def test_ase_neb_execution_lives_in_backend_with_compatibility() -> None:
+def test_ase_neb_execution_lives_in_backend_with_tools_adapters() -> None:
     from transition_state_workflow.backends import ase_neb
-    from transition_state_workflow.tool.ase_neb import driver
-    from transition_state_workflow.tool.ase_neb import external_gaussian
-    from transition_state_workflow.tool.ase_neb import gaussian_calc
     from transition_state_workflow.tools.ase_neb import results
 
-    assert driver.AseNebPreparationResult is ase_neb.AseNebPreparationResult
-    assert driver.prepare_ase_neb_initial_path is ase_neb.prepare_ase_neb_initial_path
-    assert driver.AseNebRuntimeRequest is ase_neb.AseNebRuntimeRequest
-    assert driver.run_ase_neb_candidate_path is ase_neb.run_ase_neb_candidate_path
-    assert external_gaussian.ExternalGaussianCalculatorRequest is ase_neb.ExternalGaussianCalculatorRequest
-    assert external_gaussian.ExternalGaussianNebRuntimeRequest is ase_neb.ExternalGaussianNebRuntimeRequest
-    assert gaussian_calc.create_calculator is ase_neb.create_calculator
-    assert gaussian_calc.ExternalGaussianForceCalculator is ase_neb.ExternalGaussianForceCalculator
-    assert driver.make_neb_object is ase_neb.make_neb_object
-    assert driver.attach_calculators is ase_neb.attach_calculators
-    assert driver.evaluate_neb_candidate_quality is ase_neb.evaluate_neb_candidate_quality
-    assert driver.force_max is ase_neb.force_max
+    assert ase_neb.AseNebPreparationResult is not None
+    assert ase_neb.prepare_ase_neb_initial_path is not None
+    assert ase_neb.AseNebRuntimeRequest is not None
+    assert ase_neb.run_ase_neb_candidate_path is not None
+    assert ase_neb.ExternalGaussianCalculatorRequest is not None
+    assert ase_neb.ExternalGaussianNebRuntimeRequest is not None
+    assert ase_neb.create_calculator is not None
+    assert ase_neb.ExternalGaussianForceCalculator is not None
+    assert ase_neb.make_neb_object is not None
+    assert ase_neb.attach_calculators is not None
+    assert ase_neb.evaluate_neb_candidate_quality is not None
+    assert ase_neb.force_max is not None
     assert results.collect_path_data is ase_neb.collect_path_data
     assert results.write_forces_table is ase_neb.write_forces_table
     assert results.write_path_summary is ase_neb.write_path_summary
@@ -669,27 +667,11 @@ def test_ase_neb_execution_lives_in_backend_with_compatibility() -> None:
             backend_offenders.append(f"{source_file.relative_to(ROOT)} imports {', '.join(bad)}")
     assert not backend_offenders, "ASE NEB backend package reverse imports:\n" + "\n".join(backend_offenders)
 
-    driver_imports = full_internal_imports(PACKAGE / "tool" / "ase_neb" / "driver.py")
-    assert "transition_state_workflow.tools.ase_neb.workspace" not in driver_imports
-    assert "transition_state_workflow.tools.ase_neb.node_writers" not in driver_imports
-    assert "transition_state_workflow.tool.ase_neb.node_writers" not in driver_imports
-
-    external_source = (PACKAGE / "tool" / "ase_neb" / "external_gaussian.py").read_text(
-        encoding="utf-8"
-    )
-    for runtime_detail in (
-        "import_ase_bits",
-        "make_neb_object",
-        "write_path_summary",
-        "write_candidate_quality_artifacts",
-    ):
-        assert runtime_detail not in external_source
-
     result_imports = full_internal_imports(PACKAGE / "tools" / "ase_neb" / "results.py")
     assert "transition_state_workflow.tools.ase_neb.workspace" not in result_imports
     assert "transition_state_workflow.tools.ase_neb.node_writers" not in result_imports
 
-    workflow_source = (PACKAGE / "tool" / "ase_neb" / "workflow.py").read_text(encoding="utf-8")
+    workflow_source = (PACKAGE / "cli" / "ase_neb_workflow.py").read_text(encoding="utf-8")
     for runtime_detail in (
         "import_ase_bits",
         "attach_calculators",
@@ -703,45 +685,20 @@ def test_ase_neb_execution_lives_in_backend_with_compatibility() -> None:
     ):
         assert runtime_detail not in workflow_source
 
-    for compat_source in (
-        PACKAGE / "tool" / "ase_neb" / "driver.py",
-        PACKAGE / "tool" / "ase_neb" / "gaussian_calc.py",
-        PACKAGE / "tool" / "ase_neb" / "workflow.py",
-        PACKAGE / "tools" / "ase_neb" / "results.py",
-    ):
-        assert len(compat_source.read_text(encoding="utf-8").splitlines()) <= 4
+    assert len((PACKAGE / "tools" / "ase_neb" / "results.py").read_text(encoding="utf-8").splitlines()) <= 4
 
 
-def test_ase_neb_framework_cli_lives_in_cli_with_tool_compatibility() -> None:
+def test_ase_neb_framework_cli_lives_in_cli_without_tool_compatibility() -> None:
     from transition_state_workflow.cli import ase_neb_framework as cli_framework
     from transition_state_workflow.cli import ase_neb_workflow
-    from transition_state_workflow.tool import ase_neb_framework
-    from transition_state_workflow.tool.ase_neb import workflow
 
-    assert ase_neb_framework.main is cli_framework.main
-    assert ase_neb_framework.build_parser is cli_framework.build_parser
-    assert ase_neb_framework.prepare is workflow.prepare
-    assert ase_neb_framework.run_neb is workflow.run_neb
-    assert ase_neb_framework.load_config_for_cli is workflow.load_config_for_cli
-    assert ase_neb_framework.make_gaussian_refine_from_cli is workflow.make_gaussian_refine_from_cli
-    assert ase_neb_framework.evaluate_neb_candidate_quality is workflow.evaluate_neb_candidate_quality
-    assert workflow.prepare is ase_neb_workflow.prepare
-    assert workflow.command_run is ase_neb_workflow.command_run
-    assert cli_framework.prepare is workflow.prepare
-    assert cli_framework.run_neb is workflow.run_neb
+    assert cli_framework.prepare is ase_neb_workflow.prepare
+    assert cli_framework.run_neb is ase_neb_workflow.run_neb
+    assert cli_framework.load_config_for_cli is ase_neb_workflow.load_config_for_cli
+    assert cli_framework.make_gaussian_refine_from_cli is ase_neb_workflow.make_gaussian_refine_from_cli
+    assert cli_framework.evaluate_neb_candidate_quality is ase_neb_workflow.evaluate_neb_candidate_quality
 
-    framework_source = PACKAGE / "tool" / "ase_neb_framework.py"
     cli_source = PACKAGE / "cli" / "ase_neb_framework.py"
-    framework_imports = full_internal_imports(framework_source)
-    forbidden_direct = {
-        "transition_state_workflow.backends",
-        "transition_state_workflow.core",
-    }
-    assert not [
-        name
-        for name in framework_imports
-        if any(name == prefix or name.startswith(f"{prefix}.") for prefix in forbidden_direct)
-    ]
     cli_imports = full_internal_imports(cli_source)
     assert "transition_state_workflow.cli.ase_neb_workflow" in cli_imports
     assert not any(
@@ -753,4 +710,4 @@ def test_ase_neb_framework_cli_lives_in_cli_with_tool_compatibility() -> None:
     assert "transition_state_workflow.cli.ase_neb_framework import main" in script_source
     assert "transition_state_workflow.tool.ase_neb_framework import main" not in script_source
 
-    assert len(framework_source.read_text(encoding="utf-8").splitlines()) <= 5
+    assert not (PACKAGE / "tool" / "ase_neb_framework.py").exists()

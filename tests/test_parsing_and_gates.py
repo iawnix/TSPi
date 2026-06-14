@@ -21,7 +21,7 @@ from transition_state_workflow.chem.gaussian_log import (  # noqa: E402
     frequency_summary,
     standard_frequency_values,
 )
-from transition_state_workflow.tool.ase_neb_framework import (  # noqa: E402
+from transition_state_workflow.backends.ase_neb import (  # noqa: E402
     evaluate_neb_candidate_quality,
 )
 from transition_state_workflow.tool.parse_gaussian_ts_result import (  # noqa: E402

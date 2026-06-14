@@ -377,7 +377,7 @@ Python tooling follows a package layout:
   `node_layout.py` (node directory resolution), and compatibility forwarding
   modules such as `remote_exec.py`.
 - `src/transition_state_workflow/tool/`: concrete chemistry tool CLIs and
-  compatibility entrypoints. `parse_gaussian_ts_result.py` writes parser
+  remaining non-ASE compatibility entrypoints. `parse_gaussian_ts_result.py` writes parser
   artifacts through `CLIBase` while delegating Gaussian TS/Freq parsing to
   `backends/gaussian.py`; `prepare_gaussian_ts_input.py` and
   `gaussian_gen_preflight.py` also use `CLIBase` for shared argument parsing,
@@ -388,14 +388,14 @@ Python tooling follows a package layout:
   `hypothesis_workspace.py` is a compatibility entrypoint over
   `cli/hypothesis_workspace.py`;
   `rmsd_connectivity_check.py` is a compatibility entrypoint over
-  `gate/connectivity.py`. `tool/ase_neb_framework.py`,
-  `tool/ase_neb/workflow.py`, `tool/ase_neb/validation.py`, and
-  `tool/ase_neb/external_gaussian.py` are executable/import compatibility
-  entrypoints over the corresponding `cli/` modules.
-  `tool/ase_neb/gaussian_calc.py`, `tool/ase_neb/driver.py`,
-  `tool/ase_neb/images.py`,
-  `tools/ase_neb/images.py`, and `tools/ase_neb/results.py` forward to the ASE
-  NEB backend. The dependency direction is covered by import boundary tests.
+  `gate/connectivity.py`. ASE NEB no longer has beta-era internal
+  `tool/ase_neb*` import paths: public command dispatch is
+  `scripts/ase_neb_framework.py` -> `cli/ase_neb_framework.py`, backend
+  execution lives under `backends/ase_neb/`, validation policy lives in
+  `gate/neb_candidate.py`, and workspace mutation lives in `core/`.
+  `tools/ase_neb/images.py` and `tools/ase_neb/results.py` forward to the ASE
+  NEB backend for tool-facing adapter imports. The dependency direction is
+  covered by import boundary tests.
 - `src/transition_state_workflow/web/static/`: static explorer UI assets
   loaded by the optional web service. State labels/colors come only from
   `config/state_contract.py`, shipped through the normalizer; the UI keeps no

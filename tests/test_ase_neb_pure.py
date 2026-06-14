@@ -39,20 +39,20 @@ from transition_state_workflow.tools.ase_neb.config import (  # noqa: E402
     safe_slug,
 )
 from transition_state_workflow.tools.ase_neb.errors import ConfigError  # noqa: E402
-from transition_state_workflow.tool.ase_neb.driver import (  # noqa: E402
+from transition_state_workflow.backends.ase_neb import (  # noqa: E402
+    AseNebConfigError,
     AseNebPreparationResult,
     AseNebRuntimeRequest,
-    evaluate_neb_candidate_quality,
-    force_max,
-)
-from transition_state_workflow.tool.ase_neb.external_gaussian import (  # noqa: E402
-    AseNebConfigError,
     ExternalGaussianCalculatorRequest,
     ExternalGaussianNebRuntimeRequest,
+    evaluate_neb_candidate_quality,
+    force_max,
+    require_external_gaussian_force_route,
+)
+from transition_state_workflow.cli.ase_neb_external import (  # noqa: E402
     ExternalGaussianRun,
     continue_node_id_from_images,
     external_gaussian_level_slug,
-    require_external_gaussian_force_route,
 )
 from transition_state_workflow.tools.ase_neb.geometry import (  # noqa: E402
     Atom,
@@ -78,13 +78,13 @@ from transition_state_workflow.tools.ase_neb.mechanism import (  # noqa: E402
 from transition_state_workflow.gate.neb_candidate import (  # noqa: E402
     build_validation_policy as build_gate_validation_policy,
 )
-from transition_state_workflow.tool.ase_neb.validation import (  # noqa: E402
+from transition_state_workflow.cli.ase_neb_validation import (  # noqa: E402
     build_validation_policy,
-    create_gaussian_refine_node as create_tool_gaussian_refine_node,
-    default_validation_parent as tool_default_validation_parent,
+    create_gaussian_refine_node as create_cli_gaussian_refine_node,
+    default_validation_parent as cli_default_validation_parent,
     displacement_ladder,
     irc_policy,
-    resolve_candidate as tool_resolve_candidate,
+    resolve_candidate as cli_resolve_candidate,
     threshold_policy,
     write_gaussian_input as write_ase_neb_gaussian_input,
 )
@@ -285,7 +285,7 @@ def test_irc_policy_is_optional_for_strong_endpoint_in_small_rigid() -> None:
     assert policy["policy"] == "optional_after_strong_endpoint_match"
 
 
-def test_validation_policy_gate_matches_tool_adapter(tmp_path: Path) -> None:
+def test_validation_policy_gate_matches_cli_adapter(tmp_path: Path) -> None:
     reactant = tmp_path / "reactant.xyz"
     product = tmp_path / "product.xyz"
     reactant.write_text("2\nr\nH 0 0 0\nH 0.74 0 0\n", encoding="utf-8")
@@ -308,7 +308,7 @@ def test_validation_policy_gate_matches_tool_adapter(tmp_path: Path) -> None:
     assert 0.08 in gate_policy["imaginary_mode_follow"]["displacement_ladder_max_atom_a"]
 
 
-def test_validation_policy_tool_adapter_preserves_config_error(tmp_path: Path) -> None:
+def test_validation_policy_cli_adapter_preserves_config_error(tmp_path: Path) -> None:
     reactant = tmp_path / "reactant.xyz"
     product = tmp_path / "product.xyz"
     reactant.write_text("2\nr\nH 0 0 0\nH 0.74 0 0\n", encoding="utf-8")
@@ -346,7 +346,7 @@ def test_validation_gaussian_input_adapter_preserves_config_error(tmp_path: Path
         write_ase_neb_gaussian_input(bad_xyz, tmp_path / "candidate.gjf", {})
 
 
-def test_core_validation_resolves_promotable_candidate_and_tool_errors(tmp_path: Path) -> None:
+def test_core_validation_resolves_promotable_candidate_and_cli_errors(tmp_path: Path) -> None:
     root = tmp_path / "tssearch_unit"
     candidate_dir = root / "nodes" / "n010_neb_xtb" / "candidates"
     candidate_dir.mkdir(parents=True)
@@ -367,18 +367,18 @@ def test_core_validation_resolves_promotable_candidate_and_tool_errors(tmp_path:
         "cand_001",
         xyz,
     )
-    assert tool_default_validation_parent(root) == "n010_neb_xtb"
+    assert cli_default_validation_parent(root) == "n010_neb_xtb"
 
     with pytest.raises(ConfigError):
-        tool_resolve_candidate(tmp_path / "empty", source_node_id=None, candidate_id=None)
+        cli_resolve_candidate(tmp_path / "empty", source_node_id=None, candidate_id=None)
 
 
-def test_tool_gaussian_refine_node_uses_core_state_writer(tmp_path: Path) -> None:
+def test_cli_gaussian_refine_node_uses_core_state_writer(tmp_path: Path) -> None:
     root = tmp_path / "tssearch_unit"
     candidate = tmp_path / "candidate.xyz"
     candidate.write_text("2\ncandidate\nH 0 0 0\nH 0 0 0.74\n", encoding="utf-8")
 
-    node_id, gjf = create_tool_gaussian_refine_node(
+    node_id, gjf = create_cli_gaussian_refine_node(
         root,
         source_node_id="n010_neb_xtb",
         candidate_id="cand_001",
@@ -715,7 +715,7 @@ def test_write_external_gaussian_neb_node_full_artifacts(tmp_path: Path) -> None
     # reflection + tree state via finalize_node_report_and_tree.
     import json
 
-    from transition_state_workflow.tool.ase_neb.external_gaussian import (
+    from transition_state_workflow.core.ase_neb_external import (
         write_external_gaussian_neb_node,
     )
     from transition_state_workflow.core.workspace import read_tree
@@ -765,7 +765,7 @@ def test_write_external_gaussian_neb_node_full_artifacts(tmp_path: Path) -> None
 def test_ensure_external_gaussian_project_writes_skeleton_with_entry(tmp_path: Path) -> None:
     import json
 
-    from transition_state_workflow.tool.ase_neb.external_gaussian import (
+    from transition_state_workflow.core.ase_neb_external import (
         ensure_external_gaussian_project,
     )
 
