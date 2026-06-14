@@ -511,6 +511,24 @@ Do not edit the installed skill at
       py_compile, import boundaries, plan-next/finalize/pathway/backtrack
       behavior tests, full pytest, public script help, and strict workspace
       smoke before pushing.
+- [ ] Remove the ASE-NEB-named workspace writer from `core`:
+      plan before code changes is to correct the architecture boundary rather
+      than preserve a beta-era internal import path. Create a
+      `core/workspace/` package for generic workspace primitives: stable JSON/
+      Markdown writes, workspace-relative artifact paths, tree read/write and
+      metadata updates, evidence-registry append/update, node-record
+      construction, node-id allocation, workspace skeleton creation, report/
+      reflection rendering, and the common finalize-report/tree tail. Move
+      ASE-specific project setup (normalizing/copying NEB config and endpoint
+      inputs) into the ASE NEB CLI/core adapter that calls those primitives.
+      Delete `core/ase_neb_workspace.py`,
+      `tools/ase_neb/workspace.py`, and `tool/ase_neb/workspace.py` instead of
+      keeping compatibility re-exports. Update all internal imports and tests
+      to use the new core workspace package and to assert the old workspace
+      modules are gone. Public CLI entrypoints and command names must continue
+      to work. Validate py_compile, import boundaries, ASE NEB migration/pure
+      tests, workspace/finalize behavior tests, full pytest, public script
+      help, and strict workspace smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
