@@ -14,6 +14,10 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from transition_state_workflow.backends.gaussian import (
+    gaussian_refinement_defaults as _gaussian_refinement_defaults,
+    write_gaussian_refinement_input,
+)
 from transition_state_workflow.gate.neb_candidate import (
     build_validation_policy as _build_validation_policy,
     displacement_ladder,
@@ -25,7 +29,6 @@ from transition_state_workflow.tools.ase_neb.config import (
     level_slug_from_gaussian_config,
 )
 from transition_state_workflow.tools.ase_neb.errors import ConfigError
-from transition_state_workflow.tools.ase_neb.geometry import read_xyz
 from transition_state_workflow.core.ase_neb_workspace import (
     next_node_id,
     node_record,
@@ -75,16 +78,7 @@ def build_validation_policy(
 
 
 def gaussian_refinement_defaults() -> dict[str, Any]:
-    return {
-        "route": "# M062X/def2SVP opt=(ts,calcfc,noeigen,maxcycle=100) freq nosymm scf=xqc",
-        "charge": 0,
-        "multiplicity": 1,
-        "nprocshared": None,
-        "mem": None,
-        "chk": "ts_candidate.chk",
-        "title": "TS candidate from ASE NEB",
-        "extra_sections": [],
-    }
+    return _gaussian_refinement_defaults()
 
 
 def write_gaussian_input(
@@ -92,40 +86,10 @@ def write_gaussian_input(
     output_path: Path,
     gaussian_cfg: dict[str, Any],
 ) -> Path:
-    atoms, comment = read_xyz(xyz_path)
-    params = gaussian_refinement_defaults()
-    params.update(gaussian_cfg)
-    lines: list[str] = []
-    if params.get("chk"):
-        lines.append(f"%chk={params['chk']}")
-    if params.get("nprocshared"):
-        lines.append(f"%nprocshared={params['nprocshared']}")
-    if params.get("mem"):
-        lines.append(f"%mem={params['mem']}")
-    lines.append(str(params["route"]))
-    lines.append("")
-    title = str(params.get("title") or comment or "TS candidate from ASE NEB")
-    lines.append(title)
-    lines.append("")
-    lines.append(f"{int(params['charge'])} {int(params['multiplicity'])}")
-    for atom in atoms:
-        lines.append(
-            f"{atom.element:<3s} {atom.x:16.8f} {atom.y:16.8f} {atom.z:16.8f}"
-        )
-    lines.append("")
-    extra_sections = params.get("extra_sections") or []
-    if isinstance(extra_sections, str):
-        lines.extend(extra_sections.splitlines())
-    else:
-        for section in extra_sections:
-            lines.extend(str(section).splitlines())
-            lines.append("")
-    while lines and not lines[-1].strip():
-        lines.pop()
-    lines.extend(["", "", ""])
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text("\n".join(lines), encoding="utf-8")
-    return output_path
+    try:
+        return write_gaussian_refinement_input(xyz_path, output_path, gaussian_cfg)
+    except ValueError as exc:
+        raise ConfigError(str(exc)) from exc
 
 
 def create_gaussian_refine_node(

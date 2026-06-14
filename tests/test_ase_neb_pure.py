@@ -83,6 +83,7 @@ from transition_state_workflow.tool.ase_neb.validation import (  # noqa: E402
     displacement_ladder,
     irc_policy,
     threshold_policy,
+    write_gaussian_input as write_ase_neb_gaussian_input,
 )
 from transition_state_workflow.core.ase_neb_workspace import (  # noqa: E402
     next_node_id,
@@ -305,6 +306,34 @@ def test_validation_policy_tool_adapter_preserves_config_error(tmp_path: Path) -
 
     with pytest.raises(ConfigError):
         build_validation_policy(reactant, product)
+
+
+def test_validation_gaussian_input_adapter_delegates_to_backend(tmp_path: Path) -> None:
+    xyz = tmp_path / "candidate.xyz"
+    output = tmp_path / "candidate.gjf"
+    xyz.write_text("2\ncandidate\nH 0 0 0\nH 0 0 0.74\n", encoding="utf-8")
+
+    written = write_ase_neb_gaussian_input(
+        xyz,
+        output,
+        {
+            "route": "# M062X/6-31G(d) opt=(ts,calcfc) freq",
+            "charge": 1,
+            "multiplicity": 2,
+        },
+    )
+
+    text = output.read_text(encoding="utf-8")
+    assert written == output
+    assert "# M062X/6-31G(d) opt=(ts,calcfc) freq\n\nTS candidate from ASE NEB\n\n1 2\n" in text
+
+
+def test_validation_gaussian_input_adapter_preserves_config_error(tmp_path: Path) -> None:
+    bad_xyz = tmp_path / "bad.xyz"
+    bad_xyz.write_text("not xyz\n", encoding="utf-8")
+
+    with pytest.raises(ConfigError):
+        write_ase_neb_gaussian_input(bad_xyz, tmp_path / "candidate.gjf", {})
 
 
 # --- config -----------------------------------------------------------------

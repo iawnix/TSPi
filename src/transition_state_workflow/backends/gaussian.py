@@ -300,6 +300,79 @@ def write_gaussian_input(path: Path, request: GaussianInputRequest) -> None:
     path.write_text(render_gaussian_input(request), encoding="utf-8")
 
 
+def gaussian_refinement_defaults() -> dict[str, Any]:
+    """Return ASE-NEB-promoted Gaussian TS/Freq refinement defaults."""
+
+    return {
+        "route": "# M062X/def2SVP opt=(ts,calcfc,noeigen,maxcycle=100) freq nosymm scf=xqc",
+        "charge": 0,
+        "multiplicity": 1,
+        "nprocshared": None,
+        "mem": None,
+        "chk": "ts_candidate.chk",
+        "title": "TS candidate from ASE NEB",
+        "extra_sections": [],
+    }
+
+
+def render_gaussian_refinement_input(
+    xyz_path: Path,
+    gaussian_cfg: Mapping[str, Any],
+    *,
+    frame: str = "only",
+) -> str:
+    """Render the Gaussian TS/Freq input for an ASE NEB promoted candidate."""
+
+    _, source_title, coords = read_xyz_frame(xyz_path, frame)
+    params = gaussian_refinement_defaults()
+    params.update(dict(gaussian_cfg))
+
+    lines: list[str] = []
+    if params.get("chk"):
+        lines.append(f"%chk={params['chk']}")
+    if params.get("nprocshared"):
+        lines.append(f"%nprocshared={params['nprocshared']}")
+    if params.get("mem"):
+        lines.append(f"%mem={params['mem']}")
+    lines.append(str(params["route"]))
+    lines.append("")
+    title = str(params.get("title") or source_title or "TS candidate from ASE NEB")
+    lines.append(title)
+    lines.append("")
+    lines.append(f"{int(params['charge'])} {int(params['multiplicity'])}")
+    for element, x, y, z in coords:
+        lines.append(f"{element:<3s} {x:16.8f} {y:16.8f} {z:16.8f}")
+    lines.append("")
+    extra_sections = params.get("extra_sections") or []
+    if isinstance(extra_sections, str):
+        lines.extend(extra_sections.splitlines())
+    else:
+        for section in extra_sections:
+            lines.extend(str(section).splitlines())
+            lines.append("")
+    while lines and not lines[-1].strip():
+        lines.pop()
+    lines.extend(["", "", ""])
+    return "\n".join(lines)
+
+
+def write_gaussian_refinement_input(
+    xyz_path: Path,
+    output_path: Path,
+    gaussian_cfg: Mapping[str, Any],
+    *,
+    frame: str = "only",
+) -> Path:
+    """Write an ASE-NEB-promoted Gaussian TS/Freq refinement input."""
+
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    output_path.write_text(
+        render_gaussian_refinement_input(xyz_path, gaussian_cfg, frame=frame),
+        encoding="utf-8",
+    )
+    return output_path
+
+
 def split_gaussian_job_sections(lines: list[str]) -> list[dict[str, object]]:
     """Split a Gaussian log into Link1/concatenated job sections."""
 

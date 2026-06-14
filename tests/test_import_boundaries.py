@@ -331,6 +331,17 @@ def test_neb_candidate_policy_lives_in_gate_with_tool_compatibility() -> None:
     ]
 
 
+def test_ase_neb_refinement_input_rendering_lives_in_gaussian_backend() -> None:
+    from transition_state_workflow.backends import gaussian
+    from transition_state_workflow.tool.ase_neb import validation
+
+    assert validation.gaussian_refinement_defaults() == gaussian.gaussian_refinement_defaults()
+
+    validation_imports = full_internal_imports(PACKAGE / "tool" / "ase_neb" / "validation.py")
+    assert "transition_state_workflow.tools.ase_neb.geometry" not in validation_imports
+    assert "transition_state_workflow.backends.gaussian" in validation_imports
+
+
 def test_ase_neb_external_state_writers_live_in_core_with_tool_compatibility() -> None:
     from transition_state_workflow.core import ase_neb_external as core_external
     from transition_state_workflow.tool.ase_neb import external_gaussian
