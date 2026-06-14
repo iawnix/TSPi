@@ -325,6 +325,19 @@ Do not edit the installed skill at
       helpers directly, keep old public imports working, then validate targeted
       ASE/import tests, full tests, script help, and strict workspace smoke
       before pushing.
+- [ ] Move NEB candidate validation policy into ChemGate:
+      plan before code changes is to create `gate/neb_candidate.py` for
+      backend-agnostic NEB candidate validation policy: displacement ladder
+      selection, connectivity threshold policy, IRC requirement policy, and
+      validation-policy payload construction from reactant/product endpoint
+      structures. This is a scientific evidence gate, not an ASE backend
+      validator. Keep `tool/ase_neb/validation.py` as the compatibility and
+      CLI-adapter layer that preserves `ConfigError` behavior and keeps
+      workspace/node writers in place until a later core split. Add
+      import-boundary tests that the gate module imports no `tool`, `tools`,
+      `core`, `backends`, `remote`, or `web` modules, and validate old/new
+      policy behavior plus public script help, full tests, and strict workspace
+      smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
