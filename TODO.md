@@ -529,7 +529,7 @@ Do not edit the installed skill at
       to work. Validate py_compile, import boundaries, ASE NEB migration/pure
       tests, workspace/finalize behavior tests, full pytest, public script
       help, and strict workspace smoke before pushing.
-- [ ] Make `core/workspace_state.py` compose `core/workspace/` primitives:
+- [x] Make `core/workspace_state.py` compose `core/workspace/` primitives:
       plan before code changes is to keep `workspace_state.py` as the
       hypothesis-workspace command/business assembly layer while moving
       duplicated generic mechanisms into the `core/workspace/` package.
@@ -688,6 +688,15 @@ Do not edit the installed skill at
 - `d3218b9` `docs: record validator common checkpoint`
 - `4aed706` `docs: plan validator policy split`
 - `10e9d53` `refactor: split validator pathway event policies`
+- `61694aa` `docs: record validator policy split`
+- `cef03b2` `docs: plan plan-next packet split`
+- `482a50a` `refactor: split plan-next packet snapshot`
+- `5ee0446` `docs: record plan-next packet split`
+- `5c45a3d` `docs: plan core workspace boundary fix`
+- `f7aa6d3` `refactor: move workspace writers out of ase neb`
+- `26ef11d` `docs: record core workspace boundary fix`
+- `2904988` `docs: plan workspace-state primitive reuse`
+- `b51099d` `refactor: reuse core workspace primitives`
 
 ## Completion Log
 
@@ -1372,3 +1381,22 @@ Do not edit the installed skill at
   `/tmp/tswf-core-workspace-smoke.QOgiH4/tssearch_smoke` with validator
   summary `0 errors, 0 warnings` and plan schema `ts-next-action-plan-v1`;
   full pytest `253 passed, 2 skipped`.
+- 2026-06-14: Made `core/workspace_state.py` compose generic
+  `core/workspace/` primitives instead of keeping duplicated local file and
+  evidence mechanisms. `core/workspace/io.py` now owns overwrite-aware text
+  writes; `core/workspace/scaffold.py` owns required workspace-root checks;
+  `core/workspace/evidence.py` owns portable evidence-registry append with the
+  existing `add-evidence` id/path semantics. `workspace_state.py` keeps
+  decision-card markdown, mechanism defaults, pathway setup, and branch
+  reference validation as command policy. `cli/hypothesis_workspace.py` imports
+  the text writer from `core.workspace` directly.
+  Commit: `b51099d refactor: reuse core workspace primitives`.
+- 2026-06-14: Workspace-state primitive reuse validation passed:
+  `git diff --check`; `py_compile` for `core/workspace/*.py`,
+  `core/workspace_state.py`, and `cli/hypothesis_workspace.py`;
+  import-boundary tests `24 passed`; finalize/pathway/backtrack/contract/
+  CLI-envelope behavior tests `88 passed`; full pytest
+  `253 passed, 2 skipped`; script help smoke `18 scripts`; strict workspace
+  validator, normalizer, and plan-next smoke on
+  `/tmp/tswf-workspace-state-smoke.gmvytB/tssearch_smoke` with validator
+  summary `0 errors, 0 warnings` and plan schema `ts-next-action-plan-v1`.
