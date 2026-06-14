@@ -275,6 +275,19 @@ Do not edit the installed skill at
       request. Add tests for old/new import identity and tail-file/template
       behavior without requiring ASE, then validate import boundaries, public
       script help, full tests, and a strict workspace smoke before pushing.
+- [x] Move external-Gaussian NEB continuation execution into the ASE backend:
+      plan before code changes is to move force-route validation, dry-run
+      first-input rendering, calculator attachment, NEB object construction,
+      optimizer execution, path-summary writing, and candidate-quality artifact
+      writing from `tool/ase_neb/external_gaussian.py` into
+      `backends/ase_neb.py`. The tool layer should keep only workspace-scoped
+      orchestration: create/read the source-image node, ask core to write
+      node/tree/evidence state, call the backend runtime, and return the same
+      CLI payload. Keep `ExternalGaussianRun`, `dry_run_gaussian_neb_inputs`,
+      and `continue_gaussian_neb_from_images` available from the old import
+      path, add backend/compatibility tests that do not require Gaussian, and
+      validate import boundaries, public script help, full tests, and a strict
+      workspace smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
@@ -382,6 +395,7 @@ Do not edit the installed skill at
 - `f445633` `refactor: move external gaussian neb state writers into core`
 - `5c0c4a1` `docs: record external gaussian core checkpoint`
 - `dd1bfd3` `refactor: move external gaussian runtime request into backend`
+- `ed6b539` `refactor: move external gaussian continuation runtime into backend`
 
 ## Completion Log
 
@@ -765,3 +779,20 @@ Do not edit the installed skill at
   smoke `18 scripts`; strict workspace validator and normalizer smoke on
   `/tmp/tswf-ase-runtime-request-smoke.VAqNHi/tssearch_smoke` with validator
   summary `0 errors, 0 warnings`.
+- 2026-06-14: Moved external-Gaussian NEB continuation execution into
+  `backends/ase_neb.py`: force-route validation, dry-run first-input
+  rendering, calculator attachment, NEB object construction, optimizer
+  execution, path-summary writing, and candidate-quality artifact writing now
+  live in the ASE backend. `tool/ase_neb/external_gaussian.py` remains the
+  workspace-scoped orchestration wrapper that reads source images, delegates
+  runtime work to the backend, asks core to write node/tree/evidence state, and
+  preserves the existing CLI payload and public import path.
+- 2026-06-14: External-Gaussian continuation backend validation passed:
+  `git diff --check`; `py_compile` for `backends/ase_neb.py`,
+  `tool/ase_neb/external_gaussian.py`, `tests/test_ase_neb_pure.py`, and
+  `tests/test_import_boundaries.py`; targeted import/ASE NEB tests
+  `75 passed, 1 skipped`; reference/no-undefined/architecture tests
+  `18 passed, 1 skipped`; full pytest `230 passed, 2 skipped`; script help
+  smoke `18 scripts`; strict workspace validator and normalizer smoke on
+  `/tmp/tswf-ase-continuation-backend-smoke.LlFK1C/tssearch_smoke` with
+  validator summary `0 errors, 0 warnings`.
