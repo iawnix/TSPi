@@ -347,17 +347,21 @@ Python tooling follows a package layout:
   adapter boundaries for program-specific input/output metadata. The xTB
   backend owns GFN method normalization, charge/UHF handling, direct xTB argv
   construction, fixed-name artifact discovery, and lightweight xTB log parsing
-  for candidate evidence. The QBICS backend owns dMECP command construction,
-  MPI/thread/memory option normalization, candidate/log/`.mwfn` artifact
-  discovery, and lightweight convergence/failure parsing for candidate
-  evidence; it does not reimplement QBICS TSO-SCF internals. The Gaussian
-  backend owns TS/Freq input rendering/preparation, TS/Freq log parsing, and
-  parsed summary/status properties through `GaussianBackendAdapter`; it also
-  owns external-Gaussian NEB SCF-energy and force-block parsers used by the ASE
-  calculator adapter, plus the Gaussian descriptor text parsers for frequency
-  metadata, imaginary-mode vectors, charge tables, frontier orbitals, and
-  dipole moments used by `TSDescriptorExtractionTool`; it also owns Gen/GenECP
-  preflight parsing and repair helpers used by `gaussian_gen_preflight.py`. The
+  for candidate evidence. The QBICS backend family (`qbics.py` plus
+  `qbics_state.py`) owns dMECP command construction, MPI/thread/memory option
+  normalization, total charge and `spin2p1` metadata normalization,
+  `frag1`/`frag2` fragment-state coverage checks, optional `orb1`/`orb2`
+  state-definition metadata, candidate/log/`.mwfn` artifact discovery, and
+  lightweight convergence/failure parsing for candidate evidence; it does not
+  render arbitrary QBICS input files or reimplement QBICS TSO-SCF internals. The
+  Gaussian backend owns TS/Freq input
+  rendering/preparation, TS/Freq log parsing, and parsed summary/status
+  properties through `GaussianBackendAdapter`; it also owns external-Gaussian
+  NEB SCF-energy and force-block parsers used by the ASE calculator adapter,
+  plus the Gaussian descriptor text parsers for frequency metadata,
+  imaginary-mode vectors, charge tables, frontier orbitals, and dipole moments
+  used by `TSDescriptorExtractionTool`; it also owns Gen/GenECP preflight
+  parsing and repair helpers used by `gaussian_gen_preflight.py`. The
   registry-level ASE backend is an explicit runtime-environment adapter for
   in-process ASE workflows: it owns lazy ASE/xTB/Gaussian-calculator loading
   through `require_ase`, `require_xtb`, `require_gaussian_calculator`, and

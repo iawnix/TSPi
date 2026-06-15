@@ -21,6 +21,14 @@ Use caution for intramolecular proton transfer, HAT/PCET, oxygen-site rearrangem
 - Fragment spin multiplicities are chemically plausible.
 - Do not mix `frag` and `orb` state definitions unless deliberate; `orb1/2` takes priority.
 
+The QBICS backend (`src/transition_state_workflow/backends/qbics.py` with
+`qbics_state.py`) can normalize these fields when they are supplied as backend
+request metadata: total `charge`, `spin2p1`, `frag1`/`frag2`, `atom_count`, and
+optional `orb1`/`orb2`. It validates fragment charge sums and, when
+`atom_count` is present, exact atom coverage for each diabatic state. It does
+not parse, rewrite, or repair arbitrary QBICS `.inp` files; authored input
+files remain the source of the actual QBICS calculation.
+
 ## Minimal Input Pattern
 
 ```text

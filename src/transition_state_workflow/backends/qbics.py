@@ -9,6 +9,16 @@ from typing import Any, Mapping, Sequence
 
 from transition_state_workflow.backends.base import FilesystemBackendAdapter
 from transition_state_workflow.backends.contracts import BackendInput, BackendOutput
+from transition_state_workflow.backends.qbics_state import (
+    QbicsFragmentSpec,
+    format_qbics_atom_range,
+    normalize_qbics_atom_indices,
+    normalize_qbics_charge,
+    normalize_qbics_fragments,
+    normalize_qbics_spin2p1,
+    normalize_qbics_state_metadata,
+    positive_int_or_none,
+)
 
 
 QBICS_LOG_SUFFIXES = (".out", ".log", ".txt")
@@ -27,17 +37,6 @@ class QbicsCommandRequest:
     threads: int | str | None = None
     memory_gb: int | str | None = None
     extra_args: tuple[str, ...] = ()
-
-
-def positive_int_or_none(value: int | str | None, *, field: str) -> int | None:
-    """Normalize optional positive integer command parameters."""
-
-    if value is None or str(value).strip() == "":
-        return None
-    parsed = int(value)
-    if parsed <= 0:
-        raise ValueError(f"QBICS {field} must be positive")
-    return parsed
 
 
 def normalize_qbics_task(value: str | None) -> str:
@@ -232,6 +231,7 @@ class QbicsBackendAdapter(FilesystemBackendAdapter):
             raise ValueError("backend request metadata must be a mapping")
         command_request = qbics_request_from_mapping(request)
         task = normalize_qbics_task(command_request.task)
+        state_metadata = normalize_qbics_state_metadata(request)
         return BackendInput(
             backend=self.name,
             files=(command_request.input_file,),
@@ -244,6 +244,7 @@ class QbicsBackendAdapter(FilesystemBackendAdapter):
                 "mpi_ranks": positive_int_or_none(command_request.mpi_ranks, field="mpi_ranks"),
                 "threads": positive_int_or_none(command_request.threads, field="threads"),
                 "memory_gb": positive_int_or_none(command_request.memory_gb, field="memory_gb"),
+                **state_metadata,
             },
         )
 
@@ -265,8 +266,15 @@ __all__ = [
     "QBICS_LOG_SUFFIXES",
     "QbicsBackendAdapter",
     "QbicsCommandRequest",
+    "QbicsFragmentSpec",
     "build_qbics_cli_argv",
     "discover_qbics_artifacts",
+    "format_qbics_atom_range",
+    "normalize_qbics_atom_indices",
+    "normalize_qbics_charge",
+    "normalize_qbics_fragments",
+    "normalize_qbics_spin2p1",
+    "normalize_qbics_state_metadata",
     "normalize_qbics_task",
     "parse_qbics_artifacts",
     "parse_qbics_output_text",

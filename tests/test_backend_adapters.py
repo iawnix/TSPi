@@ -12,6 +12,7 @@ from transition_state_workflow.backends.base import FilesystemBackendAdapter
 from transition_state_workflow.backends.qbics import (
     QbicsBackendAdapter,
     build_qbics_cli_argv,
+    normalize_qbics_atom_indices,
     parse_qbics_output_text,
 )
 from transition_state_workflow.backends.xtb import (
@@ -161,6 +162,99 @@ def test_qbics_backend_prepares_dmecp_command(tmp_path: Path) -> None:
         "memory_gb": 2,
     }
     assert build_qbics_cli_argv.__module__.endswith(".qbics")
+
+
+def test_qbics_backend_normalizes_fragment_state_metadata(tmp_path: Path) -> None:
+    inp = tmp_path / "qbics_input.inp"
+    inp.write_text("task\n dmecp b3lyp\nend\n", encoding="utf-8")
+    prepared = QbicsBackendAdapter().prepare(
+        {
+            "input_file": inp,
+            "charge": "0",
+            "spin2p1": "2",
+            "atom_count": "4",
+            "fragments": {
+                "frag1": [
+                    {"charge": "-1", "spin": "1", "atoms": "1-2"},
+                    {"charge": "1", "spin": "2", "atoms": [3, 4]},
+                ],
+                "frag2": [
+                    {"charge": "0", "spin": "2", "atoms": "1,3"},
+                    {"charge": "0", "spin": "1", "atoms": "2 4"},
+                ],
+            },
+        }
+    )
+
+    assert normalize_qbics_atom_indices("1-2,4") == (1, 2, 4)
+    assert prepared.metadata["charge"] == 0
+    assert prepared.metadata["spin2p1"] == 2
+    assert prepared.metadata["atom_count"] == 4
+    assert prepared.metadata["state_definition_priority"] == "fragment"
+    assert prepared.metadata["fragment_state_charges"] == {"frag1": 0, "frag2": 0}
+    assert prepared.metadata["fragment_states"] == {
+        "frag1": (
+            {"state": "frag1", "charge": -1, "spin": 1, "atoms": (1, 2), "atom_range": "1-2"},
+            {"state": "frag1", "charge": 1, "spin": 2, "atoms": (3, 4), "atom_range": "3-4"},
+        ),
+        "frag2": (
+            {"state": "frag2", "charge": 0, "spin": 2, "atoms": (1, 3), "atom_range": "1,3"},
+            {"state": "frag2", "charge": 0, "spin": 1, "atoms": (2, 4), "atom_range": "2,4"},
+        ),
+    }
+
+
+def test_qbics_backend_rejects_fragment_charge_mismatch(tmp_path: Path) -> None:
+    inp = tmp_path / "qbics_input.inp"
+    inp.write_text("task\n dmecp b3lyp\nend\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="fragment charges sum"):
+        QbicsBackendAdapter().prepare(
+            {
+                "input_file": inp,
+                "charge": 0,
+                "frag1": [{"charge": 1, "spin": 1, "atoms": "1"}],
+                "frag2": [{"charge": 0, "spin": 1, "atoms": "1"}],
+            }
+        )
+
+
+def test_qbics_backend_rejects_fragment_atom_coverage_errors(tmp_path: Path) -> None:
+    inp = tmp_path / "qbics_input.inp"
+    inp.write_text("task\n dmecp b3lyp\nend\n", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="cover 1..3 exactly once"):
+        QbicsBackendAdapter().prepare(
+            {
+                "input_file": inp,
+                "charge": 0,
+                "atom_count": 3,
+                "frag1": [{"charge": 0, "spin": 1, "atoms": "1-2"}],
+                "frag2": [{"charge": 0, "spin": 1, "atoms": "1-3"}],
+            }
+        )
+
+
+def test_qbics_backend_rejects_accidental_mixed_frag_and_orb_states(tmp_path: Path) -> None:
+    inp = tmp_path / "qbics_input.inp"
+    inp.write_text("task\n dmecp b3lyp\nend\n", encoding="utf-8")
+    request = {
+        "input_file": inp,
+        "charge": 0,
+        "atom_count": 1,
+        "frag1": [{"charge": 0, "spin": 1, "atoms": "1"}],
+        "frag2": [{"charge": 0, "spin": 1, "atoms": "1"}],
+        "orb1": "state_a",
+        "orb2": "state_b",
+    }
+
+    with pytest.raises(ValueError, match="mixed QBICS frag/orb"):
+        QbicsBackendAdapter().prepare(request)
+
+    prepared = QbicsBackendAdapter().prepare({**request, "allow_mixed_state_definitions": True})
+
+    assert prepared.metadata["state_definition_priority"] == "orbital"
+    assert prepared.metadata["orbital_states"] == {"orb1": "state_a", "orb2": "state_b"}
 
 
 def test_qbics_backend_discovers_candidate_and_scf_failure(tmp_path: Path) -> None:

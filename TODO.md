@@ -5,6 +5,13 @@ This file tracks the standalone refactor branch under
 Do not edit the installed skill at
 `/home/iaw/.codex/skills/transition-state-workflow` during this refactor.
 
+## Reading Notes
+
+- Older completed checklist entries preserve the plan text from that checkpoint.
+  When a later checkpoint supersedes an internal compatibility path or module
+  name, the current architecture is defined by `SKILL.md`, live source code,
+  import-boundary tests, and the latest completion log.
+
 ## Ground Rules
 
 - Preserve the scientific contract: endpoint readiness, candidate generation,
@@ -729,6 +736,20 @@ Do not edit the installed skill at
       Validate py_compile, import boundaries, backend-registry tests, affected
       ASE NEB pure/runtime tests, full pytest, public script help smoke, and
       strict workspace smoke before pushing.
+- [x] Tighten the QBICS backend contract so TODO, references, and code agree:
+      plan before code changes is to keep `backends/qbics.py` as a candidate
+      generation adapter, not a QBICS input renderer or TSO-SCF reimplementation.
+      Add typed normalization for total charge, `spin2p1`, `frag1`/`frag2`
+      fragment records, atom-index ranges, and optional `orb1`/`orb2` state
+      definitions. Validate that fragment charges sum to the total charge and,
+      when `atom_count` is provided, that every atom appears exactly once in
+      each diabatic state. Reject accidental mixed `frag` and `orb` state
+      definitions unless the request explicitly marks the mix as deliberate.
+      Expose the normalized state metadata through `BackendInput.metadata`, add
+      regression tests for valid and invalid QBICS state requests, update docs
+      only where the implementation scope needs clarification, then validate
+      py_compile, targeted backend/reference/import tests, full pytest, public
+      script help smoke, and push the checkpoint.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
@@ -1756,5 +1777,23 @@ Do not edit the installed skill at
   tests `123 passed`; full pytest `268 passed, 2 skipped`; public script help
   smoke `18 scripts`; strict workspace init/decision-card/validate/normalize/
   plan-next smoke on `/tmp/tswf-backend-smoke.*` with validator summary
+  `0 errors, 0 warnings`, normalize schema `ts-explorer-graph-v2`, and plan
+  schema `ts-next-action-plan-v1`.
+- 2026-06-15: Tightened the QBICS backend contract so implementation and docs
+  agree. `backends/qbics_state.py` now owns total `charge`, `spin2p1`,
+  `frag1`/`frag2` fragment records, compact atom-index ranges, `atom_count`,
+  and optional `orb1`/`orb2` state-definition normalization. `backends/qbics.py`
+  composes that state metadata with dMECP command construction, artifact
+  discovery, and lightweight log parsing. The backend validates fragment charge
+  sums against total charge, exact per-state atom coverage when `atom_count` is
+  present, and accidental mixed `frag`/`orb` definitions. `SKILL.md` and
+  `references/qbics_dmecp.md` now state that the backend validates request
+  metadata but does not render or repair arbitrary QBICS `.inp` files.
+- 2026-06-15: QBICS backend contract validation passed:
+  `git diff --check`; `py_compile` for all `src` and `tests` Python files;
+  targeted backend/reference/import tests `47 passed`; full pytest
+  `272 passed, 2 skipped`; public script help smoke `18 scripts`; strict
+  workspace init/decision-card/validate/normalize/plan-next smoke on
+  `/tmp/tswf-qbics-contract-smoke.aBF9mj/tssearch_smoke` with validator summary
   `0 errors, 0 warnings`, normalize schema `ts-explorer-graph-v2`, and plan
   schema `ts-next-action-plan-v1`.
