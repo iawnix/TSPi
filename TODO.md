@@ -695,6 +695,37 @@ Do not edit the installed skill at
       new xTB backend behavior tests, affected ASE NEB pure/runtime tests,
       full pytest, public script help smoke, and strict workspace smoke before
       pushing.
+- [ ] Implement a real QBICS backend instead of leaving
+      `backends/qbics.py` as a filesystem-adapter scaffold:
+      plan before code changes is to make `src/transition_state_workflow/backends/qbics.py`
+      own QBICS-specific candidate-generation mechanics rather than only
+      generic file metadata. Add typed request/result helpers for QBICS/dMECP
+      command construction, fragment/state/charge/multiplicity parameter
+      normalization, input/output artifact discovery, job-log parsing for
+      convergence and numerical failure diagnostics, and stable backend-neutral
+      properties that ChemGate can later classify as candidate evidence rather
+      than accepted TS proof. Keep TSO-SCF kernel behavior clearly outside this
+      Python workflow layer: the backend should orchestrate QBICS inputs,
+      commands, artifacts, and parsed evidence, not pretend to reimplement the
+      QBICS SCF internals. Update docs and tests so QBICS is no longer
+      described as a complete backend until these mechanics are implemented.
+      Validate py_compile, import boundaries, new QBICS backend behavior tests,
+      existing QBICS reference/contract tests, full pytest, public script help
+      smoke, and strict workspace smoke before pushing.
+- [ ] Clarify the ASE backend registry boundary:
+      plan before code changes is to decide whether the registry-level
+      `AseBackendAdapter` should become a real ASE backend adapter or be
+      renamed/reduced so it is not mistaken for the ASE-NEB runtime backend.
+      The current real ASE-NEB execution logic lives under
+      `backends/ase_neb/`; `backends/ase.py` owns lazy dependency loading for
+      ASE, xTB Python bindings, and the ASE Gaussian calculator. The fix should
+      keep this dependency-loading utility role explicit, avoid duplicating
+      `backends/ase_neb/` runtime behavior, and make registry/docs/tests
+      accurately describe whether `ase` means a generic ASE adapter, an
+      environment/dependency adapter, or a namespaced ASE-NEB backend family.
+      Validate py_compile, import boundaries, backend-registry tests, affected
+      ASE NEB pure/runtime tests, full pytest, public script help smoke, and
+      strict workspace smoke before pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
