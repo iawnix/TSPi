@@ -676,6 +676,25 @@ Do not edit the installed skill at
       no longer documents a `tool/` directory. Validate py_compile, focused
       import/remote/finalize/pathway/parser tests, full pytest, public script
       help smoke, and strict workspace smoke before pushing.
+- [ ] Implement a real xTB backend instead of leaving
+      `backends/xtb.py` as a filesystem-adapter scaffold:
+      plan before code changes is to make `src/transition_state_workflow/backends/xtb.py`
+      own xTB-specific backend mechanics that are currently scattered across
+      ASE-NEB runtime, node-scoped command execution, validator artifact
+      checks, and reference docs. Add typed request/result helpers for xTB
+      method and runtime parameter normalization, charge/multiplicity/UHF
+      handling, CLI argv construction for optimization and single-point
+      candidate runs, fixed-name artifact discovery (`xtbopt.xyz`, `xtb.trj`,
+      `xtbrestart`, `charges`, `wbo`, logs), and lightweight output parsing
+      for energy/convergence evidence where stable fixtures exist. Keep
+      `backends/ase_neb/` responsible for ASE orchestration and calculator
+      attachment, but make its xTB calculator setup reuse the xTB backend's
+      method/parameter normalization so xTB rules have one owner. Update docs
+      and tests so xTB is no longer described as a complete backend until
+      these mechanics are implemented. Validate py_compile, import boundaries,
+      new xTB backend behavior tests, affected ASE NEB pure/runtime tests,
+      full pytest, public script help smoke, and strict workspace smoke before
+      pushing.
 - [x] Move read-only gate logic (`evidence_gates`, `normalize_view`,
       `validate_workspace`) into `gate/`, with legacy `tool/` paths kept as
       compatibility re-exports.
