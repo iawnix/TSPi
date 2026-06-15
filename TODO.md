@@ -55,8 +55,11 @@ Do not edit the installed skill at
       input/output adapters so program-specific parsing can be moved out of
       control-flow code.
 - [x] Add concrete Gaussian, xTB, ASE, and QBICS backend adapter modules.
-      Gaussian now parses TS/Freq logs; xTB, ASE, and QBICS currently expose
-      adapter boundaries plus filesystem artifact metadata.
+      Gaussian now parses TS/Freq logs; xTB and QBICS now prepare direct
+      candidate-generation commands and parse lightweight artifact/log
+      evidence; the registry-level ASE adapter now explicitly describes the
+      in-process ASE runtime environment while `backends/ase_neb/` owns ASE-NEB
+      execution.
 - [x] Move Gaussian TS/Freq log parsing into `backends/gaussian.py`; keep
       `tool/parse_gaussian_ts_result.py` as the artifact-writing CLI and
       compatibility import path.
@@ -676,7 +679,7 @@ Do not edit the installed skill at
       no longer documents a `tool/` directory. Validate py_compile, focused
       import/remote/finalize/pathway/parser tests, full pytest, public script
       help smoke, and strict workspace smoke before pushing.
-- [ ] Implement a real xTB backend instead of leaving
+- [x] Implement a real xTB backend instead of leaving
       `backends/xtb.py` as a filesystem-adapter scaffold:
       plan before code changes is to make `src/transition_state_workflow/backends/xtb.py`
       own xTB-specific backend mechanics that are currently scattered across
@@ -695,7 +698,7 @@ Do not edit the installed skill at
       new xTB backend behavior tests, affected ASE NEB pure/runtime tests,
       full pytest, public script help smoke, and strict workspace smoke before
       pushing.
-- [ ] Implement a real QBICS backend instead of leaving
+- [x] Implement a real QBICS backend instead of leaving
       `backends/qbics.py` as a filesystem-adapter scaffold:
       plan before code changes is to make `src/transition_state_workflow/backends/qbics.py`
       own QBICS-specific candidate-generation mechanics rather than only
@@ -712,7 +715,7 @@ Do not edit the installed skill at
       Validate py_compile, import boundaries, new QBICS backend behavior tests,
       existing QBICS reference/contract tests, full pytest, public script help
       smoke, and strict workspace smoke before pushing.
-- [ ] Clarify the ASE backend registry boundary:
+- [x] Clarify the ASE backend registry boundary:
       plan before code changes is to decide whether the registry-level
       `AseBackendAdapter` should become a real ASE backend adapter or be
       renamed/reduced so it is not mistaken for the ASE-NEB runtime backend.
@@ -899,6 +902,10 @@ Do not edit the installed skill at
 - `5176333` `docs: record v1 cli cleanup gate`
 - `dd928ed` `docs: plan legacy tool package removal`
 - `88636d6` `refactor: remove legacy tool package`
+- `5f8da58` `docs: record legacy tool package removal`
+- `c299c63` `docs: plan xtb backend implementation`
+- `c41bc9b` `docs: plan remaining backend scaffolds`
+- `7a1db9d` `refactor: implement concrete backend adapters`
 
 ## Completion Log
 
@@ -1730,5 +1737,24 @@ Do not edit the installed skill at
   2 skipped`; public script help smoke `18 scripts`; strict workspace
   init/decision-card/validate/normalize/plan-next smoke on
   `/tmp/tswf-remove-tool-smoke.AdzLvx/tssearch_smoke` with validator summary
+  `0 errors, 0 warnings`, normalize schema `ts-explorer-graph-v2`, and plan
+  schema `ts-next-action-plan-v1`.
+- 2026-06-15: Implemented concrete xTB and QBICS backend adapters and clarified
+  the registry-level ASE boundary. `backends/xtb.py` now owns GFN method
+  normalization, charge/UHF handling, direct xTB argv construction, fixed-name
+  artifact discovery, lightweight log parsing, and ASE calculator parameter
+  normalization reused by `backends/ase_neb/runtime.py`. `backends/qbics.py`
+  now owns QBICS dMECP command construction, MPI/thread/memory option
+  normalization, candidate/log/`.mwfn` artifact discovery, lightweight
+  convergence/failure parsing, and candidate-only metadata. `backends/ase.py`
+  now overrides registry `prepare`/`parse` as an explicit ASE runtime
+  environment adapter while `backends/ase_neb/` remains the execution backend.
+  Commit: `7a1db9d refactor: implement concrete backend adapters`.
+- 2026-06-15: Concrete backend adapter validation passed:
+  `git diff --check`; `py_compile` for all `src` and `tests` Python files;
+  new backend behavior tests `8 passed`; targeted backend/import/ASE/reference
+  tests `123 passed`; full pytest `268 passed, 2 skipped`; public script help
+  smoke `18 scripts`; strict workspace init/decision-card/validate/normalize/
+  plan-next smoke on `/tmp/tswf-backend-smoke.*` with validator summary
   `0 errors, 0 warnings`, normalize schema `ts-explorer-graph-v2`, and plan
   schema `ts-next-action-plan-v1`.
