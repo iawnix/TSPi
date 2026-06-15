@@ -927,6 +927,7 @@ Do not edit the installed skill at
 - `c299c63` `docs: plan xtb backend implementation`
 - `c41bc9b` `docs: plan remaining backend scaffolds`
 - `7a1db9d` `refactor: implement concrete backend adapters`
+- `14d9312` `refactor: tighten qbics backend state contract`
 
 ## Completion Log
 
@@ -1789,6 +1790,7 @@ Do not edit the installed skill at
   present, and accidental mixed `frag`/`orb` definitions. `SKILL.md` and
   `references/qbics_dmecp.md` now state that the backend validates request
   metadata but does not render or repair arbitrary QBICS `.inp` files.
+  Commit: `14d9312 refactor: tighten qbics backend state contract`.
 - 2026-06-15: QBICS backend contract validation passed:
   `git diff --check`; `py_compile` for all `src` and `tests` Python files;
   targeted backend/reference/import tests `47 passed`; full pytest
