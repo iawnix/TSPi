@@ -13,6 +13,7 @@ from transition_state_workflow.backends.ase import (
     require_gaussian_calculator,
     require_xtb,
 )
+from transition_state_workflow.backends.xtb import xtb_ase_calculator_params
 
 from .contracts import AseNebConfigError, AseNebRuntimeRequest, ExternalGaussianNebRuntimeRequest
 from .gaussian_external import (
@@ -37,14 +38,7 @@ def create_calculator(calc_cfg: dict[str, Any], image_index: int, calc_root: Pat
         require_xtb()
         from xtb.ase.calculator import XTB
 
-        params.setdefault("method", calc_cfg.get("method", "GFN2-xTB"))
-        if "charge" in calc_cfg and "charge" not in params:
-            params["charge"] = calc_cfg["charge"]
-        if "uhf" in calc_cfg and "uhf" not in params:
-            params["uhf"] = calc_cfg["uhf"]
-        if "solvent" in calc_cfg and "solvent" not in params:
-            params["solvent"] = calc_cfg["solvent"]
-        return XTB(**params)
+        return XTB(**xtb_ase_calculator_params(calc_cfg))
 
     if calc_type == "gaussian":
         require_gaussian_calculator()

@@ -344,17 +344,25 @@ Python tooling follows a package layout:
   `node_writers.py` forwards to the core state writers. There is no
   `tools/ase_neb/workspace.py`; workspace mutation is owned by `core/workspace/`.
 - `src/transition_state_workflow/backends/`: Gaussian, xTB, ASE, and QBICS
-  adapter boundaries for program-specific input/output metadata. The Gaussian
+  adapter boundaries for program-specific input/output metadata. The xTB
+  backend owns GFN method normalization, charge/UHF handling, direct xTB argv
+  construction, fixed-name artifact discovery, and lightweight xTB log parsing
+  for candidate evidence. The QBICS backend owns dMECP command construction,
+  MPI/thread/memory option normalization, candidate/log/`.mwfn` artifact
+  discovery, and lightweight convergence/failure parsing for candidate
+  evidence; it does not reimplement QBICS TSO-SCF internals. The Gaussian
   backend owns TS/Freq input rendering/preparation, TS/Freq log parsing, and
   parsed summary/status properties through `GaussianBackendAdapter`; it also
   owns external-Gaussian NEB SCF-energy and force-block parsers used by the ASE
   calculator adapter, plus the Gaussian descriptor text parsers for frequency
   metadata, imaginary-mode vectors, charge tables, frontier orbitals, and
   dipole moments used by `TSDescriptorExtractionTool`; it also owns Gen/GenECP
-  preflight parsing and repair helpers used by `gaussian_gen_preflight.py`.
-  The ASE backend owns lazy ASE/xTB/Gaussian-calculator runtime loading through
-  `require_ase`, `require_xtb`, `require_gaussian_calculator`, and
-  `import_ase_bits`. `backends/ase_neb/` is the ASE NEB backend subpackage:
+  preflight parsing and repair helpers used by `gaussian_gen_preflight.py`. The
+  registry-level ASE backend is an explicit runtime-environment adapter for
+  in-process ASE workflows: it owns lazy ASE/xTB/Gaussian-calculator loading
+  through `require_ase`, `require_xtb`, `require_gaussian_calculator`, and
+  `import_ase_bits`, while `backends/ase_neb/` is the ASE NEB execution
+  backend subpackage:
   `contracts.py` owns errors, constants, and request/result dataclasses;
   `images.py` owns endpoint/image/XYZ loading, interpolation, and image-set
   IO; `gaussian_external.py` owns the external-Gaussian calculator request
