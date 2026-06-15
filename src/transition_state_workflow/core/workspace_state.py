@@ -195,23 +195,26 @@ def create_ts_branch_decision_artifacts_from_cli_args(args: argparse.Namespace) 
 
 ## Reaction-Center Expectations
 
-- Fill in expected bond, angle, fragment, spin, or charge changes before execution.
+- Track the mapped reaction-center bonds, angles, fragments, spin, and charge
+  observables named by this branch before promoting any scientific claim.
 
 ## Mechanism Analysis Plan / Required Diagnostics
 
-- Reaction type:
-- Reaction center:
-- Electronic / spin / charge:
-- Orbital / population:
-- Energy / barrier expectation:
+- Reaction type: compare the branch result with the intended elementary step.
+- Reaction center: record mapped forming and breaking bonds plus key angles.
+- Electronic / spin / charge: confirm charge and multiplicity remain consistent.
+- Orbital / population: record unavailable unless the selected output contains descriptors.
+- Energy / barrier expectation: report only energies available at the selected method.
 
 ## Evidence That Would Support This Hypothesis
 
-- Fill in measurable criteria.
+- Parsed output preserves the intended atom mapping and reaction-center identity.
+- The result reaches the next evidence layer allowed by the workflow state model.
 
 ## Evidence That Would Refute This Hypothesis
 
-- Fill in closure or backtracking criteria.
+- The structure collapses to the wrong endpoint, wrong reaction center, or a
+  pose-only change that does not test the stated mechanism.
 """
     decision_card_md = f"""# TS Decision Card: {args.node_id}
 
@@ -223,7 +226,8 @@ def create_ts_branch_decision_artifacts_from_cli_args(args: argparse.Namespace) 
 
 Chosen operation/route: {args.operation}
 
-Explain why this is the lowest-cost chemically meaningful test now.
+This operation is the planned chemically meaningful test for the branch
+hypothesis above; later promotion still requires the workflow evidence gates.
 
 ## Input / Dependency Nodes
 
@@ -246,9 +250,11 @@ Explain why this is the lowest-cost chemically meaningful test now.
 
 ## Cost And Risk
 
-- Compute cost:
-- Numerical risk:
-- Chemical risk:
+- Compute cost: bounded by the selected operation and node-scoped execution plan.
+- Numerical risk: convergence, parser, and engine failures must be closed as
+  numerical or administrative outcomes unless they carry chemical evidence.
+- Chemical risk: endpoint collapse, wrong-mode motion, or failed connectivity
+  must trigger reflection and branch/backtrack planning.
 
 ## Next If Supported
 

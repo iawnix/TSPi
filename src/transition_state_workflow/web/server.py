@@ -15,6 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
 
+from transition_state_workflow.base.rationale import lint_node_rationale
 from transition_state_workflow.base.workspace import ExplorerServerConfig, ExplorerWorkspaceConfig
 from transition_state_workflow.base.explorer_registry import default_registry_path
 from transition_state_workflow.web.assets import read_explorer_index_html
@@ -839,6 +840,7 @@ def load_node_payload(source: Path, node_id: str) -> dict[str, Any]:
     return {
         "node_id": node_id,
         "node": node_for_ui,
+        "rationale_lint": lint_node_rationale(source, node_id, node_json).to_dict(),
         "markdown": markdown,
         "evidence": records,
         "files": files,

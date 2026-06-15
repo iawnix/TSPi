@@ -98,6 +98,10 @@ def test_migrated_ase_neb_candidate_node_is_strict_v2(tmp_path: Path) -> None:
         stage="endpoint_minima_validation",
         operation="unit-test-endpoint-minima",
     )
+    endpoint_node["rationale_contract"] = {
+        "mode": "legacy_import",
+        "reason": "migration test constructs a finalized node without pre-execution markdown",
+    }
     write_json(endpoint_dir / "node.json", endpoint_node)
     (endpoint_dir / "reflection.md").write_text(
         "## Computational Outcome\nEndpoint minima checks passed.\n\n"
@@ -129,6 +133,10 @@ def test_migrated_ase_neb_candidate_node_is_strict_v2(tmp_path: Path) -> None:
         stage="neb",
         operation="ase-neb",
     )
+    node["rationale_contract"] = {
+        "mode": "legacy_import",
+        "reason": "migration test constructs a finalized node without pre-execution markdown",
+    }
     write_json(node_dir / "node.json", node)
     (node_dir / "reflection.md").write_text(
         "## Computational Outcome\nNEB produced a candidate geometry.\n\n"

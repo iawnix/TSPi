@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from transition_state_workflow.base.rationale import lint_node_rationale
 from transition_state_workflow.config.state_contract import TREE_SCHEMA
 from transition_state_workflow.util.json_io import read_json_object_required, write_json_object
 from transition_state_workflow.util.path_utils import clean_string, portable_record_path, safe_identifier_token
@@ -88,6 +89,7 @@ def start_ts_workspace_node(request: NodeStartRequest) -> None:
     node_payload = read_json_object_required(node_path)
     tree_payload = read_json_object_required(root / "tree.json")
     validate_start_request(node_payload, request)
+    validate_pre_execution_rationale(root, request.node_id, node_payload)
 
     display = node_payload.get("display") if isinstance(node_payload.get("display"), dict) else {}
     primary_file = clean_string(request.primary_file) or clean_string(display.get("primary_file"))
@@ -140,6 +142,14 @@ def validate_start_request(node_payload: dict[str, Any], request: NodeStartReque
         raise SystemExit(f"node is already {lifecycle_state}; use --force to restart intentionally")
     if claim_status != "not_evaluated" or outcome != "none":
         raise SystemExit("start-node refuses to restart an evaluated node; create a new branch instead")
+
+
+def validate_pre_execution_rationale(root: Path, node_id: str, node_payload: dict[str, Any]) -> None:
+    """Reject runnable work when the pre-execution rationale is still a draft."""
+
+    rationale = lint_node_rationale(root, node_id, node_payload)
+    if not rationale.ok_to_start:
+        raise SystemExit(f"start-node refused: incomplete pre-execution rationale; {rationale.summary()}")
 
 
 def add_start_event(tree_payload: dict[str, Any], request: NodeStartRequest, timestamp: str) -> list[dict[str, Any]]:

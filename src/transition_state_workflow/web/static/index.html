@@ -2227,6 +2227,13 @@ function renderRationale(payload) {
     return emptyBlock("No rationale.", "This node has no hypothesis or decision card markdown.");
   }
   const parts = [];
+  const lint = payload.rationale_lint || {};
+  if (lint.status && lint.status !== "complete" && lint.status !== "legacy_import") {
+    parts.push(`<div class="summary-card">
+      <div class="summary-title">Rationale Status</div>
+      <div class="summary-text">${escapeHtml(lint.summary || "Pre-execution rationale is incomplete.")}</div>
+    </div>`);
+  }
   if (hypothesis) {
     parts.push(`<section class="md"><h2>Hypothesis Detail</h2>${renderMarkdown(hypothesis)}</section>`);
   }

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from transition_state_workflow.base.rationale import lint_node_rationale
 from transition_state_workflow.gate.evidence import accepted_ts_missing_evidence_gates
 from transition_state_workflow.util.path_utils import clean_string, relative_path_or_absolute
 
@@ -36,6 +37,7 @@ def validate_node_finalization_artifacts(
         claim = clean_string(node_json.get("claim_status"))
         has_post_execution_state = lifecycle == "closed" or run_state in {"completed", "error", "stopped"}
         reflection_path = source / "nodes" / node_id / "reflection.md"
+        validate_pre_execution_rationale(source, node_id, node_json, findings)
         if has_post_execution_state:
             validate_reflection_is_finalized(source, node_id, reflection_path, claim, findings)
         if claim != "not_evaluated" and not records_by_node.get(node_id):
@@ -137,6 +139,41 @@ def iter_upstream_nodes(
 
     visit(node_id)
     return out
+
+
+def validate_pre_execution_rationale(
+    source: Path,
+    node_id: str,
+    node_json: dict[str, Any],
+    findings: list[Finding],
+) -> None:
+    """Validate the node's pre-execution hypothesis and decision-card rationale."""
+
+    rationale = lint_node_rationale(source, node_id, node_json)
+    if rationale.ok_to_start:
+        return
+    findings.append(
+        Finding(
+            rationale_finding_severity(node_json),
+            "incomplete_pre_execution_rationale",
+            rationale.summary(),
+            path=relative_path_or_absolute(source, source / "nodes" / node_id / "decision_card.md"),
+            node_id=node_id,
+        )
+    )
+
+
+def rationale_finding_severity(node_json: dict[str, Any]) -> str:
+    """Return validator severity for an incomplete pre-execution rationale."""
+
+    lifecycle = clean_string(node_json.get("lifecycle_state"))
+    run_state = clean_string(node_json.get("run_state"))
+    claim = clean_string(node_json.get("claim_status"))
+    if claim == "accepted_ts" or lifecycle in {"active", "closed", "superseded", "archived"}:
+        return "error"
+    if run_state in {"pending", "running", "parsing", "completed", "error", "stopped"}:
+        return "error"
+    return "warning"
 
 
 def validate_reflection_is_finalized(
@@ -241,6 +278,7 @@ __all__ = [
     "validate_node_finalization_artifacts",
     "candidate_has_endpoint_gate",
     "iter_upstream_nodes",
+    "validate_pre_execution_rationale",
     "validate_reflection_is_finalized",
     "reflection_has_empty_template_bullets",
 ]
