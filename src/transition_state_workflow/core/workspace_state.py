@@ -11,6 +11,7 @@ from transition_state_workflow.util.json_io import read_json_object_required, wr
 from transition_state_workflow.util.path_utils import relative_path_or_absolute
 from transition_state_workflow.core.workspace import (
     BranchReferenceError,
+    DEFAULT_PREFLIGHT_NODE_ID,
     append_portable_evidence_record,
     clean_optional_node_ref,
     ensure_workspace_root_has_manifest_and_tree,
@@ -18,6 +19,7 @@ from transition_state_workflow.core.workspace import (
     utc_timestamp,
     validate_branch_references,
     write_initial_workspace_files,
+    write_mechanism_preflight_node,
     write_prepared_branch_state,
     write_text_file_if_allowed,
 )
@@ -26,7 +28,7 @@ from transition_state_workflow.core.workspace import (
 def initialize_ts_hypothesis_workspace_files_from_cli_args(args: argparse.Namespace) -> Path:
     """Create the root v2 files for a chemistry-hypothesis TS workspace."""
 
-    return initialize_ts_hypothesis_workspace_files(
+    root = initialize_ts_hypothesis_workspace_files(
         root=args.root,
         system=args.system,
         charge=args.charge,
@@ -36,6 +38,13 @@ def initialize_ts_hypothesis_workspace_files_from_cli_args(args: argparse.Namesp
         bond_changes=tuple(args.bond_change or ()),
         force=bool(args.force),
     )
+    if bool(getattr(args, "with_preflight_node", False)):
+        write_mechanism_preflight_node(
+            root=root,
+            node_id=DEFAULT_PREFLIGHT_NODE_ID,
+            force=bool(args.force),
+        )
+    return root
 
 
 def initialize_ts_hypothesis_workspace_files(
@@ -112,6 +121,16 @@ def initialize_ts_hypothesis_workspace_files(
     initialize_pathway_model_if_missing(source, system=system, timestamp=now, mode="unknown")
     write_text_file_if_allowed(source / "knowledge_base.md", knowledge_base, overwrite_existing=force)
     return source
+
+
+def write_mechanism_preflight_node_from_cli_args(args: argparse.Namespace) -> str:
+    """CLI adapter for creating the canonical mechanism-preflight root node."""
+
+    return write_mechanism_preflight_node(
+        root=args.root,
+        node_id=args.node_id,
+        force=bool(args.force),
+    )
 
 
 def append_ts_workspace_evidence_record_from_cli_args(args: argparse.Namespace) -> None:

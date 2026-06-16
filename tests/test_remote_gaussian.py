@@ -57,9 +57,12 @@ def test_run_remote_gaussian_uses_node_outputs_as_run_cwd_for_node_inputs(tmp_pa
     assert "RUN_DIR=/remote/tssearch_unit/nodes/n010_candidate/outputs" in stdout
     assert "INPUT=../inputs/candidate.gjf" in stdout
     assert "OUTPUT=candidate.out" in stdout
+    assert "METADATA=candidate.run_metadata.txt" in stdout
+    assert "DRIVER=candidate.g16_driver.out" in stdout
     assert "GAUSS_SCRDIR=/remote/tssearch_unit/nodes/n010_candidate/scratch/gaussian" in stdout
     assert "login.example:/remote/tssearch_unit/nodes/n010_candidate/inputs/candidate.gjf" in stdout
-    assert '"$G16" < "$INPUT" > "$OUTPUT" 2> g16_driver.out' in stdout
+    assert "candidate.run_gaussian_on_compute.sh" in stdout
+    assert '"$G16" < "$INPUT" > "$OUTPUT" 2> "$DRIVER"' in stdout
     assert '"$G16" "$INPUT" "$OUTPUT"' not in stdout
     assert "output_exists=false" in stdout
     assert "expected Gaussian output missing or empty under outputs/" in stdout
@@ -94,6 +97,7 @@ def test_run_remote_gaussian_can_stage_stdout_in_scratch_before_copyback(tmp_pat
     assert "SCRATCH_STDOUT=true" in stdout
     assert 'echo "scratch_stdout=$SCRATCH_STDOUT"' in stdout
     assert 'STDOUT_SCRATCH_DIR="$GAUSS_SCRDIR/stdout"' in stdout
+    assert 'SCRATCH_DRIVER="$STDOUT_SCRATCH_DIR/$DRIVER"' in stdout
     assert '"$G16" < "$INPUT" > "$SCRATCH_OUTPUT" 2> "$SCRATCH_DRIVER"' in stdout
     assert 'mv -f "$OUTPUT.tmp" "$OUTPUT"' in stdout
     assert "candidate.out.tmp" not in stdout
@@ -205,18 +209,24 @@ def test_remote_gaussian_monitor_builds_node_scoped_status_tail_and_fetch_comman
     status = remote_gaussian_monitor.status_command(layout)
     assert "RUN_DIR=/remote/tssearch_unit/nodes/n010_candidate/outputs" in status
     assert "run_metadata.*.txt" in status
-    assert "submit_receipt remote_pid" in status
+    assert "*.run_metadata.txt" in status
+    assert "*.submit_receipt.txt" in status
+    assert "remote_pid" in status
     assert "kill -0" in status
 
     tail = remote_gaussian_monitor.tail_command(layout, filename="auto", lines=25)
     assert "LINES=25" in tail
     assert "find . -maxdepth 1 -type f -name '*.out'" in tail
+    assert "*.runner.nohup" in tail
+    assert "*.run_metadata.txt" in tail
     assert "tail_file=$TARGET" in tail
 
     fetch = remote_gaussian_monitor.fetch_list_command(layout, list(remote_gaussian_monitor.DEFAULT_FETCH_PATTERNS))
     assert "cd \"$RUN_DIR\"" in fetch
     assert "-name '*.out'" in fetch
     assert "-name 'run_metadata*.txt'" in fetch
+    assert "-name '*.run_metadata.txt'" in fetch
+    assert "-name '*.runner.nohup'" in fetch
     assert "-printf '%f\\n'" in fetch
 def test_remote_status_tail_fetch_wrappers_expose_help() -> None:
     for script in (REMOTE_STATUS_CLI, REMOTE_TAIL_CLI, REMOTE_FETCH_CLI):
@@ -264,23 +274,23 @@ def test_submit_background_writes_receipt_and_verifies_startup(
             command = argv[-1]
             assert shlex.split(command)[:3] == ["ssh", "compute-0-30", "--"]
             assert shlex.split(command)[3].startswith("bash -lc ")
-            assert "rm -f runner.nohup run_metadata.txt" in command
-            assert "submit_receipt.txt" in command
-            assert "nohup bash ./run_gaussian_on_compute.sh > runner.nohup" in command
+            assert "rm -f candidate.runner.nohup candidate.run_metadata.txt candidate.submit_receipt.txt" in command
+            assert "candidate.submit_receipt.txt" in command
+            assert "nohup bash ./candidate.run_gaussian_on_compute.sh > candidate.runner.nohup" in command
             return subprocess.CompletedProcess(argv, 0, stdout="23932\n", stderr="submit stderr\n")
         command = argv[-1]
         assert shlex.split(command)[:3] == ["ssh", "compute-0-30", "--"]
         assert shlex.split(command)[3].startswith("bash -lc ")
-        assert "submit_receipt.txt" in command
-        assert "runner.nohup" in command
-        assert "run_metadata.txt" in command
+        assert "candidate.submit_receipt.txt" in command
+        assert "candidate.runner.nohup" in command
+        assert "candidate.run_metadata.txt" in command
         assert "remote_pid" in command
         assert "kill -0" in command
         return subprocess.CompletedProcess(argv, 0, stdout="verified\n", stderr="")
 
     monkeypatch.setattr(remote_exec.subprocess, "run", fake_run)
 
-    assert remote_gaussian.submit_background(args, layout, "run_gaussian_on_compute.sh") == 0
+    assert remote_gaussian.submit_background(args, layout, layout.runner_name) == 0
     assert len(calls) == 2
     captured = capsys.readouterr()
     assert "poll:  ssh login.example " in captured.out
@@ -329,8 +339,8 @@ def test_submit_background_failure_prints_submit_and_verify_streams(
 
     monkeypatch.setattr(remote_exec.subprocess, "run", fake_run)
 
-    with pytest.raises(CliError, match="could not verify runner.nohup or run_metadata.txt"):
-        remote_gaussian.submit_background(args, layout, "run_gaussian_on_compute.sh")
+    with pytest.raises(CliError, match="could not verify candidate.runner.nohup or candidate.run_metadata.txt"):
+        remote_gaussian.submit_background(args, layout, layout.runner_name)
 
     captured = capsys.readouterr()
     assert "--- background startup verification stdout ---" in captured.err

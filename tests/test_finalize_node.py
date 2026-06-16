@@ -1344,6 +1344,7 @@ def test_validator_warns_for_root_engine_artifacts_and_bad_checkpoint_paths(tmp_
     root = tmp_path / "tssearch_unit"
     initialize_workspace(root)
     (root / "stray.chk").write_text("checkpoint should not be at root\n", encoding="utf-8")
+    (root / "candidate.run_metadata.txt").write_text("metadata should not be at root\n", encoding="utf-8")
     (root / "xtbopt.xyz").write_text("3\nbad root xtb artifact\nH 0 0 0\nH 0 0 1\nH 0 1 0\n", encoding="utf-8")
     input_path = root / "nodes" / "n010_candidate" / "inputs" / "candidate.gjf"
     input_path.write_text("%chk=outputs/candidate.chk\n#p opt freq\n\n", encoding="utf-8")

@@ -20,10 +20,15 @@ DEFAULT_FETCH_PATTERNS = (
     "*.log",
     "*.chk",
     "run_metadata*.txt",
+    "*.run_metadata.txt",
     "g16_driver*.out",
     "*.g16_driver.out",
     "runner.nohup",
+    "*.runner.nohup",
     "submit_receipt.txt",
+    "*.submit_receipt.txt",
+    "run_gaussian_on_compute.sh",
+    "*.run_gaussian_on_compute.sh",
     "*.runner.log",
 )
 
@@ -183,22 +188,23 @@ cd "$RUN_DIR"
 echo "--- files ---"
 find . -maxdepth 1 -type f -printf '%TY-%Tm-%Td %TH:%TM %s %f\\n' 2>/dev/null | sort || true
 echo "--- metadata ---"
-for f in submit_receipt.txt run_metadata.txt run_metadata.*.txt; do
+for f in submit_receipt.txt *.submit_receipt.txt run_metadata.txt run_metadata.*.txt *.run_metadata.txt; do
   [ -f "$f" ] || continue
   echo "### $f"
   sed -n '1,160p' "$f" || true
 done
 echo "--- process checks ---"
-if [ -f submit_receipt.txt ]; then
-  pid="$(awk -F= '$1 == "remote_pid" {{print $2}}' submit_receipt.txt | tail -n 1)"
+for receipt in submit_receipt.txt *.submit_receipt.txt; do
+  [ -f "$receipt" ] || continue
+  pid="$(awk -F= '$1 == "remote_pid" {{print $2}}' "$receipt" | tail -n 1)"
   if [ -n "$pid" ]; then
     if kill -0 "$pid" 2>/dev/null; then
-      echo "submit_receipt remote_pid=$pid alive=true"
+      echo "$receipt remote_pid=$pid alive=true"
     else
-      echo "submit_receipt remote_pid=$pid alive=false"
+      echo "$receipt remote_pid=$pid alive=false"
     fi
   fi
-fi
+done
 for pid_file in *.pid; do
   [ -f "$pid_file" ] || continue
   pid="$(cat "$pid_file" 2>/dev/null || true)"
@@ -209,7 +215,7 @@ for pid_file in *.pid; do
   fi
 done
 echo "--- recent logs ---"
-for f in runner.nohup *.runner.log g16_driver.out *.g16_driver.out; do
+for f in runner.nohup *.runner.nohup *.runner.log g16_driver.out *.g16_driver.out; do
   [ -f "$f" ] || continue
   echo "### tail $f"
   tail -n 30 "$f" || true
@@ -238,12 +244,16 @@ if [ "$TARGET" = "auto" ]; then
   latest_out="$(find . -maxdepth 1 -type f -name '*.out' -printf '%T@ %f\\n' 2>/dev/null | sort -nr | awk 'NR == 1 {{$1=\"\"; sub(/^ /, \"\"); print}}')"
   if [ -n "$latest_out" ]; then
     TARGET="$latest_out"
-  elif [ -f runner.nohup ]; then
-    TARGET="runner.nohup"
-  elif [ -f run_metadata.txt ]; then
-    TARGET="run_metadata.txt"
   else
-    TARGET="$(find . -maxdepth 1 -type f -printf '%f\\n' 2>/dev/null | sort | head -n 1)"
+    latest_runner="$(find . -maxdepth 1 -type f \\( -name 'runner.nohup' -o -name '*.runner.nohup' \\) -printf '%T@ %f\\n' 2>/dev/null | sort -nr | awk 'NR == 1 {{$1=\"\"; sub(/^ /, \"\"); print}}')"
+    latest_metadata="$(find . -maxdepth 1 -type f \\( -name 'run_metadata.txt' -o -name 'run_metadata.*.txt' -o -name '*.run_metadata.txt' \\) -printf '%T@ %f\\n' 2>/dev/null | sort -nr | awk 'NR == 1 {{$1=\"\"; sub(/^ /, \"\"); print}}')"
+    if [ -n "$latest_runner" ]; then
+      TARGET="$latest_runner"
+    elif [ -n "$latest_metadata" ]; then
+      TARGET="$latest_metadata"
+    else
+      TARGET="$(find . -maxdepth 1 -type f -printf '%f\\n' 2>/dev/null | sort | head -n 1)"
+    fi
   fi
 fi
 if [ -z "$TARGET" ] || [ ! -f "$TARGET" ]; then

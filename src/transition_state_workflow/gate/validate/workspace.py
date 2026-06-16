@@ -133,6 +133,7 @@ def validate_ts_workspace_contract(workspace_directory: Path) -> dict[str, Any]:
         input_refs_by_node[node_id] = sorted(set(input_refs))
 
     validate_parent_graph(parent_by_node, findings)
+    validate_mechanism_preflight_root(manifest, node_json_by_id, parent_by_node, findings)
     if graph_ready:
         validate_indexes(tree, graph, findings)
     validate_nodes_v2(source, node_json_by_id, findings)
@@ -167,4 +168,38 @@ def validate_ts_workspace_contract(workspace_directory: Path) -> dict[str, Any]:
     }
 
 
-__all__ = ["validate_ts_workspace_contract"]
+def validate_mechanism_preflight_root(
+    manifest: dict[str, Any],
+    node_json_by_id: dict[str, dict[str, Any]],
+    parent_by_node: dict[str, str],
+    findings: list[Finding],
+) -> None:
+    """Warn when an undeclared workspace starts compute branches without a preflight root."""
+
+    if any(clean_string(node.get("stage")) == "mechanism_preflight" for node in node_json_by_id.values()):
+        return
+    if clean_string(manifest.get("mechanism_preflight_storage")) == "workspace_level":
+        return
+    root_compute_nodes = [
+        node_id
+        for node_id, node in sorted(node_json_by_id.items())
+        if not clean_string(parent_by_node.get(node_id)) and clean_string(node.get("stage")) != "mechanism_preflight"
+    ]
+    if not root_compute_nodes:
+        return
+    first = root_compute_nodes[0]
+    findings.append(
+        Finding(
+            "warning",
+            "mechanism_preflight_node_missing",
+            (
+                "workspace has root compute branch nodes but no explicit mechanism_preflight node; "
+                "record mechanism_preflight_storage=workspace_level or create n000_mechanism_preflight"
+            ),
+            path="tree.json",
+            node_id=first,
+        )
+    )
+
+
+__all__ = ["validate_ts_workspace_contract", "validate_mechanism_preflight_root"]

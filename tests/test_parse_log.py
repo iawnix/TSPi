@@ -155,6 +155,28 @@ def test_backend_gaussian_parser_matches_legacy_parse_log(tmp_path: Path) -> Non
     assert backend["atoms"] == legacy["atoms"]
 
 
+def test_parse_log_warns_when_opt_maxcycle_request_does_not_change_printed_limit(tmp_path: Path) -> None:
+    text = """\
+ #P M062X/def2SVP SCF=XQC Opt=(Cartesian,MaxCycles=300) NoSymm
+
+ Step number   1 out of a maximum of 100
+ Step number 100 out of a maximum of 100
+ Number of steps exceeded,  NStep=100
+ Error termination request processed by link 9999.
+"""
+    log = _write_log(tmp_path, text, name="endpoint_continuation.out")
+
+    summary = parse_log(log)["summary"]
+    diagnostics = summary["opt_cycle_diagnostics"]
+
+    assert diagnostics["requested_opt_max_cycles"] == 300
+    assert diagnostics["printed_opt_maximum_steps"] == 100
+    assert diagnostics["nstep_termination"] == 100
+    assert diagnostics["max_cycle_request_mismatch"] is True
+    assert diagnostics["step_limit_reached"] is True
+    assert diagnostics["warnings"] == ["opt_maxcycle_request_mismatch", "opt_step_limit_reached"]
+
+
 def test_gaussian_backend_adapter_extracts_tsfreq_summary(tmp_path: Path) -> None:
     log = _write_log(tmp_path, _build_log(frequencies=_STD_FREQ_ONE_IMAG))
 

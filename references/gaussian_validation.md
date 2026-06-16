@@ -22,8 +22,12 @@ Use `.out` for new Gaussian outputs. Keep `.log` compatibility only for old arti
 For node-scoped inputs under `nodes/<node_id>/inputs`, use a bare
 `%chk=<job>.chk` unless deliberately referencing another node. The bundled
 runner executes Gaussian from `nodes/<node_id>/outputs`, so bare checkpoints,
-`g16_driver.out`, and `run_metadata.txt` stay in the node output directory. Do
-not run Gaussian from the workspace root. By default the bundled runner uses
+stem-scoped driver logs, and stem-scoped run metadata stay in the node output
+directory. For input `candidate.gjf`, job metadata is written as
+`candidate.run_metadata.txt`, `candidate.g16_driver.out`,
+`candidate.submit_receipt.txt`, and `candidate.runner.nohup`; legacy
+`run_metadata.txt` / `g16_driver.out` names are read only for old artifacts.
+Do not run Gaussian from the workspace root. By default the bundled runner uses
 `nodes/<node_id>/scratch/gaussian` as `GAUSS_SCRDIR`; override `--scratch` only
 when the alternate scratch path is node/job-unique.
 
@@ -55,9 +59,9 @@ python scripts/run_remote_gaussian.py nodes/n230_gaussian_tsfreq/inputs/candidat
 When the input path is `nodes/<node_id>/inputs/*.gjf`, `--remote-dir` is treated
 as the remote workspace root and the runner automatically uses
 `nodes/<node_id>/outputs` as the remote run directory. Poll
-`nodes/<node_id>/outputs/run_metadata.txt` for an `end=` line, then pull results
-with the same command plus `--fetch-only`. Short jobs can omit `--background`
-to run in the foreground and download automatically.
+`nodes/<node_id>/outputs/<input_stem>.run_metadata.txt` for an `end=` line,
+then pull results with the same command plus `--fetch-only`. Short jobs can
+omit `--background` to run in the foreground and download automatically.
 
 For background jobs, use the node-scoped monitor wrappers instead of hand-written
 nested SSH commands:
@@ -86,14 +90,29 @@ python scripts/ts_remote_fetch.py \
 ```
 
 These commands are read-only except for local fetch output. They inspect
-`run_metadata.txt`, `run_metadata.*.txt`, `submit_receipt.txt`, PID files,
-runner logs, Gaussian outputs, and driver logs under
+`*.run_metadata.txt`, legacy `run_metadata*.txt`, `*.submit_receipt.txt`,
+legacy `submit_receipt.txt`, PID files, runner logs, Gaussian outputs, and
+driver logs under
 `nodes/<node_id>/outputs`.
 
 If Gaussian stdout redirection to the node `outputs/` directory is unreliable
 on the shared filesystem, add `--scratch-stdout`. The runner writes Gaussian
 stdout and driver stderr under `GAUSS_SCRDIR` first, then copies the completed
-`.out` and `g16_driver.out` back into node `outputs/`.
+`.out` and `<input_stem>.g16_driver.out` back into node `outputs/`.
+
+## Endpoint Optimization Continuations
+
+Do not assume `Opt=(...,MaxCycles=N)` or `Opt=(...,MaxCycle=N)` changes the
+ordinary Gaussian Opt step cap on every target build. Preserve the output and
+parse it first. The parser reports `summary.opt_cycle_diagnostics`, including
+the requested `MaxCycle(s)` value, the printed `Step number ... out of a maximum
+of M` value, `NStep`, and warnings such as
+`opt_maxcycle_request_mismatch` or `opt_step_limit_reached`.
+
+When the printed maximum remains 100, prefer an explicit continuation branch:
+extract the final geometry, write a new endpoint-optimization node, and record
+the previous capped output as evidence. Internal Gaussian option overrides must
+be opt-in and validated on the target Gaussian build before use.
 
 Remote Gaussian jobs consume compute resources. Start them only after the user has authorized that compute work in the task context.
 

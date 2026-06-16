@@ -10,6 +10,7 @@ from transition_state_workflow.util.path_utils import clean_string, list_or_empt
 
 from .contracts import (
     ENGINE_ROOT_ARTIFACT_NAMES,
+    ENGINE_ROOT_ARTIFACT_STEM_SUFFIXES,
     ENGINE_ROOT_ARTIFACT_SUFFIXES,
     GAUSSIAN_INPUT_SUFFIXES,
     Finding,
@@ -72,6 +73,7 @@ def validate_workspace_root_has_no_engine_artifacts(source: Path, findings: list
         lower_name = name.lower()
         if (
             lower_name in ENGINE_ROOT_ARTIFACT_NAMES
+            or any(lower_name.endswith(suffix) for suffix in ENGINE_ROOT_ARTIFACT_STEM_SUFFIXES)
             or path.suffix.lower() in ENGINE_ROOT_ARTIFACT_SUFFIXES
             or lower_name.startswith("qbics")
             or lower_name.startswith("xtb_")

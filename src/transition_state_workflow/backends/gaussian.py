@@ -871,6 +871,38 @@ def parse_gaussian_convergence(lines: list[str]) -> tuple[dict[str, dict[str, st
     return {}, None
 
 
+def parse_gaussian_opt_cycle_diagnostics(lines: list[str]) -> dict[str, object]:
+    """Parse requested and observed Gaussian Opt step-cycle limits."""
+
+    text = "\n".join(lines)
+    requested_values = [int(match) for match in re.findall(r"\bMaxCycles?\s*=\s*(\d+)", text, flags=re.IGNORECASE)]
+    printed_values = [
+        int(match)
+        for match in re.findall(
+            r"Step number\s+\d+\s+out of a maximum of\s+(\d+)",
+            text,
+            flags=re.IGNORECASE,
+        )
+    ]
+    nstep_values = [int(match) for match in re.findall(r"\bNStep\s*=\s*(\d+)", text, flags=re.IGNORECASE)]
+    requested = requested_values[-1] if requested_values else None
+    printed = printed_values[-1] if printed_values else None
+    nstep = nstep_values[-1] if nstep_values else None
+    warnings: list[str] = []
+    if requested is not None and printed is not None and requested != printed:
+        warnings.append("opt_maxcycle_request_mismatch")
+    if nstep is not None and printed is not None and nstep >= printed:
+        warnings.append("opt_step_limit_reached")
+    return {
+        "requested_opt_max_cycles": requested,
+        "printed_opt_maximum_steps": printed,
+        "nstep_termination": nstep,
+        "max_cycle_request_mismatch": "opt_maxcycle_request_mismatch" in warnings,
+        "step_limit_reached": "opt_step_limit_reached" in warnings,
+        "warnings": warnings,
+    }
+
+
 def orientation_blocks(lines: list[str], marker: str) -> list[list[tuple[str, float, float, float]]]:
     """Parse Gaussian orientation blocks with element symbols and coordinates."""
 
@@ -906,6 +938,7 @@ def parse_gaussian_tsfreq_log(log_path: Path, section_index: int | None = None) 
     imaginary = [freq for freq in section_frequencies if freq < 0.0]
     atoms = final_gaussian_geometry(section_lines)
     convergence, convergence_source = parse_gaussian_convergence(section_lines)
+    opt_cycle_diagnostics = parse_gaussian_opt_cycle_diagnostics(section_lines)
     normal_termination = "Normal termination of Gaussian" in section_text
     error_termination = "Error termination" in section_text
     stationary_point_found = "Stationary point found" in section_text
@@ -953,6 +986,7 @@ def parse_gaussian_tsfreq_log(log_path: Path, section_index: int | None = None) 
         ),
         "force_convergence": convergence,
         "force_convergence_source": convergence_source,
+        "opt_cycle_diagnostics": opt_cycle_diagnostics,
         "final_convergence_evidence_present": final_convergence_evidence_present,
         "final_convergence_satisfied": final_convergence_satisfied,
         "validation_failures": validation_failures,

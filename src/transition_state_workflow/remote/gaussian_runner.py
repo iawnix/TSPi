@@ -83,6 +83,32 @@ class GaussianRunLayout:
     output_name: str
     local_download_dir: Path
 
+    @property
+    def job_stem(self) -> str:
+        """Return the input-derived stem used for job-level metadata."""
+
+        return Path(self.output_name).stem
+
+    @property
+    def runner_name(self) -> str:
+        return f"{self.job_stem}.run_gaussian_on_compute.sh"
+
+    @property
+    def metadata_name(self) -> str:
+        return f"{self.job_stem}.run_metadata.txt"
+
+    @property
+    def driver_name(self) -> str:
+        return f"{self.job_stem}.g16_driver.out"
+
+    @property
+    def receipt_name(self) -> str:
+        return f"{self.job_stem}.submit_receipt.txt"
+
+    @property
+    def nohup_name(self) -> str:
+        return f"{self.job_stem}.runner.nohup"
+
 
 def infer_node_id_from_input(input_path: Path) -> str:
     """Return node id when input is nodes/<node_id>/inputs/<file>."""
@@ -122,6 +148,8 @@ def remote_runner_text(args: argparse.Namespace, layout: GaussianRunLayout) -> s
     run_dir = shlex.quote(layout.remote_run_dir)
     input_file = shlex.quote(layout.remote_input_ref)
     output_file = shlex.quote(layout.output_name)
+    metadata_file = shlex.quote(layout.metadata_name)
+    driver_file = shlex.quote(layout.driver_name)
     g16 = shlex.quote(args.g16)
     g16root = shlex.quote(args.g16root)
     scratch = shlex.quote(layout.remote_scratch_dir)
@@ -132,6 +160,8 @@ set -euo pipefail
 RUN_DIR={run_dir}
 INPUT={input_file}
 OUTPUT={output_file}
+METADATA={metadata_file}
+DRIVER={driver_file}
 G16={g16}
 
 cd "$RUN_DIR"
@@ -158,8 +188,8 @@ SCRATCH_STDOUT={scratch_stdout}
 
 finish() {{
     local final_status="$1"
-    echo "end=$(date -Is)" >> run_metadata.txt
-    echo "status=$final_status" >> run_metadata.txt
+    echo "end=$(date -Is)" >> "$METADATA"
+    echo "status=$final_status" >> "$METADATA"
     exit "$final_status"
 }}
 
@@ -172,7 +202,7 @@ finish() {{
     echo "g16=$G16"
     echo "GAUSS_SCRDIR=$GAUSS_SCRDIR"
     echo "scratch_stdout=$SCRATCH_STDOUT"
-}} > run_metadata.txt
+}} > "$METADATA"
 
 if [[ ! -r "$INPUT" ]]; then
     echo "error: Gaussian input is not readable from run directory: $RUN_DIR/$INPUT" >&2
@@ -183,8 +213,8 @@ if [[ "$SCRATCH_STDOUT" == "true" ]]; then
     STDOUT_SCRATCH_DIR="$GAUSS_SCRDIR/stdout"
     mkdir -p "$STDOUT_SCRATCH_DIR"
     SCRATCH_OUTPUT="$STDOUT_SCRATCH_DIR/$OUTPUT"
-    SCRATCH_DRIVER="$STDOUT_SCRATCH_DIR/g16_driver.out"
-    echo "scratch_output=$SCRATCH_OUTPUT" >> run_metadata.txt
+    SCRATCH_DRIVER="$STDOUT_SCRATCH_DIR/$DRIVER"
+    echo "scratch_output=$SCRATCH_OUTPUT" >> "$METADATA"
     set +e
     "$G16" < "$INPUT" > "$SCRATCH_OUTPUT" 2> "$SCRATCH_DRIVER"
     g16_status=$?
@@ -194,21 +224,21 @@ if [[ "$SCRATCH_STDOUT" == "true" ]]; then
         mv -f "$OUTPUT.tmp" "$OUTPUT"
     fi
     if [[ -f "$SCRATCH_DRIVER" ]]; then
-        cp -f "$SCRATCH_DRIVER" g16_driver.out.tmp
-        mv -f g16_driver.out.tmp g16_driver.out
+        cp -f "$SCRATCH_DRIVER" "$DRIVER.tmp"
+        mv -f "$DRIVER.tmp" "$DRIVER"
     fi
 else
     set +e
-    "$G16" < "$INPUT" > "$OUTPUT" 2> g16_driver.out
+    "$G16" < "$INPUT" > "$OUTPUT" 2> "$DRIVER"
     g16_status=$?
     set -e
 fi
 
-echo "g16_status=$g16_status" >> run_metadata.txt
+echo "g16_status=$g16_status" >> "$METADATA"
 if [[ -s "$OUTPUT" ]]; then
-    echo "output_exists=true" >> run_metadata.txt
+    echo "output_exists=true" >> "$METADATA"
 else
-    echo "output_exists=false" >> run_metadata.txt
+    echo "output_exists=false" >> "$METADATA"
     echo "error: expected Gaussian output missing or empty under outputs/: $RUN_DIR/$OUTPUT" >&2
     echo "input=$INPUT" >&2
     echo "run directory listing:" >&2
@@ -295,6 +325,29 @@ def download_remote_file(args: argparse.Namespace, layout: GaussianRunLayout, na
     return True
 
 
+def download_first_existing(
+    args: argparse.Namespace,
+    layout: GaussianRunLayout,
+    names: list[str],
+    *,
+    tolerate_missing: bool,
+) -> bool:
+    """Download the first available candidate, trying stem-scoped names before legacy names."""
+
+    unique_names = list(dict.fromkeys(names))
+    errors: list[subprocess.CalledProcessError] = []
+    for name in unique_names:
+        try:
+            return download_remote_file(args, layout, name, tolerate_missing=False)
+        except subprocess.CalledProcessError as exc:
+            errors.append(exc)
+            continue
+    if errors and not tolerate_missing:
+        raise errors[0]
+    warn(f"missing remote files under {layout.remote_run_dir}: {', '.join(unique_names)}")
+    return False
+
+
 def download_output_file(args: argparse.Namespace, layout: GaussianRunLayout, tolerate_missing: bool) -> None:
     candidates = [layout.output_name, f"{Path(layout.output_name).stem}.log"]
     errors: list[subprocess.CalledProcessError] = []
@@ -317,14 +370,17 @@ def download_results(args: argparse.Namespace, input_path: Path, layout: Gaussia
 
     layout.local_download_dir.mkdir(parents=True, exist_ok=True)
     download_output_file(args, layout, tolerate_missing)
-    expected = ["run_metadata.txt", "g16_driver.out"]
+    expected_groups = [
+        [layout.metadata_name, "run_metadata.txt"],
+        [layout.driver_name, "g16_driver.out"],
+    ]
     chk = checkpoint_name(input_path, args.chk)
     if chk:
-        expected.append(Path(chk).name)
-    for name in dict.fromkeys(expected):
-        download_remote_file(args, layout, name, tolerate_missing)
-    for name in ("submit_receipt.txt", "runner.nohup"):
-        download_remote_file(args, layout, name, tolerate_missing=True)
+        expected_groups.append([Path(chk).name])
+    for names in expected_groups:
+        download_first_existing(args, layout, names, tolerate_missing=tolerate_missing)
+    for names in ([layout.receipt_name, "submit_receipt.txt"], [layout.nohup_name, "runner.nohup"]):
+        download_first_existing(args, layout, names, tolerate_missing=True)
 
 
 def background_submit_command(layout: GaussianRunLayout, runner_name: str) -> str:
@@ -332,16 +388,19 @@ def background_submit_command(layout: GaussianRunLayout, runner_name: str) -> st
 
     run_dir = shlex.quote(layout.remote_run_dir)
     runner = shlex.quote(runner_name)
+    metadata = shlex.quote(layout.metadata_name)
+    receipt = shlex.quote(layout.receipt_name)
+    nohup = shlex.quote(layout.nohup_name)
     return (
         f"cd {run_dir} && {{ "
-        "rm -f runner.nohup run_metadata.txt; "
-        "printf 'submit_start=%s\\n' \"$(date -Is)\" > submit_receipt.txt; "
-        "printf 'submit_host=%s\\n' \"$(hostname)\" >> submit_receipt.txt; "
-        f"printf 'runner=%s\\n' {runner} >> submit_receipt.txt; "
-        f"nohup bash ./{runner} > runner.nohup 2>&1 < /dev/null & "
+        f"rm -f {nohup} {metadata} {receipt}; "
+        f"printf 'submit_start=%s\\n' \"$(date -Is)\" > {receipt}; "
+        f"printf 'submit_host=%s\\n' \"$(hostname)\" >> {receipt}; "
+        f"printf 'runner=%s\\n' {runner} >> {receipt}; "
+        f"nohup bash ./{runner} > {nohup} 2>&1 < /dev/null & "
         "pid=$!; "
-        "printf 'remote_pid=%s\\n' \"$pid\" >> submit_receipt.txt; "
-        "printf 'submit_end=%s\\n' \"$(date -Is)\" >> submit_receipt.txt; "
+        f"printf 'remote_pid=%s\\n' \"$pid\" >> {receipt}; "
+        f"printf 'submit_end=%s\\n' \"$(date -Is)\" >> {receipt}; "
         "echo \"$pid\"; "
         "}"
     )
@@ -351,17 +410,20 @@ def background_verify_command(layout: GaussianRunLayout) -> str:
     """Build the remote shell snippet that confirms background startup artifacts."""
 
     run_dir = shlex.quote(layout.remote_run_dir)
+    metadata = shlex.quote(layout.metadata_name)
+    receipt = shlex.quote(layout.receipt_name)
+    nohup = shlex.quote(layout.nohup_name)
     return f"""cd {run_dir}
 for attempt in 1 2 3 4 5 6 7 8 9 10; do
     pid=""
-    if [ -f submit_receipt.txt ]; then
-        pid="$(awk -F= '$1 == "remote_pid" {{print $2}}' submit_receipt.txt | tail -n 1)"
+    if [ -f {receipt} ]; then
+        pid="$(awk -F= '$1 == "remote_pid" {{print $2}}' {receipt} | tail -n 1)"
     fi
-    if [ -n "$pid" ] && [ -f run_metadata.txt ]; then
+    if [ -n "$pid" ] && [ -f {metadata} ]; then
         echo "verified background startup metadata on attempt=$attempt pid=$pid"
         exit 0
     fi
-    if [ -n "$pid" ] && [ -f runner.nohup ] && kill -0 "$pid" 2>/dev/null; then
+    if [ -n "$pid" ] && [ -f {nohup} ] && kill -0 "$pid" 2>/dev/null; then
         echo "verified background process on attempt=$attempt pid=$pid"
         exit 0
     fi
@@ -370,13 +432,13 @@ done
 echo "error: missing verified background startup on compute host in $PWD" >&2
 echo "--- ls -la ---" >&2
 ls -la >&2 || true
-if [ -f submit_receipt.txt ]; then
-    echo "--- submit_receipt.txt ---" >&2
-    cat submit_receipt.txt >&2
+if [ -f {receipt} ]; then
+    echo "--- {layout.receipt_name} ---" >&2
+    cat {receipt} >&2
 fi
-if [ -f runner.nohup ]; then
-    echo "--- runner.nohup tail ---" >&2
-    tail -n 40 runner.nohup >&2 || true
+if [ -f {nohup} ]; then
+    echo "--- {layout.nohup_name} tail ---" >&2
+    tail -n 40 {nohup} >&2 || true
 fi
 exit 87
 """
@@ -418,13 +480,13 @@ def submit_background(args: argparse.Namespace, layout: GaussianRunLayout, runne
         )
     except subprocess.CalledProcessError as exc:
         print_captured_streams("background submit", submit_result.stdout, submit_result.stderr)
-        raise CliError("background submission could not verify runner.nohup or run_metadata.txt") from exc
+        raise CliError(f"background submission could not verify {layout.nohup_name} or {layout.metadata_name}") from exc
 
     emit_stdout(f"submitted in background on {args.compute_host}, remote_pid={pid}")
-    metadata_path = posixpath.join(layout.remote_run_dir, "run_metadata.txt")
+    metadata_path = posixpath.join(layout.remote_run_dir, layout.metadata_name)
     poll_argv = nested_compute_ssh_argv(args, f"tail -n 5 {shlex.quote(metadata_path)}")
     emit_stdout(f"poll:  {command_text(poll_argv)}")
-    emit_stdout("fetch: re-run this command with --fetch-only when run_metadata.txt has an end= line")
+    emit_stdout(f"fetch: re-run this command with --fetch-only when {layout.metadata_name} has an end= line")
     return 0
 
 
@@ -445,10 +507,10 @@ def _run(argv: list[str] | None) -> int:
 
     runner = remote_runner_text(args, layout)
     with tempfile.TemporaryDirectory(prefix="gaussian-remote-runner-") as tmp:
-        runner_path = Path(tmp) / "run_gaussian_on_compute.sh"
+        runner_path = Path(tmp) / layout.runner_name
         runner_path.write_text(runner, encoding="utf-8")
         if args.dry_run:
-            emit_stdout("--- run_gaussian_on_compute.sh ---")
+            emit_stdout(f"--- {layout.runner_name} ---")
             emit_stdout(runner.rstrip())
             emit_stdout("--- commands ---")
 

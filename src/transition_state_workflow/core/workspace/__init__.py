@@ -19,6 +19,13 @@ from transition_state_workflow.core.workspace.io import (
 )
 from transition_state_workflow.core.workspace.naming import utc_timestamp, workspace_slug
 from transition_state_workflow.core.workspace.nodes import VALID_NODE_STATUSES, next_node_id, node_record
+from transition_state_workflow.core.workspace.preflight import (
+    DEFAULT_PREFLIGHT_NODE_ID,
+    format_expected_bond_changes,
+    mechanism_preflight_decision_card_markdown,
+    mechanism_preflight_hypothesis_markdown,
+    write_mechanism_preflight_node,
+)
 from transition_state_workflow.core.workspace.references import (
     BranchReferenceError,
     clean_optional_node_ref,
@@ -48,6 +55,7 @@ from transition_state_workflow.core.workspace.tree import (
 __all__ = [
     "BRANCH_WORK_DIRS",
     "BranchReferenceError",
+    "DEFAULT_PREFLIGHT_NODE_ID",
     "PreparedBranchWrite",
     "VALID_NODE_STATUSES",
     "append_evidence_record",
@@ -58,12 +66,15 @@ __all__ = [
     "ensure_tree_skeleton",
     "ensure_workspace_root_has_manifest_and_tree",
     "finalize_node_report_and_tree",
+    "format_expected_bond_changes",
     "initial_evidence_registry",
     "initial_workspace_manifest",
     "initial_workspace_tree",
     "next_branch_event_id",
     "next_node_id",
     "node_record",
+    "mechanism_preflight_decision_card_markdown",
+    "mechanism_preflight_hypothesis_markdown",
     "normalize_branch_input_refs",
     "parent_graph_would_cycle",
     "prepared_branch_event",
@@ -80,6 +91,7 @@ __all__ = [
     "write_initial_workspace_files",
     "write_json",
     "write_markdown",
+    "write_mechanism_preflight_node",
     "write_prepared_branch_state",
     "write_reflection_template",
     "write_text_file_if_allowed",

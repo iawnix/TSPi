@@ -30,6 +30,7 @@ from transition_state_workflow.core.workspace_state import (
     append_ts_workspace_evidence_record_from_cli_args,
     create_ts_branch_decision_artifacts_from_cli_args,
     initialize_ts_hypothesis_workspace_files_from_cli_args,
+    write_mechanism_preflight_node_from_cli_args,
     write_suggested_decision_cards_from_plan,
 )
 from transition_state_workflow.core.workspace import write_text_file_if_allowed
@@ -67,6 +68,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="append",
         default=[],
         help="Expected bond change as role:atomA-atomB, e.g. breaking:O7-H5.",
+    )
+    init.add_argument(
+        "--with-preflight-node",
+        action="store_true",
+        help="Also scaffold a real n000_mechanism_preflight root node from the initial mechanism model.",
     )
     init.add_argument("--force", action="store_true", help="Overwrite existing scaffold files.")
     init.add_argument(
@@ -125,6 +131,17 @@ def build_parser() -> argparse.ArgumentParser:
     evidence.add_argument("--verbose", action="store_true", help="Write diagnostic logs to stderr.")
     evidence.add_argument("--quiet", action="store_true", help="Only write errors to stderr.")
 
+    preflight = sub.add_parser("preflight-node", help="Create the canonical mechanism-preflight root node.")
+    preflight.add_argument("--root", required=True, type=Path, help="Workspace directory.")
+    preflight.add_argument(
+        "--node-id",
+        default="n000_mechanism_preflight",
+        help="Preflight node id to write. Defaults to n000_mechanism_preflight.",
+    )
+    preflight.add_argument("--force", action="store_true", help="Overwrite existing preflight node artifacts.")
+    preflight.add_argument("--verbose", action="store_true", help="Write diagnostic logs to stderr.")
+    preflight.add_argument("--quiet", action="store_true", help="Only write errors to stderr.")
+
     register_start_node_parser(sub)
     register_record_backtrack_parser(sub)
     register_update_backtrack_parser(sub)
@@ -146,6 +163,8 @@ def main(argv: list[str] | None = None) -> int:
         create_ts_branch_decision_artifacts_from_cli_args(args)
     elif args.command == "add-evidence":
         append_ts_workspace_evidence_record_from_cli_args(args)
+    elif args.command == "preflight-node":
+        write_mechanism_preflight_node_from_cli_args(args)
     elif args.command == "start-node":
         start_ts_workspace_node_from_cli_args(args)
     elif args.command == "record-backtrack":

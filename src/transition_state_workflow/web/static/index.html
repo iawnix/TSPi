@@ -2180,9 +2180,7 @@ function renderNode() {
       });
     });
   } else if (state.tab === "json") {
-    d.innerHTML = `<div class="codebar"><button class="btn" id="copyJson">Copy</button></div>
-                   <div class="json">${jsonHighlight(payload)}</div>`;
-    d.querySelector("#copyJson").addEventListener("click", () => copyToClipboard(JSON.stringify(payload, null, 2)));
+    d.innerHTML = `<div class="json">${jsonHighlight(payload)}</div>`;
   }
 }
 
@@ -2299,12 +2297,10 @@ async function loadFile(path) {
     d.innerHTML = `
       <div class="codebar">
         <button class="btn" id="backToFiles">← Back</button>
-        <button class="btn" id="copyFile">Copy</button>
       </div>
       <div style="margin-top:8px; color: var(--text-3); font-family: var(--font-mono); font-size: 11.5px;">${escapeHtml(payload.path)} · ${fmtSize(payload.size)}</div>
       <pre style="margin-top:8px; padding:12px; background: var(--surface-2); border:1px solid var(--border); border-radius: var(--r-sm); overflow:auto; line-height:1.5;"><code>${escapeHtml(payload.text || "")}</code></pre>`;
     d.querySelector("#backToFiles").addEventListener("click", () => renderNode());
-    d.querySelector("#copyFile").addEventListener("click", () => copyToClipboard(payload.text || ""));
   } catch (err) {
     d.innerHTML = `<p class="error">${escapeHtml(String(err))}</p>`;
   }
@@ -2543,9 +2539,6 @@ function fileIcon(ext) {
       return '<path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>' +
              '<polyline points="14 2 14 8 20 8"/>';
   }
-}
-function copyToClipboard(text) {
-  navigator.clipboard?.writeText(text).then(() => toast("Copied"), () => toast("Copy failed"));
 }
 function toast(msg) {
   const wrap = document.getElementById("toasts");

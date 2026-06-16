@@ -49,6 +49,7 @@ def initialize_minimal_workspace(root: Path) -> None:
             "created_at": "now",
             "root": str(root),
             "node_schema": WORKSPACE_NODE_SCHEMA,
+            "mechanism_preflight_storage": "workspace_level",
             "current_accepted_ts": None,
         },
     )

@@ -22,6 +22,13 @@ ENGINE_ROOT_ARTIFACT_NAMES = {
     "xtbopt.xyz",
     "xtbrestart",
 }
+ENGINE_ROOT_ARTIFACT_STEM_SUFFIXES = {
+    ".g16_driver.out",
+    ".run_gaussian_on_compute.sh",
+    ".run_metadata.txt",
+    ".runner.nohup",
+    ".submit_receipt.txt",
+}
 ENGINE_ROOT_ARTIFACT_SUFFIXES = {".chk", ".fchk", ".rwf", ".mwfn", ".trj", ".gbw", ".hess"}
 GAUSSIAN_INPUT_SUFFIXES = {".gjf", ".com"}
 
@@ -32,6 +39,7 @@ __all__ = [
     "PRE_EXECUTION_EVIDENCE_KEYS",
     "REGISTRY_REQUIRED_SUFFIXES",
     "ENGINE_ROOT_ARTIFACT_NAMES",
+    "ENGINE_ROOT_ARTIFACT_STEM_SUFFIXES",
     "ENGINE_ROOT_ARTIFACT_SUFFIXES",
     "GAUSSIAN_INPUT_SUFFIXES",
 ]
