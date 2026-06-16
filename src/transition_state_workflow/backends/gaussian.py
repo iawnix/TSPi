@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 import re
-from typing import Any, Mapping
+from typing import Any, List, Mapping, Tuple
 
 from transition_state_workflow.backends.base import FilesystemBackendAdapter
 from transition_state_workflow.backends.contracts import BackendInput, BackendOutput
@@ -25,8 +25,8 @@ from transition_state_workflow.chem.gaussian_log import (
     write_gjf,
 )
 
-GaussianCoord = tuple[str, float, float, float]
-GaussianFrame = tuple[str, list[GaussianCoord]]
+GaussianCoord = Tuple[str, float, float, float]
+GaussianFrame = Tuple[str, List[GaussianCoord]]
 HARTREE_TO_EV = 27.211386245988
 QST_ROUTE_TOKENS = ("qst2", "qst3")
 

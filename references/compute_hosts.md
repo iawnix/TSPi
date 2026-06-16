@@ -21,6 +21,11 @@ xTB/ASE Python:
 - xTB: `/home/iaw/soft/xtb/6.7.1/bin/xtb`
 - Python env: `/home/iaw/soft/conda/envs/AresTSTools_Computer_30/bin/python`
 - sanitize `LD_LIBRARY_PATH` before ASE/SciPy work; GCC 11.3.0 libraries can require `GLIBC_2.18` and break imports.
+- Keep remote-imported helpers compatible with older compute-host Python
+  versions. Function annotations may stay modern under
+  `from __future__ import annotations`, but runtime-evaluated aliases must not
+  use PEP 585 builtins such as `Alias = tuple[...]`; use `typing.Tuple` /
+  `typing.List` for those aliases instead.
 
 QBICS:
 

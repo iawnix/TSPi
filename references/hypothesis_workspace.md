@@ -319,6 +319,11 @@ Backtrack-aware planning has two hard rules:
   is the event's `to_node`, as the tree parent. If artifacts from the failed
   node are useful, reference them through `input_refs`, not by making the failed
   node the primary parent.
+- If a replacement sibling branch already exists before the backtrack is
+  recorded, include `--new-branch-node <replacement_node>` in
+  `record-backtrack`. `plan-next` reports detected replacement siblings in
+  `suggested_backtrack_actions`, and the validator warns when that link is
+  missing.
 
 Only one `event_state=active` backtrack is allowed in a workspace. If another
 backtrack should become the current planning target, use `update-backtrack` to
@@ -439,8 +444,20 @@ failed node separately with `finalize-node` using a valid state pair such as
 outcome_code=qst2_internal_coordinate_failure`.
 
 Leave `--new-branch-node` empty unless that new branch should be marked as part
-of the backtrack event. Most views should mark the failed branch, not the new
-candidate branch.
+of the backtrack event. When a failed branch is replaced by a later sibling
+under the chosen backtrack target, pass the replacement node explicitly:
+
+```bash
+python scripts/ts_hypothesis_workspace.py record-backtrack \
+  --root tssearch_<system> \
+  --from-node n040_failed_connectivity \
+  --to-node n030_tsfreq_validated \
+  --new-branch-node n050_connectivity_retry \
+  --reason-code endpoint_assignment_failed \
+  --reason "The first connectivity branch did not prove the intended endpoint assignment; retry from the TS/Freq node with a changed connectivity method."
+```
+
+Most views should mark the failed branch, not the new candidate branch.
 
 After recording the backtrack, rerun `plan-next`. If the event remains
 `event_state=active`, the planning packet should route the next branch to the

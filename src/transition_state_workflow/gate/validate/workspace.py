@@ -13,7 +13,7 @@ from .artifacts import validate_engine_artifact_policy, validate_paths_are_porta
 from .common import clean_string_list, validate_known_node_ref
 from .contracts import Finding
 from .evidence import validate_evidence
-from .events import validate_events, validate_tree_events
+from .events import validate_backtrack_replacement_links, validate_events, validate_tree_events
 from .finalization import validate_node_finalization_artifacts
 from .io import collect_node_dirs, read_json_optional, require_file
 from .mechanism import validate_mechanism_model
@@ -145,6 +145,12 @@ def validate_ts_workspace_contract(workspace_directory: Path) -> dict[str, Any]:
     validate_pathway_model(source, pathway_model, node_json_by_id, evidence, findings)
     validate_mechanism_model(source, read_json_optional(source / "mechanism_model.json", findings), findings)
     validate_tree_events(tree, node_ids, evidence, findings)
+    validate_backtrack_replacement_links(
+        node_json_by_id,
+        parent_by_node,
+        list_or_empty(tree.get("backtrack_events")),
+        findings,
+    )
     if graph_ready:
         validate_events(graph, node_ids, findings)
     validate_paths_are_portable(source, node_json_by_id, evidence, findings)

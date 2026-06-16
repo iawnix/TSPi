@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,25 @@ from transition_state_workflow.backends.xtb import (
     parse_xtb_output_text,
     xtb_ase_calculator_params,
 )
+
+
+def test_gaussian_runtime_type_aliases_are_python38_compatible() -> None:
+    source = Path("src/transition_state_workflow/backends/gaussian.py").read_text(encoding="utf-8")
+    tree = ast.parse(source)
+    aliases = {
+        target.id: node.value
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Assign)
+        for target in node.targets
+        if isinstance(target, ast.Name)
+    }
+
+    assert isinstance(aliases["GaussianCoord"], ast.Subscript)
+    assert isinstance(aliases["GaussianCoord"].value, ast.Name)
+    assert aliases["GaussianCoord"].value.id == "Tuple"
+    assert isinstance(aliases["GaussianFrame"], ast.Subscript)
+    assert isinstance(aliases["GaussianFrame"].value, ast.Name)
+    assert aliases["GaussianFrame"].value.id == "Tuple"
 
 
 def test_xtb_backend_prepares_normalized_candidate_command(tmp_path: Path) -> None:

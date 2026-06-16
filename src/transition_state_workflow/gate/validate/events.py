@@ -16,6 +16,14 @@ from .common import (
 )
 from .contracts import Finding
 
+FAILED_BRANCH_OUTCOMES = {
+    "chemical_failure",
+    "numerical_failure",
+    "wrong_mode",
+    "wrong_endpoint",
+    "parser_refused",
+}
+
 
 def validate_tree_events(
     tree: dict[str, Any],
@@ -137,6 +145,79 @@ def validate_tree_events(
         )
 
 
+def validate_backtrack_replacement_links(
+    node_json_by_id: dict[str, dict[str, Any]],
+    parent_by_node: dict[str, str],
+    backtrack_events: list[Any],
+    findings: list[Finding],
+) -> None:
+    """Warn when a failed branch has an apparent replacement sibling but no backtrack link."""
+
+    normalized_events = [event for event in backtrack_events if isinstance(event, dict)]
+    linked_replacements = {
+        (
+            clean_string(event.get("from_node")),
+            clean_string(event.get("to_node")),
+            clean_string(event.get("new_branch_node")),
+        )
+        for event in normalized_events
+    }
+    for failed_node, node_json in sorted(node_json_by_id.items(), key=lambda item: _node_sort_key(item[0])):
+        if not _is_failed_or_ambiguous_branch(node_json):
+            continue
+        parent = clean_string(parent_by_node.get(failed_node))
+        if not parent:
+            continue
+        replacements = _replacement_siblings(failed_node, parent, parent_by_node)
+        for replacement in replacements:
+            if (failed_node, parent, replacement) in linked_replacements:
+                continue
+            findings.append(
+                Finding(
+                    "warning",
+                    "missing_replacement_backtrack_event",
+                    (
+                        f"replacement branch {replacement} shares parent {parent} with failed branch {failed_node}; "
+                        f"record a canonical backtrack event with --from-node {failed_node} --to-node {parent} "
+                        f"--new-branch-node {replacement}"
+                    ),
+                    path="tree.json",
+                    node_id=failed_node,
+                )
+            )
+
+
+def _is_failed_or_ambiguous_branch(node_json: dict[str, Any]) -> bool:
+    claim = clean_string(node_json.get("claim_status"))
+    outcome = clean_string(node_json.get("outcome"))
+    return claim in {"rejected", "ambiguous"} or outcome in FAILED_BRANCH_OUTCOMES
+
+
+def _replacement_siblings(
+    failed_node: str,
+    parent: str,
+    parent_by_node: dict[str, str],
+) -> list[str]:
+    failed_key = _node_sort_key(failed_node)
+    replacements: list[str] = []
+    for node_id, node_parent in sorted(parent_by_node.items(), key=lambda item: _node_sort_key(item[0])):
+        if node_id == failed_node:
+            continue
+        if clean_string(node_parent) != parent:
+            continue
+        if _node_sort_key(node_id) <= failed_key:
+            continue
+        replacements.append(node_id)
+    return replacements
+
+
+def _node_sort_key(node_id: str) -> tuple[int, str]:
+    text = clean_string(node_id)
+    if len(text) >= 4 and text.startswith("n") and text[1:4].isdigit():
+        return (int(text[1:4]), text)
+    return (999999, text)
+
+
 def validate_events(graph: dict[str, Any], node_ids: list[str], findings: list[Finding]) -> None:
     """Validate normalized graph events after normalizer processing."""
 
@@ -210,4 +291,4 @@ def validate_events(graph: dict[str, Any], node_ids: list[str], findings: list[F
         )
 
 
-__all__ = ["validate_tree_events", "validate_events"]
+__all__ = ["validate_tree_events", "validate_backtrack_replacement_links", "validate_events"]

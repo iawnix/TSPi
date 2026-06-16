@@ -7,7 +7,7 @@ from typing import Any
 
 from transition_state_workflow.util.path_utils import clean_string
 
-from .ids import latest_node_id, next_suggested_node_id
+from .ids import latest_node_id, next_suggested_node_id, node_sort_key
 from .pathway import pathway_target_for_suggestions
 
 
@@ -300,36 +300,64 @@ def suggest_backtrack_actions(
 ) -> list[dict[str, Any]]:
     """Suggest canonical backtrack records for failed branches without one."""
 
-    from_nodes_with_event = {clean_string(event.get("from_node")) for event in backtrack_events}
+    events_by_from: dict[str, list[dict[str, Any]]] = {}
+    for event in backtrack_events:
+        from_node = clean_string(event.get("from_node"))
+        if from_node:
+            events_by_from.setdefault(from_node, []).append(event)
     suggestions: list[dict[str, Any]] = []
     for failed in failed_nodes:
         node_id = clean_string(failed.get("node_id"))
-        if not node_id or node_id in from_nodes_with_event:
+        if not node_id:
+            continue
+        events_for_failed = events_by_from.get(node_id, [])
+        replacement_nodes = replacement_branch_nodes_for_failed(node_id, node_payloads)
+        linked_replacements = {
+            clean_string(event.get("new_branch_node"))
+            for event in events_for_failed
+            if clean_string(event.get("new_branch_node"))
+        }
+        unlinked_replacements = [
+            replacement for replacement in replacement_nodes if replacement not in linked_replacements
+        ]
+        if events_for_failed and not unlinked_replacements:
             continue
         candidate_targets = candidate_backtrack_targets(node_id, node_payloads)
+        recommended_to_node = clean_string(node_payloads.get(node_id, {}).get("parent_id"))
+        recommended_new_branch_node = unlinked_replacements[-1] if unlinked_replacements else ""
         reason_code = clean_string(failed.get("outcome_code")) or clean_string(failed.get("outcome")) or "branch_failed"
+        command_template = [
+            "python",
+            "scripts/ts_hypothesis_workspace.py",
+            "record-backtrack",
+            "--root",
+            str(source),
+            "--from-node",
+            node_id,
+            "--to-node",
+            recommended_to_node if recommended_new_branch_node else "<agent_selected_chemically_meaningful_ancestor>",
+        ]
+        if recommended_new_branch_node:
+            command_template.extend(["--new-branch-node", recommended_new_branch_node])
+        command_template.extend(
+            [
+                "--reason-code",
+                reason_code,
+                "--reason",
+                "<source-backed reason for returning to that ancestor>",
+            ]
+        )
         suggestions.append(
             {
                 "kind": "record_backtrack",
                 "from_node": node_id,
                 "candidate_to_nodes": candidate_targets,
+                "detected_replacement_branch_nodes": unlinked_replacements,
+                "recommended_to_node": recommended_to_node,
+                "recommended_new_branch_node": recommended_new_branch_node,
                 "reason_code": reason_code,
                 "reason": backtrack_reason_from_failed_summary(failed),
-                "command_template": [
-                    "python",
-                    "scripts/ts_hypothesis_workspace.py",
-                    "record-backtrack",
-                    "--root",
-                    str(source),
-                    "--from-node",
-                    node_id,
-                    "--to-node",
-                    "<agent_selected_chemically_meaningful_ancestor>",
-                    "--reason-code",
-                    reason_code,
-                    "--reason",
-                    "<source-backed reason for returning to that ancestor>",
-                ],
+                "command_template": command_template,
                 "agent_must_choose": [
                     "closest chemically meaningful ancestor",
                     "whether the new branch reuses any failed-branch artifacts as input_refs",
@@ -338,6 +366,25 @@ def suggest_backtrack_actions(
             }
         )
     return suggestions
+
+
+def replacement_branch_nodes_for_failed(node_id: str, node_payloads: dict[str, dict[str, Any]]) -> list[str]:
+    """Return later sibling branches that look like replacements for a failed node."""
+
+    parent_id = clean_string(node_payloads.get(node_id, {}).get("parent_id"))
+    if not parent_id:
+        return []
+    failed_key = node_sort_key(node_id)
+    replacements: list[str] = []
+    for candidate_id, candidate in sorted(node_payloads.items(), key=lambda item: node_sort_key(item[0])):
+        if candidate_id == node_id:
+            continue
+        if clean_string(candidate.get("parent_id")) != parent_id:
+            continue
+        if node_sort_key(candidate_id) <= failed_key:
+            continue
+        replacements.append(candidate_id)
+    return replacements
 
 
 def candidate_backtrack_targets(node_id: str, node_payloads: dict[str, dict[str, Any]]) -> list[str]:
@@ -381,6 +428,7 @@ __all__ = [
     "suggest_finalization_actions",
     "suggest_reframe_actions",
     "suggest_backtrack_actions",
+    "replacement_branch_nodes_for_failed",
     "candidate_backtrack_targets",
     "lineage_to_root",
     "backtrack_reason_from_failed_summary",

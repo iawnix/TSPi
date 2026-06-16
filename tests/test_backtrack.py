@@ -423,6 +423,64 @@ def test_validator_rejects_multiple_active_backtrack_events(tmp_path: Path) -> N
     validation = validate_workspace_allow_errors(root)
     codes = {finding["code"] for finding in validation["findings"]}
     assert "multiple_active_backtracks" in codes
+
+
+def test_plan_next_and_validator_detect_replacement_branch_without_backtrack_event(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_unit"
+    initialize_workspace(root)
+    create_failed_irc_branch_for_planner(root)
+    run_cli(
+        str(WORKSPACE_CLI),
+        "decision-card",
+        "--root",
+        str(root),
+        "--node-id",
+        "n040_endpoint_connectivity_retry",
+        "--parent-id",
+        "n020_tsfreq",
+        "--stage",
+        "connectivity_validation",
+        "--hypothesis",
+        "Retry connectivity validation from the same TS/Freq node after the IRC failure.",
+        "--operation",
+        "unit-test-connectivity-retry",
+    )
+
+    packet = plan_next(root)
+    action = packet["suggested_backtrack_actions"][0]
+    assert action["from_node"] == "n030_failed_irc"
+    assert action["recommended_to_node"] == "n020_tsfreq"
+    assert action["recommended_new_branch_node"] == "n040_endpoint_connectivity_retry"
+    assert "--new-branch-node" in action["command_template"]
+    assert "n040_endpoint_connectivity_retry" in action["command_template"]
+
+    validation = validate_workspace_allow_errors(root)
+    assert any(
+        finding["code"] == "missing_replacement_backtrack_event"
+        for finding in validation["findings"]
+    )
+
+    run_cli(
+        str(WORKSPACE_CLI),
+        "record-backtrack",
+        "--root",
+        str(root),
+        "--from-node",
+        "n030_failed_irc",
+        "--to-node",
+        "n020_tsfreq",
+        "--new-branch-node",
+        "n040_endpoint_connectivity_retry",
+        "--reason-code",
+        "irc_l123_failure",
+        "--reason",
+        "Retry connectivity validation from the TS/Freq node with a changed connectivity method.",
+    )
+    validation = validate_workspace(root, strict=True)
+    codes = {finding["code"] for finding in validation["findings"]}
+    assert "missing_replacement_backtrack_event" not in codes
+
+
 def test_record_backtrack_new_branch_is_metadata_not_badge(tmp_path: Path) -> None:
     root = tmp_path / "tssearch_unit"
     initialize_workspace(root)

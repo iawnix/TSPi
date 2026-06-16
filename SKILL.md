@@ -158,6 +158,9 @@ never the UI.
      branch under `planning_focus.parent_for_new_branch`, which is the active
      backtrack event's `to_node`; do not continue below the failed node unless
      the hypothesis is explicitly changed and recorded.
+   - If a replacement branch already exists under the chosen backtrack target,
+     record the event with `--new-branch-node <replacement_node>` so the failed
+     branch, target, and replacement branch stay explicitly linked.
    - Keep at most one `event_state=active` backtrack in a workspace. Use
      `update-backtrack` to resolve or supersede the current active backtrack
      before making another one active.
