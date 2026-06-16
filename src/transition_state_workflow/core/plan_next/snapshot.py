@@ -18,6 +18,7 @@ from .context import (
     summarize_node,
 )
 from .contracts import TsfreqEvidencePredicate, WorkspaceValidator
+from .diagnostics import endpoint_evidence_blocker_summaries
 from .ids import node_sort_key
 from .loader import active_node_summaries, ensure_plan_workspace, load_node_payloads, nodes_with_claim
 
@@ -54,6 +55,7 @@ class PlanNextSnapshot:
     backtrack_events: list[dict[str, Any]]
     evidence_records: list[dict[str, Any]]
     reframe_candidates: list[dict[str, Any]]
+    endpoint_evidence_blockers: list[dict[str, Any]]
     claims: NodeClaimSnapshot
 
 
@@ -110,6 +112,11 @@ def load_plan_next_snapshot(
         evidence_records=evidence_records,
         supports_tsfreq_evidence=supports_tsfreq_evidence,
     )
+    endpoint_evidence_blockers = endpoint_evidence_blocker_summaries(
+        source,
+        node_payloads,
+        evidence_records,
+    )
     validation_errors = [
         item for item in list_or_empty(validation.get("findings")) if clean_string(item.get("severity")) == "error"
     ]
@@ -130,6 +137,7 @@ def load_plan_next_snapshot(
         backtrack_events=backtrack_events,
         evidence_records=evidence_records,
         reframe_candidates=reframe_candidates,
+        endpoint_evidence_blockers=endpoint_evidence_blockers,
         claims=classify_node_claims(node_payloads),
     )
 

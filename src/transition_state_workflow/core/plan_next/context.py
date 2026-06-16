@@ -153,6 +153,7 @@ def build_context_items(
     backtrack_events: list[dict[str, Any]],
     accepted_nodes: list[tuple[str, dict[str, Any]]],
     active_nodes: list[dict[str, Any]],
+    endpoint_evidence_blockers: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Select prioritized context for the next model planning step."""
 
@@ -209,6 +210,30 @@ def build_context_items(
         node_id = clean_string(failed.get("node_id"))
         if node_id and node_id != from_failed_node:
             items.append(failed_branch_context_item(failed, priority="should", reason="Sibling or historical failed branch that may prevent repeated mistakes."))
+    for blocker in endpoint_evidence_blockers[:6]:
+        items.append(
+            {
+                "priority": "must",
+                "kind": "endpoint_evidence_blocker",
+                "source": f"nodes/{clean_string(blocker.get('node_id'))}/node.json",
+                "node_id": clean_string(blocker.get("node_id")),
+                "claim_status": clean_string(blocker.get("claim_status")),
+                "outcome": clean_string(blocker.get("outcome")),
+                "outcome_code": blocker.get("outcome_code"),
+                "labels": list_or_empty(blocker.get("labels"))[:8],
+                "reason": (
+                    "Parsed endpoint or endpoint-continuation evidence blocks endpoint promotion; "
+                    "the agent must choose a changed endpoint/connectivity hypothesis before continuing."
+                ),
+                "summary": jsonish_compact(
+                    {
+                        "summary": clean_string(blocker.get("summary")),
+                        "facts": blocker.get("facts") if isinstance(blocker.get("facts"), dict) else {},
+                        "source_files": list_or_empty(blocker.get("source_files"))[:4],
+                    }
+                ),
+            }
+        )
     for candidate in reframe_candidates[:4]:
         items.append(
             {
@@ -286,6 +311,7 @@ def rank_context_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
         "planning_focus": 30,
         "workspace_validation": 25,
         "pathway_model": 24,
+        "endpoint_evidence_blocker": 23,
         "failed_branch_lesson": 22,
         "accepted_node": 20,
         "focus_lineage": 15,

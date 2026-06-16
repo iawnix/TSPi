@@ -164,6 +164,12 @@ never the UI.
    - Keep at most one `event_state=active` backtrack in a workspace. Use
      `update-backtrack` to resolve or supersede the current active backtrack
      before making another one active.
+   - Treat `endpoint_evidence_blockers` as parsed diagnostic facts, not a
+     preselected repair strategy. If an endpoint or endpoint-continuation branch
+     hit a Gaussian step limit, ignored the requested MaxCycle, replayed a
+     terminal restart state, or otherwise failed endpoint validation, do not
+     promote that error-terminated geometry as endpoint evidence. Backtrack or
+     open a new endpoint/connectivity branch with a documented changed variable.
    - `plan-next` may draft decision-card suggestions, but it does not choose the
      chemistry. The agent must still decide the mechanism hypothesis, method
      level, observables, constraints, and compute cost.
@@ -315,6 +321,7 @@ Python tooling follows a package layout:
   workspace/tree/node/evidence loading, `pathway.py` owns pathway-step
   planning scope, `phase.py` owns phase/focus inference, `suggestions.py`
   owns suggested decision/finalization/reframe/backtrack actions,
+  `diagnostics.py` owns parsed endpoint-evidence blocker extraction,
   `context.py` owns context summaries and ranking, `snapshot.py` owns read-only
   workspace snapshots and node claim grouping, `packet.py` builds the final
   planning packet, and `ids.py` owns node id sorting and next-id helpers. The

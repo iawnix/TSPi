@@ -25,6 +25,7 @@ from .context import (
     summarize_reframe_tsfreq_record,
 )
 from .contracts import PLAN_SCHEMA, TsfreqEvidencePredicate, WorkspaceValidator
+from .diagnostics import endpoint_evidence_blocker_summaries
 from .ids import latest_node_id, next_suggested_node_id, node_number, node_sort_key
 from .loader import (
     active_node_summaries,
@@ -65,6 +66,7 @@ __all__ = [
     "PLAN_SCHEMA",
     "WorkspaceValidator",
     "TsfreqEvidencePredicate",
+    "endpoint_evidence_blocker_summaries",
     "register_plan_next_parser",
     "build_plan_next_packet",
     "ensure_plan_workspace",

@@ -52,6 +52,7 @@ def build_plan_next_packet(
     failed_nodes = snapshot.failed_nodes
     backtrack_events = snapshot.backtrack_events
     reframe_candidates = snapshot.reframe_candidates
+    endpoint_evidence_blockers = snapshot.endpoint_evidence_blockers
 
     endpoint_nodes = snapshot.claims.endpoint_nodes
     candidate_nodes = snapshot.claims.candidate_nodes
@@ -166,6 +167,30 @@ def build_plan_next_packet(
             allowed.append("reframe_validated_wrong_mode_tsfreq_with_new_endpoint_refs")
         if "promote_rejected_tsfreq_without_new_connectivity_boundary" not in forbidden:
             forbidden.append("promote_rejected_tsfreq_without_new_connectivity_boundary")
+    endpoint_blockers_gate_scientific_planning = bool(endpoint_evidence_blockers) and not (
+        validation_errors
+        or active_nodes
+        or (accepted_nodes and not alternative_mechanism and pathway_plan.get("mode") not in {"start", "continue"})
+    )
+    if endpoint_blockers_gate_scientific_planning:
+        _append_unique(blocking_gates, "endpoint_evidence_not_validated")
+        _append_unique(allowed, "record_backtrack_to_endpoint_or_connectivity_ancestor")
+        _append_unique(allowed, "replan_endpoint_or_connectivity_evidence_with_changed_variable")
+        _append_unique(forbidden, "endpoint_promotion_from_error_terminated_log")
+        _append_unique(forbidden, "repeat_unchanged_endpoint_restart")
+        _append_unique(forbidden, "neb_qst_from_failed_endpoint_evidence")
+        _append_unique(forbidden, "accepted_ts_from_failed_endpoint_evidence")
+        if planning_focus["mode"] == "advance":
+            latest_blocker = endpoint_evidence_blockers[-1]
+            planning_focus = {
+                "mode": "endpoint_evidence_replan",
+                "focus_node": clean_string(latest_blocker.get("node_id")),
+                "parent_for_new_branch": None,
+                "reason": (
+                    "Parsed endpoint evidence is not validated; choose a chemically meaningful "
+                    "ancestor and changed endpoint/connectivity hypothesis before opening the next branch."
+                ),
+            }
 
     suggestions = suggest_decision_cards(
         source=source,
@@ -220,7 +245,14 @@ def build_plan_next_packet(
         "context_policy": {
             "mode": "alternative_mechanism_context" if alternative_mechanism else "structured_priority_context",
             "retrieval_mode": "ranked_workspace_artifacts",
-            "ranking_keys": ["priority", "planning_focus", "failed_branch_lesson", "accepted_node", "mechanism_memory"],
+            "ranking_keys": [
+                "priority",
+                "planning_focus",
+                "endpoint_evidence_blocker",
+                "failed_branch_lesson",
+                "accepted_node",
+                "mechanism_memory",
+            ],
             "raw_excerpt_policy": "include parsed summaries and reflections first; read raw logs only when a blocking gate requires exact error text",
             "parent_rule": "new decision cards follow planning_focus.parent_for_new_branch when backtracking is active",
             "reframe_rule": "rejected or wrong-mode TS/Freq nodes stay historical; reuse them only through input_refs on a new node with a new intended reaction boundary",
@@ -239,6 +271,7 @@ def build_plan_next_packet(
             backtrack_events=backtrack_events,
             accepted_nodes=accepted_nodes,
             active_nodes=active_nodes,
+            endpoint_evidence_blockers=endpoint_evidence_blockers,
         ),
         "blocking_gates": blocking_gates,
         "allowed_next_actions": allowed,
@@ -247,6 +280,7 @@ def build_plan_next_packet(
         "refuted_hypotheses": list_or_empty(mechanism.get("refuted_hypotheses"))[:12],
         "open_questions": list_or_empty(mechanism.get("open_questions"))[:12],
         "evidence_summary": summarize_evidence(snapshot.evidence),
+        "endpoint_evidence_blockers": endpoint_evidence_blockers[:8],
         "reframe_candidates": reframe_candidates[:8],
         "backtrack_events": backtrack_events[:8],
         "failed_or_ambiguous_branches": failed_nodes[:8],
@@ -268,3 +302,8 @@ def build_plan_next_packet(
 
 
 __all__ = ["build_plan_next_packet"]
+
+
+def _append_unique(values: list[str], item: str) -> None:
+    if item not in values:
+        values.append(item)

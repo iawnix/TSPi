@@ -610,6 +610,207 @@ def test_plan_next_requires_backtrack_before_new_child_under_failed_branch(tmp_p
     assert "new_child_under_failed_node_without_backtrack" in packet["forbidden_next_actions"]
 
 
+def test_plan_next_flags_step_limited_endpoint_continuation_as_endpoint_blocker(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_unit"
+    initialize_workspace(root)
+    parsed = root / "nodes" / "n010_candidate" / "parsed" / "summary.json"
+    parsed.write_text('{"candidate": true}\n', encoding="utf-8")
+    candidate_evidence = {
+        "kind": "parsed_summary",
+        "path": "nodes/n010_candidate/parsed/summary.json",
+        "claim": "Unit-test candidate summary exists.",
+        "evidence_state": "candidate_found",
+    }
+    run_cli(
+        str(WORKSPACE_CLI),
+        "finalize-node",
+        "--root",
+        str(root),
+        "--node-id",
+        "n010_candidate",
+        "--claim-status",
+        "candidate_found",
+        "--decision",
+        "prepare_gaussian_validation",
+        "--summary",
+        "Unit-test candidate exists.",
+        "--primary-file",
+        "nodes/n010_candidate/parsed/summary.json",
+        "--evidence",
+        json.dumps(candidate_evidence),
+        "--computational-outcome",
+        "Candidate generation completed.",
+        "--mechanistic-implication",
+        "The candidate needs TS/Freq validation.",
+        "--next-branch",
+        "Run Gaussian TS/Freq validation.",
+    )
+    run_cli(
+        str(WORKSPACE_CLI),
+        "decision-card",
+        "--root",
+        str(root),
+        "--node-id",
+        "n020_tsfreq",
+        "--parent-id",
+        "n010_candidate",
+        "--stage",
+        "gaussian_tsfreq_validation",
+        "--hypothesis",
+        "The candidate has a validated TS/Freq result.",
+        "--operation",
+        "unit-test-gaussian-tsfreq",
+    )
+    tsfreq_summary = root / "nodes" / "n020_tsfreq" / "parsed" / "tsfreq.json"
+    tsfreq_summary.write_text(
+        json.dumps(
+            {
+                "normal_termination": True,
+                "stationary_point_found": True,
+                "final_convergence_satisfied": True,
+                "imaginary_frequency_count": 1,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    tsfreq_evidence = {
+        "kind": "gaussian_tsfreq_validation",
+        "path": "nodes/n020_tsfreq/parsed/tsfreq.json",
+        "claim": "Unit-test TS/Freq validation passed.",
+        "evidence_state": "supports",
+    }
+    run_cli(
+        str(WORKSPACE_CLI),
+        "finalize-node",
+        "--root",
+        str(root),
+        "--node-id",
+        "n020_tsfreq",
+        "--claim-status",
+        "tsfreq_validated",
+        "--decision",
+        "prepare_connectivity_validation",
+        "--summary",
+        "TS/Freq validation passed.",
+        "--primary-file",
+        "nodes/n020_tsfreq/parsed/tsfreq.json",
+        "--evidence",
+        json.dumps(tsfreq_evidence),
+        "--computational-outcome",
+        "TS/Freq validation completed.",
+        "--mechanistic-implication",
+        "Connectivity still needs validation.",
+        "--next-branch",
+        "Run product-side endpoint continuation.",
+    )
+    run_cli(
+        str(WORKSPACE_CLI),
+        "decision-card",
+        "--root",
+        str(root),
+        "--node-id",
+        "n030_product_endpoint_continuation",
+        "--parent-id",
+        "n020_tsfreq",
+        "--stage",
+        "connectivity_validation",
+        "--hypothesis",
+        "The product-side endpoint continuation should validate the product endpoint.",
+        "--operation",
+        "gaussian-product-side-endpoint-continuation",
+    )
+    endpoint_summary = (
+        root
+        / "nodes"
+        / "n030_product_endpoint_continuation"
+        / "parsed"
+        / "gaussian_opt_parse"
+        / "validation_summary.json"
+    )
+    endpoint_summary.parent.mkdir(parents=True, exist_ok=True)
+    endpoint_summary.write_text(
+        json.dumps(
+            {
+                "normal_termination": False,
+                "error_termination": True,
+                "stationary_point_found": False,
+                "opt_cycle_diagnostics": {
+                    "step_limit_reached": True,
+                    "requested_opt_max_cycles": 200,
+                    "printed_opt_maximum_steps": 100,
+                    "max_cycle_request_mismatch": True,
+                },
+                "force_convergence": {
+                    "Maximum Force": {"converged": "YES"},
+                    "RMS Force": {"converged": "YES"},
+                    "Maximum Displacement": {"converged": "NO"},
+                    "RMS Displacement": {"converged": "NO"},
+                },
+                "identity": {"fragments": [[1, 2], [3, 4]]},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    endpoint_evidence = {
+        "kind": "gaussian_endpoint_continuation_summary",
+        "path": "nodes/n030_product_endpoint_continuation/parsed/gaussian_opt_parse/validation_summary.json",
+        "claim": "Endpoint continuation stopped at the Gaussian step limit before endpoint validation.",
+        "evidence_state": "ambiguous",
+    }
+    run_cli(
+        str(WORKSPACE_CLI),
+        "finalize-node",
+        "--root",
+        str(root),
+        "--node-id",
+        "n030_product_endpoint_continuation",
+        "--claim-status",
+        "not_evaluated",
+        "--outcome",
+        "numerical_failure",
+        "--outcome-code",
+        "product_side_endpoint_opt_step_limit_reached",
+        "--run-state",
+        "error",
+        "--decision",
+        "replan_endpoint_or_connectivity_evidence",
+        "--summary",
+        "Product-side endpoint continuation hit NStep=100; forces passed but displacement did not.",
+        "--primary-file",
+        "nodes/n030_product_endpoint_continuation/parsed/gaussian_opt_parse/validation_summary.json",
+        "--evidence",
+        json.dumps(endpoint_evidence),
+        "--computational-outcome",
+        "Gaussian stopped before endpoint validation.",
+        "--mechanistic-implication",
+        "The product endpoint cannot be used as validated connectivity evidence.",
+        "--next-branch",
+        "Backtrack to TS/Freq or endpoint validation and choose a changed endpoint/connectivity hypothesis.",
+    )
+
+    packet = plan_next(root)
+
+    assert packet["planning_focus"]["mode"] == "backtrack_decision_needed"
+    assert "endpoint_evidence_not_validated" in packet["blocking_gates"]
+    assert "record_backtrack_to_endpoint_or_connectivity_ancestor" in packet["allowed_next_actions"]
+    assert "endpoint_promotion_from_error_terminated_log" in packet["forbidden_next_actions"]
+    assert "repeat_unchanged_endpoint_restart" in packet["forbidden_next_actions"]
+    blocker = packet["endpoint_evidence_blockers"][0]
+    assert blocker["node_id"] == "n030_product_endpoint_continuation"
+    assert set(blocker["labels"]) >= {
+        "gaussian_step_limit_reached",
+        "opt_maxcycle_request_mismatch",
+        "force_pass_displacement_fail",
+        "multi_fragment_endpoint",
+        "endpoint_not_validated",
+    }
+    assert blocker["facts"]["requested_opt_max_cycles"] == 200
+    assert blocker["facts"]["printed_opt_maximum_steps"] == 100
+    assert any(item["kind"] == "endpoint_evidence_blocker" for item in packet["context_items"])
+
+
 def test_plan_next_routes_new_branch_to_active_backtrack_target(tmp_path: Path) -> None:
     root = tmp_path / "tssearch_unit"
     initialize_workspace(root)
