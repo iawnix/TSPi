@@ -389,8 +389,12 @@ Python tooling follows a package layout:
 - `src/transition_state_workflow/remote/`: remote execution and synchronization
   boundary. `exec.py` owns the argv-only OpenSSH executor, `openssh.py` adapts
   it to `RemoteTransport`, `sftp.py` provides optional Paramiko SSH/SFTP,
-  `mcp.py` provides an injected MCP transport boundary, `gaussian_runner.py`
-  runs node-scoped remote Gaussian jobs, `gaussian_monitor.py` handles
+  `mcp.py` provides an injected MCP transport boundary, `job_runner.py` owns
+  engine-neutral remote job lifecycle mechanics such as directory preparation,
+  uploads, foreground/background launch, receipt/nohup/metadata files,
+  node-output status/tail/fetch snippets, and downloads, `gaussian_runner.py`
+  is the Gaussian engine adapter over that generic lifecycle,
+  `gaussian_monitor.py` provides Gaussian artifact-pattern policy for
   status/tail/fetch, and `sync.py`/`sync_cli.py` handle explicit metadata
   mirror synchronization.
 - `src/transition_state_workflow/util/`: cross-cutting helpers —
@@ -446,7 +450,8 @@ Python tooling follows a package layout:
   XYZ.
 - `scripts/gaussian_gen_preflight.py`: preflight and optionally repair Gaussian
   Gen/GenECP inputs before remote execution.
-- `scripts/run_remote_gaussian.py`: run Gaussian through login and compute hosts.
+- `scripts/run_remote_gaussian.py`: run Gaussian through the generic remote
+  job lifecycle on login and compute hosts.
 - `scripts/ts_remote_status.py`, `scripts/ts_remote_tail.py`, and
   `scripts/ts_remote_fetch.py`: inspect or fetch node-scoped remote Gaussian
   outputs without starting new compute work.

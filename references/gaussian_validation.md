@@ -116,17 +116,19 @@ be opt-in and validated on the target Gaussian build before use.
 
 Remote Gaussian jobs consume compute resources. Start them only after the user has authorized that compute work in the task context.
 
-The Python remote runner is backed by `src/transition_state_workflow/remote/exec.py`.
-Local execution must stay argv-based through `subprocess.run(..., shell=False)`.
-Operators such as `&&`, `>`, `2>&1`, `< /dev/null`, `&`, and `$!` belong only
-inside the final compute-host `bash -lc` command; do not hand-write nested SSH
-strings that let the login host interpret those operators.
+The Python remote runner is backed by `src/transition_state_workflow/remote/exec.py`
+for SSH command construction and `src/transition_state_workflow/remote/job_runner.py`
+for the engine-neutral job lifecycle. Local execution must stay argv-based
+through `subprocess.run(..., shell=False)`. Operators such as `&&`, `>`,
+`2>&1`, `< /dev/null`, `&`, and `$!` belong only inside the final compute-host
+`bash -lc` command; do not hand-write nested SSH strings that let the login
+host interpret those operators.
 
-`run_remote_gaussian.py` is a Gaussian engine adapter, not the generic remote
-job abstraction. It owns Gaussian-specific input placement, `.out`/driver log
-names, checkpoint handling, and scratch copy-back behavior. Future xTB or
-ASE/NEB remote execution should use a generic job lifecycle runner with an
-engine-specific adapter instead of passing non-Gaussian jobs through this CLI.
+`run_remote_gaussian.py` is the Gaussian engine adapter over the generic remote
+job lifecycle. It owns Gaussian-specific input placement, `.out`/driver log
+names, checkpoint handling, and scratch copy-back behavior. xTB or ASE/NEB
+remote execution should provide its own engine adapter and `RemoteJobSpec`
+instead of passing non-Gaussian jobs through this CLI.
 
 Runner scripts that source `g16.profile` under `set -euo pipefail` must disable
 both `-e` and `-u` while sourcing, then restore strict mode:

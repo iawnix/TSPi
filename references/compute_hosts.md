@@ -58,14 +58,15 @@ export PATH=$QBICS_HOME:$PATH
 Remote command construction:
 
 - Prefer `scripts/run_remote_gaussian.py` for Gaussian. It builds login-host to
-  compute-host SSH commands with `remote/exec.py`, using local
-  `subprocess.run(..., shell=False)` and a single final compute-host
-  `bash -lc` command.
-- Keep engine semantics out of the generic SSH boundary. The intended next
-  shape is a generic remote job lifecycle layer for directory preparation,
-  background submit, PID/metadata, tail, fetch, and summary, with thin engine
-  adapters for Gaussian, xTB, and ASE-NEB. Until that layer lands, do not reuse
-  `run_remote_gaussian.py` for xTB or ASE/NEB jobs.
+  compute-host SSH commands with `remote/exec.py` and submits through
+  `remote/job_runner.py`, using local `subprocess.run(..., shell=False)` and a
+  single final compute-host `bash -lc` command.
+- Keep engine semantics out of the generic SSH and job lifecycle boundaries.
+  `remote/job_runner.py` owns directory preparation, background submit,
+  PID/metadata receipt files, node-output status/tail/fetch snippets, and
+  downloads. `run_remote_gaussian.py` is the Gaussian adapter over that layer;
+  xTB or ASE/NEB remote execution must provide engine-specific adapters instead
+  of reusing the Gaussian CLI.
 - For ad hoc compute-host commands that need shell operators, generate the SSH
   argv through `OpenSSHRemoteExecutor.compute_argv(...)` instead of hand-writing
   nested quotes:

@@ -4,15 +4,20 @@
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass
 import posixpath
-import shlex
 import subprocess
 import sys
 from pathlib import Path
 
 from transition_state_workflow.util.cli import CliError, relay_stderr, relay_stdout, run_cli, warn
 from transition_state_workflow.remote.exec import OpenSSHRemoteExecutor, RemoteTarget
+from transition_state_workflow.remote.job_runner import (
+    RemoteNodeLayout,
+    fetch_list_command,
+    status_command,
+    tail_command,
+    validate_node_id,
+)
 
 
 DEFAULT_FETCH_PATTERNS = (
@@ -31,16 +36,6 @@ DEFAULT_FETCH_PATTERNS = (
     "*.run_gaussian_on_compute.sh",
     "*.runner.log",
 )
-
-
-@dataclass(frozen=True)
-class RemoteNodeLayout:
-    """Remote and optional local paths for one node-scoped Gaussian run."""
-
-    remote_root: str
-    node_id: str
-    remote_outputs_dir: str
-    local_outputs_dir: Path | None = None
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -151,135 +146,6 @@ def build_layout(args: argparse.Namespace) -> RemoteNodeLayout:
         remote_outputs_dir=remote_outputs_dir,
         local_outputs_dir=local_outputs_dir,
     )
-
-
-def validate_node_id(raw: str) -> str:
-    """Reject path-like node ids before building remote paths."""
-
-    node_id = raw.strip()
-    if not node_id or "/" in node_id or node_id in {".", ".."}:
-        raise CliError("--node must be a node id, not a path")
-    return node_id
-
-
-def validate_output_file(raw: str) -> str:
-    """Reject path-like output filenames before tailing."""
-
-    name = raw.strip()
-    if name == "auto":
-        return name
-    if not name or "/" in name or name in {".", ".."}:
-        raise CliError("--file must be a filename under node outputs/, or auto")
-    return name
-
-
-def status_command(layout: RemoteNodeLayout) -> str:
-    """Return a remote shell snippet that summarizes node output state."""
-
-    run_dir = shlex.quote(layout.remote_outputs_dir)
-    return f"""set -u
-RUN_DIR={run_dir}
-echo "remote_outputs=$RUN_DIR"
-if [ ! -d "$RUN_DIR" ]; then
-  echo "error: missing remote outputs dir: $RUN_DIR" >&2
-  exit 3
-fi
-cd "$RUN_DIR"
-echo "--- files ---"
-find . -maxdepth 1 -type f -printf '%TY-%Tm-%Td %TH:%TM %s %f\\n' 2>/dev/null | sort || true
-echo "--- metadata ---"
-for f in submit_receipt.txt *.submit_receipt.txt run_metadata.txt run_metadata.*.txt *.run_metadata.txt; do
-  [ -f "$f" ] || continue
-  echo "### $f"
-  sed -n '1,160p' "$f" || true
-done
-echo "--- process checks ---"
-for receipt in submit_receipt.txt *.submit_receipt.txt; do
-  [ -f "$receipt" ] || continue
-  pid="$(awk -F= '$1 == "remote_pid" {{print $2}}' "$receipt" | tail -n 1)"
-  if [ -n "$pid" ]; then
-    if kill -0 "$pid" 2>/dev/null; then
-      echo "$receipt remote_pid=$pid alive=true"
-    else
-      echo "$receipt remote_pid=$pid alive=false"
-    fi
-  fi
-done
-for pid_file in *.pid; do
-  [ -f "$pid_file" ] || continue
-  pid="$(cat "$pid_file" 2>/dev/null || true)"
-  if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
-    echo "$pid_file pid=$pid alive=true"
-  else
-    echo "$pid_file pid=${{pid:-missing}} alive=false"
-  fi
-done
-echo "--- recent logs ---"
-for f in runner.nohup *.runner.nohup *.runner.log g16_driver.out *.g16_driver.out; do
-  [ -f "$f" ] || continue
-  echo "### tail $f"
-  tail -n 30 "$f" || true
-done
-"""
-
-
-def tail_command(layout: RemoteNodeLayout, *, filename: str, lines: int) -> str:
-    """Return a remote shell snippet that tails one node output file."""
-
-    if lines < 1:
-        raise CliError("--lines must be >= 1")
-    filename = validate_output_file(filename)
-    run_dir = shlex.quote(layout.remote_outputs_dir)
-    target = shlex.quote(filename)
-    return f"""set -u
-RUN_DIR={run_dir}
-TARGET={target}
-LINES={lines}
-if [ ! -d "$RUN_DIR" ]; then
-  echo "error: missing remote outputs dir: $RUN_DIR" >&2
-  exit 3
-fi
-cd "$RUN_DIR"
-if [ "$TARGET" = "auto" ]; then
-  latest_out="$(find . -maxdepth 1 -type f -name '*.out' -printf '%T@ %f\\n' 2>/dev/null | sort -nr | awk 'NR == 1 {{$1=\"\"; sub(/^ /, \"\"); print}}')"
-  if [ -n "$latest_out" ]; then
-    TARGET="$latest_out"
-  else
-    latest_runner="$(find . -maxdepth 1 -type f \\( -name 'runner.nohup' -o -name '*.runner.nohup' \\) -printf '%T@ %f\\n' 2>/dev/null | sort -nr | awk 'NR == 1 {{$1=\"\"; sub(/^ /, \"\"); print}}')"
-    latest_metadata="$(find . -maxdepth 1 -type f \\( -name 'run_metadata.txt' -o -name 'run_metadata.*.txt' -o -name '*.run_metadata.txt' \\) -printf '%T@ %f\\n' 2>/dev/null | sort -nr | awk 'NR == 1 {{$1=\"\"; sub(/^ /, \"\"); print}}')"
-    if [ -n "$latest_runner" ]; then
-      TARGET="$latest_runner"
-    elif [ -n "$latest_metadata" ]; then
-      TARGET="$latest_metadata"
-    else
-      TARGET="$(find . -maxdepth 1 -type f -printf '%f\\n' 2>/dev/null | sort | head -n 1)"
-    fi
-  fi
-fi
-if [ -z "$TARGET" ] || [ ! -f "$TARGET" ]; then
-  echo "error: no tail target found under $RUN_DIR" >&2
-  exit 4
-fi
-echo "remote_outputs=$RUN_DIR"
-echo "tail_file=$TARGET"
-tail -n "$LINES" -- "$TARGET"
-"""
-
-
-def fetch_list_command(layout: RemoteNodeLayout, patterns: list[str]) -> str:
-    """Return a remote shell snippet that lists fetchable output files."""
-
-    run_dir = shlex.quote(layout.remote_outputs_dir)
-    clauses = " -o ".join(f"-name {shlex.quote(pattern)}" for pattern in patterns)
-    return f"""set -u
-RUN_DIR={run_dir}
-if [ ! -d "$RUN_DIR" ]; then
-  echo "error: missing remote outputs dir: $RUN_DIR" >&2
-  exit 3
-fi
-cd "$RUN_DIR"
-find . -maxdepth 1 -type f \\( {clauses} \\) -printf '%f\\n' | sort
-"""
 
 
 def print_result(result: subprocess.CompletedProcess[str]) -> None:

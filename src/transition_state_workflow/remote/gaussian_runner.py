@@ -9,23 +9,23 @@ import posixpath
 import re
 import shlex
 import subprocess
-import tempfile
 from pathlib import Path
 
-from transition_state_workflow.util.cli import CliError, emit_stdout, run_cli, warn
+from transition_state_workflow.util.cli import CliError, run_cli
 from transition_state_workflow.remote.exec import (
     OpenSSHRemoteExecutor,
     RemoteTarget,
-    command_text,
-    print_captured_streams,
 )
-
-
-def run(argv: list[str], dry_run: bool) -> None:
-    emit_stdout(command_text(argv))
-    if dry_run:
-        return
-    subprocess.run(argv, check=True)
+from transition_state_workflow.remote.job_runner import (
+    RemoteJobSpec,
+    RemoteUpload,
+    background_submit_command as generic_background_submit_command,
+    background_verify_command as generic_background_verify_command,
+    download_job_results,
+    parse_background_pid,
+    run_remote_job,
+    submit_background_remote_job,
+)
 
 
 def remote_executor(args: argparse.Namespace) -> OpenSSHRemoteExecutor:
@@ -313,181 +313,79 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def download_remote_file(args: argparse.Namespace, layout: GaussianRunLayout, name: str, tolerate_missing: bool) -> bool:
-    remote_path = f"{args.login_host}:{layout.remote_run_dir}/{name}"
-    try:
-        run([*scp_prefix(args), remote_path, str(layout.local_download_dir / Path(name).name)], args.dry_run)
-    except subprocess.CalledProcessError:
-        if not tolerate_missing:
-            raise
-        warn(f"missing remote file {remote_path}")
-        return False
-    return True
+def build_remote_job_spec(args: argparse.Namespace, input_path: Path, layout: GaussianRunLayout) -> RemoteJobSpec:
+    """Build the generic remote job spec for one Gaussian input."""
+
+    expected_groups: list[tuple[str, ...]] = [
+        (layout.output_name, f"{Path(layout.output_name).stem}.log"),
+        (layout.metadata_name, "run_metadata.txt"),
+        (layout.driver_name, "g16_driver.out"),
+    ]
+    chk = checkpoint_name(input_path, args.chk)
+    if chk:
+        expected_groups.append((Path(chk).name,))
+    uploads = [
+        RemoteUpload(input_path, posixpath.join(layout.remote_input_dir, input_path.name)),
+        *(
+            RemoteUpload(path.resolve(), posixpath.join(layout.remote_run_dir, path.resolve().name))
+            for path in args.extra_file
+        ),
+    ]
+    return RemoteJobSpec(
+        engine="gaussian",
+        job_stem=layout.job_stem,
+        remote_run_dir=layout.remote_run_dir,
+        runner_name=layout.runner_name,
+        runner_text=remote_runner_text(args, layout),
+        local_download_dir=layout.local_download_dir,
+        uploads=tuple(uploads),
+        remote_prepare_dirs=(layout.remote_input_dir, layout.remote_scratch_dir),
+        metadata_name=layout.metadata_name,
+        receipt_name=layout.receipt_name,
+        nohup_name=layout.nohup_name,
+        download_groups=tuple(expected_groups),
+        optional_download_groups=((layout.receipt_name, "submit_receipt.txt"), (layout.nohup_name, "runner.nohup")),
+    )
 
 
-def download_first_existing(
-    args: argparse.Namespace,
-    layout: GaussianRunLayout,
-    names: list[str],
-    *,
-    tolerate_missing: bool,
-) -> bool:
-    """Download the first available candidate, trying stem-scoped names before legacy names."""
+def gaussian_spec_from_layout(layout: GaussianRunLayout, *, runner_name: str) -> RemoteJobSpec:
+    """Build a minimal Gaussian spec for compatibility helpers."""
 
-    unique_names = list(dict.fromkeys(names))
-    errors: list[subprocess.CalledProcessError] = []
-    for name in unique_names:
-        try:
-            return download_remote_file(args, layout, name, tolerate_missing=False)
-        except subprocess.CalledProcessError as exc:
-            errors.append(exc)
-            continue
-    if errors and not tolerate_missing:
-        raise errors[0]
-    warn(f"missing remote files under {layout.remote_run_dir}: {', '.join(unique_names)}")
-    return False
-
-
-def download_output_file(args: argparse.Namespace, layout: GaussianRunLayout, tolerate_missing: bool) -> None:
-    candidates = [layout.output_name, f"{Path(layout.output_name).stem}.log"]
-    errors: list[subprocess.CalledProcessError] = []
-    for name in candidates:
-        remote_path = f"{args.login_host}:{layout.remote_run_dir}/{name}"
-        try:
-            run([*scp_prefix(args), remote_path, str(layout.local_download_dir / name)], args.dry_run)
-        except subprocess.CalledProcessError as exc:
-            errors.append(exc)
-            if tolerate_missing:
-                warn(f"missing remote file {remote_path}")
-            continue
-        return
-    if errors and not tolerate_missing:
-        raise errors[0]
+    return RemoteJobSpec(
+        engine="gaussian",
+        job_stem=layout.job_stem,
+        remote_run_dir=layout.remote_run_dir,
+        runner_name=runner_name,
+        runner_text="",
+        local_download_dir=layout.local_download_dir,
+        metadata_name=layout.metadata_name,
+        receipt_name=layout.receipt_name,
+        nohup_name=layout.nohup_name,
+    )
 
 
 def download_results(args: argparse.Namespace, input_path: Path, layout: GaussianRunLayout, *, tolerate_missing: bool) -> None:
     """Pull the Gaussian output, runner metadata, and checkpoint back locally."""
 
-    layout.local_download_dir.mkdir(parents=True, exist_ok=True)
-    download_output_file(args, layout, tolerate_missing)
-    expected_groups = [
-        [layout.metadata_name, "run_metadata.txt"],
-        [layout.driver_name, "g16_driver.out"],
-    ]
-    chk = checkpoint_name(input_path, args.chk)
-    if chk:
-        expected_groups.append([Path(chk).name])
-    for names in expected_groups:
-        download_first_existing(args, layout, names, tolerate_missing=tolerate_missing)
-    for names in ([layout.receipt_name, "submit_receipt.txt"], [layout.nohup_name, "runner.nohup"]):
-        download_first_existing(args, layout, names, tolerate_missing=True)
+    download_job_results(remote_executor(args), build_remote_job_spec(args, input_path, layout), tolerate_missing=tolerate_missing)
 
 
 def background_submit_command(layout: GaussianRunLayout, runner_name: str) -> str:
     """Build the remote shell snippet that records and launches a background job."""
 
-    run_dir = shlex.quote(layout.remote_run_dir)
-    runner = shlex.quote(runner_name)
-    metadata = shlex.quote(layout.metadata_name)
-    receipt = shlex.quote(layout.receipt_name)
-    nohup = shlex.quote(layout.nohup_name)
-    return (
-        f"cd {run_dir} && {{ "
-        f"rm -f {nohup} {metadata} {receipt}; "
-        f"printf 'submit_start=%s\\n' \"$(date -Is)\" > {receipt}; "
-        f"printf 'submit_host=%s\\n' \"$(hostname)\" >> {receipt}; "
-        f"printf 'runner=%s\\n' {runner} >> {receipt}; "
-        f"nohup bash ./{runner} > {nohup} 2>&1 < /dev/null & "
-        "pid=$!; "
-        f"printf 'remote_pid=%s\\n' \"$pid\" >> {receipt}; "
-        f"printf 'submit_end=%s\\n' \"$(date -Is)\" >> {receipt}; "
-        "echo \"$pid\"; "
-        "}"
-    )
+    return generic_background_submit_command(gaussian_spec_from_layout(layout, runner_name=runner_name))
 
 
 def background_verify_command(layout: GaussianRunLayout) -> str:
     """Build the remote shell snippet that confirms background startup artifacts."""
 
-    run_dir = shlex.quote(layout.remote_run_dir)
-    metadata = shlex.quote(layout.metadata_name)
-    receipt = shlex.quote(layout.receipt_name)
-    nohup = shlex.quote(layout.nohup_name)
-    return f"""cd {run_dir}
-for attempt in 1 2 3 4 5 6 7 8 9 10; do
-    pid=""
-    if [ -f {receipt} ]; then
-        pid="$(awk -F= '$1 == "remote_pid" {{print $2}}' {receipt} | tail -n 1)"
-    fi
-    if [ -n "$pid" ] && [ -f {metadata} ]; then
-        echo "verified background startup metadata on attempt=$attempt pid=$pid"
-        exit 0
-    fi
-    if [ -n "$pid" ] && [ -f {nohup} ] && kill -0 "$pid" 2>/dev/null; then
-        echo "verified background process on attempt=$attempt pid=$pid"
-        exit 0
-    fi
-    sleep 0.4
-done
-echo "error: missing verified background startup on compute host in $PWD" >&2
-echo "--- ls -la ---" >&2
-ls -la >&2 || true
-if [ -f {receipt} ]; then
-    echo "--- {layout.receipt_name} ---" >&2
-    cat {receipt} >&2
-fi
-if [ -f {nohup} ]; then
-    echo "--- {layout.nohup_name} tail ---" >&2
-    tail -n 40 {nohup} >&2 || true
-fi
-exit 87
-"""
-
-
-def parse_background_pid(stdout: str) -> str:
-    """Return the last PID-looking line from a background submit stdout stream."""
-
-    lines = [line.strip() for line in stdout.splitlines() if line.strip()]
-    for line in reversed(lines):
-        if re.fullmatch(r"\d+", line):
-            return line
-    return ""
+    return generic_background_verify_command(gaussian_spec_from_layout(layout, runner_name=layout.runner_name))
 
 
 def submit_background(args: argparse.Namespace, layout: GaussianRunLayout, runner_name: str) -> int:
     """Launch the runner with nohup on the compute host and return at once."""
 
-    if args.dry_run:
-        run_nested_compute_command(args, background_submit_command(layout, runner_name), label="background submit")
-        run_nested_compute_command(args, background_verify_command(layout), label="background startup verification")
-        return 0
-
-    submit_result = run_nested_compute_command(
-        args,
-        background_submit_command(layout, runner_name),
-        label="background submit",
-    )
-    pid = parse_background_pid(submit_result.stdout)
-    if not pid:
-        print_captured_streams("background submit", submit_result.stdout, submit_result.stderr)
-        raise CliError("background submission did not return a remote PID")
-
-    try:
-        run_nested_compute_command(
-            args,
-            background_verify_command(layout),
-            label="background startup verification",
-        )
-    except subprocess.CalledProcessError as exc:
-        print_captured_streams("background submit", submit_result.stdout, submit_result.stderr)
-        raise CliError(f"background submission could not verify {layout.nohup_name} or {layout.metadata_name}") from exc
-
-    emit_stdout(f"submitted in background on {args.compute_host}, remote_pid={pid}")
-    metadata_path = posixpath.join(layout.remote_run_dir, layout.metadata_name)
-    poll_argv = nested_compute_ssh_argv(args, f"tail -n 5 {shlex.quote(metadata_path)}")
-    emit_stdout(f"poll:  {command_text(poll_argv)}")
-    emit_stdout(f"fetch: re-run this command with --fetch-only when {layout.metadata_name} has an end= line")
-    return 0
+    return submit_background_remote_job(remote_executor(args), gaussian_spec_from_layout(layout, runner_name=runner_name))
 
 
 def _run(argv: list[str] | None) -> int:
@@ -499,66 +397,16 @@ def _run(argv: list[str] | None) -> int:
         layout = build_run_layout(args, input_path)
     except ValueError as exc:
         raise CliError(str(exc)) from exc
-    layout.local_download_dir.mkdir(parents=True, exist_ok=True)
-
-    if args.fetch_only:
-        download_results(args, input_path, layout, tolerate_missing=args.ignore_missing)
-        return 0
-
-    runner = remote_runner_text(args, layout)
-    with tempfile.TemporaryDirectory(prefix="gaussian-remote-runner-") as tmp:
-        runner_path = Path(tmp) / layout.runner_name
-        runner_path.write_text(runner, encoding="utf-8")
-        if args.dry_run:
-            emit_stdout(f"--- {layout.runner_name} ---")
-            emit_stdout(runner.rstrip())
-            emit_stdout("--- commands ---")
-
-        # Remote mkdir/chmod run as a single shell snippet on the login host with
-        # every path shlex-quoted, so a directory containing spaces or shell
-        # metacharacters is treated as a literal path, never interpreted as
-        # extra arguments or commands. scp remote targets are likewise quoted.
-        executor = remote_executor(args)
-        remote_dirs = " ".join(
-            shlex.quote(d)
-            for d in (layout.remote_input_dir, layout.remote_run_dir, layout.remote_scratch_dir)
-        )
-        executor.run_login(f"mkdir -p {remote_dirs}", label="remote mkdir")
-        run(
-            [*scp_prefix(args), str(input_path), f"{args.login_host}:{shlex.quote(f'{layout.remote_input_dir}/{input_path.name}')}"],
-            args.dry_run,
-        )
-        for local in [*[path.resolve() for path in args.extra_file], runner_path]:
-            run(
-                [*scp_prefix(args), str(local), f"{args.login_host}:{shlex.quote(f'{layout.remote_run_dir}/{local.name}')}"],
-                args.dry_run,
-            )
-        executor.run_login(
-            f"chmod +x {shlex.quote(posixpath.join(layout.remote_run_dir, runner_path.name))}",
-            label="remote chmod",
-        )
-
-        if args.background:
-            if args.no_run:
-                raise CliError("--background and --no-run are mutually exclusive")
-            return submit_background(args, layout, runner_path.name)
-
-        remote_status = 0
-        if not args.no_run:
-            runner_remote = posixpath.join(layout.remote_run_dir, runner_path.name)
-            try:
-                run_nested_compute_command(
-                    args,
-                    f"bash {shlex.quote(runner_remote)}",
-                    label="foreground Gaussian runner",
-                )
-            except subprocess.CalledProcessError as exc:
-                remote_status = exc.returncode
-
-        if not args.no_download:
-            tolerate_missing = args.ignore_missing or remote_status != 0
-            download_results(args, input_path, layout, tolerate_missing=tolerate_missing)
-    return remote_status
+    spec = build_remote_job_spec(args, input_path, layout)
+    return run_remote_job(
+        remote_executor(args),
+        spec,
+        no_run=args.no_run,
+        no_download=args.no_download,
+        background=args.background,
+        fetch_only=args.fetch_only,
+        ignore_missing=args.ignore_missing,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

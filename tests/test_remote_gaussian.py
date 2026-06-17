@@ -25,6 +25,7 @@ from transition_state_workflow.util.cli import CliError  # noqa: E402
 
 from transition_state_workflow.remote import gaussian_monitor as remote_gaussian_monitor  # noqa: E402
 from transition_state_workflow.remote import gaussian_runner as remote_gaussian  # noqa: E402
+from transition_state_workflow.remote import job_runner as remote_job_runner  # noqa: E402
 from transition_state_workflow.util import remote_exec  # noqa: E402
 
 
@@ -228,6 +229,75 @@ def test_remote_gaussian_monitor_builds_node_scoped_status_tail_and_fetch_comman
     assert "-name '*.run_metadata.txt'" in fetch
     assert "-name '*.runner.nohup'" in fetch
     assert "-printf '%f\\n'" in fetch
+
+
+def test_gaussian_monitor_reuses_generic_node_output_commands() -> None:
+    assert remote_gaussian_monitor.RemoteNodeLayout is remote_job_runner.RemoteNodeLayout
+    assert remote_gaussian_monitor.status_command is remote_job_runner.status_command
+    assert remote_gaussian_monitor.tail_command is remote_job_runner.tail_command
+    assert remote_gaussian_monitor.fetch_list_command is remote_job_runner.fetch_list_command
+
+
+def test_remote_job_runner_background_commands_are_engine_neutral() -> None:
+    spec = remote_job_runner.RemoteJobSpec(
+        engine="xtb",
+        job_stem="candidate",
+        remote_run_dir="/remote/tssearch_unit/nodes/n010_candidate/outputs",
+        runner_name="candidate.run_xtb_on_compute.sh",
+        runner_text="#!/usr/bin/env bash\nxtb input.xyz\n",
+        local_download_dir=Path("/tmp/unused"),
+        metadata_name="candidate.run_metadata.txt",
+        receipt_name="candidate.submit_receipt.txt",
+        nohup_name="candidate.runner.nohup",
+    )
+
+    submit = remote_job_runner.background_submit_command(spec)
+    assert "engine=%s" in submit
+    assert "xtb" in submit
+    assert "candidate.run_xtb_on_compute.sh" in submit
+    assert "run_gaussian" not in submit
+    assert "g16" not in submit.lower()
+
+    verify = remote_job_runner.background_verify_command(spec)
+    assert "candidate.submit_receipt.txt" in verify
+    assert "candidate.run_metadata.txt" in verify
+    assert "candidate.runner.nohup" in verify
+    assert "kill -0" in verify
+
+
+def test_gaussian_runner_builds_generic_remote_job_spec(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_unit"
+    initialize_workspace(root)
+    input_path = root / "nodes" / "n010_candidate" / "inputs" / "candidate.gjf"
+    input_path.write_text("%chk=candidate.chk\n#p opt freq\n\n0 1\nH 0 0 0\n\n", encoding="utf-8")
+    extra_file = tmp_path / "basis.lib"
+    extra_file.write_text("basis\n", encoding="utf-8")
+    args = SimpleNamespace(
+        remote_dir="/remote/tssearch_unit",
+        scratch=None,
+        output=None,
+        extra_file=[extra_file],
+        chk=None,
+        g16="/opt/g16/g16",
+        g16root="/opt/gaussian",
+        scratch_stdout=False,
+    )
+    layout = remote_gaussian.build_run_layout(args, input_path)
+
+    spec = remote_gaussian.build_remote_job_spec(args, input_path, layout)
+
+    assert spec.engine == "gaussian"
+    assert spec.remote_run_dir == "/remote/tssearch_unit/nodes/n010_candidate/outputs"
+    assert spec.remote_prepare_dirs == (
+        "/remote/tssearch_unit/nodes/n010_candidate/inputs",
+        "/remote/tssearch_unit/nodes/n010_candidate/scratch/gaussian",
+    )
+    assert spec.runner_name == "candidate.run_gaussian_on_compute.sh"
+    assert "G16=/opt/g16/g16" in spec.runner_text
+    assert "candidate.out" in spec.download_groups[0]
+    assert ("candidate.chk",) in spec.download_groups
+    assert any(upload.remote_path.endswith("/inputs/candidate.gjf") for upload in spec.uploads)
+    assert any(upload.remote_path.endswith("/outputs/basis.lib") for upload in spec.uploads)
 def test_remote_status_tail_fetch_wrappers_expose_help() -> None:
     for script in (REMOTE_STATUS_CLI, REMOTE_TAIL_CLI, REMOTE_FETCH_CLI):
         result = subprocess.run(
