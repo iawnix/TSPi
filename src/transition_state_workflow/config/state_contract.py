@@ -142,6 +142,23 @@ NODE_STATE_PRESENTATION = {
     "unknown": {"label": "unknown", "severity": "warn", "color": "amber"},
 }
 
+CARD_STATUS_PRESENTATION = {
+    "ready": {"label": "Ready", "severity": "neutral", "color": "grey"},
+    "running": {"label": "Running", "severity": "progress", "color": "blue"},
+    "success": {"label": "Success", "severity": "ok", "color": "green"},
+    "error": {"label": "Error", "severity": "fail", "color": "red"},
+    "stopped": {"label": "Stopped", "severity": "neutral", "color": "grey"},
+    "unknown": {"label": "Unknown", "severity": "warn", "color": "amber"},
+}
+
+CARD_PHASE_PRESENTATION = {
+    "preflight": {"label": "Preflight"},
+    "endpoint": {"label": "Endpoint"},
+    "candidate": {"label": "Candidate"},
+    "validation": {"label": "Validation"},
+    "pathway": {"label": "Pathway"},
+}
+
 # Workspace-level claim_state presentation: same shape as NODE_STATE_PRESENTATION,
 # but for the overall pathway/accept state of a workspace. UI reads this verbatim.
 WORKSPACE_STATE_PRESENTATION = {
@@ -245,6 +262,89 @@ def build_node_state(
         "line": line,
         "severity": presentation["severity"],
         "color": presentation["color"],
+    }
+
+
+def derive_card_phase_key(stage: str, operation: str, claim_status: str) -> str:
+    """Return the compact explorer-card phase for one node."""
+
+    stage_text = stage.lower()
+    operation_text = operation.lower()
+    if claim_status in {"tsfreq_validated", "irc_raw_completed", "endpoint_connected", "irc_connected", "accepted_ts"}:
+        return "validation"
+    if "pathway" in stage_text:
+        return "pathway"
+    if any(token in stage_text for token in ("preflight", "mechanism")):
+        return "preflight"
+    if "endpoint" in stage_text:
+        return "endpoint"
+    if any(token in stage_text for token in ("candidate", "neb", "scan", "qst", "dimer", "qbics", "dmecp")):
+        return "candidate"
+    text = f"{stage_text} {operation_text} {claim_status}".lower()
+    if any(token in text for token in ("tsfreq", "ts_freq", "ts/freq", "irc", "connectivity", "imaginary")):
+        return "validation"
+    if any(token in text for token in ("candidate", "neb", "scan", "qst", "dimer", "qbics", "dmecp")):
+        return "candidate"
+    return "candidate"
+
+
+def derive_card_status_key(
+    *,
+    lifecycle_state: str,
+    run_state: str,
+    claim_status: str,
+    outcome: str,
+) -> str:
+    """Return the compact explorer-card status for one node."""
+
+    if outcome == "administrative_stop" or run_state == "stopped":
+        return "stopped"
+    if run_state in {"pending", "running", "parsing"}:
+        return "running"
+    if run_state == "not_started" or lifecycle_state == "prepared":
+        return "ready"
+    if claim_status in {"rejected", "ambiguous"}:
+        return "error"
+    if outcome in {"chemical_failure", "numerical_failure", "wrong_mode", "wrong_endpoint", "parser_refused"}:
+        return "error"
+    if run_state == "error":
+        return "error"
+    if claim_status in CLAIM_STATUS_TO_NODE_STATE or outcome in OUTCOME_TO_NODE_STATE:
+        return "success"
+    if run_state == "completed" and claim_status == "not_evaluated" and outcome == "none":
+        return "success"
+    return "unknown"
+
+
+def build_node_card_status(
+    *,
+    lifecycle_state: str,
+    run_state: str,
+    claim_status: str,
+    outcome: str,
+    stage: str,
+    operation: str,
+) -> dict[str, str]:
+    """Build the compact Status[Phase] presentation for explorer node cards."""
+
+    status_key = derive_card_status_key(
+        lifecycle_state=lifecycle_state,
+        run_state=run_state,
+        claim_status=claim_status,
+        outcome=outcome,
+    )
+    phase_key = derive_card_phase_key(stage, operation, claim_status)
+    status = CARD_STATUS_PRESENTATION.get(status_key, CARD_STATUS_PRESENTATION["unknown"])
+    phase = CARD_PHASE_PRESENTATION.get(phase_key, CARD_PHASE_PRESENTATION["candidate"])
+    line = f"{status['label']}[{phase['label']}]"
+    return {
+        "key": f"{status_key}_{phase_key}",
+        "status": status_key,
+        "phase": phase_key,
+        "label": line,
+        "line": line,
+        "severity": status["severity"],
+        "color": status["color"],
     }
 
 

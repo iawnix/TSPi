@@ -94,14 +94,15 @@ stopped job is
 `outcome=administrative_stop`; it is not a chemical failure unless scientific
 evidence was parsed before the stop.
 
-State rendering (labels, colors, severity) is owned by one derived
-`node_state` model in
+State rendering (labels, colors, severity) is owned by
 `src/transition_state_workflow/config/state_contract.py` and emitted through
 the normalizer. Raw `claim_status`, `outcome`, and `run_state` remain audit
 fields, but they do not have separate user-facing label vocabularies. The
-explorer UI renders `node_state` fields verbatim and keeps no vocabulary of its
-own. To add or change a displayed state, change the state model and the tools —
-never the UI.
+explorer card uses compact `Status[Phase]` fields such as
+`Success[Endpoint]` or `Error[Candidate]`, while the detail panel keeps the
+derived `node_state` audit line. The explorer UI renders these normalized
+fields verbatim and keeps no vocabulary of its own. To add or change a displayed
+state, change the state model and the tools — never the UI.
 
 ## Core Workflow
 

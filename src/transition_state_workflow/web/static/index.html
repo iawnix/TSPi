@@ -651,6 +651,8 @@
     .edge-group.dependency            { color: var(--cyan); opacity: .58; }
     .edge-group.backtrack,
     .edge-group.backtrack_decision { color: var(--red); }
+    .edge-group.backtrack-resolved,
+    .edge-group.backtrack-superseded { color: var(--text-muted); opacity: .56; }
     .edge-group:hover              { color: var(--accent); }
 
     .edge {
@@ -664,6 +666,8 @@
     }
     .edge.backtrack,
     .edge.backtrack_decision { stroke-dasharray: 5 4; opacity: .72; }
+    .edge.backtrack-resolved,
+    .edge.backtrack-superseded { opacity: .52; }
     .edge.dependency { stroke-dasharray: 2 5; opacity: .7; }
     .edge-group:hover .edge  { stroke-width: 2; opacity: 1; }
     .edge.highlighted        { stroke-width: 2.2; }
@@ -1668,8 +1672,8 @@ function layoutGraph() {
 }
 
 function nodeColor(n) {
-  // `color` is the server-derived token from the normalized graph payload.
-  return COLOR_VAR[n?.color] || "var(--grey)";
+  // `card_color` is the compact server-derived token for node-card display.
+  return COLOR_VAR[n?.card_color || n?.color] || "var(--grey)";
 }
 /* ============================================================
    Graph rendering (SVG)
@@ -1677,8 +1681,8 @@ function nodeColor(n) {
 function renderLegend() {
   const legend = document.getElementById("graphLegend");
   if (!legend) return;
-  const vocab = state.graph?.presentation?.node_state || {};
-  const keys = ["candidate", "freq_ok", "irc_connected", "accepted", "rejected", "ambiguous"];
+  const vocab = state.graph?.presentation?.card_status || {};
+  const keys = ["success", "error", "running", "ready", "stopped", "unknown"];
   legend.innerHTML = keys
     .filter(key => vocab[key])
     .map(key => `<span class="chip" data-color="${escapeHtml(vocab[key].color || "grey")}">${escapeHtml(vocab[key].label || key)}</span>`)
@@ -1867,7 +1871,7 @@ function buildNode(n, p, lineage) {
   statusT.setAttribute("x", 14);
   statusT.setAttribute("y", 70);
   statusT.setAttribute("fill", color);
-  const statusLabel = n.state_label || n.node_state || "unknown";
+  const statusLabel = n.card_label || n.state_label || n.node_state || "Unknown";
   statusT.textContent = "● " + statusLabel;
   g.appendChild(statusT);
 
@@ -1905,7 +1909,7 @@ function buildNode(n, p, lineage) {
   // Failure-type tooltip on hover (native SVG <title>)
   if (n.outcome && n.outcome !== "none") {
     const t = makeSvg("title");
-    t.textContent = n.state_line || statusLabel;
+    t.textContent = n.state_line ? `${statusLabel}: ${n.state_line}` : statusLabel;
     g.appendChild(t);
   }
 
@@ -1936,7 +1940,9 @@ function buildEdge(e, s, t, lineage) {
   const c2x = x2 - dir * mid;
   const d   = `M ${x1} ${y1} C ${c1x} ${y1}, ${c2x} ${y2}, ${x2} ${y2}`;
 
+  const backStateClass = back && e.event_state ? `backtrack-${String(e.event_state)}` : "";
   const classes = ["edge-group", e.kind];
+  if (backStateClass) classes.push(backStateClass);
   if (lineage) {
     const sIn = lineage.set.has(e.source);
     const tIn = lineage.set.has(e.target);
@@ -1948,7 +1954,7 @@ function buildEdge(e, s, t, lineage) {
 
   const path = makeSvg("path");
   path.setAttribute("d", d);
-  path.setAttribute("class", `edge ${e.kind}`);
+  path.setAttribute("class", ["edge", e.kind, backStateClass].filter(Boolean).join(" "));
   g.appendChild(path);
 
   // Hollow ring at the source, solid dot at the target — encodes flow direction.
@@ -1962,9 +1968,9 @@ function buildEdge(e, s, t, lineage) {
     g.appendChild(dot);
   }
 
-  if (e.reason) {
+  if (e.reason || e.event_state) {
     const tt = makeSvg("title");
-    tt.textContent = e.reason;
+    tt.textContent = e.event_state ? `[${e.event_state}] ${e.reason || ""}`.trim() : e.reason;
     g.appendChild(tt);
   }
   return g;
@@ -2149,8 +2155,8 @@ function renderNode() {
   const payload = state.nodePayload || {};
   const node = payload.node || {};
   const head = document.getElementById("nodeHead");
-  const statusLine = node.state_line || node.state_label || node.node_state || "unknown";
-  const statusColor = node.color || presColor("node_state", node.node_state);
+  const statusLine = node.card_line || node.state_line || node.state_label || node.node_state || "Unknown";
+  const statusColor = node.card_color || node.color || presColor("node_state", node.node_state);
   const stageLabel = node.stage_label || stageInfo(node.stage).label || node.stage;
   head.innerHTML = node.node_id || payload.node_id ? `
     <span class="id">${escapeHtml(payload.node_id || node.node_id || "")}</span>
@@ -2239,6 +2245,8 @@ function renderSummary(payload, node) {
       <div class="summary-title">Status</div>
       <div class="summary-grid">
         ${summaryRow("node", payload.node_id, "mono")}
+        ${summaryRow("card_status", node.card_line || node.card_label)}
+        ${summaryRow("card_phase", node.card_phase, "mono")}
         ${summaryRow("state", node.node_state, "chip", "node_state")}
         ${summaryRow("state_line", node.state_line)}
         ${summaryRow("stage", node.stage)}

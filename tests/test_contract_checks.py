@@ -18,6 +18,7 @@ from transition_state_workflow.config.state_contract import (  # noqa: E402
     EVIDENCE_REGISTRY_SCHEMA,
     TREE_SCHEMA,
     WORKSPACE_NODE_SCHEMA,
+    build_node_card_status,
     check_node_contract_violations,
     check_workspace_contract_violations,
 )
@@ -82,6 +83,51 @@ def test_workspace_check_reports_all_three_root_schemas_independently() -> None:
         "tree_schema_not_v2",
         "evidence_registry_schema_not_v2",
     }
+
+
+def test_card_status_summarizes_completed_endpoint_without_ts_claim() -> None:
+    card = build_node_card_status(
+        lifecycle_state="closed",
+        run_state="completed",
+        claim_status="not_evaluated",
+        outcome="none",
+        stage="endpoint_validation",
+        operation="gaussian_optfreq",
+    )
+
+    assert card["status"] == "success"
+    assert card["phase"] == "endpoint"
+    assert card["label"] == "Success[Endpoint]"
+
+
+def test_card_status_maps_numerical_candidate_failure_to_error() -> None:
+    card = build_node_card_status(
+        lifecycle_state="closed",
+        run_state="error",
+        claim_status="not_evaluated",
+        outcome="numerical_failure",
+        stage="candidate_generation",
+        operation="gaussian-qst2-tsfreq",
+    )
+
+    assert card["status"] == "error"
+    assert card["phase"] == "candidate"
+    assert card["label"] == "Error[Candidate]"
+
+
+def test_card_status_promotes_tsfreq_claim_to_validation_phase() -> None:
+    card = build_node_card_status(
+        lifecycle_state="closed",
+        run_state="completed",
+        claim_status="tsfreq_validated",
+        outcome="tsfreq_validated",
+        stage="candidate_generation",
+        operation="gaussian-qst2-tsfreq",
+    )
+
+    assert card["status"] == "success"
+    assert card["phase"] == "validation"
+    assert card["label"] == "Success[Validation]"
 
 
 # --- node-level checks ------------------------------------------------------

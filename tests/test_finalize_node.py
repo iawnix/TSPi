@@ -1654,6 +1654,9 @@ def test_completed_preflight_has_single_node_state_label(tmp_path: Path) -> None
     assert node_view["node_state"] == "preflight_complete"
     assert node_view["state_label"] == "preflight complete"
     assert node_view["state_line"] == "preflight complete"
+    assert node_view["card_status"] == "success"
+    assert node_view["card_phase"] == "preflight"
+    assert node_view["card_label"] == "Success[Preflight]"
     assert "claim_label" not in node_view
     assert "outcome_label" not in node_view
     assert "run_label" not in node_view
@@ -1757,6 +1760,7 @@ def test_tsfreq_uses_single_node_state_label(tmp_path: Path) -> None:
     by_id = {node["id"]: node for node in graph["nodes"]}
     assert by_id["n010_candidate"]["node_state"] == "freq_ok"
     assert by_id["n010_candidate"]["state_line"] == "freq ok"
+    assert by_id["n010_candidate"]["card_label"] == "Success[Validation]"
 
 
 def test_gaussian_file_notes_explain_unsynced_checkpoints(tmp_path: Path) -> None:
@@ -1845,7 +1849,16 @@ def test_finalize_derives_outcome_and_claim_level(tmp_path: Path) -> None:
     assert node_view["state_label"] == "candidate"
     assert node_view["color"] == "accent"
     assert node_view["state_line"] == "candidate"
-    assert set(graph["presentation"]) == {"node_state", "evidence_state", "workspace_state"}
+    assert node_view["card_status"] == "success"
+    assert node_view["card_phase"] == "candidate"
+    assert node_view["card_label"] == "Success[Candidate]"
+    assert set(graph["presentation"]) == {
+        "card_phase",
+        "card_status",
+        "node_state",
+        "evidence_state",
+        "workspace_state",
+    }
     # Timeline must be sorted by time ascending regardless of array storage order.
     times = [e["time"] for e in graph["events"] if e.get("time")]
     assert times == sorted(times)

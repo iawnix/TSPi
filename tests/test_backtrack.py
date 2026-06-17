@@ -171,8 +171,10 @@ def test_record_backtrack_supersede_active_allows_new_active_event(tmp_path: Pat
     assert any(event["event_type"] == "supersede_backtrack" for event in tree["events"])
     graph = normalize_workspace(root)
     backtrack_edges = [edge for edge in graph["edges"] if edge["kind"] == "backtrack"]
-    assert len(backtrack_edges) == 1
-    assert backtrack_edges[0]["target"] == "n030_retry"
+    assert len(backtrack_edges) == 2
+    by_state = {edge["event_state"]: edge for edge in backtrack_edges}
+    assert by_state["superseded"]["target"] == "n020_retry"
+    assert by_state["active"]["target"] == "n030_retry"
 
     validation = validate_workspace(root, strict=True)
     assert validation["summary"]["errors"] == 0
@@ -216,7 +218,11 @@ def test_update_backtrack_resolves_active_event(tmp_path: Path) -> None:
     assert tree["backtrack_events"][0]["resolved_at"]
     assert tree["events"][-1]["event_type"] == "update_backtrack"
     graph = normalize_workspace(root)
-    assert [edge for edge in graph["edges"] if edge["kind"] == "backtrack"] == []
+    backtrack_edges = [edge for edge in graph["edges"] if edge["kind"] == "backtrack"]
+    assert len(backtrack_edges) == 1
+    assert backtrack_edges[0]["event_state"] == "resolved"
+    assert backtrack_edges[0]["source"] == "n030_failed_irc"
+    assert backtrack_edges[0]["target"] == "n005_endpoint_gate"
     packet = plan_next(root)
     assert packet["planning_focus"]["mode"] != "backtrack_replan"
     assert all(action["from_node"] != "n030_failed_irc" for action in packet["suggested_backtrack_actions"])
@@ -377,8 +383,10 @@ def test_update_backtrack_requires_supersede_when_activating_over_existing_activ
     assert tree["events"][-1]["event_type"] == "update_backtrack"
     graph = normalize_workspace(root)
     backtrack_edges = [edge for edge in graph["edges"] if edge["kind"] == "backtrack"]
-    assert len(backtrack_edges) == 1
-    assert backtrack_edges[0]["target"] == "n030_retry"
+    assert len(backtrack_edges) == 2
+    by_state = {edge["event_state"]: edge for edge in backtrack_edges}
+    assert by_state["superseded"]["target"] == "n020_retry"
+    assert by_state["active"]["target"] == "n030_retry"
 
     validation = validate_workspace(root, strict=True)
     assert validation["summary"]["errors"] == 0

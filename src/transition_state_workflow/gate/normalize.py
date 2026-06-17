@@ -9,11 +9,14 @@ from pathlib import Path
 from typing import Any
 
 from transition_state_workflow.config.state_contract import (
+    CARD_PHASE_PRESENTATION,
+    CARD_STATUS_PRESENTATION,
     EVIDENCE_STATE_PRESENTATION,
     EXPLORER_GRAPH_SCHEMA,
     NODE_STATE_PRESENTATION,
     WORKSPACE_STATE_PRESENTATION,
     TREE_NODE_FORBIDDEN_RUNTIME_FIELDS,
+    build_node_card_status,
     build_node_state,
     check_node_contract_violations,
     check_workspace_contract_violations,
@@ -121,8 +124,6 @@ def normalize_ts_workspace_to_explorer_graph(workspace_directory: Path) -> dict[
                 )
 
     for backtrack_event_payload in backtrack_events:
-        if clean_string(backtrack_event_payload.get("event_state")) != "active":
-            continue
         source_id = clean_string(backtrack_event_payload.get("from_node"))
         target_id = clean_string(backtrack_event_payload.get("to_node"))
         if source_id and target_id:
@@ -132,6 +133,8 @@ def normalize_ts_workspace_to_explorer_graph(workspace_directory: Path) -> dict[
                     "source": source_id,
                     "target": target_id,
                     "kind": "backtrack",
+                    "event_state": clean_string(backtrack_event_payload.get("event_state")) or "active",
+                    "new_branch_node": clean_string(backtrack_event_payload.get("new_branch_node")),
                     "reason": clean_string(backtrack_event_payload.get("reason")),
                     "reason_code": clean_string(backtrack_event_payload.get("reason_code")),
                 }
@@ -154,6 +157,8 @@ def normalize_ts_workspace_to_explorer_graph(workspace_directory: Path) -> dict[
         # own copies of these vocabularies.
         "presentation": {
             "node_state": NODE_STATE_PRESENTATION,
+            "card_status": CARD_STATUS_PRESENTATION,
+            "card_phase": CARD_PHASE_PRESENTATION,
             "evidence_state": EVIDENCE_STATE_PRESENTATION,
             "workspace_state": WORKSPACE_STATE_PRESENTATION,
         },
@@ -231,6 +236,7 @@ def normalize_node_for_explorer_graph(
     summary = first_nonempty_string(display.get("summary"), node_payload.get("summary"), tree_node_payload.get("summary"), "")
     claim_status = clean_string(node_payload.get("claim_status"))
     outcome = clean_string(node_payload.get("outcome"))
+    lifecycle_state = clean_string(node_payload.get("lifecycle_state"))
     run_state = clean_string(node_payload.get("run_state"))
     outcome_code = node_payload.get("outcome_code")
     node_state = build_node_state(
@@ -239,6 +245,14 @@ def normalize_node_for_explorer_graph(
         outcome_code=clean_string(outcome_code) or None,
         run_state=run_state,
         stage=stage,
+    )
+    card_status = build_node_card_status(
+        lifecycle_state=lifecycle_state,
+        run_state=run_state,
+        claim_status=claim_status,
+        outcome=outcome,
+        stage=stage,
+        operation=operation,
     )
     input_refs = normalize_input_refs(node_payload, tree_node_payload)
 
@@ -249,7 +263,7 @@ def normalize_node_for_explorer_graph(
         "stage": stage,
         "stage_label": make_stage_display_label(stage),
         "operation": operation,
-        "lifecycle_state": clean_string(node_payload.get("lifecycle_state")),
+        "lifecycle_state": lifecycle_state,
         "run_state": run_state,
         "claim_status": claim_status,
         "outcome": outcome,
@@ -260,6 +274,12 @@ def normalize_node_for_explorer_graph(
         "state_line": node_state["line"],
         "severity": node_state["severity"],
         "color": node_state["color"],
+        "card_status": card_status["status"],
+        "card_phase": card_status["phase"],
+        "card_label": card_status["label"],
+        "card_line": card_status["line"],
+        "card_severity": card_status["severity"],
+        "card_color": card_status["color"],
         "parent_id": parent_id,
         "input_refs": input_refs,
         "pathway_id": clean_string(node_payload.get("pathway_id")) or clean_string(tree_node_payload.get("pathway_id")),
