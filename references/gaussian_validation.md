@@ -122,6 +122,12 @@ Operators such as `&&`, `>`, `2>&1`, `< /dev/null`, `&`, and `$!` belong only
 inside the final compute-host `bash -lc` command; do not hand-write nested SSH
 strings that let the login host interpret those operators.
 
+`run_remote_gaussian.py` is a Gaussian engine adapter, not the generic remote
+job abstraction. It owns Gaussian-specific input placement, `.out`/driver log
+names, checkpoint handling, and scratch copy-back behavior. Future xTB or
+ASE/NEB remote execution should use a generic job lifecycle runner with an
+engine-specific adapter instead of passing non-Gaussian jobs through this CLI.
+
 Runner scripts that source `g16.profile` under `set -euo pipefail` must disable
 both `-e` and `-u` while sourcing, then restore strict mode:
 

@@ -481,6 +481,51 @@ def test_plan_next_and_validator_detect_replacement_branch_without_backtrack_eve
     assert "missing_replacement_backtrack_event" not in codes
 
 
+def test_decision_card_replaces_node_records_backtrack_event(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_unit"
+    initialize_workspace(root)
+    create_failed_irc_branch_for_planner(root)
+
+    run_cli(
+        str(WORKSPACE_CLI),
+        "decision-card",
+        "--root",
+        str(root),
+        "--node-id",
+        "n040_endpoint_connectivity_retry",
+        "--parent-id",
+        "n020_tsfreq",
+        "--stage",
+        "connectivity_validation",
+        "--hypothesis",
+        "Retry connectivity validation from the same TS/Freq node after the IRC failure.",
+        "--operation",
+        "unit-test-connectivity-retry",
+        "--replaces-node",
+        "n030_failed_irc",
+        "--backtrack-reason-code",
+        "irc_l123_failure",
+        "--backtrack-reason",
+        "Retry connectivity validation from the TS/Freq node with a changed connectivity method.",
+    )
+
+    tree = json.loads((root / "tree.json").read_text(encoding="utf-8"))
+    event = tree["backtrack_events"][0]
+    assert event["from_node"] == "n030_failed_irc"
+    assert event["to_node"] == "n020_tsfreq"
+    assert event["new_branch_node"] == "n040_endpoint_connectivity_retry"
+    assert event["reason_code"] == "irc_l123_failure"
+    assert event["event_state"] == "active"
+    assert tree["events"][-1]["event_type"] == "record_backtrack"
+
+    packet = plan_next(root)
+    assert packet["planning_focus"]["mode"] == "backtrack_replan"
+    assert packet["planning_focus"]["parent_for_new_branch"] == "n020_tsfreq"
+    validation = validate_workspace(root, strict=True)
+    codes = {finding["code"] for finding in validation["findings"]}
+    assert "missing_replacement_backtrack_event" not in codes
+
+
 def test_record_backtrack_new_branch_is_metadata_not_badge(tmp_path: Path) -> None:
     root = tmp_path / "tssearch_unit"
     initialize_workspace(root)

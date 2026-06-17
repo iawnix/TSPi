@@ -190,7 +190,7 @@ def build_explorer_server_config(
     if not workspaces and registry_root is None and not roots:
         raise SystemExit("no workspaces configured; pass --source, --workspace-registry, or --workspace-root")
     default_id = clean_string(default_workspace)
-    if default_id:
+    if default_id and workspaces:
         assert_safe_workspace_id(default_id)
         if default_id not in {workspace.workspace_id for workspace in workspaces}:
             raise SystemExit(f"default workspace not found: {default_id}")
@@ -277,13 +277,19 @@ class ExplorerWorkspaceDirectory:
         return tuple(deduplicate_explorer_workspace_configs(merged))
 
     def default_workspace_id(self) -> str:
-        """Return the configured or first available workspace id."""
+        """Return a legacy default only when the service has exactly one workspace.
 
-        configured = clean_string(self._config.default_workspace_id)
+        Multi-workspace services intentionally do not expose a server-side
+        current workspace. Browser clients choose through ?workspace= and
+        localStorage so refreshing the page does not jump to an unrelated
+        registry default.
+        """
+
         workspaces = self.current_workspaces()
-        if configured and any(workspace.workspace_id == configured for workspace in workspaces):
-            return configured
-        return workspaces[0].workspace_id if workspaces else ""
+        if len(workspaces) != 1:
+            return ""
+        only_workspace = workspaces[0]
+        return only_workspace.workspace_id
 
     def get_by_id(self, workspace_id: str) -> ExplorerWorkspaceConfig:
         """Find a live workspace by id or raise an HTTP error."""
@@ -295,10 +301,16 @@ class ExplorerWorkspaceDirectory:
         raise HTTPError(HTTPStatus.NOT_FOUND, "workspace_not_found", f"Workspace not found: {workspace_id}")
 
     def get_default(self) -> ExplorerWorkspaceConfig:
-        """Return the default workspace or raise an HTTP error when none exist."""
+        """Return the single legacy workspace or raise an explicit API error."""
 
         default_id = self.default_workspace_id()
         if not default_id:
+            if self.current_workspaces():
+                raise HTTPError(
+                    HTTPStatus.BAD_REQUEST,
+                    "workspace_required",
+                    "Multiple workspaces are registered; use /api/workspace/<id>/... scoped routes.",
+                )
             raise HTTPError(
                 HTTPStatus.NOT_FOUND,
                 "no_workspaces",

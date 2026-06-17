@@ -26,6 +26,13 @@ xTB/ASE Python:
   `from __future__ import annotations`, but runtime-evaluated aliases must not
   use PEP 585 builtins such as `Alias = tuple[...]`; use `typing.Tuple` /
   `typing.List` for those aliases instead.
+- Do not assume the full control-plane package should run inside this older
+  ASE/xTB environment. Prefer a small engine wrapper or a documented
+  py38-compatible remote subset for ASE/xTB execution, while the local
+  workflow controller, validator, and web explorer may use the maintained
+  package baseline. Before submitting long ASE/xTB jobs, run the py38
+  compatibility gate for the remote-imported subset or a direct
+  `python -m py_compile` smoke in the target environment.
 
 QBICS:
 
@@ -54,6 +61,11 @@ Remote command construction:
   compute-host SSH commands with `remote/exec.py`, using local
   `subprocess.run(..., shell=False)` and a single final compute-host
   `bash -lc` command.
+- Keep engine semantics out of the generic SSH boundary. The intended next
+  shape is a generic remote job lifecycle layer for directory preparation,
+  background submit, PID/metadata, tail, fetch, and summary, with thin engine
+  adapters for Gaussian, xTB, and ASE-NEB. Until that layer lands, do not reuse
+  `run_remote_gaussian.py` for xTB or ASE/NEB jobs.
 - For ad hoc compute-host commands that need shell operators, generate the SSH
   argv through `OpenSSHRemoteExecutor.compute_argv(...)` instead of hand-writing
   nested quotes:

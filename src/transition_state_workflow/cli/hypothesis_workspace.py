@@ -112,6 +112,36 @@ def build_parser() -> argparse.ArgumentParser:
     )
     card.add_argument("--hypothesis", required=True, help="Chemical hypothesis being tested.")
     card.add_argument("--operation", required=True, help="Operation or route chosen for this test.")
+    card.add_argument(
+        "--replaces-node",
+        default="",
+        help=(
+            "Failed or ambiguous sibling branch that this new decision-card replaces. "
+            "Requires --parent-id and records a canonical backtrack event with "
+            "--new-branch-node set to this node."
+        ),
+    )
+    card.add_argument(
+        "--backtrack-reason-code",
+        default="replacement_branch",
+        help="Reason code for the automatic backtrack event written by --replaces-node.",
+    )
+    card.add_argument(
+        "--backtrack-reason",
+        default="",
+        help="Human-readable reason for the automatic backtrack event written by --replaces-node.",
+    )
+    card.add_argument(
+        "--backtrack-evidence-ref",
+        action="append",
+        default=[],
+        help="Existing evidence id for the automatic backtrack event; may be repeated.",
+    )
+    card.add_argument(
+        "--supersede-active-backtrack",
+        action="store_true",
+        help="Supersede any existing active backtrack before writing the --replaces-node event.",
+    )
     card.add_argument("--force", action="store_true", help="Overwrite existing node templates.")
     card.add_argument("--verbose", action="store_true", help="Write diagnostic logs to stderr.")
     card.add_argument("--quiet", action="store_true", help="Only write errors to stderr.")

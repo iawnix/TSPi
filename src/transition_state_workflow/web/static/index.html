@@ -1352,6 +1352,37 @@ function workspaceApi(path) {
   return `/api/workspace/${encodeURIComponent(state.workspaceId)}${path}`;
 }
 
+function workspaceIdFromUrl() {
+  try {
+    return new URL(location.href).searchParams.get("workspace") || "";
+  } catch {
+    return "";
+  }
+}
+
+function workspaceExists(id) {
+  return !!id && state.workspaces.some(ws => ws.id === id);
+}
+
+function chooseWorkspaceId(payload) {
+  const urlId = workspaceIdFromUrl();
+  const storedId = localStorage.getItem("ts-workspace-id") || "";
+  const apiDefault = payload.default_workspace || "";
+  if (workspaceExists(state.workspaceId)) return state.workspaceId;
+  if (workspaceExists(urlId)) return urlId;
+  if (workspaceExists(storedId)) return storedId;
+  if (workspaceExists(apiDefault)) return apiDefault;
+  if (state.workspaces.length === 1) return state.workspaces[0].id;
+  return "";
+}
+
+function persistWorkspaceSelection(id) {
+  if (!id) return;
+  localStorage.setItem("ts-workspace-id", id);
+  const url = new URL(location.href);
+  url.searchParams.set("workspace", id);
+  history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+}
 
 /* ============================================================
    Load + render entry
@@ -1360,9 +1391,15 @@ async function loadAll() {
   try {
     const payload = await api("/api/workspaces");
     state.workspaces = payload.workspaces || [];
-    state.workspaceId = state.workspaceId || payload.default_workspace || state.workspaces[0]?.id || "";
+    state.workspaceId = chooseWorkspaceId(payload);
+    if (state.workspaceId) persistWorkspaceSelection(state.workspaceId);
     renderWorkspaceChip();
     renderWorkspacePop();
+    renderWorkspacePanel();
+    if (!state.workspaceId) {
+      document.getElementById("detail").innerHTML = `<p class="muted">Select a workspace.</p>`;
+      return;
+    }
     await loadWorkspaceData();
   } catch (err) {
     document.getElementById("detail").innerHTML = `<p class="error">${escapeHtml(String(err))}</p>`;
@@ -1370,13 +1407,16 @@ async function loadAll() {
 }
 
 async function switchWorkspace(id) {
+  if (!workspaceExists(id)) return;
   state.workspaceId = id;
   state.selected = null;
   state.nodePayload = null;
   state.tab = "summary";
   state.zoom = 1; state.pan = { x: 40, y: 40 };
+  persistWorkspaceSelection(id);
   renderWorkspaceChip();
   renderWorkspacePop();
+  renderWorkspacePanel();
   await loadWorkspaceData();
 }
 
@@ -1384,6 +1424,9 @@ async function loadWorkspaceData() {
   const refresh = document.getElementById("refreshBtn");
   refresh.innerHTML = `<span class="spinner"></span>`;
   try {
+    if (!state.workspaceId && state.workspaces.length !== 1) {
+      throw new Error("workspace_required");
+    }
     const path = workspaceApi("/job");
     state.job = await api(path);
     state.graph = state.job.graph;
@@ -1422,10 +1465,10 @@ function workspaceClaimStateForJob(manifest, graph, workspace) {
 }
 
 function renderWorkspaceChip() {
-  const ws = state.workspaces.find(w => w.id === state.workspaceId) || state.workspaces[0];
+  const ws = state.workspaces.find(w => w.id === state.workspaceId);
   if (!ws) {
-    document.getElementById("wsChipLabel").textContent = "no workspace";
-    document.getElementById("wsChipMeta").textContent = "";
+    document.getElementById("wsChipLabel").textContent = state.workspaces.length ? "select workspace" : "no workspace";
+    document.getElementById("wsChipMeta").textContent = state.workspaces.length ? `${state.workspaces.length} registered` : "";
     return;
   }
   document.getElementById("wsChipLabel").textContent = ws.name || ws.id;

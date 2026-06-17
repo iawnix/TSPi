@@ -7,8 +7,9 @@ from pathlib import Path
 from typing import Any
 
 from transition_state_workflow.base.pathway_model import initialize_pathway_model_if_missing, validate_pathway_step_reference
+from transition_state_workflow.core.backtrack import BacktrackRequest, active_backtrack_events, record_backtrack
 from transition_state_workflow.util.json_io import read_json_object_required, write_json_object
-from transition_state_workflow.util.path_utils import relative_path_or_absolute
+from transition_state_workflow.util.path_utils import clean_string, relative_path_or_absolute
 from transition_state_workflow.core.workspace import (
     BranchReferenceError,
     DEFAULT_PREFLIGHT_NODE_ID,
@@ -181,6 +182,25 @@ def create_ts_branch_decision_artifacts_from_cli_args(args: argparse.Namespace) 
         raise SystemExit("--pathway-id and --step-id must be provided together")
     if pathway_id:
         validate_pathway_step_reference(root, pathway_id, step_id)
+    replaces_node = clean_optional_node_ref(getattr(args, "replaces_node", ""))
+    parent_id = clean_optional_node_ref(args.parent_id)
+    if replaces_node and not parent_id:
+        raise SystemExit("--replaces-node requires --parent-id as the chemically meaningful backtrack target")
+    if replaces_node:
+        if replaces_node not in nodes:
+            raise SystemExit(f"--replaces-node does not exist in tree.json nodes: {replaces_node}")
+        active_backtracks = active_backtrack_events(tree)
+        if active_backtracks and not bool(getattr(args, "supersede_active_backtrack", False)):
+            active_ids = ", ".join(
+                clean_string(item.get("id"))
+                for item in active_backtracks
+                if clean_string(item.get("id"))
+            )
+            raise SystemExit(
+                "active backtrack event already exists"
+                + (f": {active_ids}" if active_ids else "")
+                + "; mark it resolved/superseded or rerun with --supersede-active-backtrack"
+            )
     input_refs = normalize_branch_input_refs(args.input_ref or ())
     try:
         validate_branch_references(
@@ -311,6 +331,24 @@ Pending.
     write_text_file_if_allowed(node_dir / "hypothesis.md", hypothesis_md, overwrite_existing=args.force)
     write_text_file_if_allowed(node_dir / "decision_card.md", decision_card_md, overwrite_existing=args.force)
     write_text_file_if_allowed(node_dir / "reflection.md", reflection_md, overwrite_existing=args.force)
+    if replaces_node:
+        reason = clean_string(getattr(args, "backtrack_reason", "")) or (
+            f"Branch {args.node_id} replaces failed or ambiguous branch {replaces_node} "
+            f"under ancestor {parent_id}."
+        )
+        record_backtrack(
+            BacktrackRequest(
+                root=root,
+                from_node=replaces_node,
+                to_node=parent_id,
+                new_branch_node=args.node_id,
+                reason_code=clean_string(getattr(args, "backtrack_reason_code", "")) or "replacement_branch",
+                reason=reason,
+                evidence_refs=tuple(getattr(args, "backtrack_evidence_ref", ()) or ()),
+                decision=f"replace_{replaces_node}_with_{args.node_id}",
+                supersede_active=bool(getattr(args, "supersede_active_backtrack", False)),
+            )
+        )
 
 
 def write_suggested_decision_cards_from_plan(args: argparse.Namespace, packet: dict[str, Any]) -> list[dict[str, Any]]:
@@ -339,6 +377,11 @@ def write_suggested_decision_cards_from_plan(args: argparse.Namespace, packet: d
                 step_id=str(suggestion.get("step_id") or ""),
                 hypothesis=str(suggestion.get("hypothesis") or ""),
                 operation=str(suggestion.get("operation") or ""),
+                replaces_node="",
+                backtrack_reason_code="replacement_branch",
+                backtrack_reason="",
+                backtrack_evidence_ref=[],
+                supersede_active_backtrack=False,
                 force=bool(args.force),
             )
         )

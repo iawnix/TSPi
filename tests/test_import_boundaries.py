@@ -187,6 +187,20 @@ def test_remote_and_web_cli_output_goes_through_util_cli() -> None:
     assert not offenders, "remote/web bypass util.cli output helpers:\n" + "\n".join(offenders)
 
 
+def test_no_runtime_pep585_builtin_type_aliases_for_compute_python38() -> None:
+    offenders: list[str] = []
+    builtin_aliases = {"tuple", "list", "dict", "set"}
+    for source_file in sorted(PACKAGE.rglob("*.py")):
+        tree = ast.parse(source_file.read_text(encoding="utf-8"), filename=str(source_file))
+        for node in tree.body:
+            value = node.value if isinstance(node, (ast.Assign, ast.AnnAssign)) else None
+            if isinstance(value, ast.Subscript) and isinstance(value.value, ast.Name) and value.value.id in builtin_aliases:
+                offenders.append(
+                    f"{source_file.relative_to(ROOT)}:{node.lineno} uses runtime PEP585 alias {value.value.id}[...]"
+                )
+    assert not offenders, "runtime type aliases must stay Python 3.8-compatible:\n" + "\n".join(offenders)
+
+
 def test_connectivity_checker_lives_in_gate_without_tool_compatibility() -> None:
     from transition_state_workflow.gate import connectivity
 

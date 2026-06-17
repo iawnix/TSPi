@@ -71,8 +71,13 @@ running service re-reads it whenever its mtime changes:
 
 Each workspace should point at one synced `tssearch_*` directory. The service
 exposes `/api/workspaces` and scoped routes under `/api/workspace/<id>/...`.
-Single-workspace routes such as `/api/job` and `/api/tree` read the configured
-default workspace and must return normalized `ts-explorer-graph-v2` payloads.
+The registry is not a current-view store: in multi-workspace mode
+`/api/workspaces` must not force a server-side `default_workspace`. Browser
+clients choose the current workspace with URL `?workspace=<id>` first and
+browser `localStorage` second. Single-workspace routes such as `/api/job` and
+`/api/tree` are legacy conveniences for one configured workspace; in
+multi-workspace mode they must return `workspace_required` and callers must use
+the scoped routes.
 
 ## Zero-Pollution Rules
 
