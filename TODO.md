@@ -97,3 +97,136 @@ Validation:
 - `pytest -q tests/test_remote_gaussian.py tests/test_preflight_node.py tests/test_parse_log.py tests/test_finalize_node.py::test_validator_warns_for_root_engine_artifacts_and_bad_checkpoint_paths tests/test_reference_contract.py tests/test_import_boundaries.py tests/test_no_undefined_names.py`: 71 passed, 1 skipped.
 - `pytest -q`: 280 passed, 2 skipped.
 - Installed skill sync validation under `/home/iaw/.codex/skills/transition-state-workflow`: targeted suite 71 passed, 1 skipped; full `pytest -q` 280 passed, 2 skipped.
+
+## 2026-06-17 design TODO: Gaussian-External-xTB backend and backend-selection policy
+
+Status: implemented and synced on 2026-06-18. Keep this section as the
+implementation record for the Gaussian-External-xTB backend and backend
+selection policy.
+
+### 1. Python Gaussian-External-xTB backend
+
+Problem: ADCR's useful idea is not its reaction-network workflow, but the
+Gaussian External pattern that lets Gaussian drive TS/IRC/Freq steps while xTB
+provides low-cost energy, gradient, and Hessian data. The current workflow has
+xTB, ASE/xTB, ASE NEB, Gaussian-force NEB, QBICS dMECP, and Gaussian DFT
+validation boundaries, but lacks a node-scoped Python backend for the specific
+`Gaussian External -> xTB` use case.
+
+Design boundary:
+- Add a backend module under `src/transition_state_workflow/backends/`, for
+  example `gaussian_external_xtb.py`.
+- The backend must implement Gaussian External protocol parsing and response
+  writing only. It must not own workspace state, tree mutation, final TS claims,
+  or ADCR-style reaction-network expansion.
+- Use direct xTB command execution for robust gradient/Hessian support first.
+  ASE may be used as an optional structure/calculator helper only when it
+  reduces risk and does not obscure Gaussian External units or Hessian handling.
+- All execution must be node/job scoped. Preserve Gaussian External request
+  files, generated xTB inputs, xTB logs, gradient/Hessian artifacts, and a
+  structured JSON summary under the node output area.
+- Expose a thin script wrapper, for example
+  `scripts/gaussian_external_xtb.py`, suitable for Gaussian routes such as
+  `External="python .../gaussian_external_xtb.py --workdir <node-output> ..."`.
+- Document Gaussian-side route constraints in the backend reference: TS jobs
+  generally need `NoMicro` with `External`, Opt and Freq should be split unless
+  a target Gaussian/xTB combination is proven safe, Gaussian driver parallelism
+  should not waste cores while xTB owns the expensive work, and heavy-element
+  jobs may need a broad dummy basis such as `UGBS` so Gaussian's parser accepts
+  the elements even though xTB supplies the energy model.
+
+Scientific claim boundary:
+- Gaussian-External-xTB can produce low-level TS guesses, IRC-like low-level
+  connectivity hints, and candidate evidence only.
+- It must never produce `accepted_ts`.
+- Any promising result must still branch to Gaussian DFT TS/Freq validation and
+  explicit mode/connectivity or IRC checks.
+
+Implementation requirements:
+- Parse Gaussian External input records for atom count, derivative level,
+  charge, multiplicity, atomic numbers, coordinates, and embedded charges if
+  present.
+- Support energy-only, gradient, and Hessian requests. If Hessian is requested,
+  prefer xTB native Hessian output; fail clearly if unavailable rather than
+  silently returning zeros.
+- Handle charge/multiplicity to xTB `--chrg` and `--uhf` mapping explicitly.
+- Keep unit conversion tests for Hartree, Bohr/Angstrom, gradients, forces, and
+  Hessian lower-triangle output.
+- Make xTB method, accuracy, electronic temperature, parallelism, solvent, and
+  executable path explicit CLI/config variables, not hidden defaults.
+
+Validation:
+- Unit tests for Gaussian External request parsing and response formatting.
+- Unit tests for command construction without executing xTB.
+- A dry-run fixture that writes deterministic mock xTB artifacts and verifies
+  energy/gradient/Hessian conversion.
+- CLI `--help` smoke and `python -m py_compile` for changed modules.
+- Optional live smoke only on a host with verified Gaussian+xTB, using a tiny
+  molecule and a short route; record the result as backend smoke, not TS proof.
+
+### 2. Backend-selection policy for TS search
+
+Problem: the workflow currently lists supported backends, but the agent still
+needs sharper rules for choosing a backend from the chemical situation. Tool
+selection must be mechanism-driven and should not become a fixed linear
+pipeline.
+
+Policy to document in `references/candidate_generation.md` or a dedicated
+backend-selection reference:
+- Use direct Gaussian DFT `Opt=(TS,CalcFC,NoEigen) Freq` when a chemically
+  reasonable TS guess is available and the system size/cost is acceptable.
+- Use Gaussian-External-xTB when the desired driver is Gaussian TS/IRC/Freq but
+  the system needs cheap repeated gradients/Hessians for TS-guess generation,
+  coordinate-driving refinement, or low-level IRC-like screening.
+- Use ASE/xTB scan or constrained optimization when a dominant coordinate is
+  known and endpoint identity is not yet strong enough for NEB.
+- Use ASE/xTB NEB only when optimized or defensible endpoint references are
+  distinct and atom mapping gives a meaningful continuous path.
+- Use Gaussian-force NEB only after endpoint identity is reliable and lower-cost
+  scan/NEB evidence justifies the cost; its maximum remains candidate evidence.
+- Use dimer when a local saddle is plausible but endpoint mapping is weak.
+- Use QST2 sparingly when both endpoint structures are chemically meaningful,
+  atom order is reliable, and interpolation is expected to be reasonable; do
+  not treat QST2 as a default replacement for a poor TS guess.
+- Use QST3 even more sparingly: if a plausible TS guess is already available,
+  prefer direct `Opt=TS`; only keep QST3 as a documented fallback when endpoint
+  guidance plus a TS guess is chemically justified.
+- Use QBICS dMECP only when diabatic fragment/state definitions are chemically
+  natural for atom transfer or bond switching; final acceptance still requires
+  Gaussian TS/Freq and connectivity validation.
+
+Validation:
+- Add reference-contract tests so docs do not claim that xTB, ASE, NEB, QST,
+  dMECP, or Gaussian-External-xTB can directly produce `accepted_ts`.
+- Add planner or rationale tests only if the implementation changes
+  `plan-next`; otherwise keep this as decision-policy documentation first.
+
+Implementation record:
+- Added `src/transition_state_workflow/backends/gaussian_external_xtb.py` with
+  EIn parsing, EOu serialization, Bohr-to-Angstrom XYZ rendering, direct xTB
+  argv construction, gradient/Hessian artifact parsing, deterministic dry-run
+  artifacts, explicit embedded-charge rejection, and candidate-only summary
+  metadata.
+- Added the thin wrapper `scripts/gaussian_external_xtb.py` and registered the
+  backend as `gaussian-external-xtb`.
+- Added `references/gaussian_external_xtb.md` and
+  `references/backend_selection.md`; updated the main skill, candidate
+  generation reference, and mechanism-analysis capability matrix.
+- Added offline regression coverage in `tests/test_gaussian_external_xtb.py`
+  plus registry and reference-contract updates.
+
+Validation run:
+- Authored checkout targeted tests:
+  `tests/test_gaussian_external_xtb.py tests/test_backend_adapters.py
+  tests/test_architecture_scaffold.py tests/test_import_boundaries.py
+  tests/test_reference_contract.py tests/test_no_undefined_names.py`:
+  71 passed, 1 skipped.
+- Authored checkout full `pytest -q`: 321 passed, 2 skipped.
+- Authored checkout `python -m compileall -q src scripts tests`: passed.
+- Authored checkout `python scripts/gaussian_external_xtb.py --help`: passed.
+- Installed skill tree diff against authored checkout, excluding git and cache
+  directories: no differences.
+- Installed skill targeted tests: 71 passed, 1 skipped.
+- Installed skill full `pytest -q`: 321 passed, 2 skipped.
+- Installed skill `python -m compileall -q src scripts tests`: passed.
+- Installed skill `python scripts/gaussian_external_xtb.py --help`: passed.

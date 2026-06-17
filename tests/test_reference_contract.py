@@ -74,7 +74,14 @@ def test_mechanism_analysis_sources_define_method_capability_matrix() -> None:
         assert f"`{layer}`" in text
     for status in ("hypothesis", "supported", "refuted", "ambiguous", "unavailable"):
         assert f"`{status}`" in text
-    for method in ("xTB/GFN", "ASE NEB", "Gaussian TS/Freq", "Gaussian IRC", "QBICS dMECP"):
+    for method in (
+        "xTB/GFN",
+        "ASE NEB",
+        "Gaussian-External-xTB",
+        "Gaussian TS/Freq",
+        "Gaussian IRC",
+        "QBICS dMECP",
+    ):
         assert method in text
     assert "--mechanism-analysis" in text
     assert "Do not infer electronic, orbital, or energy descriptors" in text
@@ -85,12 +92,32 @@ def test_primary_docs_link_mechanism_analysis_sources() -> None:
     source_name = "references/mechanism_analysis_sources.md"
     for path in (
         ROOT / "SKILL.md",
+        REFERENCES / "backend_selection.md",
         REFERENCES / "mechanism_reflection.md",
         REFERENCES / "candidate_generation.md",
+        REFERENCES / "gaussian_external_xtb.md",
         REFERENCES / "gaussian_validation.md",
         REFERENCES / "qbics_dmecp.md",
     ):
         assert source_name in path.read_text(encoding="utf-8")
+
+
+def test_backend_selection_keeps_candidate_generators_out_of_accepted_ts() -> None:
+    text = (REFERENCES / "backend_selection.md").read_text(encoding="utf-8")
+    assert "No candidate-generation backend may set `claim_status=accepted_ts`" in text
+    for method in (
+        "xTB",
+        "ASE",
+        "NEB",
+        "QST guesses",
+        "dimer searches",
+        "QBICS dMECP",
+        "Gaussian-External-xTB",
+    ):
+        assert method in text
+    gaussian_external = (REFERENCES / "gaussian_external_xtb.md").read_text(encoding="utf-8")
+    assert "`accepted_ts_capable=false`" in gaussian_external
+    assert "`candidate_only=true`" in gaussian_external
 
 
 def test_user_facing_docs_use_repo_local_script_examples() -> None:

@@ -193,7 +193,7 @@ def test_descriptor_extraction_tool_registers_for_descriptor_analysis(tmp_path: 
 
 def test_default_backend_registry_exposes_named_adapters(tmp_path: Path) -> None:
     registry = default_backend_registry()
-    assert registry.names() == ("ase", "gaussian", "qbics", "xtb")
+    assert registry.names() == ("ase", "gaussian", "gaussian-external-xtb", "qbics", "xtb")
 
     input_file = tmp_path / "input.gjf"
     input_file.write_text("%chk=test.chk\n", encoding="utf-8")

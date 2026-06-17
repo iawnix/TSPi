@@ -182,8 +182,12 @@ state, change the state model and the tools — never the UI.
      connectivity evidence as proof for the next step.
 
 5. Choose the next tool from the chemical hypothesis.
+   - For backend choice across xTB, ASE, Gaussian, QBICS, and
+     Gaussian-External-xTB, read `references/backend_selection.md`.
    - For xTB/ASE/NEB, scans, dimer, QST, or broad orchestration, read
      `references/candidate_generation.md`.
+   - For Gaussian-driven xTB External trials, read
+     `references/gaussian_external_xtb.md`.
    - For QBICS dMECP, read `references/qbics_dmecp.md`.
    - Before execution, create `nodes/<node_id>/decision_card.md` explaining why
      this tool is the right test and what would refute the branch.
@@ -246,6 +250,10 @@ state, change the state model and the tools — never the UI.
   refinement branch when endpoints are reliable, the path hypothesis is strong,
   and lower-level evidence is not decisive. Neither xTB-NEB nor Gaussian-force
   NEB is an accepted TS without later TS/Freq and connectivity validation.
+- Use Gaussian-External-xTB when Gaussian optimizer behavior is useful but the
+  branch is still low-cost screening. It supplies xTB energy, gradient, and
+  Hessian through Gaussian's External protocol and remains candidate/search
+  evidence only.
 - Use QST2/QST3 when optimized endpoints and a chemically plausible TS guess
   are available at the Gaussian level.
 - Use dimer when a local saddle is plausible but endpoint identity or path
@@ -357,11 +365,15 @@ Python tooling follows a package layout:
   result helpers in this package forward to the ASE NEB backend;
   `node_writers.py` forwards to the core state writers. There is no
   `tools/ase_neb/workspace.py`; workspace mutation is owned by `core/workspace/`.
-- `src/transition_state_workflow/backends/`: Gaussian, xTB, ASE, and QBICS
+- `src/transition_state_workflow/backends/`: Gaussian, Gaussian-External-xTB,
+  xTB, ASE, and QBICS
   adapter boundaries for program-specific input/output metadata. The xTB
   backend owns GFN method normalization, charge/UHF handling, direct xTB argv
   construction, fixed-name artifact discovery, and lightweight xTB log parsing
-  for candidate evidence. The QBICS backend family (`qbics.py` plus
+  for candidate evidence. The Gaussian-External-xTB backend owns Gaussian EIn
+  parsing, EOu serialization, Bohr/Angstrom conversion, direct xTB External
+  command assembly, gradient/Hessian artifact parsing, and candidate-only
+  summary metadata. The QBICS backend family (`qbics.py` plus
   `qbics_state.py`) owns dMECP command construction, MPI/thread/memory option
   normalization, total charge and `spin2p1` metadata normalization,
   `frag1`/`frag2` fragment-state coverage checks, optional `orb1`/`orb2`
@@ -426,7 +438,11 @@ Python tooling follows a package layout:
   failure-reflection checklist.
 - `references/mechanism_analysis_sources.md`: method-specific evidence sources,
   reliability limits, and `--mechanism-analysis` templates.
+- `references/backend_selection.md`: mechanism-driven backend selection policy
+  across candidate generation, TS/Freq validation, and connectivity proof.
 - `references/candidate_generation.md`: xTB/ASE/NEB/QST/Dimer candidate rules.
+- `references/gaussian_external_xtb.md`: Gaussian External EIn/EOu protocol,
+  xTB mapping, route constraints, artifacts, and claim boundary.
 - `references/qbics_dmecp.md`: QBICS dMECP setup, fragment checks, failure
   handling.
 - `references/gaussian_validation.md`: Gaussian TS/Freq, remote execution,
@@ -450,6 +466,8 @@ Python tooling follows a package layout:
   environment variables.
 - `scripts/ase_neb_framework.py`: prepare and run ASE-managed xTB/Gaussian NEB
   candidate-generation branches with the current node/tree layout.
+- `scripts/gaussian_external_xtb.py`: thin Gaussian External wrapper that lets
+  Gaussian call xTB for energy, gradient, and Hessian through EIn/EOu files.
 - `scripts/prepare_gaussian_ts_input.py`: generate Gaussian TS/Freq inputs from
   XYZ.
 - `scripts/gaussian_gen_preflight.py`: preflight and optionally repair Gaussian

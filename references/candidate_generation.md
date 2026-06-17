@@ -1,10 +1,12 @@
 # Candidate Generation
 
-Use this for xTB, ASE, NEB, scans, QST, dimer, and guessed structures before Gaussian validation.
+Use this for xTB, ASE, NEB, scans, QST, dimer, Gaussian-External-xTB, and
+guessed structures before Gaussian validation.
 For mechanism-analysis records from candidate-generation methods, read
 `references/mechanism_analysis_sources.md`; xTB/ASE evidence is usually
 screening or candidate-level evidence, not final electronic, orbital, or barrier
 proof.
+For method choice across all backends, read `references/backend_selection.md`.
 
 ## Endpoint Rule
 
@@ -181,6 +183,16 @@ python scripts/ts_node_exec.py \
 For ASE-driven NEB/scan/dimer workflows, set the script working directory or
 trajectory/log output paths to `nodes/<node_id>/outputs` and write parsed
 summaries under `nodes/<node_id>/parsed`.
+
+For Gaussian-driven low-cost trials where xTB supplies the external energy,
+gradient, and Hessian, use the Gaussian-External-xTB backend. It follows
+Gaussian's EIn/EOu protocol and remains candidate/search evidence only:
+
+```bash
+python scripts/gaussian_external_xtb.py --help
+```
+
+Read `references/gaussian_external_xtb.md` before preparing an External route.
 
 For an existing image path that should be refined with Gaussian forces, use the
 explicit external-Gaussian mode and start with `--dry-run-inputs`:

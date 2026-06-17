@@ -49,6 +49,7 @@ Each record should also include a source:
 | xTB/GFN optimization | supported only as low-level trend | key bonds, fragments, WBO proxy | charges and UHF/unpaired setting as screening evidence | unavailable unless separate output exists | rough relative energy only |
 | xTB scan/NEB/dimer | candidate-level path class | scan coordinate, highest image, WBO/bond changes | screening-level charges/spin setting | unavailable | rough barrier shape, not final barrier |
 | ASE NEB with xTB forces | candidate path only | image sequence and max-image geometry | inherited from engine, usually screening only | unavailable | relative image energies at chosen engine |
+| Gaussian-External-xTB | candidate-level optimizer or Hessian trial | Gaussian-driven trial geometry and xTB gradient/Hessian response | xTB charge and UHF setting as screening evidence | unavailable | xTB energy and curvature only, not final barrier |
 | Gaussian endpoint optimization/frequency | endpoint identity and minimum status | optimized endpoint bonds, angles, fragments | charge/multiplicity, `<S^2>`, population if requested | only if route requests orbital/population output | endpoint energy and thermochemistry |
 | Gaussian TS/Freq | TS class only after mode inspection | imaginary mode, TS geometry, mode participation | charge/multiplicity, `<S^2>`, population if requested | only if route requests orbital/population output | TS energy and thermochemistry |
 | Gaussian displacement endpoint optimization | endpoint-side assignment | plus/minus endpoint structures and key bonds | output-level charge/spin if requested | only if route requests orbital/population output | endpoint-side energies at same level |
@@ -98,9 +99,10 @@ python scripts/ts_descriptor_extract.py \
   -o nodes/n240_imaginary_follow/parsed
 ```
 
-## xTB and ASE Candidate Sources
+## xTB, ASE, and Gaussian-External-xTB Candidate Sources
 
-xTB and ASE path tools are valuable for choosing branches, not final electronic, orbital, or barrier proof.
+xTB, ASE path tools, and Gaussian-External-xTB are valuable for choosing
+branches, not final electronic, orbital, or barrier proof.
 
 Record as `supported` only for candidate-level observations:
 
@@ -116,10 +118,10 @@ Record as `ambiguous` or `unavailable` for:
 - final barrier or reaction energy;
 - accepted-TS proof.
 
-The usual `--mechanism-analysis` records from xTB/ASE are `reaction_center`,
-`energy` with a screening qualifier, and occasionally `reaction_type` as a
-hypothesis. Move to Gaussian when the branch needs final electronic, orbital,
-frequency, or barrier evidence.
+The usual `--mechanism-analysis` records from xTB/ASE/Gaussian-External-xTB are
+`reaction_center`, `energy` with a screening qualifier, and occasionally
+`reaction_type` as a hypothesis. Move to Gaussian DFT validation when the branch
+needs final electronic, orbital, frequency, or barrier evidence.
 
 ## QBICS dMECP Sources
 

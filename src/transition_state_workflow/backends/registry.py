@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 
 from transition_state_workflow.backends.contracts import BackendAdapter
 from transition_state_workflow.backends.gaussian import GaussianBackendAdapter
+from transition_state_workflow.backends.gaussian_external_xtb import GaussianExternalXtbAdapter
 from transition_state_workflow.backends.xtb import XtbBackendAdapter
 from transition_state_workflow.backends.ase import AseBackendAdapter
 from transition_state_workflow.backends.qbics import QbicsBackendAdapter
@@ -43,6 +44,7 @@ def default_backend_registry() -> BackendRegistry:
 
     registry = BackendRegistry()
     registry.register(GaussianBackendAdapter())
+    registry.register(GaussianExternalXtbAdapter())
     registry.register(XtbBackendAdapter())
     registry.register(AseBackendAdapter())
     registry.register(QbicsBackendAdapter())
