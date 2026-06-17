@@ -16,6 +16,7 @@ from transition_state_workflow.config.state_contract import (
     NODE_STATE_PRESENTATION,
     WORKSPACE_STATE_PRESENTATION,
     TREE_NODE_FORBIDDEN_RUNTIME_FIELDS,
+    VALID_BACKTRACK_EVENT_STATES,
     build_node_card_status,
     build_node_state,
     check_node_contract_violations,
@@ -442,16 +443,20 @@ def normalize_backtrack_event(item: dict[str, Any], fallback_id: str) -> dict[st
             f"backtrack event {clean_string(item.get('id')) or fallback_id} contains legacy fields: {', '.join(legacy_fields)}"
         )
     evidence_refs = [clean_string(value) for value in list_or_empty(item.get("evidence_refs")) if clean_string(value)]
+    event_id = clean_string(item.get("id")) or fallback_id
+    event_state = clean_string(item.get("event_state")) or "active"
+    if event_state not in VALID_BACKTRACK_EVENT_STATES:
+        raise ValueError(f"backtrack event {event_id} has invalid event_state: {event_state}")
     return {
         **item,
-        "id": clean_string(item.get("id")) or fallback_id,
+        "id": event_id,
         "from_node": clean_string(item.get("from_node")),
         "to_node": clean_string(item.get("to_node")),
         "new_branch_node": clean_string(item.get("new_branch_node")),
         "reason_code": clean_string(item.get("reason_code")),
         "reason": clean_string(item.get("reason")),
         "evidence_refs": evidence_refs,
-        "event_state": clean_string(item.get("event_state")) or "active",
+        "event_state": event_state,
         "created_at": clean_string(item.get("created_at")),
     }
 

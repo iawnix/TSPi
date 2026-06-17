@@ -112,9 +112,9 @@ VALID_OUTCOMES_BY_CLAIM_STATUS = {
     "ambiguous": {"wrong_mode", "wrong_endpoint", "parser_refused", "superseded"},
 }
 
-# Raw claim/outcome/run values stay separate in node.json for auditability, but
-# the explorer presents one derived node_state so users do not have to reconcile
-# multiple label systems.
+# Raw claim/outcome/run values stay separate in node.json for auditability. The
+# normalizer emits two presentation layers: compact Status[Phase] fields for
+# explorer node cards, and node_state/state_line fields for detail/audit views.
 NODE_STATE_PRESENTATION = {
     "prepared": {"label": "prepared", "severity": "neutral", "color": "grey"},
     "pending": {"label": "pending", "severity": "progress", "color": "blue"},

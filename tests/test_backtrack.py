@@ -433,6 +433,35 @@ def test_validator_rejects_multiple_active_backtrack_events(tmp_path: Path) -> N
     assert "multiple_active_backtracks" in codes
 
 
+def test_normalizer_rejects_invalid_backtrack_event_state(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_unit"
+    initialize_workspace(root)
+    create_retry_node_for_backtrack(root, "n020_retry")
+    run_cli(
+        str(WORKSPACE_CLI),
+        "record-backtrack",
+        "--root",
+        str(root),
+        "--from-node",
+        "n010_candidate",
+        "--to-node",
+        "n020_retry",
+        "--reason-code",
+        "unit_test_backtrack",
+        "--reason",
+        "Unit-test backtrack edge.",
+    )
+    tree_path = root / "tree.json"
+    tree = json.loads(tree_path.read_text(encoding="utf-8"))
+    tree["backtrack_events"][0]["event_state"] = "resolved bad"
+    tree_path.write_text(json.dumps(tree, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        normalize_workspace(root)
+
+    assert "invalid event_state: resolved bad" in exc_info.value.stderr
+
+
 def test_plan_next_and_validator_detect_replacement_branch_without_backtrack_event(tmp_path: Path) -> None:
     root = tmp_path / "tssearch_unit"
     initialize_workspace(root)

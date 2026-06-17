@@ -10,6 +10,8 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
+import pytest
+
 
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SKILL_ROOT / "src"))
@@ -128,6 +130,90 @@ def test_card_status_promotes_tsfreq_claim_to_validation_phase() -> None:
     assert card["status"] == "success"
     assert card["phase"] == "validation"
     assert card["label"] == "Success[Validation]"
+
+
+@pytest.mark.parametrize(
+    (
+        "lifecycle_state",
+        "run_state",
+        "claim_status",
+        "outcome",
+        "stage",
+        "operation",
+        "expected_status",
+        "expected_phase",
+        "expected_label",
+    ),
+    [
+        (
+            "prepared",
+            "not_started",
+            "not_evaluated",
+            "none",
+            "endpoint_validation",
+            "gaussian_optfreq",
+            "ready",
+            "endpoint",
+            "Ready[Endpoint]",
+        ),
+        (
+            "active",
+            "running",
+            "not_evaluated",
+            "none",
+            "connectivity_validation",
+            "imaginary_mode_follow",
+            "running",
+            "validation",
+            "Running[Validation]",
+        ),
+        (
+            "closed",
+            "stopped",
+            "not_evaluated",
+            "administrative_stop",
+            "candidate_generation",
+            "gaussian_qst2",
+            "stopped",
+            "candidate",
+            "Stopped[Candidate]",
+        ),
+        (
+            "closed",
+            "unknown",
+            "not_evaluated",
+            "none",
+            "candidate_generation",
+            "manual_review",
+            "unknown",
+            "candidate",
+            "Unknown[Candidate]",
+        ),
+    ],
+)
+def test_card_status_covers_nonterminal_runtime_states(
+    lifecycle_state: str,
+    run_state: str,
+    claim_status: str,
+    outcome: str,
+    stage: str,
+    operation: str,
+    expected_status: str,
+    expected_phase: str,
+    expected_label: str,
+) -> None:
+    card = build_node_card_status(
+        lifecycle_state=lifecycle_state,
+        run_state=run_state,
+        claim_status=claim_status,
+        outcome=outcome,
+        stage=stage,
+        operation=operation,
+    )
+
+    assert card["status"] == expected_status
+    assert card["phase"] == expected_phase
+    assert card["label"] == expected_label
 
 
 # --- node-level checks ------------------------------------------------------

@@ -186,7 +186,9 @@ python scripts/ts_normalize_view.py --source /local/mirrors/tssearch_group5 --pr
 
 Validation is read-only. It reports tree/node drift, missing node JSON,
 inconsistent frontier/closed/accepted indexes, missing evidence files, invalid
-old state fields, and malformed backtrack references.
+old state fields, invalid backtrack event states, and malformed backtrack
+references.
 
 Normalization is also read-only. It emits only the current normalized fields. It does not
-read, infer from, or output old state aliases.
+read, infer from, or output old state aliases, and it rejects backtrack events
+outside the canonical `active` / `resolved` / `superseded` lifecycle.
