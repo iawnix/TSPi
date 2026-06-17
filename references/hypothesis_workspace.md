@@ -480,16 +480,34 @@ be retired.
 
 ## Chemistry-Driven Tool Selection
 
-- Use scan when one dominant coordinate is chemically plausible and cheap to
-  test, such as simple proton transfer or bond stretch.
-- Use NEB when optimized reactant/product minima are distinct and atom mapping
-  gives a meaningful continuous path.
-- Use QST2/QST3 when optimized endpoints and a chemically reasonable guess are
-  available at the Gaussian validation level.
-- Use dimer when a local saddle is plausible but endpoint identity or mapping is
-  uncertain.
+Choose the search strategy first and the level/backend second. See
+`references/backend_selection.md` for the selection contract and
+`references/refinement_ladder.md` when a low-level candidate should be moved to
+a higher-level TS/Freq refinement.
+
+- Use scans when one dominant coordinate is chemically plausible and cheap to
+  test, such as simple proton transfer or bond stretch. xTB/GFN,
+  semiempirical, Gaussian-External-xTB, or Gaussian/DFT are possible
+  level/backend choices for the scan, not separate search strategies.
+- Use NEB, CI-NEB, string, or GSM when optimized reactant/product minima are
+  distinct and atom mapping gives a meaningful continuous path. xTB path
+  searches are broad candidate generation; Gaussian-force path searches are
+  expensive path-refinement branches that still need TS/Freq and connectivity
+  validation.
+- Use dimer or eigenvector-following when a local saddle is plausible but
+  endpoint identity or full path mapping is uncertain.
+- Use QST2 only as a limited fallback when the elementary step, R/P structures,
+  atom order, and mapping are reliable and a manual/scan/path candidate is not
+  the better next branch. Do not use QST2 merely because a previous TS
+  optimization failed.
+- Generally avoid QST3 unless a specific reason is recorded for why R/P
+  guidance plus an explicit TS guess should help more than direct TS
+  optimization.
+- Use direct TS optimization only to test a chemically plausible candidate. It
+  is not the default first search method.
 - Use QBICS dMECP when diabatic fragment states are chemically natural for an
-  atom-transfer or bond-switching hypothesis.
+  atom-transfer or bond-switching hypothesis. Treat it as crossing/candidate
+  evidence unless a later validation route supports a stronger claim.
 - Use imaginary-mode displacement plus endpoint optimization as the first
   connectivity screen when cheaper than IRC.
 - Use IRC when displacement/endpoints remain ambiguous or publication-grade

@@ -38,6 +38,11 @@ accumulate until a TS is found or the mechanism hypothesis is rejected.
   can support each layer.
 - Tool choice must follow the current chemical hypothesis; do not run NEB,
   QST, dimer, QBICS dMECP, Gaussian, or IRC as a default linear pipeline.
+- Method choice separates search strategy from level/backend: scan, NEB/string,
+  dimer, QST, direct TS optimization, and reaction-network exploration are
+  search strategies; xTB/GFN, semiempirical, Gaussian-External-xTB,
+  Gaussian-force execution, and Gaussian/DFT are levels or backends that can
+  support those strategies.
 - Before choosing the next branch in an existing workspace, run
   `scripts/ts_hypothesis_workspace.py plan-next --root <tssearch_root>` and use
   its planning packet as context. `plan-next` summarizes gates, allowed action
@@ -182,12 +187,15 @@ state, change the state model and the tools — never the UI.
      connectivity evidence as proof for the next step.
 
 5. Choose the next tool from the chemical hypothesis.
-   - For backend choice across xTB, ASE, Gaussian, QBICS, and
-     Gaussian-External-xTB, read `references/backend_selection.md`.
-   - For xTB/ASE/NEB, scans, dimer, QST, or broad orchestration, read
+   - For method and level selection, read `references/backend_selection.md`.
+     Choose the search strategy first, then the level/backend.
+   - For scans, NEB/string, dimer, QST, direct TS candidate optimization, or
+     broad orchestration, read
      `references/candidate_generation.md`.
    - For Gaussian-driven xTB External trials, read
      `references/gaussian_external_xtb.md`.
+   - For low-level candidate to high-level TS/Freq refinement, read
+     `references/refinement_ladder.md`.
    - For QBICS dMECP, read `references/qbics_dmecp.md`.
    - Before execution, create `nodes/<node_id>/decision_card.md` explaining why
      this tool is the right test and what would refute the branch.
@@ -229,14 +237,23 @@ state, change the state model and the tools — never the UI.
 
 ## Chemistry-Driven Tool Selection
 
-- Use xTB/GFN methods for low-cost structure cleanup, endpoint preoptimization,
-  conformer or pose screening, scan/NEB/dimer candidate generation, and broad
-  branch exploration when many hypotheses must be tested. xTB results are
-  search evidence, not final TS validation.
+- Choose the search strategy first: manual TS guess plus direct TS optimization,
+  relaxed/constrained scan, NEB/string/GSM, dimer/eigenvector following, QST
+  fallback, reaction-network exploration, or MECP/dMECP.
+- Choose the level/backend second. xTB/GFN, semiempirical methods,
+  Gaussian-External-xTB, Gaussian-force execution, and Gaussian/DFT are not
+  standalone search strategies; they are surfaces or execution backends for a
+  chosen strategy.
+- Use xTB/GFN or semiempirical levels for low-cost structure cleanup, endpoint
+  preoptimization, conformer or pose screening, scan/NEB/dimer candidate
+  generation, direct TS-guess cleanup, and broad branch exploration when many
+  hypotheses must be tested. These results are search evidence, not final TS
+  validation.
 - Use Gaussian/DFT when the result will support a validated endpoint,
   stationary point, imaginary mode, barrier, or accepted mechanism claim. Also
-  move to Gaussian when xTB changes the intended reaction-center identity,
-  collapses endpoint references, gives suspect charge/spin behavior, or the
+  move to Gaussian when a low-level candidate is plausible enough to refine, or
+  when lower-level methods change the intended reaction-center identity,
+  collapse endpoint references, give suspect charge/spin behavior, or the
   mechanism is electronically delicate.
 - Use scans for a dominant coordinate such as proton transfer, bond stretch, or
   angle-controlled rearrangement.
@@ -246,16 +263,18 @@ state, change the state model and the tools — never the UI.
   fragment pose, collapse during optimization, or have not survived endpoint
   stability checks.
 - Use xTB-NEB for path discovery and candidate generation after endpoint
-  readiness is documented. Use Gaussian-force NEB only as a more expensive
+  readiness is documented. Use Gaussian-force NEB only as a more expensive path
   refinement branch when endpoints are reliable, the path hypothesis is strong,
-  and lower-level evidence is not decisive. Neither xTB-NEB nor Gaussian-force
-  NEB is an accepted TS without later TS/Freq and connectivity validation.
-- Use Gaussian-External-xTB when Gaussian optimizer behavior is useful but the
-  branch is still low-cost screening. It supplies xTB energy, gradient, and
-  Hessian through Gaussian's External protocol and remains candidate/search
-  evidence only.
-- Use QST2/QST3 when optimized endpoints and a chemically plausible TS guess
-  are available at the Gaussian level.
+  and lower-level evidence justifies the cost. Neither xTB-NEB nor
+  Gaussian-force NEB is an accepted TS without later TS/Freq and connectivity
+  validation.
+- Use Gaussian-External-xTB as a level/backend when Gaussian optimizer behavior
+  is useful but the branch is still low-cost screening. It supplies xTB energy,
+  gradient, and Hessian through Gaussian's External protocol and remains
+  candidate/search evidence only.
+- Use QST2 only as a limited fallback when the elementary step, R/P structures,
+  atom order, and mapping are reliable. Generally avoid QST3 unless a specific
+  reason is recorded.
 - Use dimer when a local saddle is plausible but endpoint identity or path
   mapping is uncertain.
 - Use QBICS dMECP when diabatic fragment definitions are chemically natural for
@@ -439,10 +458,15 @@ Python tooling follows a package layout:
 - `references/mechanism_analysis_sources.md`: method-specific evidence sources,
   reliability limits, and `--mechanism-analysis` templates.
 - `references/backend_selection.md`: mechanism-driven backend selection policy
-  across candidate generation, TS/Freq validation, and connectivity proof.
-- `references/candidate_generation.md`: xTB/ASE/NEB/QST/Dimer candidate rules.
+  across search strategy, level/backend, candidate generation, TS/Freq
+  validation, and connectivity proof.
+- `references/candidate_generation.md`: scan, NEB/string/GSM, dimer, QST,
+  direct TS-candidate optimization, and reaction-network candidate rules with
+  level/backend examples.
 - `references/gaussian_external_xtb.md`: Gaussian External EIn/EOu protocol,
   xTB mapping, route constraints, artifacts, and claim boundary.
+- `references/refinement_ladder.md`: low-level candidate to high-level
+  refinement and validation chain.
 - `references/qbics_dmecp.md`: QBICS dMECP setup, fragment checks, failure
   handling.
 - `references/gaussian_validation.md`: Gaussian TS/Freq, remote execution,

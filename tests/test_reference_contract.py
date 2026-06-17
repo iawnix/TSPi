@@ -93,6 +93,7 @@ def test_primary_docs_link_mechanism_analysis_sources() -> None:
     for path in (
         ROOT / "SKILL.md",
         REFERENCES / "backend_selection.md",
+        REFERENCES / "refinement_ladder.md",
         REFERENCES / "mechanism_reflection.md",
         REFERENCES / "candidate_generation.md",
         REFERENCES / "gaussian_external_xtb.md",
@@ -104,13 +105,13 @@ def test_primary_docs_link_mechanism_analysis_sources() -> None:
 
 def test_backend_selection_keeps_candidate_generators_out_of_accepted_ts() -> None:
     text = (REFERENCES / "backend_selection.md").read_text(encoding="utf-8")
-    assert "No candidate-generation backend may set `claim_status=accepted_ts`" in text
+    assert "No candidate-generation strategy may set `claim_status=accepted_ts`" in text
     for method in (
         "xTB",
         "ASE",
         "NEB",
-        "QST guesses",
-        "dimer searches",
+        "QST",
+        "dimer",
         "QBICS dMECP",
         "Gaussian-External-xTB",
     ):
@@ -118,6 +119,51 @@ def test_backend_selection_keeps_candidate_generators_out_of_accepted_ts() -> No
     gaussian_external = (REFERENCES / "gaussian_external_xtb.md").read_text(encoding="utf-8")
     assert "`accepted_ts_capable=false`" in gaussian_external
     assert "`candidate_only=true`" in gaussian_external
+
+
+def test_method_selection_separates_search_strategy_from_level_backend() -> None:
+    selection = (REFERENCES / "backend_selection.md").read_text(encoding="utf-8")
+    candidate = (REFERENCES / "candidate_generation.md").read_text(encoding="utf-8")
+    skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+
+    for text in (selection, candidate, skill):
+        assert "search strategy first" in text
+        assert "level/backend" in text
+    assert "xTB, semiempirical methods, Gaussian-External-xTB, and Gaussian-force execution are levels/backends" in selection
+    assert "Do not describe\nxTB/GFN, semiempirical methods, Gaussian-External-xTB, or Gaussian-force\nexecution as standalone search strategies." in candidate
+    assert "xTB/GFN, semiempirical, Gaussian-External-xTB, Gaussian-force calculator, DFT/Gaussian" in selection
+
+
+def test_primary_docs_link_low_to_high_refinement_ladder() -> None:
+    source_name = "references/refinement_ladder.md"
+    for path in (
+        ROOT / "SKILL.md",
+        REFERENCES / "backend_selection.md",
+        REFERENCES / "candidate_generation.md",
+        REFERENCES / "gaussian_validation.md",
+    ):
+        assert source_name in path.read_text(encoding="utf-8")
+    ladder = (REFERENCES / "refinement_ladder.md").read_text(encoding="utf-8")
+    for phrase in (
+        "low-level endpoint/path/candidate",
+        "candidate quality check",
+        "geometry transfer to target level",
+        "high-level TS optimization",
+        "connectivity validation",
+        "accepted_ts",
+    ):
+        assert phrase in ladder
+
+
+def test_docs_do_not_make_optts_or_qst_default_methods() -> None:
+    selection = (REFERENCES / "backend_selection.md").read_text(encoding="utf-8")
+    candidate = (REFERENCES / "candidate_generation.md").read_text(encoding="utf-8")
+    gaussian = (REFERENCES / "gaussian_validation.md").read_text(encoding="utf-8")
+    assert "Do not use QST2 merely because a previous `Opt=TS` failed." in selection
+    assert "Generally avoid QST3." in selection
+    assert "It is not a global default starting point." in selection
+    assert "Do not use QST2 merely\nbecause a previous TS optimization failed." in candidate
+    assert "Gaussian TS optimization is a refinement or validation step for a specific\ncandidate, not a default search method." in gaussian
 
 
 def test_user_facing_docs_use_repo_local_script_examples() -> None:

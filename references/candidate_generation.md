@@ -1,25 +1,30 @@
 # Candidate Generation
 
-Use this for xTB, ASE, NEB, scans, QST, dimer, Gaussian-External-xTB, and
-guessed structures before Gaussian validation.
-For mechanism-analysis records from candidate-generation methods, read
-`references/mechanism_analysis_sources.md`; xTB/ASE evidence is usually
-screening or candidate-level evidence, not final electronic, orbital, or barrier
-proof.
-For method choice across all backends, read `references/backend_selection.md`.
+Use this for generating transition-state candidates before final validation.
+For method choice, read `references/backend_selection.md`. For low-level to
+high-level candidate transfer, read `references/refinement_ladder.md`. For
+mechanism-analysis records from candidate-generation methods, read
+`references/mechanism_analysis_sources.md`.
+
+Candidate generation chooses a search strategy first, then a level/backend.
+Examples are `xTB scan`, `DFT scan`, `xTB NEB`, `Gaussian-force NEB`,
+`Gaussian-External-xTB TS optimization`, and `DFT dimer`. Do not describe
+xTB/GFN, semiempirical methods, Gaussian-External-xTB, or Gaussian-force
+execution as standalone search strategies.
 
 ## Endpoint Rule
 
-Treat user-supplied reactant and product structures as reference endpoint
+Treat supplied reactant and product structures as reference endpoint
 hypotheses until proven otherwise. Optimize or stabilize endpoints before path
-searches. For NEB especially, unoptimized or unstable endpoints can create
-artificial paths, endpoint barriers, and wrong highest-energy images.
+searches. For NEB, string, GSM, and QST especially, unreliable endpoints can
+create artificial paths, endpoint barriers, wrong highest-energy images, or
+invalid interpolated guesses.
 
 For two-molecule, multicomponent, ion-pair, encounter-complex, or flexible
 systems, do not assume the supplied relative pose is a minimum. First check
 fragment identity, reaction-center bonds/angles, and whether each side remains
-distinct during optimization. Whole-system RMSD is secondary unless the intended
-chemistry requires a specific bound complex pose.
+distinct during optimization. Whole-system RMSD is secondary unless the
+intended chemistry requires a specific bound complex pose.
 
 Endpoint states:
 
@@ -32,80 +37,83 @@ Endpoint states:
 - `collapsed_or_unstable`: optimization changes side, merges R/P, dissociates,
   or loses the intended reaction-center identity.
 
-Do not run direct Gaussian-NEB from `reference_hypothesis` or
-`collapsed_or_unstable` endpoints. Backtrack to endpoint discovery, constrained
-preoptimization, conformer/pose search, relaxed scan, or intended-level endpoint
-stability validation.
-
-In the bundled ASE/NEB config, record the endpoint state explicitly:
-
-```json
-"endpoint_validation": {
-  "reactant_state": "lower_level_minimum",
-  "product_state": "lower_level_minimum",
-  "level": "GFN2-xTB preoptimization",
-  "evidence": "nodes/n005_endpoint_gate/parsed/endpoint_summary.json"
-}
-```
-
 Allowed ready states for candidate promotion are `validated_minimum`,
 `lower_level_minimum`, and `constrained_reference` on both sides. The default is
 `reference_hypothesis`, which lets `prepare` record the branch but prevents
 promotion to `candidate_found`.
 
+Do not run NEB, string/GSM, QST, or Gaussian-force NEB from endpoints that are
+not distinct on the chosen surface unless the branch is explicitly endpoint
+discovery or constrained candidate generation.
+
 Record:
 
-- method and level;
-- charge and multiplicity;
-- final energy;
-- minimum/frequency status if available;
+- search strategy and level/backend;
+- method, charge, multiplicity, solvent, dispersion, and constraints;
+- endpoint state and evidence;
+- final or candidate energy at that level;
 - key reaction-center bonds/angles;
 - fragment identity and relative-pose assumptions;
-- constraints used to preserve endpoint identity;
-- endpoint state from the list above.
+- changed variables from the parent branch.
 
-## Level Selection: xTB vs Gaussian
+## Search Strategies
 
-Use xTB and Gaussian at different evidence layers. Do not treat them as
-interchangeable optimizers.
+### Manual Guess Plus TS Optimization
 
-| Task | Prefer xTB/GFN when | Prefer Gaussian/DFT when |
-| --- | --- | --- |
-| Initial cleanup | structures are rough, many poses/conformers must be screened, or the goal is to remove obvious clashes | atom order, charge, multiplicity, and composition are fixed and the endpoint will become validation evidence |
-| Endpoint optimization | endpoints are hypotheses and a cheap stability check is needed first | endpoint minima will be used as QST/NEB/IRC references or final connectivity references |
-| NEB/path search | broad path discovery, xTB-NEB, scan, or dimer is being used to produce candidates | lower-level paths are promising but electronically sensitive, or the branch needs Gaussian-force refinement before TS/Freq |
-| Open-shell/HAT/PCET/charge transfer | only for screening geometries and reaction-center trends | use Gaussian earlier for spin, charge, state, barrier, and frequency-sensitive claims |
-| Weak complexes/multicomponent poses | pose/conformer screening and constrained references | validating distinct bound/encounter minima or rejecting a pose-sensitive mechanism |
-| Final TS evidence | never sufficient by itself | required for `tsfreq_validated` and any accepted TS path |
+Use when a chemically plausible TS guess exists. At low level this is candidate
+generation or candidate cleanup. At target Gaussian/DFT level it is candidate
+refinement and may become `tsfreq_validated` only after Gaussian TS/Freq gates
+pass.
 
-xTB is appropriate for speed and breadth: endpoint preoptimization, conformer or
-relative-pose screening, constrained-reference discovery, relaxed scans, NEB,
-dimer-like candidate generation, and branch recovery after failures. Record xTB
-method, charge, UHF/unpaired setting, accuracy, electronic temperature, SCF
-settings, constraints, and whether the branch is only `lower_level_minimum` or
-`candidate_found`.
+Available level/backend choices include:
 
-Move from xTB to Gaussian when:
+- xTB/GFN or semiempirical for fast TS-guess cleanup;
+- Gaussian-External-xTB when Gaussian's TS optimizer behavior is useful on an
+  xTB surface;
+- DFT/Gaussian when validating or refining a plausible candidate.
 
-- the candidate will be promoted to TS/Freq validation;
-- endpoint references must support QST, Gaussian-NEB, IRC, or final
-  connectivity checks;
-- xTB changes connectivity, proton location, fragment identity, charge state, or
-  spin/electronic character in a way that may be method-artificial;
-- the reaction is HAT, PCET, radical, open-shell, metal-containing, strongly
-  polar, or charge-transfer dominated;
-- barrier height, imaginary mode, or endpoint assignment will be reported.
+This route is not a global default starting point. It tests a specific TS
+candidate.
 
-If xTB and Gaussian disagree, do not average them. Close or mark the branch
-ambiguous, record the disagreement as evidence, and branch to a chemically
-different endpoint/model/level hypothesis.
+### Relaxed Or Constrained Scan
 
-## Candidate Routes
+Use when a dominant coordinate is chemically meaningful, such as proton
+transfer, bond stretch, bond formation, angle-controlled rearrangement, or a
+small set of coupled coordinates.
 
-### NEB
+Use xTB/GFN or semiempirical scans for rapid coordinate testing and rough
+barrier shape. Use Gaussian/DFT scans when spin, charge, solvent, proton
+placement, or electronic structure is central to the coordinate. A scan maximum
+is only a candidate seed and needs TS optimization plus frequency validation.
 
-Use the bundled node-aware ASE framework for reusable xTB or explicit
-Gaussian-force NEB candidate generation:
+If the scan coordinate forces the reaction unrealistically, close the branch or
+mark it `ambiguous` and choose a different coordinate or path strategy.
+
+### NEB, CI-NEB, String, Or GSM
+
+Use when endpoints are reliable and the intended elementary step likely needs a
+multi-coordinate path. Do not use path methods for a total R->P transformation
+that likely contains intermediates; split the pathway into elementary steps.
+
+Use xTB NEB or string/GSM for broad path discovery. Use Gaussian-force NEB only
+after endpoint identity is reliable and lower-level path evidence points to a
+specific path worth the cost. DFT/Gaussian path searches should be justified by
+small system size or high electronic sensitivity.
+
+Promote an image only if:
+
+- endpoint states are at least `lower_level_minimum` or clearly documented
+  `constrained_reference` on both sides;
+- the path converged or the convergence status is explicitly acceptable for
+  candidate generation;
+- the maximum is not an endpoint image;
+- the barrier is nontrivial and not a zero-barrier artifact;
+- the geometry has the intended reaction-center changes.
+
+The highest image or climbing image is still a candidate, not
+`tsfreq_validated`.
+
+Bundled ASE framework example:
 
 ```bash
 python scripts/ase_neb_framework.py validate-config examples/neb_xtb_config.json --strict-files
@@ -113,94 +121,7 @@ python scripts/ase_neb_framework.py prepare examples/neb_xtb_config.json
 python scripts/ase_neb_framework.py run examples/neb_xtb_config.json
 ```
 
-`prepare` creates a normalized `tssearch_<system>` workspace with
-`manifest.json`, `tree.json`, `evidence_registry.json`, and node-scoped
-artifacts. `run` may create `claim_status=candidate_found` only for NEB
-candidates whose endpoint-validation parent is ready and that pass convergence,
-non-endpoint, and minimum-barrier gates.
-
-Promote an image only if:
-
-- endpoint states are at least `lower_level_minimum` or clearly documented
-  `constrained_reference` on both sides;
-- NEB converged or convergence status is explicitly acceptable;
-- the maximum is not an endpoint image;
-- the barrier is nontrivial and not a zero-barrier artifact;
-- the geometry has the intended reaction-center changes.
-
-Choose xTB-NEB when endpoints are at least lower-level ready and the goal is
-fast path discovery or candidate generation across several plausible reaction
-coordinates. Choose Gaussian-force NEB only after endpoint identity is reliable
-and xTB/scan/QST evidence points to a specific path worth the cost. A
-Gaussian-force NEB maximum is still a candidate, not `tsfreq_validated`.
-
-### Scan
-
-A scan maximum is only a candidate. Use xTB scans for rapid coordinate testing
-and rough barrier shape. Use Gaussian scans when the coordinate is chemically
-central and xTB gives questionable connectivity, spin, charge, or proton/atom
-placement. A scan maximum needs TS optimization and frequency validation. If the
-scan coordinate forces the reaction unrealistically, reflect on coordinate
-choice.
-
-### QST2/QST3
-
-QST is useful when optimized endpoints and a reasonable guess exist. It can converge to a different saddle or endpoint-side soft mode; check imaginary mode and connectivity.
-
-### Dimer
-
-Use when a local saddle is suspected but endpoint mapping is uncertain. xTB can
-screen local saddle directions cheaply; Gaussian dimer/refinement is reserved
-for candidates that remain chemically plausible on the DFT surface. Still
-validate with Gaussian TS/Freq and connectivity.
-
-### xTB
-
-xTB is for low-cost candidate generation and screening. Do not report xTB-only TSs as final. Preserve xTB logs and geometries as candidate evidence.
-
-xTB method and precision are branch variables, not global defaults. Vary GFN
-method, accuracy, SCF iteration limit, electronic temperature, constraints,
-image count, climbing-image setting, interpolation, and optimizer only as
-explicit `changed_variables` in the node. If xTB requires strong constraints to
-preserve endpoint identity, mark the result as `constrained_reference`, not a
-validated minimum.
-
-Run xTB from `nodes/<node_id>/outputs`, not the workspace root. xTB writes
-fixed-name files such as `xtbopt.xyz`, `xtb.trj`, `xtbrestart`, `charges`,
-`wbo`, `gradient`, and `hessian` into the current working directory. Running
-from the node output directory is what keeps those artifacts attributable to
-the branch that produced them.
-
-Prefer the node-scoped wrapper for local or already-staged remote runs:
-
-```bash
-python scripts/ts_node_exec.py \
-  --workspace /path/to/tssearch_system \
-  --node-id n120_xtb_candidate \
-  -- xtb ../inputs/candidate.xyz --opt --chrg <charge> --uhf <unpaired>
-```
-
-For ASE-driven NEB/scan/dimer workflows, set the script working directory or
-trajectory/log output paths to `nodes/<node_id>/outputs` and write parsed
-summaries under `nodes/<node_id>/parsed`.
-
-For Gaussian-driven low-cost trials where xTB supplies the external energy,
-gradient, and Hessian, use the Gaussian-External-xTB backend. It follows
-Gaussian's EIn/EOu protocol and remains candidate/search evidence only:
-
-```bash
-python scripts/gaussian_external_xtb.py --help
-```
-
-Read `references/gaussian_external_xtb.md` before preparing an External route.
-
-For an existing image path that should be refined with Gaussian forces, use the
-explicit external-Gaussian mode and start with `--dry-run-inputs`:
-
-A prior NEB node writes its images to `nodes/<node_id>/images/` as
-`initial_image_NN.xyz` and `final_image_NN.xyz` (both prefixes share that
-directory). To refine the converged path, point `--xyz-dir` at it and select the
-`final_image_*.xyz` set so the initial guess is not mixed in:
+To refine an existing image path with Gaussian forces, first dry-run the inputs:
 
 ```bash
 python scripts/ase_neb_framework.py continue-gaussian-neb-from-images tssearch_gaussian_refine \
@@ -213,20 +134,78 @@ python scripts/ase_neb_framework.py continue-gaussian-neb-from-images tssearch_g
   --dry-run-inputs
 ```
 
-Declare `--reactant-endpoint-state`/`--product-endpoint-state` (and optionally
-`--endpoint-level`/`--endpoint-evidence`) to match the endpoint readiness already
-established upstream; the candidate-promotion gate stays closed while either
-endpoint is only a `reference_hypothesis`.
+### Dimer Or Eigenvector Following
+
+Use when a local saddle is suspected but endpoint mapping or the full path is
+uncertain. xTB/GFN can screen local saddle directions cheaply. DFT/Gaussian
+dimer or refinement is reserved for candidates that remain chemically
+plausible on the target surface.
+
+Still validate with Gaussian TS/Freq and connectivity.
+
+### QST2 And QST3
+
+Use QST2 only as a limited fallback when the elementary step is clear, R/P
+structures are chemically plausible, atom order and mapping are reliable, and a
+manual/scan/path TS guess is not the better next move. Do not use QST2 merely
+because a previous TS optimization failed.
+
+Generally avoid QST3. If a plausible TS guess already exists, direct TS
+optimization is usually the cleaner branch. Use QST3 only with an explicit
+reason why R/P guidance plus a TS guess should help.
+
+QST convergence can still land on the wrong saddle or an endpoint-side soft
+mode; check the imaginary mode and connectivity.
+
+### Reaction-Network Exploration
+
+Use AFIR, GRRM, GSM, metadynamics, or other network/path discovery tools when
+the mechanism, intermediates, or elementary-step sequence is unknown. Treat
+outputs as pathway hypotheses and candidate seeds. Split the discovered route
+into elementary steps before TS/Freq validation.
+
+### MECP Or dMECP
+
+Use MECP or dMECP when crossing or diabatic-state hypotheses are chemically
+central. QBICS dMECP is candidate-generation evidence for those hypotheses; it
+does not by itself validate an ordinary ground-state TS.
+
+## Level And Backend Examples
+
+xTB/GFN and semiempirical levels can support endpoint cleanup, scans, NEB,
+dimer, and low-level TS-guess optimization. Preserve fixed-name xTB artifacts
+by running from `nodes/<node_id>/outputs`:
+
+```bash
+python scripts/ts_node_exec.py \
+  --workspace /path/to/tssearch_system \
+  --node-id n120_xtb_candidate \
+  -- xtb ../inputs/candidate.xyz --opt --chrg <charge> --uhf <unpaired>
+```
+
+Gaussian-External-xTB can support Gaussian-driven low-cost TS optimization,
+gradient/Hessian trials, or other External-compatible screening jobs on the xTB
+surface:
+
+```bash
+python scripts/gaussian_external_xtb.py --help
+```
+
+Read `references/gaussian_external_xtb.md` before preparing an External route.
 
 ## Candidate Promotion
 
-Create a Gaussian validation child node only when the candidate is chemically plausible:
+Create a high-level refinement or Gaussian validation child node only when the
+candidate is chemically plausible:
 
 - endpoints were distinct and endpoint identity was not produced solely by an
   arbitrary fragment pose;
-- reaction-center bonds are between endpoint values;
-- not an endpoint or conformational artifact;
+- reaction-center bonds are between endpoint values or otherwise TS-like;
+- the candidate is not an endpoint or conformational artifact;
 - charge/multiplicity and atom order are correct;
-- for open-shell cases, spin/electronic state is plausible.
+- for open-shell cases, spin/electronic state is plausible;
+- constraints used during candidate generation are documented and either
+  removed or justified for the refinement branch.
 
-If candidate quality is weak but informative, close the branch with reflection and branch from a mechanism ancestor.
+If candidate quality is weak but informative, close the branch with reflection
+and branch from a mechanism ancestor.

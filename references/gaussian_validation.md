@@ -3,11 +3,20 @@
 Use this when preparing, running, parsing, or judging Gaussian TS/Freq and IRC jobs.
 For structured reaction-type, reaction-center, electronic, orbital, and energy
 records, read `references/mechanism_analysis_sources.md` before finalizing the
-node.
+node. When the Gaussian job refines a lower-level candidate, read
+`references/refinement_ladder.md` before preparing the input.
 
 ## TS/Frequency Input
 
-Use a candidate XYZ explicitly. For multi-frame XYZ/extXYZ, select a frame by index or `first/last`; do not silently use an arbitrary frame.
+Use a candidate XYZ explicitly. For multi-frame XYZ/extXYZ, select a frame by
+index or `first/last`; do not silently use an arbitrary frame.
+
+Gaussian TS optimization is a refinement or validation step for a specific
+candidate, not a default search method. The candidate may come from manual
+construction, scan, NEB/string/GSM, dimer, QST, Gaussian-External-xTB, xTB/GFN,
+semiempirical, or another documented lower-level search. Preserve the parent
+candidate evidence and record what level/backend changed for the Gaussian
+refinement branch.
 
 Example:
 
