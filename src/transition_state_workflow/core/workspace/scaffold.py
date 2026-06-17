@@ -38,7 +38,7 @@ def initial_workspace_manifest(
         "multiplicity": multiplicity,
         "root": str(root),
         "node_schema": WORKSPACE_NODE_SCHEMA,
-        "mechanism_preflight_storage": "workspace_level",
+        "mechanism_preflight_storage": "undeclared",
         "current_accepted_ts": None,
     }
 

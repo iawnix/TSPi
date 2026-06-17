@@ -259,16 +259,18 @@ def download_remote_file(
     name: str,
     *,
     tolerate_missing: bool,
+    local_name: str | None = None,
 ) -> bool:
     """Download one named file from the remote run directory."""
 
     remote_path = posixpath.join(spec.remote_run_dir, name)
+    local_basename = Path(local_name or name).name
     try:
         executor.run_argv(
             [
                 *executor.scp_prefix(),
                 remote_scp_target(executor, remote_path),
-                str(spec.local_download_dir / Path(name).name),
+                str(spec.local_download_dir / local_basename),
             ],
             capture_output=False,
         )
@@ -277,6 +279,19 @@ def download_remote_file(
             raise
         warn(f"missing remote file {remote_path}")
         return False
+    return True
+
+
+def remote_file_exists(executor: OpenSSHRemoteExecutor, spec: RemoteJobSpec, name: str) -> bool:
+    """Return whether a candidate file exists before downloading it."""
+
+    remote_path = posixpath.join(spec.remote_run_dir, name)
+    try:
+        executor.run_login(f"test -f {shlex.quote(remote_path)}", label="remote file exists")
+    except subprocess.CalledProcessError as exc:
+        if exc.returncode == 1:
+            return False
+        raise
     return True
 
 
@@ -290,15 +305,21 @@ def download_first_existing(
     """Download the first available candidate from a group of remote names."""
 
     unique_names = tuple(dict.fromkeys(name for name in names if name))
-    errors: list[subprocess.CalledProcessError] = []
+    if not unique_names:
+        return False
+    local_name = Path(unique_names[0]).name
     for name in unique_names:
-        try:
-            return download_remote_file(executor, spec, name, tolerate_missing=False)
-        except subprocess.CalledProcessError as exc:
-            errors.append(exc)
+        if not remote_file_exists(executor, spec, name):
             continue
-    if errors and not tolerate_missing:
-        raise errors[0]
+        return download_remote_file(
+            executor,
+            spec,
+            name,
+            tolerate_missing=False,
+            local_name=local_name,
+        )
+    if not tolerate_missing:
+        raise CliError(f"missing remote files under {spec.remote_run_dir}: {', '.join(unique_names)}")
     warn(f"missing remote files under {spec.remote_run_dir}: {', '.join(unique_names)}")
     return False
 

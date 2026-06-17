@@ -64,9 +64,11 @@ Remote command construction:
 - Keep engine semantics out of the generic SSH and job lifecycle boundaries.
   `remote/job_runner.py` owns directory preparation, background submit,
   PID/metadata receipt files, node-output status/tail/fetch snippets, and
-  downloads. `run_remote_gaussian.py` is the Gaussian adapter over that layer;
-  xTB or ASE/NEB remote execution must provide engine-specific adapters instead
-  of reusing the Gaussian CLI.
+  downloads. Download fallback first checks remote file existence; network,
+  login, or permission failures must surface instead of silently falling back to
+  stale legacy artifacts. `run_remote_gaussian.py` is the Gaussian adapter over
+  that layer; xTB or ASE/NEB remote execution must provide engine-specific
+  adapters instead of reusing the Gaussian CLI.
 - For ad hoc compute-host commands that need shell operators, generate the SSH
   argv through `OpenSSHRemoteExecutor.compute_argv(...)` instead of hand-writing
   nested quotes:

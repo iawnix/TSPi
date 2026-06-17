@@ -30,6 +30,12 @@ def write_mechanism_preflight_node(
     ensure_workspace_root_has_manifest_and_tree(source)
     node_dir = source / "nodes" / node_id
     if (node_dir / "node.json").exists() and not force:
+        existing = read_json_object_required(node_dir / "node.json")
+        if str(existing.get("stage") or "").strip() != "mechanism_preflight":
+            raise SystemExit(
+                f"existing {node_id}/node.json is not a mechanism_preflight node; "
+                "rerun preflight-node with --force after resolving the partial node"
+            )
         return node_id
 
     mechanism = read_json_object_required(source / "mechanism_model.json")

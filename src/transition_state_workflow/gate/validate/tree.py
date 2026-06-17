@@ -76,15 +76,27 @@ def validate_indexes(tree: dict[str, Any], graph: dict[str, Any], findings: list
     active = clean_string_set(list_or_empty(tree.get("active_frontier")))
     closed = clean_string_set(list_or_empty(tree.get("closed_nodes")))
     accepted = clean_string_set(list_or_empty(tree.get("accepted_nodes")))
-    graph_active = clean_string_set(list_or_empty(graph.get("active_frontier")))
-    graph_closed = clean_string_set(list_or_empty(graph.get("closed_nodes")))
-    graph_accepted = clean_string_set(list_or_empty(graph.get("accepted_nodes")))
     node_by_id = {clean_string(node.get("id")): node for node in list_or_empty(graph.get("nodes")) if isinstance(node, dict)}
-    if active != graph_active:
+    expected_active = {
+        node_id
+        for node_id, node in node_by_id.items()
+        if node_id and clean_string(node.get("lifecycle_state")) == "active"
+    }
+    expected_closed = {
+        node_id
+        for node_id, node in node_by_id.items()
+        if node_id and clean_string(node.get("lifecycle_state")) == "closed"
+    }
+    expected_accepted = {
+        node_id
+        for node_id, node in node_by_id.items()
+        if node_id and clean_string(node.get("claim_status")) == "accepted_ts"
+    }
+    if active != expected_active:
         findings.append(Finding("warning", "active_index_drift", "tree active_frontier differs from normalized active_frontier", path="tree.json"))
-    if closed != graph_closed:
+    if closed != expected_closed:
         findings.append(Finding("warning", "closed_index_drift", "tree closed_nodes differs from normalized closed_nodes", path="tree.json"))
-    if accepted != graph_accepted:
+    if accepted != expected_accepted:
         findings.append(Finding("warning", "accepted_index_drift", "tree accepted_nodes differs from normalized accepted_nodes", path="tree.json"))
     for node_id in active:
         node = node_by_id.get(node_id)

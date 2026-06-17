@@ -1429,6 +1429,82 @@ def test_start_node_marks_active_frontier(tmp_path: Path) -> None:
     assert validation["summary"]["warnings"] == 0
 
 
+def test_validator_warns_when_active_index_misses_active_node(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_unit"
+    initialize_workspace(root)
+    run_cli(
+        str(WORKSPACE_CLI),
+        "start-node",
+        "--root",
+        str(root),
+        "--node-id",
+        "n010_candidate",
+        "--run-state",
+        "running",
+        "--decision",
+        "start_unit_job",
+        "--summary",
+        "Unit-test job is running.",
+        "--primary-file",
+        "nodes/n010_candidate/decision_card.md",
+    )
+    tree_path = root / "tree.json"
+    tree = json.loads(tree_path.read_text(encoding="utf-8"))
+    tree["active_frontier"] = []
+    tree_path.write_text(json.dumps(tree, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    validation = validate_workspace_allow_errors(root)
+    codes = {finding["code"] for finding in validation["findings"]}
+    assert "active_index_drift" in codes
+
+
+def test_validator_warns_when_closed_index_misses_closed_node(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_unit"
+    initialize_workspace(root)
+    node_path = root / "nodes" / "n010_candidate" / "node.json"
+    node = json.loads(node_path.read_text(encoding="utf-8"))
+    node.update(
+        {
+            "lifecycle_state": "closed",
+            "run_state": "completed",
+            "claim_status": "candidate_found",
+            "outcome": "candidate_generated",
+            "claim_level": "candidate_only",
+        }
+    )
+    node_path.write_text(json.dumps(node, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    validation = validate_workspace_allow_errors(root)
+    codes = {finding["code"] for finding in validation["findings"]}
+    assert "closed_index_drift" in codes
+
+
+def test_validator_warns_when_accepted_index_misses_accepted_node(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_unit"
+    initialize_workspace(root)
+    node_path = root / "nodes" / "n010_candidate" / "node.json"
+    node = json.loads(node_path.read_text(encoding="utf-8"))
+    node.update(
+        {
+            "lifecycle_state": "closed",
+            "run_state": "completed",
+            "claim_status": "accepted_ts",
+            "outcome": "accepted",
+            "claim_level": "accepted_ts",
+        }
+    )
+    node_path.write_text(json.dumps(node, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    tree_path = root / "tree.json"
+    tree = json.loads(tree_path.read_text(encoding="utf-8"))
+    tree["closed_nodes"] = [*tree.get("closed_nodes", []), "n010_candidate"]
+    tree["accepted_nodes"] = []
+    tree_path.write_text(json.dumps(tree, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+
+    validation = validate_workspace_allow_errors(root)
+    codes = {finding["code"] for finding in validation["findings"]}
+    assert "accepted_index_drift" in codes
+
+
 def test_validator_warns_when_tree_parent_index_is_missing(tmp_path: Path) -> None:
     root = tmp_path / "tssearch_unit"
     initialize_workspace(root)

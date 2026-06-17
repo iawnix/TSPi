@@ -28,9 +28,12 @@ from transition_state_workflow.backends.gaussian import (  # noqa: E402
     gaussian_refinement_defaults,
     render_gaussian_input,
     write_gaussian_refinement_input,
+    parse_charge_table,
     parse_gaussian_energy_hartree,
     parse_gaussian_forces_hartree_per_bohr,
+    parse_gaussian_opt_cycle_diagnostics,
     parse_gaussian_tsfreq_log,
+    parse_last_scf_energy,
 )
 from transition_state_workflow.cli.parse_gaussian_ts_result import main as parse_cli_main  # noqa: E402
 from transition_state_workflow.cli.parse_gaussian_ts_result import parse_log  # noqa: E402
@@ -175,6 +178,72 @@ def test_parse_log_warns_when_opt_maxcycle_request_does_not_change_printed_limit
     assert diagnostics["max_cycle_request_mismatch"] is True
     assert diagnostics["step_limit_reached"] is True
     assert diagnostics["warnings"] == ["opt_maxcycle_request_mismatch", "opt_step_limit_reached"]
+
+
+def test_opt_cycle_diagnostics_use_printed_step_limit_not_nstep_proxy() -> None:
+    diagnostics = parse_gaussian_opt_cycle_diagnostics(
+        [
+            " #P Opt=(MaxCycle=300)",
+            " Step number  80 out of a maximum of 100",
+            " Number of steps exceeded,  NStep=120",
+        ]
+    )
+
+    assert diagnostics["printed_opt_step"] == 80
+    assert diagnostics["printed_opt_maximum_steps"] == 100
+    assert diagnostics["nstep_termination"] == 120
+    assert diagnostics["step_limit_reached"] is False
+    assert diagnostics["warnings"] == ["opt_maxcycle_request_mismatch"]
+
+
+def test_gaussian_scf_energy_parsers_accept_fortran_d_exponents(tmp_path: Path) -> None:
+    lines = [
+        " SCF Done:  E(RB3LYP) =  -1.234567890123D+02     A.U. after 10 cycles",
+        " SCF Done:  E(UB3LYP) =  -1.234567890124d+02     A.U. after 11 cycles",
+    ]
+    log = tmp_path / "energy.out"
+    log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    assert parse_last_scf_energy(lines) == pytest.approx(-123.4567890124)
+    assert parse_gaussian_energy_hartree(log) == pytest.approx(-123.4567890124)
+
+
+def test_parse_tsfreq_summary_accepts_exponent_energy_fields(tmp_path: Path) -> None:
+    text = _build_log(
+        frequencies=_STD_FREQ_ONE_IMAG,
+        convergence=(
+            " SCF Done:  E(RB3LYP) =  -1.234567890123D+02     A.U. after 10 cycles\n"
+            " Zero-point correction=                           1.234567D-02 (Hartree/Particle)\n"
+            " Thermal correction to Gibbs Free Energy=         2.345678d-02\n"
+            " Sum of electronic and zero-point Energies=      -1.234444433423D+02\n"
+            " Sum of electronic and thermal Free Energies=    -1.234333322323d+02\n"
+            + _CONVERGENCE_OK
+        ),
+    )
+    log = _write_log(tmp_path, text)
+
+    summary = parse_gaussian_tsfreq_log(log)["summary"]
+
+    assert summary["electronic_energy_hartree"] == pytest.approx(-123.4567890123)
+    assert summary["zero_point_correction_hartree"] == pytest.approx(0.01234567)
+    assert summary["thermal_gibbs_correction_hartree"] == pytest.approx(0.02345678)
+    assert summary["electronic_plus_zpe_hartree"] == pytest.approx(-123.4444433423)
+    assert summary["electronic_plus_thermal_free_energy_hartree"] == pytest.approx(-123.4333322323)
+
+
+def test_parse_charge_table_keeps_charge_column_when_spin_density_is_present() -> None:
+    lines = [
+        " Mulliken charges:",
+        "              1",
+        "     1  C   -0.123456    0.777777",
+        "     2  H    0.123456   -0.777777",
+        " Sum of Mulliken charges = 0.00000",
+    ]
+
+    assert parse_charge_table(lines, "Mulliken charges:", "Sum of Mulliken charges") == {
+        1: pytest.approx(-0.123456),
+        2: pytest.approx(0.123456),
+    }
 
 
 def test_gaussian_backend_adapter_extracts_tsfreq_summary(tmp_path: Path) -> None:

@@ -110,6 +110,9 @@ state, change the state model and the tools — never the UI.
    - If no tree exists, read `references/tree_schema.md`.
    - For exploratory tasks, read `references/hypothesis_workspace.md`.
    - Use `scripts/ts_hypothesis_workspace.py init` when starting a new workspace.
+   - Use `init --with-preflight-node` or `preflight-node` before direct
+     compute/candidate root branches unless a workspace-level preflight record
+     is explicitly documented.
    - Create a mechanism hypothesis node and one child per chemically distinct
      method/route.
 

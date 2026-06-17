@@ -323,7 +323,7 @@ def finalize_ts_workspace_node(request: NodeFinalizationRequest) -> None:
             step_id=request.step_id,
             node_id=request.node_id,
             timestamp=now,
-            require_node_claim=False,
+            require_node_claim=True,
         )
     elif request.pathway_step_status:
         mark_pathway_step_status(

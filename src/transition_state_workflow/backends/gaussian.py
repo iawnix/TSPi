@@ -546,6 +546,16 @@ def select_gaussian_job_section(lines: list[str], section_index: int | None = No
     return section
 
 
+GAUSSIAN_FLOAT_TOKEN_RE = r"[-+]?(?:\d+\.\d*|\.\d+|\d+)(?:[DEde][-+]?\d+)?"
+SCF_DONE_ENERGY_RE = re.compile(rf"SCF Done:\s+E\([^)]+\)\s+=\s+({GAUSSIAN_FLOAT_TOKEN_RE})")
+
+
+def parse_gaussian_float_token(value: str) -> float:
+    """Parse one Gaussian/Fortran float token."""
+
+    return float(value.replace("D", "E").replace("d", "E"))
+
+
 def parse_float(pattern: str, text: str) -> float | None:
     """Return the last float matching ``pattern`` in Gaussian text."""
 
@@ -555,21 +565,18 @@ def parse_float(pattern: str, text: str) -> float | None:
     value = matches[-1]
     if isinstance(value, tuple):
         value = value[-1]
-    return float(value.replace("D", "E"))
+    return parse_gaussian_float_token(value)
 
 
 def parse_gaussian_energy_hartree(output_path: Path) -> float:
     """Return the last SCF energy from a Gaussian output in hartree."""
 
-    scf_re = re.compile(
-        r"SCF Done:\s+E\([^)]+\)\s+=\s+([-+]?\d+\.\d+(?:[DEde][-+]?\d+)?)"
-    )
     energy = None
     with output_path.open("r", errors="ignore") as handle:
         for line in handle:
-            match = scf_re.search(line)
+            match = SCF_DONE_ENERGY_RE.search(line)
             if match:
-                energy = float(match.group(1).replace("D", "E").replace("d", "E"))
+                energy = parse_gaussian_float_token(match.group(1))
     if energy is None:
         raise RuntimeError(f"cannot find SCF Done energy in Gaussian output: {output_path}")
     return energy
@@ -622,9 +629,9 @@ def parse_last_scf_energy(lines: list[str]) -> float | None:
 
     energies = []
     for line in lines:
-        match = re.search(r"SCF Done:\s+E\([^)]+\)\s*=\s*([-+]?\d+\.\d+)", line)
+        match = SCF_DONE_ENERGY_RE.search(line)
         if match:
-            energies.append(float(match.group(1)))
+            energies.append(parse_gaussian_float_token(match.group(1)))
     return energies[-1] if energies else None
 
 
@@ -711,8 +718,11 @@ def parse_charge_table(lines: list[str], header: str, stop_prefix: str | None = 
             if stop_prefix and stop_prefix in lines[i]:
                 break
             parts = lines[i].split()
-            if len(parts) == 3 and parts[0].isdigit():
-                block[int(parts[0])] = float(parts[2])
+            if len(parts) >= 3 and parts[0].isdigit():
+                try:
+                    block[int(parts[0])] = parse_gaussian_float_token(parts[2])
+                except ValueError:
+                    pass
             elif block and (not parts or not parts[0].isdigit()):
                 break
             i += 1
@@ -876,25 +886,27 @@ def parse_gaussian_opt_cycle_diagnostics(lines: list[str]) -> dict[str, object]:
 
     text = "\n".join(lines)
     requested_values = [int(match) for match in re.findall(r"\bMaxCycles?\s*=\s*(\d+)", text, flags=re.IGNORECASE)]
-    printed_values = [
-        int(match)
-        for match in re.findall(
-            r"Step number\s+\d+\s+out of a maximum of\s+(\d+)",
+    printed_pairs = [
+        (int(step), int(maximum))
+        for step, maximum in re.findall(
+            r"Step number\s+(\d+)\s+out of a maximum of\s+(\d+)",
             text,
             flags=re.IGNORECASE,
         )
     ]
     nstep_values = [int(match) for match in re.findall(r"\bNStep\s*=\s*(\d+)", text, flags=re.IGNORECASE)]
     requested = requested_values[-1] if requested_values else None
-    printed = printed_values[-1] if printed_values else None
+    printed_step = printed_pairs[-1][0] if printed_pairs else None
+    printed = printed_pairs[-1][1] if printed_pairs else None
     nstep = nstep_values[-1] if nstep_values else None
     warnings: list[str] = []
     if requested is not None and printed is not None and requested != printed:
         warnings.append("opt_maxcycle_request_mismatch")
-    if nstep is not None and printed is not None and nstep >= printed:
+    if any(step == maximum for step, maximum in printed_pairs):
         warnings.append("opt_step_limit_reached")
     return {
         "requested_opt_max_cycles": requested,
+        "printed_opt_step": printed_step,
         "printed_opt_maximum_steps": printed,
         "nstep_termination": nstep,
         "max_cycle_request_mismatch": "opt_maxcycle_request_mismatch" in warnings,
@@ -973,16 +985,16 @@ def parse_gaussian_tsfreq_log(log_path: Path, section_index: int | None = None) 
         "imaginary_frequency_count": len(imaginary),
         "imaginary_frequencies_cm-1": imaginary,
         "lowest_frequency_cm-1": min(section_frequencies) if section_frequencies else None,
-        "electronic_energy_hartree": parse_float(r"SCF Done:\s+E\([RU]?\w+\)\s+=\s+([-+]?\d+\.\d+)", section_text),
-        "zero_point_correction_hartree": parse_float(r"Zero-point correction=\s+([-+]?\d+\.\d+)", section_text),
+        "electronic_energy_hartree": parse_float(rf"SCF Done:\s+E\([^)]+\)\s+=\s+({GAUSSIAN_FLOAT_TOKEN_RE})", section_text),
+        "zero_point_correction_hartree": parse_float(rf"Zero-point correction=\s+({GAUSSIAN_FLOAT_TOKEN_RE})", section_text),
         "thermal_gibbs_correction_hartree": parse_float(
-            r"Thermal correction to Gibbs Free Energy=\s+([-+]?\d+\.\d+)", section_text
+            rf"Thermal correction to Gibbs Free Energy=\s+({GAUSSIAN_FLOAT_TOKEN_RE})", section_text
         ),
         "electronic_plus_zpe_hartree": parse_float(
-            r"Sum of electronic and zero-point Energies=\s+([-+]?\d+\.\d+)", section_text
+            rf"Sum of electronic and zero-point Energies=\s+({GAUSSIAN_FLOAT_TOKEN_RE})", section_text
         ),
         "electronic_plus_thermal_free_energy_hartree": parse_float(
-            r"Sum of electronic and thermal Free Energies=\s+([-+]?\d+\.\d+)", section_text
+            rf"Sum of electronic and thermal Free Energies=\s+({GAUSSIAN_FLOAT_TOKEN_RE})", section_text
         ),
         "force_convergence": convergence,
         "force_convergence_source": convergence_source,

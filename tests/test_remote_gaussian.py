@@ -265,6 +265,84 @@ def test_remote_job_runner_background_commands_are_engine_neutral() -> None:
     assert "kill -0" in verify
 
 
+class _FakeDownloadExecutor:
+    def __init__(self, *, existing_names: set[str], login_error: subprocess.CalledProcessError | None = None) -> None:
+        self.target = SimpleNamespace(login_host="login.example")
+        self.existing_names = existing_names
+        self.login_error = login_error
+        self.login_commands: list[str] = []
+        self.scp_calls: list[list[str]] = []
+
+    def scp_prefix(self) -> list[str]:
+        return ["scp"]
+
+    def run_login(self, command: str, *, label: str = "login command") -> subprocess.CompletedProcess[str]:
+        self.login_commands.append(command)
+        if self.login_error is not None:
+            raise self.login_error
+        remote_path = shlex.split(command)[-1]
+        if Path(remote_path).name not in self.existing_names:
+            raise subprocess.CalledProcessError(1, command, output="", stderr="")
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    def run_argv(
+        self,
+        argv: list[str],
+        *,
+        capture_output: bool = True,
+    ) -> subprocess.CompletedProcess[str]:
+        self.scp_calls.append(argv)
+        return subprocess.CompletedProcess(argv, 0, stdout="", stderr="")
+
+
+def test_download_first_existing_fetches_legacy_remote_name_to_scoped_local_name(tmp_path: Path) -> None:
+    spec = remote_job_runner.RemoteJobSpec(
+        engine="gaussian",
+        job_stem="candidate",
+        remote_run_dir="/remote/tssearch_unit/nodes/n010_candidate/outputs",
+        runner_name="candidate.run_gaussian_on_compute.sh",
+        runner_text="#!/usr/bin/env bash\n",
+        local_download_dir=tmp_path,
+    )
+    executor = _FakeDownloadExecutor(existing_names={"run_metadata.txt"})
+
+    assert remote_job_runner.download_first_existing(
+        executor,
+        spec,
+        ("candidate.run_metadata.txt", "run_metadata.txt"),
+        tolerate_missing=False,
+    ) is True
+
+    assert len(executor.scp_calls) == 1
+    scp = executor.scp_calls[0]
+    assert "login.example:/remote/tssearch_unit/nodes/n010_candidate/outputs/run_metadata.txt" in scp
+    assert scp[-1] == str(tmp_path / "candidate.run_metadata.txt")
+
+
+def test_download_first_existing_does_not_fallback_after_remote_probe_transport_error(tmp_path: Path) -> None:
+    spec = remote_job_runner.RemoteJobSpec(
+        engine="gaussian",
+        job_stem="candidate",
+        remote_run_dir="/remote/tssearch_unit/nodes/n010_candidate/outputs",
+        runner_name="candidate.run_gaussian_on_compute.sh",
+        runner_text="#!/usr/bin/env bash\n",
+        local_download_dir=tmp_path,
+    )
+    transport_error = subprocess.CalledProcessError(255, "ssh test", output="", stderr="ssh failed")
+    executor = _FakeDownloadExecutor(existing_names={"run_metadata.txt"}, login_error=transport_error)
+
+    with pytest.raises(subprocess.CalledProcessError) as exc_info:
+        remote_job_runner.download_first_existing(
+            executor,
+            spec,
+            ("candidate.run_metadata.txt", "run_metadata.txt"),
+            tolerate_missing=False,
+        )
+
+    assert exc_info.value.returncode == 255
+    assert executor.scp_calls == []
+
+
 def test_gaussian_runner_builds_generic_remote_job_spec(tmp_path: Path) -> None:
     root = tmp_path / "tssearch_unit"
     initialize_workspace(root)

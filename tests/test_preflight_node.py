@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import sys
 from pathlib import Path
 
 from conftest import WORKSPACE_CLI, run_cli, validate_workspace
@@ -81,7 +83,7 @@ def test_preflight_node_helper_adds_root_to_existing_workspace(tmp_path: Path) -
     assert validation["summary"]["errors"] == 0
 
 
-def test_validator_warns_for_legacy_compute_root_without_preflight_declaration(tmp_path: Path) -> None:
+def test_validator_warns_for_new_compute_root_without_preflight_declaration(tmp_path: Path) -> None:
     root = tmp_path / "tssearch_unit"
     run_cli(
         str(WORKSPACE_CLI),
@@ -97,10 +99,6 @@ def test_validator_warns_for_legacy_compute_root_without_preflight_declaration(t
         "--reaction-class",
         "unknown",
     )
-    manifest_path = root / "manifest.json"
-    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    manifest.pop("mechanism_preflight_storage", None)
-    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     run_cli(
         str(WORKSPACE_CLI),
         "decision-card",
@@ -119,3 +117,83 @@ def test_validator_warns_for_legacy_compute_root_without_preflight_declaration(t
     validation = validate_workspace(root)
     codes = {finding["code"] for finding in validation["findings"]}
     assert "mechanism_preflight_node_missing" in codes
+
+
+def test_validator_allows_explicit_workspace_level_preflight_declaration(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_unit"
+    run_cli(
+        str(WORKSPACE_CLI),
+        "init",
+        "--root",
+        str(root),
+        "--system",
+        "unit_test_system",
+        "--charge",
+        "0",
+        "--multiplicity",
+        "1",
+        "--reaction-class",
+        "unknown",
+    )
+    manifest_path = root / "manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["mechanism_preflight_storage"] = "workspace_level"
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    run_cli(
+        str(WORKSPACE_CLI),
+        "decision-card",
+        "--root",
+        str(root),
+        "--node-id",
+        "n010_compute_branch",
+        "--stage",
+        "candidate_generation",
+        "--hypothesis",
+        "Workspace-level preflight was explicitly declared.",
+        "--operation",
+        "unit-test-candidate",
+    )
+
+    validation = validate_workspace(root)
+    codes = {finding["code"] for finding in validation["findings"]}
+    assert "mechanism_preflight_node_missing" not in codes
+
+
+def test_preflight_node_helper_rejects_malformed_existing_preflight_node(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_unit"
+    run_cli(
+        str(WORKSPACE_CLI),
+        "init",
+        "--root",
+        str(root),
+        "--system",
+        "unit_test_system",
+        "--charge",
+        "0",
+        "--multiplicity",
+        "1",
+        "--reaction-class",
+        "unknown",
+    )
+    node_dir = root / "nodes" / "n000_mechanism_preflight"
+    node_dir.mkdir(parents=True)
+    (node_dir / "node.json").write_text(
+        json.dumps({"stage": "candidate_generation"}, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(WORKSPACE_CLI),
+            "preflight-node",
+            "--root",
+            str(root),
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+
+    assert result.returncode != 0
+    assert "is not a mechanism_preflight node" in result.stderr

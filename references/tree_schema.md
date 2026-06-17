@@ -31,9 +31,16 @@ Use stable node IDs such as `n010_endpoint_opt_reactant`, `n120_neb_xtb_candidat
   "multiplicity": 2,
   "root": "/abs/path/tssearch_group5",
   "node_schema": "ts-node-v2",
+  "mechanism_preflight_storage": "undeclared",
   "current_accepted_ts": null
 }
 ```
+
+`mechanism_preflight_storage` is `"undeclared"` until the workspace has either a
+real `n000_mechanism_preflight` root node or an explicitly documented
+workspace-level preflight record. New compute/candidate root branches without
+either record should produce a validator warning instead of being silently
+treated as preflight-complete.
 
 ## Required `tree.json`
 

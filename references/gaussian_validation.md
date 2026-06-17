@@ -26,7 +26,8 @@ stem-scoped driver logs, and stem-scoped run metadata stay in the node output
 directory. For input `candidate.gjf`, job metadata is written as
 `candidate.run_metadata.txt`, `candidate.g16_driver.out`,
 `candidate.submit_receipt.txt`, and `candidate.runner.nohup`; legacy
-`run_metadata.txt` / `g16_driver.out` names are read only for old artifacts.
+`run_metadata.txt` / `g16_driver.out` names are read only for old artifacts and
+are copied back into the stem-scoped local filename when used as a fallback.
 Do not run Gaussian from the workspace root. By default the bundled runner uses
 `nodes/<node_id>/scratch/gaussian` as `GAUSS_SCRDIR`; override `--scratch` only
 when the alternate scratch path is node/job-unique.
@@ -108,6 +109,9 @@ parse it first. The parser reports `summary.opt_cycle_diagnostics`, including
 the requested `MaxCycle(s)` value, the printed `Step number ... out of a maximum
 of M` value, `NStep`, and warnings such as
 `opt_maxcycle_request_mismatch` or `opt_step_limit_reached`.
+`opt_step_limit_reached` is keyed to the printed Gaussian step line reaching
+`N == M`; `NStep` is reported as a diagnostic but is not by itself proof that
+the printed Opt maximum was reached.
 
 When the printed maximum remains 100, prefer an explicit continuation branch:
 extract the final geometry, write a new endpoint-optimization node, and record
