@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from transition_state_workflow.base.rationale import lint_node_rationale
-from transition_state_workflow.config.state_contract import TREE_SCHEMA
+from transition_state_workflow.config.state_contract import NODE_LEGACY_STATE_FIELDS, TREE_SCHEMA, VALID_NODE_DISPOSITIONS
 from transition_state_workflow.util.json_io import read_json_object_required, write_json_object
 from transition_state_workflow.util.path_utils import clean_string, portable_record_path, safe_identifier_token
 
@@ -47,17 +47,18 @@ def start_ts_workspace_node(request: NodeStartRequest) -> None:
     if primary_file:
         primary_file = portable_record_path(root, primary_file)["path"]
 
-    node_payload["lifecycle_state"] = "active"
-    node_payload["run_state"] = request.run_state
+    node_payload["node_disposition"] = "Running"
+    for field in NODE_LEGACY_STATE_FIELDS:
+        node_payload.pop(field, None)
     node_payload["decision"] = request.decision
     node_payload["display"] = {
         **display,
-        "badges": list(request.badges) or ["running"],
+        "badges": list(request.badges) or ["Running"],
         "metrics": display.get("metrics") if isinstance(display.get("metrics"), dict) else {},
         "primary_file": primary_file,
         "summary": request.summary,
         "title": display.get("title") or request.node_id,
-        "subtitle": display.get("subtitle") or node_payload.get("stage", ""),
+        "subtitle": display.get("subtitle") or node_payload.get("phase", ""),
     }
 
     tree_payload["active_frontier"] = append_unique(tree_payload.get("active_frontier", []), request.node_id)
@@ -84,14 +85,12 @@ def validate_start_request(node_payload: dict[str, Any], request: NodeStartReque
 
     if request.run_state not in {"pending", "running", "parsing"}:
         raise SystemExit(f"invalid active run_state: {request.run_state}")
-    claim_status = clean_string(node_payload.get("claim_status"))
-    outcome = clean_string(node_payload.get("outcome"))
-    lifecycle_state = clean_string(node_payload.get("lifecycle_state"))
-    if lifecycle_state in {"superseded", "archived"}:
-        raise SystemExit(f"node is {lifecycle_state}; create a new branch instead of restarting it")
-    if not request.force and lifecycle_state == "closed":
-        raise SystemExit(f"node is already {lifecycle_state}; use --force to restart intentionally")
-    if claim_status != "not_evaluated" or outcome != "none":
+    disposition = clean_string(node_payload.get("node_disposition"))
+    if disposition and disposition not in VALID_NODE_DISPOSITIONS:
+        raise SystemExit(f"invalid node_disposition in node.json: {disposition}")
+    if not request.force and disposition in {"Stopped", "Error", "Success"}:
+        raise SystemExit(f"node is already {disposition}; use --force to restart intentionally")
+    if disposition in {"Stopped", "Error", "Success"}:
         raise SystemExit("start_node refuses to restart an evaluated node; create a new branch instead")
 
 

@@ -1,4 +1,4 @@
-"""Public five-command workspace control-plane tests."""
+"""Public workspace control-plane tests."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from conftest import SKILL_ROOT, VALIDATOR_CLI, end_node, run_cli, start_node, validate_workspace_allow_errors
+from conftest import SKILL_ROOT, end_node, run_cli, start_node, validate_workspace_allow_errors
 
 
 WORKSPACE_CLI = SKILL_ROOT / "scripts" / "ts_workspace.py"
@@ -184,10 +184,10 @@ def test_validate_decision_rejects_forbidden_state_fields(tmp_path: Path) -> Non
     assert payload["errors"][0]["code"] == "forbidden_fields"
 
 
-def test_workspace_cli_exposes_only_five_public_commands() -> None:
+def test_workspace_cli_exposes_public_commands() -> None:
     help_text = run_cli(str(WORKSPACE_CLI), "--help").stdout
     legacy_help_text = run_cli(str(LEGACY_WORKSPACE_CLI), "--help").stdout
-    expected = "init_workspace,start_node,end_node,report_workspace,validate_decision"
+    expected = "init_workspace,start_node,end_node,report_workspace,validate_decision,validate_workspace"
     assert expected in help_text
     assert expected in legacy_help_text
     for removed in (
@@ -200,6 +200,7 @@ def test_workspace_cli_exposes_only_five_public_commands() -> None:
         "pathway-init",
         "plan-next",
         "decision-context",
+        "validate-workspace",
     ):
         assert removed not in help_text
         result = subprocess.run(

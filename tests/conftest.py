@@ -24,7 +24,6 @@ from transition_state_workflow.core.workspace.naming import utc_timestamp
 # --- Script paths -------------------------------------------------------
 
 WORKSPACE_CLI = SKILL_ROOT / "scripts" / "ts_workspace.py"
-VALIDATOR_CLI = SKILL_ROOT / "scripts" / "ts_validate_workspace.py"
 NORMALIZER_CLI = SKILL_ROOT / "scripts" / "ts_normalize_view.py"
 REMOTE_GAUSSIAN_CLI = SKILL_ROOT / "scripts" / "run_remote_gaussian.py"
 REMOTE_STATUS_CLI = SKILL_ROOT / "scripts" / "ts_remote_status.py"
@@ -48,7 +47,7 @@ def run_cli(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 def validate_workspace(root: Path, *, strict: bool = False) -> dict[str, object]:
-    args = [str(VALIDATOR_CLI), "--source", str(root), "--pretty"]
+    args = [str(WORKSPACE_CLI), "validate_workspace", "--root", str(root), "--pretty"]
     if strict:
         args.append("--strict")
     result = run_cli(*args)
@@ -59,7 +58,7 @@ def validate_workspace_allow_errors(root: Path) -> dict[str, object]:
     """Run the validator with ``check=False`` so non-zero exits don't raise."""
 
     result = subprocess.run(
-        [sys.executable, str(VALIDATOR_CLI), "--source", str(root), "--pretty"],
+        [sys.executable, str(WORKSPACE_CLI), "validate_workspace", "--root", str(root), "--pretty"],
         check=False,
         text=True,
         capture_output=True,

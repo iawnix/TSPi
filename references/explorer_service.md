@@ -160,7 +160,7 @@ The explorer shows:
   without collapsing administrative stops into chemical failures;
 - node tabs for Summary, Rationale, Timeline, Evidence, Reflection, Files, and
   JSON;
-- validator warnings from `scripts/ts_validate_workspace.py` when source
+- validator warnings from `scripts/ts_workspace.py validate_workspace` when source
   artifacts are inconsistent.
 
 The left sidebar should show task/job context, not duplicate the workspace
@@ -181,7 +181,7 @@ Use these skill scripts instead of one-off task-local Python when preparing data
 for the explorer:
 
 ```bash
-python scripts/ts_validate_workspace.py --source /local/mirrors/tssearch_group5 --pretty
+python scripts/ts_workspace.py validate_workspace --root /local/mirrors/tssearch_group5 --pretty
 python scripts/ts_normalize_view.py --source /local/mirrors/tssearch_group5 --pretty
 ```
 

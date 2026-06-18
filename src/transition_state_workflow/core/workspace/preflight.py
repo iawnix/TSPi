@@ -31,9 +31,9 @@ def write_mechanism_preflight_node(
     node_dir = source / "nodes" / node_id
     if (node_dir / "node.json").exists() and not force:
         existing = read_json_object_required(node_dir / "node.json")
-        if str(existing.get("stage") or "").strip() != "mechanism_preflight":
+        if str(existing.get("phase") or "").strip() != "preflight":
             raise SystemExit(
-                f"existing {node_id}/node.json is not a mechanism_preflight node; "
+                f"existing {node_id}/node.json is not a preflight node; "
                 "resolve the partial node and recreate the preflight branch through start_node"
             )
         return node_id

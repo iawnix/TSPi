@@ -16,7 +16,7 @@ accumulate until a TS is found or the mechanism hypothesis is rejected.
 
 ## Public Control Plane
 
-The public workspace interface is intentionally limited to five commands:
+The public workspace interface is intentionally limited to six commands:
 
 ```bash
 python scripts/ts_workspace.py init_workspace ...
@@ -24,9 +24,10 @@ python scripts/ts_workspace.py start_node ...
 python scripts/ts_workspace.py end_node ...
 python scripts/ts_workspace.py report_workspace ...
 python scripts/ts_workspace.py validate_decision ...
+python scripts/ts_workspace.py validate_workspace ...
 ```
 
-`scripts/ts_hypothesis_workspace.py` is only a wrapper to the same five-command
+`scripts/ts_hypothesis_workspace.py` is only a wrapper to the same workspace
 entrypoint. Do not rely on older workspace subcommands; they are not public
 compatibility surfaces.
 
@@ -44,6 +45,7 @@ compatibility surfaces.
   next action in an existing workspace.
 - `validate_decision` checks a proposed LLM decision JSON against the
   `report_workspace` response contract before any workspace mutation.
+- `validate_workspace` performs the read-only workspace contract check.
 
 The model should only return one of these actions in a decision payload:
 `start_node`, `end_node`, `ask_user`, or `stop`.
@@ -80,10 +82,10 @@ did or failed to do, while `closure_explanation.mechanism` describes what can
 or cannot be inferred chemically.
 
 Internal audit fields such as `claim_status`, `claim_level`, `outcome`,
-`outcome_code`, `lifecycle_state`, `run_state`, and `accepted_ts` may still
-exist in stored workspace artifacts because validators, normalizers, and the
-explorer derive gates from them. They are not LLM-facing response fields and
-must not be requested from the model.
+`outcome_code`, `lifecycle_state`, and `run_state` are derived by validators,
+normalizers, and explorer payload builders from `phase`, `node_disposition`,
+evidence records, and closure explanations. They must not be persisted as
+top-level `node.json` state and must not be requested from the model.
 
 ## Non-Negotiables
 
@@ -230,11 +232,9 @@ Do not say "TS found" for:
 
 ## Bundled Resources
 
-- `scripts/ts_workspace.py`: public five-command workspace control plane.
+- `scripts/ts_workspace.py`: public workspace control plane.
 - `scripts/ts_hypothesis_workspace.py`: compatibility wrapper to the same
-  five-command entrypoint, without old public subcommands.
-- `scripts/ts_validate_workspace.py`: read-only validator for tree/node/
-  evidence consistency, state invariants, and references.
+  workspace entrypoint, without old public subcommands.
 - `scripts/ts_normalize_view.py`: read-only normalizer for explorer payloads.
 - `scripts/ts_node_exec.py`: run local engine commands from
   `nodes/<node_id>/outputs` with node-scoped metadata.

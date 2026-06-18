@@ -182,25 +182,20 @@ def validate_mechanism_preflight_root(
 ) -> None:
     """Warn when an undeclared workspace starts compute branches without a preflight root."""
 
-    if any(clean_string(node.get("stage")) == "mechanism_preflight" for node in node_json_by_id.values()):
+    if any(clean_string(node.get("phase")) == "preflight" for node in node_json_by_id.values()):
         return
     if clean_string(manifest.get("mechanism_preflight_storage")) == "workspace_level":
         return
-    compute_root_stages = {
+    compute_root_phases = {
         "candidate_generation",
-        "gaussian_tsfreq_validation",
+        "tsfreq_validation",
         "connectivity_validation",
-        "irc_validation",
-        "irc_connectivity_validation",
-        "qbics_dmecp_candidate",
-        "neb",
-        "qst",
-        "dimer",
+        "accepted_audit",
     }
     root_compute_nodes = [
         node_id
         for node_id, node in sorted(node_json_by_id.items())
-        if not clean_string(parent_by_node.get(node_id)) and clean_string(node.get("stage")) in compute_root_stages
+        if not clean_string(parent_by_node.get(node_id)) and clean_string(node.get("phase")) in compute_root_phases
     ]
     if not root_compute_nodes:
         return

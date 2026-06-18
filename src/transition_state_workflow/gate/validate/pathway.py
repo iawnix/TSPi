@@ -11,6 +11,7 @@ from transition_state_workflow.base.pathway_model import (
     STEP_STATUSES,
     derive_pathway_status,
 )
+from transition_state_workflow.config.state_contract import derive_node_audit_view
 from transition_state_workflow.gate.evidence import accepted_ts_missing_evidence_gates
 from transition_state_workflow.util.path_utils import clean_string, relative_path_or_absolute
 
@@ -150,7 +151,8 @@ def validate_pathway_model(
                             )
                         )
                     continue
-                if clean_string(node.get("claim_status")) != "accepted_ts":
+                node_audit = derive_node_audit_view(node)
+                if clean_string(node_audit.get("claim_status")) != "accepted_ts":
                     findings.append(Finding("error", "pathway_step_node_not_accepted_ts", "pathway step accepted_ts_node is not claim_status=accepted_ts", path="pathway_model.json", node_id=accepted_node))
                 else:
                     previous_step = accepted_step_by_node.get(accepted_node)
@@ -223,7 +225,8 @@ def validate_pathway_model(
             findings.append(Finding("error", "node_pathway_step_missing", "node references missing pathway step", path=node_path, node_id=node_id))
             continue
         node = node_json_by_id.get(node_id) or {}
-        if clean_string(node.get("claim_status")) == "accepted_ts" and clean_string(step.get("accepted_ts_node")) != node_id:
+        node_audit = derive_node_audit_view(node)
+        if clean_string(node_audit.get("claim_status")) == "accepted_ts" and clean_string(step.get("accepted_ts_node")) != node_id:
             findings.append(
                 Finding(
                     "error",

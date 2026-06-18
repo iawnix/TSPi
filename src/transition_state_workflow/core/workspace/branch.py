@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from transition_state_workflow.config.state_contract import WORKSPACE_NODE_SCHEMA
+from transition_state_workflow.config.state_contract import WORKSPACE_NODE_SCHEMA, normalize_public_phase
 from transition_state_workflow.util.json_io import read_json_object_required, write_json_object
 from transition_state_workflow.util.path_utils import relative_path_or_absolute, safe_identifier_token
 
@@ -54,20 +54,16 @@ def prepared_branch_node_payload(
     input_dir_rel = relative_path_or_absolute(root, node_dir / "inputs")
     output_dir_rel = relative_path_or_absolute(root, node_dir / "outputs")
     scratch_dir_rel = relative_path_or_absolute(root, node_dir / "scratch")
+    phase = normalize_public_phase(stage, fallback_stage=stage)
     node_payload: dict[str, Any] = {
         "schema": WORKSPACE_NODE_SCHEMA,
         "node_id": node_id,
         "parent_id": parent_id,
-        "stage": stage,
+        "phase": phase,
         "operation": operation,
-        "lifecycle_state": "prepared",
-        "run_state": "not_started",
-        "claim_status": "not_evaluated",
-        "outcome": "none",
-        "outcome_code": None,
-        "claim_level": "none",
+        "node_disposition": "Running",
+        "closure_explanation": None,
         "hypothesis": hypothesis,
-        "changed_variables": dict((decision_provenance or {}).get("changed_variables") or {"operation": operation}),
         "artifact_policy": {
             "input_dir": input_dir_rel,
             "output_dir": output_dir_rel,
@@ -85,11 +81,11 @@ def prepared_branch_node_payload(
         "decision": "prepared_for_execution",
         "display": {
             "title": node_id,
-            "subtitle": stage,
-            "badges": ["prepared"],
+            "subtitle": phase,
+            "badges": ["Running", phase],
             "metrics": {},
             "primary_file": decision_rel,
-            "summary": "Prepared branch; no job has run and no TS claim exists.",
+            "summary": f"Node started in phase {phase}: {operation}",
         },
     }
     if input_refs:

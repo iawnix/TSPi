@@ -32,7 +32,7 @@ def infer_planning_state(
     if validation_errors:
         return (
             ["workspace_validation_errors"],
-            ["repair_workspace_contract", "rerun_ts_validate_workspace"],
+            ["repair_workspace_contract", "rerun_validate_workspace"],
             ["any_claim_promotion_until_workspace_validates"],
             "workspace_repair_required",
         )

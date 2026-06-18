@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Public five-command TS workspace control-plane wrapper."""
+"""Public TS workspace control-plane wrapper."""
 
 from __future__ import annotations
 

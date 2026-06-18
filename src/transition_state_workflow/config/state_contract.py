@@ -25,8 +25,14 @@ REQUIRED_NODE_FIELDS = (
     "schema",
     "node_id",
     "parent_id",
-    "stage",
+    "phase",
     "operation",
+    "node_disposition",
+    "closure_explanation",
+)
+
+NODE_LEGACY_STATE_FIELDS = (
+    "stage",
     "lifecycle_state",
     "run_state",
     "claim_status",
@@ -91,8 +97,8 @@ MAXIMUM_CLAIM_LEVEL_BY_CLAIM_STATUS = {
     "rejected": "none",
 }
 
-# claim_level is fully derived from claim_status. It is still written into
-# node.json for schema compatibility, but tools must never accept it as input.
+# claim_level is fully derived from claim_status. It is emitted only in derived
+# audit/explorer views; tools must never accept or persist it as node input.
 DERIVED_CLAIM_LEVEL_BY_CLAIM_STATUS = {
     "ambiguous": "none",
     **MAXIMUM_CLAIM_LEVEL_BY_CLAIM_STATUS,
@@ -110,6 +116,26 @@ DEFAULT_OUTCOME_BY_CLAIM_STATUS = {
     "endpoint_connected": "connectivity_validated",
     "irc_connected": "connectivity_validated",
     "accepted_ts": "accepted",
+}
+
+SUCCESS_CLAIM_STATUS_BY_PHASE = {
+    "preflight": "not_evaluated",
+    "endpoint": "endpoint_minima_ready",
+    "rp_conformer_generation": "endpoint_minima_ready",
+    "candidate_generation": "candidate_found",
+    "tsfreq_validation": "tsfreq_validated",
+    "connectivity_validation": "endpoint_connected",
+    "accepted_audit": "accepted_ts",
+}
+
+SUCCESS_OUTCOME_BY_PHASE = {
+    "preflight": "none",
+    "endpoint": "endpoint_minima_validated",
+    "rp_conformer_generation": "endpoint_minima_validated",
+    "candidate_generation": "candidate_generated",
+    "tsfreq_validation": "tsfreq_validated",
+    "connectivity_validation": "connectivity_validated",
+    "accepted_audit": "accepted",
 }
 
 VALID_OUTCOMES_BY_CLAIM_STATUS = {
@@ -373,6 +399,101 @@ def valid_outcomes_for_claim_status(claim_status: str) -> set[str]:
     return set(VALID_OUTCOMES_BY_CLAIM_STATUS.get(claim_status, set()))
 
 
+def phase_from_stage(stage: str) -> str:
+    """Map historical stage names to the public workflow phase vocabulary."""
+
+    text = stage.lower()
+    if "preflight" in text or "mechanism" in text:
+        return "preflight"
+    if "rp_conformer" in text or "conformer" in text:
+        return "rp_conformer_generation"
+    if "endpoint" in text:
+        return "endpoint"
+    if any(token in text for token in ("tsfreq", "ts_freq", "freq")):
+        return "tsfreq_validation"
+    if any(token in text for token in ("connectivity", "irc", "imaginary", "validation_plan")):
+        return "connectivity_validation"
+    if "accepted" in text:
+        return "accepted_audit"
+    if any(token in text for token in ("candidate", "neb", "scan", "qst", "dimer", "qbics", "dmecp")):
+        return "candidate_generation"
+    return "candidate_generation"
+
+
+def normalize_public_phase(value: object, *, fallback_stage: object = "") -> str:
+    """Return a valid public phase from a public field or historical stage hint."""
+
+    phase = _text(value)
+    if phase in VALID_WORKFLOW_PHASES:
+        return phase
+    stage = _text(fallback_stage)
+    if stage:
+        return phase_from_stage(stage)
+    return ""
+
+
+def derive_node_audit_state(phase: str, node_disposition: str, outcome_code: str | None = None) -> dict[str, str | None]:
+    """Derive the internal audit view from the public node state.
+
+    The returned fields are for gates, validators, and explorer views only. They
+    are no longer persisted into node.json.
+    """
+
+    if node_disposition == "Running":
+        claim_status = "not_evaluated"
+        outcome = "none"
+        run_state = "running"
+        lifecycle_state = "active"
+        code = None
+    elif node_disposition == "Stopped":
+        claim_status = "not_evaluated"
+        outcome = "administrative_stop"
+        run_state = "stopped"
+        lifecycle_state = "closed"
+        code = outcome_code or (f"{phase}_stopped" if phase else "stopped")
+    elif node_disposition == "Error":
+        claim_status = "not_evaluated"
+        outcome = "numerical_failure"
+        run_state = "error"
+        lifecycle_state = "closed"
+        code = outcome_code or (f"{phase}_program_error" if phase else "program_error")
+    elif node_disposition == "Success":
+        claim_status = SUCCESS_CLAIM_STATUS_BY_PHASE.get(phase, "not_evaluated")
+        outcome = SUCCESS_OUTCOME_BY_PHASE.get(phase, "none")
+        run_state = "completed"
+        lifecycle_state = "closed"
+        code = outcome_code
+    else:
+        claim_status = "not_evaluated"
+        outcome = "none"
+        run_state = "unknown"
+        lifecycle_state = ""
+        code = outcome_code
+    return {
+        "lifecycle_state": lifecycle_state,
+        "run_state": run_state,
+        "claim_status": claim_status,
+        "outcome": outcome,
+        "outcome_code": code,
+        "claim_level": derive_claim_level(claim_status),
+    }
+
+
+def derive_node_audit_view(node_payload: dict, tree_node_payload: dict | None = None) -> dict[str, str | None]:
+    """Return public fields plus derived internal fields for one node payload."""
+
+    tree_node_payload = tree_node_payload or {}
+    phase = normalize_public_phase(node_payload.get("phase"), fallback_stage=tree_node_payload.get("stage"))
+    disposition = _text(node_payload.get("node_disposition"))
+    audit = derive_node_audit_state(phase, disposition, _text(node_payload.get("derived_outcome_code")) or None)
+    return {
+        "phase": phase,
+        "node_disposition": disposition,
+        "stage": phase,
+        **audit,
+    }
+
+
 NODE_LEGACY_RUNTIME_FIELDS = (
     "status",
     "failure_type",
@@ -505,15 +626,21 @@ def check_node_contract_violations(
                 f"node.json contains legacy fields not allowed in v2 runtime: {', '.join(legacy)}",
             )
         )
-    if "claim_level" in node_payload and "claim_status" in node_payload:
-        raw_claim_level = _text(node_payload.get("claim_level"))
-        derived_level = derive_claim_level(_text(node_payload.get("claim_status")))
-        if raw_claim_level != derived_level:
-            violations.append(
-                (
-                    "claim_level_not_derived",
-                    f"claim_level {raw_claim_level!r} disagrees with value derived from claim_status "
-                    f"({derived_level!r}); claim_level is a derived field",
-                )
+    state_fields = [field for field in NODE_LEGACY_STATE_FIELDS if field in node_payload]
+    if state_fields:
+        violations.append(
+            (
+                "legacy_node_state_fields",
+                "node.json stores legacy state fields that must be derived from phase/node_disposition: "
+                + ", ".join(state_fields),
             )
+        )
+    phase = _text(node_payload.get("phase"))
+    if phase and phase not in VALID_WORKFLOW_PHASES:
+        violations.append(("invalid_phase", f"invalid phase: {phase}"))
+    disposition = _text(node_payload.get("node_disposition"))
+    if disposition and disposition not in VALID_NODE_DISPOSITIONS:
+        violations.append(("invalid_node_disposition", f"invalid node_disposition: {disposition}"))
+    if disposition in {"Stopped", "Error", "Success"} and not isinstance(node_payload.get("closure_explanation"), dict):
+        violations.append(("missing_closure_explanation", "closed node requires closure_explanation"))
     return violations

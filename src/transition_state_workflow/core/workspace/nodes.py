@@ -6,7 +6,7 @@ import re
 from pathlib import Path
 from typing import Any
 
-from transition_state_workflow.config.state_contract import WORKSPACE_NODE_SCHEMA, derive_claim_level
+from transition_state_workflow.config.state_contract import WORKSPACE_NODE_SCHEMA, normalize_public_phase
 
 from .naming import utc_timestamp, workspace_slug
 
@@ -41,78 +41,62 @@ def node_record(
     if status not in VALID_NODE_STATUSES:
         raise ValueError(f"invalid node status '{status}' for {node_id}")
     stage = str(extra.pop("stage", node_type))
+    phase = normalize_public_phase(stage, fallback_stage=stage)
     operation = str(extra.pop("operation", decision or stage))
     failure_type = extra.pop("failure_type", None)
-    claim_status = str(extra.pop("claim_status", "not_evaluated"))
-    outcome = str(extra.pop("outcome", "none"))
+    extra.pop("claim_status", None)
+    extra.pop("outcome", None)
     outcome_code = extra.pop("outcome_code", None)
     failure_type = failure_type or outcome_code
-    lifecycle_state = str(extra.pop("lifecycle_state", "prepared"))
-    run_state = str(extra.pop("run_state", "not_started"))
+    extra.pop("lifecycle_state", None)
+    extra.pop("run_state", None)
+    node_disposition = "Running"
 
-    if status == "pending":
-        lifecycle_state = "active"
-        run_state = "pending"
-    elif status == "running":
-        lifecycle_state = "active"
-        run_state = "running"
+    if status in {"pending", "running"}:
+        node_disposition = "Running"
     elif status == "succeeded":
-        lifecycle_state = "closed"
-        run_state = "completed"
-        if stage in {"neb", "gaussian_external_neb"}:
-            claim_status = "candidate_found"
-            outcome = "candidate_generated"
+        node_disposition = "Success"
     elif status == "ambiguous":
-        lifecycle_state = "closed"
-        run_state = "completed"
-        if failure_type in {"neb_endpoint_candidate", "neb_no_barrier"}:
-            claim_status = "rejected"
-            outcome = "chemical_failure"
-            outcome_code = outcome_code or failure_type
-        elif failure_type:
-            claim_status = "not_evaluated"
-            outcome = "numerical_failure"
-            outcome_code = outcome_code or failure_type
-        else:
-            claim_status = "ambiguous"
-            outcome = "parser_refused"
-            outcome_code = outcome_code or "ambiguous_candidate_generation"
+        node_disposition = "Error" if failure_type else "Success"
     elif status == "failed":
-        lifecycle_state = "closed"
-        run_state = "error"
-        claim_status = "not_evaluated"
-        outcome = "numerical_failure"
+        node_disposition = "Error"
         outcome_code = outcome_code or failure_type or "execution_failed"
     elif status == "accepted":
-        lifecycle_state = "closed"
-        run_state = "completed"
-        claim_status = "accepted_ts"
-        outcome = "accepted"
+        node_disposition = "Success"
+        phase = "accepted_audit"
     elif status == "closed":
-        lifecycle_state = "closed"
+        node_disposition = "Success"
 
-    claim_level = derive_claim_level(claim_status)
+    closure_explanation = None
+    if node_disposition in {"Stopped", "Error", "Success"}:
+        closure_explanation = {
+            "program": {
+                "summary": hypothesis,
+                "facts": [],
+            },
+            "mechanism": {
+                "summary": "Mechanism implications are recorded in node evidence and reflection.",
+                "facts": [],
+            },
+            "implication": "Inspect report_workspace before opening the next node.",
+            "open_questions": [],
+        }
     record = {
         "schema": WORKSPACE_NODE_SCHEMA,
         "node_id": node_id,
         "parent_id": parent_id,
-        "stage": stage,
+        "phase": phase,
         "operation": operation,
-        "lifecycle_state": lifecycle_state,
-        "run_state": run_state,
-        "claim_status": claim_status,
-        "outcome": outcome,
-        "outcome_code": outcome_code,
-        "claim_level": claim_level,
+        "node_disposition": node_disposition,
+        "closure_explanation": closure_explanation,
         "created_at": utc_timestamp(),
         "hypothesis": hypothesis,
-        "changed_variables": changed_variables or {},
         "evidence": evidence or {},
         "decision": decision,
         "display": {
             "title": node_id,
-            "subtitle": stage,
-            "badges": [claim_status],
+            "subtitle": phase,
+            "badges": [node_disposition, phase],
             "metrics": {},
             "primary_file": "",
             "summary": hypothesis,

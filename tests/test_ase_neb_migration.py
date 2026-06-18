@@ -15,6 +15,7 @@ from transition_state_workflow.config.state_contract import (  # noqa: E402
     EVIDENCE_REGISTRY_SCHEMA,
     TREE_SCHEMA,
     WORKSPACE_NODE_SCHEMA,
+    derive_node_audit_view,
 )
 from transition_state_workflow.core.workspace import (  # noqa: E402
     append_evidence_record,
@@ -158,8 +159,13 @@ def test_migrated_ase_neb_candidate_node_is_strict_v2(tmp_path: Path) -> None:
 
     saved_node = json.loads((node_dir / "node.json").read_text(encoding="utf-8"))
     assert saved_node["schema"] == "ts-node-v2"
-    assert saved_node["claim_status"] == "candidate_found"
-    assert saved_node["outcome"] == "candidate_generated"
+    assert saved_node["phase"] == "candidate_generation"
+    assert saved_node["node_disposition"] == "Success"
+    audit = derive_node_audit_view(saved_node, {"stage": "neb"})
+    assert audit["claim_status"] == "candidate_found"
+    assert audit["outcome"] == "candidate_generated"
+    for old_field in ("stage", "lifecycle_state", "run_state", "claim_status", "outcome", "outcome_code", "claim_level"):
+        assert old_field not in saved_node
     for legacy_key in ("status", "failure_type", "children", "parent", "node_type", "backtrack_target"):
         assert legacy_key not in saved_node
 

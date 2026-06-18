@@ -1,7 +1,7 @@
 # TS Workspace Tree Schema
 
 This document describes the stored tree and node artifacts used by the
-five-command workspace control plane.
+workspace control plane.
 
 Public commands:
 
@@ -10,6 +10,7 @@ Public commands:
 - `end_node`: close a node as `Success`, `Error`, or `Stopped`.
 - `report_workspace`: emit constrained decision context.
 - `validate_decision`: check a proposed decision JSON before mutation.
+- `validate_workspace`: run the read-only workspace contract validator.
 
 ## Root Layout
 
@@ -39,10 +40,8 @@ Required directories are created as needed:
   "schema": "ts-tree-v1",
   "nodes": {
     "n010_endpoint": {
-      "parent": null,
-      "children": ["n020_candidate"],
+      "parent_id": null,
       "stage": "endpoint",
-      "status": "Success",
       "node_path": "nodes/n010_endpoint/node.json"
     }
   },
@@ -130,7 +129,7 @@ Valid dispositions:
 
 ## Internal Audit Fields
 
-The stored node may include internal audit fields such as:
+The stored node must not include old top-level audit state fields such as:
 
 - `claim_status`
 - `claim_level`
@@ -139,10 +138,10 @@ The stored node may include internal audit fields such as:
 - `lifecycle_state`
 - `run_state`
 
-These fields are written by tools and consumed by validators, normalizers, and
-the explorer. They are not LLM-facing response fields. `report_workspace`
-filters the decision context and publishes an `allowed_response_contract` so
-the model knows what it may return.
+Validators, normalizers, and the explorer derive these views from `phase`,
+`node_disposition`, evidence records, and closure explanations. They are not
+LLM-facing response fields. `report_workspace` filters the decision context and
+publishes an `allowed_response_contract` so the model knows what it may return.
 
 Do not hand-author internal audit fields in a model decision. Use
 `validate_decision` to reject any proposed response that contains them.
@@ -260,7 +259,7 @@ TS/Freq or connectivity evidence from one pathway step as proof for another.
 Run:
 
 ```bash
-python scripts/ts_validate_workspace.py --source tssearch_example --pretty --strict
+python scripts/ts_workspace.py validate_workspace --root tssearch_example --pretty --strict
 ```
 
 The validator checks:
@@ -272,5 +271,6 @@ The validator checks:
 - evidence paths;
 - closure explanation completeness;
 - phase and disposition vocabulary;
+- absence of old top-level node state fields;
 - pathway references;
 - accepted-state gates.

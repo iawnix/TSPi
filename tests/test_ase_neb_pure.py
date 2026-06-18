@@ -88,6 +88,7 @@ from transition_state_workflow.cli.ase_neb_validation import (  # noqa: E402
     threshold_policy,
     write_gaussian_input as write_ase_neb_gaussian_input,
 )
+from transition_state_workflow.config.state_contract import derive_node_audit_view  # noqa: E402
 from transition_state_workflow.core.ase_neb_validation import (  # noqa: E402
     create_validation_plan_node as create_core_validation_plan_node,
     latest_promotable_candidate as core_latest_promotable_candidate,
@@ -419,7 +420,7 @@ def test_cli_gaussian_refine_node_uses_core_state_writer(tmp_path: Path) -> None
     assert gjf == node_dir / "inputs" / "ts_candidate_ts_freq.gjf"
     assert gjf.exists()
     assert (node_dir / "structures" / "source_candidate.xyz").exists()
-    assert node["stage"] == "gaussian_tsfreq_input"
+    assert node["phase"] == "tsfreq_validation"
     assert node["parent_id"] == "n010_neb_xtb"
     assert node["inputs"]["ts_freq_gjf"] == str(gjf)
     assert "run_gaussian_tsfreq" in (node_dir / "reflection.md").read_text(encoding="utf-8")
@@ -450,7 +451,7 @@ def test_core_validation_plan_node_writes_policy_state(tmp_path: Path) -> None:
     node_dir = root / "nodes" / node_id
     node = json.loads((node_dir / "node.json").read_text(encoding="utf-8"))
     assert policy_path == node_dir / "validation_policy.json"
-    assert node["stage"] == "validation_plan"
+    assert node["phase"] == "connectivity_validation"
     assert node["parent_id"] == "n020_gaussian_tsfreq"
     assert node["policy_file"] == str(policy_path)
     assert "run_mode_endpoint_validation" in (node_dir / "reflection.md").read_text(encoding="utf-8")
@@ -535,8 +536,11 @@ def test_node_record_succeeded_neb_stage_is_candidate_found() -> None:
         decision="test",
         stage="neb",
     )
-    assert record["claim_status"] == "candidate_found"
-    assert record["outcome"] == "candidate_generated"
+    assert record["phase"] == "candidate_generation"
+    assert record["node_disposition"] == "Success"
+    audit = derive_node_audit_view(record)
+    assert audit["claim_status"] == "candidate_found"
+    assert audit["outcome"] == "candidate_generated"
 
 
 def test_node_record_ambiguous_with_chemical_failure_code_routes_to_rejected() -> None:
@@ -552,8 +556,11 @@ def test_node_record_ambiguous_with_chemical_failure_code_routes_to_rejected() -
         failure_type="neb_endpoint_candidate",
         stage="neb",
     )
-    assert record["claim_status"] == "rejected"
-    assert record["outcome"] == "chemical_failure"
+    assert record["phase"] == "candidate_generation"
+    assert record["node_disposition"] == "Error"
+    audit = derive_node_audit_view(record)
+    assert audit["claim_status"] == "not_evaluated"
+    assert audit["outcome"] == "numerical_failure"
 
 
 def test_node_record_ambiguous_with_numerical_failure_code_stays_not_evaluated() -> None:
@@ -569,8 +576,11 @@ def test_node_record_ambiguous_with_numerical_failure_code_stays_not_evaluated()
         failure_type="endpoint_minima_missing",
         stage="neb",
     )
-    assert record["claim_status"] == "not_evaluated"
-    assert record["outcome"] == "numerical_failure"
+    assert record["phase"] == "candidate_generation"
+    assert record["node_disposition"] == "Error"
+    audit = derive_node_audit_view(record)
+    assert audit["claim_status"] == "not_evaluated"
+    assert audit["outcome"] == "numerical_failure"
 
 
 def test_next_node_id_increments_by_ten_from_max_existing(tmp_path: Path) -> None:
@@ -781,7 +791,7 @@ def test_write_external_gaussian_neb_node_full_artifacts(tmp_path: Path) -> None
     # summary present + accepted -> full reflection, not template.
     assert "Computational Outcome" in (node_dir / "reflection.md").read_text(encoding="utf-8")
     node = json.loads((node_dir / "node.json").read_text(encoding="utf-8"))
-    assert node["stage"] == "gaussian_external_neb"
+    assert node["phase"] == "candidate_generation"
     tree = read_tree(root)
     assert "n010_neb_gaussian_external" in tree["nodes"]
 

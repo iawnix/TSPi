@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from transition_state_workflow.config.state_contract import PATHWAY_MODEL_SCHEMA
+from transition_state_workflow.config.state_contract import PATHWAY_MODEL_SCHEMA, derive_node_audit_view
 from transition_state_workflow.util.json_io import read_json_object_optional, read_json_object_required, write_json_object
 from transition_state_workflow.util.path_utils import clean_string, list_or_empty, safe_identifier_token
 
@@ -64,7 +64,8 @@ def bind_pathway_step_to_accepted_ts(
     if not node_path.exists():
         raise SystemExit(f"pathway accepted_ts node does not exist: {node_id}")
     node_payload = read_json_object_required(node_path)
-    if require_node_claim and clean_string(node_payload.get("claim_status")) != "accepted_ts":
+    node_audit = derive_node_audit_view(node_payload)
+    if require_node_claim and clean_string(node_audit.get("claim_status")) != "accepted_ts":
         raise SystemExit("pathway-bind-step requires a node with claim_status=accepted_ts")
     model = read_pathway_model_required(root)
     pathway = find_pathway(model, pathway_id)

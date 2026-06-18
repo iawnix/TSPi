@@ -20,6 +20,7 @@ from typing import Any
 
 from transition_state_workflow.config.state_contract import (
     NODE_CLOSURE_SCHEMA,
+    NODE_LEGACY_STATE_FIELDS,
     VALID_END_NODE_DISPOSITIONS,
     VALID_NODE_DISPOSITIONS,
     VALID_WORKFLOW_PHASES,
@@ -173,6 +174,33 @@ def register_validate_decision_parser(subparsers: argparse._SubParsersAction[arg
     add_logging_arguments(validate)
 
 
+def register_validate_workspace_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
+    """Attach the public validate_workspace command."""
+
+    validate = subparsers.add_parser("validate_workspace", help="Validate a TS workspace contract.")
+    validate.add_argument("--root", required=True, type=Path, help="Workspace directory.")
+    validate.add_argument("--pretty", action="store_true", help="Pretty-print JSON.")
+    validate.add_argument("--strict", action="store_true", help="Exit nonzero on warnings as well as errors.")
+    add_logging_arguments(validate)
+
+
+def validate_workspace_payload(root: Path) -> dict[str, Any]:
+    """Return the read-only workspace validation payload."""
+
+    return validate_ts_workspace_contract(root)
+
+
+def validate_workspace_exit_code(payload: dict[str, Any], *, strict: bool) -> int:
+    """Return the command exit code for a validation payload."""
+
+    summary = payload.get("summary") if isinstance(payload.get("summary"), dict) else {}
+    if summary.get("errors"):
+        return 1
+    if strict and summary.get("warnings"):
+        return 1
+    return 0
+
+
 def add_logging_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--verbose", action="store_true", help="Write diagnostic logs to stderr.")
     parser.add_argument("--quiet", action="store_true", help="Only write errors to stderr.")
@@ -254,6 +282,8 @@ def end_node_from_cli_args(args: argparse.Namespace) -> None:
         node_id=args.node_id,
         claim_status=claim_status,
         outcome=outcome,
+        phase=args.phase,
+        node_disposition=args.node_disposition,
         outcome_code=outcome_code_for(args.node_disposition, args.phase),
         lifecycle_state="closed",
         run_state=run_state,
@@ -426,6 +456,8 @@ def append_closure_explanation(
     evidence_refs = sorted({ref for fact in [*closure.program_facts, *closure.mechanism_facts] for ref in fact_evidence_refs(fact)})
     node["phase"] = phase
     node["node_disposition"] = node_disposition
+    for field in NODE_LEGACY_STATE_FIELDS:
+        node.pop(field, None)
     node["closure_explanation"] = {
         "schema": NODE_CLOSURE_SCHEMA,
         "program": {
@@ -473,46 +505,14 @@ def public_node_summary(root: Path, node_id: str) -> dict[str, Any]:
 
 
 def public_phase(node: dict[str, Any]) -> str:
-    phase = clean_string(node.get("phase"))
-    if phase:
-        return phase
-    return stage_to_phase(clean_string(node.get("stage")))
+    return clean_string(node.get("phase"))
 
 
 def public_node_disposition(node: dict[str, Any]) -> str:
     disposition = clean_string(node.get("node_disposition"))
     if disposition:
         return disposition
-    run_state = clean_string(node.get("run_state"))
-    lifecycle = clean_string(node.get("lifecycle_state"))
-    if run_state in {"pending", "running", "parsing"} or lifecycle == "active":
-        return "Running"
-    if run_state == "stopped":
-        return "Stopped"
-    if run_state == "error":
-        return "Error"
-    if lifecycle == "closed":
-        return "Success"
     return ""
-
-
-def stage_to_phase(stage: str) -> str:
-    text = stage.lower()
-    if "preflight" in text or "mechanism" in text:
-        return "preflight"
-    if "rp_conformer" in text or "conformer" in text:
-        return "rp_conformer_generation"
-    if "endpoint" in text:
-        return "endpoint"
-    if any(token in text for token in ("candidate", "neb", "scan", "qst", "dimer", "qbics", "dmecp")):
-        return "candidate_generation"
-    if any(token in text for token in ("tsfreq", "ts_freq", "freq")):
-        return "tsfreq_validation"
-    if any(token in text for token in ("connectivity", "irc", "imaginary")):
-        return "connectivity_validation"
-    if "accepted" in text:
-        return "accepted_audit"
-    return "candidate_generation"
 
 
 def claim_ceiling_for_phase(phase: str) -> str:
@@ -649,7 +649,10 @@ __all__ = [
     "register_report_workspace_parser",
     "register_start_node_parser",
     "register_validate_decision_parser",
+    "register_validate_workspace_parser",
     "response_contract",
     "start_node_from_cli_args",
     "validate_decision_payload",
+    "validate_workspace_exit_code",
+    "validate_workspace_payload",
 ]

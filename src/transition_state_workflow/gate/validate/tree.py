@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from transition_state_workflow.config.state_contract import TREE_LEGACY_TOP_LEVEL_FIELDS
+from transition_state_workflow.config.state_contract import TREE_LEGACY_TOP_LEVEL_FIELDS, derive_node_audit_view
 from transition_state_workflow.util.path_utils import clean_string, list_or_empty
 
 from .common import clean_string_set
@@ -140,7 +140,8 @@ def validate_manifest_accepted_ts(
             )
         )
         return
-    if clean_string(node.get("claim_status")) != "accepted_ts":
+    audit = derive_node_audit_view(node)
+    if clean_string(audit.get("claim_status")) != "accepted_ts":
         findings.append(
             Finding(
                 "error",

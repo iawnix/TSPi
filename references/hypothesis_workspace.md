@@ -4,7 +4,7 @@ This workspace is the durable ledger for transition-state exploration. It
 tracks mechanism hypotheses, node-level program evidence, mechanism
 interpretation, and the constraints used to choose the next branch.
 
-The public control plane has exactly five commands:
+The public control plane has six commands:
 
 ```bash
 python scripts/ts_workspace.py init_workspace --root <tssearch_root> ...
@@ -12,6 +12,7 @@ python scripts/ts_workspace.py start_node --root <tssearch_root> ...
 python scripts/ts_workspace.py end_node --root <tssearch_root> ...
 python scripts/ts_workspace.py report_workspace --root <tssearch_root> --pretty
 python scripts/ts_workspace.py validate_decision --root <tssearch_root> --decision-file decision.json --pretty
+python scripts/ts_workspace.py validate_workspace --root <tssearch_root> --pretty
 ```
 
 `scripts/ts_hypothesis_workspace.py` is a wrapper to the same entrypoint. Do
@@ -83,11 +84,12 @@ Program/runtime failures and mechanism interpretation are separated inside
 }
 ```
 
-Stored workspace files may still contain internal audit fields such as
-`claim_status`, `outcome`, `outcome_code`, `lifecycle_state`, `run_state`, and
-accepted-state manifest entries. These are produced by the tools for validator
-and explorer compatibility. They are not LLM response fields and must not be
-requested from the model.
+Stored `node.json` files must not persist old top-level audit state fields such
+as `claim_status`, `outcome`, `outcome_code`, `lifecycle_state`, `run_state`,
+or `claim_level`. Validators, normalizers, and the explorer derive those audit
+views from `phase`, `node_disposition`, evidence records, and
+`closure_explanation`. These derived names are not LLM response fields and must
+not be requested from the model.
 
 ## Workspace Lifecycle
 
@@ -274,7 +276,7 @@ TS/Freq or connectivity evidence as proof for a later step.
 Run the validator before trusting the explorer or reporting a final state:
 
 ```bash
-python scripts/ts_validate_workspace.py --source tssearch_example --pretty --strict
+python scripts/ts_workspace.py validate_workspace --root tssearch_example --pretty --strict
 ```
 
 Generate the explorer-normalized view with:

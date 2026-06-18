@@ -14,8 +14,11 @@ from transition_state_workflow.cli.workspace_control import (
     register_report_workspace_parser,
     register_start_node_parser,
     register_validate_decision_parser,
+    register_validate_workspace_parser,
     start_node_from_cli_args,
     validate_decision_payload,
+    validate_workspace_exit_code,
+    validate_workspace_payload,
 )
 from transition_state_workflow.core.workspace_state import (
     initialize_ts_hypothesis_workspace_files_from_cli_args,
@@ -29,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     """Build the TS hypothesis workspace CLI parser."""
 
     parser = argparse.ArgumentParser(
-        description="Control TS-search workspaces through the public five-command contract.",
+        description="Control TS-search workspaces through the public workspace contract.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -38,6 +41,7 @@ def build_parser() -> argparse.ArgumentParser:
     register_end_node_parser(sub)
     register_report_workspace_parser(sub)
     register_validate_decision_parser(sub)
+    register_validate_workspace_parser(sub)
     return parser
 
 
@@ -61,6 +65,10 @@ def main(argv: list[str] | None = None) -> int:
     elif args.command == "validate_decision":
         decision = read_json_object_required(args.decision_file)
         emit_json(validate_decision_payload(args.root, decision), pretty=bool(args.pretty))
+    elif args.command == "validate_workspace":
+        payload = validate_workspace_payload(args.root)
+        emit_json(payload, pretty=bool(args.pretty))
+        return validate_workspace_exit_code(payload, strict=bool(args.strict))
     else:
         parser.error(f"unsupported command: {args.command}")
     return 0
@@ -123,7 +131,7 @@ http://127.0.0.1:8765/  (select `{workspace_id or root.name}` in the workspace l
 3. Validate before trusting the explorer view as evidence:
 
 ```bash
-python {skill_scripts / "ts_validate_workspace.py"} --source {root} --pretty
+python {skill_scripts / "ts_workspace.py"} validate_workspace --root {root} --pretty
 ```
 """
     target = root / "reports" / "explorer_launch_checklist.md"

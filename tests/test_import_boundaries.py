@@ -294,8 +294,7 @@ def test_workspace_validator_lives_in_gate_package_without_tool_compatibility() 
             offenders.append(f"{source_file.relative_to(ROOT)} imports {', '.join(bad)}")
     assert not offenders, "validator package reverse imports:\n" + "\n".join(offenders)
 
-    script_source = (ROOT / "scripts" / "ts_validate_workspace.py").read_text(encoding="utf-8")
-    assert "transition_state_workflow.gate.validate import main" in script_source
+    assert not (ROOT / "scripts" / "ts_validate_workspace.py").exists()
 
 
 def test_hypothesis_workspace_cli_lives_in_cli_without_tool_compatibility() -> None:
@@ -316,6 +315,7 @@ def test_hypothesis_workspace_cli_lives_in_cli_without_tool_compatibility() -> N
         "end_node",
         "report_workspace",
         "validate_decision",
+        "validate_workspace",
     }
     script_source = (ROOT / "scripts" / "ts_workspace.py").read_text(encoding="utf-8")
     assert "transition_state_workflow.cli.hypothesis_workspace import main" in script_source

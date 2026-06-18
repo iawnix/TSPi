@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from transition_state_workflow.config.state_contract import VALID_BACKTRACK_EVENT_STATES
+from transition_state_workflow.config.state_contract import derive_node_audit_view
 from transition_state_workflow.util.path_utils import clean_string, list_or_empty
 
 from .common import (
@@ -188,8 +189,9 @@ def validate_backtrack_replacement_links(
 
 
 def _is_failed_or_ambiguous_branch(node_json: dict[str, Any]) -> bool:
-    claim = clean_string(node_json.get("claim_status"))
-    outcome = clean_string(node_json.get("outcome"))
+    audit = derive_node_audit_view(node_json)
+    claim = clean_string(audit.get("claim_status"))
+    outcome = clean_string(audit.get("outcome"))
     return claim in {"rejected", "ambiguous"} or outcome in FAILED_BRANCH_OUTCOMES
 
 

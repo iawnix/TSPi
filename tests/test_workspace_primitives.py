@@ -11,6 +11,7 @@ from transition_state_workflow.config.state_contract import (
     EVIDENCE_REGISTRY_SCHEMA,
     TREE_SCHEMA,
     WORKSPACE_NODE_SCHEMA,
+    derive_node_audit_view,
 )
 from transition_state_workflow.core.workspace import (
     BranchReferenceError,
@@ -91,8 +92,13 @@ def test_write_prepared_branch_state_writes_node_tree_and_event(tmp_path: Path) 
     node = json.loads((first.node_dir / "node.json").read_text(encoding="utf-8"))
     tree = json.loads((root / "tree.json").read_text(encoding="utf-8"))
     assert node["schema"] == WORKSPACE_NODE_SCHEMA
-    assert node["lifecycle_state"] == "prepared"
-    assert node["claim_status"] == "not_evaluated"
+    assert node["phase"] == "candidate_generation"
+    assert node["node_disposition"] == "Running"
+    audit = derive_node_audit_view(node, tree["nodes"]["n010_branch"])
+    assert audit["lifecycle_state"] == "active"
+    assert audit["claim_status"] == "not_evaluated"
+    for old_field in ("stage", "lifecycle_state", "run_state", "claim_status", "outcome", "outcome_code", "claim_level"):
+        assert old_field not in node
     assert node["artifact_policy"]["run_cwd"] == "nodes/n010_branch/outputs"
     assert tree["nodes"]["n010_branch"]["node_path"] == "nodes/n010_branch/node.json"
     assert tree["events"][0]["event_id"] == "evt_n010_branch_prepare"

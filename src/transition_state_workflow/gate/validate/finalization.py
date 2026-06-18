@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from transition_state_workflow.base.rationale import lint_node_rationale
+from transition_state_workflow.config.state_contract import derive_node_audit_view
 from transition_state_workflow.gate.evidence import accepted_ts_missing_evidence_gates
 from transition_state_workflow.util.path_utils import clean_string, relative_path_or_absolute
 
@@ -32,9 +33,10 @@ def validate_node_finalization_artifacts(
     for node_id, node_json in node_json_by_id.items():
         if not node_json:
             continue
-        lifecycle = clean_string(node_json.get("lifecycle_state"))
-        run_state = clean_string(node_json.get("run_state"))
-        claim = clean_string(node_json.get("claim_status"))
+        audit = derive_node_audit_view(node_json)
+        lifecycle = clean_string(audit.get("lifecycle_state"))
+        run_state = clean_string(audit.get("run_state"))
+        claim = clean_string(audit.get("claim_status"))
         has_post_execution_state = lifecycle == "closed" or run_state in {"completed", "error", "stopped"}
         reflection_path = source / "nodes" / node_id / "reflection.md"
         validate_pre_execution_rationale(source, node_id, node_json, findings)
@@ -106,7 +108,8 @@ def candidate_has_endpoint_gate(
     target_step_id = clean_string(target.get("elementary_step_id"))
     for upstream_id in iter_upstream_nodes(node_id, parent_by_node, input_refs_by_node):
         upstream = node_json_by_id.get(upstream_id) or {}
-        if clean_string(upstream.get("claim_status")) == "endpoint_minima_ready":
+        upstream_audit = derive_node_audit_view(upstream)
+        if clean_string(upstream_audit.get("claim_status")) == "endpoint_minima_ready":
             if target_pathway_id or target_step_id:
                 if (
                     clean_string(upstream.get("pathway_id")) == target_pathway_id
@@ -168,9 +171,10 @@ def rationale_finding_severity(node_json: dict[str, Any], rationale: Any | None 
 
     if rationale is not None and getattr(rationale, "legacy_provenance_gap", False):
         return "info"
-    lifecycle = clean_string(node_json.get("lifecycle_state"))
-    run_state = clean_string(node_json.get("run_state"))
-    claim = clean_string(node_json.get("claim_status"))
+    audit = derive_node_audit_view(node_json)
+    lifecycle = clean_string(audit.get("lifecycle_state"))
+    run_state = clean_string(audit.get("run_state"))
+    claim = clean_string(audit.get("claim_status"))
     if claim == "accepted_ts" or lifecycle in {"active", "closed", "superseded", "archived"}:
         return "error"
     if run_state in {"pending", "running", "parsing", "completed", "error", "stopped"}:

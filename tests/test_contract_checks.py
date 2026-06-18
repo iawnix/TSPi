@@ -223,14 +223,10 @@ def _valid_node(node_id: str = "n010_candidate") -> dict:
         "schema": WORKSPACE_NODE_SCHEMA,
         "node_id": node_id,
         "parent_id": None,
-        "stage": "candidate_generation",
+        "phase": "candidate_generation",
         "operation": "test",
-        "lifecycle_state": "active",
-        "run_state": "pending",
-        "claim_status": "not_evaluated",
-        "outcome": "none",
-        "outcome_code": None,
-        "claim_level": "none",
+        "node_disposition": "Running",
+        "closure_explanation": None,
     }
 
 
@@ -247,13 +243,13 @@ def test_node_check_flags_wrong_schema() -> None:
 
 def test_node_check_flags_missing_required_fields() -> None:
     node = _valid_node()
-    del node["claim_status"]
-    del node["lifecycle_state"]
+    del node["phase"]
+    del node["node_disposition"]
     violations = check_node_contract_violations("n010_candidate", node)
     codes = [c for c, _ in violations]
     assert "missing_v2_fields" in codes
     message = next(m for c, m in violations if c == "missing_v2_fields")
-    assert "claim_status" in message and "lifecycle_state" in message
+    assert "phase" in message and "node_disposition" in message
 
 
 def test_node_check_flags_node_id_mismatch_when_present_but_different() -> None:
@@ -288,19 +284,24 @@ def test_node_check_flags_legacy_runtime_fields() -> None:
     assert "status" in message and "failure_type" in message
 
 
-def test_node_check_flags_claim_level_not_derived_from_claim_status() -> None:
+def test_node_check_flags_legacy_state_fields() -> None:
     node = _valid_node()
-    node["claim_status"] = "candidate_found"
-    node["claim_level"] = "accepted_ts"  # should be "candidate_only"
-    violations = check_node_contract_violations("n010_candidate", node)
-    codes = [c for c, _ in violations]
-    assert "claim_level_not_derived" in codes
-
-
-def test_node_check_accepts_correct_derived_claim_level() -> None:
-    node = _valid_node()
+    node["stage"] = "candidate_generation"
     node["claim_status"] = "candidate_found"
     node["claim_level"] = "candidate_only"
     violations = check_node_contract_violations("n010_candidate", node)
     codes = [c for c, _ in violations]
-    assert "claim_level_not_derived" not in codes
+    assert "legacy_node_state_fields" in codes
+
+
+def test_node_check_accepts_closed_node_with_closure_explanation() -> None:
+    node = _valid_node()
+    node["node_disposition"] = "Success"
+    node["closure_explanation"] = {
+        "program": {"summary": "ok"},
+        "mechanism": {"summary": "ok"},
+        "implication": "continue",
+    }
+    violations = check_node_contract_violations("n010_candidate", node)
+    codes = [c for c, _ in violations]
+    assert codes == []

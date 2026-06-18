@@ -22,6 +22,7 @@ from transition_state_workflow.config.state_contract import (
     check_node_contract_violations,
     check_workspace_contract_violations,
     derive_claim_level,
+    derive_node_audit_view,
 )
 from transition_state_workflow.base.pathway_model import read_pathway_model_optional, summarize_pathway_model
 from transition_state_workflow.util.json_io import read_json_object_required
@@ -230,16 +231,27 @@ def normalize_node_for_explorer_graph(
 
     ensure_node_uses_v2_contract(node_id, node_payload)
     parent_id = first_nonempty_string(node_payload.get("parent_id"), tree_node_payload.get("parent_id"))
-    stage = first_nonempty_string(node_payload.get("stage"), tree_node_payload.get("stage"))
+    audit = derive_node_audit_view(node_payload, tree_node_payload)
+    phase = clean_string(audit.get("phase"))
+    stage = phase
     operation = clean_string(node_payload.get("operation"))
     display = node_payload.get("display") if isinstance(node_payload.get("display"), dict) else {}
     title = first_nonempty_string(display.get("title"), node_payload.get("label"), tree_node_payload.get("label"), node_id)
-    summary = first_nonempty_string(display.get("summary"), node_payload.get("summary"), tree_node_payload.get("summary"), "")
-    claim_status = clean_string(node_payload.get("claim_status"))
-    outcome = clean_string(node_payload.get("outcome"))
-    lifecycle_state = clean_string(node_payload.get("lifecycle_state"))
-    run_state = clean_string(node_payload.get("run_state"))
-    outcome_code = node_payload.get("outcome_code")
+    closure = node_payload.get("closure_explanation") if isinstance(node_payload.get("closure_explanation"), dict) else {}
+    program = closure.get("program") if isinstance(closure.get("program"), dict) else {}
+    summary = first_nonempty_string(
+        display.get("summary"),
+        node_payload.get("summary"),
+        program.get("summary"),
+        tree_node_payload.get("summary"),
+        node_payload.get("hypothesis"),
+        "",
+    )
+    claim_status = clean_string(audit.get("claim_status"))
+    outcome = clean_string(audit.get("outcome"))
+    lifecycle_state = clean_string(audit.get("lifecycle_state"))
+    run_state = clean_string(audit.get("run_state"))
+    outcome_code = audit.get("outcome_code")
     node_state = build_node_state(
         claim_status=claim_status,
         outcome=outcome,
@@ -262,6 +274,7 @@ def normalize_node_for_explorer_graph(
         "label": node_id,
         "title": title,
         "stage": stage,
+        "phase": phase,
         "stage_label": make_stage_display_label(stage),
         "operation": operation,
         "lifecycle_state": lifecycle_state,
@@ -270,6 +283,8 @@ def normalize_node_for_explorer_graph(
         "outcome": outcome,
         "outcome_code": outcome_code,
         "claim_level": derive_claim_level(claim_status),
+        "node_disposition": clean_string(audit.get("node_disposition")),
+        "closure_explanation": closure,
         "node_state": node_state["key"],
         "state_label": node_state["label"],
         "state_line": node_state["line"],

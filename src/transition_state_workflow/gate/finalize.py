@@ -10,15 +10,17 @@ from typing import Any
 
 from transition_state_workflow.config.state_contract import (
     EVIDENCE_REGISTRY_SCHEMA,
+    NODE_LEGACY_STATE_FIELDS,
     TREE_SCHEMA,
     VALID_CLAIM_STATUSES,
     VALID_EVIDENCE_STATES,
     VALID_LIFECYCLE_STATES,
+    VALID_NODE_DISPOSITIONS,
     MECHANISM_ANALYSIS_LAYERS,
     MECHANISM_ANALYSIS_STATUSES,
     VALID_OUTCOMES,
     VALID_RUN_STATES,
-    derive_claim_level,
+    derive_node_audit_view,
     valid_outcomes_for_claim_status,
 )
 from transition_state_workflow.base.pathway_model import (
@@ -94,6 +96,8 @@ class NodeFinalizationRequest:
     node_id: str
     claim_status: str
     outcome: str
+    phase: str
+    node_disposition: str
     decision: str
     summary: str
     primary_file: str
@@ -208,6 +212,8 @@ def validate_finalization_request(request: NodeFinalizationRequest) -> None:
 
     if request.claim_status not in VALID_CLAIM_STATUSES:
         raise SystemExit(f"invalid claim_status: {request.claim_status}")
+    if request.node_disposition not in VALID_NODE_DISPOSITIONS - {"Running"}:
+        raise SystemExit(f"invalid terminal node_disposition: {request.node_disposition}")
     if request.outcome not in VALID_OUTCOMES:
         raise SystemExit(f"invalid outcome: {request.outcome}")
     valid_outcomes = valid_outcomes_for_claim_status(request.claim_status)
@@ -303,7 +309,8 @@ def validate_candidate_endpoint_gate(
         seen.add(upstream_id)
         upstream_path = root / "nodes" / upstream_id / "node.json"
         upstream = read_json_object_required(upstream_path) if upstream_path.exists() else {}
-        if clean_string(upstream.get("claim_status")) == "endpoint_minima_ready":
+        upstream_audit = derive_node_audit_view(upstream)
+        if clean_string(upstream_audit.get("claim_status")) == "endpoint_minima_ready":
             if target_pathway_id:
                 if (
                     clean_string(upstream.get("pathway_id")) == target_pathway_id
@@ -533,12 +540,10 @@ def update_node_payload(
     evidence.update(node_evidence_updates)
     evidence["reflection"] = relative_path_or_absolute(root, node_dir / "reflection.md")
 
-    node_payload["lifecycle_state"] = request.lifecycle_state
-    node_payload["run_state"] = request.run_state
-    node_payload["claim_status"] = request.claim_status
-    node_payload["outcome"] = request.outcome
-    node_payload["outcome_code"] = request.outcome_code
-    node_payload["claim_level"] = derive_claim_level(request.claim_status)
+    node_payload["phase"] = request.phase
+    node_payload["node_disposition"] = request.node_disposition
+    for field in NODE_LEGACY_STATE_FIELDS:
+        node_payload.pop(field, None)
     node_payload["decision"] = request.decision
     if request.pathway_id:
         node_payload["pathway_id"] = request.pathway_id
@@ -551,7 +556,7 @@ def update_node_payload(
         "primary_file": portable_record_path(root, request.primary_file)["path"],
         "summary": request.summary,
         "title": display.get("title") or request.node_id,
-        "subtitle": display.get("subtitle") or node_payload.get("stage", ""),
+        "subtitle": display.get("subtitle") or request.phase,
     }
 
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Mapping
 
+from transition_state_workflow.config.state_contract import derive_node_audit_view
 from transition_state_workflow.util.json_io import read_json_object_required
 from transition_state_workflow.util.path_utils import clean_string, list_or_empty
 
@@ -52,7 +53,9 @@ def load_node_payloads(root: Path, tree: dict[str, Any]) -> dict[str, dict[str, 
         node_path = root / "nodes" / node_id / "node.json"
         if node_path.exists():
             try:
-                payloads[node_id] = read_json_object_required(node_path)
+                node_payload = read_json_object_required(node_path)
+                tree_payload = tree_nodes.get(node_id) if isinstance(tree_nodes.get(node_id), dict) else {}
+                payloads[node_id] = {**node_payload, **derive_node_audit_view(node_payload, tree_payload)}
             except ValueError:
                 payloads[node_id] = {}
         else:

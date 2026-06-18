@@ -8,9 +8,9 @@ installed skill tree, and then clear the originating feedback in
 
 ### Scope
 
-- Public workspace control is limited to five commands:
+- Public workspace control is limited to six commands:
   `init_workspace`, `start_node`, `end_node`, `report_workspace`, and
-  `validate_decision`.
+  `validate_decision`, plus read-only `validate_workspace`.
 - `node_disposition` is the public node state:
   `Running`, `Stopped`, `Error`, or `Success`.
 - `phase` locates the workflow stage:
@@ -19,16 +19,16 @@ installed skill tree, and then clear the originating feedback in
   `accepted_audit`.
 - Program/runtime facts and mechanism interpretation are separated inside
   `closure_explanation`, not encoded as extra public state enums.
-- Internal audit fields remain available to validators and the explorer, but
-  they are forbidden model-return fields in `report_workspace` and
-  `validate_decision`.
+- Internal audit fields are derived for validators and the explorer, but old
+  top-level node state fields are not persisted in `node.json`; they remain
+  forbidden model-return fields in `report_workspace` and `validate_decision`.
 
 ### Validation To Keep Current
 
-- `python scripts/ts_workspace.py --help` exposes only the five public
+- `python scripts/ts_workspace.py --help` exposes only the six public
   commands.
 - `python scripts/ts_hypothesis_workspace.py --help` reaches the same
-  five-command entrypoint.
+  workspace entrypoint.
 - `pytest -q` passes in the authored checkout.
 - Scratch workspace smoke covers `init_workspace`, `start_node`, `end_node`,
   `report_workspace`, `validate_decision`, strict workspace validation, and
