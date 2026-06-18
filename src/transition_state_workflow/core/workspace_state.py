@@ -485,7 +485,7 @@ def format_decision_provenance_markdown(provenance: dict[str, Any]) -> str:
 
 
 def format_input_refs_markdown(input_refs: list[str]) -> str:
-    """Return decision-card text for multi-input dependency nodes."""
+    """Return decision card text for multi-input dependency nodes."""
 
     if not input_refs:
         return "- None recorded."
@@ -493,7 +493,7 @@ def format_input_refs_markdown(input_refs: list[str]) -> str:
 
 
 def format_pathway_step_markdown(pathway_id: str, step_id: str) -> str:
-    """Return decision-card text for optional pathway metadata."""
+    """Return decision card text for optional pathway metadata."""
 
     if not pathway_id:
         return "- None recorded."

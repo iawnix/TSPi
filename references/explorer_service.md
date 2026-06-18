@@ -27,7 +27,8 @@ python scripts/ts_explorer_server.py serve --host 127.0.0.1 --port 8765
 
 With no `--source`/`--workspace-registry`/`--workspace-root`, it serves the
 persistent registry at `~/.codex/state/ts_explorer/workspaces.json` and
-**hot-reloads it on change**. Register a workspace explicitly during init with
+**hot-reloads it on change**. Register a workspace explicitly during
+`init_workspace` with
 `--explorer-register` or `--explorer-registry <path>` so new searches appear in
 the running service without a restart. A registered workspace whose source is
 missing or mid-sync is skipped with a warning instead of killing the service.
@@ -42,9 +43,9 @@ python scripts/ts_explorer_server.py serve \
   --port 8765
 ```
 
-New workspaces created by `scripts/ts_hypothesis_workspace.py init` write
+New workspaces created by `scripts/ts_workspace.py init_workspace` write
 `reports/explorer_launch_checklist.md` describing this persistent-service
-workflow. By default, `init` does not write the persistent registry; pass
+workflow. By default, `init_workspace` does not write the persistent registry; pass
 `--explorer-register` to use the default registry or `--explorer-registry
 <path>` to use a non-default registry.
 

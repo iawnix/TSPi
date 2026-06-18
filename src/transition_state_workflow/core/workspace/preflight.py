@@ -34,7 +34,7 @@ def write_mechanism_preflight_node(
         if str(existing.get("stage") or "").strip() != "mechanism_preflight":
             raise SystemExit(
                 f"existing {node_id}/node.json is not a mechanism_preflight node; "
-                "rerun preflight-node with --force after resolving the partial node"
+                "resolve the partial node and recreate the preflight branch through start_node"
             )
         return node_id
 

@@ -1,4 +1,4 @@
-"""Packet orchestration for ChemKernel decision-context packets."""
+"""Packet orchestration for ChemKernel workspace report context."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ def build_plan_next_packet(
     *,
     max_suggestions: int = 4,
     alternative_mechanism: bool = False,
-    command_alias: str = "decision-context",
+    command_alias: str = "report_workspace",
     validate_workspace: WorkspaceValidator | None = None,
     supports_tsfreq_evidence: TsfreqEvidencePredicate | None = None,
 ) -> dict[str, Any]:
@@ -295,12 +295,6 @@ def build_plan_next_packet(
         "required_reframe_checks": required_reframe_checks[:8],
         "required_finalization_checks": required_finalization_checks[:8],
     }
-    if command_alias == "plan-next":
-        packet["deprecation"] = {
-            "command": "plan-next",
-            "replacement": "decision-context",
-            "message": "plan-next is a deprecated alias; the packet reports context only and does not generate route suggestions.",
-        }
     return packet
 
 

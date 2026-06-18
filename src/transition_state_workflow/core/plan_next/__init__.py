@@ -1,13 +1,12 @@
-"""ChemKernel decision-context packets.
+"""ChemKernel workspace report context packets.
 
 This package keeps the historical ``transition_state_workflow.core.plan_next``
-import surface while splitting decision-context assembly into small core-only
+import surface while splitting report-context assembly into small core-only
 modules.
 """
 
 from __future__ import annotations
 
-from .cli import register_plan_next_parser
 from .context import (
     backtrack_event_summaries,
     build_context_items,
@@ -69,7 +68,6 @@ __all__ = [
     "WorkspaceValidator",
     "TsfreqEvidencePredicate",
     "endpoint_evidence_blocker_summaries",
-    "register_plan_next_parser",
     "build_plan_next_packet",
     "ensure_plan_workspace",
     "conservative_workspace_validation",

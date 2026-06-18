@@ -221,8 +221,8 @@ Report orbital, APT charge, spin-density, or population descriptors as
 unavailable when the Gaussian output does not contain the required sections.
 Do not infer those values from filenames, route text, or related calculations.
 If a descriptor changes the mechanism interpretation, attach it through
-`finalize-node --mechanism-analysis` with the descriptor JSON or Gaussian output
-as the cited source.
+`end_node --evidence` and the node closure explanation, with the descriptor JSON
+or Gaussian output as the cited source.
 
 ## IRC Follow-Up
 

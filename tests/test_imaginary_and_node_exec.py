@@ -9,9 +9,9 @@ from pathlib import Path
 from conftest import (
     IMAGINARY_MODE_CLI,
     NODE_EXEC_CLI,
-    WORKSPACE_CLI,
     initialize_workspace,
     run_cli,
+    start_node,
     validate_workspace,
 )
 from transition_state_workflow.backends.gaussian import prepare_gaussian_imaginary_mode_follow_data
@@ -87,21 +87,13 @@ def test_connectivity_gate_endpoint_screen_detects_bond_change(tmp_path: Path) -
 def test_imaginary_mode_follow_prepare_writes_node_scoped_artifacts(tmp_path: Path) -> None:
     root = tmp_path / "tssearch_unit"
     initialize_workspace(root)
-    run_cli(
-        str(WORKSPACE_CLI),
-        "decision-card",
-        "--root",
-        str(root),
-        "--node-id",
-        "n020_imaginary_follow",
-        "--stage",
-        "connectivity_validation",
-        "--parent-id",
-        "n010_candidate",
-        "--hypothesis",
-        "Unit-test imaginary-mode follow-up prepares endpoint opt inputs.",
-        "--operation",
-        "imaginary-mode-follow",
+    start_node(
+        root,
+        node_id="n020_imaginary_follow",
+        phase="connectivity_validation",
+        parent_id="n010_candidate",
+        hypothesis="Unit-test imaginary-mode follow-up prepares endpoint opt inputs.",
+        operation="imaginary-mode-follow",
     )
     parent_outputs = root / "nodes" / "n010_candidate" / "outputs"
     parent_outputs.mkdir(exist_ok=True)
@@ -151,21 +143,13 @@ def test_imaginary_mode_follow_prepare_writes_node_scoped_artifacts(tmp_path: Pa
 def test_imaginary_mode_follow_prepare_strips_qst_template_extra_geometry(tmp_path: Path) -> None:
     root = tmp_path / "tssearch_unit"
     initialize_workspace(root)
-    run_cli(
-        str(WORKSPACE_CLI),
-        "decision-card",
-        "--root",
-        str(root),
-        "--node-id",
-        "n020_imaginary_follow",
-        "--stage",
-        "connectivity_validation",
-        "--parent-id",
-        "n010_candidate",
-        "--hypothesis",
-        "Unit-test imaginary-mode follow-up prepares endpoint opt inputs from a QST2 template.",
-        "--operation",
-        "imaginary-mode-follow",
+    start_node(
+        root,
+        node_id="n020_imaginary_follow",
+        phase="connectivity_validation",
+        parent_id="n010_candidate",
+        hypothesis="Unit-test imaginary-mode follow-up prepares endpoint opt inputs from a QST2 template.",
+        operation="imaginary-mode-follow",
     )
     freq_output = root / "nodes" / "n010_candidate" / "outputs" / "candidate_tsfreq.out"
     freq_output.write_text(minimal_gaussian_freq_log(), encoding="utf-8")

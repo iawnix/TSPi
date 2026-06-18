@@ -1,4 +1,4 @@
-"""Reusable diagnostics for ChemKernel decision-context packets."""
+"""Reusable diagnostics for ChemKernel workspace report packets."""
 
 from __future__ import annotations
 

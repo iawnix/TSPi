@@ -1,4 +1,4 @@
-"""Read-only workspace snapshots for ChemKernel decision-context packets."""
+"""Read-only workspace snapshots for ChemKernel workspace report packets."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ class NodeClaimSnapshot:
 
 @dataclass(frozen=True)
 class PlanNextSnapshot:
-    """Read-only workspace state used by the decision-context orchestrator."""
+    """Read-only workspace state used by the report-context orchestrator."""
 
     source: Path
     manifest: dict[str, Any]

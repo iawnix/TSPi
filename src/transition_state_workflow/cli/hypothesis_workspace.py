@@ -6,189 +6,38 @@ import argparse
 from pathlib import Path
 
 from transition_state_workflow.base.explorer_registry import register_workspace
-from transition_state_workflow.base.pathway_model import (
-    pathway_bind_step_from_cli_args,
-    pathway_init_from_cli_args,
-    register_pathway_parsers,
-)
-from transition_state_workflow.config.state_contract import VALID_EVIDENCE_STATES
-from transition_state_workflow.core.backtrack import (
-    record_backtrack_from_cli_args,
-    register_record_backtrack_parser,
-    register_update_backtrack_parser,
-    update_backtrack_from_cli_args,
-)
-from transition_state_workflow.core.plan_next import (
-    build_plan_next_packet as build_core_plan_next_packet,
-    register_plan_next_parser,
-)
-from transition_state_workflow.core.start_node import (
+from transition_state_workflow.cli.workspace_control import (
+    build_workspace_report_payload,
+    end_node_from_cli_args,
+    register_end_node_parser,
+    register_init_workspace_parser,
+    register_report_workspace_parser,
     register_start_node_parser,
-    start_ts_workspace_node_from_cli_args,
+    register_validate_decision_parser,
+    start_node_from_cli_args,
+    validate_decision_payload,
 )
 from transition_state_workflow.core.workspace_state import (
-    append_ts_workspace_evidence_record_from_cli_args,
-    create_ts_branch_decision_artifacts_from_cli_args,
     initialize_ts_hypothesis_workspace_files_from_cli_args,
-    write_mechanism_preflight_node_from_cli_args,
 )
 from transition_state_workflow.core.workspace import write_text_file_if_allowed
-from transition_state_workflow.gate.evidence import record_supports_tsfreq_reframe
-from transition_state_workflow.gate.finalize import (
-    finalize_ts_workspace_node_from_cli_args,
-    register_finalize_node_parser,
-)
-from transition_state_workflow.gate.validate import validate_ts_workspace_contract
 from transition_state_workflow.util.cli import configure_cli_logging, emit_json
+from transition_state_workflow.util.json_io import read_json_object_required
 
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the TS hypothesis workspace CLI parser."""
 
     parser = argparse.ArgumentParser(
-        description="Create TS-search hypothesis workspace artifacts.",
+        description="Control TS-search workspaces through the public five-command contract.",
     )
     sub = parser.add_subparsers(dest="command", required=True)
 
-    init = sub.add_parser("init", help="Initialize a tssearch_<system> workspace.")
-    init.add_argument("--root", required=True, type=Path, help="Workspace directory.")
-    init.add_argument("--system", required=True, help="Short system label.")
-    init.add_argument("--charge", required=True, type=int, help="Total charge.")
-    init.add_argument("--multiplicity", required=True, type=int, help="Spin multiplicity.")
-    init.add_argument("--reaction-class", default="unknown", help="Initial reaction-class hypothesis.")
-    init.add_argument(
-        "--key-atoms",
-        nargs="*",
-        default=[],
-        help="Reaction-center atom labels or indices.",
-    )
-    init.add_argument(
-        "--bond-change",
-        action="append",
-        default=[],
-        help="Expected bond change as role:atomA-atomB, e.g. breaking:O7-H5.",
-    )
-    init.add_argument(
-        "--with-preflight-node",
-        action="store_true",
-        help="Also scaffold a real n000_mechanism_preflight root node from the initial mechanism model.",
-    )
-    init.add_argument("--force", action="store_true", help="Overwrite existing scaffold files.")
-    init.add_argument(
-        "--no-explorer-register",
-        action="store_true",
-        help="Skip registering this workspace in the persistent explorer registry.",
-    )
-    init.add_argument(
-        "--explorer-register",
-        action="store_true",
-        help="Register this workspace in the persistent explorer registry.",
-    )
-    init.add_argument(
-        "--explorer-registry",
-        type=Path,
-        default=None,
-        help="Explorer registry path. Passing this path also opts into registration.",
-    )
-    init.add_argument("--verbose", action="store_true", help="Write diagnostic logs to stderr.")
-    init.add_argument("--quiet", action="store_true", help="Only write errors to stderr.")
-
-    card = sub.add_parser("decision-card", help="Create templates for one branch node.")
-    card.add_argument("--root", required=True, type=Path, help="Workspace directory.")
-    card.add_argument("--node-id", required=True, help="Node id under nodes/.")
-    card.add_argument("--stage", required=True, help="Workflow stage.")
-    card.add_argument("--parent-id", default=None, help="Parent node id.")
-    card.add_argument("--pathway-id", default="", help="Optional pathway id for multi-step aggregation.")
-    card.add_argument("--step-id", default="", help="Optional elementary step id within --pathway-id.")
-    card.add_argument(
-        "--input-ref",
-        action="append",
-        default=[],
-        help=(
-            "Additional input/dependency node id for multi-input routes such as QST2, "
-            "endpoint-pair validation, or IRC reference checks. May be repeated."
-        ),
-    )
-    card.add_argument("--hypothesis", required=True, help="Chemical hypothesis being tested.")
-    card.add_argument("--operation", required=True, help="Operation or route chosen for this test.")
-    card.add_argument("--trigger-source", default="", help="State, user request, or event that triggered this branch.")
-    card.add_argument("--parent-selection-reason", default="", help="Why this parent node is the right ancestor.")
-    card.add_argument("--context-packet-ref", default="", help="Optional decision-context packet path or id.")
-    card.add_argument("--evidence-ref", action="append", default=[], help="Evidence id used before creating this branch.")
-    card.add_argument("--changed-variable", action="append", default=[], help="Changed variable as key=value; may be repeated.")
-    card.add_argument("--method-or-tool-rationale", default="", help="Why the selected operation is appropriate.")
-    card.add_argument("--claim-ceiling", default="", help="Highest claim this branch may make before further validation.")
-    card.add_argument("--support-criteria", action="append", default=[], help="Concrete support criterion; may be repeated.")
-    card.add_argument("--refutation-criteria", action="append", default=[], help="Concrete refutation criterion; may be repeated.")
-    card.add_argument("--cost-risk", default="", help="Cost/risk decision for this branch.")
-    card.add_argument("--next-if-supported", default="", help="Agent-owned next step if criteria are supported.")
-    card.add_argument("--next-if-refuted", default="", help="Agent-owned next step if criteria are refuted.")
-    card.add_argument(
-        "--replaces-node",
-        default="",
-        help=(
-            "Failed or ambiguous sibling branch that this new decision-card replaces. "
-            "Requires --parent-id and records a canonical backtrack event with "
-            "--new-branch-node set to this node."
-        ),
-    )
-    card.add_argument(
-        "--backtrack-reason-code",
-        default="replacement_branch",
-        help="Reason code for the automatic backtrack event written by --replaces-node.",
-    )
-    card.add_argument(
-        "--backtrack-reason",
-        default="",
-        help="Human-readable reason for the automatic backtrack event written by --replaces-node.",
-    )
-    card.add_argument(
-        "--backtrack-evidence-ref",
-        action="append",
-        default=[],
-        help="Existing evidence id for the automatic backtrack event; may be repeated.",
-    )
-    card.add_argument(
-        "--supersede-active-backtrack",
-        action="store_true",
-        help="Supersede any existing active backtrack before writing the --replaces-node event.",
-    )
-    card.add_argument("--force", action="store_true", help="Overwrite existing node templates.")
-    card.add_argument("--verbose", action="store_true", help="Write diagnostic logs to stderr.")
-    card.add_argument("--quiet", action="store_true", help="Only write errors to stderr.")
-
-    evidence = sub.add_parser("add-evidence", help="Append one evidence registry record.")
-    evidence.add_argument("--root", required=True, type=Path, help="Workspace directory.")
-    evidence.add_argument("--kind", required=True, help="Evidence kind.")
-    evidence.add_argument("--path", required=True, help="Evidence path.")
-    evidence.add_argument("--node-id", required=True, help="Node id.")
-    evidence.add_argument("--claim", required=True, help="Short source-backed claim.")
-    evidence.add_argument(
-        "--evidence-state",
-        default="prepared",
-        choices=sorted(VALID_EVIDENCE_STATES),
-        help="How this evidence relates to the current hypothesis.",
-    )
-    evidence.add_argument("--verbose", action="store_true", help="Write diagnostic logs to stderr.")
-    evidence.add_argument("--quiet", action="store_true", help="Only write errors to stderr.")
-
-    preflight = sub.add_parser("preflight-node", help="Create the canonical mechanism-preflight root node.")
-    preflight.add_argument("--root", required=True, type=Path, help="Workspace directory.")
-    preflight.add_argument(
-        "--node-id",
-        default="n000_mechanism_preflight",
-        help="Preflight node id to write. Defaults to n000_mechanism_preflight.",
-    )
-    preflight.add_argument("--force", action="store_true", help="Overwrite existing preflight node artifacts.")
-    preflight.add_argument("--verbose", action="store_true", help="Write diagnostic logs to stderr.")
-    preflight.add_argument("--quiet", action="store_true", help="Only write errors to stderr.")
-
+    register_init_workspace_parser(sub)
     register_start_node_parser(sub)
-    register_record_backtrack_parser(sub)
-    register_update_backtrack_parser(sub)
-    register_pathway_parsers(sub)
-    register_finalize_node_parser(sub)
-    register_plan_next_parser(sub)
+    register_end_node_parser(sub)
+    register_report_workspace_parser(sub)
+    register_validate_decision_parser(sub)
     return parser
 
 
@@ -198,41 +47,20 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
     configure_cli_logging(verbose=getattr(args, "verbose", False), quiet=getattr(args, "quiet", False))
-    if args.command == "init":
+    if args.command == "init_workspace":
         initialize_ts_hypothesis_workspace_from_cli_args(args)
-    elif args.command == "decision-card":
-        create_ts_branch_decision_artifacts_from_cli_args(args)
-    elif args.command == "add-evidence":
-        append_ts_workspace_evidence_record_from_cli_args(args)
-    elif args.command == "preflight-node":
-        write_mechanism_preflight_node_from_cli_args(args)
-    elif args.command == "start-node":
-        start_ts_workspace_node_from_cli_args(args)
-    elif args.command == "record-backtrack":
-        record_backtrack_from_cli_args(args)
-    elif args.command == "update-backtrack":
-        update_backtrack_from_cli_args(args)
-    elif args.command == "pathway-init":
-        pathway_init_from_cli_args(args)
-    elif args.command == "pathway-bind-step":
-        pathway_bind_step_from_cli_args(args)
-    elif args.command == "finalize-node":
-        finalize_ts_workspace_node_from_cli_args(args)
-    elif args.command in {"decision-context", "plan-next"}:
-        if bool(getattr(args, "write_decision_cards", False)):
-            raise SystemExit(
-                "decision-context is read-only and no longer materializes decision-card nodes; "
-                "use the decision-card command with agent-owned provenance instead"
-            )
-        packet = build_core_plan_next_packet(
-            args.root,
-            max_suggestions=args.max_suggestions,
-            alternative_mechanism=args.alternative_mechanism,
-            command_alias=getattr(args, "decision_context_alias", args.command),
-            validate_workspace=validate_ts_workspace_contract,
-            supports_tsfreq_evidence=record_supports_tsfreq_reframe,
+    elif args.command == "start_node":
+        start_node_from_cli_args(args)
+    elif args.command == "end_node":
+        end_node_from_cli_args(args)
+    elif args.command == "report_workspace":
+        emit_json(
+            build_workspace_report_payload(args.root, alternative_mechanism=bool(args.alternative_mechanism)),
+            pretty=bool(args.pretty),
         )
-        emit_json(packet, pretty=args.pretty)
+    elif args.command == "validate_decision":
+        decision = read_json_object_required(args.decision_file)
+        emit_json(validate_decision_payload(args.root, decision), pretty=bool(args.pretty))
     else:
         parser.error(f"unsupported command: {args.command}")
     return 0

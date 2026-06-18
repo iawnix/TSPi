@@ -1,4 +1,4 @@
-"""Decision-context requirement builders for ChemKernel packets."""
+"""Report-context requirement builders for ChemKernel packets."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ def suggest_decision_cards(
     pathway_plan: dict[str, Any],
     max_suggestions: int,
 ) -> list[dict[str, Any]]:
-    """Deprecated compatibility hook; decision-context packets do not suggest branches."""
+    """Compatibility hook; workspace report packets do not suggest branches."""
 
     return []
 
@@ -67,7 +67,7 @@ def suggest_finalization_actions(
     connectivity_nodes: list[tuple[str, dict[str, Any]]],
     pathway_plan: dict[str, Any],
 ) -> list[dict[str, Any]]:
-    """Return non-decision-card actions when a claim may be ready to close."""
+    """Return non-branch actions when a claim may be ready to close."""
 
     if phase != "accepted_ts_ready":
         return []

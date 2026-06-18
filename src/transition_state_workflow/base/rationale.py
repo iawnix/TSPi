@@ -170,7 +170,7 @@ class RationaleLint:
 
 
 def lint_node_rationale(root: Path, node_id: str, node_payload: dict[str, Any] | None = None) -> RationaleLint:
-    """Lint the hypothesis and decision-card markdown for one node."""
+    """Lint the hypothesis and decision card markdown for one node."""
 
     node_dir = root / "nodes" / node_id
     legacy_import = rationale_legacy_import(node_payload or {})

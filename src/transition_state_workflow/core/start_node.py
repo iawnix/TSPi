@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -27,54 +26,6 @@ class NodeStartRequest:
     badges: tuple[str, ...] = ()
     evidence_refs: tuple[str, ...] = ()
     force: bool = False
-
-
-def register_start_node_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Attach the start-node subcommand to the workspace CLI."""
-
-    start = subparsers.add_parser(
-        "start-node",
-        help="Mark one prepared v2 node as active/running and add it to active_frontier.",
-    )
-    start.add_argument("--root", required=True, type=Path, help="Workspace directory.")
-    start.add_argument("--node-id", required=True, help="Node id under nodes/.")
-    start.add_argument(
-        "--run-state",
-        choices=("pending", "running", "parsing"),
-        default="running",
-        help="Runtime state to record while the external job is active.",
-    )
-    start.add_argument("--decision", default="start_execution", help="Start decision/action token.")
-    start.add_argument(
-        "--summary",
-        default="Node execution started; no scientific claim has been evaluated yet.",
-        help="User-facing start summary.",
-    )
-    start.add_argument(
-        "--primary-file",
-        default="",
-        help="Primary input, script, or log path to show while this node is running.",
-    )
-    start.add_argument("--badge", action="append", default=[], help="Display badge; may be repeated.")
-    start.add_argument("--evidence-ref", action="append", default=[], help="Existing evidence id for the start event.")
-    start.add_argument("--force", action="store_true", help="Allow restarting a closed but still unevaluated node.")
-
-
-def start_ts_workspace_node_from_cli_args(args: argparse.Namespace) -> None:
-    """Build a start request from argparse values and execute it."""
-
-    request = NodeStartRequest(
-        root=args.root,
-        node_id=args.node_id,
-        run_state=args.run_state,
-        decision=args.decision,
-        summary=args.summary,
-        primary_file=args.primary_file,
-        badges=tuple(args.badge or ()),
-        evidence_refs=tuple(args.evidence_ref or ()),
-        force=bool(args.force),
-    )
-    start_ts_workspace_node(request)
 
 
 def start_ts_workspace_node(request: NodeStartRequest) -> None:
@@ -141,7 +92,7 @@ def validate_start_request(node_payload: dict[str, Any], request: NodeStartReque
     if not request.force and lifecycle_state == "closed":
         raise SystemExit(f"node is already {lifecycle_state}; use --force to restart intentionally")
     if claim_status != "not_evaluated" or outcome != "none":
-        raise SystemExit("start-node refuses to restart an evaluated node; create a new branch instead")
+        raise SystemExit("start_node refuses to restart an evaluated node; create a new branch instead")
 
 
 def validate_pre_execution_rationale(root: Path, node_id: str, node_payload: dict[str, Any]) -> None:
@@ -149,11 +100,11 @@ def validate_pre_execution_rationale(root: Path, node_id: str, node_payload: dic
 
     rationale = lint_node_rationale(root, node_id, node_payload)
     if not rationale.ok_to_start:
-        raise SystemExit(f"start-node refused: incomplete pre-execution rationale; {rationale.summary()}")
+        raise SystemExit(f"start_node refused: incomplete pre-execution rationale; {rationale.summary()}")
 
 
 def add_start_event(tree_payload: dict[str, Any], request: NodeStartRequest, timestamp: str) -> list[dict[str, Any]]:
-    """Return timeline events with one new start-node event appended in time order."""
+    """Return timeline events with one new start_node event appended in time order."""
 
     events = [item for item in tree_payload.get("events", []) if isinstance(item, dict)]
     taken_ids = {clean_string(item.get("event_id")) for item in events}
@@ -173,7 +124,7 @@ def add_start_event(tree_payload: dict[str, Any], request: NodeStartRequest, tim
 
 
 def next_event_id(node_id: str, decision: str, taken_ids: set[str]) -> str:
-    """Return an unused start-node event id."""
+    """Return an unused start_node event id."""
 
     base = f"evt_{safe_identifier_token(node_id)}_{safe_identifier_token(decision)}"
     if base not in taken_ids:

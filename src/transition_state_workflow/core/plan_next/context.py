@@ -1,4 +1,4 @@
-"""Context extraction and ranking for ChemKernel decision-context packets."""
+"""Context extraction and ranking for ChemKernel workspace report packets."""
 
 from __future__ import annotations
 
@@ -117,7 +117,7 @@ def summarize_reframe_tsfreq_record(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def backtrack_event_summaries(tree: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return compact canonical backtrack events for decision-context packets."""
+    """Return compact canonical backtrack events for workspace report packets."""
 
     out: list[dict[str, Any]] = []
     for item in list_or_empty(tree.get("backtrack_events")):

@@ -3,7 +3,7 @@
 Use this reference when a branch needs structured `mechanism_analysis` records.
 Every record must come from a concrete file, parsed descriptor, or explicit
 absence of evidence. Attach that provenance either through the same
-`finalize-node --evidence` records or through the per-record `source` field.
+`end_node --evidence` records or through the per-record `source` field.
 Do not infer electronic, orbital, or energy descriptors from method names,
 route text, filenames, or neighboring branches.
 
@@ -13,7 +13,7 @@ Before evidence exists, put required diagnostics in the hypothesis-stage
 
 ## Analysis Layers
 
-`finalize-node --mechanism-analysis` accepts these layers:
+Mechanism-analysis records use these layers:
 
 - `reaction_type`: elementary mechanism class and competing-class exclusion.
 - `reaction_center`: mapped atoms, forming/breaking bonds, angles, fragments,
@@ -118,7 +118,7 @@ Record as `ambiguous` or `unavailable` for:
 - final barrier or reaction energy;
 - accepted-TS proof.
 
-The usual `--mechanism-analysis` records from xTB/ASE/Gaussian-External-xTB are
+The usual mechanism-analysis records from xTB/ASE/Gaussian-External-xTB are
 `reaction_center`, `energy` with a screening qualifier, and occasionally
 `reaction_type` as a hypothesis. Move to Gaussian DFT validation when the branch
 needs final electronic, orbital, frequency, or barrier evidence.
@@ -141,10 +141,10 @@ validation before mechanism acceptance.
 
 ## Recording Templates
 
-Supported reaction-center example:
+Supported reaction-center record:
 
-```bash
---mechanism-analysis '{
+```json
+{
   "layer": "reaction_center",
   "status": "supported",
   "summary": "The imaginary mode moves H7 along the O1-H7-N3 coordinate and changes both donor and acceptor distances.",
@@ -153,24 +153,24 @@ Supported reaction-center example:
     "O1_H7_delta_angstrom": 0.31,
     "N3_H7_delta_angstrom": -0.28
   }
-}'
+}
 ```
 
-Unavailable orbital example:
+Unavailable orbital record:
 
-```bash
---mechanism-analysis '{
+```json
+{
   "layer": "orbital",
   "status": "unavailable",
   "summary": "The Gaussian TS/Freq output did not include orbital or population sections; no orbital interpretation is made.",
   "source": "nodes/n230_gaussian_tsfreq/outputs/candidate_tsfreq.out"
-}'
+}
 ```
 
-Screening energy example:
+Screening energy record:
 
-```bash
---mechanism-analysis '{
+```json
+{
   "layer": "energy",
   "status": "hypothesis",
   "summary": "xTB-NEB gives a nonzero internal barrier shape; this is screening evidence only and needs Gaussian validation.",
@@ -181,7 +181,7 @@ Screening energy example:
   "details": {
     "reliability": "screening"
   }
-}'
+}
 ```
 
 ## Promotion Rules

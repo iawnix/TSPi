@@ -1,4 +1,4 @@
-"""Pathway-scoped helpers for ChemKernel decision-context packets."""
+"""Pathway-scoped helpers for ChemKernel workspace report packets."""
 
 from __future__ import annotations
 
@@ -77,7 +77,7 @@ def latest_pathway_status_node(pathway: dict[str, Any]) -> str | None:
 
 
 def pathway_target_for_suggestions(pathway_plan: dict[str, Any]) -> dict[str, str]:
-    """Return pathway metadata for decision-card or finalization suggestions."""
+    """Return pathway metadata for branch or closure suggestions."""
 
     if pathway_plan.get("mode") not in {"start", "continue"}:
         return {}

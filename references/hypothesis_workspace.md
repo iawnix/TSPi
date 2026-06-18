@@ -1,554 +1,287 @@
 # Chemistry Hypothesis Workspace
 
-Load this when a TS search is exploratory, failed, ambiguous, or likely to need
-multiple methods. The workspace is a chemistry hypothesis notebook with
-machine-readable evidence, not just a directory of calculations.
+This workspace is the durable ledger for transition-state exploration. It
+tracks mechanism hypotheses, node-level program evidence, mechanism
+interpretation, and the constraints used to choose the next branch.
 
-## Principle
+The public control plane has exactly five commands:
 
-Tool choice must follow the current chemical hypothesis.
-
-Do not start with "run NEB" or "run Gaussian" as the primary plan. Start with:
-
-- what reaction class is plausible;
-- what charge and multiplicity imply;
-- which bonds, angles, fragments, spins, and charges should change;
-- what evidence would support or refute each candidate mechanism;
-- which computation is the lowest-cost test of the next hypothesis.
-
-The workflow is:
-
-```text
-mechanism hypothesis -> tool choice -> evidence gate -> knowledge update -> next hypothesis
+```bash
+python scripts/ts_workspace.py init_workspace --root <tssearch_root> ...
+python scripts/ts_workspace.py start_node --root <tssearch_root> ...
+python scripts/ts_workspace.py end_node --root <tssearch_root> ...
+python scripts/ts_workspace.py report_workspace --root <tssearch_root> --pretty
+python scripts/ts_workspace.py validate_decision --root <tssearch_root> --decision-file decision.json --pretty
 ```
 
-## Required Workspace Additions
+`scripts/ts_hypothesis_workspace.py` is a wrapper to the same entrypoint. Do
+not use older workspace subcommands as a public interface.
 
-In addition to `manifest.json`, `tree.json`, and `nodes/`, exploratory tasks
-should keep:
+## Required Root Files
 
-```text
-tssearch_<system>/
-├── mechanism_model.json
-├── knowledge_base.md
-├── evidence_registry.json
-└── nodes/
-    └── nNNN_label/
-        ├── hypothesis.md
-        ├── decision_card.md
-        └── reflection.md
-```
+`init_workspace` creates these required structures:
 
-Use `scripts/ts_hypothesis_workspace.py init` to create these files.
+- `knowledge_base.md`: validated facts, rejected hypotheses, open questions,
+  and next-decision notes.
+- `manifest.json`: workspace identity, charge, multiplicity, root path,
+  accepted-state audit fields, and schema identifiers.
+- `mechanism_model.json`: mechanism hypotheses, required diagnostics, and
+  evidence-backed mechanism analysis records.
+- `pathway_model.json`: optional pathway and elementary-step aggregation.
+- `tree.json`: node index, parent/child relationships, active frontier, closed
+  nodes, accepted nodes, and timeline events.
+- `evidence_registry.json`: evidence records referenced by closed nodes and
+  mechanism analysis.
 
-## `mechanism_model.json`
+The workspace also contains `nodes/<node_id>/` directories. A node directory
+may hold:
 
-This is the current best chemical model. It evolves as evidence arrives.
+- `node.json`: structured node record.
+- `decision_card.md`: generated human-readable rationale for the node.
+- `reflection.md`: closure reflection after `end_node`.
+- `inputs/`, `outputs/`, `parsed/`, `scratch/`: node-scoped runtime and parsed
+  artifacts.
 
-Required fields:
+## Public Node State
+
+The LLM-facing state is intentionally small:
+
+- `phase`: `preflight`, `endpoint`, `rp_conformer_generation`,
+  `candidate_generation`, `tsfreq_validation`, `connectivity_validation`, or
+  `accepted_audit`.
+- `node_disposition`: `Running`, `Stopped`, `Error`, or `Success`.
+
+`Running` is produced by `start_node`. `Stopped`, `Error`, and `Success` are
+produced by `end_node`.
+
+Program/runtime failures and mechanism interpretation are separated inside
+`closure_explanation`:
 
 ```json
 {
-  "schema": "tssearch-mechanism-model-v1",
-  "system": "example",
-  "charge": 0,
-  "multiplicity": 1,
-  "reaction_class": "unknown",
-  "reaction_class_confidence": "low",
-  "key_atoms": [],
-  "expected_bond_changes": [],
-  "expected_angle_changes": [],
-  "electronic_hypotheses": [],
-  "analysis_plan": {
-    "reaction_type": [],
-    "reaction_center": [],
-    "electronic": [],
-    "orbital": [],
-    "energy": []
+  "program": {
+    "summary": "The Gaussian job terminated before producing a parsed frequency summary.",
+    "facts": [
+      {
+        "text": "The output ended with an SCF convergence error.",
+        "source_path": "nodes/n020_tsfreq/outputs/tsfreq.out"
+      }
+    ]
   },
-  "mechanism_analysis": {
-    "reaction_type": [],
-    "reaction_center": [],
-    "electronic": [],
-    "orbital": [],
-    "energy": []
+  "mechanism": {
+    "summary": "No TS/Freq conclusion can be drawn from this failed program run.",
+    "facts": [
+      {
+        "text": "The failure does not refute the bond-switching mechanism by itself."
+      }
+    ]
   },
-  "validated_facts": [],
-  "refuted_hypotheses": [],
-  "open_questions": [],
-  "tool_implications": [],
-  "updated_at": "2026-06-05T00:00:00+08:00"
+  "implication": "Open a revised TS/Freq node with changed SCF controls.",
+  "open_questions": [
+    "Does the candidate remain stable after a lower-level cleanup?"
+  ]
 }
 ```
 
-Rules:
+Stored workspace files may still contain internal audit fields such as
+`claim_status`, `outcome`, `outcome_code`, `lifecycle_state`, `run_state`, and
+accepted-state manifest entries. These are produced by the tools for validator
+and explorer compatibility. They are not LLM response fields and must not be
+requested from the model.
 
-- `reaction_class` is a hypothesis until evidence supports it.
-- `validated_facts` must cite evidence IDs or files.
-- `refuted_hypotheses` must cite the node or evidence that refuted them.
-- `open_questions` should drive the next branch.
-- Do not erase wrong hypotheses; move them to `refuted_hypotheses`.
-- `analysis_plan` belongs to the chemical hypothesis. Use it for expected
-  reaction type, reaction-center checks, electronic/spin/charge diagnostics,
-  orbital/population follow-up, and energy checks that still need evidence.
-- `mechanism_analysis` is structured evidence, not prose decoration. Record each
-  available layer as `supported`, `refuted`, `ambiguous`, or `unavailable` with
-  evidence references or a `source` path to the direct output/parsed descriptor:
-  - `reaction_type`: proton transfer, HAT, PCET, rearrangement, substitution,
-    atom transfer, dissociation, spin crossover, or another explicit class.
-  - `reaction_center`: mapped atoms, forming/breaking bonds, angles, fragments,
-    and mode participation.
-  - `electronic`: charge, multiplicity, `<S^2>`, spin density, donor/acceptor
-    charge migration, and state consistency.
-  - `orbital`: frontier orbitals, occupation, population/NBO-style descriptors,
-    or a clear unavailable record when the output lacks those sections.
-  - `energy`: endpoint energies, TS energy, rough or validated barrier, reaction
-    energy, and whether the barrier shape is chemically plausible.
+## Workspace Lifecycle
 
-## `evidence_registry.json`
+1. Initialize:
 
-This file indexes all decision-relevant evidence, including failed runs.
+```bash
+python scripts/ts_workspace.py init_workspace \
+  --root tssearch_example \
+  --system example \
+  --charge 0 \
+  --multiplicity 1 \
+  --reaction-class bond_switch \
+  --bond-change breaking:C1-H2 \
+  --bond-change forming:H2-O3
+```
 
-Evidence records should distinguish:
+2. Read context before deciding:
 
-- `raw_output`: Gaussian `.out`, xTB log, NEB trajectory, IRC output.
-- `parsed_summary`: parser output or extracted metrics.
-- `structure`: XYZ, Gaussian final geometry, displaced endpoint.
-- `connectivity_check`: RMSD and reaction-center bond/angle comparison.
-- `mechanistic_observation`: spin density, `<S^2>`, charge/bond-order proxy.
-- `mechanism_analysis`: structured reaction type, electronic, orbital, or energy
-  observation linked to the current mechanism model.
-- `decision_card`: why a branch was chosen.
-- `reflection`: what a failed or ambiguous branch changed chemically.
+```bash
+python scripts/ts_workspace.py report_workspace --root tssearch_example --pretty
+```
 
-Minimum record:
+The report includes:
+
+- `current_phase`
+- `focus`
+- `blocking_gates`
+- `allowed_next_actions`
+- `forbidden_next_actions`
+- public node summaries
+- validation summary
+- context items
+- endpoint evidence blockers
+- open questions
+- `allowed_response_contract`
+
+3. Validate the next decision:
+
+```bash
+python scripts/ts_workspace.py validate_decision \
+  --root tssearch_example \
+  --decision-file decision.json \
+  --pretty
+```
+
+4. Start a node:
+
+```bash
+python scripts/ts_workspace.py start_node \
+  --root tssearch_example \
+  --node-id n010_endpoint \
+  --phase endpoint \
+  --operation endpoint-opt \
+  --hypothesis "Reactant and product references are distinct minima." \
+  --rationale "Endpoint stability gates candidate generation." \
+  --expected-evidence "optimized endpoint summary" \
+  --refutation-criteria "reactant/product collapse or wrong reaction center" \
+  --cost-risk "low-cost endpoint optimization"
+```
+
+5. Close a node:
+
+```bash
+python scripts/ts_workspace.py end_node \
+  --root tssearch_example \
+  --node-id n010_endpoint \
+  --node-disposition Success \
+  --phase endpoint \
+  --decision prepare_candidate_generation \
+  --summary "Endpoint references remain distinct minima." \
+  --primary-file nodes/n010_endpoint/parsed/endpoint_summary.json \
+  --evidence '{"kind":"endpoint_summary","path":"nodes/n010_endpoint/parsed/endpoint_summary.json","claim":"Endpoint references are ready.","evidence_state":"supports"}' \
+  --program-summary "Both endpoint optimizations converged and parsed summaries were produced." \
+  --program-fact '{"text":"The parsed endpoint summary reports distinct minima.","source_path":"nodes/n010_endpoint/parsed/endpoint_summary.json"}' \
+  --mechanism-summary "Endpoint readiness supports candidate generation but is not a TS proof." \
+  --mechanism-fact "No accepted transition state is implied by endpoint readiness alone." \
+  --implication "Candidate generation may begin." \
+  --next-branch "Run a candidate-generation node."
+```
+
+## Decision Payload Contract
+
+The LLM should produce one action at a time. The allowed actions are:
+
+- `start_node`
+- `end_node`
+- `ask_user`
+- `stop`
+
+Required fields for `start_node`:
 
 ```json
 {
-  "evidence_id": "ev_001",
-  "kind": "parsed_summary",
-  "path": "/abs/path/summary.json",
-  "node_id": "n230_gaussian_tsfreq",
-  "claim": "Exactly one imaginary frequency was parsed.",
-  "evidence_state": "supports",
-  "created_at": "2026-06-05T00:00:00+08:00"
+  "action": "start_node",
+  "node_id": "n020_candidate",
+  "phase": "candidate_generation",
+  "operation": "xtb-neb-screen",
+  "hypothesis": "Endpoint-ready references can generate a TS candidate.",
+  "rationale": "Candidate generation is the next gated phase.",
+  "expected_evidence": ["candidate geometry", "parsed candidate summary"]
 }
 ```
 
-## Knowledge Base
+Required fields for `end_node`:
 
-`knowledge_base.md` is the human-readable running synthesis. Keep it short and
-source-backed:
-
-```markdown
-## Current Mechanism Model
-
-## Validated Facts
-
-## Refuted Hypotheses
-
-## Open Questions
-
-## Next Chemical Decision
+```json
+{
+  "action": "end_node",
+  "node_id": "n020_candidate",
+  "node_disposition": "Error",
+  "phase": "candidate_generation",
+  "closure_explanation": {
+    "program": {
+      "summary": "The candidate-generation program failed before producing a candidate."
+    },
+    "mechanism": {
+      "summary": "The failed program run does not refute the mechanism."
+    },
+    "implication": "Open a revised candidate-generation node with changed runtime inputs."
+  }
+}
 ```
 
-Only promote facts from parsed evidence or explicit structural checks. Do not
-promote visual impressions unless they are recorded as weak observations.
+Forbidden model-return fields include internal audit names such as
+`claim_status`, `claim_level`, `outcome`, `outcome_code`, `lifecycle_state`,
+`run_state`, and `accepted_ts`.
 
-## Decision Cards
+## Evidence Rules
 
-Every new branch should have `decision_card.md` before execution:
+- Evidence paths must be workspace-relative and point to node-scoped files when
+  possible.
+- Each closed node should include evidence records through `end_node`.
+- Program facts should cite logs, parsed JSON, geometry files, or command
+  metadata.
+- Mechanism facts should cite available structural, electronic, orbital, spin,
+  or energy diagnostics when those diagnostics exist.
+- Do not infer missing electronic, orbital, or barrier information from a
+  geometry-only or failed program result.
 
-```markdown
-## Chemical Hypothesis
-What this branch is testing.
+## Mechanism Interpretation
 
-## Why This Tool
-Why NEB, scan, QST, dimer, QBICS dMECP, Gaussian TS/Freq, displacement, or IRC
-is the right test now.
+Mechanism analysis must distinguish these layers:
 
-## Expected Supporting Evidence
-What result would support the hypothesis.
+- reaction type;
+- reaction-center motion;
+- electronic/spin/charge diagnostics;
+- orbital or population descriptors;
+- energy and barrier implications.
 
-## Refutation Criteria
-What result would close or backtrack this branch.
+Read `references/mechanism_analysis_sources.md` before deciding which method
+can support each layer. If a layer is unavailable, say it is unavailable rather
+than inferring it.
 
-## Cost And Risk
-Compute cost, numerical risk, and chemical risk.
+## Branching And Backtracking
 
-## Next If Supported
-The next validation layer.
+Backtracking is now represented as a planning interpretation, not a separate
+public command. Use `report_workspace` to identify the failed or ambiguous
+node, then open the next branch with `start_node` only after making the changed
+variable explicit.
 
-## Next If Refuted
-The ancestor or alternative hypothesis to branch from.
-```
+A replacement branch should record:
 
-Use `scripts/ts_hypothesis_workspace.py decision-card` to create a template.
+- the parent node that remains chemically meaningful;
+- the failed or ambiguous node that motivated the change, when relevant;
+- the changed variable or mechanism boundary;
+- the evidence or closure explanation that justifies the change.
 
-## Multi-Step Pathway Layer
+Do not continue below an errored node unless the hypothesis has explicitly
+changed and the new branch records that change.
 
-Use `pathway_model.json` only when a mechanism has multiple elementary TS
-claims, such as reactant -> intermediate -> product. This layer aggregates
-accepted elementary steps; it does not change the node-level evidence gates.
+## Pathways
 
-Create the pathway before opening step-scoped branches:
+For multi-step pathways, `pathway_model.json` stores pathway and elementary-step
+state. Use `--pathway-id` and `--step-id` on `start_node` and `end_node` for
+step-scoped nodes. A TS acceptance remains an elementary-step conclusion, not a
+whole-pathway conclusion unless every required step is accepted.
+
+Candidate, ambiguous, rejected, and accepted step statuses are derived from
+step-scoped node closures and evidence gates. Do not reuse a previous step's
+TS/Freq or connectivity evidence as proof for a later step.
+
+## Validation And Explorer
+
+Run the validator before trusting the explorer or reporting a final state:
 
 ```bash
-python scripts/ts_hypothesis_workspace.py pathway-init \
-  --root tssearch_<system> \
-  --mode multi_step \
-  --pathway-id p001 \
-  --label "R to P through I" \
-  --step s1:R->I \
-  --step s2:I->P
+python scripts/ts_validate_workspace.py --source tssearch_example --pretty --strict
 ```
 
-Every node that belongs to one elementary step should carry the step metadata:
+Generate the explorer-normalized view with:
 
 ```bash
-python scripts/ts_hypothesis_workspace.py decision-card \
-  --root tssearch_<system> \
-  --node-id n020_s1_endpoint_gate \
-  --stage endpoint_minima_validation \
-  --hypothesis "Validate endpoint references for step s1." \
-  --operation gaussian-endpoint-validation \
-  --pathway-id p001 \
-  --step-id s1
+python scripts/ts_normalize_view.py --source tssearch_example --pretty
 ```
 
-When an elementary step is accepted, finalize that node with the same pathway
-metadata:
-
-```bash
-python scripts/ts_hypothesis_workspace.py finalize-node \
-  --root tssearch_<system> \
-  --node-id n080_s1_connectivity \
-  --claim-status accepted_ts \
-  --decision accept_pathway_step_ts \
-  --summary "Step s1 has TS/Freq plus connectivity evidence." \
-  --primary-file nodes/n080_s1_connectivity/parsed/connectivity.json \
-  --pathway-id p001 \
-  --step-id s1 \
-  --evidence '<tsfreq evidence json>' \
-  --evidence '<connectivity evidence json>' \
-  --computational-outcome "TS/Freq and connectivity passed for step s1." \
-  --mechanistic-implication "Only elementary step s1 is accepted." \
-  --next-branch "Continue to the next incomplete pathway step."
-```
-
-Rules:
-
-- `accepted_ts` is one elementary-step claim. The whole pathway is `complete`
-  only when every required step in `pathway_model.json` is bound to its own
-  accepted TS node.
-- Do not bind the same accepted TS node to multiple pathway steps. If a
-  frequency-validated saddle might describe a different step, keep the old node
-  historical and create a new step-scoped node with `--input-ref` plus new
-  endpoint/connectivity evidence.
-- `decision-context` scopes endpoint, candidate, TS/Freq, and connectivity
-  gates to the next incomplete pathway step. A previous step's accepted TS may
-  be the tree parent for the next endpoint branch, but it is not evidence for
-  the next step's TS claim.
-- If a branch merely fails numerically or tests one bad local route, keep that
-  failure branch-local. If evidence refutes or leaves ambiguous the elementary
-  step itself, finalize the node with `--pathway-step-status rejected` or
-  `--pathway-step-status ambiguous`; the whole pathway then stops normal
-  forward planning until the mechanism hypothesis is reassessed.
-- `ts_normalize_view.py` emits pathway and node step metadata, and
-  `ts_validate_workspace.py` rejects duplicate accepted-node bindings or
-  inconsistent node/step metadata.
-
-## Decision Context
-
-Use `scripts/ts_hypothesis_workspace.py decision-context` when an agent needs
-compact state context before deciding the next chemical branch. `plan-next` is
-a deprecated alias for the same read-only packet.
-
-```bash
-python scripts/ts_hypothesis_workspace.py decision-context \
-  --root tssearch_<system> \
-  --pretty
-```
-
-After an accepted TS exists, `decision-context` defaults to audit/archive
-context. To ask for a chemically distinct alternative mechanism, make that
-intent explicit:
-
-```bash
-python scripts/ts_hypothesis_workspace.py decision-context \
-  --root tssearch_<system> \
-  --alternative-mechanism \
-  --pretty
-```
-
-This mode keeps the accepted TS visible as prior evidence, but the agent must
-still create any new mechanism-preflight branch explicitly with `decision-card`.
-The context packet never overwrites or reuses the accepted branch as proof.
-
-`decision-context` is read-only. It summarizes:
-
-- validator errors that block promotion;
-- active frontier and prepared nodes;
-- `planning_focus`, which chooses the node or mode that should guide the next
-  model call;
-- `decision_constraints`, which records required checks, blocking gates, and
-  agent-owned versus validator-owned responsibilities;
-- `context_policy` and prioritized `context_items`, which act as the structured
-  context-management layer for the next model call;
-- retrieval ranks on `context_items`, so the next agent call knows which
-  workspace artifacts to read first;
-- missing gates such as `endpoint_minima_missing`, `candidate_missing`,
-  `tsfreq_validation_missing`, or `connectivity_missing`;
-- allowed and forbidden next action classes;
-- validated facts, refuted hypotheses, and open questions from
-  `mechanism_model.json`;
-- canonical `backtrack_events[]` plus `required_backtrack_events` when failed
-  or ambiguous branches lack a backtrack decision;
-- failed or ambiguous branch reflections;
-- `required_reframe_checks` and `required_finalization_checks` when relevant.
-
-`planning_focus`, `decision_constraints`, and `context_items` are
-decision-context fields, not workspace state. Do not copy them into `tree.json`.
-They are regenerated from
-`tree.json`, node records, reflections, evidence, and the mechanism model each
-time `decision-context` runs.
-
-Backtrack-aware planning has two hard rules:
-
-- `planning_focus.mode=backtrack_decision_needed` means a failed or ambiguous
-  node has no canonical backtrack event yet. Do not open a child under that
-  failed node; first run `record-backtrack` and choose the closest chemically
-  meaningful ancestor.
-- `planning_focus.mode=backtrack_replan` means an active backtrack event exists.
-  New decision cards should use `planning_focus.parent_for_new_branch`, which
-  is the event's `to_node`, as the tree parent. If artifacts from the failed
-  node are useful, reference them through `input_refs`, not by making the failed
-  node the primary parent.
-- If a replacement sibling branch already exists before the backtrack is
-  recorded, include `--new-branch-node <replacement_node>` in
-  `record-backtrack`. `decision-context` reports detected replacement siblings
-  in `required_backtrack_events`, and the validator warns when that link is
-  missing.
-
-Only one `event_state=active` backtrack is allowed in a workspace. If another
-backtrack should become the current planning target, use `update-backtrack` to
-mark the existing active event `resolved` or `superseded`, or run
-`record-backtrack` with `--supersede-active` so the old active event is retired
-before the new one is written.
-
-When a backtrack target is active, `search_state.global_phase` records the
-highest workspace-wide evidence layer, while `search_state.phase` is the
-focus-local next gate at the backtrack target. This lets the agent revisit an
-earlier chemical decision without losing the validated evidence elsewhere in the
-tree.
-
-## Mechanism Reinterpretation And Evidence Reuse
-
-A rejected or ambiguous TS/Freq node can be chemically useful without becoming
-accepted under its original hypothesis. For example, a wrong-mode TS may fit a
-newly recognized intermediate-to-product step rather than the original
-reactant-to-product boundary.
-
-The rule is:
-
-- keep the original failed node closed as `rejected` or `ambiguous`;
-- create a new decision-card node for the reframed intended reaction boundary;
-- set `--input-ref <old_tsfreq_node>` on the new node if the old TS/Freq
-  evidence is being reused;
-- attach new endpoint or intermediate references to the new node;
-- attach new connectivity evidence to the new node;
-- finalize only the new node as `accepted_ts`, and only if that node has both
-  recognized TS/Freq evidence and recognized connectivity evidence.
-
-`decision-context` reports these cases under `reframe_candidates` and
-`required_reframe_checks`. This is a prompt to design a new mechanism-boundary
-test, not permission to edit or promote the old rejected node.
-
-It does not choose the chemistry for the agent. The agent must still decide the
-specific mechanism hypothesis, route, observables, changed variables, support
-and refutation criteria, and compute cost. Create the new branch explicitly
-with `decision-card`, then run the validator before launching compute.
-
-## Node Start
-
-Use `scripts/ts_hypothesis_workspace.py start-node` as soon as a branch begins
-execution:
-
-```bash
-python scripts/ts_hypothesis_workspace.py start-node \
-  --root tssearch_<system> \
-  --node-id n020_gaussian_endpoint_opt \
-  --run-state running \
-  --decision start_remote_gaussian \
-  --summary "Gaussian endpoint optimization is running on compute-0-30." \
-  --primary-file nodes/n020_gaussian_endpoint_opt/scripts/run_endpoint_opt.sh
-```
-
-This is the supported way to add a node to `active_frontier` and append a
-`start_node` event. It does not create a scientific claim.
-
-## Node Finalization
-
-Use `scripts/ts_hypothesis_workspace.py finalize-node` whenever a branch has a
-post-execution state, including candidate-only, validated, rejected, ambiguous,
-stopped, or accepted outcomes.
-
-`finalize-node` is the closure path for:
-
-- `node.json` lifecycle, run, claim, outcome, display, and evidence pointers;
-- `tree.json` active, closed, accepted, and event indexes;
-- `evidence_registry.json` records for parsed outputs, structures, logs, or
-  connectivity checks;
-- `reflection.md` computational outcome, mechanistic implication, knowledge
-  update, and next branch;
-- optional `knowledge_base.md` and `mechanism_model.json` updates;
-- `manifest.json` only when an accepted TS changes workspace-global state.
-
-Do not manually update those files as separate steps after execution. If a
-completed node needs a state change, run `finalize-node` again with a new
-evidence record and reflection text so the workspace remains auditable.
-
-Endpoint optimization nodes that validate reactant/product minima should use
-`claim_status=endpoint_minima_ready`; `finalize-node` derives
-`outcome=endpoint_minima_validated` and the claim level automatically. Reserve
-`endpoint_connected` for TS connectivity screens that compare displacement or
-IRC endpoints to intended references.
-
-## Backtracking
-
-Use `scripts/ts_hypothesis_workspace.py record-backtrack` whenever a failed or
-ambiguous branch sends the search back to an earlier chemistry decision:
-
-```bash
-python scripts/ts_hypothesis_workspace.py record-backtrack \
-  --root tssearch_<system> \
-  --from-node n030_gaussian_qst2 \
-  --to-node n020_gaussian_endpoint_opt \
-  --reason-code qst2_internal_coordinate_failure \
-  --reason "Gaussian QST2 failed during redundant-internal setup; return to validated endpoints and try Cartesian QST2 or NEB."
-```
-
-By default, `record-backtrack` refuses to write a second active backtrack event.
-Use `--event-state resolved` or `--event-state superseded` for historical
-records, or pass `--supersede-active` when a new active backtrack should replace
-the previous active one.
-
-`--reason-code` is a free-form diagnostic label for the graph edge, like
-`outcome_code` on `node.json`. It is not the canonical node `outcome`. Close the
-failed node separately with `finalize-node` using a valid state pair such as
-`claim_status=not_evaluated, outcome=numerical_failure,
-outcome_code=qst2_internal_coordinate_failure`.
-
-Leave `--new-branch-node` empty unless that new branch should be marked as part
-of the backtrack event. When a failed branch is replaced by a later sibling
-under the chosen backtrack target, pass the replacement node explicitly:
-
-```bash
-python scripts/ts_hypothesis_workspace.py record-backtrack \
-  --root tssearch_<system> \
-  --from-node n040_failed_connectivity \
-  --to-node n030_tsfreq_validated \
-  --new-branch-node n050_connectivity_retry \
-  --reason-code endpoint_assignment_failed \
-  --reason "The first connectivity branch did not prove the intended endpoint assignment; retry from the TS/Freq node with a changed connectivity method."
-```
-
-Most views should mark the failed branch, not the new candidate branch.
-
-After recording the backtrack, rerun `decision-context`. If the event remains
-`event_state=active`, the context packet should route the next branch to the
-event's `to_node`. Use `update-backtrack` to mark the event `resolved` or
-`superseded` only when it should remain historical context rather than the
-current branch-routing decision:
-
-```bash
-python scripts/ts_hypothesis_workspace.py update-backtrack \
-  --root tssearch_<system> \
-  --backtrack-id bt_n030_gaussian_qst2_to_n020_gaussian_endpoint_opt_qst2_internal_coordinate_failure \
-  --event-state resolved \
-  --reason "A replacement branch has been created from the endpoint gate."
-```
-
-`update-backtrack --event-state active` also follows the single-active rule. If
-another active backtrack exists, pass `--supersede-active` only when the updated
-event should become the current planning target and the old active event should
-be retired.
-
-## Chemistry-Driven Tool Selection
-
-Choose the search strategy first and the level/backend second. See
-`references/backend_selection.md` for the selection contract and
-`references/refinement_ladder.md` when a low-level candidate should be moved to
-a higher-level TS/Freq refinement.
-
-- Use scans when one dominant coordinate is chemically plausible and cheap to
-  test, such as simple proton transfer or bond stretch. xTB/GFN,
-  semiempirical, Gaussian-External-xTB, or Gaussian/DFT are possible
-  level/backend choices for the scan, not separate search strategies.
-- Use NEB, CI-NEB, string, or GSM when optimized reactant/product minima are
-  distinct and atom mapping gives a meaningful continuous path. xTB path
-  searches are broad candidate generation; Gaussian-force path searches are
-  expensive path-refinement branches that still need TS/Freq and connectivity
-  validation.
-- Use dimer or eigenvector-following when a local saddle is plausible but
-  endpoint identity or full path mapping is uncertain.
-- Use QST2 only as a limited fallback when the elementary step, R/P structures,
-  atom order, and mapping are reliable and a manual/scan/path candidate is not
-  the better next branch. Do not use QST2 merely because a previous TS
-  optimization failed.
-- Generally avoid QST3 unless a specific reason is recorded for why R/P
-  guidance plus an explicit TS guess should help more than direct TS
-  optimization.
-- Use direct TS optimization only to test a chemically plausible candidate. It
-  is not the default first search method.
-- Use QBICS dMECP when diabatic fragment states are chemically natural for an
-  atom-transfer or bond-switching hypothesis. Treat it as crossing/candidate
-  evidence unless a later validation route supports a stronger claim.
-- Use imaginary-mode displacement plus endpoint optimization as the first
-  connectivity screen when cheaper than IRC.
-- Use IRC when displacement/endpoints remain ambiguous or publication-grade
-  connectivity proof is required.
-
-## Evidence Gates
-
-Candidates can move forward only through gates:
-
-```text
-mechanism_preflight
--> endpoint_minima_ready
--> candidate_plausible
--> tsfreq_validated
--> mode_matches_hypothesis
--> endpoint_connected or irc_connected
--> accepted_ts
-```
-
-Failure at a gate should be closed with `finalize-node`, including the evidence
-record, reflection, and any source-backed updates to `mechanism_model.json` and
-`knowledge_base.md`.
-
-## Reflection As Knowledge Update
-
-After any failed or ambiguous branch, decide which canonical `outcome` applies
-and put the program-specific or chemistry-specific label in `outcome_code`:
-
-- numerical: `outcome=numerical_failure`; fix route, convergence, grid, memory,
-  environment, or initial guess;
-- structural: `outcome=wrong_endpoint` or `outcome=wrong_mode`; candidate
-  collapsed to an endpoint, conformer, or wrong mode;
-- mechanistic: `outcome=chemical_failure`, `outcome=wrong_endpoint`, or
-  `outcome=wrong_mode`; wrong reaction class, charge/multiplicity, spin state,
-  product reference, or non-distinct endpoint;
-- evidence-limited: `outcome=parser_refused` or an `ambiguous` branch with the
-  most specific allowed outcome; needs cheaper connectivity screen or IRC.
-
-Then record:
-
-- validated facts learned;
-- hypotheses refuted;
-- open questions created;
-- the next branch and its chemical difference from the failed branch.
-
-Write those records through `finalize-node`; `decision_card.md` and
-`hypothesis.md` remain pre-execution records and should not be rewritten into
-post-execution conclusions.
+The explorer is read-only. It renders normalized state from the workspace and
+does not own the state vocabulary.

@@ -147,7 +147,7 @@ def validate_pre_execution_rationale(
     node_json: dict[str, Any],
     findings: list[Finding],
 ) -> None:
-    """Validate the node's pre-execution hypothesis and decision-card rationale."""
+    """Validate the node's pre-execution hypothesis and decision card rationale."""
 
     rationale = lint_node_rationale(source, node_id, node_json)
     if rationale.ok_to_start:

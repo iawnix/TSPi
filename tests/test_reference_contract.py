@@ -83,7 +83,8 @@ def test_mechanism_analysis_sources_define_method_capability_matrix() -> None:
         "QBICS dMECP",
     ):
         assert method in text
-    assert "--mechanism-analysis" in text
+    assert "Mechanism-analysis records use these layers" in text
+    assert "source" in text
     assert "Do not infer electronic, orbital, or energy descriptors" in text
     assert "not final electronic, orbital, or barrier" in text
 

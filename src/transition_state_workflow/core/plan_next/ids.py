@@ -1,4 +1,4 @@
-"""Node-id helpers for ChemKernel decision-context packets."""
+"""Node-id helpers for ChemKernel workspace report packets."""
 
 from __future__ import annotations
 

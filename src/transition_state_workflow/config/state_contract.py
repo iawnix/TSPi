@@ -7,6 +7,19 @@ TREE_SCHEMA = "tssearch-branching-tree-v2"
 EVIDENCE_REGISTRY_SCHEMA = "tssearch-evidence-registry-v2"
 PATHWAY_MODEL_SCHEMA = "tssearch-pathway-model-v1"
 EXPLORER_GRAPH_SCHEMA = "ts-explorer-graph-v2"
+NODE_CLOSURE_SCHEMA = "ts-node-closure-v1"
+
+VALID_NODE_DISPOSITIONS = {"Running", "Stopped", "Error", "Success"}
+VALID_END_NODE_DISPOSITIONS = {"Stopped", "Error", "Success"}
+VALID_WORKFLOW_PHASES = {
+    "preflight",
+    "endpoint",
+    "rp_conformer_generation",
+    "candidate_generation",
+    "tsfreq_validation",
+    "connectivity_validation",
+    "accepted_audit",
+}
 
 REQUIRED_NODE_FIELDS = (
     "schema",

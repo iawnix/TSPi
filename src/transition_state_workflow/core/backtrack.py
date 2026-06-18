@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -40,90 +39,6 @@ class BacktrackStateUpdateRequest:
     decision: str = ""
     evidence_refs: tuple[str, ...] = ()
     supersede_active: bool = False
-
-
-def register_record_backtrack_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Attach the record-backtrack subcommand to the workspace CLI."""
-
-    parser = subparsers.add_parser(
-        "record-backtrack",
-        help="Append one canonical backtrack_events[] entry and matching timeline event.",
-    )
-    parser.add_argument("--root", required=True, type=Path, help="Workspace directory.")
-    parser.add_argument("--from-node", required=True, help="Failed, ambiguous, or superseded branch node.")
-    parser.add_argument("--to-node", required=True, help="Closest chemically meaningful ancestor to revisit.")
-    parser.add_argument(
-        "--new-branch-node",
-        default="",
-        help="Optional new branch node created after backtracking; omit when only recording the failed branch badge.",
-    )
-    parser.add_argument("--reason-code", required=True, help="Short machine-readable reason code.")
-    parser.add_argument("--reason", required=True, help="Human-readable backtrack reason.")
-    parser.add_argument("--event-state", choices=sorted(VALID_BACKTRACK_EVENT_STATES), default="active")
-    parser.add_argument("--evidence-ref", action="append", default=[], help="Existing evidence id; may be repeated.")
-    parser.add_argument("--event-id", default="", help="Explicit backtrack event id.")
-    parser.add_argument("--decision", default="", help="Timeline decision token. Defaults to backtrack_to_<to-node>.")
-    parser.add_argument(
-        "--supersede-active",
-        action="store_true",
-        help="Mark any existing active backtrack event as superseded before writing this active event.",
-    )
-
-
-def register_update_backtrack_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Attach the update-backtrack subcommand to the workspace CLI."""
-
-    parser = subparsers.add_parser(
-        "update-backtrack",
-        help="Update one canonical backtrack event state and append a timeline event.",
-    )
-    parser.add_argument("--root", required=True, type=Path, help="Workspace directory.")
-    parser.add_argument("--backtrack-id", required=True, help="Existing backtrack_events[] id.")
-    parser.add_argument("--event-state", required=True, choices=sorted(VALID_BACKTRACK_EVENT_STATES))
-    parser.add_argument("--reason", required=True, help="Human-readable reason for the state update.")
-    parser.add_argument("--decision", default="", help="Timeline decision token. Defaults to update_backtrack_<state>.")
-    parser.add_argument("--evidence-ref", action="append", default=[], help="Existing evidence id; may be repeated.")
-    parser.add_argument(
-        "--supersede-active",
-        action="store_true",
-        help="When setting this event active, supersede any other active backtrack first.",
-    )
-    parser.add_argument("--verbose", action="store_true", help="Write diagnostic logs to stderr.")
-    parser.add_argument("--quiet", action="store_true", help="Only write errors to stderr.")
-
-
-def record_backtrack_from_cli_args(args: argparse.Namespace) -> None:
-    """Build a backtrack request from argparse values and execute it."""
-
-    request = BacktrackRequest(
-        root=args.root,
-        from_node=args.from_node,
-        to_node=args.to_node,
-        new_branch_node=args.new_branch_node,
-        reason_code=args.reason_code,
-        reason=args.reason,
-        event_state=args.event_state,
-        evidence_refs=tuple(args.evidence_ref or ()),
-        event_id=args.event_id,
-        decision=args.decision,
-        supersede_active=args.supersede_active,
-    )
-    record_backtrack(request)
-
-
-def update_backtrack_from_cli_args(args: argparse.Namespace) -> None:
-    """Build a backtrack state update request from argparse values."""
-
-    request = BacktrackStateUpdateRequest(
-        root=args.root,
-        backtrack_id=args.backtrack_id,
-        event_state=args.event_state,
-        reason=args.reason,
-        decision=args.decision,
-        evidence_refs=tuple(args.evidence_ref or ()),
-        supersede_active=args.supersede_active,
-    )
-    update_backtrack_state(request)
 
 
 def record_backtrack(request: BacktrackRequest) -> None:
@@ -243,7 +158,7 @@ def update_backtrack_state(request: BacktrackStateUpdateRequest) -> None:
 
 
 def ensure_workspace_root(root: Path) -> None:
-    """Ensure root has the files required for record-backtrack."""
+    """Ensure root has the files required for backtrack event writes."""
 
     missing = [name for name in ("manifest.json", "tree.json", "nodes") if not (root / name).exists()]
     if missing:

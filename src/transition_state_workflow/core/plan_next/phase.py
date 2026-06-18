@@ -1,4 +1,4 @@
-"""Phase and focus inference for ChemKernel decision-context packets."""
+"""Phase and focus inference for ChemKernel workspace report packets."""
 
 from __future__ import annotations
 

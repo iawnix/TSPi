@@ -1,4 +1,4 @@
-"""Contracts for ChemKernel decision-context packets."""
+"""Contracts for ChemKernel workspace report packets."""
 
 from __future__ import annotations
 

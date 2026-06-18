@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -15,33 +14,6 @@ from transition_state_workflow.util.path_utils import clean_string, list_or_empt
 PATHWAY_MODES = {"unknown", "single_step", "multi_step"}
 PATHWAY_STATUSES = {"hypothesis", "partial", "complete", "rejected", "ambiguous"}
 STEP_STATUSES = {"missing", "candidate", "accepted_ts", "ambiguous", "rejected"}
-
-
-def register_pathway_parsers(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Attach pathway subcommands to the workspace CLI."""
-
-    init = subparsers.add_parser("pathway-init", help="Create or update pathway_model.json.")
-    init.add_argument("--root", required=True, type=Path, help="Workspace directory.")
-    init.add_argument("--mode", choices=sorted(PATHWAY_MODES), default="multi_step")
-    init.add_argument("--pathway-id", required=True, help="Stable pathway id, e.g. p001.")
-    init.add_argument("--label", required=True, help="Human-readable pathway label.")
-    init.add_argument(
-        "--step",
-        action="append",
-        default=[],
-        help="Elementary step as step_id:from->to, e.g. s1:R->I. May be repeated.",
-    )
-    init.add_argument("--force", action="store_true", help="Replace an existing pathway with the same id.")
-    init.add_argument("--verbose", action="store_true", help="Write diagnostic logs to stderr.")
-    init.add_argument("--quiet", action="store_true", help="Only write errors to stderr.")
-
-    bind = subparsers.add_parser("pathway-bind-step", help="Bind an accepted TS node to one pathway step.")
-    bind.add_argument("--root", required=True, type=Path, help="Workspace directory.")
-    bind.add_argument("--pathway-id", required=True, help="Pathway id.")
-    bind.add_argument("--step-id", required=True, help="Elementary step id.")
-    bind.add_argument("--node-id", required=True, help="Accepted TS node id.")
-    bind.add_argument("--verbose", action="store_true", help="Write diagnostic logs to stderr.")
-    bind.add_argument("--quiet", action="store_true", help="Only write errors to stderr.")
 
 
 def pathway_model_path(root: Path) -> Path:
@@ -70,55 +42,6 @@ def initialize_pathway_model_if_missing(root: Path, *, system: str, timestamp: s
     if path.exists():
         return
     write_json_object(path, default_pathway_model(system=system, mode=mode, timestamp=timestamp), overwrite_existing=False)
-
-
-def pathway_init_from_cli_args(args: argparse.Namespace) -> None:
-    """Create or update one pathway definition from CLI args."""
-
-    root = args.root.expanduser().resolve()
-    if not (root / "manifest.json").exists() or not (root / "tree.json").exists():
-        raise SystemExit("not a TS-search workspace, missing manifest.json or tree.json")
-    manifest = read_json_object_required(root / "manifest.json")
-    now = utc_timestamp()
-    model = load_or_default_pathway_model(root, system=clean_string(manifest.get("system")), mode=args.mode, timestamp=now)
-    mode = clean_string(args.mode)
-    if mode not in PATHWAY_MODES:
-        raise SystemExit(f"invalid pathway mode: {mode}")
-    model["mode"] = mode
-    pathway_id = safe_identifier_token(args.pathway_id)
-    if not pathway_id:
-        raise SystemExit("--pathway-id must not be empty")
-    pathways = [item for item in list_or_empty(model.get("pathways")) if isinstance(item, dict)]
-    existing = [item for item in pathways if clean_string(item.get("pathway_id")) == pathway_id]
-    if existing and not args.force:
-        raise SystemExit(f"pathway already exists: {pathway_id}; pass --force to replace it")
-    steps = [parse_step_spec(raw) for raw in list(args.step or [])]
-    validate_unique_step_ids(steps)
-    pathway = {
-        "pathway_id": pathway_id,
-        "label": clean_string(args.label),
-        "status": derive_pathway_status(steps),
-        "steps": steps,
-    }
-    pathways = [item for item in pathways if clean_string(item.get("pathway_id")) != pathway_id]
-    pathways.append(pathway)
-    model["pathways"] = pathways
-    model["active_pathway"] = pathway_id
-    model["updated_at"] = now
-    write_json_object(pathway_model_path(root), model, overwrite_existing=True)
-
-
-def pathway_bind_step_from_cli_args(args: argparse.Namespace) -> None:
-    """Bind an accepted TS node to a pathway step from CLI args."""
-
-    bind_pathway_step_to_accepted_ts(
-        root=args.root.expanduser().resolve(),
-        pathway_id=args.pathway_id,
-        step_id=args.step_id,
-        node_id=args.node_id,
-        timestamp=utc_timestamp(),
-        require_node_claim=True,
-    )
 
 
 def bind_pathway_step_to_accepted_ts(

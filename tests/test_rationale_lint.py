@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 import json
-import subprocess
-import sys
 from pathlib import Path
 
-from conftest import WORKSPACE_CLI, initialize_workspace, validate_workspace_allow_errors
+from conftest import initialize_workspace, validate_workspace_allow_errors
 
 from transition_state_workflow.base.rationale import lint_node_rationale  # noqa: E402
 from transition_state_workflow.web.server import load_node_payload  # noqa: E402
@@ -65,49 +63,10 @@ def test_decision_card_writes_structured_provenance_contract(tmp_path: Path) -> 
     assert lint["decision_provenance"]["complete"] is True
 
 
-def test_start_node_rejects_incomplete_pre_execution_rationale(tmp_path: Path) -> None:
+def test_validator_errors_for_running_node_with_draft_rationale(tmp_path: Path) -> None:
     root = tmp_path / "tssearch_unit"
     initialize_workspace(root)
     write_incomplete_decision_card(root, "n010_candidate")
-
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(WORKSPACE_CLI),
-            "start-node",
-            "--root",
-            str(root),
-            "--node-id",
-            "n010_candidate",
-            "--run-state",
-            "running",
-        ],
-        check=False,
-        text=True,
-        capture_output=True,
-    )
-
-    assert result.returncode != 0
-    assert "incomplete pre-execution rationale" in result.stderr
-
-
-def test_validator_warns_for_prepared_draft_and_errors_after_start_state(tmp_path: Path) -> None:
-    root = tmp_path / "tssearch_unit"
-    initialize_workspace(root)
-    write_incomplete_decision_card(root, "n010_candidate")
-
-    prepared_validation = validate_workspace_allow_errors(root)
-    prepared_findings = [
-        item for item in prepared_validation["findings"] if item["code"] == "incomplete_pre_execution_rationale"
-    ]
-    assert prepared_findings
-    assert prepared_findings[0]["severity"] == "warning"
-
-    node_path = root / "nodes" / "n010_candidate" / "node.json"
-    node = json.loads(node_path.read_text(encoding="utf-8"))
-    node["lifecycle_state"] = "active"
-    node["run_state"] = "running"
-    node_path.write_text(json.dumps(node, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
     active_validation = validate_workspace_allow_errors(root)
     active_findings = [

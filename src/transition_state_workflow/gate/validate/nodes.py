@@ -11,8 +11,10 @@ from transition_state_workflow.config.state_contract import (
     VALID_CLAIM_LEVELS,
     VALID_CLAIM_STATUSES,
     VALID_LIFECYCLE_STATES,
+    VALID_NODE_DISPOSITIONS,
     VALID_OUTCOMES,
     VALID_RUN_STATES,
+    VALID_WORKFLOW_PHASES,
     check_node_contract_violations,
     valid_outcomes_for_claim_status,
 )
@@ -84,8 +86,45 @@ def validate_normalized_nodes(graph: dict[str, Any], findings: list[Finding]) ->
         if outcome == "chemical_failure" and claim == "not_evaluated":
             findings.append(Finding("error", "chemical_failure_not_evaluated", "chemical_failure cannot have claim_status=not_evaluated", node_id=node_id))
 
+        phase = clean_string(node.get("phase"))
+        disposition = clean_string(node.get("node_disposition"))
+        if phase and phase not in VALID_WORKFLOW_PHASES:
+            findings.append(Finding("error", "invalid_phase", f"invalid phase: {phase}", node_id=node_id))
+        if disposition and disposition not in VALID_NODE_DISPOSITIONS:
+            findings.append(Finding("error", "invalid_node_disposition", f"invalid node_disposition: {disposition}", node_id=node_id))
+        if disposition == "Running" and run_state not in {"pending", "running", "parsing"}:
+            findings.append(Finding("error", "running_disposition_state_conflict", "node_disposition=Running requires an active run_state", node_id=node_id))
+        if disposition in {"Stopped", "Error", "Success"}:
+            validate_closure_explanation(node_id, node, findings)
+
+
+def validate_closure_explanation(
+    node_id: str,
+    node: dict[str, Any],
+    findings: list[Finding],
+) -> None:
+    """Validate the public closure explanation for a closed public node."""
+
+    closure = node.get("closure_explanation")
+    if not isinstance(closure, dict):
+        findings.append(Finding("error", "missing_closure_explanation", "closed public nodes require closure_explanation", node_id=node_id))
+        return
+    for key in ("program", "mechanism"):
+        block = closure.get(key)
+        if not isinstance(block, dict):
+            findings.append(Finding("error", f"missing_{key}_explanation", f"closure_explanation.{key} must be an object", node_id=node_id))
+            continue
+        if not clean_string(block.get("summary")):
+            findings.append(Finding("error", f"missing_{key}_summary", f"closure_explanation.{key}.summary is required", node_id=node_id))
+        facts = block.get("facts")
+        if facts is not None and not isinstance(facts, list):
+            findings.append(Finding("error", f"{key}_facts_not_list", f"closure_explanation.{key}.facts must be a list", node_id=node_id))
+    if not clean_string(closure.get("implication")):
+        findings.append(Finding("error", "missing_closure_implication", "closure_explanation.implication is required", node_id=node_id))
+
 
 __all__ = [
     "validate_nodes_v2",
     "validate_normalized_nodes",
+    "validate_closure_explanation",
 ]

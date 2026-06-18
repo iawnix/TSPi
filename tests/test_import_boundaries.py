@@ -300,22 +300,31 @@ def test_workspace_validator_lives_in_gate_package_without_tool_compatibility() 
 
 def test_hypothesis_workspace_cli_lives_in_cli_without_tool_compatibility() -> None:
     from transition_state_workflow.cli import hypothesis_workspace
-    from transition_state_workflow.core import plan_next as core_plan_next
-    from transition_state_workflow.gate import evidence
+    from transition_state_workflow.cli import workspace_control
 
     assert hypothesis_workspace.main is not None
     assert hypothesis_workspace.build_parser is not None
     assert hypothesis_workspace.initialize_ts_hypothesis_workspace_from_cli_args is not None
-    assert hypothesis_workspace.build_core_plan_next_packet is core_plan_next.build_plan_next_packet
-    assert hypothesis_workspace.register_plan_next_parser is core_plan_next.register_plan_next_parser
-    assert hypothesis_workspace.record_supports_tsfreq_reframe is evidence.record_supports_tsfreq_reframe
+    assert workspace_control.build_workspace_report_payload is not None
+    assert workspace_control.validate_decision_payload is not None
+    assert not (PACKAGE / "core" / "workspace_control.py").exists()
+
+    parser = hypothesis_workspace.build_parser()
+    assert set(parser._subparsers._actions[-1].choices) == {
+        "init_workspace",
+        "start_node",
+        "end_node",
+        "report_workspace",
+        "validate_decision",
+    }
+    script_source = (ROOT / "scripts" / "ts_workspace.py").read_text(encoding="utf-8")
+    assert "transition_state_workflow.cli.hypothesis_workspace import main" in script_source
 
     plan_next_package = PACKAGE / "core" / "plan_next"
     assert plan_next_package.is_dir()
     assert not (PACKAGE / "core" / "plan_next.py").exists()
     for expected_module in (
         "__init__.py",
-        "cli.py",
         "contracts.py",
         "loader.py",
         "packet.py",

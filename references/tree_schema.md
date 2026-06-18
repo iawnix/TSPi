@@ -1,293 +1,276 @@
-# Tree Schema
+# TS Workspace Tree Schema
 
-Load this whenever creating, updating, or auditing a TS-search workspace.
+This document describes the stored tree and node artifacts used by the
+five-command workspace control plane.
 
-## Directory Layout
+Public commands:
 
-```text
-tssearch_<system>/
-├── manifest.json
-├── tree.json
-├── nodes/
-│   └── nNNN_short_label/
-│       ├── node.json
-│       ├── reflection.md
-│       ├── inputs/
-│       ├── outputs/
-│       ├── scratch/
-│       └── parsed/
-└── reports/
-```
+- `init_workspace`: create the root ledger.
+- `start_node`: create a node and mark it `Running`.
+- `end_node`: close a node as `Success`, `Error`, or `Stopped`.
+- `report_workspace`: emit constrained decision context.
+- `validate_decision`: check a proposed decision JSON before mutation.
 
-Use stable node IDs such as `n010_endpoint_opt_reactant`, `n120_neb_xtb_candidate`, `n230_gaussian_tsfreq`, or `n490_qbics_dmecp_preflight`.
+## Root Layout
 
-## Required `manifest.json`
+Required root files:
 
-```json
-{
-  "system": "group5",
-  "created_at": "2026-06-05T00:00:00+08:00",
-  "charge": -1,
-  "multiplicity": 2,
-  "root": "/abs/path/tssearch_group5",
-  "node_schema": "ts-node-v2",
-  "mechanism_preflight_storage": "undeclared",
-  "current_accepted_ts": null
-}
-```
+- `manifest.json`
+- `tree.json`
+- `evidence_registry.json`
+- `mechanism_model.json`
+- `pathway_model.json`
+- `knowledge_base.md`
 
-`mechanism_preflight_storage` is `"undeclared"` until the workspace has either a
-real `n000_mechanism_preflight` root node or an explicitly documented
-workspace-level preflight record. New compute/candidate root branches without
-either record should produce a validator warning instead of being silently
-treated as preflight-complete.
+Required directories are created as needed:
 
-## Required `tree.json`
+- `nodes/`
+- `reports/`
+- `accepted/`
+- `rejected/`
+- `inputs/`
+
+## `tree.json`
+
+`tree.json` is the compact graph index:
 
 ```json
 {
-  "schema": "tssearch-branching-tree-v2",
-  "nodes": {},
-  "active_frontier": [],
-  "closed_nodes": [],
+  "schema": "ts-tree-v1",
+  "nodes": {
+    "n010_endpoint": {
+      "parent": null,
+      "children": ["n020_candidate"],
+      "stage": "endpoint",
+      "status": "Success",
+      "node_path": "nodes/n010_endpoint/node.json"
+    }
+  },
+  "active_frontier": ["n020_candidate"],
+  "closed_nodes": ["n010_endpoint"],
   "accepted_nodes": [],
   "events": [],
   "backtrack_events": []
 }
 ```
 
-## Required `node.json` Fields
+The public display fields are `phase` and `node_disposition`. The tree may keep
+additional internal indexes so validators and the explorer can check
+consistency.
 
-Every node must record:
+## `node.json`
 
-```json
-{
-  "schema": "ts-node-v2",
-  "node_id": "n230_gaussian_tsfreq",
-  "parent_id": "n220_candidate",
-  "input_refs": [],
-  "stage": "gaussian_tsfreq_validation",
-  "operation": "gaussian-tsfreq",
-  "lifecycle_state": "closed",
-  "run_state": "completed",
-  "claim_status": "tsfreq_validated",
-  "outcome": "tsfreq_validated",
-  "outcome_code": null,
-  "claim_level": "tsfreq_validated_only",
-  "hypothesis": "This candidate is the O7-H to O8-H rearrangement saddle.",
-  "changed_variables": {
-    "method": "UM062X/def2SVP",
-    "route": "Opt(TS,CalcFC) Freq"
-  },
-  "artifact_policy": {
-    "input_dir": "nodes/n230_gaussian_tsfreq/inputs",
-    "output_dir": "nodes/n230_gaussian_tsfreq/outputs",
-    "run_cwd": "nodes/n230_gaussian_tsfreq/outputs",
-    "scratch_dir": "nodes/n230_gaussian_tsfreq/scratch",
-    "engine_outputs": "write engine logs, checkpoints, restart files, trajectories, and candidates under output_dir or scratch_dir, never workspace root"
-  },
-  "evidence": {
-    "input": "/abs/path/job.gjf",
-    "output": "/abs/path/job.out",
-    "parsed_summary": "/abs/path/parsed/summary.json"
-  },
-  "display": {
-    "title": "n230 Gaussian TS/Freq",
-    "summary": "Gaussian TS/Freq validated exactly one intended imaginary mode; connectivity is not yet proven.",
-    "metrics": {}
-  },
-  "decision": "prepare_irc"
-}
-```
-
-The canonical state fields are `lifecycle_state`, `run_state`, `claim_status`,
-`outcome`, `outcome_code`, and `claim_level`. Author only
-`lifecycle_state`/`run_state`, `claim_status`, and (for failures) `outcome` and
-`outcome_code`; successful outcomes and `claim_level` are derived by
-`finalize-node` from `claim_status` and the validator rejects hand-written
-values that disagree with the derivation. Do not write a second canonical
-state into `tree.json`. New workspaces must not write obsolete or duplicated
-state fields such as `status`, `failure_type`, `children`, `backtrack_target`,
-`current_best`, `accepted_ts`, `backtrack_edges`, or `branch_decisions`.
-Workspaces containing those fields are invalid for the normal workflow,
-validator, and explorer.
-
-Program-specific or chemistry-specific failure labels do not belong in
-`outcome`. Store them in `outcome_code` on `node.json` or `reason_code` on
-`backtrack_events[]`. Examples include `scf_nonconvergence`,
-`qst2_internal_coordinate_failure`, `wrong_reaction_coordinate`, and
-`irc_not_connected`.
-
-Do not store a global best candidate in `tree.json`. Candidate ranking and
-selection are node-local evidence: record the candidate id, quality gates, and
-promotion decision in the candidate node's summary/metadata, then create the
-Gaussian validation child from that node. This keeps failed and superseded
-candidates available for backtracking without letting one root-level cache hide
-the branch history.
-
-All engine execution must be node-scoped. For Gaussian, xTB, QBICS, ASE/NEB,
-scan, dimer, and related tools, use `nodes/<node_id>/outputs` as the process
-working directory and read prepared inputs from `../inputs` or
-`nodes/<node_id>/inputs`. Engine-created logs, checkpoints, restart files,
-trajectories, candidate structures, and parsed summaries must stay under
-`nodes/<node_id>/outputs`, `nodes/<node_id>/parsed`, or node-local scratch. The
-workspace root is reserved for root metadata files and top-level reports only.
-For local or already-staged remote xTB/QBICS/ASE commands, prefer
-`scripts/ts_node_exec.py --workspace <root> --node-id <node_id> -- <command> ...`
-so fixed-name files such as `xtbopt.xyz`, `.mwfn`, trajectories, and runner logs
-cannot land in the workspace root. For Gaussian inputs under
-`nodes/<node_id>/inputs`, `scripts/run_remote_gaussian.py` uses
-`nodes/<node_id>/outputs` as the remote run directory automatically.
-`ts_node_exec.py` controls the process cwd and metadata only; it does not close
-or promote scientific state. Use `start-node` before launch and `finalize-node`
-after parsing evidence.
-
-Use `claim_status=accepted_ts` only after both Gaussian TS/Freq validation and
-connectivity validation pass for the intended reaction. A stopped job is
-`run_state=stopped`, `claim_status=not_evaluated`, and
-`outcome=administrative_stop`, not a chemical failure.
-
-Use `input_refs` for multi-input dependencies that are not the single primary
-tree parent. The tree remains a lineage tree with one `parent_id`, while
-`input_refs` records computational dependencies such as QST2 endpoints,
-endpoint-pair validation inputs, IRC reference endpoints, or multi-structure
-comparison inputs. Create these nodes with repeated
-`scripts/ts_hypothesis_workspace.py decision-card --input-ref <node_id>` rather
-than hand-editing JSON. The normalizer renders `input_refs` as separate
-dependency edges and the validator rejects missing referenced nodes.
-
-Use `claim_status=endpoint_minima_ready` with
-`outcome=endpoint_minima_validated` for endpoint Opt/Freq/minima identity checks
-that passed before any TS candidate or TS connectivity claim exists. This is a
-prerequisite endpoint-readiness claim, not evidence that a transition state
-connects the endpoints.
-
-Use `claim_status=candidate_found` only when an upstream parent or dependency
-node has `claim_status=endpoint_minima_ready`. A scan, NEB, QST, dimer, dMECP,
-or guessed geometry from unvalidated endpoint hypotheses must stay
-`not_evaluated`, `ambiguous`, or `rejected` until endpoint readiness is recorded.
-
-Use `scripts/ts_hypothesis_workspace.py start-node` when a prepared branch is
-launched remotely or locally. It updates `node.json` to
-`lifecycle_state=active`, sets `run_state=pending|running|parsing`, appends the
-node to `tree.json.active_frontier`, and records a `start_node` event.
-
-Completed nodes should be closed with
-`scripts/ts_hypothesis_workspace.py finalize-node`. This command updates
-`node.json`, `tree.json`, `evidence_registry.json`, `reflection.md`, optional
-knowledge/model files, and accepted-TS manifest state together. Do not update
-those files as independent manual edits unless repairing historical data, and
-always validate after such a repair.
-
-Use `scripts/ts_hypothesis_workspace.py record-backtrack` to write
-`tree.json.backtrack_events[]`. The failed or backtracked `--from-node` is the
-only node that receives the visible backtrack badge. If `--new-branch-node` is
-provided, that node records `generated_from_backtrack_event_ids` as lineage
-metadata but does not receive the failure/backtrack badge.
-
-Backtracking never rewrites existing parent links. It records a cross-edge from
-`from_node` to `to_node` so the failed branch remains auditable. The next
-chemically distinct branch after an active backtrack should be an ordinary
-child of `to_node`, or of `planning_focus.parent_for_new_branch` from the latest
-`decision-context` packet. Use `input_refs` if the new branch depends on files
-or observations from the failed node.
-
-If that ordinary child branch already exists as the replacement attempt, the
-backtrack event must name it with `new_branch_node`. The validator warns when a
-failed or ambiguous branch has a later sibling under the same parent but no
-matching `from_node -> to_node -> new_branch_node` backtrack event.
-
-`planning_focus`, `decision_constraints`, `context_policy`, `context_items`,
-`required_backtrack_events`, `required_reframe_checks`, and
-`required_finalization_checks` are generated decision-context fields. They are
-not valid `tree.json` fields and should not be persisted in the workspace tree.
-
-## Event Entry
-
-Use normalized `events[]` entries whenever choosing, closing, or backtracking:
+Every node has a `nodes/<node_id>/node.json` file. The public fields are:
 
 ```json
 {
-  "event_id": "evt_n230_parse",
-  "time": "2026-06-05T00:00:00+08:00",
-  "node_id": "n230_gaussian_tsfreq",
-  "event_type": "parse_result",
-  "decision": "prepare_irc",
-  "reason": "Exactly one imaginary frequency matches the intended reaction-center mode.",
-  "evidence_refs": ["ev_n230_tsfreq_0001"]
+  "node_id": "n020_candidate",
+  "parent_id": "n010_endpoint",
+  "phase": "candidate_generation",
+  "node_disposition": "Running",
+  "operation": "xtb-neb-screen",
+  "hypothesis": "Endpoint-ready references can produce a TS candidate.",
+  "decision_provenance": {
+    "trigger_source": "agent_cli_decision_card",
+    "parent_selection_reason": "Endpoint node closed successfully.",
+    "changed_variables": {
+      "operation": "xtb-neb-screen"
+    }
+  }
 }
 ```
 
-`events[]` is the only runtime timeline input for the explorer. Append new
-events in time order; the normalizer sorts by the ISO-8601 `time` field, so
-array position is never authoritative.
-
-## Backtrack Event Entry
-
-Use `backtrack_events[]` for graph backtracking edges:
+Closed nodes must include `closure_explanation`:
 
 ```json
 {
-  "id": "bt_n240_to_n180",
-  "from_node": "n240_failed_tsfreq",
-  "to_node": "n180_bridge_scan",
-  "new_branch_node": "n250_restart_from_n240_final",
-  "reason_code": "wrong_mode",
-  "reason": "The imaginary mode was not the intended reaction-center motion.",
-  "evidence_refs": ["ev_n240_wrong_mode_0001"],
-  "event_state": "active",
-  "created_at": "2026-06-05T00:00:00+08:00"
+  "phase": "candidate_generation",
+  "node_disposition": "Error",
+  "closure_explanation": {
+    "schema": "ts-node-closure-v1",
+    "program": {
+      "summary": "The candidate job failed before producing a parsed candidate.",
+      "facts": [
+        {
+          "text": "The program exited nonzero.",
+          "source_path": "nodes/n020_candidate/outputs/run_metadata.txt"
+        }
+      ]
+    },
+    "mechanism": {
+      "summary": "The program failure does not refute the proposed mechanism.",
+      "facts": [
+        {
+          "text": "No reaction-center diagnostic was produced."
+        }
+      ]
+    },
+    "implication": "Open a revised candidate-generation node.",
+    "open_questions": []
+  }
 }
 ```
 
-`event_state=active` means `decision-context` may use this event to route the
-next branch to `to_node`. `resolved` and `superseded` events stay in the graph
-as history but should not control the next branch parent.
+Valid phases:
 
-A workspace may contain at most one `event_state=active` backtrack event.
-`record-backtrack` enforces this by default, and the validator reports
-`multiple_active_backtracks` if hand-edited data violates it. Use
-`update-backtrack --event-state resolved` when the current active event is
-finished, or `--supersede-active` when a new active event should replace the
-current one.
+- `preflight`
+- `endpoint`
+- `rp_conformer_generation`
+- `candidate_generation`
+- `tsfreq_validation`
+- `connectivity_validation`
+- `accepted_audit`
 
-Use `scripts/ts_hypothesis_workspace.py update-backtrack` for state changes on
-existing backtrack events. Do not hand-edit `event_state`; the command appends a
-timeline event and keeps the single-active invariant enforceable.
+Valid dispositions:
 
-## Reflection File
+- `Running`
+- `Stopped`
+- `Error`
+- `Success`
 
-Every failed or ambiguous node needs `reflection.md`:
+## Internal Audit Fields
 
-```markdown
-## Computational Outcome
-What happened numerically, with exact error text or validation result.
+The stored node may include internal audit fields such as:
 
-## Mechanistic Implication
-What the evidence implies about the proposed mechanism, electronic state, or endpoint references.
+- `claim_status`
+- `claim_level`
+- `outcome`
+- `outcome_code`
+- `lifecycle_state`
+- `run_state`
 
-## Next Branch
-What should be tried next and why this is chemically different from the failed branch.
+These fields are written by tools and consumed by validators, normalizers, and
+the explorer. They are not LLM-facing response fields. `report_workspace`
+filters the decision context and publishes an `allowed_response_contract` so
+the model knows what it may return.
+
+Do not hand-author internal audit fields in a model decision. Use
+`validate_decision` to reject any proposed response that contains them.
+
+## Node Creation
+
+Use `start_node` before launching compute:
+
+```bash
+python scripts/ts_workspace.py start_node \
+  --root tssearch_example \
+  --node-id n020_candidate \
+  --parent-id n010_endpoint \
+  --phase candidate_generation \
+  --operation xtb-neb-screen \
+  --hypothesis "Endpoint-ready references can produce a candidate." \
+  --rationale "Candidate generation is the next gated phase." \
+  --expected-evidence "candidate geometry and parsed summary" \
+  --refutation-criteria "no candidate, wrong reaction center, or program error"
 ```
 
-## Tree Discipline
+`start_node` writes `node.json`, a readable `decision_card.md`, node-scoped
+directories, and tree index entries. It marks the node as `Running`.
 
-- Update the tree before running a new branch and again after parsing results.
-- Use `finalize-node` for post-execution node closure so runtime state,
-  evidence records, reflections, and tree indexes stay synchronized.
-- Preserve failed logs and wrong-host runs as evidence; do not overwrite them.
-- Do not remove closed branches. Mark them closed with a reason.
-- Put a node in `active_frontier` only while it is actively pending, running, or
-  parsing.
-- Derive children from parent links; do not hand-maintain conflicting children
-  arrays in multiple files.
-- Use `input_refs` for non-tree dependencies; do not force QST2 or endpoint
-  pair inputs into fake parent-child chains.
-- Run engines from `nodes/<node_id>/outputs`; do not allow Gaussian `.chk`, xTB
-  `xtbopt.xyz`/`xtbrestart`, QBICS `.mwfn`/trajectory files, or runner logs to
-  appear at workspace root.
-- User-visible evidence belongs in `evidence_registry.json`; node-local
-  `evidence` pointers are convenience links only.
-- If a branch used the wrong host, method, charge, multiplicity, or endpoint reference, make a new corrected branch instead of silently replacing files.
-- Run `scripts/ts_validate_workspace.py --source <tssearch_root> --pretty`
-  before using the explorer state as evidence.
+Use `--input-ref` when a new node depends on files or evidence from another
+node. Use `--pathway-id` and `--step-id` for pathway-scoped nodes.
+
+## Node Closure
+
+Use `end_node` for post-execution closure:
+
+```bash
+python scripts/ts_workspace.py end_node \
+  --root tssearch_example \
+  --node-id n020_candidate \
+  --node-disposition Success \
+  --phase candidate_generation \
+  --decision prepare_tsfreq_validation \
+  --summary "A candidate geometry was generated." \
+  --primary-file nodes/n020_candidate/parsed/candidate.json \
+  --evidence '{"kind":"candidate_summary","path":"nodes/n020_candidate/parsed/candidate.json","claim":"A candidate geometry exists.","evidence_state":"candidate_found"}' \
+  --program-summary "The candidate-generation run completed and parsed a candidate." \
+  --mechanism-summary "The result is candidate evidence only, not a validated TS." \
+  --implication "Run TS/Freq validation on this candidate." \
+  --next-branch "Start a TS/Freq validation node."
+```
+
+`end_node` updates:
+
+- `node.json`
+- `tree.json`
+- `evidence_registry.json`
+- `reflection.md`
+- `knowledge_base.md`
+- `mechanism_model.json` when mechanism analysis is present
+- accepted-state manifest fields when the accepted audit gates pass
+
+`Success` maps to the phase-level internal claim. `Error` maps to a program or
+runtime failure without a scientific conclusion. `Stopped` maps to an
+administrative stop. The mechanism implication always belongs in
+`closure_explanation`, not in a separate top-level mechanism status enum.
+
+## Report And Decision Validation
+
+`report_workspace` is read-only:
+
+```bash
+python scripts/ts_workspace.py report_workspace --root tssearch_example --pretty
+```
+
+The report includes an `allowed_response_contract`. The model should use it to
+build a proposed action JSON, then the caller should validate that JSON:
+
+```bash
+python scripts/ts_workspace.py validate_decision \
+  --root tssearch_example \
+  --decision-file decision.json \
+  --pretty
+```
+
+Only a validated decision should be translated into `start_node` or `end_node`
+arguments.
+
+## Backtracking
+
+Backtracking is a planning decision derived from the report and closed-node
+explanations. It is not a separate public mutation command.
+
+When a branch fails:
+
+1. Close the failed node with `end_node`.
+2. Run `report_workspace`.
+3. Choose the closest chemically meaningful ancestor.
+4. Start the replacement node with `start_node`.
+5. Record the changed variable, parent choice, and reason in the new node
+   rationale.
+
+The validator still checks tree consistency, active frontier, closed nodes, and
+backtrack metadata if present.
+
+## Pathway State
+
+`pathway_model.json` aggregates multi-step mechanisms. Pathway state is
+step-scoped:
+
+- a candidate belongs to one elementary step;
+- an accepted TS belongs to one elementary step;
+- a whole pathway is complete only when every required step is accepted.
+
+Use `--pathway-id` and `--step-id` on `start_node` and `end_node`. Do not reuse
+TS/Freq or connectivity evidence from one pathway step as proof for another.
+
+## Validation
+
+Run:
+
+```bash
+python scripts/ts_validate_workspace.py --source tssearch_example --pretty --strict
+```
+
+The validator checks:
+
+- required root files;
+- tree/node index consistency;
+- parent and input references;
+- active and closed node indexes;
+- evidence paths;
+- closure explanation completeness;
+- phase and disposition vocabulary;
+- pathway references;
+- accepted-state gates.

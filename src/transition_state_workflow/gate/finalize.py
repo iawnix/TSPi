@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -10,7 +9,6 @@ from pathlib import Path
 from typing import Any
 
 from transition_state_workflow.config.state_contract import (
-    DEFAULT_OUTCOME_BY_CLAIM_STATUS,
     EVIDENCE_REGISTRY_SCHEMA,
     TREE_SCHEMA,
     VALID_CLAIM_STATUSES,
@@ -116,138 +114,6 @@ class NodeFinalizationRequest:
         )
     )
     knowledge: KnowledgeUpdateSpec = field(default_factory=KnowledgeUpdateSpec)
-
-
-def register_finalize_node_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    """Attach the finalize-node subcommand to an existing argparse parser."""
-
-    finalize = subparsers.add_parser("finalize-node", help="Finalize one completed v2 node.")
-    finalize.add_argument("--root", required=True, type=Path, help="Workspace directory.")
-    finalize.add_argument("--node-id", required=True, help="Node id under nodes/.")
-    finalize.add_argument("--claim-status", required=True, choices=sorted(VALID_CLAIM_STATUSES))
-    finalize.add_argument(
-        "--outcome",
-        choices=sorted(VALID_OUTCOMES),
-        default="",
-        help=(
-            "Outcome classification. Optional for successful claim statuses (derived "
-            "automatically); required for rejected/ambiguous nodes to say what failed."
-        ),
-    )
-    finalize.add_argument("--outcome-code", default=None)
-    finalize.add_argument("--lifecycle-state", choices=sorted(VALID_LIFECYCLE_STATES), default="closed")
-    finalize.add_argument("--run-state", choices=sorted(VALID_RUN_STATES), default="completed")
-    finalize.add_argument("--decision", required=True, help="Next decision/action token.")
-    finalize.add_argument("--summary", required=True, help="User-facing node summary.")
-    finalize.add_argument("--primary-file", required=True, help="Primary evidence file path.")
-    finalize.add_argument("--pathway-id", default="", help="Optional pathway id for multi-step aggregation.")
-    finalize.add_argument("--step-id", default="", help="Optional elementary step id within --pathway-id.")
-    finalize.add_argument(
-        "--pathway-step-status",
-        choices=("candidate", "ambiguous", "rejected"),
-        default="",
-        help=(
-            "Explicitly mark the current pathway step as candidate, ambiguous, or rejected. "
-            "Use only when this node updates the elementary-step conclusion, not for an ordinary failed branch."
-        ),
-    )
-    finalize.add_argument("--badge", action="append", default=[], help="Display badge; may be repeated.")
-    finalize.add_argument(
-        "--metric",
-        action="append",
-        default=[],
-        help="Display metric as key=value; may be repeated.",
-    )
-    finalize.add_argument(
-        "--evidence",
-        action="append",
-        default=[],
-        help=(
-            "Evidence JSON object with kind,path,claim,evidence_state and optional "
-            "evidence_id,node_evidence_key; may be repeated."
-        ),
-    )
-    finalize.add_argument("--computational-outcome", required=True)
-    finalize.add_argument("--mechanistic-implication", required=True)
-    finalize.add_argument("--knowledge-update", action="append", default=[])
-    finalize.add_argument("--next-branch", required=True)
-    finalize.add_argument("--knowledge-fact", action="append", default=[])
-    finalize.add_argument("--knowledge-refutation", action="append", default=[])
-    finalize.add_argument("--open-question", action="append", default=[])
-    finalize.add_argument("--next-decision", default="")
-    finalize.add_argument("--mechanism-fact", action="append", default=[])
-    finalize.add_argument("--mechanism-refutation", action="append", default=[])
-    finalize.add_argument("--mechanism-open-question", action="append", default=[])
-    finalize.add_argument("--tool-implication", action="append", default=[])
-    finalize.add_argument(
-        "--mechanism-analysis",
-        action="append",
-        default=[],
-        help=(
-            "Mechanism-analysis JSON object with layer,status,summary and optional "
-            "source,metrics,details; may be repeated."
-        ),
-    )
-
-
-def finalize_ts_workspace_node_from_cli_args(args: argparse.Namespace) -> None:
-    """Build a finalization request from argparse values and execute it."""
-
-    user_outcome = clean_string(args.outcome)
-    derived_outcome = DEFAULT_OUTCOME_BY_CLAIM_STATUS.get(args.claim_status, "")
-    valid_outcomes = valid_outcomes_for_claim_status(args.claim_status)
-    if user_outcome and valid_outcomes and user_outcome not in valid_outcomes:
-        if derived_outcome and user_outcome != derived_outcome:
-            raise SystemExit(
-                f"--outcome must not override derived outcome for claim_status={args.claim_status}: "
-                f"expected {derived_outcome}, got {user_outcome}"
-            )
-        raise SystemExit(
-            f"outcome {user_outcome} is not valid for claim_status={args.claim_status}; "
-            f"valid outcomes: {', '.join(sorted(valid_outcomes))}"
-        )
-    outcome = user_outcome or derived_outcome
-    if not outcome:
-        raise SystemExit(
-            f"--outcome is required for claim_status={args.claim_status}: "
-            "say what failed (e.g. chemical_failure, numerical_failure, wrong_mode)"
-        )
-    request = NodeFinalizationRequest(
-        root=args.root,
-        node_id=args.node_id,
-        claim_status=args.claim_status,
-        outcome=outcome,
-        outcome_code=args.outcome_code,
-        lifecycle_state=args.lifecycle_state,
-        run_state=args.run_state,
-        decision=args.decision,
-        summary=args.summary,
-        primary_file=args.primary_file,
-        pathway_id=clean_string(args.pathway_id),
-        step_id=clean_string(args.step_id),
-        pathway_step_status=clean_string(args.pathway_step_status),
-        badges=tuple(args.badge or ()),
-        metrics=parse_metric_specs(args.metric or ()),
-        evidence=tuple(parse_evidence_spec(item) for item in (args.evidence or ())),
-        reflection=ReflectionSpec(
-            computational_outcome=args.computational_outcome,
-            mechanistic_implication=args.mechanistic_implication,
-            knowledge_updates=tuple(args.knowledge_update or ()),
-            next_branch=args.next_branch,
-        ),
-        knowledge=KnowledgeUpdateSpec(
-            facts=tuple(args.knowledge_fact or ()),
-            refutations=tuple(args.knowledge_refutation or ()),
-            open_questions=tuple(args.open_question or ()),
-            next_decision=args.next_decision,
-            mechanism_facts=tuple(args.mechanism_fact or ()),
-            mechanism_refutations=tuple(args.mechanism_refutation or ()),
-            mechanism_open_questions=tuple(args.mechanism_open_question or ()),
-            tool_implications=tuple(args.tool_implication or ()),
-            mechanism_analysis=tuple(parse_mechanism_analysis_spec(item) for item in (args.mechanism_analysis or ())),
-        ),
-    )
-    finalize_ts_workspace_node(request)
 
 
 def finalize_ts_workspace_node(request: NodeFinalizationRequest) -> None:

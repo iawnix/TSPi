@@ -22,7 +22,7 @@ Do not stop at a geometry-only explanation when the chemistry is ambiguous,
 open-shell, electronically delicate, or being promoted to `accepted_ts`. Record
 the planned diagnostics first in `mechanism_model.json` under `analysis_plan`.
 After outputs exist, record evidence-backed layers through
-`finalize-node --mechanism-analysis`. Read
+the node closure and mechanism-analysis records. Read
 `references/mechanism_analysis_sources.md` before deciding which method can
 support each layer:
 
@@ -38,9 +38,9 @@ support each layer:
 - energy: endpoint energies, TS energy, reaction energy, barrier estimate, and
   whether the energy profile supports the proposed elementary step.
 
-Each layer must be provenance-backed: cite same-finalization evidence records
-or put the direct output/parsed descriptor in the `source` field of the
-`--mechanism-analysis` JSON.
+Each layer must be provenance-backed: cite closure evidence records or put the
+direct output/parsed descriptor in the `source` field of the mechanism-analysis
+record.
 
 Use `unavailable` instead of inventing electronic, orbital, or population
 diagnostics from route text, filenames, or neighboring calculations.
@@ -63,11 +63,11 @@ QBICS dMECP is strongest for AB+C=A+BC-like bond-switching where reactant and pr
 
 ## Failure Classification Rules
 
-Do not use program-specific failure labels as node-level `outcome` values.
-`outcome` is restricted by
-`src/transition_state_workflow/config/state_contract.py`. Put exact Gaussian,
-xTB, QBICS, parser, or chemistry diagnostic labels in `outcome_code`, and put
-backtracking reasons in `record-backtrack --reason-code`.
+Do not expose program-specific failure labels as public node states. The public
+state is `node_disposition` plus `phase`; exact Gaussian, xTB, QBICS, parser,
+or chemistry diagnostic labels belong in `closure_explanation.program.facts`.
+Backtracking reasons belong in the next node rationale and mechanism
+implication after reading `report_workspace`.
 
 Use this mapping when closing failed or ambiguous branches:
 
