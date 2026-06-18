@@ -15,8 +15,8 @@ python scripts/ts_workspace.py validate_decision --root <tssearch_root> --decisi
 python scripts/ts_workspace.py validate_workspace --root <tssearch_root> --pretty
 ```
 
-`scripts/ts_hypothesis_workspace.py` is a wrapper to the same entrypoint. Do
-not use older workspace subcommands as a public interface.
+Do not use older workspace subcommands or wrapper scripts as a public
+interface.
 
 ## Required Root Files
 

@@ -11,7 +11,6 @@ from conftest import SKILL_ROOT, end_node, run_cli, start_node, validate_workspa
 
 
 WORKSPACE_CLI = SKILL_ROOT / "scripts" / "ts_workspace.py"
-LEGACY_WORKSPACE_CLI = SKILL_ROOT / "scripts" / "ts_hypothesis_workspace.py"
 
 
 def init_control_workspace(root: Path) -> None:
@@ -186,10 +185,9 @@ def test_validate_decision_rejects_forbidden_state_fields(tmp_path: Path) -> Non
 
 def test_workspace_cli_exposes_public_commands() -> None:
     help_text = run_cli(str(WORKSPACE_CLI), "--help").stdout
-    legacy_help_text = run_cli(str(LEGACY_WORKSPACE_CLI), "--help").stdout
     expected = "init_workspace,start_node,end_node,report_workspace,validate_decision,validate_workspace"
     assert expected in help_text
-    assert expected in legacy_help_text
+    assert not (SKILL_ROOT / "scripts" / "ts_hypothesis_workspace.py").exists()
     for removed in (
         "decision-card",
         "finalize-node",

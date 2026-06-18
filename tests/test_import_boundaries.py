@@ -344,9 +344,7 @@ def test_hypothesis_workspace_cli_lives_in_cli_without_tool_compatibility() -> N
         if name.startswith("transition_state_workflow.")
     }
 
-    script_source = (ROOT / "scripts" / "ts_hypothesis_workspace.py").read_text(encoding="utf-8")
-    assert "transition_state_workflow.cli.hypothesis_workspace import main" in script_source
-    assert "transition_state_workflow.tool.hypothesis_workspace import main" not in script_source
+    assert not (ROOT / "scripts" / "ts_hypothesis_workspace.py").exists()
 
 
 def test_gaussian_cli_helpers_live_in_cli_and_backend_without_tool_compatibility() -> None:

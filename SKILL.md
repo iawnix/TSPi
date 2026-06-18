@@ -27,9 +27,8 @@ python scripts/ts_workspace.py validate_decision ...
 python scripts/ts_workspace.py validate_workspace ...
 ```
 
-`scripts/ts_hypothesis_workspace.py` is only a wrapper to the same workspace
-entrypoint. Do not rely on older workspace subcommands; they are not public
-compatibility surfaces.
+Do not rely on older workspace subcommands or wrapper scripts; they are not
+public compatibility surfaces.
 
 - `init_workspace` creates the workspace root ledger and required files:
   `knowledge_base.md`, `manifest.json`, `mechanism_model.json`,
@@ -233,8 +232,6 @@ Do not say "TS found" for:
 ## Bundled Resources
 
 - `scripts/ts_workspace.py`: public workspace control plane.
-- `scripts/ts_hypothesis_workspace.py`: compatibility wrapper to the same
-  workspace entrypoint, without old public subcommands.
 - `scripts/ts_normalize_view.py`: read-only normalizer for explorer payloads.
 - `scripts/ts_node_exec.py`: run local engine commands from
   `nodes/<node_id>/outputs` with node-scoped metadata.
