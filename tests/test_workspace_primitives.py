@@ -15,6 +15,7 @@ from transition_state_workflow.config.state_contract import (
 )
 from transition_state_workflow.core.workspace import (
     BranchReferenceError,
+    WORKSPACE_ROOT_DIRECTORIES,
     clean_optional_node_ref,
     normalize_branch_input_refs,
     parent_graph_would_cycle,
@@ -35,8 +36,8 @@ def test_write_initial_workspace_files_creates_root_json_and_preserves_existing(
         overwrite_existing=False,
     )
 
-    assert (root / "nodes").is_dir()
-    assert (root / "reports").is_dir()
+    for dirname in WORKSPACE_ROOT_DIRECTORIES:
+        assert (root / dirname).is_dir()
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
     tree = json.loads((root / "tree.json").read_text(encoding="utf-8"))
     registry = json.loads((root / "evidence_registry.json").read_text(encoding="utf-8"))

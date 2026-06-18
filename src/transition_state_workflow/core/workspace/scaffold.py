@@ -13,7 +13,10 @@ from .naming import utc_timestamp
 from .tree import read_tree, update_tree_node_metadata, upsert_tree_node, write_tree
 
 
-def ensure_workspace_directories(root: Path, directories: tuple[str, ...] = ("nodes", "reports")) -> None:
+WORKSPACE_ROOT_DIRECTORIES = ("inputs", "nodes", "reports", "accepted", "rejected")
+
+
+def ensure_workspace_directories(root: Path, directories: tuple[str, ...] = WORKSPACE_ROOT_DIRECTORIES) -> None:
     """Create a TS-search workspace root and requested child directories."""
 
     root.mkdir(parents=True, exist_ok=True)
@@ -108,9 +111,7 @@ def ensure_tree_skeleton(
 ) -> None:
     """Create the standard TS-search workspace skeleton if absent."""
 
-    root.mkdir(parents=True, exist_ok=True)
-    for dirname in ("inputs", "nodes", "accepted", "rejected"):
-        (root / dirname).mkdir(parents=True, exist_ok=True)
+    ensure_workspace_directories(root)
     manifest = root / "manifest.json"
     if not manifest.exists():
         payload = {
@@ -246,6 +247,7 @@ __all__ = [
     "initial_evidence_registry",
     "initial_workspace_manifest",
     "initial_workspace_tree",
+    "WORKSPACE_ROOT_DIRECTORIES",
     "write_final_reflection",
     "write_initial_workspace_files",
     "write_reflection_template",

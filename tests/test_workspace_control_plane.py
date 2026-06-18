@@ -11,6 +11,7 @@ import pytest
 
 from conftest import SKILL_ROOT, end_node, run_cli, start_node, validate_workspace_allow_errors
 from transition_state_workflow.base.pathway_model import read_pathway_model_required
+from transition_state_workflow.core.workspace import WORKSPACE_ROOT_DIRECTORIES
 
 
 WORKSPACE_CLI = SKILL_ROOT / "scripts" / "ts_workspace.py"
@@ -34,6 +35,90 @@ def init_control_workspace(root: Path) -> None:
     )
 
 
+def start_node_cli(root: Path, *, node_id: str, evidence_ref: str) -> None:
+    run_cli(
+        str(WORKSPACE_CLI),
+        "start_node",
+        "--root",
+        str(root),
+        "--node-id",
+        node_id,
+        "--phase",
+        "candidate_generation",
+        "--operation",
+        "candidate-smoke",
+        "--parent-id",
+        "n010_endpoint",
+        "--hypothesis",
+        "Endpoint evidence can support a candidate-generation branch.",
+        "--rationale",
+        "Candidate generation is gated by the existing endpoint evidence.",
+        "--expected-evidence",
+        "candidate summary",
+        "--refutation-criteria",
+        "candidate generation fails or contradicts endpoint evidence",
+        "--evidence-ref",
+        evidence_ref,
+    )
+
+
+def close_endpoint_fixture(root: Path) -> str:
+    start_node(
+        root,
+        node_id="n010_endpoint",
+        phase="endpoint",
+        operation="endpoint-opt",
+        hypothesis="Endpoint references should be optimized before candidate generation.",
+    )
+    parsed = root / "nodes" / "n010_endpoint" / "parsed" / "summary.json"
+    parsed.write_text('{"endpoint_minima_ready": true}\n', encoding="utf-8")
+    evidence = {
+        "kind": "endpoint_summary",
+        "path": "nodes/n010_endpoint/parsed/summary.json",
+        "claim": "Endpoint smoke summary supports endpoint readiness.",
+        "evidence_state": "supports",
+    }
+    end_node(
+        root,
+        node_id="n010_endpoint",
+        phase="endpoint",
+        decision="prepare_candidate_generation",
+        summary="Endpoint smoke completed.",
+        primary_file="nodes/n010_endpoint/parsed/summary.json",
+        evidence=evidence,
+        next_branch="Report workspace and choose candidate generation.",
+    )
+    return "ev_n010_endpoint_endpoint_summary"
+
+
+def assert_start_evidence_refs(root: Path, node_id: str, expected_refs: list[str]) -> None:
+    node = json.loads((root / "nodes" / node_id / "node.json").read_text(encoding="utf-8"))
+    assert node["decision_provenance"]["evidence_refs"] == expected_refs
+    tree = json.loads((root / "tree.json").read_text(encoding="utf-8"))
+    events = [
+        event
+        for event in tree["events"]
+        if event.get("node_id") == node_id and event.get("event_type") == "start_node"
+    ]
+    assert events
+    assert events[-1]["evidence_refs"] == expected_refs
+
+
+def assert_strict_workspace_clean(root: Path) -> None:
+    payload = json.loads(
+        run_cli(
+            str(WORKSPACE_CLI),
+            "validate_workspace",
+            "--root",
+            str(root),
+            "--pretty",
+            "--strict",
+        ).stdout
+    )
+    assert payload["summary"]["errors"] == 0
+    assert payload["summary"]["warnings"] == 0
+
+
 def test_workspace_control_lifecycle_and_contract(tmp_path: Path) -> None:
     root = tmp_path / "tssearch_control"
     init_control_workspace(root)
@@ -46,6 +131,8 @@ def test_workspace_control_lifecycle_and_contract(tmp_path: Path) -> None:
         "evidence_registry.json",
     ):
         assert (root / name).exists()
+    for dirname in WORKSPACE_ROOT_DIRECTORIES:
+        assert (root / dirname).is_dir()
 
     run_cli(
         str(WORKSPACE_CLI),
@@ -142,6 +229,96 @@ def test_workspace_control_lifecycle_and_contract(tmp_path: Path) -> None:
     validation = validate_workspace_allow_errors(root)
     assert validation["summary"]["errors"] == 0
     assert validation["summary"]["warnings"] == 0
+
+
+def test_start_node_accepts_evidence_ids_and_normalizes_unique_paths(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_control"
+    init_control_workspace(root)
+    evidence_id = close_endpoint_fixture(root)
+
+    start_node_cli(root, node_id="n020_candidate_by_id", evidence_ref=evidence_id)
+    assert_start_evidence_refs(root, "n020_candidate_by_id", [evidence_id])
+    assert_strict_workspace_clean(root)
+
+    start_node_cli(
+        root,
+        node_id="n030_candidate_by_path",
+        evidence_ref="nodes/n010_endpoint/parsed/summary.json",
+    )
+    assert_start_evidence_refs(root, "n030_candidate_by_path", [evidence_id])
+    assert_strict_workspace_clean(root)
+
+
+def test_start_node_rejects_unknown_evidence_refs_before_mutation(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_control"
+    init_control_workspace(root)
+
+    missing_id = subprocess.run(
+        [
+            sys.executable,
+            str(WORKSPACE_CLI),
+            "start_node",
+            "--root",
+            str(root),
+            "--node-id",
+            "n020_missing_id",
+            "--phase",
+            "candidate_generation",
+            "--operation",
+            "candidate-smoke",
+            "--hypothesis",
+            "Endpoint evidence can support a candidate-generation branch.",
+            "--rationale",
+            "Candidate generation is gated by existing endpoint evidence.",
+            "--expected-evidence",
+            "candidate summary",
+            "--refutation-criteria",
+            "candidate generation fails or contradicts endpoint evidence",
+            "--evidence-ref",
+            "ev_missing",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert missing_id.returncode != 0
+    assert "--evidence-ref is not a known evidence_id: ev_missing" in missing_id.stderr
+    assert not (root / "nodes" / "n020_missing_id").exists()
+
+    missing_path = subprocess.run(
+        [
+            sys.executable,
+            str(WORKSPACE_CLI),
+            "start_node",
+            "--root",
+            str(root),
+            "--node-id",
+            "n030_missing_path",
+            "--phase",
+            "candidate_generation",
+            "--operation",
+            "candidate-smoke",
+            "--hypothesis",
+            "Endpoint evidence can support a candidate-generation branch.",
+            "--rationale",
+            "Candidate generation is gated by existing endpoint evidence.",
+            "--expected-evidence",
+            "candidate summary",
+            "--refutation-criteria",
+            "candidate generation fails or contradicts endpoint evidence",
+            "--evidence-ref",
+            "nodes/n010_endpoint/parsed/missing.json",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert missing_path.returncode != 0
+    assert (
+        "--evidence-ref path does not match evidence_registry.json: "
+        "nodes/n010_endpoint/parsed/missing.json"
+    ) in missing_path.stderr
+    assert not (root / "nodes" / "n030_missing_path").exists()
 
 
 def test_validate_decision_rejects_forbidden_state_fields(tmp_path: Path) -> None:

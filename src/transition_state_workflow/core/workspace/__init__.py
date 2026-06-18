@@ -34,6 +34,7 @@ from transition_state_workflow.core.workspace.references import (
     validate_branch_references,
 )
 from transition_state_workflow.core.workspace.scaffold import (
+    WORKSPACE_ROOT_DIRECTORIES,
     ensure_workspace_directories,
     ensure_tree_skeleton,
     ensure_workspace_root_has_manifest_and_tree,
@@ -58,6 +59,7 @@ __all__ = [
     "DEFAULT_PREFLIGHT_NODE_ID",
     "PreparedBranchWrite",
     "VALID_NODE_STATUSES",
+    "WORKSPACE_ROOT_DIRECTORIES",
     "append_evidence_record",
     "append_portable_evidence_record",
     "clean_optional_node_ref",

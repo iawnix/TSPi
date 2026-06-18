@@ -23,7 +23,7 @@ Required root files:
 - `pathway_model.json`
 - `knowledge_base.md`
 
-Required directories are created as needed:
+`init_workspace` pre-creates the required root directories:
 
 - `nodes/`
 - `reports/`

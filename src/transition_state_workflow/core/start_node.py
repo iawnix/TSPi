@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -10,7 +10,7 @@ from typing import Any
 from transition_state_workflow.base.rationale import lint_node_rationale
 from transition_state_workflow.config.state_contract import NODE_LEGACY_STATE_FIELDS, TREE_SCHEMA, VALID_NODE_DISPOSITIONS
 from transition_state_workflow.util.json_io import read_json_object_required, write_json_object
-from transition_state_workflow.util.path_utils import clean_string, portable_record_path, safe_identifier_token
+from transition_state_workflow.util.path_utils import clean_string, list_or_empty, portable_record_path, safe_identifier_token
 
 
 @dataclass(frozen=True)
@@ -37,6 +37,8 @@ def start_ts_workspace_node(request: NodeStartRequest) -> None:
     if not node_path.exists():
         raise SystemExit(f"node does not exist: {request.node_id}")
 
+    normalized_evidence_refs = normalize_start_evidence_refs(root, request.evidence_refs)
+    event_request = replace(request, evidence_refs=normalized_evidence_refs)
     node_payload = read_json_object_required(node_path)
     tree_payload = read_json_object_required(root / "tree.json")
     validate_start_request(node_payload, request)
@@ -63,7 +65,7 @@ def start_ts_workspace_node(request: NodeStartRequest) -> None:
 
     tree_payload["active_frontier"] = append_unique(tree_payload.get("active_frontier", []), request.node_id)
     tree_payload["closed_nodes"] = [item for item in tree_payload.get("closed_nodes", []) if item != request.node_id]
-    tree_payload["events"] = add_start_event(tree_payload, request, utc_timestamp())
+    tree_payload["events"] = add_start_event(tree_payload, event_request, utc_timestamp())
 
     write_json_object(node_path, node_payload, overwrite_existing=True)
     write_json_object(root / "tree.json", tree_payload, overwrite_existing=True)
@@ -100,6 +102,103 @@ def validate_pre_execution_rationale(root: Path, node_id: str, node_payload: dic
     rationale = lint_node_rationale(root, node_id, node_payload)
     if not rationale.ok_to_start:
         raise SystemExit(f"start_node refused: incomplete pre-execution rationale; {rationale.summary()}")
+
+
+def normalize_start_evidence_refs(root: Path, raw_refs: tuple[str, ...]) -> tuple[str, ...]:
+    """Return evidence ids for start-node refs, resolving unique registry paths."""
+
+    refs = [clean_string(item) for item in raw_refs if clean_string(item)]
+    if not refs:
+        return ()
+
+    registry_path = root / "evidence_registry.json"
+    if not registry_path.exists():
+        raise SystemExit("--evidence-ref requires evidence_registry.json; run init_workspace first")
+
+    registry = read_json_object_required(registry_path)
+    evidence_ids, path_to_ids = evidence_registry_indexes(root, registry)
+    normalized: list[str] = []
+    for ref in refs:
+        evidence_id = normalize_one_evidence_ref(
+            root=root,
+            ref=ref,
+            evidence_ids=evidence_ids,
+            path_to_ids=path_to_ids,
+        )
+        if evidence_id not in normalized:
+            normalized.append(evidence_id)
+    return tuple(normalized)
+
+
+def evidence_registry_indexes(root: Path, registry: dict[str, Any]) -> tuple[set[str], dict[str, set[str]]]:
+    """Return lookup indexes for evidence ids and portable evidence paths."""
+
+    evidence_ids: set[str] = set()
+    path_to_ids: dict[str, set[str]] = {}
+    for record in list_or_empty(registry.get("records")):
+        if not isinstance(record, dict):
+            continue
+        evidence_id = clean_string(record.get("evidence_id"))
+        if not evidence_id:
+            continue
+        evidence_ids.add(evidence_id)
+        for key in evidence_path_keys(root, clean_string(record.get("path"))):
+            path_to_ids.setdefault(key, set()).add(evidence_id)
+    return evidence_ids, path_to_ids
+
+
+def normalize_one_evidence_ref(
+    *,
+    root: Path,
+    ref: str,
+    evidence_ids: set[str],
+    path_to_ids: dict[str, set[str]],
+) -> str:
+    """Normalize one evidence ref or fail before start-node mutates state."""
+
+    if ref in evidence_ids:
+        return ref
+
+    if not evidence_ref_looks_path_shaped(ref):
+        raise SystemExit(f"--evidence-ref is not a known evidence_id: {ref}")
+
+    matched_ids = {
+        evidence_id
+        for key in evidence_path_keys(root, ref)
+        for evidence_id in path_to_ids.get(key, set())
+    }
+    if len(matched_ids) == 1:
+        return next(iter(matched_ids))
+    if len(matched_ids) > 1:
+        matches = ", ".join(sorted(matched_ids))
+        raise SystemExit(f"--evidence-ref path is ambiguous: {ref}; matching evidence ids: {matches}")
+
+    raise SystemExit(f"--evidence-ref path does not match evidence_registry.json: {ref}")
+
+
+def evidence_path_keys(root: Path, raw_path: str) -> set[str]:
+    """Return comparable path keys for registry and CLI evidence path refs."""
+
+    text = clean_string(raw_path)
+    if not text:
+        return set()
+    keys = {text}
+    portable = portable_record_path(root, text)["path"]
+    keys.add(portable)
+    path = Path(text).expanduser()
+    if path.is_absolute():
+        keys.add(str(path.resolve()))
+    else:
+        keys.add(path.as_posix())
+        keys.add(str((root / path).resolve()))
+    return {key for key in keys if key}
+
+
+def evidence_ref_looks_path_shaped(ref: str) -> bool:
+    """Return true for refs that look like file paths rather than evidence ids."""
+
+    text = clean_string(ref)
+    return "/" in text or "\\" in text or text.startswith(".") or bool(Path(text).suffix)
 
 
 def add_start_event(tree_payload: dict[str, Any], request: NodeStartRequest, timestamp: str) -> list[dict[str, Any]]:

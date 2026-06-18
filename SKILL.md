@@ -32,7 +32,8 @@ public compatibility surfaces.
 
 - `init_workspace` creates the workspace root ledger and required files:
   `knowledge_base.md`, `manifest.json`, `mechanism_model.json`,
-  `pathway_model.json`, `tree.json`, and `evidence_registry.json`.
+  `pathway_model.json`, `tree.json`, and `evidence_registry.json`, plus root
+  directories `inputs/`, `nodes/`, `reports/`, `accepted/`, and `rejected/`.
 - `start_node` creates one node and immediately marks it `Running`. It records
   the phase, operation, hypothesis, parent/input references, rationale,
   expected evidence, refutation criteria, and cost/risk.

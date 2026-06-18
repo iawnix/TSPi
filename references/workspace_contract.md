@@ -33,6 +33,8 @@ interface.
   nodes, accepted nodes, and timeline events.
 - `evidence_registry.json`: evidence records referenced by closed nodes and
   mechanism analysis.
+- root directories `inputs/`, `nodes/`, `reports/`, `accepted/`, and
+  `rejected/`.
 
 The workspace also contains `nodes/<node_id>/` directories. A node directory
 may hold:

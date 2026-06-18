@@ -26,7 +26,7 @@ from transition_state_workflow.config.state_contract import (
     VALID_NODE_DISPOSITIONS,
     VALID_WORKFLOW_PHASES,
 )
-from transition_state_workflow.core.start_node import NodeStartRequest, start_ts_workspace_node
+from transition_state_workflow.core.start_node import NodeStartRequest, normalize_start_evidence_refs, start_ts_workspace_node
 from transition_state_workflow.core.workspace_state import create_ts_branch_decision_artifacts_from_cli_args
 from transition_state_workflow.gate.evidence import record_supports_tsfreq_reframe
 from transition_state_workflow.gate.finalize import (
@@ -108,7 +108,12 @@ def register_start_node_parser(subparsers: argparse._SubParsersAction[argparse.A
     start.add_argument("--trigger-source", default="", help="State, user request, or event that triggered this node.")
     start.add_argument("--parent-selection-reason", default="", help="Why this parent node is the right ancestor.")
     start.add_argument("--context-packet-ref", default="", help="Optional report_workspace packet path or id.")
-    start.add_argument("--evidence-ref", action="append", default=[], help="Evidence id used before creating this node.")
+    start.add_argument(
+        "--evidence-ref",
+        action="append",
+        default=[],
+        help="Existing evidence id, or a unique evidence_registry path to normalize before creating this node.",
+    )
     start.add_argument("--changed-variable", action="append", default=[], help="Changed variable as key=value.")
     start.add_argument("--rationale", default="", help="Why the selected operation is appropriate.")
     start.add_argument("--expected-evidence", action="append", default=[], help="Expected supporting evidence.")
@@ -210,8 +215,10 @@ def add_logging_arguments(parser: argparse.ArgumentParser) -> None:
 def start_node_from_cli_args(args: argparse.Namespace) -> None:
     """Create a node through the old low-level writer, then mark it running."""
 
+    root = args.root.expanduser().resolve()
+    evidence_refs = normalize_start_evidence_refs(root, tuple(args.evidence_ref or ()))
     bridge_args = argparse.Namespace(
-        root=args.root,
+        root=root,
         node_id=args.node_id,
         stage=args.phase,
         parent_id=args.parent_id,
@@ -223,7 +230,7 @@ def start_node_from_cli_args(args: argparse.Namespace) -> None:
         trigger_source=args.trigger_source,
         parent_selection_reason=args.parent_selection_reason,
         context_packet_ref=args.context_packet_ref,
-        evidence_ref=args.evidence_ref or [],
+        evidence_ref=list(evidence_refs),
         changed_variable=args.changed_variable or [],
         method_or_tool_rationale=args.rationale,
         claim_ceiling=claim_ceiling_for_phase(args.phase),
@@ -242,18 +249,18 @@ def start_node_from_cli_args(args: argparse.Namespace) -> None:
     create_ts_branch_decision_artifacts_from_cli_args(bridge_args)
     start_ts_workspace_node(
         NodeStartRequest(
-            root=args.root,
+            root=root,
             node_id=args.node_id,
             run_state="running",
             decision="start_node",
             summary=f"Node started in phase {args.phase}: {args.operation}",
             primary_file=args.primary_file,
             badges=("Running", args.phase),
-            evidence_refs=tuple(args.evidence_ref or ()),
+            evidence_refs=evidence_refs,
             force=bool(args.force),
         )
     )
-    node_path = args.root.expanduser().resolve() / "nodes" / args.node_id / "node.json"
+    node_path = root / "nodes" / args.node_id / "node.json"
     node = read_json_object_required(node_path)
     node["phase"] = args.phase
     node["node_disposition"] = "Running"
