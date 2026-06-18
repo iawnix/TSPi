@@ -2,9 +2,7 @@
 
 ## 2026-06-18 workspace control-plane refactor
 
-Status: implemented in the authored checkout; validate, commit, sync the
-installed skill tree, and then clear the originating feedback in
-`/home/iaw/TS/.codex/TODO.md`.
+Status: completed and merged to `main`.
 
 ### Scope
 
@@ -34,9 +32,11 @@ installed skill tree, and then clear the originating feedback in
   `report_workspace`, `validate_decision`, strict workspace validation, and
   normalized explorer view.
 
-### Follow-Up
+### Completion Record
 
-- After commit, sync to `/home/iaw/.codex/skills/transition-state-workflow`.
-- Re-run the authored validation against the installed skill tree.
-- Push the branch if this refactor is accepted for the GitHub-backed skill
-  repository.
+- Implementation commit: `e3baeae`.
+- Merged to `main` and pushed to GitHub.
+- Synced to `/home/iaw/.codex/skills/transition-state-workflow`.
+- Validated authored checkout and installed skill tree with `257 passed, 2 skipped`.
+- Deleted local and remote `refactor/ts-workspace-control-plane` branches.
+- No matching workspace-control feedback remained in `/home/iaw/TS/.codex/TODO.md`.
