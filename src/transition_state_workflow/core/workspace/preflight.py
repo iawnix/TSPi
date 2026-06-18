@@ -87,6 +87,23 @@ def write_mechanism_preflight_node(
     evidence = dict(node_payload.get("evidence") or {})
     evidence["preflight_summary"] = summary_rel
     node_payload["evidence"] = evidence
+    node_payload["decision_provenance"] = {
+        "trigger_source": "mechanism_preflight_node",
+        "parent_selection_reason": "Preflight is the root context record for the workspace.",
+        "context_packet_ref": "not_applicable",
+        "evidence_refs": [],
+        "input_refs": [],
+        "failed_or_ambiguous_source_node": "not_applicable",
+        "backtrack_event_ref": "not_applicable",
+        "changed_variables": {"operation": "mechanism-preflight"},
+        "method_or_tool_rationale": "Record charge, multiplicity, reaction class, and reaction-center expectations before compute branches.",
+        "claim_ceiling": "not_evaluated",
+        "support_criteria": ["Endpoint and candidate branches can cite this preflight as initial context."],
+        "refutation_criteria": ["A later branch records a different elementary-step hypothesis."],
+        "cost_risk": "No compute cost; scientific risk is limited to initial hypothesis framing.",
+        "next_if_supported": "Create endpoint validation branches.",
+        "next_if_refuted": "Create an alternative mechanism-preflight branch.",
+    }
     node_payload["display"] = {
         **dict(node_payload.get("display") or {}),
         "title": node_id,
@@ -221,6 +238,26 @@ expectations recorded in `{summary_rel}`.
 ## Input / Dependency Nodes
 
 - None recorded.
+
+## Decision Provenance
+
+- Trigger source: mechanism_preflight_node
+- Parent selection reason: Preflight is the root context record for the workspace.
+- Context packet ref: not_applicable
+- Evidence refs: none
+- Input refs: none
+- Failed or ambiguous source node: not_applicable
+- Backtrack event ref: not_applicable
+- Changed variables: operation=mechanism-preflight
+- Method/tool rationale: Record charge, multiplicity, reaction class, and reaction-center expectations before compute branches.
+- Claim ceiling: not_evaluated
+- Support criteria:
+  - Endpoint and candidate branches can cite this preflight as initial context.
+- Refutation criteria:
+  - A later branch records a different elementary-step hypothesis.
+- Cost/risk: No compute cost; scientific risk is limited to initial hypothesis framing.
+- Next if supported: Create endpoint validation branches.
+- Next if refuted: Create an alternative mechanism-preflight branch.
 
 ## Expected Supporting Evidence
 

@@ -1,4 +1,4 @@
-"""Planning phase and focus inference for ChemKernel plan-next packets."""
+"""Phase and focus inference for ChemKernel decision-context packets."""
 
 from __future__ import annotations
 
@@ -196,7 +196,7 @@ def infer_planning_focus(
     accepted_nodes: list[tuple[str, dict[str, Any]]],
     failed_nodes: list[dict[str, Any]],
     backtrack_events: list[dict[str, Any]],
-    suggested_backtrack_actions: list[dict[str, Any]],
+    required_backtrack_events: list[dict[str, Any]],
     node_payloads: dict[str, dict[str, Any]],
     manifest: dict[str, Any],
     alternative_mechanism: bool,
@@ -292,8 +292,8 @@ def infer_planning_focus(
             "reason": clean_string(event.get("reason")) or "Backtrack event routes planning to an earlier chemistry decision.",
         }
 
-    if suggested_backtrack_actions:
-        latest = suggested_backtrack_actions[-1]
+    if required_backtrack_events:
+        latest = required_backtrack_events[-1]
         return {
             "mode": "backtrack_decision_needed",
             "focus_node": clean_string(latest.get("from_node")),

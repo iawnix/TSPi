@@ -45,6 +45,7 @@ def prepared_branch_node_payload(
     input_refs: list[str],
     pathway_id: str,
     step_id: str,
+    decision_provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the prepared node.json payload for one branch."""
 
@@ -66,7 +67,7 @@ def prepared_branch_node_payload(
         "outcome_code": None,
         "claim_level": "none",
         "hypothesis": hypothesis,
-        "changed_variables": {"operation": operation},
+        "changed_variables": dict((decision_provenance or {}).get("changed_variables") or {"operation": operation}),
         "artifact_policy": {
             "input_dir": input_dir_rel,
             "output_dir": output_dir_rel,
@@ -96,6 +97,8 @@ def prepared_branch_node_payload(
     if pathway_id:
         node_payload["pathway_id"] = pathway_id
         node_payload["elementary_step_id"] = step_id
+    if decision_provenance:
+        node_payload["decision_provenance"] = decision_provenance
     return node_payload
 
 
@@ -164,6 +167,7 @@ def write_prepared_branch_state(
     step_id: str,
     timestamp: str,
     overwrite_existing: bool,
+    decision_provenance: dict[str, Any] | None = None,
 ) -> PreparedBranchWrite:
     """Write prepared node state and tree event for one branch."""
 
@@ -179,6 +183,7 @@ def write_prepared_branch_state(
         input_refs=input_refs,
         pathway_id=pathway_id,
         step_id=step_id,
+        decision_provenance=decision_provenance,
     )
     write_json_object(node_dir / "node.json", node_payload, overwrite_existing=overwrite_existing)
 

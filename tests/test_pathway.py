@@ -26,7 +26,7 @@ from transition_state_workflow.base.workspace import ExplorerWorkspaceConfig  # 
 from transition_state_workflow.web.server import summarize_explorer_workspace_config  # noqa: E402
 
 
-def test_pathway_plan_tags_first_step_suggestion_and_normalized_graph(tmp_path: Path) -> None:
+def test_pathway_decision_context_tags_first_step_and_manual_decision_card_normalizes(tmp_path: Path) -> None:
     root = tmp_path / "tssearch_pathway"
     initialize_pathway_workspace(root)
 
@@ -37,18 +37,34 @@ def test_pathway_plan_tags_first_step_suggestion_and_normalized_graph(tmp_path: 
     assert packet["planning_focus"]["mode"] == "pathway_step_planning"
     assert packet["planning_focus"]["pathway_id"] == "p001"
     assert packet["planning_focus"]["step_id"] == "s1"
-    suggestion = packet["suggested_decision_cards"][0]
-    assert suggestion["pathway_id"] == "p001"
-    assert suggestion["step_id"] == "s1"
-    assert "--pathway-id" in suggestion["decision_card_command"]
-    assert "--step-id" in suggestion["decision_card_command"]
+    assert packet["decision_constraints"]["phase"] == "endpoint_discovery"
+    assert "suggested_decision_cards" not in packet
 
-    written = run_cli(str(WORKSPACE_CLI), "plan-next", "--root", str(root), "--write-decision-cards", "--pretty")
-    written_packet = json.loads(written.stdout)
-    written_node = written_packet["written_decision_cards"][0]["node_id"]
+    written_node = "n010_s1_endpoint"
+    run_cli(
+        str(WORKSPACE_CLI),
+        "decision-card",
+        "--root",
+        str(root),
+        "--node-id",
+        written_node,
+        "--stage",
+        "endpoint_minima_validation",
+        "--hypothesis",
+        "Validate endpoint references for pathway step s1.",
+        "--operation",
+        "unit-test-s1-endpoint",
+        "--pathway-id",
+        "p001",
+        "--step-id",
+        "s1",
+        "--context-packet-ref",
+        "unit-test-decision-context",
+    )
     node = json.loads((root / "nodes" / written_node / "node.json").read_text(encoding="utf-8"))
     assert node["pathway_id"] == "p001"
     assert node["elementary_step_id"] == "s1"
+    assert node["decision_provenance"]["context_packet_ref"] == "unit-test-decision-context"
 
     graph = normalize_workspace(root)
     assert graph["pathway"]["mode"] == "multi_step"
@@ -66,26 +82,23 @@ def test_pathway_planner_uses_step_local_gates_after_first_step_acceptance(tmp_p
     assert packet["search_state"]["phase"] == "endpoint_discovery"
     assert packet["search_state"]["pathway_phase"] == "continue"
     assert packet["planning_focus"]["step_id"] == "s2"
-    suggestion = packet["suggested_decision_cards"][0]
-    assert suggestion["parent_id"] == "n020_s1_candidate"
-    assert suggestion["pathway_id"] == "p001"
-    assert suggestion["step_id"] == "s2"
+    assert packet["planning_focus"]["parent_for_new_branch"] == "n020_s1_candidate"
+    assert packet["planning_focus"]["pathway_id"] == "p001"
+    assert packet["planning_focus"]["step_id"] == "s2"
 
     create_pathway_endpoint_node(root, node_id="n030_s2_endpoint", step_id="s2", parent_id="n020_s1_candidate")
     packet = plan_next(root)
     assert packet["search_state"]["phase"] == "candidate_generation"
-    suggestion = packet["suggested_decision_cards"][0]
-    assert suggestion["parent_id"] == "n030_s2_endpoint"
-    assert suggestion["pathway_id"] == "p001"
-    assert suggestion["step_id"] == "s2"
+    assert packet["planning_focus"]["parent_for_new_branch"] == "n030_s2_endpoint"
+    assert packet["planning_focus"]["pathway_id"] == "p001"
+    assert packet["planning_focus"]["step_id"] == "s2"
 
     create_pathway_candidate_node(root, node_id="n040_s2_candidate", step_id="s2", parent_id="n030_s2_endpoint")
     packet = plan_next(root)
     assert packet["search_state"]["phase"] == "gaussian_tsfreq_validation"
-    suggestion = packet["suggested_decision_cards"][0]
-    assert suggestion["parent_id"] == "n040_s2_candidate"
-    assert suggestion["pathway_id"] == "p001"
-    assert suggestion["step_id"] == "s2"
+    assert packet["planning_focus"]["parent_for_new_branch"] == "n040_s2_candidate"
+    assert packet["planning_focus"]["pathway_id"] == "p001"
+    assert packet["planning_focus"]["step_id"] == "s2"
 
     validation = validate_workspace(root, strict=True)
     assert validation["summary"]["errors"] == 0
@@ -321,7 +334,7 @@ def test_pathway_step_rejection_stops_forward_pathway_planning(tmp_path: Path) -
     assert packet["search_state"]["phase"] == "pathway_ambiguous"
     assert packet["planning_focus"]["mode"] == "pathway_ambiguous_review"
     assert packet["planning_focus"]["focus_node"] == "n030_s2_refuted"
-    assert packet["suggested_decision_cards"] == []
+    assert "suggested_decision_cards" not in packet
     assert "continue_rejected_or_ambiguous_pathway_without_changed_hypothesis" in packet["forbidden_next_actions"]
 
     validation = validate_workspace(root, strict=True)

@@ -32,9 +32,11 @@ def _as_mapping(value: Any) -> dict[str, Any]:
 def _atoms_from_structure(structure: Any) -> list[Atom]:
     symbols = structure.get_chemical_symbols()
     positions = structure.get_positions()
+    if len(symbols) != len(positions):
+        raise ValueError(f"symbol/position length mismatch: {len(symbols)} symbols, {len(positions)} positions")
     return [
         Atom(str(symbol), float(position[0]), float(position[1]), float(position[2]))
-        for symbol, position in zip(symbols, positions, strict=True)
+        for symbol, position in zip(symbols, positions)
     ]
 
 

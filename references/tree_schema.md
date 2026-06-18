@@ -189,18 +189,18 @@ Backtracking never rewrites existing parent links. It records a cross-edge from
 `from_node` to `to_node` so the failed branch remains auditable. The next
 chemically distinct branch after an active backtrack should be an ordinary
 child of `to_node`, or of `planning_focus.parent_for_new_branch` from the latest
-`plan-next` packet. Use `input_refs` if the new branch depends on files or
-observations from the failed node.
+`decision-context` packet. Use `input_refs` if the new branch depends on files
+or observations from the failed node.
 
 If that ordinary child branch already exists as the replacement attempt, the
 backtrack event must name it with `new_branch_node`. The validator warns when a
 failed or ambiguous branch has a later sibling under the same parent but no
 matching `from_node -> to_node -> new_branch_node` backtrack event.
 
-`planning_focus`, `context_policy`, `context_items`,
-`suggested_backtrack_actions`, and `suggested_decision_cards` are generated
-planning-packet fields. They are not valid `tree.json` fields and should not be
-persisted in the workspace tree.
+`planning_focus`, `decision_constraints`, `context_policy`, `context_items`,
+`required_backtrack_events`, `required_reframe_checks`, and
+`required_finalization_checks` are generated decision-context fields. They are
+not valid `tree.json` fields and should not be persisted in the workspace tree.
 
 ## Event Entry
 
@@ -240,9 +240,9 @@ Use `backtrack_events[]` for graph backtracking edges:
 }
 ```
 
-`event_state=active` means `plan-next` may use this event to route the next
-branch to `to_node`. `resolved` and `superseded` events stay in the graph as
-history but should not control the next branch parent.
+`event_state=active` means `decision-context` may use this event to route the
+next branch to `to_node`. `resolved` and `superseded` events stay in the graph
+as history but should not control the next branch parent.
 
 A workspace may contain at most one `event_state=active` backtrack event.
 `record-backtrack` enforces this by default, and the validator reports

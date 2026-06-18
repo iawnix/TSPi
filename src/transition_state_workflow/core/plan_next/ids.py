@@ -1,12 +1,10 @@
-"""Node-id helpers for ChemKernel next-action planning."""
+"""Node-id helpers for ChemKernel decision-context packets."""
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any
 
-from transition_state_workflow.util.json_io import read_json_object_required
-from transition_state_workflow.util.path_utils import clean_string, safe_identifier_token
+from transition_state_workflow.util.path_utils import clean_string
 
 
 def latest_node_id(nodes: list[tuple[str, dict[str, Any]]]) -> str | None:
@@ -15,35 +13,6 @@ def latest_node_id(nodes: list[tuple[str, dict[str, Any]]]) -> str | None:
     if not nodes:
         return None
     return sorted((node_id for node_id, _ in nodes), key=node_sort_key)[-1]
-
-
-def next_suggested_node_id(root: Path, stage: str) -> str:
-    """Return an unused nNNN_stage node id."""
-
-    used_numbers: list[int] = []
-    used_ids: set[str] = set()
-    tree_path = root / "tree.json"
-    if tree_path.exists():
-        try:
-            tree = read_json_object_required(tree_path)
-            tree_nodes = tree.get("nodes") if isinstance(tree.get("nodes"), dict) else {}
-            used_ids.update(str(key) for key in tree_nodes)
-        except ValueError:
-            pass
-    nodes_dir = root / "nodes"
-    if nodes_dir.exists():
-        used_ids.update(path.name for path in nodes_dir.iterdir() if path.is_dir())
-    for node_id in used_ids:
-        number = node_number(node_id)
-        if number is not None:
-            used_numbers.append(number)
-    next_number = 10 if not used_numbers else max(used_numbers) + 10
-    slug = safe_identifier_token(stage)
-    candidate = f"n{next_number:03d}_{slug}"
-    while candidate in used_ids:
-        next_number += 10
-        candidate = f"n{next_number:03d}_{slug}"
-    return candidate
 
 
 def node_sort_key(node_id: str) -> tuple[int, str]:
@@ -64,7 +33,6 @@ def node_number(node_id: str) -> int | None:
 
 __all__ = [
     "latest_node_id",
-    "next_suggested_node_id",
     "node_sort_key",
     "node_number",
 ]

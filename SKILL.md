@@ -44,10 +44,11 @@ accumulate until a TS is found or the mechanism hypothesis is rejected.
   Gaussian-force execution, and Gaussian/DFT are levels or backends that can
   support those strategies.
 - Before choosing the next branch in an existing workspace, run
-  `scripts/ts_hypothesis_workspace.py plan-next --root <tssearch_root>` and use
-  its planning packet as context. `plan-next` summarizes gates, allowed action
-  classes, planning focus, prioritized context items, and backtrack actions;
-  the agent still decides the chemical hypothesis and tool.
+  `scripts/ts_hypothesis_workspace.py decision-context --root <tssearch_root>`
+  and use its decision-context packet as state/context. `plan-next` is a
+  deprecated alias. The packet summarizes gates, action-class constraints,
+  planning focus, prioritized context items, and required backtrack records; it
+  does not choose routes or generate decision-card commands.
 - Initial reactant/product endpoints must be optimized before NEB, QST, IRC
   reference checks, or final connectivity claims.
 - User-provided reactant/product structures are endpoint hypotheses until they
@@ -154,13 +155,14 @@ state, change the state model and the tools — never the UI.
      on the chosen surface unless the branch is explicitly labeled as endpoint
      discovery or constrained candidate generation.
 
-4. Build the next-action planning context.
-   - Run `scripts/ts_hypothesis_workspace.py plan-next --root <tssearch_root>`
+4. Build the decision context.
+   - Run
+     `scripts/ts_hypothesis_workspace.py decision-context --root <tssearch_root>`
      before choosing a branch in an existing workspace.
    - Treat `blocking_gates`, `allowed_next_actions`,
-     `forbidden_next_actions`, `planning_focus`, `context_items`,
-     failed-branch reflections, and open questions as context for the agent
-     decision.
+     `forbidden_next_actions`, `planning_focus`, `decision_constraints`,
+     `context_items`, failed-branch reflections, and open questions as context
+     for the agent decision.
    - If `planning_focus.mode=backtrack_decision_needed`, record the chemically
      meaningful backtrack target before opening a new child branch.
    - If `planning_focus.mode=backtrack_replan`, attach the next decision-card
@@ -179,12 +181,13 @@ state, change the state model and the tools — never the UI.
      terminal restart state, or otherwise failed endpoint validation, do not
      promote that error-terminated geometry as endpoint evidence. Backtrack or
      open a new endpoint/connectivity branch with a documented changed variable.
-   - `plan-next` may draft decision-card suggestions, but it does not choose the
-     chemistry. The agent must still decide the mechanism hypothesis, method
-     level, observables, constraints, and compute cost.
-   - In a multi-step pathway, `plan-next` scopes the gate sequence to the next
-     incomplete pathway step. Do not reuse a previous step's TS/Freq or
-     connectivity evidence as proof for the next step.
+   - `decision-context` is read-only and must not draft or materialize
+     decision-card nodes. The agent owns the mechanism hypothesis, parent
+     choice, method level, observables, constraints, changed variables, and
+     compute cost.
+   - In a multi-step pathway, `decision-context` scopes the gate sequence to
+     the next incomplete pathway step. Do not reuse a previous step's TS/Freq
+     or connectivity evidence as proof for the next step.
 
 5. Choose the next tool from the chemical hypothesis.
    - For method and level selection, read `references/backend_selection.md`.
@@ -332,12 +335,12 @@ Python tooling follows a package layout:
   `ase_neb_external.py` are the command-adapter layer that composes ASE
   backend result producers, ChemGate policy helpers, and ChemKernel state
   writers for ASE NEB commands.
-- `src/transition_state_workflow/core/`: ChemKernel-facing planning and
+- `src/transition_state_workflow/core/`: ChemKernel-facing context and
   workspace state writers: workspace initialization, decision-card/node
   templates, evidence registry append, start-node, backtrack lifecycle,
   generic node/evidence/tree/report/reflection writers, ASE NEB result-to-node
-  mapping, external-Gaussian continuation state writers, and `plan-next`
-  planning packets. `core/workspace/` owns generic TS-search workspace
+  mapping, external-Gaussian continuation state writers, and decision-context
+  packets. `core/workspace/` owns generic TS-search workspace
   primitives: `io.py` owns JSON/Markdown/path helpers, `nodes.py` owns
   node-record construction and node-id allocation, `tree.py` owns tree
   read/write and metadata updates, `evidence.py` owns evidence-registry
@@ -346,16 +349,16 @@ Python tooling follows a package layout:
   `scaffold.py` owns initial workspace root files, workspace skeletons, and
   report/reflection tail writing, and `naming.py` owns workspace-safe slugs and
   timestamps.
-  `core/plan_next/` is the ChemKernel planning subpackage:
+  `core/plan_next/` is the ChemKernel decision-context subpackage:
   `cli.py` owns parser registration, `contracts.py` owns the packet schema and
   injected validator/evidence predicate contracts, `loader.py` owns read-only
   workspace/tree/node/evidence loading, `pathway.py` owns pathway-step
   planning scope, `phase.py` owns phase/focus inference, `suggestions.py`
-  owns suggested decision/finalization/reframe/backtrack actions,
+  owns required finalization/reframe/backtrack checks,
   `diagnostics.py` owns parsed endpoint-evidence blocker extraction,
   `context.py` owns context summaries and ranking, `snapshot.py` owns read-only
   workspace snapshots and node claim grouping, `packet.py` builds the final
-  planning packet, and `ids.py` owns node id sorting and next-id helpers. The
+  decision-context packet, and `ids.py` owns node id sorting helpers. The
   package `__init__.py` preserves the public `core.plan_next` import surface.
 - `src/transition_state_workflow/gate/`: ChemGate-facing read and closure
   logic: evidence gates, workspace validation, normalized explorer views,
@@ -477,10 +480,10 @@ Python tooling follows a package layout:
   pitfalls.
 - `references/explorer_service.md`: local read-only web visualization for a
   synced TS-search workspace, with source/state isolation rules.
-- `scripts/ts_hypothesis_workspace.py`: initialize workspaces, create decision
-  cards, append evidence, record or update backtrack events, emit `plan-next`
-  agent planning packets, and finalize completed nodes through the packaged
-  workflow tools.
+- `scripts/ts_hypothesis_workspace.py`: initialize workspaces, create
+  agent-owned decision cards, append evidence, record or update backtrack
+  events, emit read-only `decision-context` packets (`plan-next` alias), and
+  finalize completed nodes through the packaged workflow tools.
 - `scripts/ts_validate_workspace.py`: read-only validator for tree/node/evidence
   consistency, state invariants, and backtrack references.
 - `scripts/ts_normalize_view.py`: read-only normalizer that emits

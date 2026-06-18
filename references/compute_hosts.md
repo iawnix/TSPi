@@ -33,6 +33,9 @@ xTB/ASE Python:
   package baseline. Before submitting long ASE/xTB jobs, run the py38
   compatibility gate for the remote-imported subset or a direct
   `python -m py_compile` smoke in the target environment.
+- The ASE NEB CLI parser must tolerate Python 3.8: do not require
+  `argparse.BooleanOptionalAction`, and avoid py310-only APIs such as
+  `zip(..., strict=True)` in the remote ASE/xTB path.
 
 QBICS:
 

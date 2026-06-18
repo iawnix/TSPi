@@ -1,4 +1,4 @@
-"""Read-only workspace snapshots for ChemKernel plan-next packets."""
+"""Read-only workspace snapshots for ChemKernel decision-context packets."""
 
 from __future__ import annotations
 
@@ -38,7 +38,7 @@ class NodeClaimSnapshot:
 
 @dataclass(frozen=True)
 class PlanNextSnapshot:
-    """Read-only workspace state used by the plan-next orchestrator."""
+    """Read-only workspace state used by the decision-context orchestrator."""
 
     source: Path
     manifest: dict[str, Any]
@@ -89,7 +89,7 @@ def load_plan_next_snapshot(
     validate_workspace: WorkspaceValidator,
     supports_tsfreq_evidence: TsfreqEvidencePredicate,
 ) -> PlanNextSnapshot:
-    """Load all read-only workspace state required for plan-next."""
+    """Load all read-only workspace state required for decision context."""
 
     source = root.expanduser().resolve()
     ensure_plan_workspace(source)

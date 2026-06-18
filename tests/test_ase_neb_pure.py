@@ -110,6 +110,30 @@ def test_distance_and_covalent_cutoff_are_symmetric() -> None:
     assert covalent_cutoff(a, b) == pytest.approx(covalent_cutoff(b, a))
 
 
+def test_ase_neb_cli_boolean_optional_action_has_py38_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    import argparse
+
+    from transition_state_workflow.cli import ase_neb_framework
+
+    monkeypatch.delattr(argparse, "BooleanOptionalAction", raising=False)
+    parser = ase_neb_framework.build_parser()
+    base_args = [
+        "continue-gaussian-neb-from-images",
+        "project",
+        "--xyz-dir",
+        "images",
+        "--route",
+        "#p b3lyp/6-31g force",
+        "--charge",
+        "0",
+        "--multiplicity",
+        "1",
+    ]
+
+    assert parser.parse_args(base_args).require_normal_termination is True
+    assert parser.parse_args([*base_args, "--no-require-normal-termination"]).require_normal_termination is False
+
+
 def test_core_geometry_reports_angles_dihedrals_and_vector_norms() -> None:
     a = Atom("C", 1.0, 0.0, 0.0)
     b = Atom("C", 0.0, 0.0, 0.0)

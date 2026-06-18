@@ -1,4 +1,4 @@
-"""Workspace loading helpers for ChemKernel next-action planning."""
+"""Workspace loading helpers for ChemKernel decision-context packets."""
 
 from __future__ import annotations
 

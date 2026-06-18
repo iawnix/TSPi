@@ -1,4 +1,4 @@
-"""Pathway-scoped planning helpers for ChemKernel plan-next packets."""
+"""Pathway-scoped helpers for ChemKernel decision-context packets."""
 
 from __future__ import annotations
 

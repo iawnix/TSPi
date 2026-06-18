@@ -49,6 +49,22 @@ def test_rationale_lint_flags_old_decision_card_placeholders(tmp_path: Path) -> 
     assert "Input / Dependency Nodes" in decision["missing_sections"]
 
 
+def test_decision_card_writes_structured_provenance_contract(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_unit"
+    initialize_workspace(root)
+
+    node = json.loads((root / "nodes" / "n010_candidate" / "node.json").read_text(encoding="utf-8"))
+    provenance = node["decision_provenance"]
+    assert provenance["trigger_source"] == "agent_cli_decision_card"
+    assert provenance["parent_selection_reason"]
+    assert provenance["changed_variables"]["operation"] == "unit-test-candidate-generation"
+    assert provenance["claim_ceiling"] == "candidate_found"
+
+    lint = lint_node_rationale(root, "n010_candidate", node).to_dict()
+    assert lint["status"] == "complete"
+    assert lint["decision_provenance"]["complete"] is True
+
+
 def test_start_node_rejects_incomplete_pre_execution_rationale(tmp_path: Path) -> None:
     root = tmp_path / "tssearch_unit"
     initialize_workspace(root)

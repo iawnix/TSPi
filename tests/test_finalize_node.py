@@ -348,14 +348,17 @@ def test_plan_next_blocks_candidate_until_endpoint_ready(tmp_path: Path) -> None
 
     packet = plan_next(root)
 
-    assert packet["schema"] == "ts-next-action-plan-v1"
+    assert packet["schema"] == "ts-decision-context-v1"
+    assert packet["packet_role"] == "decision_context"
     assert packet["search_state"]["phase"] == "endpoint_discovery"
     assert "endpoint_minima_missing" in packet["blocking_gates"]
     assert "xtb_endpoint_preopt" in packet["allowed_next_actions"]
     assert "gaussian_endpoint_validation" in packet["allowed_next_actions"]
     assert "candidate_found_promotion" in packet["forbidden_next_actions"]
     assert "gaussian_neb_from_reference_hypothesis" in packet["forbidden_next_actions"]
-    assert packet["suggested_decision_cards"][0]["stage"] == "endpoint_minima_validation"
+    assert packet["decision_constraints"]["phase"] == "endpoint_discovery"
+    assert packet["decision_constraints"]["required_checks"]
+    assert "suggested_decision_cards" not in packet
 
 
 def test_plan_next_suggests_tsfreq_after_candidate_found(tmp_path: Path) -> None:
@@ -399,9 +402,8 @@ def test_plan_next_suggests_tsfreq_after_candidate_found(tmp_path: Path) -> None
     assert packet["search_state"]["phase"] == "gaussian_tsfreq_validation"
     assert "tsfreq_validation_missing" in packet["blocking_gates"]
     assert "gaussian_tsfreq_validation" in packet["allowed_next_actions"]
-    suggestion = packet["suggested_decision_cards"][0]
-    assert suggestion["stage"] == "gaussian_tsfreq_validation"
-    assert suggestion["parent_id"] == "n010_candidate"
+    assert packet["planning_focus"]["focus_node"] == "n010_candidate"
+    assert packet["decision_constraints"]["phase"] == "gaussian_tsfreq_validation"
 
 
 def test_plan_next_routes_to_connectivity_when_tsfreq_exists_without_candidate_found(tmp_path: Path) -> None:
@@ -475,9 +477,8 @@ def test_plan_next_routes_to_connectivity_when_tsfreq_exists_without_candidate_f
     assert packet["search_state"]["phase"] == "connectivity_validation"
     assert "connectivity_missing" in packet["blocking_gates"]
     assert "imaginary_mode_endpoint_follow" in packet["allowed_next_actions"]
-    suggestion = packet["suggested_decision_cards"][0]
-    assert suggestion["stage"] == "connectivity_validation"
-    assert suggestion["parent_id"] == "n020_direct_tsfreq"
+    assert packet["planning_focus"]["focus_node"] == "n020_direct_tsfreq"
+    assert packet["decision_constraints"]["phase"] == "connectivity_validation"
 
 
 def test_plan_next_exposes_reframe_candidate_for_rejected_tsfreq_wrong_mode(tmp_path: Path) -> None:
@@ -589,8 +590,8 @@ def test_plan_next_exposes_reframe_candidate_for_rejected_tsfreq_wrong_mode(tmp_
     assert "promote_rejected_tsfreq_without_new_connectivity_boundary" in packet["forbidden_next_actions"]
     assert packet["reframe_candidates"][0]["node_id"] == "n020_rejected_tsfreq"
     assert packet["reframe_candidates"][0]["tsfreq_evidence"][0]["kind"] == "tsfreq_summary"
-    assert packet["suggested_reframe_actions"][0]["source_node"] == "n020_rejected_tsfreq"
-    assert "n020_rejected_tsfreq" in packet["suggested_reframe_actions"][0]["decision_card_command_template"]
+    assert packet["required_reframe_checks"][0]["source_node"] == "n020_rejected_tsfreq"
+    assert packet["required_reframe_checks"][0]["kind"] == "reframe_validated_wrong_mode_tsfreq_check"
     assert any(item["kind"] == "reframe_candidate" for item in packet["context_items"])
 
 
@@ -603,8 +604,8 @@ def test_plan_next_requires_backtrack_before_new_child_under_failed_branch(tmp_p
 
     assert packet["planning_focus"]["mode"] == "backtrack_decision_needed"
     assert packet["planning_focus"]["focus_node"] == "n030_failed_irc"
-    assert packet["suggested_decision_cards"] == []
-    action = packet["suggested_backtrack_actions"][0]
+    assert "suggested_decision_cards" not in packet
+    action = packet["required_backtrack_events"][0]
     assert action["from_node"] == "n030_failed_irc"
     assert "n005_endpoint_gate" in action["candidate_to_nodes"]
     assert "new_child_under_failed_node_without_backtrack" in packet["forbidden_next_actions"]
@@ -837,9 +838,8 @@ def test_plan_next_routes_new_branch_to_active_backtrack_target(tmp_path: Path) 
     assert packet["planning_focus"]["parent_for_new_branch"] == "n005_endpoint_gate"
     assert packet["search_state"]["phase"] == "candidate_generation"
     assert packet["search_state"]["global_phase"] == "connectivity_validation"
-    suggestion = packet["suggested_decision_cards"][0]
-    assert suggestion["stage"] == "candidate_generation"
-    assert suggestion["parent_id"] == "n005_endpoint_gate"
+    assert packet["decision_constraints"]["phase"] == "candidate_generation"
+    assert packet["decision_constraints"]["parent_for_new_branch"] == "n005_endpoint_gate"
     must_context = [item for item in packet["context_items"] if item["priority"] == "must"]
     assert any(item.get("node_id") == "n030_failed_irc" for item in must_context)
     assert packet["context_policy"]["retrieval_mode"] == "ranked_workspace_artifacts"
@@ -857,23 +857,22 @@ def test_plan_next_distinguishes_xtb_and_gaussian_candidate_routes(tmp_path: Pat
     assert "xtb_neb_candidate_generation" in packet["allowed_next_actions"]
     assert "xtb_relaxed_scan" in packet["allowed_next_actions"]
     assert "gaussian_neb_refinement" in packet["allowed_next_actions"]
-    suggestion = packet["suggested_decision_cards"][0]
-    assert suggestion["stage"] == "candidate_generation"
-    assert "xtb-neb-scan-dimer-gaussian-refinement" in suggestion["operation"]
+    assert packet["decision_constraints"]["phase"] == "candidate_generation"
+    assert "suggested_decision_cards" not in packet
 
 
-def test_plan_next_can_write_suggested_decision_card(tmp_path: Path) -> None:
+def test_plan_next_refuses_to_write_decision_cards(tmp_path: Path) -> None:
     root = tmp_path / "tssearch_unit"
     initialize_empty_workspace(root)
 
-    packet = plan_next(root, "--write-decision-cards")
+    result = subprocess.run(
+        [sys.executable, str(WORKSPACE_CLI), "plan-next", "--root", str(root), "--write-decision-cards"],
+        text=True,
+        capture_output=True,
+    )
 
-    written = packet["written_decision_cards"]
-    assert written[0]["status"] == "written"
-    node_id = written[0]["node_id"]
-    assert (root / "nodes" / node_id / "decision_card.md").exists()
-    tree = json.loads((root / "tree.json").read_text(encoding="utf-8"))
-    assert node_id in tree["nodes"]
+    assert result.returncode != 0
+    assert "decision-context is read-only" in result.stderr
 
 
 def test_validator_warns_for_closed_node_with_template_reflection(tmp_path: Path) -> None:
@@ -1069,15 +1068,14 @@ def test_plan_next_requires_explicit_alternative_mechanism_after_accepted_ts(tmp
 
     audit_packet = plan_next(root)
     assert audit_packet["planning_focus"]["mode"] == "accepted_audit"
-    assert audit_packet["suggested_decision_cards"] == []
+    assert "suggested_decision_cards" not in audit_packet
 
     alternative_packet = plan_next(root, "--alternative-mechanism")
     assert alternative_packet["planning_focus"]["mode"] == "alternative_mechanism_planning"
     assert alternative_packet["context_policy"]["mode"] == "alternative_mechanism_context"
     assert "accepted_ts_present_requires_distinct_mechanism" in alternative_packet["blocking_gates"]
-    suggestion = alternative_packet["suggested_decision_cards"][0]
-    assert suggestion["stage"] == "mechanism_preflight"
-    assert suggestion["parent_id"] is None
+    assert alternative_packet["decision_constraints"]["phase"] == "alternative_mechanism_planning"
+    assert "suggested_decision_cards" not in alternative_packet
 
 
 def test_finalize_accepted_ts_requires_tsfreq_and_connectivity_evidence(tmp_path: Path) -> None:

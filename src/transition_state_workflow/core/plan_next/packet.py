@@ -1,4 +1,4 @@
-"""Packet orchestration for ChemKernel next-action planning."""
+"""Packet orchestration for ChemKernel decision-context packets."""
 
 from __future__ import annotations
 
@@ -17,7 +17,6 @@ from .phase import gates_for_phase, infer_phase_from_focus_node, infer_planning_
 from .snapshot import classify_node_claims, load_plan_next_snapshot
 from .suggestions import (
     suggest_backtrack_actions,
-    suggest_decision_cards,
     suggest_finalization_actions,
     suggest_reframe_actions,
 )
@@ -28,10 +27,11 @@ def build_plan_next_packet(
     *,
     max_suggestions: int = 4,
     alternative_mechanism: bool = False,
+    command_alias: str = "decision-context",
     validate_workspace: WorkspaceValidator | None = None,
     supports_tsfreq_evidence: TsfreqEvidencePredicate | None = None,
 ) -> dict[str, Any]:
-    """Return a compact planning context for the next agent decision."""
+    """Return a compact state/constraint context for the next agent decision."""
 
     validate_workspace = validate_workspace or conservative_workspace_validation
     supports_tsfreq_evidence = supports_tsfreq_evidence or no_tsfreq_evidence_support
@@ -126,7 +126,7 @@ def build_plan_next_packet(
         ]
         phase = f"pathway_{mode}"
 
-    suggested_backtrack_actions = suggest_backtrack_actions(
+    required_backtrack_events = suggest_backtrack_actions(
         source=source,
         failed_nodes=failed_nodes,
         backtrack_events=backtrack_events,
@@ -139,7 +139,7 @@ def build_plan_next_packet(
         accepted_nodes=accepted_nodes,
         failed_nodes=failed_nodes,
         backtrack_events=backtrack_events,
-        suggested_backtrack_actions=suggested_backtrack_actions,
+        required_backtrack_events=required_backtrack_events,
         node_payloads=node_payloads,
         manifest=manifest,
         alternative_mechanism=alternative_mechanism,
@@ -192,31 +192,28 @@ def build_plan_next_packet(
                 ),
             }
 
-    suggestions = suggest_decision_cards(
+    required_reframe_checks = suggest_reframe_actions(
         source=source,
-        phase=phase,
-        endpoint_nodes=planning_claims.endpoint_nodes,
-        candidate_nodes=planning_claims.candidate_nodes,
-        tsfreq_nodes=planning_claims.tsfreq_nodes,
-        parent_override=parent_override,
-        pathway_plan=pathway_plan,
+        reframe_candidates=reframe_candidates,
         max_suggestions=max_suggestions,
     )
-    if validation_errors or active_nodes or (
-        accepted_nodes and not alternative_mechanism and pathway_plan.get("mode") not in {"start", "continue"}
-    ):
-        suggestions = []
-    if pathway_plan.get("mode") in {"ambiguous", "rejected"}:
-        suggestions = []
-    if planning_focus["mode"] == "backtrack_decision_needed":
-        suggestions = []
+    required_finalization_checks = suggest_finalization_actions(
+        source=source,
+        phase=phase,
+        tsfreq_nodes=planning_claims.tsfreq_nodes,
+        connectivity_nodes=planning_claims.connectivity_nodes,
+        pathway_plan=pathway_plan,
+    )
 
-    return {
+    packet = {
         "schema": PLAN_SCHEMA,
+        "packet_role": "decision_context",
         "source": str(source),
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "command": command_alias,
         "agent_decision_required": True,
-        "planner_role": "Summarize state and gate constraints; the agent must choose the chemical hypothesis and tool.",
+        "context_role": "Summarize state, gates, constraints, and evidence pointers; the agent must choose and record the chemical/computational decision.",
+        "planner_role": "deprecated: this packet is decision context only and does not suggest routes or command templates.",
         "workspace": {
             "system": clean_string(manifest.get("system")),
             "charge": manifest.get("charge"),
@@ -242,6 +239,16 @@ def build_plan_next_packet(
             "pathway_phase": clean_string(pathway_plan.get("mode")) or "none",
         },
         "planning_focus": planning_focus,
+        "decision_constraints": build_decision_constraints(
+            phase=phase,
+            planning_focus=planning_focus,
+            blocking_gates=blocking_gates,
+            allowed=allowed,
+            forbidden=forbidden,
+            endpoint_evidence_blockers=endpoint_evidence_blockers,
+            required_backtrack_events=required_backtrack_events,
+            pathway_plan=pathway_plan,
+        ),
         "context_policy": {
             "mode": "alternative_mechanism_context" if alternative_mechanism else "structured_priority_context",
             "retrieval_mode": "ranked_workspace_artifacts",
@@ -284,21 +291,17 @@ def build_plan_next_packet(
         "reframe_candidates": reframe_candidates[:8],
         "backtrack_events": backtrack_events[:8],
         "failed_or_ambiguous_branches": failed_nodes[:8],
-        "suggested_backtrack_actions": suggested_backtrack_actions[:8],
-        "suggested_reframe_actions": suggest_reframe_actions(
-            source=source,
-            reframe_candidates=reframe_candidates,
-            max_suggestions=max_suggestions,
-        ),
-        "suggested_decision_cards": suggestions,
-        "suggested_finalization_actions": suggest_finalization_actions(
-            source=source,
-            phase=phase,
-            tsfreq_nodes=planning_claims.tsfreq_nodes,
-            connectivity_nodes=planning_claims.connectivity_nodes,
-            pathway_plan=pathway_plan,
-        ),
+        "required_backtrack_events": required_backtrack_events[:8],
+        "required_reframe_checks": required_reframe_checks[:8],
+        "required_finalization_checks": required_finalization_checks[:8],
     }
+    if command_alias == "plan-next":
+        packet["deprecation"] = {
+            "command": "plan-next",
+            "replacement": "decision-context",
+            "message": "plan-next is a deprecated alias; the packet reports context only and does not generate route suggestions.",
+        }
+    return packet
 
 
 __all__ = ["build_plan_next_packet"]
@@ -307,3 +310,55 @@ __all__ = ["build_plan_next_packet"]
 def _append_unique(values: list[str], item: str) -> None:
     if item not in values:
         values.append(item)
+
+
+def build_decision_constraints(
+    *,
+    phase: str,
+    planning_focus: dict[str, Any],
+    blocking_gates: list[str],
+    allowed: list[str],
+    forbidden: list[str],
+    endpoint_evidence_blockers: list[dict[str, Any]],
+    required_backtrack_events: list[dict[str, Any]],
+    pathway_plan: dict[str, Any],
+) -> dict[str, Any]:
+    """Return neutral decision constraints without route or command suggestions."""
+
+    required_checks = [
+        "read planning_focus and respect parent_for_new_branch before creating a new node",
+        "write an agent-owned decision_card with explicit decision_provenance before execution",
+        "keep claim ceiling at the next evidence layer unless parsed evidence supports promotion",
+    ]
+    if blocking_gates:
+        required_checks.append("resolve blocking_gates before promoting scientific claims")
+    if endpoint_evidence_blockers:
+        required_checks.append("treat endpoint_evidence_blockers as invalid endpoint evidence, not repair instructions")
+    if required_backtrack_events:
+        required_checks.append("record canonical backtrack_events before opening replacement branches")
+    if pathway_plan.get("mode") in {"start", "continue"}:
+        required_checks.append("scope any new decision to the reported pathway_id and step_id")
+    return {
+        "phase": phase,
+        "focus_mode": clean_string(planning_focus.get("mode")),
+        "parent_for_new_branch": clean_string(planning_focus.get("parent_for_new_branch")),
+        "required_checks": required_checks,
+        "allowed_action_classes": allowed,
+        "forbidden_action_classes": forbidden,
+        "blocking_gates": blocking_gates,
+        "agent_owns": [
+            "chemical hypothesis",
+            "parent selection reason",
+            "search strategy and level/backend choice",
+            "changed variables",
+            "support and refutation criteria",
+            "cost/risk decision",
+        ],
+        "validator_owns": [
+            "workspace structure",
+            "decision provenance completeness",
+            "evidence gate consistency",
+            "backtrack event linkage",
+            "accepted_ts claim gates",
+        ],
+    }

@@ -31,6 +31,29 @@ from transition_state_workflow.tools.ase_neb.mechanism import ENDPOINT_STATE_CHO
 from transition_state_workflow.util.cli import CliError, run_cli
 
 
+def boolean_optional_action() -> type[argparse.Action]:
+    """Return argparse.BooleanOptionalAction with a Python 3.8 fallback."""
+
+    action = getattr(argparse, "BooleanOptionalAction", None)
+    if action is not None:
+        return action
+
+    class BooleanOptionalAction(argparse.Action):
+        def __init__(self, option_strings, dest, default=None, **kwargs):
+            option_strings = list(option_strings)
+            expanded = []
+            for option_string in option_strings:
+                expanded.append(option_string)
+                if option_string.startswith("--"):
+                    expanded.append("--no-" + option_string[2:])
+            super().__init__(option_strings=expanded, dest=dest, nargs=0, default=default, **kwargs)
+
+        def __call__(self, parser, namespace, values, option_string=None):
+            setattr(namespace, self.dest, not str(option_string or "").startswith("--no-"))
+
+    return BooleanOptionalAction
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Build the ASE NEB framework CLI parser."""
 
@@ -153,7 +176,7 @@ def build_parser() -> argparse.ArgumentParser:
     cont.add_argument("--mem")
     cont.add_argument("--nprocshared", type=int)
     cont.add_argument("--output-suffix", default=".out")
-    cont.add_argument("--require-normal-termination", action=argparse.BooleanOptionalAction, default=True)
+    cont.add_argument("--require-normal-termination", action=boolean_optional_action(), default=True)
     cont.add_argument("--parent-node")
     cont.add_argument("--optimizer", choices=sorted(OPTIMIZER_NAMES), default="BFGS")
     cont.add_argument("--fmax", type=float, default=0.05)

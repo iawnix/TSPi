@@ -212,6 +212,14 @@ def create_ts_branch_decision_artifacts_from_cli_args(args: argparse.Namespace) 
     except BranchReferenceError as exc:
         raise SystemExit(str(exc)) from exc
     now = utc_timestamp()
+    decision_provenance = build_decision_provenance(
+        args=args,
+        parent_id=parent_id,
+        input_refs=input_refs,
+        replaces_node=replaces_node,
+        pathway_id=pathway_id,
+        step_id=step_id,
+    )
     branch_write = write_prepared_branch_state(
         root=root,
         node_id=args.node_id,
@@ -224,6 +232,7 @@ def create_ts_branch_decision_artifacts_from_cli_args(args: argparse.Namespace) 
         step_id=step_id,
         timestamp=now,
         overwrite_existing=args.force,
+        decision_provenance=decision_provenance,
     )
     node_dir = branch_write.node_dir
     hypothesis_md = f"""# Hypothesis: {args.node_id}
@@ -271,6 +280,10 @@ hypothesis above; later promotion still requires the workflow evidence gates.
 ## Input / Dependency Nodes
 
 {format_input_refs_markdown(input_refs)}
+
+## Decision Provenance
+
+{format_decision_provenance_markdown(decision_provenance)}
 
 ## Pathway Step
 
@@ -351,42 +364,124 @@ Pending.
         )
 
 
-def write_suggested_decision_cards_from_plan(args: argparse.Namespace, packet: dict[str, Any]) -> list[dict[str, Any]]:
-    """Materialize planner-suggested decision-card nodes when explicitly requested."""
+def build_decision_provenance(
+    *,
+    args: argparse.Namespace,
+    parent_id: str,
+    input_refs: list[str],
+    replaces_node: str,
+    pathway_id: str,
+    step_id: str,
+) -> dict[str, Any]:
+    """Build the structured agent-owned decision provenance record."""
 
-    root = args.root.resolve()
-    written: list[dict[str, Any]] = []
-    for suggestion in packet.get("suggested_decision_cards", []):
-        if not isinstance(suggestion, dict) or suggestion.get("kind") != "decision_card":
+    changed_variables = parse_changed_variables(getattr(args, "changed_variable", ()) or ())
+    if "operation" not in changed_variables:
+        changed_variables["operation"] = clean_string(args.operation)
+    if pathway_id and step_id:
+        changed_variables.setdefault("pathway_step", f"{pathway_id}:{step_id}")
+    evidence_refs = [clean_string(item) for item in getattr(args, "evidence_ref", ()) or () if clean_string(item)]
+    trigger_source = clean_string(getattr(args, "trigger_source", "")) or (
+        f"replacement_for:{replaces_node}" if replaces_node else "agent_cli_decision_card"
+    )
+    parent_reason = clean_string(getattr(args, "parent_selection_reason", "")) or default_parent_selection_reason(parent_id)
+    method_rationale = clean_string(getattr(args, "method_or_tool_rationale", "")) or (
+        f"Agent selected operation `{clean_string(args.operation)}` to test the stated hypothesis under the current evidence gate."
+    )
+    support_criteria = clean_string_list(getattr(args, "support_criteria", ()) or ()) or [
+        "Parsed outputs support the stated reaction-center hypothesis.",
+        "The result reaches no higher claim than the declared claim_ceiling.",
+    ]
+    refutation_criteria = clean_string_list(getattr(args, "refutation_criteria", ()) or ()) or [
+        "Parsed outputs contradict the stated reaction-center hypothesis.",
+        "The branch fails numerically or chemically before reaching the declared claim_ceiling.",
+    ]
+    return {
+        "trigger_source": trigger_source,
+        "parent_selection_reason": parent_reason,
+        "context_packet_ref": clean_string(getattr(args, "context_packet_ref", "")) or "not_recorded",
+        "evidence_refs": evidence_refs,
+        "input_refs": input_refs,
+        "failed_or_ambiguous_source_node": replaces_node or "not_applicable",
+        "backtrack_event_ref": "created_by_replaces_node" if replaces_node else "not_applicable",
+        "changed_variables": changed_variables,
+        "method_or_tool_rationale": method_rationale,
+        "claim_ceiling": clean_string(getattr(args, "claim_ceiling", "")) or default_claim_ceiling(clean_string(args.stage)),
+        "support_criteria": support_criteria,
+        "refutation_criteria": refutation_criteria,
+        "cost_risk": clean_string(getattr(args, "cost_risk", "")) or "Bounded by the selected operation and node-scoped execution plan.",
+        "next_if_supported": clean_string(getattr(args, "next_if_supported", "")) or "Advance only to the next workflow evidence gate.",
+        "next_if_refuted": clean_string(getattr(args, "next_if_refuted", "")) or "Reflect and backtrack to the closest chemically meaningful ancestor.",
+    }
+
+
+def parse_changed_variables(raw_values: tuple[str, ...] | list[str]) -> dict[str, str]:
+    out: dict[str, str] = {}
+    for raw_value in raw_values:
+        text = clean_string(raw_value)
+        if not text:
             continue
-        node_id = str(suggestion.get("node_id") or "").strip()
-        if not node_id:
-            continue
-        node_dir = root / "nodes" / node_id
-        if node_dir.exists() and not args.force:
-            written.append({"node_id": node_id, "status": "skipped_existing", "path": relative_path_or_absolute(root, node_dir)})
-            continue
-        create_ts_branch_decision_artifacts_from_cli_args(
-            argparse.Namespace(
-                root=root,
-                node_id=node_id,
-                stage=str(suggestion.get("stage") or ""),
-                parent_id=suggestion.get("parent_id"),
-                input_ref=list(suggestion.get("input_refs") or []),
-                pathway_id=str(suggestion.get("pathway_id") or ""),
-                step_id=str(suggestion.get("step_id") or ""),
-                hypothesis=str(suggestion.get("hypothesis") or ""),
-                operation=str(suggestion.get("operation") or ""),
-                replaces_node="",
-                backtrack_reason_code="replacement_branch",
-                backtrack_reason="",
-                backtrack_evidence_ref=[],
-                supersede_active_backtrack=False,
-                force=bool(args.force),
-            )
-        )
-        written.append({"node_id": node_id, "status": "written", "path": relative_path_or_absolute(root, node_dir)})
-    return written
+        if "=" not in text:
+            raise SystemExit(f"--changed-variable must use key=value form: {text}")
+        key, value = text.split("=", 1)
+        key = clean_string(key)
+        value = clean_string(value)
+        if not key or not value:
+            raise SystemExit(f"--changed-variable must use non-empty key=value form: {text}")
+        out[key] = value
+    return out
+
+
+def clean_string_list(raw_values: tuple[str, ...] | list[str]) -> list[str]:
+    return [clean_string(item) for item in raw_values if clean_string(item)]
+
+
+def default_parent_selection_reason(parent_id: str) -> str:
+    if parent_id:
+        return f"Agent selected parent node `{parent_id}` as the closest chemically meaningful ancestor for this branch."
+    return "Agent selected a root branch because no parent node is required for this decision."
+
+
+def default_claim_ceiling(stage: str) -> str:
+    if stage == "endpoint_minima_validation" or "endpoint" in stage:
+        return "endpoint_minima_ready"
+    if stage == "candidate_generation":
+        return "candidate_found"
+    if stage == "gaussian_tsfreq_validation":
+        return "tsfreq_validated"
+    if stage == "connectivity_validation":
+        return "endpoint_connected_or_irc_connected"
+    if stage == "mechanism_preflight":
+        return "not_evaluated"
+    return "next_workflow_evidence_gate"
+
+
+def format_decision_provenance_markdown(provenance: dict[str, Any]) -> str:
+    evidence_refs = provenance.get("evidence_refs") if isinstance(provenance.get("evidence_refs"), list) else []
+    input_refs = provenance.get("input_refs") if isinstance(provenance.get("input_refs"), list) else []
+    changed_variables = provenance.get("changed_variables") if isinstance(provenance.get("changed_variables"), dict) else {}
+    support = provenance.get("support_criteria") if isinstance(provenance.get("support_criteria"), list) else []
+    refute = provenance.get("refutation_criteria") if isinstance(provenance.get("refutation_criteria"), list) else []
+    lines = [
+        f"- Trigger source: {clean_string(provenance.get('trigger_source'))}",
+        f"- Parent selection reason: {clean_string(provenance.get('parent_selection_reason'))}",
+        f"- Context packet ref: {clean_string(provenance.get('context_packet_ref'))}",
+        f"- Evidence refs: {', '.join(evidence_refs) if evidence_refs else 'none'}",
+        f"- Input refs: {', '.join(input_refs) if input_refs else 'none'}",
+        f"- Failed or ambiguous source node: {clean_string(provenance.get('failed_or_ambiguous_source_node'))}",
+        f"- Backtrack event ref: {clean_string(provenance.get('backtrack_event_ref'))}",
+        f"- Changed variables: {', '.join(f'{key}={value}' for key, value in changed_variables.items())}",
+        f"- Method/tool rationale: {clean_string(provenance.get('method_or_tool_rationale'))}",
+        f"- Claim ceiling: {clean_string(provenance.get('claim_ceiling'))}",
+        "- Support criteria:",
+        *[f"  - {item}" for item in support],
+        "- Refutation criteria:",
+        *[f"  - {item}" for item in refute],
+        f"- Cost/risk: {clean_string(provenance.get('cost_risk'))}",
+        f"- Next if supported: {clean_string(provenance.get('next_if_supported'))}",
+        f"- Next if refuted: {clean_string(provenance.get('next_if_refuted'))}",
+    ]
+    return "\n".join(lines)
 
 
 def format_input_refs_markdown(input_refs: list[str]) -> str:

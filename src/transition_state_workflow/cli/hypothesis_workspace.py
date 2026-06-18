@@ -31,7 +31,6 @@ from transition_state_workflow.core.workspace_state import (
     create_ts_branch_decision_artifacts_from_cli_args,
     initialize_ts_hypothesis_workspace_files_from_cli_args,
     write_mechanism_preflight_node_from_cli_args,
-    write_suggested_decision_cards_from_plan,
 )
 from transition_state_workflow.core.workspace import write_text_file_if_allowed
 from transition_state_workflow.gate.evidence import record_supports_tsfreq_reframe
@@ -112,6 +111,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     card.add_argument("--hypothesis", required=True, help="Chemical hypothesis being tested.")
     card.add_argument("--operation", required=True, help="Operation or route chosen for this test.")
+    card.add_argument("--trigger-source", default="", help="State, user request, or event that triggered this branch.")
+    card.add_argument("--parent-selection-reason", default="", help="Why this parent node is the right ancestor.")
+    card.add_argument("--context-packet-ref", default="", help="Optional decision-context packet path or id.")
+    card.add_argument("--evidence-ref", action="append", default=[], help="Evidence id used before creating this branch.")
+    card.add_argument("--changed-variable", action="append", default=[], help="Changed variable as key=value; may be repeated.")
+    card.add_argument("--method-or-tool-rationale", default="", help="Why the selected operation is appropriate.")
+    card.add_argument("--claim-ceiling", default="", help="Highest claim this branch may make before further validation.")
+    card.add_argument("--support-criteria", action="append", default=[], help="Concrete support criterion; may be repeated.")
+    card.add_argument("--refutation-criteria", action="append", default=[], help="Concrete refutation criterion; may be repeated.")
+    card.add_argument("--cost-risk", default="", help="Cost/risk decision for this branch.")
+    card.add_argument("--next-if-supported", default="", help="Agent-owned next step if criteria are supported.")
+    card.add_argument("--next-if-refuted", default="", help="Agent-owned next step if criteria are refuted.")
     card.add_argument(
         "--replaces-node",
         default="",
@@ -207,16 +218,20 @@ def main(argv: list[str] | None = None) -> int:
         pathway_bind_step_from_cli_args(args)
     elif args.command == "finalize-node":
         finalize_ts_workspace_node_from_cli_args(args)
-    elif args.command == "plan-next":
+    elif args.command in {"decision-context", "plan-next"}:
+        if bool(getattr(args, "write_decision_cards", False)):
+            raise SystemExit(
+                "decision-context is read-only and no longer materializes decision-card nodes; "
+                "use the decision-card command with agent-owned provenance instead"
+            )
         packet = build_core_plan_next_packet(
             args.root,
             max_suggestions=args.max_suggestions,
             alternative_mechanism=args.alternative_mechanism,
+            command_alias=getattr(args, "decision_context_alias", args.command),
             validate_workspace=validate_ts_workspace_contract,
             supports_tsfreq_evidence=record_supports_tsfreq_reframe,
         )
-        if args.write_decision_cards:
-            packet["written_decision_cards"] = write_suggested_decision_cards_from_plan(args, packet)
         emit_json(packet, pretty=args.pretty)
     else:
         parser.error(f"unsupported command: {args.command}")

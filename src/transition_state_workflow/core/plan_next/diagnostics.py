@@ -1,4 +1,4 @@
-"""Reusable diagnostics for ChemKernel plan-next packets."""
+"""Reusable diagnostics for ChemKernel decision-context packets."""
 
 from __future__ import annotations
 
@@ -18,8 +18,8 @@ def endpoint_evidence_blocker_summaries(
 ) -> list[dict[str, Any]]:
     """Return endpoint-related parsed diagnostics that block endpoint evidence claims.
 
-    The planner reads already-parsed JSON artifacts only. It intentionally does
-    not scan raw engine logs or choose the chemical repair strategy.
+    Decision context reads already-parsed JSON artifacts only. It intentionally
+    does not scan raw engine logs or choose the chemical repair strategy.
     """
 
     registry_paths_by_node: dict[str, list[str]] = {}
@@ -67,17 +67,18 @@ def endpoint_evidence_blocker_summaries(
 
 
 def _is_endpoint_related(node: dict[str, Any]) -> bool:
-    text = " ".join(
-        clean_string(value)
-        for value in (
-            node.get("stage"),
-            node.get("operation"),
-            node.get("outcome_code"),
-            node.get("decision"),
-            (node.get("display") if isinstance(node.get("display"), dict) else {}).get("summary"),
-        )
-    ).lower()
-    return "endpoint" in text
+    stage = clean_string(node.get("stage")).lower()
+    operation = clean_string(node.get("operation")).lower()
+    outcome_code = clean_string(node.get("outcome_code")).lower()
+    decision = clean_string(node.get("decision")).lower()
+    if stage in {"candidate_generation", "gaussian_tsfreq_validation", "mechanism_preflight"}:
+        return False
+    if "endpoint" in stage:
+        return True
+    if stage == "connectivity_validation":
+        text = " ".join((operation, outcome_code, decision))
+        return any(marker in text for marker in ("endpoint", "connectivity", "irc"))
+    return stage in {"endpoint_validation", "endpoint_minima_validation", "endpoint_optimization"}
 
 
 def _candidate_parsed_paths(node: dict[str, Any], registry_paths: list[str]) -> list[str]:

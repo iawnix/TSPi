@@ -245,10 +245,10 @@ Rules:
   frequency-validated saddle might describe a different step, keep the old node
   historical and create a new step-scoped node with `--input-ref` plus new
   endpoint/connectivity evidence.
-- `plan-next` scopes endpoint, candidate, TS/Freq, and connectivity gates to
-  the next incomplete pathway step. A previous step's accepted TS may be the
-  tree parent for the next endpoint branch, but it is not evidence for the next
-  step's TS claim.
+- `decision-context` scopes endpoint, candidate, TS/Freq, and connectivity
+  gates to the next incomplete pathway step. A previous step's accepted TS may
+  be the tree parent for the next endpoint branch, but it is not evidence for
+  the next step's TS claim.
 - If a branch merely fails numerically or tests one bad local route, keep that
   failure branch-local. If evidence refutes or leaves ambiguous the elementary
   step itself, finalize the node with `--pathway-step-status rejected` or
@@ -258,37 +258,41 @@ Rules:
   `ts_validate_workspace.py` rejects duplicate accepted-node bindings or
   inconsistent node/step metadata.
 
-## Planning Packet
+## Decision Context
 
-Use `scripts/ts_hypothesis_workspace.py plan-next` when an agent needs compact
-state context before deciding the next chemical branch:
+Use `scripts/ts_hypothesis_workspace.py decision-context` when an agent needs
+compact state context before deciding the next chemical branch. `plan-next` is
+a deprecated alias for the same read-only packet.
 
 ```bash
-python scripts/ts_hypothesis_workspace.py plan-next \
+python scripts/ts_hypothesis_workspace.py decision-context \
   --root tssearch_<system> \
   --pretty
 ```
 
-After an accepted TS exists, `plan-next` defaults to audit/archive context. To
-ask for a chemically distinct alternative mechanism, make that intent explicit:
+After an accepted TS exists, `decision-context` defaults to audit/archive
+context. To ask for a chemically distinct alternative mechanism, make that
+intent explicit:
 
 ```bash
-python scripts/ts_hypothesis_workspace.py plan-next \
+python scripts/ts_hypothesis_workspace.py decision-context \
   --root tssearch_<system> \
   --alternative-mechanism \
   --pretty
 ```
 
-This mode keeps the accepted TS visible as prior evidence, but suggested
-decision cards start from a new mechanism preflight instead of overwriting or
-reusing the accepted branch as proof.
+This mode keeps the accepted TS visible as prior evidence, but the agent must
+still create any new mechanism-preflight branch explicitly with `decision-card`.
+The context packet never overwrites or reuses the accepted branch as proof.
 
-`plan-next` is read-only by default. It summarizes:
+`decision-context` is read-only. It summarizes:
 
 - validator errors that block promotion;
 - active frontier and prepared nodes;
 - `planning_focus`, which chooses the node or mode that should guide the next
   model call;
+- `decision_constraints`, which records required checks, blocking gates, and
+  agent-owned versus validator-owned responsibilities;
 - `context_policy` and prioritized `context_items`, which act as the structured
   context-management layer for the next model call;
 - retrieval ranks on `context_items`, so the next agent call knows which
@@ -298,15 +302,16 @@ reusing the accepted branch as proof.
 - allowed and forbidden next action classes;
 - validated facts, refuted hypotheses, and open questions from
   `mechanism_model.json`;
-- canonical `backtrack_events[]` plus suggested `record-backtrack` actions when
-  failed or ambiguous branches lack a backtrack decision;
+- canonical `backtrack_events[]` plus `required_backtrack_events` when failed
+  or ambiguous branches lack a backtrack decision;
 - failed or ambiguous branch reflections;
-- suggested decision-card drafts for the next evidence layer.
+- `required_reframe_checks` and `required_finalization_checks` when relevant.
 
-`planning_focus` and `context_items` are planning-packet fields, not workspace
-state. Do not copy them into `tree.json`. They are regenerated from
+`planning_focus`, `decision_constraints`, and `context_items` are
+decision-context fields, not workspace state. Do not copy them into `tree.json`.
+They are regenerated from
 `tree.json`, node records, reflections, evidence, and the mechanism model each
-time `plan-next` runs.
+time `decision-context` runs.
 
 Backtrack-aware planning has two hard rules:
 
@@ -321,8 +326,8 @@ Backtrack-aware planning has two hard rules:
   node the primary parent.
 - If a replacement sibling branch already exists before the backtrack is
   recorded, include `--new-branch-node <replacement_node>` in
-  `record-backtrack`. `plan-next` reports detected replacement siblings in
-  `suggested_backtrack_actions`, and the validator warns when that link is
+  `record-backtrack`. `decision-context` reports detected replacement siblings
+  in `required_backtrack_events`, and the validator warns when that link is
   missing.
 
 Only one `event_state=active` backtrack is allowed in a workspace. If another
@@ -355,23 +360,14 @@ The rule is:
 - finalize only the new node as `accepted_ts`, and only if that node has both
   recognized TS/Freq evidence and recognized connectivity evidence.
 
-`plan-next` reports these cases under `reframe_candidates` and may suggest
-`reframe_validated_wrong_mode_tsfreq_with_new_endpoint_refs`. This is a prompt
-to design a new mechanism-boundary test, not permission to edit or promote the
-old rejected node.
+`decision-context` reports these cases under `reframe_candidates` and
+`required_reframe_checks`. This is a prompt to design a new mechanism-boundary
+test, not permission to edit or promote the old rejected node.
 
 It does not choose the chemistry for the agent. The agent must still decide the
-specific mechanism hypothesis, route, observables, and compute cost. To
-materialize suggested decision-card nodes, use the explicit write mode:
-
-```bash
-python scripts/ts_hypothesis_workspace.py plan-next \
-  --root tssearch_<system> \
-  --write-decision-cards \
-  --pretty
-```
-
-Run the validator after writing suggested cards and before launching compute.
+specific mechanism hypothesis, route, observables, changed variables, support
+and refutation criteria, and compute cost. Create the new branch explicitly
+with `decision-card`, then run the validator before launching compute.
 
 ## Node Start
 
@@ -459,8 +455,8 @@ python scripts/ts_hypothesis_workspace.py record-backtrack \
 
 Most views should mark the failed branch, not the new candidate branch.
 
-After recording the backtrack, rerun `plan-next`. If the event remains
-`event_state=active`, the planning packet should route the next branch to the
+After recording the backtrack, rerun `decision-context`. If the event remains
+`event_state=active`, the context packet should route the next branch to the
 event's `to_node`. Use `update-backtrack` to mark the event `resolved` or
 `superseded` only when it should remain historical context rather than the
 current branch-routing decision:

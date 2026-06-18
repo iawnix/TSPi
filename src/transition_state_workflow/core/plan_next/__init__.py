@@ -1,7 +1,8 @@
-"""ChemKernel next-action planning packets.
+"""ChemKernel decision-context packets.
 
 This package keeps the historical ``transition_state_workflow.core.plan_next``
-import surface while splitting the planner into small core-only modules.
+import surface while splitting decision-context assembly into small core-only
+modules.
 """
 
 from __future__ import annotations
@@ -24,9 +25,9 @@ from .context import (
     summarize_node,
     summarize_reframe_tsfreq_record,
 )
-from .contracts import PLAN_SCHEMA, TsfreqEvidencePredicate, WorkspaceValidator
+from .contracts import DECISION_CONTEXT_SCHEMA, PLAN_SCHEMA, TsfreqEvidencePredicate, WorkspaceValidator
 from .diagnostics import endpoint_evidence_blocker_summaries
-from .ids import latest_node_id, next_suggested_node_id, node_number, node_sort_key
+from .ids import latest_node_id, node_number, node_sort_key
 from .loader import (
     active_node_summaries,
     conservative_workspace_validation,
@@ -64,6 +65,7 @@ from .suggestions import (
 
 __all__ = [
     "PLAN_SCHEMA",
+    "DECISION_CONTEXT_SCHEMA",
     "WorkspaceValidator",
     "TsfreqEvidencePredicate",
     "endpoint_evidence_blocker_summaries",
@@ -112,7 +114,6 @@ __all__ = [
     "first_section_line",
     "summarize_evidence",
     "latest_node_id",
-    "next_suggested_node_id",
     "node_sort_key",
     "node_number",
 ]

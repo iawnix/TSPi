@@ -154,7 +154,7 @@ def validate_pre_execution_rationale(
         return
     findings.append(
         Finding(
-            rationale_finding_severity(node_json),
+            rationale_finding_severity(node_json, rationale),
             "incomplete_pre_execution_rationale",
             rationale.summary(),
             path=relative_path_or_absolute(source, source / "nodes" / node_id / "decision_card.md"),
@@ -163,9 +163,11 @@ def validate_pre_execution_rationale(
     )
 
 
-def rationale_finding_severity(node_json: dict[str, Any]) -> str:
+def rationale_finding_severity(node_json: dict[str, Any], rationale: Any | None = None) -> str:
     """Return validator severity for an incomplete pre-execution rationale."""
 
+    if rationale is not None and getattr(rationale, "legacy_provenance_gap", False):
+        return "info"
     lifecycle = clean_string(node_json.get("lifecycle_state"))
     run_state = clean_string(node_json.get("run_state"))
     claim = clean_string(node_json.get("claim_status"))

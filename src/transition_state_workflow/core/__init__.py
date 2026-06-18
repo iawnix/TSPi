@@ -48,7 +48,6 @@ from transition_state_workflow.core.workspace_state import (
     create_ts_branch_decision_artifacts_from_cli_args,
     initialize_ts_hypothesis_workspace_files,
     initialize_ts_hypothesis_workspace_files_from_cli_args,
-    write_suggested_decision_cards_from_plan,
 )
 
 __all__ = [
@@ -88,5 +87,4 @@ __all__ = [
     "write_input_check_node",
     "write_irc_connectivity_artifacts",
     "write_neb_node_metadata",
-    "write_suggested_decision_cards_from_plan",
 ]

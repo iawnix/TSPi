@@ -225,7 +225,7 @@ def test_update_backtrack_resolves_active_event(tmp_path: Path) -> None:
     assert backtrack_edges[0]["target"] == "n005_endpoint_gate"
     packet = plan_next(root)
     assert packet["planning_focus"]["mode"] != "backtrack_replan"
-    assert all(action["from_node"] != "n030_failed_irc" for action in packet["suggested_backtrack_actions"])
+    assert all(action["from_node"] != "n030_failed_irc" for action in packet["required_backtrack_events"])
 
     validation = validate_workspace(root, strict=True)
     assert validation["summary"]["errors"] == 0
@@ -484,12 +484,11 @@ def test_plan_next_and_validator_detect_replacement_branch_without_backtrack_eve
     )
 
     packet = plan_next(root)
-    action = packet["suggested_backtrack_actions"][0]
+    action = packet["required_backtrack_events"][0]
     assert action["from_node"] == "n030_failed_irc"
-    assert action["recommended_to_node"] == "n020_tsfreq"
-    assert action["recommended_new_branch_node"] == "n040_endpoint_connectivity_retry"
-    assert "--new-branch-node" in action["command_template"]
-    assert "n040_endpoint_connectivity_retry" in action["command_template"]
+    assert action["default_to_node_from_parent"] == "n020_tsfreq"
+    assert action["detected_new_branch_node"] == "n040_endpoint_connectivity_retry"
+    assert action["kind"] == "backtrack_event_required"
 
     validation = validate_workspace_allow_errors(root)
     assert any(

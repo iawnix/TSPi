@@ -1,4 +1,4 @@
-"""Context extraction and ranking for ChemKernel next-action planning."""
+"""Context extraction and ranking for ChemKernel decision-context packets."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ from .ids import node_sort_key
 
 
 def summarize_node(node_id: str, node: dict[str, Any]) -> dict[str, Any]:
-    """Return compact node state for planner context."""
+    """Return compact node state for decision context."""
 
     display = node.get("display") if isinstance(node.get("display"), dict) else {}
     return {
@@ -117,7 +117,7 @@ def summarize_reframe_tsfreq_record(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def backtrack_event_summaries(tree: dict[str, Any]) -> list[dict[str, Any]]:
-    """Return compact canonical backtrack events for planning packets."""
+    """Return compact canonical backtrack events for decision-context packets."""
 
     out: list[dict[str, Any]] = []
     for item in list_or_empty(tree.get("backtrack_events")):
@@ -362,7 +362,7 @@ def node_context_item(
 
 
 def failed_branch_context_item(failed: dict[str, Any], *, priority: str, reason: str) -> dict[str, Any]:
-    """Return a compact failed-branch lesson for planning context."""
+    """Return a compact failed-branch lesson for decision context."""
 
     node_id = clean_string(failed.get("node_id"))
     reflection = failed.get("reflection") if isinstance(failed.get("reflection"), dict) else {}
@@ -427,7 +427,7 @@ def first_section_line(text: str, section: str) -> str:
 
 
 def summarize_evidence(evidence: dict[str, Any]) -> dict[str, Any]:
-    """Return evidence counts for planner context."""
+    """Return evidence counts for decision context."""
 
     by_state: dict[str, int] = {}
     by_kind: dict[str, int] = {}

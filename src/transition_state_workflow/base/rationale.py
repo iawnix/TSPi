@@ -20,6 +20,7 @@ HYPOTHESIS_REQUIRED_SECTIONS = (
 DECISION_CARD_REQUIRED_SECTIONS = (
     "Why This Tool",
     "Input / Dependency Nodes",
+    "Decision Provenance",
     "Expected Supporting Evidence",
     "Refutation Criteria",
     "Cost And Risk",
@@ -43,6 +44,23 @@ EMPTY_FIELD_LABELS = (
     "compute cost",
     "numerical risk",
     "chemical risk",
+)
+
+DECISION_PROVENANCE_REQUIRED_FIELDS = (
+    "trigger_source",
+    "parent_selection_reason",
+    "context_packet_ref",
+    "evidence_refs",
+    "failed_or_ambiguous_source_node",
+    "backtrack_event_ref",
+    "changed_variables",
+    "method_or_tool_rationale",
+    "claim_ceiling",
+    "support_criteria",
+    "refutation_criteria",
+    "cost_risk",
+    "next_if_supported",
+    "next_if_refuted",
 )
 
 
@@ -86,12 +104,40 @@ class RationaleLint:
     hypothesis: MarkdownLint
     decision_card: MarkdownLint
     legacy_import: bool = False
+    provenance_missing_fields: tuple[str, ...] = ()
+    provenance_empty_fields: tuple[str, ...] = ()
+
+    @property
+    def provenance_complete(self) -> bool:
+        return not self.provenance_missing_fields and not self.provenance_empty_fields
+
+    @property
+    def legacy_provenance_gap(self) -> bool:
+        return (
+            self.hypothesis.complete
+            and set(self.decision_card.missing_sections) == {"Decision Provenance"}
+            and not self.decision_card.empty_sections
+            and not self.decision_card.placeholder_hits
+            and not self.decision_card.empty_field_hits
+            and set(self.provenance_missing_fields) == set(DECISION_PROVENANCE_REQUIRED_FIELDS)
+            and not self.provenance_empty_fields
+        )
+
+    @property
+    def complete(self) -> bool:
+        return self.hypothesis.complete and self.decision_card.complete and self.provenance_complete
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "status": self.status,
             "ok_to_start": self.ok_to_start,
             "legacy_import": self.legacy_import,
+            "legacy_provenance_gap": self.legacy_provenance_gap,
+            "decision_provenance": {
+                "complete": self.provenance_complete,
+                "missing_fields": list(self.provenance_missing_fields),
+                "empty_fields": list(self.provenance_empty_fields),
+            },
             "files": {
                 "hypothesis": self.hypothesis.to_dict(),
                 "decision_card": self.decision_card.to_dict(),
@@ -116,6 +162,10 @@ class RationaleLint:
                 missing.append(f"{name}: placeholder text {', '.join(lint.placeholder_hits)}")
             if lint.empty_field_hits:
                 missing.append(f"{name}: empty fields {', '.join(lint.empty_field_hits)}")
+        if self.provenance_missing_fields:
+            missing.append(f"decision_provenance: missing fields {', '.join(self.provenance_missing_fields)}")
+        if self.provenance_empty_fields:
+            missing.append(f"decision_provenance: empty fields {', '.join(self.provenance_empty_fields)}")
         return "; ".join(missing) if missing else "pre-execution rationale is incomplete"
 
 
@@ -126,13 +176,41 @@ def lint_node_rationale(root: Path, node_id: str, node_payload: dict[str, Any] |
     legacy_import = rationale_legacy_import(node_payload or {})
     hypothesis = lint_markdown_file(node_dir / "hypothesis.md", HYPOTHESIS_REQUIRED_SECTIONS)
     decision_card = lint_markdown_file(node_dir / "decision_card.md", DECISION_CARD_REQUIRED_SECTIONS)
+    missing_provenance, empty_provenance = lint_decision_provenance(node_payload or {})
     if legacy_import:
         return RationaleLint("legacy_import", True, hypothesis, decision_card, legacy_import=True)
     if not hypothesis.present or not decision_card.present:
-        return RationaleLint("missing", False, hypothesis, decision_card)
-    if hypothesis.complete and decision_card.complete:
+        return RationaleLint("missing", False, hypothesis, decision_card, provenance_missing_fields=missing_provenance, provenance_empty_fields=empty_provenance)
+    if hypothesis.complete and decision_card.complete and not missing_provenance and not empty_provenance:
         return RationaleLint("complete", True, hypothesis, decision_card)
-    return RationaleLint("draft", False, hypothesis, decision_card)
+    return RationaleLint("draft", False, hypothesis, decision_card, provenance_missing_fields=missing_provenance, provenance_empty_fields=empty_provenance)
+
+
+def lint_decision_provenance(node_payload: dict[str, Any]) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Return missing and empty decision-provenance fields for one node."""
+
+    provenance = node_payload.get("decision_provenance")
+    if not isinstance(provenance, dict):
+        return DECISION_PROVENANCE_REQUIRED_FIELDS, ()
+    missing: list[str] = []
+    empty: list[str] = []
+    for field in DECISION_PROVENANCE_REQUIRED_FIELDS:
+        if field not in provenance:
+            missing.append(field)
+            continue
+        if provenance_field_is_empty(provenance.get(field), field):
+            empty.append(field)
+    return tuple(missing), tuple(empty)
+
+
+def provenance_field_is_empty(value: Any, field: str) -> bool:
+    if field == "evidence_refs":
+        return not isinstance(value, list)
+    if field == "changed_variables":
+        return not isinstance(value, dict) or not value
+    if field in {"support_criteria", "refutation_criteria"}:
+        return not isinstance(value, list) or not any(clean_string(item) for item in value)
+    return not clean_string(value)
 
 
 def rationale_legacy_import(node_payload: dict[str, Any]) -> bool:
