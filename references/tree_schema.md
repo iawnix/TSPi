@@ -37,7 +37,7 @@ Required directories are created as needed:
 
 ```json
 {
-  "schema": "ts-tree-v1",
+  "schema": "tssearch-branching-tree",
   "nodes": {
     "n010_endpoint": {
       "parent_id": null,
@@ -86,7 +86,7 @@ Closed nodes must include `closure_explanation`:
   "phase": "candidate_generation",
   "node_disposition": "Error",
   "closure_explanation": {
-    "schema": "ts-node-closure-v1",
+    "schema": "ts-node-closure",
     "program": {
       "summary": "The candidate job failed before producing a parsed candidate.",
       "facts": [

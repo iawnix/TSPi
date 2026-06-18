@@ -44,11 +44,11 @@ def test_mechanism_reflection_does_not_reintroduce_legacy_failure_type_list() ->
 
 def test_user_facing_docs_avoid_migration_framing() -> None:
     forbidden = (
-        "v2 node",
-        "v2 fields",
-        "v2 state",
-        "v2 pair",
-        "strict-v2",
+        "v" + "2 node",
+        "v" + "2 fields",
+        "v" + "2 state",
+        "v" + "2 pair",
+        "strict-" + "v" + "2",
         "legacy state",
         "legacy or duplicated",
         "migrated",

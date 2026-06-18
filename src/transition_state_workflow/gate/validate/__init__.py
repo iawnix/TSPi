@@ -44,7 +44,7 @@ from .finalization import (
 )
 from .io import collect_node_dirs, read_json_optional, require_file, walk_values
 from .mechanism import validate_mechanism_model
-from .nodes import validate_nodes_v2, validate_normalized_nodes
+from .nodes import validate_nodes_contract, validate_normalized_nodes
 from .pathway import validate_pathway_model
 from .tree import (
     validate_indexes,
@@ -67,7 +67,7 @@ __all__ = [
     "validate_ts_workspace_contract",
     "validate_tree_top_level_contract",
     "validate_parent_graph",
-    "validate_nodes_v2",
+    "validate_nodes_contract",
     "validate_indexes",
     "validate_manifest_accepted_ts",
     "validate_pathway_model",

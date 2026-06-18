@@ -12,7 +12,7 @@ from .contracts import Finding
 
 
 def validate_tree_top_level_contract(tree: dict[str, Any], findings: list[Finding]) -> None:
-    """Reject top-level tree fields that duplicate canonical v2 state."""
+    """Reject top-level tree fields that duplicate canonical state."""
 
     legacy = [field for field in TREE_LEGACY_TOP_LEVEL_FIELDS if field in tree]
     if legacy:
@@ -20,7 +20,7 @@ def validate_tree_top_level_contract(tree: dict[str, Any], findings: list[Findin
             Finding(
                 "error",
                 "legacy_tree_top_level_fields",
-                f"tree.json contains non-v2 top-level fields: {', '.join(legacy)}",
+                f"tree.json contains forbidden top-level fields: {', '.join(legacy)}",
                 path="tree.json",
             )
         )

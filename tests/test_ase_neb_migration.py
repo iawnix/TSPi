@@ -77,7 +77,7 @@ def initialize_minimal_workspace(root: Path) -> None:
     )
 
 
-def test_migrated_ase_neb_candidate_node_is_strict_v2(tmp_path: Path) -> None:
+def test_ase_neb_candidate_node_uses_current_schema(tmp_path: Path) -> None:
     root = tmp_path / "tssearch_unit"
     endpoint_dir = root / "nodes" / "n005_endpoint_gate"
     node_dir = root / "nodes" / "n010_neb_xtb"
@@ -158,7 +158,7 @@ def test_migrated_ase_neb_candidate_node_is_strict_v2(tmp_path: Path) -> None:
     )
 
     saved_node = json.loads((node_dir / "node.json").read_text(encoding="utf-8"))
-    assert saved_node["schema"] == "ts-node-v2"
+    assert saved_node["schema"] == "ts-node"
     assert saved_node["phase"] == "candidate_generation"
     assert saved_node["node_disposition"] == "Success"
     audit = derive_node_audit_view(saved_node, {"stage": "neb"})
@@ -170,7 +170,7 @@ def test_migrated_ase_neb_candidate_node_is_strict_v2(tmp_path: Path) -> None:
         assert legacy_key not in saved_node
 
     tree = json.loads((root / "tree.json").read_text(encoding="utf-8"))
-    assert tree["schema"] == "tssearch-branching-tree-v2"
+    assert tree["schema"] == "tssearch-branching-tree"
     assert tree["nodes"]["n010_neb_xtb"] == {
         "parent_id": "n005_endpoint_gate",
         "stage": "neb",
@@ -192,7 +192,7 @@ def test_migrated_ase_neb_example_config_validates_without_ase_runtime() -> None
     )
     payload = json.loads(result.stdout)
     assert payload["ok"] is True
-    assert payload["config"]["project"]["schema"] == "tssearch-branching-tree-v2"
+    assert payload["config"]["project"]["schema"] == "tssearch-branching-tree"
 
 
 def test_ase_neb_reflect_command_writes_template(tmp_path: Path) -> None:

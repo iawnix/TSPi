@@ -27,7 +27,7 @@ from transition_state_workflow.core.workspace import (
 
 
 def initialize_ts_hypothesis_workspace_files_from_cli_args(args: argparse.Namespace) -> Path:
-    """Create the root v2 files for a chemistry-hypothesis TS workspace."""
+    """Create the root files for a chemistry-hypothesis TS workspace."""
 
     root = initialize_ts_hypothesis_workspace_files(
         root=args.root,
@@ -72,7 +72,7 @@ def initialize_ts_hypothesis_workspace_files(
         overwrite_existing=force,
     )
     mechanism = {
-        "schema": "tssearch-mechanism-model-v1",
+        "schema": "tssearch-mechanism-model",
         "system": system,
         "charge": charge,
         "multiplicity": multiplicity,
@@ -135,7 +135,7 @@ def write_mechanism_preflight_node_from_cli_args(args: argparse.Namespace) -> st
 
 
 def append_ts_workspace_evidence_record_from_cli_args(args: argparse.Namespace) -> None:
-    """Append one evidence registry record for a v2 workspace node."""
+    """Append one evidence registry record for a workspace node."""
 
     append_ts_workspace_evidence_record(
         root=args.root,

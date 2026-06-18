@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Normalize v2 TS-search workspace artifacts into a stable explorer view."""
+"""Normalize TS-search workspace artifacts into a stable explorer view."""
 
 from __future__ import annotations
 
@@ -33,7 +33,7 @@ from transition_state_workflow.util.path_utils import clean_string, first_nonemp
 class NormalizeWorkspaceCLI(CLIBase):
     """Strict workspace normalizer command-line interface."""
 
-    description = "Emit strict ts-explorer-graph-v2 JSON for a v2 TS-search workspace."
+    description = "Emit ts-explorer-graph JSON for a TS-search workspace."
 
     def add_arguments(self, parser: argparse.ArgumentParser) -> None:
         parser.add_argument("--source", required=True, type=Path, help="tssearch workspace root.")
@@ -55,14 +55,14 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def normalize_ts_workspace_to_explorer_graph(workspace_directory: Path) -> dict[str, Any]:
-    """Build the strict v2 explorer graph payload for one TS-search workspace."""
+    """Build the explorer graph payload for one TS-search workspace."""
 
     workspace_directory = workspace_directory.expanduser().resolve()
     manifest_payload = read_json_object_required(workspace_directory / "manifest.json")
     tree_payload = read_json_object_required(workspace_directory / "tree.json")
     evidence_registry_payload = read_json_object_required(workspace_directory / "evidence_registry.json")
     pathway_summary = summarize_pathway_model(read_pathway_model_optional(workspace_directory))
-    ensure_workspace_uses_v2_contract(manifest_payload, tree_payload, evidence_registry_payload)
+    ensure_workspace_uses_current_contract(manifest_payload, tree_payload, evidence_registry_payload)
     tree_node_index = tree_payload.get("nodes") if isinstance(tree_payload.get("nodes"), dict) else {}
 
     frontier_node_ids = sorted(clean_string(item) for item in list_or_empty(tree_payload.get("active_frontier")) if clean_string(item))
@@ -179,12 +179,12 @@ def normalize_ts_workspace_to_explorer_graph(workspace_directory: Path) -> dict[
     }
 
 
-def ensure_workspace_uses_v2_contract(
+def ensure_workspace_uses_current_contract(
     manifest_payload: dict[str, Any],
     tree_payload: dict[str, Any],
     evidence_registry_payload: dict[str, Any],
 ) -> None:
-    """Reject a workspace unless its root files declare the v2 contract."""
+    """Reject a workspace unless its root files declare the current contract."""
 
     violations = check_workspace_contract_violations(
         manifest=manifest_payload,
@@ -227,9 +227,9 @@ def normalize_node_for_explorer_graph(
     backtrack_event_ids: list[str],
     generated_from_backtrack_event_ids: list[str],
 ) -> dict[str, Any]:
-    """Normalize one v2 node.json payload into an explorer node view."""
+    """Normalize one node.json payload into an explorer node view."""
 
-    ensure_node_uses_v2_contract(node_id, node_payload)
+    ensure_node_uses_current_contract(node_id, node_payload)
     parent_id = first_nonempty_string(node_payload.get("parent_id"), tree_node_payload.get("parent_id"))
     audit = derive_node_audit_view(node_payload, tree_node_payload)
     phase = clean_string(audit.get("phase"))
@@ -343,8 +343,8 @@ def normalize_reaction_boundary(value: Any) -> dict[str, str] | None:
     return {"from": start, "to": end}
 
 
-def ensure_node_uses_v2_contract(node_id: str, node_payload: dict[str, Any]) -> None:
-    """Reject node payloads that are missing v2 fields or contain old aliases."""
+def ensure_node_uses_current_contract(node_id: str, node_payload: dict[str, Any]) -> None:
+    """Reject node payloads that are missing required fields or contain old aliases."""
 
     violations = check_node_contract_violations(node_id, node_payload)
     if violations:
@@ -419,7 +419,7 @@ def normalize_timeline_events(workspace_directory: Path, tree_payload: dict[str,
 
 
 def normalize_event(item: dict[str, Any], fallback_id: str) -> dict[str, Any]:
-    """Normalize one canonical v2 timeline event."""
+    """Normalize one canonical timeline event."""
 
     if "evidence" in item and "evidence_refs" not in item:
         raise ValueError(f"event {clean_string(item.get('event_id')) or fallback_id} uses legacy evidence; use evidence_refs")
@@ -448,7 +448,7 @@ def normalize_backtrack_events(tree_payload: dict[str, Any]) -> list[dict[str, A
 
 
 def normalize_backtrack_event(item: dict[str, Any], fallback_id: str) -> dict[str, Any]:
-    """Normalize one v2 backtrack event and reject old edge aliases."""
+    """Normalize one backtrack event and reject old edge aliases."""
 
     if "evidence" in item and "evidence_refs" not in item:
         raise ValueError(f"backtrack event {clean_string(item.get('id')) or fallback_id} uses legacy evidence; use evidence_refs")
@@ -495,7 +495,7 @@ def normalize_tree_node_index_entry(value: Any) -> dict[str, Any]:
     payload = dict(value) if isinstance(value, dict) else {}
     forbidden_fields = [field_name for field_name in TREE_NODE_FORBIDDEN_RUNTIME_FIELDS if field_name in payload]
     if forbidden_fields:
-        raise ValueError(f"tree.json nodes entry contains non-v2 runtime fields: {', '.join(forbidden_fields)}")
+        raise ValueError(f"tree.json nodes entry contains forbidden runtime fields: {', '.join(forbidden_fields)}")
     return payload
 
 

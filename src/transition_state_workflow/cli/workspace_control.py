@@ -41,8 +41,8 @@ from transition_state_workflow.util.json_io import read_json_object_required, wr
 from transition_state_workflow.util.path_utils import clean_string, list_or_empty
 
 
-WORKSPACE_REPORT_SCHEMA = "ts-workspace-report-v1"
-DECISION_VALIDATION_SCHEMA = "ts-decision-validation-v1"
+WORKSPACE_REPORT_SCHEMA = "ts-workspace-report"
+DECISION_VALIDATION_SCHEMA = "ts-decision-validation"
 
 FORBIDDEN_MODEL_FIELDS = (
     "claim_status",

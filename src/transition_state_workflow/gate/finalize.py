@@ -1,4 +1,4 @@
-"""Finalize completed TS-search nodes across v2 workspace artifacts."""
+"""Finalize completed TS-search nodes across workspace artifacts."""
 
 from __future__ import annotations
 
@@ -208,7 +208,7 @@ def finalize_ts_workspace_node(request: NodeFinalizationRequest) -> None:
 
 
 def validate_finalization_request(request: NodeFinalizationRequest) -> None:
-    """Fail early when requested state combinations contradict the v2 contract."""
+    """Fail early when requested state combinations contradict the state contract."""
 
     if request.claim_status not in VALID_CLAIM_STATUSES:
         raise SystemExit(f"invalid claim_status: {request.claim_status}")
@@ -354,7 +354,7 @@ def validate_accepted_ts_evidence_gates(
 
 
 def ensure_workspace_root(root: Path) -> None:
-    """Ensure root has the v2 files required for finalization."""
+    """Ensure root has the files required for finalization."""
 
     required = ("manifest.json", "tree.json", "evidence_registry.json", "nodes")
     missing = [name for name in required if not (root / name).exists()]
@@ -363,9 +363,9 @@ def ensure_workspace_root(root: Path) -> None:
     tree = read_json_object_required(root / "tree.json")
     registry = read_json_object_required(root / "evidence_registry.json")
     if clean_string(tree.get("schema")) != TREE_SCHEMA:
-        raise SystemExit("tree.json must declare schema=tssearch-branching-tree-v2")
+        raise SystemExit("tree.json must declare schema=tssearch-branching-tree")
     if clean_string(registry.get("schema")) != EVIDENCE_REGISTRY_SCHEMA:
-        raise SystemExit("evidence_registry.json must declare schema=tssearch-evidence-registry-v2")
+        raise SystemExit("evidence_registry.json must declare schema=tssearch-evidence-registry")
 
 
 def parse_metric_specs(raw_specs: tuple[str, ...] | list[str]) -> dict[str, Any]:

@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Callable, Mapping
 
 
-DECISION_CONTEXT_SCHEMA = "ts-decision-context-v1"
+DECISION_CONTEXT_SCHEMA = "ts-decision-context"
 PLAN_SCHEMA = DECISION_CONTEXT_SCHEMA
 WorkspaceValidator = Callable[[Path], Mapping[str, Any]]
 TsfreqEvidencePredicate = Callable[[Path, Mapping[str, object]], bool]

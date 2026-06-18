@@ -18,6 +18,7 @@ from typing import Any
 from transition_state_workflow.base.rationale import lint_node_rationale
 from transition_state_workflow.base.workspace import ExplorerServerConfig, ExplorerWorkspaceConfig
 from transition_state_workflow.base.explorer_registry import default_registry_path
+from transition_state_workflow.config.state_contract import EXPLORER_GRAPH_SCHEMA
 from transition_state_workflow.web.assets import read_explorer_index_html
 from transition_state_workflow.base.pathway_model import summarize_pathway_model
 from transition_state_workflow.util.cli import configure_cli_logging, emit_json, emit_stdout, log, warn
@@ -69,7 +70,7 @@ def main() -> int:
         "--source",
         type=Path,
         default=None,
-        help="Single strict-v2 tssearch workspace or mirror root.",
+        help="Single tssearch workspace or mirror root.",
     )
     serve.add_argument(
         "--state-dir",
@@ -601,7 +602,7 @@ def make_handler(
                     self.send_json(load_explorer_workspace_api_payload(workspace.source_directory, workspace=workspace))
                     return
                 if path == "/api/tree":
-                    self.send_json(build_strict_v2_explorer_graph_payload(workspace.source_directory))
+                    self.send_json(build_current_explorer_graph_payload(workspace.source_directory))
                     return
                 if path == "/api/mechanism":
                     self.send_json(read_json_optional(workspace.source_directory / "mechanism_model.json"))
@@ -643,7 +644,7 @@ def make_handler(
                 self.send_json(load_explorer_workspace_api_payload(workspace.source_directory, workspace=workspace))
                 return
             if rest == "tree":
-                self.send_json(build_strict_v2_explorer_graph_payload(workspace.source_directory))
+                self.send_json(build_current_explorer_graph_payload(workspace.source_directory))
                 return
             if rest == "mechanism":
                 self.send_json(read_json_optional(workspace.source_directory / "mechanism_model.json"))
@@ -787,7 +788,7 @@ def load_explorer_workspace_api_payload(
 
     manifest = read_json_optional(source / "manifest.json")
     mechanism = read_json_optional(source / "mechanism_model.json")
-    graph = build_strict_v2_explorer_graph_payload(source)
+    graph = build_current_explorer_graph_payload(source)
     return {
         "app": APP_NAME,
         "source": str(source),
@@ -800,13 +801,13 @@ def load_explorer_workspace_api_payload(
     }
 
 
-def build_strict_v2_explorer_graph_payload(source: Path) -> dict[str, Any]:
-    """Build the strict v2 graph payload used by web and inspect routes."""
+def build_current_explorer_graph_payload(source: Path) -> dict[str, Any]:
+    """Build the graph payload used by web and inspect routes."""
 
     if normalize_ts_workspace_to_explorer_graph is None:
-        raise RuntimeError("strict v2 normalizer could not be imported")
+        raise RuntimeError("workspace normalizer could not be imported")
     payload = normalize_ts_workspace_to_explorer_graph(source)
-    if payload.get("schema") != "ts-explorer-graph-v2":
+    if payload.get("schema") != EXPLORER_GRAPH_SCHEMA:
         raise RuntimeError(f"normalizer returned unsupported schema: {payload.get('schema')}")
     if validate_ts_workspace_contract is not None:
         payload["validation"] = validate_ts_workspace_contract(source)
@@ -821,7 +822,7 @@ def load_node_payload(source: Path, node_id: str) -> dict[str, Any]:
     node_json = read_json_optional(node_dir / "node.json")
     if not node_dir.exists():
         raise HTTPError(HTTPStatus.NOT_FOUND, "node_not_found", f"Node not found: {node_id}")
-    graph = build_strict_v2_explorer_graph_payload(source)
+    graph = build_current_explorer_graph_payload(source)
     normalized_node = next(
         (
             item

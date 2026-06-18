@@ -165,7 +165,7 @@ def ensure_workspace_root(root: Path) -> None:
         raise SystemExit(f"not a TS-search workspace, missing: {', '.join(missing)}")
     tree = read_json_object_required(root / "tree.json")
     if clean_string(tree.get("schema")) != TREE_SCHEMA:
-        raise SystemExit("tree.json must declare schema=tssearch-branching-tree-v2")
+        raise SystemExit("tree.json must declare schema=tssearch-branching-tree")
 
 
 def validate_backtrack_request(tree_payload: dict[str, object], request: BacktrackRequest) -> None:

@@ -11,7 +11,7 @@ from transition_state_workflow.base.pathway_model import (
     STEP_STATUSES,
     derive_pathway_status,
 )
-from transition_state_workflow.config.state_contract import derive_node_audit_view
+from transition_state_workflow.config.state_contract import PATHWAY_MODEL_SCHEMA, derive_node_audit_view
 from transition_state_workflow.gate.evidence import accepted_ts_missing_evidence_gates
 from transition_state_workflow.util.path_utils import clean_string, relative_path_or_absolute
 
@@ -50,8 +50,8 @@ def validate_pathway_model(
             )
         return
 
-    if clean_string(model.get("schema")) != "tssearch-pathway-model-v1":
-        findings.append(Finding("error", "pathway_schema_invalid", "pathway_model.json must declare schema=tssearch-pathway-model-v1", path="pathway_model.json"))
+    if clean_string(model.get("schema")) != PATHWAY_MODEL_SCHEMA:
+        findings.append(Finding("error", "pathway_schema_invalid", f"pathway_model.json must declare schema={PATHWAY_MODEL_SCHEMA}", path="pathway_model.json"))
     mode = clean_string(model.get("mode"))
     if mode not in PATHWAY_MODES:
         findings.append(Finding("error", "pathway_mode_invalid", f"invalid pathway mode: {mode}", path="pathway_model.json"))

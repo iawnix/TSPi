@@ -36,7 +36,7 @@ def node_record(
     children: list[str] | None = None,
     **extra: Any,
 ) -> dict[str, Any]:
-    """Build a v2 workspace node record from a compact legacy status."""
+    """Build a workspace node record from a compact legacy status."""
 
     if status not in VALID_NODE_STATUSES:
         raise ValueError(f"invalid node status '{status}' for {node_id}")

@@ -23,12 +23,12 @@ from transition_state_workflow.util.path_utils import clean_string, list_or_empt
 from .contracts import Finding
 
 
-def validate_nodes_v2(
+def validate_nodes_contract(
     source: Path,
     node_json_by_id: dict[str, dict[str, Any]],
     findings: list[Finding],
 ) -> None:
-    """Validate required v2 fields and forbid legacy node-level aliases."""
+    """Validate required node fields and forbid legacy node-level aliases."""
 
     for node_id, node_json in node_json_by_id.items():
         node_path = relative_path_or_absolute(source, source / "nodes" / node_id / "node.json")
@@ -124,7 +124,7 @@ def validate_closure_explanation(
 
 
 __all__ = [
-    "validate_nodes_v2",
+    "validate_nodes_contract",
     "validate_normalized_nodes",
     "validate_closure_explanation",
 ]

@@ -9,7 +9,7 @@ from typing import Any
 from transition_state_workflow.util.json_io import read_json_object_optional, write_json_object
 from transition_state_workflow.util.path_utils import clean_string, slugify_workspace_id
 
-REGISTRY_SCHEMA = "ts-explorer-workspaces-v1"
+REGISTRY_SCHEMA = "ts-explorer-workspaces"
 DEFAULT_REGISTRY_PATH = Path("~/.codex/state/ts_explorer/workspaces.json")
 
 

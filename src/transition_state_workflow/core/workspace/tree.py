@@ -65,7 +65,7 @@ def upsert_tree_node(
 ) -> None:
     """Insert or update a node entry plus active/closed indexes."""
 
-    # Kept for callers that still pass the old argument; v2 tree state never stores current_best.
+    # Kept for callers that still pass the old argument; tree state never stores current_best.
     _ = current_best
     if status not in VALID_NODE_STATUSES:
         raise ValueError(f"invalid tree node status '{status}' for {node_id}")

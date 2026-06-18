@@ -23,7 +23,7 @@ def append_evidence_record(
     claim: str,
     evidence_state: str,
 ) -> str:
-    """Append or update one v2 evidence-registry record."""
+    """Append or update one evidence-registry record."""
 
     registry_path = root / "evidence_registry.json"
     if registry_path.exists():

@@ -126,7 +126,7 @@ def test_workspace_control_lifecycle_and_contract(tmp_path: Path) -> None:
     report = json.loads(
         run_cli(str(WORKSPACE_CLI), "report_workspace", "--root", str(root), "--pretty").stdout
     )
-    assert report["schema"] == "ts-workspace-report-v1"
+    assert report["schema"] == "ts-workspace-report"
     assert report["allowed_response_contract"]["allowed_actions"] == [
         "start_node",
         "end_node",

@@ -137,7 +137,7 @@ def build_validation_policy(
     )
     flags = risk_flags or []
     return {
-        "schema": "ts-validation-policy-v2",
+        "schema": "ts-validation-policy",
         "reactant": str(reactant_path),
         "product": str(product_path),
         "system_class": system_class,

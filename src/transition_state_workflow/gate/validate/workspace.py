@@ -17,7 +17,7 @@ from .events import validate_backtrack_replacement_links, validate_events, valid
 from .finalization import validate_node_finalization_artifacts
 from .io import collect_node_dirs, read_json_optional, require_file
 from .mechanism import validate_mechanism_model
-from .nodes import validate_nodes_v2, validate_normalized_nodes
+from .nodes import validate_nodes_contract, validate_normalized_nodes
 from .pathway import validate_pathway_model
 from .tree import (
     validate_indexes,
@@ -28,7 +28,7 @@ from .tree import (
 
 
 def validate_ts_workspace_contract(workspace_directory: Path) -> dict[str, Any]:
-    """Validate a v2 TS-search workspace against the canonical explorer contract."""
+    """Validate a TS-search workspace against the canonical explorer contract."""
 
     source = workspace_directory.expanduser().resolve()
     findings: list[Finding] = []
@@ -46,7 +46,7 @@ def validate_ts_workspace_contract(workspace_directory: Path) -> dict[str, Any]:
             Finding(
                 "error",
                 "normalizer_contract_error",
-                f"v2 normalizer rejected this workspace: {exc}",
+                f"normalizer rejected this workspace: {exc}",
                 path=str(source),
             )
         )
@@ -87,7 +87,7 @@ def validate_ts_workspace_contract(workspace_directory: Path) -> dict[str, Any]:
                 Finding(
                     "error",
                     "tree_node_state_cache",
-                    f"tree.nodes entry contains non-v2 runtime fields: {', '.join(tree_state_fields)}",
+                    f"tree.nodes entry contains forbidden runtime fields: {', '.join(tree_state_fields)}",
                     path="tree.json",
                     node_id=node_id,
                 )
@@ -136,7 +136,7 @@ def validate_ts_workspace_contract(workspace_directory: Path) -> dict[str, Any]:
     validate_mechanism_preflight_root(manifest, node_json_by_id, parent_by_node, findings)
     if graph_ready:
         validate_indexes(tree, graph, findings)
-    validate_nodes_v2(source, node_json_by_id, findings)
+    validate_nodes_contract(source, node_json_by_id, findings)
     validate_manifest_accepted_ts(manifest, tree, node_json_by_id, findings)
     if graph_ready:
         validate_normalized_nodes(graph, findings)
@@ -159,7 +159,7 @@ def validate_ts_workspace_contract(workspace_directory: Path) -> dict[str, Any]:
     errors = sum(1 for finding in findings if finding.severity == "error")
     warnings = sum(1 for finding in findings if finding.severity == "warning")
     return {
-        "schema": "ts-workspace-validation-v1",
+        "schema": "ts-workspace-validation",
         "source": str(source),
         "summary": {
             "errors": errors,

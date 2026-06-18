@@ -1,13 +1,13 @@
-"""Canonical v2 state contract for TS-search workspaces."""
+"""Canonical state contract for TS-search workspaces."""
 
 from __future__ import annotations
 
-WORKSPACE_NODE_SCHEMA = "ts-node-v2"
-TREE_SCHEMA = "tssearch-branching-tree-v2"
-EVIDENCE_REGISTRY_SCHEMA = "tssearch-evidence-registry-v2"
-PATHWAY_MODEL_SCHEMA = "tssearch-pathway-model-v1"
-EXPLORER_GRAPH_SCHEMA = "ts-explorer-graph-v2"
-NODE_CLOSURE_SCHEMA = "ts-node-closure-v1"
+WORKSPACE_NODE_SCHEMA = "ts-node"
+TREE_SCHEMA = "tssearch-branching-tree"
+EVIDENCE_REGISTRY_SCHEMA = "tssearch-evidence-registry"
+PATHWAY_MODEL_SCHEMA = "tssearch-pathway-model"
+EXPLORER_GRAPH_SCHEMA = "ts-explorer-graph"
+NODE_CLOSURE_SCHEMA = "ts-node-closure"
 
 VALID_NODE_DISPOSITIONS = {"Running", "Stopped", "Error", "Success"}
 VALID_END_NODE_DISPOSITIONS = {"Stopped", "Error", "Success"}
@@ -250,7 +250,7 @@ OUTCOME_TO_NODE_STATE = {
 
 
 def derive_node_state_key(claim_status: str, outcome: str, run_state: str, stage: str) -> str:
-    """Return one user-facing state key from the raw v2 audit fields.
+    """Return one user-facing state key from the raw audit fields.
 
     Successful claim statuses dominate so the more specific UI key wins (e.g.
     ``irc_connected`` instead of the coarser ``connectivity_validated``).
@@ -539,7 +539,7 @@ TREE_NODE_FORBIDDEN_RUNTIME_FIELDS = (
 
 # --- Contract checks -------------------------------------------------------
 #
-# One source of truth for the rules that say "this looks like a v2 workspace
+# One source of truth for the rules that say "this looks like a current workspace
 # file." The normalizer turns every violation into a hard ValueError; the
 # validator turns it into a soft Finding. Both call into the same functions
 # below so the rule set, codes, and messages never drift.
@@ -563,22 +563,22 @@ def check_workspace_contract_violations(
     tree: dict,
     evidence_registry: dict,
 ) -> list[tuple[str, str]]:
-    """Return ``(code, message)`` pairs for v2 contract violations on root files."""
+    """Return ``(code, message)`` pairs for contract violations on root files."""
 
     violations: list[tuple[str, str]] = []
     if _text(manifest.get("node_schema")) != WORKSPACE_NODE_SCHEMA:
         violations.append(
-            ("manifest_node_schema_not_v2", "manifest.json must declare node_schema=ts-node-v2")
+            ("manifest_node_schema_invalid", "manifest.json must declare node_schema=ts-node")
         )
     if _text(tree.get("schema")) != TREE_SCHEMA:
         violations.append(
-            ("tree_schema_not_v2", "tree.json must declare schema=tssearch-branching-tree-v2")
+            ("tree_schema_invalid", "tree.json must declare schema=tssearch-branching-tree")
         )
     if _text(evidence_registry.get("schema")) != EVIDENCE_REGISTRY_SCHEMA:
         violations.append(
             (
-                "evidence_registry_schema_not_v2",
-                "evidence_registry.json must declare schema=tssearch-evidence-registry-v2",
+                "evidence_registry_schema_invalid",
+                "evidence_registry.json must declare schema=tssearch-evidence-registry",
             )
         )
     legacy = [field for field in TREE_LEGACY_TOP_LEVEL_FIELDS if field in tree]
@@ -586,7 +586,7 @@ def check_workspace_contract_violations(
         violations.append(
             (
                 "legacy_tree_top_level_fields",
-                f"tree.json contains non-v2 top-level fields: {', '.join(legacy)}",
+                f"tree.json contains forbidden top-level fields: {', '.join(legacy)}",
             )
         )
     return violations
@@ -596,20 +596,20 @@ def check_node_contract_violations(
     node_id: str,
     node_payload: dict,
 ) -> list[tuple[str, str]]:
-    """Return ``(code, message)`` pairs for v2 contract violations on one node."""
+    """Return ``(code, message)`` pairs for contract violations on one node."""
 
     violations: list[tuple[str, str]] = []
     if _text(node_payload.get("schema")) != WORKSPACE_NODE_SCHEMA:
-        violations.append(("node_schema_not_v2", "node.json must declare schema=ts-node-v2"))
+        violations.append(("node_schema_invalid", "node.json must declare schema=ts-node"))
     missing = [field for field in REQUIRED_NODE_FIELDS if field not in node_payload]
     if missing:
         violations.append(
-            ("missing_v2_fields", f"node.json missing required v2 fields: {', '.join(missing)}")
+            ("missing_node_fields", f"node.json missing required fields: {', '.join(missing)}")
         )
     if "node_id" in node_payload:
         # A present-but-empty ``node_id`` is still wrong: callers expect this
         # check to be the single source for node-id consistency. An absent
-        # ``node_id`` field is caught above as ``missing_v2_fields``.
+        # ``node_id`` field is caught above as ``missing_node_fields``.
         declared_id = _text(node_payload.get("node_id"))
         if declared_id != node_id:
             violations.append(
@@ -623,7 +623,7 @@ def check_node_contract_violations(
         violations.append(
             (
                 "legacy_node_fields",
-                f"node.json contains legacy fields not allowed in v2 runtime: {', '.join(legacy)}",
+                f"node.json contains legacy fields not allowed in the current runtime: {', '.join(legacy)}",
             )
         )
     state_fields = [field for field in NODE_LEGACY_STATE_FIELDS if field in node_payload]

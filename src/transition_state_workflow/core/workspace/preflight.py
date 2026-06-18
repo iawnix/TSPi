@@ -67,7 +67,7 @@ def write_mechanism_preflight_node(
     node_dir = branch_write.node_dir
     summary_path = node_dir / "parsed" / "mechanism_preflight_summary.json"
     summary_payload = {
-        "schema": "tssearch-mechanism-preflight-summary-v1",
+        "schema": "tssearch-mechanism-preflight-summary",
         "node_id": node_id,
         "charge": charge,
         "multiplicity": multiplicity,

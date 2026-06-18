@@ -811,7 +811,7 @@ def test_ensure_external_gaussian_project_writes_skeleton_with_entry(tmp_path: P
     for fname in ("manifest.json", "evidence_registry.json", "tree.json", "README.md"):
         assert (root / fname).exists()
     manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
-    assert manifest["node_schema"] == "ts-node-v2"
+    assert manifest["node_schema"] == "ts-node"
     # The external-Gaussian path layers its own manifest extra on the skeleton.
     assert manifest["entry"] == "external_gaussian_neb_from_existing_images"
 

@@ -1,4 +1,4 @@
-"""Direct unit tests for the v2 contract checkers in ``config.state_contract``.
+"""Direct unit tests for the contract checkers in ``config.state_contract``.
 
 The normalizer raises on the first violation; the validator emits each one as a
 Finding. Both call into these functions, so behavior here is the source of truth
@@ -40,7 +40,7 @@ def _valid_registry() -> dict:
     return {"schema": EVIDENCE_REGISTRY_SCHEMA, "records": []}
 
 
-def test_workspace_check_returns_empty_for_valid_v2_files() -> None:
+def test_workspace_check_returns_empty_for_valid_files() -> None:
     violations = check_workspace_contract_violations(
         manifest=_valid_manifest(),
         tree=_valid_tree(),
@@ -56,13 +56,13 @@ def test_workspace_check_flags_missing_manifest_schema() -> None:
         evidence_registry=_valid_registry(),
     )
     codes = [code for code, _ in violations]
-    assert "manifest_node_schema_not_v2" in codes
+    assert "manifest_node_schema_invalid" in codes
 
 
 def test_workspace_check_flags_legacy_tree_top_level_fields() -> None:
     tree = _valid_tree()
-    tree["current_best"] = "n010"  # legacy v1 field
-    tree["schema_version"] = 1  # another legacy
+    tree["current_best"] = "n010"  # old field
+    tree["schema_version"] = 1  # another old field
     violations = check_workspace_contract_violations(
         manifest=_valid_manifest(), tree=tree, evidence_registry=_valid_registry()
     )
@@ -81,9 +81,9 @@ def test_workspace_check_reports_all_three_root_schemas_independently() -> None:
     )
     codes = {code for code, _ in violations}
     assert codes >= {
-        "manifest_node_schema_not_v2",
-        "tree_schema_not_v2",
-        "evidence_registry_schema_not_v2",
+        "manifest_node_schema_invalid",
+        "tree_schema_invalid",
+        "evidence_registry_schema_invalid",
     }
 
 
@@ -230,15 +230,15 @@ def _valid_node(node_id: str = "n010_candidate") -> dict:
     }
 
 
-def test_node_check_returns_empty_for_valid_v2_payload() -> None:
+def test_node_check_returns_empty_for_valid_payload() -> None:
     assert check_node_contract_violations("n010_candidate", _valid_node()) == []
 
 
 def test_node_check_flags_wrong_schema() -> None:
     node = _valid_node()
-    node["schema"] = "ts-node-v1"
+    node["schema"] = "old-ts-node"
     codes = [c for c, _ in check_node_contract_violations("n010_candidate", node)]
-    assert "node_schema_not_v2" in codes
+    assert "node_schema_invalid" in codes
 
 
 def test_node_check_flags_missing_required_fields() -> None:
@@ -247,8 +247,8 @@ def test_node_check_flags_missing_required_fields() -> None:
     del node["node_disposition"]
     violations = check_node_contract_violations("n010_candidate", node)
     codes = [c for c, _ in violations]
-    assert "missing_v2_fields" in codes
-    message = next(m for c, m in violations if c == "missing_v2_fields")
+    assert "missing_node_fields" in codes
+    message = next(m for c, m in violations if c == "missing_node_fields")
     assert "phase" in message and "node_disposition" in message
 
 
@@ -275,8 +275,8 @@ def test_node_check_flags_empty_node_id_as_mismatch_not_missing() -> None:
 
 def test_node_check_flags_legacy_runtime_fields() -> None:
     node = _valid_node()
-    node["status"] = "running"  # legacy v1 alias
-    node["failure_type"] = "x"  # legacy v1 alias
+    node["status"] = "running"  # old alias
+    node["failure_type"] = "x"  # old alias
     violations = check_node_contract_violations("n010_candidate", node)
     codes = [c for c, _ in violations]
     assert "legacy_node_fields" in codes

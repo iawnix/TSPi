@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI wrapper for the strict v2 TS workspace normalizer."""
+"""CLI wrapper for the TS workspace normalizer."""
 
 from __future__ import annotations
 

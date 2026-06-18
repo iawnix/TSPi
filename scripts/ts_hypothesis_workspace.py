@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""CLI wrapper for creating and updating v2 TS hypothesis workspaces."""
+"""CLI wrapper for creating and updating TS hypothesis workspaces."""
 
 from __future__ import annotations
 
