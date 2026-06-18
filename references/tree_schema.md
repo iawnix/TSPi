@@ -237,10 +237,17 @@ When a branch fails:
 3. Choose the closest chemically meaningful ancestor.
 4. Start the replacement node with `start_node`.
 5. Record the changed variable, parent choice, and reason in the new node
-   rationale.
+   rationale. When the new node replaces a failed or ambiguous sibling, pass
+   `--replaces-node <failed-node>` and the relevant
+   `--backtrack-reason-code`, `--backtrack-reason`, and
+   `--backtrack-evidence-ref` values to `start_node`; the public command writes
+   the canonical `backtrack_events[]` entry with `new_branch_node` set to the
+   replacement node.
 
 The validator still checks tree consistency, active frontier, closed nodes, and
-backtrack metadata if present.
+backtrack metadata if present. The explorer may derive display-only replacement
+edges from `new_branch_node`, but `tree.json.backtrack_events[]` remains the
+canonical backtrack record.
 
 ## Pathway State
 

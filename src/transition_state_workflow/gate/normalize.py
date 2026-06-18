@@ -128,15 +128,33 @@ def normalize_ts_workspace_to_explorer_graph(workspace_directory: Path) -> dict[
     for backtrack_event_payload in backtrack_events:
         source_id = clean_string(backtrack_event_payload.get("from_node"))
         target_id = clean_string(backtrack_event_payload.get("to_node"))
+        new_branch_node = clean_string(backtrack_event_payload.get("new_branch_node"))
+        event_id = clean_string(backtrack_event_payload.get("id"))
+        event_state = clean_string(backtrack_event_payload.get("event_state")) or "active"
         if source_id and target_id:
             edges.append(
                 {
-                    "id": clean_string(backtrack_event_payload.get("id")) or f"{source_id}~>{target_id}",
+                    "id": event_id or f"{source_id}~>{target_id}",
                     "source": source_id,
                     "target": target_id,
                     "kind": "backtrack",
-                    "event_state": clean_string(backtrack_event_payload.get("event_state")) or "active",
-                    "new_branch_node": clean_string(backtrack_event_payload.get("new_branch_node")),
+                    "event_state": event_state,
+                    "new_branch_node": new_branch_node,
+                    "reason": clean_string(backtrack_event_payload.get("reason")),
+                    "reason_code": clean_string(backtrack_event_payload.get("reason_code")),
+                }
+            )
+        if source_id and new_branch_node:
+            replacement_id = f"{event_id or f'{source_id}~>{new_branch_node}'}~replacement"
+            edges.append(
+                {
+                    "id": replacement_id,
+                    "source": source_id,
+                    "target": new_branch_node,
+                    "kind": "backtrack_replacement",
+                    "event_state": event_state,
+                    "backtrack_event_id": event_id,
+                    "to_node": target_id,
                     "reason": clean_string(backtrack_event_payload.get("reason")),
                     "reason_code": clean_string(backtrack_event_payload.get("reason_code")),
                 }

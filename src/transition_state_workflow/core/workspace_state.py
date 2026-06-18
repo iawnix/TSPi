@@ -358,6 +358,7 @@ Pending.
                 reason_code=clean_string(getattr(args, "backtrack_reason_code", "")) or "replacement_branch",
                 reason=reason,
                 evidence_refs=tuple(getattr(args, "backtrack_evidence_ref", ()) or ()),
+                event_state="resolved",
                 decision=f"replace_{replaces_node}_with_{args.node_id}",
                 supersede_active=bool(getattr(args, "supersede_active_backtrack", False)),
             )

@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from conftest import SKILL_ROOT, end_node, run_cli, start_node, validate_workspace_allow_errors
+from conftest import SKILL_ROOT, end_node, normalize_workspace, run_cli, start_node, validate_workspace_allow_errors
 from transition_state_workflow.base.pathway_model import read_pathway_model_required
 from transition_state_workflow.core.workspace import WORKSPACE_ROOT_DIRECTORIES
 
@@ -89,6 +89,37 @@ def close_endpoint_fixture(root: Path) -> str:
         next_branch="Report workspace and choose candidate generation.",
     )
     return "ev_n010_endpoint_endpoint_summary"
+
+
+def close_failed_candidate_fixture(root: Path, *, node_id: str = "n020_default_qst2") -> str:
+    start_node(
+        root,
+        node_id=node_id,
+        parent_id="n010_endpoint",
+        phase="candidate_generation",
+        operation="gaussian-qst2-default",
+        hypothesis="Default QST2 can generate a candidate from validated endpoints.",
+    )
+    parsed = root / "nodes" / node_id / "parsed" / "failure.json"
+    parsed.write_text('{"error": "End of file in ZSymb"}\n', encoding="utf-8")
+    evidence = {
+        "kind": "program_summary",
+        "path": f"nodes/{node_id}/parsed/failure.json",
+        "claim": "Default QST2 failed before producing chemistry evidence.",
+        "evidence_state": "ambiguous",
+    }
+    end_node(
+        root,
+        node_id=node_id,
+        phase="candidate_generation",
+        node_disposition="Error",
+        decision="replace_candidate_coordinate_handling",
+        summary="Default QST2 failed in setup.",
+        primary_file=f"nodes/{node_id}/parsed/failure.json",
+        evidence=evidence,
+        next_branch="Open a replacement branch from the validated endpoint parent.",
+    )
+    return f"ev_{node_id}_program_summary"
 
 
 def assert_start_evidence_refs(root: Path, node_id: str, expected_refs: list[str]) -> None:
@@ -321,6 +352,68 @@ def test_start_node_rejects_unknown_evidence_refs_before_mutation(tmp_path: Path
     assert not (root / "nodes" / "n030_missing_path").exists()
 
 
+def test_start_node_records_public_replacement_backtrack_event(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_control"
+    init_control_workspace(root)
+    close_endpoint_fixture(root)
+    failure_evidence_id = close_failed_candidate_fixture(root)
+
+    run_cli(
+        str(WORKSPACE_CLI),
+        "start_node",
+        "--root",
+        str(root),
+        "--node-id",
+        "n031_cartesian_qst2",
+        "--phase",
+        "candidate_generation",
+        "--operation",
+        "gaussian-qst2-cartesian",
+        "--parent-id",
+        "n010_endpoint",
+        "--replaces-node",
+        "n020_default_qst2",
+        "--backtrack-reason-code",
+        "replacement_branch_coordinate_handling",
+        "--backtrack-reason",
+        "Default internal-coordinate QST2 failed before chemistry evidence; Cartesian QST2 changes coordinate handling.",
+        "--backtrack-evidence-ref",
+        "nodes/n020_default_qst2/parsed/failure.json",
+        "--hypothesis",
+        "Cartesian QST2 can generate the same mapped candidate.",
+        "--rationale",
+        "The endpoint parent remains valid and only coordinate handling changes.",
+        "--expected-evidence",
+        "Gaussian candidate output",
+        "--refutation-criteria",
+        "Cartesian QST2 also fails or changes the reaction center.",
+    )
+
+    tree = json.loads((root / "tree.json").read_text(encoding="utf-8"))
+    assert len(tree["backtrack_events"]) == 1
+    event = tree["backtrack_events"][0]
+    assert event["from_node"] == "n020_default_qst2"
+    assert event["to_node"] == "n010_endpoint"
+    assert event["new_branch_node"] == "n031_cartesian_qst2"
+    assert event["reason_code"] == "replacement_branch_coordinate_handling"
+    assert event["event_state"] == "resolved"
+    assert event["evidence_refs"] == [failure_evidence_id]
+
+    node = json.loads((root / "nodes" / "n031_cartesian_qst2" / "node.json").read_text(encoding="utf-8"))
+    provenance = node["decision_provenance"]
+    assert provenance["failed_or_ambiguous_source_node"] == "n020_default_qst2"
+    assert provenance["backtrack_event_ref"] == "created_by_replaces_node"
+
+    graph = normalize_workspace(root)
+    edge_keys = {(edge["source"], edge["target"], edge["kind"]) for edge in graph["edges"]}
+    assert ("n020_default_qst2", "n010_endpoint", "backtrack") in edge_keys
+    assert ("n020_default_qst2", "n031_cartesian_qst2", "backtrack_replacement") in edge_keys
+    replacement_edge = next(edge for edge in graph["edges"] if edge["kind"] == "backtrack_replacement")
+    assert replacement_edge["to_node"] == "n010_endpoint"
+    assert replacement_edge["event_state"] == "resolved"
+    assert_strict_workspace_clean(root)
+
+
 def test_validate_decision_rejects_forbidden_state_fields(tmp_path: Path) -> None:
     root = tmp_path / "tssearch_control"
     init_control_workspace(root)
@@ -472,6 +565,49 @@ def test_validate_decision_accepts_public_shapes(tmp_path: Path) -> None:
         ).stdout
     )
     assert payload["ok"] is True
+
+
+def test_validate_decision_accepts_replacement_backtrack_fields(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_control"
+    init_control_workspace(root)
+    close_endpoint_fixture(root)
+    close_failed_candidate_fixture(root)
+    decision = tmp_path / "replacement_decision.json"
+    decision.write_text(
+        json.dumps(
+            {
+                "action": "start_node",
+                "node_id": "n031_cartesian_qst2",
+                "phase": "candidate_generation",
+                "operation": "gaussian-qst2-cartesian",
+                "parent_id": "n010_endpoint",
+                "replaces_node": "n020_default_qst2",
+                "backtrack_reason_code": "replacement_branch_coordinate_handling",
+                "backtrack_reason": "Default QST2 failed before producing chemistry evidence.",
+                "backtrack_evidence_refs": ["ev_n020_default_qst2_program_summary"],
+                "supersede_active_backtrack": False,
+                "hypothesis": "Cartesian QST2 can generate the same mapped candidate.",
+                "rationale": "The endpoint parent remains valid and only coordinate handling changes.",
+                "expected_evidence": ["Gaussian candidate output"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    payload = json.loads(
+        run_cli(
+            str(WORKSPACE_CLI),
+            "validate_decision",
+            "--root",
+            str(root),
+            "--decision-file",
+            str(decision),
+            "--pretty",
+        ).stdout
+    )
+    assert payload["ok"] is True
+    assert payload["normalized_decision"]["replaces_node"] == "n020_default_qst2"
 
 
 def test_end_node_records_error_and_stopped_dispositions(tmp_path: Path) -> None:

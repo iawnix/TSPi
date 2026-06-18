@@ -121,6 +121,28 @@ def register_start_node_parser(subparsers: argparse._SubParsersAction[argparse.A
     start.add_argument("--cost-risk", default="", help="Cost/risk decision for this node.")
     start.add_argument("--next-if-supported", default="", help="Next step if supported.")
     start.add_argument("--next-if-refuted", default="", help="Next step if refuted.")
+    start.add_argument(
+        "--replaces-node",
+        default="",
+        help="Failed or ambiguous node that this new branch replaces; requires --parent-id as the backtrack target.",
+    )
+    start.add_argument(
+        "--backtrack-reason-code",
+        default="replacement_branch",
+        help="Diagnostic reason code for the canonical replacement backtrack event.",
+    )
+    start.add_argument("--backtrack-reason", default="", help="Human-readable reason for the replacement backtrack event.")
+    start.add_argument(
+        "--backtrack-evidence-ref",
+        action="append",
+        default=[],
+        help="Evidence id, or unique evidence_registry path, supporting the replacement backtrack.",
+    )
+    start.add_argument(
+        "--supersede-active-backtrack",
+        action="store_true",
+        help="Supersede any active backtrack before recording this replacement branch event.",
+    )
     start.add_argument("--primary-file", default="", help="Primary input/script/log shown while running.")
     start.add_argument("--force", action="store_true", help="Overwrite existing node templates.")
     add_logging_arguments(start)
@@ -217,6 +239,7 @@ def start_node_from_cli_args(args: argparse.Namespace) -> None:
 
     root = args.root.expanduser().resolve()
     evidence_refs = normalize_start_evidence_refs(root, tuple(args.evidence_ref or ()))
+    backtrack_evidence_refs = normalize_start_evidence_refs(root, tuple(args.backtrack_evidence_ref or ()))
     bridge_args = argparse.Namespace(
         root=root,
         node_id=args.node_id,
@@ -239,11 +262,11 @@ def start_node_from_cli_args(args: argparse.Namespace) -> None:
         cost_risk=args.cost_risk,
         next_if_supported=args.next_if_supported,
         next_if_refuted=args.next_if_refuted,
-        replaces_node="",
-        backtrack_reason_code="replacement_branch",
-        backtrack_reason="",
-        backtrack_evidence_ref=[],
-        supersede_active_backtrack=False,
+        replaces_node=args.replaces_node,
+        backtrack_reason_code=args.backtrack_reason_code,
+        backtrack_reason=args.backtrack_reason,
+        backtrack_evidence_ref=list(backtrack_evidence_refs),
+        supersede_active_backtrack=bool(args.supersede_active_backtrack),
         force=bool(args.force),
     )
     create_ts_branch_decision_artifacts_from_cli_args(bridge_args)
@@ -388,6 +411,7 @@ def validate_decision_payload(root: Path, decision: dict[str, Any]) -> dict[str,
     if action == "start_node":
         require_fields(decision, ("node_id", "phase", "operation", "hypothesis", "rationale", "expected_evidence"), errors)
         validate_phase(decision.get("phase"), errors)
+        validate_start_node_backtrack_fields(decision, root, errors)
     elif action == "end_node":
         require_fields(decision, ("node_id", "node_disposition", "phase", "closure_explanation"), errors)
         validate_phase(decision.get("phase"), errors)
@@ -433,7 +457,19 @@ def response_contract() -> dict[str, Any]:
         "schemas_by_action": {
             "start_node": {
                 "required": ["action", "node_id", "phase", "operation", "hypothesis", "rationale", "expected_evidence"],
-                "optional": ["parent_id", "input_refs", "changed_variables", "cost_risk", "next_if_supported", "next_if_refuted"],
+                "optional": [
+                    "parent_id",
+                    "input_refs",
+                    "changed_variables",
+                    "cost_risk",
+                    "next_if_supported",
+                    "next_if_refuted",
+                    "replaces_node",
+                    "backtrack_reason_code",
+                    "backtrack_reason",
+                    "backtrack_evidence_refs",
+                    "supersede_active_backtrack",
+                ],
             },
             "end_node": {
                 "required": ["action", "node_id", "node_disposition", "phase", "closure_explanation"],
@@ -602,6 +638,39 @@ def validate_phase(value: Any, errors: list[dict[str, str]]) -> None:
     phase = clean_string(value)
     if phase not in VALID_WORKFLOW_PHASES:
         errors.append({"code": "invalid_phase", "message": f"phase must be one of: {', '.join(sorted(VALID_WORKFLOW_PHASES))}"})
+
+
+def validate_start_node_backtrack_fields(decision: dict[str, Any], root: Path, errors: list[dict[str, str]]) -> None:
+    """Validate replacement-backtrack decision fields without mutating state."""
+
+    replaces_node = clean_string(decision.get("replaces_node"))
+    if not replaces_node:
+        if "supersede_active_backtrack" in decision and not isinstance(decision.get("supersede_active_backtrack"), bool):
+            errors.append(
+                {
+                    "code": "invalid_supersede_active_backtrack",
+                    "message": "supersede_active_backtrack must be a boolean",
+                }
+            )
+        return
+    parent_id = clean_string(decision.get("parent_id"))
+    if not parent_id:
+        errors.append({"code": "missing_parent_id", "message": "replaces_node requires parent_id as the backtrack target"})
+    if "supersede_active_backtrack" in decision and not isinstance(decision.get("supersede_active_backtrack"), bool):
+        errors.append({"code": "invalid_supersede_active_backtrack", "message": "supersede_active_backtrack must be a boolean"})
+    raw_evidence_refs = decision.get("backtrack_evidence_refs", [])
+    if raw_evidence_refs and not isinstance(raw_evidence_refs, list):
+        errors.append({"code": "invalid_backtrack_evidence_refs", "message": "backtrack_evidence_refs must be a list when provided"})
+    source = root.expanduser().resolve()
+    tree_path = source / "tree.json"
+    if not tree_path.exists():
+        return
+    tree = read_json_object_required(tree_path)
+    nodes = tree.get("nodes") if isinstance(tree.get("nodes"), dict) else {}
+    if replaces_node and replaces_node not in nodes:
+        errors.append({"code": "replaces_node_missing", "message": f"replaces_node does not exist: {replaces_node}"})
+    if parent_id and parent_id not in nodes:
+        errors.append({"code": "parent_missing", "message": f"parent_id does not exist: {parent_id}"})
 
 
 def validate_explanation_block(closure: dict[str, Any], key: str, errors: list[dict[str, str]]) -> None:

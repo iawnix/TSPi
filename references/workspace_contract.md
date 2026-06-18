@@ -152,6 +152,25 @@ python scripts/ts_workspace.py start_node \
   --cost-risk "low-cost endpoint optimization"
 ```
 
+For a replacement branch after a failed or ambiguous sibling, keep the same
+public command and add backtrack provenance:
+
+```bash
+python scripts/ts_workspace.py start_node \
+  --root tssearch_example \
+  --node-id n031_cartesian_qst2 \
+  --phase candidate_generation \
+  --operation gaussian-qst2-cartesian \
+  --parent-id n020_endpoint_pair \
+  --replaces-node n030_default_qst2 \
+  --backtrack-reason-code replacement_branch_coordinate_handling \
+  --backtrack-reason "Default internal-coordinate QST2 failed before chemistry evidence; Cartesian QST2 changes only coordinate handling." \
+  --hypothesis "Cartesian QST2 can generate the same mapped H-transfer candidate." \
+  --rationale "The parent endpoint pair remains valid and the changed variable is coordinate handling." \
+  --expected-evidence "Gaussian candidate or TS/Freq output" \
+  --refutation-criteria "Gaussian setup fails again or the reaction center changes"
+```
+
 5. Close a node:
 
 ```bash

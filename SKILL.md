@@ -36,7 +36,10 @@ public compatibility surfaces.
   directories `inputs/`, `nodes/`, `reports/`, `accepted/`, and `rejected/`.
 - `start_node` creates one node and immediately marks it `Running`. It records
   the phase, operation, hypothesis, parent/input references, rationale,
-  expected evidence, refutation criteria, and cost/risk.
+  expected evidence, refutation criteria, and cost/risk. When a new node
+  replaces a failed or ambiguous branch, `start_node --replaces-node ...`
+  records the canonical replacement backtrack event with `new_branch_node`
+  pointing to the newly created node.
 - `end_node` closes one node as `Success`, `Error`, or `Stopped`. Closure must
   include a structured explanation with program facts, mechanism facts, an
   implication for planning, and any open questions.

@@ -650,7 +650,8 @@
     .edge-group.lineage               { color: var(--accent); }
     .edge-group.dependency            { color: var(--cyan); opacity: .58; }
     .edge-group.backtrack,
-    .edge-group.backtrack_decision { color: var(--red); }
+    .edge-group.backtrack_decision,
+    .edge-group.backtrack_replacement { color: var(--red); }
     .edge-group.backtrack-resolved,
     .edge-group.backtrack-superseded { color: var(--text-muted); opacity: .56; }
     .edge-group:hover              { color: var(--accent); }
@@ -665,7 +666,8 @@
                   opacity var(--t-fast) var(--ease);
     }
     .edge.backtrack,
-    .edge.backtrack_decision { stroke-dasharray: 5 4; opacity: .72; }
+    .edge.backtrack_decision,
+    .edge.backtrack_replacement { stroke-dasharray: 5 4; opacity: .72; }
     .edge.backtrack-resolved,
     .edge.backtrack-superseded { opacity: .52; }
     .edge.dependency { stroke-dasharray: 2 5; opacity: .7; }
@@ -689,7 +691,8 @@
       stroke-width: 0.8;
     }
     .edge-group.backtrack       .edge-dot,
-    .edge-group.backtrack_decision .edge-dot { opacity: .85; }
+    .edge-group.backtrack_decision .edge-dot,
+    .edge-group.backtrack_replacement .edge-dot { opacity: .85; }
     .edge-group:hover .edge-dot       { opacity: 1; }
     .edge-group:hover .edge-dot.source { stroke-width: 2; }
 

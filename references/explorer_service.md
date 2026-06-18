@@ -154,6 +154,9 @@ The explorer shows:
 - dependency edges from `input_refs` for multi-input operations such as QST2
   while preserving one primary `parent_id` lineage;
 - backtrack edges from canonical `backtrack_events[]`;
+- display-only replacement edges from a backtrack event's `from_node` to its
+  `new_branch_node`, so a failed branch visibly points to the replacement
+  branch while the canonical rollback edge still points to `to_node`;
 - separate `lifecycle_state`, `run_state`, `claim_status`, `outcome`,
   `outcome_code`, and `claim_level`;
 - active, stopped, ambiguous, rejected, numerical-failure, and accepted nodes

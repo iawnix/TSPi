@@ -58,7 +58,7 @@ def record_backtrack(request: BacktrackRequest) -> None:
         raise SystemExit(f"duplicate backtrack event id: {event_id}")
     evidence_refs = [clean_string(item) for item in request.evidence_refs if clean_string(item)]
     events = [item for item in tree_payload.get("events", []) if isinstance(item, dict)]
-    if request.event_state == "active" and request.supersede_active:
+    if request.supersede_active:
         events.extend(
             supersede_active_backtracks(
                 backtrack_events,
@@ -269,7 +269,7 @@ def supersede_active_backtracks(
                 "node_id": from_node,
                 "event_type": "supersede_backtrack",
                 "decision": "supersede_backtrack",
-                "reason": f"Backtrack event {event_id} was superseded by a newer active backtrack event.",
+                "reason": f"Backtrack event {event_id} was superseded by a newer backtrack event.",
                 "evidence_refs": [],
             }
         )
