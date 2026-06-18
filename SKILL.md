@@ -117,7 +117,7 @@ top-level `node.json` state and must not be requested from the model.
 
 1. Initialize a workspace.
    - Read `references/tree_schema.md` and
-     `references/hypothesis_workspace.md` for the stored artifact contract.
+     `references/workspace_contract.md` for the stored artifact contract.
    - Run `init_workspace` before creating any node.
    - Record charge, multiplicity, reaction class, key atoms, and expected bond
      changes when known.
@@ -253,7 +253,7 @@ Do not say "TS found" for:
 
 Reference files:
 
-- `references/hypothesis_workspace.md`: workspace artifacts, report contract,
+- `references/workspace_contract.md`: workspace artifacts, report contract,
   node lifecycle, and evidence rules.
 - `references/tree_schema.md`: required tree layout and node fields.
 - `references/mechanism_reflection.md`: mechanism preflight and

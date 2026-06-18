@@ -25,8 +25,7 @@ Status: completed and merged to `main`.
 
 - `python scripts/ts_workspace.py --help` exposes only the six public
   commands.
-- `python scripts/ts_hypothesis_workspace.py --help` reaches the same
-  workspace entrypoint.
+- Removed workspace compatibility wrappers do not exist under `scripts/`.
 - `pytest -q` passes in the authored checkout.
 - Scratch workspace smoke covers `init_workspace`, `start_node`, `end_node`,
   `report_workspace`, `validate_decision`, strict workspace validation, and

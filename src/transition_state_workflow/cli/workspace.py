@@ -21,7 +21,7 @@ from transition_state_workflow.cli.workspace_control import (
     validate_workspace_payload,
 )
 from transition_state_workflow.core.workspace_state import (
-    initialize_ts_hypothesis_workspace_files_from_cli_args,
+    initialize_ts_workspace_files_from_cli_args,
 )
 from transition_state_workflow.core.workspace import write_text_file_if_allowed
 from transition_state_workflow.util.cli import configure_cli_logging, emit_json
@@ -29,7 +29,7 @@ from transition_state_workflow.util.json_io import read_json_object_required
 
 
 def build_parser() -> argparse.ArgumentParser:
-    """Build the TS hypothesis workspace CLI parser."""
+    """Build the public TS workspace CLI parser."""
 
     parser = argparse.ArgumentParser(
         description="Control TS-search workspaces through the public workspace contract.",
@@ -46,13 +46,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
-    """Run the TS hypothesis workspace command-line interface."""
+    """Run the public TS workspace command-line interface."""
 
     parser = build_parser()
     args = parser.parse_args(argv)
     configure_cli_logging(verbose=getattr(args, "verbose", False), quiet=getattr(args, "quiet", False))
     if args.command == "init_workspace":
-        initialize_ts_hypothesis_workspace_from_cli_args(args)
+        initialize_ts_workspace_from_cli_args(args)
     elif args.command == "start_node":
         start_node_from_cli_args(args)
     elif args.command == "end_node":
@@ -74,10 +74,10 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def initialize_ts_hypothesis_workspace_from_cli_args(args: argparse.Namespace) -> None:
+def initialize_ts_workspace_from_cli_args(args: argparse.Namespace) -> None:
     """Create the root files and CLI-owned explorer launch checklist."""
 
-    root = initialize_ts_hypothesis_workspace_files_from_cli_args(args)
+    root = initialize_ts_workspace_files_from_cli_args(args)
 
     registry_note = "explorer registration skipped (--no-explorer-register)"
     workspace_id = ""
@@ -141,7 +141,7 @@ python {skill_scripts / "ts_workspace.py"} validate_workspace --root {root} --pr
 
 __all__ = [
     "build_parser",
-    "initialize_ts_hypothesis_workspace_from_cli_args",
+    "initialize_ts_workspace_from_cli_args",
     "main",
     "write_explorer_launch_checklist",
 ]

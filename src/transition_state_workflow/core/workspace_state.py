@@ -26,10 +26,10 @@ from transition_state_workflow.core.workspace import (
 )
 
 
-def initialize_ts_hypothesis_workspace_files_from_cli_args(args: argparse.Namespace) -> Path:
+def initialize_ts_workspace_files_from_cli_args(args: argparse.Namespace) -> Path:
     """Create the root files for a chemistry-hypothesis TS workspace."""
 
-    root = initialize_ts_hypothesis_workspace_files(
+    root = initialize_ts_workspace_files(
         root=args.root,
         system=args.system,
         charge=args.charge,
@@ -48,7 +48,7 @@ def initialize_ts_hypothesis_workspace_files_from_cli_args(args: argparse.Namesp
     return root
 
 
-def initialize_ts_hypothesis_workspace_files(
+def initialize_ts_workspace_files(
     *,
     root: Path,
     system: str,

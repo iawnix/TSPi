@@ -6,6 +6,8 @@ import ast
 import importlib
 from pathlib import Path
 
+import pytest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "src" / "transition_state_workflow"
@@ -297,18 +299,21 @@ def test_workspace_validator_lives_in_gate_package_without_tool_compatibility() 
     assert not (ROOT / "scripts" / "ts_validate_workspace.py").exists()
 
 
-def test_hypothesis_workspace_cli_lives_in_cli_without_tool_compatibility() -> None:
-    from transition_state_workflow.cli import hypothesis_workspace
+def test_workspace_cli_lives_in_cli_without_tool_compatibility() -> None:
+    from transition_state_workflow.cli import workspace
     from transition_state_workflow.cli import workspace_control
 
-    assert hypothesis_workspace.main is not None
-    assert hypothesis_workspace.build_parser is not None
-    assert hypothesis_workspace.initialize_ts_hypothesis_workspace_from_cli_args is not None
+    assert workspace.main is not None
+    assert workspace.build_parser is not None
+    assert workspace.initialize_ts_workspace_from_cli_args is not None
     assert workspace_control.build_workspace_report_payload is not None
     assert workspace_control.validate_decision_payload is not None
     assert not (PACKAGE / "core" / "workspace_control.py").exists()
 
-    parser = hypothesis_workspace.build_parser()
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("transition_state_workflow.cli.hypothesis_workspace")
+
+    parser = workspace.build_parser()
     assert set(parser._subparsers._actions[-1].choices) == {
         "init_workspace",
         "start_node",
@@ -318,7 +323,7 @@ def test_hypothesis_workspace_cli_lives_in_cli_without_tool_compatibility() -> N
         "validate_workspace",
     }
     script_source = (ROOT / "scripts" / "ts_workspace.py").read_text(encoding="utf-8")
-    assert "transition_state_workflow.cli.hypothesis_workspace import main" in script_source
+    assert "transition_state_workflow.cli.workspace import main" in script_source
 
     plan_next_package = PACKAGE / "core" / "plan_next"
     assert plan_next_package.is_dir()
@@ -337,7 +342,7 @@ def test_hypothesis_workspace_cli_lives_in_cli_without_tool_compatibility() -> N
     ):
         assert (plan_next_package / expected_module).is_file()
 
-    cli_imports = full_internal_imports(PACKAGE / "cli" / "hypothesis_workspace.py")
+    cli_imports = full_internal_imports(PACKAGE / "cli" / "workspace.py")
     assert "transition_state_workflow.tool" not in {
         name.split(".", 2)[0] + "." + name.split(".", 2)[1]
         for name in cli_imports
@@ -345,6 +350,8 @@ def test_hypothesis_workspace_cli_lives_in_cli_without_tool_compatibility() -> N
     }
 
     assert not (ROOT / "scripts" / "ts_hypothesis_workspace.py").exists()
+    assert not (PACKAGE / "cli" / "hypothesis_workspace.py").exists()
+    assert not (ROOT / "references" / "hypothesis_workspace.md").exists()
 
 
 def test_gaussian_cli_helpers_live_in_cli_and_backend_without_tool_compatibility() -> None:

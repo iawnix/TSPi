@@ -7,7 +7,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 from conftest import SKILL_ROOT, end_node, run_cli, start_node, validate_workspace_allow_errors
+from transition_state_workflow.base.pathway_model import read_pathway_model_required
 
 
 WORKSPACE_CLI = SKILL_ROOT / "scripts" / "ts_workspace.py"
@@ -209,6 +212,18 @@ def test_workspace_cli_exposes_public_commands() -> None:
         )
         assert result.returncode != 0
         assert "invalid choice" in result.stderr
+
+
+def test_missing_pathway_model_error_uses_public_workspace_command(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_missing_pathway"
+    root.mkdir()
+
+    with pytest.raises(SystemExit) as exc_info:
+        read_pathway_model_required(root)
+
+    message = str(exc_info.value)
+    assert "init_workspace" in message
+    assert "pathway-init" not in message
 
 
 def test_validate_decision_accepts_public_shapes(tmp_path: Path) -> None:

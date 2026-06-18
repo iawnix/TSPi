@@ -46,8 +46,8 @@ from transition_state_workflow.core.imaginary_mode_follow import (
 from transition_state_workflow.core.workspace_state import (
     append_ts_workspace_evidence_record,
     create_ts_branch_decision_artifacts_from_cli_args,
-    initialize_ts_hypothesis_workspace_files,
-    initialize_ts_hypothesis_workspace_files_from_cli_args,
+    initialize_ts_workspace_files,
+    initialize_ts_workspace_files_from_cli_args,
 )
 
 __all__ = [
@@ -68,8 +68,8 @@ __all__ = [
     "ensure_external_gaussian_project",
     "external_gaussian_level_slug",
     "find_project_input",
-    "initialize_ts_hypothesis_workspace_files",
-    "initialize_ts_hypothesis_workspace_files_from_cli_args",
+    "initialize_ts_workspace_files",
+    "initialize_ts_workspace_files_from_cli_args",
     "latest_node_with_stage",
     "latest_promotable_candidate",
     "prepare_gaussian_refine_node_layout",

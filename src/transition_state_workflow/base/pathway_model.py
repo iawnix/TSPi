@@ -175,7 +175,7 @@ def read_pathway_model_required(root: Path) -> dict[str, Any]:
 
     path = pathway_model_path(root)
     if not path.exists():
-        raise SystemExit("pathway_model.json does not exist; run pathway-init first")
+        raise SystemExit("pathway_model.json does not exist; initialize the workspace with init_workspace first")
     model = read_json_object_required(path)
     if clean_string(model.get("schema")) != PATHWAY_MODEL_SCHEMA:
         raise SystemExit(f"pathway_model.json must declare schema={PATHWAY_MODEL_SCHEMA}")
