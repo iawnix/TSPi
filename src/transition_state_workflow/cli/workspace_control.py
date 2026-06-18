@@ -5,9 +5,10 @@ small on purpose:
 
 ``init_workspace`` creates the root ledger, ``start_node`` creates and starts a
 node, ``end_node`` closes a node with structured program/mechanism
-explanations, ``report_workspace`` emits a constrained context packet, and
+explanations, ``report_workspace`` emits a constrained context packet,
 ``validate_decision`` checks a proposed LLM decision before any workspace
-mutation.
+mutation, and ``validate_workspace`` runs the read-only workspace contract
+check.
 """
 
 from __future__ import annotations
