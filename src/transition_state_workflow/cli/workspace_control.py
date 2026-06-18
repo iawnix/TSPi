@@ -568,6 +568,7 @@ def claim_ceiling_for_phase(phase: str) -> str:
         "tsfreq_validation": "tsfreq_validated",
         "connectivity_validation": "endpoint_connected_or_irc_connected",
         "accepted_audit": "accepted_ts",
+        "pathway_audit": "accepted_pathway",
     }[phase]
 
 
@@ -591,6 +592,7 @@ def closure_state_for(
         "tsfreq_validation": "tsfreq_validated",
         "connectivity_validation": "endpoint_connected",
         "accepted_audit": "accepted_ts",
+        "pathway_audit": "accepted_pathway",
     }[phase]
     outcome = {
         "preflight": "none",
@@ -600,6 +602,7 @@ def closure_state_for(
         "tsfreq_validation": "tsfreq_validated",
         "connectivity_validation": "connectivity_validated",
         "accepted_audit": "accepted",
+        "pathway_audit": "accepted",
     }[phase]
     return claim_status, outcome, "completed", requested_pathway_step_status
 

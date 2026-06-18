@@ -6,7 +6,11 @@ import argparse
 from pathlib import Path
 from typing import Any
 
-from transition_state_workflow.base.pathway_model import initialize_pathway_model_if_missing, validate_pathway_step_reference
+from transition_state_workflow.base.pathway_model import (
+    initialize_pathway_model_if_missing,
+    validate_pathway_reference,
+    validate_pathway_step_reference,
+)
 from transition_state_workflow.core.backtrack import BacktrackRequest, active_backtrack_events, record_backtrack
 from transition_state_workflow.util.json_io import read_json_object_required, write_json_object
 from transition_state_workflow.util.path_utils import clean_string, relative_path_or_absolute
@@ -178,9 +182,16 @@ def create_ts_branch_decision_artifacts_from_cli_args(args: argparse.Namespace) 
     nodes = dict(tree.get("nodes") or {})
     pathway_id = clean_optional_node_ref(args.pathway_id)
     step_id = clean_optional_node_ref(args.step_id)
-    if bool(pathway_id) != bool(step_id):
+    phase = clean_string(getattr(args, "phase", "")) or clean_string(getattr(args, "stage", ""))
+    if phase == "pathway_audit":
+        if not pathway_id:
+            raise SystemExit("--phase pathway_audit requires --pathway-id")
+        if step_id:
+            raise SystemExit("--phase pathway_audit is pathway-level; omit --step-id")
+        validate_pathway_reference(root, pathway_id)
+    elif bool(pathway_id) != bool(step_id):
         raise SystemExit("--pathway-id and --step-id must be provided together")
-    if pathway_id:
+    elif pathway_id:
         validate_pathway_step_reference(root, pathway_id, step_id)
     replaces_node = clean_optional_node_ref(getattr(args, "replaces_node", ""))
     parent_id = clean_optional_node_ref(args.parent_id)
@@ -381,6 +392,8 @@ def build_decision_provenance(
         changed_variables["operation"] = clean_string(args.operation)
     if pathway_id and step_id:
         changed_variables.setdefault("pathway_step", f"{pathway_id}:{step_id}")
+    elif pathway_id:
+        changed_variables.setdefault("pathway", pathway_id)
     evidence_refs = [clean_string(item) for item in getattr(args, "evidence_ref", ()) or () if clean_string(item)]
     trigger_source = clean_string(getattr(args, "trigger_source", "")) or (
         f"replacement_for:{replaces_node}" if replaces_node else "agent_cli_decision_card"
@@ -498,6 +511,8 @@ def format_pathway_step_markdown(pathway_id: str, step_id: str) -> str:
 
     if not pathway_id:
         return "- None recorded."
+    if not step_id:
+        return f"- Pathway: `{pathway_id}`"
     return f"- Pathway: `{pathway_id}`\n- Elementary step: `{step_id}`"
 
 

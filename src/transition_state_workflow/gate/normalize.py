@@ -24,6 +24,7 @@ from transition_state_workflow.config.state_contract import (
     derive_claim_level,
     derive_node_audit_view,
 )
+from transition_state_workflow.base.backtrack_chain import replacement_chain_nodes
 from transition_state_workflow.base.pathway_model import read_pathway_model_optional, summarize_pathway_model
 from transition_state_workflow.util.json_io import read_json_object_required
 from transition_state_workflow.util.cli import CLIBase, CLIResult, log
@@ -157,6 +158,42 @@ def normalize_ts_workspace_to_explorer_graph(workspace_directory: Path) -> dict[
                     "to_node": target_id,
                     "reason": clean_string(backtrack_event_payload.get("reason")),
                     "reason_code": clean_string(backtrack_event_payload.get("reason_code")),
+                }
+            )
+
+    parent_by_node = {clean_string(node.get("id")): clean_string(node.get("parent_id")) for node in node_views}
+    direct_replacement_edges = {
+        (clean_string(edge.get("source")), clean_string(edge.get("target")))
+        for edge in edges
+        if clean_string(edge.get("kind")) == "backtrack_replacement"
+    }
+    for backtrack_event_payload in backtrack_events:
+        source_id = clean_string(backtrack_event_payload.get("from_node"))
+        target_id = clean_string(backtrack_event_payload.get("to_node"))
+        event_id = clean_string(backtrack_event_payload.get("id"))
+        event_state = clean_string(backtrack_event_payload.get("event_state")) or "active"
+        reason = clean_string(backtrack_event_payload.get("reason"))
+        reason_code = clean_string(backtrack_event_payload.get("reason_code"))
+        for replacement_node in replacement_chain_nodes(
+            from_node=source_id,
+            to_node=target_id,
+            backtrack_events=backtrack_events,
+            parent_by_node=parent_by_node,
+        ):
+            if (source_id, replacement_node) in direct_replacement_edges:
+                continue
+            edges.append(
+                {
+                    "id": f"{event_id or f'{source_id}~>{replacement_node}'}~replacement-derived",
+                    "source": source_id,
+                    "target": replacement_node,
+                    "kind": "backtrack_replacement",
+                    "event_state": event_state,
+                    "backtrack_event_id": event_id,
+                    "to_node": target_id,
+                    "reason": reason,
+                    "reason_code": reason_code,
+                    "derived": True,
                 }
             )
 

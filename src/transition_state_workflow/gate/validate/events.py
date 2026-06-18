@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from transition_state_workflow.base.backtrack_chain import replacement_chain_covers
 from transition_state_workflow.config.state_contract import VALID_BACKTRACK_EVENT_STATES
 from transition_state_workflow.config.state_contract import derive_node_audit_view
 from transition_state_workflow.util.path_utils import clean_string, list_or_empty
@@ -119,6 +120,15 @@ def validate_tree_events(
             path="tree.json",
             allow_empty=False,
         )
+        new_branch_node = clean_string(event.get("new_branch_node"))
+        validate_known_node_ref(
+            new_branch_node,
+            known_nodes,
+            findings,
+            code="backtrack_missing_new_branch_node",
+            message="backtrack new_branch_node is missing",
+            path="tree.json",
+        )
         state = clean_string(event.get("event_state")) or "active"
         if state not in VALID_BACKTRACK_EVENT_STATES:
             findings.append(Finding("warning", "invalid_backtrack_event_state", f"invalid backtrack event_state: {state}", path="tree.json", node_id=from_node))
@@ -155,14 +165,6 @@ def validate_backtrack_replacement_links(
     """Warn when a failed branch has an apparent replacement sibling but no backtrack link."""
 
     normalized_events = [event for event in backtrack_events if isinstance(event, dict)]
-    linked_replacements = {
-        (
-            clean_string(event.get("from_node")),
-            clean_string(event.get("to_node")),
-            clean_string(event.get("new_branch_node")),
-        )
-        for event in normalized_events
-    }
     for failed_node, node_json in sorted(node_json_by_id.items(), key=lambda item: _node_sort_key(item[0])):
         if not _is_failed_or_ambiguous_branch(node_json):
             continue
@@ -171,7 +173,13 @@ def validate_backtrack_replacement_links(
             continue
         replacements = _replacement_siblings(failed_node, parent, parent_by_node)
         for replacement in replacements:
-            if (failed_node, parent, replacement) in linked_replacements:
+            if replacement_chain_covers(
+                from_node=failed_node,
+                to_node=parent,
+                replacement_node=replacement,
+                backtrack_events=normalized_events,
+                parent_by_node=parent_by_node,
+            ):
                 continue
             findings.append(
                 Finding(
@@ -269,6 +277,14 @@ def validate_events(graph: dict[str, Any], node_ids: list[str], findings: list[F
             code="backtrack_missing_to_node",
             message="backtrack to_node is missing",
             allow_empty=False,
+        )
+        new_branch_node = clean_string(event.get("new_branch_node"))
+        validate_known_node_ref(
+            new_branch_node,
+            known_nodes,
+            findings,
+            code="backtrack_missing_new_branch_node",
+            message="backtrack new_branch_node is missing",
         )
         state = clean_string(event.get("event_state"))
         if state not in VALID_BACKTRACK_EVENT_STATES:

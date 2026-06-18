@@ -51,7 +51,8 @@ The LLM-facing state is intentionally small:
 
 - `phase`: `preflight`, `endpoint`, `rp_conformer_generation`,
   `candidate_generation`, `tsfreq_validation`, `connectivity_validation`, or
-  `accepted_audit`.
+  `accepted_audit`. Use `pathway_audit` only for a pathway-level audit that
+  aggregates already accepted elementary-step TS nodes.
 - `node_disposition`: `Running`, `Stopped`, `Error`, or `Success`.
 
 `Running` is produced by `start_node`. `Stopped`, `Error`, and `Success` are

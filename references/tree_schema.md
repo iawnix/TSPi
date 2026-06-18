@@ -119,6 +119,7 @@ Valid phases:
 - `tsfreq_validation`
 - `connectivity_validation`
 - `accepted_audit`
+- `pathway_audit`
 
 Valid dispositions:
 

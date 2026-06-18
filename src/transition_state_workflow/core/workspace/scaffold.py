@@ -43,6 +43,8 @@ def initial_workspace_manifest(
         "node_schema": WORKSPACE_NODE_SCHEMA,
         "mechanism_preflight_storage": "undeclared",
         "current_accepted_ts": None,
+        "current_accepted_pathway": None,
+        "current_accepted_pathway_audit": None,
     }
 
 
@@ -121,6 +123,8 @@ def ensure_tree_skeleton(
             "root": str(root),
             "node_schema": WORKSPACE_NODE_SCHEMA,
             "current_accepted_ts": None,
+            "current_accepted_pathway": None,
+            "current_accepted_pathway_audit": None,
         }
         if manifest_extra:
             payload.update(manifest_extra)

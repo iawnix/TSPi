@@ -191,6 +191,7 @@ def validate_mechanism_preflight_root(
         "tsfreq_validation",
         "connectivity_validation",
         "accepted_audit",
+        "pathway_audit",
     }
     root_compute_nodes = [
         node_id

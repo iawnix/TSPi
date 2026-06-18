@@ -9,7 +9,19 @@ from pathlib import Path
 
 import pytest
 
-from conftest import SKILL_ROOT, end_node, normalize_workspace, run_cli, start_node, validate_workspace_allow_errors
+from conftest import (
+    SKILL_ROOT,
+    create_pathway_candidate_node,
+    create_pathway_endpoint_node,
+    end_node,
+    finalize_pathway_candidate_as_accepted,
+    initialize_pathway_workspace,
+    normalize_workspace,
+    report_workspace,
+    run_cli,
+    start_node,
+    validate_workspace_allow_errors,
+)
 from transition_state_workflow.base.pathway_model import read_pathway_model_required
 from transition_state_workflow.core.workspace import WORKSPACE_ROOT_DIRECTORIES
 
@@ -411,6 +423,255 @@ def test_start_node_records_public_replacement_backtrack_event(tmp_path: Path) -
     replacement_edge = next(edge for edge in graph["edges"] if edge["kind"] == "backtrack_replacement")
     assert replacement_edge["to_node"] == "n010_endpoint"
     assert replacement_edge["event_state"] == "resolved"
+    assert_strict_workspace_clean(root)
+
+
+def test_multi_hop_replacement_backtrack_chain_is_valid(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_control"
+    init_control_workspace(root)
+    close_endpoint_fixture(root)
+    first_failure_evidence_id = close_failed_candidate_fixture(root)
+
+    run_cli(
+        str(WORKSPACE_CLI),
+        "start_node",
+        "--root",
+        str(root),
+        "--node-id",
+        "n030_xtb_neb",
+        "--phase",
+        "candidate_generation",
+        "--operation",
+        "xtb-neb",
+        "--parent-id",
+        "n010_endpoint",
+        "--replaces-node",
+        "n020_default_qst2",
+        "--backtrack-reason-code",
+        "replacement_branch_neb",
+        "--backtrack-reason",
+        "QST2 failed before producing a candidate; NEB changes the search route.",
+        "--backtrack-evidence-ref",
+        first_failure_evidence_id,
+        "--hypothesis",
+        "xTB NEB can generate a mapped candidate from the endpoint parent.",
+        "--rationale",
+        "The endpoint parent remains valid and only the candidate generation route changes.",
+        "--expected-evidence",
+        "NEB candidate output",
+        "--refutation-criteria",
+        "NEB fails or changes the intended reaction center.",
+    )
+    neb_failure = root / "nodes" / "n030_xtb_neb" / "parsed" / "failure.json"
+    neb_failure.write_text('{"converged": false}\n', encoding="utf-8")
+    end_node(
+        root,
+        node_id="n030_xtb_neb",
+        phase="candidate_generation",
+        node_disposition="Error",
+        decision="replace_neb_settings",
+        summary="xTB NEB failed before producing a converged candidate.",
+        primary_file="nodes/n030_xtb_neb/parsed/failure.json",
+        evidence={
+            "kind": "program_summary",
+            "path": "nodes/n030_xtb_neb/parsed/failure.json",
+            "claim": "NEB did not converge to a usable candidate.",
+            "evidence_state": "ambiguous",
+        },
+        next_branch="Open a revised NEB branch from the endpoint parent.",
+    )
+
+    run_cli(
+        str(WORKSPACE_CLI),
+        "start_node",
+        "--root",
+        str(root),
+        "--node-id",
+        "n040_no_climb_neb",
+        "--phase",
+        "candidate_generation",
+        "--operation",
+        "xtb-neb-no-climb",
+        "--parent-id",
+        "n010_endpoint",
+        "--replaces-node",
+        "n030_xtb_neb",
+        "--backtrack-reason-code",
+        "replacement_branch_neb_settings",
+        "--backtrack-reason",
+        "The first NEB replacement failed; no-climb NEB changes optimizer settings.",
+        "--backtrack-evidence-ref",
+        "ev_n030_xtb_neb_program_summary",
+        "--hypothesis",
+        "No-climb NEB can recover a candidate from the same endpoint parent.",
+        "--rationale",
+        "The replacement changes NEB settings without rewriting the older QST2 history.",
+        "--expected-evidence",
+        "No-climb NEB candidate output",
+        "--refutation-criteria",
+        "No-climb NEB also fails or changes the reaction center.",
+    )
+
+    assert_strict_workspace_clean(root)
+    graph = normalize_workspace(root)
+    derived_edges = [
+        edge
+        for edge in graph["edges"]
+        if edge["kind"] == "backtrack_replacement" and edge.get("derived")
+    ]
+    assert ("n020_default_qst2", "n040_no_climb_neb") in {
+        (edge["source"], edge["target"]) for edge in derived_edges
+    }
+    report = report_workspace(root)
+    assert not [
+        item
+        for item in report["situation"].get("context_items", [])
+        if item.get("kind") == "backtrack_event_required"
+        and item.get("from_node") == "n020_default_qst2"
+    ]
+
+
+def test_report_workspace_does_not_accept_ready_on_refuting_connectivity(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_control"
+    init_control_workspace(root)
+    close_endpoint_fixture(root)
+    start_node(
+        root,
+        node_id="n020_candidate",
+        parent_id="n010_endpoint",
+        phase="candidate_generation",
+        operation="candidate-smoke",
+        hypothesis="Endpoint-ready references can produce a candidate.",
+    )
+    candidate_summary = root / "nodes" / "n020_candidate" / "parsed" / "candidate.json"
+    candidate_summary.write_text('{"candidate": true}\n', encoding="utf-8")
+    end_node(
+        root,
+        node_id="n020_candidate",
+        phase="candidate_generation",
+        decision="prepare_tsfreq",
+        summary="Candidate exists.",
+        primary_file="nodes/n020_candidate/parsed/candidate.json",
+        evidence={
+            "kind": "parsed_summary",
+            "path": "nodes/n020_candidate/parsed/candidate.json",
+            "claim": "Candidate generation produced a candidate.",
+            "evidence_state": "candidate_found",
+        },
+        next_branch="Run TS/Freq validation.",
+    )
+    start_node(
+        root,
+        node_id="n030_tsfreq",
+        parent_id="n020_candidate",
+        phase="tsfreq_validation",
+        operation="gaussian-tsfreq",
+        hypothesis="The candidate is a frequency-validated TS.",
+    )
+    tsfreq_summary = root / "nodes" / "n030_tsfreq" / "parsed" / "tsfreq.json"
+    tsfreq_summary.write_text('{"status": "validated_ts", "imaginary_frequency_count": 1}\n', encoding="utf-8")
+    end_node(
+        root,
+        node_id="n030_tsfreq",
+        phase="tsfreq_validation",
+        decision="prepare_connectivity",
+        summary="TS/Freq validation passed.",
+        primary_file="nodes/n030_tsfreq/parsed/tsfreq.json",
+        evidence={
+            "kind": "gaussian_tsfreq_validation",
+            "path": "nodes/n030_tsfreq/parsed/tsfreq.json",
+            "claim": "TS/Freq validation passed.",
+            "evidence_state": "supports",
+        },
+        next_branch="Run connectivity validation.",
+    )
+    start_node(
+        root,
+        node_id="n040_connectivity",
+        parent_id="n030_tsfreq",
+        phase="connectivity_validation",
+        operation="mode-endpoint-connectivity",
+        hypothesis="The TS connects the originally intended endpoints.",
+    )
+    connectivity_summary = root / "nodes" / "n040_connectivity" / "parsed" / "connectivity.json"
+    connectivity_summary.write_text(
+        '{"decision": "not_connected", "connectivity_supported": false}\n',
+        encoding="utf-8",
+    )
+    end_node(
+        root,
+        node_id="n040_connectivity",
+        phase="connectivity_validation",
+        decision="reframe_or_replan_connectivity",
+        summary="Connectivity check refuted the intended endpoint assignment.",
+        primary_file="nodes/n040_connectivity/parsed/connectivity.json",
+        evidence={
+            "kind": "connectivity_check",
+            "path": "nodes/n040_connectivity/parsed/connectivity.json",
+            "claim": "Connectivity check refutes the intended endpoint assignment.",
+            "evidence_state": "refutes",
+        },
+        next_branch="Reframe the mechanism or run a new connectivity branch.",
+    )
+
+    report = report_workspace(root)
+    assert report["current_phase"] == "connectivity_validation"
+    assert "connectivity_missing" in report["blocking_gates"]
+    assert "accepted_ts_without_connectivity" in report["forbidden_next_actions"]
+
+
+def test_pathway_audit_accepts_complete_pathway_without_single_ts_promotion(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_pathway"
+    initialize_pathway_workspace(root)
+    create_pathway_endpoint_node(root, node_id="n010_s1_endpoint", step_id="s1")
+    create_pathway_candidate_node(root, node_id="n020_s1_ts", step_id="s1", parent_id="n010_s1_endpoint")
+    finalize_pathway_candidate_as_accepted(root, node_id="n020_s1_ts", step_id="s1")
+    create_pathway_endpoint_node(root, node_id="n030_s2_endpoint", step_id="s2", parent_id="n020_s1_ts")
+    create_pathway_candidate_node(root, node_id="n040_s2_ts", step_id="s2", parent_id="n030_s2_endpoint")
+    finalize_pathway_candidate_as_accepted(root, node_id="n040_s2_ts", step_id="s2")
+
+    start_node(
+        root,
+        node_id="n050_pathway_audit",
+        parent_id="n040_s2_ts",
+        phase="pathway_audit",
+        operation="pathway-audit",
+        hypothesis="Both elementary steps together validate the R to P pathway.",
+        pathway_id="p001",
+    )
+    audit_summary = root / "nodes" / "n050_pathway_audit" / "parsed" / "pathway_audit.json"
+    audit_summary.write_text('{"decision": "accepted_pathway", "steps": ["s1", "s2"]}\n', encoding="utf-8")
+    end_node(
+        root,
+        node_id="n050_pathway_audit",
+        phase="pathway_audit",
+        decision="accept_pathway",
+        summary="The complete two-step pathway is accepted as a pathway-level claim.",
+        primary_file="nodes/n050_pathway_audit/parsed/pathway_audit.json",
+        evidence={
+            "kind": "pathway_audit_summary",
+            "path": "nodes/n050_pathway_audit/parsed/pathway_audit.json",
+            "claim": "Two accepted elementary-step TS nodes support the complete pathway.",
+            "evidence_state": "supports",
+        },
+        pathway_id="p001",
+        next_branch="Archive the pathway or branch an alternative pathway if requested.",
+    )
+
+    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    tree = json.loads((root / "tree.json").read_text(encoding="utf-8"))
+    pathway_model = read_pathway_model_required(root)
+    active_pathway = pathway_model["pathways"][0]
+    assert manifest["current_accepted_ts"] == "n040_s2_ts"
+    assert manifest["current_accepted_pathway"] == "p001"
+    assert manifest["current_accepted_pathway_audit"] == "n050_pathway_audit"
+    assert tree["accepted_nodes"] == ["n020_s1_ts", "n040_s2_ts"]
+    assert active_pathway["status"] == "complete"
+    assert active_pathway["accepted_pathway_audit_node"] == "n050_pathway_audit"
+    graph = normalize_workspace(root)
+    audit_node = next(node for node in graph["nodes"] if node["id"] == "n050_pathway_audit")
+    assert audit_node["claim_status"] == "accepted_pathway"
+    assert graph["accepted_ts"] == "n040_s2_ts"
     assert_strict_workspace_clean(root)
 
 

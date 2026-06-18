@@ -92,7 +92,8 @@ def prepared_branch_node_payload(
         node_payload["input_refs"] = input_refs
     if pathway_id:
         node_payload["pathway_id"] = pathway_id
-        node_payload["elementary_step_id"] = step_id
+        if step_id:
+            node_payload["elementary_step_id"] = step_id
     if decision_provenance:
         node_payload["decision_provenance"] = decision_provenance
     return node_payload
@@ -119,7 +120,8 @@ def prepared_branch_tree_entry(
         tree_node_payload["input_refs"] = input_refs
     if pathway_id:
         tree_node_payload["pathway_id"] = pathway_id
-        tree_node_payload["elementary_step_id"] = step_id
+        if step_id:
+            tree_node_payload["elementary_step_id"] = step_id
     return tree_node_payload
 
 

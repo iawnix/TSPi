@@ -19,6 +19,7 @@ VALID_WORKFLOW_PHASES = {
     "tsfreq_validation",
     "connectivity_validation",
     "accepted_audit",
+    "pathway_audit",
 }
 
 REQUIRED_NODE_FIELDS = (
@@ -52,6 +53,7 @@ VALID_CLAIM_STATUSES = {
     "endpoint_connected",
     "irc_connected",
     "accepted_ts",
+    "accepted_pathway",
     "rejected",
     "ambiguous",
 }
@@ -71,7 +73,7 @@ VALID_OUTCOMES = {
     "parser_refused",
     "superseded",
 }
-VALID_CLAIM_LEVELS = {"none", "candidate_only", "tsfreq_validated_only", "connectivity_checked", "accepted_ts"}
+VALID_CLAIM_LEVELS = {"none", "candidate_only", "tsfreq_validated_only", "connectivity_checked", "accepted_ts", "accepted_pathway"}
 VALID_EVIDENCE_STATES = {"prepared", "supports", "refutes", "ambiguous", "candidate_found", "administrative", "superseded"}
 VALID_BACKTRACK_EVENT_STATES = {"active", "resolved", "superseded"}
 MECHANISM_ANALYSIS_LAYERS = ("reaction_type", "reaction_center", "electronic", "orbital", "energy")
@@ -83,6 +85,7 @@ CLAIM_LEVEL_RANK = {
     "tsfreq_validated_only": 2,
     "connectivity_checked": 3,
     "accepted_ts": 4,
+    "accepted_pathway": 4,
 }
 
 MAXIMUM_CLAIM_LEVEL_BY_CLAIM_STATUS = {
@@ -94,6 +97,7 @@ MAXIMUM_CLAIM_LEVEL_BY_CLAIM_STATUS = {
     "endpoint_connected": "connectivity_checked",
     "irc_connected": "connectivity_checked",
     "accepted_ts": "accepted_ts",
+    "accepted_pathway": "accepted_pathway",
     "rejected": "none",
 }
 
@@ -116,6 +120,7 @@ DEFAULT_OUTCOME_BY_CLAIM_STATUS = {
     "endpoint_connected": "connectivity_validated",
     "irc_connected": "connectivity_validated",
     "accepted_ts": "accepted",
+    "accepted_pathway": "accepted",
 }
 
 SUCCESS_CLAIM_STATUS_BY_PHASE = {
@@ -126,6 +131,7 @@ SUCCESS_CLAIM_STATUS_BY_PHASE = {
     "tsfreq_validation": "tsfreq_validated",
     "connectivity_validation": "endpoint_connected",
     "accepted_audit": "accepted_ts",
+    "pathway_audit": "accepted_pathway",
 }
 
 SUCCESS_OUTCOME_BY_PHASE = {
@@ -136,6 +142,7 @@ SUCCESS_OUTCOME_BY_PHASE = {
     "tsfreq_validation": "tsfreq_validated",
     "connectivity_validation": "connectivity_validated",
     "accepted_audit": "accepted",
+    "pathway_audit": "accepted",
 }
 
 VALID_OUTCOMES_BY_CLAIM_STATUS = {
@@ -147,6 +154,7 @@ VALID_OUTCOMES_BY_CLAIM_STATUS = {
     "endpoint_connected": {"connectivity_validated"},
     "irc_connected": {"connectivity_validated"},
     "accepted_ts": {"accepted"},
+    "accepted_pathway": {"accepted"},
     "rejected": {"chemical_failure", "wrong_mode", "wrong_endpoint", "superseded"},
     "ambiguous": {"wrong_mode", "wrong_endpoint", "parser_refused", "superseded"},
 }
@@ -228,6 +236,7 @@ CLAIM_STATUS_TO_NODE_STATE = {
     "endpoint_connected": "endpoint_connected",
     "irc_connected": "irc_connected",
     "accepted_ts": "accepted",
+    "accepted_pathway": "accepted",
     "rejected": "rejected",
     "ambiguous": "ambiguous",
 }
@@ -311,6 +320,8 @@ def derive_card_phase_key(stage: str, operation: str, claim_status: str) -> str:
     operation_text = operation.lower()
     if claim_status in {"tsfreq_validated", "irc_raw_completed", "endpoint_connected", "irc_connected", "accepted_ts"}:
         return "validation"
+    if claim_status == "accepted_pathway":
+        return "pathway"
     if "pathway" in stage_text:
         return "pathway"
     if any(token in stage_text for token in ("preflight", "mechanism")):
@@ -413,6 +424,8 @@ def phase_from_stage(stage: str) -> str:
         return "tsfreq_validation"
     if any(token in text for token in ("connectivity", "irc", "imaginary", "validation_plan")):
         return "connectivity_validation"
+    if "pathway" in text and ("audit" in text or "accept" in text):
+        return "pathway_audit"
     if "accepted" in text:
         return "accepted_audit"
     if any(token in text for token in ("candidate", "neb", "scan", "qst", "dimer", "qbics", "dmecp")):

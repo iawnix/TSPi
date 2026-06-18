@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from transition_state_workflow.base.backtrack_chain import replacement_chain_covers
 from transition_state_workflow.util.path_utils import clean_string
 
 from .ids import latest_node_id, node_sort_key
@@ -140,25 +141,32 @@ def suggest_backtrack_actions(
 ) -> list[dict[str, Any]]:
     """Suggest canonical backtrack records for failed branches without one."""
 
-    events_by_from: dict[str, list[dict[str, Any]]] = {}
-    for event in backtrack_events:
-        from_node = clean_string(event.get("from_node"))
-        if from_node:
-            events_by_from.setdefault(from_node, []).append(event)
+    parent_by_node = {
+        node_id: clean_string(node.get("parent_id"))
+        for node_id, node in node_payloads.items()
+    }
     suggestions: list[dict[str, Any]] = []
     for failed in failed_nodes:
         node_id = clean_string(failed.get("node_id"))
         if not node_id:
             continue
-        events_for_failed = events_by_from.get(node_id, [])
+        parent = clean_string(parent_by_node.get(node_id))
+        events_for_failed = [
+            event
+            for event in backtrack_events
+            if clean_string(event.get("from_node")) == node_id
+        ]
         replacement_nodes = replacement_branch_nodes_for_failed(node_id, node_payloads)
-        linked_replacements = {
-            clean_string(event.get("new_branch_node"))
-            for event in events_for_failed
-            if clean_string(event.get("new_branch_node"))
-        }
         unlinked_replacements = [
-            replacement for replacement in replacement_nodes if replacement not in linked_replacements
+            replacement
+            for replacement in replacement_nodes
+            if not replacement_chain_covers(
+                from_node=node_id,
+                to_node=parent,
+                replacement_node=replacement,
+                backtrack_events=backtrack_events,
+                parent_by_node=parent_by_node,
+            )
         ]
         if events_for_failed and not unlinked_replacements:
             continue

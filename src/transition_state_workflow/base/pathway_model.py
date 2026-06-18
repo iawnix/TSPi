@@ -111,6 +111,52 @@ def bind_pathway_step_to_accepted_ts(
     write_json_object(pathway_model_path(root), model, overwrite_existing=True)
 
 
+def bind_pathway_audit_node(
+    *,
+    root: Path,
+    pathway_id: str,
+    node_id: str,
+    timestamp: str,
+) -> None:
+    """Bind a pathway-level audit node to a complete multi-step pathway."""
+
+    pathway_id = clean_string(pathway_id)
+    node_id = clean_string(node_id)
+    if not pathway_id or not node_id:
+        raise SystemExit("pathway audit binding requires --pathway-id and --node-id")
+    node_path = root / "nodes" / node_id / "node.json"
+    if not node_path.exists():
+        raise SystemExit(f"pathway audit node does not exist: {node_id}")
+    model = read_pathway_model_required(root)
+    pathway = find_pathway(model, pathway_id)
+    steps = [step for step in list_or_empty(pathway.get("steps")) if isinstance(step, dict)]
+    if derive_pathway_status(steps) != "complete":
+        raise SystemExit("accepted_pathway requires every pathway step to be bound to an accepted_ts node")
+    existing_node = clean_string(pathway.get("accepted_pathway_audit_node"))
+    if existing_node and existing_node != node_id:
+        raise SystemExit(f"pathway already has accepted_pathway_audit_node: {existing_node}")
+    pathway["status"] = "complete"
+    pathway["accepted_pathway_audit_node"] = node_id
+    pathway["updated_at"] = timestamp
+    model["active_pathway"] = pathway_id
+    model["updated_at"] = timestamp
+
+    node_payload = read_json_object_required(node_path)
+    node_payload["pathway_id"] = pathway_id
+    node_payload.pop("elementary_step_id", None)
+    node_payload["pathway_audit"] = {
+        "pathway_id": pathway_id,
+        "status": "complete",
+        "accepted_step_nodes": [
+            clean_string(step.get("accepted_ts_node"))
+            for step in steps
+            if clean_string(step.get("accepted_ts_node"))
+        ],
+    }
+    write_json_object(node_path, node_payload, overwrite_existing=True)
+    write_json_object(pathway_model_path(root), model, overwrite_existing=True)
+
+
 def mark_pathway_step_status(
     *,
     root: Path,
@@ -214,6 +260,13 @@ def validate_pathway_step_reference(root: Path, pathway_id: str, step_id: str) -
     find_step(pathway, clean_string(step_id))
 
 
+def validate_pathway_reference(root: Path, pathway_id: str) -> None:
+    """Require that a pathway reference exists."""
+
+    model = read_pathway_model_required(root)
+    find_pathway(model, clean_string(pathway_id))
+
+
 def parse_step_spec(raw: str) -> dict[str, Any]:
     """Parse step_id:from->to into a pathway step object."""
 
@@ -299,6 +352,7 @@ def summarize_pathway(pathway: dict[str, Any] | None) -> dict[str, Any] | None:
         "pathway_id": clean_string(pathway.get("pathway_id")),
         "label": clean_string(pathway.get("label")),
         "status": clean_string(pathway.get("status")) or derive_pathway_status(steps),
+        "accepted_pathway_audit_node": clean_string(pathway.get("accepted_pathway_audit_node")),
         "steps": [
             {
                 "step_id": clean_string(step.get("step_id")),

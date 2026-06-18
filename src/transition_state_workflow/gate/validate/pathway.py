@@ -29,14 +29,20 @@ def validate_pathway_model(
 ) -> None:
     """Validate optional pathway_model.json and node step references."""
 
-    node_step_refs = {
-        node_id: (
-            clean_string(node.get("pathway_id")),
-            clean_string(node.get("elementary_step_id")),
-        )
-        for node_id, node in node_json_by_id.items()
-        if clean_string(node.get("pathway_id")) or clean_string(node.get("elementary_step_id"))
-    }
+    node_step_refs: dict[str, tuple[str, str]] = {}
+    pathway_audit_refs: dict[str, str] = {}
+    for node_id, node in node_json_by_id.items():
+        pathway_id = clean_string(node.get("pathway_id"))
+        step_id = clean_string(node.get("elementary_step_id"))
+        audit = derive_node_audit_view(node)
+        if clean_string(audit.get("claim_status")) == "accepted_pathway" or clean_string(node.get("phase")) == "pathway_audit":
+            if pathway_id:
+                pathway_audit_refs[node_id] = pathway_id
+            elif step_id:
+                node_step_refs[node_id] = (pathway_id, step_id)
+            continue
+        if pathway_id or step_id:
+            node_step_refs[node_id] = (pathway_id, step_id)
     if not model:
         for node_id in node_step_refs:
             findings.append(
@@ -210,10 +216,57 @@ def validate_pathway_model(
                         path="pathway_model.json",
                     )
                 )
+        accepted_pathway_audit_node = clean_string(pathway.get("accepted_pathway_audit_node"))
+        if accepted_pathway_audit_node:
+            validate_known_node_ref(
+                accepted_pathway_audit_node,
+                known_nodes,
+                findings,
+                code="pathway_audit_node_missing",
+                message="pathway accepted_pathway_audit_node is missing",
+                path="pathway_model.json",
+                node_id=accepted_pathway_audit_node,
+                allow_empty=False,
+            )
+            audit_node = node_json_by_id.get(accepted_pathway_audit_node) or {}
+            audit = derive_node_audit_view(audit_node)
+            if audit_node and clean_string(audit.get("claim_status")) != "accepted_pathway":
+                findings.append(
+                    Finding(
+                        "error",
+                        "pathway_audit_node_not_accepted_pathway",
+                        "pathway accepted_pathway_audit_node is not claim_status=accepted_pathway",
+                        path="pathway_model.json",
+                        node_id=accepted_pathway_audit_node,
+                    )
+                )
+            if audit_node and clean_string(audit_node.get("pathway_id")) != pathway_id:
+                findings.append(
+                    Finding(
+                        "error",
+                        "pathway_audit_node_binding_conflict",
+                        "pathway accepted_pathway_audit_node does not declare the same pathway_id",
+                        path="pathway_model.json",
+                        node_id=accepted_pathway_audit_node,
+                    )
+                )
 
     active_pathway = clean_string(model.get("active_pathway"))
     if active_pathway and active_pathway not in pathway_ids:
         findings.append(Finding("error", "active_pathway_missing", "active_pathway does not reference an existing pathway", path="pathway_model.json"))
+
+    for node_id, pathway_id in pathway_audit_refs.items():
+        if pathway_id not in pathway_ids:
+            node_path = relative_path_or_absolute(source, source / "nodes" / node_id / "node.json")
+            findings.append(
+                Finding(
+                    "error",
+                    "pathway_audit_node_pathway_missing",
+                    "pathway audit node references missing pathway",
+                    path=node_path,
+                    node_id=node_id,
+                )
+            )
 
     for node_id, (pathway_id, step_id) in node_step_refs.items():
         node_path = relative_path_or_absolute(source, source / "nodes" / node_id / "node.json")

@@ -14,7 +14,8 @@ Status: completed and merged to `main`.
 - `phase` locates the workflow stage:
   `preflight`, `endpoint`, `rp_conformer_generation`,
   `candidate_generation`, `tsfreq_validation`, `connectivity_validation`, or
-  `accepted_audit`.
+  `accepted_audit`; `pathway_audit` is reserved for pathway-level audits over
+  already accepted elementary steps.
 - Program/runtime facts and mechanism interpretation are separated inside
   `closure_explanation`, not encoded as extra public state enums.
 - Internal audit fields are derived for validators and the explorer, but old

@@ -89,7 +89,11 @@ def build_plan_next_packet(
             pathway_id=clean_string(next_step.get("pathway_id")),
             step_id=clean_string(next_step.get("step_id")),
         )
-        planning_claims = classify_node_claims(planning_node_payloads)
+        planning_claims = classify_node_claims(
+            planning_node_payloads,
+            source=source,
+            evidence_records=snapshot.evidence_records,
+        )
         blocking_gates, allowed, forbidden, phase = infer_planning_state(
             validation_errors=validation_errors,
             active_nodes=active_nodes,

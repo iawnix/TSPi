@@ -24,8 +24,10 @@ from transition_state_workflow.config.state_contract import (
     valid_outcomes_for_claim_status,
 )
 from transition_state_workflow.base.pathway_model import (
+    bind_pathway_audit_node,
     bind_pathway_step_to_accepted_ts,
     mark_pathway_step_status,
+    validate_pathway_reference,
     validate_pathway_step_reference,
 )
 from transition_state_workflow.gate.evidence import accepted_ts_missing_evidence_gates
@@ -195,6 +197,13 @@ def finalize_ts_workspace_node(request: NodeFinalizationRequest) -> None:
             timestamp=now,
             require_node_claim=True,
         )
+    elif request.claim_status == "accepted_pathway":
+        bind_pathway_audit_node(
+            root=root,
+            pathway_id=request.pathway_id,
+            node_id=request.node_id,
+            timestamp=now,
+        )
     elif request.pathway_step_status:
         mark_pathway_step_status(
             root=root,
@@ -228,7 +237,12 @@ def validate_finalization_request(request: NodeFinalizationRequest) -> None:
         raise SystemExit(f"invalid run_state: {request.run_state}")
     if request.claim_status != "not_evaluated" and not request.evidence:
         raise SystemExit("finalized evaluated nodes require at least one --evidence record")
-    if bool(request.pathway_id) != bool(request.step_id):
+    if request.claim_status == "accepted_pathway":
+        if not request.pathway_id:
+            raise SystemExit("accepted_pathway requires --pathway-id")
+        if request.step_id:
+            raise SystemExit("accepted_pathway is pathway-level; omit --step-id")
+    elif bool(request.pathway_id) != bool(request.step_id):
         raise SystemExit("--pathway-id and --step-id must be provided together")
     if request.pathway_step_status and not request.pathway_id:
         raise SystemExit("--pathway-step-status requires --pathway-id and --step-id")
@@ -259,6 +273,9 @@ def validate_pathway_request(*, root: Path, request: NodeFinalizationRequest) ->
     """Validate optional pathway metadata before writing finalization artifacts."""
 
     if not request.pathway_id:
+        return
+    if request.claim_status == "accepted_pathway":
+        validate_pathway_reference(root, request.pathway_id)
         return
     validate_pathway_step_reference(root, request.pathway_id, request.step_id)
 
@@ -547,7 +564,10 @@ def update_node_payload(
     node_payload["decision"] = request.decision
     if request.pathway_id:
         node_payload["pathway_id"] = request.pathway_id
-        node_payload["elementary_step_id"] = request.step_id
+        if request.step_id:
+            node_payload["elementary_step_id"] = request.step_id
+        else:
+            node_payload.pop("elementary_step_id", None)
     node_payload["evidence"] = evidence
     node_payload["display"] = {
         **display,
@@ -626,6 +646,9 @@ def update_manifest(manifest_payload: dict[str, Any], request: NodeFinalizationR
 
     if request.claim_status == "accepted_ts":
         manifest_payload["current_accepted_ts"] = request.node_id
+    if request.claim_status == "accepted_pathway":
+        manifest_payload["current_accepted_pathway"] = request.pathway_id
+        manifest_payload["current_accepted_pathway_audit"] = request.node_id
 
 
 def write_reflection(path: Path, reflection: ReflectionSpec) -> None:
