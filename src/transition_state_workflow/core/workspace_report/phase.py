@@ -11,7 +11,7 @@ from .loader import nodes_with_claim
 from .pathway import latest_pathway_status_node
 
 
-def infer_planning_state(
+def infer_attention_phase(
     *,
     validation_errors: list[dict[str, Any]],
     active_nodes: list[dict[str, Any]],
@@ -31,7 +31,7 @@ def infer_planning_state(
         return "active_work_running"
     if accepted_nodes or clean_string(manifest.get("current_accepted_ts")):
         if alternative_mechanism:
-            return "alternative_mechanism_planning"
+            return "alternative_mechanism_context"
         return "accepted_ts_present"
     if not endpoint_nodes:
         return "endpoint_discovery"
@@ -45,7 +45,7 @@ def infer_planning_state(
 
 
 def infer_phase_from_focus_node(node_id: str, node_payloads: dict[str, dict[str, Any]]) -> str:
-    """Infer the next planning phase from the node selected as focus."""
+    """Infer the attention phase from the node selected as focus."""
 
     node = node_payloads.get(node_id, {})
     claim_status = clean_string(node.get("claim_status"))
@@ -62,7 +62,7 @@ def infer_phase_from_focus_node(node_id: str, node_payloads: dict[str, dict[str,
     return "endpoint_discovery"
 
 
-def infer_planning_focus(
+def infer_report_focus(
     *,
     phase: str,
     validation_errors: list[dict[str, Any]],
@@ -74,7 +74,7 @@ def infer_planning_focus(
     node_payloads: dict[str, dict[str, Any]],
     manifest: dict[str, Any],
     alternative_mechanism: bool,
-    pathway_plan: dict[str, Any],
+    pathway_attention: dict[str, Any],
     pathway_step_node_payloads: dict[str, dict[str, Any]],
 ) -> dict[str, Any]:
     """Choose the node and context mode that should guide the next model call."""
@@ -84,7 +84,7 @@ def infer_planning_focus(
             "mode": "workspace_repair",
             "focus_node": None,
             "parent_for_new_branch": None,
-            "reason": "Workspace validation errors block scientific planning.",
+            "reason": "Workspace validation errors need attention before scientific claim promotion.",
         }
     if active_nodes:
         focus_node = clean_string(active_nodes[-1].get("node_id"))
@@ -94,27 +94,27 @@ def infer_planning_focus(
             "parent_for_new_branch": None,
             "reason": "A node is pending, running, or parsing; parse or stop it before opening a new branch.",
         }
-    if pathway_plan.get("mode") in {"start", "continue"}:
-        next_step = pathway_plan.get("next_step") if isinstance(pathway_plan.get("next_step"), dict) else {}
+    if pathway_attention.get("mode") in {"start", "continue"}:
+        next_step = pathway_attention.get("next_step") if isinstance(pathway_attention.get("next_step"), dict) else {}
         focus_node = default_focus_node_for_phase(phase, pathway_step_node_payloads)
         previous_step_node = clean_string(manifest.get("current_accepted_ts")) or latest_node_id(accepted_nodes)
-        if not focus_node and pathway_plan.get("mode") == "continue":
+        if not focus_node and pathway_attention.get("mode") == "continue":
             focus_node = previous_step_node
         parent_for_new_branch = focus_node
         if phase == "endpoint_discovery":
-            parent_for_new_branch = previous_step_node if pathway_plan.get("mode") == "continue" else None
+            parent_for_new_branch = previous_step_node if pathway_attention.get("mode") == "continue" else None
         return {
-            "mode": "pathway_step_planning",
+            "mode": "pathway_step_focus",
             "focus_node": focus_node,
             "parent_for_new_branch": parent_for_new_branch,
             "pathway_id": clean_string(next_step.get("pathway_id")),
             "step_id": clean_string(next_step.get("step_id")),
             "reason": (
                 "The active multi-step pathway is scoped to the next incomplete elementary step; "
-                "plan this step through endpoint, candidate, TS/Freq, and connectivity gates without reusing a previous step as proof."
+                "this step needs endpoint, candidate, TS/Freq, and connectivity evidence without reusing a previous step as proof."
             ),
         }
-    if pathway_plan.get("mode") == "complete":
+    if pathway_attention.get("mode") == "complete":
         focus_node = clean_string(manifest.get("current_accepted_ts")) or latest_node_id(accepted_nodes)
         return {
             "mode": "pathway_complete",
@@ -122,11 +122,11 @@ def infer_planning_focus(
             "parent_for_new_branch": None,
             "reason": "Every required elementary step in the active pathway is bound to an accepted_ts node.",
         }
-    if pathway_plan.get("mode") in {"ambiguous", "rejected"}:
-        active_pathway = pathway_plan.get("pathway") if isinstance(pathway_plan.get("pathway"), dict) else {}
+    if pathway_attention.get("mode") in {"ambiguous", "rejected"}:
+        active_pathway = pathway_attention.get("pathway") if isinstance(pathway_attention.get("pathway"), dict) else {}
         focus_node = latest_pathway_status_node(active_pathway) or clean_string(manifest.get("current_accepted_ts")) or latest_node_id(accepted_nodes)
         return {
-            "mode": f"pathway_{clean_string(pathway_plan.get('mode'))}_review",
+            "mode": f"pathway_{clean_string(pathway_attention.get('mode'))}_review",
             "focus_node": focus_node,
             "parent_for_new_branch": None,
             "pathway_id": clean_string(active_pathway.get("pathway_id")),
@@ -139,7 +139,7 @@ def infer_planning_focus(
         focus_node = clean_string(manifest.get("current_accepted_ts")) or latest_node_id(accepted_nodes)
         if alternative_mechanism:
             return {
-                "mode": "alternative_mechanism_planning",
+                "mode": "alternative_mechanism_context",
                 "focus_node": focus_node,
                 "parent_for_new_branch": None,
                 "reason": "Accepted TS state exists and the user requested a chemically distinct alternative-mechanism branch.",
@@ -148,7 +148,7 @@ def infer_planning_focus(
             "mode": "accepted_audit",
             "focus_node": focus_node,
             "parent_for_new_branch": None,
-            "reason": "Accepted TS state exists; next planning should audit or branch only on explicit request.",
+            "reason": "Accepted TS state exists; further work should audit or branch only on explicit request.",
         }
 
     active_backtracks = [event for event in backtrack_events if clean_string(event.get("event_state")) == "active"]
@@ -157,13 +157,13 @@ def infer_planning_focus(
         focus_node = clean_string(event.get("to_node"))
         from_node = clean_string(event.get("from_node"))
         return {
-            "mode": "backtrack_replan",
+            "mode": "backtrack_focus",
             "focus_node": focus_node,
             "from_failed_node": from_node,
             "parent_for_new_branch": focus_node or None,
             "backtrack_event_id": clean_string(event.get("id")),
             "reason_code": clean_string(event.get("reason_code")),
-            "reason": clean_string(event.get("reason")) or "Backtrack event routes planning to an earlier chemistry decision.",
+            "reason": clean_string(event.get("reason")) or "Backtrack event points attention to an earlier chemistry decision.",
         }
 
     if required_backtrack_events:
@@ -184,7 +184,7 @@ def infer_planning_focus(
 
 
 def default_focus_node_for_phase(phase: str, node_payloads: dict[str, dict[str, Any]]) -> str | None:
-    """Return a reasonable focus node for ordinary forward planning."""
+    """Return a reasonable focus node for ordinary forward attention."""
 
     claim_by_phase = {
         "candidate_generation": "endpoint_minima_ready",
@@ -202,8 +202,8 @@ def default_focus_node_for_phase(phase: str, node_payloads: dict[str, dict[str, 
 
 
 __all__ = [
-    "infer_planning_state",
+    "infer_attention_phase",
     "infer_phase_from_focus_node",
-    "infer_planning_focus",
+    "infer_report_focus",
     "default_focus_node_for_phase",
 ]

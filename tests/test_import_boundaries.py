@@ -35,7 +35,7 @@ FORBIDDEN_WEB_TOOL_MODULES = {
     "transition_state_workflow.tool.ts_descriptor_extract",
     "transition_state_workflow.tool.validate_workspace",
     "transition_state_workflow.tool.finalize_node",
-    "transition_state_workflow.tool.plan_next",
+    "transition_state_workflow.tool.workspace_report",
     "transition_state_workflow.tool.record_backtrack",
     "transition_state_workflow.tool.start_node",
 }
@@ -325,9 +325,10 @@ def test_workspace_cli_lives_in_cli_without_tool_compatibility() -> None:
     script_source = (ROOT / "scripts" / "ts_workspace.py").read_text(encoding="utf-8")
     assert "transition_state_workflow.cli.workspace import main" in script_source
 
-    plan_next_package = PACKAGE / "core" / "plan_next"
-    assert plan_next_package.is_dir()
-    assert not (PACKAGE / "core" / "plan_next.py").exists()
+    workspace_report_package = PACKAGE / "core" / "workspace_report"
+    assert workspace_report_package.is_dir()
+    assert not (PACKAGE / "core" / "workspace_report.py").exists()
+    assert not (PACKAGE / "core" / "plan_next").exists()
     for expected_module in (
         "__init__.py",
         "contracts.py",
@@ -340,7 +341,19 @@ def test_workspace_cli_lives_in_cli_without_tool_compatibility() -> None:
         "context.py",
         "ids.py",
     ):
-        assert (plan_next_package / expected_module).is_file()
+        assert (workspace_report_package / expected_module).is_file()
+
+    with pytest.raises(ModuleNotFoundError):
+        importlib.import_module("transition_state_workflow.core.plan_next")
+
+    import transition_state_workflow.core as core
+    import transition_state_workflow.core.workspace_report as workspace_report
+
+    assert core.WORKSPACE_REPORT_PACKET_SCHEMA == "ts-workspace-report-packet"
+    assert workspace_report.WORKSPACE_REPORT_PACKET_SCHEMA == "ts-workspace-report-packet"
+    assert not hasattr(core, "PLAN_SCHEMA")
+    assert not hasattr(workspace_report, "PLAN_SCHEMA")
+    assert not hasattr(workspace_report, "DECISION_CONTEXT_SCHEMA")
 
     cli_imports = full_internal_imports(PACKAGE / "cli" / "workspace.py")
     assert "transition_state_workflow.tool" not in {

@@ -21,7 +21,7 @@ from .context import (
 from .contracts import TsfreqEvidencePredicate, WorkspaceValidator
 from .diagnostics import endpoint_evidence_blocker_summaries
 from .ids import node_sort_key
-from .loader import active_node_summaries, ensure_plan_workspace, load_node_payloads, nodes_with_claim
+from .loader import active_node_summaries, ensure_report_workspace, load_node_payloads, nodes_with_claim
 
 
 @dataclass(frozen=True)
@@ -38,7 +38,7 @@ class NodeClaimSnapshot:
 
 
 @dataclass(frozen=True)
-class PlanNextSnapshot:
+class WorkspaceReportSnapshot:
     """Read-only workspace state used by the report-context orchestrator."""
 
     source: Path
@@ -66,7 +66,7 @@ def classify_node_claims(
     source: Path | None = None,
     evidence_records: list[dict[str, Any]] | None = None,
 ) -> NodeClaimSnapshot:
-    """Group nodes by claim fields without applying planning policy."""
+    """Group nodes by claim fields without applying route policy."""
 
     gate_hits_by_node = evidence_gate_hits_by_node(source, evidence_records or [])
     prepared_nodes = [
@@ -97,16 +97,16 @@ def classify_node_claims(
     )
 
 
-def load_plan_next_snapshot(
+def load_workspace_report_snapshot(
     root: Path,
     *,
     validate_workspace: WorkspaceValidator,
     supports_tsfreq_evidence: TsfreqEvidencePredicate,
-) -> PlanNextSnapshot:
-    """Load all read-only workspace state required for decision context."""
+) -> WorkspaceReportSnapshot:
+    """Load all read-only workspace state required for report context."""
 
     source = root.expanduser().resolve()
-    ensure_plan_workspace(source)
+    ensure_report_workspace(source)
     manifest = read_json_object_required(source / "manifest.json")
     tree = read_json_object_required(source / "tree.json")
     evidence = read_json_object_optional(source / "evidence_registry.json")
@@ -135,7 +135,7 @@ def load_plan_next_snapshot(
         item for item in list_or_empty(validation.get("findings")) if clean_string(item.get("severity")) == "error"
     ]
 
-    return PlanNextSnapshot(
+    return WorkspaceReportSnapshot(
         source=source,
         manifest=manifest,
         tree=tree,
@@ -181,8 +181,8 @@ def evidence_gate_hits_by_node(
 
 __all__ = [
     "NodeClaimSnapshot",
-    "PlanNextSnapshot",
+    "WorkspaceReportSnapshot",
     "classify_node_claims",
     "evidence_gate_hits_by_node",
-    "load_plan_next_snapshot",
+    "load_workspace_report_snapshot",
 ]

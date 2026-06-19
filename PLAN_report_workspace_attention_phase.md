@@ -63,7 +63,7 @@ to reject malformed decisions or unsupported claim promotion.
 
 ## Implementation steps
 
-1. Add a read-only claim-readiness builder in the plan-next layer.
+1. Add a read-only claim-readiness builder in the workspace-report layer.
 2. Refactor phase inference to return attention phase and claim blockers, not
    route classes.
 3. Update packet/public report payloads to expose claim readiness and available

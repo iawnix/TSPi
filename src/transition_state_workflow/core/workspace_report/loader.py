@@ -13,8 +13,8 @@ from .context import summarize_node
 from .ids import node_sort_key
 
 
-def ensure_plan_workspace(root: Path) -> None:
-    """Fail early when the root cannot be planned from."""
+def ensure_report_workspace(root: Path) -> None:
+    """Fail early when the root cannot be summarized as a TS-search workspace."""
 
     missing = [name for name in ("manifest.json", "tree.json", "nodes") if not (root / name).exists()]
     if missing:
@@ -28,7 +28,7 @@ def conservative_workspace_validation(root: Path) -> dict[str, Any]:
         "summary": {
             "mode": "not_validated",
             "source": str(root),
-            "warning": "No ChemGate workspace validator was supplied to core.plan_next.",
+            "warning": "No ChemGate workspace validator was supplied to core.workspace_report.",
         },
         "findings": [],
     }
@@ -88,7 +88,7 @@ def nodes_with_claim(node_payloads: dict[str, dict[str, Any]], claim_status: str
 
 
 __all__ = [
-    "ensure_plan_workspace",
+    "ensure_report_workspace",
     "conservative_workspace_validation",
     "no_tsfreq_evidence_support",
     "load_node_payloads",

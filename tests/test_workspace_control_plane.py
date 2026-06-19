@@ -259,6 +259,8 @@ def test_workspace_control_lifecycle_and_contract(tmp_path: Path) -> None:
         run_cli(str(WORKSPACE_CLI), "report_workspace", "--root", str(root), "--pretty").stdout
     )
     assert report["schema"] == "ts-workspace-report"
+    assert "planning_focus" not in json.dumps(report, sort_keys=True)
+    assert "planner_role" not in json.dumps(report, sort_keys=True)
     assert report["allowed_response_contract"]["allowed_actions"] == [
         "start_node",
         "end_node",
@@ -268,6 +270,14 @@ def test_workspace_control_lifecycle_and_contract(tmp_path: Path) -> None:
     report_text = json.dumps(report["situation"], sort_keys=True)
     assert "claim_status" not in report_text
     assert "outcome" not in report_text
+
+    from transition_state_workflow.core.workspace_report import build_workspace_report_packet
+
+    packet = build_workspace_report_packet(root)
+    assert packet["schema"] == "ts-workspace-report-packet"
+    assert "focus" in packet
+    assert "planning_focus" not in packet
+    assert "planner_role" not in packet
 
     validation = validate_workspace_allow_errors(root)
     assert validation["summary"]["errors"] == 0
@@ -815,6 +825,7 @@ def test_workspace_cli_exposes_public_commands() -> None:
         "update-backtrack",
         "pathway-init",
         "plan-next",
+        "workspace-report",
         "decision-context",
         "validate-workspace",
     ):

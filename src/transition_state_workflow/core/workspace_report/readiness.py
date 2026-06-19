@@ -85,12 +85,12 @@ def current_phase_reasons(
     *,
     phase: str,
     claim_readiness: dict[str, Any],
-    planning_focus: dict[str, Any],
+    focus: dict[str, Any],
 ) -> list[str]:
     """Explain the attention anchor without prescribing the next route."""
 
     reasons: list[str] = []
-    focus_reason = clean_string(planning_focus.get("reason"))
+    focus_reason = clean_string(focus.get("reason"))
     if focus_reason:
         reasons.append(focus_reason)
     if phase == "workspace_repair_required":

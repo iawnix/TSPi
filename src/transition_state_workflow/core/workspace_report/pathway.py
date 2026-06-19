@@ -7,7 +7,7 @@ from typing import Any
 from transition_state_workflow.util.path_utils import clean_string, list_or_empty
 
 
-def infer_pathway_plan(
+def infer_pathway_attention(
     *,
     pathway_summary: dict[str, Any],
     accepted_nodes: list[tuple[str, dict[str, Any]]],
@@ -16,7 +16,7 @@ def infer_pathway_plan(
     active_nodes: list[dict[str, Any]],
     alternative_mechanism: bool,
 ) -> dict[str, Any]:
-    """Return pathway planning mode without changing node-level TS logic."""
+    """Return pathway attention mode without changing node-level TS logic."""
 
     if validation_errors or active_nodes or alternative_mechanism:
         return {"mode": "none"}
@@ -76,12 +76,12 @@ def latest_pathway_status_node(pathway: dict[str, Any]) -> str | None:
     return None
 
 
-def pathway_target_for_suggestions(pathway_plan: dict[str, Any]) -> dict[str, str]:
+def pathway_target_for_suggestions(pathway_attention: dict[str, Any]) -> dict[str, str]:
     """Return pathway metadata for branch or closure suggestions."""
 
-    if pathway_plan.get("mode") not in {"start", "continue"}:
+    if pathway_attention.get("mode") not in {"start", "continue"}:
         return {}
-    next_step = pathway_plan.get("next_step") if isinstance(pathway_plan.get("next_step"), dict) else {}
+    next_step = pathway_attention.get("next_step") if isinstance(pathway_attention.get("next_step"), dict) else {}
     return {
         "pathway_id": clean_string(next_step.get("pathway_id")),
         "step_id": clean_string(next_step.get("step_id")),
@@ -89,7 +89,7 @@ def pathway_target_for_suggestions(pathway_plan: dict[str, Any]) -> dict[str, st
 
 
 __all__ = [
-    "infer_pathway_plan",
+    "infer_pathway_attention",
     "filter_nodes_for_pathway_step",
     "latest_pathway_status_node",
     "pathway_target_for_suggestions",

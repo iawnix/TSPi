@@ -106,7 +106,7 @@ def reframe_candidate_summaries(
 
 
 def summarize_reframe_tsfreq_record(record: dict[str, Any]) -> dict[str, Any]:
-    """Return compact TS/Freq evidence metadata for reframe planning."""
+    """Return compact TS/Freq evidence metadata for a reframed mechanism."""
 
     return {
         "evidence_id": clean_string(record.get("evidence_id")),
@@ -143,7 +143,7 @@ def build_context_items(
     *,
     source: Path,
     phase: str,
-    planning_focus: dict[str, Any],
+    focus: dict[str, Any],
     node_payloads: dict[str, dict[str, Any]],
     failed_nodes: list[dict[str, Any]],
     reframe_candidates: list[dict[str, Any]],
@@ -155,7 +155,7 @@ def build_context_items(
     active_nodes: list[dict[str, Any]],
     endpoint_evidence_blockers: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """Select prioritized context for the next model planning step."""
+    """Select prioritized context for the next model decision."""
 
     from .suggestions import lineage_to_root
 
@@ -165,17 +165,17 @@ def build_context_items(
             "priority": "must",
             "kind": "workspace_validation",
             "source": "validator",
-            "reason": "Workspace contract status controls whether scientific planning is allowed.",
+            "reason": "Workspace contract status controls whether scientific claim promotion is valid.",
             "summary": jsonish_compact(validation_summary),
         }
     )
     items.append(
         {
             "priority": "must",
-            "kind": "planning_focus",
+            "kind": "focus",
             "source": "tree.json",
-            "reason": "The planning focus determines where new tree branches may attach.",
-            "summary": jsonish_compact(planning_focus),
+            "reason": "The report focus identifies the workspace area most relevant to the next model decision.",
+            "summary": jsonish_compact(focus),
         }
     )
     if bool(pathway_summary.get("present")):
@@ -188,7 +188,7 @@ def build_context_items(
                 "summary": jsonish_compact(pathway_summary),
             }
         )
-    focus_node = clean_string(planning_focus.get("focus_node"))
+    focus_node = clean_string(focus.get("focus_node"))
     if focus_node:
         for index, lineage_node in enumerate(lineage_to_root(focus_node, node_payloads)):
             priority = "must" if lineage_node == focus_node else "should"
@@ -198,10 +198,10 @@ def build_context_items(
                     node_payloads,
                     priority=priority,
                     kind="focus_lineage",
-                    reason=f"Lineage node {index + 1} leading to planning focus.",
+                    reason=f"Lineage node {index + 1} leading to the report focus.",
                 )
             )
-    from_failed_node = clean_string(planning_focus.get("from_failed_node"))
+    from_failed_node = clean_string(focus.get("from_failed_node"))
     if from_failed_node:
         failed = failed_summary_by_id(failed_nodes).get(from_failed_node)
         if failed:
@@ -268,7 +268,7 @@ def build_context_items(
                     node_payloads,
                     priority="must",
                     kind="accepted_node",
-                    reason="Accepted claims must remain visible during audit or alternative-branch planning.",
+                    reason="Accepted claims must remain visible during audit or alternative-branch decisions.",
                 )
             )
     if backtrack_events:
@@ -277,7 +277,7 @@ def build_context_items(
                 "priority": "should",
                 "kind": "backtrack_events",
                 "source": "tree.json",
-                "reason": "Backtrack edges route new planning to ancestor nodes without losing failed-branch lessons.",
+                "reason": "Backtrack edges point new branch decisions to ancestor nodes without losing failed-branch lessons.",
                 "summary": jsonish_compact(backtrack_events[:6]),
             }
         )
@@ -296,7 +296,7 @@ def build_context_items(
                 "priority": "should",
                 "kind": "mechanism_memory",
                 "source": "mechanism_model.json",
-                "reason": "Mechanism facts and refutations guide chemically distinct replanning.",
+                "reason": "Mechanism facts and refutations guide chemically distinct branch decisions.",
                 "summary": jsonish_compact(mechanism_bits),
             }
         )
@@ -308,7 +308,7 @@ def rank_context_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
     priority_score = {"must": 100, "should": 60, "could": 25}
     kind_bonus = {
-        "planning_focus": 30,
+        "focus": 30,
         "workspace_validation": 25,
         "pathway_model": 24,
         "endpoint_evidence_blocker": 23,

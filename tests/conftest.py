@@ -3,7 +3,7 @@
 Most tests drive the workflow through its scripts and assert on the resulting
 on-disk artifacts. The helpers here keep that black-box style — they invoke the
 real subprocess CLIs — so themed test files (test_validator, test_finalize,
-test_plan_next, …) share one source of truth for workspace setup.
+test_workspace_report, …) share one source of truth for workspace setup.
 """
 
 from __future__ import annotations
@@ -79,7 +79,7 @@ def report_workspace(root: Path, *extra_args: str) -> dict[str, object]:
     return json.loads(result.stdout)
 
 
-plan_next = report_workspace
+workspace_report = report_workspace
 
 
 def start_node(

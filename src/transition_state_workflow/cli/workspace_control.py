@@ -37,7 +37,7 @@ from transition_state_workflow.gate.finalize import (
     parse_evidence_spec,
 )
 from transition_state_workflow.gate.validate import validate_ts_workspace_contract
-from transition_state_workflow.core.plan_next import build_plan_next_packet
+from transition_state_workflow.core.workspace_report import build_workspace_report_packet
 from transition_state_workflow.util.json_io import read_json_object_required, write_json_object
 from transition_state_workflow.util.path_utils import clean_string, list_or_empty
 
@@ -357,7 +357,7 @@ def build_workspace_report_payload(
     """Build the constrained report_workspace payload."""
 
     source = root.expanduser().resolve()
-    packet = build_plan_next_packet(
+    packet = build_workspace_report_packet(
         source,
         alternative_mechanism=alternative_mechanism,
         command_alias="report_workspace",
@@ -367,7 +367,7 @@ def build_workspace_report_payload(
     tree = read_json_object_required(source / "tree.json")
     node_ids = sorted((tree.get("nodes") or {}).keys())
     node_summaries = [public_node_summary(source, str(node_id)) for node_id in node_ids]
-    focus = packet.get("planning_focus") if isinstance(packet.get("planning_focus"), dict) else {}
+    focus = packet.get("focus") if isinstance(packet.get("focus"), dict) else {}
     return {
         "schema": WORKSPACE_REPORT_SCHEMA,
         "source": str(source),

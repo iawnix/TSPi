@@ -12,61 +12,13 @@ from .ids import latest_node_id, node_sort_key
 from .pathway import pathway_target_for_suggestions
 
 
-def suggest_decision_cards(
-    *,
-    source: Path,
-    phase: str,
-    endpoint_nodes: list[tuple[str, dict[str, Any]]],
-    candidate_nodes: list[tuple[str, dict[str, Any]]],
-    tsfreq_nodes: list[tuple[str, dict[str, Any]]],
-    parent_override: str | None,
-    pathway_plan: dict[str, Any],
-    max_suggestions: int,
-) -> list[dict[str, Any]]:
-    """Compatibility hook; workspace report packets do not suggest branches."""
-
-    return []
-
-
-def decision_card_suggestion(
-    root: Path,
-    *,
-    stage: str,
-    operation: str,
-    parent_id: str | None,
-    hypothesis: str,
-    reason: str,
-    pathway_id: str = "",
-    step_id: str = "",
-) -> dict[str, Any]:
-    """Deprecated compatibility hook; returns a non-action context record."""
-
-    return {
-        "kind": "decision_context_only",
-        "parent_id": parent_id,
-        "input_refs": [],
-        "pathway_id": pathway_id,
-        "step_id": step_id,
-        "stage": stage,
-        "operation": operation,
-        "hypothesis": hypothesis,
-        "reason": reason,
-        "agent_must_choose": [
-            "specific chemical hypothesis",
-            "method/route details",
-            "reaction-center observables",
-            "cost and failure criteria",
-        ],
-    }
-
-
 def suggest_finalization_actions(
     *,
     source: Path,
     phase: str,
     tsfreq_nodes: list[tuple[str, dict[str, Any]]],
     connectivity_nodes: list[tuple[str, dict[str, Any]]],
-    pathway_plan: dict[str, Any],
+    pathway_attention: dict[str, Any],
 ) -> list[dict[str, Any]]:
     """Return non-branch actions when a claim may be ready to close."""
 
@@ -74,7 +26,7 @@ def suggest_finalization_actions(
         return []
     tsfreq_node = latest_node_id(tsfreq_nodes)
     connectivity_node = latest_node_id(connectivity_nodes)
-    pathway_target = pathway_target_for_suggestions(pathway_plan)
+    pathway_target = pathway_target_for_suggestions(pathway_attention)
     pathway_args = []
     if pathway_target:
         pathway_args = [
@@ -101,7 +53,7 @@ def suggest_reframe_actions(
     reframe_candidates: list[dict[str, Any]],
     max_suggestions: int,
 ) -> list[dict[str, Any]]:
-    """Return planning actions for reusing a failed TS/Freq node under a new reaction boundary."""
+    """Return required checks for using failed TS/Freq evidence under a new reaction boundary."""
 
     actions: list[dict[str, Any]] = []
     if max_suggestions <= 0:
@@ -249,8 +201,6 @@ def backtrack_reason_from_failed_summary(failed: dict[str, Any]) -> str:
 
 
 __all__ = [
-    "suggest_decision_cards",
-    "decision_card_suggestion",
     "suggest_finalization_actions",
     "suggest_reframe_actions",
     "suggest_backtrack_actions",
