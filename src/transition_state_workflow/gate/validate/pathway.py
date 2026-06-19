@@ -12,18 +12,21 @@ from transition_state_workflow.base.pathway_model import (
     derive_pathway_status,
 )
 from transition_state_workflow.config.state_contract import PATHWAY_MODEL_SCHEMA, derive_node_audit_view
-from transition_state_workflow.gate.evidence import accepted_ts_missing_evidence_gates
-from transition_state_workflow.util.path_utils import clean_string, relative_path_or_absolute
+from transition_state_workflow.gate.evidence import (
+    accepted_ts_missing_evidence_gates,
+    accepted_ts_supporting_evidence_records,
+)
+from transition_state_workflow.util.path_utils import clean_string, list_or_empty, relative_path_or_absolute
 
 from .common import iter_object_records, register_unique_id, require_list_field, validate_known_node_ref
 from .contracts import Finding
-from .evidence import group_evidence_records_by_node
 
 
 def validate_pathway_model(
     source: Path,
     model: dict[str, Any],
     node_json_by_id: dict[str, dict[str, Any]],
+    input_refs_by_node: dict[str, list[str]],
     evidence: dict[str, Any],
     findings: list[Finding],
 ) -> None:
@@ -73,7 +76,7 @@ def validate_pathway_model(
     pathway_ids: set[str] = set()
     step_index: dict[tuple[str, str], dict[str, Any]] = {}
     accepted_step_by_node: dict[str, tuple[str, str]] = {}
-    records_by_node = group_evidence_records_by_node(evidence)
+    registry_records = [item for item in list_or_empty(evidence.get("records")) if isinstance(item, dict)]
     known_nodes = set(node_json_by_id)
     for p_index, pathway in iter_object_records(
         pathways,
@@ -185,7 +188,13 @@ def validate_pathway_model(
                                 node_id=accepted_node,
                             )
                         )
-                    missing = accepted_ts_missing_evidence_gates(source, records_by_node.get(accepted_node, []))
+                    supporting_records = accepted_ts_supporting_evidence_records(
+                        registry_records,
+                        node_id=accepted_node,
+                        node_payload=node,
+                        input_refs_by_node=input_refs_by_node,
+                    )
+                    missing = accepted_ts_missing_evidence_gates(source, supporting_records)
                     if missing:
                         findings.append(
                             Finding(

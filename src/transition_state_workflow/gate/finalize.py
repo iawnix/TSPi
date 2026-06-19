@@ -30,7 +30,10 @@ from transition_state_workflow.base.pathway_model import (
     validate_pathway_reference,
     validate_pathway_step_reference,
 )
-from transition_state_workflow.gate.evidence import accepted_ts_missing_evidence_gates
+from transition_state_workflow.gate.evidence import (
+    accepted_ts_missing_evidence_gates,
+    accepted_ts_supporting_evidence_records,
+)
 from transition_state_workflow.util.json_io import read_json_object_required, write_json_object
 from transition_state_workflow.util.path_utils import (
     clean_string,
@@ -161,8 +164,10 @@ def finalize_ts_workspace_node(request: NodeFinalizationRequest) -> None:
     )
     validate_accepted_ts_evidence_gates(
         node_id=request.node_id,
+        node_payload=node_payload,
         claim_status=request.claim_status,
         root=root,
+        tree_payload=tree_payload,
         existing_registry=registry_payload,
         new_records=new_records,
     )
@@ -352,25 +357,63 @@ def validate_accepted_ts_evidence_gates(
     *,
     root: Path,
     node_id: str,
+    node_payload: dict[str, Any],
     claim_status: str,
+    tree_payload: dict[str, Any],
     existing_registry: dict[str, Any],
     new_records: list[dict[str, Any]],
 ) -> None:
-    """Require TS/Freq and connectivity evidence before accepting a TS."""
+    """Require explicit TS/Freq and connectivity evidence before accepting a TS."""
 
     if claim_status != "accepted_ts":
         return
-    existing_records = [
-        item
-        for item in existing_registry.get("records", [])
-        if isinstance(item, dict) and clean_string(item.get("node_id")) == node_id
-    ]
-    missing = accepted_ts_missing_evidence_gates(root, existing_records + new_records)
+    existing_records = [item for item in existing_registry.get("records", []) if isinstance(item, dict)]
+    supporting_records = accepted_ts_supporting_evidence_records(
+        [*existing_records, *new_records],
+        node_id=node_id,
+        node_payload=node_payload,
+        input_refs_by_node=collect_tree_input_refs(root, tree_payload, node_id, node_payload),
+    )
+    missing = accepted_ts_missing_evidence_gates(root, supporting_records)
     if missing:
         raise SystemExit(
             "accepted_ts requires supporting TS/Freq and connectivity evidence "
-            f"for this node; missing gates: {', '.join(missing)}"
+            "from this node, its evidence_refs, or explicit input_refs; "
+            f"missing gates: {', '.join(missing)}"
         )
+
+
+def collect_tree_input_refs(
+    root: Path,
+    tree_payload: dict[str, Any],
+    current_node_id: str,
+    current_node_payload: dict[str, Any],
+) -> dict[str, list[str]]:
+    """Return input refs from tree entries and node payloads for evidence gates."""
+
+    tree_nodes = tree_payload.get("nodes") if isinstance(tree_payload.get("nodes"), dict) else {}
+    node_ids = {str(item) for item in tree_nodes}
+    node_ids.add(current_node_id)
+    out: dict[str, list[str]] = {}
+    for node_id in node_ids:
+        tree_entry = tree_nodes.get(node_id) if isinstance(tree_nodes.get(node_id), dict) else {}
+        if node_id == current_node_id:
+            node = current_node_payload
+        else:
+            node_path = root / "nodes" / node_id / "node.json"
+            node = read_json_object_required(node_path) if node_path.exists() else {}
+        refs: list[str] = []
+        for raw in list(tree_entry.get("input_refs") or []) + list(node.get("input_refs") or []):
+            ref = clean_string(raw)
+            if ref and ref not in refs:
+                refs.append(ref)
+        provenance = node.get("decision_provenance") if isinstance(node.get("decision_provenance"), dict) else {}
+        for raw in list(provenance.get("input_refs") or []):
+            ref = clean_string(raw)
+            if ref and ref not in refs:
+                refs.append(ref)
+        out[node_id] = refs
+    return out
 
 
 def ensure_workspace_root(root: Path) -> None:

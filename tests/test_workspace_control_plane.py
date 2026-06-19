@@ -134,6 +134,100 @@ def close_failed_candidate_fixture(root: Path, *, node_id: str = "n020_default_q
     return f"ev_{node_id}_program_summary"
 
 
+def close_validated_ts_chain(root: Path) -> tuple[str, str]:
+    close_endpoint_fixture(root)
+    start_node(
+        root,
+        node_id="n020_candidate",
+        parent_id="n010_endpoint",
+        phase="candidate_generation",
+        operation="candidate-smoke",
+        hypothesis="Endpoint-ready references can produce a candidate.",
+    )
+    candidate_summary = root / "nodes" / "n020_candidate" / "parsed" / "candidate.json"
+    candidate_summary.write_text('{"candidate": true}\n', encoding="utf-8")
+    end_node(
+        root,
+        node_id="n020_candidate",
+        phase="candidate_generation",
+        decision="prepare_tsfreq",
+        summary="Candidate exists.",
+        primary_file="nodes/n020_candidate/parsed/candidate.json",
+        evidence={
+            "kind": "parsed_summary",
+            "path": "nodes/n020_candidate/parsed/candidate.json",
+            "claim": "Candidate generation produced a candidate.",
+            "evidence_state": "candidate_found",
+        },
+        next_branch="Run TS/Freq validation.",
+    )
+    start_node(
+        root,
+        node_id="n030_tsfreq",
+        parent_id="n020_candidate",
+        phase="tsfreq_validation",
+        operation="gaussian-tsfreq",
+        hypothesis="The candidate is a frequency-validated TS.",
+    )
+    tsfreq_summary = root / "nodes" / "n030_tsfreq" / "parsed" / "tsfreq.json"
+    tsfreq_summary.write_text(
+        json.dumps(
+            {
+                "normal_termination": True,
+                "stationary_point_found": True,
+                "final_convergence_satisfied": True,
+                "imaginary_frequency_count": 1,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    end_node(
+        root,
+        node_id="n030_tsfreq",
+        phase="tsfreq_validation",
+        decision="prepare_connectivity",
+        summary="TS/Freq validation passed.",
+        primary_file="nodes/n030_tsfreq/parsed/tsfreq.json",
+        evidence={
+            "kind": "gaussian_tsfreq_validation",
+            "path": "nodes/n030_tsfreq/parsed/tsfreq.json",
+            "claim": "TS/Freq validation passed.",
+            "evidence_state": "supports",
+        },
+        next_branch="Run connectivity validation.",
+    )
+    start_node(
+        root,
+        node_id="n040_connectivity",
+        parent_id="n030_tsfreq",
+        phase="connectivity_validation",
+        operation="mode-endpoint-connectivity",
+        hypothesis="The TS connects the intended endpoint basins.",
+    )
+    connectivity_summary = root / "nodes" / "n040_connectivity" / "parsed" / "connectivity.json"
+    connectivity_summary.write_text(
+        '{"decision": "connected", "connectivity_supported": true}\n',
+        encoding="utf-8",
+    )
+    end_node(
+        root,
+        node_id="n040_connectivity",
+        phase="connectivity_validation",
+        decision="prepare_acceptance_audit",
+        summary="Connectivity validation passed.",
+        primary_file="nodes/n040_connectivity/parsed/connectivity.json",
+        evidence={
+            "kind": "connectivity_check",
+            "path": "nodes/n040_connectivity/parsed/connectivity.json",
+            "claim": "Connectivity validation passed.",
+            "evidence_state": "supports",
+        },
+        next_branch="Run accepted TS audit.",
+    )
+    return "ev_n030_tsfreq_gaussian_tsfreq_validation", "ev_n040_connectivity_connectivity_check"
+
+
 def assert_start_evidence_refs(root: Path, node_id: str, expected_refs: list[str]) -> None:
     node = json.loads((root / "nodes" / node_id / "node.json").read_text(encoding="utf-8"))
     assert node["decision_provenance"]["evidence_refs"] == expected_refs
@@ -823,6 +917,80 @@ def test_report_workspace_accepts_explicit_tsfreq_validation_gate_without_kind_w
     assert report["claim_readiness"]["tsfreq"]["status"] == "supported"
     assert report["claim_readiness"]["tsfreq"]["supporting_nodes"] == ["n030_tsfreq"]
     assert report["claim_readiness"]["connectivity"]["status"] == "missing"
+
+
+def test_accepted_audit_uses_referenced_upstream_evidence_without_duplication(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_control"
+    init_control_workspace(root)
+    tsfreq_evidence_id, connectivity_evidence_id = close_validated_ts_chain(root)
+
+    run_cli(
+        str(WORKSPACE_CLI),
+        "start_node",
+        "--root",
+        str(root),
+        "--node-id",
+        "n050_accepted_ts_audit",
+        "--phase",
+        "accepted_audit",
+        "--operation",
+        "accepted-ts-audit",
+        "--parent-id",
+        "n040_connectivity",
+        "--input-ref",
+        "n030_tsfreq",
+        "--input-ref",
+        "n040_connectivity",
+        "--evidence-ref",
+        tsfreq_evidence_id,
+        "--evidence-ref",
+        connectivity_evidence_id,
+        "--hypothesis",
+        "The accepted audit binds the upstream TS/Freq and connectivity evidence.",
+        "--rationale",
+        "The audit node cites existing validated evidence instead of duplicating it.",
+        "--expected-evidence",
+        "accepted audit summary",
+        "--refutation-criteria",
+        "Referenced TS/Freq or connectivity evidence is missing or does not support acceptance.",
+    )
+    audit_summary = root / "nodes" / "n050_accepted_ts_audit" / "parsed" / "accepted_audit.json"
+    audit_summary.write_text(
+        json.dumps(
+            {
+                "decision": "accepted_ts",
+                "evidence_refs": [tsfreq_evidence_id, connectivity_evidence_id],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    end_node(
+        root,
+        node_id="n050_accepted_ts_audit",
+        phase="accepted_audit",
+        decision="accept_ts",
+        summary="Upstream TS/Freq and connectivity evidence support accepted TS.",
+        primary_file="nodes/n050_accepted_ts_audit/parsed/accepted_audit.json",
+        evidence={
+            "kind": "accepted_ts_audit_summary",
+            "path": "nodes/n050_accepted_ts_audit/parsed/accepted_audit.json",
+            "claim": "The accepted audit references upstream TS/Freq and connectivity evidence.",
+            "evidence_state": "supports",
+        },
+        next_branch="Archive the accepted TS or explore an alternative mechanism if requested.",
+    )
+
+    manifest = json.loads((root / "manifest.json").read_text(encoding="utf-8"))
+    registry = json.loads((root / "evidence_registry.json").read_text(encoding="utf-8"))
+    audit_records = [
+        record
+        for record in registry["records"]
+        if record.get("node_id") == "n050_accepted_ts_audit"
+    ]
+    assert manifest["current_accepted_ts"] == "n050_accepted_ts_audit"
+    assert [record["kind"] for record in audit_records] == ["accepted_ts_audit_summary"]
+    assert_strict_workspace_clean(root)
 
 
 def test_pathway_audit_accepts_complete_pathway_without_single_ts_promotion(tmp_path: Path) -> None:

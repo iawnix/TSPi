@@ -142,7 +142,7 @@ def validate_ts_workspace_contract(workspace_directory: Path) -> dict[str, Any]:
         validate_normalized_nodes(graph, findings)
     validate_evidence(source, evidence, node_ids, findings)
     validate_node_finalization_artifacts(source, node_json_by_id, parent_by_node, input_refs_by_node, evidence, findings)
-    validate_pathway_model(source, pathway_model, node_json_by_id, evidence, findings)
+    validate_pathway_model(source, pathway_model, node_json_by_id, input_refs_by_node, evidence, findings)
     validate_mechanism_model(source, read_json_optional(source / "mechanism_model.json", findings), findings)
     validate_tree_events(tree, node_ids, evidence, findings)
     validate_backtrack_replacement_links(

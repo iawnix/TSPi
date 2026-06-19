@@ -133,10 +133,12 @@ layers:
   `card_line`, `card_severity`, and `card_color`, rendered as
   `Status[Phase]` labels such as `Success[Endpoint]` or `Error[Candidate]`;
 - audit fields: `node_state`, `state_label`, `state_line`, `severity`, and
-  `color`, derived from raw `claim_status`, `outcome`, and `run_state`.
+  `color`, derived from public `phase`, `node_disposition`, evidence, and
+  closure data.
 
-Raw `claim_status`, `outcome`, and `run_state` remain in the payload for audit,
-but they do not have separate user-facing label systems. The payload includes
+Derived `claim_status`, `outcome`, and `run_state` remain in the normalized
+payload for audit, but they are not stored source-of-truth fields in `node.json`
+and they do not have separate user-facing label systems. The payload includes
 `presentation.card_status`, `presentation.card_phase`, and
 `presentation.node_state` for the full presentation vocabulary. The UI renders
 these fields verbatim and keeps no state-to-label or state-to-color maps of its
@@ -157,7 +159,7 @@ The explorer shows:
 - display-only replacement edges from a backtrack event's `from_node` to its
   `new_branch_node`, so a failed branch visibly points to the replacement
   branch while the canonical rollback edge still points to `to_node`;
-- separate `lifecycle_state`, `run_state`, `claim_status`, `outcome`,
+- separate derived `lifecycle_state`, `run_state`, `claim_status`, `outcome`,
   `outcome_code`, and `claim_level`;
 - active, stopped, ambiguous, rejected, numerical-failure, and accepted nodes
   without collapsing administrative stops into chemical failures;

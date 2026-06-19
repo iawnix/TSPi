@@ -159,8 +159,8 @@ VALID_OUTCOMES_BY_CLAIM_STATUS = {
     "ambiguous": {"wrong_mode", "wrong_endpoint", "parser_refused", "superseded"},
 }
 
-# Raw claim/outcome/run values stay separate in node.json for auditability. The
-# normalizer emits two presentation layers: compact Status[Phase] fields for
+# Claim/outcome/run values are derived audit fields, not stored node.json state.
+# The normalizer emits two presentation layers: compact Status[Phase] fields for
 # explorer node cards, and node_state/state_line fields for detail/audit views.
 NODE_STATE_PRESENTATION = {
     "prepared": {"label": "prepared", "severity": "neutral", "color": "grey"},
@@ -259,7 +259,7 @@ OUTCOME_TO_NODE_STATE = {
 
 
 def derive_node_state_key(claim_status: str, outcome: str, run_state: str, stage: str) -> str:
-    """Return one user-facing state key from the raw audit fields.
+    """Return one user-facing state key from derived audit fields.
 
     Successful claim statuses dominate so the more specific UI key wins (e.g.
     ``irc_connected`` instead of the coarser ``connectivity_validated``).

@@ -7,8 +7,11 @@ from typing import Any
 
 from transition_state_workflow.base.rationale import lint_node_rationale
 from transition_state_workflow.config.state_contract import derive_node_audit_view
-from transition_state_workflow.gate.evidence import accepted_ts_missing_evidence_gates
-from transition_state_workflow.util.path_utils import clean_string, relative_path_or_absolute
+from transition_state_workflow.gate.evidence import (
+    accepted_ts_missing_evidence_gates,
+    accepted_ts_supporting_evidence_records,
+)
+from transition_state_workflow.util.path_utils import clean_string, list_or_empty, relative_path_or_absolute
 
 from .contracts import Finding, REFLECTION_TEMPLATE_MARKERS
 from .evidence import (
@@ -29,6 +32,7 @@ def validate_node_finalization_artifacts(
     """Validate post-execution node closure across reflection and evidence records."""
 
     records_by_node = group_evidence_records_by_node(evidence)
+    registry_records = [item for item in list_or_empty(evidence.get("records")) if isinstance(item, dict)]
     registry_paths_by_node = group_registry_paths_by_node(source, evidence)
     for node_id, node_json in node_json_by_id.items():
         if not node_json:
@@ -53,13 +57,20 @@ def validate_node_finalization_artifacts(
                 )
             )
         if claim == "accepted_ts":
-            missing = accepted_ts_missing_evidence_gates(source, records_by_node.get(node_id, []))
+            supporting_records = accepted_ts_supporting_evidence_records(
+                registry_records,
+                node_id=node_id,
+                node_payload=node_json,
+                input_refs_by_node=input_refs_by_node,
+            )
+            missing = accepted_ts_missing_evidence_gates(source, supporting_records)
             if missing:
                 findings.append(
                     Finding(
                         "error",
                         "accepted_ts_missing_evidence_gates",
-                        "accepted_ts requires supporting TS/Freq and connectivity evidence; "
+                        "accepted_ts requires supporting TS/Freq and connectivity evidence from this node, "
+                        "its evidence_refs, or explicit input_refs; "
                         f"missing gates: {', '.join(missing)}",
                         path="evidence_registry.json",
                         node_id=node_id,

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
@@ -39,6 +39,135 @@ def accepted_ts_missing_evidence_gates(
 
     hits = accepted_ts_evidence_gate_hits(root, records)
     return [gate for gate in ACCEPTED_TS_REQUIRED_EVIDENCE_GATES if gate not in hits]
+
+
+def accepted_ts_supporting_evidence_records(
+    records: Sequence[Mapping[str, object]],
+    *,
+    node_id: str,
+    node_payload: Mapping[str, object] | None = None,
+    input_refs_by_node: Mapping[str, Sequence[str]] | None = None,
+) -> list[Mapping[str, object]]:
+    """Return records explicitly bound to one accepted-TS audit decision.
+
+    Direct records on the audit node remain valid, but accepted audit nodes may
+    also bind already-validated TS/Freq and connectivity evidence through their
+    decision-card evidence refs or explicit input refs. Parent lineage is not
+    traversed here: an accepted audit must state which evidence or dependency
+    nodes it is using.
+    """
+
+    node_payload = node_payload or {}
+    input_refs_by_node = input_refs_by_node or {}
+    records_by_id: dict[str, Mapping[str, object]] = {}
+    selected: list[Mapping[str, object]] = []
+    selected_ids: set[str] = set()
+
+    def add(record: Mapping[str, object]) -> None:
+        evidence_id = clean_string(record.get("evidence_id"))
+        key = evidence_id or f"record:{id(record)}"
+        if key in selected_ids:
+            return
+        selected_ids.add(key)
+        selected.append(record)
+
+    for record in records:
+        if not isinstance(record, Mapping):
+            continue
+        evidence_id = clean_string(record.get("evidence_id"))
+        if evidence_id:
+            records_by_id[evidence_id] = record
+        if clean_string(record.get("node_id")) == node_id:
+            add(record)
+
+    for evidence_ref in evidence_refs_from_node_payload(node_payload):
+        record = records_by_id.get(evidence_ref)
+        if record is not None:
+            add(record)
+
+    dependency_nodes = accepted_ts_dependency_node_ids(
+        node_id=node_id,
+        node_payload=node_payload,
+        input_refs_by_node=input_refs_by_node,
+    )
+    for record in records:
+        if isinstance(record, Mapping) and clean_string(record.get("node_id")) in dependency_nodes:
+            add(record)
+    return selected
+
+
+def accepted_ts_dependency_node_ids(
+    *,
+    node_id: str,
+    node_payload: Mapping[str, object],
+    input_refs_by_node: Mapping[str, Sequence[str]],
+) -> set[str]:
+    """Return explicit dependency nodes for an accepted audit node."""
+
+    out: set[str] = set()
+    seen = {node_id}
+    stack = [
+        *input_refs_from_node_payload(node_payload),
+        *[clean_string(item) for item in input_refs_by_node.get(node_id, ()) if clean_string(item)],
+    ]
+    while stack:
+        current = clean_string(stack.pop())
+        if not current or current in seen:
+            continue
+        seen.add(current)
+        out.add(current)
+        stack.extend(clean_string(item) for item in input_refs_by_node.get(current, ()) if clean_string(item))
+    return out
+
+
+def evidence_refs_from_node_payload(node_payload: Mapping[str, object]) -> set[str]:
+    """Collect evidence ids cited by a node's decision or closure records."""
+
+    refs: set[str] = set()
+    collect_evidence_refs(node_payload.get("decision_provenance"), refs)
+    collect_evidence_refs(node_payload.get("closure_explanation"), refs)
+    collect_evidence_refs(node_payload, refs)
+    return refs
+
+
+def collect_evidence_refs(value: object, refs: set[str]) -> None:
+    """Collect scalar or list evidence refs from nested JSON-like values."""
+
+    if isinstance(value, Mapping):
+        scalar = clean_string(value.get("evidence_ref"))
+        if scalar:
+            refs.add(scalar)
+        raw_refs = value.get("evidence_refs")
+        if isinstance(raw_refs, Sequence) and not isinstance(raw_refs, (str, bytes)):
+            for item in raw_refs:
+                ref = clean_string(item)
+                if ref:
+                    refs.add(ref)
+        for child in value.values():
+            collect_evidence_refs(child, refs)
+    elif isinstance(value, Sequence) and not isinstance(value, (str, bytes)):
+        for child in value:
+            collect_evidence_refs(child, refs)
+
+
+def input_refs_from_node_payload(node_payload: Mapping[str, object]) -> list[str]:
+    """Return explicit input refs from public node state and decision provenance."""
+
+    refs: list[str] = []
+    add_input_refs(node_payload.get("input_refs"), refs)
+    provenance = node_payload.get("decision_provenance")
+    if isinstance(provenance, Mapping):
+        add_input_refs(provenance.get("input_refs"), refs)
+    return refs
+
+
+def add_input_refs(raw_refs: object, refs: list[str]) -> None:
+    if not isinstance(raw_refs, Sequence) or isinstance(raw_refs, (str, bytes)):
+        return
+    for item in raw_refs:
+        ref = clean_string(item)
+        if ref and ref not in refs:
+            refs.append(ref)
 
 
 def accepted_ts_evidence_gate_hits(
@@ -186,6 +315,7 @@ __all__ = [
     "TSFREQ_KINDS",
     "accepted_ts_evidence_gate_hits",
     "accepted_ts_missing_evidence_gates",
+    "accepted_ts_supporting_evidence_records",
     "record_supports_tsfreq_reframe",
     "supports_connectivity_gate",
     "supports_tsfreq_gate",

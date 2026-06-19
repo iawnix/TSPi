@@ -282,6 +282,10 @@ Forbidden model-return fields include internal audit names such as
 - Evidence paths must be workspace-relative and point to node-scoped files when
   possible.
 - Each closed node should include evidence records through `end_node`.
+- An `accepted_audit` node may use its own evidence records, decision-card
+  `evidence_refs`, or explicit `input_refs` to upstream TS/Freq and
+  connectivity nodes for the accepted-TS gate. It must not rely on an implicit
+  parent chain to guess which evidence was accepted.
 - Program facts should cite logs, parsed JSON, geometry files, or command
   metadata.
 - Mechanism facts should cite available structural, electronic, orbital, spin,
