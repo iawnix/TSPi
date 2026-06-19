@@ -483,3 +483,20 @@ fi
 cd "$RUN_DIR"
 find . -maxdepth 1 -type f \\( {clauses} \\) -printf '%f\\n' | sort
 """
+
+
+def fetch_tree_list_command(layout: RemoteNodeLayout, patterns: list[str]) -> str:
+    """Return a remote shell snippet that lists fetchable files recursively."""
+
+    run_dir = shlex.quote(layout.remote_outputs_dir)
+    effective_patterns = patterns or ["*"]
+    clauses = " -o ".join(f"-name {shlex.quote(pattern)}" for pattern in effective_patterns)
+    return f"""set -u
+RUN_DIR={run_dir}
+if [ ! -d "$RUN_DIR" ]; then
+  echo "error: missing remote outputs dir: $RUN_DIR" >&2
+  exit 3
+fi
+cd "$RUN_DIR"
+find . -type f \\( {clauses} \\) -printf '%P\\n' | sort
+"""

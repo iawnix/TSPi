@@ -64,8 +64,18 @@ def test_compute_host_docs_match_remote_executor_quoting_model() -> None:
     assert "remote/exec.py" in text
     assert "remote/job_runner.py" in text
     assert "OpenSSHRemoteExecutor" in text
+    assert "ts_remote_job.py submit --engine ase-neb" in text
     assert ("ssh compute-" + "0-30 " + '"') not in text
     assert "subprocess.run(..., shell=False)" in text
+
+
+def test_candidate_generation_docs_expose_remote_ase_neb_adapter() -> None:
+    text = (REFERENCES / "candidate_generation.md").read_text(encoding="utf-8")
+    skill = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+    assert "scripts/ts_remote_job.py submit --engine ase-neb" in text
+    assert "nodes/<node>/outputs" in text
+    assert "scripts/ts_remote_job.py" in skill
+    assert "--engine ase-neb" in skill
 
 
 def test_mechanism_analysis_sources_define_method_capability_matrix() -> None:

@@ -29,6 +29,7 @@ REMOTE_GAUSSIAN_CLI = SKILL_ROOT / "scripts" / "run_remote_gaussian.py"
 REMOTE_STATUS_CLI = SKILL_ROOT / "scripts" / "ts_remote_status.py"
 REMOTE_TAIL_CLI = SKILL_ROOT / "scripts" / "ts_remote_tail.py"
 REMOTE_FETCH_CLI = SKILL_ROOT / "scripts" / "ts_remote_fetch.py"
+REMOTE_JOB_CLI = SKILL_ROOT / "scripts" / "ts_remote_job.py"
 IMAGINARY_MODE_CLI = SKILL_ROOT / "scripts" / "ts_imaginary_mode_follow.py"
 NODE_EXEC_CLI = SKILL_ROOT / "scripts" / "ts_node_exec.py"
 

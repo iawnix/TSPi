@@ -121,6 +121,31 @@ python scripts/ase_neb_framework.py prepare examples/neb_xtb_config.json
 python scripts/ase_neb_framework.py run examples/neb_xtb_config.json
 ```
 
+Remote ASE/xTB NEB should go through the generic remote job CLI rather than a
+hand-written runner. Put the config and endpoint XYZ files under the intended
+node `inputs/` directory, then submit the node-scoped job:
+
+```bash
+python scripts/ts_remote_job.py submit --engine ase-neb \
+  --config nodes/n030_xtb_neb/inputs/ase_neb_xtb_config.json \
+  --root /home/iaw/codex_runs/TEST4/tssearch_example \
+  --node n030_xtb_neb \
+  --login-host iaw.1w \
+  --compute-host compute-0-30 \
+  --background
+```
+
+The adapter uploads a runtime copy to
+`<remote-root>/tools/transition-state-workflow/`, rewrites the remote config so
+input paths and the nested ASE-NEB output directory are node-scoped, and records
+metadata/logs under `nodes/<node>/outputs/`. Monitor and fetch with:
+
+```bash
+python scripts/ts_remote_job.py status --engine ase-neb --root <remote-root> --node n030_xtb_neb --login-host iaw.1w --compute-host compute-0-30
+python scripts/ts_remote_job.py tail --engine ase-neb --root <remote-root> --node n030_xtb_neb --login-host iaw.1w --compute-host compute-0-30 --file auto
+python scripts/ts_remote_job.py fetch --engine ase-neb --root <remote-root> --node n030_xtb_neb --login-host iaw.1w --compute-host compute-0-30 --local-root .
+```
+
 To refine an existing image path with Gaussian forces, first dry-run the inputs:
 
 ```bash

@@ -140,8 +140,9 @@ host interpret those operators.
 `run_remote_gaussian.py` is the Gaussian engine adapter over the generic remote
 job lifecycle. It owns Gaussian-specific input placement, `.out`/driver log
 names, checkpoint handling, and scratch copy-back behavior. xTB or ASE/NEB
-remote execution should provide its own engine adapter and `RemoteJobSpec`
-instead of passing non-Gaussian jobs through this CLI.
+remote execution must not pass non-Gaussian jobs through this CLI. Use
+`scripts/ts_remote_job.py submit --engine ase-neb` for ASE/xTB NEB; future
+engines should provide their own adapter and `RemoteJobSpec`.
 
 Runner scripts that source `g16.profile` under `set -euo pipefail` must disable
 both `-e` and `-u` while sourcing, then restore strict mode:

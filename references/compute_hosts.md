@@ -64,13 +64,20 @@ Remote command construction:
   compute-host SSH commands with `remote/exec.py` and submits through
   `remote/job_runner.py`, using local `subprocess.run(..., shell=False)` and a
   single final compute-host `bash -lc` command.
+- Prefer `scripts/ts_remote_job.py submit --engine ase-neb` for remote
+  ASE/xTB NEB. It packages the current `src/`, `scripts/`, and `templates/`
+  runtime into `<remote-root>/tools/transition-state-workflow/`, uploads a
+  remote JSON config plus referenced endpoint files into
+  `nodes/<node>/inputs/`, runs the ASE-NEB framework on the compute host, and
+  writes metadata/logs under `nodes/<node>/outputs/`.
 - Keep engine semantics out of the generic SSH and job lifecycle boundaries.
   `remote/job_runner.py` owns directory preparation, background submit,
   PID/metadata receipt files, node-output status/tail/fetch snippets, and
   downloads. Download fallback first checks remote file existence; network,
   login, or permission failures must surface instead of silently falling back to
   stale legacy artifacts. `run_remote_gaussian.py` is the Gaussian adapter over
-  that layer; xTB or ASE/NEB remote execution must provide engine-specific
+  that layer; `ts_remote_job.py --engine ase-neb` is the ASE-NEB adapter over
+  the same layer. Future xTB or ASE variants must provide engine-specific
   adapters instead of reusing the Gaussian CLI.
 - For ad hoc compute-host commands that need shell operators, generate the SSH
   argv through `OpenSSHRemoteExecutor.compute_argv(...)` instead of hand-writing

@@ -242,6 +242,9 @@ Do not say "TS found" for:
   `nodes/<node_id>/outputs` with node-scoped metadata.
 - `scripts/ase_neb_framework.py`: prepare and run ASE-managed xTB/Gaussian NEB
   candidate-generation branches.
+- `scripts/ts_remote_job.py`: generic remote job CLI. Initial engine support is
+  `--engine ase-neb`, which stages a remote tool runtime and runs ASE/xTB NEB
+  through the generic remote lifecycle.
 - `scripts/gaussian_external_xtb.py`: Gaussian External wrapper for xTB energy,
   gradient, and Hessian through EIn/EOu files.
 - `scripts/prepare_gaussian_ts_input.py`: generate Gaussian TS/Freq inputs from
