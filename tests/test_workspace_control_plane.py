@@ -616,8 +616,9 @@ def test_report_workspace_does_not_accept_ready_on_refuting_connectivity(tmp_pat
 
     report = report_workspace(root)
     assert report["current_phase"] == "connectivity_validation"
-    assert "connectivity_missing" in report["blocking_gates"]
-    assert report["forbidden_next_actions"] == []
+    assert "blocking_gates" not in report
+    assert "allowed_next_actions" not in report
+    assert "forbidden_next_actions" not in report
     assert report["claim_readiness"]["tsfreq"]["status"] == "supported"
     assert report["claim_readiness"]["connectivity"]["status"] == "missing"
     assert report["claim_readiness"]["accepted_ts"]["missing_evidence"] == ["connectivity"]
@@ -694,8 +695,10 @@ def test_report_workspace_accepts_explicit_tsfreq_validation_gate_without_kind_w
     assert report["current_phase"] == "connectivity_validation"
     assert report["current_phase_scope"]["role"] == "attention_anchor"
     assert report["available_commands"] == ["start_node", "end_node", "ask_user", "stop"]
-    assert report["allowed_next_actions"] == ["start_node", "end_node", "ask_user", "stop"]
-    assert report["forbidden_next_actions"] == []
+    assert "deprecated_fields" not in report
+    assert "blocking_gates" not in report
+    assert "allowed_next_actions" not in report
+    assert "forbidden_next_actions" not in report
     assert report["claim_readiness"]["tsfreq"]["status"] == "supported"
     assert report["claim_readiness"]["tsfreq"]["supporting_nodes"] == ["n030_tsfreq"]
     assert report["claim_readiness"]["connectivity"]["status"] == "missing"

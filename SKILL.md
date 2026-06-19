@@ -151,11 +151,10 @@ top-level `node.json` state and must not be requested from the model.
    - Treat `current_phase` as the current attention layer, not as a mandatory
      next command. Route and method selection remain model decisions recorded
      in the decision provenance.
-   - Treat `blocking_gates` / `allowed_next_actions` /
-     `forbidden_next_actions` as deprecated compatibility fields:
-     `blocking_gates` mirrors claim blockers, `allowed_next_actions` lists only
-     public commands, and `forbidden_next_actions` is not a route-policy
-     surface.
+   - Do not expect `blocking_gates`, `allowed_next_actions`, or
+     `forbidden_next_actions` in `report_workspace`; missing evidence is
+     represented under `claim_readiness`, and public commands are listed under
+     `available_commands`.
    - Validate the proposed JSON with `validate_decision` before mutating the
      workspace.
 

@@ -45,13 +45,11 @@ from .pathway import (
 from .readiness import (
     PUBLIC_DECISION_ACTIONS,
     build_claim_readiness,
-    claim_blockers_from_readiness,
     current_phase_reasons,
     current_phase_scope,
 )
 from .phase import (
     default_focus_node_for_phase,
-    gates_for_phase,
     infer_phase_from_focus_node,
     infer_planning_focus,
     infer_planning_state,
@@ -91,10 +89,8 @@ __all__ = [
     "infer_planning_state",
     "PUBLIC_DECISION_ACTIONS",
     "build_claim_readiness",
-    "claim_blockers_from_readiness",
     "current_phase_reasons",
     "current_phase_scope",
-    "gates_for_phase",
     "infer_phase_from_focus_node",
     "infer_planning_focus",
     "default_focus_node_for_phase",

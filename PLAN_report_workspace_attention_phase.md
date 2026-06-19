@@ -47,11 +47,11 @@ supported; they do not choose the next route.
 - `situation.context_items`
 - `allowed_response_contract`
 
-Compatibility fields may remain, but only as deprecated diagnostics:
+Compatibility fields are removed from the report contract:
 
-- `blocking_gates` means missing evidence that blocks claim promotion.
-- `allowed_next_actions` mirrors public command names only.
-- `forbidden_next_actions` should not contain route-level planner classes.
+- do not emit `blocking_gates`;
+- do not emit `allowed_next_actions`;
+- do not emit `forbidden_next_actions`.
 
 ## Enforcement boundary
 
@@ -67,7 +67,7 @@ to reject malformed decisions or unsupported claim promotion.
 2. Refactor phase inference to return attention phase and claim blockers, not
    route classes.
 3. Update packet/public report payloads to expose claim readiness and available
-   commands while demoting compatibility fields.
+   commands while removing compatibility fields.
 4. Prefer explicit `validation_gate` / `gate` metadata over evidence-kind
    whitelists and keep kind fallback for old records.
 5. Scope Gaussian Opt MaxCycle parsing to the `Opt` route section so SCF

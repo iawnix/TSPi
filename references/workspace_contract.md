@@ -123,8 +123,6 @@ The report includes:
 - `focus`
 - `claim_readiness`
 - `available_commands`
-- compatibility diagnostics: `blocking_gates`, `allowed_next_actions`, and
-  `forbidden_next_actions`
 - public node summaries
 - validation summary
 - context items
@@ -133,10 +131,9 @@ The report includes:
 - `allowed_response_contract`
 
 `current_phase` is an attention anchor for the current scientific layer, not a
-route decision. `claim_readiness` is the primary evidence diagnostic. The
-compatibility fields must not be interpreted as a hard planner:
-`blocking_gates` mirrors missing claim evidence, `allowed_next_actions` lists
-only the public command names, and `forbidden_next_actions` is deprecated.
+route decision. `claim_readiness` is the primary evidence diagnostic.
+`blocking_gates`, `allowed_next_actions`, and `forbidden_next_actions` are not
+part of the report contract.
 
 3. Validate the next decision:
 

@@ -389,14 +389,6 @@ def build_workspace_report_payload(
         },
         "claim_readiness": packet.get("claim_readiness", {}),
         "available_commands": list_or_empty(packet.get("available_commands")),
-        "deprecated_fields": {
-            "blocking_gates": "claim blockers retained for compatibility; use claim_readiness for primary diagnostics",
-            "allowed_next_actions": "public command names only; no route or method suggestions",
-            "forbidden_next_actions": "deprecated and intentionally empty; claim attempts are validated by validate_decision/end_node",
-        },
-        "blocking_gates": list_or_empty(packet.get("blocking_gates")),
-        "allowed_next_actions": ["start_node", "end_node", "ask_user", "stop"],
-        "forbidden_next_actions": [],
         "nodes": node_summaries,
         "situation": {
             "validation": packet.get("validation_summary", {}),

@@ -81,29 +81,6 @@ def build_claim_readiness(
     }
 
 
-def claim_blockers_from_readiness(readiness: dict[str, Any]) -> list[str]:
-    """Return compatibility blockers derived from missing claim evidence."""
-
-    blockers: list[str] = []
-    workspace = readiness.get("workspace") if isinstance(readiness.get("workspace"), dict) else {}
-    if workspace.get("status") == "invalid":
-        blockers.append("workspace_validation_errors")
-    if workspace.get("status") == "active_work":
-        blockers.append("active_nodes_pending")
-    if _missing(readiness, "endpoint_minima"):
-        blockers.append("endpoint_minima_missing")
-    if not _missing(readiness, "endpoint_minima") and _missing(readiness, "candidate"):
-        blockers.append("candidate_missing")
-    if not _missing(readiness, "candidate") and _missing(readiness, "tsfreq"):
-        blockers.append("tsfreq_validation_missing")
-    if not _missing(readiness, "tsfreq") and _missing(readiness, "connectivity"):
-        blockers.append("connectivity_missing")
-    endpoint = readiness.get("endpoint_minima") if isinstance(readiness.get("endpoint_minima"), dict) else {}
-    if endpoint.get("diagnostics"):
-        blockers.append("endpoint_evidence_not_validated")
-    return _unique(blockers)
-
-
 def current_phase_reasons(
     *,
     phase: str,
@@ -163,11 +140,6 @@ def _node_ids(nodes: list[tuple[str, dict[str, Any]]]) -> list[str]:
     return [node_id for node_id, _ in sorted(nodes, key=lambda item: node_sort_key(item[0]))]
 
 
-def _missing(readiness: dict[str, Any], key: str) -> bool:
-    item = readiness.get(key) if isinstance(readiness.get(key), dict) else {}
-    return bool(item.get("missing_evidence"))
-
-
 def _workspace_diagnostics(
     validation_errors: list[dict[str, Any]],
     active_nodes: list[dict[str, Any]],
@@ -191,7 +163,6 @@ def _unique(values: list[str]) -> list[str]:
 __all__ = [
     "PUBLIC_DECISION_ACTIONS",
     "build_claim_readiness",
-    "claim_blockers_from_readiness",
     "current_phase_reasons",
     "current_phase_scope",
 ]

@@ -22,104 +22,26 @@ def infer_planning_state(
     accepted_nodes: list[tuple[str, dict[str, Any]]],
     manifest: dict[str, Any],
     alternative_mechanism: bool,
-) -> tuple[list[str], list[str], list[str], str]:
-    """Infer claim blockers and the report attention phase.
-
-    The empty allowed/forbidden return positions preserve the historical
-    function shape while avoiding route suggestions in report packets.
-    """
-
-    blocking: list[str] = []
-    allowed: list[str] = []
-    forbidden: list[str] = []
+) -> str:
+    """Infer the report attention phase."""
 
     if validation_errors:
-        return (
-            ["workspace_validation_errors"],
-            [],
-            [],
-            "workspace_repair_required",
-        )
+        return "workspace_repair_required"
     if active_nodes:
-        return (
-            ["active_nodes_pending"],
-            [],
-            [],
-            "active_work_running",
-        )
+        return "active_work_running"
     if accepted_nodes or clean_string(manifest.get("current_accepted_ts")):
         if alternative_mechanism:
-            return (
-                ["accepted_ts_present_requires_distinct_mechanism"],
-                [],
-                [],
-                "alternative_mechanism_planning",
-            )
-        return (
-            [],
-            [],
-            [],
-            "accepted_ts_present",
-        )
+            return "alternative_mechanism_planning"
+        return "accepted_ts_present"
     if not endpoint_nodes:
-        blocking.append("endpoint_minima_missing")
-        return blocking, allowed, forbidden, "endpoint_discovery"
+        return "endpoint_discovery"
     if not candidate_nodes and not tsfreq_nodes:
-        blocking.append("candidate_missing")
-        return blocking, allowed, forbidden, "candidate_generation"
+        return "candidate_generation"
     if not tsfreq_nodes:
-        blocking.append("tsfreq_validation_missing")
-        return blocking, allowed, forbidden, "gaussian_tsfreq_validation"
+        return "gaussian_tsfreq_validation"
     if not connectivity_nodes:
-        blocking.append("connectivity_missing")
-        return blocking, allowed, forbidden, "connectivity_validation"
-    return (
-        [],
-        [],
-        [],
-        "accepted_ts_ready",
-    )
-
-
-def gates_for_phase(phase: str) -> tuple[list[str], list[str], list[str], str]:
-    """Return claim blockers for a focus-local attention phase."""
-
-    if phase == "endpoint_discovery":
-        return (
-            ["endpoint_minima_missing"],
-            [],
-            [],
-            phase,
-        )
-    if phase == "candidate_generation":
-        return (
-            ["candidate_missing_after_backtrack_target"],
-            [],
-            [],
-            phase,
-        )
-    if phase == "gaussian_tsfreq_validation":
-        return (
-            ["tsfreq_validation_missing_after_backtrack_target"],
-            [],
-            [],
-            phase,
-        )
-    if phase == "connectivity_validation":
-        return (
-            ["connectivity_missing_after_backtrack_target"],
-            [],
-            [],
-            phase,
-        )
-    if phase == "accepted_ts_ready":
-        return (
-            [],
-            [],
-            [],
-            phase,
-        )
-    return ([], [], [], phase)
+        return "connectivity_validation"
+    return "accepted_ts_ready"
 
 
 def infer_phase_from_focus_node(node_id: str, node_payloads: dict[str, dict[str, Any]]) -> str:
@@ -281,7 +203,6 @@ def default_focus_node_for_phase(phase: str, node_payloads: dict[str, dict[str, 
 
 __all__ = [
     "infer_planning_state",
-    "gates_for_phase",
     "infer_phase_from_focus_node",
     "infer_planning_focus",
     "default_focus_node_for_phase",

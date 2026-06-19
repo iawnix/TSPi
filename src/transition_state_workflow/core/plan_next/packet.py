@@ -13,11 +13,10 @@ from .contracts import PLAN_SCHEMA, TsfreqEvidencePredicate, WorkspaceValidator
 from .ids import node_sort_key
 from .loader import conservative_workspace_validation, no_tsfreq_evidence_support
 from .pathway import filter_nodes_for_pathway_step, infer_pathway_plan
-from .phase import gates_for_phase, infer_phase_from_focus_node, infer_planning_focus, infer_planning_state
+from .phase import infer_phase_from_focus_node, infer_planning_focus, infer_planning_state
 from .readiness import (
     PUBLIC_DECISION_ACTIONS,
     build_claim_readiness,
-    claim_blockers_from_readiness,
     current_phase_reasons,
     current_phase_scope,
 )
@@ -67,7 +66,7 @@ def build_plan_next_packet(
     connectivity_nodes = snapshot.claims.connectivity_nodes
     accepted_nodes = snapshot.claims.accepted_nodes
 
-    blocking_gates, allowed, forbidden, phase = infer_planning_state(
+    phase = infer_planning_state(
         validation_errors=validation_errors,
         active_nodes=active_nodes,
         endpoint_nodes=endpoint_nodes,
@@ -101,7 +100,7 @@ def build_plan_next_packet(
             source=source,
             evidence_records=snapshot.evidence_records,
         )
-        blocking_gates, allowed, forbidden, phase = infer_planning_state(
+        phase = infer_planning_state(
             validation_errors=validation_errors,
             active_nodes=active_nodes,
             endpoint_nodes=planning_claims.endpoint_nodes,
@@ -113,15 +112,9 @@ def build_plan_next_packet(
             alternative_mechanism=False,
         )
     elif pathway_plan.get("mode") == "complete":
-        blocking_gates = []
-        allowed = []
-        forbidden = []
         phase = "pathway_complete"
     elif pathway_plan.get("mode") in {"ambiguous", "rejected"}:
         mode = clean_string(pathway_plan.get("mode"))
-        blocking_gates = [f"pathway_{mode}_requires_mechanism_reassessment"]
-        allowed = []
-        forbidden = []
         phase = f"pathway_{mode}"
 
     required_backtrack_events = suggest_backtrack_actions(
@@ -144,21 +137,14 @@ def build_plan_next_packet(
         pathway_plan=pathway_plan,
         pathway_step_node_payloads=planning_node_payloads,
     )
-    parent_override = None
     if planning_focus["mode"] == "backtrack_replan":
         focus_phase = infer_phase_from_focus_node(
             clean_string(planning_focus.get("focus_node")),
             node_payloads,
         )
         if focus_phase:
-            blocking_gates, allowed, forbidden, phase = gates_for_phase(focus_phase)
-        parent_override = clean_string(planning_focus.get("parent_for_new_branch")) or None
-    elif planning_focus["mode"] == "pathway_step_planning":
-        parent_override = clean_string(planning_focus.get("parent_for_new_branch")) or None
+            phase = focus_phase
     elif planning_focus["mode"] == "backtrack_decision_needed":
-        blocking_gates = ["backtrack_target_missing"]
-        allowed = []
-        forbidden = []
         phase = "backtrack_decision_needed"
     endpoint_blockers_gate_scientific_planning = bool(endpoint_evidence_blockers) and not (
         validation_errors
@@ -166,7 +152,6 @@ def build_plan_next_packet(
         or (accepted_nodes and not alternative_mechanism and pathway_plan.get("mode") not in {"start", "continue"})
     )
     if endpoint_blockers_gate_scientific_planning:
-        _append_unique(blocking_gates, "endpoint_evidence_not_validated")
         if planning_focus["mode"] == "advance":
             latest_blocker = endpoint_evidence_blockers[-1]
             planning_focus = {
@@ -202,7 +187,6 @@ def build_plan_next_packet(
         manifest=manifest,
         endpoint_evidence_blockers=endpoint_evidence_blockers,
     )
-    blocking_gates = _unique_preserve_order([*blocking_gates, *claim_blockers_from_readiness(claim_readiness)])
     phase_reasons = current_phase_reasons(
         phase=phase,
         claim_readiness=claim_readiness,
@@ -250,7 +234,6 @@ def build_plan_next_packet(
         "decision_constraints": build_decision_constraints(
             phase=phase,
             planning_focus=planning_focus,
-            blocking_gates=blocking_gates,
             endpoint_evidence_blockers=endpoint_evidence_blockers,
             required_backtrack_events=required_backtrack_events,
             pathway_plan=pathway_plan,
@@ -266,7 +249,7 @@ def build_plan_next_packet(
                 "accepted_node",
                 "mechanism_memory",
             ],
-            "raw_excerpt_policy": "include parsed summaries and reflections first; read raw logs only when a blocking gate requires exact error text",
+            "raw_excerpt_policy": "include parsed summaries and reflections first; read raw logs only when exact program or chemistry evidence is needed",
             "parent_rule": "new decision cards follow planning_focus.parent_for_new_branch when backtracking is active",
             "reframe_rule": "rejected or wrong-mode TS/Freq nodes stay historical; reuse them only through input_refs on a new node with a new intended reaction boundary",
             "pathway_rule": "accepted_ts remains an elementary-step claim; pathway completion is derived only when every required pathway step is bound to an accepted_ts node",
@@ -286,9 +269,6 @@ def build_plan_next_packet(
             active_nodes=active_nodes,
             endpoint_evidence_blockers=endpoint_evidence_blockers,
         ),
-        "blocking_gates": blocking_gates,
-        "allowed_next_actions": PUBLIC_DECISION_ACTIONS,
-        "forbidden_next_actions": [],
         "validated_facts": list_or_empty(mechanism.get("validated_facts"))[:12],
         "refuted_hypotheses": list_or_empty(mechanism.get("refuted_hypotheses"))[:12],
         "open_questions": list_or_empty(mechanism.get("open_questions"))[:12],
@@ -307,16 +287,10 @@ def build_plan_next_packet(
 __all__ = ["build_plan_next_packet"]
 
 
-def _append_unique(values: list[str], item: str) -> None:
-    if item not in values:
-        values.append(item)
-
-
 def build_decision_constraints(
     *,
     phase: str,
     planning_focus: dict[str, Any],
-    blocking_gates: list[str],
     endpoint_evidence_blockers: list[dict[str, Any]],
     required_backtrack_events: list[dict[str, Any]],
     pathway_plan: dict[str, Any],
@@ -328,8 +302,6 @@ def build_decision_constraints(
         "write an agent-owned decision_card with explicit decision_provenance before execution",
         "keep claim ceiling at the next evidence layer unless parsed evidence supports promotion",
     ]
-    if blocking_gates:
-        required_checks.append("resolve claim blockers before promoting scientific claims")
     if endpoint_evidence_blockers:
         required_checks.append("treat endpoint_evidence_blockers as invalid endpoint evidence, not repair instructions")
     if required_backtrack_events:
@@ -342,9 +314,6 @@ def build_decision_constraints(
         "parent_for_new_branch": clean_string(planning_focus.get("parent_for_new_branch")),
         "required_checks": required_checks,
         "available_commands": PUBLIC_DECISION_ACTIONS,
-        "claim_blockers": blocking_gates,
-        "blocking_gates": blocking_gates,
-        "route_suggestions": [],
         "agent_owns": [
             "chemical hypothesis",
             "parent selection reason",
@@ -361,11 +330,3 @@ def build_decision_constraints(
             "accepted_ts claim gates",
         ],
     }
-
-
-def _unique_preserve_order(values: list[str]) -> list[str]:
-    result: list[str] = []
-    for value in values:
-        if value and value not in result:
-            result.append(value)
-    return result
