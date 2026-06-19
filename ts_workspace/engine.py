@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from .finalizers import finalize_closed_node
+from .finalizers import finalize_closed_node, validate_accepted_audit_gates
 from .io import append_jsonl, append_markdown, now_iso, read_json, sha256_json, write_json
 from .readers import report_workspace as build_report
 from .validators.decision import ContractError, validate_decision as validate_decision_dict
@@ -174,12 +174,14 @@ def end_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
         raise ContractError(f"node is not running: {node_id}")
 
     closure = dict(decision["payload"]["closure"])
+    merged_evidence_refs = sorted(set(node.get("evidence_refs", []) + decision.get("evidence_refs", [])))
+    validate_accepted_audit_gates(root_path, node, closure, merged_evidence_refs)
     closure["closed_at"] = now_iso()
     node["closure"] = closure
     node["lifecycle"] = "stopped" if closure["program_status"] == "stopped" else "closed"
     node["ended_by_decision"] = _decision_id(decision)
     node["ended_at"] = closure["closed_at"]
-    node["evidence_refs"] = sorted(set(node.get("evidence_refs", []) + decision.get("evidence_refs", [])))
+    node["evidence_refs"] = merged_evidence_refs
     write_json(node_path, node)
 
     tree = read_json(root_path / "tree.json")

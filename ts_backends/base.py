@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 
 
@@ -21,3 +22,13 @@ class PreparedTask:
     input_paths: list[str]
     expected_artifacts: list[str]
     environment: dict[str, str] = field(default_factory=dict)
+
+
+class Backend(ABC):
+    """Calculation adapter boundary."""
+
+    name: str
+
+    @abstractmethod
+    def prepare(self, task: BackendTask) -> PreparedTask:
+        """Return node-scoped execution metadata without mutating a workspace."""

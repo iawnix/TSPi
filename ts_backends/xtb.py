@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .base import BackendTask, PreparedTask
+from .base import Backend, BackendTask, PreparedTask
 
 
 def prepare_xtb_opt(task: BackendTask) -> PreparedTask:
@@ -16,3 +16,10 @@ def prepare_xtb_opt(task: BackendTask) -> PreparedTask:
         input_paths=[xyz],
         expected_artifacts=["xtbopt.xyz", "xtb.out"],
     )
+
+
+class XtbBackend(Backend):
+    name = "xtb"
+
+    def prepare(self, task: BackendTask) -> PreparedTask:
+        return prepare_xtb_opt(task)

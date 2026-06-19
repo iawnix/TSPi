@@ -1,5 +1,5 @@
 """Calculation backend adapters."""
 
-from .base import BackendTask, PreparedTask
+from .base import Backend, BackendTask, PreparedTask
 
-__all__ = ["BackendTask", "PreparedTask"]
+__all__ = ["Backend", "BackendTask", "PreparedTask"]

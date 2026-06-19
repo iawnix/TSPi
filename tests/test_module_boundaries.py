@@ -3,8 +3,10 @@ from __future__ import annotations
 from pathlib import Path
 
 from mol_comparator import compare_structures
-from ts_backends.base import BackendTask
-from ts_backends.gaussian import prepare_gaussian
+from ts_backends.base import Backend, BackendTask
+from ts_backends.gaussian import GaussianBackend, prepare_gaussian
+from ts_remote.base import Runner
+from ts_remote.ssh import SshRunner
 from ts_web import register_workspace
 
 
@@ -13,6 +15,16 @@ def test_backend_prepares_command_without_workspace_write() -> None:
     prepared = prepare_gaussian(task)
     assert prepared.backend == "gaussian"
     assert prepared.command == ["g16", "nodes/n001/inputs/ts.gjf"]
+    assert prepared.expected_artifacts == ["nodes/n001/outputs/gaussian.out"]
+    assert isinstance(GaussianBackend(), Backend)
+
+
+def test_remote_runner_returns_node_scoped_receipt() -> None:
+    runner = SshRunner()
+    receipt = runner.submit(node_id="n001", host="compute-0-30", remote_dir="/remote/n001", command=["g16", "ts.gjf"])
+    assert isinstance(runner, Runner)
+    assert receipt.node_id == "n001"
+    assert receipt.receipt_path == "/remote/n001/remote_receipt.json"
 
 
 def test_mol_comparator_returns_evidence_shaped_result(tmp_path: Path) -> None:

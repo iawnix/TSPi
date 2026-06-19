@@ -16,6 +16,14 @@ def finalize_closed_node(root: Path, node: dict[str, Any], decision: dict[str, A
     _write_acceptance_artifact(root, node, closure)
 
 
+def validate_accepted_audit_gates(root: Path, node: dict[str, Any], closure: dict[str, Any], evidence_refs: list[str]) -> None:
+    if node["phase"] != "accepted_audit":
+        return
+    if closure["program_status"] != "completed" or closure["claim_verdict"] != "supported":
+        return
+    _accepted_gate_evidence(root, evidence_refs)
+
+
 def _update_mechanism_model(root: Path, node: dict[str, Any], closure: dict[str, Any]) -> None:
     path = root / "mechanism_model.json"
     model = read_json(path)
@@ -82,6 +90,7 @@ def _write_acceptance_artifact(root: Path, node: dict[str, Any], closure: dict[s
         return
     if closure["program_status"] != "completed" or closure["claim_verdict"] != "supported":
         return
+    gate_evidence = _accepted_gate_evidence(root, node.get("evidence_refs", []))
     manifest_path = root / "manifest.json"
     manifest = read_json(manifest_path)
     artifact = {
@@ -89,12 +98,29 @@ def _write_acceptance_artifact(root: Path, node: dict[str, Any], closure: dict[s
         "node_id": node["node_id"],
         "phase": node["phase"],
         "required_gates": ["tsfreq_gate", "connectivity_gate"],
-        "evidence_refs": node.get("evidence_refs", []),
+        "evidence_refs": [gate_evidence["tsfreq_gate"], gate_evidence["connectivity_gate"]],
     }
     artifact_path = root / "accepted" / f"{artifact['accepted_id']}.json"
     write_json(artifact_path, artifact)
     manifest.setdefault("accepted_ts_refs", []).append(str(artifact_path.relative_to(root)))
     write_json(manifest_path, manifest)
+
+
+def _accepted_gate_evidence(root: Path, evidence_refs: list[str]) -> dict[str, str]:
+    registry = read_json(root / "evidence_registry.json")
+    allowed_refs = set(evidence_refs)
+    gate_evidence: dict[str, str] = {}
+    for entry in registry.get("evidence", []):
+        if not isinstance(entry, dict):
+            continue
+        evidence_id = entry.get("evidence_id")
+        role = entry.get("role")
+        if evidence_id in allowed_refs and role in {"connectivity_gate", "tsfreq_gate"}:
+            gate_evidence[role] = evidence_id
+    missing_gates = sorted({"connectivity_gate", "tsfreq_gate"} - set(gate_evidence))
+    if missing_gates:
+        raise ValueError(f"accepted audit missing required evidence gates: {', '.join(missing_gates)}")
+    return gate_evidence
 
 
 def _ensure_pathway(model: dict[str, Any], pathway_id: str) -> dict[str, Any]:

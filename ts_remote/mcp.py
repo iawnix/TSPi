@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .base import RemoteReceipt
+from .base import RemoteReceipt, Runner
 
 
 def mcp_receipt(node_id: str, host_label: str, remote_dir: str, command: list[str]) -> RemoteReceipt:
@@ -13,3 +13,8 @@ def mcp_receipt(node_id: str, host_label: str, remote_dir: str, command: list[st
         command=command,
         receipt_path=f"{remote_dir.rstrip('/')}/mcp_receipt.json",
     )
+
+
+class McpRunner(Runner):
+    def submit(self, *, node_id: str, host: str, remote_dir: str, command: list[str]) -> RemoteReceipt:
+        return mcp_receipt(node_id, host, remote_dir, command)

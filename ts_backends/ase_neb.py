@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from .base import BackendTask, PreparedTask
+from .base import Backend, BackendTask, PreparedTask
 
 
 def prepare_ase_neb(task: BackendTask) -> PreparedTask:
@@ -16,3 +16,10 @@ def prepare_ase_neb(task: BackendTask) -> PreparedTask:
         input_paths=[reactant, product],
         expected_artifacts=["neb.traj", "neb_summary.json"],
     )
+
+
+class AseNebBackend(Backend):
+    name = "ase_neb"
+
+    def prepare(self, task: BackendTask) -> PreparedTask:
+        return prepare_ase_neb(task)
