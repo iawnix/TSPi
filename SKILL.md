@@ -34,6 +34,9 @@ public compatibility surfaces.
   `knowledge_base.md`, `manifest.json`, `mechanism_model.json`,
   `pathway_model.json`, `tree.json`, and `evidence_registry.json`, plus root
   directories `inputs/`, `nodes/`, `reports/`, `accepted/`, and `rejected/`.
+  For multi-step mechanisms, it can also initialize `pathway_model.json` with
+  `--pathway-mode multi_step`, `--pathway-id`, `--pathway-label`, and repeated
+  `--pathway-step step_id:from->to` arguments.
 - `start_node` creates one node and immediately marks it `Running`. It records
   the phase, operation, hypothesis, parent/input references, rationale,
   expected evidence, refutation criteria, and cost/risk. When a new node
@@ -45,8 +48,10 @@ public compatibility surfaces.
   implication for planning, and any open questions.
 - `report_workspace` emits the LLM-facing workspace context. It summarizes
   `current_phase` as an attention anchor, `claim_readiness` as evidence
-  diagnostics, focus/context pointers, and the public response contract. It
-  does not choose the route, method, or next command for the model.
+  diagnostics, focus/context pointers, root ledger references, compact node
+  artifact indexes, and the public response contract. It does not choose the
+  route, method, or next command for the model, and it does not inline full
+  node closure explanations.
 - `validate_decision` checks a proposed LLM decision JSON against the
   `report_workspace` response contract before any workspace mutation.
 - `validate_workspace` performs the read-only workspace contract check.
@@ -127,6 +132,9 @@ top-level `node.json` state and must not be requested from the model.
    - Run `init_workspace` before creating any node.
    - Record charge, multiplicity, reaction class, key atoms, and expected bond
      changes when known.
+   - For known multi-step hypotheses, initialize the pathway at the same time
+     with `--pathway-mode multi_step`, `--pathway-id`, and repeated
+     `--pathway-step step_id:from->to` arguments.
 
 2. Run mechanism preflight before spending compute time.
    - Read `references/mechanism_reflection.md`.
@@ -146,8 +154,9 @@ top-level `node.json` state and must not be requested from the model.
    - Run `report_workspace --root <tssearch_root>` before choosing the next
      node in an existing workspace.
    - Use `current_phase`, `current_phase_scope`, `claim_readiness`, `focus`,
-     `situation.context_items`, failed-node closure explanations, and open
-     questions as context for the next decision.
+     `situation.context_items`, `ledger_refs`, `node_index`, failed-node
+     `reflection.md` files, and open questions as context for the next
+     decision.
    - Treat `current_phase` as the current attention layer, not as a mandatory
      next command. Route and method selection remain model decisions recorded
      in the decision provenance.
@@ -188,6 +197,9 @@ top-level `node.json` state and must not be requested from the model.
 8. Reflect, update knowledge, and branch.
    - Every `Error`, `Stopped`, or chemically ambiguous result needs a closure
      explanation that separates program facts from mechanism implications.
+   - Provide source-backed `--program-fact` and `--mechanism-fact` values when
+     closing a node; `end_node` renders them into both `closure_explanation`
+     and `reflection.md`.
    - Close completed work with `end_node`; do not hand-edit `node.json`,
      `tree.json`, `evidence_registry.json`, `reflection.md`,
      `knowledge_base.md`, `mechanism_model.json`, or accepted-state manifest

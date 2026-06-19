@@ -85,6 +85,20 @@ def register_init_workspace_parser(subparsers: argparse._SubParsersAction[argpar
         default=[],
         help="Expected bond change as role:atomA-atomB, e.g. breaking:O7-H5.",
     )
+    init.add_argument(
+        "--pathway-mode",
+        default="unknown",
+        choices=("unknown", "multi_step"),
+        help="Initialize pathway_model.json as unknown or multi_step.",
+    )
+    init.add_argument("--pathway-id", default="", help="Pathway id for --pathway-mode multi_step.")
+    init.add_argument("--pathway-label", default="", help="Readable pathway label for --pathway-mode multi_step.")
+    init.add_argument(
+        "--pathway-step",
+        action="append",
+        default=[],
+        help="Elementary step as step_id:from->to; repeat for multi-step pathways.",
+    )
     init.add_argument("--force", action="store_true", help="Overwrite existing scaffold files.")
     init.add_argument("--no-explorer-register", action="store_true", help="Skip persistent explorer registration.")
     init.add_argument("--explorer-register", action="store_true", help="Register this workspace in the explorer registry.")
@@ -330,7 +344,10 @@ def end_node_from_cli_args(args: argparse.Namespace) -> None:
         reflection=ReflectionSpec(
             computational_outcome=args.program_summary,
             mechanistic_implication=args.mechanism_summary,
+            program_facts=closure_input.program_facts,
+            mechanism_facts=closure_input.mechanism_facts,
             knowledge_updates=(args.implication,),
+            open_questions=closure_input.open_questions,
             next_branch=args.next_branch,
         ),
         knowledge=KnowledgeUpdateSpec(
@@ -366,7 +383,7 @@ def build_workspace_report_payload(
     )
     tree = read_json_object_required(source / "tree.json")
     node_ids = sorted((tree.get("nodes") or {}).keys())
-    node_summaries = [public_node_summary(source, str(node_id)) for node_id in node_ids]
+    node_index = [public_node_index_entry(source, str(node_id)) for node_id in node_ids]
     focus = packet.get("focus") if isinstance(packet.get("focus"), dict) else {}
     return {
         "schema": WORKSPACE_REPORT_SCHEMA,
@@ -374,6 +391,7 @@ def build_workspace_report_payload(
         "generated_at": packet.get("generated_at"),
         "workspace": packet.get("workspace", {}),
         "pathway": packet.get("pathway", {}),
+        "ledger_refs": workspace_ledger_refs(),
         "current_phase": packet.get("search_state", {}).get("phase") if isinstance(packet.get("search_state"), dict) else "",
         "current_phase_scope": packet.get("search_state", {}).get("phase_scope", {})
         if isinstance(packet.get("search_state"), dict)
@@ -389,7 +407,7 @@ def build_workspace_report_payload(
         },
         "claim_readiness": packet.get("claim_readiness", {}),
         "available_commands": list_or_empty(packet.get("available_commands")),
-        "nodes": node_summaries,
+        "node_index": node_index,
         "situation": {
             "validation": packet.get("validation_summary", {}),
             "context_items": strip_forbidden_report_fields(packet.get("context_items", [])),
@@ -397,6 +415,19 @@ def build_workspace_report_payload(
             "open_questions": packet.get("open_questions", []),
         },
         "allowed_response_contract": response_contract(),
+    }
+
+
+def workspace_ledger_refs() -> dict[str, str]:
+    """Return root-ledger file names the model can read for full state."""
+
+    return {
+        "manifest": "manifest.json",
+        "tree": "tree.json",
+        "evidence_registry": "evidence_registry.json",
+        "mechanism_model": "mechanism_model.json",
+        "pathway_model": "pathway_model.json",
+        "knowledge_base": "knowledge_base.md",
     }
 
 
@@ -534,23 +565,35 @@ def fact_evidence_refs(fact: dict[str, Any]) -> list[str]:
     return refs
 
 
-def public_node_summary(root: Path, node_id: str) -> dict[str, Any]:
-    """Return the node fields report_workspace exposes to LLMs."""
+def public_node_index_entry(root: Path, node_id: str) -> dict[str, Any]:
+    """Return a compact node artifact index for report_workspace."""
 
     node_path = root / "nodes" / node_id / "node.json"
     node = read_json_object_required(node_path) if node_path.exists() else {}
     display = node.get("display") if isinstance(node.get("display"), dict) else {}
-    closure = node.get("closure_explanation") if isinstance(node.get("closure_explanation"), dict) else {}
-    return {
+    node_dir = root / "nodes" / node_id
+    entry: dict[str, Any] = {
         "node_id": node_id,
         "parent_id": clean_string(node.get("parent_id")) or None,
         "phase": public_phase(node),
         "node_disposition": public_node_disposition(node),
         "operation": clean_string(node.get("operation")),
-        "hypothesis": clean_string(node.get("hypothesis")),
         "summary": clean_string(display.get("summary")),
-        "closure_explanation": closure,
+        "node_json": f"nodes/{node_id}/node.json",
     }
+    if (node_dir / "reflection.md").exists():
+        entry["reflection"] = f"nodes/{node_id}/reflection.md"
+    if (node_dir / "decision_card.md").exists():
+        entry["decision_card"] = f"nodes/{node_id}/decision_card.md"
+    evidence_refs = []
+    closure = node.get("closure_explanation") if isinstance(node.get("closure_explanation"), dict) else {}
+    for ref in list_or_empty(closure.get("evidence_refs")):
+        clean_ref = clean_string(ref)
+        if clean_ref:
+            evidence_refs.append(clean_ref)
+    if evidence_refs:
+        entry["evidence_refs"] = evidence_refs
+    return entry
 
 
 def public_phase(node: dict[str, Any]) -> str:

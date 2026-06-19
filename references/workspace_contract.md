@@ -109,6 +109,23 @@ python scripts/ts_workspace.py init_workspace \
   --bond-change forming:H2-O3
 ```
 
+For a known multi-step pathway, initialize `pathway_model.json` through the
+same public command:
+
+```bash
+python scripts/ts_workspace.py init_workspace \
+  --root tssearch_example \
+  --system example \
+  --charge 0 \
+  --multiplicity 1 \
+  --reaction-class bond_switch \
+  --pathway-mode multi_step \
+  --pathway-id p001 \
+  --pathway-label "R to P through I" \
+  --pathway-step s1:R->I \
+  --pathway-step s2:I->P
+```
+
 2. Read context before deciding:
 
 ```bash
@@ -123,7 +140,8 @@ The report includes:
 - `focus`
 - `claim_readiness`
 - `available_commands`
-- public node summaries
+- `ledger_refs`
+- `node_index`
 - validation summary
 - context items
 - endpoint evidence blockers
@@ -134,6 +152,15 @@ The report includes:
 route decision. `claim_readiness` is the primary evidence diagnostic.
 `blocking_gates`, `allowed_next_actions`, and `forbidden_next_actions` are not
 part of the report contract.
+
+`ledger_refs` points to the root source-of-truth files:
+`manifest.json`, `tree.json`, `evidence_registry.json`,
+`mechanism_model.json`, `pathway_model.json`, and `knowledge_base.md`.
+`node_index` is intentionally compact. It points to `node.json`,
+`decision_card.md`, and `reflection.md` without inlining full
+`closure_explanation` payloads. Read `reflection.md` for node-level program
+facts, mechanism facts, evidence references, open questions, and next-branch
+notes.
 
 3. Validate the next decision:
 
@@ -197,6 +224,11 @@ python scripts/ts_workspace.py end_node \
   --implication "Candidate generation may begin." \
   --next-branch "Run a candidate-generation node."
 ```
+
+`end_node` writes `reflection.md` from the same structured closure input. The
+reflection keeps the required sections `Computational Outcome`,
+`Mechanistic Implication`, and `Next Branch`, and adds source-backed
+`Program Facts`, `Mechanism Facts`, `Evidence Records`, and `Open Questions`.
 
 ## Decision Payload Contract
 

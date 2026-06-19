@@ -31,6 +31,22 @@ Required root files:
 - `rejected/`
 - `inputs/`
 
+For known multi-step mechanisms, `init_workspace` may also initialize
+`pathway_model.json`:
+
+```bash
+python scripts/ts_workspace.py init_workspace \
+  --root tssearch_example \
+  --system example \
+  --charge 0 \
+  --multiplicity 1 \
+  --pathway-mode multi_step \
+  --pathway-id p001 \
+  --pathway-label "R to P through I" \
+  --pathway-step s1:R->I \
+  --pathway-step s2:I->P
+```
+
 ## `tree.json`
 
 `tree.json` is the compact graph index:
@@ -204,6 +220,9 @@ python scripts/ts_workspace.py end_node \
 runtime failure without a scientific conclusion. `Stopped` maps to an
 administrative stop. The mechanism implication always belongs in
 `closure_explanation`, not in a separate top-level mechanism status enum.
+`reflection.md` is rendered from the same closure input and includes structured
+program facts, mechanism facts, evidence records, open questions, and the next
+branch note.
 
 ## Report And Decision Validation
 
@@ -213,8 +232,12 @@ administrative stop. The mechanism implication always belongs in
 python scripts/ts_workspace.py report_workspace --root tssearch_example --pretty
 ```
 
-The report includes an `allowed_response_contract`. The model should use it to
-build a proposed action JSON, then the caller should validate that JSON:
+The report includes `ledger_refs`, `node_index`, `current_phase`,
+`claim_readiness`, focused context items, and an `allowed_response_contract`.
+It does not inline full node `closure_explanation` payloads; read the
+`node_index[].reflection` path for node-level reflection details. The model
+should use the response contract to build a proposed action JSON, then the
+caller should validate that JSON:
 
 ```bash
 python scripts/ts_workspace.py validate_decision \

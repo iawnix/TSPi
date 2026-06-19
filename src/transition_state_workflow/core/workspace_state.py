@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any
 
 from transition_state_workflow.base.pathway_model import (
-    initialize_pathway_model_if_missing,
+    build_initial_pathway_model,
+    pathway_model_path,
     validate_pathway_reference,
     validate_pathway_step_reference,
 )
@@ -41,6 +42,10 @@ def initialize_ts_workspace_files_from_cli_args(args: argparse.Namespace) -> Pat
         reaction_class=args.reaction_class,
         key_atoms=tuple(args.key_atoms or ()),
         bond_changes=tuple(args.bond_change or ()),
+        pathway_mode=args.pathway_mode,
+        pathway_id=args.pathway_id,
+        pathway_label=args.pathway_label,
+        pathway_steps=tuple(args.pathway_step or ()),
         force=bool(args.force),
     )
     if bool(getattr(args, "with_preflight_node", False)):
@@ -61,12 +66,24 @@ def initialize_ts_workspace_files(
     reaction_class: str,
     key_atoms: tuple[str, ...],
     bond_changes: tuple[str, ...],
+    pathway_mode: str = "unknown",
+    pathway_id: str = "",
+    pathway_label: str = "",
+    pathway_steps: tuple[str, ...] = (),
     force: bool,
 ) -> Path:
     """Create core TS-search workspace files and return the resolved root."""
 
     source = root.resolve()
     now = utc_timestamp()
+    pathway_model = build_initial_pathway_model(
+        system=system,
+        timestamp=now,
+        mode=pathway_mode,
+        pathway_id=pathway_id,
+        pathway_label=pathway_label,
+        step_specs=pathway_steps,
+    )
     write_initial_workspace_files(
         source,
         system=system,
@@ -123,7 +140,7 @@ def initialize_ts_workspace_files(
 - Complete mechanism preflight and endpoint optimization before promoting any TS candidate.
 """
     write_json_object(source / "mechanism_model.json", mechanism, overwrite_existing=force)
-    initialize_pathway_model_if_missing(source, system=system, timestamp=now, mode="unknown")
+    write_json_object(pathway_model_path(source), pathway_model, overwrite_existing=force)
     write_text_file_if_allowed(source / "knowledge_base.md", knowledge_base, overwrite_existing=force)
     return source
 

@@ -25,6 +25,7 @@ def pathway_model_path(root: Path) -> Path:
 def default_pathway_model(*, system: str, mode: str, timestamp: str) -> dict[str, Any]:
     """Build an empty pathway model."""
 
+    validate_pathway_mode(mode)
     return {
         "schema": PATHWAY_MODEL_SCHEMA,
         "system": system,
@@ -35,13 +36,67 @@ def default_pathway_model(*, system: str, mode: str, timestamp: str) -> dict[str
     }
 
 
-def initialize_pathway_model_if_missing(root: Path, *, system: str, timestamp: str, mode: str = "unknown") -> None:
-    """Create an empty optional pathway model during workspace initialization."""
+def build_initial_pathway_model(
+    *,
+    system: str,
+    timestamp: str,
+    mode: str = "unknown",
+    pathway_id: str = "",
+    pathway_label: str = "",
+    step_specs: tuple[str, ...] = (),
+) -> dict[str, Any]:
+    """Return the initial pathway model requested by ``init_workspace``."""
 
-    path = pathway_model_path(root)
-    if path.exists():
-        return
-    write_json_object(path, default_pathway_model(system=system, mode=mode, timestamp=timestamp), overwrite_existing=False)
+    mode = clean_string(mode) or "unknown"
+    validate_pathway_mode(mode)
+    pathway_id = safe_identifier_token(pathway_id) if clean_string(pathway_id) else ""
+    pathway_label = clean_string(pathway_label)
+    steps = [parse_step_spec(item) for item in step_specs]
+    validate_unique_step_ids(steps)
+    if step_specs and mode != "multi_step":
+        raise SystemExit("--pathway-step requires --pathway-mode multi_step")
+    if mode == "multi_step":
+        if not pathway_id:
+            raise SystemExit("--pathway-mode multi_step requires --pathway-id")
+        if not steps:
+            raise SystemExit("--pathway-mode multi_step requires at least one --pathway-step")
+    elif pathway_id:
+        raise SystemExit("--pathway-id is only valid with --pathway-mode multi_step")
+    elif pathway_label:
+        raise SystemExit("--pathway-label is only valid with --pathway-mode multi_step")
+    model = default_pathway_model(system=system, mode=mode, timestamp=timestamp)
+    if not pathway_id:
+        return model
+    model["active_pathway"] = pathway_id
+    model["pathways"] = [
+        {
+            "pathway_id": pathway_id,
+            "label": pathway_label or default_pathway_label(steps),
+            "status": derive_pathway_status(steps),
+            "steps": steps,
+            "updated_at": timestamp,
+        }
+    ]
+    return model
+
+
+def validate_pathway_mode(mode: str) -> None:
+    """Reject pathway modes outside the public contract."""
+
+    if mode not in PATHWAY_MODES:
+        raise SystemExit(f"invalid pathway mode: {mode}")
+
+
+def default_pathway_label(steps: list[dict[str, Any]]) -> str:
+    """Derive a readable pathway label from the initialized step boundaries."""
+
+    if not steps:
+        return ""
+    first = clean_string(steps[0].get("from"))
+    last = clean_string(steps[-1].get("to"))
+    if first and last:
+        return f"{first} to {last}"
+    return "Initialized pathway"
 
 
 def bind_pathway_step_to_accepted_ts(

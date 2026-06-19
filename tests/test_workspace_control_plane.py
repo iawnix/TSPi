@@ -254,11 +254,39 @@ def test_workspace_control_lifecycle_and_contract(tmp_path: Path) -> None:
     assert node["node_disposition"] == "Success"
     assert node["closure_explanation"]["program"]["summary"]
     assert node["closure_explanation"]["mechanism"]["summary"]
+    reflection_text = (root / "nodes" / "n010_endpoint" / "reflection.md").read_text(encoding="utf-8")
+    assert "### Program Facts" in reflection_text
+    assert "Parsed summary reports endpoint_minima_ready=true." in reflection_text
+    assert "evidence: `ev_n010_endpoint_endpoint_summary`" in reflection_text
+    assert "source: `nodes/n010_endpoint/parsed/summary.json`" in reflection_text
+    assert "### Mechanism Facts" in reflection_text
+    assert "Endpoint readiness is a prerequisite, not a TS mechanism proof." in reflection_text
+    assert "## Open Questions" in reflection_text
+    assert "Which candidate generation strategy should test the reaction center first?" in reflection_text
 
     report = json.loads(
         run_cli(str(WORKSPACE_CLI), "report_workspace", "--root", str(root), "--pretty").stdout
     )
     assert report["schema"] == "ts-workspace-report"
+    assert "ledger_refs" in report
+    assert report["ledger_refs"]["tree"] == "tree.json"
+    assert "nodes" not in report
+    assert "node_index" in report
+    assert report["node_index"] == [
+        {
+            "node_id": "n010_endpoint",
+            "parent_id": None,
+            "phase": "endpoint",
+            "node_disposition": "Success",
+            "operation": "endpoint-opt",
+            "summary": "Endpoint smoke completed.",
+            "node_json": "nodes/n010_endpoint/node.json",
+            "reflection": "nodes/n010_endpoint/reflection.md",
+            "decision_card": "nodes/n010_endpoint/decision_card.md",
+            "evidence_refs": ["ev_n010_endpoint_endpoint_summary"],
+        }
+    ]
+    assert "closure_explanation" not in json.dumps(report["node_index"], sort_keys=True)
     assert "planning_focus" not in json.dumps(report, sort_keys=True)
     assert "planner_role" not in json.dumps(report, sort_keys=True)
     assert report["allowed_response_contract"]["allowed_actions"] == [
@@ -282,6 +310,89 @@ def test_workspace_control_lifecycle_and_contract(tmp_path: Path) -> None:
     validation = validate_workspace_allow_errors(root)
     assert validation["summary"]["errors"] == 0
     assert validation["summary"]["warnings"] == 0
+
+
+def test_init_workspace_can_define_multi_step_pathway(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_pathway_init"
+    run_cli(
+        str(WORKSPACE_CLI),
+        "init_workspace",
+        "--root",
+        str(root),
+        "--system",
+        "unit_pathway",
+        "--charge",
+        "0",
+        "--multiplicity",
+        "1",
+        "--reaction-class",
+        "bond_switch",
+        "--pathway-mode",
+        "multi_step",
+        "--pathway-id",
+        "p001",
+        "--pathway-label",
+        "R to P through I",
+        "--pathway-step",
+        "s1:R->I",
+        "--pathway-step",
+        "s2:I->P",
+        "--no-explorer-register",
+    )
+
+    pathway_model = read_pathway_model_required(root)
+    assert pathway_model["mode"] == "multi_step"
+    assert pathway_model["active_pathway"] == "p001"
+    assert pathway_model["pathways"][0]["label"] == "R to P through I"
+    assert pathway_model["pathways"][0]["steps"] == [
+        {
+            "step_id": "s1",
+            "label": "R -> I",
+            "from": "R",
+            "to": "I",
+            "status": "missing",
+            "accepted_ts_node": None,
+            "evidence_refs": [],
+        },
+        {
+            "step_id": "s2",
+            "label": "I -> P",
+            "from": "I",
+            "to": "P",
+            "status": "missing",
+            "accepted_ts_node": None,
+            "evidence_refs": [],
+        },
+    ]
+    assert_strict_workspace_clean(root)
+
+
+def test_init_workspace_rejects_orphan_pathway_fields(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_bad_pathway"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(WORKSPACE_CLI),
+            "init_workspace",
+            "--root",
+            str(root),
+            "--system",
+            "unit_pathway",
+            "--charge",
+            "0",
+            "--multiplicity",
+            "1",
+            "--pathway-step",
+            "s1:R->P",
+            "--no-explorer-register",
+        ],
+        check=False,
+        text=True,
+        capture_output=True,
+    )
+    assert result.returncode != 0
+    assert "--pathway-step requires --pathway-mode multi_step" in result.stderr
+    assert not root.exists()
 
 
 def test_start_node_accepts_evidence_ids_and_normalizes_unique_paths(tmp_path: Path) -> None:

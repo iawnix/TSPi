@@ -71,7 +71,10 @@ class ReflectionSpec:
 
     computational_outcome: str
     mechanistic_implication: str
+    program_facts: tuple[dict[str, Any], ...] = ()
+    mechanism_facts: tuple[dict[str, Any], ...] = ()
     knowledge_updates: tuple[str, ...] = ()
+    open_questions: tuple[str, ...] = ()
     next_branch: str = ""
 
 
@@ -180,7 +183,7 @@ def finalize_ts_workspace_node(request: NodeFinalizationRequest) -> None:
     update_evidence_registry(registry_payload, new_records, timestamp=now)
     update_manifest(manifest_payload, request)
 
-    write_reflection(node_dir / "reflection.md", request.reflection)
+    write_reflection(node_dir / "reflection.md", request.reflection, evidence_ids=evidence_ids)
     append_knowledge_base(root / "knowledge_base.md", request, evidence_ids, timestamp=now)
     update_mechanism_model(root / "mechanism_model.json", request, evidence_ids, timestamp=now)
 
@@ -651,10 +654,13 @@ def update_manifest(manifest_payload: dict[str, Any], request: NodeFinalizationR
         manifest_payload["current_accepted_pathway_audit"] = request.node_id
 
 
-def write_reflection(path: Path, reflection: ReflectionSpec) -> None:
+def write_reflection(path: Path, reflection: ReflectionSpec, *, evidence_ids: list[str] | None = None) -> None:
     """Write reflection.md from structured post-execution fields."""
 
     knowledge_lines = list(reflection.knowledge_updates) or ["No knowledge-base update requested."]
+    finalization_evidence = list(evidence_ids or [])
+    evidence_lines = [f"- `{item}`" for item in finalization_evidence] or ["- None recorded."]
+    open_question_lines = [f"- {item}" for item in reflection.open_questions] or ["- None."]
     text = "\n".join(
         [
             "# Reflection",
@@ -663,13 +669,29 @@ def write_reflection(path: Path, reflection: ReflectionSpec) -> None:
             "",
             reflection.computational_outcome,
             "",
+            "### Program Facts",
+            "",
+            *format_reflection_facts(reflection.program_facts),
+            "",
             "## Mechanistic Implication",
             "",
             reflection.mechanistic_implication,
             "",
+            "### Mechanism Facts",
+            "",
+            *format_reflection_facts(reflection.mechanism_facts),
+            "",
             "## Knowledge Update",
             "",
             *[f"- {item}" for item in knowledge_lines],
+            "",
+            "## Evidence Records",
+            "",
+            *evidence_lines,
+            "",
+            "## Open Questions",
+            "",
+            *open_question_lines,
             "",
             "## Next Branch",
             "",
@@ -678,6 +700,47 @@ def write_reflection(path: Path, reflection: ReflectionSpec) -> None:
         ]
     )
     path.write_text(text, encoding="utf-8")
+
+
+def format_reflection_facts(facts: tuple[dict[str, Any], ...]) -> list[str]:
+    """Render structured closure facts as compact Markdown bullets."""
+
+    if not facts:
+        return ["- None recorded."]
+    return [format_reflection_fact(fact) for fact in facts]
+
+
+def format_reflection_fact(fact: dict[str, Any]) -> str:
+    """Render one closure fact with source and evidence pointers."""
+
+    text = clean_string(fact.get("text"))
+    if not text:
+        text = json.dumps(fact, ensure_ascii=True, sort_keys=True)
+    annotations: list[str] = []
+    evidence_refs = reflection_fact_evidence_refs(fact)
+    if evidence_refs:
+        annotations.append("evidence: " + ", ".join(f"`{item}`" for item in evidence_refs))
+    source = clean_string(fact.get("source_path")) or clean_string(fact.get("source"))
+    if source:
+        annotations.append(f"source: `{source}`")
+    suffix = f" ({'; '.join(annotations)})" if annotations else ""
+    return f"- {text}{suffix}"
+
+
+def reflection_fact_evidence_refs(fact: dict[str, Any]) -> list[str]:
+    """Return evidence refs from supported closure fact shapes."""
+
+    refs: list[str] = []
+    scalar = clean_string(fact.get("evidence_ref"))
+    if scalar:
+        refs.append(scalar)
+    raw_refs = fact.get("evidence_refs")
+    if isinstance(raw_refs, list):
+        for item in raw_refs:
+            ref = clean_string(item)
+            if ref and ref not in refs:
+                refs.append(ref)
+    return refs
 
 
 def append_knowledge_base(

@@ -16,11 +16,6 @@ from pathlib import Path
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(SKILL_ROOT / "src"))
 
-from transition_state_workflow.base.pathway_model import parse_step_spec
-from transition_state_workflow.config.state_contract import PATHWAY_MODEL_SCHEMA
-from transition_state_workflow.core.workspace.naming import utc_timestamp
-
-
 # --- Script paths -------------------------------------------------------
 
 WORKSPACE_CLI = SKILL_ROOT / "scripts" / "ts_workspace.py"
@@ -276,30 +271,29 @@ def initialize_workspace(root: Path) -> None:
 def initialize_pathway_workspace(root: Path) -> None:
     """Initialize a multi-step pathway workspace (p001: R -> I -> P)."""
 
-    initialize_empty_workspace(root)
-    timestamp = utc_timestamp()
-    (root / "pathway_model.json").write_text(
-        json.dumps(
-            {
-                "schema": PATHWAY_MODEL_SCHEMA,
-                "system": "unit_test_system",
-                "mode": "multi_step",
-                "active_pathway": "p001",
-                "pathways": [
-                    {
-                        "pathway_id": "p001",
-                        "label": "R to P through I",
-                        "status": "hypothesis",
-                        "steps": [parse_step_spec("s1:R->I"), parse_step_spec("s2:I->P")],
-                    }
-                ],
-                "updated_at": timestamp,
-            },
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n",
-        encoding="utf-8",
+    run_cli(
+        str(WORKSPACE_CLI),
+        "init_workspace",
+        "--root",
+        str(root),
+        "--system",
+        "unit_test_system",
+        "--charge",
+        "0",
+        "--multiplicity",
+        "1",
+        "--reaction-class",
+        "bond_switch",
+        "--pathway-mode",
+        "multi_step",
+        "--pathway-id",
+        "p001",
+        "--pathway-label",
+        "R to P through I",
+        "--pathway-step",
+        "s1:R->I",
+        "--pathway-step",
+        "s2:I->P",
     )
 
 
