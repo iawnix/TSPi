@@ -23,7 +23,11 @@ def infer_planning_state(
     manifest: dict[str, Any],
     alternative_mechanism: bool,
 ) -> tuple[list[str], list[str], list[str], str]:
-    """Infer state-machine blockers and allowed action classes."""
+    """Infer claim blockers and the report attention phase.
+
+    The empty allowed/forbidden return positions preserve the historical
+    function shape while avoiding route suggestions in report packets.
+    """
 
     blocking: list[str] = []
     allowed: list[str] = []
@@ -32,142 +36,90 @@ def infer_planning_state(
     if validation_errors:
         return (
             ["workspace_validation_errors"],
-            ["repair_workspace_contract", "rerun_validate_workspace"],
-            ["any_claim_promotion_until_workspace_validates"],
+            [],
+            [],
             "workspace_repair_required",
         )
     if active_nodes:
         return (
             ["active_nodes_pending"],
-            ["wait_for_active_nodes", "parse_active_outputs", "administrative_stop_if_needed"],
-            ["accepted_ts", "candidate_or_validation_promotion_without_parsed_outputs"],
+            [],
+            [],
             "active_work_running",
         )
     if accepted_nodes or clean_string(manifest.get("current_accepted_ts")):
         if alternative_mechanism:
             return (
                 ["accepted_ts_present_requires_distinct_mechanism"],
-                ["mechanism_preflight_alternative", "endpoint_discovery_for_alternative", "branch_alternative_mechanism"],
-                ["overwrite_accepted_branch_without_new_evidence", "reuse_accepted_ts_as_alternative_proof"],
+                [],
+                [],
                 "alternative_mechanism_planning",
             )
         return (
             [],
-            ["audit_accepted_ts_evidence", "archive_search", "branch_alternative_mechanism_if_requested"],
-            ["overwrite_accepted_branch_without_new_evidence"],
+            [],
+            [],
             "accepted_ts_present",
         )
     if not endpoint_nodes:
         blocking.append("endpoint_minima_missing")
-        allowed.extend(
-            [
-                "xtb_endpoint_preopt",
-                "gaussian_endpoint_validation",
-                "constrained_endpoint_reference",
-                "pose_search",
-                "fragment_identity_check",
-            ]
-        )
-        forbidden.extend(
-            [
-                "candidate_found_promotion",
-                "xtb_neb_from_reference_hypothesis",
-                "gaussian_neb_from_reference_hypothesis",
-                "qst_from_unvalidated_endpoints",
-                "accepted_ts",
-            ]
-        )
         return blocking, allowed, forbidden, "endpoint_discovery"
     if not candidate_nodes and not tsfreq_nodes:
         blocking.append("candidate_missing")
-        allowed.extend(
-            [
-                "xtb_neb_candidate_generation",
-                "xtb_relaxed_scan",
-                "xtb_dimer_screen",
-                "gaussian_neb_refinement",
-                "qst2_qst3_guess",
-                "qbics_dmecp_candidate_generation",
-            ]
-        )
-        forbidden.extend(["accepted_ts", "tsfreq_validation_without_candidate"])
         return blocking, allowed, forbidden, "candidate_generation"
     if not tsfreq_nodes:
         blocking.append("tsfreq_validation_missing")
-        allowed.extend(["gaussian_tsfreq_validation", "gaussian_input_preflight", "candidate_quality_review"])
-        forbidden.extend(["accepted_ts", "connectivity_claim_without_tsfreq"])
         return blocking, allowed, forbidden, "gaussian_tsfreq_validation"
     if not connectivity_nodes:
         blocking.append("connectivity_missing")
-        allowed.extend(["imaginary_mode_endpoint_follow", "endpoint_connectivity_check", "irc_connectivity_check"])
-        forbidden.extend(["accepted_ts_without_connectivity", "visual_only_connectivity_claim"])
         return blocking, allowed, forbidden, "connectivity_validation"
     return (
         [],
-        ["finalize_accepted_ts_if_structured_evidence_passes", "audit_frequency_and_connectivity_payloads"],
-        ["accepted_ts_without_structured_tsfreq_and_connectivity_evidence"],
+        [],
+        [],
         "accepted_ts_ready",
     )
 
 
 def gates_for_phase(phase: str) -> tuple[list[str], list[str], list[str], str]:
-    """Return planning gates for a focus-local phase."""
+    """Return claim blockers for a focus-local attention phase."""
 
     if phase == "endpoint_discovery":
         return (
             ["endpoint_minima_missing"],
-            [
-                "xtb_endpoint_preopt",
-                "gaussian_endpoint_validation",
-                "constrained_endpoint_reference",
-                "pose_search",
-                "fragment_identity_check",
-            ],
-            [
-                "candidate_found_promotion",
-                "xtb_neb_from_reference_hypothesis",
-                "gaussian_neb_from_reference_hypothesis",
-                "qst_from_unvalidated_endpoints",
-                "accepted_ts",
-            ],
+            [],
+            [],
             phase,
         )
     if phase == "candidate_generation":
         return (
             ["candidate_missing_after_backtrack_target"],
-            [
-                "xtb_neb_candidate_generation",
-                "xtb_relaxed_scan",
-                "xtb_dimer_screen",
-                "gaussian_neb_refinement",
-                "qst2_qst3_guess",
-                "qbics_dmecp_candidate_generation",
-            ],
-            ["accepted_ts", "tsfreq_validation_without_candidate"],
+            [],
+            [],
             phase,
         )
     if phase == "gaussian_tsfreq_validation":
         return (
             ["tsfreq_validation_missing_after_backtrack_target"],
-            ["gaussian_tsfreq_validation", "gaussian_input_preflight", "candidate_quality_review"],
-            ["accepted_ts", "connectivity_claim_without_tsfreq"],
+            [],
+            [],
             phase,
         )
     if phase == "connectivity_validation":
         return (
             ["connectivity_missing_after_backtrack_target"],
-            ["imaginary_mode_endpoint_follow", "endpoint_connectivity_check", "irc_connectivity_check"],
-            ["accepted_ts_without_connectivity", "visual_only_connectivity_claim"],
+            [],
+            [],
             phase,
         )
     if phase == "accepted_ts_ready":
         return (
             [],
-            ["finalize_accepted_ts_if_structured_evidence_passes", "audit_frequency_and_connectivity_payloads"],
-            ["accepted_ts_without_structured_tsfreq_and_connectivity_evidence"],
+            [],
+            [],
             phase,
         )
-    return ([], ["inspect_backtrack_target"], ["new_child_under_failed_node_without_backtrack"], phase)
+    return ([], [], [], phase)
 
 
 def infer_phase_from_focus_node(node_id: str, node_payloads: dict[str, dict[str, Any]]) -> str:

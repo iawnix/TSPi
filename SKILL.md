@@ -43,9 +43,10 @@ public compatibility surfaces.
 - `end_node` closes one node as `Success`, `Error`, or `Stopped`. Closure must
   include a structured explanation with program facts, mechanism facts, an
   implication for planning, and any open questions.
-- `report_workspace` emits the LLM-facing decision context. This packet
-  constrains the next response fields and should be read before choosing the
-  next action in an existing workspace.
+- `report_workspace` emits the LLM-facing workspace context. It summarizes
+  `current_phase` as an attention anchor, `claim_readiness` as evidence
+  diagnostics, focus/context pointers, and the public response contract. It
+  does not choose the route, method, or next command for the model.
 - `validate_decision` checks a proposed LLM decision JSON against the
   `report_workspace` response contract before any workspace mutation.
 - `validate_workspace` performs the read-only workspace contract check.
@@ -144,9 +145,17 @@ top-level `node.json` state and must not be requested from the model.
 4. Build the decision context.
    - Run `report_workspace --root <tssearch_root>` before choosing the next
      node in an existing workspace.
-   - Use `blocking_gates`, `allowed_next_actions`, `forbidden_next_actions`,
-     `focus`, `situation.context_items`, failed-node closure explanations, and
-     open questions as context for the next decision.
+   - Use `current_phase`, `current_phase_scope`, `claim_readiness`, `focus`,
+     `situation.context_items`, failed-node closure explanations, and open
+     questions as context for the next decision.
+   - Treat `current_phase` as the current attention layer, not as a mandatory
+     next command. Route and method selection remain model decisions recorded
+     in the decision provenance.
+   - Treat `blocking_gates` / `allowed_next_actions` /
+     `forbidden_next_actions` as deprecated compatibility fields:
+     `blocking_gates` mirrors claim blockers, `allowed_next_actions` lists only
+     public commands, and `forbidden_next_actions` is not a route-policy
+     surface.
    - Validate the proposed JSON with `validate_decision` before mutating the
      workspace.
 

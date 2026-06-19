@@ -375,15 +375,28 @@ def build_workspace_report_payload(
         "workspace": packet.get("workspace", {}),
         "pathway": packet.get("pathway", {}),
         "current_phase": packet.get("search_state", {}).get("phase") if isinstance(packet.get("search_state"), dict) else "",
+        "current_phase_scope": packet.get("search_state", {}).get("phase_scope", {})
+        if isinstance(packet.get("search_state"), dict)
+        else {},
+        "current_phase_reasons": packet.get("search_state", {}).get("phase_reasons", [])
+        if isinstance(packet.get("search_state"), dict)
+        else [],
         "focus": {
             "mode": clean_string(focus.get("mode")),
             "focus_node": clean_string(focus.get("focus_node")) or None,
             "parent_for_new_branch": clean_string(focus.get("parent_for_new_branch")) or None,
             "reason": clean_string(focus.get("reason")),
         },
+        "claim_readiness": packet.get("claim_readiness", {}),
+        "available_commands": list_or_empty(packet.get("available_commands")),
+        "deprecated_fields": {
+            "blocking_gates": "claim blockers retained for compatibility; use claim_readiness for primary diagnostics",
+            "allowed_next_actions": "public command names only; no route or method suggestions",
+            "forbidden_next_actions": "deprecated and intentionally empty; claim attempts are validated by validate_decision/end_node",
+        },
         "blocking_gates": list_or_empty(packet.get("blocking_gates")),
         "allowed_next_actions": ["start_node", "end_node", "ask_user", "stop"],
-        "forbidden_next_actions": list_or_empty(packet.get("forbidden_next_actions")),
+        "forbidden_next_actions": [],
         "nodes": node_summaries,
         "situation": {
             "validation": packet.get("validation_summary", {}),

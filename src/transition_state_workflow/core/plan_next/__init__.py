@@ -42,6 +42,13 @@ from .pathway import (
     latest_pathway_status_node,
     pathway_target_for_suggestions,
 )
+from .readiness import (
+    PUBLIC_DECISION_ACTIONS,
+    build_claim_readiness,
+    claim_blockers_from_readiness,
+    current_phase_reasons,
+    current_phase_scope,
+)
 from .phase import (
     default_focus_node_for_phase,
     gates_for_phase,
@@ -82,6 +89,11 @@ __all__ = [
     "infer_pathway_plan",
     "filter_nodes_for_pathway_step",
     "infer_planning_state",
+    "PUBLIC_DECISION_ACTIONS",
+    "build_claim_readiness",
+    "claim_blockers_from_readiness",
+    "current_phase_reasons",
+    "current_phase_scope",
     "gates_for_phase",
     "infer_phase_from_focus_node",
     "infer_planning_focus",

@@ -22,6 +22,10 @@ from transition_state_workflow.tools.node_exec import NodeExecutionTool
 
 def minimal_gaussian_freq_log() -> str:
     return """ Charge = 0 Multiplicity = 1
+ Maximum Force            0.000001     0.000450     YES
+ RMS     Force            0.000001     0.000300     YES
+ Maximum Displacement     0.000001     0.001800     YES
+ RMS     Displacement     0.000001     0.001200     YES
  Stationary point found.
  Standard orientation:
  ---------------------------------------------------------------------

@@ -196,6 +196,22 @@ def test_opt_cycle_diagnostics_use_printed_step_limit_not_nstep_proxy() -> None:
     assert diagnostics["warnings"] == ["opt_maxcycle_request_mismatch"]
 
 
+def test_opt_cycle_diagnostics_ignore_scf_maxcycle_request() -> None:
+    diagnostics = parse_gaussian_opt_cycle_diagnostics(
+        [
+            " #P M062X/def2SVP Opt=(MaxCycle=100) SCF=(XQC,Tight,MaxCycle=512)",
+            "",
+            " Step number   1 out of a maximum of 100",
+            " Normal termination of Gaussian 16",
+        ]
+    )
+
+    assert diagnostics["requested_opt_max_cycles"] == 100
+    assert diagnostics["printed_opt_maximum_steps"] == 100
+    assert diagnostics["max_cycle_request_mismatch"] is False
+    assert diagnostics["warnings"] == []
+
+
 def test_gaussian_scf_energy_parsers_accept_fortran_d_exponents(tmp_path: Path) -> None:
     lines = [
         " SCF Done:  E(RB3LYP) =  -1.234567890123D+02     A.U. after 10 cycles",

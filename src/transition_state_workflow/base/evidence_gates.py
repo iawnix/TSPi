@@ -1,4 +1,4 @@
-"""Evidence-gate checks shared by planner and validators."""
+"""Evidence-gate checks shared by reports and validators."""
 
 from __future__ import annotations
 

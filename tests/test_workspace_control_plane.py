@@ -617,7 +617,88 @@ def test_report_workspace_does_not_accept_ready_on_refuting_connectivity(tmp_pat
     report = report_workspace(root)
     assert report["current_phase"] == "connectivity_validation"
     assert "connectivity_missing" in report["blocking_gates"]
-    assert "accepted_ts_without_connectivity" in report["forbidden_next_actions"]
+    assert report["forbidden_next_actions"] == []
+    assert report["claim_readiness"]["tsfreq"]["status"] == "supported"
+    assert report["claim_readiness"]["connectivity"]["status"] == "missing"
+    assert report["claim_readiness"]["accepted_ts"]["missing_evidence"] == ["connectivity"]
+
+
+def test_report_workspace_accepts_explicit_tsfreq_validation_gate_without_kind_whitelist(tmp_path: Path) -> None:
+    root = tmp_path / "tssearch_control"
+    init_control_workspace(root)
+    close_endpoint_fixture(root)
+    start_node(
+        root,
+        node_id="n020_candidate",
+        parent_id="n010_endpoint",
+        phase="candidate_generation",
+        operation="candidate-smoke",
+        hypothesis="Endpoint-ready references can produce a candidate.",
+    )
+    candidate_summary = root / "nodes" / "n020_candidate" / "parsed" / "candidate.json"
+    candidate_summary.write_text('{"candidate": true}\n', encoding="utf-8")
+    end_node(
+        root,
+        node_id="n020_candidate",
+        phase="candidate_generation",
+        decision="prepare_tsfreq",
+        summary="Candidate exists.",
+        primary_file="nodes/n020_candidate/parsed/candidate.json",
+        evidence={
+            "kind": "parsed_summary",
+            "path": "nodes/n020_candidate/parsed/candidate.json",
+            "claim": "Candidate generation produced a candidate.",
+            "evidence_state": "candidate_found",
+        },
+        next_branch="Run TS/Freq validation.",
+    )
+    start_node(
+        root,
+        node_id="n030_tsfreq",
+        parent_id="n020_candidate",
+        phase="tsfreq_validation",
+        operation="gaussian-tsfreq-mode-follow",
+        hypothesis="The candidate is a frequency-validated TS.",
+    )
+    tsfreq_summary = root / "nodes" / "n030_tsfreq" / "parsed" / "imaginary_mode_summary.json"
+    tsfreq_summary.write_text(
+        json.dumps(
+            {
+                "normal_termination": True,
+                "stationary_point_found": True,
+                "final_convergence_satisfied": True,
+                "imaginary_frequency_count": 1,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    end_node(
+        root,
+        node_id="n030_tsfreq",
+        phase="tsfreq_validation",
+        decision="prepare_connectivity",
+        summary="TS/Freq mode validation passed.",
+        primary_file="nodes/n030_tsfreq/parsed/imaginary_mode_summary.json",
+        evidence={
+            "kind": "gaussian_tsfreq_mode_summary",
+            "validation_gate": "tsfreq",
+            "path": "nodes/n030_tsfreq/parsed/imaginary_mode_summary.json",
+            "claim": "TS/Freq mode validation passed.",
+            "evidence_state": "supports",
+        },
+        next_branch="Run connectivity validation.",
+    )
+
+    report = report_workspace(root)
+    assert report["current_phase"] == "connectivity_validation"
+    assert report["current_phase_scope"]["role"] == "attention_anchor"
+    assert report["available_commands"] == ["start_node", "end_node", "ask_user", "stop"]
+    assert report["allowed_next_actions"] == ["start_node", "end_node", "ask_user", "stop"]
+    assert report["forbidden_next_actions"] == []
+    assert report["claim_readiness"]["tsfreq"]["status"] == "supported"
+    assert report["claim_readiness"]["tsfreq"]["supporting_nodes"] == ["n030_tsfreq"]
+    assert report["claim_readiness"]["connectivity"]["status"] == "missing"
 
 
 def test_pathway_audit_accepts_complete_pathway_without_single_ts_promotion(tmp_path: Path) -> None:

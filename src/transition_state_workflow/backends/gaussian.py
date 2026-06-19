@@ -24,6 +24,7 @@ from transition_state_workflow.chem.gaussian_log import (
     terminated_normally as gaussian_terminated_normally,
     write_gjf,
 )
+from transition_state_workflow.util.path_utils import clean_string
 
 GaussianCoord = Tuple[str, float, float, float]
 GaussianFrame = Tuple[str, List[GaussianCoord]]
@@ -422,6 +423,7 @@ def prepare_gaussian_imaginary_mode_follow_data(
         "imaginary_frequencies_cm-1": [mode.frequency for mode in imaginary],
         "normal_termination": gaussian_terminated_normally(lines),
         "stationary_point_found": any("Stationary point found" in line for line in lines),
+        "final_convergence_satisfied": gaussian_final_convergence_satisfied(lines),
         "is_ts_frequency_validated": False,
     }
     if len(imaginary) != 1:
@@ -438,7 +440,11 @@ def prepare_gaussian_imaginary_mode_follow_data(
         )
 
     mode = imaginary[0]
-    is_validated = bool(summary["normal_termination"] and summary["stationary_point_found"])
+    is_validated = bool(
+        summary["normal_termination"]
+        and summary["stationary_point_found"]
+        and summary["final_convergence_satisfied"]
+    )
     summary["is_ts_frequency_validated"] = is_validated
     summary["claim_status_suggestion"] = "tsfreq_validated" if is_validated else "ambiguous"
     summary["imaginary_mode_index"] = mode.index
@@ -465,6 +471,13 @@ def prepare_gaussian_imaginary_mode_follow_data(
         scan_frames=scan_frames,
         summary=summary,
     )
+
+
+def gaussian_final_convergence_satisfied(lines: list[str]) -> bool:
+    """Return true when the final Gaussian convergence table passed."""
+
+    convergence, _ = parse_gaussian_convergence(lines)
+    return bool(convergence) and all(clean_string(row.get("converged")).lower() == "yes" for row in convergence.values())
 
 
 def endpoint_template_from_gjf(path: Path) -> tuple[dict[str, object], bool]:
@@ -885,7 +898,7 @@ def parse_gaussian_opt_cycle_diagnostics(lines: list[str]) -> dict[str, object]:
     """Parse requested and observed Gaussian Opt step-cycle limits."""
 
     text = "\n".join(lines)
-    requested_values = [int(match) for match in re.findall(r"\bMaxCycles?\s*=\s*(\d+)", text, flags=re.IGNORECASE)]
+    requested_values = opt_maxcycle_requests_from_route(text)
     printed_pairs = [
         (int(step), int(maximum))
         for step, maximum in re.findall(
@@ -913,6 +926,39 @@ def parse_gaussian_opt_cycle_diagnostics(lines: list[str]) -> dict[str, object]:
         "step_limit_reached": "opt_step_limit_reached" in warnings,
         "warnings": warnings,
     }
+
+
+def opt_maxcycle_requests_from_route(text: str) -> list[int]:
+    """Return MaxCycle values from the Gaussian Opt route scope only."""
+
+    route = gaussian_route_text(text)
+    if not re.search(r"\bOpt(?:imize)?\b", route, flags=re.IGNORECASE):
+        return []
+    values: list[int] = []
+    for body in re.findall(r"\bOpt(?:imize)?\s*=\s*\(([^)]*)\)", route, flags=re.IGNORECASE | re.DOTALL):
+        values.extend(
+            int(match)
+            for match in re.findall(r"\bMaxCycles?\s*=\s*(\d+)", body, flags=re.IGNORECASE)
+        )
+    for value in re.findall(r"\bOpt(?:imize)?\s*=\s*MaxCycles?\s*=\s*(\d+)", route, flags=re.IGNORECASE):
+        values.append(int(value))
+    return values
+
+
+def gaussian_route_text(text: str) -> str:
+    """Return contiguous Gaussian route lines from log/input text."""
+
+    route_lines: list[str] = []
+    collecting = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not collecting and stripped.startswith("#"):
+            collecting = True
+        if collecting:
+            if not stripped:
+                break
+            route_lines.append(stripped)
+    return " ".join(route_lines)
 
 
 def orientation_blocks(lines: list[str], marker: str) -> list[list[tuple[str, float, float, float]]]:
