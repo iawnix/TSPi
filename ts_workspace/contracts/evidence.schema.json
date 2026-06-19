@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TS evidence entry",
+  "type": "object",
+  "required": ["evidence_id", "kind", "role", "evidence_tier", "node_id", "summary"],
+  "properties": {
+    "evidence_id": {"type": "string"},
+    "kind": {"type": "string"},
+    "role": {"type": "string"},
+    "evidence_tier": {
+      "enum": ["local_compute", "local_parse", "manual_observation", "literature", "user_provided", "hypothesis"]
+    },
+    "node_id": {"type": "string"},
+    "path": {"type": "string"},
+    "summary": {"type": "string"},
+    "quality": {"type": "object"},
+    "diagnostics": {"type": "array", "items": {"type": "string"}}
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TS decision",
+  "type": "object",
+  "required": ["schema_version", "action", "rationale", "payload"],
+  "properties": {
+    "schema_version": {"const": "ts-decision"},
+    "decision_id": {"type": "string"},
+    "action": {
+      "enum": ["init_workspace", "start_node", "end_node", "update_workspace", "ask_user", "stop"]
+    },
+    "rationale": {"type": "string", "minLength": 1},
+    "evidence_refs": {"type": "array", "items": {"type": "string"}},
+    "report_ref": {
+      "type": "object",
+      "properties": {
+        "report_id": {"type": "string"},
+        "workspace_root": {"type": "string"}
+      }
+    },
+    "payload": {"type": "object"}
+  },
+  "additionalProperties": true
+}

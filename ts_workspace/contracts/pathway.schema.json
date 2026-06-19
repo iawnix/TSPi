@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TS pathway model",
+  "type": "object",
+  "required": ["schema_version", "focus_pathway_id", "pathways"],
+  "properties": {
+    "schema_version": {"const": "ts-pathway"},
+    "focus_pathway_id": {"type": ["string", "null"]},
+    "pathways": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["pathway_id", "status", "steps"],
+        "properties": {
+          "pathway_id": {"type": "string"},
+          "label": {"type": "string"},
+          "pattern": {"type": "string"},
+          "status": {"enum": ["proposed", "active", "supported", "refuted", "superseded", "accepted"]},
+          "steps": {"type": "array"}
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}

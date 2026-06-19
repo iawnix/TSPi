@@ -1,0 +1,35 @@
+{
+  "backtrack_events": [
+    {
+      "changed_variable": "pathway hypothesis",
+      "created_by_decision": "dec_7b7138313cee",
+      "event_id": "bt_8b482922d2",
+      "event_state": "resolved",
+      "evidence_refs": [],
+      "from_node": "n001",
+      "new_branch_node": "n002",
+      "rationale": "Open a two-step branch after the single-step mode was refuted.",
+      "reason_code": "mode_not_target_step",
+      "to_node": "n001"
+    }
+  ],
+  "nodes": [
+    {
+      "claim_verdict": "refuted",
+      "closed_at": "2026-06-20T03:47:02+08:00",
+      "hypothesis": "The single-step candidate has the intended reaction-coordinate imaginary mode.",
+      "lifecycle": "closed",
+      "node_id": "n001",
+      "parent_node": null,
+      "phase": "tsfreq_validation",
+      "program_status": "completed"
+    },
+    {
+      "hypothesis": "A two-step route via Int1 may explain the reaction.",
+      "lifecycle": "running",
+      "node_id": "n002",
+      "parent_node": null,
+      "phase": "candidate_generation"
+    }
+  ]
+}

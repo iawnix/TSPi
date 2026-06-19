@@ -1,0 +1,52 @@
+{
+  "artifacts": {
+    "inputs": "nodes/n001/inputs",
+    "outputs": "nodes/n001/outputs",
+    "remote": "nodes/n001/remote",
+    "scratch": "nodes/n001/scratch"
+  },
+  "backtrack": null,
+  "closure": {
+    "claim_verdict": "supported",
+    "closed_at": "2026-06-20T03:47:02+08:00",
+    "implication": "Promote this TS to accepted artifacts.",
+    "mechanism": {
+      "evidence_refs": [
+        "ev_tsfreq_001",
+        "ev_conn_001"
+      ],
+      "summary": "The single-step TS is accepted for this pathway step."
+    },
+    "open_questions": [],
+    "program": {
+      "evidence_refs": [
+        "ev_tsfreq_001",
+        "ev_conn_001"
+      ],
+      "summary": "Audit inputs are complete."
+    },
+    "program_status": "completed"
+  },
+  "created_by_decision": "dec_1a805fd6664b",
+  "ended_at": "2026-06-20T03:47:02+08:00",
+  "ended_by_decision": "dec_8e3daff08156",
+  "evidence_refs": [
+    "ev_conn_001",
+    "ev_tsfreq_001"
+  ],
+  "expected_evidence": [
+    "tsfreq_gate",
+    "connectivity_gate"
+  ],
+  "hypothesis": "The single-step candidate satisfies TS/Freq and connectivity gates.",
+  "lifecycle": "closed",
+  "node_id": "n001",
+  "parent_node": null,
+  "pathway_ref": {
+    "pathway_id": "p_single",
+    "step_id": "s1"
+  },
+  "phase": "accepted_audit",
+  "schema_version": "ts-node",
+  "started_at": "2026-06-20T03:47:02+08:00"
+}

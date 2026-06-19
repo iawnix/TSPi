@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TS tree",
+  "type": "object",
+  "required": ["schema_version", "nodes", "edges", "current_node", "backtrack_events"],
+  "properties": {
+    "schema_version": {"const": "ts-tree"},
+    "nodes": {"type": "array"},
+    "edges": {"type": "array"},
+    "current_node": {"type": ["string", "null"]},
+    "backtrack_events": {"type": "array"}
+  },
+  "additionalProperties": false
+}

@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TS node",
+  "type": "object",
+  "required": ["schema_version", "node_id", "phase", "lifecycle", "hypothesis", "closure"],
+  "properties": {
+    "schema_version": {"const": "ts-node"},
+    "node_id": {"type": "string"},
+    "parent_node": {"type": ["string", "null"]},
+    "phase": {
+      "enum": ["preflight", "endpoint", "rp_conformer_generation", "candidate_generation", "tsfreq_validation", "connectivity_validation", "accepted_audit", "pathway_audit"]
+    },
+    "lifecycle": {"enum": ["running", "closed", "stopped"]},
+    "hypothesis": {"type": "string"},
+    "expected_evidence": {"type": "array", "items": {"type": "string"}},
+    "evidence_refs": {"type": "array", "items": {"type": "string"}},
+    "pathway_ref": {"type": ["object", "null"]},
+    "backtrack": {"type": ["object", "null"]},
+    "closure": {"type": ["object", "null"]}
+  },
+  "additionalProperties": true
+}

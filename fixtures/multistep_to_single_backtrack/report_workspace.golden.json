@@ -1,0 +1,79 @@
+{
+  "allowed_decision_actions": [
+    "start_node",
+    "end_node",
+    "update_workspace",
+    "ask_user",
+    "stop"
+  ],
+  "backtrack_events": [
+    {
+      "changed_variable": "pathway hypothesis",
+      "created_by_decision": "dec_c3450b65bfb0",
+      "event_id": "bt_b932104858",
+      "event_state": "resolved",
+      "evidence_refs": [],
+      "from_node": "n001",
+      "new_branch_node": "n002",
+      "rationale": "Open a revised single-step branch after the multistep step was refuted.",
+      "reason_code": "connectivity_refuted_step",
+      "to_node": "n001"
+    }
+  ],
+  "closed_node_count": 1,
+  "decision_contract": {
+    "mutation_channel": "ts_workspace",
+    "requires_report_ref": [
+      "start_node",
+      "end_node",
+      "update_workspace"
+    ],
+    "schema_version": "ts-decision"
+  },
+  "evidence_count": 0,
+  "focus": {
+    "accepted_ts_refs": [],
+    "current_node": "n002",
+    "focus_pathway_id": "p_single_revised"
+  },
+  "ledger_refs": {
+    "evidence_registry": "evidence_registry.json",
+    "knowledge_base": "knowledge_base.md",
+    "manifest": "manifest.json",
+    "mechanism_model": "mechanism_model.json",
+    "pathway_model": "pathway_model.json",
+    "tree": "tree.json"
+  },
+  "node_index": [
+    {
+      "claim_verdict": "refuted",
+      "closed_at": "2026-06-20T03:47:02+08:00",
+      "hypothesis": "The first multistep TS connects R and Int1.",
+      "lifecycle": "closed",
+      "node_id": "n001",
+      "parent_node": null,
+      "phase": "connectivity_validation",
+      "program_status": "completed"
+    },
+    {
+      "hypothesis": "A revised single-step reaction-coordinate hypothesis should be tested.",
+      "lifecycle": "running",
+      "node_id": "n002",
+      "parent_node": null,
+      "phase": "candidate_generation"
+    }
+  ],
+  "open_nodes": [
+    {
+      "hypothesis": "A revised single-step reaction-coordinate hypothesis should be tested.",
+      "lifecycle": "running",
+      "node_id": "n002",
+      "parent_node": null,
+      "phase": "candidate_generation"
+    }
+  ],
+  "report_id": "rep_20260619T194702",
+  "valid": true,
+  "validation_findings": [],
+  "workspace_root": "fixtures/multistep_to_single_backtrack"
+}

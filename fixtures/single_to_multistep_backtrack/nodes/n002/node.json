@@ -1,0 +1,32 @@
+{
+  "artifacts": {
+    "inputs": "nodes/n002/inputs",
+    "outputs": "nodes/n002/outputs",
+    "remote": "nodes/n002/remote",
+    "scratch": "nodes/n002/scratch"
+  },
+  "backtrack": {
+    "changed_variable": "pathway hypothesis",
+    "evidence_refs": [],
+    "from_node": "n001",
+    "reason_code": "mode_not_target_step",
+    "to_node": "n001"
+  },
+  "closure": null,
+  "created_by_decision": "dec_7b7138313cee",
+  "evidence_refs": [],
+  "expected_evidence": [
+    "candidate_geometry"
+  ],
+  "hypothesis": "A two-step route via Int1 may explain the reaction.",
+  "lifecycle": "running",
+  "node_id": "n002",
+  "parent_node": null,
+  "pathway_ref": {
+    "pathway_id": "p_two_step",
+    "step_id": "s1"
+  },
+  "phase": "candidate_generation",
+  "schema_version": "ts-node",
+  "started_at": "2026-06-20T03:47:02+08:00"
+}

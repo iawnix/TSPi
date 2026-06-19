@@ -1,0 +1,17 @@
+{
+  "accepted_facts": [],
+  "hypotheses": [],
+  "open_questions": [],
+  "refuted_hypotheses": [
+    {
+      "claim_verdict": "refuted",
+      "evidence_refs": [],
+      "hypothesis": "The single-step candidate has the intended reaction-coordinate imaginary mode.",
+      "mechanism_summary": "The mode is conformational rather than the target bond change.",
+      "node_id": "n001",
+      "phase": "tsfreq_validation",
+      "program_status": "completed"
+    }
+  ],
+  "schema_version": "ts-mechanism"
+}

@@ -1,0 +1,37 @@
+{
+  "focus_pathway_id": "p_single_revised",
+  "pathways": [
+    {
+      "label": "p_two_step",
+      "pathway_id": "p_two_step",
+      "pattern": "unspecified",
+      "status": "refuted",
+      "steps": [
+        {
+          "from": "unknown",
+          "refuting_nodes": [
+            "n001"
+          ],
+          "status": "refuted",
+          "step_id": "s1",
+          "to": "unknown"
+        }
+      ]
+    },
+    {
+      "label": "p_single_revised",
+      "pathway_id": "p_single_revised",
+      "pattern": "unspecified",
+      "status": "active",
+      "steps": [
+        {
+          "from": "unknown",
+          "status": "active",
+          "step_id": "s1",
+          "to": "unknown"
+        }
+      ]
+    }
+  ],
+  "schema_version": "ts-pathway"
+}

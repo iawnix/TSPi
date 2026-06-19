@@ -1,0 +1,17 @@
+{
+  "accepted_facts": [],
+  "hypotheses": [],
+  "open_questions": [],
+  "refuted_hypotheses": [
+    {
+      "claim_verdict": "refuted",
+      "evidence_refs": [],
+      "hypothesis": "The first multistep TS connects R and Int1.",
+      "mechanism_summary": "Endpoint assignment does not support the proposed Int1 basin.",
+      "node_id": "n001",
+      "phase": "connectivity_validation",
+      "program_status": "completed"
+    }
+  ],
+  "schema_version": "ts-mechanism"
+}

@@ -1,17 +1,15 @@
 #!/usr/bin/env python3
-"""Public TS workspace control-plane wrapper."""
+"""Wrapper for the workspace control plane."""
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
-SKILL_ROOT_DIRECTORY = Path(__file__).resolve().parents[1]
-SRC_DIRECTORY = SKILL_ROOT_DIRECTORY / "src"
-sys.path.insert(0, str(SRC_DIRECTORY))
-
-from transition_state_workflow.cli.workspace import main  # noqa: E402
+from ts_workspace.cli import main
 
 
 if __name__ == "__main__":

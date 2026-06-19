@@ -1,4 +1,3 @@
-interface:
-  display_name: "Transition-State Workflow"
-  short_description: "Rigorous tree-based TS search and validation"
-  default_prompt: "Use $transition-state-workflow to plan, run, validate, and reflect on this transition-state search."
+display_name: Transition-State Workflow
+short_description: Chemistry-hypothesis-driven transition-state workspace control.
+default_prompt: Use the transition-state workflow to initialize a workspace, report context, create decision JSON, run node-scoped computation, validate evidence, and close mechanism branches.

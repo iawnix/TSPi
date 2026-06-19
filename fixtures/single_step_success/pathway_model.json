@@ -1,0 +1,23 @@
+{
+  "focus_pathway_id": "p_single",
+  "pathways": [
+    {
+      "label": "p_single",
+      "pathway_id": "p_single",
+      "pattern": "unspecified",
+      "status": "supported",
+      "steps": [
+        {
+          "from": "unknown",
+          "status": "supported",
+          "step_id": "s1",
+          "supporting_nodes": [
+            "n001"
+          ],
+          "to": "unknown"
+        }
+      ]
+    }
+  ],
+  "schema_version": "ts-pathway"
+}

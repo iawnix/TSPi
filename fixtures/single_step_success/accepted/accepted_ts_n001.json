@@ -1,0 +1,13 @@
+{
+  "accepted_id": "accepted_ts_n001",
+  "evidence_refs": [
+    "ev_conn_001",
+    "ev_tsfreq_001"
+  ],
+  "node_id": "n001",
+  "phase": "accepted_audit",
+  "required_gates": [
+    "tsfreq_gate",
+    "connectivity_gate"
+  ]
+}
