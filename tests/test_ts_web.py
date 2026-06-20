@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 
+from ts_workspace import end_node, init_workspace, report_workspace, start_node
 from ts_web import normalize_workspace, register_workspace
 from ts_web.registry import list_workspaces, register_workspaces
 from ts_web.server import create_server
@@ -267,6 +268,32 @@ def test_web_claim_state_reflects_pathway_model(tmp_path: Path) -> None:
         thread.join(timeout=2)
 
 
+def test_web_claim_state_marks_terminal_refute_as_needs_followup(tmp_path: Path) -> None:
+    state = tmp_path / "web-state"
+    workspace = tmp_path / "terminal-refute"
+    _make_refuted_terminal_workspace(workspace)
+    row = register_workspace(workspace, state, "terminal")
+    server = create_server("127.0.0.1", 0, state)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        payload = _get_json(host, port, "/api/workspaces")
+        summary = payload["workspaces"][0]
+        assert summary["workspace_id"] == row["workspace_id"]
+        assert summary["claim_state"] == "needs_followup"
+        assert "accepted_ts" not in summary
+        assert "charge" not in summary
+        assert "multiplicity" not in summary
+        job = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/job")
+        assert job["workspace"]["claim_state"] == "needs_followup"
+        assert job["graph"]["presentation"]["workspace_state"]["needs_followup"]["color"] == "amber"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 def _get_json(host: str, port: int, path: str) -> dict:
     return json.loads(_get_text(host, port, path))
 
@@ -295,3 +322,46 @@ def _get_status_text(host: str, port: int, path: str) -> tuple[int, str]:
 
 def _relative_files(root: Path) -> set[str]:
     return {str(path.relative_to(root)) for path in root.rglob("*") if path.is_file()}
+
+
+def _make_refuted_terminal_workspace(workspace: Path) -> None:
+    init_workspace(workspace)
+    report = report_workspace(workspace)
+    report_ref = {"report_id": report["report_id"], "workspace_root": str(workspace)}
+    start_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "start_node",
+            "rationale": "Start a connectivity validation node.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "node_id": "n001",
+                "phase": "connectivity_validation",
+                "hypothesis": "Candidate connects the expected endpoints.",
+                "expected_evidence": [],
+            },
+        },
+    )
+    end_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "end_node",
+            "rationale": "Close the connectivity validation node as refuted.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "node_id": "n001",
+                "closure": {
+                    "program_status": "completed",
+                    "claim_verdict": "refuted",
+                    "program": {"summary": "Connectivity check completed.", "evidence_refs": []},
+                    "mechanism": {"summary": "Endpoint assignment is not connected.", "evidence_refs": []},
+                    "implication": "Open a replacement branch.",
+                    "open_questions": ["Find a different candidate."],
+                },
+            },
+        },
+    )

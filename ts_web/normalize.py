@@ -83,13 +83,18 @@ def explorer_workspace_summary(
     source_root = row.get("source_root") or row.get("source") or ""
     label = row.get("label") or row.get("name") or (Path(source_root).name if source_root else "")
     workspace_id = row.get("workspace_id") or row.get("id") or ""
+    if view is None and source_root:
+        try:
+            view = normalize_workspace(source_root, label=label)
+        except Exception:  # noqa: BLE001
+            view = None
     if manifest is None:
         manifest = _read_json(Path(source_root) / "manifest.json") if source_root else {}
     if pathway_model is None:
         pathway_model = _read_json(Path(source_root) / "pathway_model.json") if source_root else {}
     accepted_refs = _list(manifest.get("accepted_ts_refs"))
     focus = view.get("focus", {}) if isinstance(view, dict) else {}
-    return {
+    summary = {
         **row,
         "id": workspace_id,
         "workspace_id": workspace_id,
@@ -98,15 +103,16 @@ def explorer_workspace_summary(
         "source": source_root,
         "source_root": source_root,
         "system": manifest.get("system") or manifest.get("system_slug") or Path(source_root).name,
-        "charge": manifest.get("charge", ""),
-        "multiplicity": manifest.get("multiplicity", ""),
-        "claim_state": _claim_state(accepted_refs, pathway_model),
-        "accepted_ts": ", ".join(str(item) for item in accepted_refs),
-        "focus_node": focus.get("current_node", ""),
+        "claim_state": _claim_state(accepted_refs, pathway_model, view=view),
     }
+    _put_if_present(summary, "charge", manifest.get("charge"))
+    _put_if_present(summary, "multiplicity", manifest.get("multiplicity"))
+    _put_if_present(summary, "accepted_ts", ", ".join(str(item) for item in accepted_refs))
+    _put_if_present(summary, "focus_node", focus.get("current_node"))
+    return summary
 
 
-def _claim_state(accepted_refs: list[Any], pathway_model: dict[str, Any]) -> str:
+def _claim_state(accepted_refs: list[Any], pathway_model: dict[str, Any], *, view: dict[str, Any] | None = None) -> str:
     """Authoritative workspace claim state. UI must NOT re-derive."""
 
     focus_id = pathway_model.get("focus_pathway_id") if isinstance(pathway_model, dict) else None
@@ -133,6 +139,8 @@ def _claim_state(accepted_refs: list[Any], pathway_model: dict[str, Any]) -> str
             return "pathway_rejected"
     if accepted_refs:
         return "accepted_ts"
+    if _view_needs_followup(view):
+        return "needs_followup"
     return "searching"
 
 
@@ -451,6 +459,7 @@ def _explorer_presentation() -> dict[str, Any]:
         },
         "workspace_state": {
             "searching": {"label": "searching", "color": "accent"},
+            "needs_followup": {"label": "needs follow-up", "color": "amber"},
             "accepted_ts": {"label": "accepted TS", "color": "green"},
             "pathway_complete": {"label": "pathway complete", "color": "green"},
             "pathway_partial": {"label": "pathway partial", "color": "amber"},
@@ -487,6 +496,32 @@ def _normalize_backtrack_event(event: dict[str, Any]) -> dict[str, Any]:
         "reason_code": event.get("reason_code"),
         "evidence_refs": event.get("evidence_refs", []),
     }
+
+
+def _view_needs_followup(view: dict[str, Any] | None) -> bool:
+    if not isinstance(view, dict):
+        return False
+    findings = _list(view.get("validation_findings"))
+    if any(isinstance(item, dict) and item.get("code") == "workspace_needs_followup" for item in findings):
+        return True
+    nodes = [node for node in _list(view.get("nodes")) if isinstance(node, dict)]
+    if not nodes:
+        return False
+    if view.get("focus", {}).get("current_node"):
+        return False
+    if any(node.get("lifecycle") == "running" for node in nodes):
+        return False
+    last = nodes[-1]
+    display = last.get("display") if isinstance(last.get("display"), dict) else {}
+    return display.get("claim_verdict") in {"refuted", "inconclusive", "not_evaluated"}
+
+
+def _put_if_present(target: dict[str, Any], key: str, value: Any) -> None:
+    if value is None:
+        return
+    if isinstance(value, str) and not value.strip():
+        return
+    target[key] = value
 
 
 def _display_label(lifecycle: str | None, claim_verdict: str | None) -> str:
