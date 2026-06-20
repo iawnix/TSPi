@@ -12,6 +12,7 @@ import pytest
 
 from ts_workspace import end_node, init_workspace, report_workspace, start_node
 from ts_web import normalize_workspace, register_workspace
+from ts_web.normalize import explorer_graph_payload_from_view
 from ts_web.registry import list_workspaces, register_workspaces
 from ts_web.server import create_server
 
@@ -38,6 +39,49 @@ def test_normalize_workspace_uses_canonical_backtrack_events() -> None:
         for event in tree["backtrack_events"]
     ]
     assert view["nodes"][0]["display"]["claim_verdict"] == "refuted"
+
+
+def test_backtrack_visual_semantics_are_distinct_from_refuted_status() -> None:
+    fixture = ROOT / "fixtures" / "single_to_multistep_backtrack"
+    graph = explorer_graph_payload_from_view(normalize_workspace(fixture))
+    nodes = {node["id"]: node for node in graph["nodes"]}
+    replacement_edges = [edge for edge in graph["edges"] if edge["kind"] == "backtrack_replacement"]
+
+    assert nodes["n001"]["node_state"] == "refuted"
+    assert nodes["n001"]["card_color"] == "red"
+    assert nodes["n001"]["backtrack_badge"]["role"] == "backtrack_source"
+    assert nodes["n001"]["backtrack_badge"]["color"] == "purple"
+    assert replacement_edges
+    assert {edge["edge_color"] for edge in replacement_edges} == {"blue"}
+    assert graph["presentation"]["edge_kind"]["backtrack_replacement"]["color"] == "blue"
+    assert graph["presentation"]["event_role"]["backtrack_source"]["color"] == "purple"
+
+
+def test_backtrack_edges_and_events_dedupe_when_target_is_replacement(tmp_path: Path) -> None:
+    workspace = tmp_path / "dedupe-backtrack"
+    shutil.copytree(ROOT / "fixtures" / "single_to_multistep_backtrack", workspace)
+    tree_path = workspace / "tree.json"
+    tree = json.loads(tree_path.read_text(encoding="utf-8"))
+    tree["backtrack_events"][0]["to_node"] = "n002"
+    tree["backtrack_events"][0]["new_branch_node"] = "n002"
+    tree_path.write_text(json.dumps(tree, indent=2) + "\n", encoding="utf-8")
+
+    graph = explorer_graph_payload_from_view(normalize_workspace(workspace))
+    backtrack_edges = [edge for edge in graph["edges"] if edge["kind"].startswith("backtrack")]
+    n002_events = [
+        event
+        for event in graph["events"]
+        if event["event_id"] == "bt_8b482922d2" and event["node_id"] == "n002"
+    ]
+    nodes = {node["id"]: node for node in graph["nodes"]}
+
+    assert [(edge["kind"], edge["source"], edge["target"]) for edge in backtrack_edges] == [
+        ("backtrack_replacement", "n001", "n002")
+    ]
+    assert [event["event_role"] for event in n002_events] == ["generated_from_backtrack"]
+    assert nodes["n002"]["backtrack_target_event_ids"] == []
+    assert nodes["n002"]["generated_from_backtrack_event_ids"] == ["bt_8b482922d2"]
+    assert nodes["n002"]["backtrack_badge"]["role"] == "generated_from_backtrack"
 
 
 def test_register_workspace_deduplicates_and_rejects_source_pollution(tmp_path: Path) -> None:

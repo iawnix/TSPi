@@ -649,11 +649,8 @@
     .edge-group.faded:hover           { opacity: .85; }
     .edge-group.lineage               { color: var(--accent); }
     .edge-group.dependency            { color: var(--cyan); opacity: .58; }
-    .edge-group.backtrack,
-    .edge-group.backtrack_decision,
-    .edge-group.backtrack_replacement { color: var(--red); }
     .edge-group.backtrack-resolved,
-    .edge-group.backtrack-superseded { color: var(--text-muted); opacity: .56; }
+    .edge-group.backtrack-superseded { opacity: .56; }
     .edge-group:hover              { color: var(--accent); }
 
     .edge {
@@ -772,9 +769,9 @@
     .node:hover .node-icon,
     .node.selected .node-icon { stroke: var(--text); }
     .node.selected .node-stripe { width: 6px; }
-    .backtrack-badge { fill: var(--red-soft); stroke: var(--red); stroke-width: 1; }
+    .backtrack-badge { fill: var(--surface-1); stroke: currentColor; stroke-width: 1; }
     .backtrack-badge-icon {
-      stroke: var(--red);
+      stroke: currentColor;
       stroke-width: 1.8;
       fill: none;
       stroke-linecap: round;
@@ -1862,11 +1859,12 @@ function buildNode(n, p, lineage) {
   // Approximate width of status text (no SVG measurement at build time).
   const statusTextW = 14 + 12 + statusLabel.length * 6.6;
 
-  // Backtrack ↺ badge (red, next to status)
-  if (Array.isArray(n.backtrack_event_ids) && n.backtrack_event_ids.length) {
+  // Backtrack ↺ badge (control-flow colored, separate from status color)
+  if (n.backtrack_badge && Array.isArray(n.backtrack_badge.event_ids) && n.backtrack_badge.event_ids.length) {
     const bx = Math.min(NODE_W - 22, statusTextW + 6);
     const bg = makeSvg("g");
     bg.setAttribute("transform", `translate(${bx}, 60)`);
+    bg.style.color = COLOR_VAR[n.backtrack_badge.color] || COLOR_VAR[presColor("event_role", n.backtrack_badge.role)] || "var(--purple)";
     bg.innerHTML = `
       <circle class="backtrack-badge" cx="7" cy="7" r="7"/>
       <svg x="1" y="1" width="12" height="12" viewBox="0 0 24 24" overflow="visible">
@@ -1875,7 +1873,7 @@ function buildNode(n, p, lineage) {
           <path d="M4 11a8 8 0 1 1 2.5 6"/>
         </g>
       </svg>
-      <title>Backtrack events: ${escapeHtml(n.backtrack_event_ids.join(", "))}</title>`;
+      <title>${escapeHtml(n.backtrack_badge.label || "Backtrack")}: ${escapeHtml(n.backtrack_badge.event_ids.join(", "))}</title>`;
     g.appendChild(bg);
   }
 
@@ -1935,6 +1933,7 @@ function buildEdge(e, s, t, lineage) {
   }
   const g = makeSvg("g");
   g.setAttribute("class", classes.join(" "));
+  g.style.color = COLOR_VAR[e.edge_color] || COLOR_VAR[presColor("edge_kind", e.kind)] || "var(--grey)";
 
   const path = makeSvg("path");
   path.setAttribute("d", d);

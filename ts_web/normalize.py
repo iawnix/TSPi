@@ -285,18 +285,20 @@ def _explorer_node(row: dict[str, Any], backtrack_events: list[Any]) -> dict[str
     claim_verdict = display.get("claim_verdict") or closure.get("claim_verdict")
     tone = display.get("tone") or _display_tone(lifecycle, claim_verdict, program_status)
     state_key = _node_state_key(lifecycle, claim_verdict, program_status)
-    backtrack_ids = [
-        str(event.get("event_id"))
-        for event in backtrack_events
-        if isinstance(event, dict)
-        and event.get("event_id")
-        and (event.get("from_node") == node_id or event.get("to_node") == node_id)
-    ]
-    generated_ids = [
-        str(event.get("event_id"))
-        for event in backtrack_events
-        if isinstance(event, dict) and event.get("event_id") and event.get("new_branch_node") == node_id
-    ]
+    backtrack_from_ids: list[str] = []
+    backtrack_target_ids: list[str] = []
+    generated_ids: list[str] = []
+    for event in backtrack_events:
+        if not isinstance(event, dict) or not event.get("event_id"):
+            continue
+        event_id = str(event["event_id"])
+        if event.get("from_node") == node_id:
+            backtrack_from_ids.append(event_id)
+        if event.get("to_node") == node_id and event.get("to_node") != event.get("new_branch_node"):
+            backtrack_target_ids.append(event_id)
+        if event.get("new_branch_node") == node_id:
+            generated_ids.append(event_id)
+    backtrack_ids = _dedupe(backtrack_from_ids + backtrack_target_ids + generated_ids)
     state_line = _closure_line(closure, program_status, claim_verdict)
     return {
         "id": node_id,
@@ -325,7 +327,10 @@ def _explorer_node(row: dict[str, Any], backtrack_events: list[Any]) -> dict[str
         "active": lifecycle == "running",
         "frontier": lifecycle == "running",
         "backtrack_event_ids": backtrack_ids,
-        "generated_from_backtrack_event_ids": generated_ids,
+        "backtrack_from_event_ids": _dedupe(backtrack_from_ids),
+        "backtrack_target_event_ids": _dedupe(backtrack_target_ids),
+        "generated_from_backtrack_event_ids": _dedupe(generated_ids),
+        "backtrack_badge": _backtrack_badge(backtrack_from_ids, backtrack_target_ids, generated_ids),
     }
 
 
@@ -341,7 +346,7 @@ def _explorer_edges(nodes: list[dict[str, Any]], tree_edges: list[Any], backtrac
         if key in seen:
             return
         seen.add(key)
-        edges.append({"source": source, "target": target, "kind": kind, **extra})
+        edges.append({"source": source, "target": target, "kind": kind, **_edge_display(kind), **extra})
 
     for node in nodes:
         add(node.get("parent_id"), node.get("id"), "branch")
@@ -357,7 +362,7 @@ def _explorer_edges(nodes: list[dict[str, Any]], tree_edges: list[Any], backtrac
             "event_state": event.get("event_state"),
             "reason": event.get("reason_code"),
         }
-        if event.get("from_node") != event.get("to_node"):
+        if event.get("from_node") != event.get("to_node") and event.get("to_node") != event.get("new_branch_node"):
             add(event.get("from_node"), event.get("to_node"), "backtrack", **extra)
         add(event.get("from_node"), event.get("new_branch_node"), "backtrack_replacement", **extra)
     return edges
@@ -365,18 +370,33 @@ def _explorer_edges(nodes: list[dict[str, Any]], tree_edges: list[Any], backtrac
 
 def _explorer_events(backtrack_events: list[Any]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
+    seen: set[tuple[str, str, str]] = set()
     for event in backtrack_events:
         if not isinstance(event, dict):
             continue
         event_id = event.get("event_id")
-        for node_id in (event.get("from_node"), event.get("to_node"), event.get("new_branch_node")):
+        role_nodes = [
+            ("backtrack_source", event.get("from_node")),
+            ("generated_from_backtrack", event.get("new_branch_node")),
+        ]
+        if event.get("to_node") != event.get("new_branch_node"):
+            role_nodes.insert(1, ("backtrack_target", event.get("to_node")))
+        for role, node_id in role_nodes:
             if not node_id:
                 continue
+            key = (str(event_id), str(node_id), role)
+            if key in seen:
+                continue
+            seen.add(key)
+            display = _event_role_display(role)
             out.append(
                 {
                     "event_id": event_id,
                     "node_id": node_id,
                     "event_type": "backtrack",
+                    "event_role": role,
+                    "event_label": display["label"],
+                    "event_color": display["color"],
                     "decision": event.get("reason_code") or "backtrack",
                     "reason": event.get("rationale") or event.get("changed_variable"),
                     "evidence_refs": _list(event.get("evidence_refs")),
@@ -531,7 +551,54 @@ def _explorer_presentation() -> dict[str, Any]:
             "tsfreq_gate": {"label": "TS/Freq gate", "color": "cyan"},
             "connectivity_gate": {"label": "connectivity gate", "color": "purple"},
         },
+        "edge_kind": {
+            "branch": {"label": "branch", "color": "accent"},
+            "dependency": {"label": "dependency", "color": "cyan"},
+            "backtrack": {"label": "backtrack target", "color": "purple"},
+            "backtrack_decision": {"label": "backtrack decision", "color": "purple"},
+            "backtrack_replacement": {"label": "replacement branch", "color": "blue"},
+        },
+        "event_role": {
+            "backtrack_source": {"label": "backtracked from", "color": "purple"},
+            "backtrack_target": {"label": "backtrack target", "color": "purple"},
+            "generated_from_backtrack": {"label": "generated by backtrack", "color": "blue"},
+            "backtrack": {"label": "backtrack", "color": "purple"},
+        },
     }
+
+
+def _edge_display(kind: str) -> dict[str, str]:
+    entry = _explorer_presentation()["edge_kind"].get(kind, {})
+    return {
+        "edge_label": str(entry.get("label") or kind.replace("_", " ")),
+        "edge_color": str(entry.get("color") or "grey"),
+    }
+
+
+def _event_role_display(role: str) -> dict[str, str]:
+    entry = _explorer_presentation()["event_role"].get(role, {})
+    return {
+        "label": str(entry.get("label") or role.replace("_", " ")),
+        "color": str(entry.get("color") or "grey"),
+    }
+
+
+def _backtrack_badge(source_ids: list[str], target_ids: list[str], generated_ids: list[str]) -> dict[str, Any] | None:
+    if source_ids:
+        display = _event_role_display("backtrack_source")
+        return {"role": "backtrack_source", "label": display["label"], "color": display["color"], "event_ids": _dedupe(source_ids)}
+    if generated_ids:
+        display = _event_role_display("generated_from_backtrack")
+        return {
+            "role": "generated_from_backtrack",
+            "label": display["label"],
+            "color": display["color"],
+            "event_ids": _dedupe(generated_ids),
+        }
+    if target_ids:
+        display = _event_role_display("backtrack_target")
+        return {"role": "backtrack_target", "label": display["label"], "color": display["color"], "event_ids": _dedupe(target_ids)}
+    return None
 
 
 def _normalize_backtrack_event(event: dict[str, Any]) -> dict[str, Any]:
@@ -563,6 +630,17 @@ def _view_needs_followup(view: dict[str, Any] | None) -> bool:
     last = nodes[-1]
     display = last.get("display") if isinstance(last.get("display"), dict) else {}
     return display.get("claim_verdict") in {"refuted", "inconclusive", "not_evaluated"}
+
+
+def _dedupe(items: list[str]) -> list[str]:
+    out: list[str] = []
+    seen: set[str] = set()
+    for item in items:
+        if item in seen:
+            continue
+        seen.add(item)
+        out.append(item)
+    return out
 
 
 def _put_if_present(target: dict[str, Any], key: str, value: Any) -> None:
