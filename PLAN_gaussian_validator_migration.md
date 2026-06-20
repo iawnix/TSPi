@@ -24,9 +24,9 @@ preserving the current workflow boundaries.
    final-geometry extraction into `ts_backends.gaussian`.
 2. Add thin script wrappers in `scripts/` for the migrated Gaussian prepare and
    parse commands so existing operator workflows have stable entrypoints.
-3. Add a Gaussian remote adapter under `ts_remote` and a thin
-   `scripts/run_remote_gaussian.py` wrapper. The adapter must disable `set -u`
-   while sourcing `g16.profile` or initialize `LD_LIBRARY64_PATH` before source.
+3. Add a Gaussian remote adapter under `ts_remote` without exposing a standalone
+   `run_remote_gaussian.py` script. The adapter must disable `set -u` while
+   sourcing `g16.profile` or initialize `LD_LIBRARY64_PATH` before source.
 4. Port the `gaussian-ts-validator` regression tests to
    `transition-state-workflow` and keep assertions focused on the migrated
    public functions/CLI behavior.
@@ -45,4 +45,5 @@ preserving the current workflow boundaries.
   and cache artifacts.
 - Installed skill targeted/full tests pass.
 - `gaussian-ts-validator/SKILL.md` no longer claims it owns runnable logic beyond
-  compatibility routing.
+  compatibility routing, and no compatibility `run_remote_gaussian.py` script
+  remains.

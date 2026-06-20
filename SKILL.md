@@ -55,13 +55,15 @@ Except for first-time bootstrap, mutation commands must be traceable to a
 decision JSON. The mutation command validates the decision internally; a
 separate `validate_decision` call is only a preflight.
 
-Gaussian helper entrypoints are thin wrappers around those module boundaries:
+Gaussian local helper entrypoints are thin wrappers around backend boundaries:
 
 ```bash
 python scripts/prepare_gaussian_ts_input.py --help
 python scripts/parse_gaussian_ts_result.py --help
-python scripts/run_remote_gaussian.py --help
 ```
+
+Remote Gaussian execution is an internal `ts_remote.gaussian` adapter. Do not
+expose or treat it as an independent public workflow command.
 
 Run `report_workspace` before choosing or closing a node. The report gives the
 agent the current hypothesis tree, evidence readiness, open questions, and

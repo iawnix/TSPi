@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import argparse
 import subprocess
 from pathlib import Path
 
@@ -235,19 +234,15 @@ def test_failed_remote_run_still_downloads_expected_artifacts(monkeypatch, tmp_p
 
     monkeypatch.setattr(subprocess, "run", fake_run)
 
-    assert remote_gaussian.run_remote_gaussian_main(
-        [
-            str(input_path),
-            "--login-host",
-            "login",
-            "--compute-host",
-            "compute",
-            "--remote-dir",
-            "/remote/run",
-            "--output",
-            str(output_dir),
-        ]
-    ) == 9
+    config = remote_gaussian.RemoteGaussianConfig(
+        input_path=input_path,
+        login_host="login",
+        compute_host="compute",
+        remote_dir="/remote/run",
+        output_dir=output_dir,
+    )
+
+    assert remote_gaussian.execute_remote_gaussian(config) == 9
 
     remote_sources = [call[-2] for call in calls if call and call[0] == "scp" and call[-2].startswith("login:")]
     remote_run_index = next(
@@ -272,14 +267,17 @@ def test_failed_remote_run_still_downloads_expected_artifacts(monkeypatch, tmp_p
 
 
 def test_remote_runner_relaxes_nounset_for_gaussian_profile_source() -> None:
-    args = argparse.Namespace(
+    config = remote_gaussian.RemoteGaussianConfig(
+        input_path=Path("ts.gjf"),
+        login_host="login",
+        compute_host="compute",
         remote_dir="/remote/run",
         g16="/opt/g16/g16",
         g16root="/opt/gaussian",
         scratch="/scratch/g16",
     )
 
-    text = remote_gaussian.remote_runner_text(args, "ts.gjf")
+    text = remote_gaussian.remote_runner_text(config, "ts.gjf")
     lines = text.splitlines()
 
     assert lines[:2] == ["#!/usr/bin/env bash", "set -euo pipefail"]

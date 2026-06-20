@@ -2,13 +2,32 @@
 
 from __future__ import annotations
 
-import argparse
+from dataclasses import dataclass, field
 import re
 import shlex
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
+
+
+@dataclass(frozen=True)
+class RemoteGaussianConfig:
+    input_path: Path
+    login_host: str
+    compute_host: str
+    remote_dir: str
+    output_dir: Path = Path(".")
+    ssh_config: Path | None = None
+    extra_files: tuple[Path, ...] = field(default_factory=tuple)
+    g16: str = "/home/iaw/soft/Gaussian/g16/g16"
+    g16root: str = "/home/iaw/soft/Gaussian"
+    scratch: str = "/tmp/iaw_g16_codex"
+    chk: str | None = None
+    no_run: bool = False
+    no_download: bool = False
+    ignore_missing: bool = False
+    dry_run: bool = False
 
 
 def command_text(argv: list[str]) -> str:
@@ -22,17 +41,17 @@ def run(argv: list[str], dry_run: bool) -> None:
     subprocess.run(argv, check=True)
 
 
-def ssh_prefix(args: argparse.Namespace) -> list[str]:
+def ssh_prefix(config: RemoteGaussianConfig) -> list[str]:
     prefix = ["ssh"]
-    if args.ssh_config:
-        prefix.extend(["-F", str(args.ssh_config)])
+    if config.ssh_config:
+        prefix.extend(["-F", str(config.ssh_config)])
     return prefix
 
 
-def scp_prefix(args: argparse.Namespace) -> list[str]:
+def scp_prefix(config: RemoteGaussianConfig) -> list[str]:
     prefix = ["scp"]
-    if args.ssh_config:
-        prefix.extend(["-F", str(args.ssh_config)])
+    if config.ssh_config:
+        prefix.extend(["-F", str(config.ssh_config)])
     return prefix
 
 
@@ -46,12 +65,12 @@ def checkpoint_name(input_path: Path, explicit_chk: str | None) -> str | None:
     return None
 
 
-def remote_runner_text(args: argparse.Namespace, input_name: str) -> str:
-    run_dir = shlex.quote(args.remote_dir)
+def remote_runner_text(config: RemoteGaussianConfig, input_name: str) -> str:
+    run_dir = shlex.quote(config.remote_dir)
     input_file = shlex.quote(input_name)
-    g16 = shlex.quote(args.g16)
-    g16root = shlex.quote(args.g16root)
-    scratch = shlex.quote(args.scratch)
+    g16 = shlex.quote(config.g16)
+    g16root = shlex.quote(config.g16root)
+    scratch = shlex.quote(config.scratch)
     return f"""#!/usr/bin/env bash
 set -euo pipefail
 
@@ -103,30 +122,10 @@ exit "$status"
 """
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Run a Gaussian input on a remote login-host -> compute-host path.")
-    parser.add_argument("input", type=Path, help="Local Gaussian .gjf/.com file")
-    parser.add_argument("--login-host", required=True, help="SSH login host, e.g. iaw.1w")
-    parser.add_argument("--compute-host", required=True, help="Compute host reachable from the login host")
-    parser.add_argument("--remote-dir", required=True, help="Remote run directory")
-    parser.add_argument("--output", type=Path, default=Path("."), help="Local output directory for pulled files")
-    parser.add_argument("--ssh-config", type=Path, default=None, help="Optional ssh_config path")
-    parser.add_argument("--extra-file", type=Path, action="append", default=[], help="Extra local file to upload")
-    parser.add_argument("--g16", default="/home/iaw/soft/Gaussian/g16/g16")
-    parser.add_argument("--g16root", default="/home/iaw/soft/Gaussian")
-    parser.add_argument("--scratch", default="/tmp/iaw_g16_codex")
-    parser.add_argument("--chk", help="Checkpoint filename to pull back. Defaults to %%chk from input.")
-    parser.add_argument("--no-run", action="store_true", help="Upload files and runner but do not execute Gaussian")
-    parser.add_argument("--no-download", action="store_true", help="Do not pull result files back")
-    parser.add_argument("--ignore-missing", action="store_true", help="Ignore missing files during download")
-    parser.add_argument("--dry-run", action="store_true", help="Print commands and runner without executing")
-    return parser
-
-
-def download_remote_file(args: argparse.Namespace, name: str, tolerate_missing: bool) -> bool:
-    remote_path = f"{args.login_host}:{args.remote_dir}/{name}"
+def download_remote_file(config: RemoteGaussianConfig, name: str, tolerate_missing: bool) -> bool:
+    remote_path = f"{config.login_host}:{config.remote_dir}/{name}"
     try:
-        run([*scp_prefix(args), remote_path, str(args.output / name)], args.dry_run)
+        run([*scp_prefix(config), remote_path, str(config.output_dir / name)], config.dry_run)
     except subprocess.CalledProcessError:
         if not tolerate_missing:
             raise
@@ -135,13 +134,13 @@ def download_remote_file(args: argparse.Namespace, name: str, tolerate_missing: 
     return True
 
 
-def download_output_file(args: argparse.Namespace, input_path: Path, tolerate_missing: bool) -> None:
+def download_output_file(config: RemoteGaussianConfig, input_path: Path, tolerate_missing: bool) -> None:
     candidates = [f"{input_path.stem}.out", f"{input_path.stem}.log"]
     errors: list[subprocess.CalledProcessError] = []
     for name in candidates:
-        remote_path = f"{args.login_host}:{args.remote_dir}/{name}"
+        remote_path = f"{config.login_host}:{config.remote_dir}/{name}"
         try:
-            run([*scp_prefix(args), remote_path, str(args.output / name)], args.dry_run)
+            run([*scp_prefix(config), remote_path, str(config.output_dir / name)], config.dry_run)
         except subprocess.CalledProcessError as exc:
             errors.append(exc)
             if tolerate_missing:
@@ -152,51 +151,50 @@ def download_output_file(args: argparse.Namespace, input_path: Path, tolerate_mi
         raise errors[0]
 
 
-def run_remote_gaussian_main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
-    input_path = args.input.resolve()
+def execute_remote_gaussian(config: RemoteGaussianConfig) -> int:
+    input_path = config.input_path.resolve()
     if not input_path.exists():
         raise FileNotFoundError(input_path)
-    args.output.mkdir(parents=True, exist_ok=True)
+    config.output_dir.mkdir(parents=True, exist_ok=True)
 
-    runner = remote_runner_text(args, input_path.name)
+    runner = remote_runner_text(config, input_path.name)
     with tempfile.TemporaryDirectory(prefix="gaussian-remote-runner-") as tmp:
         runner_path = Path(tmp) / "run_gaussian_on_compute.sh"
         runner_path.write_text(runner, encoding="utf-8")
-        if args.dry_run:
+        if config.dry_run:
             print("--- run_gaussian_on_compute.sh ---")
             print(runner.rstrip())
             print("--- commands ---")
 
-        run([*ssh_prefix(args), args.login_host, "mkdir", "-p", args.remote_dir], args.dry_run)
-        for local in [input_path, *[path.resolve() for path in args.extra_file], runner_path]:
-            run([*scp_prefix(args), str(local), f"{args.login_host}:{args.remote_dir}/{local.name}"], args.dry_run)
-        run([*ssh_prefix(args), args.login_host, "chmod", "+x", f"{args.remote_dir}/{runner_path.name}"], args.dry_run)
+        run([*ssh_prefix(config), config.login_host, "mkdir", "-p", config.remote_dir], config.dry_run)
+        for local in [input_path, *[path.resolve() for path in config.extra_files], runner_path]:
+            run([*scp_prefix(config), str(local), f"{config.login_host}:{config.remote_dir}/{local.name}"], config.dry_run)
+        run([*ssh_prefix(config), config.login_host, "chmod", "+x", f"{config.remote_dir}/{runner_path.name}"], config.dry_run)
 
         remote_status = 0
-        if not args.no_run:
+        if not config.no_run:
             try:
                 run(
                     [
-                        *ssh_prefix(args),
-                        args.login_host,
+                        *ssh_prefix(config),
+                        config.login_host,
                         "ssh",
-                        args.compute_host,
+                        config.compute_host,
                         "bash",
-                        f"{args.remote_dir}/{runner_path.name}",
+                        f"{config.remote_dir}/{runner_path.name}",
                     ],
-                    args.dry_run,
+                    config.dry_run,
                 )
             except subprocess.CalledProcessError as exc:
                 remote_status = exc.returncode
 
-        if not args.no_download:
-            tolerate_missing = args.ignore_missing or remote_status != 0
-            download_output_file(args, input_path, tolerate_missing)
+        if not config.no_download:
+            tolerate_missing = config.ignore_missing or remote_status != 0
+            download_output_file(config, input_path, tolerate_missing)
             expected = ["run_metadata.txt", "g16_driver.out"]
-            chk = checkpoint_name(input_path, args.chk)
+            chk = checkpoint_name(input_path, config.chk)
             if chk:
                 expected.append(Path(chk).name)
             for name in dict.fromkeys(expected):
-                download_remote_file(args, name, tolerate_missing)
+                download_remote_file(config, name, tolerate_missing)
     return remote_status
