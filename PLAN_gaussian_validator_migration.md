@@ -15,7 +15,7 @@ preserving the current workflow boundaries.
   parse chemistry or write scientific verdicts.
 - `mol_comparator` remains the structure-comparison layer. No Gaussian process
   or TS/Freq parser logic should enter this module.
-- `gaussian-ts-validator` becomes a compatibility/deprecation entrypoint only.
+- `gaussian-ts-validator` becomes a thin transitional entrypoint only.
 
 ## Migration Steps
 
@@ -45,5 +45,5 @@ preserving the current workflow boundaries.
   and cache artifacts.
 - Installed skill targeted/full tests pass.
 - `gaussian-ts-validator/SKILL.md` no longer claims it owns runnable logic beyond
-  compatibility routing, and no compatibility `run_remote_gaussian.py` script
+  transitional routing, and no transitional `run_remote_gaussian.py` script
   remains.

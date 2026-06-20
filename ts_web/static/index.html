@@ -1572,7 +1572,7 @@ function renderSidebars() {
   renderList("facts", mechanism.validated_facts || [], "factsCount");
   renderList("refuted", mechanism.refuted_hypotheses || [], "refutedCount");
   renderList("questions", mechanism.open_questions || [], "questionsCount");
-  renderList("mechanismAnalysis", flattenMechanismAnalysis(mechanism.mechanism_analysis), "analysisCount");
+  renderList("mechanismAnalysis", mechanism.latest_analysis || [], "analysisCount");
 }
 
 function renderKv(id, obj) {
@@ -1607,26 +1607,6 @@ function renderList(id, values, countId) {
     ? arr.map(v => `<li>${escapeHtml(typeof v === "object" ? JSON.stringify(v) : String(v))}</li>`).join("")
     : `<li class="muted">None.</li>`;
 }
-function flattenMechanismAnalysis(analysis) {
-  if (!analysis || typeof analysis !== "object") return [];
-  const layers = ["reaction_type", "reaction_center", "electronic", "orbital", "energy"];
-  const items = [];
-  for (const layer of layers) {
-    const records = Array.isArray(analysis[layer]) ? analysis[layer] : [];
-    for (const record of records) {
-      if (!record || typeof record !== "object") continue;
-      const bits = [
-        layer,
-        record.status || "unknown",
-        record.summary || ""
-      ].filter(Boolean);
-      const source = record.source || (Array.isArray(record.evidence_refs) ? record.evidence_refs.join(", ") : "");
-      items.push(source ? `${bits.join(" / ")} [${source}]` : bits.join(" / "));
-    }
-  }
-  return items;
-}
-
 /* ============================================================
    Graph layout
    ============================================================ */

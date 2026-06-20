@@ -61,7 +61,7 @@ def explorer_job_payload(
         "app": "TS Hypothesis Explorer",
         "source": str(root),
         "manifest": manifest,
-        "mechanism": _explorer_mechanism(mechanism_model),
+        "mechanism": _explorer_mechanism(mechanism_model, view=view),
         "evidence_summary": graph["evidence_summary"],
         "graph": graph,
         "workspace": explorer_workspace_summary(
@@ -413,13 +413,62 @@ def _explorer_evidence(records: list[Any]) -> dict[str, Any]:
     return {"records": normalized, "summary": {"count": len(normalized), "by_kind": by_kind, "by_state": by_state}}
 
 
-def _explorer_mechanism(mechanism_model: dict[str, Any]) -> dict[str, Any]:
+def _explorer_mechanism(mechanism_model: dict[str, Any], *, view: dict[str, Any] | None = None) -> dict[str, Any]:
+    accepted_facts = _list(mechanism_model.get("accepted_facts"))
+    refuted_hypotheses = _list(mechanism_model.get("refuted_hypotheses"))
+    open_questions = _list(mechanism_model.get("open_questions"))
+    hypotheses = _list(mechanism_model.get("hypotheses"))
     return {
         **mechanism_model,
-        "validated_facts": _mechanism_lines(_list(mechanism_model.get("accepted_facts"))),
-        "refuted_hypotheses": _mechanism_lines(_list(mechanism_model.get("refuted_hypotheses"))),
-        "open_questions": _mechanism_lines(_list(mechanism_model.get("open_questions"))),
+        "validated_facts": _mechanism_lines(accepted_facts),
+        "refuted_hypotheses": _mechanism_lines(refuted_hypotheses),
+        "open_questions": _mechanism_lines(open_questions),
+        "latest_analysis": _mechanism_lines(
+            _latest_mechanism_records(
+                {
+                    "accepted_facts": accepted_facts,
+                    "refuted_hypotheses": refuted_hypotheses,
+                    "open_questions": open_questions,
+                    "hypotheses": hypotheses,
+                },
+                view=view,
+            )
+        ),
     }
+
+
+def _latest_mechanism_records(
+    groups: dict[str, list[Any]],
+    *,
+    view: dict[str, Any] | None = None,
+) -> list[Any]:
+    records: list[Any] = []
+    for key in ("accepted_facts", "refuted_hypotheses", "open_questions", "hypotheses"):
+        records.extend(groups.get(key, []))
+    if not records:
+        return []
+
+    node_order = _node_order(view)
+    if node_order:
+        by_order = [
+            (node_order[record.get("node_id")], record)
+            for record in records
+            if isinstance(record, dict) and record.get("node_id") in node_order
+        ]
+        if by_order:
+            latest_order = max(order for order, _record in by_order)
+            return [record for order, record in by_order if order == latest_order]
+    return [records[-1]]
+
+
+def _node_order(view: dict[str, Any] | None) -> dict[str, int]:
+    if not isinstance(view, dict):
+        return {}
+    order: dict[str, int] = {}
+    for index, node in enumerate(_list(view.get("nodes"))):
+        if isinstance(node, dict) and node.get("node_id"):
+            order[str(node["node_id"])] = index
+    return order
 
 
 def _mechanism_lines(records: list[Any]) -> list[str]:

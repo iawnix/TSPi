@@ -268,6 +268,80 @@ def test_web_claim_state_reflects_pathway_model(tmp_path: Path) -> None:
         thread.join(timeout=2)
 
 
+def test_web_mechanism_analysis_uses_latest_tree_record(tmp_path: Path) -> None:
+    workspace = tmp_path / "latest-mechanism"
+    shutil.copytree(ROOT / "fixtures" / "single_step_success", workspace)
+
+    node_id = "n999_pathway_audit"
+    source_node = json.loads((workspace / "nodes" / "n001" / "node.json").read_text(encoding="utf-8"))
+    latest_node = {
+        **source_node,
+        "node_id": node_id,
+        "parent_node": "n001",
+        "phase": "pathway_audit",
+        "hypothesis": "The full route has a latest two-step pathway-level mechanism.",
+        "closure": {
+            **source_node["closure"],
+            "mechanism": {
+                "summary": "Latest mechanism analysis: reactant -> intermediate -> product.",
+                "evidence_refs": ["ev_conn_001", "ev_tsfreq_001"],
+            },
+        },
+    }
+    (workspace / "nodes" / node_id).mkdir()
+    (workspace / "nodes" / node_id / "node.json").write_text(
+        json.dumps(latest_node, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+    tree = json.loads((workspace / "tree.json").read_text(encoding="utf-8"))
+    tree["nodes"].append(
+        {
+            "node_id": node_id,
+            "parent_node": "n001",
+            "phase": "pathway_audit",
+            "lifecycle": "closed",
+            "program_status": "completed",
+            "claim_verdict": "supported",
+            "hypothesis": latest_node["hypothesis"],
+        }
+    )
+    tree["edges"].append({"parent_node": "n001", "child_node": node_id})
+    (workspace / "tree.json").write_text(json.dumps(tree, indent=2) + "\n", encoding="utf-8")
+
+    mechanism = json.loads((workspace / "mechanism_model.json").read_text(encoding="utf-8"))
+    old_record = mechanism["accepted_facts"][0]
+    new_record = {
+        "node_id": node_id,
+        "phase": "pathway_audit",
+        "claim_verdict": "supported",
+        "program_status": "completed",
+        "hypothesis": latest_node["hypothesis"],
+        "mechanism_summary": "Latest mechanism analysis: reactant -> intermediate -> product.",
+        "evidence_refs": ["ev_conn_001", "ev_tsfreq_001"],
+    }
+    mechanism["accepted_facts"] = [new_record, old_record]
+    (workspace / "mechanism_model.json").write_text(json.dumps(mechanism, indent=2) + "\n", encoding="utf-8")
+
+    state = tmp_path / "web-state"
+    row = register_workspace(workspace, state, "latest")
+    server = create_server("127.0.0.1", 0, state)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        job = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/job")
+        latest = job["mechanism"]["latest_analysis"]
+        assert latest == [
+            "n999_pathway_audit / pathway_audit / supported: "
+            "Latest mechanism analysis: reactant -> intermediate -> product."
+        ]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 def test_web_claim_state_marks_terminal_refute_as_needs_followup(tmp_path: Path) -> None:
     state = tmp_path / "web-state"
     workspace = tmp_path / "terminal-refute"
