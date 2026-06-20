@@ -71,6 +71,9 @@ def test_web_server_api_is_read_only(tmp_path: Path) -> None:
         assert payload["view"]["backtrack_edges"][0]["new_branch_node"] == "n002"
         html = _get_text(host, port, "/")
         assert "TS Workspace Explorer" in html
+        assert 'id="workspaceList"' in html
+        assert 'id="graphSvg"' in html
+        assert 'id="nodeDetail"' in html
     finally:
         server.shutdown()
         server.server_close()

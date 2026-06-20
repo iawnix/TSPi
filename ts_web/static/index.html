@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="light">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -7,258 +7,1491 @@
   <style>
     :root {
       color-scheme: light;
-      --ink: #1f2933;
-      --muted: #65717d;
-      --line: #d6dee6;
-      --blue: #0072b2;
-      --green: #009e73;
-      --orange: #d55e00;
-      --purple: #9b5ca5;
-      --amber: #e69f00;
-      --bg: #f7f9fb;
+      --font-sans: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Arial, sans-serif;
+      --font-mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+      --bg: #f5f6f8;
+      --grid: #e7ebef;
       --panel: #ffffff;
+      --panel-2: #f9fafb;
+      --panel-3: #eef2f5;
+      --line: #d9e0e7;
+      --line-strong: #c3ccd5;
+      --text: #17202a;
+      --text-2: #4b5967;
+      --text-3: #788491;
+      --blue: #1d70f2;
+      --cyan: #16859b;
+      --green: #14804a;
+      --red: #c83142;
+      --amber: #b97611;
+      --purple: #7c58c5;
+      --grey: #647181;
+      --blue-soft: #eef5ff;
+      --cyan-soft: #edf8fa;
+      --green-soft: #edf8f2;
+      --red-soft: #fff0f2;
+      --amber-soft: #fff7e8;
+      --purple-soft: #f4f0ff;
+      --grey-soft: #f1f4f7;
+      --shadow: 0 14px 32px rgba(23, 32, 42, 0.12), 0 2px 6px rgba(23, 32, 42, 0.06);
+      --radius: 8px;
+      --header-h: 52px;
+      --left-w: 324px;
+      --right-w: 430px;
+      --node-w: 260;
+      --node-h: 94;
     }
+
+    [data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #0e1217;
+      --grid: #1e2630;
+      --panel: #141a21;
+      --panel-2: #19212a;
+      --panel-3: #202a35;
+      --line: #27323e;
+      --line-strong: #354252;
+      --text: #edf2f7;
+      --text-2: #b6c0ca;
+      --text-3: #7d8a98;
+      --blue: #6da2ff;
+      --cyan: #4cb4c5;
+      --green: #58c284;
+      --red: #ff7480;
+      --amber: #e4a94b;
+      --purple: #aa91f0;
+      --grey: #96a3b2;
+      --blue-soft: #14233c;
+      --cyan-soft: #102c32;
+      --green-soft: #12291d;
+      --red-soft: #32161b;
+      --amber-soft: #302311;
+      --purple-soft: #261f3f;
+      --grey-soft: #202832;
+      --shadow: 0 16px 36px rgba(0, 0, 0, 0.42), 0 2px 8px rgba(0, 0, 0, 0.26);
+    }
+
     * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    html { overflow: hidden; }
     body {
       margin: 0;
-      font-family: Arial, Helvetica, sans-serif;
-      color: var(--ink);
-      background: var(--bg);
-    }
-    header {
-      padding: 20px 28px 14px;
-      background: var(--panel);
-      border-bottom: 1px solid var(--line);
-    }
-    h1 { margin: 0; font-size: 20px; letter-spacing: 0; }
-    .sub { margin-top: 6px; color: var(--muted); font-size: 13px; }
-    main { padding: 20px 28px 28px; display: grid; gap: 16px; }
-    .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-    select, button {
-      font: inherit;
-      border: 1px solid var(--line);
-      background: white;
-      color: var(--ink);
-      padding: 8px 10px;
-      border-radius: 6px;
-    }
-    button { cursor: pointer; }
-    .grid {
-      display: grid;
-      grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.8fr);
-      gap: 16px;
-      align-items: start;
-    }
-    .panel {
-      background: var(--panel);
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 16px;
-      min-width: 0;
-    }
-    .panel h2 {
-      margin: 0 0 12px;
-      font-size: 14px;
-      letter-spacing: 0;
-    }
-    .summary {
-      display: grid;
-      grid-template-columns: repeat(4, minmax(0, 1fr));
-      gap: 10px;
-    }
-    .metric {
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      padding: 10px;
-      background: #fbfcfd;
-      min-height: 68px;
-    }
-    .metric .k { font-size: 11px; color: var(--muted); }
-    .metric .v { margin-top: 7px; font-size: 18px; font-weight: 700; }
-    .node-list { display: grid; gap: 10px; }
-    .node {
-      border: 1px solid var(--line);
-      border-left: 5px solid var(--line);
-      border-radius: 8px;
-      padding: 11px 12px;
-      background: white;
-    }
-    .node.supported { border-left-color: var(--green); }
-    .node.refuted { border-left-color: var(--orange); }
-    .node.active { border-left-color: var(--blue); }
-    .node.inconclusive { border-left-color: var(--amber); }
-    .node.blocked { border-left-color: #555; }
-    .node-title {
-      display: flex;
-      gap: 8px;
-      align-items: baseline;
-      justify-content: space-between;
+      font-family: var(--font-sans);
       font-size: 13px;
-      font-weight: 700;
+      color: var(--text);
+      background: var(--bg);
+      letter-spacing: 0;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
-    .badge {
-      border-radius: 999px;
-      padding: 3px 8px;
+    button, select { font: inherit; color: inherit; }
+    button { cursor: pointer; }
+    code, pre, .mono { font-family: var(--font-mono); }
+
+    .app {
+      height: 100vh;
+      display: grid;
+      grid-template-columns: var(--left-w) minmax(420px, 1fr) var(--right-w);
+      grid-template-rows: var(--header-h) minmax(0, 1fr);
+      grid-template-areas:
+        "top top top"
+        "left graph right";
+      background:
+        linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px),
+        var(--bg);
+      background-size: 28px 28px;
+    }
+
+    .topbar {
+      grid-area: top;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 14px;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--panel) 94%, transparent);
+      backdrop-filter: blur(10px) saturate(140%);
+      z-index: 5;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      min-width: 210px;
+      font-weight: 650;
+    }
+    .brand-mark {
+      width: 24px;
+      height: 24px;
+      display: grid;
+      place-items: center;
+      border: 1px solid var(--line-strong);
+      border-radius: 6px;
+      background: var(--panel-2);
+      color: var(--blue);
+      font-weight: 800;
+      font-size: 12px;
+    }
+    .top-center {
+      flex: 1;
+      display: flex;
+      justify-content: center;
+      min-width: 0;
+      position: relative;
+    }
+    .top-actions {
+      display: flex;
+      align-items: center;
+      justify-content: flex-end;
+      gap: 6px;
+      min-width: 210px;
+    }
+
+    .workspace-chip {
+      max-width: min(560px, 70vw);
+      height: 34px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 10px 0 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: 0 1px 1px rgba(23, 32, 42, 0.03);
+    }
+    .workspace-chip:hover { border-color: var(--line-strong); background: var(--panel-2); }
+    .workspace-chip-label {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 600;
+    }
+    .workspace-chip-meta {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text-3);
+      font-size: 12px;
+    }
+    .workspace-pop {
+      position: absolute;
+      top: 42px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: min(620px, calc(100vw - 28px));
+      max-height: 390px;
+      overflow: auto;
+      padding: 7px;
+      display: none;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      z-index: 20;
+    }
+    .workspace-pop.open { display: grid; gap: 6px; }
+
+    .iconbtn {
+      width: 34px;
+      height: 34px;
+      display: inline-grid;
+      place-items: center;
+      border: 1px solid transparent;
+      border-radius: 7px;
+      background: transparent;
+      color: var(--text-2);
+    }
+    .iconbtn:hover {
+      border-color: var(--line);
+      background: var(--panel-2);
+      color: var(--text);
+    }
+    .iconbtn svg, .workspace-chip svg { width: 16px; height: 16px; }
+
+    .panel {
+      min-width: 0;
+      min-height: 0;
+      display: flex;
+      flex-direction: column;
+      background: var(--panel);
+      position: relative;
+      overflow: hidden;
+    }
+    .panel.left {
+      grid-area: left;
+      border-right: 1px solid var(--line);
+    }
+    .panel.right {
+      grid-area: right;
+      border-left: 1px solid var(--line);
+    }
+    .panel-head {
+      height: 44px;
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      padding: 0 13px;
+      border-bottom: 1px solid var(--line);
+      background: var(--panel);
+    }
+    .panel-title {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
+      color: var(--text-3);
       font-size: 11px;
-      background: #eef3f7;
-      color: var(--muted);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .panel-title svg { width: 14px; height: 14px; }
+    .panel-body {
+      flex: 1;
+      overflow: auto;
+      padding: 14px;
+    }
+    .resizer {
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      width: 10px;
+      z-index: 6;
+      cursor: col-resize;
+    }
+    .left .resizer { right: -5px; }
+    .right .resizer { left: -5px; }
+    .resizer::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      bottom: 0;
+      left: 4px;
+      width: 2px;
+      background: transparent;
+    }
+    .resizer:hover::after, .resizer.dragging::after { background: var(--blue); }
+    body.resizing { cursor: col-resize; user-select: none; }
+
+    .section { margin-bottom: 18px; }
+    .section:last-child { margin-bottom: 0; }
+    .section-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 8px;
+    }
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--text-3);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--grey);
+    }
+    .count {
+      min-width: 20px;
+      height: 20px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0 6px;
+      border-radius: 999px;
+      background: var(--panel-2);
+      color: var(--text-2);
+      font-size: 11px;
+      font-weight: 650;
+    }
+
+    .workspace-list, .pathway-list, .fact-list {
+      display: grid;
+      gap: 7px;
+    }
+    .workspace-row, .pathway-row {
+      width: 100%;
+      min-width: 0;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 4px 8px;
+      padding: 9px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      text-align: left;
+    }
+    .workspace-row:hover, .pathway-row:hover { border-color: var(--line-strong); background: var(--panel-2); }
+    .workspace-row[aria-current="true"] {
+      border-color: color-mix(in srgb, var(--blue) 45%, var(--line));
+      background: var(--blue-soft);
+    }
+    .row-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 650;
+      font-size: 12px;
+    }
+    .row-meta {
+      grid-column: 1 / -1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--text-3);
+      font-size: 11px;
+    }
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      min-height: 20px;
+      max-width: 100%;
+      padding: 2px 7px;
+      border: 1px solid transparent;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 700;
+      line-height: 1.35;
       white-space: nowrap;
     }
-    .hypothesis {
-      margin-top: 7px;
-      color: var(--muted);
-      font-size: 12px;
-      line-height: 1.35;
+    .chip.blue { color: var(--blue); background: var(--blue-soft); }
+    .chip.cyan { color: var(--cyan); background: var(--cyan-soft); }
+    .chip.green { color: var(--green); background: var(--green-soft); }
+    .chip.red { color: var(--red); background: var(--red-soft); }
+    .chip.amber { color: var(--amber); background: var(--amber-soft); }
+    .chip.purple { color: var(--purple); background: var(--purple-soft); }
+    .chip.grey { color: var(--grey); background: var(--grey-soft); }
+
+    .kv {
+      display: grid;
+      grid-template-columns: 92px minmax(0, 1fr);
+      gap: 7px 12px;
+      align-items: start;
     }
-    .mono {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    .kv .k {
+      color: var(--text-3);
+      font-size: 12px;
+    }
+    .kv .v {
+      min-width: 0;
+      overflow-wrap: anywhere;
+      color: var(--text);
+      font-size: 12px;
+    }
+    .muted { color: var(--text-3); }
+    .empty {
+      color: var(--text-3);
+      padding: 10px 0;
+      font-size: 12px;
+    }
+    .fact {
+      padding: 8px 9px;
+      border-left: 3px solid var(--line-strong);
+      border-radius: 6px;
+      background: var(--panel-2);
+      color: var(--text-2);
+      font-size: 12px;
+      overflow-wrap: anywhere;
+    }
+
+    .graph-area {
+      grid-area: graph;
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      grid-template-rows: 44px minmax(0, 1fr);
+      background: transparent;
+    }
+    .graph-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 0 12px;
+      border-bottom: 1px solid var(--line);
+      background: color-mix(in srgb, var(--panel) 74%, transparent);
+      backdrop-filter: blur(8px) saturate(130%);
+    }
+    .legend {
+      min-width: 0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      overflow: hidden;
+    }
+    .graph-stats {
+      flex: 0 0 auto;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      color: var(--text-3);
+      font-size: 12px;
+    }
+    .graph-controls {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+    }
+    .zoom-readout {
+      width: 44px;
+      text-align: center;
+      color: var(--text-2);
+      font-family: var(--font-mono);
       font-size: 11px;
     }
-    .edges { display: grid; gap: 8px; }
+    .graph-wrap {
+      min-width: 0;
+      min-height: 0;
+      position: relative;
+      overflow: hidden;
+      cursor: grab;
+    }
+    .graph-wrap.dragging { cursor: grabbing; user-select: none; }
+    .graph-svg {
+      width: 100%;
+      height: 100%;
+      display: block;
+    }
+    .graph-empty {
+      fill: var(--text-3);
+      font: 13px var(--font-sans);
+    }
+    .node-card {
+      fill: var(--panel);
+      stroke: var(--line);
+      stroke-width: 1;
+      filter: drop-shadow(0 1px 2px rgba(23, 32, 42, 0.08));
+    }
+    .node:hover .node-card { stroke: var(--line-strong); }
+    .node.selected .node-card {
+      stroke: var(--blue);
+      stroke-width: 1.5;
+    }
+    .node.faded { opacity: 0.32; }
+    .node-stage {
+      fill: var(--text-3);
+      font: 700 10px var(--font-sans);
+      letter-spacing: 0.06em;
+    }
+    .node-id {
+      fill: var(--text);
+      font: 700 14px var(--font-sans);
+      letter-spacing: 0;
+    }
+    .node-hypothesis {
+      fill: var(--text-2);
+      font: 12px var(--font-sans);
+    }
+    .node-label {
+      font: 700 11px var(--font-sans);
+    }
+    .node-count {
+      fill: var(--text-3);
+      font: 11px var(--font-mono);
+    }
     .edge {
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+    .edge.branch { stroke: var(--line-strong); }
+    .edge.backtrack {
+      stroke: var(--red);
+      stroke-dasharray: 7 7;
+    }
+    .edge.faded { opacity: 0.22; }
+    .edge-dot.source {
+      fill: var(--panel);
+      stroke: currentColor;
+      stroke-width: 2;
+    }
+    .edge-dot.target {
+      fill: currentColor;
+      stroke: none;
+    }
+    .edge-group.branch { color: var(--line-strong); }
+    .edge-group.backtrack { color: var(--red); }
+    .edge-label {
+      fill: var(--red);
+      font: 700 10px var(--font-sans);
+      letter-spacing: 0.04em;
+    }
+
+    .node-head {
+      display: grid;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .node-title-line {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      min-width: 0;
+    }
+    .node-title {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 17px;
+      font-weight: 750;
+    }
+    .node-subtitle {
+      color: var(--text-2);
+      line-height: 1.45;
+      overflow-wrap: anywhere;
+    }
+    .tabs {
+      display: flex;
+      gap: 2px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 12px;
+      overflow-x: auto;
+    }
+    .tab {
+      height: 32px;
+      padding: 0 9px;
+      border: 0;
+      border-bottom: 2px solid transparent;
+      background: transparent;
+      color: var(--text-3);
+      font-weight: 650;
+      white-space: nowrap;
+    }
+    .tab.active {
+      color: var(--text);
+      border-bottom-color: var(--blue);
+    }
+    .detail {
+      display: grid;
+      gap: 12px;
+    }
+    .detail-block {
+      display: grid;
+      gap: 8px;
+    }
+    .detail-title {
+      color: var(--text-3);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    pre {
+      margin: 0;
+      max-height: 420px;
+      overflow: auto;
+      padding: 11px;
       border: 1px solid var(--line);
       border-radius: 8px;
-      padding: 10px;
-      background: #fffaf4;
+      background: var(--panel-2);
+      color: var(--text-2);
+      font: 11px/1.45 var(--font-mono);
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+
+    .toast {
+      position: fixed;
+      left: 50%;
+      bottom: 18px;
+      transform: translateX(-50%);
+      max-width: min(720px, calc(100vw - 32px));
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel);
+      color: var(--text);
+      box-shadow: var(--shadow);
+      z-index: 60;
       font-size: 12px;
     }
-    .edge strong { color: var(--orange); }
-    pre {
-      max-height: 280px;
-      overflow: auto;
-      padding: 12px;
-      border-radius: 8px;
-      background: #111827;
-      color: #e5e7eb;
-      font-size: 11px;
-      line-height: 1.35;
+
+    @media (max-width: 1120px) {
+      :root { --left-w: 288px; --right-w: 380px; }
     }
-    @media (max-width: 980px) {
-      .grid { grid-template-columns: 1fr; }
-      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    @media (max-width: 900px) {
+      html { overflow: auto; }
+      body { min-height: 100%; overflow: auto; }
+      .app {
+        min-height: 100vh;
+        height: auto;
+        grid-template-columns: 1fr;
+        grid-template-rows: var(--header-h) auto 58vh auto;
+        grid-template-areas:
+          "top"
+          "left"
+          "graph"
+          "right";
+      }
+      .topbar { position: sticky; top: 0; }
+      .brand, .top-actions { min-width: 0; }
+      .brand span:last-child { display: none; }
+      .panel.left, .panel.right {
+        max-height: 42vh;
+        border-left: 0;
+        border-right: 0;
+        border-bottom: 1px solid var(--line);
+      }
+      .resizer { display: none; }
     }
   </style>
 </head>
 <body>
-  <header>
-    <h1>TS Workspace Explorer</h1>
-    <div class="sub">Read-only view of transition-state search branches, evidence gates and canonical backtrack events.</div>
-  </header>
-  <main>
-    <section class="toolbar">
-      <select id="workspaceSelect" aria-label="Workspace"></select>
-      <button id="reloadButton" type="button">Reload</button>
-      <span id="sourceRoot" class="sub"></span>
-    </section>
-    <section class="summary" id="summary"></section>
-    <section class="grid">
-      <section class="panel">
-        <h2>Nodes</h2>
-        <div class="node-list" id="nodes"></div>
-      </section>
-      <aside class="panel">
-        <h2>Backtrack events</h2>
-        <div class="edges" id="backtracks"></div>
-        <h2 style="margin-top:16px;">Raw view</h2>
-        <pre id="raw"></pre>
-      </aside>
-    </section>
-  </main>
+  <div class="app" id="app">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark">TS</span>
+        <span>TS Workspace Explorer</span>
+      </div>
+      <div class="top-center">
+        <button class="workspace-chip" id="workspaceChip" type="button" aria-haspopup="listbox" aria-expanded="false">
+          <span class="workspace-chip-label" id="workspaceChipLabel">workspace</span>
+          <span class="workspace-chip-meta" id="workspaceChipMeta"></span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="6 9 12 15 18 9"/></svg>
+        </button>
+        <div class="workspace-pop" id="workspacePopover" role="listbox"></div>
+      </div>
+      <div class="top-actions">
+        <button class="iconbtn" id="reloadButton" type="button" title="Reload" aria-label="Reload">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+        </button>
+        <button class="iconbtn" id="themeButton" type="button" title="Theme" aria-label="Theme">
+          <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        </button>
+      </div>
+    </header>
+
+    <aside class="panel left">
+      <div class="resizer" id="leftResizer" role="separator" aria-orientation="vertical" aria-label="Resize left panel"></div>
+      <div class="panel-head">
+        <div class="panel-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+          Workspace
+        </div>
+      </div>
+      <div class="panel-body">
+        <section class="section">
+          <div class="section-head">
+            <div class="section-title"><span class="dot" style="background:var(--cyan)"></span>Workspaces</div>
+            <span class="count" id="workspaceCount">0</span>
+          </div>
+          <div class="workspace-list" id="workspaceList"></div>
+        </section>
+        <section class="section">
+          <div class="section-head">
+            <div class="section-title"><span class="dot" style="background:var(--blue)"></span>Focus</div>
+          </div>
+          <div class="kv" id="focusKv"></div>
+        </section>
+        <section class="section">
+          <div class="section-head">
+            <div class="section-title"><span class="dot" style="background:var(--purple)"></span>Pathways</div>
+            <span class="count" id="pathwayCount">0</span>
+          </div>
+          <div class="pathway-list" id="pathwayList"></div>
+        </section>
+        <section class="section">
+          <div class="section-head">
+            <div class="section-title"><span class="dot" style="background:var(--green)"></span>Mechanism</div>
+          </div>
+          <div class="fact-list" id="mechanismList"></div>
+        </section>
+      </div>
+    </aside>
+
+    <main class="graph-area">
+      <div class="graph-toolbar">
+        <div class="legend" id="legend"></div>
+        <div class="graph-stats">
+          <span id="graphStats">0 nodes</span>
+          <div class="graph-controls">
+            <button class="iconbtn" id="zoomOut" type="button" title="Zoom out" aria-label="Zoom out">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+            <span class="zoom-readout" id="zoomReadout">100%</span>
+            <button class="iconbtn" id="zoomIn" type="button" title="Zoom in" aria-label="Zoom in">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+            <button class="iconbtn" id="zoomFit" type="button" title="Fit" aria-label="Fit">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V3h4M21 7V3h-4M3 17v4h4M21 17v4h-4"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="graph-wrap" id="graphWrap">
+        <svg class="graph-svg" id="graphSvg" role="img" aria-label="TS workspace graph">
+          <defs>
+            <marker id="arrowBranch" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+              <path d="M 0 0 L 8 4 L 0 8 z" fill="var(--line-strong)"></path>
+            </marker>
+            <marker id="arrowBacktrack" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+              <path d="M 0 0 L 8 4 L 0 8 z" fill="var(--red)"></path>
+            </marker>
+          </defs>
+          <g id="viewport"></g>
+        </svg>
+      </div>
+    </main>
+
+    <aside class="panel right">
+      <div class="resizer" id="rightResizer" role="separator" aria-orientation="vertical" aria-label="Resize right panel"></div>
+      <div class="panel-head">
+        <div class="panel-title">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+          Node
+        </div>
+      </div>
+      <div class="panel-body" id="nodeDetail">
+        <div class="node-head" id="nodeHead"></div>
+        <div class="tabs" id="nodeTabs"></div>
+        <div class="detail" id="detailBody"></div>
+      </div>
+    </aside>
+  </div>
+
   <script>
-    const state = { workspaces: [], currentId: null };
+    const NODE_W = 260;
+    const NODE_H = 94;
+    const X_GAP = 92;
+    const Y_GAP = 34;
+    const tabs = ["summary", "closure", "evidence", "json"];
+    const state = {
+      workspaces: [],
+      currentId: "",
+      view: null,
+      selectedId: "",
+      activeTab: "summary",
+      edges: [],
+      layout: { positions: {}, width: 1, height: 1 },
+      zoom: 1,
+      pan: { x: 40, y: 40 },
+      drag: null
+    };
+
+    function toneColor(tone) {
+      return ({
+        supported: "green",
+        refuted: "red",
+        active: "blue",
+        inconclusive: "amber",
+        blocked: "grey",
+        neutral: "grey"
+      })[tone || "neutral"] || "grey";
+    }
+
+    function phaseColor(phase) {
+      if (/accepted|audit/i.test(phase || "")) return "green";
+      if (/connectivity|freq|validation/i.test(phase || "")) return "blue";
+      if (/candidate|conformer|endpoint/i.test(phase || "")) return "cyan";
+      if (/pathway|preflight/i.test(phase || "")) return "purple";
+      return "grey";
+    }
+
+    async function getJson(path) {
+      const response = await fetch(path, { cache: "no-store" });
+      const text = await response.text();
+      let payload = {};
+      try { payload = JSON.parse(text); } catch {
+        throw new Error(text.slice(0, 220) || response.statusText);
+      }
+      if (!response.ok || payload.error) throw new Error(payload.error || response.statusText);
+      return payload;
+    }
 
     async function loadWorkspaces() {
-      const res = await fetch('/api/workspaces');
-      const data = await res.json();
-      state.workspaces = data.workspaces || [];
-      const select = document.getElementById('workspaceSelect');
-      select.innerHTML = '';
-      for (const row of state.workspaces) {
-        const option = document.createElement('option');
-        option.value = row.workspace_id;
-        option.textContent = row.label || row.source_root;
-        select.appendChild(option);
-      }
-      if (!state.currentId && state.workspaces.length) state.currentId = state.workspaces[0].workspace_id;
-      if (state.currentId) select.value = state.currentId;
+      const payload = await getJson("/api/workspaces");
+      state.workspaces = payload.workspaces || [];
+      const urlId = new URL(location.href).searchParams.get("workspace") || "";
+      const storedId = localStorage.getItem("ts-web-workspace") || "";
+      const known = new Set(state.workspaces.map(row => row.workspace_id));
+      if (state.currentId && known.has(state.currentId)) return;
+      state.currentId = known.has(urlId) ? urlId : (known.has(storedId) ? storedId : (state.workspaces[0]?.workspace_id || ""));
     }
 
     async function loadCurrent() {
       if (!state.currentId) {
-        renderEmpty();
+        state.view = null;
+        renderAll();
         return;
       }
-      const res = await fetch(`/api/workspace?id=${encodeURIComponent(state.currentId)}`);
-      const data = await res.json();
-      if (data.error) throw new Error(data.error);
-      render(data.view);
+      const payload = await getJson(`/api/workspace?id=${encodeURIComponent(state.currentId)}`);
+      state.view = payload.view || null;
+      const ids = new Set((state.view?.nodes || []).map(node => node.node_id));
+      const focus = state.view?.focus?.current_node || "";
+      if (!ids.has(state.selectedId)) state.selectedId = ids.has(focus) ? focus : (state.view?.nodes?.[0]?.node_id || "");
+      localStorage.setItem("ts-web-workspace", state.currentId);
+      const url = new URL(location.href);
+      url.searchParams.set("workspace", state.currentId);
+      history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
+      renderAll();
+      fitGraph();
     }
 
-    function render(view) {
-      document.getElementById('sourceRoot').textContent = view.source_root || '';
-      renderSummary(view);
-      renderNodes(view.nodes || []);
-      renderBacktracks(view.backtrack_edges || []);
-      document.getElementById('raw').textContent = JSON.stringify(view, null, 2);
+    function renderAll() {
+      renderWorkspaceSelectors();
+      renderLeftPanel();
+      state.edges = buildEdges(state.view);
+      layoutGraph();
+      renderLegend();
+      renderGraph();
+      renderNodeDetail();
     }
 
-    function renderSummary(view) {
-      const rows = [
-        ['Valid', view.valid ? 'yes' : 'no'],
-        ['Nodes', (view.nodes || []).length],
-        ['Evidence', (view.evidence || []).length],
-        ['Accepted TS', ((view.focus || {}).accepted_ts_refs || []).length],
+    function renderWorkspaceSelectors() {
+      const current = state.workspaces.find(row => row.workspace_id === state.currentId);
+      document.getElementById("workspaceChipLabel").textContent = current?.label || current?.workspace_id || "No workspace";
+      document.getElementById("workspaceChipMeta").textContent = current ? shortPath(current.source_root) : "";
+      document.getElementById("workspaceCount").textContent = String(state.workspaces.length);
+
+      const rows = state.workspaces.map(row => workspaceRowHtml(row)).join("");
+      document.getElementById("workspaceList").innerHTML = rows || `<div class="empty">No workspace registered.</div>`;
+      document.getElementById("workspacePopover").innerHTML = rows || `<div class="empty">No workspace registered.</div>`;
+      document.querySelectorAll("[data-workspace-id]").forEach(element => {
+        element.addEventListener("click", () => switchWorkspace(element.dataset.workspaceId));
+      });
+    }
+
+    function workspaceRowHtml(row) {
+      const selected = row.workspace_id === state.currentId ? "true" : "false";
+      return `<button class="workspace-row" type="button" data-workspace-id="${escapeAttr(row.workspace_id)}" aria-current="${selected}">
+        <span class="row-title">${escapeHtml(row.label || row.workspace_id)}</span>
+        <span class="chip cyan">${escapeHtml(dateLabel(row.registered_at))}</span>
+        <span class="row-meta">${escapeHtml(shortPath(row.source_root || ""))}</span>
+      </button>`;
+    }
+
+    function renderLeftPanel() {
+      const view = state.view;
+      if (!view) {
+        renderKv("focusKv", {});
+        document.getElementById("pathwayCount").textContent = "0";
+        document.getElementById("pathwayList").innerHTML = `<div class="empty">No pathway data.</div>`;
+        document.getElementById("mechanismList").innerHTML = `<div class="empty">No mechanism data.</div>`;
+        return;
+      }
+      const focus = view.focus || {};
+      renderKv("focusKv", {
+        valid: view.valid ? "yes" : "no",
+        current: focus.current_node || "-",
+        pathway: focus.focus_pathway_id || "-",
+        nodes: String((view.nodes || []).length),
+        evidence: String((view.evidence || []).length),
+        accepted: String((focus.accepted_ts_refs || []).length)
+      });
+      renderPathways(view.pathways || []);
+      renderMechanism(view.mechanism || {});
+    }
+
+    function renderPathways(pathways) {
+      document.getElementById("pathwayCount").textContent = String(pathways.length);
+      document.getElementById("pathwayList").innerHTML = pathways.length ? pathways.map(pathway => {
+        const status = pathway.status || "unknown";
+        const color = status === "active" ? "blue" : (status === "refuted" ? "red" : (status === "accepted" ? "green" : "grey"));
+        const steps = Array.isArray(pathway.steps) ? `${pathway.steps.length} steps` : "0 steps";
+        return `<div class="pathway-row">
+          <span class="row-title">${escapeHtml(pathway.label || pathway.pathway_id || "pathway")}</span>
+          <span class="chip ${color}">${escapeHtml(status)}</span>
+          <span class="row-meta">${escapeHtml(pathway.pattern || steps)}</span>
+        </div>`;
+      }).join("") : `<div class="empty">No pathway data.</div>`;
+    }
+
+    function renderMechanism(mechanism) {
+      const items = [
+        ...labelItems("fact", mechanism.accepted_facts || []),
+        ...labelItems("refuted", mechanism.refuted_hypotheses || []),
+        ...labelItems("open", mechanism.open_questions || [])
       ];
-      document.getElementById('summary').innerHTML = rows.map(([k, v]) => (
-        `<div class="metric"><div class="k">${escapeHtml(k)}</div><div class="v">${escapeHtml(String(v))}</div></div>`
-      )).join('');
+      document.getElementById("mechanismList").innerHTML = items.length
+        ? items.slice(0, 8).map(item => `<div class="fact">${escapeHtml(item)}</div>`).join("")
+        : `<div class="empty">No mechanism data.</div>`;
     }
 
-    function renderNodes(nodes) {
-      document.getElementById('nodes').innerHTML = nodes.map((n) => {
-        const display = n.display || {};
-        return `<article class="node ${escapeHtml(display.tone || 'neutral')}">
-          <div class="node-title">
-            <span>${escapeHtml(n.node_id || '')} · ${escapeHtml(n.phase || '')}</span>
-            <span class="badge">${escapeHtml(display.label || '')}</span>
-          </div>
-          <div class="hypothesis">${escapeHtml(n.hypothesis || '')}</div>
-          <div class="hypothesis mono">program=${escapeHtml(display.program_status || '-')} · claim=${escapeHtml(display.claim_verdict || '-')}</div>
-        </article>`;
-      }).join('') || '<div class="sub">No nodes.</div>';
+    function labelItems(label, values) {
+      return (Array.isArray(values) ? values : []).map(value => {
+        const text = typeof value === "object"
+          ? (value.hypothesis || value.summary || value.question || JSON.stringify(value))
+          : String(value);
+        return `${label}: ${text}`;
+      });
     }
 
-    function renderBacktracks(edges) {
-      document.getElementById('backtracks').innerHTML = edges.map((e) => (
-        `<div class="edge">
-          <strong>${escapeHtml(e.from_node || '')}</strong> → ${escapeHtml(e.new_branch_node || '')}
-          <div class="mono">context=${escapeHtml(e.to_node || '')} · ${escapeHtml(e.changed_variable || '')}</div>
-          <div>${escapeHtml(e.reason_code || '')}</div>
-        </div>`
-      )).join('') || '<div class="sub">No backtrack events.</div>';
+    function renderLegend() {
+      document.getElementById("legend").innerHTML = [
+        ["blue", "running"],
+        ["green", "supported"],
+        ["red", "refuted"],
+        ["amber", "inconcl."],
+        ["purple", "backtrack"]
+      ].map(([color, label]) => `<span class="chip ${color}">${label}</span>`).join("");
     }
 
-    function renderEmpty() {
-      document.getElementById('summary').innerHTML = '';
-      document.getElementById('nodes').innerHTML = '<div class="sub">No workspace registered.</div>';
-      document.getElementById('backtracks').innerHTML = '';
-      document.getElementById('raw').textContent = '';
+    function buildEdges(view) {
+      if (!view) return [];
+      const ids = new Set((view.nodes || []).map(node => node.node_id));
+      const edges = [];
+      const seen = new Set();
+      const add = (source, target, kind, payload = {}) => {
+        if (!source || !target || !ids.has(source) || !ids.has(target)) return;
+        const key = `${kind}:${source}:${target}:${payload.event_id || ""}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        edges.push({ source, target, kind, ...payload });
+      };
+      for (const edge of view.edges || []) {
+        add(edge.parent_node || edge.source || edge.from_node, edge.child_node || edge.target || edge.to_node, "branch", edge);
+      }
+      for (const node of view.nodes || []) {
+        add(node.parent_node, node.node_id, "branch", { implicit: true });
+      }
+      for (const event of view.backtrack_edges || []) {
+        add(event.from_node, event.new_branch_node || event.to_node, "backtrack", event);
+      }
+      return edges;
+    }
+
+    function layoutGraph() {
+      const nodes = state.view?.nodes || [];
+      const order = new Map(nodes.map((node, index) => [node.node_id, index]));
+      const levels = Object.fromEntries(nodes.map(node => [node.node_id, 0]));
+      const graphEdges = state.edges.filter(edge => edge.source !== edge.target);
+      if (graphEdges.length) {
+        for (let i = 0; i < nodes.length + 2; i += 1) {
+          for (const edge of graphEdges) {
+            levels[edge.target] = Math.max(levels[edge.target] || 0, (levels[edge.source] || 0) + 1);
+          }
+        }
+      } else {
+        nodes.forEach((node, index) => { levels[node.node_id] = index; });
+      }
+      const grouped = {};
+      for (const node of nodes) {
+        const level = levels[node.node_id] || 0;
+        if (!grouped[level]) grouped[level] = [];
+        grouped[level].push(node);
+      }
+      const positions = {};
+      let maxX = 0;
+      let maxY = 0;
+      Object.keys(grouped).map(Number).sort((a, b) => a - b).forEach(level => {
+        grouped[level].sort((a, b) => (order.get(a.node_id) || 0) - (order.get(b.node_id) || 0));
+        grouped[level].forEach((node, row) => {
+          const x = 48 + level * (NODE_W + X_GAP);
+          const y = 52 + row * (NODE_H + Y_GAP);
+          positions[node.node_id] = { x, y };
+          maxX = Math.max(maxX, x + NODE_W);
+          maxY = Math.max(maxY, y + NODE_H);
+        });
+      });
+      state.layout = { positions, width: maxX + 56, height: maxY + 56 };
+    }
+
+    function renderGraph() {
+      const viewport = document.getElementById("viewport");
+      viewport.innerHTML = "";
+      viewport.setAttribute("transform", `translate(${state.pan.x},${state.pan.y}) scale(${state.zoom})`);
+      const nodes = state.view?.nodes || [];
+      if (!nodes.length) {
+        const text = makeSvg("text");
+        text.setAttribute("class", "graph-empty");
+        text.setAttribute("x", 40);
+        text.setAttribute("y", 60);
+        text.textContent = "No nodes.";
+        viewport.appendChild(text);
+        document.getElementById("graphStats").textContent = "0 nodes";
+        return;
+      }
+      const lineage = selectedLineage();
+      const edgeLayer = makeSvg("g");
+      viewport.appendChild(edgeLayer);
+      for (const edge of state.edges) edgeLayer.appendChild(renderEdge(edge, lineage));
+      const nodeLayer = makeSvg("g");
+      viewport.appendChild(nodeLayer);
+      for (const node of nodes) nodeLayer.appendChild(renderNode(node, lineage));
+      document.getElementById("graphStats").textContent = `${nodes.length} nodes, ${state.edges.length} edges`;
+      document.getElementById("zoomReadout").textContent = `${Math.round(state.zoom * 100)}%`;
+    }
+
+    function selectedLineage() {
+      if (!state.selectedId) return null;
+      const linked = new Set([state.selectedId]);
+      let changed = true;
+      while (changed) {
+        changed = false;
+        for (const edge of state.edges) {
+          if (linked.has(edge.source) && !linked.has(edge.target)) { linked.add(edge.target); changed = true; }
+          if (linked.has(edge.target) && !linked.has(edge.source)) { linked.add(edge.source); changed = true; }
+        }
+      }
+      return linked;
+    }
+
+    function renderNode(node, lineage) {
+      const position = state.layout.positions[node.node_id] || { x: 0, y: 0 };
+      const display = node.display || {};
+      const tone = display.tone || "neutral";
+      const color = toneColor(tone);
+      const group = makeSvg("g");
+      const classes = ["node"];
+      if (state.selectedId === node.node_id) classes.push("selected");
+      if (lineage && !lineage.has(node.node_id)) classes.push("faded");
+      group.setAttribute("class", classes.join(" "));
+      group.setAttribute("transform", `translate(${position.x},${position.y})`);
+      group.setAttribute("tabindex", "0");
+      group.setAttribute("role", "button");
+      group.addEventListener("click", () => selectNode(node.node_id));
+      group.addEventListener("keydown", event => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          selectNode(node.node_id);
+        }
+      });
+
+      const card = makeSvg("rect");
+      card.setAttribute("class", "node-card");
+      card.setAttribute("width", NODE_W);
+      card.setAttribute("height", NODE_H);
+      card.setAttribute("rx", 8);
+      group.appendChild(card);
+
+      const stripe = makeSvg("rect");
+      stripe.setAttribute("x", 0);
+      stripe.setAttribute("y", 0);
+      stripe.setAttribute("width", 5);
+      stripe.setAttribute("height", NODE_H);
+      stripe.setAttribute("rx", 6);
+      stripe.setAttribute("fill", `var(--${color})`);
+      group.appendChild(stripe);
+
+      const phase = makeSvg("text");
+      phase.setAttribute("class", "node-stage");
+      phase.setAttribute("x", 15);
+      phase.setAttribute("y", 20);
+      phase.textContent = trimText((node.phase || "phase").replaceAll("_", " ").toUpperCase(), 30);
+      group.appendChild(phase);
+
+      const label = makeSvg("text");
+      label.setAttribute("class", "node-label");
+      label.setAttribute("x", NODE_W - 13);
+      label.setAttribute("y", 20);
+      label.setAttribute("text-anchor", "end");
+      label.setAttribute("fill", `var(--${color})`);
+      label.textContent = trimText(display.label || node.lifecycle || "unknown", 20);
+      group.appendChild(label);
+
+      const id = makeSvg("text");
+      id.setAttribute("class", "node-id");
+      id.setAttribute("x", 15);
+      id.setAttribute("y", 46);
+      id.textContent = trimText(node.node_id || "", 27);
+      group.appendChild(id);
+
+      const hypo = makeSvg("text");
+      hypo.setAttribute("class", "node-hypothesis");
+      hypo.setAttribute("x", 15);
+      hypo.setAttribute("y", 72);
+      hypo.textContent = trimText(node.hypothesis || "", 43);
+      group.appendChild(hypo);
+
+      const count = makeSvg("text");
+      count.setAttribute("class", "node-count");
+      count.setAttribute("x", NODE_W - 13);
+      count.setAttribute("y", 72);
+      count.setAttribute("text-anchor", "end");
+      count.textContent = `${(node.evidence_refs || []).length} ev`;
+      group.appendChild(count);
+
+      const title = makeSvg("title");
+      title.textContent = `${node.node_id || ""} ${node.phase || ""}`;
+      group.appendChild(title);
+      return group;
+    }
+
+    function renderEdge(edge, lineage) {
+      const source = state.layout.positions[edge.source];
+      const target = state.layout.positions[edge.target];
+      const group = makeSvg("g");
+      const classes = ["edge-group", edge.kind];
+      if (lineage && (!lineage.has(edge.source) || !lineage.has(edge.target))) classes.push("faded");
+      group.setAttribute("class", classes.join(" "));
+      if (!source || !target) return group;
+
+      const back = edge.kind === "backtrack";
+      const reverse = back && target.x <= source.x;
+      const x1 = source.x + (reverse ? 0 : NODE_W);
+      const y1 = source.y + NODE_H / 2;
+      const x2 = target.x + (reverse ? NODE_W : 0);
+      const y2 = target.y + NODE_H / 2;
+      const dx = Math.max(42, Math.abs(x2 - x1) * 0.46);
+      const direction = reverse ? -1 : 1;
+      const c1x = x1 + direction * dx;
+      const c2x = x2 - direction * dx;
+      const path = makeSvg("path");
+      path.setAttribute("class", `edge ${edge.kind}`);
+      path.setAttribute("d", `M ${x1} ${y1} C ${c1x} ${y1}, ${c2x} ${y2}, ${x2} ${y2}`);
+      path.setAttribute("marker-end", back ? "url(#arrowBacktrack)" : "url(#arrowBranch)");
+      group.appendChild(path);
+
+      for (const endpoint of [[x1, y1, "source"], [x2, y2, "target"]]) {
+        const dot = makeSvg("circle");
+        dot.setAttribute("class", `edge-dot ${endpoint[2]}`);
+        dot.setAttribute("cx", endpoint[0]);
+        dot.setAttribute("cy", endpoint[1]);
+        dot.setAttribute("r", 3.2);
+        group.appendChild(dot);
+      }
+      if (back) {
+        const label = makeSvg("text");
+        label.setAttribute("class", "edge-label");
+        label.setAttribute("x", (x1 + x2) / 2);
+        label.setAttribute("y", Math.min(y1, y2) - 10);
+        label.setAttribute("text-anchor", "middle");
+        label.textContent = trimText(edge.reason_code || edge.changed_variable || "backtrack", 28);
+        group.appendChild(label);
+      }
+      const title = makeSvg("title");
+      title.textContent = `${edge.kind}: ${edge.source} -> ${edge.target}`;
+      group.appendChild(title);
+      return group;
+    }
+
+    function renderNodeDetail() {
+      const node = (state.view?.nodes || []).find(row => row.node_id === state.selectedId);
+      const head = document.getElementById("nodeHead");
+      const tabEl = document.getElementById("nodeTabs");
+      const body = document.getElementById("detailBody");
+      if (!node) {
+        head.innerHTML = `<div class="empty">No node selected.</div>`;
+        tabEl.innerHTML = "";
+        body.innerHTML = "";
+        return;
+      }
+      const display = node.display || {};
+      const color = toneColor(display.tone);
+      head.innerHTML = `<div class="node-title-line">
+        <div class="node-title">${escapeHtml(node.node_id || "")}</div>
+        <span class="chip ${color}">${escapeHtml(display.label || node.lifecycle || "unknown")}</span>
+      </div>
+      <div class="node-subtitle">${escapeHtml(node.hypothesis || "")}</div>`;
+      tabEl.innerHTML = tabs.map(name => (
+        `<button class="tab ${state.activeTab === name ? "active" : ""}" type="button" data-tab="${name}" translate="no">${titleCase(name)}</button>`
+      )).join("");
+      tabEl.querySelectorAll("[data-tab]").forEach(button => {
+        button.addEventListener("click", () => {
+          state.activeTab = button.dataset.tab;
+          renderNodeDetail();
+        });
+      });
+      if (state.activeTab === "summary") body.innerHTML = renderSummaryTab(node);
+      if (state.activeTab === "closure") body.innerHTML = renderClosureTab(node);
+      if (state.activeTab === "evidence") body.innerHTML = renderEvidenceTab(node);
+      if (state.activeTab === "json") body.innerHTML = `<pre>${escapeHtml(JSON.stringify(node, null, 2))}</pre>`;
+    }
+
+    function renderSummaryTab(node) {
+      const display = node.display || {};
+      return `<div class="detail-block">
+        <div class="detail-title">Node</div>
+        ${kvHtml({
+          phase: node.phase || "-",
+          lifecycle: node.lifecycle || "-",
+          program: display.program_status || "-",
+          claim: display.claim_verdict || "-",
+          parent: node.parent_node || "-",
+          pathway: pathwayText(node.pathway_ref)
+        })}
+      </div>`;
+    }
+
+    function renderClosureTab(node) {
+      const closure = node.closure;
+      if (!closure) return `<div class="empty">No closure record.</div>`;
+      return `<div class="detail-block">
+        <div class="detail-title">Closure</div>
+        ${kvHtml({
+          program: closure.program_status || "-",
+          claim: closure.claim_verdict || "-",
+          closed_at: closure.closed_at || "-",
+          implication: closure.implication || "-"
+        })}
+      </div>
+      <div class="detail-block">
+        <div class="detail-title">Program</div>
+        <pre>${escapeHtml(JSON.stringify(closure.program || {}, null, 2))}</pre>
+      </div>
+      <div class="detail-block">
+        <div class="detail-title">Mechanism</div>
+        <pre>${escapeHtml(JSON.stringify(closure.mechanism || {}, null, 2))}</pre>
+      </div>
+      <div class="detail-block">
+        <div class="detail-title">Open Questions</div>
+        ${listHtml(closure.open_questions || [])}
+      </div>`;
+    }
+
+    function renderEvidenceTab(node) {
+      const refs = node.evidence_refs || [];
+      const evidence = state.view?.evidence || [];
+      const refSet = new Set(refs);
+      const matched = evidence.filter(row => refSet.has(row.evidence_id || row.id || row.ref));
+      return `<div class="detail-block">
+        <div class="detail-title">References</div>
+        ${listHtml(refs)}
+      </div>
+      <div class="detail-block">
+        <div class="detail-title">Records</div>
+        <pre>${escapeHtml(JSON.stringify(matched.length ? matched : evidence, null, 2))}</pre>
+      </div>`;
+    }
+
+    function selectNode(nodeId) {
+      state.selectedId = nodeId;
+      renderGraph();
+      renderNodeDetail();
+    }
+
+    function fitGraph() {
+      const wrap = document.getElementById("graphWrap");
+      const nodes = state.view?.nodes || [];
+      if (!nodes.length) {
+        state.zoom = 1;
+        state.pan = { x: 40, y: 40 };
+        renderGraph();
+        return;
+      }
+      const scale = Math.min(1.12, Math.max(0.35, Math.min(
+        (wrap.clientWidth - 80) / Math.max(1, state.layout.width),
+        (wrap.clientHeight - 80) / Math.max(1, state.layout.height)
+      )));
+      state.zoom = Number.isFinite(scale) ? scale : 1;
+      state.pan = {
+        x: Math.max(22, (wrap.clientWidth - state.layout.width * state.zoom) / 2),
+        y: Math.max(22, (wrap.clientHeight - state.layout.height * state.zoom) / 2)
+      };
+      renderGraph();
+    }
+
+    function zoomBy(factor, origin = null) {
+      const wrap = document.getElementById("graphWrap");
+      const point = origin || { x: wrap.clientWidth / 2, y: wrap.clientHeight / 2 };
+      const oldZoom = state.zoom;
+      const nextZoom = Math.min(2.2, Math.max(0.25, oldZoom * factor));
+      const worldX = (point.x - state.pan.x) / oldZoom;
+      const worldY = (point.y - state.pan.y) / oldZoom;
+      state.zoom = nextZoom;
+      state.pan = { x: point.x - worldX * nextZoom, y: point.y - worldY * nextZoom };
+      renderGraph();
+    }
+
+    function switchWorkspace(id) {
+      if (!id || id === state.currentId) return;
+      state.currentId = id;
+      state.selectedId = "";
+      state.activeTab = "summary";
+      closeWorkspacePopover();
+      loadCurrent().catch(showError);
+    }
+
+    function renderKv(targetId, values) {
+      document.getElementById(targetId).innerHTML = kvHtml(values);
+    }
+
+    function kvHtml(values) {
+      const entries = Object.entries(values || {});
+      return entries.length ? entries.map(([key, value]) => (
+        `<div class="k">${escapeHtml(key)}</div><div class="v">${escapeHtml(String(value ?? "-"))}</div>`
+      )).join("") : `<div class="empty">No data.</div>`;
+    }
+
+    function listHtml(values) {
+      const arr = Array.isArray(values) ? values : [];
+      return arr.length
+        ? `<div class="fact-list">${arr.map(value => `<div class="fact">${escapeHtml(typeof value === "object" ? JSON.stringify(value) : String(value))}</div>`).join("")}</div>`
+        : `<div class="empty">No data.</div>`;
+    }
+
+    function pathwayText(pathway) {
+      if (!pathway || typeof pathway !== "object") return "-";
+      return [pathway.pathway_id, pathway.step_id].filter(Boolean).join(" / ") || "-";
+    }
+
+    function shortPath(path) {
+      if (!path) return "";
+      const bits = String(path).split("/").filter(Boolean);
+      if (bits.length <= 3) return path;
+      return `.../${bits.slice(-3).join("/")}`;
+    }
+
+    function dateLabel(value) {
+      if (!value) return "registered";
+      const date = new Date(value);
+      if (Number.isNaN(date.getTime())) return "registered";
+      return date.toLocaleDateString(undefined, { month: "short", day: "2-digit" });
+    }
+
+    function titleCase(value) {
+      return String(value).replace(/\b\w/g, char => char.toUpperCase());
+    }
+
+    function trimText(value, max) {
+      const text = String(value || "");
+      return text.length <= max ? text : `${text.slice(0, Math.max(0, max - 1))}...`;
     }
 
     function escapeHtml(value) {
-      return value.replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+      return String(value).replace(/[&<>"']/g, char => ({
+        "&": "&amp;",
+        "<": "&lt;",
+        ">": "&gt;",
+        '"': "&quot;",
+        "'": "&#39;"
+      })[char]);
     }
 
-    document.getElementById('workspaceSelect').addEventListener('change', (event) => {
-      state.currentId = event.target.value;
-      loadCurrent().catch((err) => alert(err.message));
-    });
-    document.getElementById('reloadButton').addEventListener('click', () => loadCurrent().catch((err) => alert(err.message)));
+    function escapeAttr(value) {
+      return escapeHtml(value).replace(/`/g, "&#96;");
+    }
 
-    loadWorkspaces().then(loadCurrent).catch((err) => {
-      renderEmpty();
-      document.getElementById('raw').textContent = err.message;
+    function makeSvg(tag) {
+      return document.createElementNS("http://www.w3.org/2000/svg", tag);
+    }
+
+    function toggleWorkspacePopover() {
+      const pop = document.getElementById("workspacePopover");
+      const open = !pop.classList.contains("open");
+      pop.classList.toggle("open", open);
+      document.getElementById("workspaceChip").setAttribute("aria-expanded", String(open));
+    }
+
+    function closeWorkspacePopover() {
+      document.getElementById("workspacePopover").classList.remove("open");
+      document.getElementById("workspaceChip").setAttribute("aria-expanded", "false");
+    }
+
+    function showError(error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const toast = document.createElement("div");
+      toast.className = "toast";
+      toast.textContent = message;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 4200);
+    }
+
+    function applyTheme() {
+      const saved = localStorage.getItem("ts-web-theme");
+      if (saved === "dark" || saved === "light") document.documentElement.dataset.theme = saved;
+      updateThemeIcon();
+    }
+
+    function toggleTheme() {
+      const next = document.documentElement.dataset.theme === "dark" ? "light" : "dark";
+      document.documentElement.dataset.theme = next;
+      localStorage.setItem("ts-web-theme", next);
+      updateThemeIcon();
+      renderGraph();
+    }
+
+    function updateThemeIcon() {
+      const dark = document.documentElement.dataset.theme === "dark";
+      document.getElementById("themeIcon").innerHTML = dark
+        ? `<circle cx="12" cy="12" r="4"/><path d="M12 2 v 2 M12 20 v 2 M4.93 4.93 l1.41 1.41 M17.66 17.66 l1.41 1.41 M2 12 h2 M20 12 h2 M4.93 19.07 l1.41 -1.41 M17.66 6.34 l1.41 -1.41"/>`
+        : `<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>`;
+    }
+
+    function setupResize(handleId, cssVar, min, max) {
+      const handle = document.getElementById(handleId);
+      const saved = localStorage.getItem(`ts-web-${cssVar}`);
+      if (saved) document.documentElement.style.setProperty(cssVar, saved);
+      handle.addEventListener("pointerdown", event => {
+        event.preventDefault();
+        handle.setPointerCapture(event.pointerId);
+        handle.classList.add("dragging");
+        document.body.classList.add("resizing");
+        const startX = event.clientX;
+        const startValue = parseFloat(getComputedStyle(document.documentElement).getPropertyValue(cssVar));
+        const move = moveEvent => {
+          const delta = cssVar === "--left-w" ? moveEvent.clientX - startX : startX - moveEvent.clientX;
+          const value = Math.min(max, Math.max(min, startValue + delta));
+          const px = `${value}px`;
+          document.documentElement.style.setProperty(cssVar, px);
+          localStorage.setItem(`ts-web-${cssVar}`, px);
+          fitGraph();
+        };
+        const up = upEvent => {
+          handle.releasePointerCapture(upEvent.pointerId);
+          handle.classList.remove("dragging");
+          document.body.classList.remove("resizing");
+          window.removeEventListener("pointermove", move);
+          window.removeEventListener("pointerup", up);
+        };
+        window.addEventListener("pointermove", move);
+        window.addEventListener("pointerup", up);
+      });
+    }
+
+    function bindGraphInteractions() {
+      const wrap = document.getElementById("graphWrap");
+      wrap.addEventListener("pointerdown", event => {
+        if (event.target.closest && event.target.closest(".node")) return;
+        wrap.setPointerCapture(event.pointerId);
+        wrap.classList.add("dragging");
+        state.drag = { x: event.clientX, y: event.clientY, pan: { ...state.pan } };
+      });
+      wrap.addEventListener("pointermove", event => {
+        if (!state.drag) return;
+        state.pan = {
+          x: state.drag.pan.x + event.clientX - state.drag.x,
+          y: state.drag.pan.y + event.clientY - state.drag.y
+        };
+        renderGraph();
+      });
+      wrap.addEventListener("pointerup", event => {
+        if (!state.drag) return;
+        wrap.releasePointerCapture(event.pointerId);
+        wrap.classList.remove("dragging");
+        state.drag = null;
+      });
+      wrap.addEventListener("wheel", event => {
+        event.preventDefault();
+        const rect = wrap.getBoundingClientRect();
+        zoomBy(event.deltaY < 0 ? 1.08 : 0.92, { x: event.clientX - rect.left, y: event.clientY - rect.top });
+      }, { passive: false });
+    }
+
+    document.getElementById("workspaceChip").addEventListener("click", toggleWorkspacePopover);
+    document.addEventListener("click", event => {
+      if (!event.target.closest(".top-center")) closeWorkspacePopover();
     });
+    document.getElementById("reloadButton").addEventListener("click", () => loadWorkspaces().then(loadCurrent).catch(showError));
+    document.getElementById("themeButton").addEventListener("click", toggleTheme);
+    document.getElementById("zoomIn").addEventListener("click", () => zoomBy(1.16));
+    document.getElementById("zoomOut").addEventListener("click", () => zoomBy(0.86));
+    document.getElementById("zoomFit").addEventListener("click", fitGraph);
+    window.addEventListener("resize", () => fitGraph());
+
+    applyTheme();
+    setupResize("leftResizer", "--left-w", 240, 580);
+    setupResize("rightResizer", "--right-w", 320, 760);
+    bindGraphInteractions();
+    loadWorkspaces().then(loadCurrent).catch(showError);
   </script>
 </body>
 </html>
