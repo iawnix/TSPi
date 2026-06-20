@@ -54,6 +54,7 @@ def explorer_job_payload(
     root = Path(source_root).resolve()
     manifest = _read_json(root / "manifest.json")
     mechanism_model = _read_json(root / "mechanism_model.json")
+    pathway_model = _read_json(root / "pathway_model.json")
     view = normalize_workspace(root, label=label)
     graph = explorer_graph_payload_from_view(view)
     return {
@@ -63,7 +64,9 @@ def explorer_job_payload(
         "mechanism": _explorer_mechanism(mechanism_model),
         "evidence_summary": graph["evidence_summary"],
         "graph": graph,
-        "workspace": explorer_workspace_summary(workspace or {}, view=view, manifest=manifest),
+        "workspace": explorer_workspace_summary(
+            workspace or {}, view=view, manifest=manifest, pathway_model=pathway_model
+        ),
         "read_only": True,
     }
 
@@ -73,13 +76,17 @@ def explorer_workspace_summary(
     *,
     view: dict[str, Any] | None = None,
     manifest: dict[str, Any] | None = None,
+    pathway_model: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Return one workspace row in the shape used by the explorer UI."""
 
     source_root = row.get("source_root") or row.get("source") or ""
     label = row.get("label") or row.get("name") or (Path(source_root).name if source_root else "")
     workspace_id = row.get("workspace_id") or row.get("id") or ""
-    manifest = manifest or (_read_json(Path(source_root) / "manifest.json") if source_root else {})
+    if manifest is None:
+        manifest = _read_json(Path(source_root) / "manifest.json") if source_root else {}
+    if pathway_model is None:
+        pathway_model = _read_json(Path(source_root) / "pathway_model.json") if source_root else {}
     accepted_refs = _list(manifest.get("accepted_ts_refs"))
     focus = view.get("focus", {}) if isinstance(view, dict) else {}
     return {
@@ -93,10 +100,55 @@ def explorer_workspace_summary(
         "system": manifest.get("system") or manifest.get("system_slug") or Path(source_root).name,
         "charge": manifest.get("charge", ""),
         "multiplicity": manifest.get("multiplicity", ""),
-        "claim_state": "accepted_ts" if accepted_refs else "searching",
+        "claim_state": _claim_state(accepted_refs, pathway_model),
         "accepted_ts": ", ".join(str(item) for item in accepted_refs),
         "focus_node": focus.get("current_node", ""),
     }
+
+
+def _claim_state(accepted_refs: list[Any], pathway_model: dict[str, Any]) -> str:
+    """Authoritative workspace claim state. UI must NOT re-derive."""
+
+    focus_id = pathway_model.get("focus_pathway_id") if isinstance(pathway_model, dict) else None
+    pathways = _list(pathway_model.get("pathways") if isinstance(pathway_model, dict) else None)
+    focus = next(
+        (p for p in pathways if isinstance(p, dict) and p.get("pathway_id") == focus_id),
+        None,
+    )
+    statuses = {p.get("status") for p in pathways if isinstance(p, dict)}
+    focus_status = focus.get("status") if isinstance(focus, dict) else None
+    if focus_status in {"accepted", "complete"}:
+        return "pathway_complete"
+    if focus_status == "supported":
+        if _is_complete_pathway(focus):
+            return "pathway_complete"
+        if accepted_refs:
+            return "accepted_ts"
+        return "pathway_partial"
+    if focus_status in {"active", "proposed"}:
+        return "pathway_hypothesis"
+    if focus_status in {"refuted", "superseded"}:
+        # If only refuted/superseded exist, treat as rejected; else still searching.
+        if statuses and statuses.issubset({"refuted", "superseded"}):
+            return "pathway_rejected"
+    if accepted_refs:
+        return "accepted_ts"
+    return "searching"
+
+
+def _is_complete_pathway(pathway: Any) -> bool:
+    if not isinstance(pathway, dict):
+        return False
+    steps = [step for step in _list(pathway.get("steps")) if isinstance(step, dict)]
+    if not steps:
+        return False
+    supported = [step for step in steps if step.get("status") in {"supported", "accepted", "complete"}]
+    if len(supported) != len(steps):
+        return False
+    if len(steps) > 1:
+        return True
+    step_id = str(steps[0].get("step_id") or "")
+    return "pathway" in step_id
 
 
 def explorer_graph_payload(source_root: str | Path, *, label: str | None = None) -> dict[str, Any]:
@@ -192,9 +244,11 @@ def _normalize_node(root: Path, row: dict[str, Any]) -> dict[str, Any]:
     node_id = row.get("node_id")
     detail = _read_json(root / "nodes" / str(node_id) / "node.json") if node_id else {}
     lifecycle = detail.get("lifecycle") or row.get("lifecycle")
-    closure = detail.get("closure")
-    claim_verdict = row.get("claim_verdict") or (closure or {}).get("claim_verdict")
-    program_status = row.get("program_status") or (closure or {}).get("program_status")
+    closure = detail.get("closure") or {}
+    # closure is the authoritative source per SKILL.md; tree row is only a fallback
+    # when node.json is missing or hasn't been closed yet.
+    claim_verdict = closure.get("claim_verdict") or row.get("claim_verdict")
+    program_status = closure.get("program_status") or row.get("program_status")
     return {
         "node_id": node_id,
         "parent_node": detail.get("parent_node", row.get("parent_node")),
@@ -203,7 +257,7 @@ def _normalize_node(root: Path, row: dict[str, Any]) -> dict[str, Any]:
         "hypothesis": detail.get("hypothesis", row.get("hypothesis")),
         "pathway_ref": detail.get("pathway_ref"),
         "evidence_refs": detail.get("evidence_refs", []),
-        "closure": closure,
+        "closure": closure or None,
         "display": {
             "label": _display_label(lifecycle, claim_verdict),
             "tone": _display_tone(lifecycle, claim_verdict, program_status),
@@ -324,6 +378,9 @@ def _explorer_events(backtrack_events: list[Any]) -> list[dict[str, Any]]:
 
 
 def _explorer_evidence(records: list[Any]) -> dict[str, Any]:
+    # Single source of truth for evidence vocabulary: the presentation table.
+    # Anything not in the table falls back to "grey" so unknown states still render.
+    vocab = _explorer_presentation()["evidence_state"]
     normalized: list[dict[str, Any]] = []
     by_kind: dict[str, int] = {}
     by_state: dict[str, int] = {}
@@ -332,14 +389,15 @@ def _explorer_evidence(records: list[Any]) -> dict[str, Any]:
             continue
         kind = str(record.get("kind") or "unknown")
         state = str(record.get("evidence_tier") or record.get("role") or "recorded")
+        entry = vocab.get(state) or {}
         by_kind[kind] = by_kind.get(kind, 0) + 1
         by_state[state] = by_state.get(state, 0) + 1
         normalized.append(
             {
                 **record,
                 "evidence_state": state,
-                "evidence_label": state.replace("_", " "),
-                "evidence_color": "green" if state in {"local_parse", "final"} else "grey",
+                "evidence_label": entry.get("label") or state.replace("_", " "),
+                "evidence_color": entry.get("color") or "grey",
                 "claim": record.get("summary") or record.get("claim") or "",
                 "source": record.get("path") or record.get("source") or "",
             }

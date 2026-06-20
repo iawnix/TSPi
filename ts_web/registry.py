@@ -43,6 +43,20 @@ def register_workspace(source_root: str | Path, state_dir: str | Path, label: st
     return row
 
 
+def register_workspaces(
+    source_roots: list[str | Path],
+    state_dir: str | Path,
+    labels: list[str] | None = None,
+) -> list[dict[str, str]]:
+    labels = labels or []
+    if len(labels) > len(source_roots):
+        raise ValueError("more labels than source roots")
+    return [
+        register_workspace(source, state_dir, labels[index] if index < len(labels) else None)
+        for index, source in enumerate(source_roots)
+    ]
+
+
 def list_workspaces(state_dir: str | Path) -> list[dict[str, str]]:
     state = ensure_state_dir(state_dir)
     registry_path = state / "workspaces.json"

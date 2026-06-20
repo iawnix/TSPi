@@ -94,6 +94,8 @@ def _make_handler(state_dir: Path):
                     self._send_json(_read_workspace_file(row, _first(query.get("path")) or ""))
                 else:
                     self._send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
+            except ValueError as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             except Exception as exc:  # noqa: BLE001
                 self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
 

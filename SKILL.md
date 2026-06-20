@@ -26,9 +26,13 @@ decision JSON.
 - `ts_remote`: generic staging, submission, polling, fetch, and kill helpers.
   Remote code does not interpret chemistry.
 - `ts_web`: read-only explorer support. UI state must be separate from the
-  source workspace. Start it with `python scripts/ts_web.py serve --state-dir
-  <state> --host 0.0.0.0 --port 8766`, optionally adding `--source-root <root>`
-  to register a workspace before serving.
+  source workspace. Web only renders — every label, color, and `claim_state`
+  comes from the backend; the UI keeps no vocabulary of its own. Start it with
+  `python scripts/ts_web.py serve --state-dir <state> --port 8766`. Pass
+  `--source-root <root>` (repeat for multiple workspaces) and matching
+  `--label <name>` to register on startup. Default bind is `0.0.0.0` for
+  LAN-visible TS monitoring. Manage the registry with
+  `python scripts/ts_web.py register|list|remove --state-dir <state> ...`.
 - `ts_report`: final conclusion assembly from validated workspace evidence.
 
 ## Public Control Plane

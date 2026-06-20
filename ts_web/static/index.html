@@ -1456,19 +1456,11 @@ async function loadWorkspaceData() {
    Workspace UI
    ============================================================ */
 /* Workspace claim_state label/color come from graph.presentation.workspace_state,
-   the same single source as node_state. Keep no private vocabulary here. */
+   the same single source as node_state. The backend's explorer_workspace_summary
+   is the only place that decides which key applies; do not re-derive here. */
 function pathwayStatusForWorkspace(ws) {
-  const key = ws?.claim_state || (ws?.accepted_ts ? "accepted_ts" : "searching");
-  return { label: presLabel("workspace_state", key, key || "unknown"), color: presColor("workspace_state", key) };
-}
-
-function workspaceClaimStateForJob(manifest, graph, workspace) {
-  if (workspace?.claim_state) return workspace.claim_state;
-  const pathway = graph?.pathway || {};
-  const active = pathway.active_pathway || {};
-  if (pathway.mode === "multi_step" && active.status) return `pathway_${active.status}`;
-  const acceptedNodes = Array.isArray(graph.accepted_nodes) ? graph.accepted_nodes : [];
-  return (manifest.current_accepted_ts || graph.accepted_ts || acceptedNodes.length) ? "accepted_ts" : "searching";
+  const key = ws?.claim_state || "searching";
+  return { label: presLabel("workspace_state", key, key), color: presColor("workspace_state", key) };
 }
 
 function renderWorkspaceChip() {
@@ -1553,11 +1545,10 @@ function renderSidebars() {
   const manifest = state.job.manifest || {};
   const mechanism = state.job.mechanism || {};
   const graph = state.job.graph || {};
-  const acceptedNodes = Array.isArray(graph.accepted_nodes) ? graph.accepted_nodes : [];
-  const acceptedTs = manifest.current_accepted_ts || graph.accepted_ts || acceptedNodes[0] || "";
-  const claimState = workspaceClaimStateForJob(manifest, graph, state.job.workspace || {});
+  const workspace = state.job.workspace || {};
+  const acceptedTs = workspace.accepted_ts || graph.accepted_ts || "";
+  const claimState = workspace.claim_state || "searching";
 
-  const ws = state.workspaces.find(w => w.id === state.workspaceId);
   renderWorkspaceChip();
   renderWorkspacePanel();
 
