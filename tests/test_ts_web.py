@@ -77,6 +77,9 @@ def test_web_server_api_is_read_only(tmp_path: Path) -> None:
         node = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/node/n001")
         assert node["node"]["program_status"] == "completed"
         assert node["markdown"]["decision_card"]
+        assert "## Program" in node["markdown"]["reflection"]
+        assert "Frequency job completed." in node["markdown"]["reflection"]
+        assert "## Mechanism" in node["markdown"]["reflection"]
         preview = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/file?path=nodes/n001/node.json")
         assert preview["path"] == "nodes/n001/node.json"
         html = _get_text(host, port, "/")

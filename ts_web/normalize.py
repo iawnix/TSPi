@@ -151,7 +151,7 @@ def explorer_node_payload(source_root: str | Path, node_id: str, *, label: str |
     markdown = {
         "hypothesis": _read_text(node_dir / "hypothesis.md") or str(merged.get("hypothesis") or ""),
         "decision_card": _read_text(node_dir / "decision_card.md") or _read_text(node_dir / "decision.md"),
-        "reflection": _read_text(node_dir / "reflection.md"),
+        "reflection": _read_text(node_dir / "reflection.md") or _render_closure_reflection(merged),
         "report": _read_text(node_dir / "report.md"),
     }
     return {
@@ -487,6 +487,52 @@ def _closure_line(closure: dict[str, Any], program_status: Any, claim_verdict: A
         if value:
             return str(value)
     return " / ".join(str(item) for item in (program_status, claim_verdict) if item)
+
+
+def _render_closure_reflection(node: dict[str, Any]) -> str:
+    closure = node.get("closure") if isinstance(node.get("closure"), dict) else {}
+    if not closure:
+        return ""
+    lines = ["# Closure Reflection", ""]
+    status = [
+        ("phase", node.get("phase") or node.get("stage")),
+        ("lifecycle", node.get("lifecycle")),
+        ("program_status", closure.get("program_status")),
+        ("claim_verdict", closure.get("claim_verdict")),
+        ("closed_at", closure.get("closed_at") or node.get("ended_at")),
+        ("reason_code", closure.get("reason_code") or node.get("reason_code")),
+    ]
+    for key, value in status:
+        if value:
+            lines.append(f"- {key}: {value}")
+    _append_closure_section(lines, "Program", closure.get("program"))
+    _append_closure_section(lines, "Mechanism", closure.get("mechanism"))
+    if closure.get("implication"):
+        lines.extend(["", "## Implication", "", str(closure["implication"])])
+    open_questions = _list(closure.get("open_questions"))
+    if open_questions:
+        lines.extend(["", "## Open Questions", ""])
+        lines.extend(f"- {item}" for item in open_questions)
+    return "\n".join(lines).strip() + "\n"
+
+
+def _append_closure_section(lines: list[str], title: str, section: Any) -> None:
+    if not isinstance(section, dict):
+        return
+    summary = section.get("summary")
+    facts = _list(section.get("facts"))
+    evidence_refs = _list(section.get("evidence_refs"))
+    if not summary and not facts and not evidence_refs:
+        return
+    lines.extend(["", f"## {title}", ""])
+    if summary:
+        lines.append(str(summary))
+    if facts:
+        lines.extend(["", "Facts:"])
+        lines.extend(f"- {item}" for item in facts)
+    if evidence_refs:
+        lines.extend(["", "Evidence refs:"])
+        lines.extend(f"- {item}" for item in evidence_refs)
 
 
 def _read_json(path: Path) -> dict[str, Any]:
