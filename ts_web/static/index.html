@@ -315,7 +315,10 @@
       align-items: baseline;
     }
     .ws-item:hover { background: var(--surface-2); }
-    .ws-item[aria-selected="true"] { background: var(--accent-soft); }
+    .ws-item[aria-selected="true"] {
+      background: transparent;
+      box-shadow: inset 3px 0 0 var(--accent);
+    }
     .ws-item-name {
       font-weight: 550; color: var(--text);
       grid-column: 1;
@@ -351,8 +354,8 @@
       border-color: var(--border-strong);
     }
     .workspace-card[aria-current="true"] {
-      background: var(--accent-soft);
       border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+      box-shadow: inset 3px 0 0 var(--accent);
     }
     .workspace-card-name {
       font-weight: 560;
@@ -383,7 +386,11 @@
       transition: background var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
     }
     .iconbtn:hover { background: var(--surface-2); color: var(--text); }
-    .iconbtn[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); }
+    .iconbtn[aria-pressed="true"] {
+      background: transparent;
+      border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+      color: var(--accent);
+    }
 
     .btn {
       display: inline-flex; align-items: center; gap: 6px;
@@ -396,8 +403,16 @@
       transition: background var(--t-fast) var(--ease), border-color var(--t-fast) var(--ease);
     }
     .btn:hover { background: var(--surface-2); border-color: var(--border-strong); }
-    .btn-primary { background: var(--accent); color: var(--accent-fg); border-color: transparent; }
-    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-primary {
+      background: transparent;
+      color: var(--accent);
+      border-color: color-mix(in srgb, var(--accent) 50%, var(--border));
+    }
+    .btn-primary:hover {
+      background: transparent;
+      color: var(--accent-hover);
+      border-color: var(--accent-hover);
+    }
 
     .kbd {
       display: inline-flex; align-items: center;
@@ -556,9 +571,9 @@
       height: 22px; padding: 0 8px;
       border-radius: var(--r-pill);
       font-size: 11.5px; font-weight: 550;
-      background: var(--grey-soft);
+      background: transparent;
       color: var(--text-2);
-      border: 1px solid transparent;
+      border: 1px solid var(--border);
       white-space: nowrap;
     }
     .chip::before {
@@ -572,14 +587,14 @@
     /* Chip palette is keyed by the server-side color token emitted by the
        normalizer (`ts-explorer-graph`); the UI never maps chemistry states
        to colors itself. */
-    .chip[data-color="grey"]   { background: var(--grey-soft);   color: var(--grey); }
-    .chip[data-color="cyan"]   { background: var(--cyan-soft);   color: var(--cyan); }
-    .chip[data-color="accent"] { background: var(--accent-soft); color: var(--accent); }
-    .chip[data-color="purple"] { background: var(--purple-soft); color: var(--purple); }
-    .chip[data-color="green"]  { background: var(--green-soft);  color: var(--green); }
-    .chip[data-color="red"]    { background: var(--red-soft);    color: var(--red); }
-    .chip[data-color="amber"]  { background: var(--amber-soft);  color: var(--amber); }
-    .chip[data-color="blue"]   { background: var(--accent-soft); color: var(--accent); }
+    .chip[data-color="grey"]   { color: var(--grey);   border-color: color-mix(in srgb, var(--grey) 35%, var(--border)); }
+    .chip[data-color="cyan"]   { color: var(--cyan);   border-color: color-mix(in srgb, var(--cyan) 35%, var(--border)); }
+    .chip[data-color="accent"] { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
+    .chip[data-color="purple"] { color: var(--purple); border-color: color-mix(in srgb, var(--purple) 35%, var(--border)); }
+    .chip[data-color="green"]  { color: var(--green);  border-color: color-mix(in srgb, var(--green) 35%, var(--border)); }
+    .chip[data-color="red"]    { color: var(--red);    border-color: color-mix(in srgb, var(--red) 35%, var(--border)); }
+    .chip[data-color="amber"]  { color: var(--amber);  border-color: color-mix(in srgb, var(--amber) 35%, var(--border)); }
+    .chip[data-color="blue"]   { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--border)); }
 
     /* =========================================================
        Main graph area
@@ -601,6 +616,20 @@
     }
     .legend { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
     .legend .chip { cursor: default; }
+    .symbol-legend {
+      gap: 5px;
+      color: var(--purple);
+    }
+    .legend-glyph {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 14px;
+      height: 14px;
+      font-size: 13px;
+      line-height: 1;
+      color: currentColor;
+    }
     .graph-stats {
       display: flex; align-items: center; gap: 14px;
       color: var(--text-3); font-size: 12px;
@@ -769,7 +798,7 @@
     .node:hover .node-icon,
     .node.selected .node-icon { stroke: var(--text); }
     .node.selected .node-stripe { width: 6px; }
-    .backtrack-badge { fill: var(--surface-1); stroke: currentColor; stroke-width: 1; }
+    .backtrack-badge { fill: none; stroke: currentColor; stroke-width: 1; }
     .backtrack-badge-icon {
       stroke: currentColor;
       stroke-width: 1.8;
@@ -1663,11 +1692,16 @@ function renderLegend() {
   const legend = document.getElementById("graphLegend");
   if (!legend) return;
   const vocab = state.graph?.presentation?.card_status || {};
+  const eventRoles = state.graph?.presentation?.event_role || {};
+  const backtrackSource = eventRoles.backtrack_source || {};
   const keys = ["success", "error", "running", "ready", "stopped", "unknown"];
-  legend.innerHTML = keys
+  const statusChips = keys
     .filter(key => vocab[key])
     .map(key => `<span class="chip" data-color="${escapeHtml(vocab[key].color || "grey")}">${escapeHtml(vocab[key].label || key)}</span>`)
-    .join("");
+  const backtrackLegend = `<span class="chip no-dot symbol-legend" data-color="${escapeHtml(backtrackSource.color || "purple")}" title="Backtrack marker on a node">
+      <span class="legend-glyph" aria-hidden="true">↺</span>${escapeHtml(backtrackSource.label || "backtracked from")}
+    </span>`;
+  legend.innerHTML = [...statusChips, backtrackLegend].join("");
 }
 
 function renderGraph() {
@@ -1864,6 +1898,7 @@ function buildNode(n, p, lineage) {
     const bx = Math.min(NODE_W - 22, statusTextW + 6);
     const bg = makeSvg("g");
     bg.setAttribute("transform", `translate(${bx}, 60)`);
+    bg.setAttribute("aria-label", `${n.backtrack_badge.label || "Backtrack"}: ${n.backtrack_badge.event_ids.join(", ")}`);
     bg.style.color = COLOR_VAR[n.backtrack_badge.color] || COLOR_VAR[presColor("event_role", n.backtrack_badge.role)] || "var(--purple)";
     bg.innerHTML = `
       <circle class="backtrack-badge" cx="7" cy="7" r="7"/>

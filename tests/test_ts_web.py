@@ -57,6 +57,18 @@ def test_backtrack_visual_semantics_are_distinct_from_refuted_status() -> None:
     assert graph["presentation"]["event_role"]["backtrack_source"]["color"] == "purple"
 
 
+def test_static_ui_uses_outline_status_chips_and_explains_backtrack_symbol() -> None:
+    html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
+
+    assert ".chip[data-color=\"red\"]" in html
+    assert ".chip[data-color=\"red\"]    { color: var(--red);" in html
+    assert ".chip[data-color=\"red\"]    { background:" not in html
+    assert ".backtrack-badge { fill: none;" in html
+    assert "symbol-legend" in html
+    assert "↺" in html
+    assert "backtracked from" in html
+
+
 def test_backtrack_edges_and_events_dedupe_when_target_is_replacement(tmp_path: Path) -> None:
     workspace = tmp_path / "dedupe-backtrack"
     shutil.copytree(ROOT / "fixtures" / "single_to_multistep_backtrack", workspace)
