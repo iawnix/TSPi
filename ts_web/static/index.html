@@ -523,33 +523,36 @@
     }
     .edge {
       fill: none;
-      stroke-width: 2;
+      stroke: currentColor;
+      stroke-width: 1.4;
       stroke-linecap: round;
       stroke-linejoin: round;
+      transition: stroke-width 120ms cubic-bezier(.2, 0, 0, 1), opacity 120ms cubic-bezier(.2, 0, 0, 1);
     }
-    .edge.branch { stroke: var(--line-strong); }
-    .edge.backtrack {
-      stroke: var(--red);
-      stroke-dasharray: 7 7;
-    }
+    .edge.backtrack,
+    .edge.backtrack_replacement,
+    .edge.backtrack_decision { stroke-dasharray: 5 4; opacity: 0.72; }
     .edge.faded { opacity: 0.22; }
     .edge-dot.source {
-      fill: var(--panel);
+      fill: var(--bg);
       stroke: currentColor;
-      stroke-width: 2;
+      stroke-width: 1.6;
     }
     .edge-dot.target {
       fill: currentColor;
-      stroke: none;
+      stroke: var(--bg);
+      stroke-width: 0.8;
     }
     .edge-group.branch { color: var(--line-strong); }
-    .edge-group.backtrack { color: var(--red); }
+    .edge-group.backtrack,
+    .edge-group.backtrack_replacement,
+    .edge-group.backtrack_decision { color: var(--red); }
     .edge-group.lineage { color: var(--blue); }
-    .edge-label {
-      fill: var(--red);
-      font: 700 10px var(--font-sans);
-      letter-spacing: 0.04em;
-    }
+    .edge-group.backtrack.lineage,
+    .edge-group.backtrack_replacement.lineage,
+    .edge-group.backtrack_decision.lineage { color: var(--red); }
+    .edge-group:hover .edge { stroke-width: 2; opacity: 1; }
+    .edge-group:hover .edge-dot.source { stroke-width: 2; }
     .minimap {
       position: absolute;
       right: 14px;
@@ -599,16 +602,15 @@
     }
     .tabs {
       display: flex;
+      flex-wrap: wrap;
       gap: 2px;
       border-bottom: 1px solid var(--line);
       margin-bottom: 12px;
-      overflow-x: auto;
-      scrollbar-width: none;
+      overflow: visible;
     }
-    .tabs::-webkit-scrollbar { display: none; }
     .tab {
-      height: 32px;
-      padding: 0 9px;
+      min-height: 30px;
+      padding: 6px 8px;
       border: 0;
       border-bottom: 2px solid transparent;
       background: transparent;
@@ -1063,7 +1065,12 @@
         add(node.parent_node, node.node_id, "branch", { implicit: true });
       }
       for (const event of view.backtrack_edges || []) {
-        add(event.from_node, event.new_branch_node || event.to_node, "backtrack", event);
+        if (event.to_node && event.to_node !== event.from_node) {
+          add(event.from_node, event.to_node, "backtrack", event);
+        }
+        if (event.new_branch_node) {
+          add(event.from_node, event.new_branch_node, "backtrack_replacement", event);
+        }
       }
       return edges;
     }
@@ -1243,14 +1250,25 @@
       group.setAttribute("class", classes.join(" "));
       if (!source || !target) return group;
 
-      const back = edge.kind === "backtrack";
-      const reverse = back && target.x <= source.x;
-      const x1 = source.x + (reverse ? 0 : NODE_W);
-      const y1 = source.y + NODE_H / 2;
-      const x2 = target.x + (reverse ? NODE_W : 0);
-      const y2 = target.y + NODE_H / 2;
+      const back = edge.kind && edge.kind.startsWith("backtrack");
+      const pad = 5;
+      let x1;
+      let y1;
+      let x2;
+      let y2;
+      if (back) {
+        x1 = source.x - pad;
+        y1 = source.y + NODE_H / 2;
+        x2 = target.x + NODE_W + pad;
+        y2 = target.y + NODE_H / 2;
+      } else {
+        x1 = source.x + NODE_W + pad;
+        y1 = source.y + NODE_H / 2;
+        x2 = target.x - pad;
+        y2 = target.y + NODE_H / 2;
+      }
       const dx = Math.max(42, Math.abs(x2 - x1) * 0.46);
-      const direction = reverse ? -1 : 1;
+      const direction = back ? -1 : 1;
       const c1x = x1 + direction * dx;
       const c2x = x2 - direction * dx;
       const path = makeSvg("path");
@@ -1266,17 +1284,13 @@
         dot.setAttribute("r", 3.2);
         group.appendChild(dot);
       }
-      if (back) {
-        const label = makeSvg("text");
-        label.setAttribute("class", "edge-label");
-        label.setAttribute("x", (x1 + x2) / 2);
-        label.setAttribute("y", Math.min(y1, y2) - 10);
-        label.setAttribute("text-anchor", "middle");
-        label.textContent = trimText(edge.reason_code || edge.changed_variable || "backtrack", 28);
-        group.appendChild(label);
-      }
       const title = makeSvg("title");
-      title.textContent = `${edge.kind}: ${edge.source} -> ${edge.target}`;
+      title.textContent = [
+        `${edge.kind}: ${edge.source} -> ${edge.target}`,
+        edge.event_state ? `state=${edge.event_state}` : "",
+        edge.reason_code ? `reason=${edge.reason_code}` : "",
+        edge.changed_variable ? `changed=${edge.changed_variable}` : ""
+      ].filter(Boolean).join(" | ");
       group.appendChild(title);
       return group;
     }
