@@ -30,7 +30,14 @@ def register_workspace(source_root: str | Path, state_dir: str | Path, label: st
         "registered_at": now_iso(),
     }
     rows = registry.setdefault("workspaces", [])
-    rows[:] = [item for item in rows if item.get("workspace_id") != row["workspace_id"]]
+    rows[:] = [
+        item
+        for item in rows
+        if item.get("workspace_id") != row["workspace_id"]
+        and item.get("id") != row["workspace_id"]
+        and item.get("source_root") != row["source_root"]
+        and item.get("source") != row["source_root"]
+    ]
     rows.append(row)
     write_json(registry_path, registry)
     return row
@@ -46,7 +53,7 @@ def list_workspaces(state_dir: str | Path) -> list[dict[str, str]]:
 
 def find_workspace(state_dir: str | Path, workspace_id: str) -> dict[str, str] | None:
     for row in list_workspaces(state_dir):
-        if row.get("workspace_id") == workspace_id:
+        if row.get("workspace_id") == workspace_id or row.get("id") == workspace_id:
             return row
     return None
 

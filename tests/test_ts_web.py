@@ -66,14 +66,24 @@ def test_web_server_api_is_read_only(tmp_path: Path) -> None:
         assert health == {"ok": True}
         workspaces = _get_json(host, port, "/api/workspaces")
         assert workspaces["workspaces"][0]["workspace_id"] == row["workspace_id"]
+        assert workspaces["workspaces"][0]["id"] == row["workspace_id"]
+        assert workspaces["default_workspace"] == row["workspace_id"]
         payload = _get_json(host, port, f"/api/workspace?id={row['workspace_id']}")
         assert payload["view"]["label"] == "backtrack"
         assert payload["view"]["backtrack_edges"][0]["new_branch_node"] == "n002"
+        job = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/job")
+        assert job["graph"]["nodes"][0]["claim_verdict"] == "refuted"
+        assert job["graph"]["edges"][0]["kind"] == "backtrack_replacement"
+        node = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/node/n001")
+        assert node["node"]["program_status"] == "completed"
+        assert node["markdown"]["decision_card"]
+        preview = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/file?path=nodes/n001/node.json")
+        assert preview["path"] == "nodes/n001/node.json"
         html = _get_text(host, port, "/")
-        assert "TS Workspace Explorer" in html
+        assert "TS Hypothesis Explorer" in html
         assert 'id="workspaceList"' in html
         assert 'id="graphSvg"' in html
-        assert 'id="nodeDetail"' in html
+        assert 'id="detail"' in html
         assert 'id="toggleLeft"' in html
         assert 'id="toggleRight"' in html
         assert 'id="zoomReset"' in html
@@ -83,6 +93,29 @@ def test_web_server_api_is_read_only(tmp_path: Path) -> None:
         server.server_close()
         thread.join(timeout=2)
     assert _relative_files(source) == before
+
+
+def test_web_server_accepts_existing_registry_row_shape(tmp_path: Path) -> None:
+    source = ROOT / "fixtures" / "single_step_success"
+    state = tmp_path / "web-state"
+    state.mkdir()
+    (state / "workspaces.json").write_text(
+        json.dumps({"workspaces": [{"id": "single-step", "name": "single", "source": str(source)}]}),
+        encoding="utf-8",
+    )
+    server = create_server("127.0.0.1", 0, state)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        workspaces = _get_json(host, port, "/api/workspaces")
+        assert workspaces["workspaces"][0]["id"] == "single-step"
+        job = _get_json(host, port, "/api/workspace/single-step/job")
+        assert job["graph"]["nodes"][0]["claim_verdict"] == "supported"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
 
 
 def test_ts_web_cli_register(tmp_path: Path) -> None:
