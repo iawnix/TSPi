@@ -74,6 +74,10 @@ def test_web_server_api_is_read_only(tmp_path: Path) -> None:
         assert 'id="workspaceList"' in html
         assert 'id="graphSvg"' in html
         assert 'id="nodeDetail"' in html
+        assert 'id="toggleLeft"' in html
+        assert 'id="toggleRight"' in html
+        assert 'id="zoomReset"' in html
+        assert 'id="minimapSvg"' in html
     finally:
         server.shutdown()
         server.server_close()

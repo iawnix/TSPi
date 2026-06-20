@@ -102,6 +102,9 @@
         var(--bg);
       background-size: 28px 28px;
     }
+    .app.left-collapsed { grid-template-columns: 44px minmax(420px, 1fr) var(--right-w); }
+    .app.right-collapsed { grid-template-columns: var(--left-w) minmax(420px, 1fr) 44px; }
+    .app.left-collapsed.right-collapsed { grid-template-columns: 44px minmax(420px, 1fr) 44px; }
 
     .topbar {
       grid-area: top;
@@ -257,6 +260,17 @@
       overflow: auto;
       padding: 14px;
     }
+    .app.left-collapsed .panel.left .panel-head,
+    .app.right-collapsed .panel.right .panel-head {
+      padding: 0 5px;
+      justify-content: center;
+    }
+    .app.left-collapsed .panel.left .panel-title,
+    .app.left-collapsed .panel.left .panel-body,
+    .app.right-collapsed .panel.right .panel-title,
+    .app.right-collapsed .panel.right .panel-body {
+      display: none;
+    }
     .resizer {
       position: absolute;
       top: 0;
@@ -278,6 +292,8 @@
     }
     .resizer:hover::after, .resizer.dragging::after { background: var(--blue); }
     body.resizing { cursor: col-resize; user-select: none; }
+    .app.left-collapsed .panel.left .resizer,
+    .app.right-collapsed .panel.right .resizer { display: none; }
 
     .section { margin-bottom: 18px; }
     .section:last-child { margin-bottom: 0; }
@@ -466,6 +482,7 @@
       width: 100%;
       height: 100%;
       display: block;
+      touch-action: none;
     }
     .graph-empty {
       fill: var(--text-3);
@@ -527,10 +544,32 @@
     }
     .edge-group.branch { color: var(--line-strong); }
     .edge-group.backtrack { color: var(--red); }
+    .edge-group.lineage { color: var(--blue); }
     .edge-label {
       fill: var(--red);
       font: 700 10px var(--font-sans);
       letter-spacing: 0.04em;
+    }
+    .minimap {
+      position: absolute;
+      right: 14px;
+      bottom: 14px;
+      width: 178px;
+      height: 118px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--panel);
+      box-shadow: var(--shadow);
+      opacity: 0.92;
+      pointer-events: none;
+    }
+    .minimap svg { width: 100%; height: 100%; display: block; }
+    .minimap .vp {
+      fill: var(--blue-soft);
+      stroke: var(--blue);
+      stroke-width: 1.4;
+      opacity: 0.86;
     }
 
     .node-head {
@@ -564,7 +603,9 @@
       border-bottom: 1px solid var(--line);
       margin-bottom: 12px;
       overflow-x: auto;
+      scrollbar-width: none;
     }
+    .tabs::-webkit-scrollbar { display: none; }
     .tab {
       height: 32px;
       padding: 0 9px;
@@ -593,6 +634,39 @@
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.06em;
+    }
+    .summary-stack, .timeline {
+      display: grid;
+      gap: 10px;
+    }
+    .summary-card, .timeline-item {
+      padding: 10px 11px;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: var(--panel-2);
+    }
+    .summary-card.primary {
+      background: var(--panel);
+      border-color: var(--line-strong);
+    }
+    .summary-title, .timeline-action {
+      color: var(--text-3);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+    .summary-text, .timeline-text {
+      color: var(--text-2);
+      line-height: 1.55;
+      overflow-wrap: anywhere;
+    }
+    .timeline-evidence {
+      margin-top: 4px;
+      color: var(--text-3);
+      font: 11px var(--font-mono);
+      overflow-wrap: anywhere;
     }
     pre {
       margin: 0;
@@ -641,6 +715,11 @@
           "graph"
           "right";
       }
+      .app.left-collapsed,
+      .app.right-collapsed,
+      .app.left-collapsed.right-collapsed {
+        grid-template-columns: 1fr;
+      }
       .topbar { position: sticky; top: 0; }
       .brand, .top-actions { min-width: 0; }
       .brand span:last-child { display: none; }
@@ -679,13 +758,16 @@
       </div>
     </header>
 
-    <aside class="panel left">
+    <aside class="panel left" id="leftPanel">
       <div class="resizer" id="leftResizer" role="separator" aria-orientation="vertical" aria-label="Resize left panel"></div>
       <div class="panel-head">
         <div class="panel-title">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
           Workspace
         </div>
+        <button class="iconbtn" id="toggleLeft" type="button" title="Collapse" aria-label="Collapse left panel" aria-expanded="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="15 18 9 12 15 6"/></svg>
+        </button>
       </div>
       <div class="panel-body">
         <section class="section">
@@ -733,6 +815,9 @@
             <button class="iconbtn" id="zoomFit" type="button" title="Fit" aria-label="Fit">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7V3h4M21 7V3h-4M3 17v4h4M21 17v4h-4"/></svg>
             </button>
+            <button class="iconbtn" id="zoomReset" type="button" title="Reset" aria-label="Reset">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+            </button>
           </div>
         </div>
       </div>
@@ -748,16 +833,22 @@
           </defs>
           <g id="viewport"></g>
         </svg>
+        <div class="minimap" id="minimap" aria-hidden="true">
+          <svg id="minimapSvg" viewBox="0 0 1 1" preserveAspectRatio="xMidYMid meet"></svg>
+        </div>
       </div>
     </main>
 
-    <aside class="panel right">
+    <aside class="panel right" id="rightPanel">
       <div class="resizer" id="rightResizer" role="separator" aria-orientation="vertical" aria-label="Resize right panel"></div>
       <div class="panel-head">
         <div class="panel-title">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
           Node
         </div>
+        <button class="iconbtn" id="toggleRight" type="button" title="Collapse" aria-label="Collapse right panel" aria-expanded="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
       </div>
       <div class="panel-body" id="nodeDetail">
         <div class="node-head" id="nodeHead"></div>
@@ -772,7 +863,15 @@
     const NODE_H = 94;
     const X_GAP = 92;
     const Y_GAP = 34;
-    const tabs = ["summary", "closure", "evidence", "json"];
+    const tabs = [
+      ["summary", "Summary"],
+      ["rationale", "Rationale"],
+      ["timeline", "Timeline"],
+      ["evidence", "Evidence"],
+      ["closure", "Closure"],
+      ["files", "Files"],
+      ["json", "JSON"]
+    ];
     const state = {
       workspaces: [],
       currentId: "",
@@ -783,7 +882,8 @@
       layout: { positions: {}, width: 1, height: 1 },
       zoom: 1,
       pan: { x: 40, y: 40 },
-      drag: null
+      drag: null,
+      suppressClick: false
     };
 
     function toneColor(tone) {
@@ -1017,6 +1117,7 @@
         text.textContent = "No nodes.";
         viewport.appendChild(text);
         document.getElementById("graphStats").textContent = "0 nodes";
+        renderMinimap();
         return;
       }
       const lineage = selectedLineage();
@@ -1028,6 +1129,7 @@
       for (const node of nodes) nodeLayer.appendChild(renderNode(node, lineage));
       document.getElementById("graphStats").textContent = `${nodes.length} nodes, ${state.edges.length} edges`;
       document.getElementById("zoomReadout").textContent = `${Math.round(state.zoom * 100)}%`;
+      renderMinimap();
     }
 
     function selectedLineage() {
@@ -1055,13 +1157,17 @@
       if (lineage && !lineage.has(node.node_id)) classes.push("faded");
       group.setAttribute("class", classes.join(" "));
       group.setAttribute("transform", `translate(${position.x},${position.y})`);
+      group.setAttribute("data-node-id", node.node_id || "");
       group.setAttribute("tabindex", "0");
       group.setAttribute("role", "button");
-      group.addEventListener("click", () => selectNode(node.node_id));
+      group.addEventListener("click", () => {
+        if (state.suppressClick) return;
+        selectNode(node.node_id, { reveal: true });
+      });
       group.addEventListener("keydown", event => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
-          selectNode(node.node_id);
+          selectNode(node.node_id, { reveal: true });
         }
       });
 
@@ -1130,7 +1236,10 @@
       const target = state.layout.positions[edge.target];
       const group = makeSvg("g");
       const classes = ["edge-group", edge.kind];
-      if (lineage && (!lineage.has(edge.source) || !lineage.has(edge.target))) classes.push("faded");
+      if (lineage) {
+        if (lineage.has(edge.source) && lineage.has(edge.target)) classes.push("lineage");
+        else classes.push("faded");
+      }
       group.setAttribute("class", classes.join(" "));
       if (!source || !target) return group;
 
@@ -1147,7 +1256,6 @@
       const path = makeSvg("path");
       path.setAttribute("class", `edge ${edge.kind}`);
       path.setAttribute("d", `M ${x1} ${y1} C ${c1x} ${y1}, ${c2x} ${y2}, ${x2} ${y2}`);
-      path.setAttribute("marker-end", back ? "url(#arrowBacktrack)" : "url(#arrowBranch)");
       group.appendChild(path);
 
       for (const endpoint of [[x1, y1, "source"], [x2, y2, "target"]]) {
@@ -1191,8 +1299,8 @@
         <span class="chip ${color}">${escapeHtml(display.label || node.lifecycle || "unknown")}</span>
       </div>
       <div class="node-subtitle">${escapeHtml(node.hypothesis || "")}</div>`;
-      tabEl.innerHTML = tabs.map(name => (
-        `<button class="tab ${state.activeTab === name ? "active" : ""}" type="button" data-tab="${name}" translate="no">${titleCase(name)}</button>`
+      tabEl.innerHTML = tabs.map(([name, label]) => (
+        `<button class="tab ${state.activeTab === name ? "active" : ""}" type="button" data-tab="${name}" translate="no">${escapeHtml(label)}</button>`
       )).join("");
       tabEl.querySelectorAll("[data-tab]").forEach(button => {
         button.addEventListener("click", () => {
@@ -1201,24 +1309,76 @@
         });
       });
       if (state.activeTab === "summary") body.innerHTML = renderSummaryTab(node);
+      if (state.activeTab === "rationale") body.innerHTML = renderRationaleTab(node);
+      if (state.activeTab === "timeline") body.innerHTML = renderTimelineTab(node);
       if (state.activeTab === "closure") body.innerHTML = renderClosureTab(node);
       if (state.activeTab === "evidence") body.innerHTML = renderEvidenceTab(node);
+      if (state.activeTab === "files") body.innerHTML = renderFilesTab(node);
       if (state.activeTab === "json") body.innerHTML = `<pre>${escapeHtml(JSON.stringify(node, null, 2))}</pre>`;
     }
 
     function renderSummaryTab(node) {
       const display = node.display || {};
-      return `<div class="detail-block">
-        <div class="detail-title">Node</div>
-        ${kvHtml({
+      return `<div class="summary-stack">
+        <div class="summary-card primary">
+          <div class="summary-title">Hypothesis</div>
+          <div class="summary-text">${escapeHtml(node.hypothesis || "No hypothesis recorded.")}</div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-title">Node</div>
+          <div class="kv">${kvHtml({
           phase: node.phase || "-",
           lifecycle: node.lifecycle || "-",
           program: display.program_status || "-",
           claim: display.claim_verdict || "-",
           parent: node.parent_node || "-",
           pathway: pathwayText(node.pathway_ref)
-        })}
+          })}</div>
+        </div>
       </div>`;
+    }
+
+    function renderRationaleTab(node) {
+      const closure = node.closure || {};
+      const pieces = [
+        ["Hypothesis", node.hypothesis || ""],
+        ["Pathway Reference", pathwayText(node.pathway_ref)],
+        ["Program Summary", closure.program?.summary || ""],
+        ["Mechanism Summary", closure.mechanism?.summary || ""],
+        ["Implication", closure.implication || ""]
+      ].filter(([, value]) => value && value !== "-");
+      return pieces.length ? `<div class="summary-stack">${pieces.map(([title, value]) => `
+        <div class="summary-card">
+          <div class="summary-title">${escapeHtml(title)}</div>
+          <div class="summary-text">${escapeHtml(value)}</div>
+        </div>`).join("")}</div>` : `<div class="empty">No rationale data.</div>`;
+    }
+
+    function renderTimelineTab(node) {
+      const nodeId = node.node_id;
+      const events = [];
+      if (node.closure?.closed_at) {
+        events.push({
+          action: "closed",
+          text: `${node.closure.program_status || "-"} / ${node.closure.claim_verdict || "-"}`,
+          evidence: node.evidence_refs || []
+        });
+      }
+      for (const event of state.view?.backtrack_edges || []) {
+        if (event.from_node === nodeId || event.to_node === nodeId || event.new_branch_node === nodeId) {
+          events.push({
+            action: "backtrack",
+            text: `${event.from_node || "-"} -> ${event.new_branch_node || event.to_node || "-"} (${event.reason_code || event.changed_variable || "-"})`,
+            evidence: event.evidence_refs || []
+          });
+        }
+      }
+      return events.length ? `<div class="timeline">${events.map(event => `
+        <div class="timeline-item">
+          <div class="timeline-action">${escapeHtml(event.action)}</div>
+          <div class="timeline-text">${escapeHtml(event.text)}</div>
+          ${event.evidence.length ? `<div class="timeline-evidence">${escapeHtml(event.evidence.join(", "))}</div>` : ""}
+        </div>`).join("")}</div>` : `<div class="empty">No timeline data.</div>`;
     }
 
     function renderClosureTab(node) {
@@ -1226,12 +1386,12 @@
       if (!closure) return `<div class="empty">No closure record.</div>`;
       return `<div class="detail-block">
         <div class="detail-title">Closure</div>
-        ${kvHtml({
+        <div class="kv">${kvHtml({
           program: closure.program_status || "-",
           claim: closure.claim_verdict || "-",
           closed_at: closure.closed_at || "-",
           implication: closure.implication || "-"
-        })}
+        })}</div>
       </div>
       <div class="detail-block">
         <div class="detail-title">Program</div>
@@ -1262,8 +1422,29 @@
       </div>`;
     }
 
-    function selectNode(nodeId) {
+    function renderFilesTab(node) {
+      const root = state.view?.source_root || "";
+      const entries = [
+        root && `workspace: ${root}`,
+        root && node.node_id && `node: ${root}/nodes/${node.node_id}`
+      ].filter(Boolean);
+      return entries.length ? `<div class="summary-stack">${entries.map(item => `
+        <div class="summary-card">
+          <div class="summary-title">Path</div>
+          <div class="summary-text mono">${escapeHtml(item)}</div>
+        </div>`).join("")}</div>` : `<div class="empty">No file data.</div>`;
+    }
+
+    function selectNode(nodeId, options = {}) {
       state.selectedId = nodeId;
+      if (options.reveal) setPanelCollapsed("right", false);
+      renderGraph();
+      renderNodeDetail();
+    }
+
+    function clearSelection() {
+      if (!state.selectedId) return;
+      state.selectedId = "";
       renderGraph();
       renderNodeDetail();
     }
@@ -1286,7 +1467,13 @@
         x: Math.max(22, (wrap.clientWidth - state.layout.width * state.zoom) / 2),
         y: Math.max(22, (wrap.clientHeight - state.layout.height * state.zoom) / 2)
       };
-      renderGraph();
+      applyTransform();
+    }
+
+    function resetGraph() {
+      state.zoom = 1;
+      state.pan = { x: 40, y: 40 };
+      applyTransform();
     }
 
     function zoomBy(factor, origin = null) {
@@ -1298,7 +1485,43 @@
       const worldY = (point.y - state.pan.y) / oldZoom;
       state.zoom = nextZoom;
       state.pan = { x: point.x - worldX * nextZoom, y: point.y - worldY * nextZoom };
-      renderGraph();
+      applyTransform();
+    }
+
+    function applyTransform() {
+      document.getElementById("viewport").setAttribute("transform", `translate(${state.pan.x},${state.pan.y}) scale(${state.zoom})`);
+      document.getElementById("zoomReadout").textContent = `${Math.round(state.zoom * 100)}%`;
+      renderMinimap();
+    }
+
+    function renderMinimap() {
+      const svg = document.getElementById("minimapSvg");
+      if (!svg) return;
+      const width = Math.max(1, state.layout.width || 1);
+      const height = Math.max(1, state.layout.height || 1);
+      svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+      svg.innerHTML = "";
+      for (const node of state.view?.nodes || []) {
+        const position = state.layout.positions[node.node_id];
+        if (!position) continue;
+        const rect = makeSvg("rect");
+        rect.setAttribute("x", position.x);
+        rect.setAttribute("y", position.y);
+        rect.setAttribute("width", NODE_W);
+        rect.setAttribute("height", NODE_H);
+        rect.setAttribute("rx", 7);
+        rect.setAttribute("fill", `var(--${toneColor(node.display?.tone)})`);
+        rect.setAttribute("opacity", "0.58");
+        svg.appendChild(rect);
+      }
+      const wrap = document.getElementById("graphWrap");
+      const viewport = makeSvg("rect");
+      viewport.setAttribute("class", "vp");
+      viewport.setAttribute("x", -state.pan.x / Math.max(state.zoom, 0.001));
+      viewport.setAttribute("y", -state.pan.y / Math.max(state.zoom, 0.001));
+      viewport.setAttribute("width", wrap.clientWidth / Math.max(state.zoom, 0.001));
+      viewport.setAttribute("height", wrap.clientHeight / Math.max(state.zoom, 0.001));
+      svg.appendChild(viewport);
     }
 
     function switchWorkspace(id) {
@@ -1395,6 +1618,21 @@
       setTimeout(() => toast.remove(), 4200);
     }
 
+    function setPanelCollapsed(side, collapsed) {
+      const app = document.getElementById("app");
+      const key = side === "left" ? "left-collapsed" : "right-collapsed";
+      app.classList.toggle(key, collapsed);
+      const button = document.getElementById(side === "left" ? "toggleLeft" : "toggleRight");
+      if (button) button.setAttribute("aria-expanded", String(!collapsed));
+      localStorage.setItem(`ts-web-${key}`, collapsed ? "1" : "0");
+      setTimeout(() => fitGraph(), 0);
+    }
+
+    function initPanelCollapse() {
+      setPanelCollapsed("left", localStorage.getItem("ts-web-left-collapsed") === "1");
+      setPanelCollapsed("right", localStorage.getItem("ts-web-right-collapsed") === "1");
+    }
+
     function applyTheme() {
       const saved = localStorage.getItem("ts-web-theme");
       if (saved === "dark" || saved === "light") document.documentElement.dataset.theme = saved;
@@ -1450,30 +1688,86 @@
     function bindGraphInteractions() {
       const wrap = document.getElementById("graphWrap");
       wrap.addEventListener("pointerdown", event => {
-        if (event.target.closest && event.target.closest(".node")) return;
+        if (event.button !== 0) return;
+        const nodeElement = event.target.closest?.("[data-node-id]");
         wrap.setPointerCapture(event.pointerId);
         wrap.classList.add("dragging");
-        state.drag = { x: event.clientX, y: event.clientY, pan: { ...state.pan } };
+        state.drag = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          pan: { ...state.pan },
+          nodeId: nodeElement?.getAttribute("data-node-id") || "",
+          moved: false
+        };
       });
       wrap.addEventListener("pointermove", event => {
-        if (!state.drag) return;
-        state.pan = {
-          x: state.drag.pan.x + event.clientX - state.drag.x,
-          y: state.drag.pan.y + event.clientY - state.drag.y
-        };
-        renderGraph();
+        if (!state.drag || state.drag.pointerId !== event.pointerId) return;
+        const dx = event.clientX - state.drag.startX;
+        const dy = event.clientY - state.drag.startY;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) state.drag.moved = true;
+        if (!state.drag.moved) return;
+        state.pan = { x: state.drag.pan.x + dx, y: state.drag.pan.y + dy };
+        applyTransform();
       });
       wrap.addEventListener("pointerup", event => {
-        if (!state.drag) return;
+        if (!state.drag || state.drag.pointerId !== event.pointerId) return;
+        const clickedNode = state.drag.nodeId;
+        const moved = state.drag.moved;
         wrap.releasePointerCapture(event.pointerId);
         wrap.classList.remove("dragging");
         state.drag = null;
+        if (moved) {
+          state.suppressClick = true;
+          setTimeout(() => { state.suppressClick = false; }, 0);
+          return;
+        }
+        if (clickedNode) selectNode(clickedNode, { reveal: true });
+      });
+      wrap.addEventListener("pointercancel", () => {
+        state.drag = null;
+        wrap.classList.remove("dragging");
       });
       wrap.addEventListener("wheel", event => {
         event.preventDefault();
-        const rect = wrap.getBoundingClientRect();
-        zoomBy(event.deltaY < 0 ? 1.08 : 0.92, { x: event.clientX - rect.left, y: event.clientY - rect.top });
+        if (event.ctrlKey || event.metaKey || event.shiftKey) {
+          const rect = wrap.getBoundingClientRect();
+          zoomBy(Math.exp(-event.deltaY * 0.002), { x: event.clientX - rect.left, y: event.clientY - rect.top });
+          return;
+        }
+        state.pan = { x: state.pan.x - event.deltaX, y: state.pan.y - event.deltaY };
+        applyTransform();
       }, { passive: false });
+      new ResizeObserver(() => renderMinimap()).observe(wrap);
+    }
+
+    function bindKeyboardShortcuts() {
+      document.addEventListener("keydown", event => {
+        const target = event.target;
+        if (target && /input|textarea|select/i.test(target.tagName || "")) return;
+        if (event.key === "r" || event.key === "R") {
+          event.preventDefault();
+          loadWorkspaces().then(loadCurrent).catch(showError);
+        } else if (event.key === "t" || event.key === "T") {
+          event.preventDefault();
+          toggleTheme();
+        } else if (event.key === "f" || event.key === "F") {
+          event.preventDefault();
+          fitGraph();
+        } else if (event.key === "0") {
+          event.preventDefault();
+          resetGraph();
+        } else if (event.key === "+" || event.key === "=") {
+          event.preventDefault();
+          zoomBy(1.16);
+        } else if (event.key === "-") {
+          event.preventDefault();
+          zoomBy(0.86);
+        } else if (event.key === "Escape") {
+          closeWorkspacePopover();
+          clearSelection();
+        }
+      });
     }
 
     document.getElementById("workspaceChip").addEventListener("click", toggleWorkspacePopover);
@@ -1485,12 +1779,21 @@
     document.getElementById("zoomIn").addEventListener("click", () => zoomBy(1.16));
     document.getElementById("zoomOut").addEventListener("click", () => zoomBy(0.86));
     document.getElementById("zoomFit").addEventListener("click", fitGraph);
+    document.getElementById("zoomReset").addEventListener("click", resetGraph);
+    document.getElementById("toggleLeft").addEventListener("click", () => {
+      setPanelCollapsed("left", !document.getElementById("app").classList.contains("left-collapsed"));
+    });
+    document.getElementById("toggleRight").addEventListener("click", () => {
+      setPanelCollapsed("right", !document.getElementById("app").classList.contains("right-collapsed"));
+    });
     window.addEventListener("resize", () => fitGraph());
 
     applyTheme();
+    initPanelCollapse();
     setupResize("leftResizer", "--left-w", 240, 580);
     setupResize("rightResizer", "--right-w", 320, 760);
     bindGraphInteractions();
+    bindKeyboardShortcuts();
     loadWorkspaces().then(loadCurrent).catch(showError);
   </script>
 </body>
