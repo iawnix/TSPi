@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TS Workspace Explorer</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #1f2933;
+      --muted: #65717d;
+      --line: #d6dee6;
+      --blue: #0072b2;
+      --green: #009e73;
+      --orange: #d55e00;
+      --purple: #9b5ca5;
+      --amber: #e69f00;
+      --bg: #f7f9fb;
+      --panel: #ffffff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: Arial, Helvetica, sans-serif;
+      color: var(--ink);
+      background: var(--bg);
+    }
+    header {
+      padding: 20px 28px 14px;
+      background: var(--panel);
+      border-bottom: 1px solid var(--line);
+    }
+    h1 { margin: 0; font-size: 20px; letter-spacing: 0; }
+    .sub { margin-top: 6px; color: var(--muted); font-size: 13px; }
+    main { padding: 20px 28px 28px; display: grid; gap: 16px; }
+    .toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+    select, button {
+      font: inherit;
+      border: 1px solid var(--line);
+      background: white;
+      color: var(--ink);
+      padding: 8px 10px;
+      border-radius: 6px;
+    }
+    button { cursor: pointer; }
+    .grid {
+      display: grid;
+      grid-template-columns: minmax(0, 1.4fr) minmax(320px, 0.8fr);
+      gap: 16px;
+      align-items: start;
+    }
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      min-width: 0;
+    }
+    .panel h2 {
+      margin: 0 0 12px;
+      font-size: 14px;
+      letter-spacing: 0;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .metric {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fbfcfd;
+      min-height: 68px;
+    }
+    .metric .k { font-size: 11px; color: var(--muted); }
+    .metric .v { margin-top: 7px; font-size: 18px; font-weight: 700; }
+    .node-list { display: grid; gap: 10px; }
+    .node {
+      border: 1px solid var(--line);
+      border-left: 5px solid var(--line);
+      border-radius: 8px;
+      padding: 11px 12px;
+      background: white;
+    }
+    .node.supported { border-left-color: var(--green); }
+    .node.refuted { border-left-color: var(--orange); }
+    .node.active { border-left-color: var(--blue); }
+    .node.inconclusive { border-left-color: var(--amber); }
+    .node.blocked { border-left-color: #555; }
+    .node-title {
+      display: flex;
+      gap: 8px;
+      align-items: baseline;
+      justify-content: space-between;
+      font-size: 13px;
+      font-weight: 700;
+    }
+    .badge {
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 11px;
+      background: #eef3f7;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+    .hypothesis {
+      margin-top: 7px;
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    .mono {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 11px;
+    }
+    .edges { display: grid; gap: 8px; }
+    .edge {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      background: #fffaf4;
+      font-size: 12px;
+    }
+    .edge strong { color: var(--orange); }
+    pre {
+      max-height: 280px;
+      overflow: auto;
+      padding: 12px;
+      border-radius: 8px;
+      background: #111827;
+      color: #e5e7eb;
+      font-size: 11px;
+      line-height: 1.35;
+    }
+    @media (max-width: 980px) {
+      .grid { grid-template-columns: 1fr; }
+      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>TS Workspace Explorer</h1>
+    <div class="sub">Read-only view of transition-state search branches, evidence gates and canonical backtrack events.</div>
+  </header>
+  <main>
+    <section class="toolbar">
+      <select id="workspaceSelect" aria-label="Workspace"></select>
+      <button id="reloadButton" type="button">Reload</button>
+      <span id="sourceRoot" class="sub"></span>
+    </section>
+    <section class="summary" id="summary"></section>
+    <section class="grid">
+      <section class="panel">
+        <h2>Nodes</h2>
+        <div class="node-list" id="nodes"></div>
+      </section>
+      <aside class="panel">
+        <h2>Backtrack events</h2>
+        <div class="edges" id="backtracks"></div>
+        <h2 style="margin-top:16px;">Raw view</h2>
+        <pre id="raw"></pre>
+      </aside>
+    </section>
+  </main>
+  <script>
+    const state = { workspaces: [], currentId: null };
+
+    async function loadWorkspaces() {
+      const res = await fetch('/api/workspaces');
+      const data = await res.json();
+      state.workspaces = data.workspaces || [];
+      const select = document.getElementById('workspaceSelect');
+      select.innerHTML = '';
+      for (const row of state.workspaces) {
+        const option = document.createElement('option');
+        option.value = row.workspace_id;
+        option.textContent = row.label || row.source_root;
+        select.appendChild(option);
+      }
+      if (!state.currentId && state.workspaces.length) state.currentId = state.workspaces[0].workspace_id;
+      if (state.currentId) select.value = state.currentId;
+    }
+
+    async function loadCurrent() {
+      if (!state.currentId) {
+        renderEmpty();
+        return;
+      }
+      const res = await fetch(`/api/workspace?id=${encodeURIComponent(state.currentId)}`);
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      render(data.view);
+    }
+
+    function render(view) {
+      document.getElementById('sourceRoot').textContent = view.source_root || '';
+      renderSummary(view);
+      renderNodes(view.nodes || []);
+      renderBacktracks(view.backtrack_edges || []);
+      document.getElementById('raw').textContent = JSON.stringify(view, null, 2);
+    }
+
+    function renderSummary(view) {
+      const rows = [
+        ['Valid', view.valid ? 'yes' : 'no'],
+        ['Nodes', (view.nodes || []).length],
+        ['Evidence', (view.evidence || []).length],
+        ['Accepted TS', ((view.focus || {}).accepted_ts_refs || []).length],
+      ];
+      document.getElementById('summary').innerHTML = rows.map(([k, v]) => (
+        `<div class="metric"><div class="k">${escapeHtml(k)}</div><div class="v">${escapeHtml(String(v))}</div></div>`
+      )).join('');
+    }
+
+    function renderNodes(nodes) {
+      document.getElementById('nodes').innerHTML = nodes.map((n) => {
+        const display = n.display || {};
+        return `<article class="node ${escapeHtml(display.tone || 'neutral')}">
+          <div class="node-title">
+            <span>${escapeHtml(n.node_id || '')} · ${escapeHtml(n.phase || '')}</span>
+            <span class="badge">${escapeHtml(display.label || '')}</span>
+          </div>
+          <div class="hypothesis">${escapeHtml(n.hypothesis || '')}</div>
+          <div class="hypothesis mono">program=${escapeHtml(display.program_status || '-')} · claim=${escapeHtml(display.claim_verdict || '-')}</div>
+        </article>`;
+      }).join('') || '<div class="sub">No nodes.</div>';
+    }
+
+    function renderBacktracks(edges) {
+      document.getElementById('backtracks').innerHTML = edges.map((e) => (
+        `<div class="edge">
+          <strong>${escapeHtml(e.from_node || '')}</strong> → ${escapeHtml(e.new_branch_node || '')}
+          <div class="mono">context=${escapeHtml(e.to_node || '')} · ${escapeHtml(e.changed_variable || '')}</div>
+          <div>${escapeHtml(e.reason_code || '')}</div>
+        </div>`
+      )).join('') || '<div class="sub">No backtrack events.</div>';
+    }
+
+    function renderEmpty() {
+      document.getElementById('summary').innerHTML = '';
+      document.getElementById('nodes').innerHTML = '<div class="sub">No workspace registered.</div>';
+      document.getElementById('backtracks').innerHTML = '';
+      document.getElementById('raw').textContent = '';
+    }
+
+    function escapeHtml(value) {
+      return value.replace(/[&<>"']/g, (ch) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[ch]));
+    }
+
+    document.getElementById('workspaceSelect').addEventListener('change', (event) => {
+      state.currentId = event.target.value;
+      loadCurrent().catch((err) => alert(err.message));
+    });
+    document.getElementById('reloadButton').addEventListener('click', () => loadCurrent().catch((err) => alert(err.message)));
+
+    loadWorkspaces().then(loadCurrent).catch((err) => {
+      renderEmpty();
+      document.getElementById('raw').textContent = err.message;
+    });
+  </script>
+</body>
+</html>

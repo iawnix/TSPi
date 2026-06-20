@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Register a workspace for the read-only explorer."""
+"""Read-only workspace explorer CLI."""
 
 from __future__ import annotations
 
@@ -11,16 +11,32 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ts_web import register_workspace
+from ts_web import register_workspace, serve
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--source-root", required=True)
-    parser.add_argument("--state-dir", required=True)
-    parser.add_argument("--label")
+    parser = argparse.ArgumentParser(prog="ts_web")
+    sub = parser.add_subparsers(dest="command", required=True)
+
+    register = sub.add_parser("register")
+    register.add_argument("--source-root", required=True)
+    register.add_argument("--state-dir", required=True)
+    register.add_argument("--label")
+
+    serve_cmd = sub.add_parser("serve")
+    serve_cmd.add_argument("--state-dir", required=True)
+    serve_cmd.add_argument("--host", default="0.0.0.0")
+    serve_cmd.add_argument("--port", type=int, default=8766)
+    serve_cmd.add_argument("--source-root")
+    serve_cmd.add_argument("--label")
+
     args = parser.parse_args()
-    print(json.dumps(register_workspace(args.source_root, args.state_dir, args.label), indent=2, sort_keys=True))
+    if args.command == "register":
+        print(json.dumps(register_workspace(args.source_root, args.state_dir, args.label), indent=2, sort_keys=True))
+        return 0
+    if args.command == "serve":
+        serve(args.host, args.port, args.state_dir, source_root=args.source_root, label=args.label)
+        return 0
     return 0
 
 
