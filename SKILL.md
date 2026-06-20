@@ -22,9 +22,11 @@ decision JSON.
 - `mol_comparator`: structural comparison only. It returns metrics, a verdict,
   and uncertainty that can become evidence; it never writes a workspace.
 - `ts_backends`: local calculation adapters. Backends prepare commands and parse
-  direct artifacts; they do not set node verdicts or accepted TS facts.
+  direct artifacts; they do not set node verdicts or accepted TS facts. Gaussian
+  input construction and TS/Freq log parsing live in `ts_backends.gaussian`.
 - `ts_remote`: generic staging, submission, polling, fetch, and kill helpers.
-  Remote code does not interpret chemistry.
+  Remote code does not interpret chemistry. Gaussian remote execution lives in
+  `ts_remote.gaussian`.
 - `ts_web`: read-only explorer support. UI state must be separate from the
   source workspace. Web only renders — every label, color, and `claim_state`
   comes from the backend; the UI keeps no vocabulary of its own. Start it with
@@ -52,6 +54,14 @@ python scripts/ts_workspace.py validate_workspace --root <root>
 Except for first-time bootstrap, mutation commands must be traceable to a
 decision JSON. The mutation command validates the decision internally; a
 separate `validate_decision` call is only a preflight.
+
+Gaussian helper entrypoints are thin wrappers around those module boundaries:
+
+```bash
+python scripts/prepare_gaussian_ts_input.py --help
+python scripts/parse_gaussian_ts_result.py --help
+python scripts/run_remote_gaussian.py --help
+```
 
 Run `report_workspace` before choosing or closing a node. The report gives the
 agent the current hypothesis tree, evidence readiness, open questions, and
