@@ -9,6 +9,7 @@ from .finalizers import finalize_closed_node, validate_accepted_audit_gates
 from .io import append_jsonl, append_markdown, now_iso, read_json, sha256_json, write_json
 from .readers import report_workspace as build_report
 from .validators.decision import ContractError, validate_decision as validate_decision_dict
+from .validators.decision_context import validate_decision_for_workspace
 from .validators.workspace import REQUIRED_DIRS, REQUIRED_FILES, validate_workspace as validate_workspace_dict
 
 
@@ -62,7 +63,7 @@ def init_workspace(root: str | Path, decision: dict[str, Any] | None = None) -> 
 
 def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
     root_path = Path(root)
-    validate_decision_dict(decision)
+    validate_decision_for_workspace(root_path, decision)
     _require_initialized(root_path)
     payload = decision["payload"]
     tree = read_json(root_path / "tree.json")

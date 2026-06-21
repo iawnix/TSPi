@@ -34,8 +34,15 @@ Allowed actions:
 `start_node`, `end_node`, and `update_workspace` require a `report_ref`.
 `report_workspace` should be run before the decision is written.
 
+The public `validate_decision --root <root> --decision-file <file>` preflight
+validates both the JSON contract and workspace-context requirements. For
+example, starting a replacement branch after a terminal unresolved node must
+include `payload.backtrack`; the same check is enforced again inside
+`start_node` before any node files are written.
+
 `update_workspace` may append evidence, knowledge, or provenance. It cannot
 close a node, write a verdict, accept a TS, or rewrite a pathway.
 
-Machine authority is `ts_workspace/contracts/decision.schema.json` plus the
-Python validator.
+Machine authority is `ts_workspace/contracts/decision.schema.json`, the pure
+Python decision validator, and the workspace-aware decision preflight used by
+the public CLI.

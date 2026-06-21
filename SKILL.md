@@ -53,7 +53,9 @@ python scripts/ts_workspace.py validate_workspace --root <root>
 
 Except for first-time bootstrap, mutation commands must be traceable to a
 decision JSON. The mutation command validates the decision internally; a
-separate `validate_decision` call is only a preflight.
+separate `validate_decision` call is only a preflight. Public preflight is
+workspace-aware: it validates both the JSON shape and contextual requirements
+such as required replacement-branch `payload.backtrack` provenance.
 
 Gaussian local helper entrypoints are thin wrappers around backend boundaries:
 

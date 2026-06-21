@@ -10,6 +10,7 @@ from typing import Any
 
 from .engine import end_node, init_workspace, report_workspace, start_node, update_workspace, validate_workspace
 from .validators.decision import ContractError, validate_decision
+from .validators.decision_context import validate_decision_for_workspace
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -56,7 +57,7 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
 
     decision = _load_decision(args.decision_file)
     if command == "validate_decision":
-        validate_decision(decision)
+        validate_decision_for_workspace(args.root, decision)
         return {"valid": True, "action": decision["action"]}
     if command == "start_node":
         return start_node(args.root, decision)

@@ -85,13 +85,87 @@ def test_workspace_cli_roundtrip(tmp_path: Path) -> None:
     assert validation["valid"] is True
 
 
+def test_workspace_cli_validate_decision_rejects_missing_replacement_backtrack(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    _run("init_workspace", "--root", str(workspace))
+
+    report = _run("report_workspace", "--root", str(workspace))
+    report_ref = {"report_id": report["report_id"], "workspace_root": str(workspace)}
+
+    start_decision = _start_decision(report_ref, "n001", "connectivity_validation")
+    start_path = tmp_path / "start_n001.json"
+    start_path.write_text(json.dumps(start_decision), encoding="utf-8")
+    _run("start_node", "--root", str(workspace), "--decision-file", str(start_path))
+
+    end_decision = _end_decision(report_ref, "n001", "refuted")
+    end_path = tmp_path / "end_n001.json"
+    end_path.write_text(json.dumps(end_decision), encoding="utf-8")
+    _run("end_node", "--root", str(workspace), "--decision-file", str(end_path))
+
+    replacement_decision = _start_decision(report_ref, "n002", "candidate_generation")
+    replacement_path = tmp_path / "start_n002_missing_backtrack.json"
+    replacement_path.write_text(json.dumps(replacement_decision), encoding="utf-8")
+
+    preflight = _run_raw("validate_decision", "--root", str(workspace), "--decision-file", str(replacement_path))
+    mutation = _run_raw("start_node", "--root", str(workspace), "--decision-file", str(replacement_path))
+
+    assert preflight.returncode == 2
+    assert mutation.returncode == 2
+    assert "payload.backtrack is required" in preflight.stderr
+    assert "payload.backtrack is required" in mutation.stderr
+    assert not (workspace / "nodes" / "n002").exists()
+
+
+def _start_decision(report_ref: dict[str, str], node_id: str, phase: str) -> dict:
+    return {
+        "schema_version": "ts-decision",
+        "action": "start_node",
+        "rationale": f"Start {node_id}.",
+        "evidence_refs": [],
+        "report_ref": report_ref,
+        "payload": {
+            "node_id": node_id,
+            "phase": phase,
+            "hypothesis": f"Test {phase}.",
+            "expected_evidence": [],
+        },
+    }
+
+
+def _end_decision(report_ref: dict[str, str], node_id: str, claim_verdict: str) -> dict:
+    return {
+        "schema_version": "ts-decision",
+        "action": "end_node",
+        "rationale": f"Close {node_id}.",
+        "evidence_refs": [],
+        "report_ref": report_ref,
+        "payload": {
+            "node_id": node_id,
+            "closure": {
+                "program_status": "completed",
+                "claim_verdict": claim_verdict,
+                "program": {"summary": "Program completed.", "evidence_refs": []},
+                "mechanism": {"summary": "Claim was evaluated.", "evidence_refs": []},
+                "implication": "Open a replacement branch.",
+                "open_questions": [],
+            },
+        },
+    }
+
+
 def _run(*args: str) -> dict:
+    completed = _run_raw(*args)
+    completed.check_returncode()
+    return json.loads(completed.stdout)
+
+
+def _run_raw(*args: str) -> subprocess.CompletedProcess[str]:
     completed = subprocess.run(
         [sys.executable, str(CLI), *args],
         cwd=ROOT,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        check=True,
+        check=False,
     )
-    return json.loads(completed.stdout)
+    return completed

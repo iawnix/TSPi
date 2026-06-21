@@ -4,17 +4,38 @@ import json
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from ts_workspace import end_node, init_workspace, report_workspace, start_node, validate_workspace
+from ts_workspace.validators.decision import ContractError
+from ts_workspace.validators.decision_context import validate_decision_for_workspace
 
 
-def test_validate_workspace_requires_backtrack_for_replacement_after_terminal_refute(tmp_path: Path) -> None:
+def test_start_node_requires_backtrack_for_replacement_after_terminal_refute(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     init_workspace(workspace)
     report_ref = _report_ref(workspace)
 
     start_node(workspace, _start_decision(report_ref, node_id="n001", phase="connectivity_validation"))
     end_node(workspace, _end_decision(report_ref, "n001", "refuted"))
+    decision = _start_decision(report_ref, node_id="n002", phase="candidate_generation")
+
+    with pytest.raises(ContractError, match="payload.backtrack is required"):
+        validate_decision_for_workspace(workspace, decision)
+    with pytest.raises(ContractError, match="payload.backtrack is required"):
+        start_node(workspace, decision)
+
+    assert not (workspace / "nodes" / "n002").exists()
+
+
+def test_validate_workspace_still_detects_legacy_missing_replacement_backtrack(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    init_workspace(workspace)
+    report_ref = _report_ref(workspace)
+
+    start_node(workspace, _start_decision(report_ref, node_id="n001", phase="connectivity_validation"))
     start_node(workspace, _start_decision(report_ref, node_id="n002", phase="candidate_generation"))
+    end_node(workspace, _end_decision(report_ref, "n001", "refuted"))
 
     validation = validate_workspace(workspace)
 
