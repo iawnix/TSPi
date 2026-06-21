@@ -33,5 +33,12 @@ nodes/<node_id>/scratch/
 nodes/<node_id>/remote/
 ```
 
+Fresh endpoint-based searches should create an explicit `n000` node through
+`start_node` after `init_workspace`. Use `phase=endpoint` or `phase=preflight`
+and close it after endpoint provenance, charge/multiplicity, atom-order
+mapping, source hashes, and initial reaction-center checks are recorded.
+Candidate generation should then start at `n001` with `parent_node=n000`.
+Legacy workspaces without `n000` remain valid.
+
 The workspace validator checks required files, node JSON records, current focus,
 append-only evidence identity, and forbidden public fields.

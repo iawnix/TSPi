@@ -400,10 +400,113 @@ def test_web_mechanism_analysis_uses_latest_tree_record(tmp_path: Path) -> None:
         host, port = server.server_address
         job = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/job")
         latest = job["mechanism"]["latest_analysis"]
-        assert latest == [
+        assert latest[:1] == [
             "n999_pathway_audit / pathway_audit / supported: "
             "Latest mechanism analysis: reactant -> intermediate -> product."
         ]
+        assert any("evidence ev_conn_001 / connectivity_gate" in line for line in latest)
+        assert any("evidence ev_tsfreq_001 / tsfreq_gate" in line for line in latest)
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_web_mechanism_analysis_includes_closure_facts_and_evidence_quality(tmp_path: Path) -> None:
+    workspace = tmp_path / "mechanism-evidence"
+    init_workspace(workspace)
+    report = report_workspace(workspace)
+    report_ref = {"report_id": report["report_id"], "workspace_root": str(workspace)}
+    start_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "start_node",
+            "rationale": "Validate TS/Freq.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "node_id": "n001",
+                "phase": "tsfreq_validation",
+                "hypothesis": "The TS candidate is a first-order saddle.",
+                "expected_evidence": ["tsfreq_gate"],
+            },
+        },
+    )
+    update_workspace(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "update_workspace",
+            "rationale": "Register TS/Freq gate.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "append_evidence": {
+                    "evidence_id": "ev_tsfreq_rich",
+                    "kind": "gaussian_tsfreq_validation",
+                    "role": "tsfreq_gate",
+                    "evidence_tier": "local_parse",
+                    "node_id": "n001",
+                    "summary": "One imaginary mode matches the reaction center.",
+                    "quality": {
+                        "imaginary_frequency_count": 1,
+                        "imaginary_frequencies_cm-1": [-659.8838],
+                        "mode_verdict": "mode_matches_reaction_center",
+                        "final_reaction_center_distances_A": {"C2-C3": 2.122249, "C2-O6": 1.827943},
+                    },
+                }
+            },
+        },
+    )
+    end_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "end_node",
+            "rationale": "Close TS/Freq.",
+            "evidence_refs": ["ev_tsfreq_rich"],
+            "report_ref": report_ref,
+            "payload": {
+                "node_id": "n001",
+                "closure": {
+                    "program_status": "completed",
+                    "claim_verdict": "supported",
+                    "program": {
+                        "summary": "Gaussian completed.",
+                        "evidence_refs": ["ev_tsfreq_rich"],
+                        "facts": ["Normal Gaussian termination."],
+                    },
+                    "mechanism": {
+                        "summary": "The mode matches C2-C3/C2-O6 exchange.",
+                        "evidence_refs": ["ev_tsfreq_rich"],
+                        "facts": ["C2-C3 elongates while C2-O6 forms."],
+                    },
+                    "implication": "Run IRC next.",
+                    "open_questions": [],
+                },
+            },
+        },
+    )
+
+    view = normalize_workspace(workspace)
+    state = tmp_path / "web-state"
+    row = register_workspace(workspace, state, "mechanism")
+    server = create_server("127.0.0.1", 0, state)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        job = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/job")
+        latest = job["mechanism"]["latest_analysis"]
+        graph = explorer_graph_payload_from_view(view)
+        n001_events = [event for event in graph["events"] if event.get("node_id") == "n001"]
+
+        assert any("mechanism fact: C2-C3 elongates while C2-O6 forms." in line for line in latest)
+        assert any("program fact: Normal Gaussian termination." in line for line in latest)
+        assert any("imaginary_frequency_count=1" in line for line in latest)
+        assert any("mode_verdict=mode_matches_reaction_center" in line for line in latest)
+        assert [event["decision"] for event in n001_events] == ["start_node", "end_node"]
     finally:
         server.shutdown()
         server.server_close()

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -21,6 +22,7 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
     evidence_records = _list(evidence_registry.get("evidence"))
     nodes = [_normalize_node(root, row, evidence_records) for row in _list(tree.get("nodes"))]
     backtrack_events = _list(tree.get("backtrack_events"))
+    decision_events = _normalize_decision_events(root / "decision_log.jsonl")
     return {
         "label": label or root.name,
         "source_root": str(root),
@@ -34,6 +36,7 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         "nodes": nodes,
         "edges": _list(tree.get("edges")),
         "backtrack_edges": [_normalize_backtrack_event(event) for event in backtrack_events],
+        "decision_events": decision_events,
         "pathways": _list(pathway_model.get("pathways")),
         "evidence": evidence_records,
         "mechanism": {
@@ -177,7 +180,7 @@ def explorer_graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
     nodes = [_explorer_node(row, _list(view.get("backtrack_edges"))) for row in _list(view.get("nodes"))]
     edges = _explorer_edges(nodes, _list(view.get("edges")), _list(view.get("backtrack_edges")))
     evidence = _explorer_evidence(_list(view.get("evidence")))
-    events = _explorer_events(_list(view.get("backtrack_edges")))
+    events = _explorer_events(_list(view.get("backtrack_edges")), _list(view.get("decision_events")))
     return {
         "schema": "ts-explorer-graph",
         "nodes": nodes,
@@ -378,9 +381,22 @@ def _explorer_edges(nodes: list[dict[str, Any]], tree_edges: list[Any], backtrac
     return edges
 
 
-def _explorer_events(backtrack_events: list[Any]) -> list[dict[str, Any]]:
+def _explorer_events(backtrack_events: list[Any], decision_events: list[Any]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
+
+    def add(event: dict[str, Any]) -> None:
+        event_id = event.get("event_id")
+        node_id = event.get("node_id")
+        role = event.get("event_role") or event.get("event_type") or "event"
+        if not event_id or not node_id:
+            return
+        key = (str(event_id), str(node_id), str(role))
+        if key in seen:
+            return
+        seen.add(key)
+        out.append(event)
+
     for event in backtrack_events:
         if not isinstance(event, dict):
             continue
@@ -392,14 +408,8 @@ def _explorer_events(backtrack_events: list[Any]) -> list[dict[str, Any]]:
         if event.get("to_node") != event.get("new_branch_node"):
             role_nodes.insert(1, ("backtrack_target", event.get("to_node")))
         for role, node_id in role_nodes:
-            if not node_id:
-                continue
-            key = (str(event_id), str(node_id), role)
-            if key in seen:
-                continue
-            seen.add(key)
             display = _event_role_display(role)
-            out.append(
+            add(
                 {
                     "event_id": event_id,
                     "node_id": node_id,
@@ -412,6 +422,9 @@ def _explorer_events(backtrack_events: list[Any]) -> list[dict[str, Any]]:
                     "evidence_refs": _list(event.get("evidence_refs")),
                 }
             )
+    for event in decision_events:
+        if isinstance(event, dict):
+            add(event)
     return out
 
 
@@ -448,22 +461,21 @@ def _explorer_mechanism(mechanism_model: dict[str, Any], *, view: dict[str, Any]
     refuted_hypotheses = _list(mechanism_model.get("refuted_hypotheses"))
     open_questions = _list(mechanism_model.get("open_questions"))
     hypotheses = _list(mechanism_model.get("hypotheses"))
+    latest_records = _latest_mechanism_records(
+        {
+            "accepted_facts": accepted_facts,
+            "refuted_hypotheses": refuted_hypotheses,
+            "open_questions": open_questions,
+            "hypotheses": hypotheses,
+        },
+        view=view,
+    )
     return {
         **mechanism_model,
         "validated_facts": _mechanism_lines(accepted_facts),
         "refuted_hypotheses": _mechanism_lines(refuted_hypotheses),
         "open_questions": _mechanism_lines(open_questions),
-        "latest_analysis": _mechanism_lines(
-            _latest_mechanism_records(
-                {
-                    "accepted_facts": accepted_facts,
-                    "refuted_hypotheses": refuted_hypotheses,
-                    "open_questions": open_questions,
-                    "hypotheses": hypotheses,
-                },
-                view=view,
-            )
-        ),
+        "latest_analysis": _latest_mechanism_analysis_lines(latest_records, view=view),
     }
 
 
@@ -526,6 +538,118 @@ def _mechanism_lines(records: list[Any]) -> list[str]:
     return lines
 
 
+def _latest_mechanism_analysis_lines(records: list[Any], *, view: dict[str, Any] | None = None) -> list[str]:
+    lines = _mechanism_lines(records)
+    if not isinstance(view, dict):
+        return lines
+    node_ids = {
+        str(record.get("node_id"))
+        for record in records
+        if isinstance(record, dict) and record.get("node_id")
+    }
+    evidence_refs = _evidence_refs_for_records(records)
+    for node in _list(view.get("nodes")):
+        if not isinstance(node, dict) or str(node.get("node_id")) not in node_ids:
+            continue
+        lines.extend(_closure_fact_lines(node))
+        evidence_refs.extend(_evidence_refs_for_closure(node.get("closure")))
+    lines.extend(_evidence_analysis_lines(view, evidence_refs))
+    return _dedupe_strings(lines)
+
+
+def _closure_fact_lines(node: dict[str, Any]) -> list[str]:
+    closure = node.get("closure") if isinstance(node.get("closure"), dict) else {}
+    if not closure:
+        return []
+    node_id = node.get("node_id")
+    out: list[str] = []
+    mechanism = closure.get("mechanism") if isinstance(closure.get("mechanism"), dict) else {}
+    program = closure.get("program") if isinstance(closure.get("program"), dict) else {}
+    for fact in _list(mechanism.get("facts")):
+        out.append(f"{node_id} / mechanism fact: {fact}")
+    for fact in _list(program.get("facts")):
+        out.append(f"{node_id} / program fact: {fact}")
+    return out
+
+
+def _evidence_refs_for_records(records: list[Any]) -> list[str]:
+    refs: list[str] = []
+    for record in records:
+        if isinstance(record, dict):
+            refs.extend(str(ref) for ref in _list(record.get("evidence_refs")) if ref)
+    return refs
+
+
+def _evidence_refs_for_closure(closure: Any) -> list[str]:
+    if not isinstance(closure, dict):
+        return []
+    refs: list[str] = []
+    for key in ("program", "mechanism"):
+        section = closure.get(key)
+        if isinstance(section, dict):
+            refs.extend(str(ref) for ref in _list(section.get("evidence_refs")) if ref)
+    return refs
+
+
+def _evidence_analysis_lines(view: dict[str, Any], evidence_refs: list[str]) -> list[str]:
+    wanted = set(evidence_refs)
+    if not wanted:
+        return []
+    records = [
+        record
+        for record in _list(view.get("evidence"))
+        if isinstance(record, dict) and record.get("evidence_id") in wanted
+    ]
+    by_id = {str(record.get("evidence_id")): record for record in records}
+    lines: list[str] = []
+    for evidence_id in _dedupe([str(ref) for ref in evidence_refs if ref]):
+        record = by_id.get(evidence_id)
+        if not record:
+            continue
+        role = record.get("role") or record.get("kind") or "evidence"
+        summary = record.get("summary") or ""
+        quality = _quality_summary(record.get("quality"))
+        line = f"evidence {evidence_id} / {role}: {summary}"
+        if quality:
+            line = f"{line} | {quality}"
+        lines.append(line)
+    return lines
+
+
+def _quality_summary(quality: Any) -> str:
+    if not isinstance(quality, dict):
+        return ""
+    preferred = [
+        "imaginary_frequencies_cm-1",
+        "imaginary_frequency_count",
+        "mode_verdict",
+        "final_reaction_center_distances_A",
+        "forward_assignment",
+        "reverse_assignment",
+        "forward_irc_end_assignment",
+        "reverse_irc_end_assignment",
+        "forward_same_level_key_distance_error_to_reactant_A_sum",
+        "reverse_same_level_key_distance_error_to_product_A_sum",
+        "forward_key_distance_error_to_product_A_sum",
+        "reverse_key_distance_error_to_reactant_A_sum",
+        "strict_pathway_decision",
+    ]
+    parts: list[str] = []
+    for key in preferred:
+        if key in quality:
+            parts.append(f"{key}={_compact_quality_value(quality[key])}")
+    return "; ".join(parts[:6])
+
+
+def _compact_quality_value(value: Any) -> str:
+    if isinstance(value, dict):
+        items = list(value.items())[:4]
+        return "{" + ", ".join(f"{key}:{val}" for key, val in items) + "}"
+    if isinstance(value, list):
+        return "[" + ", ".join(str(item) for item in value[:4]) + "]"
+    return str(value)
+
+
 def _explorer_presentation() -> dict[str, Any]:
     return {
         "card_status": {
@@ -575,6 +699,9 @@ def _explorer_presentation() -> dict[str, Any]:
             "backtrack_target": {"label": "backtrack target", "color": "purple"},
             "generated_from_backtrack": {"label": "generated by backtrack", "color": "blue"},
             "backtrack": {"label": "backtrack", "color": "purple"},
+            "start_node": {"label": "node started", "color": "accent"},
+            "end_node": {"label": "node closed", "color": "green"},
+            "update_workspace": {"label": "workspace updated", "color": "cyan"},
         },
     }
 
@@ -624,6 +751,41 @@ def _normalize_backtrack_event(event: dict[str, Any]) -> dict[str, Any]:
         "reason_code": event.get("reason_code"),
         "evidence_refs": event.get("evidence_refs", []),
     }
+
+
+def _normalize_decision_events(path: Path) -> list[dict[str, Any]]:
+    events: list[dict[str, Any]] = []
+    for row in _read_jsonl(path):
+        decision_id = row.get("decision_id")
+        action = row.get("action")
+        result = row.get("result") if isinstance(row.get("result"), dict) else {}
+        node_id = result.get("node_id")
+        if not decision_id or not action or not node_id:
+            continue
+        display = _event_role_display(str(action))
+        lifecycle = result.get("lifecycle")
+        appended = result.get("appended")
+        detail = ""
+        if lifecycle:
+            detail = f"lifecycle={lifecycle}"
+        elif isinstance(appended, dict):
+            detail = ", ".join(f"{key}={value}" for key, value in appended.items())
+        created = row.get("created_at")
+        reason = " / ".join(str(part) for part in (created, detail) if part)
+        events.append(
+            {
+                "event_id": decision_id,
+                "node_id": node_id,
+                "event_type": "decision",
+                "event_role": action,
+                "event_label": display["label"],
+                "event_color": display["color"],
+                "decision": action,
+                "reason": reason,
+                "evidence_refs": _list(row.get("evidence_refs")),
+            }
+        )
+    return events
 
 
 def _view_needs_followup(view: dict[str, Any] | None) -> bool:
@@ -716,6 +878,10 @@ def _dedupe(items: list[str]) -> list[str]:
         seen.add(item)
         out.append(item)
     return out
+
+
+def _dedupe_strings(items: list[str]) -> list[str]:
+    return _dedupe([item for item in items if item])
 
 
 def _put_if_present(target: dict[str, Any], key: str, value: Any) -> None:
@@ -842,6 +1008,22 @@ def _read_text(path: Path) -> str:
     if not path.exists() or not path.is_file():
         return ""
     return path.read_text(encoding="utf-8", errors="replace")
+
+
+def _read_jsonl(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    rows: list[dict[str, Any]] = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
 
 
 def _list(value: Any) -> list[Any]:

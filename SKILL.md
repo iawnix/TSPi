@@ -124,17 +124,22 @@ They are not top-level node states.
 ## Workflow
 
 1. Initialize a workspace with `init_workspace`.
-2. Run `report_workspace` before deciding the next node.
-3. Construct a decision JSON with the action, rationale, report reference,
+2. For a fresh endpoint-based run, start an explicit `node_id=n000`
+   `endpoint` or `preflight` node before candidate generation. Use it only for
+   source hashes, charge/multiplicity, atom mapping, endpoint sanity checks,
+   and the initial reaction-center hypothesis. Close it before opening `n001`;
+   do not put TS/Freq, IRC, connectivity, or accepted-TS claims in `n000`.
+3. Run `report_workspace` before deciding the next node.
+4. Construct a decision JSON with the action, rationale, report reference,
    evidence references, and payload.
-4. Run `validate_decision` for preflight when useful.
-5. Apply the mutation through `start_node`, `update_workspace`, or `end_node`.
-6. Use `ts_backends`, `ts_remote`, and `mol_comparator` to create artifacts and
+5. Run `validate_decision` for preflight when useful.
+6. Apply the mutation through `start_node`, `update_workspace`, or `end_node`.
+7. Use `ts_backends`, `ts_remote`, and `mol_comparator` to create artifacts and
    evidence, then register evidence through `ts_workspace`.
-7. Close the node with program facts, claim verdict, implication, and open
+8. Close the node with program facts, claim verdict, implication, and open
    questions.
-8. Run `report_workspace` again before branching, backtracking, or stopping.
-9. Use `ts_report` only after the workspace validates.
+9. Run `report_workspace` again before branching, backtracking, or stopping.
+10. Use `ts_report` only after the workspace validates.
 
 ## References
 

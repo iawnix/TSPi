@@ -113,6 +113,50 @@ def test_pathway_audit_supported_does_not_mark_audited_step_supported(tmp_path: 
     assert validate_workspace(workspace)["valid"] is True
 
 
+def test_tsfreq_support_does_not_mark_pathway_step_supported(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    init_workspace(workspace)
+    report_ref = _report_ref(workspace)
+    pathway_ref = {"pathway_id": "p_test", "step_id": "s_r_to_p"}
+
+    start_node(
+        workspace,
+        _start_decision(report_ref, node_id="n001", phase="tsfreq_validation", pathway_ref=pathway_ref),
+    )
+    end_node(workspace, _end_decision(report_ref, "n001", "supported"))
+
+    model = json.loads((workspace / "pathway_model.json").read_text(encoding="utf-8"))
+    pathway = model["pathways"][0]
+    step = pathway["steps"][0]
+
+    assert pathway["status"] == "active"
+    assert step["status"] == "active"
+    assert "supporting_nodes" not in step
+    assert validate_workspace(workspace)["valid"] is True
+
+
+def test_connectivity_support_marks_pathway_step_supported(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    init_workspace(workspace)
+    report_ref = _report_ref(workspace)
+    pathway_ref = {"pathway_id": "p_test", "step_id": "s_r_to_p"}
+
+    start_node(
+        workspace,
+        _start_decision(report_ref, node_id="n001", phase="connectivity_validation", pathway_ref=pathway_ref),
+    )
+    end_node(workspace, _end_decision(report_ref, "n001", "supported"))
+
+    model = json.loads((workspace / "pathway_model.json").read_text(encoding="utf-8"))
+    pathway = model["pathways"][0]
+    step = pathway["steps"][0]
+
+    assert pathway["status"] == "supported"
+    assert step["status"] == "supported"
+    assert step["supporting_nodes"] == ["n001"]
+    assert validate_workspace(workspace)["valid"] is True
+
+
 def _report_ref(workspace: Path) -> dict[str, str]:
     report = report_workspace(workspace)
     return {"report_id": report["report_id"], "workspace_root": str(workspace)}

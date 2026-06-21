@@ -116,6 +116,74 @@ def test_workspace_cli_validate_decision_rejects_missing_replacement_backtrack(t
     assert not (workspace / "nodes" / "n002").exists()
 
 
+def test_explicit_n000_endpoint_node_keeps_next_auto_id_at_n001(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    _run("init_workspace", "--root", str(workspace))
+    report = _run("report_workspace", "--root", str(workspace))
+    report_ref = {"report_id": report["report_id"], "workspace_root": str(workspace)}
+
+    start_endpoint = {
+        "schema_version": "ts-decision",
+        "action": "start_node",
+        "rationale": "Start explicit endpoint preflight.",
+        "evidence_refs": [],
+        "report_ref": report_ref,
+        "payload": {
+            "node_id": "n000",
+            "phase": "endpoint",
+            "hypothesis": "User-provided endpoints are ready for candidate generation.",
+            "expected_evidence": ["endpoint_hashes", "charge_multiplicity", "atom_order_mapping"],
+        },
+    }
+    start_endpoint_path = tmp_path / "start_n000.json"
+    start_endpoint_path.write_text(json.dumps(start_endpoint), encoding="utf-8")
+    endpoint = _run("start_node", "--root", str(workspace), "--decision-file", str(start_endpoint_path))
+    assert endpoint["node_id"] == "n000"
+
+    close_endpoint = {
+        "schema_version": "ts-decision",
+        "action": "end_node",
+        "rationale": "Close endpoint preflight.",
+        "evidence_refs": [],
+        "report_ref": report_ref,
+        "payload": {
+            "node_id": "n000",
+            "closure": {
+                "program_status": "completed",
+                "claim_verdict": "supported",
+                "program": {"summary": "Endpoint checks completed.", "evidence_refs": []},
+                "mechanism": {"summary": "Inputs are suitable for candidate generation.", "evidence_refs": []},
+                "implication": "Open candidate generation.",
+                "open_questions": [],
+            },
+        },
+    }
+    close_endpoint_path = tmp_path / "close_n000.json"
+    close_endpoint_path.write_text(json.dumps(close_endpoint), encoding="utf-8")
+    _run("end_node", "--root", str(workspace), "--decision-file", str(close_endpoint_path))
+
+    start_candidate = {
+        "schema_version": "ts-decision",
+        "action": "start_node",
+        "rationale": "Start candidate generation after endpoint preflight.",
+        "evidence_refs": [],
+        "report_ref": report_ref,
+        "payload": {
+            "parent_node": "n000",
+            "phase": "candidate_generation",
+            "hypothesis": "Endpoint-checked inputs can produce a TS candidate.",
+            "expected_evidence": ["candidate_geometry"],
+        },
+    }
+    start_candidate_path = tmp_path / "start_candidate.json"
+    start_candidate_path.write_text(json.dumps(start_candidate), encoding="utf-8")
+    candidate = _run("start_node", "--root", str(workspace), "--decision-file", str(start_candidate_path))
+
+    tree = json.loads((workspace / "tree.json").read_text(encoding="utf-8"))
+    assert candidate["node_id"] == "n001"
+    assert tree["edges"] == [{"parent_node": "n000", "child_node": "n001"}]
+
+
 def _start_decision(report_ref: dict[str, str], node_id: str, phase: str) -> dict:
     return {
         "schema_version": "ts-decision",

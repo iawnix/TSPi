@@ -1,6 +1,9 @@
 # Candidate Generation
 
 Candidate generation creates hypotheses and artifacts for later validation.
+For fresh endpoint-based searches, candidate generation should usually be
+parented to an explicit closed `n000` endpoint/preflight node rather than to
+workspace-level endpoint evidence alone.
 
 Valid candidate sources include:
 

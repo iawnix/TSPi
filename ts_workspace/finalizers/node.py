@@ -7,6 +7,8 @@ from typing import Any
 
 from ..io import append_markdown, read_json, write_json
 
+PATHWAY_STEP_STATUS_PHASES = {"connectivity_validation", "accepted_audit"}
+
 
 def finalize_closed_node(root: Path, node: dict[str, Any], decision: dict[str, Any]) -> None:
     closure = node["closure"]
@@ -58,6 +60,9 @@ def _update_pathway_model(root: Path, node: dict[str, Any], closure: dict[str, A
     step = _ensure_step(pathway, step_id)
     if node["phase"] == "pathway_audit":
         _record_pathway_audit(pathway, step, node, closure)
+        write_json(path, model)
+        return
+    if node["phase"] not in PATHWAY_STEP_STATUS_PHASES:
         write_json(path, model)
         return
     verdict = closure["claim_verdict"]
