@@ -40,3 +40,10 @@ Allowed pathway and step statuses:
 
 Backtracking appends events in `tree.json.backtrack_events[]`; it never deletes
 old nodes or hides a rejected branch.
+
+`pathway_audit` nodes may be recorded as `audit_nodes` on a pathway or step, but
+their phase-level `claim_verdict` must not automatically mutate the audited step
+to `supported` or `refuted`. Pathway or step status should change only from
+elementary-step evidence or an explicit accepted-pathway contract. Whether to
+continue with a new hypothesis branch after a negative audit is an agent
+decision, not a validator-enforced branch rule.

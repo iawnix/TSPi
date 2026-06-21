@@ -109,6 +109,12 @@ On close, `closure.program_status` records execution facts:
 - `inconclusive`
 - `not_evaluated`
 
+For `pathway_audit`, `claim_verdict=supported` means the audit conclusion is
+supported. It does not by itself mean the audited pathway or step is accepted.
+Negative audits should expose an audit outcome such as pathway not accepted
+through evidence/closure/reporting semantics, while the agent remains
+responsible for deciding whether to open a new branch, stop, or ask the user.
+
 Specific program failures or chemical disagreements belong in `reason_code`,
 `closure.program.facts`, `closure.mechanism.facts`, or evidence diagnostics.
 They are not top-level node states.

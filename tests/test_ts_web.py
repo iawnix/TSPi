@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from ts_workspace import end_node, init_workspace, report_workspace, start_node
+from ts_workspace import end_node, init_workspace, report_workspace, start_node, update_workspace
 from ts_web import normalize_workspace, register_workspace
 from ts_web.normalize import explorer_graph_payload_from_view
 from ts_web.registry import list_workspaces, register_workspaces
@@ -392,6 +392,110 @@ def test_web_mechanism_analysis_uses_latest_tree_record(tmp_path: Path) -> None:
             "n999_pathway_audit / pathway_audit / supported: "
             "Latest mechanism analysis: reactant -> intermediate -> product."
         ]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_web_pathway_audit_not_accepted_is_not_rendered_as_success(tmp_path: Path) -> None:
+    workspace = tmp_path / "negative-pathway-audit"
+    init_workspace(workspace)
+    report = report_workspace(workspace)
+    report_ref = {"report_id": report["report_id"], "workspace_root": str(workspace)}
+    node_id = "n001_pathway_audit"
+
+    start_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "start_node",
+            "rationale": "Audit a strict pathway after connectivity failures.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "node_id": node_id,
+                "phase": "pathway_audit",
+                "hypothesis": "The current evidence may not support strict R to P connectivity.",
+                "expected_evidence": ["pathway_audit_summary"],
+                "pathway_ref": {"pathway_id": "p_r_to_i_to_p", "step_id": "s_i_to_p"},
+            },
+        },
+    )
+    update_workspace(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "update_workspace",
+            "rationale": "Register a negative strict pathway audit.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "append_evidence": {
+                    "evidence_id": "ev_negative_pathway_audit",
+                    "kind": "pathway_audit_summary",
+                    "role": "pathway_audit",
+                    "evidence_tier": "local_parse",
+                    "node_id": node_id,
+                    "summary": "Strict R->P pathway is not accepted because the connectivity gate is missing.",
+                    "quality": {
+                        "strict_pathway_supported": False,
+                        "strict_pathway_decision": "not_accepted",
+                        "accepted_ts_available": False,
+                    },
+                    "diagnostics": ["no_accepted_ts", "second_step_connectivity_gate_missing"],
+                }
+            },
+        },
+    )
+    end_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "end_node",
+            "rationale": "Close the negative pathway audit.",
+            "evidence_refs": ["ev_negative_pathway_audit"],
+            "report_ref": report_ref,
+            "payload": {
+                "node_id": node_id,
+                "closure": {
+                    "program_status": "completed",
+                    "claim_verdict": "supported",
+                    "reason_code": "strict_r_to_p_not_accepted_missing_second_step_connectivity",
+                    "program": {"summary": "Audit completed.", "evidence_refs": ["ev_negative_pathway_audit"]},
+                    "mechanism": {
+                        "summary": "The audit supports not accepting the pathway.",
+                        "evidence_refs": ["ev_negative_pathway_audit"],
+                    },
+                    "implication": "Agent decides whether to open a new hypothesis branch.",
+                    "open_questions": [],
+                },
+            },
+        },
+    )
+
+    view = normalize_workspace(workspace)
+    graph = explorer_graph_payload_from_view(view)
+    node = graph["nodes"][0]
+
+    assert view["valid"] is True
+    assert node["claim_verdict"] == "supported"
+    assert node["node_state"] == "pathway_not_accepted"
+    assert node["state_label"] == "pathway not accepted"
+    assert node["card_color"] == "amber"
+    assert graph["presentation"]["node_state"]["pathway_not_accepted"]["color"] == "amber"
+
+    state = tmp_path / "web-state"
+    row = register_workspace(workspace, state, "negative-audit")
+    server = create_server("127.0.0.1", 0, state)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        payload = _get_json(host, port, "/api/workspaces")
+        summary = payload["workspaces"][0]
+        assert summary["workspace_id"] == row["workspace_id"]
+        assert summary["claim_state"] == "pathway_not_accepted"
     finally:
         server.shutdown()
         server.server_close()

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -64,6 +65,33 @@ def test_validate_workspace_flags_terminal_unresolved_target(tmp_path: Path) -> 
     assert _codes(validation) == {"workspace_needs_followup"}
 
 
+def test_pathway_audit_supported_does_not_mark_audited_step_supported(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    init_workspace(workspace)
+    report_ref = _report_ref(workspace)
+
+    start_node(
+        workspace,
+        _start_decision(
+            report_ref,
+            node_id="n001",
+            phase="pathway_audit",
+            pathway_ref={"pathway_id": "p_test", "step_id": "s_i_to_p"},
+        ),
+    )
+    end_node(workspace, _end_decision(report_ref, "n001", "supported"))
+
+    model = json.loads((workspace / "pathway_model.json").read_text(encoding="utf-8"))
+    pathway = model["pathways"][0]
+    step = pathway["steps"][0]
+
+    assert pathway["status"] == "active"
+    assert step["status"] == "active"
+    assert pathway["audit_nodes"][0]["node_id"] == "n001"
+    assert step["audit_nodes"][0]["node_id"] == "n001"
+    assert validate_workspace(workspace)["valid"] is True
+
+
 def _report_ref(workspace: Path) -> dict[str, str]:
     report = report_workspace(workspace)
     return {"report_id": report["report_id"], "workspace_root": str(workspace)}
@@ -75,6 +103,7 @@ def _start_decision(
     node_id: str,
     phase: str,
     backtrack: dict[str, Any] | None = None,
+    pathway_ref: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "node_id": node_id,
@@ -84,6 +113,8 @@ def _start_decision(
     }
     if backtrack is not None:
         payload["backtrack"] = backtrack
+    if pathway_ref is not None:
+        payload["pathway_ref"] = pathway_ref
     return {
         "schema_version": "ts-decision",
         "action": "start_node",

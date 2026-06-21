@@ -56,6 +56,10 @@ def _update_pathway_model(root: Path, node: dict[str, Any], closure: dict[str, A
     step_id = pathway_ref["step_id"]
     pathway = _ensure_pathway(model, pathway_id)
     step = _ensure_step(pathway, step_id)
+    if node["phase"] == "pathway_audit":
+        _record_pathway_audit(pathway, step, node, closure)
+        write_json(path, model)
+        return
     verdict = closure["claim_verdict"]
     if verdict == "supported":
         step["status"] = "supported"
@@ -68,6 +72,22 @@ def _update_pathway_model(root: Path, node: dict[str, Any], closure: dict[str, A
         step.setdefault("inconclusive_nodes", []).append(node["node_id"])
     pathway["status"] = _pathway_status_from_steps(pathway["steps"])
     write_json(path, model)
+
+
+def _record_pathway_audit(
+    pathway: dict[str, Any],
+    step: dict[str, Any],
+    node: dict[str, Any],
+    closure: dict[str, Any],
+) -> None:
+    audit_record = {
+        "node_id": node["node_id"],
+        "program_status": closure["program_status"],
+        "claim_verdict": closure["claim_verdict"],
+        "reason_code": closure.get("reason_code"),
+    }
+    pathway.setdefault("audit_nodes", []).append(audit_record)
+    step.setdefault("audit_nodes", []).append(audit_record)
 
 
 def _append_knowledge(root: Path, node: dict[str, Any], closure: dict[str, Any]) -> None:

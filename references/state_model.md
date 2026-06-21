@@ -32,6 +32,11 @@ Valid phases:
 - `inconclusive`
 - `not_evaluated`
 
+For `pathway_audit`, the verdict applies to the audit conclusion, not directly
+to the pathway. A supported audit can support a negative conclusion such as
+`pathway_not_accepted` or missing connectivity. Views and reports must expose
+that audit outcome separately instead of displaying the node as pathway success.
+
 Specific diagnostics such as a wrong imaginary mode, collapsed endpoint,
 scheduler failure, parser failure, or RMSD disagreement are reason codes or
 evidence diagnostics. They are not top-level node states and must not steer the

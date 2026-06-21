@@ -18,7 +18,8 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
     pathway_model = _read_json(root / "pathway_model.json")
     mechanism_model = _read_json(root / "mechanism_model.json")
 
-    nodes = [_normalize_node(root, row) for row in _list(tree.get("nodes"))]
+    evidence_records = _list(evidence_registry.get("evidence"))
+    nodes = [_normalize_node(root, row, evidence_records) for row in _list(tree.get("nodes"))]
     backtrack_events = _list(tree.get("backtrack_events"))
     return {
         "label": label or root.name,
@@ -34,7 +35,7 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         "edges": _list(tree.get("edges")),
         "backtrack_edges": [_normalize_backtrack_event(event) for event in backtrack_events],
         "pathways": _list(pathway_model.get("pathways")),
-        "evidence": _list(evidence_registry.get("evidence")),
+        "evidence": evidence_records,
         "mechanism": {
             "accepted_facts": _list(mechanism_model.get("accepted_facts")),
             "refuted_hypotheses": _list(mechanism_model.get("refuted_hypotheses")),
@@ -123,14 +124,19 @@ def _claim_state(accepted_refs: list[Any], pathway_model: dict[str, Any], *, vie
     )
     statuses = {p.get("status") for p in pathways if isinstance(p, dict)}
     focus_status = focus.get("status") if isinstance(focus, dict) else None
+    audit_outcome = _latest_pathway_audit_outcome(view)
     if focus_status in {"accepted", "complete"}:
         return "pathway_complete"
     if focus_status == "supported":
+        if audit_outcome == "pathway_not_accepted" and not accepted_refs:
+            return "pathway_not_accepted"
         if _is_complete_pathway(focus):
             return "pathway_complete"
         if accepted_refs:
             return "accepted_ts"
         return "pathway_partial"
+    if audit_outcome == "pathway_not_accepted" and not accepted_refs:
+        return "pathway_not_accepted"
     if focus_status in {"active", "proposed"}:
         return "pathway_hypothesis"
     if focus_status in {"refuted", "superseded"}:
@@ -248,7 +254,7 @@ def list_node_files(source_root: str | Path, node_id: str) -> dict[str, Any]:
     return {"node_id": node_id, "files": files}
 
 
-def _normalize_node(root: Path, row: dict[str, Any]) -> dict[str, Any]:
+def _normalize_node(root: Path, row: dict[str, Any], evidence_records: list[Any]) -> dict[str, Any]:
     node_id = row.get("node_id")
     detail = _read_json(root / "nodes" / str(node_id) / "node.json") if node_id else {}
     lifecycle = detail.get("lifecycle") or row.get("lifecycle")
@@ -257,18 +263,22 @@ def _normalize_node(root: Path, row: dict[str, Any]) -> dict[str, Any]:
     # when node.json is missing or hasn't been closed yet.
     claim_verdict = closure.get("claim_verdict") or row.get("claim_verdict")
     program_status = closure.get("program_status") or row.get("program_status")
+    phase = detail.get("phase", row.get("phase"))
+    audit_display = _pathway_audit_display(str(node_id), phase, closure, evidence_records)
     return {
         "node_id": node_id,
         "parent_node": detail.get("parent_node", row.get("parent_node")),
-        "phase": detail.get("phase", row.get("phase")),
+        "phase": phase,
         "lifecycle": lifecycle,
         "hypothesis": detail.get("hypothesis", row.get("hypothesis")),
         "pathway_ref": detail.get("pathway_ref"),
         "evidence_refs": detail.get("evidence_refs", []),
         "closure": closure or None,
         "display": {
-            "label": _display_label(lifecycle, claim_verdict),
-            "tone": _display_tone(lifecycle, claim_verdict, program_status),
+            "label": audit_display.get("label") or _display_label(lifecycle, claim_verdict),
+            "tone": audit_display.get("tone") or _display_tone(lifecycle, claim_verdict, program_status),
+            "state": audit_display.get("state"),
+            "audit_outcome": audit_display.get("audit_outcome"),
             "program_status": program_status,
             "claim_verdict": claim_verdict,
         },
@@ -284,7 +294,7 @@ def _explorer_node(row: dict[str, Any], backtrack_events: list[Any]) -> dict[str
     program_status = display.get("program_status") or closure.get("program_status")
     claim_verdict = display.get("claim_verdict") or closure.get("claim_verdict")
     tone = display.get("tone") or _display_tone(lifecycle, claim_verdict, program_status)
-    state_key = _node_state_key(lifecycle, claim_verdict, program_status)
+    state_key = display.get("state") or _node_state_key(lifecycle, claim_verdict, program_status)
     backtrack_from_ids: list[str] = []
     backtrack_target_ids: list[str] = []
     generated_ids: list[str] = []
@@ -533,6 +543,7 @@ def _explorer_presentation() -> dict[str, Any]:
             "pathway_complete": {"label": "pathway complete", "color": "green"},
             "pathway_partial": {"label": "pathway partial", "color": "amber"},
             "pathway_hypothesis": {"label": "pathway hypothesis", "color": "purple"},
+            "pathway_not_accepted": {"label": "pathway not accepted", "color": "amber"},
             "pathway_rejected": {"label": "pathway rejected", "color": "red"},
         },
         "node_state": {
@@ -541,6 +552,7 @@ def _explorer_presentation() -> dict[str, Any]:
             "refuted": {"label": "refuted", "color": "red"},
             "inconclusive": {"label": "inconclusive", "color": "amber"},
             "not_evaluated": {"label": "not evaluated", "color": "grey"},
+            "pathway_not_accepted": {"label": "pathway not accepted", "color": "amber"},
             "failed": {"label": "failed", "color": "red"},
             "stopped": {"label": "stopped", "color": "grey"},
             "unknown": {"label": "unknown", "color": "grey"},
@@ -632,6 +644,69 @@ def _view_needs_followup(view: dict[str, Any] | None) -> bool:
     return display.get("claim_verdict") in {"refuted", "inconclusive", "not_evaluated"}
 
 
+def _latest_pathway_audit_outcome(view: dict[str, Any] | None) -> str | None:
+    if not isinstance(view, dict):
+        return None
+    nodes = [node for node in _list(view.get("nodes")) if isinstance(node, dict)]
+    for node in reversed(nodes):
+        display = node.get("display") if isinstance(node.get("display"), dict) else {}
+        outcome = display.get("audit_outcome")
+        if outcome:
+            return str(outcome)
+    return None
+
+
+def _pathway_audit_display(
+    node_id: str,
+    phase: Any,
+    closure: dict[str, Any],
+    evidence_records: list[Any],
+) -> dict[str, str]:
+    if phase != "pathway_audit" or not closure:
+        return {}
+    outcome = _pathway_audit_outcome(node_id, closure, evidence_records)
+    if outcome == "pathway_not_accepted":
+        return {
+            "label": "pathway not accepted",
+            "tone": "audit_negative",
+            "state": "pathway_not_accepted",
+            "audit_outcome": outcome,
+        }
+    return {}
+
+
+def _pathway_audit_outcome(node_id: str, closure: dict[str, Any], evidence_records: list[Any]) -> str | None:
+    for record in evidence_records:
+        if not isinstance(record, dict) or str(record.get("node_id") or "") != node_id:
+            continue
+        if _record_says_pathway_not_accepted(record):
+            return "pathway_not_accepted"
+    text_parts = [
+        closure.get("reason_code"),
+        closure.get("implication"),
+        closure.get("mechanism", {}).get("summary") if isinstance(closure.get("mechanism"), dict) else "",
+        closure.get("program", {}).get("summary") if isinstance(closure.get("program"), dict) else "",
+    ]
+    text = " ".join(str(part or "").lower() for part in text_parts)
+    if any(marker in text for marker in ("not_accepted", "not accepted", "missing connectivity", "no accepted ts")):
+        return "pathway_not_accepted"
+    return None
+
+
+def _record_says_pathway_not_accepted(record: dict[str, Any]) -> bool:
+    quality = record.get("quality") if isinstance(record.get("quality"), dict) else {}
+    diagnostics = " ".join(str(item).lower() for item in _list(record.get("diagnostics")))
+    summary = str(record.get("summary") or "").lower()
+    decision = str(quality.get("strict_pathway_decision") or quality.get("audit_outcome") or "").lower()
+    if quality.get("strict_pathway_supported") is False:
+        return True
+    if quality.get("accepted_ts_available") is False and "accepted" in summary:
+        return True
+    if decision in {"not_accepted", "pathway_not_accepted", "not accepted"}:
+        return True
+    return any(marker in f"{diagnostics} {summary}" for marker in ("no_accepted_ts", "missing connectivity", "not accepted"))
+
+
 def _dedupe(items: list[str]) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
@@ -687,6 +762,7 @@ def _tone_color(tone: str | None) -> str:
     return {
         "active": "accent",
         "supported": "green",
+        "audit_negative": "amber",
         "refuted": "red",
         "blocked": "red",
         "inconclusive": "amber",
