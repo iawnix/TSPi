@@ -6,6 +6,7 @@ import shutil
 import subprocess
 import sys
 import threading
+from importlib.resources import files
 from pathlib import Path
 
 import pytest
@@ -14,6 +15,7 @@ from ts_workspace import end_node, init_workspace, report_workspace, start_node,
 from ts_web import normalize_workspace, register_workspace
 from ts_web.normalize import explorer_graph_payload_from_view
 from ts_web.registry import list_workspaces, register_workspaces
+from ts_web import server as ts_web_server
 from ts_web.server import create_server
 
 
@@ -67,6 +69,16 @@ def test_static_ui_uses_outline_status_chips_and_explains_backtrack_symbol() -> 
     assert "symbol-legend" in html
     assert "↺" in html
     assert "backtracked from" in html
+
+
+def test_static_asset_resolves_from_current_ts_web_package() -> None:
+    expected = files("ts_web").joinpath("static", "index.html").read_bytes()
+    assert ts_web_server._static_asset("index.html").read_bytes() == expected
+
+    server_source = (ROOT / "ts_web" / "server.py").read_text(encoding="utf-8")
+    assert "STATIC_DIR" not in server_source
+    assert "Path(__file__).resolve().parent / \"static\"" not in server_source
+    assert "files(STATIC_PACKAGE)" in server_source
 
 
 def test_backtrack_edges_and_events_dedupe_when_target_is_replacement(tmp_path: Path) -> None:

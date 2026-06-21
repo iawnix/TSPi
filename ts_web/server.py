@@ -6,6 +6,7 @@ import json
 import posixpath
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from importlib.resources import files
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
@@ -19,8 +20,12 @@ from .normalize import (
 )
 from .registry import ensure_state_dir, find_workspace, list_workspaces, register_workspace
 
-STATIC_DIR = Path(__file__).resolve().parent / "static"
 MAX_TEXT_BYTES = 1_000_000
+STATIC_PACKAGE = __package__ or "ts_web"
+
+
+def _static_asset(name: str):
+    return files(STATIC_PACKAGE).joinpath("static", name)
 
 
 def serve(host: str, port: int, state_dir: str | Path, *, source_root: str | Path | None = None, label: str | None = None) -> None:
@@ -55,7 +60,7 @@ def _make_handler(state_dir: Path):
             path = parsed.path
             try:
                 if path in {"/", "/index.html"}:
-                    self._send_file(STATIC_DIR / "index.html", "text/html; charset=utf-8")
+                    self._send_static_file("index.html", "text/html; charset=utf-8")
                 elif path == "/api/health":
                     self._send_json({"ok": True})
                 elif path == "/api/workspaces":
@@ -112,6 +117,14 @@ def _make_handler(state_dir: Path):
 
         def _send_file(self, path: Path, content_type: str) -> None:
             body = path.read_bytes()
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", content_type)
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _send_static_file(self, name: str, content_type: str) -> None:
+            body = _static_asset(name).read_bytes()
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
