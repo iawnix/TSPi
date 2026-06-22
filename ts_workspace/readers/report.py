@@ -8,6 +8,8 @@ from typing import Any
 from ..io import compact_id_time, read_json, write_json
 from ..validators.workspace import validate_workspace
 
+PATHWAY_AUDIT_PHASE = "pathway_audit"
+
 
 def report_workspace(root: str | Path) -> dict[str, Any]:
     root_path = Path(root)
@@ -77,10 +79,11 @@ def _build_hypothesis_context(mechanism: dict[str, Any], evidence: dict[str, Any
         active = hypotheses[-1]
         focus_id = active.get("hypothesis_id")
     prediction_status = active.get("prediction_status", []) if isinstance(active, dict) else []
-    supported = _prediction_ids_by_verdict(prediction_status, "supported")
-    refuted = _prediction_ids_by_verdict(prediction_status, "refuted")
+    claim_prediction_status = _claim_prediction_rows(prediction_status)
+    supported = _prediction_ids_by_verdict(claim_prediction_status, "supported")
+    refuted = _prediction_ids_by_verdict(claim_prediction_status, "refuted")
     all_predictions = active.get("testable_predictions", []) if isinstance(active, dict) else []
-    known_prediction_ids = supported | refuted | _prediction_ids_by_verdict(prediction_status, "inconclusive")
+    known_prediction_ids = supported | refuted | _prediction_ids_by_verdict(claim_prediction_status, "inconclusive")
     open_predictions = [
         item for item in all_predictions
         if isinstance(item, dict) and item.get("prediction_id") not in known_prediction_ids
@@ -101,7 +104,57 @@ def _build_hypothesis_context(mechanism: dict[str, Any], evidence: dict[str, Any
         "supported_predictions": sorted(supported),
         "refuted_predictions": sorted(refuted),
         "required_next_evidence": required_next,
+        "pathway_audits": _pathway_audit_summaries(prediction_status, evidence),
     }
+
+
+def _claim_prediction_rows(rows: list[Any]) -> list[dict[str, Any]]:
+    """Rows whose verdict directly evaluates the referenced prediction."""
+    return [
+        row for row in rows
+        if isinstance(row, dict) and row.get("phase") != PATHWAY_AUDIT_PHASE
+    ]
+
+
+def _pathway_audit_summaries(rows: list[Any], evidence: dict[str, Any]) -> list[dict[str, Any]]:
+    evidence_records = evidence.get("evidence", []) if isinstance(evidence, dict) else []
+    summaries: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict) or row.get("phase") != PATHWAY_AUDIT_PHASE:
+            continue
+        outcome = _pathway_audit_outcome(row, evidence_records)
+        item = {
+            "node_id": row.get("node_id"),
+            "claim_verdict": row.get("claim_verdict"),
+            "prediction_ids": [str(item) for item in row.get("prediction_ids", []) if item],
+            "evidence_refs": [str(item) for item in row.get("evidence_refs", []) if item],
+            "audit_outcome": outcome,
+        }
+        if outcome in {"pathway_not_accepted", "not_accepted"}:
+            item["recommended_next_action"] = "start_new_branch"
+        summaries.append(item)
+    return summaries
+
+
+def _pathway_audit_outcome(row: dict[str, Any], evidence_records: list[Any]) -> str | None:
+    evidence_refs = set(str(item) for item in row.get("evidence_refs", []) if item)
+    for record in evidence_records:
+        if not isinstance(record, dict) or str(record.get("evidence_id")) not in evidence_refs:
+            continue
+        quality = record.get("quality") if isinstance(record.get("quality"), dict) else {}
+        facts = record.get("facts") if isinstance(record.get("facts"), dict) else {}
+        decision = str(quality.get("strict_pathway_decision") or quality.get("audit_outcome") or "").lower()
+        if not decision:
+            decision = str(facts.get("strict_pathway_decision") or facts.get("audit_outcome") or facts.get("verdict") or "").lower()
+        if decision == "not_accepted":
+            return "pathway_not_accepted"
+        if decision:
+            return decision
+        if quality.get("strict_pathway_supported") is False or facts.get("whole_R_to_P_pathway_accepted") is False:
+            return "pathway_not_accepted"
+    if row.get("claim_verdict") == "supported":
+        return "audit_supported"
+    return None
 
 
 def _prediction_ids_by_verdict(rows: list[Any], verdict: str) -> set[str]:

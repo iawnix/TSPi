@@ -116,6 +116,10 @@ supported. It does not by itself mean the audited pathway or step is accepted.
 Negative audits should expose an audit outcome such as pathway not accepted
 through evidence/closure/reporting semantics, while the agent remains
 responsible for deciding whether to open a new branch, stop, or ask the user.
+When the user's request requires strict R->P proof or mandatory IRC, a negative
+pathway audit closes only the current mechanism branch. It must not be treated
+as completion of the overall research task unless the user explicitly stops the
+search or no scientifically meaningful branch remains.
 
 Specific program failures or chemical disagreements belong in `reason_code`,
 `closure.program.facts`, `closure.mechanism.facts`, or evidence diagnostics.
@@ -173,3 +177,6 @@ Report the highest validated layer only:
 
 Do not call a candidate, scan point, NEB image, dMECP structure, or isolated
 imaginary frequency an accepted TS.
+Do not report a negative `pathway_audit` as a successful pathway conclusion.
+If `accepted_ts_refs` is empty and the audit outcome is not accepted, report the
+failed branch and the next hypothesis branch separately.

@@ -47,3 +47,7 @@ to `supported` or `refuted`. Pathway or step status should change only from
 elementary-step evidence or an explicit accepted-pathway contract. Whether to
 continue with a new hypothesis branch after a negative audit is an agent
 decision, not a validator-enforced branch rule.
+For strict user requests such as mandatory IRC and supplied R->P proof, a
+negative audit means the audited branch is not accepted. The agent should open a
+new scientifically justified branch unless the user stops the run or the audit
+also documents that no meaningful branch remains.

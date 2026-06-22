@@ -131,3 +131,149 @@ def test_report_workspace_exposes_hypothesis_context(tmp_path: Path) -> None:
     assert report["hypothesis_context"]["focus_hypothesis_id"] == HYPOTHESIS_ID
     assert report["hypothesis_context"]["active_hypothesis"]["hypothesis_id"] == HYPOTHESIS_ID
     assert "tsfreq_gate" in report["hypothesis_context"]["required_next_evidence"]
+
+
+def test_negative_pathway_audit_does_not_support_audited_prediction(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_v3_workspace(workspace)
+
+    start_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "start_node",
+            "rationale": "Start connectivity validation.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "node_id": "n001",
+                "parent_node": "n000",
+                "phase": "connectivity_validation",
+                "hypothesis": "Connectivity may fail.",
+                "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_conn_001"]},
+                "expected_evidence": ["connectivity_gate"],
+            },
+        },
+    )
+    end_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "end_node",
+            "rationale": "Close connectivity as refuted.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "node_id": "n001",
+                "closure": {
+                    "program_status": "completed",
+                    "claim_verdict": "refuted",
+                    "program": {"summary": "IRC endpoints do not match.", "evidence_refs": []},
+                    "mechanism": {
+                        "summary": "Connectivity prediction is refuted.",
+                        "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_conn_001"]},
+                        "evidence_refs": [],
+                        "revision": {
+                            "action": "refute_prediction",
+                            "prediction_ids": ["pred_conn_001"],
+                            "changed_variable": "pathway_topology",
+                        },
+                    },
+                    "implication": "Audit the strict pathway.",
+                    "open_questions": [],
+                },
+            },
+        },
+    )
+
+    report_ref = {"report_id": report_workspace(workspace)["report_id"], "workspace_root": str(workspace)}
+    start_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "start_node",
+            "rationale": "Start negative pathway audit.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "node_id": "n002",
+                "parent_node": "n001",
+                "phase": "pathway_audit",
+                "hypothesis": "The strict pathway is not accepted.",
+                "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_conn_001"]},
+                "expected_evidence": ["pathway_audit_summary"],
+            },
+        },
+    )
+    update_workspace(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "update_workspace",
+            "rationale": "Register negative pathway audit evidence.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "append_evidence": {
+                    "evidence_id": "ev_pathway_audit",
+                    "kind": "pathway_audit_summary",
+                    "role": "pathway_audit",
+                    "evidence_tier": "local_parse",
+                    "node_id": "n002",
+                    "summary": "The strict pathway is not accepted.",
+                    "quality": {
+                        "hypothesis_id": HYPOTHESIS_ID,
+                    },
+                    "facts": {
+                        "verdict": "not_accepted",
+                        "whole_R_to_P_pathway_accepted": False,
+                    },
+                }
+            },
+        },
+    )
+    end_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "end_node",
+            "rationale": "Close negative pathway audit.",
+            "evidence_refs": ["ev_pathway_audit"],
+            "report_ref": report_ref,
+            "payload": {
+                "node_id": "n002",
+                "closure": {
+                    "program_status": "completed",
+                    "claim_verdict": "supported",
+                    "program": {"summary": "Audit completed.", "evidence_refs": ["ev_pathway_audit"]},
+                    "mechanism": {
+                        "summary": "The audited pathway is not accepted.",
+                        "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_conn_001"]},
+                        "evidence_refs": ["ev_pathway_audit"],
+                        "revision": {
+                            "action": "refute_prediction",
+                            "prediction_ids": ["pred_conn_001"],
+                            "changed_variable": "pathway_topology",
+                        },
+                    },
+                    "implication": "Open a replacement branch instead of accepting this pathway.",
+                    "open_questions": ["Open a new mechanism hypothesis."],
+                },
+            },
+        },
+    )
+
+    context = report_workspace(workspace)["hypothesis_context"]
+
+    assert context["supported_predictions"] == []
+    assert context["refuted_predictions"] == ["pred_conn_001"]
+    assert context["pathway_audits"] == [
+        {
+            "node_id": "n002",
+            "claim_verdict": "supported",
+            "prediction_ids": ["pred_conn_001"],
+            "evidence_refs": ["ev_pathway_audit"],
+            "audit_outcome": "pathway_not_accepted",
+            "recommended_next_action": "start_new_branch",
+        }
+    ]
