@@ -1,5 +1,7 @@
 __pycache__/
 .pytest_cache/
+node_modules/
+npm-debug.log*
 *.pyc
 *.pyo
 *.tmp

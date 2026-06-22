@@ -1,0 +1,29 @@
+{
+  "name": "ts-agent-skill",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Pi package wrapper for the transition-state workflow skill.",
+  "keywords": [
+    "pi-package",
+    "transition-state",
+    "chemistry",
+    "agent-skill"
+  ],
+  "scripts": {
+    "test": "python3 -m pytest -q",
+    "test:pi-adapter": "python3 -m pytest -q tests/test_pi_agent_adapter.py"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-ai": "*",
+    "@earendil-works/pi-coding-agent": "*",
+    "typebox": "*"
+  },
+  "pi": {
+    "skills": [
+      "."
+    ],
+    "extensions": [
+      "./extensions/ts-workflow-context"
+    ]
+  }
+}
