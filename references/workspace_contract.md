@@ -33,12 +33,42 @@ nodes/<node_id>/scratch/
 nodes/<node_id>/remote/
 ```
 
-Fresh endpoint-based searches should create an explicit `n000` node through
-`start_node` after `init_workspace`. Use `phase=endpoint` or `phase=preflight`
-and close it after endpoint provenance, charge/multiplicity, atom-order
-mapping, source hashes, and initial reaction-center checks are recorded.
-Candidate generation should then start at `n001` with `parent_node=n000`.
-Legacy workspaces without `n000` remain valid.
+## v3 Hypothesis Model
 
-The workspace validator checks required files, node JSON records, current focus,
-append-only evidence identity, and forbidden public fields.
+`init_workspace` creates:
+
+```json
+{
+  "schema_version": "ts-mechanism",
+  "focus_hypothesis_id": null,
+  "hypotheses": [],
+  "accepted_facts": [],
+  "refuted_hypotheses": [],
+  "open_questions": []
+}
+```
+
+Fresh endpoint-based searches must create an explicit `n000` node through
+`start_node` after `init_workspace`. Use `phase=endpoint` or `phase=preflight`.
+The `n000` decision must include `payload.initial_mechanism_hypothesis`.
+
+Close `n000` after endpoint provenance, charge/multiplicity, atom-order
+mapping, source hashes, reaction-center delta, and initial mechanism evidence
+are recorded. Candidate generation starts at `n001` with `parent_node=n000` and
+`payload.hypothesis_ref`.
+
+Legacy workspaces without `n000` or without `hypothesis_ref` are invalid under
+the v3 contract.
+
+## Ledgers
+
+- `mechanism_model.hypotheses[]`: active, supported, refuted, or superseded
+  working mechanism hypotheses.
+- `mechanism_model.accepted_facts[]`: accepted TS facts written only by
+  `accepted_audit` after TS/Freq and connectivity gates are both present.
+- `pathway_model.json`: pathway and step topology. Hypotheses may reference a
+  pathway step, but do not duplicate pathway structure.
+
+The workspace validator checks required files, node JSON records, initial
+`n000` structure, hypothesis references, current focus, append-only evidence
+identity, and forbidden public fields.

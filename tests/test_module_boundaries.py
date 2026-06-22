@@ -8,6 +8,7 @@ from ts_backends.gaussian import GaussianBackend, prepare_gaussian
 from ts_remote.base import Runner
 from ts_remote.ssh import SshRunner
 from ts_web import normalize_workspace, register_workspace
+from v3_helpers import make_accepted_workspace
 
 
 def test_backend_prepares_command_without_workspace_write() -> None:
@@ -50,10 +51,11 @@ def test_web_registry_rejects_state_dir_inside_source(tmp_path: Path) -> None:
         raise AssertionError("state dir inside source workspace should be rejected")
 
 
-def test_web_normalizer_is_read_only() -> None:
-    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "single_step_success"
-    before = {str(path.relative_to(fixture)) for path in fixture.rglob("*") if path.is_file()}
-    view = normalize_workspace(fixture)
-    after = {str(path.relative_to(fixture)) for path in fixture.rglob("*") if path.is_file()}
+def test_web_normalizer_is_read_only(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    make_accepted_workspace(workspace)
+    before = {str(path.relative_to(workspace)) for path in workspace.rglob("*") if path.is_file()}
+    view = normalize_workspace(workspace)
+    after = {str(path.relative_to(workspace)) for path in workspace.rglob("*") if path.is_file()}
     assert view["valid"] is True
     assert after == before

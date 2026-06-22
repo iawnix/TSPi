@@ -15,6 +15,10 @@
     "expected_evidence": {"type": "array", "items": {"type": "string"}},
     "evidence_refs": {"type": "array", "items": {"type": "string"}},
     "pathway_ref": {"type": ["object", "null"]},
+    "hypothesis_ref": {"anyOf": [{"$ref": "mechanism.schema.json#/$defs/hypothesis_ref"}, {"type": "null"}]},
+    "initial_mechanism_hypothesis": {
+      "anyOf": [{"$ref": "mechanism.schema.json#/$defs/mechanism_hypothesis_input"}, {"type": "null"}]
+    },
     "backtrack": {"type": ["object", "null"]},
     "closure": {"type": ["object", "null"]}
   },

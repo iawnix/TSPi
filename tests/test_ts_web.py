@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import http.client
 import json
-import shutil
 import subprocess
 import sys
 import threading
@@ -11,22 +10,30 @@ from pathlib import Path
 
 import pytest
 
-from ts_workspace import end_node, init_workspace, report_workspace, start_node, update_workspace
+from ts_workspace import end_node, start_node, update_workspace
 from ts_web import normalize_workspace, register_workspace
 from ts_web.normalize import explorer_graph_payload_from_view
 from ts_web.registry import list_workspaces, register_workspaces
 from ts_web import server as ts_web_server
 from ts_web.server import create_server
+from v3_helpers import (
+    HYPOTHESIS_ID,
+    HYPOTHESIS_REF,
+    bootstrap_v3_workspace,
+    make_accepted_workspace,
+    make_backtrack_workspace,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "scripts" / "ts_web.py"
 
 
-def test_normalize_workspace_uses_canonical_backtrack_events() -> None:
-    fixture = ROOT / "fixtures" / "single_to_multistep_backtrack"
-    tree = json.loads((fixture / "tree.json").read_text(encoding="utf-8"))
-    view = normalize_workspace(fixture)
+def test_normalize_workspace_uses_canonical_backtrack_events(tmp_path: Path) -> None:
+    workspace = tmp_path / "backtrack"
+    make_backtrack_workspace(workspace)
+    tree = json.loads((workspace / "tree.json").read_text(encoding="utf-8"))
+    view = normalize_workspace(workspace)
     assert view["backtrack_edges"] == [
         {
             "event_id": event.get("event_id"),
@@ -40,12 +47,14 @@ def test_normalize_workspace_uses_canonical_backtrack_events() -> None:
         }
         for event in tree["backtrack_events"]
     ]
-    assert view["nodes"][0]["display"]["claim_verdict"] == "refuted"
+    nodes = {node["node_id"]: node for node in view["nodes"]}
+    assert nodes["n001"]["display"]["claim_verdict"] == "refuted"
 
 
-def test_backtrack_visual_semantics_are_distinct_from_refuted_status() -> None:
-    fixture = ROOT / "fixtures" / "single_to_multistep_backtrack"
-    graph = explorer_graph_payload_from_view(normalize_workspace(fixture))
+def test_backtrack_visual_semantics_are_distinct_from_refuted_status(tmp_path: Path) -> None:
+    workspace = tmp_path / "backtrack"
+    make_backtrack_workspace(workspace)
+    graph = explorer_graph_payload_from_view(normalize_workspace(workspace))
     nodes = {node["id"]: node for node in graph["nodes"]}
     replacement_edges = [edge for edge in graph["edges"] if edge["kind"] == "backtrack_replacement"]
 
@@ -83,9 +92,10 @@ def test_static_asset_resolves_from_current_ts_web_package() -> None:
 
 def test_backtrack_edges_and_events_dedupe_when_target_is_replacement(tmp_path: Path) -> None:
     workspace = tmp_path / "dedupe-backtrack"
-    shutil.copytree(ROOT / "fixtures" / "single_to_multistep_backtrack", workspace)
+    make_backtrack_workspace(workspace)
     tree_path = workspace / "tree.json"
     tree = json.loads(tree_path.read_text(encoding="utf-8"))
+    event_id = tree["backtrack_events"][0]["event_id"]
     tree["backtrack_events"][0]["to_node"] = "n002"
     tree["backtrack_events"][0]["new_branch_node"] = "n002"
     tree_path.write_text(json.dumps(tree, indent=2) + "\n", encoding="utf-8")
@@ -95,7 +105,7 @@ def test_backtrack_edges_and_events_dedupe_when_target_is_replacement(tmp_path: 
     n002_events = [
         event
         for event in graph["events"]
-        if event["event_id"] == "bt_8b482922d2" and event["node_id"] == "n002"
+        if event["event_id"] == event_id and event["node_id"] == "n002"
     ]
     nodes = {node["id"]: node for node in graph["nodes"]}
 
@@ -104,12 +114,13 @@ def test_backtrack_edges_and_events_dedupe_when_target_is_replacement(tmp_path: 
     ]
     assert [event["event_role"] for event in n002_events] == ["generated_from_backtrack"]
     assert nodes["n002"]["backtrack_target_event_ids"] == []
-    assert nodes["n002"]["generated_from_backtrack_event_ids"] == ["bt_8b482922d2"]
+    assert nodes["n002"]["generated_from_backtrack_event_ids"] == [event_id]
     assert nodes["n002"]["backtrack_badge"]["role"] == "generated_from_backtrack"
 
 
 def test_register_workspace_deduplicates_and_rejects_source_pollution(tmp_path: Path) -> None:
-    source = ROOT / "fixtures" / "single_step_success"
+    source = tmp_path / "single-step"
+    make_accepted_workspace(source)
     state = tmp_path / "web-state"
     first = register_workspace(source, state, "single")
     second = register_workspace(source, state, "single updated")
@@ -123,7 +134,8 @@ def test_register_workspace_deduplicates_and_rejects_source_pollution(tmp_path: 
 
 
 def test_web_server_api_is_read_only(tmp_path: Path) -> None:
-    source = ROOT / "fixtures" / "single_to_multistep_backtrack"
+    source = tmp_path / "backtrack"
+    make_backtrack_workspace(source)
     before = _relative_files(source)
     state = tmp_path / "web-state"
     row = register_workspace(source, state, "backtrack")
@@ -142,17 +154,18 @@ def test_web_server_api_is_read_only(tmp_path: Path) -> None:
         assert payload["view"]["label"] == "backtrack"
         assert payload["view"]["backtrack_edges"][0]["new_branch_node"] == "n002"
         job = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/job")
-        assert job["graph"]["nodes"][0]["claim_verdict"] == "refuted"
-        assert job["graph"]["edges"][0]["kind"] == "backtrack_replacement"
+        graph_nodes = {node["id"]: node for node in job["graph"]["nodes"]}
+        assert graph_nodes["n001"]["claim_verdict"] == "refuted"
+        assert any(edge["kind"] == "backtrack_replacement" for edge in job["graph"]["edges"])
         single_tree = _get_json(host, port, "/api/tree")
-        assert single_tree["edges"][0]["kind"] == "backtrack_replacement"
+        assert any(edge["kind"] == "backtrack_replacement" for edge in single_tree["edges"])
         node = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/node/n001")
         assert node["node"]["program_status"] == "completed"
         single_node = _get_json(host, port, "/api/node/n001")
         assert single_node["node"]["program_status"] == "completed"
         assert node["markdown"]["decision_card"]
         assert "## Program" in node["markdown"]["reflection"]
-        assert "Frequency job completed." in node["markdown"]["reflection"]
+        assert "Program completed." in node["markdown"]["reflection"]
         assert "## Mechanism" in node["markdown"]["reflection"]
         preview = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/file?path=nodes/n001/node.json")
         assert preview["path"] == "nodes/n001/node.json"
@@ -173,7 +186,8 @@ def test_web_server_api_is_read_only(tmp_path: Path) -> None:
 
 
 def test_web_server_accepts_existing_registry_row_shape(tmp_path: Path) -> None:
-    source = ROOT / "fixtures" / "single_step_success"
+    source = tmp_path / "single-step"
+    make_accepted_workspace(source)
     state = tmp_path / "web-state"
     state.mkdir()
     (state / "workspaces.json").write_text(
@@ -196,7 +210,8 @@ def test_web_server_accepts_existing_registry_row_shape(tmp_path: Path) -> None:
 
 
 def test_ts_web_cli_register(tmp_path: Path) -> None:
-    source = ROOT / "fixtures" / "single_step_success"
+    source = tmp_path / "single-step"
+    make_accepted_workspace(source)
     state = tmp_path / "web-state"
     completed = subprocess.run(
         [
@@ -223,7 +238,11 @@ def test_ts_web_cli_register(tmp_path: Path) -> None:
 
 def test_ts_web_cli_serve_registers_multiple_source_roots(tmp_path: Path) -> None:
     """`serve --source-root` uses the same pre-registration helper."""
-    sources = [ROOT / "fixtures" / "single_step_success", ROOT / "fixtures" / "single_to_multistep_backtrack"]
+    accepted = tmp_path / "accepted"
+    backtrack = tmp_path / "backtrack"
+    make_accepted_workspace(accepted)
+    make_backtrack_workspace(backtrack)
+    sources = [accepted, backtrack]
     state = tmp_path / "web-state"
     register_workspaces(sources, state, ["A", "B"])
     rows = json.loads((state / "workspaces.json").read_text(encoding="utf-8"))["workspaces"]
@@ -235,7 +254,8 @@ def test_ts_web_cli_serve_registers_multiple_source_roots(tmp_path: Path) -> Non
 
 
 def test_ts_web_cli_list_and_remove(tmp_path: Path) -> None:
-    source = ROOT / "fixtures" / "single_step_success"
+    source = tmp_path / "single-step"
+    make_accepted_workspace(source)
     state = tmp_path / "web-state"
     register = subprocess.run(
         [sys.executable, str(CLI), "register", "--source-root", str(source), "--state-dir", str(state), "--label", "x"],
@@ -259,7 +279,8 @@ def test_ts_web_cli_list_and_remove(tmp_path: Path) -> None:
 
 def test_web_server_unknown_workspace_returns_400(tmp_path: Path) -> None:
     """Unknown workspace id is a client error, not a server error."""
-    source = ROOT / "fixtures" / "single_step_success"
+    source = tmp_path / "single-step"
+    make_accepted_workspace(source)
     state = tmp_path / "web-state"
     register_workspace(source, state, "single")
     server = create_server("127.0.0.1", 0, state)
@@ -281,10 +302,14 @@ def test_web_server_unknown_workspace_returns_400(tmp_path: Path) -> None:
 def test_web_claim_state_reflects_pathway_model(tmp_path: Path) -> None:
     """Workspace claim_state is backend-derived from pathway and accepted TS state."""
     state = tmp_path / "web-state"
-    accepted_row = register_workspace(ROOT / "fixtures" / "single_step_success", state, "accepted")
-    hypothesis_row = register_workspace(ROOT / "fixtures" / "single_to_multistep_backtrack", state, "hypothesis")
+    accepted = tmp_path / "accepted"
+    hypothesis = tmp_path / "hypothesis"
+    make_accepted_workspace(accepted)
+    make_backtrack_workspace(hypothesis)
+    accepted_row = register_workspace(accepted, state, "accepted")
+    hypothesis_row = register_workspace(hypothesis, state, "hypothesis")
     pathway_complete = tmp_path / "pathway-complete"
-    shutil.copytree(ROOT / "fixtures" / "single_step_success", pathway_complete)
+    make_accepted_workspace(pathway_complete)
     (pathway_complete / "manifest.json").write_text(
         json.dumps(
             {
@@ -338,7 +363,7 @@ def test_web_claim_state_reflects_pathway_model(tmp_path: Path) -> None:
 
 def test_web_mechanism_analysis_uses_latest_tree_record(tmp_path: Path) -> None:
     workspace = tmp_path / "latest-mechanism"
-    shutil.copytree(ROOT / "fixtures" / "single_step_success", workspace)
+    make_accepted_workspace(workspace)
 
     node_id = "n999_pathway_audit"
     source_node = json.loads((workspace / "nodes" / "n001" / "node.json").read_text(encoding="utf-8"))
@@ -414,9 +439,7 @@ def test_web_mechanism_analysis_uses_latest_tree_record(tmp_path: Path) -> None:
 
 def test_web_mechanism_analysis_includes_closure_facts_and_evidence_quality(tmp_path: Path) -> None:
     workspace = tmp_path / "mechanism-evidence"
-    init_workspace(workspace)
-    report = report_workspace(workspace)
-    report_ref = {"report_id": report["report_id"], "workspace_root": str(workspace)}
+    report_ref = bootstrap_v3_workspace(workspace)
     start_node(
         workspace,
         {
@@ -427,8 +450,10 @@ def test_web_mechanism_analysis_includes_closure_facts_and_evidence_quality(tmp_
             "report_ref": report_ref,
             "payload": {
                 "node_id": "n001",
+                "parent_node": "n000",
                 "phase": "tsfreq_validation",
                 "hypothesis": "The TS candidate is a first-order saddle.",
+                "hypothesis_ref": HYPOTHESIS_REF,
                 "expected_evidence": ["tsfreq_gate"],
             },
         },
@@ -450,6 +475,9 @@ def test_web_mechanism_analysis_includes_closure_facts_and_evidence_quality(tmp_
                     "node_id": "n001",
                     "summary": "One imaginary mode matches the reaction center.",
                     "quality": {
+                        "hypothesis_id": HYPOTHESIS_ID,
+                        "prediction_ids": ["pred_mode_001"],
+                        "verdict_against_prediction": "supported",
                         "imaginary_frequency_count": 1,
                         "imaginary_frequencies_cm-1": [-659.8838],
                         "mode_verdict": "mode_matches_reaction_center",
@@ -479,6 +507,7 @@ def test_web_mechanism_analysis_includes_closure_facts_and_evidence_quality(tmp_
                     },
                     "mechanism": {
                         "summary": "The mode matches C2-C3/C2-O6 exchange.",
+                        "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_mode_001"]},
                         "evidence_refs": ["ev_tsfreq_rich"],
                         "facts": ["C2-C3 elongates while C2-O6 forms."],
                     },
@@ -515,9 +544,7 @@ def test_web_mechanism_analysis_includes_closure_facts_and_evidence_quality(tmp_
 
 def test_web_pathway_audit_not_accepted_is_not_rendered_as_success(tmp_path: Path) -> None:
     workspace = tmp_path / "negative-pathway-audit"
-    init_workspace(workspace)
-    report = report_workspace(workspace)
-    report_ref = {"report_id": report["report_id"], "workspace_root": str(workspace)}
+    report_ref = bootstrap_v3_workspace(workspace)
     node_id = "n001_pathway_audit"
 
     start_node(
@@ -530,8 +557,10 @@ def test_web_pathway_audit_not_accepted_is_not_rendered_as_success(tmp_path: Pat
             "report_ref": report_ref,
             "payload": {
                 "node_id": node_id,
+                "parent_node": "n000",
                 "phase": "pathway_audit",
                 "hypothesis": "The current evidence may not support strict R to P connectivity.",
+                "hypothesis_ref": HYPOTHESIS_REF,
                 "expected_evidence": ["pathway_audit_summary"],
                 "pathway_ref": {"pathway_id": "p_r_to_i_to_p", "step_id": "s_i_to_p"},
             },
@@ -554,6 +583,7 @@ def test_web_pathway_audit_not_accepted_is_not_rendered_as_success(tmp_path: Pat
                     "node_id": node_id,
                     "summary": "Strict R->P pathway is not accepted because the connectivity gate is missing.",
                     "quality": {
+                        "hypothesis_id": HYPOTHESIS_ID,
                         "strict_pathway_supported": False,
                         "strict_pathway_decision": "not_accepted",
                         "accepted_ts_available": False,
@@ -580,6 +610,7 @@ def test_web_pathway_audit_not_accepted_is_not_rendered_as_success(tmp_path: Pat
                     "program": {"summary": "Audit completed.", "evidence_refs": ["ev_negative_pathway_audit"]},
                     "mechanism": {
                         "summary": "The audit supports not accepting the pathway.",
+                        "hypothesis_ref": HYPOTHESIS_REF,
                         "evidence_refs": ["ev_negative_pathway_audit"],
                     },
                     "implication": "Agent decides whether to open a new hypothesis branch.",
@@ -591,7 +622,7 @@ def test_web_pathway_audit_not_accepted_is_not_rendered_as_success(tmp_path: Pat
 
     view = normalize_workspace(workspace)
     graph = explorer_graph_payload_from_view(view)
-    node = graph["nodes"][0]
+    node = next(item for item in graph["nodes"] if item["id"] == node_id)
 
     assert view["valid"] is True
     assert node["claim_verdict"] == "supported"
@@ -674,9 +705,7 @@ def _relative_files(root: Path) -> set[str]:
 
 
 def _make_refuted_terminal_workspace(workspace: Path) -> None:
-    init_workspace(workspace)
-    report = report_workspace(workspace)
-    report_ref = {"report_id": report["report_id"], "workspace_root": str(workspace)}
+    report_ref = bootstrap_v3_workspace(workspace)
     start_node(
         workspace,
         {
@@ -687,8 +716,10 @@ def _make_refuted_terminal_workspace(workspace: Path) -> None:
             "report_ref": report_ref,
             "payload": {
                 "node_id": "n001",
+                "parent_node": "n000",
                 "phase": "connectivity_validation",
                 "hypothesis": "Candidate connects the expected endpoints.",
+                "hypothesis_ref": HYPOTHESIS_REF,
                 "expected_evidence": [],
             },
         },
@@ -707,7 +738,16 @@ def _make_refuted_terminal_workspace(workspace: Path) -> None:
                     "program_status": "completed",
                     "claim_verdict": "refuted",
                     "program": {"summary": "Connectivity check completed.", "evidence_refs": []},
-                    "mechanism": {"summary": "Endpoint assignment is not connected.", "evidence_refs": []},
+                    "mechanism": {
+                        "summary": "Endpoint assignment is not connected.",
+                        "hypothesis_ref": HYPOTHESIS_REF,
+                        "revision": {
+                            "action": "refute_prediction",
+                            "prediction_ids": HYPOTHESIS_REF["prediction_ids"],
+                            "changed_variable": "reaction_center",
+                        },
+                        "evidence_refs": [],
+                    },
                     "implication": "Open a replacement branch.",
                     "open_questions": ["Find a different candidate."],
                 },

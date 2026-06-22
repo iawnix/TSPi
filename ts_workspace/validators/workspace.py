@@ -8,6 +8,8 @@ from typing import Any
 from ..io import read_json
 from .decision import (
     FORBIDDEN_PUBLIC_FIELDS,
+    HYPOTHESIS_REF_PHASES,
+    INITIAL_HYPOTHESIS_PHASES,
     VALID_CLAIM_VERDICTS,
     VALID_LIFECYCLES,
     VALID_PHASES,
@@ -50,6 +52,8 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
             except Exception as exc:  # noqa: BLE001
                 _finding(findings, "error", "invalid_json", str(exc), filename)
 
+    mechanism_model = loaded.get("mechanism_model.json", {})
+    hypothesis_ids = _validate_mechanism_model(mechanism_model, findings)
     tree = loaded.get("tree.json", {})
     node_entries = tree.get("nodes", []) if isinstance(tree, dict) else []
     node_ids = set()
@@ -79,12 +83,13 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
             _finding(findings, "error", "invalid_node_json", str(exc), str(node_path))
             continue
         node_details[node_id] = node
-        _validate_node(node, node_id, findings, str(node_path))
+        _validate_node(node, node_id, hypothesis_ids, findings, str(node_path))
 
     current_node = tree.get("current_node") if isinstance(tree, dict) else None
     if current_node is not None and current_node not in node_ids:
         _finding(findings, "error", "invalid_current_node", "tree.current_node does not exist", "tree.json")
     if isinstance(tree, dict):
+        _validate_initial_node_sequence(ordered_node_ids, node_details, hypothesis_ids, findings)
         _validate_backtrack_events(tree, node_ids, findings)
         _validate_replacement_backtrack_sequence(tree, ordered_node_ids, node_details, findings)
         _validate_unresolved_terminal_state(
@@ -113,11 +118,27 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
                 _finding(findings, "error", "duplicate_evidence_id", f"duplicate evidence {evidence_id}", "evidence_registry.json")
             else:
                 ids.add(evidence_id)
+            quality = item.get("quality") if isinstance(item.get("quality"), dict) else {}
+            hypothesis_id = quality.get("hypothesis_id")
+            if hypothesis_id is not None and hypothesis_id not in hypothesis_ids:
+                _finding(
+                    findings,
+                    "error",
+                    "unknown_evidence_hypothesis",
+                    f"evidence references unknown hypothesis_id: {hypothesis_id}",
+                    "evidence_registry.json",
+                )
 
     return {"valid": not any(item["severity"] == "error" for item in findings), "findings": findings}
 
 
-def _validate_node(node: dict[str, Any], expected_id: str, findings: list[dict[str, str]], source: str) -> None:
+def _validate_node(
+    node: dict[str, Any],
+    expected_id: str,
+    hypothesis_ids: set[str],
+    findings: list[dict[str, str]],
+    source: str,
+) -> None:
     if node.get("node_id") != expected_id:
         _finding(findings, "error", "node_id_mismatch", "node_id does not match tree entry", source)
     if node.get("phase") not in VALID_PHASES:
@@ -127,6 +148,17 @@ def _validate_node(node: dict[str, Any], expected_id: str, findings: list[dict[s
         _finding(findings, "error", "invalid_lifecycle", "node lifecycle is invalid", source)
     if not isinstance(node.get("hypothesis"), str) or not node["hypothesis"].strip():
         _finding(findings, "error", "missing_hypothesis", "node hypothesis is required", source)
+    phase = node.get("phase")
+    if phase in INITIAL_HYPOTHESIS_PHASES and not isinstance(node.get("initial_mechanism_hypothesis"), dict):
+        _finding(
+            findings,
+            "error",
+            "missing_initial_mechanism_hypothesis",
+            "endpoint/preflight node requires initial_mechanism_hypothesis",
+            source,
+        )
+    if phase in HYPOTHESIS_REF_PHASES:
+        _validate_hypothesis_ref(node.get("hypothesis_ref"), hypothesis_ids, findings, source, "node.hypothesis_ref")
 
     closure = node.get("closure")
     if lifecycle == "running" and closure is not None:
@@ -139,6 +171,86 @@ def _validate_node(node: dict[str, Any], expected_id: str, findings: list[dict[s
             _finding(findings, "error", "invalid_program_status", "closure.program_status is invalid", source)
         if closure.get("claim_verdict") not in VALID_CLAIM_VERDICTS:
             _finding(findings, "error", "invalid_claim_verdict", "closure.claim_verdict is invalid", source)
+        mechanism = closure.get("mechanism") if isinstance(closure.get("mechanism"), dict) else {}
+        if phase in HYPOTHESIS_REF_PHASES:
+            _validate_hypothesis_ref(
+                mechanism.get("hypothesis_ref"),
+                hypothesis_ids,
+                findings,
+                source,
+                "closure.mechanism.hypothesis_ref",
+            )
+            node_ref = node.get("hypothesis_ref") if isinstance(node.get("hypothesis_ref"), dict) else {}
+            mech_ref = mechanism.get("hypothesis_ref") if isinstance(mechanism.get("hypothesis_ref"), dict) else {}
+            if node_ref.get("hypothesis_id") != mech_ref.get("hypothesis_id"):
+                _finding(
+                    findings,
+                    "error",
+                    "mismatched_closure_hypothesis_ref",
+                    "closure mechanism hypothesis_ref must match node hypothesis_ref",
+                    source,
+                )
+
+
+def _validate_mechanism_model(model: Any, findings: list[dict[str, str]]) -> set[str]:
+    source = "mechanism_model.json"
+    hypothesis_ids: set[str] = set()
+    if not isinstance(model, dict):
+        _finding(findings, "error", "invalid_mechanism_model", "mechanism_model must be an object", source)
+        return hypothesis_ids
+    if model.get("schema_version") != "ts-mechanism":
+        _finding(findings, "error", "invalid_mechanism_schema", "mechanism_model schema_version must be ts-mechanism", source)
+    if "focus_hypothesis_id" not in model:
+        _finding(findings, "error", "missing_focus_hypothesis_id", "mechanism_model.focus_hypothesis_id is required", source)
+    hypotheses = model.get("hypotheses")
+    if not isinstance(hypotheses, list):
+        _finding(findings, "error", "invalid_hypotheses", "mechanism_model.hypotheses must be a list", source)
+        return hypothesis_ids
+    for index, hypothesis in enumerate(hypotheses):
+        path = f"{source}.hypotheses[{index}]"
+        if not isinstance(hypothesis, dict):
+            _finding(findings, "error", "invalid_hypothesis", "hypothesis must be an object", path)
+            continue
+        hypothesis_id = hypothesis.get("hypothesis_id")
+        if not isinstance(hypothesis_id, str) or not hypothesis_id:
+            _finding(findings, "error", "missing_hypothesis_id", "hypothesis_id is required", path)
+            continue
+        if hypothesis_id in hypothesis_ids:
+            _finding(findings, "error", "duplicate_hypothesis_id", f"duplicate hypothesis_id: {hypothesis_id}", path)
+        hypothesis_ids.add(hypothesis_id)
+        for field in ("summary", "status", "source_node"):
+            if not isinstance(hypothesis.get(field), str) or not hypothesis[field].strip():
+                _finding(findings, "error", "invalid_hypothesis", f"{field} is required", path)
+        if not isinstance(hypothesis.get("structured_claim"), dict):
+            _finding(findings, "error", "invalid_hypothesis", "structured_claim must be an object", path)
+        if not isinstance(hypothesis.get("testable_predictions"), list):
+            _finding(findings, "error", "invalid_hypothesis", "testable_predictions must be a list", path)
+        if not isinstance(hypothesis.get("required_evidence"), list):
+            _finding(findings, "error", "invalid_hypothesis", "required_evidence must be a list", path)
+    focus = model.get("focus_hypothesis_id")
+    if focus is not None and focus not in hypothesis_ids:
+        _finding(findings, "error", "invalid_focus_hypothesis_id", "focus_hypothesis_id does not exist", source)
+    return hypothesis_ids
+
+
+def _validate_hypothesis_ref(
+    value: Any,
+    hypothesis_ids: set[str],
+    findings: list[dict[str, str]],
+    source: str,
+    label: str,
+) -> None:
+    if not isinstance(value, dict):
+        _finding(findings, "error", "missing_hypothesis_ref", f"{label} is required", source)
+        return
+    hypothesis_id = value.get("hypothesis_id")
+    if not isinstance(hypothesis_id, str) or not hypothesis_id:
+        _finding(findings, "error", "invalid_hypothesis_ref", f"{label}.hypothesis_id is required", source)
+    elif hypothesis_id not in hypothesis_ids:
+        _finding(findings, "error", "unknown_hypothesis_ref", f"{label} references unknown hypothesis_id: {hypothesis_id}", source)
+    prediction_ids = value.get("prediction_ids", [])
+    if not isinstance(prediction_ids, list):
+        _finding(findings, "error", "invalid_hypothesis_ref", f"{label}.prediction_ids must be a list", source)
 
 
 def _validate_backtrack_events(tree: dict[str, Any], node_ids: set[str], findings: list[dict[str, str]]) -> None:
@@ -157,6 +269,32 @@ def _validate_backtrack_events(tree: dict[str, Any], node_ids: set[str], finding
                 _finding(findings, "error", "invalid_backtrack_event", f"{field} is required", path)
             elif node_id not in node_ids:
                 _finding(findings, "error", "invalid_backtrack_event_node", f"{field} does not exist: {node_id}", path)
+
+
+def _validate_initial_node_sequence(
+    ordered_node_ids: list[str],
+    node_details: dict[str, dict[str, Any]],
+    hypothesis_ids: set[str],
+    findings: list[dict[str, str]],
+) -> None:
+    if not ordered_node_ids:
+        return
+    first_id = ordered_node_ids[0]
+    first = node_details.get(first_id, {})
+    if first_id != "n000":
+        _finding(findings, "error", "missing_n000", "first node must be n000", "tree.json.nodes[0]")
+    if first.get("phase") not in INITIAL_HYPOTHESIS_PHASES:
+        _finding(findings, "error", "invalid_n000_phase", "n000 must be endpoint or preflight", "nodes/n000/node.json")
+    closure = first.get("closure")
+    if isinstance(closure, dict) and closure.get("program_status") == "completed" and closure.get("claim_verdict") == "supported":
+        if not hypothesis_ids:
+            _finding(
+                findings,
+                "error",
+                "missing_finalized_hypothesis",
+                "supported n000 must finalize at least one mechanism hypothesis",
+                "mechanism_model.json.hypotheses",
+            )
 
 
 def _validate_replacement_backtrack_sequence(
@@ -259,10 +397,8 @@ def _is_descendant(node_id: str, ancestor_id: str, parent_by_id: dict[str, Any])
 def _has_accepted_claim(manifest: dict[str, Any], pathway_model: dict[str, Any]) -> bool:
     if _as_list(manifest.get("accepted_ts_refs")):
         return True
-    if manifest.get("current_accepted_pathway") or manifest.get("current_accepted_ts"):
-        return True
     for pathway in _as_list(pathway_model.get("pathways")):
-        if isinstance(pathway, dict) and pathway.get("status") in {"accepted", "complete"}:
+        if isinstance(pathway, dict) and pathway.get("status") == "accepted":
             return True
     return False
 

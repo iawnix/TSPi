@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ..io import read_json
-from .decision import ContractError, validate_decision
+from .decision import HYPOTHESIS_REF_PHASES, INITIAL_HYPOTHESIS_PHASES, ContractError, validate_decision
 from .workspace import REQUIRED_FILES, UNRESOLVED_TERMINAL_VERDICTS
 
 
@@ -16,6 +16,8 @@ def validate_decision_for_workspace(root: str | Path, decision: dict[str, Any]) 
     validate_decision(decision)
     if decision.get("action") == "start_node":
         _validate_start_node_context(Path(root), decision)
+    elif decision.get("action") == "end_node":
+        _validate_end_node_context(Path(root), decision)
     return decision
 
 
@@ -31,7 +33,14 @@ def _validate_start_node_context(root: Path, decision: dict[str, Any]) -> None:
     node_ids = set(ordered_node_ids)
     _validate_backtrack_refs(payload.get("backtrack"), node_ids)
     if not ordered_node_ids:
+        if node_id != "n000":
+            raise ContractError("first node must be explicit n000 endpoint/preflight hypothesis node")
+        if payload.get("phase") not in INITIAL_HYPOTHESIS_PHASES:
+            raise ContractError("first node phase must be endpoint or preflight")
         return
+
+    if payload.get("phase") in HYPOTHESIS_REF_PHASES:
+        _validate_hypothesis_ref_exists(root, payload["hypothesis_ref"])
 
     previous_id = ordered_node_ids[-1]
     previous = _read_node(root, previous_id)
@@ -55,6 +64,32 @@ def _validate_start_node_context(root: Path, decision: dict[str, Any]) -> None:
             "payload.backtrack.from_node must match the terminal unresolved "
             f"node being replaced: {previous_id}"
         )
+
+
+def _validate_end_node_context(root: Path, decision: dict[str, Any]) -> None:
+    _require_initialized(root)
+    payload = decision["payload"]
+    node = _read_node(root, payload["node_id"])
+    phase = node.get("phase")
+    closure = payload["closure"]
+    mechanism = closure.get("mechanism", {}) if isinstance(closure.get("mechanism"), dict) else {}
+
+    if phase in INITIAL_HYPOTHESIS_PHASES:
+        if closure.get("program_status") == "completed":
+            if not isinstance(node.get("initial_mechanism_hypothesis"), dict):
+                raise ContractError("completed endpoint/preflight node requires initial_mechanism_hypothesis")
+        return
+
+    if phase in HYPOTHESIS_REF_PHASES:
+        node_ref = node.get("hypothesis_ref")
+        mechanism_ref = mechanism.get("hypothesis_ref")
+        if not isinstance(node_ref, dict):
+            raise ContractError("node.hypothesis_ref is required for mechanism phase closure")
+        if not isinstance(mechanism_ref, dict):
+            raise ContractError("closure.mechanism.hypothesis_ref is required for mechanism phase closure")
+        if mechanism_ref.get("hypothesis_id") != node_ref.get("hypothesis_id"):
+            raise ContractError("closure.mechanism.hypothesis_ref must match node.hypothesis_ref")
+        _validate_hypothesis_ref_exists(root, mechanism_ref)
 
 
 def _require_initialized(root: Path) -> None:
@@ -85,6 +120,18 @@ def _validate_backtrack_refs(backtrack: Any, node_ids: set[str]) -> None:
         node_id = backtrack.get(field)
         if node_id not in node_ids:
             raise ContractError(f"payload.backtrack.{field} does not exist: {node_id}")
+
+
+def _validate_hypothesis_ref_exists(root: Path, hypothesis_ref: dict[str, Any]) -> None:
+    model = read_json(root / "mechanism_model.json")
+    hypothesis_id = hypothesis_ref.get("hypothesis_id")
+    ids = {
+        item.get("hypothesis_id")
+        for item in model.get("hypotheses", [])
+        if isinstance(item, dict)
+    }
+    if hypothesis_id not in ids:
+        raise ContractError(f"unknown hypothesis_ref.hypothesis_id: {hypothesis_id}")
 
 
 def _parent_map(root: Path, ordered_node_ids: list[str]) -> dict[str, Any]:

@@ -4,13 +4,12 @@ from pathlib import Path
 
 from ts_report import build_final_report
 from ts_workspace import end_node, init_workspace, report_workspace, start_node, update_workspace
+from v3_helpers import HYPOTHESIS_ID, HYPOTHESIS_REF, bootstrap_v3_workspace
 
 
 def test_report_labels_negative_pathway_audit_outcome(tmp_path: Path) -> None:
     workspace = tmp_path / "negative-audit-report"
-    init_workspace(workspace)
-    report = report_workspace(workspace)
-    report_ref = {"report_id": report["report_id"], "workspace_root": str(workspace)}
+    report_ref = bootstrap_v3_workspace(workspace)
     node_id = "n001_pathway_audit"
 
     start_node(
@@ -25,6 +24,7 @@ def test_report_labels_negative_pathway_audit_outcome(tmp_path: Path) -> None:
                 "node_id": node_id,
                 "phase": "pathway_audit",
                 "hypothesis": "The strict pathway may be unaccepted.",
+                "hypothesis_ref": HYPOTHESIS_REF,
                 "expected_evidence": ["pathway_audit_summary"],
                 "pathway_ref": {"pathway_id": "p_test", "step_id": "s_i_to_p"},
             },
@@ -47,6 +47,7 @@ def test_report_labels_negative_pathway_audit_outcome(tmp_path: Path) -> None:
                     "node_id": node_id,
                     "summary": "The strict pathway is not accepted.",
                     "quality": {
+                        "hypothesis_id": HYPOTHESIS_ID,
                         "strict_pathway_supported": False,
                         "strict_pathway_decision": "not_accepted",
                     },
@@ -68,7 +69,11 @@ def test_report_labels_negative_pathway_audit_outcome(tmp_path: Path) -> None:
                     "program_status": "completed",
                     "claim_verdict": "supported",
                     "program": {"summary": "Audit completed.", "evidence_refs": ["ev_negative_audit"]},
-                    "mechanism": {"summary": "Pathway not accepted.", "evidence_refs": ["ev_negative_audit"]},
+                    "mechanism": {
+                        "summary": "Pathway not accepted.",
+                        "hypothesis_ref": HYPOTHESIS_REF,
+                        "evidence_refs": ["ev_negative_audit"],
+                    },
                     "implication": "Agent decides the next branch.",
                     "open_questions": [],
                 },

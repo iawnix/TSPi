@@ -27,6 +27,7 @@ def init_workspace(root: str | Path, decision: dict[str, Any] | None = None) -> 
             "schema_version": "ts-workspace",
             "created_at": now_iso(),
             "current_focus": None,
+            "hypothesis_contract_version": "v3",
             "accepted_ts_refs": [],
             "provenance": [],
         },
@@ -46,6 +47,7 @@ def init_workspace(root: str | Path, decision: dict[str, Any] | None = None) -> 
         root_path / "mechanism_model.json",
         {
             "schema_version": "ts-mechanism",
+            "focus_hypothesis_id": None,
             "hypotheses": [],
             "accepted_facts": [],
             "refuted_hypotheses": [],
@@ -85,6 +87,8 @@ def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
         "expected_evidence": payload.get("expected_evidence", []),
         "evidence_refs": decision.get("evidence_refs", []),
         "pathway_ref": payload.get("pathway_ref"),
+        "hypothesis_ref": payload.get("hypothesis_ref"),
+        "initial_mechanism_hypothesis": payload.get("initial_mechanism_hypothesis"),
         "backtrack": payload.get("backtrack"),
         "created_by_decision": _decision_id(decision),
         "started_at": now_iso(),
@@ -104,10 +108,11 @@ def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
             "node_id": node_id,
             "parent_node": node["parent_node"],
             "phase": node["phase"],
-            "lifecycle": node["lifecycle"],
-            "hypothesis": node["hypothesis"],
-        }
-    )
+                "lifecycle": node["lifecycle"],
+                "hypothesis": node["hypothesis"],
+                "hypothesis_ref": node.get("hypothesis_ref"),
+            }
+        )
     if node["parent_node"]:
         tree.setdefault("edges", []).append({"parent_node": node["parent_node"], "child_node": node_id})
     if node["backtrack"]:
@@ -164,7 +169,7 @@ def update_workspace(root: str | Path, decision: dict[str, Any]) -> dict[str, An
 
 def end_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
     root_path = Path(root)
-    validate_decision_dict(decision)
+    validate_decision_for_workspace(root_path, decision)
     _require_initialized(root_path)
     node_id = decision["payload"]["node_id"]
     node_path = root_path / "nodes" / node_id / "node.json"

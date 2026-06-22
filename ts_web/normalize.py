@@ -31,6 +31,7 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         "focus": {
             "current_node": tree.get("current_node"),
             "focus_pathway_id": pathway_model.get("focus_pathway_id"),
+            "focus_hypothesis_id": mechanism_model.get("focus_hypothesis_id"),
             "accepted_ts_refs": manifest.get("accepted_ts_refs", []),
         },
         "nodes": nodes,
@@ -40,6 +41,8 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         "pathways": _list(pathway_model.get("pathways")),
         "evidence": evidence_records,
         "mechanism": {
+            "focus_hypothesis_id": mechanism_model.get("focus_hypothesis_id"),
+            "hypotheses": _list(mechanism_model.get("hypotheses")),
             "accepted_facts": _list(mechanism_model.get("accepted_facts")),
             "refuted_hypotheses": _list(mechanism_model.get("refuted_hypotheses")),
             "open_questions": _list(mechanism_model.get("open_questions")),
@@ -461,11 +464,13 @@ def _explorer_mechanism(mechanism_model: dict[str, Any], *, view: dict[str, Any]
     refuted_hypotheses = _list(mechanism_model.get("refuted_hypotheses"))
     open_questions = _list(mechanism_model.get("open_questions"))
     hypotheses = _list(mechanism_model.get("hypotheses"))
+    hypothesis_predictions = _hypothesis_prediction_records(hypotheses)
     latest_records = _latest_mechanism_records(
         {
             "accepted_facts": accepted_facts,
             "refuted_hypotheses": refuted_hypotheses,
             "open_questions": open_questions,
+            "hypothesis_predictions": hypothesis_predictions,
             "hypotheses": hypotheses,
         },
         view=view,
@@ -479,13 +484,32 @@ def _explorer_mechanism(mechanism_model: dict[str, Any], *, view: dict[str, Any]
     }
 
 
+def _hypothesis_prediction_records(hypotheses: list[Any]) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for hypothesis in hypotheses:
+        if not isinstance(hypothesis, dict):
+            continue
+        for row in _list(hypothesis.get("prediction_status")):
+            if not isinstance(row, dict):
+                continue
+            records.append(
+                {
+                    **row,
+                    "hypothesis_id": hypothesis.get("hypothesis_id"),
+                    "hypothesis": hypothesis.get("summary"),
+                    "mechanism_summary": f"Prediction status for {hypothesis.get('hypothesis_id')}.",
+                }
+            )
+    return records
+
+
 def _latest_mechanism_records(
     groups: dict[str, list[Any]],
     *,
     view: dict[str, Any] | None = None,
 ) -> list[Any]:
     records: list[Any] = []
-    for key in ("accepted_facts", "refuted_hypotheses", "open_questions", "hypotheses"):
+    for key in ("accepted_facts", "refuted_hypotheses", "open_questions", "hypothesis_predictions", "hypotheses"):
         records.extend(groups.get(key, []))
     if not records:
         return []

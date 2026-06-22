@@ -18,7 +18,14 @@
         "workspace_root": {"type": "string"}
       }
     },
-    "payload": {"type": "object"}
+    "payload": {
+      "type": "object",
+      "properties": {
+        "hypothesis_ref": {"$ref": "mechanism.schema.json#/$defs/hypothesis_ref"},
+        "initial_mechanism_hypothesis": {"$ref": "mechanism.schema.json#/$defs/mechanism_hypothesis_input"}
+      },
+      "additionalProperties": true
+    }
   },
   "additionalProperties": true
 }

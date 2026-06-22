@@ -9,12 +9,12 @@ import pytest
 from ts_workspace import end_node, init_workspace, report_workspace, start_node, validate_workspace
 from ts_workspace.validators.decision import ContractError
 from ts_workspace.validators.decision_context import validate_decision_for_workspace
+from v3_helpers import HYPOTHESIS_REF, PATHWAY_REF, bootstrap_v3_workspace
 
 
 def test_start_node_requires_backtrack_for_replacement_after_terminal_refute(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    init_workspace(workspace)
-    report_ref = _report_ref(workspace)
+    report_ref = bootstrap_v3_workspace(workspace)
 
     start_node(workspace, _start_decision(report_ref, node_id="n001", phase="connectivity_validation"))
     end_node(workspace, _end_decision(report_ref, "n001", "refuted"))
@@ -28,10 +28,9 @@ def test_start_node_requires_backtrack_for_replacement_after_terminal_refute(tmp
     assert not (workspace / "nodes" / "n002").exists()
 
 
-def test_validate_workspace_still_detects_legacy_missing_replacement_backtrack(tmp_path: Path) -> None:
+def test_validate_workspace_detects_missing_replacement_backtrack(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    init_workspace(workspace)
-    report_ref = _report_ref(workspace)
+    report_ref = bootstrap_v3_workspace(workspace)
 
     start_node(workspace, _start_decision(report_ref, node_id="n001", phase="connectivity_validation"))
     start_node(workspace, _start_decision(report_ref, node_id="n002", phase="candidate_generation"))
@@ -45,8 +44,7 @@ def test_validate_workspace_still_detects_legacy_missing_replacement_backtrack(t
 
 def test_validate_workspace_accepts_explicit_replacement_backtrack(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    init_workspace(workspace)
-    report_ref = _report_ref(workspace)
+    report_ref = bootstrap_v3_workspace(workspace)
 
     start_node(workspace, _start_decision(report_ref, node_id="n001", phase="connectivity_validation"))
     end_node(workspace, _end_decision(report_ref, "n001", "refuted"))
@@ -58,8 +56,8 @@ def test_validate_workspace_accepts_explicit_replacement_backtrack(tmp_path: Pat
             phase="candidate_generation",
             backtrack={
                 "from_node": "n001",
-                "to_node": "n001",
-                "changed_variable": "candidate generation strategy",
+                "to_node": "n000",
+                "changed_variable": "reaction_center",
                 "reason_code": "connectivity_refuted",
                 "evidence_refs": [],
             },
@@ -74,8 +72,7 @@ def test_validate_workspace_accepts_explicit_replacement_backtrack(tmp_path: Pat
 
 def test_validate_workspace_flags_terminal_unresolved_target(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    init_workspace(workspace)
-    report_ref = _report_ref(workspace)
+    report_ref = bootstrap_v3_workspace(workspace)
 
     start_node(workspace, _start_decision(report_ref, node_id="n001", phase="connectivity_validation"))
     end_node(workspace, _end_decision(report_ref, "n001", "refuted"))
@@ -88,8 +85,7 @@ def test_validate_workspace_flags_terminal_unresolved_target(tmp_path: Path) -> 
 
 def test_pathway_audit_supported_does_not_mark_audited_step_supported(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    init_workspace(workspace)
-    report_ref = _report_ref(workspace)
+    report_ref = bootstrap_v3_workspace(workspace)
 
     start_node(
         workspace,
@@ -115,9 +111,8 @@ def test_pathway_audit_supported_does_not_mark_audited_step_supported(tmp_path: 
 
 def test_tsfreq_support_does_not_mark_pathway_step_supported(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    init_workspace(workspace)
-    report_ref = _report_ref(workspace)
     pathway_ref = {"pathway_id": "p_test", "step_id": "s_r_to_p"}
+    report_ref = bootstrap_v3_workspace(workspace, pathway_ref=pathway_ref)
 
     start_node(
         workspace,
@@ -137,9 +132,8 @@ def test_tsfreq_support_does_not_mark_pathway_step_supported(tmp_path: Path) -> 
 
 def test_connectivity_support_marks_pathway_step_supported(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    init_workspace(workspace)
-    report_ref = _report_ref(workspace)
     pathway_ref = {"pathway_id": "p_test", "step_id": "s_r_to_p"}
+    report_ref = bootstrap_v3_workspace(workspace, pathway_ref=pathway_ref)
 
     start_node(
         workspace,
@@ -172,8 +166,10 @@ def _start_decision(
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "node_id": node_id,
+        "parent_node": "n000",
         "phase": phase,
         "hypothesis": f"Test {phase} hypothesis.",
+        "hypothesis_ref": HYPOTHESIS_REF,
         "expected_evidence": [],
     }
     if backtrack is not None:
@@ -203,7 +199,16 @@ def _end_decision(report_ref: dict[str, str], node_id: str, claim_verdict: str) 
                 "program_status": "completed",
                 "claim_verdict": claim_verdict,
                 "program": {"summary": "Program completed.", "evidence_refs": []},
-                "mechanism": {"summary": "Claim was evaluated.", "evidence_refs": []},
+                "mechanism": {
+                    "summary": "Claim was evaluated.",
+                    "hypothesis_ref": HYPOTHESIS_REF,
+                    "revision": {
+                        "action": "refute_prediction",
+                        "prediction_ids": HYPOTHESIS_REF["prediction_ids"],
+                        "changed_variable": "reaction_center",
+                    } if claim_verdict == "refuted" else None,
+                    "evidence_refs": [],
+                },
                 "implication": "Choose a follow-up branch.",
                 "open_questions": [],
             },

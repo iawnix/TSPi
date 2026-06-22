@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TS mechanism model",
+  "type": "object",
+  "required": ["schema_version", "focus_hypothesis_id", "hypotheses", "accepted_facts", "refuted_hypotheses", "open_questions"],
+  "properties": {
+    "schema_version": {"const": "ts-mechanism"},
+    "focus_hypothesis_id": {"type": ["string", "null"]},
+    "hypotheses": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/mechanism_hypothesis"}
+    },
+    "accepted_facts": {"type": "array"},
+    "refuted_hypotheses": {"type": "array"},
+    "open_questions": {"type": "array"}
+  },
+  "additionalProperties": true,
+  "$defs": {
+    "hypothesis_ref": {
+      "type": "object",
+      "required": ["hypothesis_id"],
+      "properties": {
+        "hypothesis_id": {"type": "string", "minLength": 1},
+        "prediction_ids": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      },
+      "additionalProperties": true
+    },
+    "mechanism_hypothesis_input": {
+      "type": "object",
+      "required": ["summary", "derived_from", "structured_claim", "testable_predictions", "required_evidence", "uncertainties", "alternative_hypotheses"],
+      "properties": {
+        "hypothesis_id": {"type": "string"},
+        "summary": {"type": "string", "minLength": 1},
+        "derived_from": {"type": "object"},
+        "structured_claim": {"$ref": "#/$defs/structured_claim"},
+        "testable_predictions": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/testable_prediction"}
+        },
+        "required_evidence": {"type": "array", "items": {"type": "string"}},
+        "uncertainties": {"type": "array", "items": {"type": "string"}},
+        "alternative_hypotheses": {"type": "array"},
+        "evidence_refs": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    },
+    "mechanism_hypothesis": {
+      "allOf": [
+        {"$ref": "#/$defs/mechanism_hypothesis_input"},
+        {
+          "type": "object",
+          "required": ["hypothesis_id", "status", "source_node"],
+          "properties": {
+            "hypothesis_id": {"type": "string", "minLength": 1},
+            "status": {"enum": ["proposed", "active", "supported", "refuted", "superseded"]},
+            "source_node": {"type": "string", "minLength": 1},
+            "parent_hypothesis_id": {"type": ["string", "null"]},
+            "prediction_status": {"type": "array"}
+          },
+          "additionalProperties": true
+        }
+      ]
+    },
+    "structured_claim": {
+      "type": "object",
+      "required": ["reaction_center", "reaction_class", "elementary_step_model", "electronic_model"],
+      "properties": {
+        "reaction_center": {
+          "type": "object",
+          "properties": {
+            "forming_bonds": {"type": "array"},
+            "breaking_bonds": {"type": "array"},
+            "transferred_atoms": {"type": "array"},
+            "spectator_regions": {"type": "array"}
+          },
+          "additionalProperties": true
+        },
+        "reaction_class": {"type": "array", "items": {"type": "string"}},
+        "elementary_step_model": {"type": "string", "minLength": 1},
+        "electronic_model": {"type": "object"},
+        "pathway_ref": {"type": "object"}
+      },
+      "additionalProperties": true
+    },
+    "testable_prediction": {
+      "type": "object",
+      "required": ["prediction_id", "phase", "expectation"],
+      "properties": {
+        "prediction_id": {"type": "string", "minLength": 1},
+        "phase": {"type": "string", "minLength": 1},
+        "expectation": {"type": "string", "minLength": 1},
+        "required_evidence_roles": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    }
+  }
+}

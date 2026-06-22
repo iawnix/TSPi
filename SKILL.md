@@ -127,11 +127,14 @@ They are not top-level node states.
 2. For a fresh endpoint-based run, start an explicit `node_id=n000`
    `endpoint` or `preflight` node before candidate generation. Use it only for
    source hashes, charge/multiplicity, atom mapping, endpoint sanity checks,
-   and the initial reaction-center hypothesis. Close it before opening `n001`;
-   do not put TS/Freq, IRC, connectivity, or accepted-TS claims in `n000`.
+   and the structured `initial_mechanism_hypothesis`. Close it before opening
+   `n001`; do not put TS/Freq, IRC, connectivity, or accepted-TS claims in
+   `n000`.
 3. Run `report_workspace` before deciding the next node.
 4. Construct a decision JSON with the action, rationale, report reference,
-   evidence references, and payload.
+   evidence references, and payload. Every post-`n000` mechanism node must
+   include `payload.hypothesis_ref` that points to
+   `mechanism_model.hypotheses[]`.
 5. Run `validate_decision` for preflight when useful.
 6. Apply the mutation through `start_node`, `update_workspace`, or `end_node`.
 7. Use `ts_backends`, `ts_remote`, and `mol_comparator` to create artifacts and

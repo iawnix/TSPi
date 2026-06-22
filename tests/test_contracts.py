@@ -18,6 +18,7 @@ def test_required_schema_files_exist() -> None:
         "tree.schema.json",
         "evidence.schema.json",
         "pathway.schema.json",
+        "mechanism.schema.json",
     ]:
         path = ROOT / "ts_workspace" / "contracts" / name
         assert path.exists()
