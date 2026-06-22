@@ -37,7 +37,7 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
             "focus_hypothesis_id": mechanism.get("focus_hypothesis_id"),
             "accepted_ts_refs": manifest.get("accepted_ts_refs", []),
         },
-        "hypothesis_context": _build_hypothesis_context(mechanism, evidence),
+        "hypothesis_context": _build_hypothesis_context(mechanism, evidence, manifest),
         "node_index": nodes,
         "open_nodes": open_nodes,
         "closed_node_count": len(closed_nodes),
@@ -71,7 +71,7 @@ def _read_or_empty(path: Path) -> dict[str, Any]:
         return {}
 
 
-def _build_hypothesis_context(mechanism: dict[str, Any], evidence: dict[str, Any]) -> dict[str, Any]:
+def _build_hypothesis_context(mechanism: dict[str, Any], evidence: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:
     focus_id = mechanism.get("focus_hypothesis_id")
     hypotheses = [item for item in mechanism.get("hypotheses", []) if isinstance(item, dict)]
     active = next((item for item in hypotheses if item.get("hypothesis_id") == focus_id), None)
@@ -93,6 +93,7 @@ def _build_hypothesis_context(mechanism: dict[str, Any], evidence: dict[str, Any
         for item in evidence.get("evidence", [])
         if isinstance(item, dict) and _evidence_matches_hypothesis(item, focus_id)
     }
+    evidence_roles.update(_satisfied_audit_roles(prediction_status, manifest))
     required_next = [
         role for role in (active.get("required_evidence", []) if isinstance(active, dict) else [])
         if role not in evidence_roles
@@ -114,6 +115,20 @@ def _claim_prediction_rows(rows: list[Any]) -> list[dict[str, Any]]:
         row for row in rows
         if isinstance(row, dict) and row.get("phase") != PATHWAY_AUDIT_PHASE
     ]
+
+
+def _satisfied_audit_roles(rows: list[Any], manifest: dict[str, Any]) -> set[str]:
+    roles: set[str] = set()
+    if manifest.get("accepted_ts_refs"):
+        roles.add("accepted_audit")
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        if row.get("phase") == "accepted_audit" and row.get("claim_verdict") == "supported":
+            roles.add("accepted_audit")
+
+    return roles
 
 
 def _pathway_audit_summaries(rows: list[Any], evidence: dict[str, Any]) -> list[dict[str, Any]]:

@@ -5,9 +5,9 @@ from pathlib import Path
 import pytest
 
 from ts_workspace import end_node, report_workspace, start_node, update_workspace, validate_workspace
-from ts_workspace.io import read_json
+from ts_workspace.io import read_json, write_json
 from ts_workspace.validators.decision import ContractError, validate_decision
-from v3_helpers import HYPOTHESIS_ID, HYPOTHESIS_REF, bootstrap_v3_workspace
+from v3_helpers import HYPOTHESIS_ID, HYPOTHESIS_REF, bootstrap_v3_workspace, make_accepted_workspace
 
 
 def test_n000_supported_closure_finalizes_focus_hypothesis(tmp_path: Path) -> None:
@@ -131,6 +131,35 @@ def test_report_workspace_exposes_hypothesis_context(tmp_path: Path) -> None:
     assert report["hypothesis_context"]["focus_hypothesis_id"] == HYPOTHESIS_ID
     assert report["hypothesis_context"]["active_hypothesis"]["hypothesis_id"] == HYPOTHESIS_ID
     assert "tsfreq_gate" in report["hypothesis_context"]["required_next_evidence"]
+
+
+def test_report_treats_accepted_artifact_as_satisfied_after_acceptance(tmp_path: Path) -> None:
+    workspace = tmp_path / "accepted-report"
+    make_accepted_workspace(workspace)
+    _append_required_evidence(workspace, "accepted_audit")
+
+    report = report_workspace(workspace)
+
+    assert "accepted_audit" not in report["hypothesis_context"]["required_next_evidence"]
+
+
+def test_report_treats_supported_accepted_audit_row_as_satisfied(tmp_path: Path) -> None:
+    workspace = tmp_path / "accepted-report-row"
+    make_accepted_workspace(workspace)
+    _append_required_evidence(workspace, "accepted_audit")
+    manifest = read_json(workspace / "manifest.json")
+    manifest["accepted_ts_refs"] = []
+    write_json(workspace / "manifest.json", manifest)
+
+    report = report_workspace(workspace)
+
+    assert "accepted_audit" not in report["hypothesis_context"]["required_next_evidence"]
+
+
+def _append_required_evidence(workspace: Path, role: str) -> None:
+    mechanism = read_json(workspace / "mechanism_model.json")
+    mechanism["hypotheses"][0]["required_evidence"].append(role)
+    write_json(workspace / "mechanism_model.json", mechanism)
 
 
 def test_negative_pathway_audit_does_not_support_audited_prediction(tmp_path: Path) -> None:
