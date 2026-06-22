@@ -3,24 +3,35 @@
 This package keeps the Python workflow kernel authoritative and exposes a thin
 Pi adapter around it.
 
-## Install Or Run
+## Install
 
-From this package directory:
+Install this repository as a Pi package. For a TS task workspace, prefer
+project-local installation so the package is recorded in that task directory's
+`.pi/settings.json` instead of the global Pi settings:
 
 ```bash
-pi -e .
+cd /path/to/ts-workspace
+pi install -l /home/iaw/Codex/Project/2026-06-13/transition-state-workflow-refactor --approve
 ```
 
-Or install from a git/local package source:
+Then start Pi from the same TS workspace:
 
 ```bash
-pi install /path/to/transition-state-workflow-refactor
+TS_WORKSPACE_ROOT=$PWD pi --approve --session-dir .pi/sessions
 ```
 
 Pi loads:
 
 - the root skill via `package.json` `pi.skills`;
 - the context extension at `extensions/ts-workflow-context`.
+
+`pi -e` is for loading one extension file directly; it does not load this
+package manifest from the repository root. For temporary extension-only testing:
+
+```bash
+pi --skill /home/iaw/Codex/Project/2026-06-13/transition-state-workflow-refactor \
+  -e /home/iaw/Codex/Project/2026-06-13/transition-state-workflow-refactor/extensions/ts-workflow-context/index.ts
+```
 
 ## Workspace Context
 
