@@ -16,7 +16,7 @@ class MolVisualizer:
 
     def __init__(
         self,
-        engine: str = "blender",
+        engine: str = "xyzrender",
         style: str = "ball_and_stick",
         color_scheme: str = "cpk",
         background: str = "white",

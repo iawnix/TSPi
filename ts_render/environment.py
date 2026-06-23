@@ -35,12 +35,8 @@ class EnvironmentChecker:
         found = shutil.which("xyzrender")
         return str(Path(found).resolve()) if found else None
 
-    def command_path(self, name: str) -> str | None:
-        found = shutil.which(name)
-        return str(Path(found).resolve()) if found else None
-
     def check_command(self, command: str, args: list[str] | None = None, timeout: int = 30) -> dict[str, Any]:
-        path = self.xyzrender_path() if command == "xyzrender" else self.command_path(command)
+        path = self.xyzrender_path() if command == "xyzrender" else None
         if not path:
             return {"available": False, "path": None, "returncode": None}
         completed = subprocess.run(
@@ -72,27 +68,9 @@ class EnvironmentChecker:
                 "python_executable": manifest.get("python_executable") if manifest else None,
             },
             "xyzrender": self.check_command("xyzrender"),
-            "blender": self.check_command("blender", ["--version"]),
-            "ffmpeg": self.check_command("ffmpeg", ["-version"]),
-            "obabel": self.check_command("obabel", ["-V"]),
         }
 
     def list_available_engines(self) -> list[str]:
-        engines: list[str] = []
         if not self.xyzrender_path():
-            return engines
-        if self.command_path("blender"):
-            engines.append("blender")
-        try:
-            import pyvista  # noqa: F401
-
-            engines.append("pyvista")
-        except ImportError:
-            pass
-        try:
-            import mayavi  # noqa: F401
-
-            engines.append("mayavi")
-        except ImportError:
-            pass
-        return engines
+            return []
+        return ["xyzrender"]

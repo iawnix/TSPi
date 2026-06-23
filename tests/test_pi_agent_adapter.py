@@ -20,6 +20,7 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
     assert manifest["pi"]["extensions"] == ["./extensions/ts-workflow-context"]
     assert manifest["peerDependencies"]["@earendil-works/pi-coding-agent"] == "*"
     assert manifest["peerDependencies"]["typebox"] == "*"
+    assert "postinstall" not in manifest["scripts"]
 
 
 def test_pi_context_summary_from_report_workspace(tmp_path: Path) -> None:

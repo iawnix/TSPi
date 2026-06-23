@@ -19,6 +19,12 @@ Allowed behavior:
 - create node-scoped image, animation, or diagnostic artifacts;
 - return a structured `RenderResult`.
 
+Render dependency boundary:
+
+- `xyzrender` is the only render backend.
+- Blender, FFmpeg, OpenBabel, Mayavi, and PyVista are not required or probed by
+  `ts_render`.
+
 Forbidden behavior:
 
 - edit `manifest.json`, `tree.json`, `mechanism_model.json`,

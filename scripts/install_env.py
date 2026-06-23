@@ -29,6 +29,7 @@ def main() -> int:
     parser.add_argument("--package-root", default=str(ROOT))
     parser.add_argument("--env-root", help="Directory that stores hashed Conda prefixes.")
     parser.add_argument("--conda", help="Path to conda or mamba executable.")
+    parser.add_argument("--conda-root", help="Root directory of an existing Conda or Mamba installation.")
     parser.add_argument("--dry-run", action="store_true", help="Print the planned environment without creating it.")
     parser.add_argument("--force", action="store_true", help="Run conda env update even when the prefix already exists.")
     parser.add_argument("--with-render", action="store_true", help="Also install optional xyzrender into the runtime env.")
@@ -43,7 +44,8 @@ def main() -> int:
 
     prefix = default_env_prefix(package_root, args.env_root)
     python = env_python(prefix)
-    conda = _resolve_conda(args.conda)
+    conda_root = _resolve_conda_root(args.conda_root)
+    conda = _resolve_conda(args.conda, conda_root)
     action = "reuse" if python.exists() and not args.force else ("update" if prefix.exists() else "create")
     payload = {
         "package_root": str(package_root),
@@ -51,6 +53,7 @@ def main() -> int:
         "spec_sha256": spec_sha256(package_root),
         "env_prefix": str(prefix),
         "python_executable": str(python),
+        "conda_root": str(conda_root) if conda_root else None,
         "conda_executable": conda,
         "action": action,
         "dry_run": bool(args.dry_run),
@@ -62,14 +65,18 @@ def main() -> int:
         return 0
 
     if conda is None:
-        print("error: conda or mamba not found; set --conda or TS_AGENT_CONDA_EXE", file=sys.stderr)
+        print(
+            "error: conda or mamba not found; set --conda, --conda-root, "
+            "TS_AGENT_CONDA_EXE, or TS_AGENT_CONDA_ROOT",
+            file=sys.stderr,
+        )
         return 2
 
     prefix.parent.mkdir(parents=True, exist_ok=True)
     if action == "create":
-        command = [conda, "env", "create", "--solver", "libmamba", "-p", str(prefix), "-f", str(spec_path)]
+        command = _conda_env_command(conda, "create", prefix, spec_path)
     elif action == "update":
-        command = [conda, "env", "update", "--solver", "libmamba", "-p", str(prefix), "-f", str(spec_path), "--prune"]
+        command = _conda_env_command(conda, "update", prefix, spec_path)
     else:
         command = []
 
@@ -94,6 +101,7 @@ def main() -> int:
         "spec_sha256": payload["spec_sha256"],
         "env_prefix": str(prefix),
         "python_executable": str(python),
+        "conda_root": str(conda_root) if conda_root else None,
         "conda_executable": conda,
         "render_dependencies_requested": bool(args.with_render),
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
@@ -105,19 +113,47 @@ def main() -> int:
     return 0
 
 
-def _resolve_conda(explicit: str | None) -> str | None:
+def _resolve_conda_root(explicit: str | None) -> Path | None:
+    root = explicit or os.environ.get("TS_AGENT_CONDA_ROOT")
+    if not root:
+        return None
+    return Path(root).expanduser().resolve()
+
+
+def _resolve_conda(explicit: str | None, conda_root: Path | None) -> str | None:
     candidates = [
         explicit,
+        *_conda_root_candidates(conda_root),
         os.environ.get("TS_AGENT_CONDA_EXE"),
+        *_conda_root_candidates(_resolve_conda_root(None) if conda_root is None else None),
         shutil.which("mamba"),
         shutil.which("conda"),
-        "/home/iaw/soft/conda/2026.03.05/bin/conda",
-        "/home/iaw/soft/conda/2026.03.05/condabin/conda",
     ]
     for candidate in candidates:
         if candidate and Path(candidate).expanduser().exists():
             return str(Path(candidate).expanduser().resolve())
     return None
+
+
+def _conda_root_candidates(conda_root: Path | None) -> list[str]:
+    if conda_root is None:
+        return []
+    return [
+        str(conda_root / "bin" / "mamba"),
+        str(conda_root / "condabin" / "mamba"),
+        str(conda_root / "bin" / "conda"),
+        str(conda_root / "condabin" / "conda"),
+    ]
+
+
+def _conda_env_command(conda: str, action: str, prefix: Path, spec_path: Path) -> list[str]:
+    command = [conda, "env", action]
+    if Path(conda).name == "conda":
+        command.extend(["--solver", "libmamba"])
+    command.extend(["-p", str(prefix), "-f", str(spec_path)])
+    if action == "update":
+        command.append("--prune")
+    return command
 
 
 def _print(payload: dict, as_json: bool) -> None:

@@ -17,7 +17,7 @@ pi install -l /home/iaw/Codex/Project/2026-06-13/transition-state-workflow-refac
 Install or refresh the isolated Python runtime:
 
 ```bash
-python scripts/install_env.py --json
+python scripts/install_env.py --conda-root /path/to/miniforge3 --with-render --json
 ```
 
 Then start Pi from the same TS workspace:

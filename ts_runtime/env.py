@@ -62,13 +62,6 @@ def default_env_store(package_root: str | Path | None = None) -> Path:
             return agents_root / "envs" / SKILL_NAME
         return agents_root.parent / ".envs" / SKILL_NAME
 
-    ts_root = Path("/home/iaw/TS")
-    if ts_root.exists():
-        agents_root = ts_root / ".agents"
-        if agents_root.exists() and os.access(agents_root, os.W_OK):
-            return agents_root / "envs" / SKILL_NAME
-        return ts_root / ".envs" / SKILL_NAME
-
     return root.parent / ".envs" / SKILL_NAME
 
 
@@ -108,11 +101,23 @@ def configured_python(package_root: str | Path | None = None) -> Path | None:
     manifest = load_manifest(package_root)
     if not manifest:
         return None
+    if not _manifest_matches_spec(package_root, manifest):
+        return None
     python = manifest.get("python_executable")
     if not python:
         return None
     path = Path(str(python)).expanduser().resolve()
     return path if path.exists() else None
+
+
+def _manifest_matches_spec(package_root: str | Path | None, manifest: dict[str, Any]) -> bool:
+    expected = manifest.get("spec_sha256")
+    if not expected:
+        return True
+    spec = environment_spec_path(package_root)
+    if not spec.exists():
+        return False
+    return str(expected) == spec_sha256(package_root)
 
 
 def ensure_runtime_python(package_root: str | Path | None = None) -> None:

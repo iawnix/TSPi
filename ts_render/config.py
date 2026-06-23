@@ -4,7 +4,7 @@ from __future__ import annotations
 
 DEFAULT_RESOLUTION = (1024, 768)
 STYLES = ("ball_and_stick", "space_fill", "wireframe", "stick", "cartoon", "licorice", "van_der_waals")
-ENGINES = ("blender", "mayavi", "pyvista")
+ENGINES = ("xyzrender",)
 COLOR_SCHEMES = ("cpk", "jmol", "rasmol", "element", "temperature", "charge", "electronegativity")
 LAYOUTS = ("horizontal", "vertical", "grid")
 CAMERA_PATHS = ("orbit", "zoom", "pan", "static")

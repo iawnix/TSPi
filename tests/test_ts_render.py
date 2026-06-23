@@ -6,6 +6,11 @@ import sys
 from pathlib import Path
 
 from ts_render import MolVisualizer
+from ts_render.config import ENGINES
+
+
+def test_ts_render_exposes_only_xyzrender_engine() -> None:
+    assert ENGINES == ("xyzrender",)
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -54,6 +59,9 @@ def test_ts_render_cli_diagnostic_json(tmp_path: Path, monkeypatch) -> None:
 
     assert payload["xyzrender"]["available"] is True
     assert payload["xyzrender"]["path"] == str(fake)
+    assert "blender" not in payload
+    assert "ffmpeg" not in payload
+    assert "obabel" not in payload
 
 
 def _fake_xyzrender(tmp_path: Path) -> Path:

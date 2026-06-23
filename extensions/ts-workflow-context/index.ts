@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
+import { createHash } from "node:crypto";
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
@@ -18,6 +19,7 @@ const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(EXTENSION_DIR, "..", "..");
 const WORKSPACE_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_workspace.py");
 const RUNTIME_MANIFEST = resolve(PACKAGE_ROOT, ".runtime", "env.json");
+const ENVIRONMENT_SPEC = resolve(PACKAGE_ROOT, "environment.yml");
 
 type TsCommand = "validate_decision" | "start_node" | "update_workspace" | "end_node";
 
@@ -136,7 +138,12 @@ function resolvePythonExecutable(): string {
   if (existsSync(RUNTIME_MANIFEST)) {
     try {
       const manifest = JSON.parse(readFileSync(RUNTIME_MANIFEST, "utf8"));
-      if (manifest && typeof manifest.python_executable === "string" && existsSync(manifest.python_executable)) {
+      if (
+        manifest &&
+        manifestMatchesSpec(manifest) &&
+        typeof manifest.python_executable === "string" &&
+        existsSync(manifest.python_executable)
+      ) {
         return manifest.python_executable;
       }
     } catch (_error) {
@@ -144,6 +151,17 @@ function resolvePythonExecutable(): string {
     }
   }
   return "python3";
+}
+
+function manifestMatchesSpec(manifest: { spec_sha256?: unknown }): boolean {
+  if (typeof manifest.spec_sha256 !== "string") {
+    return true;
+  }
+  if (!existsSync(ENVIRONMENT_SPEC)) {
+    return false;
+  }
+  const digest = createHash("sha256").update(readFileSync(ENVIRONMENT_SPEC)).digest("hex");
+  return digest === manifest.spec_sha256;
 }
 
 function requireWorkspaceRoot(inputRoot: string | undefined, cwd: string): string {

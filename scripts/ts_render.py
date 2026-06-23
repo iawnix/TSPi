@@ -104,7 +104,7 @@ def main() -> int:
 
 def _add_common_render_args(parser: argparse.ArgumentParser, default_resolution: str = "1024x768") -> None:
     parser.add_argument("--style", choices=STYLES, default="ball_and_stick")
-    parser.add_argument("--engine", choices=ENGINES, default="blender")
+    parser.add_argument("--engine", choices=ENGINES, default="xyzrender")
     parser.add_argument("--color-scheme", choices=COLOR_SCHEMES, default="cpk")
     parser.add_argument("--background", default="white")
     parser.add_argument("--resolution", default=default_resolution)
@@ -113,7 +113,7 @@ def _add_common_render_args(parser: argparse.ArgumentParser, default_resolution:
 def _print_diagnostic(payload: dict) -> None:
     print(f"python: {payload['python']['executable']}")
     print(f"runtime_env: {payload['runtime'].get('env_prefix') or 'not configured'}")
-    for key in ["xyzrender", "blender", "ffmpeg", "obabel"]:
+    for key in ["xyzrender"]:
         item = payload[key]
         status = "ok" if item.get("available") else "missing"
         print(f"{key}: {status} {item.get('path') or ''}".rstrip())
