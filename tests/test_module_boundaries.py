@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from mol_comparator import compare_structures
+from ts_render import MolVisualizer
 from ts_backends.base import Backend, BackendTask
 from ts_backends.gaussian import GaussianBackend, prepare_gaussian
 from ts_remote.base import Runner
@@ -59,3 +60,33 @@ def test_web_normalizer_is_read_only(tmp_path: Path) -> None:
     after = {str(path.relative_to(workspace)) for path in workspace.rglob("*") if path.is_file()}
     assert view["valid"] is True
     assert after == before
+
+
+def test_ts_render_writes_artifact_without_root_ledger_mutation(tmp_path: Path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    make_accepted_workspace(workspace)
+    fake = tmp_path / "xyzrender"
+    fake.write_text(
+        """#!/usr/bin/env python3
+import sys
+from pathlib import Path
+if "-o" in sys.argv:
+    path = Path(sys.argv[sys.argv.index("-o") + 1])
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"fake image")
+""",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    monkeypatch.setenv("TS_RENDER_XYZRENDER", str(fake))
+    ledgers = ["manifest.json", "tree.json", "mechanism_model.json", "pathway_model.json", "evidence_registry.json"]
+    before = {name: (workspace / name).read_text(encoding="utf-8") for name in ledgers}
+
+    result = MolVisualizer().render_molecule(
+        workspace / "inputs" / "reactant.xyz",
+        workspace / "nodes" / "n001" / "outputs" / "render.png",
+    )
+
+    after = {name: (workspace / name).read_text(encoding="utf-8") for name in ledgers}
+    assert result.ok is True
+    assert before == after

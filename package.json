@@ -10,8 +10,11 @@
     "agent-skill"
   ],
   "scripts": {
-    "test": "python3 -m pytest -q",
-    "test:pi-adapter": "python3 -m pytest -q tests/test_pi_agent_adapter.py"
+    "install-env": "python3 scripts/install_env.py --with-render --json",
+    "install-env:core": "python3 scripts/install_env.py --json",
+    "postinstall": "python3 scripts/install_env.py --with-render --json",
+    "test": "python3 scripts/run_in_runtime.py -m pytest -q",
+    "test:pi-adapter": "python3 scripts/run_in_runtime.py -m pytest -q tests/test_pi_agent_adapter.py"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",

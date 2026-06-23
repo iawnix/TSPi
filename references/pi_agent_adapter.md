@@ -14,6 +14,12 @@ cd /path/to/ts-workspace
 pi install -l /home/iaw/Codex/Project/2026-06-13/transition-state-workflow-refactor --approve
 ```
 
+Install or refresh the isolated Python runtime:
+
+```bash
+python scripts/install_env.py --json
+```
+
 Then start Pi from the same TS workspace:
 
 ```bash
@@ -52,6 +58,10 @@ python scripts/ts_workspace.py report_workspace --root <workspace>
 
 It does not read or mutate ledger files directly. `report_workspace` remains the
 only report source.
+
+If `.runtime/env.json` exists, the extension runs `scripts/ts_workspace.py` with
+the manifest's `python_executable`. Without a manifest it falls back to
+`python3`, matching source-checkout development behavior.
 
 ## Tools
 

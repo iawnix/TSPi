@@ -21,9 +21,15 @@ decision JSON.
   validation, report context, finalizers, and root ledger writes.
 - `mol_comparator`: structural comparison only. It returns metrics, a verdict,
   and uncertainty that can become evidence; it never writes a workspace.
+- `ts_runtime`: isolated Python runtime discovery only. It owns Conda
+  environment manifests and interpreter selection; it never mutates TS
+  workspace ledgers.
 - `ts_backends`: local calculation adapters. Backends prepare commands and parse
   direct artifacts; they do not set node verdicts or accepted TS facts. Gaussian
   input construction and TS/Freq log parsing live in `ts_backends.gaussian`.
+- `ts_render`: molecular visualization only. It returns node-scoped image,
+  animation, and diagnostic artifacts; it never mutates workspace ledgers or
+  makes chemistry verdicts.
 - `ts_remote`: generic staging, submission, polling, fetch, and kill helpers.
   Remote code does not interpret chemistry. Gaussian remote execution lives in
   `ts_remote.gaussian`.
@@ -63,6 +69,20 @@ Gaussian local helper entrypoints are thin wrappers around backend boundaries:
 python scripts/prepare_gaussian_ts_input.py --help
 python scripts/parse_gaussian_ts_result.py --help
 ```
+
+Runtime and visualization entrypoints:
+
+```bash
+python scripts/install_env.py --json
+python scripts/ts_render.py diagnostic --json
+python scripts/ts_render.py render input.xyz -o nodes/n001/outputs/render.png
+python scripts/ts_render.py compare reactant.xyz ts.xyz product.xyz -o nodes/n001/outputs/compare.png
+python scripts/ts_render.py animate irc.xyz -o nodes/n001/outputs/irc.mp4
+```
+
+After installation, public scripts and the Pi extension prefer the interpreter
+recorded in `.runtime/env.json`. If no runtime manifest is present, scripts fall
+back to the current Python so development checkouts remain testable.
 
 Remote Gaussian execution is an internal `ts_remote.gaussian` adapter. Do not
 expose or treat it as an independent public workflow command.
@@ -157,6 +177,9 @@ Read only the reference needed for the current task:
 - `references/state_model.md`
 - `references/pathway_model.md`
 - `references/mol_comparator_contract.md`
+- `references/runtime_environment.md`
+- `references/render_contract.md`
+- `references/report_template.md`
 - `references/backend_contract.md`
 - `references/remote_contract.md`
 - `references/mechanism_reflection.md`

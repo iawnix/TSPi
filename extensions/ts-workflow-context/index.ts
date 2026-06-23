@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
+import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -16,6 +17,7 @@ const {
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(EXTENSION_DIR, "..", "..");
 const WORKSPACE_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_workspace.py");
+const RUNTIME_MANIFEST = resolve(PACKAGE_ROOT, ".runtime", "env.json");
 
 type TsCommand = "validate_decision" | "start_node" | "update_workspace" | "end_node";
 
@@ -123,8 +125,25 @@ export default function (pi: ExtensionAPI) {
 }
 
 async function runJson(pi: ExtensionAPI, command: string, root: string, extraArgs: string[], signal?: AbortSignal) {
-  const result = await pi.exec("python3", [WORKSPACE_CLI, command, "--root", root, ...extraArgs], { signal });
+  const result = await pi.exec(resolvePythonExecutable(), [WORKSPACE_CLI, command, "--root", root, ...extraArgs], { signal });
   return parseJsonOutput(result);
+}
+
+function resolvePythonExecutable(): string {
+  if (process.env.TS_AGENT_PYTHON) {
+    return process.env.TS_AGENT_PYTHON;
+  }
+  if (existsSync(RUNTIME_MANIFEST)) {
+    try {
+      const manifest = JSON.parse(readFileSync(RUNTIME_MANIFEST, "utf8"));
+      if (manifest && typeof manifest.python_executable === "string" && existsSync(manifest.python_executable)) {
+        return manifest.python_executable;
+      }
+    } catch (_error) {
+      return "python3";
+    }
+  }
+  return "python3";
 }
 
 function requireWorkspaceRoot(inputRoot: string | undefined, cwd: string): string {

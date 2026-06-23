@@ -11,6 +11,10 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from ts_runtime import ensure_runtime_python
+
+ensure_runtime_python(ROOT)
+
 from ts_backends.gaussian import prepare_input_main
 
 

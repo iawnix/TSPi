@@ -1,0 +1,15 @@
+name: ts-agent-skill
+channels:
+  - conda-forge
+  - nodefaults
+dependencies:
+  - python=3.11
+  - pip
+  - pytest
+  - numpy
+  - scipy
+  - ase
+  - pillow
+  - imageio
+  - imageio-ffmpeg
+  - ffmpeg

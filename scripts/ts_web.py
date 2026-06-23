@@ -11,6 +11,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from ts_runtime import ensure_runtime_python
+
+ensure_runtime_python(ROOT)
+
 from ts_web import list_workspaces, register_workspace, register_workspaces, serve
 from ts_web.registry import ensure_state_dir
 from ts_workspace.io import read_json, write_json
