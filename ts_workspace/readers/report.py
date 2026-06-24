@@ -79,11 +79,17 @@ def _build_hypothesis_context(mechanism: dict[str, Any], evidence: dict[str, Any
         active = hypotheses[-1]
         focus_id = active.get("hypothesis_id")
     prediction_status = active.get("prediction_status", []) if isinstance(active, dict) else []
+    pathway_audits = _pathway_audit_summaries(prediction_status, evidence)
     claim_prediction_status = _claim_prediction_rows(prediction_status)
     supported = _prediction_ids_by_verdict(claim_prediction_status, "supported")
     refuted = _prediction_ids_by_verdict(claim_prediction_status, "refuted")
     all_predictions = active.get("testable_predictions", []) if isinstance(active, dict) else []
-    known_prediction_ids = supported | refuted | _prediction_ids_by_verdict(claim_prediction_status, "inconclusive")
+    known_prediction_ids = (
+        supported
+        | refuted
+        | _prediction_ids_by_verdict(claim_prediction_status, "inconclusive")
+        | _audited_prediction_ids(pathway_audits)
+    )
     open_predictions = [
         item for item in all_predictions
         if isinstance(item, dict) and item.get("prediction_id") not in known_prediction_ids
@@ -91,9 +97,10 @@ def _build_hypothesis_context(mechanism: dict[str, Any], evidence: dict[str, Any
     evidence_roles = {
         item.get("role")
         for item in evidence.get("evidence", [])
-        if isinstance(item, dict) and _evidence_matches_hypothesis(item, focus_id)
+        if isinstance(item, dict) and _evidence_satisfies_active_hypothesis(item, active, focus_id)
     }
     evidence_roles.update(_satisfied_audit_roles(prediction_status, manifest))
+    evidence_roles.update(_satisfied_pathway_audit_roles(pathway_audits))
     required_next = [
         role for role in (active.get("required_evidence", []) if isinstance(active, dict) else [])
         if role not in evidence_roles
@@ -105,7 +112,7 @@ def _build_hypothesis_context(mechanism: dict[str, Any], evidence: dict[str, Any
         "supported_predictions": sorted(supported),
         "refuted_predictions": sorted(refuted),
         "required_next_evidence": required_next,
-        "pathway_audits": _pathway_audit_summaries(prediction_status, evidence),
+        "pathway_audits": pathway_audits,
     }
 
 
@@ -129,6 +136,22 @@ def _satisfied_audit_roles(rows: list[Any], manifest: dict[str, Any]) -> set[str
             roles.add("accepted_audit")
 
     return roles
+
+
+def _satisfied_pathway_audit_roles(pathway_audits: list[dict[str, Any]]) -> set[str]:
+    for audit in pathway_audits:
+        if audit.get("audit_outcome"):
+            return {"pathway_audit_summary"}
+    return set()
+
+
+def _audited_prediction_ids(pathway_audits: list[dict[str, Any]]) -> set[str]:
+    audited: set[str] = set()
+    for audit in pathway_audits:
+        if not audit.get("audit_outcome"):
+            continue
+        audited.update(str(item) for item in audit.get("prediction_ids", []) if item)
+    return audited
 
 
 def _pathway_audit_summaries(rows: list[Any], evidence: dict[str, Any]) -> list[dict[str, Any]]:
@@ -179,6 +202,20 @@ def _prediction_ids_by_verdict(rows: list[Any], verdict: str) -> set[str]:
             continue
         out.update(str(item) for item in row.get("prediction_ids", []) if item)
     return out
+
+
+def _evidence_satisfies_active_hypothesis(record: dict[str, Any], active: dict[str, Any] | None, hypothesis_id: Any) -> bool:
+    if _evidence_matches_hypothesis(record, hypothesis_id):
+        return True
+    if not isinstance(active, dict):
+        return False
+    evidence_id = record.get("evidence_id")
+    if evidence_id and evidence_id in set(str(item) for item in active.get("evidence_refs", []) if item):
+        return True
+    source_node = active.get("source_node")
+    if source_node and record.get("node_id") == source_node and record.get("role") in set(active.get("required_evidence", [])):
+        return True
+    return False
 
 
 def _evidence_matches_hypothesis(record: dict[str, Any], hypothesis_id: Any) -> bool:

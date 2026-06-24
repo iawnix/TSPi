@@ -7,7 +7,7 @@ import pytest
 from ts_workspace import end_node, report_workspace, start_node, update_workspace, validate_workspace
 from ts_workspace.io import read_json, write_json
 from ts_workspace.validators.decision import ContractError, validate_decision
-from v3_helpers import HYPOTHESIS_ID, HYPOTHESIS_REF, bootstrap_v3_workspace, make_accepted_workspace
+from v3_helpers import HYPOTHESIS_ID, HYPOTHESIS_REF, PATHWAY_REF, bootstrap_v3_workspace, make_accepted_workspace
 
 
 def test_n000_supported_closure_finalizes_focus_hypothesis(tmp_path: Path) -> None:
@@ -154,6 +154,139 @@ def test_report_treats_supported_accepted_audit_row_as_satisfied(tmp_path: Path)
     report = report_workspace(workspace)
 
     assert "accepted_audit" not in report["hypothesis_context"]["required_next_evidence"]
+
+
+def test_report_treats_source_node_foundation_evidence_as_satisfied(tmp_path: Path) -> None:
+    workspace = tmp_path / "source-evidence-report"
+    report_ref = bootstrap_v3_workspace(workspace)
+    update_workspace(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "update_workspace",
+            "rationale": "Register endpoint facts that predate hypothesis IDs.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "append_evidence": [
+                    {
+                        "evidence_id": "ev_endpoint_source",
+                        "kind": "endpoint_provenance",
+                        "role": "endpoint_provenance",
+                        "evidence_tier": "user_provided",
+                        "node_id": "n000",
+                        "summary": "User supplied the endpoint pair.",
+                    },
+                    {
+                        "evidence_id": "ev_charge_spin",
+                        "kind": "charge_multiplicity",
+                        "role": "charge_multiplicity",
+                        "evidence_tier": "user_provided",
+                        "node_id": "n000",
+                        "summary": "Charge/multiplicity are user supplied.",
+                    },
+                    {
+                        "evidence_id": "ev_mapping",
+                        "kind": "atom_mapping",
+                        "role": "atom_mapping",
+                        "evidence_tier": "manual_observation",
+                        "node_id": "n000",
+                        "summary": "Identity mapping is used.",
+                    },
+                ]
+            },
+        },
+    )
+
+    report = report_workspace(workspace)
+
+    required = report["hypothesis_context"]["required_next_evidence"]
+    assert "endpoint_provenance" not in required
+    assert "charge_multiplicity" not in required
+    assert "atom_mapping" not in required
+
+
+def test_report_treats_accepted_pathway_audit_as_satisfied_without_support_pollution(tmp_path: Path) -> None:
+    workspace = tmp_path / "accepted-pathway-audit"
+    report_ref = make_accepted_workspace(workspace)
+    _append_required_evidence(workspace, "pathway_audit_summary")
+    report_ref = {"report_id": report_workspace(workspace)["report_id"], "workspace_root": str(workspace)}
+    start_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "start_node",
+            "rationale": "Start accepted pathway audit.",
+            "evidence_refs": ["ev_tsfreq_001", "ev_conn_001"],
+            "report_ref": report_ref,
+            "payload": {
+                "node_id": "n004",
+                "parent_node": "n003",
+                "phase": "pathway_audit",
+                "hypothesis": "The strict pathway is accepted.",
+                "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_pathway_001"]},
+                "expected_evidence": ["pathway_audit_summary"],
+                "pathway_ref": PATHWAY_REF,
+            },
+        },
+    )
+    update_workspace(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "update_workspace",
+            "rationale": "Register accepted pathway audit evidence.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "append_evidence": {
+                    "evidence_id": "ev_pathway_accepted",
+                    "kind": "pathway_audit_summary",
+                    "role": "pathway_audit_summary",
+                    "evidence_tier": "local_parse",
+                    "node_id": "n004",
+                    "summary": "The strict pathway is accepted.",
+                    "quality": {
+                        "hypothesis_id": HYPOTHESIS_ID,
+                        "strict_pathway_supported": True,
+                        "strict_pathway_decision": "accepted",
+                    },
+                }
+            },
+        },
+    )
+    end_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "end_node",
+            "rationale": "Close accepted pathway audit.",
+            "evidence_refs": ["ev_pathway_accepted"],
+            "report_ref": report_ref,
+            "payload": {
+                "node_id": "n004",
+                "closure": {
+                    "program_status": "completed",
+                    "claim_verdict": "supported",
+                    "program": {"summary": "Audit completed.", "evidence_refs": ["ev_pathway_accepted"]},
+                    "mechanism": {
+                        "summary": "Pathway accepted.",
+                        "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_pathway_001"]},
+                        "evidence_refs": ["ev_pathway_accepted"],
+                    },
+                    "implication": "Report the accepted pathway.",
+                    "open_questions": [],
+                },
+            },
+        },
+    )
+
+    context = report_workspace(workspace)["hypothesis_context"]
+
+    assert "pathway_audit_summary" not in context["required_next_evidence"]
+    assert "pred_pathway_001" not in {item["prediction_id"] for item in context["open_predictions"]}
+    assert "pred_pathway_001" not in context["supported_predictions"]
+    assert context["pathway_audits"][-1]["audit_outcome"] == "accepted"
 
 
 def _append_required_evidence(workspace: Path, role: str) -> None:

@@ -131,18 +131,18 @@ def _claim_state(accepted_refs: list[Any], pathway_model: dict[str, Any], *, vie
     statuses = {p.get("status") for p in pathways if isinstance(p, dict)}
     focus_status = focus.get("status") if isinstance(focus, dict) else None
     audit_outcome = _latest_pathway_audit_outcome(view)
+    if audit_outcome in {"accepted", "pathway_accepted"}:
+        return "pathway_complete"
+    if audit_outcome == "pathway_not_accepted":
+        return "pathway_not_accepted"
     if focus_status in {"accepted", "complete"}:
         return "pathway_complete"
     if focus_status == "supported":
-        if audit_outcome == "pathway_not_accepted" and not accepted_refs:
-            return "pathway_not_accepted"
         if _is_complete_pathway(focus):
             return "pathway_complete"
         if accepted_refs:
             return "accepted_ts"
         return "pathway_partial"
-    if audit_outcome == "pathway_not_accepted" and not accepted_refs:
-        return "pathway_not_accepted"
     if focus_status in {"active", "proposed"}:
         return "pathway_hypothesis"
     if focus_status in {"refuted", "superseded"}:
@@ -858,6 +858,13 @@ def _pathway_audit_display(
             "state": "pathway_not_accepted",
             "audit_outcome": outcome,
         }
+    if outcome in {"accepted", "pathway_accepted"}:
+        return {
+            "label": "pathway accepted",
+            "tone": "success",
+            "state": "supported",
+            "audit_outcome": "accepted",
+        }
     return {}
 
 
@@ -867,6 +874,9 @@ def _pathway_audit_outcome(node_id: str, closure: dict[str, Any], evidence_recor
             continue
         if _record_says_pathway_not_accepted(record):
             return "pathway_not_accepted"
+        decision = _record_pathway_audit_decision(record)
+        if decision in {"accepted", "pathway_accepted"}:
+            return "accepted"
     text_parts = [
         closure.get("reason_code"),
         closure.get("implication"),
@@ -876,6 +886,8 @@ def _pathway_audit_outcome(node_id: str, closure: dict[str, Any], evidence_recor
     text = " ".join(str(part or "").lower() for part in text_parts)
     if any(marker in text for marker in ("not_accepted", "not accepted", "missing connectivity", "no accepted ts")):
         return "pathway_not_accepted"
+    if any(marker in text for marker in ("pathway_accepted", "pathway accepted", "strict_r_to_p_pathway_accepted")):
+        return "accepted"
     return None
 
 
@@ -883,7 +895,7 @@ def _record_says_pathway_not_accepted(record: dict[str, Any]) -> bool:
     quality = record.get("quality") if isinstance(record.get("quality"), dict) else {}
     diagnostics = " ".join(str(item).lower() for item in _list(record.get("diagnostics")))
     summary = str(record.get("summary") or "").lower()
-    decision = str(quality.get("strict_pathway_decision") or quality.get("audit_outcome") or "").lower()
+    decision = _record_pathway_audit_decision(record)
     if quality.get("strict_pathway_supported") is False:
         return True
     if quality.get("accepted_ts_available") is False and "accepted" in summary:
@@ -891,6 +903,19 @@ def _record_says_pathway_not_accepted(record: dict[str, Any]) -> bool:
     if decision in {"not_accepted", "pathway_not_accepted", "not accepted"}:
         return True
     return any(marker in f"{diagnostics} {summary}" for marker in ("no_accepted_ts", "missing connectivity", "not accepted"))
+
+
+def _record_pathway_audit_decision(record: dict[str, Any]) -> str:
+    quality = record.get("quality") if isinstance(record.get("quality"), dict) else {}
+    facts = record.get("facts") if isinstance(record.get("facts"), dict) else {}
+    return str(
+        quality.get("strict_pathway_decision")
+        or quality.get("audit_outcome")
+        or facts.get("strict_pathway_decision")
+        or facts.get("audit_outcome")
+        or facts.get("verdict")
+        or ""
+    ).lower()
 
 
 def _dedupe(items: list[str]) -> list[str]:

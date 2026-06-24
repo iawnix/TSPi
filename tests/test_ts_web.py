@@ -304,10 +304,84 @@ def test_web_claim_state_reflects_pathway_model(tmp_path: Path) -> None:
     state = tmp_path / "web-state"
     accepted = tmp_path / "accepted"
     hypothesis = tmp_path / "hypothesis"
+    pathway_audited = tmp_path / "pathway-audited"
     make_accepted_workspace(accepted)
     make_backtrack_workspace(hypothesis)
+    report_ref = make_accepted_workspace(pathway_audited)
+    start_node(
+        pathway_audited,
+        {
+            "schema_version": "ts-decision",
+            "action": "start_node",
+            "rationale": "Start accepted pathway audit.",
+            "evidence_refs": ["ev_tsfreq_001", "ev_conn_001"],
+            "report_ref": report_ref,
+            "payload": {
+                "node_id": "n004",
+                "parent_node": "n003",
+                "phase": "pathway_audit",
+                "hypothesis": "The strict pathway is accepted.",
+                "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_pathway_001"]},
+                "expected_evidence": ["pathway_audit_summary"],
+                "pathway_ref": {"pathway_id": "p_single", "step_id": "s1"},
+            },
+        },
+    )
+    update_workspace(
+        pathway_audited,
+        {
+            "schema_version": "ts-decision",
+            "action": "update_workspace",
+            "rationale": "Register accepted pathway audit evidence.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "append_evidence": {
+                    "evidence_id": "ev_pathway_accepted",
+                    "kind": "pathway_audit_summary",
+                    "role": "pathway_audit_summary",
+                    "evidence_tier": "local_parse",
+                    "node_id": "n004",
+                    "summary": "The strict pathway is accepted.",
+                    "quality": {
+                        "hypothesis_id": HYPOTHESIS_ID,
+                        "strict_pathway_supported": True,
+                        "strict_pathway_decision": "accepted",
+                    },
+                    "facts": {"whole_R_to_P_pathway_accepted": True},
+                }
+            },
+        },
+    )
+    end_node(
+        pathway_audited,
+        {
+            "schema_version": "ts-decision",
+            "action": "end_node",
+            "rationale": "Close accepted pathway audit.",
+            "evidence_refs": ["ev_pathway_accepted"],
+            "report_ref": report_ref,
+            "payload": {
+                "node_id": "n004",
+                "closure": {
+                    "program_status": "completed",
+                    "claim_verdict": "supported",
+                    "reason_code": "strict_r_to_p_pathway_accepted",
+                    "program": {"summary": "Audit completed.", "evidence_refs": ["ev_pathway_accepted"]},
+                    "mechanism": {
+                        "summary": "Pathway accepted.",
+                        "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_pathway_001"]},
+                        "evidence_refs": ["ev_pathway_accepted"],
+                    },
+                    "implication": "Report the accepted pathway.",
+                    "open_questions": [],
+                },
+            },
+        },
+    )
     accepted_row = register_workspace(accepted, state, "accepted")
     hypothesis_row = register_workspace(hypothesis, state, "hypothesis")
+    pathway_audited_row = register_workspace(pathway_audited, state, "pathway-audited")
     pathway_complete = tmp_path / "pathway-complete"
     make_accepted_workspace(pathway_complete)
     (pathway_complete / "manifest.json").write_text(
@@ -354,6 +428,7 @@ def test_web_claim_state_reflects_pathway_model(tmp_path: Path) -> None:
         by_id = {row["workspace_id"]: row for row in payload["workspaces"]}
         assert by_id[accepted_row["workspace_id"]]["claim_state"] == "accepted_ts"
         assert by_id[hypothesis_row["workspace_id"]]["claim_state"] == "pathway_hypothesis"
+        assert by_id[pathway_audited_row["workspace_id"]]["claim_state"] == "pathway_complete"
         assert by_id[complete_row["workspace_id"]]["claim_state"] == "pathway_complete"
     finally:
         server.shutdown()
