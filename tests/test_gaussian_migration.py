@@ -290,3 +290,58 @@ def test_remote_runner_relaxes_nounset_for_gaussian_profile_source() -> None:
     assert lines[source_index + 1] == "    profile_status=$?"
     assert lines[source_index + 2] == "    set -u"
     assert lines[source_index + 3] == "    set -e"
+
+
+def test_submit_async_gaussian_stages_extra_files_and_uses_generic_lifecycle(monkeypatch, tmp_path: Path) -> None:
+    input_path = tmp_path / "ts.gjf"
+    input_path.write_text("%chk=ts.chk\n# opt=(ts) freq\n\nTitle\n\n0 1\nH 0 0 0\n\n", encoding="utf-8")
+    chk_path = tmp_path / "ts.chk"
+    chk_path.write_bytes(b"checkpoint")
+    output_dir = tmp_path / "pulled"
+    calls: list[list[str]] = []
+    staged_runner = ""
+    staged_receipt = {}
+
+    def fake_run(argv, check):
+        nonlocal staged_runner, staged_receipt
+        calls.append(list(argv))
+        if argv[0] == "scp" and argv[-2].endswith("run_gaussian_on_compute.sh"):
+            staged_runner = Path(argv[-2]).read_text(encoding="utf-8")
+        if argv[0] == "scp" and argv[-2].endswith("remote_receipt.json"):
+            import json
+
+            staged_receipt = json.loads(Path(argv[-2]).read_text(encoding="utf-8"))
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    config = remote_gaussian.RemoteGaussianConfig(
+        input_path=input_path,
+        login_host="login",
+        compute_host="compute",
+        remote_dir="/remote/run",
+        output_dir=output_dir,
+        extra_files=(chk_path,),
+        g16="/opt/g16/g16",
+        g16root="/opt/gaussian",
+        scratch="/scratch/g16",
+        node_id="n123",
+    )
+
+    receipt = remote_gaussian.submit_async_gaussian(config)
+
+    assert receipt.node_id == "n123"
+    assert receipt.receipt_path == "/remote/run/remote_receipt.json"
+    assert staged_receipt["metadata"]["status_path"] == "/remote/run/remote_status.json"
+    assert [call[-1] for call in calls if call[0] == "scp"] == [
+        "login:/remote/run/ts.gjf",
+        "login:/remote/run/ts.chk",
+        "login:/remote/run/run_gaussian_on_compute.sh",
+        "login:/remote/run/remote_receipt.json",
+    ]
+    assert all(not call[-2].startswith("login:") for call in calls if call[0] == "scp")
+    assert '"adapter":"gaussian"' in staged_runner
+    assert 'source "$g16root/g16/bsd/g16.profile"' in staged_runner
+    assert '"$G16" "$INPUT" > g16_driver.out 2> g16_driver.err' in staged_runner
+    assert calls[-1][:2] == ["ssh", "login"]
+    assert calls[-1][2].startswith("ssh compute ")
+    assert "nohup bash ./run_gaussian_on_compute.sh" in calls[-1][2]
