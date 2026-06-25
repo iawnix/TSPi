@@ -6,6 +6,13 @@ The public schema version remains `ts-decision`, but v3 decisions are strict:
 the first node must submit a structured initial hypothesis, and all later
 mechanism phases must reference an existing hypothesis.
 
+Runtime decision shapes live under `templates/decision/`. Those files are the
+authoritative examples for agent-facing workspace mutation. Test files are
+regression fixtures only and must not be used as operating examples for live TS
+research. Templates define JSON shape, provenance, evidence roles, and closure
+semantics; they do not encode fixed retry classification or automatic branch
+selection.
+
 ## Start `n000`
 
 ```json

@@ -1,0 +1,32 @@
+{
+  "schema_version": "ts-decision",
+  "action": "start_node",
+  "rationale": "Start pathway audit after accepted-TS evidence exists.",
+  "evidence_refs": [
+    "${EV_TSFREQ}",
+    "${EV_CONNECTIVITY}"
+  ],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
+  "payload": {
+    "node_id": "n005",
+    "parent_node": "n004",
+    "phase": "pathway_audit",
+    "hypothesis": "Audit whether the accepted TS and endpoint assignments strictly support the requested R to P pathway.",
+    "hypothesis_ref": {
+      "hypothesis_id": "${HYPOTHESIS_ID}",
+      "prediction_ids": [
+        "${PRED_PATHWAY_ID}"
+      ]
+    },
+    "pathway_ref": {
+      "pathway_id": "${PATHWAY_ID}",
+      "step_id": "${STEP_ID}"
+    },
+    "expected_evidence": [
+      "pathway_audit_summary"
+    ]
+  }
+}

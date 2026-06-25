@@ -1,0 +1,129 @@
+{
+  "schema_version": "ts-decision",
+  "action": "start_node",
+  "rationale": "Start endpoint-derived mechanism preflight from user-provided reactant and product structures.",
+  "evidence_refs": [],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
+  "payload": {
+    "node_id": "n000",
+    "phase": "endpoint",
+    "hypothesis": "Initial endpoint-derived mechanism hypothesis.",
+    "initial_mechanism_hypothesis": {
+      "hypothesis_id": "${HYPOTHESIS_ID}",
+      "summary": "${INITIAL_HYPOTHESIS_SUMMARY}",
+      "derived_from": {
+        "reactant_ref": "${REACTANT_REF}",
+        "product_ref": "${PRODUCT_REF}",
+        "charge": "${CHARGE}",
+        "multiplicity": "${MULTIPLICITY}",
+        "atom_mapping_ref": "${ATOM_MAPPING_REF}"
+      },
+      "structured_claim": {
+        "reaction_center": {
+          "forming_bonds": [
+            {
+              "atoms": [
+                "${FORMING_ATOM_A}",
+                "${FORMING_ATOM_B}"
+              ],
+              "label": "${FORMING_BOND_LABEL}"
+            }
+          ],
+          "breaking_bonds": [],
+          "transferred_atoms": [],
+          "spectator_regions": []
+        },
+        "reaction_class": [
+          "${REACTION_CLASS}"
+        ],
+        "elementary_step_model": "${ELEMENTARY_STEP_MODEL}",
+        "electronic_model": {
+          "surface": "${ELECTRONIC_SURFACE}",
+          "spin_surface": "${SPIN_SURFACE}",
+          "net_electron_transfer": "${NET_ELECTRON_TRANSFER}",
+          "charge_transfer": "${CHARGE_TRANSFER}",
+          "spin_density_change": "${SPIN_DENSITY_CHANGE}",
+          "pcet": "${PCET}"
+        },
+        "pathway_ref": {
+          "pathway_id": "${PATHWAY_ID}",
+          "step_id": "${STEP_ID}"
+        }
+      },
+      "testable_predictions": [
+        {
+          "prediction_id": "${PRED_CANDIDATE_ID}",
+          "phase": "candidate_generation",
+          "expectation": "Candidate generation can produce a TS-like structure for the proposed reaction center.",
+          "required_evidence_roles": [
+            "candidate_geometry"
+          ]
+        },
+        {
+          "prediction_id": "${PRED_MODE_ID}",
+          "phase": "tsfreq_validation",
+          "expectation": "The TS/Freq result has one imaginary mode aligned with the proposed reaction coordinate.",
+          "required_evidence_roles": [
+            "tsfreq_gate",
+            "mode_assignment"
+          ]
+        },
+        {
+          "prediction_id": "${PRED_CONN_ID}",
+          "phase": "connectivity_validation",
+          "expectation": "IRC or endpoint displacement connects the candidate to the expected reactant and product basins.",
+          "required_evidence_roles": [
+            "connectivity_gate",
+            "irc_endpoint_assignment"
+          ]
+        },
+        {
+          "prediction_id": "${PRED_PATHWAY_ID}",
+          "phase": "pathway_audit",
+          "expectation": "The accepted TS and connectivity evidence support the audited R to P pathway.",
+          "required_evidence_roles": [
+            "pathway_audit_summary"
+          ]
+        }
+      ],
+      "required_evidence": [
+        "endpoint_provenance",
+        "charge_multiplicity",
+        "atom_mapping",
+        "reaction_center_delta",
+        "initial_mechanism_hypothesis",
+        "candidate_geometry",
+        "tsfreq_gate",
+        "connectivity_gate",
+        "accepted_audit",
+        "pathway_audit_summary"
+      ],
+      "uncertainties": [
+        "Endpoint geometries alone do not prove the reaction timing or electronic mechanism."
+      ],
+      "alternative_hypotheses": [
+        {
+          "summary": "${ALTERNATIVE_HYPOTHESIS_SUMMARY}",
+          "changed_variable": "${ALTERNATIVE_CHANGED_VARIABLE}"
+        }
+      ],
+      "evidence_refs": [
+        "${EV_INITIAL_HYPOTHESIS}",
+        "${EV_ENDPOINT_PROVENANCE}",
+        "${EV_CHARGE_MULTIPLICITY}",
+        "${EV_ATOM_MAPPING}",
+        "${EV_REACTION_CENTER_DELTA}"
+      ]
+    },
+    "expected_evidence": [
+      "endpoint_provenance",
+      "charge_multiplicity",
+      "atom_mapping",
+      "reaction_center_delta",
+      "initial_mechanism_hypothesis"
+    ]
+  }
+}

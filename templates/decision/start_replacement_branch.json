@@ -1,0 +1,41 @@
+{
+  "schema_version": "ts-decision",
+  "action": "start_node",
+  "rationale": "Start a replacement hypothesis branch after an unresolved or refuted terminal node.",
+  "evidence_refs": [
+    "${BACKTRACK_EVIDENCE_REF}"
+  ],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
+  "payload": {
+    "node_id": "${NEW_BRANCH_NODE_ID}",
+    "parent_node": "${BACKTRACK_TO_NODE}",
+    "phase": "candidate_generation",
+    "hypothesis": "Test a revised mechanism variable instead of continuing the failed branch.",
+    "hypothesis_ref": {
+      "hypothesis_id": "${HYPOTHESIS_ID}",
+      "prediction_ids": [
+        "${PRED_CANDIDATE_ID}"
+      ]
+    },
+    "pathway_ref": {
+      "pathway_id": "${REVISED_PATHWAY_ID}",
+      "step_id": "${STEP_ID}"
+    },
+    "backtrack": {
+      "from_node": "${BACKTRACK_FROM_NODE}",
+      "to_node": "${BACKTRACK_TO_NODE}",
+      "changed_variable": "${BACKTRACK_CHANGED_VARIABLE}",
+      "reason_code": "${BACKTRACK_REASON_CODE}",
+      "evidence_refs": [
+        "${BACKTRACK_EVIDENCE_REF}"
+      ]
+    },
+    "expected_evidence": [
+      "candidate_geometry",
+      "candidate_generation_log"
+    ]
+  }
+}

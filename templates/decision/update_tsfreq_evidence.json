@@ -1,0 +1,37 @@
+{
+  "schema_version": "ts-decision",
+  "action": "update_workspace",
+  "rationale": "Register parsed TS/Freq evidence.",
+  "evidence_refs": [],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
+  "payload": {
+    "append_evidence": {
+      "evidence_id": "${EV_TSFREQ}",
+      "kind": "gaussian_tsfreq_validation",
+      "role": "tsfreq_gate",
+      "evidence_tier": "local_parse",
+      "node_id": "n002",
+      "summary": "TS/Freq parsing found exactly one imaginary frequency and the mode matches the proposed reaction coordinate.",
+      "path": "${TSFREQ_LOG_PATH}",
+      "quality": {
+        "hypothesis_id": "${HYPOTHESIS_ID}",
+        "prediction_ids": [
+          "${PRED_MODE_ID}"
+        ],
+        "verdict_against_prediction": "supported",
+        "imaginary_frequency_count": 1,
+        "mode_verdict": "mode_matches_reaction_center"
+      },
+      "facts": {
+        "method": "wB97x",
+        "basis": "6-31G(d)",
+        "imaginary_frequencies_cm-1": [
+          "${IMAGINARY_FREQUENCY_CM1}"
+        ]
+      }
+    }
+  }
+}

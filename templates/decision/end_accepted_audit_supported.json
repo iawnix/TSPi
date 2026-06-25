@@ -1,0 +1,43 @@
+{
+  "schema_version": "ts-decision",
+  "action": "end_node",
+  "rationale": "Close accepted-TS audit after confirming TS/Freq and connectivity gates match the same hypothesis.",
+  "evidence_refs": [
+    "${EV_TSFREQ}",
+    "${EV_CONNECTIVITY}"
+  ],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
+  "payload": {
+    "node_id": "n004",
+    "closure": {
+      "program_status": "completed",
+      "claim_verdict": "supported",
+      "program": {
+        "summary": "Accepted-TS audit checked the required gate evidence.",
+        "evidence_refs": [
+          "${EV_TSFREQ}",
+          "${EV_CONNECTIVITY}"
+        ]
+      },
+      "mechanism": {
+        "summary": "TS/Freq and connectivity gates support the same active hypothesis, so an accepted-TS artifact can be written.",
+        "hypothesis_ref": {
+          "hypothesis_id": "${HYPOTHESIS_ID}",
+          "prediction_ids": [
+            "${PRED_MODE_ID}",
+            "${PRED_CONN_ID}"
+          ]
+        },
+        "evidence_refs": [
+          "${EV_TSFREQ}",
+          "${EV_CONNECTIVITY}"
+        ]
+      },
+      "implication": "Run pathway audit before claiming the full R to P pathway is accepted.",
+      "open_questions": []
+    }
+  }
+}

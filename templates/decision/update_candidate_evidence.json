@@ -1,0 +1,28 @@
+{
+  "schema_version": "ts-decision",
+  "action": "update_workspace",
+  "rationale": "Register TS candidate-generation evidence.",
+  "evidence_refs": [],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
+  "payload": {
+    "append_evidence": {
+      "evidence_id": "${EV_CANDIDATE}",
+      "kind": "candidate_generation",
+      "role": "candidate_geometry",
+      "evidence_tier": "local_compute",
+      "node_id": "n001",
+      "summary": "Candidate-generation produced a TS-like geometry for follow-up TS/Freq validation.",
+      "path": "${CANDIDATE_GEOMETRY_PATH}",
+      "quality": {
+        "hypothesis_id": "${HYPOTHESIS_ID}",
+        "prediction_ids": [
+          "${PRED_CANDIDATE_ID}"
+        ],
+        "verdict_against_prediction": "supported"
+      }
+    }
+  }
+}

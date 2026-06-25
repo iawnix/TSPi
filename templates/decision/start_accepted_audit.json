@@ -1,0 +1,33 @@
+{
+  "schema_version": "ts-decision",
+  "action": "start_node",
+  "rationale": "Start accepted-TS audit after TS/Freq and connectivity gates both support the same hypothesis.",
+  "evidence_refs": [
+    "${EV_TSFREQ}",
+    "${EV_CONNECTIVITY}"
+  ],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
+  "payload": {
+    "node_id": "n004",
+    "parent_node": "n003",
+    "phase": "accepted_audit",
+    "hypothesis": "The candidate can be accepted as a TS for the active hypothesis if both gates match the same hypothesis.",
+    "hypothesis_ref": {
+      "hypothesis_id": "${HYPOTHESIS_ID}",
+      "prediction_ids": [
+        "${PRED_MODE_ID}",
+        "${PRED_CONN_ID}"
+      ]
+    },
+    "pathway_ref": {
+      "pathway_id": "${PATHWAY_ID}",
+      "step_id": "${STEP_ID}"
+    },
+    "expected_evidence": [
+      "accepted_audit"
+    ]
+  }
+}

@@ -91,6 +91,12 @@ Run `report_workspace` before choosing or closing a node. The report gives the
 agent the current hypothesis tree, evidence readiness, open questions, and
 allowed decision shape.
 
+Use `templates/decision/` as the runtime source for decision JSON shape. Files
+under `tests/` are regression fixtures only and must not be used as operating
+examples for real research mutations. Decision templates constrain provenance,
+evidence roles, and closure semantics; they must not be read as a fixed retry
+or branching policy.
+
 ## State Model
 
 Persistent node state has only three public concepts:
@@ -156,8 +162,9 @@ They are not top-level node states.
    `n000`.
 3. Run `report_workspace` before deciding the next node.
 4. Construct a decision JSON with the action, rationale, report reference,
-   evidence references, and payload. Every post-`n000` mechanism node must
-   include `payload.hypothesis_ref` that points to
+   evidence references, and payload. Start from `templates/decision/` when a
+   reusable shape is needed; do not copy JSON from `tests/`. Every post-`n000`
+   mechanism node must include `payload.hypothesis_ref` that points to
    `mechanism_model.hypotheses[]`.
 5. Run `validate_decision` for preflight when useful.
 6. Apply the mutation through `start_node`, `update_workspace`, or `end_node`.

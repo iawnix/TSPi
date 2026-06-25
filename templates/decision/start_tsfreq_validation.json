@@ -1,0 +1,33 @@
+{
+  "schema_version": "ts-decision",
+  "action": "start_node",
+  "rationale": "Start TS/Freq validation for the candidate under the active hypothesis.",
+  "evidence_refs": [
+    "${EV_CANDIDATE}"
+  ],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
+  "payload": {
+    "node_id": "n002",
+    "parent_node": "n001",
+    "phase": "tsfreq_validation",
+    "hypothesis": "The candidate is a first-order saddle with an imaginary mode matching the proposed reaction coordinate.",
+    "hypothesis_ref": {
+      "hypothesis_id": "${HYPOTHESIS_ID}",
+      "prediction_ids": [
+        "${PRED_MODE_ID}"
+      ]
+    },
+    "pathway_ref": {
+      "pathway_id": "${PATHWAY_ID}",
+      "step_id": "${STEP_ID}"
+    },
+    "expected_evidence": [
+      "gaussian_output",
+      "tsfreq_gate",
+      "mode_assignment"
+    ]
+  }
+}

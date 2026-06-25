@@ -1,0 +1,40 @@
+{
+  "schema_version": "ts-decision",
+  "action": "end_node",
+  "rationale": "Close endpoint preflight with a structured initial mechanism hypothesis.",
+  "evidence_refs": [
+    "${EV_ENDPOINT_PROVENANCE}",
+    "${EV_CHARGE_MULTIPLICITY}",
+    "${EV_ATOM_MAPPING}",
+    "${EV_REACTION_CENTER_DELTA}",
+    "${EV_INITIAL_HYPOTHESIS}"
+  ],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
+  "payload": {
+    "node_id": "n000",
+    "closure": {
+      "program_status": "completed",
+      "claim_verdict": "supported",
+      "program": {
+        "summary": "Endpoint provenance, charge/multiplicity, atom mapping, and reaction-center deltas were checked.",
+        "evidence_refs": [
+          "${EV_ENDPOINT_PROVENANCE}",
+          "${EV_CHARGE_MULTIPLICITY}",
+          "${EV_ATOM_MAPPING}",
+          "${EV_REACTION_CENTER_DELTA}"
+        ]
+      },
+      "mechanism": {
+        "summary": "The initial endpoint-derived mechanism hypothesis is ready for candidate generation or direct TS/Freq testing.",
+        "evidence_refs": [
+          "${EV_INITIAL_HYPOTHESIS}"
+        ]
+      },
+      "implication": "Open the next hypothesis-referenced node.",
+      "open_questions": []
+    }
+  }
+}

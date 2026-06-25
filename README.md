@@ -21,6 +21,8 @@ visualization artifact, not chemistry proof.
 - `ts_report`: final report assembly from validated workspace evidence.
 - `extensions/ts-workflow-context`: Pi Agent extension for workspace context,
   validation, and decision tools.
+- `templates/decision/`: runtime decision JSON templates for workspace
+  mutations. These are operating examples; files under `tests/` are not.
 - `templates/ts_final_report.md`: fillable final-report template.
 
 ## Runtime Model
@@ -94,6 +96,12 @@ python scripts/ts_workspace.py validate_workspace --root <workspace>
 
 Run `report_workspace` before choosing or closing a node. Do not edit workspace
 ledgers by hand.
+
+Use `templates/decision/` when preparing runtime decision JSON. Replace the
+`${NAME}` placeholders, run `validate_decision`, then apply the mutation. Do
+not copy decision JSON from `tests/`; tests are fixtures and may intentionally
+omit operating context. The templates constrain state-machine shape and
+evidence provenance only, not a fixed retry policy.
 
 ## Pi Agent Usage
 

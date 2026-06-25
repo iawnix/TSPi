@@ -1,0 +1,33 @@
+{
+  "schema_version": "ts-decision",
+  "action": "update_workspace",
+  "rationale": "Register accepted pathway-audit evidence.",
+  "evidence_refs": [],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
+  "payload": {
+    "append_evidence": {
+      "evidence_id": "${EV_PATHWAY_AUDIT}",
+      "kind": "pathway_audit",
+      "role": "pathway_audit_summary",
+      "evidence_tier": "manual_observation",
+      "node_id": "n005",
+      "summary": "Accepted TS and connectivity evidence support the audited R to P pathway.",
+      "path": "${PATHWAY_AUDIT_PATH}",
+      "quality": {
+        "hypothesis_id": "${HYPOTHESIS_ID}",
+        "prediction_ids": [
+          "${PRED_PATHWAY_ID}"
+        ],
+        "strict_pathway_supported": true,
+        "strict_pathway_decision": "accepted"
+      },
+      "facts": {
+        "whole_R_to_P_pathway_accepted": true,
+        "audit_outcome": "accepted"
+      }
+    }
+  }
+}

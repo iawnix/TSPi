@@ -1,0 +1,34 @@
+{
+  "schema_version": "ts-decision",
+  "action": "update_workspace",
+  "rationale": "Register IRC or endpoint-assignment connectivity evidence.",
+  "evidence_refs": [],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
+  "payload": {
+    "append_evidence": {
+      "evidence_id": "${EV_CONNECTIVITY}",
+      "kind": "irc_connectivity_validation",
+      "role": "connectivity_gate",
+      "evidence_tier": "local_parse",
+      "node_id": "n003",
+      "summary": "Forward and reverse IRC endpoints were assigned to the expected product and reactant basins.",
+      "path": "${IRC_SUMMARY_PATH}",
+      "quality": {
+        "hypothesis_id": "${HYPOTHESIS_ID}",
+        "prediction_ids": [
+          "${PRED_CONN_ID}"
+        ],
+        "verdict_against_prediction": "supported",
+        "forward_assignment": "product",
+        "reverse_assignment": "reactant"
+      },
+      "facts": {
+        "reactant_endpoint_ref": "${IRC_REACTANT_ENDPOINT_REF}",
+        "product_endpoint_ref": "${IRC_PRODUCT_ENDPOINT_REF}"
+      }
+    }
+  }
+}

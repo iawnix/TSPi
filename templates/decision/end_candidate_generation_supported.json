@@ -1,0 +1,39 @@
+{
+  "schema_version": "ts-decision",
+  "action": "end_node",
+  "rationale": "Close candidate generation after producing a structure for TS/Freq validation.",
+  "evidence_refs": [
+    "${EV_CANDIDATE}"
+  ],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
+  "payload": {
+    "node_id": "n001",
+    "closure": {
+      "program_status": "completed",
+      "claim_verdict": "supported",
+      "program": {
+        "summary": "Candidate-generation completed and produced a candidate geometry.",
+        "evidence_refs": [
+          "${EV_CANDIDATE}"
+        ]
+      },
+      "mechanism": {
+        "summary": "The candidate is suitable for TS/Freq validation, but it is not yet an accepted TS.",
+        "hypothesis_ref": {
+          "hypothesis_id": "${HYPOTHESIS_ID}",
+          "prediction_ids": [
+            "${PRED_CANDIDATE_ID}"
+          ]
+        },
+        "evidence_refs": [
+          "${EV_CANDIDATE}"
+        ]
+      },
+      "implication": "Run TS/Freq validation before making any accepted-TS claim.",
+      "open_questions": []
+    }
+  }
+}
