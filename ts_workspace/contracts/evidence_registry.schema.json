@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TS evidence registry",
+  "type": "object",
+  "required": ["schema_version", "evidence"],
+  "properties": {
+    "schema_version": {"const": "ts-evidence-registry"},
+    "evidence": {
+      "type": "array",
+      "items": {"$ref": "evidence.schema.json"}
+    }
+  },
+  "additionalProperties": false
+}

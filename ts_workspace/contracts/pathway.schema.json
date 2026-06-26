@@ -12,11 +12,26 @@
         "type": "object",
         "required": ["pathway_id", "status", "steps"],
         "properties": {
-          "pathway_id": {"type": "string"},
+          "pathway_id": {"type": "string", "minLength": 1},
           "label": {"type": "string"},
           "pattern": {"type": "string"},
           "status": {"enum": ["proposed", "active", "supported", "refuted", "superseded", "accepted"]},
-          "steps": {"type": "array"}
+          "steps": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["step_id", "status"],
+              "properties": {
+                "step_id": {"type": "string", "minLength": 1},
+                "from": {"type": "string"},
+                "to": {"type": "string"},
+                "status": {"enum": ["proposed", "active", "supported", "refuted", "superseded", "accepted"]},
+                "supporting_nodes": {"type": "array", "items": {"type": "string", "minLength": 1}},
+                "audit_nodes": {"type": "array"}
+              },
+              "additionalProperties": true
+            }
+          }
         },
         "additionalProperties": true
       }

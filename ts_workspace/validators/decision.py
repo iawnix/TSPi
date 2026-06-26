@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..schema_validation import SchemaValidationError, validate_contract
+
 
 class ContractError(ValueError):
     """Raised when a decision or workspace contract is invalid."""
@@ -61,7 +63,12 @@ FORBIDDEN_PUBLIC_FIELDS = {
 }
 
 
-def validate_decision(decision: dict[str, Any]) -> dict[str, Any]:
+def validate_decision(decision: Any) -> dict[str, Any]:
+    try:
+        validate_contract("decision.schema.json", decision)
+    except SchemaValidationError as exc:
+        raise ContractError(str(exc)) from exc
+
     _require(isinstance(decision, dict), "decision must be an object")
     _reject_forbidden_keys(decision)
 

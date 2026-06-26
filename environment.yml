@@ -6,6 +6,7 @@ dependencies:
   - python=3.11
   - pip
   - pytest
+  - jsonschema
   - numpy
   - scipy
   - ase

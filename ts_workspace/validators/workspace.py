@@ -7,6 +7,7 @@ from typing import Any
 
 from ..evidence_gates import accepted_gate_evidence, strict_connectivity_diagnostic
 from ..io import read_json
+from ..schema_validation import schema_findings
 from .decision import (
     FORBIDDEN_PUBLIC_FIELDS,
     HYPOTHESIS_REF_PHASES,
@@ -28,6 +29,13 @@ REQUIRED_FILES = {
 
 REQUIRED_DIRS = {"inputs", "nodes", "reports", "accepted", "rejected"}
 UNRESOLVED_TERMINAL_VERDICTS = {"refuted", "inconclusive", "not_evaluated"}
+SCHEMA_BY_FILE = {
+    "manifest.json": "manifest.schema.json",
+    "tree.json": "tree.schema.json",
+    "evidence_registry.json": "evidence_registry.schema.json",
+    "mechanism_model.json": "mechanism.schema.json",
+    "pathway_model.json": "pathway.schema.json",
+}
 
 
 def validate_workspace(root: str | Path) -> dict[str, Any]:
@@ -52,6 +60,10 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
                 loaded[filename] = read_json(path)
             except Exception as exc:  # noqa: BLE001
                 _finding(findings, "error", "invalid_json", str(exc), filename)
+                continue
+            schema_name = SCHEMA_BY_FILE.get(filename)
+            if schema_name:
+                findings.extend(schema_findings(schema_name, loaded[filename], filename))
 
     mechanism_model = loaded.get("mechanism_model.json", {})
     hypothesis_ids = _validate_mechanism_model(mechanism_model, findings)
@@ -83,6 +95,10 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001
             _finding(findings, "error", "invalid_node_json", str(exc), str(node_path))
             continue
+        findings.extend(schema_findings("node.schema.json", node, str(node_path)))
+        if not isinstance(node, dict):
+            _finding(findings, "error", "invalid_node_json", "node.json must contain an object", str(node_path))
+            continue
         node_details[node_id] = node
         _validate_node(node, node_id, hypothesis_ids, findings, str(node_path))
 
@@ -95,8 +111,8 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
         _validate_replacement_backtrack_sequence(tree, ordered_node_ids, node_details, findings)
         _validate_unresolved_terminal_state(
             tree,
-            loaded.get("manifest.json", {}),
-            loaded.get("pathway_model.json", {}),
+            _as_dict(loaded.get("manifest.json")),
+            _as_dict(loaded.get("pathway_model.json")),
             ordered_node_ids,
             node_details,
             findings,
@@ -105,7 +121,7 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
     for filename, data in loaded.items():
         _reject_forbidden(data, findings, filename)
 
-    evidence = loaded.get("evidence_registry.json", {}).get("evidence", [])
+    evidence = _as_dict(loaded.get("evidence_registry.json")).get("evidence", [])
     evidence_by_id: dict[str, dict[str, Any]] = {}
     if isinstance(evidence, list):
         ids: set[str] = set()
@@ -132,7 +148,7 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
                     "evidence_registry.json",
                 )
 
-    _validate_accepted_ts_refs(root_path, loaded.get("manifest.json", {}), evidence_by_id, findings)
+    _validate_accepted_ts_refs(root_path, _as_dict(loaded.get("manifest.json")), evidence_by_id, findings)
 
     return {"valid": not any(item["severity"] == "error" for item in findings), "findings": findings}
 
@@ -427,6 +443,10 @@ def _validate_accepted_ts_refs(
         except Exception as exc:  # noqa: BLE001
             _finding(findings, "error", "invalid_accepted_ts_artifact", str(exc), ref)
             continue
+        findings.extend(schema_findings("accepted_ts.schema.json", artifact, ref))
+        if not isinstance(artifact, dict):
+            _finding(findings, "error", "invalid_accepted_ts_artifact", "accepted artifact must be an object", ref)
+            continue
         evidence_refs = [str(item) for item in _as_list(artifact.get("evidence_refs")) if item]
         try:
             gate_evidence = accepted_gate_evidence(list(evidence_by_id.values()), evidence_refs)
@@ -440,6 +460,10 @@ def _validate_accepted_ts_refs(
 
 def _as_list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
+
+
+def _as_dict(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 def _reject_forbidden(value: Any, findings: list[dict[str, str]], path: str) -> None:
