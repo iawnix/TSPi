@@ -1,7 +1,7 @@
 {
   "schema_version": "ts-decision",
   "action": "end_node",
-  "rationale": "Close connectivity validation with supported R/P endpoint assignments.",
+  "rationale": "Close connectivity validation with normal-terminated bidirectional IRC and supported R/P endpoint assignments.",
   "evidence_refs": [
     "${EV_CONNECTIVITY}"
   ],
@@ -15,13 +15,13 @@
       "program_status": "completed",
       "claim_verdict": "supported",
       "program": {
-        "summary": "IRC or endpoint-assignment analysis completed.",
+        "summary": "Bidirectional IRC and endpoint-assignment analysis completed without unresolved IRC program failures.",
         "evidence_refs": [
           "${EV_CONNECTIVITY}"
         ]
       },
       "mechanism": {
-        "summary": "Connectivity evidence supports the expected R to P assignment for the active hypothesis.",
+        "summary": "Strict connectivity evidence supports the expected R to P assignment for the active hypothesis.",
         "hypothesis_ref": {
           "hypothesis_id": "${HYPOTHESIS_ID}",
           "prediction_ids": [

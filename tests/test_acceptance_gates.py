@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pytest
 
-from ts_workspace import end_node, init_workspace, report_workspace, start_node, update_workspace
-from ts_workspace.io import read_json
-from v3_helpers import HYPOTHESIS_ID, HYPOTHESIS_REF, bootstrap_v3_workspace
+from ts_workspace import end_node, init_workspace, report_workspace, start_node, update_workspace, validate_workspace
+from ts_workspace.io import read_json, write_json
+from v3_helpers import HYPOTHESIS_ID, HYPOTHESIS_REF, bootstrap_v3_workspace, make_accepted_workspace
 
 
 def test_accepted_audit_requires_tsfreq_and_connectivity_gates(tmp_path):
@@ -78,3 +78,122 @@ def test_accepted_audit_requires_tsfreq_and_connectivity_gates(tmp_path):
     node = read_json(workspace / "nodes" / "n001" / "node.json")
     assert node["lifecycle"] == "running"
     assert node["closure"] is None
+
+
+def test_accepted_audit_rejects_endpoint_recovery_after_failed_irc(tmp_path):
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_v3_workspace(workspace)
+
+    start_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "start_node",
+            "rationale": "Start accepted audit with failed-IRC connectivity evidence.",
+            "evidence_refs": ["ev_tsfreq", "ev_conn_failed_irc"],
+            "report_ref": report_ref,
+            "payload": {
+                "phase": "accepted_audit",
+                "hypothesis": "A candidate must not be accepted when mandatory IRC failed.",
+                "hypothesis_ref": HYPOTHESIS_REF,
+                "expected_evidence": ["tsfreq_gate", "connectivity_gate"],
+            },
+        },
+    )
+    update_workspace(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "update_workspace",
+            "rationale": "Register TS/Freq and failed-IRC endpoint-recovery evidence.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "append_evidence": [
+                    {
+                        "evidence_id": "ev_tsfreq",
+                        "kind": "gaussian_tsfreq_validation",
+                        "role": "tsfreq_gate",
+                        "evidence_tier": "local_parse",
+                        "node_id": "n001",
+                        "summary": "One imaginary mode supports the candidate.",
+                        "quality": {"hypothesis_id": HYPOTHESIS_ID},
+                    },
+                    {
+                        "evidence_id": "ev_conn_failed_irc",
+                        "kind": "irc_connectivity_validation",
+                        "role": "connectivity_gate",
+                        "evidence_tier": "local_parse",
+                        "node_id": "n001",
+                        "summary": "IRC endpoints optimize to R/P, but both IRC jobs ended by corrector failure.",
+                        "quality": {
+                            "hypothesis_id": HYPOTHESIS_ID,
+                            "strict_irc_complete": False,
+                            "irc_program_failures": [
+                                {"direction": "forward", "type": "corrector_convergence", "point": 87},
+                                {"direction": "reverse", "type": "corrector_convergence", "point": 74},
+                            ],
+                            "irc_directions": {
+                                "forward": {"normal_termination": False, "assignment": "reactant"},
+                                "reverse": {"normal_termination": False, "assignment": "product"},
+                            },
+                            "endpoint_optimization_recovery_used": True,
+                            "verdict_against_prediction": "endpoint_basin_supported_but_strict_irc_incomplete",
+                        },
+                    },
+                ]
+            },
+        },
+    )
+
+    with pytest.raises(ValueError, match="strict_irc_complete=true"):
+        end_node(
+            workspace,
+            {
+                "schema_version": "ts-decision",
+                "action": "end_node",
+                "rationale": "Attempt to close accepted audit with failed IRC.",
+                "evidence_refs": ["ev_tsfreq", "ev_conn_failed_irc"],
+                "report_ref": report_ref,
+                "payload": {
+                    "node_id": "n001",
+                    "closure": {
+                        "program_status": "completed",
+                        "claim_verdict": "supported",
+                        "program": {"summary": "Audit ran.", "evidence_refs": ["ev_tsfreq", "ev_conn_failed_irc"]},
+                        "mechanism": {
+                            "summary": "Endpoint recovery is not strict IRC completion.",
+                            "hypothesis_ref": HYPOTHESIS_REF,
+                            "evidence_refs": ["ev_tsfreq", "ev_conn_failed_irc"],
+                        },
+                        "implication": "This should stay open for follow-up IRC.",
+                        "open_questions": [],
+                    },
+                },
+            },
+        )
+    node = read_json(workspace / "nodes" / "n001" / "node.json")
+    manifest = read_json(workspace / "manifest.json")
+    assert node["lifecycle"] == "running"
+    assert node["closure"] is None
+    assert manifest["accepted_ts_refs"] == []
+
+
+def test_workspace_validator_rejects_existing_non_strict_accepted_connectivity(tmp_path):
+    workspace = tmp_path / "ws"
+    make_accepted_workspace(workspace)
+
+    registry_path = workspace / "evidence_registry.json"
+    registry = read_json(registry_path)
+    for record in registry["evidence"]:
+        if record.get("evidence_id") == "ev_conn_001":
+            record["quality"]["strict_irc_complete"] = False
+            record["quality"]["irc_program_failures"] = [
+                {"direction": "forward", "type": "corrector_convergence", "point": 87}
+            ]
+            record["quality"]["irc_directions"]["forward"]["normal_termination"] = False
+    write_json(registry_path, registry)
+
+    validation = validate_workspace(workspace)
+    assert validation["valid"] is False
+    assert any(item["code"] == "non_strict_accepted_ts_connectivity" for item in validation["findings"])

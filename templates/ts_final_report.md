@@ -128,6 +128,8 @@ IRC or displacement settings:
 | Max steps / points | {{value}} |
 | Initial Hessian source | {{calcfc/readfc/other}} |
 | Endpoint optimization | {{performed / not performed}} |
+| Strict IRC complete | {{yes/no; both directions normal terminated}} |
+| IRC program failures | {{none or exact failure type/point}} |
 | Connectivity evidence | `{{evidence_id}}` |
 
 Endpoint assignment:
@@ -151,6 +153,7 @@ Complete this section only when the accepted-audit gate is satisfied.
 | --- | --- | --- | --- |
 | TS/Freq gate | `tsfreq_gate` | yes/no | {{evidence_id}} |
 | Connectivity gate | `connectivity_gate` | yes/no | {{evidence_id}} |
+| Strict IRC gate | `strict_irc_complete` | yes/no | {{forward/reverse normal termination status}} |
 | Same hypothesis ID | `{{hypothesis_id}}` | yes/no | {{notes}} |
 | Accepted artifact | `accepted/{{accepted_id}}.json` | yes/no | {{notes}} |
 

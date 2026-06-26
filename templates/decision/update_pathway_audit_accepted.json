@@ -22,7 +22,8 @@
           "${PRED_PATHWAY_ID}"
         ],
         "strict_pathway_supported": true,
-        "strict_pathway_decision": "accepted"
+        "strict_pathway_decision": "accepted",
+        "requires_strict_irc_complete": true
       },
       "facts": {
         "whole_R_to_P_pathway_accepted": true,

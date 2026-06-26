@@ -295,6 +295,12 @@ def make_accepted_workspace(workspace: Path) -> dict[str, str]:
                 "hypothesis_id": HYPOTHESIS_ID,
                 "prediction_ids": ["pred_conn_001"],
                 "verdict_against_prediction": "supported",
+                "strict_irc_complete": True,
+                "irc_program_failures": [],
+                "irc_directions": {
+                    "forward": {"normal_termination": True, "assignment": "product"},
+                    "reverse": {"normal_termination": True, "assignment": "reactant"},
+                },
                 "forward_assignment": "product",
                 "reverse_assignment": "reactant",
             },

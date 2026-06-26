@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from ..evidence_gates import accepted_gate_evidence, strict_connectivity_diagnostic
 from ..io import read_json
 from .decision import (
     FORBIDDEN_PUBLIC_FIELDS,
@@ -105,6 +106,7 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
         _reject_forbidden(data, findings, filename)
 
     evidence = loaded.get("evidence_registry.json", {}).get("evidence", [])
+    evidence_by_id: dict[str, dict[str, Any]] = {}
     if isinstance(evidence, list):
         ids: set[str] = set()
         for item in evidence:
@@ -118,6 +120,7 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
                 _finding(findings, "error", "duplicate_evidence_id", f"duplicate evidence {evidence_id}", "evidence_registry.json")
             else:
                 ids.add(evidence_id)
+                evidence_by_id[evidence_id] = item
             quality = item.get("quality") if isinstance(item.get("quality"), dict) else {}
             hypothesis_id = quality.get("hypothesis_id")
             if hypothesis_id is not None and hypothesis_id not in hypothesis_ids:
@@ -128,6 +131,8 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
                     f"evidence references unknown hypothesis_id: {hypothesis_id}",
                     "evidence_registry.json",
                 )
+
+    _validate_accepted_ts_refs(root_path, loaded.get("manifest.json", {}), evidence_by_id, findings)
 
     return {"valid": not any(item["severity"] == "error" for item in findings), "findings": findings}
 
@@ -401,6 +406,36 @@ def _has_accepted_claim(manifest: dict[str, Any], pathway_model: dict[str, Any])
         if isinstance(pathway, dict) and pathway.get("status") == "accepted":
             return True
     return False
+
+
+def _validate_accepted_ts_refs(
+    root: Path,
+    manifest: dict[str, Any],
+    evidence_by_id: dict[str, dict[str, Any]],
+    findings: list[dict[str, str]],
+) -> None:
+    for ref in _as_list(manifest.get("accepted_ts_refs")):
+        if not isinstance(ref, str) or not ref:
+            _finding(findings, "error", "invalid_accepted_ts_ref", "accepted_ts_ref must be a non-empty string", "manifest.json")
+            continue
+        path = root / ref
+        if not path.exists():
+            _finding(findings, "error", "missing_accepted_ts_artifact", f"missing accepted artifact: {ref}", ref)
+            continue
+        try:
+            artifact = read_json(path)
+        except Exception as exc:  # noqa: BLE001
+            _finding(findings, "error", "invalid_accepted_ts_artifact", str(exc), ref)
+            continue
+        evidence_refs = [str(item) for item in _as_list(artifact.get("evidence_refs")) if item]
+        try:
+            gate_evidence = accepted_gate_evidence(list(evidence_by_id.values()), evidence_refs)
+        except ValueError as exc:
+            _finding(findings, "error", "invalid_accepted_ts_gates", str(exc), ref)
+            continue
+        diagnostic = strict_connectivity_diagnostic(gate_evidence["connectivity_gate"])
+        if diagnostic:
+            _finding(findings, "error", "non_strict_accepted_ts_connectivity", diagnostic, ref)
 
 
 def _as_list(value: Any) -> list[Any]:

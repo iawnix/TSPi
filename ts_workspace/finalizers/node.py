@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from ..evidence_gates import accepted_gate_evidence, validate_strict_connectivity_gate
 from ..io import append_markdown, read_json, write_json
 
 PATHWAY_STEP_STATUS_PHASES = {"connectivity_validation", "accepted_audit"}
@@ -24,10 +25,12 @@ def validate_accepted_audit_gates(root: Path, node: dict[str, Any], closure: dic
         return
     if closure["program_status"] != "completed" or closure["claim_verdict"] != "supported":
         return
-    gate_evidence = _accepted_gate_evidence(root, evidence_refs)
+    registry = read_json(root / "evidence_registry.json")
+    gate_evidence = accepted_gate_evidence(registry.get("evidence", []), evidence_refs)
     hypothesis_id = node.get("hypothesis_ref", {}).get("hypothesis_id") if isinstance(node.get("hypothesis_ref"), dict) else None
     if gate_evidence.get("__hypothesis_id") != hypothesis_id:
         raise ValueError("accepted audit gate evidence must match node.hypothesis_ref")
+    validate_strict_connectivity_gate(gate_evidence["connectivity_gate"])
 
 
 def _update_mechanism_model(root: Path, node: dict[str, Any], closure: dict[str, Any]) -> None:
@@ -259,7 +262,9 @@ def _write_acceptance_artifact(root: Path, node: dict[str, Any], closure: dict[s
         return
     if closure["program_status"] != "completed" or closure["claim_verdict"] != "supported":
         return
-    gate_evidence = _accepted_gate_evidence(root, node.get("evidence_refs", []))
+    registry = read_json(root / "evidence_registry.json")
+    gate_evidence = accepted_gate_evidence(registry.get("evidence", []), node.get("evidence_refs", []))
+    validate_strict_connectivity_gate(gate_evidence["connectivity_gate"])
     manifest_path = root / "manifest.json"
     manifest = read_json(manifest_path)
     artifact = {
@@ -268,38 +273,15 @@ def _write_acceptance_artifact(root: Path, node: dict[str, Any], closure: dict[s
         "phase": node["phase"],
         "hypothesis_ref": node.get("hypothesis_ref"),
         "required_gates": ["tsfreq_gate", "connectivity_gate"],
-        "evidence_refs": [gate_evidence["tsfreq_gate"], gate_evidence["connectivity_gate"]],
+        "evidence_refs": [
+            gate_evidence["tsfreq_gate"]["evidence_id"],
+            gate_evidence["connectivity_gate"]["evidence_id"],
+        ],
     }
     artifact_path = root / "accepted" / f"{artifact['accepted_id']}.json"
     write_json(artifact_path, artifact)
     manifest.setdefault("accepted_ts_refs", []).append(str(artifact_path.relative_to(root)))
     write_json(manifest_path, manifest)
-
-
-def _accepted_gate_evidence(root: Path, evidence_refs: list[str]) -> dict[str, str]:
-    registry = read_json(root / "evidence_registry.json")
-    allowed_refs = set(evidence_refs)
-    gate_evidence: dict[str, str] = {}
-    gate_hypothesis_ids: set[str] = set()
-    for entry in registry.get("evidence", []):
-        if not isinstance(entry, dict):
-            continue
-        evidence_id = entry.get("evidence_id")
-        role = entry.get("role")
-        if evidence_id in allowed_refs and role in {"connectivity_gate", "tsfreq_gate"}:
-            gate_evidence[role] = evidence_id
-            quality = entry.get("quality") if isinstance(entry.get("quality"), dict) else {}
-            hypothesis_id = quality.get("hypothesis_id")
-            if not hypothesis_id:
-                raise ValueError(f"accepted audit gate evidence missing quality.hypothesis_id: {evidence_id}")
-            gate_hypothesis_ids.add(str(hypothesis_id))
-    missing_gates = sorted({"connectivity_gate", "tsfreq_gate"} - set(gate_evidence))
-    if missing_gates:
-        raise ValueError(f"accepted audit missing required evidence gates: {', '.join(missing_gates)}")
-    if len(gate_hypothesis_ids) != 1:
-        raise ValueError("accepted audit gate evidence must share one hypothesis_id")
-    gate_evidence["__hypothesis_id"] = next(iter(gate_hypothesis_ids))
-    return gate_evidence
 
 
 def _ensure_pathway(model: dict[str, Any], pathway_id: str) -> dict[str, Any]:
