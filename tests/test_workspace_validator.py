@@ -6,7 +6,8 @@ from typing import Any
 
 import pytest
 
-from ts_workspace import end_node, init_workspace, report_workspace, start_node, validate_workspace
+from ts_workspace import end_node, init_workspace, report_workspace, start_node, update_workspace, validate_workspace
+from ts_workspace.io import read_json, write_json
 from ts_workspace.validators.decision import ContractError
 from ts_workspace.validators.decision_context import validate_decision_for_workspace
 from v3_helpers import HYPOTHESIS_REF, PATHWAY_REF, bootstrap_v3_workspace
@@ -149,6 +150,96 @@ def test_connectivity_support_marks_pathway_step_supported(tmp_path: Path) -> No
     assert step["status"] == "supported"
     assert step["supporting_nodes"] == ["n001"]
     assert validate_workspace(workspace)["valid"] is True
+
+
+def test_update_workspace_rejects_cross_node_evidence_path(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_v3_workspace(workspace)
+
+    start_node(workspace, _start_decision(report_ref, node_id="n001", phase="candidate_generation"))
+    end_node(workspace, _end_decision(report_ref, "n001", "supported"))
+    start_node(workspace, _start_decision(report_ref, node_id="n002", phase="tsfreq_validation"))
+
+    with pytest.raises(ContractError, match="different node artifact directory"):
+        update_workspace(
+            workspace,
+            {
+                "schema_version": "ts-decision",
+                "action": "update_workspace",
+                "rationale": "Register TS/Freq evidence with an invalid cross-node path.",
+                "evidence_refs": [],
+                "report_ref": report_ref,
+                "payload": {
+                    "append_evidence": {
+                        "evidence_id": "ev_tsfreq_cross_node",
+                        "kind": "gaussian_tsfreq_validation",
+                        "role": "tsfreq_gate",
+                        "evidence_tier": "local_parse",
+                        "node_id": "n002",
+                        "summary": "This wrongly points to the candidate node output.",
+                        "path": "nodes/n001/outputs/qst2_parse/validation_summary.json",
+                    }
+                },
+            },
+        )
+
+
+def test_update_workspace_accepts_current_node_evidence_path(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_v3_workspace(workspace)
+
+    start_node(workspace, _start_decision(report_ref, node_id="n001", phase="tsfreq_validation"))
+    result = update_workspace(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "update_workspace",
+            "rationale": "Register TS/Freq evidence with a node-owned path.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "append_evidence": {
+                    "evidence_id": "ev_tsfreq_owned",
+                    "kind": "gaussian_tsfreq_validation",
+                    "role": "tsfreq_gate",
+                    "evidence_tier": "local_parse",
+                    "node_id": "n001",
+                    "summary": "This points to the TS/Freq node output.",
+                    "path": "nodes/n001/outputs/validation_summary.json",
+                }
+            },
+        },
+    )
+
+    assert result["appended"]["evidence"] == 1
+
+
+def test_validate_workspace_warns_for_legacy_cross_node_evidence_path(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_v3_workspace(workspace)
+
+    start_node(workspace, _start_decision(report_ref, node_id="n001", phase="candidate_generation"))
+    end_node(workspace, _end_decision(report_ref, "n001", "supported"))
+    start_node(workspace, _start_decision(report_ref, node_id="n002", phase="tsfreq_validation"))
+
+    registry = read_json(workspace / "evidence_registry.json")
+    registry["evidence"].append(
+        {
+            "evidence_id": "ev_legacy_cross_node",
+            "kind": "gaussian_tsfreq_validation",
+            "role": "tsfreq_gate",
+            "evidence_tier": "local_parse",
+            "node_id": "n002",
+            "summary": "Legacy evidence points to a previous node path.",
+            "path": "nodes/n001/outputs/qst2_parse/validation_summary.json",
+        }
+    )
+    write_json(workspace / "evidence_registry.json", registry)
+
+    validation = validate_workspace(workspace)
+
+    assert validation["valid"] is True
+    assert {"cross_node_evidence_path", "missing_artifact_manifest_consumed_path"} <= _codes(validation)
 
 
 def _report_ref(workspace: Path) -> dict[str, str]:

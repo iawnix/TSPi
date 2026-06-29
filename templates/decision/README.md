@@ -16,6 +16,13 @@ Do not use files under `tests/` as runtime decision examples. Tests are allowed
 to contain narrow fixtures and edge cases that are not complete operating
 guidance.
 
+Evidence paths are node-owned. A `tsfreq_validation` evidence record for
+`n002` should cite an artifact under `nodes/n002/outputs/...`, not the
+candidate node that originally generated the Gaussian log. When a node consumes
+an upstream file, create `nodes/<node>/outputs/artifact_manifest.json` using
+`templates/artifact_manifest.json` and put the upstream file under
+`consumed_artifacts`.
+
 Typical endpoint-first sequence:
 
 1. `start_endpoint_n000.json`

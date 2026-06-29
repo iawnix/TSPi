@@ -127,7 +127,7 @@ def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
 
 def update_workspace(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
     root_path = Path(root)
-    validate_decision_dict(decision)
+    validate_decision_for_workspace(root_path, decision)
     _require_initialized(root_path)
     payload = decision["payload"]
     appended: dict[str, int] = {"evidence": 0, "knowledge": 0, "provenance": 0}

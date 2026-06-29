@@ -23,6 +23,7 @@ def test_required_schema_files_exist() -> None:
         "evidence_registry.schema.json",
         "manifest.schema.json",
         "accepted_ts.schema.json",
+        "artifact_manifest.schema.json",
         "pathway.schema.json",
         "mechanism.schema.json",
     ]:

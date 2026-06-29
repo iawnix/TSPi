@@ -14,7 +14,7 @@
       "role": "connectivity_gate",
       "evidence_tier": "local_parse",
       "node_id": "n003",
-      "summary": "Forward and reverse IRC endpoints were assigned to the expected product and reactant basins.",
+      "summary": "Forward and reverse IRC endpoints were assigned to the expected product and reactant basins. The primary evidence path is a connectivity artifact owned by this connectivity node.",
       "path": "${IRC_SUMMARY_PATH}",
       "quality": {
         "hypothesis_id": "${HYPOTHESIS_ID}",
@@ -39,6 +39,7 @@
         "endpoint_optimization_recovery_used": false
       },
       "facts": {
+        "source_tsfreq_ref": "Record any upstream TS checkpoint/log consumed from the TS/Freq node in nodes/n003/outputs/artifact_manifest.json consumed_artifacts.",
         "reactant_endpoint_ref": "${IRC_REACTANT_ENDPOINT_REF}",
         "product_endpoint_ref": "${IRC_PRODUCT_ENDPOINT_REF}"
       }

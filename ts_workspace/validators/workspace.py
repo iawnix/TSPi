@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from ..artifact_policy import consumed_paths_from_manifest, node_owner_from_artifact_path, role_matches_phase
 from ..evidence_gates import accepted_gate_evidence, strict_connectivity_diagnostic
 from ..io import read_json
 from ..schema_validation import schema_findings
@@ -147,6 +148,7 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
                     f"evidence references unknown hypothesis_id: {hypothesis_id}",
                     "evidence_registry.json",
                 )
+        _validate_evidence_artifact_boundaries(root_path, evidence, node_details, findings)
 
     _validate_accepted_ts_refs(root_path, _as_dict(loaded.get("manifest.json")), evidence_by_id, findings)
 
@@ -456,6 +458,86 @@ def _validate_accepted_ts_refs(
         diagnostic = strict_connectivity_diagnostic(gate_evidence["connectivity_gate"])
         if diagnostic:
             _finding(findings, "error", "non_strict_accepted_ts_connectivity", diagnostic, ref)
+
+
+def _validate_evidence_artifact_boundaries(
+    root: Path,
+    evidence: list[Any],
+    node_details: dict[str, dict[str, Any]],
+    findings: list[dict[str, str]],
+) -> None:
+    manifest_cache: dict[str, dict[str, Any] | None] = {}
+    for index, item in enumerate(evidence):
+        if not isinstance(item, dict):
+            continue
+        source = f"evidence_registry.json.evidence[{index}]"
+        evidence_id = str(item.get("evidence_id") or f"#{index}")
+        node_id = item.get("node_id")
+        if not isinstance(node_id, str) or not node_id:
+            continue
+        node = node_details.get(node_id)
+        if node is None:
+            _finding(findings, "error", "unknown_evidence_node", f"evidence {evidence_id} references unknown node {node_id}", source)
+            continue
+        phase = node.get("phase")
+        if not role_matches_phase(item.get("role"), phase):
+            _finding(
+                findings,
+                "warning",
+                "evidence_role_phase_mismatch",
+                f"evidence {evidence_id} role {item.get('role')!r} is not owned by node phase {phase!r}",
+                source,
+            )
+        path = item.get("path")
+        owner = node_owner_from_artifact_path(path)
+        if owner is None or owner == node_id:
+            continue
+        _finding(
+            findings,
+            "warning",
+            "cross_node_evidence_path",
+            f"evidence {evidence_id} belongs to {node_id} but path points into node {owner}",
+            source,
+        )
+        manifest = _artifact_manifest(root, node_id, manifest_cache, findings)
+        consumed = consumed_paths_from_manifest(manifest)
+        if isinstance(path, str) and path not in consumed:
+            _finding(
+                findings,
+                "warning",
+                "missing_artifact_manifest_consumed_path",
+                f"node {node_id} should declare consumed artifact {path!r} in outputs/artifact_manifest.json",
+                f"nodes/{node_id}/outputs/artifact_manifest.json",
+            )
+
+
+def _artifact_manifest(
+    root: Path,
+    node_id: str,
+    cache: dict[str, dict[str, Any] | None],
+    findings: list[dict[str, str]],
+) -> dict[str, Any] | None:
+    if node_id in cache:
+        return cache[node_id]
+    path = root / "nodes" / node_id / "outputs" / "artifact_manifest.json"
+    if not path.exists():
+        cache[node_id] = None
+        return None
+    try:
+        manifest = read_json(path)
+    except Exception as exc:  # noqa: BLE001
+        _finding(findings, "error", "invalid_artifact_manifest", str(exc), str(path))
+        cache[node_id] = None
+        return None
+    findings.extend(schema_findings("artifact_manifest.schema.json", manifest, str(path)))
+    node = read_json(root / "nodes" / node_id / "node.json")
+    if isinstance(manifest, dict):
+        if manifest.get("node_id") != node_id:
+            _finding(findings, "error", "artifact_manifest_node_mismatch", "artifact manifest node_id must match node", str(path))
+        if manifest.get("phase") != node.get("phase"):
+            _finding(findings, "error", "artifact_manifest_phase_mismatch", "artifact manifest phase must match node phase", str(path))
+    cache[node_id] = manifest if isinstance(manifest, dict) else None
+    return cache[node_id]
 
 
 def _as_list(value: Any) -> list[Any]:

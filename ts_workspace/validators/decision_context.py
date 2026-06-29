@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from ..artifact_policy import node_owner_from_artifact_path, role_matches_phase
 from ..io import read_json
 from .decision import HYPOTHESIS_REF_PHASES, INITIAL_HYPOTHESIS_PHASES, ContractError, validate_decision
 from .workspace import REQUIRED_FILES, UNRESOLVED_TERMINAL_VERDICTS
@@ -18,6 +19,8 @@ def validate_decision_for_workspace(root: str | Path, decision: dict[str, Any]) 
         _validate_start_node_context(Path(root), decision)
     elif decision.get("action") == "end_node":
         _validate_end_node_context(Path(root), decision)
+    elif decision.get("action") == "update_workspace":
+        _validate_update_workspace_context(Path(root), decision)
     return decision
 
 
@@ -90,6 +93,35 @@ def _validate_end_node_context(root: Path, decision: dict[str, Any]) -> None:
         if mechanism_ref.get("hypothesis_id") != node_ref.get("hypothesis_id"):
             raise ContractError("closure.mechanism.hypothesis_ref must match node.hypothesis_ref")
         _validate_hypothesis_ref_exists(root, mechanism_ref)
+
+
+def _validate_update_workspace_context(root: Path, decision: dict[str, Any]) -> None:
+    _require_initialized(root)
+    evidence = decision["payload"].get("append_evidence")
+    if evidence is None:
+        return
+    entries = evidence if isinstance(evidence, list) else [evidence]
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        node_id = entry.get("node_id")
+        if not isinstance(node_id, str) or not node_id:
+            continue
+        node = _read_node(root, node_id)
+        path = entry.get("path")
+        if isinstance(path, str) and path.strip() and not role_matches_phase(entry.get("role"), node.get("phase")):
+            raise ContractError(
+                "append_evidence.role does not match the node phase for a path-bearing artifact: "
+                f"role={entry.get('role')!r}, node={node_id}, phase={node.get('phase')!r}"
+            )
+        owner = node_owner_from_artifact_path(path)
+        if owner is not None and owner != node_id:
+            raise ContractError(
+                "append_evidence.path points to a different node artifact directory: "
+                f"path owner={owner}, evidence.node_id={node_id}. "
+                "Write the validation artifact under the current node and record upstream files "
+                "in nodes/<node>/outputs/artifact_manifest.json consumed_artifacts."
+            )
 
 
 def _require_initialized(root: Path) -> None:
