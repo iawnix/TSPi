@@ -436,6 +436,7 @@ def test_negative_pathway_audit_does_not_support_audited_prediction(tmp_path: Pa
             "prediction_ids": ["pred_conn_001"],
             "evidence_refs": ["ev_pathway_audit"],
             "audit_outcome": "pathway_not_accepted",
-            "recommended_next_action": "start_new_branch",
+            "branch_state": "current_branch_not_accepted",
         }
     ]
+    assert "recommended_next_action" not in context["pathway_audits"][0]

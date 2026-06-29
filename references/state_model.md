@@ -39,7 +39,9 @@ that audit outcome separately instead of displaying the node as pathway success.
 Report aggregation must not count `pathway_audit` verdicts as direct support or
 refutation of the audited prediction. Use the underlying elementary-step phases
 for `supported_predictions` and `refuted_predictions`; expose audit outcomes in
-a separate audit summary.
+a separate audit summary. Report summaries may expose branch state such as
+`current_branch_not_accepted`, but must not emit next-action recommendations;
+branch choice remains an agent decision.
 
 Specific diagnostics such as a wrong imaginary mode, collapsed endpoint,
 scheduler failure, parser failure, or RMSD disagreement are reason codes or

@@ -169,7 +169,7 @@ def _pathway_audit_summaries(rows: list[Any], evidence: dict[str, Any]) -> list[
             "audit_outcome": outcome,
         }
         if outcome in {"pathway_not_accepted", "not_accepted"}:
-            item["recommended_next_action"] = "start_new_branch"
+            item["branch_state"] = "current_branch_not_accepted"
         summaries.append(item)
     return summaries
 
