@@ -11,8 +11,12 @@ HYPOTHESIS_REF = {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_mode_
 PATHWAY_REF = {"pathway_id": "p_single", "step_id": "s1"}
 
 
-def initial_mechanism_hypothesis(*, pathway_ref: dict[str, str] | None = None) -> dict[str, Any]:
-    return {
+def initial_mechanism_hypothesis(
+    *,
+    pathway_ref: dict[str, str] | None = None,
+    stereochemical: bool = False,
+) -> dict[str, Any]:
+    hypothesis = {
         "hypothesis_id": HYPOTHESIS_ID,
         "summary": "Endpoint-derived single-step C-N formation hypothesis.",
         "derived_from": {
@@ -68,12 +72,39 @@ def initial_mechanism_hypothesis(*, pathway_ref: dict[str, str] | None = None) -
         "alternative_hypotheses": [{"summary": "Stepwise C-N formation.", "changed_variable": "elementary_step_order"}],
         "evidence_refs": ["ev_hyp_0001"],
     }
+    if stereochemical:
+        hypothesis["structured_claim"]["stereochemical_policy"] = {
+            "endpoint_policy": "retain_explicit_stereocenters",
+            "checks": [
+                {
+                    "type": "tetrahedral",
+                    "center": 1,
+                    "neighbors": [0, 2, 3, 4],
+                    "policy": "retain",
+                }
+            ],
+        }
+        hypothesis["testable_predictions"].append(
+            {
+                "prediction_id": "pred_stereo_001",
+                "phase": "connectivity_validation",
+                "expectation": "IRC endpoints preserve the declared stereochemical assignment.",
+                "required_evidence_roles": ["stereochemical_connectivity_gate"],
+            }
+        )
+        hypothesis["required_evidence"].append("stereochemical_connectivity_gate")
+    return hypothesis
 
 
-def bootstrap_v3_workspace(workspace: Path, *, pathway_ref: dict[str, str] | None = None) -> dict[str, str]:
+def bootstrap_v3_workspace(
+    workspace: Path,
+    *,
+    pathway_ref: dict[str, str] | None = None,
+    stereochemical: bool = False,
+) -> dict[str, str]:
     init_workspace(workspace)
     report_ref = _report_ref(workspace)
-    hypothesis = initial_mechanism_hypothesis(pathway_ref=pathway_ref)
+    hypothesis = initial_mechanism_hypothesis(pathway_ref=pathway_ref, stereochemical=stereochemical)
     start_node(
         workspace,
         {
@@ -232,8 +263,8 @@ def end_v3_node(
     )
 
 
-def make_accepted_workspace(workspace: Path) -> dict[str, str]:
-    report_ref = bootstrap_v3_workspace(workspace, pathway_ref=PATHWAY_REF)
+def make_accepted_workspace(workspace: Path, *, stereochemical: bool = False) -> dict[str, str]:
+    report_ref = bootstrap_v3_workspace(workspace, pathway_ref=PATHWAY_REF, stereochemical=stereochemical)
 
     start_v3_node(
         workspace,
@@ -281,9 +312,7 @@ def make_accepted_workspace(workspace: Path) -> dict[str, str]:
         pathway_ref=PATHWAY_REF,
         prediction_ids=["pred_conn_001"],
     )
-    _append_evidence(
-        workspace,
-        report_ref,
+    connectivity_evidence: list[dict[str, Any]] = [
         {
             "evidence_id": "ev_conn_001",
             "kind": "irc_connectivity_validation",
@@ -304,19 +333,47 @@ def make_accepted_workspace(workspace: Path) -> dict[str, str]:
                 "forward_assignment": "product",
                 "reverse_assignment": "reactant",
             },
-        },
-    )
+        }
+    ]
+    if stereochemical:
+        connectivity_evidence.append(
+            {
+                "evidence_id": "ev_stereo_001",
+                "kind": "stereochemical_connectivity_validation",
+                "role": "stereochemical_connectivity_gate",
+                "evidence_tier": "local_parse",
+                "node_id": "n002",
+                "summary": "Declared stereochemical checks are matched at the assigned IRC endpoints.",
+                "quality": {
+                    "hypothesis_id": HYPOTHESIS_ID,
+                    "prediction_ids": ["pred_stereo_001"],
+                    "verdict_against_prediction": "supported",
+                    "stereochemical_verdict": "matched",
+                    "stereochemistry_matched": True,
+                    "stereochemical_mismatches": [],
+                    "stereochemical_checks": [
+                        {
+                            "type": "tetrahedral",
+                            "center": 1,
+                            "policy": "retain",
+                            "verdict": "matched",
+                        }
+                    ],
+                },
+            }
+        )
+    _append_evidence(workspace, report_ref, connectivity_evidence)
     end_v3_node(
         workspace,
         report_ref,
         node_id="n002",
         claim_verdict="supported",
-        evidence_refs=["ev_conn_001"],
-        prediction_ids=["pred_conn_001"],
+        evidence_refs=[item["evidence_id"] for item in connectivity_evidence],
+        prediction_ids=["pred_conn_001"] + (["pred_stereo_001"] if stereochemical else []),
     )
 
     report_ref = _report_ref(workspace)
-    gate_refs = ["ev_tsfreq_001", "ev_conn_001"]
+    gate_refs = ["ev_tsfreq_001", "ev_conn_001"] + (["ev_stereo_001"] if stereochemical else [])
     start_v3_node(
         workspace,
         report_ref,
@@ -381,13 +438,15 @@ def make_backtrack_workspace(workspace: Path) -> dict[str, str]:
     return _report_ref(workspace)
 
 
-def _append_evidence(workspace: Path, report_ref: dict[str, str], evidence: dict[str, Any]) -> None:
+def _append_evidence(workspace: Path, report_ref: dict[str, str], evidence: dict[str, Any] | list[dict[str, Any]]) -> None:
+    entries = evidence if isinstance(evidence, list) else [evidence]
+    roles = ",".join(str(item.get("role", "")) for item in entries)
     update_workspace(
         workspace,
         {
             "schema_version": "ts-decision",
             "action": "update_workspace",
-            "rationale": f"Register {evidence['role']} evidence.",
+            "rationale": f"Register {roles} evidence.",
             "evidence_refs": [],
             "report_ref": report_ref,
             "payload": {"append_evidence": evidence},

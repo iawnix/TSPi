@@ -6,7 +6,13 @@ from pathlib import Path
 from typing import Any
 
 from ..artifact_policy import consumed_paths_from_manifest, node_owner_from_artifact_path, role_matches_phase
-from ..evidence_gates import accepted_gate_evidence, strict_connectivity_diagnostic
+from ..evidence_gates import (
+    STEREOCHEMICAL_GATE_ROLE,
+    accepted_gate_evidence,
+    hypothesis_requires_stereochemical_gate,
+    stereochemical_gate_diagnostic,
+    strict_connectivity_diagnostic,
+)
 from ..io import read_json
 from ..schema_validation import schema_findings
 from .decision import (
@@ -150,7 +156,13 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
                 )
         _validate_evidence_artifact_boundaries(root_path, evidence, node_details, findings)
 
-    _validate_accepted_ts_refs(root_path, _as_dict(loaded.get("manifest.json")), evidence_by_id, findings)
+    _validate_accepted_ts_refs(
+        root_path,
+        _as_dict(loaded.get("manifest.json")),
+        _as_dict(loaded.get("mechanism_model.json")),
+        evidence_by_id,
+        findings,
+    )
 
     return {"valid": not any(item["severity"] == "error" for item in findings), "findings": findings}
 
@@ -429,6 +441,7 @@ def _has_accepted_claim(manifest: dict[str, Any], pathway_model: dict[str, Any])
 def _validate_accepted_ts_refs(
     root: Path,
     manifest: dict[str, Any],
+    mechanism_model: dict[str, Any],
     evidence_by_id: dict[str, dict[str, Any]],
     findings: list[dict[str, str]],
 ) -> None:
@@ -450,14 +463,50 @@ def _validate_accepted_ts_refs(
             _finding(findings, "error", "invalid_accepted_ts_artifact", "accepted artifact must be an object", ref)
             continue
         evidence_refs = [str(item) for item in _as_list(artifact.get("evidence_refs")) if item]
+        hypothesis_id = _artifact_hypothesis_id(artifact)
+        hypothesis = _mechanism_hypothesis_by_id(mechanism_model, hypothesis_id)
+        require_stereo = hypothesis_requires_stereochemical_gate(hypothesis)
         try:
-            gate_evidence = accepted_gate_evidence(list(evidence_by_id.values()), evidence_refs)
+            gate_evidence = accepted_gate_evidence(
+                list(evidence_by_id.values()),
+                evidence_refs,
+                require_stereochemical_gate=require_stereo,
+            )
         except ValueError as exc:
             _finding(findings, "error", "invalid_accepted_ts_gates", str(exc), ref)
             continue
+        if hypothesis_id and gate_evidence.get("__hypothesis_id") != hypothesis_id:
+            _finding(
+                findings,
+                "error",
+                "invalid_accepted_ts_hypothesis",
+                "accepted artifact gate evidence must match artifact.hypothesis_ref",
+                ref,
+            )
         diagnostic = strict_connectivity_diagnostic(gate_evidence["connectivity_gate"])
         if diagnostic:
             _finding(findings, "error", "non_strict_accepted_ts_connectivity", diagnostic, ref)
+        if require_stereo:
+            stereo_diagnostic = stereochemical_gate_diagnostic(gate_evidence[STEREOCHEMICAL_GATE_ROLE])
+            if stereo_diagnostic:
+                _finding(findings, "error", "invalid_accepted_ts_stereochemistry", stereo_diagnostic, ref)
+
+
+def _artifact_hypothesis_id(artifact: dict[str, Any]) -> str | None:
+    hypothesis_ref = artifact.get("hypothesis_ref")
+    if not isinstance(hypothesis_ref, dict):
+        return None
+    hypothesis_id = hypothesis_ref.get("hypothesis_id")
+    return str(hypothesis_id) if hypothesis_id else None
+
+
+def _mechanism_hypothesis_by_id(model: dict[str, Any], hypothesis_id: str | None) -> dict[str, Any] | None:
+    if not hypothesis_id:
+        return None
+    for item in model.get("hypotheses", []):
+        if isinstance(item, dict) and item.get("hypothesis_id") == hypothesis_id:
+            return item
+    return None
 
 
 def _validate_evidence_artifact_boundaries(

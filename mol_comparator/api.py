@@ -8,6 +8,7 @@ from typing import Any
 from .flexibility import select_reaction_center
 from .internals import angle, dihedral, distance, heavy_atom_indices, mapped_indices, read_xyz
 from .rmsd import centered_rmsd
+from .stereo import compare_stereochemistry
 
 
 def compare_structures(
@@ -19,6 +20,7 @@ def compare_structures(
     key_bonds: list[tuple[int, int]] | None = None,
     key_angles: list[tuple[int, int, int]] | None = None,
     key_dihedrals: list[tuple[int, int, int, int]] | None = None,
+    stereochemical_checks: list[dict[str, Any]] | None = None,
     rmsd_threshold: float = 0.5,
     reaction_center_threshold: float = 0.25,
 ) -> dict[str, Any]:
@@ -38,6 +40,7 @@ def compare_structures(
     center_ref_indices = select_reaction_center(len(ref_symbols), reaction_center_atoms, fallback_center)
     center_pairs = [(index, mapping[index][1]) for index in center_ref_indices]
     center_rmsd = centered_rmsd([ref_coords[index] for index, _ in center_pairs], [tgt_coords[index] for _, index in center_pairs])
+    stereo_rows, stereo_diagnostics = compare_stereochemistry(ref_coords, tgt_coords, mapping, stereochemical_checks)
 
     metrics: dict[str, Any] = {
         "heavy_atom_rmsd": round(heavy_rmsd, 6),
@@ -45,8 +48,9 @@ def compare_structures(
         "key_bonds": _bond_metrics(ref_coords, tgt_coords, key_bonds or [], mapping),
         "key_angles": _angle_metrics(ref_coords, tgt_coords, key_angles or [], mapping),
         "key_dihedrals": _dihedral_metrics(ref_coords, tgt_coords, key_dihedrals or [], mapping),
+        "stereochemistry": stereo_rows,
     }
-    diagnostics = []
+    diagnostics = list(stereo_diagnostics)
     if heavy_rmsd > rmsd_threshold:
         diagnostics.append("heavy atom RMSD exceeds threshold")
     if center_rmsd > reaction_center_threshold:

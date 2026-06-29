@@ -73,6 +73,8 @@ Accepted TS language is allowed only when all are present:
 
 - `tsfreq_gate` evidence for the same `hypothesis_id`;
 - `connectivity_gate` evidence for the same `hypothesis_id`;
+- `stereochemical_connectivity_gate` for the same `hypothesis_id` when the
+  hypothesis declares stereochemical requirements;
 - an `accepted_audit` node or accepted artifact written by `ts_workspace`;
 - no unresolved contradiction in pathway audit evidence for the reported
   pathway step.

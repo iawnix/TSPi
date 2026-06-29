@@ -43,6 +43,13 @@ Typical endpoint-first sequence:
 16. `update_pathway_audit_accepted.json`
 17. `end_pathway_audit_accepted.json`
 
+If the active hypothesis declares `structured_claim.stereochemical_policy`,
+`structured_claim.stereochemical_requirements`, or includes
+`stereochemical_connectivity_gate` in `required_evidence`, register
+`update_stereochemical_connectivity_evidence.json` during the
+`connectivity_validation` node and include that evidence ref in the accepted
+audit. Non-stereo hypotheses do not need this optional template.
+
 For a negative pathway audit, use `update_pathway_audit_not_accepted.json` and
 `end_pathway_audit_not_accepted.json`. That closes the current mechanism
 branch only. If a new hypothesis branch is scientifically justified, start it

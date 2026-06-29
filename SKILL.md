@@ -172,11 +172,13 @@ They are not top-level node states.
    evidence, then register evidence through `ts_workspace`. Keep node artifacts
    phase-owned: candidate-generation outputs stay under the candidate node;
    TS/Freq parse and mode-analysis outputs stay under the TS/Freq node; IRC and
-   endpoint-assignment outputs stay under the connectivity node. If a node
-   consumes an upstream artifact, do not cite that upstream file as the primary
-   evidence path. Write the current node's validation artifact under
-   `nodes/<node>/outputs/...` and record upstream files in
-   `nodes/<node>/outputs/artifact_manifest.json`.
+   endpoint-assignment outputs stay under the connectivity node. If the active
+   hypothesis declares stereochemical requirements, stereochemical endpoint
+   matching is a separate `stereochemical_connectivity_gate` owned by the
+   connectivity node. If a node consumes an upstream artifact, do not cite that
+   upstream file as the primary evidence path. Write the current node's
+   validation artifact under `nodes/<node>/outputs/...` and record upstream
+   files in `nodes/<node>/outputs/artifact_manifest.json`.
 8. Close the node with program facts, claim verdict, implication, and open
    questions.
 9. Run `report_workspace` again before branching, backtracking, or stopping.
@@ -213,7 +215,8 @@ Report the highest validated layer only:
 - candidate evidence when only candidates exist;
 - TS/Freq evidence only after a parsed frequency result supports the phase;
 - connectivity evidence only after endpoint assignment has been checked;
-- accepted TS only after both TS/Freq and connectivity gates are present;
+- accepted TS only after TS/Freq, strict connectivity, and any declared
+  stereochemical gates are present;
 - pathway conclusion only after a pathway audit.
 
 Do not call a candidate, scan point, NEB image, dMECP structure, or isolated

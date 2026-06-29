@@ -197,3 +197,136 @@ def test_workspace_validator_rejects_existing_non_strict_accepted_connectivity(t
     validation = validate_workspace(workspace)
     assert validation["valid"] is False
     assert any(item["code"] == "non_strict_accepted_ts_connectivity" for item in validation["findings"])
+
+
+def test_stereochemical_hypothesis_requires_stereo_gate_for_acceptance(tmp_path):
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_v3_workspace(workspace, stereochemical=True)
+
+    start_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "start_node",
+            "rationale": "Start accepted audit without declared stereochemical gate.",
+            "evidence_refs": ["ev_tsfreq", "ev_conn"],
+            "report_ref": report_ref,
+            "payload": {
+                "phase": "accepted_audit",
+                "hypothesis": "Stereo-sensitive hypothesis cannot be accepted without stereo gate.",
+                "hypothesis_ref": HYPOTHESIS_REF,
+                "expected_evidence": ["tsfreq_gate", "connectivity_gate", "stereochemical_connectivity_gate"],
+            },
+        },
+    )
+    update_workspace(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "update_workspace",
+            "rationale": "Register only TS/Freq and connectivity evidence.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "append_evidence": [
+                    {
+                        "evidence_id": "ev_tsfreq",
+                        "kind": "gaussian_tsfreq_validation",
+                        "role": "tsfreq_gate",
+                        "evidence_tier": "local_parse",
+                        "node_id": "n001",
+                        "summary": "One imaginary mode supports the candidate.",
+                        "quality": {"hypothesis_id": HYPOTHESIS_ID},
+                    },
+                    {
+                        "evidence_id": "ev_conn",
+                        "kind": "irc_connectivity_validation",
+                        "role": "connectivity_gate",
+                        "evidence_tier": "local_parse",
+                        "node_id": "n001",
+                        "summary": "Strict bidirectional IRC reached assigned basins.",
+                        "quality": {
+                            "hypothesis_id": HYPOTHESIS_ID,
+                            "strict_irc_complete": True,
+                            "irc_program_failures": [],
+                            "irc_directions": {
+                                "forward": {"normal_termination": True, "assignment": "product"},
+                                "reverse": {"normal_termination": True, "assignment": "reactant"},
+                            },
+                        },
+                    },
+                ]
+            },
+        },
+    )
+
+    with pytest.raises(ValueError, match="stereochemical_connectivity_gate"):
+        end_node(
+            workspace,
+            {
+                "schema_version": "ts-decision",
+                "action": "end_node",
+                "rationale": "Attempt accepted closure without stereo gate.",
+                "evidence_refs": ["ev_tsfreq", "ev_conn"],
+                "report_ref": report_ref,
+                "payload": {
+                    "node_id": "n001",
+                    "closure": {
+                        "program_status": "completed",
+                        "claim_verdict": "supported",
+                        "program": {"summary": "Audit ran.", "evidence_refs": ["ev_tsfreq", "ev_conn"]},
+                        "mechanism": {
+                            "summary": "Stereo evidence is missing.",
+                            "hypothesis_ref": HYPOTHESIS_REF,
+                            "evidence_refs": ["ev_tsfreq", "ev_conn"],
+                        },
+                        "implication": "This should not create an accepted artifact.",
+                        "open_questions": [],
+                    },
+                },
+            },
+        )
+
+
+def test_stereochemical_gate_is_recorded_in_accepted_artifact(tmp_path):
+    workspace = tmp_path / "ws"
+    make_accepted_workspace(workspace, stereochemical=True)
+
+    manifest = read_json(workspace / "manifest.json")
+    artifact = read_json(workspace / manifest["accepted_ts_refs"][0])
+
+    assert "stereochemical_connectivity_gate" in artifact["required_gates"]
+    assert "ev_stereo_001" in artifact["evidence_refs"]
+    assert validate_workspace(workspace)["valid"] is True
+
+
+def test_workspace_validator_rejects_stereo_required_accepted_artifact_missing_stereo_gate(tmp_path):
+    workspace = tmp_path / "ws"
+    make_accepted_workspace(workspace, stereochemical=True)
+
+    manifest = read_json(workspace / "manifest.json")
+    artifact_path = workspace / manifest["accepted_ts_refs"][0]
+    artifact = read_json(artifact_path)
+    artifact["evidence_refs"] = [item for item in artifact["evidence_refs"] if item != "ev_stereo_001"]
+    write_json(artifact_path, artifact)
+
+    validation = validate_workspace(workspace)
+    assert validation["valid"] is False
+    assert any(item["code"] == "invalid_accepted_ts_gates" for item in validation["findings"])
+
+
+def test_workspace_validator_rejects_failed_stereo_gate(tmp_path):
+    workspace = tmp_path / "ws"
+    make_accepted_workspace(workspace, stereochemical=True)
+
+    registry_path = workspace / "evidence_registry.json"
+    registry = read_json(registry_path)
+    for record in registry["evidence"]:
+        if record.get("evidence_id") == "ev_stereo_001":
+            record["quality"]["stereochemistry_matched"] = False
+            record["quality"]["stereochemical_verdict"] = "mismatched"
+    write_json(registry_path, registry)
+
+    validation = validate_workspace(workspace)
+    assert validation["valid"] is False
+    assert any(item["code"] == "invalid_accepted_ts_stereochemistry" for item in validation["findings"])

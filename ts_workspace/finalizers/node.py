@@ -5,7 +5,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..evidence_gates import accepted_gate_evidence, validate_strict_connectivity_gate
+from ..evidence_gates import (
+    STEREOCHEMICAL_GATE_ROLE,
+    accepted_gate_evidence,
+    hypothesis_requires_stereochemical_gate,
+    validate_stereochemical_connectivity_gate,
+    validate_strict_connectivity_gate,
+)
 from ..io import append_markdown, read_json, write_json
 
 PATHWAY_STEP_STATUS_PHASES = {"connectivity_validation", "accepted_audit"}
@@ -26,11 +32,19 @@ def validate_accepted_audit_gates(root: Path, node: dict[str, Any], closure: dic
     if closure["program_status"] != "completed" or closure["claim_verdict"] != "supported":
         return
     registry = read_json(root / "evidence_registry.json")
-    gate_evidence = accepted_gate_evidence(registry.get("evidence", []), evidence_refs)
+    hypothesis = _hypothesis_for_node(root, node)
+    require_stereo = hypothesis_requires_stereochemical_gate(hypothesis)
+    gate_evidence = accepted_gate_evidence(
+        registry.get("evidence", []),
+        evidence_refs,
+        require_stereochemical_gate=require_stereo,
+    )
     hypothesis_id = node.get("hypothesis_ref", {}).get("hypothesis_id") if isinstance(node.get("hypothesis_ref"), dict) else None
     if gate_evidence.get("__hypothesis_id") != hypothesis_id:
         raise ValueError("accepted audit gate evidence must match node.hypothesis_ref")
     validate_strict_connectivity_gate(gate_evidence["connectivity_gate"])
+    if require_stereo:
+        validate_stereochemical_connectivity_gate(gate_evidence[STEREOCHEMICAL_GATE_ROLE])
 
 
 def _update_mechanism_model(root: Path, node: dict[str, Any], closure: dict[str, Any]) -> None:
@@ -94,6 +108,12 @@ def _find_hypothesis(model: dict[str, Any], hypothesis_id: str | None) -> dict[s
         if isinstance(hypothesis, dict) and hypothesis.get("hypothesis_id") == hypothesis_id:
             return hypothesis
     raise ValueError(f"unknown hypothesis_id: {hypothesis_id}")
+
+
+def _hypothesis_for_node(root: Path, node: dict[str, Any]) -> dict[str, Any]:
+    model = read_json(root / "mechanism_model.json")
+    hypothesis_id = node.get("hypothesis_ref", {}).get("hypothesis_id") if isinstance(node.get("hypothesis_ref"), dict) else None
+    return _find_hypothesis(model, hypothesis_id)
 
 
 def _next_hypothesis_id(model: dict[str, Any]) -> str:
@@ -263,20 +283,33 @@ def _write_acceptance_artifact(root: Path, node: dict[str, Any], closure: dict[s
     if closure["program_status"] != "completed" or closure["claim_verdict"] != "supported":
         return
     registry = read_json(root / "evidence_registry.json")
-    gate_evidence = accepted_gate_evidence(registry.get("evidence", []), node.get("evidence_refs", []))
+    hypothesis = _hypothesis_for_node(root, node)
+    require_stereo = hypothesis_requires_stereochemical_gate(hypothesis)
+    gate_evidence = accepted_gate_evidence(
+        registry.get("evidence", []),
+        node.get("evidence_refs", []),
+        require_stereochemical_gate=require_stereo,
+    )
     validate_strict_connectivity_gate(gate_evidence["connectivity_gate"])
+    if require_stereo:
+        validate_stereochemical_connectivity_gate(gate_evidence[STEREOCHEMICAL_GATE_ROLE])
     manifest_path = root / "manifest.json"
     manifest = read_json(manifest_path)
+    required_gates = ["tsfreq_gate", "connectivity_gate"]
+    evidence_refs = [
+        gate_evidence["tsfreq_gate"]["evidence_id"],
+        gate_evidence["connectivity_gate"]["evidence_id"],
+    ]
+    if require_stereo:
+        required_gates.append(STEREOCHEMICAL_GATE_ROLE)
+        evidence_refs.append(gate_evidence[STEREOCHEMICAL_GATE_ROLE]["evidence_id"])
     artifact = {
         "accepted_id": f"accepted_ts_{node['node_id']}",
         "node_id": node["node_id"],
         "phase": node["phase"],
         "hypothesis_ref": node.get("hypothesis_ref"),
-        "required_gates": ["tsfreq_gate", "connectivity_gate"],
-        "evidence_refs": [
-            gate_evidence["tsfreq_gate"]["evidence_id"],
-            gate_evidence["connectivity_gate"]["evidence_id"],
-        ],
+        "required_gates": required_gates,
+        "evidence_refs": evidence_refs,
     }
     artifact_path = root / "accepted" / f"{artifact['accepted_id']}.json"
     write_json(artifact_path, artifact)

@@ -154,13 +154,15 @@ Complete this section only when the accepted-audit gate is satisfied.
 | TS/Freq gate | `tsfreq_gate` | yes/no | {{evidence_id}} |
 | Connectivity gate | `connectivity_gate` | yes/no | {{evidence_id}} |
 | Strict IRC gate | `strict_irc_complete` | yes/no | {{forward/reverse normal termination status}} |
+| Stereochemical gate | `stereochemical_connectivity_gate` if declared | yes/no/not required | {{evidence_id and verdict}} |
 | Same hypothesis ID | `{{hypothesis_id}}` | yes/no | {{notes}} |
 | Accepted artifact | `accepted/{{accepted_id}}.json` | yes/no | {{notes}} |
 
 Accepted TS statement:
 
-{{Only state accepted TS here if all gates are yes. Include accepted artifact
-path and evidence refs.}}
+{{Only state accepted TS here if all required gates are yes, including the
+stereochemical gate when the hypothesis declares stereochemical requirements.
+Include accepted artifact path and evidence refs.}}
 
 ## 9. Pathway Audit
 
@@ -241,7 +243,7 @@ Decision JSON files:
 - [ ] Workspace validates with `python scripts/ts_workspace.py validate_workspace --root {{workspace_root}}`.
 - [ ] `report_workspace` was run before report generation.
 - [ ] All accepted claims cite evidence IDs.
-- [ ] TS/Freq and connectivity evidence refer to the same hypothesis ID.
+- [ ] TS/Freq, connectivity, and declared stereochemical evidence refer to the same hypothesis ID.
 - [ ] Negative pathway audits are reported as negative outcomes.
 - [ ] Coordinates, absolute energies, and frequency counts are present in
       artifacts or appendix.

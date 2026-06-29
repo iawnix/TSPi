@@ -18,6 +18,7 @@ ROLE_PHASE_OWNER = {
     "mode_assignment": "tsfreq_validation",
     "connectivity_gate": "connectivity_validation",
     "irc_endpoint_assignment": "connectivity_validation",
+    "stereochemical_connectivity_gate": "connectivity_validation",
     "accepted_audit": "accepted_audit",
     "pathway_audit": "pathway_audit",
     "pathway_audit_summary": "pathway_audit",

@@ -52,7 +52,13 @@ Minimum fields:
       "spin_density_change": "not_expected",
       "pcet": "not_expected"
     },
-    "pathway_ref": {"pathway_id": "p_single", "step_id": "s1"}
+    "pathway_ref": {"pathway_id": "p_single", "step_id": "s1"},
+    "stereochemical_policy": {
+      "endpoint_policy": "retain_explicit_stereocenters",
+      "checks": [
+        {"type": "tetrahedral", "center": 1, "neighbors": [0, 2, 3, 4], "policy": "retain"}
+      ]
+    }
   },
   "testable_predictions": [
     {
@@ -69,7 +75,8 @@ Minimum fields:
     "reaction_center_delta",
     "initial_mechanism_hypothesis",
     "tsfreq_gate",
-    "connectivity_gate"
+    "connectivity_gate",
+    "stereochemical_connectivity_gate"
   ],
   "uncertainties": ["Endpoint geometry does not prove the electronic timing."],
   "alternative_hypotheses": [
@@ -78,6 +85,10 @@ Minimum fields:
   "evidence_refs": ["ev_hyp_0001"]
 }
 ```
+
+Only include `stereochemical_policy` and `stereochemical_connectivity_gate`
+when the reaction question depends on stereoisomer identity. Once declared,
+accepted-audit closure requires a matched stereochemical connectivity gate.
 
 `n000` may not contain TS/Freq, IRC, connectivity, or accepted-TS claims. It
 only establishes whether the endpoint-derived mechanism hypothesis is usable.
