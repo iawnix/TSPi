@@ -113,6 +113,8 @@ def _validate_start_payload(payload: dict[str, Any]) -> None:
         _validate_initial_mechanism_hypothesis(payload.get("initial_mechanism_hypothesis"))
     else:
         _validate_hypothesis_ref(payload.get("hypothesis_ref"), "payload.hypothesis_ref")
+        if payload.get("solution_ref") is not None:
+            _validate_solution_ref(payload.get("solution_ref"), "payload.solution_ref")
 
     expected = payload.get("expected_evidence", [])
     _require(isinstance(expected, list), "payload.expected_evidence must be a list")
@@ -188,6 +190,16 @@ def _validate_hypothesis_ref(value: Any, path: str) -> None:
     prediction_ids = value.get("prediction_ids", [])
     _require(isinstance(prediction_ids, list), f"{path}.prediction_ids must be a list")
     _require(all(_clean(item) for item in prediction_ids), f"{path}.prediction_ids cannot contain empty values")
+
+
+def _validate_solution_ref(value: Any, path: str) -> None:
+    _require(isinstance(value, dict), f"{path} must be an object")
+    _require(_clean(value.get("solution_id")), f"{path}.solution_id is required")
+    for field in ("summary", "strategy", "parent_solution_id"):
+        nested = value.get(field)
+        _require(nested is None or isinstance(nested, str), f"{path}.{field} must be a string or null")
+        if isinstance(nested, str):
+            _require(bool(nested.strip()), f"{path}.{field} cannot be empty")
 
 
 def _validate_initial_mechanism_hypothesis(value: Any) -> None:

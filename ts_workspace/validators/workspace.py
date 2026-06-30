@@ -108,6 +108,7 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
             continue
         node_details[node_id] = node
         _validate_node(node, node_id, hypothesis_ids, findings, str(node_path))
+        _validate_tree_node_lineage(entry, node, findings, f"tree.json.nodes[{len(ordered_node_ids) - 1}]")
 
     current_node = tree.get("current_node") if isinstance(tree, dict) else None
     if current_node is not None and current_node not in node_ids:
@@ -194,6 +195,8 @@ def _validate_node(
         )
     if phase in HYPOTHESIS_REF_PHASES:
         _validate_hypothesis_ref(node.get("hypothesis_ref"), hypothesis_ids, findings, source, "node.hypothesis_ref")
+        if node.get("solution_ref") is not None:
+            _validate_solution_ref(node.get("solution_ref"), findings, source, "node.solution_ref")
 
     closure = node.get("closure")
     if lifecycle == "running" and closure is not None:
@@ -286,6 +289,31 @@ def _validate_hypothesis_ref(
     prediction_ids = value.get("prediction_ids", [])
     if not isinstance(prediction_ids, list):
         _finding(findings, "error", "invalid_hypothesis_ref", f"{label}.prediction_ids must be a list", source)
+
+
+def _validate_solution_ref(value: Any, findings: list[dict[str, str]], source: str, label: str) -> None:
+    if not isinstance(value, dict):
+        _finding(findings, "error", "invalid_solution_ref", f"{label} must be an object", source)
+        return
+    solution_id = value.get("solution_id")
+    if not isinstance(solution_id, str) or not solution_id.strip():
+        _finding(findings, "error", "invalid_solution_ref", f"{label}.solution_id is required", source)
+    for field in ("summary", "strategy", "parent_solution_id"):
+        nested = value.get(field)
+        if nested is not None and not isinstance(nested, str):
+            _finding(findings, "error", "invalid_solution_ref", f"{label}.{field} must be a string or null", source)
+        elif isinstance(nested, str) and not nested.strip():
+            _finding(findings, "error", "invalid_solution_ref", f"{label}.{field} cannot be empty", source)
+
+
+def _validate_tree_node_lineage(
+    entry: dict[str, Any],
+    node: dict[str, Any],
+    findings: list[dict[str, str]],
+    source: str,
+) -> None:
+    if entry.get("solution_ref") != node.get("solution_ref"):
+        _finding(findings, "error", "solution_ref_mismatch", "tree node solution_ref must match node solution_ref", source)
 
 
 def _validate_backtrack_events(tree: dict[str, Any], node_ids: set[str], findings: list[dict[str, str]]) -> None:

@@ -1430,7 +1430,7 @@ async function loadAll() {
     renderWorkspacePop();
     renderWorkspacePanel();
     if (!state.workspaceId) {
-      document.getElementById("detail").innerHTML = `<p class="muted">Select a workspace.</p>`;
+      renderNoWorkspace();
       return;
     }
     await loadWorkspaceData();
@@ -1458,7 +1458,15 @@ async function loadWorkspaceData() {
   refresh.innerHTML = `<span class="spinner"></span>`;
   try {
     if (!state.workspaceId && state.workspaces.length !== 1) {
-      throw new Error("workspace_required");
+      renderNoWorkspace();
+      return;
+    }
+    if (!state.workspaceId && state.workspaces.length === 1) {
+      state.workspaceId = state.workspaces[0].id;
+      persistWorkspaceSelection(state.workspaceId);
+      renderWorkspaceChip();
+      renderWorkspacePop();
+      renderWorkspacePanel();
     }
     const path = workspaceApi("/job");
     state.job = await api(path);
@@ -2345,6 +2353,32 @@ function renderEmptyNode() {
   document.getElementById("nodeHead").innerHTML = `<span class="muted">No node selected.</span>`;
   document.getElementById("tabs").innerHTML = "";
   document.getElementById("detail").innerHTML = emptyBlock("Empty workspace", "No nodes in this tssearch yet.");
+}
+
+function renderNoWorkspace() {
+  state.job = null;
+  state.graph = null;
+  state.selected = null;
+  state.nodePayload = null;
+  document.getElementById("jobKv").innerHTML = "";
+  document.getElementById("mechKv").innerHTML = "";
+  document.getElementById("mechanismAnalysis").innerHTML = "";
+  document.getElementById("facts").innerHTML = "";
+  document.getElementById("refuted").innerHTML = "";
+  document.getElementById("questions").innerHTML = "";
+  document.getElementById("analysisCount").textContent = "0";
+  document.getElementById("factsCount").textContent = "0";
+  document.getElementById("refutedCount").textContent = "0";
+  document.getElementById("questionsCount").textContent = "0";
+  document.getElementById("graphStats").textContent = "No workspace";
+  document.getElementById("graphLegend").innerHTML = "";
+  document.getElementById("viewport").innerHTML = "";
+  document.getElementById("minimapSvg").innerHTML = "";
+  document.getElementById("nodeHead").innerHTML = `<span class="muted">No node selected.</span>`;
+  document.getElementById("tabs").innerHTML = "";
+  document.getElementById("detail").innerHTML = state.workspaces.length
+    ? emptyBlock("Select a workspace", "Choose a registered workspace from the top bar.")
+    : emptyBlock("No workspaces", "Register a TS workspace to inspect it here.");
 }
 
 function emptyBlock(title, hint) {

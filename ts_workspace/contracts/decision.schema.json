@@ -30,6 +30,7 @@
         },
         "hypothesis": {"type": "string", "minLength": 1},
         "hypothesis_ref": {"$ref": "mechanism.schema.json#/$defs/hypothesis_ref"},
+        "solution_ref": {"$ref": "#/$defs/solution_ref"},
         "initial_mechanism_hypothesis": {"$ref": "mechanism.schema.json#/$defs/mechanism_hypothesis_input"},
         "expected_evidence": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "pathway_ref": {"$ref": "#/$defs/pathway_ref"},
@@ -108,6 +109,17 @@
       "properties": {
         "pathway_id": {"type": "string", "minLength": 1},
         "step_id": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": true
+    },
+    "solution_ref": {
+      "type": "object",
+      "required": ["solution_id"],
+      "properties": {
+        "solution_id": {"type": "string", "minLength": 1},
+        "summary": {"type": ["string", "null"]},
+        "strategy": {"type": ["string", "null"]},
+        "parent_solution_id": {"type": ["string", "null"]}
       },
       "additionalProperties": true
     },

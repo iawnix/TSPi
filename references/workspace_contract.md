@@ -60,6 +60,21 @@ are recorded. Candidate generation starts at `n001` with `parent_node=n000` and
 Legacy workspaces without `n000` or without `hypothesis_ref` are invalid under
 the v3 contract.
 
+Later nodes may include optional `solution_ref`:
+
+```json
+{
+  "solution_id": "sol_scan_001",
+  "strategy": "relaxed_scan_seed",
+  "summary": "Generate a TS guess from a constrained bond-distance scan."
+}
+```
+
+This groups computational search strategies within the same chemical
+hypothesis. It does not create a second state machine: closure still uses only
+`program_status` and `claim_verdict`, and failures remain diagnostics or
+closure facts.
+
 ## Ledgers
 
 - `mechanism_model.hypotheses[]`: active, supported, refuted, or superseded
@@ -70,5 +85,5 @@ the v3 contract.
   pathway step, but do not duplicate pathway structure.
 
 The workspace validator checks required files, node JSON records, initial
-`n000` structure, hypothesis references, current focus, append-only evidence
-identity, and forbidden public fields.
+`n000` structure, hypothesis references, optional solution lineage consistency,
+current focus, append-only evidence identity, and forbidden public fields.

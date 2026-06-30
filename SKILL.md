@@ -160,12 +160,18 @@ They are not top-level node states.
    and the structured `initial_mechanism_hypothesis`. Close it before opening
    `n001`; do not put TS/Freq, IRC, connectivity, or accepted-TS claims in
    `n000`.
+   Reactant/product endpoints define target basins for validation, not the
+   candidate-generation method. Do not default to QST2/QST3 merely because R/P endpoints
+   are available; justify QST use from endpoint optimization, atom mapping,
+   conformer compatibility, and the elementary-step model.
 3. Run `report_workspace` before deciding the next node.
 4. Construct a decision JSON with the action, rationale, report reference,
    evidence references, and payload. Start from `templates/decision/` when a
    reusable shape is needed; do not copy JSON from `tests/`. Every post-`n000`
    mechanism node must include `payload.hypothesis_ref` that points to
-   `mechanism_model.hypotheses[]`.
+   `mechanism_model.hypotheses[]`. Use optional `payload.solution_ref` only to
+   group alternative search strategies under the same hypothesis; it is
+   lineage metadata, not a new state, verdict, or retry policy.
 5. Run `validate_decision` for preflight when useful.
 6. Apply the mutation through `start_node`, `update_workspace`, or `end_node`.
 7. Use `ts_backends`, `ts_remote`, and `mol_comparator` to create artifacts and

@@ -47,3 +47,10 @@ Specific diagnostics such as a wrong imaginary mode, collapsed endpoint,
 scheduler failure, parser failure, or RMSD disagreement are reason codes or
 evidence diagnostics. They are not top-level node states and must not steer the
 framework as fixed branches.
+
+`solution_ref` is optional lineage metadata for grouping alternative search
+strategies under the same `hypothesis_ref`. It does not add a lifecycle value,
+claim verdict, branch disposition, or retry classification. A failed Gaussian
+route, wrong-basin TS/Freq result, or exhausted scan remains an execution fact,
+evidence diagnostic, closure fact, or decision rationale; the agent must still
+make an explicit next decision from the evidence.

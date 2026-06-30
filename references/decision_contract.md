@@ -76,6 +76,11 @@ finalizer promotes `initial_mechanism_hypothesis` into
       "hypothesis_id": "hyp_0001",
       "prediction_ids": ["pred_mode_001"]
     },
+    "solution_ref": {
+      "solution_id": "sol_scan_001",
+      "strategy": "relaxed_scan_seed",
+      "summary": "A constrained scan will seed this TS/Freq attempt."
+    },
     "expected_evidence": ["gaussian_output", "imaginary_mode_summary"]
   }
 }
@@ -83,6 +88,9 @@ finalizer promotes `initial_mechanism_hypothesis` into
 
 `closure.mechanism.hypothesis_ref` must match the node's
 `payload.hypothesis_ref`.
+`payload.solution_ref` is optional lineage metadata for grouping alternative
+search strategies under the same hypothesis. It must not be used as a verdict,
+retry state, or automatic branch selector.
 
 ## Closure Revision
 

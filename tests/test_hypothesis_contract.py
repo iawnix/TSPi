@@ -41,6 +41,71 @@ def test_candidate_generation_requires_hypothesis_ref() -> None:
         validate_decision(decision)
 
 
+def test_solution_ref_is_optional_lineage_not_state(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_v3_workspace(workspace)
+    solution_ref = {
+        "solution_id": "sol_scan_001",
+        "strategy": "relaxed_scan_seed",
+        "summary": "Generate a TS guess from a constrained C-N distance scan.",
+    }
+
+    start_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "start_node",
+            "rationale": "Start a candidate-generation solution branch.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "node_id": "n001",
+                "parent_node": "n000",
+                "phase": "candidate_generation",
+                "hypothesis": "Test one search strategy under the same chemical hypothesis.",
+                "hypothesis_ref": HYPOTHESIS_REF,
+                "solution_ref": solution_ref,
+                "expected_evidence": ["candidate_geometry"],
+            },
+        },
+    )
+
+    node = read_json(workspace / "nodes" / "n001" / "node.json")
+    tree = read_json(workspace / "tree.json")
+    report = report_workspace(workspace)
+
+    assert node["solution_ref"] == solution_ref
+    assert tree["nodes"][-1]["solution_ref"] == solution_ref
+    assert report["node_index"][-1]["solution_ref"] == solution_ref
+    assert validate_workspace(workspace)["valid"] is True
+
+    tree["nodes"][-1].pop("solution_ref")
+    write_json(workspace / "tree.json", tree)
+    validation = validate_workspace(workspace)
+    assert validation["valid"] is False
+    assert any(item["code"] == "solution_ref_mismatch" for item in validation["findings"])
+
+
+def test_solution_ref_rejects_blank_solution_id() -> None:
+    decision = {
+        "schema_version": "ts-decision",
+        "action": "start_node",
+        "rationale": "Start candidate generation with invalid lineage.",
+        "evidence_refs": [],
+        "report_ref": {"report_id": "rep_test", "workspace_root": "ws"},
+        "payload": {
+            "phase": "candidate_generation",
+            "hypothesis": "Lineage must be structural if present.",
+            "hypothesis_ref": HYPOTHESIS_REF,
+            "solution_ref": {"solution_id": "   "},
+            "expected_evidence": [],
+        },
+    }
+
+    with pytest.raises(ContractError, match="payload.solution_ref.solution_id is required"):
+        validate_decision(decision)
+
+
 def test_accepted_audit_gate_evidence_must_match_node_hypothesis(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     report_ref = bootstrap_v3_workspace(workspace)

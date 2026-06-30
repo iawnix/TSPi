@@ -21,6 +21,22 @@
           "hypothesis_ref": {
             "anyOf": [{"$ref": "mechanism.schema.json#/$defs/hypothesis_ref"}, {"type": "null"}]
           },
+          "solution_ref": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": ["solution_id"],
+                "properties": {
+                  "solution_id": {"type": "string", "minLength": 1},
+                  "summary": {"type": ["string", "null"]},
+                  "strategy": {"type": ["string", "null"]},
+                  "parent_solution_id": {"type": ["string", "null"]}
+                },
+                "additionalProperties": true
+              },
+              {"type": "null"}
+            ]
+          },
           "closed_at": {"type": "string"},
           "program_status": {"enum": ["completed", "failed", "stopped", "not_run"]},
           "claim_verdict": {"enum": ["supported", "refuted", "inconclusive", "not_evaluated"]}

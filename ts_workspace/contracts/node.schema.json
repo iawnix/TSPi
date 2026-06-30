@@ -16,6 +16,22 @@
     "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}},
     "pathway_ref": {"type": ["object", "null"]},
     "hypothesis_ref": {"anyOf": [{"$ref": "mechanism.schema.json#/$defs/hypothesis_ref"}, {"type": "null"}]},
+    "solution_ref": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["solution_id"],
+          "properties": {
+            "solution_id": {"type": "string", "minLength": 1},
+            "summary": {"type": ["string", "null"]},
+            "strategy": {"type": ["string", "null"]},
+            "parent_solution_id": {"type": ["string", "null"]}
+          },
+          "additionalProperties": true
+        },
+        {"type": "null"}
+      ]
+    },
     "initial_mechanism_hypothesis": {
       "anyOf": [{"$ref": "mechanism.schema.json#/$defs/mechanism_hypothesis_input"}, {"type": "null"}]
     },

@@ -80,6 +80,16 @@ def test_static_ui_uses_outline_status_chips_and_explains_backtrack_symbol() -> 
     assert "backtracked from" in html
 
 
+def test_static_ui_refresh_without_workspace_renders_empty_state() -> None:
+    html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
+
+    assert "function renderNoWorkspace()" in html
+    assert "renderNoWorkspace();\n      return;" in html
+    assert 'throw new Error("workspace_required")' not in html
+    assert "Select a workspace" in html
+    assert "No workspaces" in html
+
+
 def test_static_asset_resolves_from_current_ts_web_package() -> None:
     expected = files("ts_web").joinpath("static", "index.html").read_bytes()
     assert ts_web_server._static_asset("index.html").read_bytes() == expected

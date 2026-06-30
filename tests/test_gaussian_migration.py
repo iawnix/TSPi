@@ -133,6 +133,54 @@ def test_route_requires_extra_section_detects_gen() -> None:
     assert not gaussian.route_requires_extra_section("#P B3LYP/6-31G(d) opt freq")
 
 
+def test_read_gjf_route_extracts_multiline_route(tmp_path: Path) -> None:
+    gjf = tmp_path / "case.gjf"
+    gjf.write_text(
+        "\n".join(
+            [
+                "%chk=case.chk",
+                "%nprocshared=8",
+                "#P M062X/6-31G(d,p)",
+                "Opt=(TS,CalcFC,MaxCycle=200) Freq",
+                "",
+                "title",
+                "",
+                "0 1",
+                "H 0 0 0",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    assert gaussian.read_gjf_route(gjf) == "#P M062X/6-31G(d,p) Opt=(TS,CalcFC,MaxCycle=200) Freq"
+
+
+def test_parse_log_reports_route_readback_and_effective_step_mismatch(tmp_path: Path) -> None:
+    log = "\n".join(
+        [
+            " Entering Link 1 = synthetic",
+            " #P M062X/6-31G(d,p) Opt=(TS,CalcFC,MaxCycle=102) Freq",
+            " -------------------------------------------------------------------",
+            " Step number 62 out of a maximum of 102",
+            job(),
+        ]
+    )
+    parsed = parse_text(tmp_path, log)
+    summary = parsed["summary"]
+
+    assert summary["gaussian_route_settings"]["maxcycle"] == 102
+    assert summary["route_expectation"]["checked"] is False
+
+    expected = "#P M062X/6-31G(d,p) Opt=(TS,CalcFC,MaxCycle=200) Freq"
+    checked = gaussian.parse_log(tmp_path / "case.log", expected_route=expected)["summary"]["route_expectation"]
+    assert checked["checked"] is True
+    assert checked["matched"] is False
+    assert "route_text_differs" in checked["mismatches"]
+    assert "maxcycle_differs" in checked["mismatches"]
+    assert "maxcycle_not_seen_in_effective_step_limits" in checked["mismatches"]
+
+
 def test_valid_ts_section_validates_and_extracts_standard_orientation(tmp_path: Path) -> None:
     parsed = parse_text(tmp_path, job())
     summary = parsed["summary"]

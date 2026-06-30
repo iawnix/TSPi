@@ -88,6 +88,7 @@ def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
         "evidence_refs": decision.get("evidence_refs", []),
         "pathway_ref": payload.get("pathway_ref"),
         "hypothesis_ref": payload.get("hypothesis_ref"),
+        "solution_ref": payload.get("solution_ref"),
         "initial_mechanism_hypothesis": payload.get("initial_mechanism_hypothesis"),
         "backtrack": payload.get("backtrack"),
         "created_by_decision": _decision_id(decision),
@@ -108,10 +109,11 @@ def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
             "node_id": node_id,
             "parent_node": node["parent_node"],
             "phase": node["phase"],
-                "lifecycle": node["lifecycle"],
-                "hypothesis": node["hypothesis"],
-                "hypothesis_ref": node.get("hypothesis_ref"),
-            }
+            "lifecycle": node["lifecycle"],
+            "hypothesis": node["hypothesis"],
+            "hypothesis_ref": node.get("hypothesis_ref"),
+            "solution_ref": node.get("solution_ref"),
+        }
         )
     if node["parent_node"]:
         tree.setdefault("edges", []).append({"parent_node": node["parent_node"], "child_node": node_id})
