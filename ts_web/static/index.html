@@ -678,8 +678,8 @@
     .edge-group.faded:hover           { opacity: .85; }
     .edge-group.lineage               { color: var(--accent); }
     .edge-group.dependency            { color: var(--cyan); opacity: .58; }
-    .edge-group.backtrack-resolved,
-    .edge-group.backtrack-superseded { opacity: .56; }
+    .edge-group.branch-resolved,
+    .edge-group.branch-superseded { opacity: .56; }
     .edge-group:hover              { color: var(--accent); }
 
     .edge {
@@ -691,11 +691,11 @@
       transition: stroke-width var(--t-fast) var(--ease),
                   opacity var(--t-fast) var(--ease);
     }
-    .edge.backtrack,
-    .edge.backtrack_decision,
-    .edge.backtrack_replacement { stroke-dasharray: 5 4; opacity: .72; }
-    .edge.backtrack-resolved,
-    .edge.backtrack-superseded { opacity: .52; }
+    .edge.branch,
+    .edge.branch_decision,
+    .edge.branch_generated { stroke-dasharray: 5 4; opacity: .72; }
+    .edge.branch-resolved,
+    .edge.branch-superseded { opacity: .52; }
     .edge.dependency { stroke-dasharray: 2 5; opacity: .7; }
     .edge-group:hover .edge  { stroke-width: 2; opacity: 1; }
     .edge.highlighted        { stroke-width: 2.2; }
@@ -716,9 +716,9 @@
       stroke: var(--bg);            /* thin halo so the dot pops on grid bg */
       stroke-width: 0.8;
     }
-    .edge-group.backtrack       .edge-dot,
-    .edge-group.backtrack_decision .edge-dot,
-    .edge-group.backtrack_replacement .edge-dot { opacity: .85; }
+    .edge-group.branch       .edge-dot,
+    .edge-group.branch_decision .edge-dot,
+    .edge-group.branch_generated .edge-dot { opacity: .85; }
     .edge-group:hover .edge-dot       { opacity: 1; }
     .edge-group:hover .edge-dot.source { stroke-width: 2; }
 
@@ -798,8 +798,8 @@
     .node:hover .node-icon,
     .node.selected .node-icon { stroke: var(--text); }
     .node.selected .node-stripe { width: 6px; }
-    .backtrack-badge { fill: none; stroke: currentColor; stroke-width: 1; }
-    .backtrack-badge-icon {
+    .branch-badge { fill: none; stroke: currentColor; stroke-width: 1; }
+    .branch-badge-icon {
       stroke: currentColor;
       stroke-width: 1.8;
       fill: none;
@@ -1701,15 +1701,15 @@ function renderLegend() {
   if (!legend) return;
   const vocab = state.graph?.presentation?.card_status || {};
   const eventRoles = state.graph?.presentation?.event_role || {};
-  const backtrackSource = eventRoles.backtrack_source || {};
+  const branchSource = eventRoles.branch_source || {};
   const keys = ["success", "error", "running", "ready", "stopped", "unknown"];
   const statusChips = keys
     .filter(key => vocab[key])
     .map(key => `<span class="chip" data-color="${escapeHtml(vocab[key].color || "grey")}">${escapeHtml(vocab[key].label || key)}</span>`)
-  const backtrackLegend = `<span class="chip no-dot symbol-legend" data-color="${escapeHtml(backtrackSource.color || "purple")}" title="Backtrack marker on a node">
-      <span class="legend-glyph" aria-hidden="true">↺</span>${escapeHtml(backtrackSource.label || "backtracked from")}
+  const branchLegend = `<span class="chip no-dot symbol-legend" data-color="${escapeHtml(branchSource.color || "purple")}" title="Branch marker on a node">
+      <span class="legend-glyph" aria-hidden="true">↺</span>${escapeHtml(branchSource.label || "branched from")}
     </span>`;
-  legend.innerHTML = [...statusChips, backtrackLegend].join("");
+  legend.innerHTML = [...statusChips, branchLegend].join("");
 }
 
 function renderGraph() {
@@ -1901,22 +1901,22 @@ function buildNode(n, p, lineage) {
   // Approximate width of status text (no SVG measurement at build time).
   const statusTextW = 14 + 12 + statusLabel.length * 6.6;
 
-  // Backtrack ↺ badge (control-flow colored, separate from status color)
-  if (n.backtrack_badge && Array.isArray(n.backtrack_badge.event_ids) && n.backtrack_badge.event_ids.length) {
+  // Branch ↺ badge (control-flow colored, separate from status color)
+  if (n.branch_badge && Array.isArray(n.branch_badge.event_ids) && n.branch_badge.event_ids.length) {
     const bx = Math.min(NODE_W - 22, statusTextW + 6);
     const bg = makeSvg("g");
     bg.setAttribute("transform", `translate(${bx}, 60)`);
-    bg.setAttribute("aria-label", `${n.backtrack_badge.label || "Backtrack"}: ${n.backtrack_badge.event_ids.join(", ")}`);
-    bg.style.color = COLOR_VAR[n.backtrack_badge.color] || COLOR_VAR[presColor("event_role", n.backtrack_badge.role)] || "var(--purple)";
+    bg.setAttribute("aria-label", `${n.branch_badge.label || "Branch"}: ${n.branch_badge.event_ids.join(", ")}`);
+    bg.style.color = COLOR_VAR[n.branch_badge.color] || COLOR_VAR[presColor("event_role", n.branch_badge.role)] || "var(--purple)";
     bg.innerHTML = `
-      <circle class="backtrack-badge" cx="7" cy="7" r="7"/>
+      <circle class="branch-badge" cx="7" cy="7" r="7"/>
       <svg x="1" y="1" width="12" height="12" viewBox="0 0 24 24" overflow="visible">
-        <g class="backtrack-badge-icon">
+        <g class="branch-badge-icon">
           <polyline points="3 4 3 10 9 10"/>
           <path d="M4 11a8 8 0 1 1 2.5 6"/>
         </g>
       </svg>
-      <title>${escapeHtml(n.backtrack_badge.label || "Backtrack")}: ${escapeHtml(n.backtrack_badge.event_ids.join(", "))}</title>`;
+      <title>${escapeHtml(n.branch_badge.label || "Branch")}: ${escapeHtml(n.branch_badge.event_ids.join(", "))}</title>`;
     g.appendChild(bg);
   }
 
@@ -1942,11 +1942,11 @@ function buildNode(n, p, lineage) {
 }
 
 function buildEdge(e, s, t, lineage) {
-  const back = e.kind && e.kind.startsWith("backtrack");
+  const back = e.kind && e.kind.startsWith("branch");
 
   // Endpoint dots sit a small gap OUTSIDE the source/target nodes, so the curve
   // visibly connects two free-floating circles rather than stabbing the cards.
-  // Backtrack edges exit the source's LEFT side and enter the target's RIGHT side.
+  // Branch edges exit the source's LEFT side and enter the target's RIGHT side.
   const pad = 5;
   let x1, y1, x2, y2;
   if (back) {
@@ -1965,7 +1965,7 @@ function buildEdge(e, s, t, lineage) {
   const c2x = x2 - dir * mid;
   const d   = `M ${x1} ${y1} C ${c1x} ${y1}, ${c2x} ${y2}, ${x2} ${y2}`;
 
-  const backStateClass = back && e.event_state ? `backtrack-${String(e.event_state)}` : "";
+  const backStateClass = back && e.event_state ? `branch-${String(e.event_state)}` : "";
   const classes = ["edge-group", e.kind];
   if (backStateClass) classes.push(backStateClass);
   if (lineage) {
@@ -2282,8 +2282,8 @@ function renderSummary(payload, node) {
         ${summaryRow("reason_code", node.reason_code, "mono")}
         ${summaryRow("parent", node.parent_id, "mono")}
         ${Array.isArray(node.input_refs) && node.input_refs.length ? summaryRow("input_refs", node.input_refs.join(", "), "mono") : ""}
-        ${Array.isArray(node.backtrack_event_ids) && node.backtrack_event_ids.length ? summaryRow("backtrack_events", node.backtrack_event_ids.join(", "), "mono") : ""}
-        ${Array.isArray(node.generated_from_backtrack_event_ids) && node.generated_from_backtrack_event_ids.length ? summaryRow("generated_from_backtrack", node.generated_from_backtrack_event_ids.join(", "), "mono") : ""}
+        ${Array.isArray(node.branch_event_ids) && node.branch_event_ids.length ? summaryRow("branch_events", node.branch_event_ids.join(", "), "mono") : ""}
+        ${Array.isArray(node.generated_from_branch_event_ids) && node.generated_from_branch_event_ids.length ? summaryRow("generated_from_branch", node.generated_from_branch_event_ids.join(", "), "mono") : ""}
       </div>
     </div>
     <div class="summary-card">

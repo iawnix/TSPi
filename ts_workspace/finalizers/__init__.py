@@ -1,4 +1,4 @@
-"""Finalizers that update read ledgers after node closure."""
+"""Finalizers that update read models after node closure."""
 
 from .node import finalize_closed_node, validate_accepted_audit_gates
 

@@ -32,10 +32,29 @@
         {"type": "null"}
       ]
     },
+    "branch_context": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["relation", "from_node", "anchor_node"],
+          "properties": {
+            "relation": {
+              "enum": ["continue_parent", "new_solution_branch", "new_hypothesis_branch", "new_pathway_branch", "administrative_followup"]
+            },
+            "from_node": {"type": "string", "minLength": 1},
+            "anchor_node": {"type": "string", "minLength": 1},
+            "reason_code": {"type": "string", "minLength": 1},
+            "changed_variable": {"type": "string", "minLength": 1},
+            "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}}
+          },
+          "additionalProperties": true
+        },
+        {"type": "null"}
+      ]
+    },
     "initial_mechanism_hypothesis": {
       "anyOf": [{"$ref": "mechanism.schema.json#/$defs/mechanism_hypothesis_input"}, {"type": "null"}]
     },
-    "backtrack": {"type": ["object", "null"]},
     "created_by_decision": {"type": "string", "minLength": 1},
     "started_at": {"type": "string", "minLength": 1},
     "artifacts": {"type": "object"},

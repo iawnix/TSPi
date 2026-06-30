@@ -37,7 +37,6 @@ EXPECTED_TEMPLATE_FILES = {
     "update_pathway_audit_not_accepted.json",
     "end_pathway_audit_not_accepted.json",
     "start_solution_branch.json",
-    "start_replacement_branch.json",
 }
 
 
@@ -100,12 +99,18 @@ DEFAULT_VALUES = {
     "EV_PATHWAY_AUDIT": "ev_pathway_audit_001",
     "PATHWAY_AUDIT_PATH": "reports/pathway_audit.json",
     "PATHWAY_AUDIT_DIAGNOSTIC": "forward endpoint does not match product basin",
-    "BACKTRACK_EVIDENCE_REF": "ev_pathway_audit_001",
+    "SOURCE_SHA256": "0000000000000000000000000000000000000000000000000000000000000000",
+    "PARSER_VERSION": "1.0",
+    "TSFREQ_PARSER_NAME": "gaussian_tsfreq_parser",
+    "CONNECTIVITY_PARSER_NAME": "irc_connectivity_parser",
+    "STEREOCHEMISTRY_PARSER_NAME": "stereochemistry_connectivity_parser",
+    "PATHWAY_AUDIT_PARSER_NAME": "pathway_audit_parser",
+    "BRANCH_EVIDENCE_REF": "ev_pathway_audit_001",
     "NEW_BRANCH_NODE_ID": "n002",
-    "BACKTRACK_FROM_NODE": "n001",
-    "BACKTRACK_TO_NODE": "n000",
-    "BACKTRACK_CHANGED_VARIABLE": "solution_strategy",
-    "BACKTRACK_REASON_CODE": "connectivity_refuted",
+    "BRANCH_FROM_NODE": "n001",
+    "BRANCH_ANCHOR_NODE": "n000",
+    "BRANCH_CHANGED_VARIABLE": "solution_strategy",
+    "BRANCH_REASON_CODE": "connectivity_refuted",
 }
 
 
@@ -158,7 +163,7 @@ def test_runtime_templates_drive_complete_accepted_pathway_workspace(tmp_path: P
     assert validate_workspace(workspace)["valid"] is True
 
 
-def test_replacement_branch_template_requires_explicit_backtrack_context(tmp_path: Path) -> None:
+def test_solution_branch_template_requires_explicit_branch_context(tmp_path: Path) -> None:
     workspace = tmp_path / "replacement_branch"
     init_workspace(workspace)
     for template_name in [
@@ -179,17 +184,17 @@ def test_replacement_branch_template_requires_explicit_backtrack_context(tmp_pat
     }
     _apply_decision(workspace, refuted_close)
 
-    replacement = _with_report_ref(workspace, _render_template("start_replacement_branch.json"))
-    validate_decision_for_workspace(workspace, replacement)
-    started = start_node(workspace, replacement)
+    solution_branch = _with_report_ref(workspace, _render_template("start_solution_branch.json"))
+    validate_decision_for_workspace(workspace, solution_branch)
+    started = start_node(workspace, solution_branch)
 
     assert started["node_id"] == "n002"
     tree = json.loads((workspace / "tree.json").read_text(encoding="utf-8"))
-    assert tree["backtrack_events"][-1]["from_node"] == "n001"
-    assert tree["backtrack_events"][-1]["to_node"] == "n000"
-    assert tree["backtrack_events"][-1]["changed_variable"] == "solution_strategy"
-    assert tree["backtrack_events"][-1]["lineage_scope"] == "solution"
-    assert tree["backtrack_events"][-1]["target_solution_ref"]["solution_id"] == "sol_scan_002"
+    assert tree["branch_events"][-1]["relation"] == "new_solution_branch"
+    assert tree["branch_events"][-1]["from_node"] == "n001"
+    assert tree["branch_events"][-1]["anchor_node"] == "n000"
+    assert tree["branch_events"][-1]["changed_variable"] == "solution_strategy"
+    assert tree["branch_events"][-1]["target_solution_ref"]["solution_id"] == "sol_scan_002"
     report = report_workspace(workspace)
     lineage = report["solution_lineage"][0]
     assert lineage["hypothesis_id"] == "hyp_0001"

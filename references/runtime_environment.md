@@ -42,7 +42,7 @@ Public scripts call `ts_runtime.ensure_runtime_python()` before importing
 workflow modules. The Pi extension reads `.runtime/env.json` and executes the
 recorded interpreter when present.
 
-Runtime helpers must not mutate workspace ledgers, start or close nodes, or
+Runtime helpers must not mutate workspace state files, start or close nodes, or
 interpret chemistry.
 
 Package installation does not create a Conda environment automatically. Users

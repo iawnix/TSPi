@@ -6,9 +6,10 @@ from pathlib import Path
 from typing import Any
 
 from ..artifact_policy import node_owner_from_artifact_path, role_matches_phase
+from ..evidence_gates import gate_artifact_metadata_diagnostic
 from ..io import read_json
 from .decision import HYPOTHESIS_REF_PHASES, INITIAL_HYPOTHESIS_PHASES, ContractError, validate_decision
-from .workspace import REQUIRED_FILES, UNRESOLVED_TERMINAL_VERDICTS
+from .workspace import REQUIRED_FILES
 
 
 def validate_decision_for_workspace(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
@@ -34,7 +35,6 @@ def _validate_start_node_context(root: Path, decision: dict[str, Any]) -> None:
 
     ordered_node_ids = _ordered_node_ids(tree)
     node_ids = set(ordered_node_ids)
-    _validate_backtrack_refs(payload.get("backtrack"), node_ids)
     if not ordered_node_ids:
         if node_id != "n000":
             raise ContractError("first node must be explicit n000 endpoint/preflight hypothesis node")
@@ -42,32 +42,11 @@ def _validate_start_node_context(root: Path, decision: dict[str, Any]) -> None:
             raise ContractError("first node phase must be endpoint or preflight")
         return
 
+    _validate_parent_ref(payload.get("parent_node"), node_ids)
+    _validate_branch_context(root, payload, node_ids)
+
     if payload.get("phase") in HYPOTHESIS_REF_PHASES:
         _validate_hypothesis_ref_exists(root, payload["hypothesis_ref"])
-
-    previous_id = ordered_node_ids[-1]
-    previous = _read_node(root, previous_id)
-    if not _is_unresolved_closed(previous):
-        return
-
-    parent_by_id = _parent_map(root, ordered_node_ids)
-    parent_by_id[node_id] = payload.get("parent_node")
-    if _is_descendant(node_id, previous_id, parent_by_id):
-        return
-
-    backtrack = payload.get("backtrack")
-    if backtrack is None:
-        verdict = _claim_verdict(previous)
-        raise ContractError(
-            "payload.backtrack is required when start_node opens a replacement "
-            f"branch after terminal {verdict} node {previous_id}"
-        )
-    if backtrack.get("from_node") != previous_id:
-        raise ContractError(
-            "payload.backtrack.from_node must match the terminal unresolved "
-            f"node being replaced: {previous_id}"
-        )
-    _validate_backtrack_lineage_scope(root, payload)
 
 
 def _validate_end_node_context(root: Path, decision: dict[str, Any]) -> None:
@@ -123,6 +102,9 @@ def _validate_update_workspace_context(root: Path, decision: dict[str, Any]) -> 
                 "Write the validation artifact under the current node and record upstream files "
                 "in nodes/<node>/outputs/artifact_manifest.json consumed_artifacts."
             )
+        gate_diagnostic = gate_artifact_metadata_diagnostic(entry)
+        if gate_diagnostic:
+            raise ContractError(gate_diagnostic)
 
 
 def _require_initialized(root: Path) -> None:
@@ -146,13 +128,11 @@ def _ordered_node_ids(tree: dict[str, Any]) -> list[str]:
     return ordered
 
 
-def _validate_backtrack_refs(backtrack: Any, node_ids: set[str]) -> None:
-    if backtrack is None:
+def _validate_parent_ref(parent_node: Any, node_ids: set[str]) -> None:
+    if parent_node is None:
         return
-    for field in ("from_node", "to_node"):
-        node_id = backtrack.get(field)
-        if node_id not in node_ids:
-            raise ContractError(f"payload.backtrack.{field} does not exist: {node_id}")
+    if parent_node not in node_ids:
+        raise ContractError(f"payload.parent_node does not exist: {parent_node}")
 
 
 def _validate_hypothesis_ref_exists(root: Path, hypothesis_ref: dict[str, Any]) -> None:
@@ -167,29 +147,58 @@ def _validate_hypothesis_ref_exists(root: Path, hypothesis_ref: dict[str, Any]) 
         raise ContractError(f"unknown hypothesis_ref.hypothesis_id: {hypothesis_id}")
 
 
-def _validate_backtrack_lineage_scope(root: Path, payload: dict[str, Any]) -> None:
-    backtrack = payload.get("backtrack")
-    if not isinstance(backtrack, dict) or backtrack.get("lineage_scope") != "solution":
-        return
+def _validate_branch_context(root: Path, payload: dict[str, Any], node_ids: set[str]) -> None:
+    context = payload.get("branch_context")
+    if not isinstance(context, dict):
+        raise ContractError("payload.branch_context is required after n000")
+
+    relation = context.get("relation")
+    from_node_id = context.get("from_node")
+    anchor_node_id = context.get("anchor_node")
+    if from_node_id not in node_ids:
+        raise ContractError(f"payload.branch_context.from_node does not exist: {from_node_id}")
+    if anchor_node_id not in node_ids:
+        raise ContractError(f"payload.branch_context.anchor_node does not exist: {anchor_node_id}")
+
+    from_node = _read_node(root, str(from_node_id))
+    if relation == "continue_parent":
+        parent_node = payload.get("parent_node")
+        if parent_node != from_node_id:
+            raise ContractError("continue_parent branch_context requires parent_node to match from_node")
+    elif relation == "new_solution_branch":
+        _validate_new_solution_branch(from_node, payload)
+    elif relation == "new_hypothesis_branch":
+        _validate_new_hypothesis_branch(from_node, payload)
+    elif relation == "new_pathway_branch":
+        if not isinstance(payload.get("pathway_ref"), dict):
+            raise ContractError("new_pathway_branch requires payload.pathway_ref")
+    elif relation == "administrative_followup":
+        if not isinstance(context.get("reason_code"), str) or not context["reason_code"].strip():
+            raise ContractError("administrative_followup requires payload.branch_context.reason_code")
+
+
+def _validate_new_solution_branch(from_node: dict[str, Any], payload: dict[str, Any]) -> None:
     new_ref = payload.get("hypothesis_ref")
     if not isinstance(new_ref, dict):
-        raise ContractError("solution-scoped backtrack requires payload.hypothesis_ref")
-    if not isinstance(payload.get("solution_ref"), dict):
-        raise ContractError("solution-scoped backtrack requires payload.solution_ref")
-    from_node = _read_node(root, backtrack["from_node"])
+        raise ContractError("new_solution_branch requires payload.hypothesis_ref")
+    solution_ref = payload.get("solution_ref")
+    if not isinstance(solution_ref, dict) or not str(solution_ref.get("solution_id") or "").strip():
+        raise ContractError("new_solution_branch requires payload.solution_ref.solution_id")
     from_ref = from_node.get("hypothesis_ref")
     if isinstance(from_ref, dict) and from_ref.get("hypothesis_id") != new_ref.get("hypothesis_id"):
-        raise ContractError(
-            "solution-scoped backtrack must keep the same hypothesis_id; "
-            "use lineage_scope=hypothesis for a chemical-hypothesis replacement"
-        )
+        raise ContractError("new_solution_branch must keep the same hypothesis_id")
+    from_solution = from_node.get("solution_ref")
+    if isinstance(from_solution, dict) and from_solution.get("solution_id") == solution_ref.get("solution_id"):
+        raise ContractError("new_solution_branch requires a new solution_ref.solution_id")
 
 
-def _parent_map(root: Path, ordered_node_ids: list[str]) -> dict[str, Any]:
-    parents: dict[str, Any] = {}
-    for node_id in ordered_node_ids:
-        parents[node_id] = _read_node(root, node_id).get("parent_node")
-    return parents
+def _validate_new_hypothesis_branch(from_node: dict[str, Any], payload: dict[str, Any]) -> None:
+    new_ref = payload.get("hypothesis_ref")
+    if payload.get("phase") in HYPOTHESIS_REF_PHASES and not isinstance(new_ref, dict):
+        raise ContractError("new_hypothesis_branch requires payload.hypothesis_ref for mechanism phases")
+    from_ref = from_node.get("hypothesis_ref")
+    if isinstance(from_ref, dict) and isinstance(new_ref, dict) and from_ref.get("hypothesis_id") == new_ref.get("hypothesis_id"):
+        raise ContractError("new_hypothesis_branch requires a different hypothesis_id")
 
 
 def _read_node(root: Path, node_id: str) -> dict[str, Any]:
@@ -200,28 +209,6 @@ def _read_node(root: Path, node_id: str) -> dict[str, Any]:
     if not isinstance(node, dict):
         raise ContractError(f"node.json for {node_id} must be an object")
     return node
-
-
-def _is_unresolved_closed(node: dict[str, Any]) -> bool:
-    return node.get("lifecycle") in {"closed", "stopped"} and _claim_verdict(node) in UNRESOLVED_TERMINAL_VERDICTS
-
-
-def _claim_verdict(node: dict[str, Any]) -> str | None:
-    closure = node.get("closure")
-    if isinstance(closure, dict):
-        return closure.get("claim_verdict")
-    return node.get("claim_verdict")
-
-
-def _is_descendant(node_id: str, ancestor_id: str, parent_by_id: dict[str, Any]) -> bool:
-    current = parent_by_id.get(node_id)
-    seen: set[str] = set()
-    while isinstance(current, str) and current and current not in seen:
-        if current == ancestor_id:
-            return True
-        seen.add(current)
-        current = parent_by_id.get(current)
-    return False
 
 
 def _next_node_id(tree: dict[str, Any]) -> str:

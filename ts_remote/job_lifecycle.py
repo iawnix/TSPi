@@ -3,7 +3,7 @@
 This module owns transport mechanics only: staging files, launching a command
 asynchronously, polling process state, fetching artifacts, killing a process,
 and recording receipts. It does not parse chemistry output or mutate TS
-workspace ledgers.
+workspace state files.
 """
 
 from __future__ import annotations

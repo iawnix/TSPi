@@ -11,6 +11,8 @@ class EvidenceGateError(ValueError):
 
 BASE_ACCEPTED_GATE_ROLES = {"connectivity_gate", "tsfreq_gate"}
 STEREOCHEMICAL_GATE_ROLE = "stereochemical_connectivity_gate"
+PATHWAY_AUDIT_GATE_ROLE = "pathway_audit_summary"
+MACHINE_GATE_ROLES = BASE_ACCEPTED_GATE_ROLES | {STEREOCHEMICAL_GATE_ROLE, PATHWAY_AUDIT_GATE_ROLE}
 
 
 def accepted_gate_evidence(
@@ -166,6 +168,28 @@ def stereochemical_gate_diagnostic(stereo_gate: dict[str, Any]) -> str | None:
     return None
 
 
+def gate_artifact_metadata_diagnostic(record: dict[str, Any]) -> str | None:
+    role = record.get("role")
+    if role not in MACHINE_GATE_ROLES:
+        return None
+    evidence_id = str(record.get("evidence_id") or "<unknown>")
+    source_files = record.get("source_files")
+    if not isinstance(source_files, list) or not source_files or not all(_nonempty_string(item) for item in source_files):
+        return f"gate evidence requires non-empty source_files: {evidence_id}"
+    source_sha256 = record.get("source_sha256")
+    if not _nonempty_string(source_sha256):
+        return f"gate evidence requires source_sha256: {evidence_id}"
+    for field in ("parser_name", "parser_version"):
+        if not _nonempty_string(record.get(field)):
+            return f"gate evidence requires {field}: {evidence_id}"
+    if not isinstance(record.get("normal_termination"), bool):
+        return f"gate evidence requires boolean normal_termination: {evidence_id}"
+    diagnostics = record.get("diagnostics")
+    if diagnostics is not None and not isinstance(diagnostics, list):
+        return f"gate evidence diagnostics must be a list: {evidence_id}"
+    return None
+
+
 def _meaningful_stereo_value(value: Any) -> bool:
     if value is None or value is False:
         return False
@@ -185,3 +209,7 @@ def _meaningful_stereo_value(value: Any) -> bool:
     if isinstance(value, (list, tuple, set, dict)):
         return bool(value)
     return True
+
+
+def _nonempty_string(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip())

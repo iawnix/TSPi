@@ -96,6 +96,7 @@ def test_workspace_cli_roundtrip(tmp_path: Path) -> None:
             "phase": "candidate_generation",
             "hypothesis": "A single-step R to P reaction path can produce a TS candidate.",
             "hypothesis_ref": HYPOTHESIS_REF,
+            "branch_context": {"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
             "expected_evidence": ["candidate_geometry"],
             "pathway_ref": {"pathway_id": "p_single", "step_id": "s1"},
         },
@@ -109,7 +110,7 @@ def test_workspace_cli_roundtrip(tmp_path: Path) -> None:
     assert validation["valid"] is True
 
 
-def test_workspace_cli_validate_decision_rejects_missing_replacement_backtrack(tmp_path: Path) -> None:
+def test_workspace_cli_validate_decision_rejects_missing_branch_context(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     _run("init_workspace", "--root", str(workspace))
     _bootstrap_v3_cli_workspace(tmp_path, workspace)
@@ -125,8 +126,8 @@ def test_workspace_cli_validate_decision_rejects_missing_replacement_backtrack(t
     end_path.write_text(json.dumps(end_decision), encoding="utf-8")
     _run("end_node", "--root", str(workspace), "--decision-file", str(end_path))
 
-    replacement_decision = _start_decision(report_ref, "n002", "candidate_generation")
-    replacement_path = tmp_path / "start_n002_missing_backtrack.json"
+    replacement_decision = _start_decision(report_ref, "n002", "candidate_generation", include_branch_context=False)
+    replacement_path = tmp_path / "start_n002_missing_branch_context.json"
     replacement_path.write_text(json.dumps(replacement_decision), encoding="utf-8")
 
     preflight = _run_raw("validate_decision", "--root", str(workspace), "--decision-file", str(replacement_path))
@@ -134,8 +135,8 @@ def test_workspace_cli_validate_decision_rejects_missing_replacement_backtrack(t
 
     assert preflight.returncode == 2
     assert mutation.returncode == 2
-    assert "payload.backtrack is required" in preflight.stderr
-    assert "payload.backtrack is required" in mutation.stderr
+    assert "payload.branch_context is required" in preflight.stderr
+    assert "payload.branch_context is required" in mutation.stderr
     assert not (workspace / "nodes" / "n002").exists()
 
 
@@ -198,6 +199,7 @@ def test_explicit_n000_endpoint_node_keeps_next_auto_id_at_n001(tmp_path: Path) 
             "phase": "candidate_generation",
             "hypothesis": "Endpoint-checked inputs can produce a TS candidate.",
             "hypothesis_ref": HYPOTHESIS_REF,
+            "branch_context": {"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
             "expected_evidence": ["candidate_geometry"],
         },
     }
@@ -210,21 +212,24 @@ def test_explicit_n000_endpoint_node_keeps_next_auto_id_at_n001(tmp_path: Path) 
     assert tree["edges"] == [{"parent_node": "n000", "child_node": "n001"}]
 
 
-def _start_decision(report_ref: dict[str, str], node_id: str, phase: str) -> dict:
+def _start_decision(report_ref: dict[str, str], node_id: str, phase: str, *, include_branch_context: bool = True) -> dict:
+    payload = {
+        "node_id": node_id,
+        "parent_node": "n000",
+        "phase": phase,
+        "hypothesis": f"Test {phase}.",
+        "hypothesis_ref": HYPOTHESIS_REF,
+        "expected_evidence": [],
+    }
+    if include_branch_context:
+        payload["branch_context"] = {"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"}
     return {
         "schema_version": "ts-decision",
         "action": "start_node",
         "rationale": f"Start {node_id}.",
         "evidence_refs": [],
         "report_ref": report_ref,
-        "payload": {
-            "node_id": node_id,
-            "parent_node": "n000",
-            "phase": phase,
-            "hypothesis": f"Test {phase}.",
-            "hypothesis_ref": HYPOTHESIS_REF,
-            "expected_evidence": [],
-        },
+        "payload": payload,
     }
 
 

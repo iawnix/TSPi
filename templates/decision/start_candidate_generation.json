@@ -25,6 +25,11 @@
       "strategy": "${SOLUTION_STRATEGY}",
       "summary": "${SOLUTION_SUMMARY}"
     },
+    "branch_context": {
+      "relation": "continue_parent",
+      "from_node": "n000",
+      "anchor_node": "n000"
+    },
     "pathway_ref": {
       "pathway_id": "${PATHWAY_ID}",
       "step_id": "${STEP_ID}"

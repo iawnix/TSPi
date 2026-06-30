@@ -9,6 +9,7 @@ from ..artifact_policy import consumed_paths_from_manifest, node_owner_from_arti
 from ..evidence_gates import (
     STEREOCHEMICAL_GATE_ROLE,
     accepted_gate_evidence,
+    gate_artifact_metadata_diagnostic,
     hypothesis_requires_stereochemical_gate,
     stereochemical_gate_diagnostic,
     strict_connectivity_diagnostic,
@@ -20,7 +21,7 @@ from .decision import (
     HYPOTHESIS_REF_PHASES,
     INITIAL_HYPOTHESIS_PHASES,
     VALID_CLAIM_VERDICTS,
-    VALID_BACKTRACK_LINEAGE_SCOPES,
+    VALID_BRANCH_RELATIONS,
     VALID_LIFECYCLES,
     VALID_PHASES,
     VALID_PROGRAM_STATUSES,
@@ -116,9 +117,9 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
         _finding(findings, "error", "invalid_current_node", "tree.current_node does not exist", "tree.json")
     if isinstance(tree, dict):
         _validate_initial_node_sequence(ordered_node_ids, node_details, hypothesis_ids, findings)
-        _validate_backtrack_events(tree, node_ids, findings)
-        _validate_backtrack_lineage(tree, node_details, findings)
-        _validate_replacement_backtrack_sequence(tree, ordered_node_ids, node_details, findings)
+        _validate_branch_contexts(node_details, findings)
+        _validate_branch_events(tree, node_ids, findings)
+        _validate_branch_lineage(tree, node_details, findings)
         _validate_unresolved_terminal_state(
             tree,
             _as_dict(loaded.get("manifest.json")),
@@ -157,6 +158,9 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
                     f"evidence references unknown hypothesis_id: {hypothesis_id}",
                     "evidence_registry.json",
                 )
+            gate_diagnostic = gate_artifact_metadata_diagnostic(item)
+            if gate_diagnostic:
+                _finding(findings, "error", "missing_gate_artifact_metadata", gate_diagnostic, "evidence_registry.json")
         _validate_evidence_artifact_boundaries(root_path, evidence, node_details, findings)
 
     _validate_accepted_ts_refs(
@@ -316,64 +320,148 @@ def _validate_tree_node_lineage(
 ) -> None:
     if entry.get("solution_ref") != node.get("solution_ref"):
         _finding(findings, "error", "solution_ref_mismatch", "tree node solution_ref must match node solution_ref", source)
+    if entry.get("branch_context") != node.get("branch_context"):
+        _finding(findings, "error", "branch_context_mismatch", "tree node branch_context must match node branch_context", source)
 
 
-def _validate_backtrack_events(tree: dict[str, Any], node_ids: set[str], findings: list[dict[str, str]]) -> None:
-    events = tree.get("backtrack_events", [])
+def _validate_branch_contexts(node_details: dict[str, dict[str, Any]], findings: list[dict[str, str]]) -> None:
+    for node_id, node in node_details.items():
+        source = f"nodes/{node_id}/node.json"
+        if node_id == "n000":
+            if node.get("branch_context") is not None:
+                _finding(findings, "error", "invalid_n000_branch_context", "n000 must not have branch_context", source)
+            continue
+        context = node.get("branch_context")
+        if not isinstance(context, dict):
+            _finding(findings, "error", "missing_branch_context", "post-n000 node requires branch_context", source)
+            continue
+        relation = context.get("relation")
+        if relation not in VALID_BRANCH_RELATIONS:
+            _finding(findings, "error", "invalid_branch_context", "branch_context.relation is invalid", source)
+        from_node_id = context.get("from_node")
+        anchor_node_id = context.get("anchor_node")
+        for field, ref in (("from_node", from_node_id), ("anchor_node", anchor_node_id)):
+            if not isinstance(ref, str) or not ref:
+                _finding(findings, "error", "invalid_branch_context", f"branch_context.{field} is required", source)
+            elif ref not in node_details:
+                _finding(findings, "error", "invalid_branch_context_node", f"branch_context.{field} does not exist: {ref}", source)
+        from_node = node_details.get(str(from_node_id))
+        if relation == "continue_parent":
+            if node.get("parent_node") != from_node_id:
+                _finding(findings, "error", "invalid_branch_context", "continue_parent requires parent_node to match from_node", source)
+        elif relation == "new_solution_branch":
+            _validate_solution_branch_context(node, from_node, findings, source)
+        elif relation == "new_hypothesis_branch":
+            _validate_hypothesis_branch_context(node, from_node, findings, source)
+        elif relation == "new_pathway_branch":
+            if not isinstance(node.get("pathway_ref"), dict):
+                _finding(findings, "error", "invalid_branch_context", "new_pathway_branch requires node.pathway_ref", source)
+        elif relation == "administrative_followup":
+            if not isinstance(context.get("reason_code"), str) or not context["reason_code"].strip():
+                _finding(findings, "error", "invalid_branch_context", "administrative_followup requires reason_code", source)
+
+
+def _validate_solution_branch_context(
+    node: dict[str, Any],
+    from_node: dict[str, Any] | None,
+    findings: list[dict[str, str]],
+    source: str,
+) -> None:
+    solution_ref = node.get("solution_ref")
+    if not isinstance(solution_ref, dict) or not str(solution_ref.get("solution_id") or "").strip():
+        _finding(findings, "error", "invalid_branch_context", "new_solution_branch requires node.solution_ref.solution_id", source)
+    if from_node is None:
+        return
+    from_ref = from_node.get("hypothesis_ref") if isinstance(from_node.get("hypothesis_ref"), dict) else {}
+    new_ref = node.get("hypothesis_ref") if isinstance(node.get("hypothesis_ref"), dict) else {}
+    if from_ref and new_ref and from_ref.get("hypothesis_id") != new_ref.get("hypothesis_id"):
+        _finding(findings, "error", "solution_branch_hypothesis_mismatch", "new_solution_branch must keep the same hypothesis_id", source)
+    from_solution = from_node.get("solution_ref") if isinstance(from_node.get("solution_ref"), dict) else {}
+    if isinstance(solution_ref, dict) and from_solution and from_solution.get("solution_id") == solution_ref.get("solution_id"):
+        _finding(findings, "error", "solution_branch_duplicate_solution", "new_solution_branch requires a new solution_ref.solution_id", source)
+
+
+def _validate_hypothesis_branch_context(
+    node: dict[str, Any],
+    from_node: dict[str, Any] | None,
+    findings: list[dict[str, str]],
+    source: str,
+) -> None:
+    if from_node is None:
+        return
+    from_ref = from_node.get("hypothesis_ref") if isinstance(from_node.get("hypothesis_ref"), dict) else {}
+    new_ref = node.get("hypothesis_ref") if isinstance(node.get("hypothesis_ref"), dict) else {}
+    if from_ref and new_ref and from_ref.get("hypothesis_id") == new_ref.get("hypothesis_id"):
+        _finding(findings, "error", "hypothesis_branch_same_hypothesis", "new_hypothesis_branch requires a different hypothesis_id", source)
+
+
+def _validate_branch_events(tree: dict[str, Any], node_ids: set[str], findings: list[dict[str, str]]) -> None:
+    events = tree.get("branch_events", [])
     if not isinstance(events, list):
-        _finding(findings, "error", "invalid_backtrack_events", "tree.backtrack_events must be a list", "tree.json")
+        _finding(findings, "error", "invalid_branch_events", "tree.branch_events must be a list", "tree.json")
         return
     for index, event in enumerate(events):
-        path = f"tree.json.backtrack_events[{index}]"
+        path = f"tree.json.branch_events[{index}]"
         if not isinstance(event, dict):
-            _finding(findings, "error", "invalid_backtrack_event", "backtrack event must be an object", path)
+            _finding(findings, "error", "invalid_branch_event", "branch event must be an object", path)
             continue
-        for field in ("from_node", "to_node", "new_branch_node"):
+        relation = event.get("relation")
+        if relation not in VALID_BRANCH_RELATIONS:
+            _finding(findings, "error", "invalid_branch_event", "relation is invalid", path)
+        for field in ("from_node", "anchor_node", "new_node"):
             node_id = event.get(field)
             if not isinstance(node_id, str) or not node_id:
-                _finding(findings, "error", "invalid_backtrack_event", f"{field} is required", path)
+                _finding(findings, "error", "invalid_branch_event", f"{field} is required", path)
             elif node_id not in node_ids:
-                _finding(findings, "error", "invalid_backtrack_event_node", f"{field} does not exist: {node_id}", path)
-        lineage_scope = event.get("lineage_scope")
-        if lineage_scope is not None and lineage_scope not in VALID_BACKTRACK_LINEAGE_SCOPES:
-            _finding(findings, "error", "invalid_backtrack_event", "lineage_scope is invalid", path)
+                _finding(findings, "error", "invalid_branch_event_node", f"{field} does not exist: {node_id}", path)
 
 
-def _validate_backtrack_lineage(
+def _validate_branch_lineage(
     tree: dict[str, Any],
     node_details: dict[str, dict[str, Any]],
     findings: list[dict[str, str]],
 ) -> None:
-    for index, event in enumerate(_backtrack_events(tree)):
-        path = f"tree.json.backtrack_events[{index}]"
-        new_node = node_details.get(str(event.get("new_branch_node")))
+    for index, event in enumerate(_branch_events(tree)):
+        path = f"tree.json.branch_events[{index}]"
+        new_node = node_details.get(str(event.get("new_node")))
         from_node = node_details.get(str(event.get("from_node")))
         if new_node is None:
             continue
+        context = new_node.get("branch_context") if isinstance(new_node.get("branch_context"), dict) else {}
+        for field in ("relation", "from_node", "anchor_node", "reason_code", "changed_variable"):
+            if field in event or field in context:
+                if event.get(field) != context.get(field):
+                    _finding(
+                        findings,
+                        "error",
+                        "branch_event_context_mismatch",
+                        f"branch event {field} must match new node branch_context",
+                        path,
+                    )
         if "target_hypothesis_ref" in event and event.get("target_hypothesis_ref") != new_node.get("hypothesis_ref"):
             _finding(
                 findings,
                 "error",
-                "backtrack_target_hypothesis_mismatch",
-                "backtrack target_hypothesis_ref must match the new branch node hypothesis_ref",
+                "branch_target_hypothesis_mismatch",
+                "branch target_hypothesis_ref must match the new node hypothesis_ref",
                 path,
             )
         if "target_solution_ref" in event and event.get("target_solution_ref") != new_node.get("solution_ref"):
             _finding(
                 findings,
                 "error",
-                "backtrack_target_solution_mismatch",
-                "backtrack target_solution_ref must match the new branch node solution_ref",
+                "branch_target_solution_mismatch",
+                "branch target_solution_ref must match the new node solution_ref",
                 path,
             )
-        if event.get("lineage_scope") != "solution":
+        if event.get("relation") != "new_solution_branch":
             continue
         if not isinstance(new_node.get("solution_ref"), dict):
             _finding(
                 findings,
                 "error",
-                "solution_backtrack_missing_solution_ref",
-                "solution-scoped backtrack requires the new branch node solution_ref",
+                "solution_branch_missing_solution_ref",
+                "new_solution_branch requires the new node solution_ref",
                 path,
             )
         if from_node is None:
@@ -384,8 +472,8 @@ def _validate_backtrack_lineage(
             _finding(
                 findings,
                 "error",
-                "solution_backtrack_hypothesis_mismatch",
-                "solution-scoped backtrack must keep the same hypothesis_id",
+                "solution_branch_hypothesis_mismatch",
+                "new_solution_branch must keep the same hypothesis_id",
                 path,
             )
 
@@ -414,39 +502,6 @@ def _validate_initial_node_sequence(
                 "supported n000 must finalize at least one mechanism hypothesis",
                 "mechanism_model.json.hypotheses",
             )
-
-
-def _validate_replacement_backtrack_sequence(
-    tree: dict[str, Any],
-    ordered_node_ids: list[str],
-    node_details: dict[str, dict[str, Any]],
-    findings: list[dict[str, str]],
-) -> None:
-    """Require explicit provenance when a failed terminal node is replaced."""
-
-    events = _backtrack_events(tree)
-    parent_by_id = {node_id: node.get("parent_node") for node_id, node in node_details.items()}
-    for index, node_id in enumerate(ordered_node_ids[1:], start=1):
-        previous_id = ordered_node_ids[index - 1]
-        previous = node_details.get(previous_id, {})
-        current = node_details.get(node_id, {})
-        if not _is_unresolved_closed(previous):
-            continue
-        if _is_descendant(node_id, previous_id, parent_by_id):
-            continue
-        if _has_replacement_event(events, previous_id, node_id):
-            continue
-        verdict = _claim_verdict(previous)
-        _finding(
-            findings,
-            "error",
-            "missing_explicit_backtrack_provenance",
-            (
-                f"node {node_id} starts after terminal {verdict} node {previous_id} "
-                "without explicit backtrack provenance"
-            ),
-            "tree.json.backtrack_events",
-        )
 
 
 def _validate_unresolved_terminal_state(
@@ -480,15 +535,8 @@ def _validate_unresolved_terminal_state(
     )
 
 
-def _backtrack_events(tree: dict[str, Any]) -> list[dict[str, Any]]:
-    return [event for event in tree.get("backtrack_events", []) if isinstance(event, dict)]
-
-
-def _has_replacement_event(events: list[dict[str, Any]], from_node: str, new_branch_node: str) -> bool:
-    return any(
-        event.get("from_node") == from_node and event.get("new_branch_node") == new_branch_node
-        for event in events
-    )
+def _branch_events(tree: dict[str, Any]) -> list[dict[str, Any]]:
+    return [event for event in tree.get("branch_events", []) if isinstance(event, dict)]
 
 
 def _is_unresolved_closed(node: dict[str, Any]) -> bool:
@@ -500,17 +548,6 @@ def _claim_verdict(node: dict[str, Any]) -> str | None:
     if isinstance(closure, dict):
         return closure.get("claim_verdict")
     return node.get("claim_verdict")
-
-
-def _is_descendant(node_id: str, ancestor_id: str, parent_by_id: dict[str, Any]) -> bool:
-    current = parent_by_id.get(node_id)
-    seen: set[str] = set()
-    while isinstance(current, str) and current and current not in seen:
-        if current == ancestor_id:
-            return True
-        seen.add(current)
-        current = parent_by_id.get(current)
-    return False
 
 
 def _has_accepted_claim(manifest: dict[str, Any], pathway_model: dict[str, Any]) -> bool:

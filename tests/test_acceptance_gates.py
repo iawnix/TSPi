@@ -4,7 +4,7 @@ import pytest
 
 from ts_workspace import end_node, init_workspace, report_workspace, start_node, update_workspace, validate_workspace
 from ts_workspace.io import read_json, write_json
-from v3_helpers import HYPOTHESIS_ID, HYPOTHESIS_REF, bootstrap_v3_workspace, make_accepted_workspace
+from v3_helpers import HYPOTHESIS_ID, HYPOTHESIS_REF, bootstrap_v3_workspace, gate_artifact_metadata, make_accepted_workspace
 
 
 def test_accepted_audit_requires_tsfreq_and_connectivity_gates(tmp_path):
@@ -21,8 +21,10 @@ def test_accepted_audit_requires_tsfreq_and_connectivity_gates(tmp_path):
             "report_ref": report_ref,
             "payload": {
                 "phase": "accepted_audit",
+                "parent_node": "n000",
                 "hypothesis": "A candidate should not be accepted with only one evidence gate.",
                 "hypothesis_ref": HYPOTHESIS_REF,
+                "branch_context": {"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
                 "expected_evidence": ["tsfreq_gate", "connectivity_gate"],
             },
         },
@@ -43,6 +45,7 @@ def test_accepted_audit_requires_tsfreq_and_connectivity_gates(tmp_path):
                     "evidence_tier": "local_parse",
                     "node_id": "n001",
                     "summary": "One imaginary mode supports the candidate.",
+                    **gate_artifact_metadata("nodes/n001/outputs/tsfreq_only.json"),
                     "quality": {"hypothesis_id": HYPOTHESIS_ID},
                 }
             },
@@ -94,8 +97,10 @@ def test_accepted_audit_rejects_endpoint_recovery_after_failed_irc(tmp_path):
             "report_ref": report_ref,
             "payload": {
                 "phase": "accepted_audit",
+                "parent_node": "n000",
                 "hypothesis": "A candidate must not be accepted when mandatory IRC failed.",
                 "hypothesis_ref": HYPOTHESIS_REF,
+                "branch_context": {"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
                 "expected_evidence": ["tsfreq_gate", "connectivity_gate"],
             },
         },
@@ -117,6 +122,7 @@ def test_accepted_audit_rejects_endpoint_recovery_after_failed_irc(tmp_path):
                         "evidence_tier": "local_parse",
                         "node_id": "n001",
                         "summary": "One imaginary mode supports the candidate.",
+                        **gate_artifact_metadata("nodes/n001/outputs/tsfreq.json"),
                         "quality": {"hypothesis_id": HYPOTHESIS_ID},
                     },
                     {
@@ -126,6 +132,7 @@ def test_accepted_audit_rejects_endpoint_recovery_after_failed_irc(tmp_path):
                         "evidence_tier": "local_parse",
                         "node_id": "n001",
                         "summary": "IRC endpoints optimize to R/P, but both IRC jobs ended by corrector failure.",
+                        **gate_artifact_metadata("nodes/n001/outputs/failed_irc.json"),
                         "quality": {
                             "hypothesis_id": HYPOTHESIS_ID,
                             "strict_irc_complete": False,
@@ -213,8 +220,10 @@ def test_stereochemical_hypothesis_requires_stereo_gate_for_acceptance(tmp_path)
             "report_ref": report_ref,
             "payload": {
                 "phase": "accepted_audit",
+                "parent_node": "n000",
                 "hypothesis": "Stereo-sensitive hypothesis cannot be accepted without stereo gate.",
                 "hypothesis_ref": HYPOTHESIS_REF,
+                "branch_context": {"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
                 "expected_evidence": ["tsfreq_gate", "connectivity_gate", "stereochemical_connectivity_gate"],
             },
         },
@@ -236,6 +245,7 @@ def test_stereochemical_hypothesis_requires_stereo_gate_for_acceptance(tmp_path)
                         "evidence_tier": "local_parse",
                         "node_id": "n001",
                         "summary": "One imaginary mode supports the candidate.",
+                        **gate_artifact_metadata("nodes/n001/outputs/stereo_tsfreq.json"),
                         "quality": {"hypothesis_id": HYPOTHESIS_ID},
                     },
                     {
@@ -245,6 +255,7 @@ def test_stereochemical_hypothesis_requires_stereo_gate_for_acceptance(tmp_path)
                         "evidence_tier": "local_parse",
                         "node_id": "n001",
                         "summary": "Strict bidirectional IRC reached assigned basins.",
+                        **gate_artifact_metadata("nodes/n001/outputs/stereo_connectivity.json"),
                         "quality": {
                             "hypothesis_id": HYPOTHESIS_ID,
                             "strict_irc_complete": True,

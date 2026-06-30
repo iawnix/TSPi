@@ -10,44 +10,54 @@ from ts_workspace import end_node, init_workspace, report_workspace, start_node,
 from ts_workspace.io import read_json, write_json
 from ts_workspace.validators.decision import ContractError
 from ts_workspace.validators.decision_context import validate_decision_for_workspace
-from v3_helpers import HYPOTHESIS_REF, PATHWAY_REF, bootstrap_v3_workspace
+from v3_helpers import HYPOTHESIS_REF, PATHWAY_REF, bootstrap_v3_workspace, gate_artifact_metadata
 
 
-def test_start_node_requires_backtrack_for_replacement_after_terminal_refute(tmp_path: Path) -> None:
+def test_start_node_requires_branch_context_after_n000(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     report_ref = bootstrap_v3_workspace(workspace)
 
-    start_node(workspace, _start_decision(report_ref, node_id="n001", phase="connectivity_validation"))
-    end_node(workspace, _end_decision(report_ref, "n001", "refuted"))
-    decision = _start_decision(report_ref, node_id="n002", phase="candidate_generation")
+    decision = _start_decision(report_ref, node_id="n001", phase="candidate_generation", include_branch_context=False)
 
-    with pytest.raises(ContractError, match="payload.backtrack is required"):
+    with pytest.raises(ContractError, match="payload.branch_context is required"):
         validate_decision_for_workspace(workspace, decision)
-    with pytest.raises(ContractError, match="payload.backtrack is required"):
+    with pytest.raises(ContractError, match="payload.branch_context is required"):
         start_node(workspace, decision)
 
-    assert not (workspace / "nodes" / "n002").exists()
+    assert not (workspace / "nodes" / "n001").exists()
 
 
-def test_validate_workspace_detects_missing_replacement_backtrack(tmp_path: Path) -> None:
+def test_validate_workspace_detects_missing_branch_context(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     report_ref = bootstrap_v3_workspace(workspace)
 
     start_node(workspace, _start_decision(report_ref, node_id="n001", phase="connectivity_validation"))
-    start_node(workspace, _start_decision(report_ref, node_id="n002", phase="candidate_generation"))
-    end_node(workspace, _end_decision(report_ref, "n001", "refuted"))
+    node = read_json(workspace / "nodes" / "n001" / "node.json")
+    node.pop("branch_context", None)
+    write_json(workspace / "nodes" / "n001" / "node.json", node)
+    tree = read_json(workspace / "tree.json")
+    tree["nodes"][1].pop("branch_context", None)
+    write_json(workspace / "tree.json", tree)
 
     validation = validate_workspace(workspace)
 
     assert validation["valid"] is False
-    assert _codes(validation) == {"missing_explicit_backtrack_provenance"}
+    assert "missing_branch_context" in _codes(validation)
 
 
-def test_validate_workspace_accepts_explicit_replacement_backtrack(tmp_path: Path) -> None:
+def test_validate_workspace_accepts_explicit_solution_branch(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     report_ref = bootstrap_v3_workspace(workspace)
 
-    start_node(workspace, _start_decision(report_ref, node_id="n001", phase="connectivity_validation"))
+    start_node(
+        workspace,
+        _start_decision(
+            report_ref,
+            node_id="n001",
+            phase="candidate_generation",
+            solution_ref={"solution_id": "sol_qst2_001"},
+        ),
+    )
     end_node(workspace, _end_decision(report_ref, "n001", "refuted"))
     start_node(
         workspace,
@@ -55,13 +65,40 @@ def test_validate_workspace_accepts_explicit_replacement_backtrack(tmp_path: Pat
             report_ref,
             node_id="n002",
             phase="candidate_generation",
-            backtrack={
+            solution_ref={"solution_id": "sol_scan_002", "parent_solution_id": "sol_qst2_001"},
+            branch_context={
+                "relation": "new_solution_branch",
                 "from_node": "n001",
-                "to_node": "n000",
-                "changed_variable": "reaction_center",
-                "reason_code": "connectivity_refuted",
+                "anchor_node": "n000",
+                "changed_variable": "solution_strategy",
+                "reason_code": "route_failed",
                 "evidence_refs": [],
             },
+        ),
+    )
+
+    validation = validate_workspace(workspace)
+
+    assert validation["valid"] is True
+    assert validation["findings"] == []
+
+
+def test_non_linear_branch_from_older_node_ignores_recent_terminal_node(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_v3_workspace(workspace)
+
+    start_node(workspace, _start_decision(report_ref, node_id="n001", phase="candidate_generation"))
+    end_node(workspace, _end_decision(report_ref, "n001", "supported"))
+    start_node(workspace, _start_decision(report_ref, node_id="n002", phase="connectivity_validation"))
+    end_node(workspace, _end_decision(report_ref, "n002", "refuted"))
+    start_node(
+        workspace,
+        _start_decision(
+            report_ref,
+            node_id="n003",
+            parent_node="n001",
+            phase="tsfreq_validation",
+            branch_context={"relation": "continue_parent", "from_node": "n001", "anchor_node": "n000"},
         ),
     )
 
@@ -207,6 +244,7 @@ def test_update_workspace_accepts_current_node_evidence_path(tmp_path: Path) -> 
                     "node_id": "n001",
                     "summary": "This points to the TS/Freq node output.",
                     "path": "nodes/n001/outputs/validation_summary.json",
+                    **gate_artifact_metadata("nodes/n001/outputs/validation_summary.json"),
                 }
             },
         },
@@ -233,6 +271,7 @@ def test_validate_workspace_warns_for_legacy_cross_node_evidence_path(tmp_path: 
             "node_id": "n002",
             "summary": "Legacy evidence points to a previous node path.",
             "path": "nodes/n001/outputs/qst2_parse/validation_summary.json",
+            **gate_artifact_metadata("nodes/n002/outputs/validation_summary.json"),
         }
     )
     write_json(workspace / "evidence_registry.json", registry)
@@ -253,19 +292,28 @@ def _start_decision(
     *,
     node_id: str,
     phase: str,
-    backtrack: dict[str, Any] | None = None,
+    parent_node: str = "n000",
+    branch_context: dict[str, Any] | None = None,
+    include_branch_context: bool = True,
+    solution_ref: dict[str, Any] | None = None,
     pathway_ref: dict[str, str] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "node_id": node_id,
-        "parent_node": "n000",
+        "parent_node": parent_node,
         "phase": phase,
         "hypothesis": f"Test {phase} hypothesis.",
         "hypothesis_ref": HYPOTHESIS_REF,
         "expected_evidence": [],
     }
-    if backtrack is not None:
-        payload["backtrack"] = backtrack
+    if include_branch_context:
+        payload["branch_context"] = branch_context or {
+            "relation": "continue_parent",
+            "from_node": parent_node,
+            "anchor_node": "n000",
+        }
+    if solution_ref is not None:
+        payload["solution_ref"] = solution_ref
     if pathway_ref is not None:
         payload["pathway_ref"] = pathway_ref
     return {

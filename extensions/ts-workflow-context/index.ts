@@ -50,7 +50,7 @@ export default function (pi: ExtensionAPI) {
     promptSnippet: "Summarize the current transition-state workspace state from report_workspace",
     promptGuidelines: [
       "Use ts_workspace_context before choosing or closing a transition-state workflow node.",
-      "Use ts_workspace_context instead of reading every workspace ledger when only current state is needed.",
+      "Use ts_workspace_context instead of reading every workspace state file when only current state is needed.",
     ],
     parameters: Type.Object({
       root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
@@ -87,7 +87,7 @@ export default function (pi: ExtensionAPI) {
     description: "Apply or preflight a ts_workspace decision JSON through the public control plane.",
     promptSnippet: "Validate or apply a transition-state workspace decision JSON",
     promptGuidelines: [
-      "Use ts_workspace_decision for transition-state workspace mutations; do not edit manifest, tree, node, evidence, mechanism, or pathway ledgers by hand.",
+      "Use ts_workspace_decision for transition-state workspace mutations; do not edit manifest, tree, node, evidence, mechanism, or pathway state files by hand.",
       "Use ts_workspace_decision with action=validate_decision before mutating when decision shape is uncertain.",
     ],
     parameters: Type.Object({

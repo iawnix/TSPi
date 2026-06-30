@@ -5,7 +5,7 @@ inputs, commands, and parsers for its own artifacts.
 
 Backends must not:
 
-- mutate workspace root ledgers;
+- mutate workspace root state files;
 - close a node;
 - set a scientific verdict;
 - accept or reject a pathway;

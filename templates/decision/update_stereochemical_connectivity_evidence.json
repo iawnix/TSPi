@@ -16,6 +16,14 @@
       "node_id": "n003",
       "summary": "Declared stereochemical checks match the assigned IRC endpoint basins. The primary evidence path is owned by this connectivity node.",
       "path": "${STEREOCHEMISTRY_SUMMARY_PATH}",
+      "source_files": [
+        "${STEREOCHEMISTRY_SUMMARY_PATH}"
+      ],
+      "source_sha256": "${SOURCE_SHA256}",
+      "parser_name": "${STEREOCHEMISTRY_PARSER_NAME}",
+      "parser_version": "${PARSER_VERSION}",
+      "normal_termination": true,
+      "diagnostics": [],
       "quality": {
         "hypothesis_id": "${HYPOTHESIS_ID}",
         "prediction_ids": [

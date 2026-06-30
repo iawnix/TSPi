@@ -31,10 +31,10 @@
         "hypothesis": {"type": "string", "minLength": 1},
         "hypothesis_ref": {"$ref": "mechanism.schema.json#/$defs/hypothesis_ref"},
         "solution_ref": {"$ref": "#/$defs/solution_ref"},
+        "branch_context": {"$ref": "#/$defs/branch_context"},
         "initial_mechanism_hypothesis": {"$ref": "mechanism.schema.json#/$defs/mechanism_hypothesis_input"},
         "expected_evidence": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "pathway_ref": {"$ref": "#/$defs/pathway_ref"},
-        "backtrack": {"$ref": "#/$defs/backtrack"},
         "closure": {"$ref": "#/$defs/closure"},
         "append_evidence": {
           "anyOf": [
@@ -123,15 +123,17 @@
       },
       "additionalProperties": true
     },
-    "backtrack": {
+    "branch_context": {
       "type": "object",
-      "required": ["from_node", "to_node", "changed_variable", "reason_code"],
+      "required": ["relation", "from_node", "anchor_node"],
       "properties": {
+        "relation": {
+          "enum": ["continue_parent", "new_solution_branch", "new_hypothesis_branch", "new_pathway_branch", "administrative_followup"]
+        },
         "from_node": {"type": "string", "minLength": 1},
-        "to_node": {"type": "string", "minLength": 1},
+        "anchor_node": {"type": "string", "minLength": 1},
         "changed_variable": {"type": "string", "minLength": 1},
         "reason_code": {"type": "string", "minLength": 1},
-        "lineage_scope": {"enum": ["solution", "hypothesis", "pathway", "administrative"]},
         "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}}
       },
       "additionalProperties": true
@@ -150,6 +152,7 @@
               "type": "object",
               "properties": {
                 "hypothesis_ref": {"$ref": "mechanism.schema.json#/$defs/hypothesis_ref"},
+                "impact_scope": {"enum": ["solution_only", "prediction", "pathway_step", "hypothesis"]},
                 "revision": {"type": ["object", "null"]}
               }
             }

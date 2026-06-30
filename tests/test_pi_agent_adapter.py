@@ -43,7 +43,7 @@ def test_pi_context_summary_from_report_workspace(tmp_path: Path) -> None:
     assert "TS workspace context:" in payload["summary"]
     assert f"focus_hypothesis: {HYPOTHESIS_ID}" in payload["summary"]
     assert "required_next_evidence:" in payload["summary"]
-    assert "do not edit ledgers by hand" in payload["summary"]
+    assert "do not edit workspace state files by hand" in payload["summary"]
     assert payload["details"]["workspaceRoot"] == str(workspace)
     assert payload["details"]["focusHypothesisId"] == HYPOTHESIS_ID
     assert payload["details"]["valid"] is True

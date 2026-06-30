@@ -20,8 +20,9 @@ from v3_helpers import (
     HYPOTHESIS_ID,
     HYPOTHESIS_REF,
     bootstrap_v3_workspace,
+    gate_artifact_metadata,
     make_accepted_workspace,
-    make_backtrack_workspace,
+    make_branch_workspace,
 )
 
 
@@ -29,55 +30,56 @@ ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "scripts" / "ts_web.py"
 
 
-def test_normalize_workspace_uses_canonical_backtrack_events(tmp_path: Path) -> None:
-    workspace = tmp_path / "backtrack"
-    make_backtrack_workspace(workspace)
+def test_normalize_workspace_uses_canonical_branch_events(tmp_path: Path) -> None:
+    workspace = tmp_path / "branch"
+    make_branch_workspace(workspace)
     tree = json.loads((workspace / "tree.json").read_text(encoding="utf-8"))
     view = normalize_workspace(workspace)
-    assert view["backtrack_edges"] == [
+    assert view["branch_edges"] == [
         {
             "event_id": event.get("event_id"),
             "event_state": event.get("event_state"),
+            "relation": event.get("relation"),
             "from_node": event.get("from_node"),
-            "to_node": event.get("to_node"),
-            "new_branch_node": event.get("new_branch_node"),
+            "anchor_node": event.get("anchor_node"),
+            "new_node": event.get("new_node"),
             "changed_variable": event.get("changed_variable"),
             "reason_code": event.get("reason_code"),
             "evidence_refs": event.get("evidence_refs", []),
         }
-        for event in tree["backtrack_events"]
+        for event in tree["branch_events"]
     ]
     nodes = {node["node_id"]: node for node in view["nodes"]}
     assert nodes["n001"]["display"]["claim_verdict"] == "refuted"
 
 
-def test_backtrack_visual_semantics_are_distinct_from_refuted_status(tmp_path: Path) -> None:
-    workspace = tmp_path / "backtrack"
-    make_backtrack_workspace(workspace)
+def test_branch_visual_semantics_are_distinct_from_refuted_status(tmp_path: Path) -> None:
+    workspace = tmp_path / "branch"
+    make_branch_workspace(workspace)
     graph = explorer_graph_payload_from_view(normalize_workspace(workspace))
     nodes = {node["id"]: node for node in graph["nodes"]}
-    replacement_edges = [edge for edge in graph["edges"] if edge["kind"] == "backtrack_replacement"]
+    generated_edges = [edge for edge in graph["edges"] if edge["kind"] == "branch_generated"]
 
     assert nodes["n001"]["node_state"] == "refuted"
     assert nodes["n001"]["card_color"] == "red"
-    assert nodes["n001"]["backtrack_badge"]["role"] == "backtrack_source"
-    assert nodes["n001"]["backtrack_badge"]["color"] == "purple"
-    assert replacement_edges
-    assert {edge["edge_color"] for edge in replacement_edges} == {"blue"}
-    assert graph["presentation"]["edge_kind"]["backtrack_replacement"]["color"] == "blue"
-    assert graph["presentation"]["event_role"]["backtrack_source"]["color"] == "purple"
+    assert nodes["n001"]["branch_badge"]["role"] == "branch_source"
+    assert nodes["n001"]["branch_badge"]["color"] == "purple"
+    assert generated_edges
+    assert {edge["edge_color"] for edge in generated_edges} == {"blue"}
+    assert graph["presentation"]["edge_kind"]["branch_generated"]["color"] == "blue"
+    assert graph["presentation"]["event_role"]["branch_source"]["color"] == "purple"
 
 
-def test_static_ui_uses_outline_status_chips_and_explains_backtrack_symbol() -> None:
+def test_static_ui_uses_outline_status_chips_and_explains_branch_symbol() -> None:
     html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
 
     assert ".chip[data-color=\"red\"]" in html
     assert ".chip[data-color=\"red\"]    { color: var(--red);" in html
     assert ".chip[data-color=\"red\"]    { background:" not in html
-    assert ".backtrack-badge { fill: none;" in html
+    assert ".branch-badge { fill: none;" in html
     assert "symbol-legend" in html
     assert "↺" in html
-    assert "backtracked from" in html
+    assert "branched from" in html
 
 
 def test_static_ui_refresh_without_workspace_renders_empty_state() -> None:
@@ -100,18 +102,18 @@ def test_static_asset_resolves_from_current_ts_web_package() -> None:
     assert "files(STATIC_PACKAGE)" in server_source
 
 
-def test_backtrack_edges_and_events_dedupe_when_target_is_replacement(tmp_path: Path) -> None:
-    workspace = tmp_path / "dedupe-backtrack"
-    make_backtrack_workspace(workspace)
+def test_branch_edges_and_events_dedupe_when_target_is_replacement(tmp_path: Path) -> None:
+    workspace = tmp_path / "dedupe-branch"
+    make_branch_workspace(workspace)
     tree_path = workspace / "tree.json"
     tree = json.loads(tree_path.read_text(encoding="utf-8"))
-    event_id = tree["backtrack_events"][0]["event_id"]
-    tree["backtrack_events"][0]["to_node"] = "n002"
-    tree["backtrack_events"][0]["new_branch_node"] = "n002"
+    event = next(item for item in tree["branch_events"] if item["new_node"] == "n002")
+    event_id = event["event_id"]
+    event["anchor_node"] = "n002"
     tree_path.write_text(json.dumps(tree, indent=2) + "\n", encoding="utf-8")
 
     graph = explorer_graph_payload_from_view(normalize_workspace(workspace))
-    backtrack_edges = [edge for edge in graph["edges"] if edge["kind"].startswith("backtrack")]
+    branch_edges = [edge for edge in graph["edges"] if edge["kind"] == "branch_generated" and edge.get("event_id") == event_id]
     n002_events = [
         event
         for event in graph["events"]
@@ -119,13 +121,13 @@ def test_backtrack_edges_and_events_dedupe_when_target_is_replacement(tmp_path: 
     ]
     nodes = {node["id"]: node for node in graph["nodes"]}
 
-    assert [(edge["kind"], edge["source"], edge["target"]) for edge in backtrack_edges] == [
-        ("backtrack_replacement", "n001", "n002")
+    assert [(edge["kind"], edge["source"], edge["target"]) for edge in branch_edges] == [
+        ("branch_generated", "n001", "n002")
     ]
-    assert [event["event_role"] for event in n002_events] == ["generated_from_backtrack"]
-    assert nodes["n002"]["backtrack_target_event_ids"] == []
-    assert nodes["n002"]["generated_from_backtrack_event_ids"] == [event_id]
-    assert nodes["n002"]["backtrack_badge"]["role"] == "generated_from_backtrack"
+    assert [event["event_role"] for event in n002_events] == ["generated_from_branch"]
+    assert nodes["n002"]["branch_anchor_event_ids"] == []
+    assert nodes["n002"]["generated_from_branch_event_ids"] == [event_id]
+    assert nodes["n002"]["branch_badge"]["role"] == "generated_from_branch"
 
 
 def test_register_workspace_deduplicates_and_rejects_source_pollution(tmp_path: Path) -> None:
@@ -144,11 +146,11 @@ def test_register_workspace_deduplicates_and_rejects_source_pollution(tmp_path: 
 
 
 def test_web_server_api_is_read_only(tmp_path: Path) -> None:
-    source = tmp_path / "backtrack"
-    make_backtrack_workspace(source)
+    source = tmp_path / "branch"
+    make_branch_workspace(source)
     before = _relative_files(source)
     state = tmp_path / "web-state"
-    row = register_workspace(source, state, "backtrack")
+    row = register_workspace(source, state, "branch")
     server = create_server("127.0.0.1", 0, state)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
@@ -161,14 +163,14 @@ def test_web_server_api_is_read_only(tmp_path: Path) -> None:
         assert workspaces["workspaces"][0]["id"] == row["workspace_id"]
         assert workspaces["default_workspace"] == row["workspace_id"]
         payload = _get_json(host, port, f"/api/workspace?id={row['workspace_id']}")
-        assert payload["view"]["label"] == "backtrack"
-        assert payload["view"]["backtrack_edges"][0]["new_branch_node"] == "n002"
+        assert payload["view"]["label"] == "branch"
+        assert any(edge["new_node"] == "n002" for edge in payload["view"]["branch_edges"])
         job = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/job")
         graph_nodes = {node["id"]: node for node in job["graph"]["nodes"]}
         assert graph_nodes["n001"]["claim_verdict"] == "refuted"
-        assert any(edge["kind"] == "backtrack_replacement" for edge in job["graph"]["edges"])
+        assert any(edge["kind"] == "branch_generated" for edge in job["graph"]["edges"])
         single_tree = _get_json(host, port, "/api/tree")
-        assert any(edge["kind"] == "backtrack_replacement" for edge in single_tree["edges"])
+        assert any(edge["kind"] == "branch_generated" for edge in single_tree["edges"])
         node = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/node/n001")
         assert node["node"]["program_status"] == "completed"
         single_node = _get_json(host, port, "/api/node/n001")
@@ -249,10 +251,10 @@ def test_ts_web_cli_register(tmp_path: Path) -> None:
 def test_ts_web_cli_serve_registers_multiple_source_roots(tmp_path: Path) -> None:
     """`serve --source-root` uses the same pre-registration helper."""
     accepted = tmp_path / "accepted"
-    backtrack = tmp_path / "backtrack"
+    branch = tmp_path / "branch"
     make_accepted_workspace(accepted)
-    make_backtrack_workspace(backtrack)
-    sources = [accepted, backtrack]
+    make_branch_workspace(branch)
+    sources = [accepted, branch]
     state = tmp_path / "web-state"
     register_workspaces(sources, state, ["A", "B"])
     rows = json.loads((state / "workspaces.json").read_text(encoding="utf-8"))["workspaces"]
@@ -316,7 +318,7 @@ def test_web_claim_state_reflects_pathway_model(tmp_path: Path) -> None:
     hypothesis = tmp_path / "hypothesis"
     pathway_audited = tmp_path / "pathway-audited"
     make_accepted_workspace(accepted)
-    make_backtrack_workspace(hypothesis)
+    make_branch_workspace(hypothesis)
     report_ref = make_accepted_workspace(pathway_audited)
     start_node(
         pathway_audited,
@@ -332,6 +334,7 @@ def test_web_claim_state_reflects_pathway_model(tmp_path: Path) -> None:
                 "phase": "pathway_audit",
                 "hypothesis": "The strict pathway is accepted.",
                 "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_pathway_001"]},
+                "branch_context": {"relation": "continue_parent", "from_node": "n003", "anchor_node": "n000"},
                 "expected_evidence": ["pathway_audit_summary"],
                 "pathway_ref": {"pathway_id": "p_single", "step_id": "s1"},
             },
@@ -353,6 +356,7 @@ def test_web_claim_state_reflects_pathway_model(tmp_path: Path) -> None:
                     "evidence_tier": "local_parse",
                     "node_id": "n004",
                     "summary": "The strict pathway is accepted.",
+                    **gate_artifact_metadata("nodes/n004/outputs/pathway_audit.json"),
                     "quality": {
                         "hypothesis_id": HYPOTHESIS_ID,
                         "strict_pathway_supported": True,
@@ -456,6 +460,7 @@ def test_web_mechanism_analysis_uses_latest_tree_record(tmp_path: Path) -> None:
         **source_node,
         "node_id": node_id,
         "parent_node": "n001",
+        "branch_context": {"relation": "continue_parent", "from_node": "n001", "anchor_node": "n000"},
         "phase": "pathway_audit",
         "hypothesis": "The full route has a latest two-step pathway-level mechanism.",
         "closure": {
@@ -482,6 +487,7 @@ def test_web_mechanism_analysis_uses_latest_tree_record(tmp_path: Path) -> None:
             "program_status": "completed",
             "claim_verdict": "supported",
             "hypothesis": latest_node["hypothesis"],
+            "branch_context": latest_node["branch_context"],
         }
     )
     tree["edges"].append({"parent_node": "n001", "child_node": node_id})
@@ -539,6 +545,7 @@ def test_web_mechanism_analysis_includes_closure_facts_and_evidence_quality(tmp_
                 "phase": "tsfreq_validation",
                 "hypothesis": "The TS candidate is a first-order saddle.",
                 "hypothesis_ref": HYPOTHESIS_REF,
+                "branch_context": {"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
                 "expected_evidence": ["tsfreq_gate"],
             },
         },
@@ -559,6 +566,7 @@ def test_web_mechanism_analysis_includes_closure_facts_and_evidence_quality(tmp_
                     "evidence_tier": "local_parse",
                     "node_id": "n001",
                     "summary": "One imaginary mode matches the reaction center.",
+                    **gate_artifact_metadata("nodes/n001/outputs/tsfreq_rich.json"),
                     "quality": {
                         "hypothesis_id": HYPOTHESIS_ID,
                         "prediction_ids": ["pred_mode_001"],
@@ -620,7 +628,8 @@ def test_web_mechanism_analysis_includes_closure_facts_and_evidence_quality(tmp_
         assert any("program fact: Normal Gaussian termination." in line for line in latest)
         assert any("imaginary_frequency_count=1" in line for line in latest)
         assert any("mode_verdict=mode_matches_reaction_center" in line for line in latest)
-        assert [event["decision"] for event in n001_events] == ["start_node", "end_node"]
+        assert any(event["event_type"] == "branch" for event in n001_events)
+        assert [event["decision"] for event in n001_events if event["event_type"] != "branch"] == ["start_node", "end_node"]
     finally:
         server.shutdown()
         server.server_close()
@@ -646,6 +655,7 @@ def test_web_pathway_audit_not_accepted_is_not_rendered_as_success(tmp_path: Pat
                 "phase": "pathway_audit",
                 "hypothesis": "The current evidence may not support strict R to P connectivity.",
                 "hypothesis_ref": HYPOTHESIS_REF,
+                "branch_context": {"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
                 "expected_evidence": ["pathway_audit_summary"],
                 "pathway_ref": {"pathway_id": "p_r_to_i_to_p", "step_id": "s_i_to_p"},
             },
@@ -663,10 +673,11 @@ def test_web_pathway_audit_not_accepted_is_not_rendered_as_success(tmp_path: Pat
                 "append_evidence": {
                     "evidence_id": "ev_negative_pathway_audit",
                     "kind": "pathway_audit_summary",
-                    "role": "pathway_audit",
+                    "role": "pathway_audit_summary",
                     "evidence_tier": "local_parse",
                     "node_id": node_id,
                     "summary": "Strict R->P pathway is not accepted because the connectivity gate is missing.",
+                    **gate_artifact_metadata("nodes/n001_pathway_audit/outputs/pathway_audit.json"),
                     "quality": {
                         "hypothesis_id": HYPOTHESIS_ID,
                         "strict_pathway_supported": False,
@@ -805,6 +816,7 @@ def _make_refuted_terminal_workspace(workspace: Path) -> None:
                 "phase": "connectivity_validation",
                 "hypothesis": "Candidate connects the expected endpoints.",
                 "hypothesis_ref": HYPOTHESIS_REF,
+                "branch_context": {"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
                 "expected_evidence": [],
             },
         },

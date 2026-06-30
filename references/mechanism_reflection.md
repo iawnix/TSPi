@@ -127,7 +127,7 @@ Allowed `closure.mechanism.revision.action` values:
 
 New hypotheses must be introduced by a later `start_node` decision carrying
 `initial_mechanism_hypothesis` and, when replacing an unresolved branch, a
-canonical `payload.backtrack` event.
+canonical `payload.branch_context` relation.
 
 Recommended changed variables:
 

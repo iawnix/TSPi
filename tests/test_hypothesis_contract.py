@@ -7,7 +7,14 @@ import pytest
 from ts_workspace import end_node, report_workspace, start_node, update_workspace, validate_workspace
 from ts_workspace.io import read_json, write_json
 from ts_workspace.validators.decision import ContractError, validate_decision
-from v3_helpers import HYPOTHESIS_ID, HYPOTHESIS_REF, PATHWAY_REF, bootstrap_v3_workspace, make_accepted_workspace
+from v3_helpers import (
+    HYPOTHESIS_ID,
+    HYPOTHESIS_REF,
+    PATHWAY_REF,
+    bootstrap_v3_workspace,
+    gate_artifact_metadata,
+    make_accepted_workspace,
+)
 
 
 def test_n000_supported_closure_finalizes_focus_hypothesis(tmp_path: Path) -> None:
@@ -65,6 +72,7 @@ def test_solution_ref_is_optional_lineage_not_state(tmp_path: Path) -> None:
                 "hypothesis": "Test one search strategy under the same chemical hypothesis.",
                 "hypothesis_ref": HYPOTHESIS_REF,
                 "solution_ref": solution_ref,
+                "branch_context": {"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
                 "expected_evidence": ["candidate_geometry"],
             },
         },
@@ -123,6 +131,7 @@ def test_accepted_audit_gate_evidence_must_match_node_hypothesis(tmp_path: Path)
                 "phase": "accepted_audit",
                 "hypothesis": "Audit gates must match the node hypothesis.",
                 "hypothesis_ref": HYPOTHESIS_REF,
+                "branch_context": {"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
                 "expected_evidence": ["tsfreq_gate", "connectivity_gate"],
             },
         },
@@ -144,6 +153,7 @@ def test_accepted_audit_gate_evidence_must_match_node_hypothesis(tmp_path: Path)
                         "evidence_tier": "local_parse",
                         "node_id": "n001",
                         "summary": "Wrong hypothesis TS/Freq evidence.",
+                        **gate_artifact_metadata("nodes/n001/outputs/wrong_tsfreq.json"),
                         "quality": {"hypothesis_id": "hyp_other"},
                     },
                     {
@@ -153,6 +163,7 @@ def test_accepted_audit_gate_evidence_must_match_node_hypothesis(tmp_path: Path)
                         "evidence_tier": "local_parse",
                         "node_id": "n001",
                         "summary": "Wrong hypothesis connectivity evidence.",
+                        **gate_artifact_metadata("nodes/n001/outputs/wrong_connectivity.json"),
                         "quality": {"hypothesis_id": "hyp_other"},
                     },
                 ]
@@ -290,6 +301,7 @@ def test_report_treats_accepted_pathway_audit_as_satisfied_without_support_pollu
                 "phase": "pathway_audit",
                 "hypothesis": "The strict pathway is accepted.",
                 "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_pathway_001"]},
+                "branch_context": {"relation": "continue_parent", "from_node": "n003", "anchor_node": "n000"},
                 "expected_evidence": ["pathway_audit_summary"],
                 "pathway_ref": PATHWAY_REF,
             },
@@ -311,6 +323,7 @@ def test_report_treats_accepted_pathway_audit_as_satisfied_without_support_pollu
                     "evidence_tier": "local_parse",
                     "node_id": "n004",
                     "summary": "The strict pathway is accepted.",
+                    **gate_artifact_metadata("nodes/n004/outputs/pathway_audit.json"),
                     "quality": {
                         "hypothesis_id": HYPOTHESIS_ID,
                         "strict_pathway_supported": True,
@@ -378,6 +391,7 @@ def test_negative_pathway_audit_does_not_support_audited_prediction(tmp_path: Pa
                 "phase": "connectivity_validation",
                 "hypothesis": "Connectivity may fail.",
                 "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_conn_001"]},
+                "branch_context": {"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
                 "expected_evidence": ["connectivity_gate"],
             },
         },
@@ -399,6 +413,7 @@ def test_negative_pathway_audit_does_not_support_audited_prediction(tmp_path: Pa
                     "mechanism": {
                         "summary": "Connectivity prediction is refuted.",
                         "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_conn_001"]},
+                        "impact_scope": "prediction",
                         "evidence_refs": [],
                         "revision": {
                             "action": "refute_prediction",
@@ -428,6 +443,7 @@ def test_negative_pathway_audit_does_not_support_audited_prediction(tmp_path: Pa
                 "phase": "pathway_audit",
                 "hypothesis": "The strict pathway is not accepted.",
                 "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_conn_001"]},
+                "branch_context": {"relation": "continue_parent", "from_node": "n001", "anchor_node": "n000"},
                 "expected_evidence": ["pathway_audit_summary"],
             },
         },

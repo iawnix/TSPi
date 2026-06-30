@@ -23,8 +23,10 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
     mechanism = _read_or_empty(root_path / "mechanism_model.json")
 
     nodes = tree.get("nodes", []) if isinstance(tree, dict) else []
+    branch_events = tree.get("branch_events", []) if isinstance(tree, dict) else []
     open_nodes = [item for item in nodes if item.get("lifecycle") == "running"]
     closed_nodes = [item for item in nodes if item.get("lifecycle") in {"closed", "stopped"}]
+    hypothesis_context = _build_hypothesis_context(mechanism, evidence, manifest)
 
     report = {
         "report_id": report_id,
@@ -37,14 +39,16 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
             "focus_hypothesis_id": mechanism.get("focus_hypothesis_id"),
             "accepted_ts_refs": manifest.get("accepted_ts_refs", []),
         },
-        "hypothesis_context": _build_hypothesis_context(mechanism, evidence, manifest),
+        "hypothesis_context": hypothesis_context,
         "node_index": nodes,
-        "solution_lineage": _build_solution_lineage(nodes, tree.get("backtrack_events", [])),
+        "solution_lineage": _build_solution_lineage(nodes, branch_events),
+        "branch_frontiers": _build_branch_frontiers(nodes, branch_events),
+        "readiness": _build_readiness(validation, manifest, hypothesis_context),
         "open_nodes": open_nodes,
         "closed_node_count": len(closed_nodes),
         "evidence_count": len(evidence.get("evidence", [])) if isinstance(evidence, dict) else 0,
-        "backtrack_events": tree.get("backtrack_events", []),
-        "ledger_refs": {
+        "branch_events": branch_events,
+        "workspace_state_refs": {
             "manifest": "manifest.json",
             "tree": "tree.json",
             "evidence_registry": "evidence_registry.json",
@@ -72,7 +76,7 @@ def _read_or_empty(path: Path) -> dict[str, Any]:
         return {}
 
 
-def _build_solution_lineage(nodes: list[Any], backtrack_events: list[Any]) -> list[dict[str, Any]]:
+def _build_solution_lineage(nodes: list[Any], branch_events: list[Any]) -> list[dict[str, Any]]:
     groups: dict[str, dict[str, Any]] = {}
     node_by_id = {str(node.get("node_id")): node for node in nodes if isinstance(node, dict) and node.get("node_id")}
     for node in nodes:
@@ -83,7 +87,7 @@ def _build_solution_lineage(nodes: list[Any], backtrack_events: list[Any]) -> li
         if not solution_ref:
             continue
         hypothesis_id = str(hypothesis_ref.get("hypothesis_id") or "unassigned")
-        group = groups.setdefault(hypothesis_id, {"hypothesis_id": hypothesis_id, "solutions": {}, "backtrack_events": []})
+        group = groups.setdefault(hypothesis_id, {"hypothesis_id": hypothesis_id, "solutions": {}, "branch_events": []})
         solution_id = str(solution_ref.get("solution_id") or "unassigned")
         solution = group["solutions"].setdefault(
             solution_id,
@@ -101,23 +105,23 @@ def _build_solution_lineage(nodes: list[Any], backtrack_events: list[Any]) -> li
         solution["latest_program_status"] = node.get("program_status")
         solution["latest_claim_verdict"] = node.get("claim_verdict")
 
-    for event in backtrack_events:
+    for event in branch_events:
         if not isinstance(event, dict):
             continue
         target_ref = event.get("target_hypothesis_ref") if isinstance(event.get("target_hypothesis_ref"), dict) else {}
         if not target_ref:
-            target_node = node_by_id.get(str(event.get("new_branch_node")))
+            target_node = node_by_id.get(str(event.get("new_node")))
             target_ref = target_node.get("hypothesis_ref") if isinstance(target_node, dict) and isinstance(target_node.get("hypothesis_ref"), dict) else {}
         hypothesis_id = str(target_ref.get("hypothesis_id") or "unassigned")
         if hypothesis_id not in groups:
-            groups[hypothesis_id] = {"hypothesis_id": hypothesis_id, "solutions": {}, "backtrack_events": []}
-        groups[hypothesis_id]["backtrack_events"].append(
+            groups[hypothesis_id] = {"hypothesis_id": hypothesis_id, "solutions": {}, "branch_events": []}
+        groups[hypothesis_id]["branch_events"].append(
             {
                 "event_id": event.get("event_id"),
-                "lineage_scope": event.get("lineage_scope"),
+                "relation": event.get("relation"),
                 "from_node": event.get("from_node"),
-                "to_node": event.get("to_node"),
-                "new_branch_node": event.get("new_branch_node"),
+                "anchor_node": event.get("anchor_node"),
+                "new_node": event.get("new_node"),
                 "reason_code": event.get("reason_code"),
                 "changed_variable": event.get("changed_variable"),
                 "target_solution_ref": event.get("target_solution_ref"),
@@ -134,10 +138,80 @@ def _build_solution_lineage(nodes: list[Any], backtrack_events: list[Any]) -> li
                     group["solutions"][solution_id]
                     for solution_id in sorted(group["solutions"])
                 ],
-                "backtrack_events": group["backtrack_events"],
+                "branch_events": group["branch_events"],
             }
         )
     return out
+
+
+def _build_branch_frontiers(nodes: list[Any], branch_events: list[Any]) -> list[dict[str, Any]]:
+    outgoing = {
+        str(event.get("from_node"))
+        for event in branch_events
+        if isinstance(event, dict) and event.get("from_node")
+    }
+    frontiers: list[dict[str, Any]] = []
+    for node in nodes:
+        if not isinstance(node, dict) or node.get("lifecycle") not in {"closed", "stopped"}:
+            continue
+        node_id = str(node.get("node_id") or "")
+        if not node_id:
+            continue
+        frontiers.append(
+            {
+                "node_id": node_id,
+                "lifecycle": node.get("lifecycle"),
+                "phase": node.get("phase"),
+                "claim_verdict": node.get("claim_verdict"),
+                "program_status": node.get("program_status"),
+                "has_outgoing_branch": node_id in outgoing,
+            }
+        )
+    return frontiers
+
+
+def _build_readiness(
+    validation: dict[str, Any],
+    manifest: dict[str, Any],
+    hypothesis_context: dict[str, Any],
+) -> dict[str, Any]:
+    required_next = [str(item) for item in hypothesis_context.get("required_next_evidence", []) if item]
+    pathway_audits = hypothesis_context.get("pathway_audits", [])
+    accepted_pathway_audit = any(
+        isinstance(item, dict) and str(item.get("audit_outcome") or "").lower() == "accepted"
+        for item in pathway_audits
+    )
+    accepted_ts_ready = bool(manifest.get("accepted_ts_refs"))
+    strict_ready = accepted_ts_ready and accepted_pathway_audit
+    return {
+        "structural_valid": bool(validation.get("valid")),
+        "highest_validated_layer": _highest_validated_layer(hypothesis_context, accepted_ts_ready, accepted_pathway_audit),
+        "strict_r_to_p_ready": strict_ready,
+        "blocking_evidence": [] if strict_ready else required_next,
+        "warnings": [
+            item for item in validation.get("findings", [])
+            if isinstance(item, dict) and item.get("severity") == "warning"
+        ],
+    }
+
+
+def _highest_validated_layer(
+    hypothesis_context: dict[str, Any],
+    accepted_ts_ready: bool,
+    accepted_pathway_audit: bool,
+) -> str:
+    if accepted_pathway_audit:
+        return "pathway"
+    if accepted_ts_ready:
+        return "accepted_ts"
+    required_next = set(str(item) for item in hypothesis_context.get("required_next_evidence", []) if item)
+    if "connectivity_gate" not in required_next:
+        return "connectivity"
+    if "tsfreq_gate" not in required_next:
+        return "tsfreq"
+    if "candidate_geometry" not in required_next:
+        return "candidate"
+    return "hypothesis"
 
 
 def _build_hypothesis_context(mechanism: dict[str, Any], evidence: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:

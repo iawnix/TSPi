@@ -38,8 +38,8 @@ Allowed pathway and step statuses:
 - `superseded`
 - `accepted`
 
-Backtracking appends events in `tree.json.backtrack_events[]`; it never deletes
-old nodes or hides a rejected branch.
+Branching appends events in `tree.json.branch_events[]`; it never deletes old
+nodes or hides a rejected branch.
 
 `pathway_audit` nodes may be recorded as `audit_nodes` on a pathway or step, but
 their phase-level `claim_verdict` must not automatically mutate the audited step

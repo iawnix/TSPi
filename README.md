@@ -95,7 +95,7 @@ python scripts/ts_workspace.py validate_workspace --root <workspace>
 ```
 
 Run `report_workspace` before choosing or closing a node. Do not edit workspace
-ledgers by hand.
+state files by hand.
 
 Use `templates/decision/` when preparing runtime decision JSON. Replace the
 `${NAME}` placeholders, run `validate_decision`, then apply the mutation. Do
@@ -144,8 +144,8 @@ Pi tools:
   `update_workspace`, or `end_node` through a decision JSON.
 
 The Pi extension is a wrapper. Chemistry judgments, accepted-TS logic,
-Gaussian parsing, workspace state transitions, and backtrack rules stay in the
-Python kernel.
+Gaussian parsing, workspace state transitions, and branch-context rules stay in
+the Python kernel.
 
 ## Reporting
 

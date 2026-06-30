@@ -3,7 +3,7 @@
   "action": "start_node",
   "rationale": "Start a new solution branch under the same chemical hypothesis after agent review of the failed path.",
   "evidence_refs": [
-    "${BACKTRACK_EVIDENCE_REF}"
+    "${BRANCH_EVIDENCE_REF}"
   ],
   "report_ref": {
     "report_id": "${REPORT_ID}",
@@ -11,7 +11,7 @@
   },
   "payload": {
     "node_id": "${NEW_BRANCH_NODE_ID}",
-    "parent_node": "${BACKTRACK_TO_NODE}",
+    "parent_node": "${BRANCH_ANCHOR_NODE}",
     "phase": "candidate_generation",
     "hypothesis": "Test a different candidate-generation strategy while keeping the same chemical hypothesis.",
     "hypothesis_ref": {
@@ -30,14 +30,14 @@
       "pathway_id": "${PATHWAY_ID}",
       "step_id": "${STEP_ID}"
     },
-    "backtrack": {
-      "from_node": "${BACKTRACK_FROM_NODE}",
-      "to_node": "${BACKTRACK_TO_NODE}",
-      "changed_variable": "solution_strategy",
-      "reason_code": "${BACKTRACK_REASON_CODE}",
-      "lineage_scope": "solution",
+    "branch_context": {
+      "relation": "new_solution_branch",
+      "from_node": "${BRANCH_FROM_NODE}",
+      "anchor_node": "${BRANCH_ANCHOR_NODE}",
+      "changed_variable": "${BRANCH_CHANGED_VARIABLE}",
+      "reason_code": "${BRANCH_REASON_CODE}",
       "evidence_refs": [
-        "${BACKTRACK_EVIDENCE_REF}"
+        "${BRANCH_EVIDENCE_REF}"
       ]
     },
     "expected_evidence": [

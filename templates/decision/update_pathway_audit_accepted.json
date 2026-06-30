@@ -12,10 +12,18 @@
       "evidence_id": "${EV_PATHWAY_AUDIT}",
       "kind": "pathway_audit",
       "role": "pathway_audit_summary",
-      "evidence_tier": "manual_observation",
+      "evidence_tier": "local_parse",
       "node_id": "n005",
       "summary": "Accepted TS and connectivity evidence support the audited R to P pathway.",
       "path": "${PATHWAY_AUDIT_PATH}",
+      "source_files": [
+        "${PATHWAY_AUDIT_PATH}"
+      ],
+      "source_sha256": "${SOURCE_SHA256}",
+      "parser_name": "${PATHWAY_AUDIT_PARSER_NAME}",
+      "parser_version": "${PARSER_VERSION}",
+      "normal_termination": true,
+      "diagnostics": [],
       "quality": {
         "hypothesis_id": "${HYPOTHESIS_ID}",
         "prediction_ids": [

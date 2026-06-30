@@ -21,6 +21,11 @@
         "${PRED_PATHWAY_ID}"
       ]
     },
+    "branch_context": {
+      "relation": "continue_parent",
+      "from_node": "n004",
+      "anchor_node": "n000"
+    },
     "pathway_ref": {
       "pathway_id": "${PATHWAY_ID}",
       "step_id": "${STEP_ID}"

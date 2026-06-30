@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TS tree",
   "type": "object",
-  "required": ["schema_version", "nodes", "edges", "current_node", "backtrack_events"],
+  "required": ["schema_version", "nodes", "edges", "current_node", "branch_events"],
   "properties": {
     "schema_version": {"const": "ts-tree"},
     "nodes": {
@@ -37,6 +37,9 @@
               {"type": "null"}
             ]
           },
+          "branch_context": {
+            "anyOf": [{"$ref": "#/$defs/branch_context"}, {"type": "null"}]
+          },
           "closed_at": {"type": "string"},
           "program_status": {"enum": ["completed", "failed", "stopped", "not_run"]},
           "claim_verdict": {"enum": ["supported", "refuted", "inconclusive", "not_evaluated"]}
@@ -57,20 +60,22 @@
       }
     },
     "current_node": {"type": ["string", "null"]},
-    "backtrack_events": {
+    "branch_events": {
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["event_id", "event_state", "from_node", "to_node", "new_branch_node", "reason_code", "changed_variable"],
+        "required": ["event_id", "event_state", "relation", "from_node", "anchor_node", "new_node"],
         "properties": {
           "event_id": {"type": "string", "minLength": 1},
           "event_state": {"enum": ["active", "resolved", "superseded"]},
+          "relation": {
+            "enum": ["continue_parent", "new_solution_branch", "new_hypothesis_branch", "new_pathway_branch", "administrative_followup"]
+          },
           "from_node": {"type": "string", "minLength": 1},
-          "to_node": {"type": "string", "minLength": 1},
-          "new_branch_node": {"type": "string", "minLength": 1},
+          "anchor_node": {"type": "string", "minLength": 1},
+          "new_node": {"type": "string", "minLength": 1},
           "reason_code": {"type": "string", "minLength": 1},
           "changed_variable": {"type": "string", "minLength": 1},
-          "lineage_scope": {"enum": ["solution", "hypothesis", "pathway", "administrative"]},
           "target_hypothesis_ref": {
             "anyOf": [{"$ref": "mechanism.schema.json#/$defs/hypothesis_ref"}, {"type": "null"}]
           },
@@ -98,5 +103,22 @@
       }
     }
   },
-  "additionalProperties": false
+  "additionalProperties": false,
+  "$defs": {
+    "branch_context": {
+      "type": "object",
+      "required": ["relation", "from_node", "anchor_node"],
+      "properties": {
+        "relation": {
+          "enum": ["continue_parent", "new_solution_branch", "new_hypothesis_branch", "new_pathway_branch", "administrative_followup"]
+        },
+        "from_node": {"type": "string", "minLength": 1},
+        "anchor_node": {"type": "string", "minLength": 1},
+        "reason_code": {"type": "string", "minLength": 1},
+        "changed_variable": {"type": "string", "minLength": 1},
+        "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      },
+      "additionalProperties": true
+    }
+  }
 }

@@ -1,6 +1,6 @@
 ---
 name: transition-state-workflow
-description: Plan, run, validate, and reflect on transition-state searches with a chemistry-hypothesis-driven workspace, decision JSON mutations, backtracking mechanism branches, molecular comparison, backend adapters, remote execution helpers, read-only web visualization, and final report assembly.
+description: Plan, run, validate, and reflect on transition-state searches with a chemistry-hypothesis-driven workspace, decision JSON mutations, explicit mechanism branches, molecular comparison, backend adapters, remote execution helpers, read-only web visualization, and final report assembly.
 ---
 
 # Transition-State Workflow
@@ -11,24 +11,24 @@ candidate generation, TS/Freq validation, connectivity validation, accepted TS
 audit, and pathway audit as separate evidence layers.
 
 The workspace is the only trusted state source. Agents do not edit workspace
-ledgers by hand. All mutations go through `ts_workspace` with a validated
+state files by hand. All mutations go through `ts_workspace` with a validated
 decision JSON.
 
 ## Module Boundaries
 
 - `ts_workspace`: the only writable control plane. It owns workspace bootstrap,
   node start and close, append-only updates, decision validation, workspace
-  validation, report context, finalizers, and root ledger writes.
+  validation, report context, finalizers, and root state writes.
 - `mol_comparator`: structural comparison only. It returns metrics, a verdict,
   and uncertainty that can become evidence; it never writes a workspace.
 - `ts_runtime`: isolated Python runtime discovery only. It owns Conda
   environment manifests and interpreter selection; it never mutates TS
-  workspace ledgers.
+  workspace state files.
 - `ts_backends`: local calculation adapters. Backends prepare commands and parse
   direct artifacts; they do not set node verdicts or accepted TS facts. Gaussian
   input construction and TS/Freq log parsing live in `ts_backends.gaussian`.
 - `ts_render`: molecular visualization only. It returns node-scoped image,
-  animation, and diagnostic artifacts; it never mutates workspace ledgers or
+  animation, and diagnostic artifacts; it never mutates workspace state files or
   makes chemistry verdicts.
 - `ts_remote`: generic staging, submission, polling, fetch, and kill helpers.
   Remote code does not interpret chemistry. Gaussian remote execution lives in
@@ -61,7 +61,7 @@ Except for first-time bootstrap, mutation commands must be traceable to a
 decision JSON. The mutation command validates the decision internally; a
 separate `validate_decision` call is only a preflight. Public preflight is
 workspace-aware: it validates both the JSON shape and contextual requirements
-such as required replacement-branch `payload.backtrack` provenance.
+such as required post-`n000` `payload.branch_context` provenance.
 
 Gaussian local helper entrypoints are thin wrappers around backend boundaries:
 
@@ -171,11 +171,13 @@ They are not top-level node states.
    mechanism node must include `payload.hypothesis_ref` that points to
   `mechanism_model.hypotheses[]`. Use optional `payload.solution_ref` only to
    group alternative search strategies under the same hypothesis; it is
-   lineage metadata, not a new state, verdict, or retry policy.
+   lineage metadata, not a new state, verdict, or retry policy. Every post-`n000`
+   `start_node` must include `payload.branch_context` so the agent's intended
+   graph relation is explicit.
    When a solution branch fails and the agent decides the chemical hypothesis
    remains viable, open the next branch with the same `payload.hypothesis_ref`,
-   a new `payload.solution_ref`, and explicit `payload.backtrack` provenance
-   with `lineage_scope=solution`. `ts_workspace` records and validates that
+   a new `payload.solution_ref`, and `payload.branch_context.relation`
+   set to `new_solution_branch`. `ts_workspace` records and validates that
    decision; it must not decide whether to retry, switch solution, switch
    hypothesis, or stop.
 5. Run `validate_decision` for preflight when useful.
@@ -193,7 +195,7 @@ They are not top-level node states.
    files in `nodes/<node>/outputs/artifact_manifest.json`.
 8. Close the node with program facts, claim verdict, implication, and open
    questions.
-9. Run `report_workspace` again before branching, backtracking, or stopping.
+9. Run `report_workspace` again before branching or stopping.
 10. Use `ts_report` only after the workspace validates.
 
 ## References

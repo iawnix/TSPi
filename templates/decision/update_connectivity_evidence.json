@@ -16,6 +16,14 @@
       "node_id": "n003",
       "summary": "Forward and reverse IRC endpoints were assigned to the expected product and reactant basins. The primary evidence path is a connectivity artifact owned by this connectivity node.",
       "path": "${IRC_SUMMARY_PATH}",
+      "source_files": [
+        "${IRC_SUMMARY_PATH}"
+      ],
+      "source_sha256": "${SOURCE_SHA256}",
+      "parser_name": "${CONNECTIVITY_PARSER_NAME}",
+      "parser_version": "${PARSER_VERSION}",
+      "normal_termination": true,
+      "diagnostics": [],
       "quality": {
         "hypothesis_id": "${HYPOTHESIS_ID}",
         "prediction_ids": [

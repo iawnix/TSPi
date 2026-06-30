@@ -55,7 +55,7 @@ function buildContextDetails(report) {
   const hypothesisContext = objectOrEmpty(report.hypothesis_context);
   const activeHypothesis = objectOrEmpty(hypothesisContext.active_hypothesis);
   const openNodes = arrayOfObjects(report.open_nodes);
-  const backtrackEvents = arrayOfObjects(report.backtrack_events);
+  const branchEvents = arrayOfObjects(report.branch_events);
 
   return {
     reportId: report.report_id || "",
@@ -88,10 +88,11 @@ function buildContextDetails(report) {
     supportedPredictions: arrayOfStrings(hypothesisContext.supported_predictions),
     refutedPredictions: arrayOfStrings(hypothesisContext.refuted_predictions),
     requiredNextEvidence: arrayOfStrings(hypothesisContext.required_next_evidence),
-    backtrackEvents: backtrackEvents.map((event) => ({
+    branchEvents: branchEvents.map((event) => ({
+      relation: event.relation || "",
       fromNode: event.from_node || "",
-      toNode: event.to_node || "",
-      newBranchNode: event.new_branch_node || "",
+      anchorNode: event.anchor_node || "",
+      newNode: event.new_node || "",
       changedVariable: event.changed_variable || "",
       reasonCode: event.reason_code || "",
     })),
@@ -119,7 +120,7 @@ function buildContextSummary(report, options = {}) {
   lines.push(`- supported_predictions: ${formatList(details.supportedPredictions, maxItems)}`);
   lines.push(`- refuted_predictions: ${formatList(details.refutedPredictions, maxItems)}`);
   lines.push(`- required_next_evidence: ${formatList(details.requiredNextEvidence, maxItems)}`);
-  lines.push(`- backtrack_events: ${formatBacktrackList(details.backtrackEvents, maxItems)}`);
+  lines.push(`- branch_events: ${formatBranchList(details.branchEvents, maxItems)}`);
   lines.push(`- allowed_decision_actions: ${formatList(details.allowedDecisionActions, maxItems)}`);
 
   if (details.validationFindings.length) {
@@ -132,7 +133,7 @@ function buildContextSummary(report, options = {}) {
   }
 
   lines.push(
-    "- contract: use ts_workspace_context/ts_workspace_validate/ts_workspace_decision or scripts/ts_workspace.py; do not edit ledgers by hand."
+    "- contract: use ts_workspace_context/ts_workspace_validate/ts_workspace_decision or scripts/ts_workspace.py; do not edit workspace state files by hand."
   );
   lines.push("- contract: every post-n000 mechanism node must carry payload.hypothesis_ref.");
   return lines.join("\n");
@@ -170,13 +171,13 @@ function formatPredictionList(values, maxItems) {
     .join(", ");
 }
 
-function formatBacktrackList(values, maxItems) {
+function formatBranchList(values, maxItems) {
   if (!values.length) {
     return "(none)";
   }
   return values
     .slice(-maxItems)
-    .map((item) => `${item.fromNode || "?"}->${item.newBranchNode || "?"}:${item.changedVariable || item.reasonCode || "backtrack"}`)
+    .map((item) => `${item.fromNode || "?"}->${item.newNode || "?"}:${item.relation || item.changedVariable || item.reasonCode || "branch"}`)
     .join(", ");
 }
 

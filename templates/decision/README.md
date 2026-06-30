@@ -53,12 +53,12 @@ audit. Non-stereo hypotheses do not need this optional template.
 For a failed computational path that the agent judges to be a solution failure
 rather than a chemical-hypothesis failure, use `start_solution_branch.json`.
 It keeps the same `hypothesis_ref`, assigns a new `solution_ref`, and records
-`payload.backtrack.lineage_scope=solution`.
+`payload.branch_context.relation=new_solution_branch`.
 
 For a negative pathway audit, use `update_pathway_audit_not_accepted.json` and
 `end_pathway_audit_not_accepted.json`. That closes the current mechanism
 branch only. If the agent decides a same-hypothesis solution branch remains
 scientifically meaningful, start it with `start_solution_branch.json` and
-explicit `payload.backtrack` provenance. If the chemistry itself is being
+explicit `payload.branch_context` provenance. If the chemistry itself is being
 changed, create or revise the chemical hypothesis explicitly; do not encode
 that as an automatic retry policy.

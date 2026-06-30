@@ -32,5 +32,5 @@ Output shape:
 checks using zero-based atom indices. A failed declared check makes the
 comparator verdict `mismatched` even when RMSD and bond metrics are acceptable.
 
-The comparator never writes workspace ledgers and never accepts a TS. Its result
+The comparator never writes workspace state files and never accepts a TS. Its result
 can be registered as evidence through `update_workspace`.

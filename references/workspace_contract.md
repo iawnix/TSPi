@@ -20,7 +20,7 @@ Required directories:
 - `accepted/`
 - `rejected/`
 
-Only `ts_workspace` may write root ledgers. Backends, remote helpers,
+Only `ts_workspace` may write root state files. Backends, remote helpers,
 molecular comparison, web views, and final reports must return artifacts or
 read models instead of mutating the workspace.
 
@@ -76,16 +76,16 @@ hypothesis. It does not create a second state machine: closure still uses only
 closure facts.
 
 For same-hypothesis replacement of a failed search strategy, the agent records
-an explicit backtrack decision:
+an explicit branch-context decision:
 
 ```json
 {
-  "backtrack": {
+  "branch_context": {
+    "relation": "new_solution_branch",
     "from_node": "n002",
-    "to_node": "n000",
+    "anchor_node": "n000",
     "changed_variable": "solution_strategy",
-    "reason_code": "route_failed",
-    "lineage_scope": "solution"
+    "reason_code": "route_failed"
   },
   "hypothesis_ref": {"hypothesis_id": "hyp_0001", "prediction_ids": ["pred_candidate_001"]},
   "solution_ref": {"solution_id": "sol_scan_002", "parent_solution_id": "sol_qst2_001"}
@@ -96,7 +96,7 @@ The workspace validates this as provenance only. It does not decide that a
 solution is exhausted, that a hypothesis is refuted, or that the search should
 continue.
 
-## Ledgers
+## Workspace State Files
 
 - `mechanism_model.hypotheses[]`: active, supported, refuted, or superseded
   working mechanism hypotheses.
@@ -107,7 +107,7 @@ continue.
 
 The workspace validator checks required files, node JSON records, initial
 `n000` structure, hypothesis references, optional solution lineage consistency,
-explicit backtrack provenance after branch jumps, current focus, append-only
+explicit branch provenance after graph jumps, current focus, append-only
 evidence identity, and forbidden public fields. A terminal unresolved node with
 no running follow-up is reported as a warning/fact, not as an invalid workspace;
 the agent decides whether to continue, stop, or ask the user.

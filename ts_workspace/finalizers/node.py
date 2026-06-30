@@ -16,6 +16,7 @@ from ..io import append_markdown, read_json, write_json
 
 PATHWAY_STEP_STATUS_PHASES = {"connectivity_validation", "accepted_audit"}
 INITIAL_HYPOTHESIS_PHASES = {"preflight", "endpoint"}
+IMPACT_SCOPES = {"solution_only", "prediction", "pathway_step", "hypothesis"}
 
 
 def finalize_closed_node(root: Path, node: dict[str, Any], decision: dict[str, Any]) -> None:
@@ -62,10 +63,18 @@ def _update_mechanism_model(root: Path, node: dict[str, Any], closure: dict[str,
     hypothesis = _find_hypothesis(model, hypothesis_id)
     evidence_refs = sorted(set(hypothesis.get("evidence_refs", []) + node.get("evidence_refs", []) + mechanism.get("evidence_refs", [])))
     hypothesis["evidence_refs"] = evidence_refs
-    _append_prediction_status(hypothesis, node, closure, ref, mechanism)
-    _apply_revision(model, hypothesis, node, closure, mechanism)
+    impact_scope = _impact_scope(node, closure)
+    if impact_scope in {"prediction", "pathway_step", "hypothesis"}:
+        _append_prediction_status(hypothesis, node, closure, ref, mechanism)
+    if impact_scope == "hypothesis":
+        _apply_revision(model, hypothesis, node, closure, mechanism)
 
-    if node.get("phase") == "accepted_audit" and closure["program_status"] == "completed" and closure["claim_verdict"] == "supported":
+    if (
+        impact_scope == "hypothesis"
+        and node.get("phase") == "accepted_audit"
+        and closure["program_status"] == "completed"
+        and closure["claim_verdict"] == "supported"
+    ):
         hypothesis["status"] = "supported"
         model.setdefault("accepted_facts", []).append(_mechanism_entry(node, closure, hypothesis_id, evidence_refs))
     elif closure["claim_verdict"] in {"inconclusive", "not_evaluated"}:
@@ -232,6 +241,9 @@ def _update_pathway_model(root: Path, node: dict[str, Any], closure: dict[str, A
     if node["phase"] not in PATHWAY_STEP_STATUS_PHASES:
         write_json(path, model)
         return
+    if _impact_scope(node, closure) != "pathway_step":
+        write_json(path, model)
+        return
     verdict = closure["claim_verdict"]
     if verdict == "supported":
         step["status"] = "supported"
@@ -349,3 +361,20 @@ def _pathway_status_from_steps(steps: list[dict[str, Any]]) -> str:
     if statuses and statuses <= {"supported"}:
         return "supported"
     return "active"
+
+
+def _impact_scope(node: dict[str, Any], closure: dict[str, Any]) -> str:
+    mechanism = closure.get("mechanism", {}) if isinstance(closure.get("mechanism"), dict) else {}
+    explicit = mechanism.get("impact_scope")
+    if explicit in IMPACT_SCOPES:
+        return explicit
+    if closure.get("claim_verdict") != "supported":
+        return "solution_only"
+    phase = node.get("phase")
+    if phase == "accepted_audit":
+        return "hypothesis"
+    if phase in PATHWAY_STEP_STATUS_PHASES:
+        return "pathway_step"
+    if phase not in INITIAL_HYPOTHESIS_PHASES:
+        return "prediction"
+    return "solution_only"

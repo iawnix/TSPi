@@ -4,7 +4,14 @@ from pathlib import Path
 
 from ts_report import build_final_report
 from ts_workspace import end_node, init_workspace, report_workspace, start_node, update_workspace
-from v3_helpers import HYPOTHESIS_ID, HYPOTHESIS_REF, PATHWAY_REF, bootstrap_v3_workspace, make_accepted_workspace
+from v3_helpers import (
+    HYPOTHESIS_ID,
+    HYPOTHESIS_REF,
+    PATHWAY_REF,
+    bootstrap_v3_workspace,
+    gate_artifact_metadata,
+    make_accepted_workspace,
+)
 
 
 def test_report_labels_negative_pathway_audit_outcome(tmp_path: Path) -> None:
@@ -22,9 +29,11 @@ def test_report_labels_negative_pathway_audit_outcome(tmp_path: Path) -> None:
             "report_ref": report_ref,
             "payload": {
                 "node_id": node_id,
+                "parent_node": "n000",
                 "phase": "pathway_audit",
                 "hypothesis": "The strict pathway may be unaccepted.",
                 "hypothesis_ref": HYPOTHESIS_REF,
+                "branch_context": {"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
                 "expected_evidence": ["pathway_audit_summary"],
                 "pathway_ref": {"pathway_id": "p_test", "step_id": "s_i_to_p"},
             },
@@ -42,10 +51,11 @@ def test_report_labels_negative_pathway_audit_outcome(tmp_path: Path) -> None:
                 "append_evidence": {
                     "evidence_id": "ev_negative_audit",
                     "kind": "pathway_audit_summary",
-                    "role": "pathway_audit",
+                    "role": "pathway_audit_summary",
                     "evidence_tier": "local_parse",
                     "node_id": node_id,
                     "summary": "The strict pathway is not accepted.",
+                    **gate_artifact_metadata("nodes/n001_pathway_audit/outputs/pathway_audit.json"),
                     "quality": {
                         "hypothesis_id": HYPOTHESIS_ID,
                         "strict_pathway_supported": False,
@@ -101,9 +111,11 @@ def test_report_includes_acceptance_layers_and_pathway_outcome(tmp_path: Path) -
             "report_ref": report_ref,
             "payload": {
                 "node_id": node_id,
+                "parent_node": "n003",
                 "phase": "pathway_audit",
                 "hypothesis": "The strict pathway is accepted.",
                 "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_pathway_001"]},
+                "branch_context": {"relation": "continue_parent", "from_node": "n003", "anchor_node": "n000"},
                 "expected_evidence": ["pathway_audit_summary"],
                 "pathway_ref": PATHWAY_REF,
             },
@@ -125,6 +137,7 @@ def test_report_includes_acceptance_layers_and_pathway_outcome(tmp_path: Path) -
                     "evidence_tier": "local_parse",
                     "node_id": node_id,
                     "summary": "The strict pathway is accepted.",
+                    **gate_artifact_metadata("nodes/n004_pathway_audit/outputs/pathway_audit.json"),
                     "quality": {
                         "hypothesis_id": HYPOTHESIS_ID,
                         "strict_pathway_supported": True,

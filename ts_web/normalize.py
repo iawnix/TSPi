@@ -21,7 +21,7 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
 
     evidence_records = _list(evidence_registry.get("evidence"))
     nodes = [_normalize_node(root, row, evidence_records) for row in _list(tree.get("nodes"))]
-    backtrack_events = _list(tree.get("backtrack_events"))
+    branch_events = _list(tree.get("branch_events"))
     decision_events = _normalize_decision_events(root / "decision_log.jsonl")
     return {
         "label": label or root.name,
@@ -36,7 +36,7 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         },
         "nodes": nodes,
         "edges": _list(tree.get("edges")),
-        "backtrack_edges": [_normalize_backtrack_event(event) for event in backtrack_events],
+        "branch_edges": [_normalize_branch_event(event) for event in branch_events],
         "decision_events": decision_events,
         "pathways": _list(pathway_model.get("pathways")),
         "evidence": evidence_records,
@@ -180,10 +180,10 @@ def explorer_graph_payload(source_root: str | Path, *, label: str | None = None)
 def explorer_graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
     """Transform the canonical normalized view into the explorer graph shape."""
 
-    nodes = [_explorer_node(row, _list(view.get("backtrack_edges"))) for row in _list(view.get("nodes"))]
-    edges = _explorer_edges(nodes, _list(view.get("edges")), _list(view.get("backtrack_edges")))
+    nodes = [_explorer_node(row, _list(view.get("branch_edges"))) for row in _list(view.get("nodes"))]
+    edges = _explorer_edges(nodes, _list(view.get("edges")), _list(view.get("branch_edges")))
     evidence = _explorer_evidence(_list(view.get("evidence")))
-    events = _explorer_events(_list(view.get("backtrack_edges")), _list(view.get("decision_events")))
+    events = _explorer_events(_list(view.get("branch_edges")), _list(view.get("decision_events")))
     return {
         "schema": "ts-explorer-graph",
         "nodes": nodes,
@@ -291,7 +291,7 @@ def _normalize_node(root: Path, row: dict[str, Any], evidence_records: list[Any]
     }
 
 
-def _explorer_node(row: dict[str, Any], backtrack_events: list[Any]) -> dict[str, Any]:
+def _explorer_node(row: dict[str, Any], branch_events: list[Any]) -> dict[str, Any]:
     node_id = str(row.get("node_id") or "")
     lifecycle = row.get("lifecycle")
     display = row.get("display") if isinstance(row.get("display"), dict) else {}
@@ -301,20 +301,20 @@ def _explorer_node(row: dict[str, Any], backtrack_events: list[Any]) -> dict[str
     claim_verdict = display.get("claim_verdict") or closure.get("claim_verdict")
     tone = display.get("tone") or _display_tone(lifecycle, claim_verdict, program_status)
     state_key = display.get("state") or _node_state_key(lifecycle, claim_verdict, program_status)
-    backtrack_from_ids: list[str] = []
-    backtrack_target_ids: list[str] = []
+    branch_from_ids: list[str] = []
+    branch_anchor_ids: list[str] = []
     generated_ids: list[str] = []
-    for event in backtrack_events:
+    for event in branch_events:
         if not isinstance(event, dict) or not event.get("event_id"):
             continue
         event_id = str(event["event_id"])
         if event.get("from_node") == node_id:
-            backtrack_from_ids.append(event_id)
-        if event.get("to_node") == node_id and event.get("to_node") != event.get("new_branch_node"):
-            backtrack_target_ids.append(event_id)
-        if event.get("new_branch_node") == node_id:
+            branch_from_ids.append(event_id)
+        if event.get("anchor_node") == node_id and event.get("anchor_node") != event.get("new_node"):
+            branch_anchor_ids.append(event_id)
+        if event.get("new_node") == node_id:
             generated_ids.append(event_id)
-    backtrack_ids = _dedupe(backtrack_from_ids + backtrack_target_ids + generated_ids)
+    branch_ids = _dedupe(branch_from_ids + branch_anchor_ids + generated_ids)
     state_line = _closure_line(closure, program_status, claim_verdict)
     return {
         "id": node_id,
@@ -342,15 +342,15 @@ def _explorer_node(row: dict[str, Any], backtrack_events: list[Any]) -> dict[str
         "input_refs": _list(row.get("evidence_refs")),
         "active": lifecycle == "running",
         "frontier": lifecycle == "running",
-        "backtrack_event_ids": backtrack_ids,
-        "backtrack_from_event_ids": _dedupe(backtrack_from_ids),
-        "backtrack_target_event_ids": _dedupe(backtrack_target_ids),
-        "generated_from_backtrack_event_ids": _dedupe(generated_ids),
-        "backtrack_badge": _backtrack_badge(backtrack_from_ids, backtrack_target_ids, generated_ids),
+        "branch_event_ids": branch_ids,
+        "branch_from_event_ids": _dedupe(branch_from_ids),
+        "branch_anchor_event_ids": _dedupe(branch_anchor_ids),
+        "generated_from_branch_event_ids": _dedupe(generated_ids),
+        "branch_badge": _branch_badge(branch_from_ids, branch_anchor_ids, generated_ids),
     }
 
 
-def _explorer_edges(nodes: list[dict[str, Any]], tree_edges: list[Any], backtrack_events: list[Any]) -> list[dict[str, Any]]:
+def _explorer_edges(nodes: list[dict[str, Any]], tree_edges: list[Any], branch_events: list[Any]) -> list[dict[str, Any]]:
     node_ids = {node.get("id") for node in nodes}
     edges: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
@@ -370,7 +370,7 @@ def _explorer_edges(nodes: list[dict[str, Any]], tree_edges: list[Any], backtrac
         if not isinstance(edge, dict):
             continue
         add(edge.get("source") or edge.get("parent"), edge.get("target") or edge.get("child"), edge.get("kind") or "branch")
-    for event in backtrack_events:
+    for event in branch_events:
         if not isinstance(event, dict):
             continue
         extra = {
@@ -378,13 +378,13 @@ def _explorer_edges(nodes: list[dict[str, Any]], tree_edges: list[Any], backtrac
             "event_state": event.get("event_state"),
             "reason": event.get("reason_code"),
         }
-        if event.get("from_node") != event.get("to_node") and event.get("to_node") != event.get("new_branch_node"):
-            add(event.get("from_node"), event.get("to_node"), "backtrack", **extra)
-        add(event.get("from_node"), event.get("new_branch_node"), "backtrack_replacement", **extra)
+        if event.get("from_node") != event.get("anchor_node") and event.get("anchor_node") != event.get("new_node"):
+            add(event.get("from_node"), event.get("anchor_node"), "branch_anchor", **extra)
+        add(event.get("from_node"), event.get("new_node"), "branch_generated", **extra)
     return edges
 
 
-def _explorer_events(backtrack_events: list[Any], decision_events: list[Any]) -> list[dict[str, Any]]:
+def _explorer_events(branch_events: list[Any], decision_events: list[Any]) -> list[dict[str, Any]]:
     out: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
 
@@ -400,27 +400,27 @@ def _explorer_events(backtrack_events: list[Any], decision_events: list[Any]) ->
         seen.add(key)
         out.append(event)
 
-    for event in backtrack_events:
+    for event in branch_events:
         if not isinstance(event, dict):
             continue
         event_id = event.get("event_id")
         role_nodes = [
-            ("backtrack_source", event.get("from_node")),
-            ("generated_from_backtrack", event.get("new_branch_node")),
+            ("branch_source", event.get("from_node")),
+            ("generated_from_branch", event.get("new_node")),
         ]
-        if event.get("to_node") != event.get("new_branch_node"):
-            role_nodes.insert(1, ("backtrack_target", event.get("to_node")))
+        if event.get("anchor_node") != event.get("new_node"):
+            role_nodes.insert(1, ("branch_anchor", event.get("anchor_node")))
         for role, node_id in role_nodes:
             display = _event_role_display(role)
             add(
                 {
                     "event_id": event_id,
                     "node_id": node_id,
-                    "event_type": "backtrack",
+                    "event_type": "branch",
                     "event_role": role,
                     "event_label": display["label"],
                     "event_color": display["color"],
-                    "decision": event.get("reason_code") or "backtrack",
+                    "decision": event.get("reason_code") or "branch",
                     "reason": event.get("rationale") or event.get("changed_variable"),
                     "evidence_refs": _list(event.get("evidence_refs")),
                 }
@@ -714,15 +714,14 @@ def _explorer_presentation() -> dict[str, Any]:
         "edge_kind": {
             "branch": {"label": "branch", "color": "accent"},
             "dependency": {"label": "dependency", "color": "cyan"},
-            "backtrack": {"label": "backtrack target", "color": "purple"},
-            "backtrack_decision": {"label": "backtrack decision", "color": "purple"},
-            "backtrack_replacement": {"label": "replacement branch", "color": "blue"},
+            "branch_anchor": {"label": "branch anchor", "color": "purple"},
+            "branch_generated": {"label": "generated branch", "color": "blue"},
         },
         "event_role": {
-            "backtrack_source": {"label": "backtracked from", "color": "purple"},
-            "backtrack_target": {"label": "backtrack target", "color": "purple"},
-            "generated_from_backtrack": {"label": "generated by backtrack", "color": "blue"},
-            "backtrack": {"label": "backtrack", "color": "purple"},
+            "branch_source": {"label": "branched from", "color": "purple"},
+            "branch_anchor": {"label": "branch anchor", "color": "purple"},
+            "generated_from_branch": {"label": "generated by branch", "color": "blue"},
+            "branch": {"label": "branch", "color": "purple"},
             "start_node": {"label": "node started", "color": "accent"},
             "end_node": {"label": "node closed", "color": "green"},
             "update_workspace": {"label": "workspace updated", "color": "cyan"},
@@ -746,31 +745,32 @@ def _event_role_display(role: str) -> dict[str, str]:
     }
 
 
-def _backtrack_badge(source_ids: list[str], target_ids: list[str], generated_ids: list[str]) -> dict[str, Any] | None:
+def _branch_badge(source_ids: list[str], anchor_ids: list[str], generated_ids: list[str]) -> dict[str, Any] | None:
     if source_ids:
-        display = _event_role_display("backtrack_source")
-        return {"role": "backtrack_source", "label": display["label"], "color": display["color"], "event_ids": _dedupe(source_ids)}
+        display = _event_role_display("branch_source")
+        return {"role": "branch_source", "label": display["label"], "color": display["color"], "event_ids": _dedupe(source_ids)}
     if generated_ids:
-        display = _event_role_display("generated_from_backtrack")
+        display = _event_role_display("generated_from_branch")
         return {
-            "role": "generated_from_backtrack",
+            "role": "generated_from_branch",
             "label": display["label"],
             "color": display["color"],
             "event_ids": _dedupe(generated_ids),
         }
-    if target_ids:
-        display = _event_role_display("backtrack_target")
-        return {"role": "backtrack_target", "label": display["label"], "color": display["color"], "event_ids": _dedupe(target_ids)}
+    if anchor_ids:
+        display = _event_role_display("branch_anchor")
+        return {"role": "branch_anchor", "label": display["label"], "color": display["color"], "event_ids": _dedupe(anchor_ids)}
     return None
 
 
-def _normalize_backtrack_event(event: dict[str, Any]) -> dict[str, Any]:
+def _normalize_branch_event(event: dict[str, Any]) -> dict[str, Any]:
     return {
         "event_id": event.get("event_id"),
         "event_state": event.get("event_state"),
+        "relation": event.get("relation"),
         "from_node": event.get("from_node"),
-        "to_node": event.get("to_node"),
-        "new_branch_node": event.get("new_branch_node"),
+        "anchor_node": event.get("anchor_node"),
+        "new_node": event.get("new_node"),
         "changed_variable": event.get("changed_variable"),
         "reason_code": event.get("reason_code"),
         "evidence_refs": event.get("evidence_refs", []),

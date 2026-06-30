@@ -62,7 +62,7 @@ def test_web_normalizer_is_read_only(tmp_path: Path) -> None:
     assert after == before
 
 
-def test_ts_render_writes_artifact_without_root_ledger_mutation(tmp_path: Path, monkeypatch) -> None:
+def test_ts_render_writes_artifact_without_root_state_mutation(tmp_path: Path, monkeypatch) -> None:
     workspace = tmp_path / "workspace"
     make_accepted_workspace(workspace)
     fake = tmp_path / "xyzrender"
@@ -79,14 +79,14 @@ if "-o" in sys.argv:
     )
     fake.chmod(0o755)
     monkeypatch.setenv("TS_RENDER_XYZRENDER", str(fake))
-    ledgers = ["manifest.json", "tree.json", "mechanism_model.json", "pathway_model.json", "evidence_registry.json"]
-    before = {name: (workspace / name).read_text(encoding="utf-8") for name in ledgers}
+    state_files = ["manifest.json", "tree.json", "mechanism_model.json", "pathway_model.json", "evidence_registry.json"]
+    before = {name: (workspace / name).read_text(encoding="utf-8") for name in state_files}
 
     result = MolVisualizer().render_molecule(
         workspace / "inputs" / "reactant.xyz",
         workspace / "nodes" / "n001" / "outputs" / "render.png",
     )
 
-    after = {name: (workspace / name).read_text(encoding="utf-8") for name in ledgers}
+    after = {name: (workspace / name).read_text(encoding="utf-8") for name in state_files}
     assert result.ok is True
     assert before == after

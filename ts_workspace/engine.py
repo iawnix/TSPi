@@ -39,7 +39,7 @@ def init_workspace(root: str | Path, decision: dict[str, Any] | None = None) -> 
             "nodes": [],
             "edges": [],
             "current_node": None,
-            "backtrack_events": [],
+            "branch_events": [],
         },
     )
     write_json(root_path / "evidence_registry.json", {"schema_version": "ts-evidence-registry", "evidence": []})
@@ -89,8 +89,8 @@ def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
         "pathway_ref": payload.get("pathway_ref"),
         "hypothesis_ref": payload.get("hypothesis_ref"),
         "solution_ref": payload.get("solution_ref"),
+        "branch_context": payload.get("branch_context"),
         "initial_mechanism_hypothesis": payload.get("initial_mechanism_hypothesis"),
-        "backtrack": payload.get("backtrack"),
         "created_by_decision": _decision_id(decision),
         "started_at": now_iso(),
         "artifacts": {
@@ -113,12 +113,13 @@ def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
             "hypothesis": node["hypothesis"],
             "hypothesis_ref": node.get("hypothesis_ref"),
             "solution_ref": node.get("solution_ref"),
+            "branch_context": node.get("branch_context"),
         }
         )
     if node["parent_node"]:
         tree.setdefault("edges", []).append({"parent_node": node["parent_node"], "child_node": node_id})
-    if node["backtrack"]:
-        tree.setdefault("backtrack_events", []).append(_backtrack_event(node, node["backtrack"], decision))
+    if node["branch_context"]:
+        tree.setdefault("branch_events", []).append(_branch_event(node, node["branch_context"], decision))
     tree["current_node"] = node_id
     write_json(root_path / "tree.json", tree)
 
@@ -254,24 +255,24 @@ def _log_decision(root: Path, decision: dict[str, Any], result: dict[str, Any]) 
     )
 
 
-def _backtrack_event(node: dict[str, Any], backtrack: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
+def _branch_event(node: dict[str, Any], branch_context: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
     node_id = node["node_id"]
     event = {
-        "event_id": "bt_" + sha256_json({"node_id": node_id, "backtrack": backtrack}).split(":", 1)[1][:10],
+        "event_id": "br_" + sha256_json({"node_id": node_id, "branch_context": branch_context}).split(":", 1)[1][:10],
         "event_state": "resolved",
-        "from_node": backtrack["from_node"],
-        "to_node": backtrack["to_node"],
-        "new_branch_node": node_id,
-        "reason_code": backtrack["reason_code"],
-        "changed_variable": backtrack["changed_variable"],
+        "relation": branch_context["relation"],
+        "from_node": branch_context["from_node"],
+        "anchor_node": branch_context["anchor_node"],
+        "new_node": node_id,
         "rationale": decision["rationale"],
-        "evidence_refs": backtrack.get("evidence_refs", []),
+        "evidence_refs": branch_context.get("evidence_refs", []),
         "target_hypothesis_ref": node.get("hypothesis_ref"),
         "target_solution_ref": node.get("solution_ref"),
         "created_by_decision": _decision_id(decision),
     }
-    if backtrack.get("lineage_scope") is not None:
-        event["lineage_scope"] = backtrack["lineage_scope"]
+    for field in ("reason_code", "changed_variable"):
+        if branch_context.get(field):
+            event[field] = branch_context[field]
     return event
 
 

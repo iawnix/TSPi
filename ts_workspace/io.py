@@ -1,4 +1,4 @@
-"""Small file IO helpers for workspace ledgers."""
+"""Small file IO helpers for workspace state files."""
 
 from __future__ import annotations
 

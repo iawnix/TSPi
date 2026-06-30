@@ -45,7 +45,7 @@ The extension injects a short per-turn system-prompt context only when it can
 resolve a TS workspace root. For automatic prompt injection, resolution order:
 
 1. `TS_WORKSPACE_ROOT`;
-2. the nearest ancestor containing the workspace ledgers.
+2. the nearest ancestor containing the workspace state files.
 
 For tools and commands, an explicit `root` argument takes precedence over
 environment and ancestor discovery.
@@ -56,7 +56,7 @@ The injected context is derived only from:
 python scripts/ts_workspace.py report_workspace --root <workspace>
 ```
 
-It does not read or mutate ledger files directly. `report_workspace` remains the
+It does not read or mutate workspace state files directly. `report_workspace` remains the
 only report source.
 
 If `.runtime/env.json` exists, the extension runs `scripts/ts_workspace.py` with
@@ -81,5 +81,5 @@ public `ts_workspace` CLI and inherits all validators/finalizers.
 ## Boundary
 
 The Pi extension must stay a wrapper. Do not implement chemistry judgments,
-workspace state transitions, accepted-TS logic, Gaussian parsing, or backtrack
+workspace state transitions, accepted-TS logic, Gaussian parsing, or branch-context
 rules in TypeScript. Those contracts belong in Python modules and schemas.

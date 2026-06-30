@@ -193,7 +193,8 @@ def start_v3_node(
     parent_node: str = "n000",
     pathway_ref: dict[str, str] | None = None,
     prediction_ids: list[str] | None = None,
-    backtrack: dict[str, Any] | None = None,
+    branch_context: dict[str, Any] | None = None,
+    solution_ref: dict[str, Any] | None = None,
     evidence_refs: list[str] | None = None,
 ) -> None:
     ref = {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": prediction_ids or ["pred_mode_001"]}
@@ -204,11 +205,16 @@ def start_v3_node(
         "hypothesis": f"Test {phase} under {HYPOTHESIS_ID}.",
         "hypothesis_ref": ref,
         "expected_evidence": [],
+        "branch_context": branch_context or {
+            "relation": "continue_parent",
+            "from_node": parent_node,
+            "anchor_node": "n000",
+        },
     }
     if pathway_ref is not None:
         payload["pathway_ref"] = pathway_ref
-    if backtrack is not None:
-        payload["backtrack"] = backtrack
+    if solution_ref is not None:
+        payload["solution_ref"] = solution_ref
     start_node(
         workspace,
         {
@@ -284,6 +290,7 @@ def make_accepted_workspace(workspace: Path, *, stereochemical: bool = False) ->
             "evidence_tier": "local_parse",
             "node_id": "n001",
             "summary": "One imaginary mode matches the proposed C-N formation coordinate.",
+            **gate_artifact_metadata("nodes/n001/outputs/tsfreq_validation.json"),
             "quality": {
                 "hypothesis_id": HYPOTHESIS_ID,
                 "prediction_ids": ["pred_mode_001"],
@@ -320,6 +327,7 @@ def make_accepted_workspace(workspace: Path, *, stereochemical: bool = False) ->
             "evidence_tier": "local_parse",
             "node_id": "n002",
             "summary": "Forward and reverse endpoints match the expected reactant/product basins.",
+            **gate_artifact_metadata("nodes/n002/outputs/connectivity_validation.json"),
             "quality": {
                 "hypothesis_id": HYPOTHESIS_ID,
                 "prediction_ids": ["pred_conn_001"],
@@ -344,6 +352,7 @@ def make_accepted_workspace(workspace: Path, *, stereochemical: bool = False) ->
                 "evidence_tier": "local_parse",
                 "node_id": "n002",
                 "summary": "Declared stereochemical checks are matched at the assigned IRC endpoints.",
+                **gate_artifact_metadata("nodes/n002/outputs/stereochemical_connectivity_validation.json"),
                 "quality": {
                     "hypothesis_id": HYPOTHESIS_ID,
                     "prediction_ids": ["pred_stereo_001"],
@@ -395,7 +404,7 @@ def make_accepted_workspace(workspace: Path, *, stereochemical: bool = False) ->
     return _report_ref(workspace)
 
 
-def make_backtrack_workspace(workspace: Path) -> dict[str, str]:
+def make_branch_workspace(workspace: Path) -> dict[str, str]:
     report_ref = bootstrap_v3_workspace(workspace)
     start_v3_node(
         workspace,
@@ -427,15 +436,27 @@ def make_backtrack_workspace(workspace: Path) -> dict[str, str]:
         phase="candidate_generation",
         pathway_ref={"pathway_id": "p_revised", "step_id": "s1"},
         prediction_ids=["pred_mode_001"],
-        backtrack={
+        branch_context={
+            "relation": "new_pathway_branch",
             "from_node": "n001",
-            "to_node": "n000",
+            "anchor_node": "n000",
             "changed_variable": "reaction_center",
             "reason_code": "connectivity_refuted",
             "evidence_refs": [],
         },
     )
     return _report_ref(workspace)
+
+
+def gate_artifact_metadata(source_file: str) -> dict[str, Any]:
+    return {
+        "source_files": [source_file],
+        "source_sha256": "0" * 64,
+        "parser_name": "test_parser",
+        "parser_version": "1.0",
+        "normal_termination": True,
+        "diagnostics": [],
+    }
 
 
 def _append_evidence(workspace: Path, report_ref: dict[str, str], evidence: dict[str, Any] | list[dict[str, Any]]) -> None:

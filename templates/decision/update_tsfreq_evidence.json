@@ -16,6 +16,14 @@
       "node_id": "n002",
       "summary": "TS/Freq parsing found exactly one imaginary frequency and the mode matches the proposed reaction coordinate. The primary evidence path is a validation artifact owned by this TS/Freq node.",
       "path": "${TSFREQ_LOG_PATH}",
+      "source_files": [
+        "${TSFREQ_LOG_PATH}"
+      ],
+      "source_sha256": "${SOURCE_SHA256}",
+      "parser_name": "${TSFREQ_PARSER_NAME}",
+      "parser_version": "${PARSER_VERSION}",
+      "normal_termination": true,
+      "diagnostics": [],
       "quality": {
         "hypothesis_id": "${HYPOTHESIS_ID}",
         "prediction_ids": [

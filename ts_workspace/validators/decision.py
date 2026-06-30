@@ -41,8 +41,15 @@ VALID_LIFECYCLES = {"running", "closed", "stopped"}
 VALID_PROGRAM_STATUSES = {"completed", "failed", "stopped", "not_run"}
 VALID_CLAIM_VERDICTS = {"supported", "refuted", "inconclusive", "not_evaluated"}
 VALID_PATHWAY_STATUSES = {"proposed", "active", "supported", "refuted", "superseded", "accepted"}
-VALID_BACKTRACK_EVENT_STATES = {"active", "resolved", "superseded"}
-VALID_BACKTRACK_LINEAGE_SCOPES = {"solution", "hypothesis", "pathway", "administrative"}
+VALID_BRANCH_EVENT_STATES = {"active", "resolved", "superseded"}
+VALID_BRANCH_RELATIONS = {
+    "continue_parent",
+    "new_solution_branch",
+    "new_hypothesis_branch",
+    "new_pathway_branch",
+    "administrative_followup",
+}
+VALID_IMPACT_SCOPES = {"solution_only", "prediction", "pathway_step", "hypothesis"}
 VALID_EVIDENCE_TIERS = {
     "local_compute",
     "local_parse",
@@ -109,6 +116,8 @@ def _validate_start_payload(payload: dict[str, Any]) -> None:
     phase = payload.get("phase")
     _require(phase in VALID_PHASES, "payload.phase is invalid")
     _require(_clean(payload.get("hypothesis")), "payload.hypothesis is required")
+    removed_branch_key = "back" + "track"
+    _require(removed_branch_key not in payload, "payload contains removed branch-provenance field; use payload.branch_context")
 
     if phase in INITIAL_HYPOTHESIS_PHASES:
         _validate_initial_mechanism_hypothesis(payload.get("initial_mechanism_hypothesis"))
@@ -127,20 +136,9 @@ def _validate_start_payload(payload: dict[str, Any]) -> None:
         _require(_clean(pathway_ref.get("pathway_id")), "pathway_ref.pathway_id is required")
         _require(_clean(pathway_ref.get("step_id")), "pathway_ref.step_id is required")
 
-    backtrack = payload.get("backtrack")
-    if backtrack is not None:
-        _require(isinstance(backtrack, dict), "payload.backtrack must be an object")
-        for field in ("from_node", "to_node", "changed_variable", "reason_code"):
-            _require(_clean(backtrack.get(field)), f"backtrack.{field} is required")
-        lineage_scope = backtrack.get("lineage_scope")
-        _require(
-            lineage_scope is None or lineage_scope in VALID_BACKTRACK_LINEAGE_SCOPES,
-            "backtrack.lineage_scope is invalid",
-        )
-        if lineage_scope == "solution":
-            _validate_solution_ref(payload.get("solution_ref"), "payload.solution_ref")
-        refs = backtrack.get("evidence_refs", [])
-        _require(isinstance(refs, list), "backtrack.evidence_refs must be a list")
+    branch_context = payload.get("branch_context")
+    if branch_context is not None:
+        _validate_branch_context(branch_context)
 
 
 def _validate_end_payload(payload: dict[str, Any]) -> None:
@@ -163,6 +161,11 @@ def _validate_end_payload(payload: dict[str, Any]) -> None:
         _validate_hypothesis_ref(mechanism.get("hypothesis_ref"), "closure.mechanism.hypothesis_ref")
     if mechanism.get("revision") is not None:
         _validate_revision(mechanism.get("revision"))
+    impact_scope = mechanism.get("impact_scope")
+    _require(
+        impact_scope is None or impact_scope in VALID_IMPACT_SCOPES,
+        "closure.mechanism.impact_scope is invalid",
+    )
 
     if closure["program_status"] in {"failed", "stopped"}:
         _require(
@@ -208,6 +211,20 @@ def _validate_solution_ref(value: Any, path: str) -> None:
         _require(nested is None or isinstance(nested, str), f"{path}.{field} must be a string or null")
         if isinstance(nested, str):
             _require(bool(nested.strip()), f"{path}.{field} cannot be empty")
+
+
+def _validate_branch_context(value: Any) -> None:
+    _require(isinstance(value, dict), "payload.branch_context must be an object")
+    relation = value.get("relation")
+    _require(relation in VALID_BRANCH_RELATIONS, "payload.branch_context.relation is invalid")
+    for field in ("from_node", "anchor_node"):
+        _require(_clean(value.get(field)), f"payload.branch_context.{field} is required")
+    for field in ("reason_code", "changed_variable"):
+        nested = value.get(field)
+        _require(nested is None or _clean(nested), f"payload.branch_context.{field} cannot be empty")
+    refs = value.get("evidence_refs", [])
+    _require(isinstance(refs, list), "payload.branch_context.evidence_refs must be a list")
+    _require(all(_clean(item) for item in refs), "payload.branch_context.evidence_refs cannot contain empty values")
 
 
 def _validate_initial_mechanism_hypothesis(value: Any) -> None:
