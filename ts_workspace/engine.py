@@ -118,7 +118,7 @@ def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
     if node["parent_node"]:
         tree.setdefault("edges", []).append({"parent_node": node["parent_node"], "child_node": node_id})
     if node["backtrack"]:
-        tree.setdefault("backtrack_events", []).append(_backtrack_event(node_id, node["backtrack"], decision))
+        tree.setdefault("backtrack_events", []).append(_backtrack_event(node, node["backtrack"], decision))
     tree["current_node"] = node_id
     write_json(root_path / "tree.json", tree)
 
@@ -254,8 +254,9 @@ def _log_decision(root: Path, decision: dict[str, Any], result: dict[str, Any]) 
     )
 
 
-def _backtrack_event(node_id: str, backtrack: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
-    return {
+def _backtrack_event(node: dict[str, Any], backtrack: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
+    node_id = node["node_id"]
+    event = {
         "event_id": "bt_" + sha256_json({"node_id": node_id, "backtrack": backtrack}).split(":", 1)[1][:10],
         "event_state": "resolved",
         "from_node": backtrack["from_node"],
@@ -265,8 +266,13 @@ def _backtrack_event(node_id: str, backtrack: dict[str, Any], decision: dict[str
         "changed_variable": backtrack["changed_variable"],
         "rationale": decision["rationale"],
         "evidence_refs": backtrack.get("evidence_refs", []),
+        "target_hypothesis_ref": node.get("hypothesis_ref"),
+        "target_solution_ref": node.get("solution_ref"),
         "created_by_decision": _decision_id(decision),
     }
+    if backtrack.get("lineage_scope") is not None:
+        event["lineage_scope"] = backtrack["lineage_scope"]
+    return event
 
 
 def _ensure_pathway_for_node(root: Path, node: dict[str, Any]) -> None:

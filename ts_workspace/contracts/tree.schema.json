@@ -70,6 +70,26 @@
           "new_branch_node": {"type": "string", "minLength": 1},
           "reason_code": {"type": "string", "minLength": 1},
           "changed_variable": {"type": "string", "minLength": 1},
+          "lineage_scope": {"enum": ["solution", "hypothesis", "pathway", "administrative"]},
+          "target_hypothesis_ref": {
+            "anyOf": [{"$ref": "mechanism.schema.json#/$defs/hypothesis_ref"}, {"type": "null"}]
+          },
+          "target_solution_ref": {
+            "anyOf": [
+              {
+                "type": "object",
+                "required": ["solution_id"],
+                "properties": {
+                  "solution_id": {"type": "string", "minLength": 1},
+                  "summary": {"type": ["string", "null"]},
+                  "strategy": {"type": ["string", "null"]},
+                  "parent_solution_id": {"type": ["string", "null"]}
+                },
+                "additionalProperties": true
+              },
+              {"type": "null"}
+            ]
+          },
           "rationale": {"type": "string"},
           "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}},
           "created_by_decision": {"type": "string"}

@@ -92,6 +92,12 @@ finalizer promotes `initial_mechanism_hypothesis` into
 search strategies under the same hypothesis. It must not be used as a verdict,
 retry state, or automatic branch selector.
 
+When the agent opens a same-hypothesis replacement solution, the new
+`start_node` decision keeps the same `payload.hypothesis_ref`, supplies a new
+`payload.solution_ref`, and records `payload.backtrack.lineage_scope=solution`.
+The preflight validates references and consistency; it does not decide whether
+the replacement should be made.
+
 ## Closure Revision
 
 ```json

@@ -75,6 +75,27 @@ hypothesis. It does not create a second state machine: closure still uses only
 `program_status` and `claim_verdict`, and failures remain diagnostics or
 closure facts.
 
+For same-hypothesis replacement of a failed search strategy, the agent records
+an explicit backtrack decision:
+
+```json
+{
+  "backtrack": {
+    "from_node": "n002",
+    "to_node": "n000",
+    "changed_variable": "solution_strategy",
+    "reason_code": "route_failed",
+    "lineage_scope": "solution"
+  },
+  "hypothesis_ref": {"hypothesis_id": "hyp_0001", "prediction_ids": ["pred_candidate_001"]},
+  "solution_ref": {"solution_id": "sol_scan_002", "parent_solution_id": "sol_qst2_001"}
+}
+```
+
+The workspace validates this as provenance only. It does not decide that a
+solution is exhausted, that a hypothesis is refuted, or that the search should
+continue.
+
 ## Ledgers
 
 - `mechanism_model.hypotheses[]`: active, supported, refuted, or superseded
@@ -86,4 +107,7 @@ closure facts.
 
 The workspace validator checks required files, node JSON records, initial
 `n000` structure, hypothesis references, optional solution lineage consistency,
-current focus, append-only evidence identity, and forbidden public fields.
+explicit backtrack provenance after branch jumps, current focus, append-only
+evidence identity, and forbidden public fields. A terminal unresolved node with
+no running follow-up is reported as a warning/fact, not as an invalid workspace;
+the agent decides whether to continue, stop, or ask the user.

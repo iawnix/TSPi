@@ -169,9 +169,15 @@ They are not top-level node states.
    evidence references, and payload. Start from `templates/decision/` when a
    reusable shape is needed; do not copy JSON from `tests/`. Every post-`n000`
    mechanism node must include `payload.hypothesis_ref` that points to
-   `mechanism_model.hypotheses[]`. Use optional `payload.solution_ref` only to
+  `mechanism_model.hypotheses[]`. Use optional `payload.solution_ref` only to
    group alternative search strategies under the same hypothesis; it is
    lineage metadata, not a new state, verdict, or retry policy.
+   When a solution branch fails and the agent decides the chemical hypothesis
+   remains viable, open the next branch with the same `payload.hypothesis_ref`,
+   a new `payload.solution_ref`, and explicit `payload.backtrack` provenance
+   with `lineage_scope=solution`. `ts_workspace` records and validates that
+   decision; it must not decide whether to retry, switch solution, switch
+   hypothesis, or stop.
 5. Run `validate_decision` for preflight when useful.
 6. Apply the mutation through `start_node`, `update_workspace`, or `end_node`.
 7. Use `ts_backends`, `ts_remote`, and `mol_comparator` to create artifacts and

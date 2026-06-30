@@ -42,6 +42,7 @@ VALID_PROGRAM_STATUSES = {"completed", "failed", "stopped", "not_run"}
 VALID_CLAIM_VERDICTS = {"supported", "refuted", "inconclusive", "not_evaluated"}
 VALID_PATHWAY_STATUSES = {"proposed", "active", "supported", "refuted", "superseded", "accepted"}
 VALID_BACKTRACK_EVENT_STATES = {"active", "resolved", "superseded"}
+VALID_BACKTRACK_LINEAGE_SCOPES = {"solution", "hypothesis", "pathway", "administrative"}
 VALID_EVIDENCE_TIERS = {
     "local_compute",
     "local_parse",
@@ -131,6 +132,13 @@ def _validate_start_payload(payload: dict[str, Any]) -> None:
         _require(isinstance(backtrack, dict), "payload.backtrack must be an object")
         for field in ("from_node", "to_node", "changed_variable", "reason_code"):
             _require(_clean(backtrack.get(field)), f"backtrack.{field} is required")
+        lineage_scope = backtrack.get("lineage_scope")
+        _require(
+            lineage_scope is None or lineage_scope in VALID_BACKTRACK_LINEAGE_SCOPES,
+            "backtrack.lineage_scope is invalid",
+        )
+        if lineage_scope == "solution":
+            _validate_solution_ref(payload.get("solution_ref"), "payload.solution_ref")
         refs = backtrack.get("evidence_refs", [])
         _require(isinstance(refs, list), "backtrack.evidence_refs must be a list")
 

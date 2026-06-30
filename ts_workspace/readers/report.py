@@ -39,6 +39,7 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
         },
         "hypothesis_context": _build_hypothesis_context(mechanism, evidence, manifest),
         "node_index": nodes,
+        "solution_lineage": _build_solution_lineage(nodes, tree.get("backtrack_events", [])),
         "open_nodes": open_nodes,
         "closed_node_count": len(closed_nodes),
         "evidence_count": len(evidence.get("evidence", [])) if isinstance(evidence, dict) else 0,
@@ -69,6 +70,74 @@ def _read_or_empty(path: Path) -> dict[str, Any]:
         return read_json(path)
     except Exception:  # noqa: BLE001
         return {}
+
+
+def _build_solution_lineage(nodes: list[Any], backtrack_events: list[Any]) -> list[dict[str, Any]]:
+    groups: dict[str, dict[str, Any]] = {}
+    node_by_id = {str(node.get("node_id")): node for node in nodes if isinstance(node, dict) and node.get("node_id")}
+    for node in nodes:
+        if not isinstance(node, dict):
+            continue
+        hypothesis_ref = node.get("hypothesis_ref") if isinstance(node.get("hypothesis_ref"), dict) else {}
+        solution_ref = node.get("solution_ref") if isinstance(node.get("solution_ref"), dict) else {}
+        if not solution_ref:
+            continue
+        hypothesis_id = str(hypothesis_ref.get("hypothesis_id") or "unassigned")
+        group = groups.setdefault(hypothesis_id, {"hypothesis_id": hypothesis_id, "solutions": {}, "backtrack_events": []})
+        solution_id = str(solution_ref.get("solution_id") or "unassigned")
+        solution = group["solutions"].setdefault(
+            solution_id,
+            {
+                "solution_id": solution_id,
+                "solution_ref": solution_ref,
+                "nodes": [],
+                "latest_lifecycle": None,
+                "latest_program_status": None,
+                "latest_claim_verdict": None,
+            },
+        )
+        solution["nodes"].append(node.get("node_id"))
+        solution["latest_lifecycle"] = node.get("lifecycle")
+        solution["latest_program_status"] = node.get("program_status")
+        solution["latest_claim_verdict"] = node.get("claim_verdict")
+
+    for event in backtrack_events:
+        if not isinstance(event, dict):
+            continue
+        target_ref = event.get("target_hypothesis_ref") if isinstance(event.get("target_hypothesis_ref"), dict) else {}
+        if not target_ref:
+            target_node = node_by_id.get(str(event.get("new_branch_node")))
+            target_ref = target_node.get("hypothesis_ref") if isinstance(target_node, dict) and isinstance(target_node.get("hypothesis_ref"), dict) else {}
+        hypothesis_id = str(target_ref.get("hypothesis_id") or "unassigned")
+        if hypothesis_id not in groups:
+            groups[hypothesis_id] = {"hypothesis_id": hypothesis_id, "solutions": {}, "backtrack_events": []}
+        groups[hypothesis_id]["backtrack_events"].append(
+            {
+                "event_id": event.get("event_id"),
+                "lineage_scope": event.get("lineage_scope"),
+                "from_node": event.get("from_node"),
+                "to_node": event.get("to_node"),
+                "new_branch_node": event.get("new_branch_node"),
+                "reason_code": event.get("reason_code"),
+                "changed_variable": event.get("changed_variable"),
+                "target_solution_ref": event.get("target_solution_ref"),
+            }
+        )
+
+    out: list[dict[str, Any]] = []
+    for hypothesis_id in sorted(groups):
+        group = groups[hypothesis_id]
+        out.append(
+            {
+                "hypothesis_id": hypothesis_id,
+                "solutions": [
+                    group["solutions"][solution_id]
+                    for solution_id in sorted(group["solutions"])
+                ],
+                "backtrack_events": group["backtrack_events"],
+            }
+        )
+    return out
 
 
 def _build_hypothesis_context(mechanism: dict[str, Any], evidence: dict[str, Any], manifest: dict[str, Any]) -> dict[str, Any]:

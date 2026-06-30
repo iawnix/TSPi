@@ -40,7 +40,7 @@ def test_validate_workspace_detects_missing_replacement_backtrack(tmp_path: Path
     validation = validate_workspace(workspace)
 
     assert validation["valid"] is False
-    assert _codes(validation) == {"missing_replacement_backtrack_event"}
+    assert _codes(validation) == {"missing_explicit_backtrack_provenance"}
 
 
 def test_validate_workspace_accepts_explicit_replacement_backtrack(tmp_path: Path) -> None:
@@ -80,8 +80,9 @@ def test_validate_workspace_flags_terminal_unresolved_target(tmp_path: Path) -> 
 
     validation = validate_workspace(workspace)
 
-    assert validation["valid"] is False
-    assert _codes(validation) == {"workspace_needs_followup"}
+    assert validation["valid"] is True
+    assert _codes(validation) == {"terminal_unresolved_no_running_node"}
+    assert validation["findings"][0]["severity"] == "warning"
 
 
 def test_pathway_audit_supported_does_not_mark_audited_step_supported(tmp_path: Path) -> None:

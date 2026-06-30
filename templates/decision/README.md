@@ -28,7 +28,7 @@ Typical endpoint-first sequence:
 1. `start_endpoint_n000.json`
 2. `update_endpoint_evidence.json`
 3. `end_endpoint_n000_supported.json`
-4. `start_candidate_generation.json`
+4. `start_candidate_generation.json` for the first `solution_ref`
 5. `update_candidate_evidence.json`
 6. `end_candidate_generation_supported.json`
 7. `start_tsfreq_validation.json`
@@ -50,8 +50,15 @@ If the active hypothesis declares `structured_claim.stereochemical_policy`,
 `connectivity_validation` node and include that evidence ref in the accepted
 audit. Non-stereo hypotheses do not need this optional template.
 
+For a failed computational path that the agent judges to be a solution failure
+rather than a chemical-hypothesis failure, use `start_solution_branch.json`.
+It keeps the same `hypothesis_ref`, assigns a new `solution_ref`, and records
+`payload.backtrack.lineage_scope=solution`.
+
 For a negative pathway audit, use `update_pathway_audit_not_accepted.json` and
 `end_pathway_audit_not_accepted.json`. That closes the current mechanism
-branch only. If a new hypothesis branch is scientifically justified, start it
-with `start_replacement_branch.json` and explicit `payload.backtrack`
-provenance.
+branch only. If the agent decides a same-hypothesis solution branch remains
+scientifically meaningful, start it with `start_solution_branch.json` and
+explicit `payload.backtrack` provenance. If the chemistry itself is being
+changed, create or revise the chemical hypothesis explicitly; do not encode
+that as an automatic retry policy.

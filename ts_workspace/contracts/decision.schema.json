@@ -131,6 +131,7 @@
         "to_node": {"type": "string", "minLength": 1},
         "changed_variable": {"type": "string", "minLength": 1},
         "reason_code": {"type": "string", "minLength": 1},
+        "lineage_scope": {"enum": ["solution", "hypothesis", "pathway", "administrative"]},
         "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}}
       },
       "additionalProperties": true

@@ -20,6 +20,11 @@
         "${PRED_CANDIDATE_ID}"
       ]
     },
+    "solution_ref": {
+      "solution_id": "${SOLUTION_ID}",
+      "strategy": "${SOLUTION_STRATEGY}",
+      "summary": "${SOLUTION_SUMMARY}"
+    },
     "pathway_ref": {
       "pathway_id": "${PATHWAY_ID}",
       "step_id": "${STEP_ID}"

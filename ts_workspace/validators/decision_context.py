@@ -67,6 +67,7 @@ def _validate_start_node_context(root: Path, decision: dict[str, Any]) -> None:
             "payload.backtrack.from_node must match the terminal unresolved "
             f"node being replaced: {previous_id}"
         )
+    _validate_backtrack_lineage_scope(root, payload)
 
 
 def _validate_end_node_context(root: Path, decision: dict[str, Any]) -> None:
@@ -164,6 +165,24 @@ def _validate_hypothesis_ref_exists(root: Path, hypothesis_ref: dict[str, Any]) 
     }
     if hypothesis_id not in ids:
         raise ContractError(f"unknown hypothesis_ref.hypothesis_id: {hypothesis_id}")
+
+
+def _validate_backtrack_lineage_scope(root: Path, payload: dict[str, Any]) -> None:
+    backtrack = payload.get("backtrack")
+    if not isinstance(backtrack, dict) or backtrack.get("lineage_scope") != "solution":
+        return
+    new_ref = payload.get("hypothesis_ref")
+    if not isinstance(new_ref, dict):
+        raise ContractError("solution-scoped backtrack requires payload.hypothesis_ref")
+    if not isinstance(payload.get("solution_ref"), dict):
+        raise ContractError("solution-scoped backtrack requires payload.solution_ref")
+    from_node = _read_node(root, backtrack["from_node"])
+    from_ref = from_node.get("hypothesis_ref")
+    if isinstance(from_ref, dict) and from_ref.get("hypothesis_id") != new_ref.get("hypothesis_id"):
+        raise ContractError(
+            "solution-scoped backtrack must keep the same hypothesis_id; "
+            "use lineage_scope=hypothesis for a chemical-hypothesis replacement"
+        )
 
 
 def _parent_map(root: Path, ordered_node_ids: list[str]) -> dict[str, Any]:

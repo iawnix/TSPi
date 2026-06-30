@@ -20,6 +20,7 @@ from .decision import (
     HYPOTHESIS_REF_PHASES,
     INITIAL_HYPOTHESIS_PHASES,
     VALID_CLAIM_VERDICTS,
+    VALID_BACKTRACK_LINEAGE_SCOPES,
     VALID_LIFECYCLES,
     VALID_PHASES,
     VALID_PROGRAM_STATUSES,
@@ -116,6 +117,7 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
     if isinstance(tree, dict):
         _validate_initial_node_sequence(ordered_node_ids, node_details, hypothesis_ids, findings)
         _validate_backtrack_events(tree, node_ids, findings)
+        _validate_backtrack_lineage(tree, node_details, findings)
         _validate_replacement_backtrack_sequence(tree, ordered_node_ids, node_details, findings)
         _validate_unresolved_terminal_state(
             tree,
@@ -332,6 +334,60 @@ def _validate_backtrack_events(tree: dict[str, Any], node_ids: set[str], finding
                 _finding(findings, "error", "invalid_backtrack_event", f"{field} is required", path)
             elif node_id not in node_ids:
                 _finding(findings, "error", "invalid_backtrack_event_node", f"{field} does not exist: {node_id}", path)
+        lineage_scope = event.get("lineage_scope")
+        if lineage_scope is not None and lineage_scope not in VALID_BACKTRACK_LINEAGE_SCOPES:
+            _finding(findings, "error", "invalid_backtrack_event", "lineage_scope is invalid", path)
+
+
+def _validate_backtrack_lineage(
+    tree: dict[str, Any],
+    node_details: dict[str, dict[str, Any]],
+    findings: list[dict[str, str]],
+) -> None:
+    for index, event in enumerate(_backtrack_events(tree)):
+        path = f"tree.json.backtrack_events[{index}]"
+        new_node = node_details.get(str(event.get("new_branch_node")))
+        from_node = node_details.get(str(event.get("from_node")))
+        if new_node is None:
+            continue
+        if "target_hypothesis_ref" in event and event.get("target_hypothesis_ref") != new_node.get("hypothesis_ref"):
+            _finding(
+                findings,
+                "error",
+                "backtrack_target_hypothesis_mismatch",
+                "backtrack target_hypothesis_ref must match the new branch node hypothesis_ref",
+                path,
+            )
+        if "target_solution_ref" in event and event.get("target_solution_ref") != new_node.get("solution_ref"):
+            _finding(
+                findings,
+                "error",
+                "backtrack_target_solution_mismatch",
+                "backtrack target_solution_ref must match the new branch node solution_ref",
+                path,
+            )
+        if event.get("lineage_scope") != "solution":
+            continue
+        if not isinstance(new_node.get("solution_ref"), dict):
+            _finding(
+                findings,
+                "error",
+                "solution_backtrack_missing_solution_ref",
+                "solution-scoped backtrack requires the new branch node solution_ref",
+                path,
+            )
+        if from_node is None:
+            continue
+        from_ref = from_node.get("hypothesis_ref") if isinstance(from_node.get("hypothesis_ref"), dict) else {}
+        new_ref = new_node.get("hypothesis_ref") if isinstance(new_node.get("hypothesis_ref"), dict) else {}
+        if from_ref and new_ref and from_ref.get("hypothesis_id") != new_ref.get("hypothesis_id"):
+            _finding(
+                findings,
+                "error",
+                "solution_backtrack_hypothesis_mismatch",
+                "solution-scoped backtrack must keep the same hypothesis_id",
+                path,
+            )
 
 
 def _validate_initial_node_sequence(
@@ -384,10 +440,10 @@ def _validate_replacement_backtrack_sequence(
         _finding(
             findings,
             "error",
-            "missing_replacement_backtrack_event",
+            "missing_explicit_backtrack_provenance",
             (
                 f"node {node_id} starts after terminal {verdict} node {previous_id} "
-                "without a canonical backtrack event"
+                "without explicit backtrack provenance"
             ),
             "tree.json.backtrack_events",
         )
@@ -414,11 +470,11 @@ def _validate_unresolved_terminal_state(
     verdict = _claim_verdict(terminal)
     _finding(
         findings,
-        "error",
-        "workspace_needs_followup",
+        "warning",
+        "terminal_unresolved_no_running_node",
         (
             f"terminal node {terminal_id} is {verdict} and the workspace has no "
-            "running node or accepted TS/pathway"
+            "running node or accepted TS/pathway; agent decision is still required"
         ),
         "tree.json.current_node",
     )

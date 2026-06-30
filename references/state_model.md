@@ -54,3 +54,10 @@ claim verdict, branch disposition, or retry classification. A failed Gaussian
 route, wrong-basin TS/Freq result, or exhausted scan remains an execution fact,
 evidence diagnostic, closure fact, or decision rationale; the agent must still
 make an explicit next decision from the evidence.
+
+If the agent decides a failed route is only a solution failure, the next node
+keeps the same `hypothesis_ref`, uses a new `solution_ref`, and records
+`payload.backtrack.lineage_scope=solution`. The workspace may validate that
+the referenced nodes exist and that a solution-scoped backtrack keeps the same
+`hypothesis_id`; it must not infer from node status that a new solution,
+hypothesis replacement, or stop decision is required.

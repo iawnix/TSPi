@@ -1,7 +1,7 @@
 {
   "schema_version": "ts-decision",
   "action": "start_node",
-  "rationale": "Start a replacement solution branch after an unresolved or refuted terminal node.",
+  "rationale": "Start a new solution branch under the same chemical hypothesis after agent review of the failed path.",
   "evidence_refs": [
     "${BACKTRACK_EVIDENCE_REF}"
   ],
@@ -13,7 +13,7 @@
     "node_id": "${NEW_BRANCH_NODE_ID}",
     "parent_node": "${BACKTRACK_TO_NODE}",
     "phase": "candidate_generation",
-    "hypothesis": "Test a new search strategy under the same chemical hypothesis instead of continuing the failed solution branch.",
+    "hypothesis": "Test a different candidate-generation strategy while keeping the same chemical hypothesis.",
     "hypothesis_ref": {
       "hypothesis_id": "${HYPOTHESIS_ID}",
       "prediction_ids": [
@@ -33,7 +33,7 @@
     "backtrack": {
       "from_node": "${BACKTRACK_FROM_NODE}",
       "to_node": "${BACKTRACK_TO_NODE}",
-      "changed_variable": "${BACKTRACK_CHANGED_VARIABLE}",
+      "changed_variable": "solution_strategy",
       "reason_code": "${BACKTRACK_REASON_CODE}",
       "lineage_scope": "solution",
       "evidence_refs": [

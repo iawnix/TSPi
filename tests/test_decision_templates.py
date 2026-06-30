@@ -36,6 +36,7 @@ EXPECTED_TEMPLATE_FILES = {
     "end_pathway_audit_accepted.json",
     "update_pathway_audit_not_accepted.json",
     "end_pathway_audit_not_accepted.json",
+    "start_solution_branch.json",
     "start_replacement_branch.json",
 }
 
@@ -69,6 +70,13 @@ DEFAULT_VALUES = {
     "PRED_CONN_ID": "pred_conn_001",
     "PRED_STEREO_ID": "pred_stereo_001",
     "PRED_PATHWAY_ID": "pred_pathway_001",
+    "SOLUTION_ID": "sol_qst2_001",
+    "SOLUTION_STRATEGY": "qst2_seed",
+    "SOLUTION_SUMMARY": "Initial QST2-like candidate-generation route.",
+    "NEW_SOLUTION_ID": "sol_scan_002",
+    "NEW_SOLUTION_STRATEGY": "relaxed_scan_seed",
+    "NEW_SOLUTION_SUMMARY": "Replacement solution branch from a constrained scan seed.",
+    "PARENT_SOLUTION_ID": "sol_qst2_001",
     "ALTERNATIVE_HYPOTHESIS_SUMMARY": "Stepwise C-N formation.",
     "ALTERNATIVE_CHANGED_VARIABLE": "elementary_step_model",
     "EV_INITIAL_HYPOTHESIS": "ev_hyp_0001",
@@ -96,7 +104,7 @@ DEFAULT_VALUES = {
     "NEW_BRANCH_NODE_ID": "n002",
     "BACKTRACK_FROM_NODE": "n001",
     "BACKTRACK_TO_NODE": "n000",
-    "BACKTRACK_CHANGED_VARIABLE": "reaction_center",
+    "BACKTRACK_CHANGED_VARIABLE": "solution_strategy",
     "BACKTRACK_REASON_CODE": "connectivity_refuted",
 }
 
@@ -179,7 +187,13 @@ def test_replacement_branch_template_requires_explicit_backtrack_context(tmp_pat
     tree = json.loads((workspace / "tree.json").read_text(encoding="utf-8"))
     assert tree["backtrack_events"][-1]["from_node"] == "n001"
     assert tree["backtrack_events"][-1]["to_node"] == "n000"
-    assert tree["backtrack_events"][-1]["changed_variable"] == "reaction_center"
+    assert tree["backtrack_events"][-1]["changed_variable"] == "solution_strategy"
+    assert tree["backtrack_events"][-1]["lineage_scope"] == "solution"
+    assert tree["backtrack_events"][-1]["target_solution_ref"]["solution_id"] == "sol_scan_002"
+    report = report_workspace(workspace)
+    lineage = report["solution_lineage"][0]
+    assert lineage["hypothesis_id"] == "hyp_0001"
+    assert [item["solution_id"] for item in lineage["solutions"]] == ["sol_qst2_001", "sol_scan_002"]
 
 
 def _apply_template(workspace: Path, template_name: str) -> dict[str, Any]:
