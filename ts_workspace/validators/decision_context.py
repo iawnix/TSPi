@@ -8,7 +8,13 @@ from typing import Any
 from ..artifact_policy import node_owner_from_artifact_path, role_matches_phase
 from ..evidence_gates import gate_artifact_metadata_diagnostic
 from ..io import read_json
-from .decision import HYPOTHESIS_REF_PHASES, INITIAL_HYPOTHESIS_PHASES, ContractError, validate_decision
+from .decision import (
+    ANCHORED_BRANCH_RELATIONS,
+    HYPOTHESIS_REF_PHASES,
+    INITIAL_HYPOTHESIS_PHASES,
+    ContractError,
+    validate_decision,
+)
 from .workspace import REQUIRED_FILES
 
 
@@ -162,10 +168,10 @@ def _validate_branch_context(root: Path, payload: dict[str, Any], node_ids: set[
 
     from_node = _read_node(root, str(from_node_id))
     if relation == "continue_parent":
-        parent_node = payload.get("parent_node")
-        if parent_node != from_node_id:
-            raise ContractError("continue_parent branch_context requires parent_node to match from_node")
-    elif relation == "new_solution_branch":
+        _require_parent_matches(payload, from_node_id, "from_node", relation)
+    elif relation in ANCHORED_BRANCH_RELATIONS:
+        _require_parent_matches(payload, anchor_node_id, "anchor_node", relation)
+    if relation == "new_solution_branch":
         _validate_new_solution_branch(from_node, payload)
     elif relation == "new_hypothesis_branch":
         _validate_new_hypothesis_branch(from_node, payload)
@@ -175,6 +181,12 @@ def _validate_branch_context(root: Path, payload: dict[str, Any], node_ids: set[
     elif relation == "administrative_followup":
         if not isinstance(context.get("reason_code"), str) or not context["reason_code"].strip():
             raise ContractError("administrative_followup requires payload.branch_context.reason_code")
+
+
+def _require_parent_matches(payload: dict[str, Any], expected_node: Any, expected_field: str, relation: Any) -> None:
+    parent_node = payload.get("parent_node")
+    if parent_node != expected_node:
+        raise ContractError(f"{relation} branch_context requires parent_node to match {expected_field}")
 
 
 def _validate_new_solution_branch(from_node: dict[str, Any], payload: dict[str, Any]) -> None:

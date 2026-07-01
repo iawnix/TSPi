@@ -177,8 +177,11 @@ They are not top-level node states.
    When a solution branch fails and the agent decides the chemical hypothesis
    remains viable, open the next branch with the same `payload.hypothesis_ref`,
    a new `payload.solution_ref`, and `payload.branch_context.relation`
-   set to `new_solution_branch`. `ts_workspace` records and validates that
-   decision; it must not decide whether to retry, switch solution, switch
+   set to `new_solution_branch`. For `new_solution_branch`,
+   `new_hypothesis_branch`, and `new_pathway_branch`, set `payload.parent_node`
+   to `payload.branch_context.anchor_node`; `payload.branch_context.from_node`
+   records the failed or triggering node. `ts_workspace` records and validates
+   that topology; it must not decide whether to retry, switch solution, switch
    hypothesis, or stop.
 5. Run `validate_decision` for preflight when useful.
 6. Apply the mutation through `start_node`, `update_workspace`, or `end_node`.

@@ -57,7 +57,9 @@ make an explicit next decision from the evidence.
 
 If the agent decides a failed route is only a solution failure, the next node
 keeps the same `hypothesis_ref`, uses a new `solution_ref`, and records
-`payload.branch_context.relation=new_solution_branch`. The workspace may
-validate that the referenced nodes exist and that the branch keeps the same
-`hypothesis_id`; it must not infer from node status that a new solution,
-hypothesis replacement, or stop decision is required.
+`payload.branch_context.relation=new_solution_branch`. The workspace validates
+that referenced nodes exist, that the branch keeps the same `hypothesis_id`,
+and that `payload.parent_node` equals `payload.branch_context.anchor_node`.
+The triggering node remains recorded in `payload.branch_context.from_node`.
+The workspace must not infer from node status that a new solution, hypothesis
+replacement, or stop decision is required.

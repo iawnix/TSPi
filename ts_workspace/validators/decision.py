@@ -49,6 +49,11 @@ VALID_BRANCH_RELATIONS = {
     "new_pathway_branch",
     "administrative_followup",
 }
+ANCHORED_BRANCH_RELATIONS = {
+    "new_solution_branch",
+    "new_hypothesis_branch",
+    "new_pathway_branch",
+}
 VALID_IMPACT_SCOPES = {"solution_only", "prediction", "pathway_step", "hypothesis"}
 VALID_EVIDENCE_TIERS = {
     "local_compute",

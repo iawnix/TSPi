@@ -53,7 +53,9 @@ audit. Non-stereo hypotheses do not need this optional template.
 For a failed computational path that the agent judges to be a solution failure
 rather than a chemical-hypothesis failure, use `start_solution_branch.json`.
 It keeps the same `hypothesis_ref`, assigns a new `solution_ref`, and records
-`payload.branch_context.relation=new_solution_branch`.
+`payload.branch_context.relation=new_solution_branch`. The template mounts the
+new node under `payload.branch_context.anchor_node`; the failed or triggering
+node is recorded separately as `payload.branch_context.from_node`.
 
 For a negative pathway audit, use `update_pathway_audit_not_accepted.json` and
 `end_pathway_audit_not_accepted.json`. That closes the current mechanism

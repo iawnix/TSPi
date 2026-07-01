@@ -17,6 +17,7 @@ from ..evidence_gates import (
 from ..io import read_json
 from ..schema_validation import schema_findings
 from .decision import (
+    ANCHORED_BRANCH_RELATIONS,
     FORBIDDEN_PUBLIC_FIELDS,
     HYPOTHESIS_REF_PHASES,
     INITIAL_HYPOTHESIS_PHASES,
@@ -349,7 +350,15 @@ def _validate_branch_contexts(node_details: dict[str, dict[str, Any]], findings:
         if relation == "continue_parent":
             if node.get("parent_node") != from_node_id:
                 _finding(findings, "error", "invalid_branch_context", "continue_parent requires parent_node to match from_node", source)
-        elif relation == "new_solution_branch":
+        elif relation in ANCHORED_BRANCH_RELATIONS and node.get("parent_node") != anchor_node_id:
+            _finding(
+                findings,
+                "error",
+                "branch_parent_anchor_mismatch",
+                f"{relation} requires parent_node to match branch_context.anchor_node",
+                source,
+            )
+        if relation == "new_solution_branch":
             _validate_solution_branch_context(node, from_node, findings, source)
         elif relation == "new_hypothesis_branch":
             _validate_hypothesis_branch_context(node, from_node, findings, source)
@@ -408,12 +417,14 @@ def _validate_branch_events(tree: dict[str, Any], node_ids: set[str], findings: 
         relation = event.get("relation")
         if relation not in VALID_BRANCH_RELATIONS:
             _finding(findings, "error", "invalid_branch_event", "relation is invalid", path)
-        for field in ("from_node", "anchor_node", "new_node"):
+        for field in ("from_node", "anchor_node", "new_node", "parent_node"):
             node_id = event.get(field)
             if not isinstance(node_id, str) or not node_id:
                 _finding(findings, "error", "invalid_branch_event", f"{field} is required", path)
             elif node_id not in node_ids:
                 _finding(findings, "error", "invalid_branch_event_node", f"{field} does not exist: {node_id}", path)
+        if not isinstance(event.get("is_rebased"), bool):
+            _finding(findings, "error", "invalid_branch_event", "is_rebased is required", path)
 
 
 def _validate_branch_lineage(
@@ -427,6 +438,24 @@ def _validate_branch_lineage(
         from_node = node_details.get(str(event.get("from_node")))
         if new_node is None:
             continue
+        parent_node = new_node.get("parent_node")
+        if event.get("parent_node") != parent_node:
+            _finding(
+                findings,
+                "error",
+                "branch_event_parent_mismatch",
+                "branch event parent_node must match the new node parent_node",
+                path,
+            )
+        expected_rebased = parent_node == event.get("anchor_node") and event.get("from_node") != event.get("anchor_node")
+        if event.get("is_rebased") != expected_rebased:
+            _finding(
+                findings,
+                "error",
+                "branch_event_rebased_mismatch",
+                "branch event is_rebased must match parent/from/anchor topology",
+                path,
+            )
         context = new_node.get("branch_context") if isinstance(new_node.get("branch_context"), dict) else {}
         for field in ("relation", "from_node", "anchor_node", "reason_code", "changed_variable"):
             if field in event or field in context:

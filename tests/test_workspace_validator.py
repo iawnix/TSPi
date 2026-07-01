@@ -81,6 +81,93 @@ def test_validate_workspace_accepts_explicit_solution_branch(tmp_path: Path) -> 
 
     assert validation["valid"] is True
     assert validation["findings"] == []
+    tree = read_json(workspace / "tree.json")
+    assert tree["edges"][-1] == {"parent_node": "n000", "child_node": "n002"}
+    assert tree["branch_events"][-1]["parent_node"] == "n000"
+    assert tree["branch_events"][-1]["is_rebased"] is True
+
+
+def test_new_solution_branch_requires_parent_to_match_anchor(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_v3_workspace(workspace)
+
+    start_node(
+        workspace,
+        _start_decision(
+            report_ref,
+            node_id="n001",
+            phase="candidate_generation",
+            solution_ref={"solution_id": "sol_qst2_001"},
+        ),
+    )
+    end_node(workspace, _end_decision(report_ref, "n001", "refuted"))
+    decision = _start_decision(
+        report_ref,
+        node_id="n002",
+        parent_node="n001",
+        phase="candidate_generation",
+        solution_ref={"solution_id": "sol_scan_002", "parent_solution_id": "sol_qst2_001"},
+        branch_context={
+            "relation": "new_solution_branch",
+            "from_node": "n001",
+            "anchor_node": "n000",
+            "changed_variable": "solution_strategy",
+            "reason_code": "route_failed",
+            "evidence_refs": [],
+        },
+    )
+
+    with pytest.raises(ContractError, match="new_solution_branch branch_context requires parent_node to match anchor_node"):
+        validate_decision_for_workspace(workspace, decision)
+    with pytest.raises(ContractError, match="new_solution_branch branch_context requires parent_node to match anchor_node"):
+        start_node(workspace, decision)
+
+
+def test_validate_workspace_rejects_solution_branch_not_mounted_on_anchor(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_v3_workspace(workspace)
+
+    start_node(
+        workspace,
+        _start_decision(
+            report_ref,
+            node_id="n001",
+            phase="candidate_generation",
+            solution_ref={"solution_id": "sol_qst2_001"},
+        ),
+    )
+    end_node(workspace, _end_decision(report_ref, "n001", "refuted"))
+    start_node(
+        workspace,
+        _start_decision(
+            report_ref,
+            node_id="n002",
+            phase="candidate_generation",
+            solution_ref={"solution_id": "sol_scan_002", "parent_solution_id": "sol_qst2_001"},
+            branch_context={
+                "relation": "new_solution_branch",
+                "from_node": "n001",
+                "anchor_node": "n000",
+                "changed_variable": "solution_strategy",
+                "reason_code": "route_failed",
+                "evidence_refs": [],
+            },
+        ),
+    )
+    node = read_json(workspace / "nodes" / "n002" / "node.json")
+    node["parent_node"] = "n001"
+    write_json(workspace / "nodes" / "n002" / "node.json", node)
+    tree = read_json(workspace / "tree.json")
+    tree["nodes"][2]["parent_node"] = "n001"
+    tree["edges"][-1] = {"parent_node": "n001", "child_node": "n002"}
+    tree["branch_events"][-1]["parent_node"] = "n001"
+    tree["branch_events"][-1]["is_rebased"] = False
+    write_json(workspace / "tree.json", tree)
+
+    validation = validate_workspace(workspace)
+
+    assert validation["valid"] is False
+    assert "branch_parent_anchor_mismatch" in _codes(validation)
 
 
 def test_non_linear_branch_from_older_node_ignores_recent_terminal_node(tmp_path: Path) -> None:

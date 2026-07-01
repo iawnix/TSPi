@@ -193,8 +193,11 @@ def test_solution_branch_template_requires_explicit_branch_context(tmp_path: Pat
     assert tree["branch_events"][-1]["relation"] == "new_solution_branch"
     assert tree["branch_events"][-1]["from_node"] == "n001"
     assert tree["branch_events"][-1]["anchor_node"] == "n000"
+    assert tree["branch_events"][-1]["parent_node"] == "n000"
+    assert tree["branch_events"][-1]["is_rebased"] is True
     assert tree["branch_events"][-1]["changed_variable"] == "solution_strategy"
     assert tree["branch_events"][-1]["target_solution_ref"]["solution_id"] == "sol_scan_002"
+    assert tree["edges"][-1] == {"parent_node": "n000", "child_node": "n002"}
     report = report_workspace(workspace)
     lineage = report["solution_lineage"][0]
     assert lineage["hypothesis_id"] == "hyp_0001"

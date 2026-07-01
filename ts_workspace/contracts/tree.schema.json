@@ -64,7 +64,7 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["event_id", "event_state", "relation", "from_node", "anchor_node", "new_node"],
+        "required": ["event_id", "event_state", "relation", "from_node", "anchor_node", "new_node", "parent_node", "is_rebased"],
         "properties": {
           "event_id": {"type": "string", "minLength": 1},
           "event_state": {"enum": ["active", "resolved", "superseded"]},
@@ -74,6 +74,8 @@
           "from_node": {"type": "string", "minLength": 1},
           "anchor_node": {"type": "string", "minLength": 1},
           "new_node": {"type": "string", "minLength": 1},
+          "parent_node": {"type": "string", "minLength": 1},
+          "is_rebased": {"type": "boolean"},
           "reason_code": {"type": "string", "minLength": 1},
           "changed_variable": {"type": "string", "minLength": 1},
           "target_hypothesis_ref": {

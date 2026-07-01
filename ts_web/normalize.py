@@ -801,6 +801,8 @@ def _normalize_branch_event(event: dict[str, Any]) -> dict[str, Any]:
         "from_node": event.get("from_node"),
         "anchor_node": event.get("anchor_node"),
         "new_node": event.get("new_node"),
+        "parent_node": event.get("parent_node"),
+        "is_rebased": event.get("is_rebased"),
         "changed_variable": event.get("changed_variable"),
         "reason_code": event.get("reason_code"),
         "evidence_refs": event.get("evidence_refs", []),

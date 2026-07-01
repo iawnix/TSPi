@@ -257,13 +257,18 @@ def _log_decision(root: Path, decision: dict[str, Any], result: dict[str, Any]) 
 
 def _branch_event(node: dict[str, Any], branch_context: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
     node_id = node["node_id"]
+    parent_node = node.get("parent_node")
+    from_node = branch_context["from_node"]
+    anchor_node = branch_context["anchor_node"]
     event = {
         "event_id": "br_" + sha256_json({"node_id": node_id, "branch_context": branch_context}).split(":", 1)[1][:10],
         "event_state": "resolved",
         "relation": branch_context["relation"],
-        "from_node": branch_context["from_node"],
-        "anchor_node": branch_context["anchor_node"],
+        "from_node": from_node,
+        "anchor_node": anchor_node,
         "new_node": node_id,
+        "parent_node": parent_node,
+        "is_rebased": parent_node == anchor_node and from_node != anchor_node,
         "rationale": decision["rationale"],
         "evidence_refs": branch_context.get("evidence_refs", []),
         "target_hypothesis_ref": node.get("hypothesis_ref"),

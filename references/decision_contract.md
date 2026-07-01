@@ -95,8 +95,11 @@ retry state, or automatic branch selector.
 When the agent opens a same-hypothesis replacement solution, the new
 `start_node` decision keeps the same `payload.hypothesis_ref`, supplies a new
 `payload.solution_ref`, and records
-`payload.branch_context.relation=new_solution_branch`. The preflight validates
-references and consistency; it does not decide whether the replacement should
+`payload.branch_context.relation=new_solution_branch`. The new node's
+`payload.parent_node` must equal `payload.branch_context.anchor_node`; the
+failed or triggering node is recorded separately in
+`payload.branch_context.from_node`. The preflight validates references,
+topology, and consistency; it does not decide whether the replacement should
 be made.
 
 ## Closure Revision

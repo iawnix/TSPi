@@ -92,9 +92,12 @@ an explicit branch-context decision:
 }
 ```
 
-The workspace validates this as provenance only. It does not decide that a
-solution is exhausted, that a hypothesis is refuted, or that the search should
-continue.
+For `new_solution_branch`, `new_hypothesis_branch`, and `new_pathway_branch`,
+the new node's `parent_node` must equal `branch_context.anchor_node`. The
+`from_node` records the failed or triggering node; it is not the structural
+parent unless it is also the anchor. The workspace validates this topology,
+but it does not decide that a solution is exhausted, that a hypothesis is
+refuted, or that the search should continue.
 
 ## Workspace State Files
 
