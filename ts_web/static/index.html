@@ -1942,11 +1942,11 @@ function buildNode(n, p, lineage) {
 }
 
 function buildEdge(e, s, t, lineage) {
-  const back = e.kind && e.kind.startsWith("branch");
+  const back = e.kind === "branch_anchor";
 
   // Endpoint dots sit a small gap OUTSIDE the source/target nodes, so the curve
   // visibly connects two free-floating circles rather than stabbing the cards.
-  // Branch edges exit the source's LEFT side and enter the target's RIGHT side.
+  // Anchor edges point back to the branch anchor; lineage/generated edges flow forward.
   const pad = 5;
   let x1, y1, x2, y2;
   if (back) {

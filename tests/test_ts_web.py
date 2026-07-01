@@ -82,6 +82,13 @@ def test_static_ui_uses_outline_status_chips_and_explains_branch_symbol() -> Non
     assert "branched from" in html
 
 
+def test_static_ui_only_anchor_edges_render_as_back_edges() -> None:
+    html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
+
+    assert 'const back = e.kind === "branch_anchor";' in html
+    assert 'e.kind.startsWith("branch")' not in html
+
+
 def test_static_ui_refresh_without_workspace_renders_empty_state() -> None:
     html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
 
@@ -128,6 +135,17 @@ def test_branch_edges_and_events_dedupe_when_target_is_replacement(tmp_path: Pat
     assert nodes["n002"]["branch_anchor_event_ids"] == []
     assert nodes["n002"]["generated_from_branch_event_ids"] == [event_id]
     assert nodes["n002"]["branch_badge"]["role"] == "generated_from_branch"
+
+
+def test_continue_parent_branch_events_do_not_duplicate_lineage_edges(tmp_path: Path) -> None:
+    workspace = tmp_path / "accepted"
+    make_accepted_workspace(workspace)
+    graph = explorer_graph_payload_from_view(normalize_workspace(workspace))
+
+    lineage_edges = [edge for edge in graph["edges"] if edge["kind"] == "branch"]
+    assert len(lineage_edges) == len(graph["nodes"]) - 1
+    assert not [edge for edge in graph["edges"] if edge["kind"] == "branch_generated"]
+    assert not [edge for edge in graph["edges"] if edge["kind"] == "branch_anchor"]
 
 
 def test_register_workspace_deduplicates_and_rejects_source_pollution(tmp_path: Path) -> None:
@@ -203,7 +221,7 @@ def test_web_server_accepts_existing_registry_row_shape(tmp_path: Path) -> None:
     state = tmp_path / "web-state"
     state.mkdir()
     (state / "workspaces.json").write_text(
-        json.dumps({"workspaces": [{"id": "single-step", "name": "single", "source": str(source)}]}),
+        json.dumps({"workspaces": [{}, {"id": "single-step", "name": "single", "source": str(source)}]}),
         encoding="utf-8",
     )
     server = create_server("127.0.0.1", 0, state)
@@ -212,7 +230,9 @@ def test_web_server_accepts_existing_registry_row_shape(tmp_path: Path) -> None:
     try:
         host, port = server.server_address
         workspaces = _get_json(host, port, "/api/workspaces")
+        assert len(workspaces["workspaces"]) == 1
         assert workspaces["workspaces"][0]["id"] == "single-step"
+        assert workspaces["default_workspace"] == "single-step"
         job = _get_json(host, port, "/api/workspace/single-step/job")
         assert job["graph"]["nodes"][0]["claim_verdict"] == "supported"
     finally:

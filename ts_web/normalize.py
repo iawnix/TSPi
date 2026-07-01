@@ -351,36 +351,66 @@ def _explorer_node(row: dict[str, Any], branch_events: list[Any]) -> dict[str, A
 
 
 def _explorer_edges(nodes: list[dict[str, Any]], tree_edges: list[Any], branch_events: list[Any]) -> list[dict[str, Any]]:
-    node_ids = {node.get("id") for node in nodes}
+    node_ids = {str(node.get("id")) for node in nodes if node.get("id")}
+    parent_by_id = {
+        str(node.get("id")): str(node.get("parent_id"))
+        for node in nodes
+        if node.get("id") and node.get("parent_id")
+    }
     edges: list[dict[str, Any]] = []
     seen: set[tuple[str, str, str]] = set()
+    lineage_pairs: set[tuple[str, str]] = set()
 
-    def add(source: Any, target: Any, kind: str, **extra: Any) -> None:
-        if not source or not target or source not in node_ids or target not in node_ids:
-            return
-        key = (str(source), str(target), kind)
+    def add(source: Any, target: Any, kind: str, **extra: Any) -> bool:
+        if not source or not target:
+            return False
+        source_id = str(source)
+        target_id = str(target)
+        if source_id not in node_ids or target_id not in node_ids or source_id == target_id:
+            return False
+        key = (source_id, target_id, kind)
         if key in seen:
-            return
+            return False
         seen.add(key)
-        edges.append({"source": source, "target": target, "kind": kind, **_edge_display(kind), **extra})
+        if kind == "branch":
+            lineage_pairs.add((source_id, target_id))
+        edges.append({"source": source_id, "target": target_id, "kind": kind, **_edge_display(kind), **extra})
+        return True
 
     for node in nodes:
         add(node.get("parent_id"), node.get("id"), "branch")
     for edge in tree_edges:
         if not isinstance(edge, dict):
             continue
-        add(edge.get("source") or edge.get("parent"), edge.get("target") or edge.get("child"), edge.get("kind") or "branch")
+        add(
+            edge.get("source") or edge.get("parent") or edge.get("parent_node"),
+            edge.get("target") or edge.get("child") or edge.get("child_node"),
+            edge.get("kind") or "branch",
+        )
     for event in branch_events:
         if not isinstance(event, dict):
             continue
+        from_node = event.get("from_node")
+        anchor_node = event.get("anchor_node")
+        new_node = event.get("new_node")
         extra = {
             "event_id": event.get("event_id"),
             "event_state": event.get("event_state"),
             "reason": event.get("reason_code"),
         }
-        if event.get("from_node") != event.get("anchor_node") and event.get("anchor_node") != event.get("new_node"):
-            add(event.get("from_node"), event.get("anchor_node"), "branch_anchor", **extra)
-        add(event.get("from_node"), event.get("new_node"), "branch_generated", **extra)
+        parent_id = parent_by_id.get(str(new_node)) if new_node else None
+        generated_pair = (str(from_node), str(new_node)) if from_node and new_node else None
+        if generated_pair and generated_pair not in lineage_pairs:
+            add(from_node, new_node, "branch_generated", **extra)
+        if (
+            from_node
+            and anchor_node
+            and new_node
+            and from_node != anchor_node
+            and anchor_node != new_node
+            and from_node != parent_id
+        ):
+            add(from_node, anchor_node, "branch_anchor", **extra)
     return edges
 
 

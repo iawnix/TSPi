@@ -30,14 +30,10 @@ def register_workspace(source_root: str | Path, state_dir: str | Path, label: st
         "registered_at": now_iso(),
     }
     rows = registry.setdefault("workspaces", [])
-    rows[:] = [
-        item
-        for item in rows
-        if item.get("workspace_id") != row["workspace_id"]
-        and item.get("id") != row["workspace_id"]
-        and item.get("source_root") != row["source_root"]
-        and item.get("source") != row["source_root"]
-    ]
+    if not isinstance(rows, list):
+        rows = []
+        registry["workspaces"] = rows
+    rows[:] = [item for item in rows if _valid_workspace_row(item) and not _same_workspace_row(item, row)]
     rows.append(row)
     write_json(registry_path, registry)
     return row
@@ -62,7 +58,9 @@ def list_workspaces(state_dir: str | Path) -> list[dict[str, str]]:
     registry_path = state / "workspaces.json"
     registry = read_json(registry_path) if registry_path.exists() else {"workspaces": []}
     rows = registry.get("workspaces", [])
-    return rows if isinstance(rows, list) else []
+    if not isinstance(rows, list):
+        return []
+    return [row for row in rows if _valid_workspace_row(row)]
 
 
 def find_workspace(state_dir: str | Path, workspace_id: str) -> dict[str, str] | None:
@@ -75,3 +73,20 @@ def find_workspace(state_dir: str | Path, workspace_id: str) -> dict[str, str] |
 def workspace_id_for(source_root: str | Path) -> str:
     source = str(Path(source_root).resolve()).encode("utf-8")
     return "ws_" + hashlib.sha256(source).hexdigest()[:12]
+
+
+def _valid_workspace_row(row: object) -> bool:
+    if not isinstance(row, dict):
+        return False
+    workspace_id = row.get("workspace_id") or row.get("id")
+    source_root = row.get("source_root") or row.get("source")
+    return bool(workspace_id and source_root)
+
+
+def _same_workspace_row(existing: dict[str, str], new: dict[str, str]) -> bool:
+    return (
+        existing.get("workspace_id") == new["workspace_id"]
+        or existing.get("id") == new["workspace_id"]
+        or existing.get("source_root") == new["source_root"]
+        or existing.get("source") == new["source_root"]
+    )
