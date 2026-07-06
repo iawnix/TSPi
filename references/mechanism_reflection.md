@@ -22,6 +22,16 @@ The initial hypothesis is derived from:
 - endpoint bond changes;
 - known chemistry used as an explicitly uncertain assumption.
 
+The hypothesis must also declare what local geometry and electronic structure
+would be consistent with the proposed elementary step. Endpoint bond changes
+and target distances are not enough. For the reaction center, record expected
+short contacts that are allowed, short contacts that would be chemically
+unwanted, key angles or coordination motifs, and the electronic diagnostics
+that are meaningful for the model, such as heavy-atom charges, spin density,
+orbital occupation, radical character, or excited-state population. If a
+diagnostic is method- or backend-dependent, mark it as a sanity check rather
+than definitive proof.
+
 Minimum fields:
 
 ```json
@@ -66,6 +76,12 @@ Minimum fields:
       "phase": "tsfreq_validation",
       "expectation": "The imaginary mode involves C1-N2 formation.",
       "required_evidence_roles": ["tsfreq_gate", "mode_assignment"]
+    },
+    {
+      "prediction_id": "pred_mechanism_consistency_001",
+      "phase": "candidate_generation",
+      "expectation": "Candidate and TS/Freq summaries include local-geometry and available electronic-structure consistency checks for the declared reaction-center motif.",
+      "required_evidence_roles": ["candidate_geometry", "mode_assignment"]
     }
   ],
   "required_evidence": [
@@ -85,6 +101,30 @@ Minimum fields:
   "evidence_refs": ["ev_hyp_0001"]
 }
 ```
+
+## Geometry And Electronic Reflection
+
+Every candidate-generation and TS/Freq reflection must explicitly answer two
+questions before a candidate is promoted, a TS/Freq node is closed as supported,
+or IRC is started:
+
+- Does the current local geometry still match the declared reaction-center
+  motif? Check more than target distances: nearest neighbors, unintended short
+  contacts, valence or coordination changes, key angles, planarity or folding,
+  spectator-region drift, and whether the geometry has fallen into a different
+  local motif.
+- Does the available electronic structure contradict the mechanism? Use
+  diagnostics appropriate to the hypothesis, such as Mulliken/NPA/CM5 charges,
+  spin density, natural orbital occupation, TD-state character, or charge
+  transfer. Treat these as method-dependent sanity checks unless the hypothesis
+  makes them decisive.
+
+If either review contradicts the declared hypothesis, the node may still record
+useful artifacts, but it must not label the structure as a chemically plausible
+seed, must not close TS/Freq as supported, and must not start IRC from that
+structure. A single imaginary frequency and a visually plausible distance
+change are necessary evidence only after this mechanism-consistency review does
+not refute the branch.
 
 Only include `stereochemical_policy` and `stereochemical_connectivity_gate`
 when the reaction question depends on stereoisomer identity. Once declared,

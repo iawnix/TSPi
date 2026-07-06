@@ -19,12 +19,17 @@ The candidate-generation rationale should state which parts of the hypothesis
 drive the strategy:
 
 - reaction-center forming and breaking bonds;
+- required local geometry: allowed contacts, forbidden short contacts, key
+  angles, valence or coordination motifs, and spectator-region constraints;
 - transferred atoms such as H/proton candidates;
 - concerted vs stepwise elementary-step model;
 - charge and multiplicity;
 - ground-state, open-shell, spin-crossing, or excited-state assumptions;
 - whether PT, ET, HAT, PCET, radical character, or spin-density changes are
   expected or only possible.
+- electronic diagnostics that should be checked when available, such as
+  reaction-center charges, spin density, orbital occupation, TD-state character,
+  or charge-transfer indicators.
 
 Reactant/product endpoints define the target connectivity basins for later
 validation. They do not by themselves determine the TS-search method. Do not
@@ -46,6 +51,25 @@ Common strategy layers:
   compatibility justify that strategy;
 - diabatic or crossing-point candidates only when the hypothesis justifies
   non-adiabatic or spin-surface exploration.
+
+Candidate ranking must include a mechanism-consistency review. A candidate
+that only satisfies target bond distances is not automatically chemically
+plausible. Before setting `quality.verdict_against_prediction=supported` or
+selecting a structure for TS/Freq, inspect and record:
+
+- local geometry consistency: nearest neighbors, unintended short contacts,
+  key angles, valence or coordination changes, folding, and spectator drift;
+- electronic-structure consistency when available: charges, spin populations,
+  natural orbital or occupation diagnostics, TD-state character, or other
+  hypothesis-specific electronic indicators;
+- explicit refutation reasons when the structure instead matches a different
+  motif, such as a folded three-membered local motif, unwanted proton transfer,
+  radical localization, wrong spin state, or a spectator group becoming part of
+  the reaction center.
+
+If local geometry or available electronic diagnostics contradict the declared
+mechanism, the structure may be retained as a rejected artifact, but it should
+not be reported as a chemically plausible TS/Freq seed.
 
 A candidate is not a TS proof. Register candidates as evidence with
 `quality.hypothesis_id`, then open a `tsfreq_validation` node for Gaussian or

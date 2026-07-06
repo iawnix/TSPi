@@ -31,7 +31,11 @@
         ],
         "verdict_against_prediction": "supported",
         "imaginary_frequency_count": 1,
-        "mode_verdict": "mode_matches_reaction_center"
+        "mode_verdict": "mode_matches_reaction_center",
+        "local_geometry_consistency": "${LOCAL_GEOMETRY_CONSISTENCY_VERDICT}",
+        "electronic_structure_consistency": "${ELECTRONIC_STRUCTURE_CONSISTENCY_VERDICT}",
+        "mechanism_consistency_review": "${MECHANISM_CONSISTENCY_REVIEW_PATH}",
+        "connectivity_claim_allowed_without_irc": false
       },
       "facts": {
         "method": "wB97x",

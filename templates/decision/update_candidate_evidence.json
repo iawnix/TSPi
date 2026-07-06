@@ -21,7 +21,10 @@
         "prediction_ids": [
           "${PRED_CANDIDATE_ID}"
         ],
-        "verdict_against_prediction": "supported"
+        "verdict_against_prediction": "supported",
+        "local_geometry_consistency": "${LOCAL_GEOMETRY_CONSISTENCY_VERDICT}",
+        "electronic_structure_consistency": "${ELECTRONIC_STRUCTURE_CONSISTENCY_VERDICT}",
+        "mechanism_consistency_review": "${MECHANISM_CONSISTENCY_REVIEW_PATH}"
       }
     }
   }
