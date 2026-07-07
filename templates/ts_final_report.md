@@ -155,6 +155,8 @@ Complete this section only when the accepted-audit gate is satisfied.
 | Connectivity gate | `connectivity_gate` | yes/no | {{evidence_id}} |
 | Strict IRC gate | `strict_irc_complete` | yes/no | {{forward/reverse normal termination status}} |
 | Stereochemical gate | `stereochemical_connectivity_gate` if declared | yes/no/not required | {{evidence_id and verdict}} |
+| Endpoint/intermediate identity gate | `endpoint_identity_gate` / `intermediate_identity_gate` if declared | yes/no/not required | {{evidence_id and boundary}} |
+| Electronic/state character gate | `electronic_structure_gate` / `state_character_gate` if declared | yes/no/not required | {{evidence_id and diagnostics}} |
 | Same hypothesis ID | `{{hypothesis_id}}` | yes/no | {{notes}} |
 | Accepted artifact | `accepted/{{accepted_id}}.json` | yes/no | {{notes}} |
 
@@ -173,6 +175,7 @@ Include accepted artifact path and evidence refs.}}
 | Whole R-to-P accepted | yes/no/inconclusive |
 | Audit outcome | `{{accepted | pathway_not_accepted | inconclusive}}` |
 | Pathway evidence | `{{evidence_refs}}` |
+| Shared-basin consistency | `shared_basin_consistency_gate` if declared | yes/no/not required |
 
 Pathway conclusion:
 

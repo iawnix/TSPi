@@ -16,6 +16,16 @@ Use explicit evidence:
 Connectivity evidence should be registered separately from TS/Freq evidence.
 Accepted TS audit requires both layers.
 
+IRC endpoint assignment proves basin connectivity under the chosen method and
+settings. It does not by itself prove an endpoint's electronic identity,
+intermediate identity, radical/open-shell character, excited-state character,
+oxidation state, zwitterionic character, or a shared intermediate basin between
+two elementary steps. If the hypothesis declares those mechanism claims, record
+separate `endpoint_identity_gate`, `intermediate_identity_gate`,
+`electronic_structure_gate`, `state_character_gate`, or
+`shared_basin_consistency_gate` evidence before accepted/pathway audit language
+is allowed.
+
 If a hypothesis has stereochemical requirements, declare them in
 `structured_claim.stereochemical_policy`,
 `structured_claim.stereochemical_requirements`, or by listing

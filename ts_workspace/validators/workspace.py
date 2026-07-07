@@ -11,8 +11,11 @@ from ..evidence_gates import (
     accepted_gate_evidence,
     gate_artifact_metadata_diagnostic,
     hypothesis_requires_stereochemical_gate,
+    mechanism_reflection_gate_evidence,
+    mechanism_reflection_required_roles,
     stereochemical_gate_diagnostic,
     strict_connectivity_diagnostic,
+    validate_mechanism_reflection_gate,
 )
 from ..io import read_json
 from ..schema_validation import schema_findings
@@ -168,6 +171,12 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
         root_path,
         _as_dict(loaded.get("manifest.json")),
         _as_dict(loaded.get("mechanism_model.json")),
+        evidence_by_id,
+        findings,
+    )
+    _validate_pathway_audit_mechanism_gates(
+        _as_dict(loaded.get("mechanism_model.json")),
+        node_details,
         evidence_by_id,
         findings,
     )
@@ -640,6 +649,29 @@ def _validate_accepted_ts_refs(
             stereo_diagnostic = stereochemical_gate_diagnostic(gate_evidence[STEREOCHEMICAL_GATE_ROLE])
             if stereo_diagnostic:
                 _finding(findings, "error", "invalid_accepted_ts_stereochemistry", stereo_diagnostic, ref)
+        mechanism_roles = mechanism_reflection_required_roles(hypothesis, include_shared_basin=False)
+        try:
+            mechanism_gate_evidence = mechanism_reflection_gate_evidence(
+                list(evidence_by_id.values()),
+                evidence_refs,
+                mechanism_roles,
+            )
+        except ValueError as exc:
+            _finding(findings, "error", "invalid_accepted_ts_mechanism_reflection_gates", str(exc), ref)
+            continue
+        if mechanism_roles and hypothesis_id and mechanism_gate_evidence.get("__hypothesis_id") != hypothesis_id:
+            _finding(
+                findings,
+                "error",
+                "invalid_accepted_ts_mechanism_reflection_hypothesis",
+                "accepted artifact mechanism reflection evidence must match artifact.hypothesis_ref",
+                ref,
+            )
+        for role in sorted(mechanism_roles):
+            try:
+                validate_mechanism_reflection_gate(mechanism_gate_evidence[role], role)
+            except ValueError as exc:
+                _finding(findings, "error", "invalid_accepted_ts_mechanism_reflection_gate", str(exc), ref)
 
 
 def _artifact_hypothesis_id(artifact: dict[str, Any]) -> str | None:
@@ -657,6 +689,83 @@ def _mechanism_hypothesis_by_id(model: dict[str, Any], hypothesis_id: str | None
         if isinstance(item, dict) and item.get("hypothesis_id") == hypothesis_id:
             return item
     return None
+
+
+def _validate_pathway_audit_mechanism_gates(
+    mechanism_model: dict[str, Any],
+    node_details: dict[str, dict[str, Any]],
+    evidence_by_id: dict[str, dict[str, Any]],
+    findings: list[dict[str, str]],
+) -> None:
+    evidence_records = list(evidence_by_id.values())
+    for node_id, node in node_details.items():
+        if node.get("phase") != "pathway_audit":
+            continue
+        closure = node.get("closure") if isinstance(node.get("closure"), dict) else {}
+        if closure.get("program_status") != "completed" or closure.get("claim_verdict") != "supported":
+            continue
+        evidence_refs = sorted(
+            set(
+                _as_list(node.get("evidence_refs"))
+                + _as_list(closure.get("program", {}).get("evidence_refs") if isinstance(closure.get("program"), dict) else [])
+                + _as_list(closure.get("mechanism", {}).get("evidence_refs") if isinstance(closure.get("mechanism"), dict) else [])
+            )
+        )
+        if not _pathway_audit_accepts_pathway(evidence_records, evidence_refs, closure):
+            continue
+        hypothesis_id = _node_hypothesis_id(node)
+        hypothesis = _mechanism_hypothesis_by_id(mechanism_model, hypothesis_id)
+        roles = mechanism_reflection_required_roles(hypothesis, include_shared_basin=True)
+        source = f"nodes/{node_id}/node.json"
+        try:
+            gate_evidence = mechanism_reflection_gate_evidence(evidence_records, evidence_refs, roles)
+        except ValueError as exc:
+            _finding(findings, "error", "invalid_pathway_audit_mechanism_reflection_gates", str(exc), source)
+            continue
+        if roles and hypothesis_id and gate_evidence.get("__hypothesis_id") != hypothesis_id:
+            _finding(
+                findings,
+                "error",
+                "invalid_pathway_audit_mechanism_reflection_hypothesis",
+                "pathway audit mechanism reflection evidence must match node.hypothesis_ref",
+                source,
+            )
+        for role in sorted(roles):
+            try:
+                validate_mechanism_reflection_gate(gate_evidence[role], role)
+            except ValueError as exc:
+                _finding(findings, "error", "invalid_pathway_audit_mechanism_reflection_gate", str(exc), source)
+
+
+def _node_hypothesis_id(node: dict[str, Any]) -> str | None:
+    ref = node.get("hypothesis_ref")
+    if not isinstance(ref, dict):
+        return None
+    hypothesis_id = ref.get("hypothesis_id")
+    return str(hypothesis_id) if hypothesis_id else None
+
+
+def _pathway_audit_accepts_pathway(
+    evidence_records: list[dict[str, Any]],
+    evidence_refs: list[str],
+    closure: dict[str, Any],
+) -> bool:
+    allowed_refs = set(evidence_refs)
+    for entry in evidence_records:
+        if entry.get("evidence_id") not in allowed_refs or entry.get("role") != "pathway_audit_summary":
+            continue
+        quality = entry.get("quality") if isinstance(entry.get("quality"), dict) else {}
+        facts = entry.get("facts") if isinstance(entry.get("facts"), dict) else {}
+        if (
+            quality.get("strict_pathway_supported") is True
+            or quality.get("strict_pathway_decision") == "accepted"
+            or facts.get("audit_outcome") == "accepted"
+            or facts.get("whole_R_to_P_pathway_accepted") is True
+        ):
+            return True
+    mechanism = closure.get("mechanism") if isinstance(closure.get("mechanism"), dict) else {}
+    facts = mechanism.get("facts") if isinstance(mechanism.get("facts"), dict) else {}
+    return facts.get("audit_outcome") == "accepted" or facts.get("whole_R_to_P_pathway_accepted") is True
 
 
 def _validate_evidence_artifact_boundaries(

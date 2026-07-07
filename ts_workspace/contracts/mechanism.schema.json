@@ -33,6 +33,10 @@
         "summary": {"type": "string", "minLength": 1},
         "derived_from": {"type": "object"},
         "structured_claim": {"$ref": "#/$defs/structured_claim"},
+        "mechanism_claims": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/mechanism_claim"}
+        },
         "testable_predictions": {
           "type": "array",
           "items": {"$ref": "#/$defs/testable_prediction"}
@@ -90,6 +94,34 @@
         "phase": {"type": "string", "minLength": 1},
         "expectation": {"type": "string", "minLength": 1},
         "required_evidence_roles": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": true
+    },
+    "mechanism_claim": {
+      "type": "object",
+      "required": ["claim_id", "claim_type", "summary", "geometry_reflection_plan", "electronic_structure_reflection_plan"],
+      "properties": {
+        "claim_id": {"type": "string", "minLength": 1},
+        "claim_type": {"type": "string", "minLength": 1},
+        "subject": {"type": "string"},
+        "subject_type": {"type": "string"},
+        "summary": {"type": "string", "minLength": 1},
+        "geometry_reflection_plan": {"type": "object"},
+        "electronic_structure_reflection_plan": {"type": "object"},
+        "state_character_reflection_plan": {"type": "object"},
+        "required_evidence_roles": {
+          "type": "array",
+          "items": {
+            "enum": [
+              "endpoint_identity_gate",
+              "intermediate_identity_gate",
+              "electronic_structure_gate",
+              "state_character_gate",
+              "shared_basin_consistency_gate"
+            ]
+          }
+        },
+        "shared_basin_required": {"type": "boolean"}
       },
       "additionalProperties": true
     }

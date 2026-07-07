@@ -237,7 +237,7 @@ def _validate_initial_mechanism_hypothesis(value: Any) -> None:
     _require(_clean(value.get("summary")), "initial_mechanism_hypothesis.summary is required")
     for field in ("derived_from", "structured_claim"):
         _require(isinstance(value.get(field), dict), f"initial_mechanism_hypothesis.{field} must be an object")
-    for field in ("testable_predictions", "required_evidence", "uncertainties", "alternative_hypotheses"):
+    for field in ("mechanism_claims", "testable_predictions", "required_evidence", "uncertainties", "alternative_hypotheses"):
         _require(isinstance(value.get(field), list), f"initial_mechanism_hypothesis.{field} must be a list")
 
     structured = value["structured_claim"]
@@ -257,6 +257,31 @@ def _validate_initial_mechanism_hypothesis(value: Any) -> None:
         _require(_clean(prediction.get("prediction_id")), f"testable_predictions[{index}].prediction_id is required")
         _require(prediction.get("phase") in VALID_PHASES, f"testable_predictions[{index}].phase is invalid")
         _require(_clean(prediction.get("expectation")), f"testable_predictions[{index}].expectation is required")
+    for index, claim in enumerate(value["mechanism_claims"]):
+        _validate_mechanism_claim(claim, index)
+
+
+def _validate_mechanism_claim(claim: Any, index: int) -> None:
+    _require(isinstance(claim, dict), f"mechanism_claims[{index}] must be an object")
+    _require(_clean(claim.get("claim_id")), f"mechanism_claims[{index}].claim_id is required")
+    _require(_clean(claim.get("claim_type")), f"mechanism_claims[{index}].claim_type is required")
+    _require(_clean(claim.get("summary")), f"mechanism_claims[{index}].summary is required")
+    _require(
+        isinstance(claim.get("geometry_reflection_plan"), dict),
+        f"mechanism_claims[{index}].geometry_reflection_plan must be an object",
+    )
+    _require(
+        isinstance(claim.get("electronic_structure_reflection_plan"), dict),
+        f"mechanism_claims[{index}].electronic_structure_reflection_plan must be an object",
+    )
+    state_plan = claim.get("state_character_reflection_plan")
+    _require(
+        state_plan is None or isinstance(state_plan, dict),
+        f"mechanism_claims[{index}].state_character_reflection_plan must be an object when present",
+    )
+    roles = claim.get("required_evidence_roles", [])
+    _require(isinstance(roles, list), f"mechanism_claims[{index}].required_evidence_roles must be a list")
+    _require(all(_clean(item) for item in roles), f"mechanism_claims[{index}].required_evidence_roles cannot contain empty values")
 
 
 def _validate_revision(value: Any) -> None:

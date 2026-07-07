@@ -6,6 +6,16 @@ from pathlib import PurePosixPath
 from typing import Any
 
 
+MECHANISM_REFLECTION_PHASES = {
+    "endpoint",
+    "preflight",
+    "candidate_generation",
+    "tsfreq_validation",
+    "connectivity_validation",
+    "accepted_audit",
+    "pathway_audit",
+}
+
 ROLE_PHASE_OWNER = {
     "endpoint_provenance": "endpoint",
     "charge_multiplicity": "endpoint",
@@ -19,6 +29,11 @@ ROLE_PHASE_OWNER = {
     "connectivity_gate": "connectivity_validation",
     "irc_endpoint_assignment": "connectivity_validation",
     "stereochemical_connectivity_gate": "connectivity_validation",
+    "endpoint_identity_gate": MECHANISM_REFLECTION_PHASES,
+    "intermediate_identity_gate": MECHANISM_REFLECTION_PHASES,
+    "electronic_structure_gate": MECHANISM_REFLECTION_PHASES,
+    "state_character_gate": MECHANISM_REFLECTION_PHASES,
+    "shared_basin_consistency_gate": MECHANISM_REFLECTION_PHASES,
     "accepted_audit": "accepted_audit",
     "pathway_audit": "pathway_audit",
     "pathway_audit_summary": "pathway_audit",
@@ -27,7 +42,7 @@ ROLE_PHASE_OWNER = {
 INITIAL_PHASES = {"endpoint", "preflight"}
 
 
-def expected_phase_for_role(role: Any) -> str | None:
+def expected_phase_for_role(role: Any) -> Any:
     """Return the node phase that owns a structured evidence role."""
 
     if not isinstance(role, str):
@@ -41,6 +56,8 @@ def role_matches_phase(role: Any, phase: Any) -> bool:
     expected = expected_phase_for_role(role)
     if expected is None:
         return True
+    if isinstance(expected, (set, frozenset, list, tuple)):
+        return phase in expected
     if expected == "endpoint":
         return phase in INITIAL_PHASES
     return phase == expected

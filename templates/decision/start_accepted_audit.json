@@ -4,7 +4,8 @@
   "rationale": "Start accepted-TS audit after TS/Freq and connectivity gates both support the same hypothesis.",
   "evidence_refs": [
     "${EV_TSFREQ}",
-    "${EV_CONNECTIVITY}"
+    "${EV_CONNECTIVITY}",
+    "${EV_MECHANISM_REFLECTION}"
   ],
   "report_ref": {
     "report_id": "${REPORT_ID}",
@@ -32,7 +33,8 @@
       "step_id": "${STEP_ID}"
     },
     "expected_evidence": [
-      "accepted_audit"
+      "accepted_audit",
+      "${MECHANISM_REFLECTION_GATE_ROLE}"
     ]
   }
 }

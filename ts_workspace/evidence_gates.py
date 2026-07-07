@@ -12,7 +12,18 @@ class EvidenceGateError(ValueError):
 BASE_ACCEPTED_GATE_ROLES = {"connectivity_gate", "tsfreq_gate"}
 STEREOCHEMICAL_GATE_ROLE = "stereochemical_connectivity_gate"
 PATHWAY_AUDIT_GATE_ROLE = "pathway_audit_summary"
-MACHINE_GATE_ROLES = BASE_ACCEPTED_GATE_ROLES | {STEREOCHEMICAL_GATE_ROLE, PATHWAY_AUDIT_GATE_ROLE}
+MECHANISM_REFLECTION_GATE_ROLES = {
+    "endpoint_identity_gate",
+    "intermediate_identity_gate",
+    "electronic_structure_gate",
+    "state_character_gate",
+    "shared_basin_consistency_gate",
+}
+MACHINE_GATE_ROLES = (
+    BASE_ACCEPTED_GATE_ROLES
+    | {STEREOCHEMICAL_GATE_ROLE, PATHWAY_AUDIT_GATE_ROLE}
+    | MECHANISM_REFLECTION_GATE_ROLES
+)
 
 
 def accepted_gate_evidence(
@@ -56,6 +67,113 @@ def accepted_gate_evidence(
         raise EvidenceGateError("accepted audit gate evidence must share one hypothesis_id")
     gate_evidence["__hypothesis_id"] = next(iter(gate_hypothesis_ids))
     return gate_evidence
+
+
+def mechanism_reflection_required_roles(
+    hypothesis: dict[str, Any] | None,
+    *,
+    include_shared_basin: bool = True,
+) -> set[str]:
+    """Return declared mechanism-reflection gates for a hypothesis.
+
+    The validator only enforces claims the agent declared. It does not infer
+    that a chemical label such as "carbene" is true; it checks that declared
+    electronic/identity/state/shared-basin claims have corresponding evidence
+    gates before accepted/pathway audit language is allowed.
+    """
+
+    if not isinstance(hypothesis, dict):
+        return set()
+    roles: set[str] = set()
+    roles.update(_mechanism_roles_from_values(hypothesis.get("required_evidence")))
+    for prediction in hypothesis.get("testable_predictions", []):
+        if not isinstance(prediction, dict):
+            continue
+        roles.update(_mechanism_roles_from_values(prediction.get("required_evidence_roles")))
+
+    for claim in _mechanism_claims(hypothesis):
+        roles.update(_mechanism_roles_from_values(claim.get("required_evidence_roles")))
+        claim_type = _normalized(claim.get("claim_type") or claim.get("type") or claim.get("kind"))
+        subject_type = _normalized(claim.get("subject_type") or claim.get("subject_kind"))
+        if claim_type in {"endpoint_identity", "endpoint_identity_claim"} or subject_type == "endpoint":
+            roles.add("endpoint_identity_gate")
+        if claim_type in {"intermediate_identity", "intermediate_identity_claim"} or subject_type == "intermediate":
+            roles.add("intermediate_identity_gate")
+        if claim_type in {
+            "electronic_structure",
+            "electron_transfer",
+            "charge_transfer",
+            "radical",
+            "diradical",
+            "open_shell",
+            "oxidation_state",
+            "non_innocent_ligand",
+            "carbene",
+            "nitrene",
+            "oxene",
+            "zwitterion",
+            "ion_pair",
+        }:
+            roles.add("electronic_structure_gate")
+        if claim_type in {"state_character", "excited_state", "spin_state", "spin_surface", "broken_symmetry"}:
+            roles.add("state_character_gate")
+        if claim.get("shared_basin_required") is True or claim_type == "shared_basin_consistency":
+            roles.add("shared_basin_consistency_gate")
+
+    if not include_shared_basin:
+        roles.discard("shared_basin_consistency_gate")
+    return roles
+
+
+def mechanism_reflection_gate_evidence(
+    evidence_records: list[Any],
+    evidence_refs: list[str],
+    required_roles: set[str],
+) -> dict[str, Any]:
+    """Return evidence records satisfying declared mechanism-reflection roles."""
+
+    allowed_refs = set(evidence_refs)
+    required = set(required_roles) & MECHANISM_REFLECTION_GATE_ROLES
+    gate_evidence: dict[str, Any] = {}
+    gate_hypothesis_ids: set[str] = set()
+    for role in sorted(required):
+        for entry in evidence_records:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("evidence_id") not in allowed_refs:
+                continue
+            if not _record_satisfies_mechanism_role(entry, role):
+                continue
+            gate_evidence[role] = entry
+            quality = entry.get("quality") if isinstance(entry.get("quality"), dict) else {}
+            hypothesis_id = quality.get("hypothesis_id")
+            if not hypothesis_id:
+                raise EvidenceGateError(
+                    f"mechanism reflection gate evidence missing quality.hypothesis_id: {entry.get('evidence_id')}"
+                )
+            gate_hypothesis_ids.add(str(hypothesis_id))
+            break
+
+    missing = sorted(required - set(gate_evidence))
+    if missing:
+        raise EvidenceGateError(f"missing required mechanism reflection gates: {', '.join(missing)}")
+    if required and len(gate_hypothesis_ids) != 1:
+        raise EvidenceGateError("mechanism reflection gate evidence must share one hypothesis_id")
+    if gate_hypothesis_ids:
+        gate_evidence["__hypothesis_id"] = next(iter(gate_hypothesis_ids))
+    return gate_evidence
+
+
+def validate_mechanism_reflection_gate(record: dict[str, Any], role: str) -> None:
+    """Require a completed current-node diagnostic for a mechanism claim gate."""
+
+    evidence_id = str(record.get("evidence_id") or "<unknown>")
+    if record.get("normal_termination") is not True:
+        raise EvidenceGateError(f"{role} requires normal_termination=true: {evidence_id}")
+    quality = record.get("quality") if isinstance(record.get("quality"), dict) else {}
+    pending_key = role.replace("_gate", "_gate_pending")
+    if quality.get(pending_key) is True:
+        raise EvidenceGateError(f"{role} is still pending: {evidence_id}")
 
 
 def validate_strict_connectivity_gate(connectivity_gate: dict[str, Any]) -> None:
@@ -213,3 +331,30 @@ def _meaningful_stereo_value(value: Any) -> bool:
 
 def _nonempty_string(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
+
+
+def _mechanism_roles_from_values(value: Any) -> set[str]:
+    if not isinstance(value, list):
+        return set()
+    return {str(item) for item in value if str(item) in MECHANISM_REFLECTION_GATE_ROLES}
+
+
+def _mechanism_claims(hypothesis: dict[str, Any]) -> list[dict[str, Any]]:
+    claims = hypothesis.get("mechanism_claims")
+    if not isinstance(claims, list):
+        structured = hypothesis.get("structured_claim") if isinstance(hypothesis.get("structured_claim"), dict) else {}
+        claims = structured.get("mechanism_claims") if isinstance(structured.get("mechanism_claims"), list) else []
+    return [claim for claim in claims if isinstance(claim, dict)]
+
+
+def _record_satisfies_mechanism_role(record: dict[str, Any], role: str) -> bool:
+    if record.get("role") == role:
+        return True
+    quality = record.get("quality") if isinstance(record.get("quality"), dict) else {}
+    completed_key = role.replace("_gate", "_gate_completed")
+    supported_key = role.replace("_gate", "_gate_supported")
+    return quality.get(completed_key) is True or quality.get(supported_key) is True
+
+
+def _normalized(value: Any) -> str:
+    return str(value or "").strip().lower().replace("-", "_").replace(" ", "_")

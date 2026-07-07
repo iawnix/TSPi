@@ -70,6 +70,33 @@ Minimum fields:
       ]
     }
   },
+  "mechanism_claims": [
+    {
+      "claim_id": "claim_identity_001",
+      "claim_type": "intermediate_identity",
+      "subject": "post-extrusion intermediate",
+      "subject_type": "intermediate",
+      "summary": "The pathway uses a closed-shell singlet intermediate label, not a proven free-radical label.",
+      "geometry_reflection_plan": {
+        "reaction_center_metrics": ["C1-N2, C1-C3, and unintended short contacts"],
+        "motif_or_coordination_checks": ["local valence and folding around the reactive center"],
+        "decision_boundary": "A different local motif must be reported as a different basin label."
+      },
+      "electronic_structure_reflection_plan": {
+        "diagnostics": ["NPA/NBO/Wiberg or method-available population analysis"],
+        "decision_boundary": "Population diagnostics are method-dependent sanity checks unless the claim makes them decisive."
+      },
+      "state_character_reflection_plan": {
+        "diagnostics": ["singlet/triplet or stable/broken-symmetry comparison when state character is claimed"],
+        "decision_boundary": "Do not claim an excited/open-shell identity from geometry alone."
+      },
+      "required_evidence_roles": [
+        "intermediate_identity_gate",
+        "electronic_structure_gate",
+        "state_character_gate"
+      ]
+    }
+  ],
   "testable_predictions": [
     {
       "prediction_id": "pred_mode_001",
@@ -104,6 +131,17 @@ Minimum fields:
 
 ## Geometry And Electronic Reflection
 
+Every new hypothesis must split its chemistry into `mechanism_claims`. A claim
+that names an endpoint/intermediate identity, electron transfer, radical or
+diradical character, excited-state character, oxidation state, non-innocent
+ligand behavior, carbene/nitrene/oxene identity, zwitterion, ion pair, or
+shared intermediate basin must carry a geometry reflection plan and an
+electronic-structure reflection plan. A state-character plan is required when
+the claim depends on spin, open-shell, broken-symmetry, excited-state, or
+nonadiabatic character. The validator checks that the declared evidence roles
+are present before accepted/pathway audit language is allowed; it does not
+hard-code chemistry-specific thresholds.
+
 Every candidate-generation and TS/Freq reflection must explicitly answer two
 questions before a candidate is promoted, a TS/Freq node is closed as supported,
 or IRC is started:
@@ -125,6 +163,13 @@ seed, must not close TS/Freq as supported, and must not start IRC from that
 structure. A single imaginary frequency and a visually plausible distance
 change are necessary evidence only after this mechanism-consistency review does
 not refute the branch.
+
+For multi-step pathways, endpoint assignment must be paired with identity and
+shared-basin evidence when those claims are declared. `connectivity_gate` shows
+where an IRC or displacement path lands; `endpoint_identity_gate`,
+`intermediate_identity_gate`, `electronic_structure_gate`,
+`state_character_gate`, and `shared_basin_consistency_gate` document what those
+basins are allowed to be called in the mechanism.
 
 Only include `stereochemical_policy` and `stereochemical_connectivity_gate`
 when the reaction question depends on stereoisomer identity. Once declared,

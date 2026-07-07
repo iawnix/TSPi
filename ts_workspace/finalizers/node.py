@@ -9,6 +9,9 @@ from ..evidence_gates import (
     STEREOCHEMICAL_GATE_ROLE,
     accepted_gate_evidence,
     hypothesis_requires_stereochemical_gate,
+    mechanism_reflection_gate_evidence,
+    mechanism_reflection_required_roles,
+    validate_mechanism_reflection_gate,
     validate_stereochemical_connectivity_gate,
     validate_strict_connectivity_gate,
 )
@@ -46,6 +49,32 @@ def validate_accepted_audit_gates(root: Path, node: dict[str, Any], closure: dic
     validate_strict_connectivity_gate(gate_evidence["connectivity_gate"])
     if require_stereo:
         validate_stereochemical_connectivity_gate(gate_evidence[STEREOCHEMICAL_GATE_ROLE])
+    _validate_declared_mechanism_reflection_gates(
+        registry.get("evidence", []),
+        evidence_refs,
+        hypothesis,
+        hypothesis_id,
+        include_shared_basin=False,
+    )
+
+
+def validate_pathway_audit_gates(root: Path, node: dict[str, Any], closure: dict[str, Any], evidence_refs: list[str]) -> None:
+    if node["phase"] != "pathway_audit":
+        return
+    if closure["program_status"] != "completed" or closure["claim_verdict"] != "supported":
+        return
+    registry = read_json(root / "evidence_registry.json")
+    if not _pathway_audit_accepts_pathway(registry.get("evidence", []), evidence_refs, closure):
+        return
+    hypothesis = _hypothesis_for_node(root, node)
+    hypothesis_id = node.get("hypothesis_ref", {}).get("hypothesis_id") if isinstance(node.get("hypothesis_ref"), dict) else None
+    _validate_declared_mechanism_reflection_gates(
+        registry.get("evidence", []),
+        evidence_refs,
+        hypothesis,
+        hypothesis_id,
+        include_shared_basin=True,
+    )
 
 
 def _update_mechanism_model(root: Path, node: dict[str, Any], closure: dict[str, Any]) -> None:
@@ -305,6 +334,14 @@ def _write_acceptance_artifact(root: Path, node: dict[str, Any], closure: dict[s
     validate_strict_connectivity_gate(gate_evidence["connectivity_gate"])
     if require_stereo:
         validate_stereochemical_connectivity_gate(gate_evidence[STEREOCHEMICAL_GATE_ROLE])
+    mechanism_roles = mechanism_reflection_required_roles(hypothesis, include_shared_basin=False)
+    mechanism_gate_evidence = mechanism_reflection_gate_evidence(
+        registry.get("evidence", []),
+        node.get("evidence_refs", []),
+        mechanism_roles,
+    )
+    for role in sorted(mechanism_roles):
+        validate_mechanism_reflection_gate(mechanism_gate_evidence[role], role)
     manifest_path = root / "manifest.json"
     manifest = read_json(manifest_path)
     required_gates = ["tsfreq_gate", "connectivity_gate"]
@@ -315,6 +352,9 @@ def _write_acceptance_artifact(root: Path, node: dict[str, Any], closure: dict[s
     if require_stereo:
         required_gates.append(STEREOCHEMICAL_GATE_ROLE)
         evidence_refs.append(gate_evidence[STEREOCHEMICAL_GATE_ROLE]["evidence_id"])
+    for role in sorted(mechanism_roles):
+        required_gates.append(role)
+        evidence_refs.append(mechanism_gate_evidence[role]["evidence_id"])
     artifact = {
         "accepted_id": f"accepted_ts_{node['node_id']}",
         "node_id": node["node_id"],
@@ -378,3 +418,44 @@ def _impact_scope(node: dict[str, Any], closure: dict[str, Any]) -> str:
     if phase not in INITIAL_HYPOTHESIS_PHASES:
         return "prediction"
     return "solution_only"
+
+
+def _validate_declared_mechanism_reflection_gates(
+    evidence_records: list[Any],
+    evidence_refs: list[str],
+    hypothesis: dict[str, Any] | None,
+    hypothesis_id: str | None,
+    *,
+    include_shared_basin: bool,
+) -> None:
+    roles = mechanism_reflection_required_roles(hypothesis, include_shared_basin=include_shared_basin)
+    gate_evidence = mechanism_reflection_gate_evidence(evidence_records, evidence_refs, roles)
+    if roles and gate_evidence.get("__hypothesis_id") != hypothesis_id:
+        raise ValueError("mechanism reflection gate evidence must match node.hypothesis_ref")
+    for role in sorted(roles):
+        validate_mechanism_reflection_gate(gate_evidence[role], role)
+
+
+def _pathway_audit_accepts_pathway(
+    evidence_records: list[Any],
+    evidence_refs: list[str],
+    closure: dict[str, Any],
+) -> bool:
+    allowed_refs = set(evidence_refs)
+    for entry in evidence_records:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("evidence_id") not in allowed_refs or entry.get("role") != "pathway_audit_summary":
+            continue
+        quality = entry.get("quality") if isinstance(entry.get("quality"), dict) else {}
+        facts = entry.get("facts") if isinstance(entry.get("facts"), dict) else {}
+        if (
+            quality.get("strict_pathway_supported") is True
+            or quality.get("strict_pathway_decision") == "accepted"
+            or facts.get("audit_outcome") == "accepted"
+            or facts.get("whole_R_to_P_pathway_accepted") is True
+        ):
+            return True
+    mechanism = closure.get("mechanism") if isinstance(closure.get("mechanism"), dict) else {}
+    facts = mechanism.get("facts") if isinstance(mechanism.get("facts"), dict) else {}
+    return facts.get("audit_outcome") == "accepted" or facts.get("whole_R_to_P_pathway_accepted") is True

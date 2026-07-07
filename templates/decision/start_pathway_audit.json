@@ -4,7 +4,8 @@
   "rationale": "Start pathway audit after accepted-TS evidence exists.",
   "evidence_refs": [
     "${EV_TSFREQ}",
-    "${EV_CONNECTIVITY}"
+    "${EV_CONNECTIVITY}",
+    "${EV_MECHANISM_REFLECTION}"
   ],
   "report_ref": {
     "report_id": "${REPORT_ID}",
@@ -31,7 +32,8 @@
       "step_id": "${STEP_ID}"
     },
     "expected_evidence": [
-      "pathway_audit_summary"
+      "pathway_audit_summary",
+      "${MECHANISM_REFLECTION_GATE_ROLE}"
     ]
   }
 }

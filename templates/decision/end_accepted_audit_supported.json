@@ -4,7 +4,8 @@
   "rationale": "Close accepted-TS audit after confirming TS/Freq and connectivity gates match the same hypothesis.",
   "evidence_refs": [
     "${EV_TSFREQ}",
-    "${EV_CONNECTIVITY}"
+    "${EV_CONNECTIVITY}",
+    "${EV_MECHANISM_REFLECTION}"
   ],
   "report_ref": {
     "report_id": "${REPORT_ID}",
@@ -19,7 +20,8 @@
         "summary": "Accepted-TS audit checked the required gate evidence.",
         "evidence_refs": [
           "${EV_TSFREQ}",
-          "${EV_CONNECTIVITY}"
+          "${EV_CONNECTIVITY}",
+          "${EV_MECHANISM_REFLECTION}"
         ]
       },
       "mechanism": {
@@ -33,7 +35,8 @@
         },
         "evidence_refs": [
           "${EV_TSFREQ}",
-          "${EV_CONNECTIVITY}"
+          "${EV_CONNECTIVITY}",
+          "${EV_MECHANISM_REFLECTION}"
         ]
       },
       "implication": "Run pathway audit before claiming the full R to P pathway is accepted.",

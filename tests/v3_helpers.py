@@ -15,6 +15,7 @@ def initial_mechanism_hypothesis(
     *,
     pathway_ref: dict[str, str] | None = None,
     stereochemical: bool = False,
+    identity_claim: bool = False,
 ) -> dict[str, Any]:
     hypothesis = {
         "hypothesis_id": HYPOTHESIS_ID,
@@ -45,6 +46,25 @@ def initial_mechanism_hypothesis(
             },
             "pathway_ref": pathway_ref or PATHWAY_REF,
         },
+        "mechanism_claims": [
+            {
+                "claim_id": "claim_reaction_center_001",
+                "claim_type": "reaction_center_motif",
+                "subject": "C1-N2 reaction center",
+                "subject_type": "reaction_center",
+                "summary": "The candidate should preserve the declared local reaction-center motif.",
+                "geometry_reflection_plan": {
+                    "reaction_center_metrics": ["C1-N2 distance"],
+                    "unwanted_short_contacts": [],
+                    "decision_boundary": "Reject if the candidate falls into a different local motif.",
+                },
+                "electronic_structure_reflection_plan": {
+                    "diagnostics": ["method-available population sanity checks"],
+                    "decision_boundary": "Do not infer electronic timing from geometry alone.",
+                },
+                "required_evidence_roles": [],
+            }
+        ],
         "testable_predictions": [
             {
                 "prediction_id": "pred_mode_001",
@@ -93,6 +113,31 @@ def initial_mechanism_hypothesis(
             }
         )
         hypothesis["required_evidence"].append("stereochemical_connectivity_gate")
+    if identity_claim:
+        hypothesis["mechanism_claims"].append(
+            {
+                "claim_id": "claim_intermediate_identity_001",
+                "claim_type": "intermediate_identity",
+                "subject": "shared intermediate",
+                "subject_type": "intermediate",
+                "summary": "The mechanism uses a declared intermediate identity.",
+                "geometry_reflection_plan": {
+                    "reaction_center_metrics": ["C1-N2 and unintended short contacts"],
+                    "motif_or_coordination_checks": ["local valence"],
+                    "decision_boundary": "Reject the identity label if the basin has a different local motif.",
+                },
+                "electronic_structure_reflection_plan": {
+                    "diagnostics": ["NPA/NBO or method-available population diagnostics"],
+                    "decision_boundary": "Do not claim this identity from IRC endpoint assignment alone.",
+                },
+                "state_character_reflection_plan": {
+                    "diagnostics": ["spin/state comparison when needed"],
+                    "decision_boundary": "Do not claim state character without state evidence.",
+                },
+                "required_evidence_roles": ["intermediate_identity_gate"],
+            }
+        )
+        hypothesis["required_evidence"].append("intermediate_identity_gate")
     return hypothesis
 
 
@@ -101,10 +146,15 @@ def bootstrap_v3_workspace(
     *,
     pathway_ref: dict[str, str] | None = None,
     stereochemical: bool = False,
+    identity_claim: bool = False,
 ) -> dict[str, str]:
     init_workspace(workspace)
     report_ref = _report_ref(workspace)
-    hypothesis = initial_mechanism_hypothesis(pathway_ref=pathway_ref, stereochemical=stereochemical)
+    hypothesis = initial_mechanism_hypothesis(
+        pathway_ref=pathway_ref,
+        stereochemical=stereochemical,
+        identity_claim=identity_claim,
+    )
     start_node(
         workspace,
         {
@@ -269,8 +319,18 @@ def end_v3_node(
     )
 
 
-def make_accepted_workspace(workspace: Path, *, stereochemical: bool = False) -> dict[str, str]:
-    report_ref = bootstrap_v3_workspace(workspace, pathway_ref=PATHWAY_REF, stereochemical=stereochemical)
+def make_accepted_workspace(
+    workspace: Path,
+    *,
+    stereochemical: bool = False,
+    identity_claim: bool = False,
+) -> dict[str, str]:
+    report_ref = bootstrap_v3_workspace(
+        workspace,
+        pathway_ref=PATHWAY_REF,
+        stereochemical=stereochemical,
+        identity_claim=identity_claim,
+    )
 
     start_v3_node(
         workspace,
@@ -371,6 +431,24 @@ def make_accepted_workspace(workspace: Path, *, stereochemical: bool = False) ->
                 },
             }
         )
+    if identity_claim:
+        connectivity_evidence.append(
+            {
+                "evidence_id": "ev_identity_001",
+                "kind": "intermediate_identity_audit",
+                "role": "intermediate_identity_gate",
+                "evidence_tier": "local_parse",
+                "node_id": "n002",
+                "summary": "Declared intermediate identity is supported with the stated boundary.",
+                **gate_artifact_metadata("nodes/n002/outputs/intermediate_identity.json"),
+                "quality": {
+                    "hypothesis_id": HYPOTHESIS_ID,
+                    "prediction_ids": ["pred_conn_001"],
+                    "intermediate_identity_gate_completed": True,
+                    "verdict_against_declared_claim": "supported_with_boundary",
+                },
+            }
+        )
     _append_evidence(workspace, report_ref, connectivity_evidence)
     end_v3_node(
         workspace,
@@ -383,6 +461,8 @@ def make_accepted_workspace(workspace: Path, *, stereochemical: bool = False) ->
 
     report_ref = _report_ref(workspace)
     gate_refs = ["ev_tsfreq_001", "ev_conn_001"] + (["ev_stereo_001"] if stereochemical else [])
+    if identity_claim:
+        gate_refs.append("ev_identity_001")
     start_v3_node(
         workspace,
         report_ref,

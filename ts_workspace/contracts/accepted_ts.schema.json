@@ -17,7 +17,18 @@
     "hypothesis_ref": {"$ref": "mechanism.schema.json#/$defs/hypothesis_ref"},
     "required_gates": {
       "type": "array",
-      "items": {"enum": ["tsfreq_gate", "connectivity_gate", "stereochemical_connectivity_gate"]},
+      "items": {
+        "enum": [
+          "tsfreq_gate",
+          "connectivity_gate",
+          "stereochemical_connectivity_gate",
+          "endpoint_identity_gate",
+          "intermediate_identity_gate",
+          "electronic_structure_gate",
+          "state_character_gate",
+          "shared_basin_consistency_gate"
+        ]
+      },
       "contains": {"const": "tsfreq_gate"},
       "minContains": 1
     },

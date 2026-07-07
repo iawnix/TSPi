@@ -43,6 +43,15 @@ Typical endpoint-first sequence:
 16. `update_pathway_audit_accepted.json`
 17. `end_pathway_audit_accepted.json`
 
+When the initial hypothesis declares `mechanism_claims` that require
+`endpoint_identity_gate`, `intermediate_identity_gate`,
+`electronic_structure_gate`, `state_character_gate`, or
+`shared_basin_consistency_gate`, register the corresponding diagnostics with
+`update_mechanism_identity_evidence.json` before closing accepted/pathway audit
+as accepted. These gates document geometry, electronic-structure, and
+state-character support for the declared mechanism claim; they do not replace
+TS/Freq or IRC connectivity gates.
+
 If the active hypothesis declares `structured_claim.stereochemical_policy`,
 `structured_claim.stereochemical_requirements`, or includes
 `stereochemical_connectivity_gate` in `required_evidence`, register

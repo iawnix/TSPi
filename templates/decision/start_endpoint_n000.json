@@ -53,6 +53,46 @@
           "step_id": "${STEP_ID}"
         }
       },
+      "mechanism_claims": [
+        {
+          "claim_id": "${MECHANISM_CLAIM_ID}",
+          "claim_type": "${MECHANISM_CLAIM_TYPE}",
+          "subject": "${MECHANISM_CLAIM_SUBJECT}",
+          "subject_type": "${MECHANISM_CLAIM_SUBJECT_TYPE}",
+          "summary": "${MECHANISM_CLAIM_SUMMARY}",
+          "geometry_reflection_plan": {
+            "reaction_center_metrics": [
+              "${GEOMETRY_METRIC}"
+            ],
+            "unwanted_short_contacts": [
+              "${UNWANTED_SHORT_CONTACT}"
+            ],
+            "motif_or_coordination_checks": [
+              "${LOCAL_MOTIF_CHECK}"
+            ],
+            "decision_boundary": "${GEOMETRY_DECISION_BOUNDARY}"
+          },
+          "electronic_structure_reflection_plan": {
+            "diagnostics": [
+              "${ELECTRONIC_DIAGNOSTIC}"
+            ],
+            "population_or_bonding_checks": [
+              "${POPULATION_OR_BONDING_CHECK}"
+            ],
+            "decision_boundary": "${ELECTRONIC_DECISION_BOUNDARY}"
+          },
+          "state_character_reflection_plan": {
+            "diagnostics": [
+              "${STATE_CHARACTER_DIAGNOSTIC}"
+            ],
+            "decision_boundary": "${STATE_CHARACTER_DECISION_BOUNDARY}"
+          },
+          "required_evidence_roles": [
+            "${MECHANISM_REFLECTION_GATE_ROLE}"
+          ],
+          "shared_basin_required": false
+        }
+      ],
       "testable_predictions": [
         {
           "prediction_id": "${PRED_CANDIDATE_ID}",
@@ -98,6 +138,7 @@
         "candidate_geometry",
         "tsfreq_gate",
         "connectivity_gate",
+        "${MECHANISM_REFLECTION_GATE_ROLE}",
         "accepted_audit",
         "pathway_audit_summary"
       ],

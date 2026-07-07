@@ -3,7 +3,8 @@
   "action": "end_node",
   "rationale": "Close pathway audit with an accepted R to P pathway conclusion.",
   "evidence_refs": [
-    "${EV_PATHWAY_AUDIT}"
+    "${EV_PATHWAY_AUDIT}",
+    "${EV_MECHANISM_REFLECTION}"
   ],
   "report_ref": {
     "report_id": "${REPORT_ID}",
@@ -17,7 +18,8 @@
       "program": {
         "summary": "Pathway audit completed.",
         "evidence_refs": [
-          "${EV_PATHWAY_AUDIT}"
+          "${EV_PATHWAY_AUDIT}",
+          "${EV_MECHANISM_REFLECTION}"
         ]
       },
       "mechanism": {
@@ -29,7 +31,8 @@
           ]
         },
         "evidence_refs": [
-          "${EV_PATHWAY_AUDIT}"
+          "${EV_PATHWAY_AUDIT}",
+          "${EV_MECHANISM_REFLECTION}"
         ]
       },
       "implication": "The audited pathway may be reported as accepted.",

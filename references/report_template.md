@@ -75,9 +75,18 @@ Accepted TS language is allowed only when all are present:
 - `connectivity_gate` evidence for the same `hypothesis_id`;
 - `stereochemical_connectivity_gate` for the same `hypothesis_id` when the
   hypothesis declares stereochemical requirements;
+- `endpoint_identity_gate`, `intermediate_identity_gate`,
+  `electronic_structure_gate`, `state_character_gate`, and/or
+  `shared_basin_consistency_gate` for the same `hypothesis_id` when the
+  hypothesis declares the corresponding mechanism claims;
 - an `accepted_audit` node or accepted artifact written by `ts_workspace`;
 - no unresolved contradiction in pathway audit evidence for the reported
   pathway step.
+
+Report geometry connectivity, endpoint stability, electronic/state identity,
+shared-basin consistency, and final R to P pathway proof as separate evidence
+layers. Do not let IRC endpoint assignment stand in for an electronic-identity
+claim.
 
 If a pathway audit is negative, report the branch as failed or not accepted and
 state the next branch or open question separately.
