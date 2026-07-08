@@ -1911,7 +1911,8 @@ function buildEdge(e, s, t, lineage) {
   const c2x = x2 - mid;
   const d   = `M ${x1} ${y1} C ${c1x} ${y1}, ${c2x} ${y2}, ${x2} ${y2}`;
 
-  const classes = ["edge-group", e.kind];
+  const branchStateClass = e.event_state ? `branch-${e.event_state}` : "";
+  const classes = ["edge-group", e.kind, branchStateClass].filter(Boolean);
   if (lineage) {
     const sIn = lineage.set.has(e.source);
     const tIn = lineage.set.has(e.target);
@@ -1924,7 +1925,7 @@ function buildEdge(e, s, t, lineage) {
 
   const path = makeSvg("path");
   path.setAttribute("d", d);
-  path.setAttribute("class", ["edge", e.kind, backStateClass].filter(Boolean).join(" "));
+  path.setAttribute("class", ["edge", e.kind, branchStateClass].filter(Boolean).join(" "));
   g.appendChild(path);
 
   // Hollow ring at the source, solid dot at the target — encodes flow direction.
