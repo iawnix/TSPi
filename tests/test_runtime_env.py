@@ -148,3 +148,22 @@ def test_ts_runtime_run_injects_skill_root_into_pythonpath(monkeypatch) -> None:
     pythonpath = str(calls["env"]["PYTHONPATH"]).split(os.pathsep)
     assert pythonpath[0] == str(ROOT)
     assert "/tmp/existing" in pythonpath
+
+
+def test_ts_runtime_script_passes_dash_m_arguments() -> None:
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "ts_runtime.py"),
+            "run",
+            "-c",
+            "print('runtime-ok')",
+        ],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    assert completed.stdout.strip() == "runtime-ok"

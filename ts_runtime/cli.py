@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import os
 import sys
 from pathlib import Path
@@ -28,15 +27,15 @@ def run_in_runtime(package_root: str | Path, python_args: list[str]) -> int:
 
 def main(argv: list[str] | None = None, *, package_root: str | Path | None = None) -> int:
     root = Path(package_root).resolve() if package_root else Path(__file__).resolve().parents[1]
-    parser = argparse.ArgumentParser(prog="ts_runtime")
-    sub = parser.add_subparsers(dest="command", required=True)
-
-    run = sub.add_parser("run", help="Run Python arguments under the configured skill runtime.")
-    run.add_argument("python_args", nargs=argparse.REMAINDER)
-
-    args = parser.parse_args(argv)
-    if args.command == "run":
-        if not args.python_args:
-            parser.error("run requires Python arguments, for example: ts_runtime run -m pytest -q")
-        return run_in_runtime(root, args.python_args)
-    raise AssertionError(args.command)
+    args = list(sys.argv[1:] if argv is None else argv)
+    if not args or args[0] in {"-h", "--help"}:
+        print("usage: ts_runtime run <python-args...>")
+        return 0
+    command, python_args = args[0], args[1:]
+    if command != "run":
+        print(f"unknown ts_runtime command: {command}", file=sys.stderr)
+        return 2
+    if not python_args:
+        print("usage: ts_runtime run <python-args...>", file=sys.stderr)
+        return 2
+    return run_in_runtime(root, python_args)
