@@ -10,6 +10,8 @@ from .base import Backend, BackendTask, PreparedTask
 from pathlib import Path
 from typing import List, Tuple
 
+from ts_workspace.io import write_json
+
 
 Coord = Tuple[str, float, float, float]
 Frame = Tuple[str, List[Coord]]
@@ -329,6 +331,66 @@ def parse_frequencies(lines: list[str]) -> list[float]:
     return freqs
 
 
+def parse_frequency_tables(lines: list[str]) -> list[dict[str, object]]:
+    """Return contiguous Gaussian frequency tables in a job section.
+
+    Opt=CalcAll jobs can print force-constant frequency tables during
+    optimization and then print the final harmonic Freq section. TS/Freq gating
+    must use the final frequency table, while earlier tables remain audit data.
+    """
+
+    tables: list[dict[str, object]] = []
+    current: dict[str, object] | None = None
+    for index, line in enumerate(lines):
+        if "Frequencies --" not in line:
+            if current is not None and _ends_frequency_table(line):
+                current["end_line"] = index
+                current = None
+            continue
+        _, values = line.split("--", 1)
+        freqs = [float(part) for part in values.split()]
+        if current is None:
+            current = {"index": len(tables), "start_line": index + 1, "end_line": index + 1, "frequencies": []}
+            tables.append(current)
+        current["end_line"] = index + 1
+        current_frequencies = current["frequencies"]
+        if not isinstance(current_frequencies, list):
+            raise TypeError("internal parser error: frequency table has unexpected shape")
+        current_frequencies.extend(freqs)
+    return tables
+
+
+def selected_frequency_table(lines: list[str]) -> dict[str, object]:
+    tables = parse_frequency_tables(lines)
+    if not tables:
+        return {
+            "index": None,
+            "start_line": None,
+            "end_line": None,
+            "selection_reason": "no_frequency_table",
+            "table_count": 0,
+            "frequencies": [],
+        }
+    table = dict(tables[-1])
+    table["selection_reason"] = "default_final_frequency_table"
+    table["table_count"] = len(tables)
+    return table
+
+
+def _ends_frequency_table(line: str) -> bool:
+    stripped = line.strip()
+    if not stripped:
+        return False
+    return (
+        stripped.startswith("Red. masses")
+        or stripped.startswith("Frc consts")
+        or stripped.startswith("IR Inten")
+        or stripped.startswith("Atom")
+        or stripped.startswith("Thermochemistry")
+        or stripped.startswith("Zero-point correction=")
+    )
+
+
 def parse_convergence(lines: list[str]) -> tuple[dict[str, dict[str, str | float]], str | None]:
     convergence_rows: dict[str, dict[str, str | float]] = {}
     stationary_convergence_rows: dict[str, dict[str, str | float]] | None = None
@@ -419,8 +481,14 @@ def parse_log(
         raise TypeError("internal parser error: section lines are unavailable")
     section_text = "\n".join(section_lines)
     log_route = extract_log_route(section_lines)
-    section_frequencies = parse_frequencies(section_lines)
+    raw_section_frequencies = parse_frequencies(section_lines)
+    frequency_table = selected_frequency_table(section_lines)
+    table_frequencies = frequency_table["frequencies"]
+    if not isinstance(table_frequencies, list):
+        raise TypeError("internal parser error: selected frequency table has unexpected shape")
+    section_frequencies = [float(freq) for freq in table_frequencies]
     imaginary = [freq for freq in section_frequencies if freq < 0.0]
+    raw_imaginary = [freq for freq in raw_section_frequencies if freq < 0.0]
     atoms = final_geometry(section_lines)
     convergence, convergence_source = parse_convergence(section_lines)
     normal_termination = "Normal termination of Gaussian" in section_text
@@ -460,6 +528,14 @@ def parse_log(
         "imaginary_frequency_count": len(imaginary),
         "imaginary_frequencies_cm-1": imaginary,
         "lowest_frequency_cm-1": min(section_frequencies) if section_frequencies else None,
+        "selected_frequency_table_index": frequency_table["index"],
+        "selected_frequency_table_reason": frequency_table["selection_reason"],
+        "selected_frequency_table_start_line": frequency_table["start_line"],
+        "selected_frequency_table_end_line": frequency_table["end_line"],
+        "frequency_table_count": frequency_table["table_count"],
+        "raw_frequency_count": len(raw_section_frequencies),
+        "raw_imaginary_frequency_count": len(raw_imaginary),
+        "raw_imaginary_frequencies_cm-1": raw_imaginary,
         "electronic_energy_hartree": parse_float(r"SCF Done:\s+E\([RU]?\w+\)\s+=\s+([-+]?\d+\.\d+)", section_text),
         "zero_point_correction_hartree": parse_float(r"Zero-point correction=\s+([-+]?\d+\.\d+)", section_text),
         "thermal_gibbs_correction_hartree": parse_float(
@@ -488,7 +564,7 @@ def write_parse_artifacts(parsed: dict[str, object], output_dir: Path, log_stem:
     atoms = parsed["atoms"]
     if not isinstance(summary, dict) or not isinstance(frequencies, list) or not isinstance(atoms, list):
         raise TypeError("parsed Gaussian artifact has unexpected shape")
-    (output_dir / "validation_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    write_json(output_dir / "validation_summary.json", summary)
     (output_dir / "frequencies_cm-1.txt").write_text(
         "\n".join(f"{float(freq):.6f}" for freq in frequencies) + ("\n" if frequencies else ""),
         encoding="utf-8",

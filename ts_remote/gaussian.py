@@ -8,6 +8,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import uuid
 from pathlib import Path
 
 from .base import RemoteReceipt
@@ -73,18 +74,26 @@ def checkpoint_name(input_path: Path, explicit_chk: str | None) -> str | None:
     return None
 
 
+def _run_id(node_id: str, input_name: str) -> str:
+    stem = re.sub(r"[^A-Za-z0-9_.-]+", "_", Path(input_name).stem).strip("._-") or "gaussian"
+    node = re.sub(r"[^A-Za-z0-9_.-]+", "_", node_id).strip("._-") or "node"
+    return f"{node}_{stem}_{uuid.uuid4().hex[:12]}"
+
+
 def remote_runner_text(config: RemoteGaussianConfig, input_name: str) -> str:
     run_dir = shlex.quote(config.remote_dir)
     input_file = shlex.quote(input_name)
     g16 = shlex.quote(config.g16)
     g16root = shlex.quote(config.g16root)
-    scratch = shlex.quote(config.scratch)
+    scratch_root = shlex.quote(config.scratch)
+    run_id = shlex.quote(_run_id(config.node_id, input_name))
     return f"""#!/usr/bin/env bash
 set -euo pipefail
 
 RUN_DIR={run_dir}
 INPUT={input_file}
 G16={g16}
+RUN_ID={run_id}
 
 cd "$RUN_DIR"
 
@@ -107,12 +116,14 @@ export GAUSS_EXEDIR="$g16root/g16/bsd:$g16root/g16"
 export G16BASIS="$g16root/g16/basis"
 export PATH="$g16root/g16/bsd:$g16root/g16:$PATH"
 
-export GAUSS_SCRDIR={scratch}
+SCRATCH_ROOT={scratch_root}
+export GAUSS_SCRDIR="$SCRATCH_ROOT/$RUN_ID"
 mkdir -p "$GAUSS_SCRDIR"
 
 {{
     echo "host=$(hostname)"
     echo "start=$(date -Is)"
+    echo "run_id=$RUN_ID"
     echo "run_dir=$RUN_DIR"
     echo "input=$INPUT"
     echo "g16=$G16"
@@ -163,7 +174,8 @@ def async_remote_runner_text(config: RemoteGaussianConfig, job_config: RemoteJob
     input_file = shlex.quote(input_path.name)
     g16 = shlex.quote(config.g16)
     g16root = shlex.quote(config.g16root)
-    scratch = shlex.quote(config.scratch)
+    scratch_root = shlex.quote(config.scratch)
+    run_id = shlex.quote(_run_id(job.node_id, input_path.name))
     return f"""#!/usr/bin/env bash
 set -euo pipefail
 
@@ -171,12 +183,13 @@ RUN_DIR={run_dir}
 STATUS_FILE={status_file}
 INPUT={input_file}
 G16={g16}
+RUN_ID={run_id}
 
 cd "$RUN_DIR"
 
 start_time=$(date -Is)
 cat > "$STATUS_FILE" <<EOF
-{{"state":"running","pid":$$,"start":"$start_time","run_dir":"$RUN_DIR","adapter":"gaussian"}}
+{{"state":"running","pid":$$,"run_id":"$RUN_ID","start":"$start_time","run_dir":"$RUN_DIR","adapter":"gaussian"}}
 EOF
 
 export g16root={g16root}
@@ -198,12 +211,14 @@ export GAUSS_EXEDIR="$g16root/g16/bsd:$g16root/g16"
 export G16BASIS="$g16root/g16/basis"
 export PATH="$g16root/g16/bsd:$g16root/g16:$PATH"
 
-export GAUSS_SCRDIR={scratch}
+SCRATCH_ROOT={scratch_root}
+export GAUSS_SCRDIR="$SCRATCH_ROOT/$RUN_ID"
 mkdir -p "$GAUSS_SCRDIR"
 
 {{
     echo "host=$(hostname)"
     echo "start=$start_time"
+    echo "run_id=$RUN_ID"
     echo "run_dir=$RUN_DIR"
     echo "input=$INPUT"
     echo "g16=$G16"
@@ -223,9 +238,13 @@ if [[ $status -eq 0 ]]; then
 else
     state=failed
 fi
-cat > "$STATUS_FILE" <<EOF
-{{"state":"$state","pid":$$,"exit_status":$status,"start":"$start_time","end":"$end_time","run_dir":"$RUN_DIR","adapter":"gaussian"}}
+if grep -q "\\"run_id\\":\\"$RUN_ID\\"" "$STATUS_FILE" 2>/dev/null; then
+    cat > "$STATUS_FILE" <<EOF
+{{"state":"$state","pid":$$,"run_id":"$RUN_ID","exit_status":$status,"start":"$start_time","end":"$end_time","run_dir":"$RUN_DIR","adapter":"gaussian"}}
 EOF
+else
+    echo "warning: not updating $STATUS_FILE because run_id changed" >&2
+fi
 exit "$status"
 """
 

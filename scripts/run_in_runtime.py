@@ -18,7 +18,12 @@ def main() -> int:
         print("usage: run_in_runtime.py <python-args...>", file=sys.stderr)
         return 2
     python = configured_python(ROOT) or Path(sys.executable).resolve()
-    os.execv(str(python), [str(python), *sys.argv[1:]])
+    env = dict(os.environ)
+    root_text = str(ROOT)
+    existing = [item for item in env.get("PYTHONPATH", "").split(os.pathsep) if item]
+    if root_text not in existing:
+        env["PYTHONPATH"] = os.pathsep.join([root_text, *existing]) if existing else root_text
+    os.execve(str(python), [str(python), *sys.argv[1:]], env)
     return 0
 
 

@@ -29,3 +29,8 @@ submission. Do not expose a standalone Gaussian remote-runner script as part of
 the public workflow surface. The generated compute-side runner must source
 Gaussian profiles with unset-variable protection because cluster profiles may
 read variables such as `LD_LIBRARY64_PATH` before defining them.
+Asynchronous launch should also protect each remote run directory against
+duplicate submission: reject a second launch when the recorded PID is still
+active, record a per-run identifier in remote status/metadata, and use a
+scratch subdirectory unique to that run rather than a process-shared Gaussian
+scratch root.

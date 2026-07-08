@@ -87,6 +87,8 @@ def test_submit_async_stages_inputs_runner_receipt_and_launches_background_job(m
     assert "nohup bash ./run_remote_job.sh" in calls[-1][2]
     assert "remote_runner.stdout" in calls[-1][2]
     assert "remote_pid.txt" in calls[-1][2]
+    assert "remote_pid.txt.lock" in calls[-1][2]
+    assert 'kill -0 "$pid"' in calls[-1][2]
 
 
 def test_submit_async_rejects_staging_basename_collision(tmp_path: Path) -> None:

@@ -175,12 +175,7 @@ def submit_async(config: RemoteJobConfig, *, runner_text: str | None = None) -> 
         for local in [*input_paths, runner_path, receipt_path]:
             _run([*_scp_prefix(config), str(local), f"{config.login_host}:{config.remote_dir}/{local.name}"], config.dry_run)
         _run([*_ssh_prefix(config), config.login_host, "chmod", "+x", f"{config.remote_dir}/{config.runner_name}"], config.dry_run)
-        launch = (
-            f"cd {shlex.quote(config.remote_dir)} && "
-            f"(nohup bash ./{shlex.quote(config.runner_name)} > {shlex.quote(config.runner_stdout_name)} "
-            f"2> {shlex.quote(config.runner_stderr_name)} < /dev/null & "
-            f"echo $! > {shlex.quote(config.pid_name)})"
-        )
+        launch = _launch_script(config)
         _run([*_ssh_prefix(config), config.login_host, _nested_compute_command(config, launch)], config.dry_run)
     return receipt
 
@@ -311,6 +306,32 @@ def _receipt(config: RemoteJobConfig) -> RemoteReceipt:
 def _nested_compute_command(config: RemoteJobConfig, script: str) -> str:
     compute_command = "bash -lc " + shlex.quote(script)
     return "ssh " + shlex.quote(config.compute_host) + " " + shlex.quote(compute_command)
+
+
+def _launch_script(config: RemoteJobConfig) -> str:
+    lock_name = f"{config.pid_name}.lock"
+    return (
+        f"cd {shlex.quote(config.remote_dir)}\n"
+        f"LOCK_DIR={shlex.quote(lock_name)}\n"
+        "if ! mkdir \"$LOCK_DIR\" 2>/dev/null; then\n"
+        f"    pid=$(cat {shlex.quote(config.pid_name)} 2>/dev/null || true)\n"
+        "    if [[ -n \"$pid\" ]] && kill -0 \"$pid\" 2>/dev/null; then\n"
+        "        echo \"remote job already running with pid $pid\" >&2\n"
+        "        exit 4\n"
+        "    fi\n"
+        "    echo \"remote submit lock exists but no active pid was found: $LOCK_DIR\" >&2\n"
+        "    exit 5\n"
+        "fi\n"
+        "trap 'rmdir \"$LOCK_DIR\" 2>/dev/null || true' EXIT\n"
+        f"pid=$(cat {shlex.quote(config.pid_name)} 2>/dev/null || true)\n"
+        "if [[ -n \"$pid\" ]] && kill -0 \"$pid\" 2>/dev/null; then\n"
+        "    echo \"remote job already running with pid $pid\" >&2\n"
+        "    exit 4\n"
+        "fi\n"
+        f"(nohup bash ./{shlex.quote(config.runner_name)} > {shlex.quote(config.runner_stdout_name)} "
+        f"2> {shlex.quote(config.runner_stderr_name)} < /dev/null & "
+        f"echo $! > {shlex.quote(config.pid_name)})\n"
+    )
 
 
 def _environment_lines(environment: dict[str, str]) -> list[str]:

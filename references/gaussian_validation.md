@@ -50,6 +50,12 @@ review is refuted.
 
 Concatenated or Link1 logs should be parsed section by section. The default is
 the final Gaussian job section unless a section index is explicitly supplied.
+Within the selected job section, if Gaussian printed multiple frequency tables
+such as Opt=CalcAll force-constant updates followed by the final harmonic Freq
+section, gate TS/Freq validity against the final complete frequency table only.
+Earlier frequency tables remain useful audit diagnostics and should be retained
+in the parsed artifact as raw frequency information rather than mixed into the
+acceptance count.
 
 When an input file is available, parse Gaussian results with
 `--input-gjf <file>` so the validation artifact records the intended route,

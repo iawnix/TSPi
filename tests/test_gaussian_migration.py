@@ -265,6 +265,37 @@ def test_stationary_point_convergence_is_not_overwritten_by_later_frequency_rows
     assert summary["force_convergence"]["Maximum Displacement"]["converged"] == "YES"
 
 
+def test_calcall_uses_final_frequency_table_for_tsfreq_gate(tmp_path: Path) -> None:
+    text = "\n".join(
+        [
+            " Entering Link 1 = synthetic",
+            " SCF Done:  E(RB3LYP) =  -40.123456     A.U. after 10 cycles",
+            orientation(),
+            convergence(),
+            " Stationary point found.",
+            " Frequencies --  -512.3000  -101.4000   98.2000",
+            " Red. masses --     1.0000     1.1000     1.2000",
+            " Frc consts  --     0.1000     0.2000     0.3000",
+            " Frequencies --  -450.0000    47.1000   98.2000",
+            " Zero-point correction=                           0.012345",
+            " Normal termination of Gaussian 16",
+        ]
+    )
+
+    parsed = parse_text(tmp_path, text)
+    summary = parsed["summary"]
+
+    assert summary["status"] == "validated_ts"
+    assert summary["frequency_table_count"] == 2
+    assert summary["selected_frequency_table_index"] == 1
+    assert summary["selected_frequency_table_reason"] == "default_final_frequency_table"
+    assert summary["frequency_count"] == 3
+    assert summary["imaginary_frequency_count"] == 1
+    assert summary["raw_frequency_count"] == 6
+    assert summary["raw_imaginary_frequency_count"] == 3
+    assert summary["raw_imaginary_frequencies_cm-1"] == [-512.3, -101.4, -450.0]
+
+
 def test_failed_remote_run_still_downloads_expected_artifacts(monkeypatch, tmp_path: Path) -> None:
     input_path = tmp_path / "ts.gjf"
     input_path.write_text("%chk=ts.chk\n# opt\n\nTitle\n\n0 1\nH 0 0 0\n\n", encoding="utf-8")
@@ -338,6 +369,9 @@ def test_remote_runner_relaxes_nounset_for_gaussian_profile_source() -> None:
     assert lines[source_index + 1] == "    profile_status=$?"
     assert lines[source_index + 2] == "    set -u"
     assert lines[source_index + 3] == "    set -e"
+    assert "RUN_ID=" in text
+    assert 'echo "run_id=$RUN_ID"' in text
+    assert 'export GAUSS_SCRDIR="$SCRATCH_ROOT/$RUN_ID"' in text
 
 
 def test_submit_async_gaussian_stages_extra_files_and_uses_generic_lifecycle(monkeypatch, tmp_path: Path) -> None:
@@ -388,7 +422,9 @@ def test_submit_async_gaussian_stages_extra_files_and_uses_generic_lifecycle(mon
     ]
     assert all(not call[-2].startswith("login:") for call in calls if call[0] == "scp")
     assert '"adapter":"gaussian"' in staged_runner
+    assert '"run_id":"$RUN_ID"' in staged_runner
     assert 'source "$g16root/g16/bsd/g16.profile"' in staged_runner
+    assert 'export GAUSS_SCRDIR="$SCRATCH_ROOT/$RUN_ID"' in staged_runner
     assert '"$G16" "$INPUT" > g16_driver.out 2> g16_driver.err' in staged_runner
     assert calls[-1][:2] == ["ssh", "login"]
     assert calls[-1][2].startswith("ssh compute ")
