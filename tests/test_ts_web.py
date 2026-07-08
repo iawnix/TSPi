@@ -60,34 +60,49 @@ def test_branch_visual_semantics_are_distinct_from_refuted_status(tmp_path: Path
     make_branch_workspace(workspace)
     graph = explorer_graph_payload_from_view(normalize_workspace(workspace))
     nodes = {node["id"]: node for node in graph["nodes"]}
-    generated_edges = [edge for edge in graph["edges"] if edge["kind"] == "branch_generated"]
+    trigger_edges = [edge for edge in graph["edges"] if edge["kind"] == "branch_trigger"]
 
     assert nodes["n001"]["node_state"] == "refuted"
     assert nodes["n001"]["card_color"] == "red"
-    assert nodes["n001"]["branch_badge"]["role"] == "branch_source"
-    assert nodes["n001"]["branch_badge"]["color"] == "purple"
-    assert generated_edges
-    assert {edge["edge_color"] for edge in generated_edges} == {"blue"}
-    assert graph["presentation"]["edge_kind"]["branch_generated"]["color"] == "blue"
-    assert graph["presentation"]["event_role"]["branch_source"]["color"] == "purple"
+    assert nodes["n001"]["branch_badge"]["role"] == "branch_trigger"
+    assert nodes["n001"]["branch_badge"]["label"] == "triggered pathway branch"
+    assert nodes["n001"]["branch_origin"]["role"] == "branch_trigger"
+    assert nodes["n001"]["branch_origin"]["label"] == "triggered pathway branch"
+    assert nodes["n002"]["branch_badge"]["role"] == "generated_from_branch"
+    assert nodes["n002"]["branch_badge"]["label"] == "new pathway branch"
+    assert nodes["n002"]["branch_badge"]["color"] == "purple"
+    assert nodes["n002"]["branch_origin"]["role"] == "generated_from_branch"
+    assert nodes["n002"]["branch_origin"]["label"] == "new pathway branch"
+    assert nodes["n002"]["branch_origin"]["is_anchor_relinked"] is True
+    assert [(edge["source"], edge["target"]) for edge in trigger_edges] == [("n001", "n002")]
+    assert {edge["edge_color"] for edge in trigger_edges} == {"purple"}
+    assert graph["presentation"]["edge_kind"]["branch_trigger"]["color"] == "purple"
+    assert graph["presentation"]["event_role"]["branch_trigger"]["color"] == "purple"
+    assert graph["presentation"]["event_role"]["generated_from_branch"]["color"] == "purple"
 
 
-def test_static_ui_uses_outline_status_chips_and_explains_branch_symbol() -> None:
+def test_static_ui_uses_outline_status_chips_and_branch_origin_panel() -> None:
     html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
 
     assert ".chip[data-color=\"red\"]" in html
     assert ".chip[data-color=\"red\"]    { color: var(--red);" in html
     assert ".chip[data-color=\"red\"]    { background:" not in html
-    assert ".branch-badge { fill: none;" in html
-    assert "symbol-legend" in html
-    assert "↺" in html
-    assert "branched from" in html
+    assert "Branch Origin" in html
+    assert "Alternative branch relation" in html
+    assert ".branch-badge { fill: none;" not in html
+    assert "symbol-legend" not in html
+    assert "↺" not in html
+    assert "Non-linear branch marker on trigger or generated nodes" not in html
+    assert "triggered rebase" not in html
+    assert "rebased branch" not in html
 
 
-def test_static_ui_only_anchor_edges_render_as_back_edges() -> None:
+def test_static_ui_has_no_legacy_branch_edge_vocabulary() -> None:
     html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
 
-    assert 'const back = e.kind === "branch_anchor";' in html
+    assert "branch_anchor" not in html
+    assert "branch_generated" not in html
+    assert "branch_source" not in html
     assert 'e.kind.startsWith("branch")' not in html
 
 
@@ -122,7 +137,12 @@ def test_branch_edges_and_events_dedupe_when_target_is_replacement(tmp_path: Pat
     tree_path.write_text(json.dumps(tree, indent=2) + "\n", encoding="utf-8")
 
     graph = explorer_graph_payload_from_view(normalize_workspace(workspace))
-    branch_edges = [edge for edge in graph["edges"] if edge["kind"] == "branch_generated" and edge.get("event_id") == event_id]
+    branch_edges = [edge for edge in graph["edges"] if edge["kind"] == "branch_trigger" and edge.get("event_id") == event_id]
+    n001_events = [
+        event
+        for event in graph["events"]
+        if event["event_id"] == event_id and event["node_id"] == "n001"
+    ]
     n002_events = [
         event
         for event in graph["events"]
@@ -131,12 +151,16 @@ def test_branch_edges_and_events_dedupe_when_target_is_replacement(tmp_path: Pat
     nodes = {node["id"]: node for node in graph["nodes"]}
 
     assert [(edge["kind"], edge["source"], edge["target"]) for edge in branch_edges] == [
-        ("branch_generated", "n001", "n002")
+        ("branch_trigger", "n001", "n002")
     ]
+    assert [event["event_role"] for event in n001_events] == ["branch_trigger"]
     assert [event["event_role"] for event in n002_events] == ["generated_from_branch"]
-    assert nodes["n002"]["branch_anchor_event_ids"] == []
+    assert "branch_anchor_event_ids" not in nodes["n002"]
+    assert nodes["n001"]["branch_trigger_event_ids"] == [event_id]
     assert nodes["n002"]["generated_from_branch_event_ids"] == [event_id]
     assert nodes["n002"]["branch_badge"]["role"] == "generated_from_branch"
+    assert nodes["n002"]["branch_origin"]["role"] == "generated_from_branch"
+    assert nodes["n002"]["branch_origin"]["is_anchor_relinked"] is False
 
 
 def test_continue_parent_branch_events_do_not_duplicate_lineage_edges(tmp_path: Path) -> None:
@@ -147,7 +171,10 @@ def test_continue_parent_branch_events_do_not_duplicate_lineage_edges(tmp_path: 
     lineage_edges = [edge for edge in graph["edges"] if edge["kind"] == "branch"]
     assert len(lineage_edges) == len(graph["nodes"]) - 1
     assert not [edge for edge in graph["edges"] if edge["kind"] == "branch_generated"]
+    assert not [edge for edge in graph["edges"] if edge["kind"] == "branch_trigger"]
     assert not [edge for edge in graph["edges"] if edge["kind"] == "branch_anchor"]
+    assert not [node for node in graph["nodes"] if node["branch_badge"]]
+    assert not [node for node in graph["nodes"] if node["branch_origin"]]
 
 
 def test_register_workspace_deduplicates_and_rejects_source_pollution(tmp_path: Path) -> None:
@@ -188,9 +215,9 @@ def test_web_server_api_is_read_only(tmp_path: Path) -> None:
         job = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/job")
         graph_nodes = {node["id"]: node for node in job["graph"]["nodes"]}
         assert graph_nodes["n001"]["claim_verdict"] == "refuted"
-        assert any(edge["kind"] == "branch_generated" for edge in job["graph"]["edges"])
+        assert any(edge["kind"] == "branch_trigger" for edge in job["graph"]["edges"])
         single_tree = _get_json(host, port, "/api/tree")
-        assert any(edge["kind"] == "branch_generated" for edge in single_tree["edges"])
+        assert any(edge["kind"] == "branch_trigger" for edge in single_tree["edges"])
         node = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/node/n001")
         assert node["node"]["program_status"] == "completed"
         single_node = _get_json(host, port, "/api/node/n001")
@@ -650,8 +677,8 @@ def test_web_mechanism_analysis_includes_closure_facts_and_evidence_quality(tmp_
         assert any("program fact: Normal Gaussian termination." in line for line in latest)
         assert any("imaginary_frequency_count=1" in line for line in latest)
         assert any("mode_verdict=mode_matches_reaction_center" in line for line in latest)
-        assert any(event["event_type"] == "branch" for event in n001_events)
-        assert [event["decision"] for event in n001_events if event["event_type"] != "branch"] == ["start_node", "end_node"]
+        assert not any(event["event_type"] == "branch" for event in n001_events)
+        assert [event["decision"] for event in n001_events] == ["start_node", "end_node"]
     finally:
         server.shutdown()
         server.server_close()

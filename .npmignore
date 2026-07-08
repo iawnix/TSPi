@@ -1,0 +1,9 @@
+__pycache__/
+.pytest_cache/
+.runtime/
+node_modules/
+npm-debug.log*
+*.pyc
+*.pyo
+*.tmp
+PLAN_*.md

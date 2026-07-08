@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from collections.abc import Iterable
 from typing import Any
 
 from ts_workspace.io import read_json
@@ -301,20 +302,20 @@ def _explorer_node(row: dict[str, Any], branch_events: list[Any]) -> dict[str, A
     claim_verdict = display.get("claim_verdict") or closure.get("claim_verdict")
     tone = display.get("tone") or _display_tone(lifecycle, claim_verdict, program_status)
     state_key = display.get("state") or _node_state_key(lifecycle, claim_verdict, program_status)
-    branch_from_ids: list[str] = []
-    branch_anchor_ids: list[str] = []
-    generated_ids: list[str] = []
+    branch_trigger_events: list[dict[str, Any]] = []
+    generated_events: list[dict[str, Any]] = []
     for event in branch_events:
         if not isinstance(event, dict) or not event.get("event_id"):
             continue
-        event_id = str(event["event_id"])
+        if not _is_visible_branch_event(event):
+            continue
         if event.get("from_node") == node_id:
-            branch_from_ids.append(event_id)
-        if event.get("anchor_node") == node_id and event.get("anchor_node") != event.get("new_node"):
-            branch_anchor_ids.append(event_id)
+            branch_trigger_events.append(event)
         if event.get("new_node") == node_id:
-            generated_ids.append(event_id)
-    branch_ids = _dedupe(branch_from_ids + branch_anchor_ids + generated_ids)
+            generated_events.append(event)
+    branch_trigger_ids = [str(event["event_id"]) for event in branch_trigger_events]
+    generated_ids = [str(event["event_id"]) for event in generated_events]
+    branch_ids = _dedupe(branch_trigger_ids + generated_ids)
     state_line = _closure_line(closure, program_status, claim_verdict)
     return {
         "id": node_id,
@@ -343,10 +344,10 @@ def _explorer_node(row: dict[str, Any], branch_events: list[Any]) -> dict[str, A
         "active": lifecycle == "running",
         "frontier": lifecycle == "running",
         "branch_event_ids": branch_ids,
-        "branch_from_event_ids": _dedupe(branch_from_ids),
-        "branch_anchor_event_ids": _dedupe(branch_anchor_ids),
+        "branch_trigger_event_ids": _dedupe(branch_trigger_ids),
         "generated_from_branch_event_ids": _dedupe(generated_ids),
-        "branch_badge": _branch_badge(branch_from_ids, branch_anchor_ids, generated_ids),
+        "branch_badge": _branch_badge(branch_trigger_events, generated_events),
+        "branch_origin": _branch_origin(branch_trigger_events, generated_events),
     }
 
 
@@ -390,6 +391,8 @@ def _explorer_edges(nodes: list[dict[str, Any]], tree_edges: list[Any], branch_e
     for event in branch_events:
         if not isinstance(event, dict):
             continue
+        if not _is_visible_branch_event(event):
+            continue
         from_node = event.get("from_node")
         anchor_node = event.get("anchor_node")
         new_node = event.get("new_node")
@@ -399,18 +402,8 @@ def _explorer_edges(nodes: list[dict[str, Any]], tree_edges: list[Any], branch_e
             "reason": event.get("reason_code"),
         }
         parent_id = parent_by_id.get(str(new_node)) if new_node else None
-        generated_pair = (str(from_node), str(new_node)) if from_node and new_node else None
-        if generated_pair and generated_pair not in lineage_pairs:
-            add(from_node, new_node, "branch_generated", **extra)
-        if (
-            from_node
-            and anchor_node
-            and new_node
-            and from_node != anchor_node
-            and anchor_node != new_node
-            and from_node != parent_id
-        ):
-            add(from_node, anchor_node, "branch_anchor", **extra)
+        if from_node and new_node and str(from_node) != parent_id:
+            add(from_node, new_node, "branch_trigger", **extra)
     return edges
 
 
@@ -433,13 +426,13 @@ def _explorer_events(branch_events: list[Any], decision_events: list[Any]) -> li
     for event in branch_events:
         if not isinstance(event, dict):
             continue
+        if not _is_visible_branch_event(event):
+            continue
         event_id = event.get("event_id")
         role_nodes = [
-            ("branch_source", event.get("from_node")),
+            ("branch_trigger", event.get("from_node")),
             ("generated_from_branch", event.get("new_node")),
         ]
-        if event.get("anchor_node") != event.get("new_node"):
-            role_nodes.insert(1, ("branch_anchor", event.get("anchor_node")))
         for role, node_id in role_nodes:
             display = _event_role_display(role)
             add(
@@ -450,8 +443,8 @@ def _explorer_events(branch_events: list[Any], decision_events: list[Any]) -> li
                     "event_role": role,
                     "event_label": display["label"],
                     "event_color": display["color"],
-                    "decision": event.get("reason_code") or "branch",
-                    "reason": event.get("rationale") or event.get("changed_variable"),
+                    "decision": _branch_event_decision(role, event),
+                    "reason": _branch_event_reason(role, event),
                     "evidence_refs": _list(event.get("evidence_refs")),
                 }
             )
@@ -744,13 +737,11 @@ def _explorer_presentation() -> dict[str, Any]:
         "edge_kind": {
             "branch": {"label": "branch", "color": "accent"},
             "dependency": {"label": "dependency", "color": "cyan"},
-            "branch_anchor": {"label": "branch anchor", "color": "purple"},
-            "branch_generated": {"label": "generated branch", "color": "blue"},
+            "branch_trigger": {"label": "alternative trigger", "color": "purple"},
         },
         "event_role": {
-            "branch_source": {"label": "branched from", "color": "purple"},
-            "branch_anchor": {"label": "branch anchor", "color": "purple"},
-            "generated_from_branch": {"label": "generated by branch", "color": "blue"},
+            "branch_trigger": {"label": "alternative trigger", "color": "purple"},
+            "generated_from_branch": {"label": "new attempt", "color": "purple"},
             "branch": {"label": "branch", "color": "purple"},
             "start_node": {"label": "node started", "color": "accent"},
             "end_node": {"label": "node closed", "color": "green"},
@@ -775,22 +766,126 @@ def _event_role_display(role: str) -> dict[str, str]:
     }
 
 
-def _branch_badge(source_ids: list[str], anchor_ids: list[str], generated_ids: list[str]) -> dict[str, Any] | None:
-    if source_ids:
-        display = _event_role_display("branch_source")
-        return {"role": "branch_source", "label": display["label"], "color": display["color"], "event_ids": _dedupe(source_ids)}
-    if generated_ids:
-        display = _event_role_display("generated_from_branch")
-        return {
-            "role": "generated_from_branch",
-            "label": display["label"],
-            "color": display["color"],
-            "event_ids": _dedupe(generated_ids),
-        }
-    if anchor_ids:
-        display = _event_role_display("branch_anchor")
-        return {"role": "branch_anchor", "label": display["label"], "color": display["color"], "event_ids": _dedupe(anchor_ids)}
+def _branch_badge(trigger_events: list[dict[str, Any]], generated_events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if trigger_events:
+        return _branch_badge_for_role("branch_trigger", trigger_events)
+    if generated_events:
+        return _branch_badge_for_role("generated_from_branch", generated_events)
     return None
+
+
+def _branch_badge_for_role(role: str, events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    event_ids = [str(event["event_id"]) for event in events if event.get("event_id")]
+    if not event_ids:
+        return None
+    display = _event_role_display(role)
+    return {
+        "role": role,
+        "label": _branch_event_badge_label(role, events) or display["label"],
+        "color": display["color"],
+        "event_ids": _dedupe(event_ids),
+        "relations": _dedupe(str(event.get("relation") or "") for event in events if event.get("relation")),
+    }
+
+
+def _branch_event_badge_label(role: str, events: list[dict[str, Any]]) -> str:
+    relation = _primary_relation(events)
+    if role == "branch_trigger":
+        return _relation_phrase(relation, role="trigger")
+    if role == "generated_from_branch":
+        return _relation_phrase(relation, role="generated")
+    return ""
+
+
+def _branch_event_decision(role: str, event: dict[str, Any]) -> str:
+    if role == "branch_trigger":
+        return _relation_phrase(str(event.get("relation") or ""), role="trigger")
+    if role == "generated_from_branch":
+        return _relation_phrase(str(event.get("relation") or ""), role="generated")
+    return str(event.get("reason_code") or "branch")
+
+
+def _branch_event_reason(role: str, event: dict[str, Any]) -> str:
+    from_node = event.get("from_node")
+    anchor_node = event.get("anchor_node")
+    new_node = event.get("new_node")
+    if from_node and anchor_node and new_node:
+        relation = _relation_phrase(str(event.get("relation") or ""), role="generated")
+        if role == "branch_trigger":
+            return f"{from_node} triggered {new_node} as a {relation}, anchored at {anchor_node}."
+        if role == "generated_from_branch":
+            return f"{new_node} was created as a {relation}, triggered by {from_node} and anchored at {anchor_node}."
+    return str(event.get("rationale") or event.get("changed_variable") or event.get("reason_code") or "")
+
+
+def _branch_origin(trigger_events: list[dict[str, Any]], generated_events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    if trigger_events:
+        return _branch_origin_for_role("branch_trigger", trigger_events)
+    if generated_events:
+        return _branch_origin_for_role("generated_from_branch", generated_events)
+    return None
+
+
+def _branch_origin_for_role(role: str, events: list[dict[str, Any]]) -> dict[str, Any] | None:
+    event = next((item for item in events if item.get("event_id")), None)
+    if event is None:
+        return None
+    relation = str(event.get("relation") or "")
+    display = _event_role_display(role)
+    return {
+        "role": role,
+        "label": _relation_phrase(relation, role="trigger" if role == "branch_trigger" else "generated")
+        or display["label"],
+        "relation": relation,
+        "from_node": event.get("from_node"),
+        "anchor_node": event.get("anchor_node"),
+        "new_node": event.get("new_node"),
+        "parent_node": event.get("parent_node"),
+        "is_anchor_relinked": _is_anchor_relinked(event),
+        "reason_code": event.get("reason_code"),
+        "changed_variable": event.get("changed_variable"),
+        "rationale": event.get("rationale"),
+        "event_ids": _dedupe(str(item["event_id"]) for item in events if item.get("event_id")),
+        "summary": _branch_event_reason(role, event),
+    }
+
+
+def _primary_relation(events: list[dict[str, Any]]) -> str:
+    for event in events:
+        relation = event.get("relation")
+        if relation:
+            return str(relation)
+    return ""
+
+
+def _relation_phrase(relation: str, *, role: str) -> str:
+    if relation == "new_solution_branch":
+        return "triggered alternative solution" if role == "trigger" else "new solution attempt"
+    if relation == "new_hypothesis_branch":
+        return "triggered hypothesis branch" if role == "trigger" else "new hypothesis branch"
+    if relation == "new_pathway_branch":
+        return "triggered pathway branch" if role == "trigger" else "new pathway branch"
+    if relation == "administrative_followup":
+        return "triggered follow-up" if role == "trigger" else "follow-up"
+    return "triggered branch" if role == "trigger" else "new branch"
+
+
+def _is_anchor_relinked(event: dict[str, Any]) -> bool:
+    parent_node = event.get("parent_node")
+    from_node = event.get("from_node")
+    anchor_node = event.get("anchor_node")
+    new_node = event.get("new_node")
+    if parent_node and from_node and anchor_node and new_node:
+        return (
+            str(parent_node) == str(anchor_node)
+            and str(from_node) != str(anchor_node)
+            and str(anchor_node) != str(new_node)
+        )
+    return bool(event.get("is_rebased"))
+
+
+def _is_visible_branch_event(event: dict[str, Any]) -> bool:
+    return event.get("relation") != "continue_parent"
 
 
 def _normalize_branch_event(event: dict[str, Any]) -> dict[str, Any]:
@@ -950,7 +1045,7 @@ def _record_pathway_audit_decision(record: dict[str, Any]) -> str:
     ).lower()
 
 
-def _dedupe(items: list[str]) -> list[str]:
+def _dedupe(items: Iterable[str]) -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
     for item in items:
