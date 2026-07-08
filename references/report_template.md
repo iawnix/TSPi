@@ -11,7 +11,10 @@ claims, not as a generic calculation log. The final report must separate:
 
 The report must state the highest validated layer reached. It must not call a
 candidate, scan point, NEB image, dMECP structure, or isolated imaginary
-frequency an accepted transition state.
+frequency an accepted transition state. `ts_report` should be able to write a
+report package with `final_report.md`, `report_context.json`, `assets/`, and
+`email_summary.md`; missing render or energy data must be reported as missing
+evidence rather than silently omitted.
 
 ## External Reporting Guidance Used
 
@@ -53,19 +56,36 @@ Use `templates/ts_final_report.md` as the fillable template. A completed report
 should include:
 
 1. Executive verdict and highest validated evidence layer.
-2. System, endpoint, atom-mapping, charge, multiplicity, and pathway scope.
-3. Computational protocol sufficient to reproduce the calculation.
-4. Search tree summary with node decisions and evidence references.
-5. Candidate-generation evidence and rejected-branch rationale.
-6. TS/Freq evidence including convergence, one-imaginary-frequency status,
-   imaginary-mode assignment, key internal-coordinate changes, and artifacts.
-7. Connectivity or IRC evidence including settings, endpoint assignments,
+2. Reaction overview: system, endpoint, atom-mapping, charge, multiplicity,
+   reaction center, transferred atoms, and pathway scope.
+3. R-TS-P structural panel with reactant, accepted/selected TS, product, and
+   reaction-center key distances.
+4. Imaginary mode / vibration analysis, including mode+ and mode- displacement
+   geometry or distance changes.
+5. IRC / connectivity evidence including settings, endpoint assignments,
    endpoint optimization state, RMSD/key-bond metrics, and diagnostics.
-8. Accepted-TS audit only when TS/Freq and connectivity gates both support the
+6. Energy profile across R, TS, and P with clear missing-data notes when
+   stationary-point energies are incomplete or not comparable.
+7. Mechanistic interpretation explaining how the reaction occurs, including
+   synchrony/asynchrony, TS resemblance, alternative hypotheses, and electronic
+   structure boundaries.
+8. Evidence audit preserving the candidate generation, TS/Freq validation,
+   connectivity validation, accepted-TS audit, and pathway audit layers.
+9. Search tree summary with node decisions and evidence references.
+10. Limitations and follow-up.
+11. Artifact and evidence appendix.
+
+The evidence audit should retain:
+
+- Candidate-generation evidence and rejected-branch rationale.
+- TS/Freq evidence including convergence, one-imaginary-frequency status,
+   imaginary-mode assignment, key internal-coordinate changes, and artifacts.
+- Connectivity or IRC evidence including settings, endpoint assignments,
+  endpoint optimization state, RMSD/key-bond metrics, and diagnostics.
+- Accepted-TS audit only when TS/Freq and connectivity gates both support the
    same hypothesis.
-9. Pathway audit, including negative-audit conclusions such as
+- Pathway audit, including negative-audit conclusions such as
    `pathway_not_accepted`.
-10. Energy profile, coordinates, artifacts, hashes, logs, and open questions.
 
 ## Minimum Acceptance Gates
 

@@ -1,22 +1,20 @@
 #!/usr/bin/env python3
-"""Thin wrapper for Gaussian TS/Freq input preparation."""
+"""Calculation backend CLI for the transition-state workflow skill."""
 
 from __future__ import annotations
 
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT))
 
 from ts_runtime import ensure_runtime_python
 
 ensure_runtime_python(ROOT)
 
-from ts_backends.gaussian import prepare_input_main
+from ts_backends.cli import main  # noqa: E402
 
 
 if __name__ == "__main__":
-    raise SystemExit(prepare_input_main())
+    raise SystemExit(main())

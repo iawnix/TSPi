@@ -14,14 +14,19 @@ from ts_runtime import ensure_runtime_python
 
 ensure_runtime_python(ROOT)
 
-from ts_report import build_final_report
+from ts_report import build_final_report, build_report_package
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", required=True)
     parser.add_argument("--output")
+    parser.add_argument("--package-dir", help="Write final_report.md, report_context.json, assets/, and email_summary.md.")
     args = parser.parse_args()
+    if args.package_dir:
+        result = build_report_package(args.root, args.package_dir)
+        print(result["report"])
+        return 0
     text = build_final_report(args.root)
     if args.output:
         Path(args.output).write_text(text, encoding="utf-8")

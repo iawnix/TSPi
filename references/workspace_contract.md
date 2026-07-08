@@ -21,7 +21,7 @@ Required directories:
 - `rejected/`
 
 Only `ts_workspace` may write root state files. Backends, remote helpers,
-molecular comparison, web views, and final reports must return artifacts or
+structure analysis, web views, and final reports must return artifacts or
 read models instead of mutating the workspace.
 
 Node-scoped artifacts belong under:

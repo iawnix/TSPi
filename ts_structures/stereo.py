@@ -32,7 +32,7 @@ def compare_stereochemistry(
 ) -> tuple[list[dict[str, Any]], list[str]]:
     """Compare explicitly declared stereochemical features.
 
-    Checks use zero-based atom indices, matching the rest of ``mol_comparator``.
+    Checks use zero-based atom indices, matching the rest of ``ts_structures``.
     Supported check shapes:
 
     - ``{"type": "tetrahedral", "center": 0, "neighbors": [1, 2, 3, 4],

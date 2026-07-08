@@ -5,8 +5,8 @@ Gaussian TS/Freq validation should be node-scoped.
 Use `ts_backends.gaussian` for Gaussian input construction and Gaussian output
 parsing. The public helper scripts are thin wrappers:
 
-- `scripts/prepare_gaussian_ts_input.py`;
-- `scripts/parse_gaussian_ts_result.py`.
+- `scripts/ts_backend.py gaussian prepare`;
+- `scripts/ts_backend.py gaussian parse`.
 
 Record:
 

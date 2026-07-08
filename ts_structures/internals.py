@@ -1,4 +1,4 @@
-"""Geometry primitives for molecular comparisons."""
+"""Geometry primitives for structure analysiss."""
 
 from __future__ import annotations
 

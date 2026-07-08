@@ -1,6 +1,6 @@
 ---
 name: transition-state-workflow
-description: Plan, run, validate, and reflect on transition-state searches with a chemistry-hypothesis-driven workspace, decision JSON mutations, explicit mechanism branches, molecular comparison, backend adapters, remote execution helpers, read-only web visualization, and final report assembly.
+description: Plan, run, validate, and reflect on transition-state searches with a chemistry-hypothesis-driven workspace, decision JSON mutations, explicit mechanism branches, structure analysis, backend adapters, remote execution helpers, read-only web visualization, and final report assembly.
 ---
 
 # Transition-State Workflow
@@ -19,8 +19,9 @@ decision JSON.
 - `ts_workspace`: the only writable control plane. It owns workspace bootstrap,
   node start and close, append-only updates, decision validation, workspace
   validation, report context, finalizers, and root state writes.
-- `mol_comparator`: structural comparison only. It returns metrics, a verdict,
-  and uncertainty that can become evidence; it never writes a workspace.
+- `ts_structures`: structure analysis only. It parses XYZ structures,
+  computes geometry/RMSD/stereochemical metrics, and returns evidence-shaped
+  results; it never writes a workspace.
 - `ts_runtime`: isolated Python runtime discovery only. It owns Conda
   environment manifests and interpreter selection; it never mutates TS
   workspace state files.
@@ -41,7 +42,9 @@ decision JSON.
   `--label <name>` to register on startup. Default bind is `0.0.0.0` for
   LAN-visible TS monitoring. Manage the registry with
   `python scripts/ts_web.py register|list|remove --state-dir <state> ...`.
-- `ts_report`: final conclusion assembly from validated workspace evidence.
+- `ts_report`: final report package assembly from validated workspace
+  evidence. It can emit Markdown, a report context JSON, visual assets, and an
+  email summary; missing render or energy data must be reported explicitly.
 
 ## Public Control Plane
 
@@ -66,8 +69,8 @@ such as required post-`n000` `payload.branch_context` provenance.
 Gaussian local helper entrypoints are thin wrappers around backend boundaries:
 
 ```bash
-python scripts/prepare_gaussian_ts_input.py --help
-python scripts/parse_gaussian_ts_result.py --help
+python scripts/ts_backend.py gaussian prepare --help
+python scripts/ts_backend.py gaussian parse --help
 ```
 
 Runtime and visualization entrypoints:
@@ -78,6 +81,7 @@ python scripts/ts_render.py diagnostic --json
 python scripts/ts_render.py render input.xyz -o nodes/n001/outputs/render.png
 python scripts/ts_render.py compare reactant.xyz ts.xyz product.xyz -o nodes/n001/outputs/compare.png
 python scripts/ts_render.py animate irc.xyz -o nodes/n001/outputs/irc.mp4
+python scripts/ts_report.py --root <root> --package-dir reports/final_report_package
 ```
 
 After installation, public scripts and the Pi extension prefer the interpreter
@@ -185,7 +189,7 @@ They are not top-level node states.
    hypothesis, or stop.
 5. Run `validate_decision` for preflight when useful.
 6. Apply the mutation through `start_node`, `update_workspace`, or `end_node`.
-7. Use `ts_backends`, `ts_remote`, and `mol_comparator` to create artifacts and
+7. Use `ts_backends`, `ts_remote`, and `ts_structures` to create artifacts and
    evidence, then register evidence through `ts_workspace`. Keep node artifacts
    phase-owned: candidate-generation outputs stay under the candidate node;
    TS/Freq parse and mode-analysis outputs stay under the TS/Freq node; IRC and
@@ -199,7 +203,10 @@ They are not top-level node states.
 8. Close the node with program facts, claim verdict, implication, and open
    questions.
 9. Run `report_workspace` again before branching or stopping.
-10. Use `ts_report` only after the workspace validates.
+10. Use `ts_report` only after the workspace validates. Prefer report-package
+   output for final handoff so structure panels, vibration/IRC plots, energy
+   profile, mechanism interpretation, context JSON, and email summary are kept
+   together.
 
 ## References
 
@@ -209,7 +216,7 @@ Read only the reference needed for the current task:
 - `references/decision_contract.md`
 - `references/state_model.md`
 - `references/pathway_model.md`
-- `references/mol_comparator_contract.md`
+- `references/ts_structures_contract.md`
 - `references/runtime_environment.md`
 - `references/render_contract.md`
 - `references/report_template.md`

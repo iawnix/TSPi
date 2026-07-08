@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from mol_comparator import compare_structures
+from ts_structures import compare_structures
 from ts_render import MolVisualizer
 from ts_backends.base import Backend, BackendTask
 from ts_backends.gaussian import GaussianBackend, prepare_gaussian
@@ -29,7 +29,7 @@ def test_remote_runner_returns_node_scoped_receipt() -> None:
     assert receipt.receipt_path == "/remote/n001/remote_receipt.json"
 
 
-def test_mol_comparator_returns_evidence_shaped_result(tmp_path: Path) -> None:
+def test_ts_structures_returns_evidence_shaped_result(tmp_path: Path) -> None:
     xyz = "2\nh2\nH 0 0 0\nH 0 0 0.74\n"
     ref = tmp_path / "ref.xyz"
     target = tmp_path / "target.xyz"

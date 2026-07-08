@@ -16,9 +16,9 @@ visualization artifact, not chemistry proof.
   finalizers, and workspace validation.
 - `ts_backends`: local calculation adapters and parsers.
 - `ts_remote`: remote staging, submission, polling, fetch, and kill helpers.
-- `mol_comparator`: structure comparison helpers.
+- `ts_structures`: structure parsing, geometry, RMSD, and stereochemistry helpers.
 - `ts_render`: lightweight molecular rendering through `xyzrender` only.
-- `ts_report`: final report assembly from validated workspace evidence.
+- `ts_report`: final report package assembly from validated workspace evidence.
 - `extensions/ts-workflow-context`: Pi Agent extension for workspace context,
   validation, and decision tools.
 - `templates/decision/`: runtime decision JSON templates for workspace
@@ -155,6 +155,18 @@ Use the final report template after the workspace validates:
 templates/ts_final_report.md
 ```
 
+Generate a report package when handing off a completed search:
+
+```bash
+python scripts/ts_report.py --root <workspace> --package-dir <workspace>/reports/final_report_package
+```
+
+The package contains `final_report.md`, `report_context.json`, `assets/`, and
+`email_summary.md`. The report should include R-TS-P structure references,
+imaginary-mode/vibration analysis, IRC key-distance evidence, an energy profile
+or explicit missing-energy note, and a mechanism interpretation that separates
+accepted pathway evidence from chemical speculation.
+
 The report must state the highest validated evidence layer reached. Do not call
 a candidate, scan point, NEB image, dMECP structure, or isolated imaginary
 frequency an accepted TS. Accepted-TS language requires TS/Freq and
@@ -178,7 +190,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q
 Run tests through the configured runtime:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/run_in_runtime.py -m pytest -q
+PYTHONDONTWRITEBYTECODE=1 python3 scripts/ts_runtime.py run -m pytest -q
 ```
 
 Check Pi package contents:

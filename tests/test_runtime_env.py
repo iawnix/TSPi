@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import importlib.util
 import json
 import os
 import subprocess
@@ -10,6 +9,7 @@ from pathlib import Path
 import pytest
 
 from ts_runtime.env import configured_python, default_env_prefix, default_env_store, spec_sha256, write_manifest
+import ts_runtime.cli as runtime_cli
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -126,17 +126,10 @@ def test_install_env_accepts_user_conda_root(tmp_path: Path) -> None:
     assert payload["conda_executable"] == str(conda)
 
 
-def test_run_in_runtime_injects_skill_root_into_pythonpath(monkeypatch) -> None:
-    script_path = ROOT / "scripts" / "run_in_runtime.py"
-    spec = importlib.util.spec_from_file_location("test_run_in_runtime_module", script_path)
-    assert spec and spec.loader
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-
+def test_ts_runtime_run_injects_skill_root_into_pythonpath(monkeypatch) -> None:
     calls: dict[str, object] = {}
 
-    monkeypatch.setattr(module, "configured_python", lambda root: Path(sys.executable).resolve())
-    monkeypatch.setattr(module.sys, "argv", ["run_in_runtime.py", "tools/monitor.py", "--root", "/tmp/ws"])
+    monkeypatch.setattr(runtime_cli, "configured_python", lambda root: Path(sys.executable).resolve())
     monkeypatch.setenv("PYTHONPATH", "/tmp/existing")
 
     def fake_execve(path, argv, env):
@@ -145,10 +138,10 @@ def test_run_in_runtime_injects_skill_root_into_pythonpath(monkeypatch) -> None:
         calls["env"] = env
         raise SystemExit(0)
 
-    monkeypatch.setattr(module.os, "execve", fake_execve)
+    monkeypatch.setattr(runtime_cli.os, "execve", fake_execve)
 
     with pytest.raises(SystemExit):
-        module.main()
+        runtime_cli.run_in_runtime(ROOT, ["tools/monitor.py", "--root", "/tmp/ws"])
 
     assert calls["path"] == str(Path(sys.executable).resolve())
     assert calls["argv"] == [str(Path(sys.executable).resolve()), "tools/monitor.py", "--root", "/tmp/ws"]

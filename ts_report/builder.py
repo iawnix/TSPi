@@ -1,33 +1,43 @@
-"""Build a final Markdown report from a validated workspace."""
+"""Build Markdown reports from validated workspaces."""
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
-from ts_workspace.io import read_json
-from ts_workspace.validators.workspace import validate_workspace
+from .context import collect_report_context, pathway_audit_outcome_for_node
+from .figures import write_report_assets
 
 
 def build_final_report(root: str | Path) -> str:
+    context = collect_report_context(root)
+    return render_final_report(context)
+
+
+def build_report_package(root: str | Path, output_dir: str | Path | None = None) -> dict[str, str]:
     root_path = Path(root)
-    validation = validate_workspace(root_path)
-    if not validation["valid"]:
-        errors = "; ".join(item["message"] for item in validation["findings"] if item["severity"] == "error")
-        raise ValueError(f"workspace is invalid: {errors}")
+    package_dir = Path(output_dir) if output_dir is not None else root_path / "reports" / "final_report_package"
+    package_dir.mkdir(parents=True, exist_ok=True)
+    context = collect_report_context(root_path)
+    context["assets"] = write_report_assets(root_path, context, package_dir / "assets")
 
-    manifest = read_json(root_path / "manifest.json")
-    tree = read_json(root_path / "tree.json")
-    evidence = read_json(root_path / "evidence_registry.json")
-    mechanism = read_json(root_path / "mechanism_model.json")
-    pathway = read_json(root_path / "pathway_model.json")
+    context_path = package_dir / "report_context.json"
+    report_path = package_dir / "final_report.md"
+    email_path = package_dir / "email_summary.md"
+    context_path.write_text(json.dumps(_json_safe(context), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    report_path.write_text(render_final_report(context), encoding="utf-8")
+    email_path.write_text(render_email_summary(context), encoding="utf-8")
+    return {
+        "package_dir": str(package_dir),
+        "report": str(report_path),
+        "context": str(context_path),
+        "email_summary": str(email_path),
+        "assets_dir": str(package_dir / "assets"),
+    }
 
-    evidence_records = [item for item in evidence.get("evidence", []) if isinstance(item, dict)]
-    nodes = [item for item in tree.get("nodes", []) if isinstance(item, dict)]
-    accepted_refs = [str(item) for item in manifest.get("accepted_ts_refs", []) if item]
-    highest_layer = _highest_validated_layer(nodes, accepted_refs, evidence_records)
-    final_claim = _final_claim(highest_layer, nodes, evidence_records)
 
+def render_final_report(context: dict[str, Any]) -> str:
     lines = [
         "# Transition-State Search Report",
         "",
@@ -35,40 +45,60 @@ def build_final_report(root: str | Path) -> str:
         "",
         "| Field | Value |",
         "| --- | --- |",
-        f"| Workspace | `{root_path}` |",
-        f"| Highest validated layer | `{highest_layer}` |",
-        f"| Final claim | `{final_claim}` |",
-        f"| Accepted TS refs | `{', '.join(accepted_refs) or 'none'}` |",
-        f"| Nodes | {len(nodes)} |",
-        f"| Evidence entries | {len(evidence_records)} |",
+        f"| Workspace | `{context['workspace_root']}` |",
+        f"| Highest validated layer | `{context['highest_validated_layer']}` |",
+        f"| Final claim | `{context['final_claim']}` |",
+        f"| Accepted TS refs | `{', '.join(context.get('accepted_ts_refs', [])) or 'none'}` |",
+        f"| Nodes | {len(context.get('nodes', []))} |",
+        f"| Evidence entries | {len(context.get('evidence_records', []))} |",
         "",
-        _conclusion_sentence(highest_layer, final_claim, accepted_refs),
+        _conclusion_sentence(context),
         "",
-        "## 2. Reaction And Hypothesis Scope",
+        "## 2. Reaction Overview",
         "",
-        *_hypothesis_scope_lines(mechanism),
+        *_reaction_overview_lines(context),
         "",
-        "## 3. Evidence Layers",
+        "## 3. R-TS-P Structural Panel",
         "",
-        *_evidence_layer_lines(evidence_records, accepted_refs),
+        *_structure_panel_lines(context),
         "",
-        "## 4. Search Tree Summary",
+        "## 4. Imaginary Mode / Vibration Analysis",
+        "",
+        *_mode_lines(context),
+        "",
+        "## 5. IRC / Connectivity Evidence",
+        "",
+        *_connectivity_lines(context),
+        "",
+        "## 6. Energy Profile",
+        "",
+        *_energy_lines(context),
+        "",
+        "## 7. Mechanistic Interpretation",
+        "",
+        *_mechanism_lines(context),
+        "",
+        "## 8. Evidence Audit",
+        "",
+        *_evidence_layer_lines(context.get("evidence_records", []), context.get("accepted_ts_refs", [])),
+        "",
+        "## 9. Search Tree Summary",
         "",
         "| Node | Phase | Lifecycle | Program status | Claim verdict | Audit outcome |",
         "| --- | --- | --- | --- | --- | --- |",
     ]
-    for node in nodes:
-        audit_note = _pathway_audit_note(node, evidence_records)
+    records = context.get("evidence_records", [])
+    for node in context.get("nodes", []):
+        audit_note = _pathway_audit_note(node, records)
         audit_outcome = audit_note.removeprefix(" (audit_outcome=").removesuffix(")") if audit_note else ""
         lines.append(
             f"| `{node['node_id']}` | {node['phase']} | {node['lifecycle']} | "
             f"{node.get('program_status', '')} | {node.get('claim_verdict', 'open')} | {audit_outcome} |"
         )
 
-    # Keep the compact node index for compatibility with existing consumers.
     lines.extend(["", "Node index:", ""])
-    for node in nodes:
-        audit_note = _pathway_audit_note(node, evidence_records)
+    for node in context.get("nodes", []):
+        audit_note = _pathway_audit_note(node, records)
         lines.append(
             f"- {node['node_id']}: {node['phase']} / {node['lifecycle']} / "
             f"{node.get('claim_verdict', 'open')}{audit_note}"
@@ -77,17 +107,17 @@ def build_final_report(root: str | Path) -> str:
     lines.extend(
         [
             "",
-            "## 5. Pathway Model",
+            "## 10. Limitations And Follow-up",
             "",
-            *_pathway_lines(pathway, evidence_records),
+            *_limitation_lines(context),
             "",
-            "## 6. Artifact And Evidence Appendix",
+            "## 11. Artifact And Evidence Appendix",
             "",
             "| Evidence ID | Role | Kind | Node | Path | Summary |",
             "| --- | --- | --- | --- | --- | --- |",
         ]
     )
-    for record in evidence_records:
+    for record in context.get("evidence_records", []):
         lines.append(
             f"| `{record.get('evidence_id', '')}` | {record.get('role', '')} | {record.get('kind', '')} | "
             f"`{record.get('node_id', '')}` | `{record.get('path', '')}` | {_escape_table(str(record.get('summary', '')))} |"
@@ -95,84 +125,197 @@ def build_final_report(root: str | Path) -> str:
     return "\n".join(lines) + "\n"
 
 
-def _highest_validated_layer(nodes: list[dict[str, Any]], accepted_refs: list[str], evidence_records: list[dict[str, Any]]) -> str:
-    for node in reversed(nodes):
-        if node.get("phase") == "pathway_audit" and node.get("claim_verdict") == "supported":
-            if _pathway_audit_outcome_for_node(node.get("node_id"), evidence_records):
-                return "pathway"
-    if accepted_refs or any(node.get("phase") == "accepted_audit" and node.get("claim_verdict") == "supported" for node in nodes):
-        return "accepted_ts"
-    if any(node.get("phase") == "connectivity_validation" and node.get("claim_verdict") == "supported" for node in nodes):
-        return "connectivity"
-    if any(node.get("phase") == "tsfreq_validation" and node.get("claim_verdict") == "supported" for node in nodes):
-        return "tsfreq"
-    if any(node.get("phase") == "candidate_generation" and node.get("claim_verdict") == "supported" for node in nodes):
-        return "candidate"
-    return "endpoint"
+def render_email_summary(context: dict[str, Any]) -> str:
+    active = context.get("active_hypothesis", {}) if isinstance(context.get("active_hypothesis"), dict) else {}
+    lines = [
+        f"Subject: TS report - {context.get('final_claim')} at {context.get('highest_validated_layer')} layer",
+        "",
+        _conclusion_sentence(context).replace("**Conclusion.** ", ""),
+        "",
+        f"Workspace: {context.get('workspace_root')}",
+        f"Hypothesis: {active.get('hypothesis_id', '')} {active.get('summary', '')}",
+        f"Accepted TS refs: {', '.join(context.get('accepted_ts_refs', [])) or 'none'}",
+        "",
+        "Main report: final_report.md",
+    ]
+    return "\n".join(lines) + "\n"
 
 
-def _final_claim(highest_layer: str, nodes: list[dict[str, Any]], evidence_records: list[dict[str, Any]]) -> str:
-    if highest_layer == "pathway":
-        for node in reversed(nodes):
-            if node.get("phase") == "pathway_audit":
-                outcome = _pathway_audit_outcome_for_node(node.get("node_id"), evidence_records)
-                if outcome == "pathway_not_accepted":
-                    return "not_accepted"
-                if outcome:
-                    return outcome
-    if highest_layer == "accepted_ts":
-        return "accepted_ts"
-    return "incomplete"
-
-
-def _conclusion_sentence(highest_layer: str, final_claim: str, accepted_refs: list[str]) -> str:
-    if highest_layer == "pathway" and final_claim in {"accepted", "pathway_accepted"}:
+def _conclusion_sentence(context: dict[str, Any]) -> str:
+    highest = context.get("highest_validated_layer")
+    final_claim = context.get("final_claim")
+    accepted_refs = context.get("accepted_ts_refs", [])
+    if highest == "pathway" and final_claim in {"accepted", "pathway_accepted"}:
         return (
             "**Conclusion.** The workspace evidence supports the audited pathway. "
             f"Accepted TS artifacts: `{', '.join(accepted_refs)}`."
         )
-    if highest_layer == "pathway" and final_claim == "not_accepted":
+    if highest == "pathway" and final_claim == "not_accepted":
         return "**Conclusion.** The pathway audit supports a negative conclusion; the audited pathway is not accepted."
-    if highest_layer == "accepted_ts":
+    if highest == "accepted_ts":
         return (
             "**Conclusion.** The transition state is accepted by TS/Freq and connectivity gates, "
             "but no accepted pathway audit is present."
         )
-    return f"**Conclusion.** Highest supported layer is `{highest_layer}`; do not report beyond that layer."
+    return f"**Conclusion.** Highest supported layer is `{highest}`; do not report beyond that layer."
 
 
-def _hypothesis_scope_lines(mechanism: dict[str, Any]) -> list[str]:
-    focus_id = mechanism.get("focus_hypothesis_id")
-    hypotheses = [item for item in mechanism.get("hypotheses", []) if isinstance(item, dict)]
-    active = next((item for item in hypotheses if item.get("hypothesis_id") == focus_id), hypotheses[-1] if hypotheses else {})
+def _reaction_overview_lines(context: dict[str, Any]) -> list[str]:
+    active = context.get("active_hypothesis", {}) if isinstance(context.get("active_hypothesis"), dict) else {}
     derived = active.get("derived_from") if isinstance(active.get("derived_from"), dict) else {}
-    lines = [
+    center = context.get("reaction_center", {}) if isinstance(context.get("reaction_center"), dict) else {}
+    forming = ", ".join(item.get("label", str(item.get("atoms", ""))) for item in center.get("forming_bonds", []))
+    breaking = ", ".join(item.get("label", str(item.get("atoms", ""))) for item in center.get("breaking_bonds", []))
+    transferred = ", ".join(str(item.get("label") or item.get("atom")) for item in center.get("transferred_atoms", []))
+    return [
         "| Item | Value |",
         "| --- | --- |",
-        f"| Hypothesis | `{active.get('hypothesis_id', focus_id or '')}` |",
+        f"| Hypothesis | `{active.get('hypothesis_id', '')}` |",
         f"| Summary | {_escape_table(str(active.get('summary', '')))} |",
         f"| Reactant | `{derived.get('reactant_ref', '')}` |",
         f"| Product | `{derived.get('product_ref', '')}` |",
         f"| Charge / multiplicity | `{derived.get('charge', '')} / {derived.get('multiplicity', '')}` |",
+        f"| Forming bonds | {forming or 'not declared'} |",
+        f"| Breaking bonds | {breaking or 'not declared'} |",
+        f"| Transferred atoms | {transferred or 'not declared'} |",
     ]
-    claim = active.get("structured_claim") if isinstance(active.get("structured_claim"), dict) else {}
-    center = claim.get("reaction_center") if isinstance(claim.get("reaction_center"), dict) else {}
-    forming = ", ".join(item.get("label", str(item.get("atoms", ""))) for item in center.get("forming_bonds", []) if isinstance(item, dict))
-    breaking = ", ".join(item.get("label", str(item.get("atoms", ""))) for item in center.get("breaking_bonds", []) if isinstance(item, dict))
-    lines.append(f"| Forming bonds | {forming or ''} |")
-    lines.append(f"| Breaking bonds | {breaking or ''} |")
+
+
+def _structure_panel_lines(context: dict[str, Any]) -> list[str]:
+    assets = context.get("assets", {}) if isinstance(context.get("assets"), dict) else {}
+    structures = context.get("structures", {}) if isinstance(context.get("structures"), dict) else {}
+    lines = []
+    if assets.get("structure_render", {}).get("ok"):
+        lines.append(f"![R-TS-P render]({assets['structure_render']['output_path']})")
+        lines.append("")
+    elif assets.get("structure_panel_svg"):
+        lines.append(f"![R-TS-P structure panel]({assets['structure_panel_svg']['path']})")
+        lines.append("")
+    lines.extend(["| Role | Structure | Exists |", "| --- | --- | --- |"])
+    for key in ["reactant", "ts", "product", "mode_minus", "mode_plus", "irc_forward", "irc_reverse"]:
+        item = structures.get(key, {})
+        if not item:
+            continue
+        lines.append(f"| {key} | `{item.get('path', '')}` | {item.get('exists', False)} |")
+    profile = context.get("distance_profile", {}) if isinstance(context.get("distance_profile"), dict) else {}
+    keys = [str(key) for key in profile.get("keys", [])[:6]]
+    rows = [row for row in profile.get("rows", []) if isinstance(row, dict)]
+    if keys and rows:
+        lines.extend(["", "Key reaction-center distances:", "", _distance_table(keys, rows)])
+    return lines or ["- No R/TS/P structure references were available in the report context."]
+
+
+def _mode_lines(context: dict[str, Any]) -> list[str]:
+    tsfreq = context.get("tsfreq", {}) if isinstance(context.get("tsfreq"), dict) else {}
+    mode = tsfreq.get("mode_assignment") if isinstance(tsfreq.get("mode_assignment"), dict) else {}
+    selected = tsfreq.get("selected_record") if isinstance(tsfreq.get("selected_record"), dict) else {}
+    assets = context.get("assets", {}) if isinstance(context.get("assets"), dict) else {}
+    lines = []
+    if assets.get("distance_profile_svg"):
+        lines.append(f"![Mode and IRC key distances]({assets['distance_profile_svg']['path']})")
+        lines.append("")
+    lines.extend(
+        [
+            "| Field | Value |",
+            "| --- | --- |",
+            f"| TS/Freq evidence | `{selected.get('evidence_id', '')}` |",
+            f"| Imaginary frequency | `{mode.get('imaginary_frequency_cm-1', _key_facts(selected).get('imaginary_frequencies_cm-1', ''))}` |",
+            f"| Mode verdict | {_escape_table(str(mode.get('mode_verdict', mode.get('verdict_against_prediction', ''))))} |",
+            f"| Product-like displacement | {_escape_table(str(mode.get('product_like_displacement', '')))} |",
+            f"| Reactant-like displacement | {_escape_table(str(mode.get('reactant_like_displacement', '')))} |",
+        ]
+    )
     return lines
 
 
-def _evidence_layer_lines(evidence_records: list[dict[str, Any]], accepted_refs: list[str]) -> list[str]:
+def _connectivity_lines(context: dict[str, Any]) -> list[str]:
+    conn = context.get("connectivity", {}) if isinstance(context.get("connectivity"), dict) else {}
+    verdict = conn.get("verdict") if isinstance(conn.get("verdict"), dict) else {}
+    directions = conn.get("directions") if isinstance(conn.get("directions"), dict) else {}
+    lines = [
+        "| Field | Value |",
+        "| --- | --- |",
+        f"| Connectivity verdict | {_escape_table(str(verdict.get('verdict', verdict.get('r_to_p_connected_via_ts', ''))))} |",
+        f"| Forward assignment | `{verdict.get('forward_assignment', '')}` |",
+        f"| Reverse assignment | `{verdict.get('reverse_assignment', '')}` |",
+        f"| Strict IRC without program failure | `{verdict.get('strict_irc_complete_without_program_failure', verdict.get('strict_irc_complete', ''))}` |",
+        f"| Stationary endpoint IRC complete | `{verdict.get('stationary_endpoint_irc_complete', '')}` |",
+    ]
+    if directions:
+        lines.extend(["", "| Direction | Assignment | Termination | Final geometry |", "| --- | --- | --- | --- |"])
+        for name, direction in directions.items():
+            if not isinstance(direction, dict):
+                continue
+            lines.append(
+                f"| {name} | {direction.get('assignment', '')} | {direction.get('termination', '')} | "
+                f"`{direction.get('final_geometry', '')}` |"
+            )
+    if verdict.get("caveat"):
+        lines.extend(["", f"Connectivity caveat: {_escape_table(str(verdict['caveat']))}"])
+    return lines
+
+
+def _energy_lines(context: dict[str, Any]) -> list[str]:
+    profile = context.get("energy_profile", {}) if isinstance(context.get("energy_profile"), dict) else {}
+    assets = context.get("assets", {}) if isinstance(context.get("assets"), dict) else {}
+    lines = []
+    if assets.get("energy_profile_svg"):
+        lines.append(f"![Energy profile]({assets['energy_profile_svg']['path']})")
+        lines.append("")
+    lines.extend(["| Species | Role | Electronic energy / hartree | E+ZPE / hartree | Relative E / kcal mol-1 | Source |", "| --- | --- | --- | --- | --- | --- |"])
+    for row in profile.get("rows", []):
+        if not isinstance(row, dict):
+            continue
+        lines.append(
+            f"| {row.get('species', '')} | {row.get('role', '')} | {_fmt(row.get('electronic_energy_hartree'))} | "
+            f"{_fmt(row.get('electronic_plus_zpe_hartree'))} | {_fmt(row.get('relative_electronic_energy_kcal_mol'))} | "
+            f"`{row.get('source', '')}` |"
+        )
+    for note in profile.get("notes", []):
+        lines.append(f"- {note}")
+    return lines
+
+
+def _mechanism_lines(context: dict[str, Any]) -> list[str]:
+    interp = context.get("mechanism_interpretation", {}) if isinstance(context.get("mechanism_interpretation"), dict) else {}
+    lines = [str(interp.get("summary", "No mechanism interpretation was generated."))]
+    progress = interp.get("reaction_progress", []) if isinstance(interp.get("reaction_progress"), list) else []
+    if progress:
+        lines.extend(["", "| Coordinate | Type | R | TS | P | Progress |", "| --- | --- | --- | --- | --- | --- |"])
+        for item in progress:
+            if not isinstance(item, dict):
+                continue
+            progress_value = item.get("progress")
+            lines.append(
+                f"| {item.get('label', '')} | {item.get('type', '')} | {_fmt(item.get('reactant'))} | "
+                f"{_fmt(item.get('ts'))} | {_fmt(item.get('product'))} | {_fmt(progress_value)} |"
+            )
+    for title, key in [
+        ("Supporting observations", "supporting_observations"),
+        ("Interpretation boundaries", "boundaries"),
+    ]:
+        values = interp.get(key, []) if isinstance(interp.get(key), list) else []
+        if values:
+            lines.extend(["", f"{title}:"])
+            lines.extend(f"- {value}" for value in values)
+    alternatives = interp.get("alternative_hypotheses", []) if isinstance(interp.get("alternative_hypotheses"), list) else []
+    if alternatives:
+        lines.extend(["", "Alternative hypotheses retained for audit:"])
+        for item in alternatives:
+            if isinstance(item, dict):
+                lines.append(f"- {item.get('summary', '')} ({item.get('changed_variable', 'changed variable not specified')})")
+    return lines
+
+
+def _evidence_layer_lines(records: list[dict[str, Any]], accepted_refs: list[str]) -> list[str]:
     return [
         "### TS/Freq",
         "",
-        *_role_table(evidence_records, {"tsfreq_gate", "mode_assignment"}),
+        *_role_table(records, {"tsfreq_gate", "mode_assignment", "electronic_structure_gate"}),
         "",
         "### Connectivity / IRC",
         "",
-        *_role_table(evidence_records, {"connectivity_gate", "irc_endpoint_assignment", "stereochemical_connectivity_gate"}),
+        *_role_table(records, {"connectivity_gate", "irc_endpoint_assignment", "stereochemical_connectivity_gate"}),
         "",
         "### Accepted TS",
         "",
@@ -180,24 +323,24 @@ def _evidence_layer_lines(evidence_records: list[dict[str, Any]], accepted_refs:
         "",
         "### Pathway Audit",
         "",
-        *_role_table(evidence_records, {"pathway_audit", "pathway_audit_summary"}),
+        *_role_table(records, {"pathway_audit", "pathway_audit_summary"}),
     ]
 
 
-def _role_table(evidence_records: list[dict[str, Any]], roles: set[str]) -> list[str]:
-    rows = [record for record in evidence_records if record.get("role") in roles]
+def _role_table(records: list[dict[str, Any]], roles: set[str]) -> list[str]:
+    rows = [record for record in records if record.get("role") in roles]
     if not rows:
         return ["- none"]
     lines = ["| Evidence | Role | Key facts | Path |", "| --- | --- | --- | --- |"]
     for record in rows:
         lines.append(
             f"| `{record.get('evidence_id', '')}` | {record.get('role', '')} | "
-            f"{_escape_table(_key_facts(record))} | `{record.get('path', '')}` |"
+            f"{_escape_table('; '.join(f'{key}={value}' for key, value in _key_facts(record).items()))} | `{record.get('path', '')}` |"
         )
     return lines
 
 
-def _key_facts(record: dict[str, Any]) -> str:
+def _key_facts(record: dict[str, Any]) -> dict[str, Any]:
     quality = record.get("quality") if isinstance(record.get("quality"), dict) else {}
     facts = record.get("facts") if isinstance(record.get("facts"), dict) else {}
     merged = {**quality, **facts}
@@ -216,33 +359,13 @@ def _key_facts(record: dict[str, Any]) -> str:
         "strict_pathway_supported",
         "whole_R_to_P_pathway_accepted",
     ]
-    parts = [f"{key}={merged[key]}" for key in preferred if key in merged]
-    if not parts:
-        return str(record.get("summary", ""))
-    return "; ".join(str(item) for item in parts)
+    return {key: merged[key] for key in preferred if key in merged}
 
 
-def _pathway_lines(pathway: dict[str, Any], evidence_records: list[dict[str, Any]]) -> list[str]:
-    lines = [f"- focus_pathway_id: `{pathway.get('focus_pathway_id', '')}`"]
-    for item in pathway.get("pathways", []):
-        if not isinstance(item, dict):
-            continue
-        lines.append(f"- `{item.get('pathway_id', '')}`: status `{item.get('status', '')}`, pattern `{item.get('pattern', '')}`")
-    outcomes = [
-        _pathway_audit_outcome_for_node(record.get("node_id"), evidence_records)
-        for record in evidence_records
-        if record.get("role") in {"pathway_audit", "pathway_audit_summary"}
-    ]
-    outcomes = [item for item in outcomes if item]
-    if outcomes:
-        lines.append(f"- latest pathway audit outcome: `{outcomes[-1]}`")
-    return lines
-
-
-def _pathway_audit_note(node: dict[str, Any], evidence_records: list[Any]) -> str:
+def _pathway_audit_note(node: dict[str, Any], records: list[Any]) -> str:
     if node.get("phase") != "pathway_audit":
         return ""
-    outcome = _pathway_audit_outcome_for_node(node.get("node_id"), evidence_records)
+    outcome = pathway_audit_outcome_for_node(node.get("node_id"), records)
     if outcome:
         return f" (audit_outcome={outcome})"
     reason = str(node.get("reason_code") or "").lower()
@@ -251,30 +374,41 @@ def _pathway_audit_note(node: dict[str, Any], evidence_records: list[Any]) -> st
     return ""
 
 
-def _pathway_audit_outcome_for_node(node_id: Any, evidence_records: list[Any]) -> str | None:
-    for record in evidence_records:
-        if not isinstance(record, dict) or record.get("node_id") != node_id:
-            continue
-        quality = record.get("quality") if isinstance(record.get("quality"), dict) else {}
-        facts = record.get("facts") if isinstance(record.get("facts"), dict) else {}
-        decision = str(
-            quality.get("strict_pathway_decision")
-            or quality.get("audit_outcome")
-            or facts.get("strict_pathway_decision")
-            or facts.get("audit_outcome")
-            or facts.get("verdict")
-            or ""
-        ).lower()
-        if quality.get("strict_pathway_supported") is False or decision in {"not_accepted", "pathway_not_accepted"}:
-            return "pathway_not_accepted"
-        if decision in {"accepted", "pathway_accepted"} or quality.get("strict_pathway_supported") is True:
-            return "accepted"
-        if facts.get("whole_R_to_P_pathway_accepted") is False:
-            return "pathway_not_accepted"
-        if facts.get("whole_R_to_P_pathway_accepted") is True:
-            return "accepted"
-    return None
+def _limitation_lines(context: dict[str, Any]) -> list[str]:
+    limitations = context.get("limitations", []) if isinstance(context.get("limitations"), list) else []
+    if limitations:
+        return [f"- {item}" for item in limitations]
+    return ["- No additional limitations were extracted beyond the evidence-layer boundaries above."]
+
+
+def _distance_table(keys: list[str], rows: list[dict[str, Any]]) -> str:
+    lines = ["| Structure | " + " | ".join(keys) + " |", "| --- | " + " | ".join("---" for _ in keys) + " |"]
+    for row in rows:
+        distances = row.get("distances") if isinstance(row.get("distances"), dict) else {}
+        values = [_fmt(distances.get(key)) for key in keys]
+        lines.append(f"| {row.get('label', '')} | " + " | ".join(values) + " |")
+    return "\n".join(lines)
+
+
+def _fmt(value: Any) -> str:
+    if isinstance(value, float):
+        return f"{value:.4f}"
+    if isinstance(value, int):
+        return str(value)
+    if value is None:
+        return ""
+    return str(value)
 
 
 def _escape_table(text: str) -> str:
     return text.replace("|", "\\|").replace("\n", " ")
+
+
+def _json_safe(value: Any) -> Any:
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, Path):
+        return str(value)
+    return value

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ts_report import build_final_report
+import json
+
+from ts_report import build_final_report, build_report_package
 from ts_workspace import end_node, init_workspace, report_workspace, start_node, update_workspace
 from v3_helpers import (
     HYPOTHESIS_ID,
@@ -180,3 +182,53 @@ def test_report_includes_acceptance_layers_and_pathway_outcome(tmp_path: Path) -
     assert "ev_tsfreq_001" in text
     assert "ev_conn_001" in text
     assert "n004_pathway_audit: pathway_audit / closed / supported (audit_outcome=accepted)" in text
+
+
+def test_report_package_writes_visual_mechanism_assets(tmp_path: Path) -> None:
+    workspace = tmp_path / "package-report"
+    make_accepted_workspace(workspace)
+    (workspace / "inputs").mkdir(exist_ok=True)
+    _write_xyz(workspace / "inputs" / "reactant.xyz", [("C", 0, 0, 0), ("N", 3, 0, 0)])
+    _write_xyz(workspace / "inputs" / "product.xyz", [("C", 0, 0, 0), ("N", 1.4, 0, 0)])
+    ts_dir = workspace / "nodes" / "n001" / "outputs"
+    ts_dir.mkdir(parents=True, exist_ok=True)
+    _write_xyz(ts_dir / "ts_final.xyz", [("C", 0, 0, 0), ("N", 2.0, 0, 0)])
+    (ts_dir / "tsfreq_validation.json").write_text(
+        json.dumps(
+            {
+                "ts_structure": "nodes/n001/outputs/ts_final.xyz",
+                "electronic_energy_hartree": -100.0,
+                "mode_assignment": {
+                    "imaginary_frequency_cm-1": -500.0,
+                    "mode_verdict": "mode_matches_reaction_center",
+                    "product_like_displacement": "C1-N2 shortens.",
+                    "reactant_like_displacement": "C1-N2 lengthens.",
+                },
+                "reaction_center_distances_angstrom": {
+                    "reactant_endpoint": {"C1-N2": 3.0},
+                    "p39_final": {"C1-N2": 2.0},
+                    "product_endpoint": {"C1-N2": 1.4},
+                },
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    result = build_report_package(workspace, workspace / "reports" / "pkg")
+
+    report = Path(result["report"]).read_text(encoding="utf-8")
+    context = json.loads(Path(result["context"]).read_text(encoding="utf-8"))
+    assert "## 3. R-TS-P Structural Panel" in report
+    assert "## 4. Imaginary Mode / Vibration Analysis" in report
+    assert "## 6. Energy Profile" in report
+    assert "## 7. Mechanistic Interpretation" in report
+    assert Path(result["assets_dir"], "r_ts_p_structure_panel.svg").exists()
+    assert Path(result["assets_dir"], "irc_key_distance_profile.svg").exists()
+    assert context["mechanism_interpretation"]["classification"]
+
+
+def _write_xyz(path: Path, atoms: list[tuple[str, float, float, float]]) -> None:
+    lines = [str(len(atoms)), path.stem]
+    lines.extend(f"{symbol} {x:.6f} {y:.6f} {z:.6f}" for symbol, x, y, z in atoms)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")

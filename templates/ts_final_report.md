@@ -20,7 +20,7 @@ frequency an accepted TS.}}
 **Decision for next action.** {{stop | open replacement branch | run follow-up
 IRC | rerun TS/Freq | ask user}} because {{short reason}}.
 
-## 2. Reaction And Hypothesis Scope
+## 2. Reaction Overview / Reaction And Hypothesis Scope
 
 | Item | Value |
 | --- | --- |
@@ -59,7 +59,74 @@ Nondefault choices:
 - Remote execution: host `{{host}}`, node `{{compute_node}}`, cores
   `{{cores}}`, remote directory `{{remote_dir}}`.
 
-## 4. Search Tree Summary
+## 4. R-TS-P Structural Panel
+
+| Role | Structure | Key reaction-center distances | Rendered artifact |
+| --- | --- | --- | --- |
+| R | `{{reactant_xyz}}` | {{distances}} | `assets/r_ts_p_structure_panel.svg` |
+| TS | `{{ts_xyz}}` | {{distances}} | `assets/r_ts_p_render.png` or missing |
+| P | `{{product_xyz}}` | {{distances}} | `assets/r_ts_p_structure_panel.svg` |
+
+## 5. Imaginary Mode / Vibration Analysis
+
+| Field | Value |
+| --- | --- |
+| Imaginary frequency | {{value cm^-1}} |
+| Mode-minus structure | `{{mode_minus_xyz}}` |
+| Mode-plus structure | `{{mode_plus_xyz}}` |
+| Mode displacement artifact | `assets/irc_key_distance_profile.svg` |
+| Reaction-coordinate interpretation | {{forming/breaking/transferred coordinates}} |
+
+## 6. IRC / Connectivity Evidence
+
+| Direction | Endpoint artifact | Assigned basin | RMSD / metric | Key bond checks | Verdict |
+| --- | --- | --- | --- | --- | --- |
+| forward | `{{path}}` | reactant/product/other | {{value}} | {{values}} | {{supported/refuted}} |
+| reverse | `{{path}}` | reactant/product/other | {{value}} | {{values}} | {{supported/refuted}} |
+
+## 7. Energy Profile
+
+Relative energies should be traceable to absolute energies and corrections in
+the artifacts or appendix. If R, TS, and P are not all available at comparable
+levels, report the gap explicitly.
+
+| Species | Role | Artifact | Electronic energy / hartree | Correction | Relative energy / kcal mol^-1 |
+| --- | --- | --- | --- | --- | --- |
+| R | reactant | `{{path}}` | {{E}} | {{ZPE/G}} | {{rel}} |
+| TS | transition state | `{{path}}` | {{E}} | {{ZPE/G}} | {{rel}} |
+| P | product | `{{path}}` | {{E}} | {{ZPE/G}} | {{rel}} |
+
+## 8. Mechanistic Interpretation
+
+{{Explain how the reaction occurs. Distinguish accepted pathway evidence from
+mechanistic interpretation. State whether the coordinate is tightly coupled,
+asynchronous, or still compatible with a stepwise alternative. Describe which
+bond changes are advanced at the TS, what the imaginary mode does, what the IRC
+confirms, and which electronic-structure claims remain unproven.}}
+
+## 9. Evidence Audit
+
+### Candidate Generation Evidence
+
+{{candidate evidence and rejected branches}}
+
+### TS/Freq Validation
+
+{{TS/Freq gate, mode assignment, convergence, frequencies}}
+
+### Connectivity / IRC Validation
+
+{{IRC endpoint assignment, strictness, caveats}}
+
+### Accepted-TS Audit
+
+{{accepted audit gates}}
+
+### Pathway Audit
+
+{{pathway audit outcome}}
+
+## 10. Search Tree Summary
 
 | Node | Phase | Hypothesis ref | Program status | Claim verdict | Key evidence | Implication |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -72,7 +139,7 @@ Rejected or superseded branches:
 | --- | --- | --- | --- |
 | `{{node_id}}` | {{reason_code}} | `{{evidence_refs}}` | {{changed variable}} |
 
-## 5. Candidate Generation Evidence
+## 11. Candidate Generation Evidence
 
 Candidate-generation method:
 
@@ -88,7 +155,7 @@ Candidate table:
 | --- | --- | --- | --- | --- | --- |
 | `{{candidate_id}}` | `{{node_id}}` | {{value}} | {{key bonds}} | kept/rejected | {{reason}} |
 
-## 6. TS/Freq Validation
+## 12. TS/Freq Validation
 
 | Field | Value |
 | --- | --- |
@@ -116,7 +183,7 @@ Diagnostics:
 - Relevant artifacts: `{{freq_log}}`, `{{mode_animation}}`,
   `{{rendered_ts}}`.
 
-## 7. Connectivity / IRC Validation
+## 13. Connectivity / IRC Validation
 
 IRC or displacement settings:
 
@@ -145,7 +212,7 @@ Connectivity conclusion:
 product basins. If both sides lead to the same basin, report the TS branch as
 not accepted and identify the needed replacement hypothesis.}}
 
-## 8. Accepted-TS Audit
+## 14. Accepted-TS Audit
 
 Complete this section only when the accepted-audit gate is satisfied.
 
@@ -166,7 +233,7 @@ Accepted TS statement:
 stereochemical gate when the hypothesis declares stereochemical requirements.
 Include accepted artifact path and evidence refs.}}
 
-## 9. Pathway Audit
+## 15. Pathway Audit
 
 | Field | Value |
 | --- | --- |
@@ -182,7 +249,7 @@ Pathway conclusion:
 {{Report a negative pathway audit as a supported negative audit, not as pathway
 success. State the failed branch and the next branch separately.}}
 
-## 10. Energy Profile
+## 16. Energy Profile
 
 Relative energies should be traceable to absolute energies and corrections in
 the artifacts or appendix.
@@ -200,7 +267,7 @@ Energy notes:
 - Temperature / pressure: {{values}}.
 - Conformer treatment: {{lowest, ensemble, not searched}}.
 
-## 11. Figures And Rendered Artifacts
+## 17. Figures And Rendered Artifacts
 
 | Figure | Purpose | Artifact | Notes |
 | --- | --- | --- | --- |
@@ -209,13 +276,13 @@ Energy notes:
 | IRC animation | pathway inspection | `{{path}}` | {{notes}} |
 | Energy diagram | barrier summary | `{{path}}` | {{notes}} |
 
-## 12. Limitations And Open Questions
+## 18. Limitations And Open Questions
 
 - {{Unresolved conformer issue, method uncertainty, missing IRC, ambiguous
   endpoint assignment, failed branch, spin/charge uncertainty, etc.}}
 - Required follow-up: {{specific calculation or decision}}.
 
-## 13. Artifact And Evidence Appendix
+## 19. Artifact And Evidence Appendix
 
 Evidence registry excerpt:
 

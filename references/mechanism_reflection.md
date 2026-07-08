@@ -171,6 +171,15 @@ where an IRC or displacement path lands; `endpoint_identity_gate`,
 `state_character_gate`, and `shared_basin_consistency_gate` document what those
 basins are allowed to be called in the mechanism.
 
+Final reports must turn this structured mechanism state into an explicit
+mechanistic interpretation section. That section should separate accepted
+pathway evidence from chemical interpretation, summarize what the imaginary
+mode and IRC key-distance profile imply about synchronous or asynchronous bond
+changes, list alternative hypotheses that remain possible, and state which
+electronic-structure or state-character diagnostics were absent. Geometry-only
+connectivity must not be presented as proof of electronic timing or
+intermediate identity.
+
 Only include `stereochemical_policy` and `stereochemical_connectivity_gate`
 when the reaction question depends on stereoisomer identity. Once declared,
 accepted-audit closure requires a matched stereochemical connectivity gate.

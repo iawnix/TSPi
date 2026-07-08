@@ -1,4 +1,4 @@
-"""Public molecular comparison API."""
+"""Public structure analysis API."""
 
 from __future__ import annotations
 

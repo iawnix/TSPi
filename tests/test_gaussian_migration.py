@@ -127,6 +127,41 @@ def test_write_gjf_appends_extra_section(tmp_path: Path) -> None:
     assert "C 0\n6-31G(d)\n****\n" in text
 
 
+def test_ts_backend_gaussian_prepare_cli(tmp_path: Path) -> None:
+    xyz = write_xyz(
+        tmp_path / "candidate.xyz",
+        """
+        1
+        candidate
+        H 0 0 0
+        """,
+    )
+    output = tmp_path / "candidate.gjf"
+
+    completed = subprocess.run(
+        [
+            "python3",
+            str(Path(__file__).resolve().parents[1] / "scripts" / "ts_backend.py"),
+            "gaussian",
+            "prepare",
+            str(xyz),
+            str(output),
+            "--charge",
+            "0",
+            "--multiplicity",
+            "1",
+        ],
+        cwd=Path(__file__).resolve().parents[1],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    assert output.exists()
+    assert "Wrote" in completed.stdout
+
+
 def test_route_requires_extra_section_detects_gen() -> None:
     assert gaussian.route_requires_extra_section("#P B3LYP/Gen opt freq")
     assert gaussian.route_requires_extra_section("#P B3LYP/genecp opt freq")
