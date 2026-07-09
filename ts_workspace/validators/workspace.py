@@ -80,6 +80,7 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
 
     mechanism_model = loaded.get("mechanism_model.json", {})
     hypothesis_ids = _validate_mechanism_model(mechanism_model, findings)
+    hypothesis_source_nodes = _hypothesis_source_nodes(mechanism_model)
     tree = loaded.get("tree.json", {})
     node_entries = tree.get("nodes", []) if isinstance(tree, dict) else []
     node_ids = set()
@@ -121,7 +122,7 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
         _finding(findings, "error", "invalid_current_node", "tree.current_node does not exist", "tree.json")
     if isinstance(tree, dict):
         _validate_initial_node_sequence(ordered_node_ids, node_details, hypothesis_ids, findings)
-        _validate_branch_contexts(node_details, findings)
+        _validate_branch_contexts(node_details, hypothesis_source_nodes, findings)
         _validate_branch_events(tree, node_ids, findings)
         _validate_branch_lineage(tree, node_details, findings)
         _validate_unresolved_terminal_state(
@@ -287,6 +288,20 @@ def _validate_mechanism_model(model: Any, findings: list[dict[str, str]]) -> set
     return hypothesis_ids
 
 
+def _hypothesis_source_nodes(model: Any) -> dict[str, str]:
+    if not isinstance(model, dict):
+        return {}
+    sources: dict[str, str] = {}
+    for hypothesis in model.get("hypotheses", []):
+        if not isinstance(hypothesis, dict):
+            continue
+        hypothesis_id = hypothesis.get("hypothesis_id")
+        source_node = hypothesis.get("source_node")
+        if isinstance(hypothesis_id, str) and isinstance(source_node, str) and hypothesis_id and source_node:
+            sources[hypothesis_id] = source_node
+    return sources
+
+
 def _validate_hypothesis_ref(
     value: Any,
     hypothesis_ids: set[str],
@@ -334,7 +349,11 @@ def _validate_tree_node_lineage(
         _finding(findings, "error", "branch_context_mismatch", "tree node branch_context must match node branch_context", source)
 
 
-def _validate_branch_contexts(node_details: dict[str, dict[str, Any]], findings: list[dict[str, str]]) -> None:
+def _validate_branch_contexts(
+    node_details: dict[str, dict[str, Any]],
+    hypothesis_source_nodes: dict[str, str],
+    findings: list[dict[str, str]],
+) -> None:
     for node_id, node in node_details.items():
         source = f"nodes/{node_id}/node.json"
         if node_id == "n000":
@@ -369,6 +388,7 @@ def _validate_branch_contexts(node_details: dict[str, dict[str, Any]], findings:
             )
         if relation == "new_solution_branch":
             _validate_solution_branch_context(node, from_node, findings, source)
+            _validate_solution_branch_anchor_source(node, anchor_node_id, hypothesis_source_nodes, findings, source)
         elif relation == "new_hypothesis_branch":
             _validate_hypothesis_branch_context(node, from_node, findings, source)
         elif relation == "new_pathway_branch":
@@ -397,6 +417,32 @@ def _validate_solution_branch_context(
     from_solution = from_node.get("solution_ref") if isinstance(from_node.get("solution_ref"), dict) else {}
     if isinstance(solution_ref, dict) and from_solution and from_solution.get("solution_id") == solution_ref.get("solution_id"):
         _finding(findings, "error", "solution_branch_duplicate_solution", "new_solution_branch requires a new solution_ref.solution_id", source)
+
+
+def _validate_solution_branch_anchor_source(
+    node: dict[str, Any],
+    anchor_node_id: Any,
+    hypothesis_source_nodes: dict[str, str],
+    findings: list[dict[str, str]],
+    source: str,
+) -> None:
+    hypothesis_ref = node.get("hypothesis_ref") if isinstance(node.get("hypothesis_ref"), dict) else {}
+    hypothesis_id = hypothesis_ref.get("hypothesis_id")
+    if not isinstance(hypothesis_id, str):
+        return
+    source_node = hypothesis_source_nodes.get(hypothesis_id)
+    if source_node is None or anchor_node_id == source_node:
+        return
+    _finding(
+        findings,
+        "warning",
+        "overbroad_anchor_node_for_new_solution_branch",
+        (
+            "new_solution_branch anchor_node should match the hypothesis source_node; "
+            f"hypothesis_id={hypothesis_id}, source_node={source_node}, anchor_node={anchor_node_id}"
+        ),
+        source,
+    )
 
 
 def _validate_hypothesis_branch_context(

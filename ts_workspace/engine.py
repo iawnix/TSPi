@@ -166,8 +166,16 @@ def update_workspace(root: str | Path, decision: dict[str, Any]) -> dict[str, An
         write_json(manifest_path, manifest)
         appended["provenance"] += len(items)
 
-    _log_decision(root_path, decision, {"mutation_applied": True, "appended": appended})
-    return {"appended": appended}
+    repair = payload.get("repair_branch_anchor")
+    repairs = 0
+    if repair is not None:
+        items = repair if isinstance(repair, list) else [repair]
+        for item in items:
+            _repair_branch_anchor(root_path, item, _decision_id(decision))
+            repairs += 1
+
+    _log_decision(root_path, decision, {"mutation_applied": True, "appended": appended, "repairs": {"branch_anchor": repairs}})
+    return {"appended": appended, "repairs": {"branch_anchor": repairs}}
 
 
 def end_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
@@ -303,6 +311,65 @@ def _ensure_pathway_for_node(root: Path, node: dict[str, Any]) -> None:
         pathway["steps"].append({"step_id": step_id, "from": "unknown", "to": "unknown", "status": "active"})
     model["focus_pathway_id"] = pathway_id
     write_json(path, model)
+
+
+def _repair_branch_anchor(root: Path, repair: dict[str, Any], decision_id: str) -> None:
+    node_id = str(repair["node_id"])
+    new_anchor = str(repair["new_anchor_node"])
+    reason_code = str(repair["reason_code"])
+    repaired_at = now_iso()
+
+    node_path = root / "nodes" / node_id / "node.json"
+    node = read_json(node_path)
+    old_parent = node.get("parent_node")
+    context = dict(node.get("branch_context") or {})
+    old_anchor = context.get("anchor_node")
+    context["anchor_node"] = new_anchor
+    node["parent_node"] = new_anchor
+    node["branch_context"] = context
+    node.setdefault("lineage_repairs", []).append(
+        {
+            "decision_id": decision_id,
+            "repaired_at": repaired_at,
+            "reason_code": reason_code,
+            "old_parent_node": old_parent,
+            "old_anchor_node": old_anchor,
+            "new_parent_node": new_anchor,
+            "new_anchor_node": new_anchor,
+        }
+    )
+    write_json(node_path, node)
+
+    tree_path = root / "tree.json"
+    tree = read_json(tree_path)
+    for entry in tree.get("nodes", []):
+        if entry.get("node_id") == node_id:
+            entry["parent_node"] = new_anchor
+            entry["branch_context"] = context
+            break
+    for edge in tree.get("edges", []):
+        if edge.get("child_node") == node_id:
+            edge["parent_node"] = new_anchor
+            break
+    for event in tree.get("branch_events", []):
+        if event.get("new_node") != node_id:
+            continue
+        event["anchor_node"] = new_anchor
+        event["parent_node"] = new_anchor
+        event["is_rebased"] = event.get("from_node") != new_anchor
+        event.setdefault("lineage_repairs", []).append(
+            {
+                "decision_id": decision_id,
+                "repaired_at": repaired_at,
+                "reason_code": reason_code,
+                "old_parent_node": old_parent,
+                "old_anchor_node": old_anchor,
+                "new_parent_node": new_anchor,
+                "new_anchor_node": new_anchor,
+            }
+        )
+        break
+    write_json(tree_path, tree)
 
 
 def _knowledge_entries(knowledge: str | dict[str, Any] | list[Any]) -> list[tuple[str, str]]:

@@ -180,7 +180,7 @@ def _validate_end_payload(payload: dict[str, Any]) -> None:
 
 
 def _validate_update_payload(payload: dict[str, Any]) -> None:
-    allowed = {"append_evidence", "append_knowledge", "append_provenance"}
+    allowed = {"append_evidence", "append_knowledge", "append_provenance", "repair_branch_anchor"}
     _require(any(key in payload for key in allowed), "update_workspace needs an append operation")
     forbidden = {"lifecycle", "closure", "claim_verdict", "accepted_ts", "current_accepted_ts"}
     touched = forbidden.intersection(payload)

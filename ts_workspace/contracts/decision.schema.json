@@ -51,6 +51,12 @@
             {"type": "array", "items": {"type": "object"}}
           ]
         },
+        "repair_branch_anchor": {
+          "anyOf": [
+            {"$ref": "#/$defs/branch_anchor_repair"},
+            {"type": "array", "items": {"$ref": "#/$defs/branch_anchor_repair"}}
+          ]
+        },
         "question": {"type": "string", "minLength": 1},
         "reason": {"type": "string", "minLength": 1}
       },
@@ -86,7 +92,8 @@
             "anyOf": [
               {"required": ["append_evidence"]},
               {"required": ["append_knowledge"]},
-              {"required": ["append_provenance"]}
+              {"required": ["append_provenance"]},
+              {"required": ["repair_branch_anchor"]}
             ]
           }
         }
@@ -135,6 +142,16 @@
         "changed_variable": {"type": "string", "minLength": 1},
         "reason_code": {"type": "string", "minLength": 1},
         "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      },
+      "additionalProperties": true
+    },
+    "branch_anchor_repair": {
+      "type": "object",
+      "required": ["node_id", "new_anchor_node", "reason_code"],
+      "properties": {
+        "node_id": {"type": "string", "minLength": 1},
+        "new_anchor_node": {"type": "string", "minLength": 1},
+        "reason_code": {"type": "string", "minLength": 1}
       },
       "additionalProperties": true
     },

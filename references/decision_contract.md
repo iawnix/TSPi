@@ -98,9 +98,26 @@ When the agent opens a same-hypothesis replacement solution, the new
 `payload.branch_context.relation=new_solution_branch`. The new node's
 `payload.parent_node` must equal `payload.branch_context.anchor_node`; the
 failed or triggering node is recorded separately in
-`payload.branch_context.from_node`. The preflight validates references,
-topology, and consistency; it does not decide whether the replacement should
-be made.
+`payload.branch_context.from_node`. For same-hypothesis replacement solutions,
+the anchor must equal the current hypothesis
+`mechanism_model.hypotheses[].source_node`; an older global ancestor is an
+overbroad anchor unless it is also that source node. The preflight validates
+references, topology, and consistency; it does not decide whether the
+replacement should be made.
+
+For legacy lineage repair, use `action=update_workspace` with
+`payload.repair_branch_anchor`:
+
+```json
+{
+  "node_id": "n023",
+  "new_anchor_node": "n020",
+  "reason_code": "overbroad_anchor_node_for_new_solution_branch"
+}
+```
+
+The repair is rejected for running nodes and for anchors that do not match the
+node hypothesis `source_node`.
 
 ## Closure Revision
 

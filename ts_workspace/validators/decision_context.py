@@ -83,7 +83,14 @@ def _validate_end_node_context(root: Path, decision: dict[str, Any]) -> None:
 
 def _validate_update_workspace_context(root: Path, decision: dict[str, Any]) -> None:
     _require_initialized(root)
-    evidence = decision["payload"].get("append_evidence")
+    payload = decision["payload"]
+    repair = payload.get("repair_branch_anchor")
+    if repair is not None:
+        entries = repair if isinstance(repair, list) else [repair]
+        for entry in entries:
+            _validate_branch_anchor_repair(root, entry)
+
+    evidence = payload.get("append_evidence")
     if evidence is None:
         return
     entries = evidence if isinstance(evidence, list) else [evidence]
@@ -111,6 +118,34 @@ def _validate_update_workspace_context(root: Path, decision: dict[str, Any]) -> 
         gate_diagnostic = gate_artifact_metadata_diagnostic(entry)
         if gate_diagnostic:
             raise ContractError(gate_diagnostic)
+
+
+def _validate_branch_anchor_repair(root: Path, repair: Any) -> None:
+    if not isinstance(repair, dict):
+        raise ContractError("repair_branch_anchor entries must be objects")
+    node_id = repair.get("node_id")
+    new_anchor = repair.get("new_anchor_node")
+    if not isinstance(node_id, str) or not node_id:
+        raise ContractError("repair_branch_anchor.node_id is required")
+    if not isinstance(new_anchor, str) or not new_anchor:
+        raise ContractError("repair_branch_anchor.new_anchor_node is required")
+    if not (root / "nodes" / new_anchor / "node.json").exists():
+        raise ContractError(f"repair_branch_anchor.new_anchor_node does not exist: {new_anchor}")
+    node = _read_node(root, node_id)
+    if node.get("lifecycle") == "running":
+        raise ContractError(f"repair_branch_anchor refuses to reparent running node: {node_id}")
+    context = node.get("branch_context") if isinstance(node.get("branch_context"), dict) else {}
+    if context.get("relation") != "new_solution_branch":
+        raise ContractError(f"repair_branch_anchor only applies to new_solution_branch nodes: {node_id}")
+    hypothesis_ref = node.get("hypothesis_ref") if isinstance(node.get("hypothesis_ref"), dict) else {}
+    source_node = _hypothesis_source_node(root, hypothesis_ref.get("hypothesis_id"))
+    if source_node is None:
+        raise ContractError(f"repair_branch_anchor cannot resolve hypothesis source_node for {node_id}")
+    if new_anchor != source_node:
+        raise ContractError(
+            "repair_branch_anchor.new_anchor_node must match the hypothesis source_node: "
+            f"node_id={node_id}, source_node={source_node}, new_anchor_node={new_anchor}"
+        )
 
 
 def _require_initialized(root: Path) -> None:
@@ -173,6 +208,7 @@ def _validate_branch_context(root: Path, payload: dict[str, Any], node_ids: set[
         _require_parent_matches(payload, anchor_node_id, "anchor_node", relation)
     if relation == "new_solution_branch":
         _validate_new_solution_branch(from_node, payload)
+        _validate_solution_branch_anchor_matches_hypothesis_source(root, payload)
     elif relation == "new_hypothesis_branch":
         _validate_new_hypothesis_branch(from_node, payload)
     elif relation == "new_pathway_branch":
@@ -204,6 +240,21 @@ def _validate_new_solution_branch(from_node: dict[str, Any], payload: dict[str, 
         raise ContractError("new_solution_branch requires a new solution_ref.solution_id")
 
 
+def _validate_solution_branch_anchor_matches_hypothesis_source(root: Path, payload: dict[str, Any]) -> None:
+    context = payload.get("branch_context") if isinstance(payload.get("branch_context"), dict) else {}
+    anchor_node_id = context.get("anchor_node")
+    hypothesis_ref = payload.get("hypothesis_ref") if isinstance(payload.get("hypothesis_ref"), dict) else {}
+    hypothesis_id = hypothesis_ref.get("hypothesis_id")
+    source_node = _hypothesis_source_node(root, hypothesis_id)
+    if source_node is None:
+        return
+    if anchor_node_id != source_node:
+        raise ContractError(
+            "new_solution_branch anchor_node must match the hypothesis source_node: "
+            f"hypothesis_id={hypothesis_id}, source_node={source_node}, anchor_node={anchor_node_id}"
+        )
+
+
 def _validate_new_hypothesis_branch(from_node: dict[str, Any], payload: dict[str, Any]) -> None:
     new_ref = payload.get("hypothesis_ref")
     if payload.get("phase") in HYPOTHESIS_REF_PHASES and not isinstance(new_ref, dict):
@@ -221,6 +272,19 @@ def _read_node(root: Path, node_id: str) -> dict[str, Any]:
     if not isinstance(node, dict):
         raise ContractError(f"node.json for {node_id} must be an object")
     return node
+
+
+def _hypothesis_source_node(root: Path, hypothesis_id: Any) -> str | None:
+    if not isinstance(hypothesis_id, str) or not hypothesis_id:
+        return None
+    model = read_json(root / "mechanism_model.json")
+    for hypothesis in model.get("hypotheses", []):
+        if not isinstance(hypothesis, dict):
+            continue
+        if hypothesis.get("hypothesis_id") == hypothesis_id:
+            source_node = hypothesis.get("source_node")
+            return source_node if isinstance(source_node, str) and source_node else None
+    return None
 
 
 def _next_node_id(tree: dict[str, Any]) -> str:

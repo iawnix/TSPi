@@ -95,9 +95,19 @@ an explicit branch-context decision:
 For `new_solution_branch`, `new_hypothesis_branch`, and `new_pathway_branch`,
 the new node's `parent_node` must equal `branch_context.anchor_node`. The
 `from_node` records the failed or triggering node; it is not the structural
-parent unless it is also the anchor. The workspace validates this topology,
-but it does not decide that a solution is exhausted, that a hypothesis is
-refuted, or that the search should continue.
+parent unless it is also the anchor. For `new_solution_branch`, the anchor
+must also equal the current hypothesis `source_node`, so same-hypothesis
+replacement solutions remain mounted inside the hypothesis branch rather than
+being lifted to a broader ancestor. The workspace validates this topology, but
+it does not decide that a solution is exhausted, that a hypothesis is refuted,
+or that the search should continue.
+
+Legacy workspaces that predate this rule may be repaired through a validated
+`update_workspace` decision with `payload.repair_branch_anchor`. The repair is
+limited to non-running `new_solution_branch` nodes and requires
+`new_anchor_node` to equal the node hypothesis `source_node`; it updates the
+node, tree node, edge, and branch event lineage together and records a
+`lineage_repairs` audit entry.
 
 ## Workspace State Files
 

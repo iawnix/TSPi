@@ -184,8 +184,12 @@ They are not top-level node states.
    set to `new_solution_branch`. For `new_solution_branch`,
    `new_hypothesis_branch`, and `new_pathway_branch`, set `payload.parent_node`
    to `payload.branch_context.anchor_node`; `payload.branch_context.from_node`
-   records the failed or triggering node. `ts_workspace` records and validates
-   that topology; it must not decide whether to retry, switch solution, switch
+   records the failed or triggering node. For `new_solution_branch`,
+   `payload.branch_context.anchor_node` must be the current hypothesis
+   `mechanism_model.hypotheses[].source_node`; do not re-anchor a
+   same-hypothesis branch to a broader ancestor such as `n000` unless that
+   ancestor is the hypothesis source. `ts_workspace` records and validates that
+   topology; it must not decide whether to retry, switch solution, switch
    hypothesis, or stop.
 5. Run `validate_decision` for preflight when useful.
 6. Apply the mutation through `start_node`, `update_workspace`, or `end_node`.
@@ -202,8 +206,12 @@ They are not top-level node states.
    files in `nodes/<node>/outputs/artifact_manifest.json`.
 8. Close the node with program facts, claim verdict, implication, and open
    questions.
-9. Run `report_workspace` again before branching or stopping.
-10. Use `ts_report` only after the workspace validates. Prefer report-package
+9. Use `update_workspace` with `payload.repair_branch_anchor` only for explicit
+   legacy lineage repair of non-running `new_solution_branch` nodes; it must
+   move the branch to the current hypothesis `source_node` and records a repair
+   audit entry.
+10. Run `report_workspace` again before branching or stopping.
+11. Use `ts_report` only after the workspace validates. Prefer report-package
    output for final handoff so structure panels, vibration/IRC plots, energy
    profile, mechanism interpretation, context JSON, and email summary are kept
    together.

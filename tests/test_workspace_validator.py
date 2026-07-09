@@ -10,7 +10,7 @@ from ts_workspace import end_node, init_workspace, report_workspace, start_node,
 from ts_workspace.io import read_json, write_json
 from ts_workspace.validators.decision import ContractError
 from ts_workspace.validators.decision_context import validate_decision_for_workspace
-from v3_helpers import HYPOTHESIS_REF, PATHWAY_REF, bootstrap_v3_workspace, gate_artifact_metadata
+from v3_helpers import HYPOTHESIS_REF, PATHWAY_REF, bootstrap_v3_workspace, gate_artifact_metadata, initial_mechanism_hypothesis
 
 
 def test_start_node_requires_branch_context_after_n000(tmp_path: Path) -> None:
@@ -168,6 +168,188 @@ def test_validate_workspace_rejects_solution_branch_not_mounted_on_anchor(tmp_pa
 
     assert validation["valid"] is False
     assert "branch_parent_anchor_mismatch" in _codes(validation)
+
+
+def test_new_solution_branch_requires_anchor_to_match_hypothesis_source(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_v3_workspace(workspace)
+    _add_secondary_hypothesis(workspace, report_ref)
+
+    start_node(
+        workspace,
+        _start_decision(
+            report_ref,
+            node_id="n002",
+            parent_node="n001",
+            phase="candidate_generation",
+            solution_ref={"solution_id": "sol_secondary_001"},
+            branch_context={"relation": "continue_parent", "from_node": "n001", "anchor_node": "n000"},
+            hypothesis_ref={"hypothesis_id": "hyp_0002", "prediction_ids": ["pred_mode_001"]},
+        ),
+    )
+    end_node(workspace, _end_decision(report_ref, "n002", "refuted", hypothesis_id="hyp_0002"))
+    decision = _start_decision(
+        report_ref,
+        node_id="n003",
+        parent_node="n000",
+        phase="candidate_generation",
+        solution_ref={"solution_id": "sol_secondary_002", "parent_solution_id": "sol_secondary_001"},
+        branch_context={
+            "relation": "new_solution_branch",
+            "from_node": "n002",
+            "anchor_node": "n000",
+            "changed_variable": "solution_strategy",
+            "reason_code": "route_failed",
+            "evidence_refs": [],
+        },
+        hypothesis_ref={"hypothesis_id": "hyp_0002", "prediction_ids": ["pred_mode_001"]},
+    )
+
+    with pytest.raises(ContractError, match="anchor_node must match the hypothesis source_node"):
+        validate_decision_for_workspace(workspace, decision)
+    with pytest.raises(ContractError, match="anchor_node must match the hypothesis source_node"):
+        start_node(workspace, decision)
+
+
+def test_validate_workspace_warns_for_legacy_overbroad_solution_anchor(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_v3_workspace(workspace)
+    _add_secondary_hypothesis(workspace, report_ref)
+
+    start_node(
+        workspace,
+        _start_decision(
+            report_ref,
+            node_id="n002",
+            parent_node="n001",
+            phase="candidate_generation",
+            solution_ref={"solution_id": "sol_secondary_001"},
+            branch_context={"relation": "continue_parent", "from_node": "n001", "anchor_node": "n000"},
+            hypothesis_ref={"hypothesis_id": "hyp_0002", "prediction_ids": ["pred_mode_001"]},
+        ),
+    )
+    node = read_json(workspace / "nodes" / "n002" / "node.json")
+    node["parent_node"] = "n000"
+    node["branch_context"] = {
+        "relation": "new_solution_branch",
+        "from_node": "n001",
+        "anchor_node": "n000",
+        "changed_variable": "solution_strategy",
+        "reason_code": "legacy_overbroad_anchor",
+        "evidence_refs": [],
+    }
+    write_json(workspace / "nodes" / "n002" / "node.json", node)
+    tree = read_json(workspace / "tree.json")
+    tree["nodes"][2]["parent_node"] = "n000"
+    tree["nodes"][2]["branch_context"] = node["branch_context"]
+    tree["edges"][-1] = {"parent_node": "n000", "child_node": "n002"}
+    tree["branch_events"][-1].update(
+        {
+            "relation": "new_solution_branch",
+            "from_node": "n001",
+            "anchor_node": "n000",
+            "parent_node": "n000",
+            "is_rebased": True,
+            "reason_code": "legacy_overbroad_anchor",
+            "changed_variable": "solution_strategy",
+        }
+    )
+    write_json(workspace / "tree.json", tree)
+
+    validation = validate_workspace(workspace)
+
+    assert validation["valid"] is True
+    assert "overbroad_anchor_node_for_new_solution_branch" in _codes(validation)
+    finding = next(item for item in validation["findings"] if item["code"] == "overbroad_anchor_node_for_new_solution_branch")
+    assert finding["severity"] == "warning"
+
+
+def test_update_workspace_repairs_legacy_overbroad_solution_anchor(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_v3_workspace(workspace)
+    _add_secondary_hypothesis(workspace, report_ref)
+
+    start_node(
+        workspace,
+        _start_decision(
+            report_ref,
+            node_id="n002",
+            parent_node="n001",
+            phase="candidate_generation",
+            solution_ref={"solution_id": "sol_secondary_001"},
+            branch_context={"relation": "continue_parent", "from_node": "n001", "anchor_node": "n000"},
+            hypothesis_ref={"hypothesis_id": "hyp_0002", "prediction_ids": ["pred_mode_001"]},
+        ),
+    )
+    end_node(workspace, _end_decision(report_ref, "n002", "refuted", hypothesis_id="hyp_0002"))
+    _force_overbroad_solution_anchor(workspace, "n002")
+
+    assert "overbroad_anchor_node_for_new_solution_branch" in _codes(validate_workspace(workspace))
+    result = update_workspace(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "update_workspace",
+            "rationale": "Repair legacy solution branch anchor to the hypothesis source node.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "repair_branch_anchor": {
+                    "node_id": "n002",
+                    "new_anchor_node": "n001",
+                    "reason_code": "test_overbroad_anchor_repair",
+                }
+            },
+        },
+    )
+
+    assert result["repairs"]["branch_anchor"] == 1
+    validation = validate_workspace(workspace)
+    assert validation["valid"] is True
+    assert "overbroad_anchor_node_for_new_solution_branch" not in _codes(validation)
+    node = read_json(workspace / "nodes" / "n002" / "node.json")
+    assert node["parent_node"] == "n001"
+    assert node["branch_context"]["anchor_node"] == "n001"
+    assert node["lineage_repairs"][0]["reason_code"] == "test_overbroad_anchor_repair"
+
+
+def test_update_workspace_refuses_to_repair_running_branch_anchor(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_v3_workspace(workspace)
+    _add_secondary_hypothesis(workspace, report_ref)
+
+    start_node(
+        workspace,
+        _start_decision(
+            report_ref,
+            node_id="n002",
+            parent_node="n001",
+            phase="candidate_generation",
+            solution_ref={"solution_id": "sol_secondary_001"},
+            branch_context={"relation": "continue_parent", "from_node": "n001", "anchor_node": "n000"},
+            hypothesis_ref={"hypothesis_id": "hyp_0002", "prediction_ids": ["pred_mode_001"]},
+        ),
+    )
+    _force_overbroad_solution_anchor(workspace, "n002")
+
+    with pytest.raises(ContractError, match="refuses to reparent running node"):
+        update_workspace(
+            workspace,
+            {
+                "schema_version": "ts-decision",
+                "action": "update_workspace",
+                "rationale": "Attempt to repair a running node.",
+                "evidence_refs": [],
+                "report_ref": report_ref,
+                "payload": {
+                    "repair_branch_anchor": {
+                        "node_id": "n002",
+                        "new_anchor_node": "n001",
+                        "reason_code": "running_node_repair_attempt",
+                    }
+                },
+            },
+        )
 
 
 def test_non_linear_branch_from_older_node_ignores_recent_terminal_node(tmp_path: Path) -> None:
@@ -384,13 +566,14 @@ def _start_decision(
     include_branch_context: bool = True,
     solution_ref: dict[str, Any] | None = None,
     pathway_ref: dict[str, str] | None = None,
+    hypothesis_ref: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "node_id": node_id,
         "parent_node": parent_node,
         "phase": phase,
         "hypothesis": f"Test {phase} hypothesis.",
-        "hypothesis_ref": HYPOTHESIS_REF,
+        "hypothesis_ref": hypothesis_ref or HYPOTHESIS_REF,
         "expected_evidence": [],
     }
     if include_branch_context:
@@ -413,7 +596,8 @@ def _start_decision(
     }
 
 
-def _end_decision(report_ref: dict[str, str], node_id: str, claim_verdict: str) -> dict[str, Any]:
+def _end_decision(report_ref: dict[str, str], node_id: str, claim_verdict: str, *, hypothesis_id: str | None = None) -> dict[str, Any]:
+    hypothesis_ref = {"hypothesis_id": hypothesis_id or HYPOTHESIS_REF["hypothesis_id"], "prediction_ids": HYPOTHESIS_REF["prediction_ids"]}
     return {
         "schema_version": "ts-decision",
         "action": "end_node",
@@ -428,7 +612,7 @@ def _end_decision(report_ref: dict[str, str], node_id: str, claim_verdict: str) 
                 "program": {"summary": "Program completed.", "evidence_refs": []},
                 "mechanism": {
                     "summary": "Claim was evaluated.",
-                    "hypothesis_ref": HYPOTHESIS_REF,
+                    "hypothesis_ref": hypothesis_ref,
                     "revision": {
                         "action": "refute_prediction",
                         "prediction_ids": HYPOTHESIS_REF["prediction_ids"],
@@ -441,6 +625,120 @@ def _end_decision(report_ref: dict[str, str], node_id: str, claim_verdict: str) 
             },
         },
     }
+
+
+def _add_secondary_hypothesis(workspace: Path, report_ref: dict[str, str]) -> None:
+    hypothesis = initial_mechanism_hypothesis()
+    hypothesis["hypothesis_id"] = "hyp_0002"
+    hypothesis["summary"] = "Secondary hypothesis with a non-root source node."
+    hypothesis["evidence_refs"] = ["ev_hyp_0002"]
+    start_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "start_node",
+            "rationale": "Start secondary hypothesis preflight.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "node_id": "n001",
+                "parent_node": "n000",
+                "phase": "preflight",
+                "hypothesis": "Secondary initial mechanism hypothesis.",
+                "initial_mechanism_hypothesis": hypothesis,
+                "expected_evidence": ["initial_mechanism_hypothesis"],
+                "branch_context": {
+                    "relation": "new_hypothesis_branch",
+                    "from_node": "n000",
+                    "anchor_node": "n000",
+                    "changed_variable": "electronic_state_model",
+                    "reason_code": "secondary_hypothesis_for_anchor_test",
+                    "evidence_refs": [],
+                },
+            },
+        },
+    )
+    update_workspace(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "update_workspace",
+            "rationale": "Register secondary hypothesis evidence.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "append_evidence": {
+                    "evidence_id": "ev_hyp_0002",
+                    "kind": "mechanism_hypothesis",
+                    "role": "initial_mechanism_hypothesis",
+                    "evidence_tier": "hypothesis",
+                    "node_id": "n001",
+                    "summary": "Secondary initial mechanism hypothesis.",
+                    "quality": {"hypothesis_id": "hyp_0002"},
+                }
+            },
+        },
+    )
+    end_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "end_node",
+            "rationale": "Close secondary hypothesis preflight.",
+            "evidence_refs": ["ev_hyp_0002"],
+            "report_ref": report_ref,
+            "payload": {
+                "node_id": "n001",
+                "closure": {
+                    "program_status": "completed",
+                    "claim_verdict": "supported",
+                    "program": {"summary": "Secondary preflight completed.", "evidence_refs": []},
+                    "mechanism": {"summary": "Secondary hypothesis is ready.", "evidence_refs": ["ev_hyp_0002"]},
+                    "implication": "Open a hypothesis-referenced search node.",
+                    "open_questions": [],
+                },
+            },
+        },
+    )
+
+
+def _force_overbroad_solution_anchor(workspace: Path, node_id: str) -> None:
+    node = read_json(workspace / "nodes" / node_id / "node.json")
+    node["parent_node"] = "n000"
+    node["branch_context"] = {
+        "relation": "new_solution_branch",
+        "from_node": "n001",
+        "anchor_node": "n000",
+        "changed_variable": "solution_strategy",
+        "reason_code": "legacy_overbroad_anchor",
+        "evidence_refs": [],
+    }
+    write_json(workspace / "nodes" / node_id / "node.json", node)
+    tree = read_json(workspace / "tree.json")
+    for entry in tree["nodes"]:
+        if entry["node_id"] == node_id:
+            entry["parent_node"] = "n000"
+            entry["branch_context"] = node["branch_context"]
+            break
+    for edge in tree["edges"]:
+        if edge["child_node"] == node_id:
+            edge["parent_node"] = "n000"
+            break
+    for event in tree["branch_events"]:
+        if event["new_node"] == node_id:
+            event.update(
+                {
+                    "relation": "new_solution_branch",
+                    "from_node": "n001",
+                    "anchor_node": "n000",
+                    "parent_node": "n000",
+                    "is_rebased": True,
+                    "reason_code": "legacy_overbroad_anchor",
+                    "changed_variable": "solution_strategy",
+                }
+            )
+            break
+    write_json(workspace / "tree.json", tree)
 
 
 def _codes(validation: dict[str, Any]) -> set[str]:
