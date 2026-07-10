@@ -342,6 +342,9 @@ def parse_frequency_tables(lines: list[str]) -> list[dict[str, object]]:
     tables: list[dict[str, object]] = []
     current: dict[str, object] | None = None
     for index, line in enumerate(lines):
+        if current is not None and _starts_frequency_section(line):
+            current["end_line"] = index
+            current = None
         if "Frequencies --" not in line:
             if current is not None and _ends_frequency_table(line):
                 current["end_line"] = index
@@ -382,13 +385,22 @@ def _ends_frequency_table(line: str) -> bool:
     if not stripped:
         return False
     return (
-        stripped.startswith("Red. masses")
-        or stripped.startswith("Frc consts")
-        or stripped.startswith("IR Inten")
-        or stripped.startswith("Atom")
-        or stripped.startswith("Thermochemistry")
+        stripped.startswith("Thermochemistry")
         or stripped.startswith("Zero-point correction=")
+        or stripped.startswith("Entering Link 1")
+        or stripped.startswith("Leave Link")
+        or stripped.startswith("Step number")
+        or stripped.startswith("Optimization completed")
+        or stripped.startswith("GradGradGrad")
+        or stripped.startswith("Input orientation:")
+        or stripped.startswith("Standard orientation:")
+        or stripped.startswith("SCF Done:")
     )
+
+
+def _starts_frequency_section(line: str) -> bool:
+    stripped = line.strip()
+    return stripped.startswith("Harmonic frequencies")
 
 
 def parse_convergence(lines: list[str]) -> tuple[dict[str, dict[str, str | float]], str | None]:

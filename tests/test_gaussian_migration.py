@@ -311,6 +311,7 @@ def test_calcall_uses_final_frequency_table_for_tsfreq_gate(tmp_path: Path) -> N
             " Frequencies --  -512.3000  -101.4000   98.2000",
             " Red. masses --     1.0000     1.1000     1.2000",
             " Frc consts  --     0.1000     0.2000     0.3000",
+            " Step number   2 out of a maximum of  20",
             " Frequencies --  -450.0000    47.1000   98.2000",
             " Zero-point correction=                           0.012345",
             " Normal termination of Gaussian 16",
@@ -329,6 +330,42 @@ def test_calcall_uses_final_frequency_table_for_tsfreq_gate(tmp_path: Path) -> N
     assert summary["raw_frequency_count"] == 6
     assert summary["raw_imaginary_frequency_count"] == 3
     assert summary["raw_imaginary_frequencies_cm-1"] == [-512.3, -101.4, -450.0]
+
+
+def test_final_harmonic_section_keeps_three_mode_blocks_together(tmp_path: Path) -> None:
+    text = "\n".join(
+        [
+            " Entering Link 1 = synthetic",
+            " SCF Done:  E(RB3LYP) =  -40.123456     A.U. after 10 cycles",
+            orientation(),
+            convergence(),
+            " Stationary point found.",
+            " Harmonic frequencies (cm**-1), IR intensities (KM/Mole), Raman scattering",
+            " Frequencies --  -2146.9640    79.1339   113.0786",
+            " Red. masses --      1.1683     1.0480     4.7018",
+            " Frc consts  --      3.1730     0.0039     0.0354",
+            " IR Inten    --    321.0030     0.0494    12.0857",
+            " Atom  AN      X      Y      Z        X      Y      Z        X      Y      Z",
+            " Frequencies --    152.1906   189.6272   296.4253",
+            " Red. masses --      3.2740     2.9558     4.3682",
+            " Frc consts  --      0.0447     0.0626     0.2261",
+            " IR Inten    --      0.3781    14.0466    35.7227",
+            " - Thermochemistry -",
+            " Zero-point correction=                           0.103168",
+            " Normal termination of Gaussian 16",
+        ]
+    )
+
+    parsed = parse_text(tmp_path, text)
+    summary = parsed["summary"]
+
+    assert summary["status"] == "validated_ts"
+    assert summary["frequency_table_count"] == 1
+    assert summary["selected_frequency_table_index"] == 0
+    assert summary["frequency_count"] == 6
+    assert summary["imaginary_frequency_count"] == 1
+    assert summary["raw_frequency_count"] == 6
+    assert summary["raw_imaginary_frequency_count"] == 1
 
 
 def test_failed_remote_run_still_downloads_expected_artifacts(monkeypatch, tmp_path: Path) -> None:
