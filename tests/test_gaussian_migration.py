@@ -281,6 +281,32 @@ def test_missing_convergence_evidence_is_not_validated_but_input_geometry_is_ext
     assert parsed["atoms"][1] == ("H", 0.4, 0.5, 0.6)
 
 
+def test_overflow_convergence_value_does_not_crash_parser(tmp_path: Path) -> None:
+    text = "\n".join(
+        [
+            " Entering Link 1 = synthetic",
+            " SCF Done:  E(RB3LYP) =  -40.123456     A.U. after 10 cycles",
+            orientation(),
+            " Maximum Force            0.001246     0.000450     NO",
+            " RMS     Force            0.000289     0.000300     YES",
+            " Maximum Displacement     ********     0.001800     NO",
+            " RMS     Displacement     0.000012     0.001200     YES",
+            " Optimization stopped.",
+            "    -- Number of steps exceeded,  NStep= 109",
+            " Frequencies --    -65.6077   -45.5442   -21.8948",
+            " Error termination request processed by link 9999.",
+        ]
+    )
+
+    parsed = parse_text(tmp_path, text)
+    summary = parsed["summary"]
+
+    assert summary["status"] == "not_validated_ts"
+    assert summary["force_convergence"]["Maximum Displacement"]["value"] == "********"
+    assert summary["final_convergence_satisfied"] is False
+    assert "missing_normal_termination" in summary["validation_failures"]
+
+
 def test_stationary_point_convergence_is_not_overwritten_by_later_frequency_rows(tmp_path: Path) -> None:
     text = "\n".join(
         [

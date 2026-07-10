@@ -403,6 +403,13 @@ def _starts_frequency_section(line: str) -> bool:
     return stripped.startswith("Harmonic frequencies")
 
 
+def _parse_convergence_number(token: str) -> float | str:
+    try:
+        return float(token.replace("D", "E"))
+    except ValueError:
+        return token
+
+
 def parse_convergence(lines: list[str]) -> tuple[dict[str, dict[str, str | float]], str | None]:
     convergence_rows: dict[str, dict[str, str | float]] = {}
     stationary_convergence_rows: dict[str, dict[str, str | float]] | None = None
@@ -419,8 +426,8 @@ def parse_convergence(lines: list[str]) -> tuple[dict[str, dict[str, str | float
             if len(parts) >= 5:
                 label = " ".join(parts[:2])
                 convergence_rows[label] = {
-                    "value": float(parts[2].replace("D", "E")),
-                    "threshold": float(parts[3].replace("D", "E")),
+                    "value": _parse_convergence_number(parts[2]),
+                    "threshold": _parse_convergence_number(parts[3]),
                     "converged": parts[4],
                 }
         elif "Stationary point found" in stripped and convergence_rows:
