@@ -261,9 +261,6 @@ def _commit_transaction(
     if snapshot_path not in changes:
         changes[snapshot_path] = decision
 
-    if not changes:
-        return
-
     tx_path = root / "transaction_log.jsonl"
     relative_paths = sorted(str(path.relative_to(root)) for path in changes)
     append_jsonl(
