@@ -24,13 +24,19 @@ Required directories:
 `decisions/` holds one file per applied decision (`<decision_id>.json`) — the
 full decision payload as submitted. `decision_log.jsonl` rows carry a
 `snapshot_ref` pointing at the snapshot so audits and future replays can
-recover the exact decision without depending on the log row alone. `decisions/`
-is auto-created on first mutation, so an old workspace missing it is a
-warning (`missing_soft_dir`), not an error.
+recover the exact decision without depending on the log row alone. If a
+snapshot file already exists, the same `decision_id` may be reused only for the
+exact same decision content and an already committed transaction; the repeated
+call is a no-op. Different content with the same `decision_id`, or a matching
+snapshot without a committed transaction, is rejected before any state write.
+`decisions/` is auto-created on first mutation, so an old workspace missing it
+is a warning (`missing_soft_dir`), not an error.
 
 `init_workspace` refuses to overwrite an already-initialized workspace by
 default. Pass `force=True` (or `--force` on the CLI) to reinitialize; that is
-destructive.
+destructive and removes workspace-owned state directories and root state files
+before creating a fresh workspace. Do not use it on a research directory unless
+that reset is explicitly intended.
 
 ## Transaction Log
 
@@ -55,9 +61,9 @@ The flow inside `_commit_transaction`:
 without a matching `committed` row and reports it as
 `pending_transaction` (warning). A workspace with a pending transaction is
 still `valid=true` — the warning is a hint to inspect that decision's
-snapshot and either replay it (safe: the snapshot is the exact input that
-was accepted by validation) or manually verify state and mark the
-transaction as committed.
+snapshot and manually verify the listed state paths. Automatic reuse of the
+same `decision_id` is blocked until the transaction is known to be committed,
+because append-style mutations may not be safe to replay blindly.
 
 Because writes 2 and 3 are sequential, a crash between them can leave state
 files written but the decision_log row missing. The `pending_transaction`

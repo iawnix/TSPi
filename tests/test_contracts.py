@@ -116,15 +116,94 @@ def test_init_refuses_to_overwrite_initialized_workspace(tmp_path: Path) -> None
 
 
 def test_init_force_reinitializes(tmp_path: Path) -> None:
+    from tests.v3_helpers import initial_mechanism_hypothesis
+    from ts_workspace import start_node
+
     workspace = tmp_path / "ws"
     init_workspace(workspace)
+    (workspace / "nodes" / "n000").mkdir(parents=True)
+    write_json(workspace / "nodes" / "n000" / "node.json", {"node_id": "n000", "stale": True})
+    (workspace / "accepted" / "accepted_ts_old.json").write_text("{}\n", encoding="utf-8")
     tree = read_json(workspace / "tree.json")
-    tree["nodes"].append({"node_id": "n_ghost", "phase": "endpoint"})
+    tree["nodes"].append({"node_id": "n000", "phase": "endpoint"})
     write_json(workspace / "tree.json", tree)
 
     init_workspace(workspace, force=True)
 
     assert read_json(workspace / "tree.json")["nodes"] == []
+    assert not (workspace / "nodes" / "n000" / "node.json").exists()
+    assert not (workspace / "accepted" / "accepted_ts_old.json").exists()
+    started = start_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "start_node",
+            "rationale": "Start a fresh n000 after force reinitialization.",
+            "evidence_refs": [],
+            "report_ref": {"report_id": "rep_test", "workspace_root": str(workspace)},
+            "payload": {
+                "node_id": "n000",
+                "phase": "endpoint",
+                "hypothesis": "Fresh endpoint hypothesis.",
+                "initial_mechanism_hypothesis": initial_mechanism_hypothesis(),
+                "expected_evidence": [],
+            },
+        },
+    )
+    assert started["node_id"] == "n000"
+
+
+def test_decision_snapshot_rejects_duplicate_id_with_different_content(tmp_path: Path) -> None:
+    from tests.v3_helpers import _report_ref, bootstrap_v3_workspace
+    from ts_workspace import update_workspace
+
+    workspace = tmp_path / "ws"
+    bootstrap_v3_workspace(workspace)
+    first = {
+        "schema_version": "ts-decision",
+        "decision_id": "dec_duplicate",
+        "action": "update_workspace",
+        "rationale": "First mutation with this explicit id.",
+        "evidence_refs": [],
+        "report_ref": _report_ref(workspace),
+        "payload": {"append_knowledge": "First note."},
+    }
+    update_workspace(workspace, first)
+    second = {
+        **first,
+        "rationale": "Different mutation with the same explicit id.",
+        "payload": {"append_provenance": [{"source": "second"}]},
+    }
+
+    with pytest.raises(ContractError, match="decision_id already exists"):
+        update_workspace(workspace, second)
+
+    snapshot = json.loads((workspace / "decisions" / "dec_duplicate.json").read_text(encoding="utf-8"))
+    assert snapshot["payload"] == first["payload"]
+
+
+def test_decision_snapshot_allows_duplicate_id_with_same_content(tmp_path: Path) -> None:
+    from tests.v3_helpers import _report_ref, bootstrap_v3_workspace
+    from ts_workspace import update_workspace
+
+    workspace = tmp_path / "ws"
+    bootstrap_v3_workspace(workspace)
+    decision = {
+        "schema_version": "ts-decision",
+        "decision_id": "dec_idempotent",
+        "action": "update_workspace",
+        "rationale": "Idempotent retry with identical content.",
+        "evidence_refs": [],
+        "report_ref": _report_ref(workspace),
+        "payload": {"append_knowledge": "Repeated note."},
+    }
+    update_workspace(workspace, decision)
+    knowledge_after_first = (workspace / "knowledge_base.md").read_text(encoding="utf-8")
+    update_workspace(workspace, decision)
+
+    snapshot = json.loads((workspace / "decisions" / "dec_idempotent.json").read_text(encoding="utf-8"))
+    assert snapshot["payload"] == decision["payload"]
+    assert (workspace / "knowledge_base.md").read_text(encoding="utf-8") == knowledge_after_first
 
 
 def test_decision_snapshot_is_persisted(tmp_path: Path) -> None:

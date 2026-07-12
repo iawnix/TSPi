@@ -100,11 +100,16 @@ python scripts/ts_workspace.py validate_decision  --root <root> --decision-file 
 
 `report_workspace` returns the current context but does not write; use
 `snapshot_report` to also persist `reports/<report_id>.json`. `init_workspace`
-refuses to overwrite an initialized workspace unless `--force` is passed.
+refuses to overwrite an initialized workspace unless `--force` is passed;
+`--force` is destructive and removes workspace-owned state before recreating the
+workspace.
 
 Every applied mutation records a full decision snapshot at
 `decisions/<decision_id>.json` and a `snapshot_ref` in `decision_log.jsonl`,
-so audits and future replays do not depend on the log row alone.
+so audits and future replays do not depend on the log row alone. Reusing a
+`decision_id` is allowed only when the stored snapshot content is identical and
+already committed; it becomes a no-op. Different content with the same
+`decision_id` is rejected before mutation.
 `end_node` mutations are transactional: a `transaction_log.jsonl` `prepare`
 row is written with the exact paths, all writes are applied, then a
 `committed` row closes the transaction. `validate_workspace` reports

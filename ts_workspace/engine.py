@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -34,6 +36,8 @@ def init_workspace(
                 + ", ".join(sorted(existing))
                 + "; pass force=True to reinitialize"
             )
+    elif root_path.exists():
+        _clear_workspace_owned_state(root_path)
     root_path.mkdir(parents=True, exist_ok=True)
     for dirname in REQUIRED_DIRS | SOFT_DIRS:
         (root_path / dirname).mkdir(parents=True, exist_ok=True)
@@ -258,7 +262,14 @@ def _commit_transaction(
     decision_id = _decision_id(decision)
     snapshot_ref = f"decisions/{decision_id}.json"
     snapshot_path = root / snapshot_ref
-    if snapshot_path not in changes:
+    if snapshot_path.exists():
+        existing = read_json(snapshot_path)
+        if sha256_json(existing) != sha256_json(decision):
+            raise ContractError(f"decision_id already exists with different content: {decision_id}")
+        if _transaction_committed(root, decision_id):
+            return
+        raise ContractError(f"decision_id already exists without committed transaction: {decision_id}")
+    elif snapshot_path not in changes:
         changes[snapshot_path] = decision
 
     tx_path = root / "transaction_log.jsonl"
@@ -298,6 +309,44 @@ def _commit_transaction(
             "paths": relative_paths,
         },
     )
+
+
+def _transaction_committed(root: Path, decision_id: str) -> bool:
+    tx_path = root / "transaction_log.jsonl"
+    if not tx_path.exists():
+        return False
+    committed = False
+    for line in tx_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if row.get("decision_id") != decision_id:
+            continue
+        stage = row.get("stage")
+        if stage == "prepare":
+            committed = False
+        elif stage == "committed":
+            committed = True
+    return committed
+
+
+def _clear_workspace_owned_state(root: Path) -> None:
+    """Remove files and directories owned by the TS workspace before force reinit."""
+    for dirname in sorted(REQUIRED_DIRS | SOFT_DIRS):
+        path = root / dirname
+        if path.exists():
+            shutil.rmtree(path)
+    for filename in sorted(REQUIRED_FILES | {"decision_log.jsonl", "transaction_log.jsonl"}):
+        path = root / filename
+        if path.exists():
+            if path.is_dir():
+                shutil.rmtree(path)
+            else:
+                path.unlink()
 
 
 def report_workspace(root: str | Path) -> dict[str, Any]:

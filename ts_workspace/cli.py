@@ -23,7 +23,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--force",
         action="store_true",
-        help="reinitialize an already-initialized workspace (destructive)",
+        help="delete workspace-owned state and reinitialize (destructive)",
     )
 
     p = sub.add_parser("report_workspace")
