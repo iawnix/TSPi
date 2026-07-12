@@ -83,7 +83,7 @@ require a decision JSON. Read/support commands do not.
 **Mutation CLI:**
 
 ```bash
-python scripts/ts_workspace.py init_workspace  --root <root> [--force]
+python scripts/ts_workspace.py init_workspace  --root <root> [--decision-file decision.json] [--force]
 python scripts/ts_workspace.py start_node      --root <root> --decision-file decision.json
 python scripts/ts_workspace.py update_workspace --root <root> --decision-file decision.json
 python scripts/ts_workspace.py end_node        --root <root> --decision-file decision.json
@@ -102,7 +102,7 @@ python scripts/ts_workspace.py validate_decision  --root <root> --decision-file 
 `snapshot_report` to also persist `reports/<report_id>.json`. `init_workspace`
 refuses to overwrite an initialized workspace unless `--force` is passed;
 `--force` is destructive and removes workspace-owned state before recreating the
-workspace.
+workspace, so it requires an `init_workspace` decision JSON.
 
 Every applied mutation records a full decision snapshot at
 `decisions/<decision_id>.json` and a `snapshot_ref` in `decision_log.jsonl`,
@@ -110,9 +110,10 @@ so audits and future replays do not depend on the log row alone. Reusing a
 `decision_id` is allowed only when the stored snapshot content is identical and
 already committed; it becomes a no-op. Different content with the same
 `decision_id` is rejected before mutation.
-`end_node` mutations are transactional: a `transaction_log.jsonl` `prepare`
-row is written with the exact paths, all writes are applied, then a
-`committed` row closes the transaction. `validate_workspace` reports
+Mutations are transactional: a `transaction_log.jsonl` `prepare` row is written
+with the exact paths, the decision snapshot is written before state files, all
+writes are applied, then a `committed` row closes the transaction.
+`validate_workspace` reports
 `pending_transaction` (warning) if a `prepare` is not followed by
 `committed`, so crash-interrupted closes are detectable.
 

@@ -175,10 +175,14 @@ Allowed actions:
 
 `start_node`, `end_node`, and `update_workspace` require a `report_ref`.
 `report_workspace` should be run before the decision is written.
+First-time `init_workspace` may bootstrap without a decision file, but
+destructive force reinitialization must pass an `action=init_workspace`
+decision so the reset is auditable.
 
 The public `validate_decision --root <root> --decision-file <file>` preflight
 validates both JSON shape and workspace-context requirements. Mutation commands
-run the same validation internally before writing files.
+run the same validation internally before writing files and reject decision
+files whose `action` does not match the invoked mutation command.
 
 `update_workspace` may append evidence, knowledge, or provenance. It cannot
 close a node, write a verdict, accept a TS, rewrite a pathway, or mutate

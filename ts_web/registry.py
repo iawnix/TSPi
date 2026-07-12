@@ -11,9 +11,7 @@ from ts_workspace.io import now_iso, read_json, write_json
 def ensure_state_dir(state_dir: str | Path, *, source_root: str | Path | None = None) -> Path:
     state = Path(state_dir).resolve()
     if source_root is not None:
-        source = Path(source_root).resolve()
-        if state == source or source in state.parents:
-            raise ValueError("web state_dir must not be inside the source workspace")
+        _reject_state_inside_source(state, Path(source_root).resolve())
     state.mkdir(parents=True, exist_ok=True)
     return state
 
@@ -23,12 +21,7 @@ def register_workspace(source_root: str | Path, state_dir: str | Path, label: st
     state = ensure_state_dir(state_dir, source_root=source)
     registry_path = state / "workspaces.json"
     registry = read_json(registry_path) if registry_path.exists() else {"workspaces": []}
-    row = {
-        "workspace_id": workspace_id_for(source),
-        "source_root": str(source),
-        "label": label or source.name,
-        "registered_at": now_iso(),
-    }
+    row = _new_workspace_row(source, label)
     rows = registry.setdefault("workspaces", [])
     if not isinstance(rows, list):
         rows = []
@@ -47,10 +40,27 @@ def register_workspaces(
     labels = labels or []
     if len(labels) > len(source_roots):
         raise ValueError("more labels than source roots")
-    return [
-        register_workspace(source, state_dir, labels[index] if index < len(labels) else None)
-        for index, source in enumerate(source_roots)
-    ]
+    state = Path(state_dir).resolve()
+    sources = [Path(source).resolve() for source in source_roots]
+    for source in sources:
+        _reject_state_inside_source(state, source)
+
+    state.mkdir(parents=True, exist_ok=True)
+    registry_path = state / "workspaces.json"
+    registry = read_json(registry_path) if registry_path.exists() else {"workspaces": []}
+    rows = registry.setdefault("workspaces", [])
+    if not isinstance(rows, list):
+        rows = []
+        registry["workspaces"] = rows
+
+    registered: list[dict[str, str]] = []
+    for index, source in enumerate(sources):
+        row = _new_workspace_row(source, labels[index] if index < len(labels) else None)
+        rows[:] = [item for item in rows if _valid_workspace_row(item) and not _same_workspace_row(item, row)]
+        rows.append(row)
+        registered.append(row)
+    write_json(registry_path, registry)
+    return registered
 
 
 def list_workspaces(state_dir: str | Path) -> list[dict[str, str]]:
@@ -73,6 +83,20 @@ def find_workspace(state_dir: str | Path, workspace_id: str) -> dict[str, str] |
 def workspace_id_for(source_root: str | Path) -> str:
     source = str(Path(source_root).resolve()).encode("utf-8")
     return "ws_" + hashlib.sha256(source).hexdigest()[:12]
+
+
+def _reject_state_inside_source(state: Path, source: Path) -> None:
+    if state == source or source in state.parents:
+        raise ValueError("web state_dir must not be inside the source workspace")
+
+
+def _new_workspace_row(source: Path, label: str | None = None) -> dict[str, str]:
+    return {
+        "workspace_id": workspace_id_for(source),
+        "source_root": str(source),
+        "label": label or source.name,
+        "registered_at": now_iso(),
+    }
 
 
 def _valid_workspace_row(row: object) -> bool:

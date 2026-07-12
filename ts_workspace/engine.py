@@ -23,7 +23,10 @@ def init_workspace(
 ) -> dict[str, Any]:
     root_path = Path(root)
     if decision is not None:
+        _require_decision_action(decision, "init_workspace")
         validate_decision_dict(decision)
+    elif force:
+        raise ContractError("force reinitialize requires an init_workspace decision")
     if not force:
         existing = [
             filename
@@ -86,6 +89,7 @@ def init_workspace(
 
 def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
     root_path = Path(root)
+    _require_decision_action(decision, "start_node")
     validate_decision_for_workspace(root_path, decision)
     _require_initialized(root_path)
     payload = decision["payload"]
@@ -153,6 +157,7 @@ def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
 
 def update_workspace(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
     root_path = Path(root)
+    _require_decision_action(decision, "update_workspace")
     validate_decision_for_workspace(root_path, decision)
     _require_initialized(root_path)
     payload = decision["payload"]
@@ -210,6 +215,7 @@ def update_workspace(root: str | Path, decision: dict[str, Any]) -> dict[str, An
 
 def end_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
     root_path = Path(root)
+    _require_decision_action(decision, "end_node")
     validate_decision_for_workspace(root_path, decision)
     _require_initialized(root_path)
     node_id = decision["payload"]["node_id"]
@@ -262,15 +268,18 @@ def _commit_transaction(
     decision_id = _decision_id(decision)
     snapshot_ref = f"decisions/{decision_id}.json"
     snapshot_path = root / snapshot_ref
+    transaction_status = _transaction_status(root, decision_id)
     if snapshot_path.exists():
         existing = read_json(snapshot_path)
         if sha256_json(existing) != sha256_json(decision):
             raise ContractError(f"decision_id already exists with different content: {decision_id}")
-        if _transaction_committed(root, decision_id):
+        if transaction_status == "committed":
             return
         raise ContractError(f"decision_id already exists without committed transaction: {decision_id}")
-    elif snapshot_path not in changes:
-        changes[snapshot_path] = decision
+    if transaction_status:
+        raise ContractError(f"decision_id already has {transaction_status} transaction without decision snapshot: {decision_id}")
+    if snapshot_path not in changes:
+        changes = {snapshot_path: decision, **changes}
 
     tx_path = root / "transaction_log.jsonl"
     relative_paths = sorted(str(path.relative_to(root)) for path in changes)
@@ -311,11 +320,11 @@ def _commit_transaction(
     )
 
 
-def _transaction_committed(root: Path, decision_id: str) -> bool:
+def _transaction_status(root: Path, decision_id: str) -> str:
     tx_path = root / "transaction_log.jsonl"
     if not tx_path.exists():
-        return False
-    committed = False
+        return ""
+    status = ""
     for line in tx_path.read_text(encoding="utf-8").splitlines():
         line = line.strip()
         if not line:
@@ -328,10 +337,14 @@ def _transaction_committed(root: Path, decision_id: str) -> bool:
             continue
         stage = row.get("stage")
         if stage == "prepare":
-            committed = False
+            status = "prepare"
         elif stage == "committed":
-            committed = True
-    return committed
+            status = "committed"
+    return status
+
+
+def _transaction_committed(root: Path, decision_id: str) -> bool:
+    return _transaction_status(root, decision_id) == "committed"
 
 
 def _clear_workspace_owned_state(root: Path) -> None:
@@ -382,6 +395,12 @@ def _decision_id(decision: dict[str, Any]) -> str:
     if isinstance(decision.get("decision_id"), str) and decision["decision_id"].strip():
         return decision["decision_id"].strip()
     return "dec_" + sha256_json(decision).split(":", 1)[1][:12]
+
+
+def _require_decision_action(decision: dict[str, Any], expected: str) -> None:
+    action = decision.get("action") if isinstance(decision, dict) else None
+    if action != expected:
+        raise ContractError(f"decision action {action!r} does not match command {expected!r}")
 
 
 def _branch_event(node: dict[str, Any], branch_context: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:

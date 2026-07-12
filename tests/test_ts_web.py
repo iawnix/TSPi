@@ -314,6 +314,19 @@ def test_ts_web_cli_serve_registers_multiple_source_roots(tmp_path: Path) -> Non
         register_workspaces(sources, state, ["A", "B", "C"])
 
 
+def test_register_workspaces_validates_all_sources_before_writing(tmp_path: Path) -> None:
+    accepted = tmp_path / "accepted"
+    branch = tmp_path / "branch"
+    make_accepted_workspace(accepted)
+    make_branch_workspace(branch)
+    state = branch / ".web-state"
+
+    with pytest.raises(ValueError, match="state_dir"):
+        register_workspaces([accepted, branch], state, ["A", "B"])
+
+    assert not state.exists()
+
+
 def test_ts_web_cli_list_and_remove(tmp_path: Path) -> None:
     source = tmp_path / "single-step"
     make_accepted_workspace(source)

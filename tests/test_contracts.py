@@ -14,6 +14,17 @@ from ts_workspace.validators.decision import ContractError, validate_decision
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def init_decision(decision_id: str = "dec_init_workspace") -> dict[str, object]:
+    return {
+        "schema_version": "ts-decision",
+        "decision_id": decision_id,
+        "action": "init_workspace",
+        "rationale": "Initialize or intentionally reinitialize the workspace.",
+        "evidence_refs": [],
+        "payload": {},
+    }
+
+
 def test_required_schema_files_exist() -> None:
     for name in [
         "decision.schema.json",
@@ -128,7 +139,7 @@ def test_init_force_reinitializes(tmp_path: Path) -> None:
     tree["nodes"].append({"node_id": "n000", "phase": "endpoint"})
     write_json(workspace / "tree.json", tree)
 
-    init_workspace(workspace, force=True)
+    init_workspace(workspace, init_decision("dec_force_reinit"), force=True)
 
     assert read_json(workspace / "tree.json")["nodes"] == []
     assert not (workspace / "nodes" / "n000" / "node.json").exists()
@@ -151,6 +162,38 @@ def test_init_force_reinitializes(tmp_path: Path) -> None:
         },
     )
     assert started["node_id"] == "n000"
+
+
+def test_init_force_requires_decision(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    init_workspace(workspace)
+
+    with pytest.raises(ContractError, match="force reinitialize requires"):
+        init_workspace(workspace, force=True)
+
+
+def test_mutation_rejects_mismatched_decision_action(tmp_path: Path) -> None:
+    from tests.v3_helpers import _report_ref, bootstrap_v3_workspace
+    from ts_workspace import update_workspace
+
+    workspace = tmp_path / "ws"
+    bootstrap_v3_workspace(workspace)
+    decision = {
+        "schema_version": "ts-decision",
+        "decision_id": "dec_wrong_action",
+        "action": "start_node",
+        "rationale": "This start_node decision must not be accepted by update_workspace.",
+        "evidence_refs": [],
+        "report_ref": _report_ref(workspace),
+        "payload": {
+            "phase": "candidate_generation",
+            "hypothesis": "Wrong command/action pairing.",
+            "expected_evidence": [],
+        },
+    }
+
+    with pytest.raises(ContractError, match="does not match command"):
+        update_workspace(workspace, decision)
 
 
 def test_decision_snapshot_rejects_duplicate_id_with_different_content(tmp_path: Path) -> None:
@@ -204,6 +247,68 @@ def test_decision_snapshot_allows_duplicate_id_with_same_content(tmp_path: Path)
     snapshot = json.loads((workspace / "decisions" / "dec_idempotent.json").read_text(encoding="utf-8"))
     assert snapshot["payload"] == decision["payload"]
     assert (workspace / "knowledge_base.md").read_text(encoding="utf-8") == knowledge_after_first
+
+
+def test_decision_snapshot_is_written_before_state_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.v3_helpers import _report_ref, bootstrap_v3_workspace
+    from ts_workspace import update_workspace
+    from ts_workspace import engine
+
+    workspace = tmp_path / "ws"
+    bootstrap_v3_workspace(workspace)
+    decision = {
+        "schema_version": "ts-decision",
+        "decision_id": "dec_snapshot_first",
+        "action": "update_workspace",
+        "rationale": "Record write order for the transaction envelope.",
+        "evidence_refs": [],
+        "report_ref": _report_ref(workspace),
+        "payload": {"append_knowledge": "Snapshot should be written first."},
+    }
+    writes: list[str] = []
+    real_apply_change = engine.apply_change
+
+    def record_apply_change(path: Path, value: object) -> None:
+        writes.append(path.relative_to(workspace).as_posix())
+        real_apply_change(path, value)
+
+    monkeypatch.setattr(engine, "apply_change", record_apply_change)
+    update_workspace(workspace, decision)
+
+    assert writes[0] == "decisions/dec_snapshot_first.json"
+
+
+def test_pending_transaction_without_snapshot_blocks_replay(tmp_path: Path) -> None:
+    from tests.v3_helpers import _report_ref, bootstrap_v3_workspace
+    from ts_workspace import update_workspace
+
+    workspace = tmp_path / "ws"
+    bootstrap_v3_workspace(workspace)
+    decision = {
+        "schema_version": "ts-decision",
+        "decision_id": "dec_pending_no_snapshot",
+        "action": "update_workspace",
+        "rationale": "This decision id already has an incomplete transaction.",
+        "evidence_refs": [],
+        "report_ref": _report_ref(workspace),
+        "payload": {"append_knowledge": "Should not be replayed."},
+    }
+    with (workspace / "transaction_log.jsonl").open("a", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "decision_id": "dec_pending_no_snapshot",
+                    "stage": "prepare",
+                    "created_at": "1970-01-01T00:00:00+00:00",
+                    "action": "update_workspace",
+                    "paths": ["knowledge_base.md"],
+                }
+            )
+            + "\n"
+        )
+
+    with pytest.raises(ContractError, match="transaction without decision snapshot"):
+        update_workspace(workspace, decision)
 
 
 def test_decision_snapshot_is_persisted(tmp_path: Path) -> None:

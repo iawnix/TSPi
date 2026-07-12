@@ -35,8 +35,9 @@ is a warning (`missing_soft_dir`), not an error.
 `init_workspace` refuses to overwrite an already-initialized workspace by
 default. Pass `force=True` (or `--force` on the CLI) to reinitialize; that is
 destructive and removes workspace-owned state directories and root state files
-before creating a fresh workspace. Do not use it on a research directory unless
-that reset is explicitly intended.
+before creating a fresh workspace. Force reinitialization requires an
+`init_workspace` decision JSON so the destructive reset is auditable. Do not
+use it on a research directory unless that reset is explicitly intended.
 
 ## Transaction Log
 
@@ -51,11 +52,13 @@ Every mutation is wrapped in a two-phase envelope written to
 The flow inside `_commit_transaction`:
 
 1. Append `prepare` row (lists every path this mutation will write).
-2. Apply every proposed write via `apply_change` (each write is already
+2. Write `decisions/<decision_id>.json` first, so a crash after state writes
+   still leaves the submitted decision available for audit.
+3. Apply every proposed state write via `apply_change` (each write is already
    atomic per file: temp file + `fsync` + `rename`).
-3. Append the `decision_log.jsonl` row with the decision snapshot ref and
+4. Append the `decision_log.jsonl` row with the decision snapshot ref and
    result summary.
-4. Append `committed` row.
+5. Append `committed` row.
 
 `validate_workspace` scans `transaction_log.jsonl` for any `prepare` row
 without a matching `committed` row and reports it as
@@ -65,11 +68,13 @@ snapshot and manually verify the listed state paths. Automatic reuse of the
 same `decision_id` is blocked until the transaction is known to be committed,
 because append-style mutations may not be safe to replay blindly.
 
-Because writes 2 and 3 are sequential, a crash between them can leave state
+Because writes 3 and 4 are sequential, a crash between them can leave state
 files written but the decision_log row missing. The `pending_transaction`
-warning is the recovery hook: `decisions/<decision_id>.json` is the source
-of truth for what the mutation intended, and the state files are the source
-of truth for what was written.
+warning is the recovery hook: `decisions/<decision_id>.json` is the source of
+truth for what the mutation intended, and the state files are the source of
+truth for what was written. If a `prepare`/`committed` transaction exists but
+the decision snapshot is missing, automatic reuse of that `decision_id` is
+rejected because append-style mutations may not be safe to replay blindly.
 
 Only `ts_workspace` may write root state files. Backends, remote helpers,
 structure analysis, web views, and final reports must return artifacts or
