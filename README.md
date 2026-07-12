@@ -24,6 +24,8 @@ visualization artifact, not chemistry proof.
 - `templates/decision/`: runtime decision JSON templates for workspace
   mutations. These are operating examples; files under `tests/` are not.
 - `templates/ts_final_report.md`: fillable final-report template.
+- `docs/MAINTAINER_GUIDE.md`: code-maintenance guide for module boundaries,
+  control-plane invariants, testing, and release sync.
 
 ## Runtime Model
 
