@@ -34,9 +34,15 @@ decision JSON.
 - `ts_remote`: generic staging, submission, polling, fetch, and kill helpers.
   Remote code does not interpret chemistry. Gaussian remote execution lives in
   `ts_remote.gaussian`.
-- `ts_web`: read-only explorer support. UI state must be separate from the
-  source workspace. Web only renders — every label, color, and `claim_state`
-  comes from the backend; the UI keeps no vocabulary of its own. Start it with
+- `ts_web`: rendering-only explorer. It reads workspace state and prepares
+  it for the browser UI; it does not mutate the source workspace. UI state
+  (workspace registry, user preferences) lives in an explicit `--state-dir`
+  that must not be inside the source workspace. Every label, color, and
+  `claim_state` in the payload comes from `ts_web`'s read layer; the browser
+  frontend keeps no vocabulary of its own and does no state derivation. When
+  the same derivation is needed outside the web UI, promote it to
+  `ts_workspace/readers/` and have `ts_web` consume it from there — do not
+  duplicate. Start with
   `python scripts/ts_web.py serve --state-dir <state> --port 8766`. Pass
   `--source-root <root>` (repeat for multiple workspaces) and matching
   `--label <name>` to register on startup. Default bind is `0.0.0.0` for
@@ -46,19 +52,64 @@ decision JSON.
   evidence. It can emit Markdown, a report context JSON, visual assets, and an
   email summary; missing render or energy data must be reported explicitly.
 
+## Authority Model
+
+The workspace enforces evidence integrity, atomicity, and provenance; it does
+not decide research direction. Route selection, retry vs. reformulate, and
+hypothesis switching are agent decisions guided by references and templates,
+not by validators. A rule is code only if violating it corrupts state that
+later reads cannot recover from; otherwise it is a template default, a
+validator warning, or a reference heuristic. Generic patterns live in this
+skill; project-specific priors live in the project's own `.TODO.md` or
+README, not in shared references.
+
+Concretely:
+
+- Hard errors: schema shape, evidence-gate structure, references existing,
+  provenance present, cross-file topology (e.g. `parent_node ==
+  branch_context.anchor_node` for anchored relations).
+- Soft warnings: patterns that are usually wrong but sometimes legitimate
+  (e.g. `new_solution_branch` after only an IRC-parameter change).
+- Templates: default decision shapes named by scenario so the right choice
+  is the easy choice.
+- References: symptom-triggered reflection (mechanism identity, route
+  strategy) that guides the next decision without gating it.
+
 ## Public Control Plane
 
-The public workspace interface has seven commands:
+Two disjoint command sets. Mutation commands change workspace state and
+require a decision JSON. Read/support commands do not.
+
+**Mutation CLI:**
 
 ```bash
-python scripts/ts_workspace.py init_workspace --root <root>
-python scripts/ts_workspace.py report_workspace --root <root>
-python scripts/ts_workspace.py validate_decision --root <root> --decision-file decision.json
-python scripts/ts_workspace.py start_node --root <root> --decision-file decision.json
+python scripts/ts_workspace.py init_workspace  --root <root> [--force]
+python scripts/ts_workspace.py start_node      --root <root> --decision-file decision.json
 python scripts/ts_workspace.py update_workspace --root <root> --decision-file decision.json
-python scripts/ts_workspace.py end_node --root <root> --decision-file decision.json
-python scripts/ts_workspace.py validate_workspace --root <root>
+python scripts/ts_workspace.py end_node        --root <root> --decision-file decision.json
 ```
+
+**Read / Support CLI:**
+
+```bash
+python scripts/ts_workspace.py report_workspace   --root <root>
+python scripts/ts_workspace.py snapshot_report    --root <root>
+python scripts/ts_workspace.py validate_workspace --root <root>
+python scripts/ts_workspace.py validate_decision  --root <root> --decision-file decision.json
+```
+
+`report_workspace` returns the current context but does not write; use
+`snapshot_report` to also persist `reports/<report_id>.json`. `init_workspace`
+refuses to overwrite an initialized workspace unless `--force` is passed.
+
+Every applied mutation records a full decision snapshot at
+`decisions/<decision_id>.json` and a `snapshot_ref` in `decision_log.jsonl`,
+so audits and future replays do not depend on the log row alone.
+`end_node` mutations are transactional: a `transaction_log.jsonl` `prepare`
+row is written with the exact paths, all writes are applied, then a
+`committed` row closes the transaction. `validate_workspace` reports
+`pending_transaction` (warning) if a `prepare` is not followed by
+`committed`, so crash-interrupted closes are detectable.
 
 Except for first-time bootstrap, mutation commands must be traceable to a
 decision JSON. The mutation command validates the decision internally; a
@@ -178,19 +229,26 @@ They are not top-level node states.
    lineage metadata, not a new state, verdict, or retry policy. Every post-`n000`
    `start_node` must include `payload.branch_context` so the agent's intended
    graph relation is explicit.
-   When a solution branch fails and the agent decides the chemical hypothesis
-   remains viable, open the next branch with the same `payload.hypothesis_ref`,
-   a new `payload.solution_ref`, and `payload.branch_context.relation`
-   set to `new_solution_branch`. For `new_solution_branch`,
-   `new_hypothesis_branch`, and `new_pathway_branch`, set `payload.parent_node`
-   to `payload.branch_context.anchor_node`; `payload.branch_context.from_node`
-   records the failed or triggering node. For `new_solution_branch`,
-   `payload.branch_context.anchor_node` must be the current hypothesis
-   `mechanism_model.hypotheses[].source_node`; do not re-anchor a
-   same-hypothesis branch to a broader ancestor such as `n000` unless that
-   ancestor is the hypothesis source. `ts_workspace` records and validates that
-   topology; it must not decide whether to retry, switch solution, switch
-   hypothesis, or stop.
+
+   **Branch relation decision table** — pick one:
+
+   | Situation | `relation` | Notes |
+   |---|---|---|
+   | Same scientific object continues to next evidence layer (candidate → TS/Freq, TS/Freq → IRC, IRC → accepted audit, accepted → pathway audit) | `continue_parent` | `parent_node == from_node`. |
+   | Same TS claim, IRC/protocol parameters changed after a program failure | `continue_parent` | `parent_node = TS/Freq-supported node`, `from_node = same`; cite the failed attempt via `reason_code` + evidence with role `previous_attempt_summary`. |
+   | Same hypothesis, different candidate / search strategy | `new_solution_branch` | New `solution_ref.solution_id`; `parent_node == anchor_node == hypothesis.source_node`. |
+   | Different mechanism hypothesis | `new_hypothesis_branch` | `parent_node == anchor_node`. |
+   | Different pathway topology / step model | `new_pathway_branch` | `parent_node == anchor_node`. |
+   | Monitoring, report packaging, workspace repair, visualization | `administrative_followup` | No chemistry verdict. |
+
+   **Program failure follow-up is not automatically a new branch.** A
+   scheduler failure, IRC corrector convergence failure, parser desync, or
+   Gaussian route ineffectiveness that continues verifying the same
+   scientific claim is `continue_parent`, not `new_solution_branch`. Reserve
+   `new_solution_branch` for real candidate/search-strategy replacement.
+
+   `ts_workspace` records and validates topology; it must not decide whether
+   to retry, switch solution, switch hypothesis, or stop.
 5. Run `validate_decision` for preflight when useful.
 6. Apply the mutation through `start_node`, `update_workspace`, or `end_node`.
 7. Use `ts_backends`, `ts_remote`, and `ts_structures` to create artifacts and
@@ -235,6 +293,16 @@ Read only the reference needed for the current task:
 - `references/candidate_generation.md`
 - `references/gaussian_validation.md`
 - `references/connectivity_validation.md`
+- `references/strategy_reflection.md`
+
+Read `references/strategy_reflection.md` when any of the following holds:
+(a) the same `hypothesis_ref` has ≥2 consecutive nodes whose IRC endpoint
+assignments fall on the same side (product/product or reactant/reactant);
+(b) the same `hypothesis_ref` has ≥2 Gaussian route-mismatch diagnostics
+or route-ineffective closures;
+(c) the active `initial_mechanism_hypothesis.structured_claim.electronic_model`
+marks `excited_state`, `open_shell`, or `non_adiabatic`;
+(d) any recent `reason_code` matches `wrong_basin|route_ineffective|surface_ambiguous`.
 
 Use `templates/artifact_manifest.json` when a node consumes files generated by
 an earlier node. `update_workspace` rejects new path-bearing evidence whose

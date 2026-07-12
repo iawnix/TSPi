@@ -121,8 +121,6 @@ def _validate_start_payload(payload: dict[str, Any]) -> None:
     phase = payload.get("phase")
     _require(phase in VALID_PHASES, "payload.phase is invalid")
     _require(_clean(payload.get("hypothesis")), "payload.hypothesis is required")
-    removed_branch_key = "back" + "track"
-    _require(removed_branch_key not in payload, "payload contains removed branch-provenance field; use payload.branch_context")
 
     if phase in INITIAL_HYPOTHESIS_PHASES:
         _validate_initial_mechanism_hypothesis(payload.get("initial_mechanism_hypothesis"))

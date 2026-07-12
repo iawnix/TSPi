@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +19,10 @@ from .decision import (
 )
 from .workspace import REQUIRED_FILES
 
+_PROTOCOL_VARIANT_RE = re.compile(r"^(irc_.*|integrator|step_size|corrector)", re.IGNORECASE)
+_PROGRAM_FAILURE_RE = re.compile(r"(convergence_failed|scheduler_failure|parser_failure)", re.IGNORECASE)
+_STRATEGY_TOKEN_RE = re.compile(r"(candidate|geometry|search|seed|method|route)", re.IGNORECASE)
+
 
 def validate_decision_for_workspace(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
     """Validate a decision against both JSON shape and current workspace state."""
@@ -29,6 +35,104 @@ def validate_decision_for_workspace(root: str | Path, decision: dict[str, Any]) 
     elif decision.get("action") == "update_workspace":
         _validate_update_workspace_context(Path(root), decision)
     return decision
+
+
+def detect_decision_warnings(root: str | Path, decision: dict[str, Any]) -> list[dict[str, str]]:
+    """Return non-blocking hints for suspicious decision patterns.
+
+    Warnings never reject a decision; they surface likely-misclassification
+    signals so the agent can reconsider. Empty list means no signals fired.
+    """
+    if decision.get("action") != "start_node":
+        return []
+    payload = decision.get("payload") or {}
+    context = payload.get("branch_context") if isinstance(payload.get("branch_context"), dict) else {}
+    relation = context.get("relation")
+    if relation != "new_solution_branch":
+        return []
+
+    warnings: list[dict[str, str]] = []
+    phase = payload.get("phase")
+    changed_variable = str(context.get("changed_variable") or "")
+    reason_code = str(context.get("reason_code") or "")
+
+    if phase == "connectivity_validation" and changed_variable and _PROTOCOL_VARIANT_RE.match(changed_variable):
+        warnings.append(
+            {
+                "code": "suspicious_new_solution_branch_for_protocol_variant",
+                "message": (
+                    "new_solution_branch used with an IRC-protocol changed_variable "
+                    f"({changed_variable!r}) on a connectivity_validation node; "
+                    "same-claim IRC parameter changes are usually continue_parent."
+                ),
+            }
+        )
+    if reason_code and _PROGRAM_FAILURE_RE.search(reason_code):
+        warnings.append(
+            {
+                "code": "program_failure_used_as_new_solution_branch",
+                "message": (
+                    "new_solution_branch driven by a program-level failure "
+                    f"({reason_code!r}); program failure is not automatically a new branch."
+                ),
+            }
+        )
+
+    hypothesis_ref = payload.get("hypothesis_ref") if isinstance(payload.get("hypothesis_ref"), dict) else {}
+    hypothesis_id = hypothesis_ref.get("hypothesis_id")
+    if hypothesis_id and _hypothesis_had_recent_tsfreq_support(Path(root), hypothesis_id) and (
+        not changed_variable or not _STRATEGY_TOKEN_RE.search(changed_variable)
+    ):
+        warnings.append(
+            {
+                "code": "same_claim_reused_as_new_solution_branch",
+                "message": (
+                    "new_solution_branch under a hypothesis that already has a "
+                    "TS/Freq-supported node in the last 24h with no candidate/geometry/search-level "
+                    "changed_variable; reconsider continue_parent."
+                ),
+            }
+        )
+
+    return warnings
+
+
+def _hypothesis_had_recent_tsfreq_support(root: Path, hypothesis_id: str) -> bool:
+    tree_path = root / "tree.json"
+    if not tree_path.exists():
+        return False
+    try:
+        tree = read_json(tree_path)
+    except Exception:  # noqa: BLE001
+        return False
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=24)
+    for entry in tree.get("nodes", []):
+        if entry.get("phase") != "tsfreq_validation":
+            continue
+        if entry.get("claim_verdict") != "supported":
+            continue
+        node_path = root / "nodes" / str(entry.get("node_id")) / "node.json"
+        if not node_path.exists():
+            continue
+        try:
+            node = read_json(node_path)
+        except Exception:  # noqa: BLE001
+            continue
+        node_hyp = node.get("hypothesis_ref") if isinstance(node.get("hypothesis_ref"), dict) else {}
+        if node_hyp.get("hypothesis_id") != hypothesis_id:
+            continue
+        closed_at = node.get("closure", {}).get("closed_at") if isinstance(node.get("closure"), dict) else None
+        if not closed_at:
+            continue
+        try:
+            closed_ts = datetime.fromisoformat(closed_at)
+        except ValueError:
+            continue
+        if closed_ts.tzinfo is None:
+            closed_ts = closed_ts.replace(tzinfo=timezone.utc)
+        if closed_ts >= cutoff:
+            return True
+    return False
 
 
 def _validate_start_node_context(root: Path, decision: dict[str, Any]) -> None:

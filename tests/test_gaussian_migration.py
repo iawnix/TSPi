@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -140,7 +141,7 @@ def test_ts_backend_gaussian_prepare_cli(tmp_path: Path) -> None:
 
     completed = subprocess.run(
         [
-            "python3",
+            sys.executable,
             str(Path(__file__).resolve().parents[1] / "scripts" / "ts_backend.py"),
             "gaussian",
             "prepare",

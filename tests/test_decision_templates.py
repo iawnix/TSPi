@@ -26,7 +26,8 @@ EXPECTED_TEMPLATE_FILES = {
     "start_tsfreq_validation.json",
     "update_tsfreq_evidence.json",
     "end_tsfreq_validation_supported.json",
-    "start_connectivity_validation.json",
+    "start_connectivity_validation__initial.json",
+    "start_connectivity_validation__protocol_variant.json",
     "update_connectivity_evidence.json",
     "update_stereochemical_connectivity_evidence.json",
     "end_connectivity_validation_supported.json",
@@ -37,7 +38,7 @@ EXPECTED_TEMPLATE_FILES = {
     "end_pathway_audit_accepted.json",
     "update_pathway_audit_not_accepted.json",
     "end_pathway_audit_not_accepted.json",
-    "start_solution_branch.json",
+    "start_solution_branch__strategy_change.json",
 }
 
 
@@ -107,6 +108,12 @@ DEFAULT_VALUES = {
     "ELECTRONIC_STRUCTURE_CONSISTENCY_VERDICT": "not_refuted",
     "MECHANISM_CONSISTENCY_REVIEW_PATH": "nodes/n001/outputs/mechanism_consistency_review.json",
     "EV_TSFREQ": "ev_tsfreq_001",
+    "EV_PREVIOUS_ATTEMPT_SUMMARY": "ev_previous_attempt_001",
+    "NEW_NODE_ID": "n004",
+    "TSFREQ_SUPPORTED_NODE_ID": "n002",
+    "HYPOTHESIS_SOURCE_NODE": "n000",
+    "IRC_PROTOCOL_VARIABLE": "irc_integration_settings",
+    "PREVIOUS_ATTEMPT_FAILURE_CODE": "irc_corrector_convergence_failed",
     "TSFREQ_LOG_PATH": "nodes/n002/outputs/tsfreq.log",
     "IMAGINARY_FREQUENCY_CM1": "-512.3",
     "EV_CONNECTIVITY": "ev_conn_001",
@@ -176,7 +183,7 @@ def test_runtime_templates_drive_complete_accepted_pathway_workspace(tmp_path: P
         "start_tsfreq_validation.json",
         "update_tsfreq_evidence.json",
         "end_tsfreq_validation_supported.json",
-        "start_connectivity_validation.json",
+        "start_connectivity_validation__initial.json",
         "update_connectivity_evidence.json",
         "end_connectivity_validation_supported.json",
         "start_accepted_audit.json",
@@ -215,7 +222,7 @@ def test_solution_branch_template_requires_explicit_branch_context(tmp_path: Pat
     }
     _apply_decision(workspace, refuted_close)
 
-    solution_branch = _with_report_ref(workspace, _render_template("start_solution_branch.json"))
+    solution_branch = _with_report_ref(workspace, _render_template("start_solution_branch__strategy_change.json"))
     validate_decision_for_workspace(workspace, solution_branch)
     started = start_node(workspace, solution_branch)
 

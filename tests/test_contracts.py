@@ -107,6 +107,181 @@ def test_forbidden_public_field_is_rejected() -> None:
         validate_decision(decision)
 
 
+def test_init_refuses_to_overwrite_initialized_workspace(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    init_workspace(workspace)
+
+    with pytest.raises(ContractError, match="already initialized"):
+        init_workspace(workspace)
+
+
+def test_init_force_reinitializes(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    init_workspace(workspace)
+    tree = read_json(workspace / "tree.json")
+    tree["nodes"].append({"node_id": "n_ghost", "phase": "endpoint"})
+    write_json(workspace / "tree.json", tree)
+
+    init_workspace(workspace, force=True)
+
+    assert read_json(workspace / "tree.json")["nodes"] == []
+
+
+def test_decision_snapshot_is_persisted(tmp_path: Path) -> None:
+    from tests.v3_helpers import bootstrap_v3_workspace
+
+    workspace = tmp_path / "ws"
+    bootstrap_v3_workspace(workspace)
+    assert (workspace / "decisions").is_dir()
+
+    log_rows = [
+        json.loads(row)
+        for row in (workspace / "decision_log.jsonl").read_text(encoding="utf-8").splitlines()
+        if row.strip()
+    ]
+    assert log_rows, "decision_log.jsonl should have at least one row"
+    for row in log_rows:
+        assert row["snapshot_ref"].startswith("decisions/")
+        snapshot_path = workspace / row["snapshot_ref"]
+        assert snapshot_path.exists(), row["snapshot_ref"]
+        snapshot = json.loads(snapshot_path.read_text(encoding="utf-8"))
+        assert snapshot["action"] == row["action"]
+
+
+def test_end_node_records_transaction_log(tmp_path: Path) -> None:
+    from tests.v3_helpers import make_accepted_workspace
+
+    workspace = tmp_path / "ws"
+    make_accepted_workspace(workspace)
+
+    tx_path = workspace / "transaction_log.jsonl"
+    assert tx_path.exists()
+    rows = [
+        json.loads(line)
+        for line in tx_path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    stages_by_decision: dict[str, list[str]] = {}
+    for row in rows:
+        stages_by_decision.setdefault(row["decision_id"], []).append(row["stage"])
+    assert stages_by_decision, "transaction_log should have at least one committed close"
+    for decision_id, stages in stages_by_decision.items():
+        assert stages == ["prepare", "committed"], (decision_id, stages)
+
+
+def test_pending_transaction_is_flagged_as_warning(tmp_path: Path) -> None:
+    from tests.v3_helpers import make_accepted_workspace
+
+    workspace = tmp_path / "ws"
+    make_accepted_workspace(workspace)
+    tx_path = workspace / "transaction_log.jsonl"
+    with tx_path.open("a", encoding="utf-8") as handle:
+        handle.write(
+            json.dumps(
+                {
+                    "decision_id": "dec_simulated_crash",
+                    "stage": "prepare",
+                    "created_at": "1970-01-01T00:00:00+00:00",
+                    "action": "end_node",
+                    "paths": ["tree.json"],
+                }
+            )
+            + "\n"
+        )
+
+    result = validate_workspace(workspace)
+    codes = {finding["code"] for finding in result["findings"]}
+    assert "pending_transaction" in codes
+    assert result["valid"] is True
+
+
+def test_report_workspace_is_pure_read(tmp_path: Path) -> None:
+    from tests.v3_helpers import bootstrap_v3_workspace
+    from ts_workspace import report_workspace, snapshot_report
+
+    workspace = tmp_path / "ws"
+    bootstrap_v3_workspace(workspace)
+    reports_dir = workspace / "reports"
+
+    before = {path.name for path in reports_dir.iterdir()} if reports_dir.exists() else set()
+    report_workspace(workspace)
+    after = {path.name for path in reports_dir.iterdir()} if reports_dir.exists() else set()
+    assert before == after, "report_workspace must not write files"
+
+    snapshot = snapshot_report(workspace)
+    assert (reports_dir / f"{snapshot['report_id']}.json").exists()
+
+
+def test_decision_warnings_flag_irc_protocol_variant_as_new_solution_branch() -> None:
+    from ts_workspace.validators.decision_context import detect_decision_warnings
+
+    decision = {
+        "schema_version": "ts-decision",
+        "action": "start_node",
+        "rationale": "IRC integrator changed on the same TS/Freq-supported checkpoint.",
+        "evidence_refs": [],
+        "report_ref": {"report_id": "rep_test", "workspace_root": "ws"},
+        "payload": {
+            "node_id": "n004",
+            "parent_node": "n000",
+            "phase": "connectivity_validation",
+            "hypothesis": "Same TS claim; IRC protocol variant.",
+            "hypothesis_ref": {"hypothesis_id": "hyp_ghost", "prediction_ids": ["pred_x"]},
+            "solution_ref": {"solution_id": "sol_2"},
+            "branch_context": {
+                "relation": "new_solution_branch",
+                "from_node": "n002",
+                "anchor_node": "n000",
+                "changed_variable": "irc_integration_settings",
+                "reason_code": "irc_corrector_convergence_failed",
+            },
+            "expected_evidence": ["irc_output"],
+        },
+    }
+    warnings = detect_decision_warnings("/nonexistent", decision)
+    codes = {item["code"] for item in warnings}
+    assert "suspicious_new_solution_branch_for_protocol_variant" in codes
+    assert "program_failure_used_as_new_solution_branch" in codes
+
+
+def test_decision_warnings_are_silent_on_continue_parent() -> None:
+    from ts_workspace.validators.decision_context import detect_decision_warnings
+
+    decision = {
+        "schema_version": "ts-decision",
+        "action": "start_node",
+        "rationale": "Same-claim IRC retry, using continue_parent.",
+        "evidence_refs": [],
+        "report_ref": {"report_id": "rep_test", "workspace_root": "ws"},
+        "payload": {
+            "node_id": "n004",
+            "parent_node": "n002",
+            "phase": "connectivity_validation",
+            "hypothesis": "Same TS claim; IRC protocol variant.",
+            "hypothesis_ref": {"hypothesis_id": "hyp_ghost", "prediction_ids": ["pred_x"]},
+            "branch_context": {
+                "relation": "continue_parent",
+                "from_node": "n002",
+                "anchor_node": "n000",
+                "changed_variable": "irc_integration_settings",
+                "reason_code": "irc_corrector_convergence_failed",
+            },
+            "expected_evidence": ["irc_output"],
+        },
+    }
+    assert detect_decision_warnings("/nonexistent", decision) == []
+
+
+def test_strategy_reflection_reference_rejects_named_priors() -> None:
+    """Strategy reflection is generic; project-specific priors must not leak in."""
+    path = ROOT / "references" / "strategy_reflection.md"
+    assert path.exists(), "strategy_reflection.md must exist"
+    text = path.read_text(encoding="utf-8")
+    forbidden = ["EDAA", "Wolff", "trans1x_", "TSResearch_"]
+    hits = [token for token in forbidden if token in text]
+    assert not hits, f"strategy_reflection.md contains named priors: {hits}"
+
+
 def test_update_workspace_cannot_write_closure() -> None:
     decision = {
         "schema_version": "ts-decision",

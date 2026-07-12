@@ -15,19 +15,25 @@ from ..evidence_gates import (
     validate_stereochemical_connectivity_gate,
     validate_strict_connectivity_gate,
 )
-from ..io import append_markdown, read_json, write_json
+from ..io import read_json
 
 PATHWAY_STEP_STATUS_PHASES = {"connectivity_validation", "accepted_audit"}
 INITIAL_HYPOTHESIS_PHASES = {"preflight", "endpoint"}
 IMPACT_SCOPES = {"solution_only", "prediction", "pathway_step", "hypothesis"}
 
 
-def finalize_closed_node(root: Path, node: dict[str, Any], decision: dict[str, Any]) -> None:
+def compute_close_changes(root: Path, node: dict[str, Any], decision: dict[str, Any]) -> dict[Path, Any]:
+    """Return proposed writes for closing a node without touching disk.
+
+    Values are dicts (written as JSON) or strings (written as UTF-8 text).
+    """
     closure = node["closure"]
-    _update_mechanism_model(root, node, closure)
-    _update_pathway_model(root, node, closure)
-    _append_knowledge(root, node, closure)
-    _write_acceptance_artifact(root, node, closure)
+    changes: dict[Path, Any] = {}
+    _update_mechanism_model(root, node, closure, changes)
+    _update_pathway_model(root, node, closure, changes)
+    _append_knowledge(root, node, closure, changes)
+    _write_acceptance_artifact(root, node, closure, changes)
+    return changes
 
 
 def validate_accepted_audit_gates(root: Path, node: dict[str, Any], closure: dict[str, Any], evidence_refs: list[str]) -> None:
@@ -77,13 +83,13 @@ def validate_pathway_audit_gates(root: Path, node: dict[str, Any], closure: dict
     )
 
 
-def _update_mechanism_model(root: Path, node: dict[str, Any], closure: dict[str, Any]) -> None:
+def _update_mechanism_model(root: Path, node: dict[str, Any], closure: dict[str, Any], changes: dict[Path, Any]) -> None:
     path = root / "mechanism_model.json"
     model = read_json(path)
     model.setdefault("focus_hypothesis_id", None)
     if node.get("phase") in INITIAL_HYPOTHESIS_PHASES:
         _finalize_initial_hypothesis(root, model, node, closure)
-        write_json(path, model)
+        changes[path] = model
         return
 
     mechanism = closure.get("mechanism", {}) if isinstance(closure.get("mechanism"), dict) else {}
@@ -108,7 +114,7 @@ def _update_mechanism_model(root: Path, node: dict[str, Any], closure: dict[str,
         model.setdefault("accepted_facts", []).append(_mechanism_entry(node, closure, hypothesis_id, evidence_refs))
     elif closure["claim_verdict"] in {"inconclusive", "not_evaluated"}:
         model.setdefault("open_questions", []).append(_mechanism_entry(node, closure, hypothesis_id, evidence_refs))
-    write_json(path, model)
+    changes[path] = model
 
 
 def _finalize_initial_hypothesis(root: Path, model: dict[str, Any], node: dict[str, Any], closure: dict[str, Any]) -> None:
@@ -253,7 +259,7 @@ def _mechanism_entry(
     }
 
 
-def _update_pathway_model(root: Path, node: dict[str, Any], closure: dict[str, Any]) -> None:
+def _update_pathway_model(root: Path, node: dict[str, Any], closure: dict[str, Any], changes: dict[Path, Any]) -> None:
     pathway_ref = node.get("pathway_ref")
     if not pathway_ref:
         return
@@ -265,13 +271,13 @@ def _update_pathway_model(root: Path, node: dict[str, Any], closure: dict[str, A
     step = _ensure_step(pathway, step_id)
     if node["phase"] == "pathway_audit":
         _record_pathway_audit(pathway, step, node, closure)
-        write_json(path, model)
+        changes[path] = model
         return
     if node["phase"] not in PATHWAY_STEP_STATUS_PHASES:
-        write_json(path, model)
+        changes[path] = model
         return
     if _impact_scope(node, closure) != "pathway_step":
-        write_json(path, model)
+        changes[path] = model
         return
     verdict = closure["claim_verdict"]
     if verdict == "supported":
@@ -284,7 +290,7 @@ def _update_pathway_model(root: Path, node: dict[str, Any], closure: dict[str, A
         step["status"] = "active"
         step.setdefault("inconclusive_nodes", []).append(node["node_id"])
     pathway["status"] = _pathway_status_from_steps(pathway["steps"])
-    write_json(path, model)
+    changes[path] = model
 
 
 def _record_pathway_audit(
@@ -303,7 +309,7 @@ def _record_pathway_audit(
     step.setdefault("audit_nodes", []).append(audit_record)
 
 
-def _append_knowledge(root: Path, node: dict[str, Any], closure: dict[str, Any]) -> None:
+def _append_knowledge(root: Path, node: dict[str, Any], closure: dict[str, Any], changes: dict[Path, Any]) -> None:
     body = "\n".join(
         [
             f"- node: {node['node_id']}",
@@ -315,10 +321,15 @@ def _append_knowledge(root: Path, node: dict[str, Any], closure: dict[str, Any])
             f"- implication: {closure.get('implication', '')}",
         ]
     )
-    append_markdown(root / "knowledge_base.md", f"Node {node['node_id']} closure", body)
+    path = root / "knowledge_base.md"
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    if not existing:
+        existing = "# Knowledge Base\n\n"
+    section = f"## Node {node['node_id']} closure\n\n{body.strip()}\n\n"
+    changes[path] = existing + section
 
 
-def _write_acceptance_artifact(root: Path, node: dict[str, Any], closure: dict[str, Any]) -> None:
+def _write_acceptance_artifact(root: Path, node: dict[str, Any], closure: dict[str, Any], changes: dict[Path, Any]) -> None:
     if node["phase"] != "accepted_audit":
         return
     if closure["program_status"] != "completed" or closure["claim_verdict"] != "supported":
@@ -364,9 +375,9 @@ def _write_acceptance_artifact(root: Path, node: dict[str, Any], closure: dict[s
         "evidence_refs": evidence_refs,
     }
     artifact_path = root / "accepted" / f"{artifact['accepted_id']}.json"
-    write_json(artifact_path, artifact)
+    changes[artifact_path] = artifact
     manifest.setdefault("accepted_ts_refs", []).append(str(artifact_path.relative_to(root)))
-    write_json(manifest_path, manifest)
+    changes[manifest_path] = manifest
 
 
 def _ensure_pathway(model: dict[str, Any], pathway_id: str) -> dict[str, Any]:

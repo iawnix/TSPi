@@ -34,11 +34,31 @@ def write_json(path: Path, data: Any) -> None:
     tmp.replace(path)
 
 
+def write_text_atomic(path: Path, text: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(f"{path.name}.tmp")
+    with tmp.open("w", encoding="utf-8") as handle:
+        handle.write(text)
+        handle.flush()
+        os.fsync(handle.fileno())
+    tmp.replace(path)
+
+
+def apply_change(path: Path, value: Any) -> None:
+    """Write one proposed change; strings become UTF-8 text, everything else JSON."""
+    if isinstance(value, str):
+        write_text_atomic(path, value)
+    else:
+        write_json(path, value)
+
+
 def append_jsonl(path: Path, row: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
         json.dump(row, handle, sort_keys=True)
         handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def append_markdown(path: Path, title: str, body: str) -> None:
@@ -48,6 +68,8 @@ def append_markdown(path: Path, title: str, body: str) -> None:
         if prefix:
             handle.write(prefix)
         handle.write(f"## {title}\n\n{body.strip()}\n\n")
+        handle.flush()
+        os.fsync(handle.fileno())
 
 
 def sha256_json(data: Any) -> str:

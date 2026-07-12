@@ -19,6 +19,51 @@ Required directories:
 - `reports/`
 - `accepted/`
 - `rejected/`
+- `decisions/`
+
+`decisions/` holds one file per applied decision (`<decision_id>.json`) — the
+full decision payload as submitted. `decision_log.jsonl` rows carry a
+`snapshot_ref` pointing at the snapshot so audits and future replays can
+recover the exact decision without depending on the log row alone. `decisions/`
+is auto-created on first mutation, so an old workspace missing it is a
+warning (`missing_soft_dir`), not an error.
+
+`init_workspace` refuses to overwrite an already-initialized workspace by
+default. Pass `force=True` (or `--force` on the CLI) to reinitialize; that is
+destructive.
+
+## Transaction Log
+
+Every mutation is wrapped in a two-phase envelope written to
+`transaction_log.jsonl`:
+
+```
+{"decision_id": "...", "stage": "prepare",   "action": "end_node", "paths": [...], ...}
+{"decision_id": "...", "stage": "committed", "action": "end_node", "paths": [...], ...}
+```
+
+The flow inside `_commit_transaction`:
+
+1. Append `prepare` row (lists every path this mutation will write).
+2. Apply every proposed write via `apply_change` (each write is already
+   atomic per file: temp file + `fsync` + `rename`).
+3. Append the `decision_log.jsonl` row with the decision snapshot ref and
+   result summary.
+4. Append `committed` row.
+
+`validate_workspace` scans `transaction_log.jsonl` for any `prepare` row
+without a matching `committed` row and reports it as
+`pending_transaction` (warning). A workspace with a pending transaction is
+still `valid=true` — the warning is a hint to inspect that decision's
+snapshot and either replay it (safe: the snapshot is the exact input that
+was accepted by validation) or manually verify state and mark the
+transaction as committed.
+
+Because writes 2 and 3 are sequential, a crash between them can leave state
+files written but the decision_log row missing. The `pending_transaction`
+warning is the recovery hook: `decisions/<decision_id>.json` is the source
+of truth for what the mutation intended, and the state files are the source
+of truth for what was written.
 
 Only `ts_workspace` may write root state files. Backends, remote helpers,
 structure analysis, web views, and final reports must return artifacts or
@@ -108,6 +153,31 @@ limited to non-running `new_solution_branch` nodes and requires
 `new_anchor_node` to equal the node hypothesis `source_node`; it updates the
 node, tree node, edge, and branch event lineage together and records a
 `lineage_repairs` audit entry.
+
+## Evidence Roles
+
+Evidence `role` is a free-form string, not a fixed enum. The following roles
+have specific consumers (validators, finalizers, report reader); use them
+verbatim so downstream checks find them:
+
+- `initial_mechanism_hypothesis` — required to close an `endpoint` or
+  `preflight` node that promotes an initial hypothesis.
+- `tsfreq_gate`, `mode_assignment` — TS/Freq validation gates.
+- `connectivity_gate`, `irc_endpoint_assignment` — connectivity validation
+  gates.
+- `stereochemical_connectivity_gate` — required when the active hypothesis
+  declares stereochemical requirements.
+- `endpoint_identity_gate`, `intermediate_identity_gate`,
+  `electronic_structure_gate`, `state_character_gate`,
+  `shared_basin_consistency_gate` — mechanism-identity reflection gates.
+- `pathway_audit_summary` — pathway audit conclusion.
+- `previous_attempt_summary` — used with `continue_parent` after a
+  program-level failure on a prior attempt for the same scientific claim.
+  Cite it from `branch_context.evidence_refs` so the failed attempt is
+  machine-queryable without grepping `reason_code` text.
+
+Other roles are permitted; they simply won't be consumed by the built-in
+validators or finalizers.
 
 ## Workspace State Files
 

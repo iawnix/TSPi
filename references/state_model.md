@@ -50,10 +50,14 @@ framework as fixed branches.
 
 `solution_ref` is optional lineage metadata for grouping alternative search
 strategies under the same `hypothesis_ref`. It does not add a lifecycle value,
-claim verdict, branch disposition, or retry classification. A failed Gaussian
-route, wrong-basin TS/Freq result, or exhausted scan remains an execution fact,
-evidence diagnostic, closure fact, or decision rationale; the agent must still
-make an explicit next decision from the evidence.
+claim verdict, branch disposition, or retry classification, and it does not
+choose `branch_context.relation`. A failed Gaussian route, wrong-basin
+TS/Freq result, or exhausted scan remains an execution fact, evidence
+diagnostic, closure fact, or decision rationale; the agent must still make an
+explicit next decision from the evidence. Same-claim protocol changes (e.g.
+different IRC integrator on the same TS/Freq-supported checkpoint) keep the
+existing `solution_ref` and use `branch_context.relation = continue_parent`;
+they are not a new solution branch.
 
 If the agent decides a failed route is only a solution failure, the next node
 keeps the same `hypothesis_ref`, uses a new `solution_ref`, and records

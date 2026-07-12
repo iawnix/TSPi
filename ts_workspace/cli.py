@@ -8,9 +8,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .engine import end_node, init_workspace, report_workspace, start_node, update_workspace, validate_workspace
+from .engine import end_node, init_workspace, report_workspace, snapshot_report, start_node, update_workspace, validate_workspace
 from .validators.decision import ContractError, validate_decision
-from .validators.decision_context import validate_decision_for_workspace
+from .validators.decision_context import detect_decision_warnings, validate_decision_for_workspace
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -20,8 +20,16 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("init_workspace")
     p.add_argument("--root", required=True)
     p.add_argument("--decision-file")
+    p.add_argument(
+        "--force",
+        action="store_true",
+        help="reinitialize an already-initialized workspace (destructive)",
+    )
 
     p = sub.add_parser("report_workspace")
+    p.add_argument("--root", required=True)
+
+    p = sub.add_parser("snapshot_report")
     p.add_argument("--root", required=True)
 
     p = sub.add_parser("validate_workspace")
@@ -49,18 +57,28 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
     command = args.command
     if command == "init_workspace":
         decision = _load_decision(args.decision_file) if args.decision_file else None
-        return init_workspace(args.root, decision)
+        return init_workspace(args.root, decision, force=args.force)
     if command == "report_workspace":
         return report_workspace(args.root)
+    if command == "snapshot_report":
+        return snapshot_report(args.root)
     if command == "validate_workspace":
         return validate_workspace(args.root)
 
     decision = _load_decision(args.decision_file)
     if command == "validate_decision":
         validate_decision_for_workspace(args.root, decision)
-        return {"valid": True, "action": decision["action"]}
+        return {
+            "valid": True,
+            "action": decision["action"],
+            "warnings": detect_decision_warnings(args.root, decision),
+        }
     if command == "start_node":
-        return start_node(args.root, decision)
+        warnings = detect_decision_warnings(args.root, decision)
+        result = start_node(args.root, decision)
+        if warnings:
+            result = {**result, "warnings": warnings}
+        return result
     if command == "update_workspace":
         return update_workspace(args.root, decision)
     if command == "end_node":

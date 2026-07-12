@@ -41,6 +41,8 @@ REQUIRED_FILES = {
 }
 
 REQUIRED_DIRS = {"inputs", "nodes", "reports", "accepted", "rejected"}
+# Auto-created on first mutation; missing is a warning, not an error.
+SOFT_DIRS = {"decisions"}
 UNRESOLVED_TERMINAL_VERDICTS = {"refuted", "inconclusive", "not_evaluated"}
 SCHEMA_BY_FILE = {
     "manifest.json": "manifest.schema.json",
@@ -64,6 +66,16 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
         path = root_path / dirname
         if not path.is_dir():
             _finding(findings, "error", "missing_dir", f"missing {dirname}/", dirname)
+    for dirname in sorted(SOFT_DIRS):
+        path = root_path / dirname
+        if not path.is_dir():
+            _finding(
+                findings,
+                "warning",
+                "missing_soft_dir",
+                f"missing {dirname}/ (auto-created on next mutation)",
+                dirname,
+            )
 
     loaded: dict[str, Any] = {}
     for filename in sorted(REQUIRED_FILES - {"knowledge_base.md"}):
@@ -181,8 +193,44 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
         evidence_by_id,
         findings,
     )
+    _validate_pending_transactions(root_path, findings)
 
     return {"valid": not any(item["severity"] == "error" for item in findings), "findings": findings}
+
+
+def _validate_pending_transactions(root: Path, findings: list[dict[str, str]]) -> None:
+    """Detect prepare rows without a matching committed row in transaction_log.jsonl."""
+    tx_path = root / "transaction_log.jsonl"
+    if not tx_path.exists():
+        return
+    prepared: dict[str, dict[str, Any]] = {}
+    for line in tx_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            import json as _json
+
+            row = _json.loads(line)
+        except Exception:  # noqa: BLE001
+            _finding(findings, "warning", "transaction_log_unreadable", "malformed transaction_log row", "transaction_log.jsonl")
+            continue
+        decision_id = row.get("decision_id")
+        stage = row.get("stage")
+        if not decision_id or stage not in {"prepare", "committed"}:
+            continue
+        if stage == "prepare":
+            prepared[decision_id] = row
+        elif stage == "committed":
+            prepared.pop(decision_id, None)
+    for decision_id, row in prepared.items():
+        _finding(
+            findings,
+            "warning",
+            "pending_transaction",
+            f"decision {decision_id} recorded prepare without committed",
+            "transaction_log.jsonl",
+        )
 
 
 def _validate_node(

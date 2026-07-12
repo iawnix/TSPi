@@ -1,5 +1,9 @@
 # Mechanism Reflection
 
+For route-level reflection after repeated same-shape failure (wrong-basin
+IRC, Gaussian route mismatch, photochemistry/open-shell/non-adiabatic), see
+`references/strategy_reflection.md`.
+
 Mechanism reasoning is hypothesis management, not a hidden state machine.
 
 The v3 workspace contract is strict: every search starts with a structured

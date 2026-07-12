@@ -12,6 +12,10 @@ PATHWAY_AUDIT_PHASE = "pathway_audit"
 
 
 def report_workspace(root: str | Path) -> dict[str, Any]:
+    """Build a read-only report context. This function does NOT write to disk.
+
+    Use `snapshot_report(root)` when a persisted audit snapshot is needed.
+    """
     root_path = Path(root)
     validation = validate_workspace(root_path)
     report_id = f"rep_{compact_id_time()}"
@@ -63,7 +67,14 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
             "mutation_channel": "ts_workspace",
         },
     }
-    write_json(root_path / "reports" / f"{report_id}.json", report)
+    return report
+
+
+def snapshot_report(root: str | Path) -> dict[str, Any]:
+    """Build a report and persist it under `reports/<report_id>.json`."""
+    root_path = Path(root)
+    report = report_workspace(root_path)
+    write_json(root_path / "reports" / f"{report['report_id']}.json", report)
     return report
 
 

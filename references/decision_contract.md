@@ -119,6 +119,34 @@ For legacy lineage repair, use `action=update_workspace` with
 The repair is rejected for running nodes and for anchors that do not match the
 node hypothesis `source_node`.
 
+## Branch Relation Semantics
+
+`branch_context.relation` records the intended graph relation between the new
+node and existing workspace state. Pick from:
+
+- `continue_parent` — same scientific object continues to the next evidence
+  layer, or the same TS claim is re-validated with different protocol
+  parameters. Requires `parent_node == branch_context.from_node`. A failed
+  program attempt (e.g. IRC corrector convergence failure) that continues
+  verifying the same TS claim is `continue_parent`, not a new branch; cite
+  the failed attempt through `reason_code`, closure facts, and evidence with
+  role `previous_attempt_summary`.
+- `new_solution_branch` — same hypothesis, different candidate / search
+  strategy (e.g. QST candidate failed → constrained scan candidate; strict
+  connectivity refuted a TS/Freq-supported candidate → different TS-search
+  method). Requires a new `solution_ref.solution_id` and
+  `parent_node == branch_context.anchor_node == hypothesis.source_node`. Do
+  not use for IRC-parameter changes, parser/scheduler follow-up, or next-layer
+  validation.
+- `new_hypothesis_branch` — the mechanism hypothesis changes (concerted →
+  stepwise, ground-state → excited-state, ketone-side → ester-side treated
+  as distinct hypotheses).
+- `new_pathway_branch` — pathway topology or step model changes while
+  hypothesis handling stays explicit.
+- `administrative_followup` — non-scientific control-plane work (monitoring
+  handoff, report packaging, workspace repair, visualization). Must not
+  carry a chemistry verdict.
+
 ## Closure Revision
 
 ```json
