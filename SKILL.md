@@ -225,7 +225,10 @@ They are not top-level node states.
    candidate-generation method. Do not default to QST2/QST3 merely because R/P endpoints
    are available; justify QST use from endpoint optimization, atom mapping,
    conformer compatibility, and the elementary-step model.
-3. Run `report_workspace` before deciding the next node.
+3. Run `report_workspace` before deciding the next node. Read
+   `references/agent_decision_protocol.md` before closing a node, choosing a
+   branch relation, or deciding whether a previous failed exploration should
+   affect the next action.
 4. Construct a decision JSON with the action, rationale, report reference,
    evidence references, and payload. Start from `templates/decision/` when a
    reusable shape is needed; do not copy JSON from `tests/`. Every post-`n000`
@@ -285,6 +288,7 @@ They are not top-level node states.
 Read only the reference needed for the current task:
 
 - `references/workspace_contract.md`
+- `references/agent_decision_protocol.md`
 - `references/decision_contract.md`
 - `references/state_model.md`
 - `references/pathway_model.md`

@@ -9,6 +9,7 @@ SKILL = ROOT / "SKILL.md"
 CANDIDATE_GENERATION = ROOT / "references" / "candidate_generation.md"
 GAUSSIAN_VALIDATION = ROOT / "references" / "gaussian_validation.md"
 MECHANISM_REFLECTION = ROOT / "references" / "mechanism_reflection.md"
+AGENT_DECISION_PROTOCOL = ROOT / "references" / "agent_decision_protocol.md"
 UPDATE_CANDIDATE_EVIDENCE = ROOT / "templates" / "decision" / "update_candidate_evidence.json"
 UPDATE_TSFREQ_EVIDENCE = ROOT / "templates" / "decision" / "update_tsfreq_evidence.json"
 
@@ -61,3 +62,14 @@ def test_mechanism_reflection_requires_geometry_and_electronic_checks() -> None:
     assert "the final local geometry and available electronic diagnostics must not contradict" in normalized_gaussian
     assert "Do not start IRC from a TS/Freq result whose mechanism-consistency review is refuted" in normalized_gaussian
     assert "connectivity_claim_allowed_without_irc" in tsfreq_template
+
+
+def test_skill_links_agent_decision_protocol_for_failed_exploration() -> None:
+    skill_text = SKILL.read_text(encoding="utf-8")
+    protocol_text = AGENT_DECISION_PROTOCOL.read_text(encoding="utf-8")
+
+    assert "references/agent_decision_protocol.md" in skill_text
+    assert "previous failed exploration" in protocol_text
+    assert "report_workspace.node_index" in protocol_text
+    assert "nodes/<failed_node>/node.json" in protocol_text
+    assert "Across independent repeated studies" in protocol_text
