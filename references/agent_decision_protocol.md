@@ -66,6 +66,11 @@ Program failures and chemistry failures are different:
 - Chemistry failure: calculation completed but evidence refutes the claim. Use
   `program_status=completed` and the appropriate `claim_verdict`.
 
+When the program failed, read `references/program_runtime_failures.md` before
+closing or launching a follow-up node. Use it to identify the first hard failure,
+decide what evidence to preserve, and distinguish a protocol retry from a real
+candidate, hypothesis, or pathway change.
+
 ## After Closing A Node
 
 Immediately run `report_workspace` and inspect:
