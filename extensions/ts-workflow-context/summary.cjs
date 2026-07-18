@@ -133,7 +133,7 @@ function buildContextSummary(report, options = {}) {
   }
 
   lines.push(
-    "- contract: use ts_workspace_context/ts_workspace_validate/ts_workspace_decision or scripts/ts_workspace.py; do not edit workspace state files by hand."
+    "- contract: use ts_workspace_context/ts_workspace_validate/ts_workspace_decision; do not edit workspace state files by hand; shell fallbacks must use an explicit TSAgentSkill root, not cwd-relative scripts."
   );
   lines.push("- contract: every post-n000 mechanism node must carry payload.hypothesis_ref.");
   return lines.join("\n");

@@ -5,6 +5,7 @@ from pathlib import Path
 import json
 
 from ts_report import build_final_report, build_report_package
+from ts_report.context import collect_report_context
 from ts_workspace import end_node, init_workspace, report_workspace, start_node, update_workspace
 from v3_helpers import (
     HYPOTHESIS_ID,
@@ -228,7 +229,113 @@ def test_report_package_writes_visual_mechanism_assets(tmp_path: Path) -> None:
     assert context["mechanism_interpretation"]["classification"]
 
 
+def test_energy_profile_uses_reactant_product_zpe_corrections(tmp_path: Path) -> None:
+    workspace = tmp_path / "zpe-report"
+    make_accepted_workspace(workspace)
+    energy_dir = workspace / "nodes" / "n000" / "outputs"
+    ts_dir = workspace / "nodes" / "n001" / "outputs"
+    energy_dir.mkdir(parents=True, exist_ok=True)
+    ts_dir.mkdir(parents=True, exist_ok=True)
+    _write_energy_json(
+        energy_dir / "reactant_freq.json",
+        species="reactant",
+        electronic=-100.000,
+        zpe=0.010,
+        gibbs=0.020,
+    )
+    _write_energy_json(
+        energy_dir / "product_freq.json",
+        species="product",
+        electronic=-100.020,
+        zpe=0.011,
+        gibbs=0.021,
+    )
+    _write_energy_json(
+        ts_dir / "tsfreq_validation.json",
+        species="transition_state",
+        electronic=-99.950,
+        zpe=0.015,
+        gibbs=0.025,
+        extra={"ts_structure": "nodes/n001/outputs/ts_final.xyz"},
+    )
+
+    report_ref = _report_ref(workspace)
+    update_workspace(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "update_workspace",
+            "rationale": "Register endpoint stationary-point energies.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "append_evidence": [
+                    {
+                        "evidence_id": "ev_reactant_energy",
+                        "kind": "gaussian_freq_energy",
+                        "role": "reactant_energy",
+                        "evidence_tier": "local_parse",
+                        "node_id": "n000",
+                        "summary": "Reactant frequency energy with ZPE correction.",
+                        **gate_artifact_metadata("nodes/n000/outputs/reactant_freq.json"),
+                    },
+                    {
+                        "evidence_id": "ev_product_energy",
+                        "kind": "gaussian_freq_energy",
+                        "role": "product_energy",
+                        "evidence_tier": "local_parse",
+                        "node_id": "n000",
+                        "summary": "Product frequency energy with ZPE correction.",
+                        **gate_artifact_metadata("nodes/n000/outputs/product_freq.json"),
+                    },
+                ]
+            },
+        },
+    )
+
+    context = collect_report_context(workspace)
+    rows = {row["species"]: row for row in context["energy_profile"]["rows"]}
+
+    assert rows["R"]["electronic_plus_zpe_hartree"] == -99.990
+    assert rows["TS"]["electronic_plus_zpe_hartree"] == -99.935
+    assert rows["P"]["electronic_plus_zpe_hartree"] == -100.009
+    assert rows["R"]["relative_zpe_corrected_energy_kcal_mol"] == 0.0
+    assert rows["TS"]["relative_zpe_corrected_energy_kcal_mol"] == 34.513
+    assert rows["P"]["relative_zpe_corrected_energy_kcal_mol"] == -11.923
+    assert rows["TS"]["relative_electronic_energy_kcal_mol"] == 31.375
+    assert not any("E+ZPE is missing" in note for note in context["energy_profile"]["notes"])
+
+    report = build_final_report(workspace)
+    assert "Rel E+ZPE / kcal mol-1" in report
+    assert "34.513" in report
+
+
 def _write_xyz(path: Path, atoms: list[tuple[str, float, float, float]]) -> None:
     lines = [str(len(atoms)), path.stem]
     lines.extend(f"{symbol} {x:.6f} {y:.6f} {z:.6f}" for symbol, x, y, z in atoms)
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def _write_energy_json(
+    path: Path,
+    *,
+    species: str,
+    electronic: float,
+    zpe: float,
+    gibbs: float,
+    extra: dict[str, object] | None = None,
+) -> None:
+    payload = {
+        "species": species,
+        "electronic_energy_hartree": electronic,
+        "zero_point_correction_hartree": zpe,
+        "thermal_gibbs_correction_hartree": gibbs,
+    }
+    if extra:
+        payload.update(extra)
+    path.write_text(json.dumps(payload) + "\n", encoding="utf-8")
+
+
+def _report_ref(workspace: Path) -> dict[str, str]:
+    report = report_workspace(workspace)
+    return {"report_id": report["report_id"], "workspace_root": str(workspace)}

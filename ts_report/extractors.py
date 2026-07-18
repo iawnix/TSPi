@@ -8,6 +8,13 @@ from typing import Any
 from ts_workspace.io import read_json
 
 HARTREE_TO_KCAL_MOL = 627.509474
+ENERGY_FIELDS = (
+    "electronic_energy_hartree",
+    "zero_point_correction_hartree",
+    "thermal_gibbs_correction_hartree",
+    "electronic_plus_zpe_hartree",
+    "electronic_plus_thermal_free_energy_hartree",
+)
 
 
 def active_hypothesis(mechanism: dict[str, Any]) -> dict[str, Any]:
@@ -167,23 +174,204 @@ def collect_distance_profile(active: dict[str, Any], tsfreq: dict[str, Any], con
     return {"keys": keys, "rows": rows}
 
 
-def collect_energy_profile(tsfreq: dict[str, Any]) -> dict[str, Any]:
-    rows: list[dict[str, Any]] = [
-        {"species": "R", "role": "reactant", "source": "", "electronic_energy_hartree": None},
-        {"species": "TS", "role": "transition_state", **(tsfreq.get("energy") or {})},
-        {"species": "P", "role": "product", "source": "", "electronic_energy_hartree": None},
-    ]
-    known = [row for row in rows if isinstance(row.get("electronic_energy_hartree"), int | float)]
-    notes: list[str] = []
-    if len(known) >= 2:
-        reference = min(float(row["electronic_energy_hartree"]) for row in known)
-        for row in rows:
-            energy = row.get("electronic_energy_hartree")
-            if isinstance(energy, int | float):
-                row["relative_electronic_energy_kcal_mol"] = round((float(energy) - reference) * HARTREE_TO_KCAL_MOL, 3)
-    else:
-        notes.append("Comparable R/TS/P stationary-point energies are not complete in the current report context.")
+def collect_energy_profile(
+    records: list[dict[str, Any]],
+    artifacts: dict[str, dict[str, Any]],
+    tsfreq: dict[str, Any],
+) -> dict[str, Any]:
+    rows_by_species: dict[str, dict[str, Any]] = {
+        "R": {"species": "R", "role": "reactant", "source": "", "electronic_energy_hartree": None},
+        "TS": {"species": "TS", "role": "transition_state", **_complete_energy_fields(tsfreq.get("energy") or {})},
+        "P": {"species": "P", "role": "product", "source": "", "electronic_energy_hartree": None},
+    }
+
+    for species, row in _iter_energy_rows(records, artifacts):
+        current = rows_by_species.get(species, {})
+        if _energy_field_count(row) >= _energy_field_count(current):
+            rows_by_species[species] = {**current, **row, "species": species}
+
+    rows = [rows_by_species["R"], rows_by_species["TS"], rows_by_species["P"]]
+    notes = _relative_energy_notes(rows)
+    _add_relative_energies(rows, notes)
     return {"rows": rows, "notes": notes}
+
+
+def _iter_energy_rows(
+    records: list[dict[str, Any]],
+    artifacts: dict[str, dict[str, Any]],
+) -> list[tuple[str, dict[str, Any]]]:
+    rows: list[tuple[str, dict[str, Any]]] = []
+    for record in records:
+        artifact = artifacts.get(str(record.get("evidence_id", "")), {})
+        rows.extend(_energy_rows_from_container(record, artifact, _energy_source(record)))
+    return rows
+
+
+def _energy_rows_from_container(record: dict[str, Any], artifact: Any, source: str) -> list[tuple[str, dict[str, Any]]]:
+    rows: list[tuple[str, dict[str, Any]]] = []
+    for data in _energy_payloads(record, artifact):
+        species = _energy_species(record, data)
+        if species is None or not _has_energy_data(data):
+            continue
+        rows.append((species, _energy_row(species, record, data, source)))
+    return rows
+
+
+def _energy_payloads(record: dict[str, Any], artifact: Any) -> list[dict[str, Any]]:
+    payloads: list[dict[str, Any]] = []
+    merged = {**_merged_quality_facts(record)}
+    if isinstance(artifact, dict):
+        merged.update(artifact)
+    payloads.append(merged)
+    if isinstance(artifact, dict):
+        rows = artifact.get("rows") or _first_dict(artifact, "energy_profile")
+        if isinstance(rows, dict):
+            rows = rows.get("rows")
+        if isinstance(rows, list):
+            payloads.extend(item for item in rows if isinstance(item, dict))
+        for key in ("reactant", "r", "product", "p", "ts", "transition_state"):
+            value = artifact.get(key)
+            if isinstance(value, dict):
+                payloads.append({"species": key, **value})
+        energies = artifact.get("energies")
+        if isinstance(energies, dict):
+            for key, value in energies.items():
+                if isinstance(value, dict):
+                    payloads.append({"species": str(key), **value})
+    return payloads
+
+
+def _energy_species(record: dict[str, Any], data: dict[str, Any]) -> str | None:
+    for key in ("species", "structure_role", "stationary_point_role", "endpoint_role"):
+        value = str(data.get(key, "")).strip().lower()
+        if value in {"r", "reactant", "reactant_endpoint"}:
+            return "R"
+        if value in {"p", "product", "product_endpoint"}:
+            return "P"
+        if value in {"ts", "transition_state", "transition state"}:
+            return "TS"
+    tokens = [
+        data.get("species"),
+        data.get("structure_role"),
+        data.get("stationary_point_role"),
+        data.get("endpoint_role"),
+        data.get("role"),
+        record.get("role"),
+        record.get("kind"),
+        record.get("summary"),
+        record.get("path"),
+    ]
+    text = " ".join(str(token).lower() for token in tokens if token)
+    if any(token in text for token in ("transition_state", "transition state", "tsfreq", "ts_freq")):
+        return "TS"
+    if any(token in text for token in ("reactant", "reagent", " r ", "species=r", "endpoint_r")):
+        return "R"
+    if any(token in text for token in ("product", " p ", "species=p", "endpoint_p")):
+        return "P"
+    return None
+
+
+def _energy_source(record: dict[str, Any]) -> str:
+    if record.get("path"):
+        return str(record["path"])
+    source_files = record.get("source_files") if isinstance(record.get("source_files"), list) else []
+    return str(source_files[0]) if source_files else ""
+
+
+def _has_energy_data(data: dict[str, Any]) -> bool:
+    return any(_numeric(data.get(field)) is not None for field in ENERGY_FIELDS)
+
+
+def _energy_field_count(data: dict[str, Any]) -> int:
+    return sum(1 for field in ENERGY_FIELDS if _numeric(data.get(field)) is not None)
+
+
+def _energy_row(species: str, record: dict[str, Any], data: dict[str, Any], source: str) -> dict[str, Any]:
+    completed = _complete_energy_fields(data)
+    role = {"R": "reactant", "TS": "transition_state", "P": "product"}[species]
+    row: dict[str, Any] = {
+        "species": species,
+        "role": str(data.get("role") or role),
+        "source": source or str(record.get("path", "")),
+    }
+    for field in ENERGY_FIELDS:
+        row[field] = completed.get(field)
+    return row
+
+
+def _complete_energy_fields(data: dict[str, Any]) -> dict[str, Any]:
+    completed = dict(data)
+    electronic = _numeric(completed.get("electronic_energy_hartree"))
+    zpe = _numeric(completed.get("zero_point_correction_hartree"))
+    gibbs = _numeric(completed.get("thermal_gibbs_correction_hartree"))
+    if _numeric(completed.get("electronic_plus_zpe_hartree")) is None and electronic is not None and zpe is not None:
+        completed["electronic_plus_zpe_hartree"] = electronic + zpe
+    if (
+        _numeric(completed.get("electronic_plus_thermal_free_energy_hartree")) is None
+        and electronic is not None
+        and gibbs is not None
+    ):
+        completed["electronic_plus_thermal_free_energy_hartree"] = electronic + gibbs
+    for field in ENERGY_FIELDS:
+        value = _numeric(completed.get(field))
+        if value is not None:
+            completed[field] = value
+    return completed
+
+
+def _add_relative_energies(rows: list[dict[str, Any]], notes: list[str]) -> None:
+    for absolute_key, relative_key, label in [
+        ("electronic_energy_hartree", "relative_electronic_energy_kcal_mol", "electronic energies"),
+        ("electronic_plus_zpe_hartree", "relative_zpe_corrected_energy_kcal_mol", "E+ZPE energies"),
+        (
+            "electronic_plus_thermal_free_energy_hartree",
+            "relative_free_energy_kcal_mol",
+            "thermal free energies",
+        ),
+    ]:
+        reference = _relative_reference(rows, absolute_key)
+        if reference is None:
+            notes.append(f"Comparable R/TS/P {label} are not complete in the current report context.")
+            continue
+        for row in rows:
+            energy = _numeric(row.get(absolute_key))
+            if energy is not None:
+                row[relative_key] = round((energy - reference) * HARTREE_TO_KCAL_MOL, 3)
+
+
+def _relative_reference(rows: list[dict[str, Any]], absolute_key: str) -> float | None:
+    reactant = next((row for row in rows if row.get("species") == "R"), {})
+    reactant_energy = _numeric(reactant.get(absolute_key))
+    if reactant_energy is not None:
+        return reactant_energy
+    known = [_numeric(row.get(absolute_key)) for row in rows]
+    known_values = [value for value in known if value is not None]
+    if len(known_values) >= 2:
+        return min(known_values)
+    return None
+
+
+def _relative_energy_notes(rows: list[dict[str, Any]]) -> list[str]:
+    notes: list[str] = []
+    for row in rows:
+        if _numeric(row.get("electronic_energy_hartree")) is None:
+            notes.append(f"{row.get('species')} electronic energy is missing.")
+        if _numeric(row.get("electronic_plus_zpe_hartree")) is None:
+            notes.append(f"{row.get('species')} E+ZPE is missing.")
+    return notes
+
+
+def _numeric(value: Any) -> float | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int | float):
+        return float(value)
+    if isinstance(value, str):
+        try:
+            return float(value)
+        except ValueError:
+            return None
+    return None
 
 
 def collect_limitations(records: list[dict[str, Any]], connectivity: dict[str, Any]) -> list[str]:

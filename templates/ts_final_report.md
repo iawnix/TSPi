@@ -90,11 +90,11 @@ Relative energies should be traceable to absolute energies and corrections in
 the artifacts or appendix. If R, TS, and P are not all available at comparable
 levels, report the gap explicitly.
 
-| Species | Role | Artifact | Electronic energy / hartree | Correction | Relative energy / kcal mol^-1 |
-| --- | --- | --- | --- | --- | --- |
-| R | reactant | `{{path}}` | {{E}} | {{ZPE/G}} | {{rel}} |
-| TS | transition state | `{{path}}` | {{E}} | {{ZPE/G}} | {{rel}} |
-| P | product | `{{path}}` | {{E}} | {{ZPE/G}} | {{rel}} |
+| Species | Role | Artifact | E_elec / hartree | E+ZPE / hartree | G / hartree | Rel E_elec / kcal mol^-1 | Rel E+ZPE / kcal mol^-1 | Rel G / kcal mol^-1 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| R | reactant | `{{path}}` | {{E}} | {{E_ZPE}} | {{G}} | {{rel_E}} | {{rel_E_ZPE}} | {{rel_G}} |
+| TS | transition state | `{{path}}` | {{E}} | {{E_ZPE}} | {{G}} | {{rel_E}} | {{rel_E_ZPE}} | {{rel_G}} |
+| P | product | `{{path}}` | {{E}} | {{E_ZPE}} | {{G}} | {{rel_E}} | {{rel_E_ZPE}} | {{rel_G}} |
 
 ## 8. Mechanistic Interpretation
 
@@ -254,11 +254,11 @@ success. State the failed branch and the next branch separately.}}
 Relative energies should be traceable to absolute energies and corrections in
 the artifacts or appendix.
 
-| Species | Role | Artifact | Electronic energy / hartree | Correction | Relative energy / kcal mol^-1 |
-| --- | --- | --- | --- | --- | --- |
-| R | reactant | `{{path}}` | {{E}} | {{ZPE/G}} | {{rel}} |
-| TS | transition state | `{{path}}` | {{E}} | {{ZPE/G}} | {{rel}} |
-| P | product | `{{path}}` | {{E}} | {{ZPE/G}} | {{rel}} |
+| Species | Role | Artifact | E_elec / hartree | E+ZPE / hartree | G / hartree | Rel E_elec / kcal mol^-1 | Rel E+ZPE / kcal mol^-1 | Rel G / kcal mol^-1 |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| R | reactant | `{{path}}` | {{E}} | {{E_ZPE}} | {{G}} | {{rel_E}} | {{rel_E_ZPE}} | {{rel_G}} |
+| TS | transition state | `{{path}}` | {{E}} | {{E_ZPE}} | {{G}} | {{rel_E}} | {{rel_E_ZPE}} | {{rel_G}} |
+| P | product | `{{path}}` | {{E}} | {{E_ZPE}} | {{G}} | {{rel_E}} | {{rel_E_ZPE}} | {{rel_G}} |
 
 Energy notes:
 
@@ -310,7 +310,7 @@ Decision JSON files:
 
 ## 14. Source Checklist
 
-- [ ] Workspace validates with `python scripts/ts_workspace.py validate_workspace --root {{workspace_root}}`.
+- [ ] Workspace validates with `python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_workspace --root {{workspace_root}}`.
 - [ ] `report_workspace` was run before report generation.
 - [ ] All accepted claims cite evidence IDs.
 - [ ] TS/Freq, connectivity, and declared stereochemical evidence refer to the same hypothesis ID.

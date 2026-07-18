@@ -20,6 +20,8 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
     assert manifest["pi"]["extensions"] == ["./extensions/ts-workflow-context"]
     assert manifest["peerDependencies"]["@earendil-works/pi-coding-agent"] == "*"
     assert manifest["peerDependencies"]["typebox"] == "*"
+    assert "--workspace-root" in manifest["scripts"]["install-env"]
+    assert "TS_WORKSPACE_ROOT" in manifest["scripts"]["install-env"]
     assert "postinstall" not in manifest["scripts"]
 
 
@@ -44,6 +46,8 @@ def test_pi_context_summary_from_report_workspace(tmp_path: Path) -> None:
     assert f"focus_hypothesis: {HYPOTHESIS_ID}" in payload["summary"]
     assert "required_next_evidence:" in payload["summary"]
     assert "do not edit workspace state files by hand" in payload["summary"]
+    assert "scripts/ts_workspace.py" not in payload["summary"]
+    assert "explicit TSAgentSkill root" in payload["summary"]
     assert payload["details"]["workspaceRoot"] == str(workspace)
     assert payload["details"]["focusHypothesisId"] == HYPOTHESIS_ID
     assert payload["details"]["valid"] is True

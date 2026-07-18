@@ -15,7 +15,8 @@ Before every mutation after bootstrap:
 1. Run:
 
    ```bash
-   python scripts/ts_workspace.py report_workspace --root <workspace>
+   export TS_AGENT_SKILL_ROOT=/path/to/transition-state-workflow
+   python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" report_workspace --root <workspace>
    ```
 
 2. Read the current-node files relevant to the decision:
@@ -32,7 +33,7 @@ Before every mutation after bootstrap:
 6. Run:
 
    ```bash
-   python scripts/ts_workspace.py validate_decision --root <workspace> --decision-file decision.json
+   python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_decision --root <workspace> --decision-file decision.json
    ```
 
 7. Apply exactly one mutation: `start_node`, `update_workspace`, or `end_node`.

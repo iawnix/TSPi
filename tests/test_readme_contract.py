@@ -19,7 +19,8 @@ def test_readme_documents_install_and_agent_entrypoints() -> None:
 
     for phrase in [
         "TSAgentSkill",
-        "python scripts/install_env.py --conda-root /path/to/miniforge3 --with-render --json",
+        "--workspace-root \"$TS_WORKSPACE_ROOT\"",
+        "TS_WORKSPACE_ROOT=/path/to/ts-workspace npm run install-env",
         "Codex Usage",
         "Pi Agent Usage",
         "templates/ts_final_report.md",

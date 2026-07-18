@@ -53,16 +53,19 @@ def _write_energy_profile_svg(context: dict[str, Any], path: Path) -> dict[str, 
     profile = context.get("energy_profile", {}) if isinstance(context.get("energy_profile"), dict) else {}
     rows = [row for row in profile.get("rows", []) if isinstance(row, dict)]
     labels = [str(row.get("species", "")) for row in rows]
-    values = [
-        float(row["relative_electronic_energy_kcal_mol"])
-        if isinstance(row.get("relative_electronic_energy_kcal_mol"), int | float)
-        else None
-        for row in rows
-    ]
-    if sum(value is not None for value in values) < 2:
+    series: dict[str, list[float | None]] = {}
+    for key, label in [
+        ("relative_zpe_corrected_energy_kcal_mol", "E+ZPE"),
+        ("relative_free_energy_kcal_mol", "G"),
+        ("relative_electronic_energy_kcal_mol", "electronic"),
+    ]:
+        values = [float(row[key]) if isinstance(row.get(key), int | float) else None for row in rows]
+        if sum(value is not None for value in values) >= 2:
+            series[label] = values
+    if not series:
         notes = profile.get("notes", []) if isinstance(profile.get("notes"), list) else []
         return _write_text_svg(path, "Energy Profile", notes or ["Comparable R/TS/P energies were not available."])
-    return _write_line_svg(path, "Energy Profile", labels, {"electronic": values}, "kcal mol-1")
+    return _write_line_svg(path, "Energy Profile", labels, series, "kcal mol-1")
 
 
 def _try_render_mechanism(root: Path, context: dict[str, Any], path: Path) -> dict[str, Any] | None:

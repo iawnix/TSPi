@@ -262,13 +262,22 @@ def _energy_lines(context: dict[str, Any]) -> list[str]:
     if assets.get("energy_profile_svg"):
         lines.append(f"![Energy profile]({assets['energy_profile_svg']['path']})")
         lines.append("")
-    lines.extend(["| Species | Role | Electronic energy / hartree | E+ZPE / hartree | Relative E / kcal mol-1 | Source |", "| --- | --- | --- | --- | --- | --- |"])
+    lines.extend(
+        [
+            "| Species | Role | E_elec / hartree | E+ZPE / hartree | G / hartree | Rel E_elec / kcal mol-1 | Rel E+ZPE / kcal mol-1 | Rel G / kcal mol-1 | Source |",
+            "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
+        ]
+    )
     for row in profile.get("rows", []):
         if not isinstance(row, dict):
             continue
         lines.append(
             f"| {row.get('species', '')} | {row.get('role', '')} | {_fmt(row.get('electronic_energy_hartree'))} | "
-            f"{_fmt(row.get('electronic_plus_zpe_hartree'))} | {_fmt(row.get('relative_electronic_energy_kcal_mol'))} | "
+            f"{_fmt(row.get('electronic_plus_zpe_hartree'))} | "
+            f"{_fmt(row.get('electronic_plus_thermal_free_energy_hartree'))} | "
+            f"{_fmt(row.get('relative_electronic_energy_kcal_mol'))} | "
+            f"{_fmt(row.get('relative_zpe_corrected_energy_kcal_mol'))} | "
+            f"{_fmt(row.get('relative_free_energy_kcal_mol'))} | "
             f"`{row.get('source', '')}` |"
         )
     for note in profile.get("notes", []):

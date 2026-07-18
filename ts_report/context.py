@@ -58,7 +58,7 @@ def collect_report_context(root: str | Path) -> dict[str, Any]:
         "connectivity": connectivity,
     }
     context["distance_profile"] = collect_distance_profile(active, tsfreq, connectivity)
-    context["energy_profile"] = collect_energy_profile(tsfreq)
+    context["energy_profile"] = collect_energy_profile(records, artifacts, tsfreq)
     context["limitations"] = collect_limitations(records, connectivity)
     context["mechanism_interpretation"] = build_mechanism_interpretation(context)
     context["assets"] = {}

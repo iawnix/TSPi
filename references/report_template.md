@@ -64,8 +64,10 @@ should include:
    geometry or distance changes.
 5. IRC / connectivity evidence including settings, endpoint assignments,
    endpoint optimization state, RMSD/key-bond metrics, and diagnostics.
-6. Energy profile across R, TS, and P with clear missing-data notes when
-   stationary-point energies are incomplete or not comparable.
+6. Energy profile across R, TS, and P with electronic, E+ZPE, and when
+   available thermal free-energy relative values. Report clear missing-data
+   notes when stationary-point energies or corrections are incomplete or not
+   comparable.
 7. Mechanistic interpretation explaining how the reaction occurs, including
    synchrony/asynchrony, TS resemblance, alternative hypotheses, and electronic
    structure boundaries.

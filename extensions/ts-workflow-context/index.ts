@@ -1,8 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { createHash } from "node:crypto";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,8 +17,7 @@ const {
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
 const PACKAGE_ROOT = resolve(EXTENSION_DIR, "..", "..");
 const WORKSPACE_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_workspace.py");
-const RUNTIME_MANIFEST = resolve(PACKAGE_ROOT, ".runtime", "env.json");
-const ENVIRONMENT_SPEC = resolve(PACKAGE_ROOT, "environment.yml");
+const RUNTIME_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_runtime.py");
 
 type TsCommand = "validate_decision" | "start_node" | "update_workspace" | "end_node";
 
@@ -127,41 +125,29 @@ export default function (pi: ExtensionAPI) {
 }
 
 async function runJson(pi: ExtensionAPI, command: string, root: string, extraArgs: string[], signal?: AbortSignal) {
-  const result = await pi.exec(resolvePythonExecutable(), [WORKSPACE_CLI, command, "--root", root, ...extraArgs], { signal });
+  const python = await resolvePythonExecutable(pi, root, signal);
+  const result = await pi.exec(python, [WORKSPACE_CLI, command, "--root", root, ...extraArgs], { signal });
   return parseJsonOutput(result);
 }
 
-function resolvePythonExecutable(): string {
+async function resolvePythonExecutable(pi: ExtensionAPI, workspaceRoot: string, signal?: AbortSignal): Promise<string> {
   if (process.env.TS_AGENT_PYTHON) {
     return process.env.TS_AGENT_PYTHON;
   }
-  if (existsSync(RUNTIME_MANIFEST)) {
-    try {
-      const manifest = JSON.parse(readFileSync(RUNTIME_MANIFEST, "utf8"));
-      if (
-        manifest &&
-        manifestMatchesSpec(manifest) &&
-        typeof manifest.python_executable === "string" &&
-        existsSync(manifest.python_executable)
-      ) {
-        return manifest.python_executable;
-      }
-    } catch (_error) {
-      return "python3";
+  try {
+    const result = await pi.exec(
+      "python3",
+      [RUNTIME_CLI, "resolve", "--package-root", PACKAGE_ROOT, "--workspace-root", workspaceRoot, "--json"],
+      { signal }
+    );
+    const runtime = parseJsonOutput(result);
+    if (runtime && typeof runtime.python_executable === "string" && existsSync(runtime.python_executable)) {
+      return runtime.python_executable;
     }
+  } catch (_error) {
+    return "python3";
   }
   return "python3";
-}
-
-function manifestMatchesSpec(manifest: { spec_sha256?: unknown }): boolean {
-  if (typeof manifest.spec_sha256 !== "string") {
-    return true;
-  }
-  if (!existsSync(ENVIRONMENT_SPEC)) {
-    return false;
-  }
-  const digest = createHash("sha256").update(readFileSync(ENVIRONMENT_SPEC)).digest("hex");
-  return digest === manifest.spec_sha256;
 }
 
 function requireWorkspaceRoot(inputRoot: string | undefined, cwd: string): string {

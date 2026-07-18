@@ -143,8 +143,10 @@ and have `ts_web` consume that result.
 - Remote helpers should return receipts, statuses, fetched files, or errors.
   They should not infer mechanism identity.
 - Runtime setup must stay isolated from shared Conda `base`. Public scripts
-  should use `.runtime/env.json` when present and fall back to the current
-  interpreter for development checkouts.
+  should resolve the workspace-owned runtime manifest when a workspace root is
+  known and fall back to the current interpreter for development checkouts.
+  Legacy `package-root/.runtime/env.json` is compatibility input only when no
+  explicit workspace root, runtime home, or manifest path is supplied.
 - `ts_render` depends on `xyzrender` only. Do not add Blender, FFmpeg,
   OpenBabel, Mayavi, or PyVista probes unless the contract is intentionally
   revised.
@@ -204,8 +206,10 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q -p no:cacheprovider
 If the installed runtime matters:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/ts_runtime.py run -m pytest -q
-python3 scripts/ts_render.py diagnostic --json
+export TS_AGENT_SKILL_ROOT=$PWD
+export TS_WORKSPACE_ROOT=/path/to/ts-workspace
+PYTHONDONTWRITEBYTECODE=1 python3 "$TS_AGENT_SKILL_ROOT/scripts/ts_runtime.py" run -m pytest -q
+python3 "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" diagnostic --json
 ```
 
 If Pi package metadata, extension files, or `package.json` changed:
@@ -237,9 +241,17 @@ rsync -a --delete \
 6. Validate the installed copy:
 
 ```bash
-cd /home/iaw/TS/.agents/skills/transition-state-workflow
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/ts_runtime.py run -m pytest -q
-python3 scripts/ts_render.py diagnostic --json
+cd /home/iaw/TS
+export TS_AGENT_SKILL_ROOT=/home/iaw/TS/.agents/skills/transition-state-workflow
+export TS_WORKSPACE_ROOT=/home/iaw/TS
+python3 "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
+  --package-root "$TS_AGENT_SKILL_ROOT" \
+  --workspace-root "$TS_WORKSPACE_ROOT" \
+  --conda-root /path/to/miniforge3 \
+  --with-render \
+  --json
+PYTHONDONTWRITEBYTECODE=1 python3 "$TS_AGENT_SKILL_ROOT/scripts/ts_runtime.py" run -m pytest -q
+python3 "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" diagnostic --json
 ```
 
 7. If the behavior affects active research, record any remaining discrepancy in

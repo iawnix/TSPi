@@ -8,7 +8,17 @@ from pathlib import Path
 
 import pytest
 
-from ts_runtime.env import configured_python, default_env_prefix, default_env_store, spec_sha256, write_manifest
+from ts_runtime.env import (
+    configured_python,
+    default_env_prefix,
+    default_env_store,
+    default_runtime_home,
+    legacy_runtime_manifest_path,
+    runtime_manifest_path,
+    seed_workspace_root_from_argv,
+    spec_sha256,
+    write_manifest,
+)
 import ts_runtime.cli as runtime_cli
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,12 +37,27 @@ def test_default_env_prefix_is_spec_hash_scoped(tmp_path: Path) -> None:
 
 def test_default_env_store_is_package_relative_without_override(tmp_path: Path, monkeypatch) -> None:
     monkeypatch.delenv("TS_AGENT_ENV_ROOT", raising=False)
+    monkeypatch.delenv("TS_WORKSPACE_ROOT", raising=False)
     package = tmp_path / "skill"
     package.mkdir()
 
     store = default_env_store(package)
 
     assert store == tmp_path / ".envs" / "transition-state-workflow"
+
+
+def test_workspace_root_owns_runtime_home_and_env_store(tmp_path: Path, monkeypatch) -> None:
+    monkeypatch.delenv("TS_AGENT_ENV_ROOT", raising=False)
+    monkeypatch.delenv("TS_AGENT_RUNTIME_HOME", raising=False)
+    workspace = tmp_path / "workspace"
+    package = tmp_path / "pi" / "git" / "github.com" / "iawnix" / "TSAgentSkill"
+    workspace.mkdir()
+    package.mkdir(parents=True)
+    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
+
+    assert default_runtime_home(package, workspace) == workspace / ".agents" / "runtime" / "transition-state-workflow"
+    assert default_env_store(package, workspace) == workspace / ".agents" / "envs" / "transition-state-workflow"
+    assert runtime_manifest_path(package, workspace_root=workspace) == workspace / ".agents" / "runtime" / "transition-state-workflow" / "env.json"
 
 
 def test_configured_python_reads_runtime_manifest(tmp_path: Path) -> None:
@@ -49,6 +74,84 @@ def test_configured_python_reads_runtime_manifest(tmp_path: Path) -> None:
     )
 
     assert configured_python(package) == Path(sys.executable).resolve()
+
+
+def test_configured_python_reads_legacy_package_manifest(tmp_path: Path) -> None:
+    package = tmp_path / "skill"
+    package.mkdir()
+    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
+    path = legacy_runtime_manifest_path(package)
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "ts-agent-runtime-v1",
+                "python_executable": sys.executable,
+                "spec_sha256": spec_sha256(package),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert configured_python(package) == Path(sys.executable).resolve()
+
+
+def test_workspace_runtime_does_not_fall_back_to_package_manifest(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    package = tmp_path / "dev-skill"
+    workspace.mkdir()
+    package.mkdir()
+    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
+    path = legacy_runtime_manifest_path(package)
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "ts-agent-runtime-v1",
+                "python_executable": sys.executable,
+                "spec_sha256": spec_sha256(package),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert configured_python(package, workspace_root=workspace) is None
+
+
+def test_workspace_runtime_env_does_not_fall_back_to_package_manifest(tmp_path: Path, monkeypatch) -> None:
+    workspace = tmp_path / "workspace"
+    package = tmp_path / "dev-skill"
+    workspace.mkdir()
+    package.mkdir()
+    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
+    path = legacy_runtime_manifest_path(package)
+    path.parent.mkdir(parents=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": "ts-agent-runtime-v1",
+                "python_executable": sys.executable,
+                "spec_sha256": spec_sha256(package),
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    monkeypatch.setenv("TS_WORKSPACE_ROOT", str(workspace))
+
+    assert configured_python(package) is None
+
+
+def test_seed_workspace_root_from_argv_sets_runtime_env(monkeypatch, tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    monkeypatch.delenv("TS_WORKSPACE_ROOT", raising=False)
+
+    seed_workspace_root_from_argv(["report_workspace", "--root", str(workspace)])
+
+    try:
+        assert os.environ["TS_WORKSPACE_ROOT"] == str(workspace)
+    finally:
+        os.environ.pop("TS_WORKSPACE_ROOT", None)
 
 
 def test_configured_python_ignores_stale_runtime_manifest(tmp_path: Path) -> None:
@@ -90,7 +193,35 @@ def test_install_env_dry_run_reports_hashed_prefix(tmp_path: Path) -> None:
     assert payload["action"] == "create"
     assert payload["dry_run"] is True
     assert payload["env_prefix"].startswith(str(tmp_path / "envs"))
+    assert payload["manifest_path"].endswith("/.runtime/transition-state-workflow/env.json")
     assert payload["python_executable"].endswith("/bin/python")
+
+
+def test_install_env_dry_run_accepts_workspace_runtime_home(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "install_env.py"),
+            "--package-root",
+            str(ROOT),
+            "--workspace-root",
+            str(workspace),
+            "--dry-run",
+            "--json",
+        ],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    payload = json.loads(completed.stdout)
+
+    assert payload["runtime_home"] == str(workspace / ".agents" / "runtime" / "transition-state-workflow")
+    assert payload["manifest_path"] == str(workspace / ".agents" / "runtime" / "transition-state-workflow" / "env.json")
+    assert payload["env_prefix"].startswith(str(workspace / ".agents" / "envs" / "transition-state-workflow"))
 
 
 def test_install_env_accepts_user_conda_root(tmp_path: Path) -> None:
@@ -167,3 +298,28 @@ def test_ts_runtime_script_passes_dash_m_arguments() -> None:
     )
 
     assert completed.stdout.strip() == "runtime-ok"
+
+
+def test_ts_runtime_resolve_reports_external_manifest_path(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "ts_runtime.py"),
+            "resolve",
+            "--workspace-root",
+            str(workspace),
+            "--json",
+        ],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    payload = json.loads(completed.stdout)
+
+    assert payload["configured"] is False
+    assert payload["manifest_path"] == str(workspace / ".agents" / "runtime" / "transition-state-workflow" / "env.json")
+    assert payload["env_prefix"].startswith(str(workspace / ".agents" / "envs" / "transition-state-workflow"))

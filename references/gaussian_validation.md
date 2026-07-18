@@ -5,8 +5,8 @@ Gaussian TS/Freq validation should be node-scoped.
 Use `ts_backends.gaussian` for Gaussian input construction and Gaussian output
 parsing. The public helper scripts are thin wrappers:
 
-- `scripts/ts_backend.py gaussian prepare`;
-- `scripts/ts_backend.py gaussian parse`.
+- `python "$TS_AGENT_SKILL_ROOT/scripts/ts_backend.py" gaussian prepare`;
+- `python "$TS_AGENT_SKILL_ROOT/scripts/ts_backend.py" gaussian parse`.
 
 Record:
 
@@ -25,7 +25,8 @@ Record:
 - whether available electronic diagnostics support or at least do not refute
   the mechanism, such as reaction-center charges, spin density, natural orbital
   occupation, TD-state character, or charge-transfer indicators;
-- parsed energy when available.
+- parsed electronic energy, zero-point correction, E+ZPE, and thermal
+  free-energy correction when available.
 
 One imaginary frequency is necessary but not sufficient for an accepted TS. The
 mode must support the current phase claim, the final local geometry and

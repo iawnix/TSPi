@@ -4,7 +4,8 @@ These templates are the runtime starting point for `ts_workspace` mutations.
 Use them when preparing a real decision JSON, then run:
 
 ```bash
-python scripts/ts_workspace.py validate_decision --root <workspace> --decision-file decision.json
+export TS_AGENT_SKILL_ROOT=/path/to/transition-state-workflow
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_decision --root <workspace> --decision-file decision.json
 ```
 
 The placeholders use the literal form `${NAME}`. Replace every placeholder

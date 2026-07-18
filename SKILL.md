@@ -43,11 +43,11 @@ decision JSON.
   the same derivation is needed outside the web UI, promote it to
   `ts_workspace/readers/` and have `ts_web` consume it from there — do not
   duplicate. Start with
-  `python scripts/ts_web.py serve --state-dir <state> --port 8766`. Pass
-  `--source-root <root>` (repeat for multiple workspaces) and matching
+  `python "$TS_AGENT_SKILL_ROOT/scripts/ts_web.py" serve --state-dir <state> --port 8766`.
+  Pass `--source-root <root>` (repeat for multiple workspaces) and matching
   `--label <name>` to register on startup. Default bind is `0.0.0.0` for
   LAN-visible TS monitoring. Manage the registry with
-  `python scripts/ts_web.py register|list|remove --state-dir <state> ...`.
+  `python "$TS_AGENT_SKILL_ROOT/scripts/ts_web.py" register|list|remove --state-dir <state> ...`.
 - `ts_report`: final report package assembly from validated workspace
   evidence. It can emit Markdown, a report context JSON, visual assets, and an
   email summary; missing render or energy data must be reported explicitly.
@@ -80,22 +80,28 @@ Concretely:
 Two disjoint command sets. Mutation commands change workspace state and
 require a decision JSON. Read/support commands do not.
 
+All shell examples assume an explicit skill root:
+
+```bash
+export TS_AGENT_SKILL_ROOT=/path/to/transition-state-workflow
+```
+
 **Mutation CLI:**
 
 ```bash
-python scripts/ts_workspace.py init_workspace  --root <root> [--decision-file decision.json] [--force]
-python scripts/ts_workspace.py start_node      --root <root> --decision-file decision.json
-python scripts/ts_workspace.py update_workspace --root <root> --decision-file decision.json
-python scripts/ts_workspace.py end_node        --root <root> --decision-file decision.json
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" init_workspace  --root <root> [--decision-file decision.json] [--force]
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" start_node      --root <root> --decision-file decision.json
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" update_workspace --root <root> --decision-file decision.json
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" end_node        --root <root> --decision-file decision.json
 ```
 
 **Read / Support CLI:**
 
 ```bash
-python scripts/ts_workspace.py report_workspace   --root <root>
-python scripts/ts_workspace.py snapshot_report    --root <root>
-python scripts/ts_workspace.py validate_workspace --root <root>
-python scripts/ts_workspace.py validate_decision  --root <root> --decision-file decision.json
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" report_workspace   --root <root>
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" snapshot_report    --root <root>
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_workspace --root <root>
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_decision  --root <root> --decision-file decision.json
 ```
 
 `report_workspace` returns the current context but does not write; use
@@ -126,24 +132,28 @@ such as required post-`n000` `payload.branch_context` provenance.
 Gaussian local helper entrypoints are thin wrappers around backend boundaries:
 
 ```bash
-python scripts/ts_backend.py gaussian prepare --help
-python scripts/ts_backend.py gaussian parse --help
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_backend.py" gaussian prepare --help
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_backend.py" gaussian parse --help
 ```
 
 Runtime and visualization entrypoints:
 
 ```bash
-python scripts/install_env.py --json
-python scripts/ts_render.py diagnostic --json
-python scripts/ts_render.py render input.xyz -o nodes/n001/outputs/render.png
-python scripts/ts_render.py compare reactant.xyz ts.xyz product.xyz -o nodes/n001/outputs/compare.png
-python scripts/ts_render.py animate irc.xyz -o nodes/n001/outputs/irc.mp4
-python scripts/ts_report.py --root <root> --package-dir reports/final_report_package
+python "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" --package-root "$TS_AGENT_SKILL_ROOT" --workspace-root <workspace> --json
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" diagnostic --json
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" render input.xyz -o nodes/n001/outputs/render.png
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" compare reactant.xyz ts.xyz product.xyz -o nodes/n001/outputs/compare.png
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" animate irc.xyz -o nodes/n001/outputs/irc.mp4
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_report.py" --root <root> --package-dir reports/final_report_package
 ```
 
 After installation, public scripts and the Pi extension prefer the interpreter
-recorded in `.runtime/env.json`. If no runtime manifest is present, scripts fall
-back to the current Python so development checkouts remain testable.
+recorded in the resolved runtime manifest. With a workspace root, the default
+manifest is `<workspace>/.agents/runtime/transition-state-workflow/env.json`
+and the Conda prefixes live under
+`<workspace>/.agents/envs/transition-state-workflow/`. Legacy
+`package-root/.runtime/env.json` manifests are read only when no explicit
+workspace root, runtime home, or manifest path is supplied.
 
 Remote Gaussian execution is an internal `ts_remote.gaussian` adapter. Do not
 expose or treat it as an independent public workflow command.
@@ -281,7 +291,9 @@ They are not top-level node states.
 11. Use `ts_report` only after the workspace validates. Prefer report-package
    output for final handoff so structure panels, vibration/IRC plots, energy
    profile, mechanism interpretation, context JSON, and email summary are kept
-   together.
+   together. Energy profiles must distinguish electronic, E+ZPE, and available
+   free-energy relative values; missing R/P/TS corrections must be reported as
+   missing rather than silently replaced by electronic energies.
 
 ## References
 

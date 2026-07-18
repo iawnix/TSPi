@@ -18,7 +18,9 @@ sys.path.insert(0, str(ROOT))
 from ts_runtime.env import (  # noqa: E402
     MANIFEST_VERSION,
     default_env_prefix,
+    default_runtime_home,
     env_python,
+    runtime_manifest_path,
     spec_sha256,
     write_manifest,
 )
@@ -27,6 +29,9 @@ from ts_runtime.env import (  # noqa: E402
 def main() -> int:
     parser = argparse.ArgumentParser(description="Install the TSAgentSkill isolated Python environment.")
     parser.add_argument("--package-root", default=str(ROOT))
+    parser.add_argument("--workspace-root", help="Workspace root that owns .agents/runtime and .agents/envs.")
+    parser.add_argument("--runtime-home", help="Directory that stores the runtime manifest.")
+    parser.add_argument("--manifest-path", help="Explicit runtime manifest path.")
     parser.add_argument("--env-root", help="Directory that stores hashed Conda prefixes.")
     parser.add_argument("--conda", help="Path to conda or mamba executable.")
     parser.add_argument("--conda-root", help="Root directory of an existing Conda or Mamba installation.")
@@ -42,8 +47,19 @@ def main() -> int:
         print(f"error: missing environment spec: {spec_path}", file=sys.stderr)
         return 2
 
-    prefix = default_env_prefix(package_root, args.env_root)
+    prefix = default_env_prefix(package_root, args.env_root, args.workspace_root)
     python = env_python(prefix)
+    runtime_home = (
+        Path(args.runtime_home).expanduser().resolve()
+        if args.runtime_home
+        else default_runtime_home(package_root, args.workspace_root)
+    )
+    manifest_path = runtime_manifest_path(
+        package_root,
+        runtime_home=args.runtime_home,
+        workspace_root=args.workspace_root,
+        manifest_path=args.manifest_path,
+    )
     conda_root = _resolve_conda_root(args.conda_root)
     conda = _resolve_conda(args.conda, conda_root)
     action = "reuse" if python.exists() and not args.force else ("update" if prefix.exists() else "create")
@@ -52,6 +68,8 @@ def main() -> int:
         "environment_spec": str(spec_path),
         "spec_sha256": spec_sha256(package_root),
         "env_prefix": str(prefix),
+        "runtime_home": str(runtime_home),
+        "manifest_path": str(manifest_path),
         "python_executable": str(python),
         "conda_root": str(conda_root) if conda_root else None,
         "conda_executable": conda,
@@ -100,13 +118,21 @@ def main() -> int:
         "environment_spec": str(spec_path),
         "spec_sha256": payload["spec_sha256"],
         "env_prefix": str(prefix),
+        "runtime_home": str(runtime_home),
+        "manifest_path": str(manifest_path),
         "python_executable": str(python),
         "conda_root": str(conda_root) if conda_root else None,
         "conda_executable": conda,
         "render_dependencies_requested": bool(args.with_render),
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
     }
-    manifest_path = write_manifest(package_root, manifest)
+    manifest_path = write_manifest(
+        package_root,
+        manifest,
+        runtime_home=args.runtime_home,
+        workspace_root=args.workspace_root,
+        manifest_path=args.manifest_path,
+    )
     payload["manifest_path"] = str(manifest_path)
     payload["action"] = action
     _print(payload, args.json)

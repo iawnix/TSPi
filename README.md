@@ -37,28 +37,52 @@ Typical install:
 
 ```bash
 git clone https://github.com/iawnix/TSAgentSkill.git
-cd TSAgentSkill
-python scripts/install_env.py --conda-root /path/to/miniforge3 --with-render --json
+export TS_AGENT_SKILL_ROOT=$PWD/TSAgentSkill
+export TS_WORKSPACE_ROOT=/path/to/ts-workspace
+python "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
+  --package-root "$TS_AGENT_SKILL_ROOT" \
+  --workspace-root "$TS_WORKSPACE_ROOT" \
+  --conda-root /path/to/miniforge3 \
+  --with-render \
+  --json
 ```
 
 Equivalent environment variables:
 
 ```bash
-TS_AGENT_CONDA_ROOT=/path/to/miniforge3 python scripts/install_env.py --with-render --json
-TS_AGENT_CONDA_EXE=/path/to/conda python scripts/install_env.py --with-render --json
+TS_AGENT_CONDA_ROOT=/path/to/miniforge3 python "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" --package-root "$TS_AGENT_SKILL_ROOT" --workspace-root "$TS_WORKSPACE_ROOT" --with-render --json
+TS_AGENT_CONDA_EXE=/path/to/conda python "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" --package-root "$TS_AGENT_SKILL_ROOT" --workspace-root "$TS_WORKSPACE_ROOT" --with-render --json
 ```
 
 Useful runtime overrides:
 
 ```bash
+TS_WORKSPACE_ROOT=/path/to/ts-workspace
+TS_AGENT_RUNTIME_HOME=/path/to/runtime-home
+TS_AGENT_RUNTIME_MANIFEST=/path/to/env.json
 TS_AGENT_ENV_ROOT=/path/to/env-store
 TS_AGENT_PYTHON=/path/to/python
 TS_AGENT_DISABLE_RUNTIME_REEXEC=1
 ```
 
-The installer writes `.runtime/env.json`. Public Python scripts and the Pi
-extension prefer the interpreter recorded there. If `environment.yml` changes,
-stale runtime manifests are ignored until the environment is refreshed.
+The installer writes the runtime manifest outside the package checkout by
+default. With `--workspace-root`, the default is
+`<workspace>/.agents/runtime/transition-state-workflow/env.json` and the Conda
+prefix store is `<workspace>/.agents/envs/transition-state-workflow/`. Public
+Python scripts and the Pi extension prefer the interpreter recorded there. If
+`environment.yml` changes, stale runtime manifests are ignored until the
+environment is refreshed. Legacy `package-root/.runtime/env.json` manifests are
+read only when no explicit workspace root, runtime home, or manifest path is
+supplied.
+
+From a package checkout, the npm helper scripts require `TS_WORKSPACE_ROOT` and
+write the same workspace-owned runtime:
+
+```bash
+cd "$TS_AGENT_SKILL_ROOT"
+TS_WORKSPACE_ROOT=/path/to/ts-workspace npm run install-env
+TS_WORKSPACE_ROOT=/path/to/ts-workspace npm run install-env:core
+```
 
 ## Render Dependency Boundary
 
@@ -68,8 +92,8 @@ The skill does not require or probe Blender, FFmpeg, OpenBabel, Mayavi, or
 PyVista. Install render support with:
 
 ```bash
-python scripts/install_env.py --conda-root /path/to/miniforge3 --with-render --json
-python scripts/ts_render.py diagnostic --json
+python "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" --package-root "$TS_AGENT_SKILL_ROOT" --workspace-root "$TS_WORKSPACE_ROOT" --conda-root /path/to/miniforge3 --with-render --json
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" diagnostic --json
 ```
 
 If `xyzrender` is unavailable, TS workspace operations, validation, and reports
@@ -87,13 +111,14 @@ workspace skill directory, for example:
 Codex reads `SKILL.md` as the skill entrypoint. Public workspace commands:
 
 ```bash
-python scripts/ts_workspace.py init_workspace --root <workspace>
-python scripts/ts_workspace.py report_workspace --root <workspace>
-python scripts/ts_workspace.py validate_decision --root <workspace> --decision-file decision.json
-python scripts/ts_workspace.py start_node --root <workspace> --decision-file decision.json
-python scripts/ts_workspace.py update_workspace --root <workspace> --decision-file decision.json
-python scripts/ts_workspace.py end_node --root <workspace> --decision-file decision.json
-python scripts/ts_workspace.py validate_workspace --root <workspace>
+export TS_AGENT_SKILL_ROOT=<workspace>/.agents/skills/transition-state-workflow
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" init_workspace --root <workspace>
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" report_workspace --root <workspace>
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_decision --root <workspace> --decision-file decision.json
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" start_node --root <workspace> --decision-file decision.json
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" update_workspace --root <workspace> --decision-file decision.json
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" end_node --root <workspace> --decision-file decision.json
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_workspace --root <workspace>
 ```
 
 Run `report_workspace` before choosing or closing a node. Do not edit workspace
@@ -107,18 +132,33 @@ evidence provenance only, not a fixed retry policy.
 
 ## Pi Agent Usage
 
-Install this checkout as a project-local Pi package from the TS workspace:
+Install the package project-locally from the TS workspace. For maintained local
+workspaces, prefer registering the installed skill copy so Pi and Codex share
+the same package root:
 
 ```bash
 cd /path/to/ts-workspace
-pi install -l /path/to/TSAgentSkill --approve
+pi install -l "$PWD/.agents/skills/transition-state-workflow" --approve
 ```
 
-Install or refresh the runtime from the package root:
+Direct GitHub installation is also supported; the package checkout then lives
+under `.pi/git/...`, but runtime state still belongs to the TS workspace when
+`TS_WORKSPACE_ROOT` is set:
 
 ```bash
-cd /path/to/TSAgentSkill
-python scripts/install_env.py --conda-root /path/to/miniforge3 --with-render --json
+pi install -l https://github.com/iawnix/TSAgentSkill --approve
+```
+
+For GitHub installs, use the Pi-managed checkout path as `TS_AGENT_SKILL_ROOT`
+when refreshing the runtime, or run the npm helper from that checkout with
+`TS_WORKSPACE_ROOT` set.
+
+Install or refresh the runtime with an explicit package root and workspace root:
+
+```bash
+export TS_AGENT_SKILL_ROOT=/path/to/TSAgentSkill
+export TS_WORKSPACE_ROOT=/path/to/ts-workspace
+python "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" --package-root "$TS_AGENT_SKILL_ROOT" --workspace-root "$TS_WORKSPACE_ROOT" --conda-root /path/to/miniforge3 --with-render --json
 ```
 
 Start Pi from the TS workspace:
@@ -160,14 +200,15 @@ templates/ts_final_report.md
 Generate a report package when handing off a completed search:
 
 ```bash
-python scripts/ts_report.py --root <workspace> --package-dir <workspace>/reports/final_report_package
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_report.py" --root <workspace> --package-dir <workspace>/reports/final_report_package
 ```
 
 The package contains `final_report.md`, `report_context.json`, `assets/`, and
 `email_summary.md`. The report should include R-TS-P structure references,
 imaginary-mode/vibration analysis, IRC key-distance evidence, an energy profile
-or explicit missing-energy note, and a mechanism interpretation that separates
-accepted pathway evidence from chemical speculation.
+with electronic, E+ZPE, and available free-energy relative values or explicit
+missing-energy notes, and a mechanism interpretation that separates accepted
+pathway evidence from chemical speculation.
 
 The report must state the highest validated evidence layer reached. Do not call
 a candidate, scan point, NEB image, dMECP structure, or isolated imaginary
@@ -192,7 +233,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q
 Run tests through the configured runtime:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 python3 scripts/ts_runtime.py run -m pytest -q
+PYTHONDONTWRITEBYTECODE=1 python3 "$TS_AGENT_SKILL_ROOT/scripts/ts_runtime.py" run -m pytest -q
 ```
 
 Check Pi package contents:
