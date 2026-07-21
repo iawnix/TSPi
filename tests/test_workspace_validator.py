@@ -404,7 +404,37 @@ def test_pathway_audit_supported_does_not_mark_audited_step_supported(tmp_path: 
             pathway_ref={"pathway_id": "p_test", "step_id": "s_i_to_p"},
         ),
     )
-    end_node(workspace, _end_decision(report_ref, "n001", "supported"))
+    update_workspace(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "update_workspace",
+            "rationale": "Register a negative pathway audit summary.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "append_evidence": {
+                    "evidence_id": "ev_pathway_not_accepted",
+                    "kind": "pathway_audit",
+                    "role": "pathway_audit_summary",
+                    "evidence_tier": "local_parse",
+                    "node_id": "n001",
+                    "summary": "This branch does not strictly support the audited pathway.",
+                    **gate_artifact_metadata("nodes/n001/outputs/pathway_audit.json"),
+                    "quality": {
+                        "hypothesis_id": HYPOTHESIS_REF["hypothesis_id"],
+                        "strict_pathway_supported": False,
+                        "strict_pathway_decision": "pathway_not_accepted",
+                    },
+                }
+            },
+        },
+    )
+    close_decision = _end_decision(report_ref, "n001", "supported")
+    close_decision["evidence_refs"] = ["ev_pathway_not_accepted"]
+    close_decision["payload"]["closure"]["program"]["evidence_refs"] = ["ev_pathway_not_accepted"]
+    close_decision["payload"]["closure"]["mechanism"]["evidence_refs"] = ["ev_pathway_not_accepted"]
+    end_node(workspace, close_decision)
 
     model = json.loads((workspace / "pathway_model.json").read_text(encoding="utf-8"))
     pathway = model["pathways"][0]
@@ -415,6 +445,90 @@ def test_pathway_audit_supported_does_not_mark_audited_step_supported(tmp_path: 
     assert pathway["audit_nodes"][0]["node_id"] == "n001"
     assert step["audit_nodes"][0]["node_id"] == "n001"
     assert validate_workspace(workspace)["valid"] is True
+
+
+def test_validate_workspace_requires_strict_pathway_decision_for_closed_pathway_audit(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_v3_workspace(workspace)
+
+    start_node(
+        workspace,
+        _start_decision(
+            report_ref,
+            node_id="n001",
+            phase="pathway_audit",
+            pathway_ref={"pathway_id": "p_test", "step_id": "s_i_to_p"},
+        ),
+    )
+    update_workspace(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "update_workspace",
+            "rationale": "Register a pathway audit summary with a strict decision.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "append_evidence": {
+                    "evidence_id": "ev_pathway_audit",
+                    "kind": "pathway_audit",
+                    "role": "pathway_audit_summary",
+                    "evidence_tier": "local_parse",
+                    "node_id": "n001",
+                    "summary": "The pathway audit was accepted.",
+                    **gate_artifact_metadata("nodes/n001/outputs/pathway_audit.json"),
+                    "quality": {
+                        "hypothesis_id": HYPOTHESIS_REF["hypothesis_id"],
+                        "strict_pathway_supported": True,
+                        "strict_pathway_decision": "accepted",
+                    },
+                }
+            },
+        },
+    )
+    close_decision = _end_decision(report_ref, "n001", "supported")
+    close_decision["evidence_refs"] = ["ev_pathway_audit"]
+    close_decision["payload"]["closure"]["program"]["evidence_refs"] = ["ev_pathway_audit"]
+    close_decision["payload"]["closure"]["mechanism"]["evidence_refs"] = ["ev_pathway_audit"]
+    end_node(workspace, close_decision)
+
+    registry_path = workspace / "evidence_registry.json"
+    registry = read_json(registry_path)
+    for entry in registry["evidence"]:
+        if entry.get("evidence_id") == "ev_pathway_audit":
+            entry["quality"].pop("strict_pathway_decision", None)
+            break
+    write_json(registry_path, registry)
+    validation = validate_workspace(workspace)
+
+    assert validation["valid"] is False
+    assert "missing_pathway_audit_strict_decision" in _codes(validation)
+
+
+def test_validate_workspace_requires_pathway_ref_for_pathway_audit(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_v3_workspace(workspace)
+
+    start_node(
+        workspace,
+        _start_decision(
+            report_ref,
+            node_id="n001",
+            phase="pathway_audit",
+            pathway_ref={"pathway_id": "p_test", "step_id": "s_i_to_p"},
+        ),
+    )
+    node_path = workspace / "nodes" / "n001" / "node.json"
+    node = read_json(node_path)
+    node.pop("pathway_ref", None)
+    write_json(node_path, node)
+
+    validation = validate_workspace(workspace)
+
+    assert validation["valid"] is False
+    assert "missing_pathway_ref" in _codes(validation)
+    with pytest.raises(ContractError, match="node.pathway_ref"):
+        end_node(workspace, _end_decision(report_ref, "n001", "supported"))
 
 
 def test_tsfreq_support_does_not_mark_pathway_step_supported(tmp_path: Path) -> None:

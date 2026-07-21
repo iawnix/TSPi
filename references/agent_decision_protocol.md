@@ -55,6 +55,19 @@ Read the current node's phase and use the matching reference:
 - `pathway_audit`: `references/pathway_model.md` and
   `references/report_template.md`
 
+For `pathway_audit`, check these two contract points before closing:
+
+- The running node must already have `node.pathway_ref` from the
+  `start_node.payload.pathway_ref` decision. It must name the audited
+  `pathway_id` and `step_id`; do not close a pathway audit that cannot be tied
+  to a pathway step.
+- Register a `pathway_audit_summary` evidence record first, using
+  `update_pathway_audit_accepted.json` or
+  `update_pathway_audit_not_accepted.json`. The evidence must carry
+  `quality.strict_pathway_decision=accepted` or
+  `quality.strict_pathway_decision=pathway_not_accepted`, and the `end_node`
+  decision must cite that evidence ref.
+
 Then choose an `end_*` decision template that matches the evidence actually
 available. If a phase is not supported, close it as `refuted`,
 `inconclusive`, or `not_evaluated` as appropriate.

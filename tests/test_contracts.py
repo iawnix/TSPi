@@ -61,6 +61,28 @@ def test_decision_json_schema_rejects_invalid_payload_type() -> None:
         validate_decision(decision)
 
 
+def test_pathway_audit_start_decision_requires_pathway_ref() -> None:
+    decision = {
+        "schema_version": "ts-decision",
+        "action": "start_node",
+        "rationale": "Start pathway audit without an audited pathway reference.",
+        "evidence_refs": [],
+        "report_ref": {"report_id": "rep_test", "workspace_root": "ws"},
+        "payload": {
+            "node_id": "n001",
+            "parent_node": "n000",
+            "phase": "pathway_audit",
+            "hypothesis": "Audit strict R to P pathway closure.",
+            "hypothesis_ref": {"hypothesis_id": "hyp_0001", "prediction_ids": ["pred_pathway_001"]},
+            "branch_context": {"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
+            "expected_evidence": ["pathway_audit_summary"],
+        },
+    }
+
+    with pytest.raises(ContractError, match="pathway_ref"):
+        validate_decision(decision)
+
+
 def test_workspace_json_schema_rejects_tree_extra_top_level_field(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     init_workspace(workspace)

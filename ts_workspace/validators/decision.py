@@ -134,10 +134,10 @@ def _validate_start_payload(payload: dict[str, Any]) -> None:
     _require(all(_clean(item) for item in expected), "payload.expected_evidence cannot contain empty values")
 
     pathway_ref = payload.get("pathway_ref")
-    if pathway_ref is not None:
-        _require(isinstance(pathway_ref, dict), "payload.pathway_ref must be an object")
-        _require(_clean(pathway_ref.get("pathway_id")), "pathway_ref.pathway_id is required")
-        _require(_clean(pathway_ref.get("step_id")), "pathway_ref.step_id is required")
+    if phase == "pathway_audit":
+        _validate_pathway_ref(pathway_ref, "payload.pathway_ref")
+    elif pathway_ref is not None:
+        _validate_pathway_ref(pathway_ref, "payload.pathway_ref")
 
     branch_context = payload.get("branch_context")
     if branch_context is not None:
@@ -214,6 +214,12 @@ def _validate_solution_ref(value: Any, path: str) -> None:
         _require(nested is None or isinstance(nested, str), f"{path}.{field} must be a string or null")
         if isinstance(nested, str):
             _require(bool(nested.strip()), f"{path}.{field} cannot be empty")
+
+
+def _validate_pathway_ref(value: Any, path: str) -> None:
+    _require(isinstance(value, dict), f"{path} is required")
+    _require(_clean(value.get("pathway_id")), f"{path}.pathway_id is required")
+    _require(_clean(value.get("step_id")), f"{path}.step_id is required")
 
 
 def _validate_branch_context(value: Any) -> None:

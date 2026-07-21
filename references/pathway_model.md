@@ -47,6 +47,14 @@ to `supported` or `refuted`. Pathway or step status should change only from
 elementary-step evidence or an explicit accepted-pathway contract. Whether to
 continue with a new hypothesis branch after a negative audit is an agent
 decision, not a validator-enforced branch rule.
+Every `pathway_audit` start decision must include `payload.pathway_ref` with the
+audited `pathway_id` and `step_id`; without that reference the audit cannot be
+attached to `pathway_model.json`. Before closing the audit, register exactly
+what the audit decided as a `pathway_audit_summary` evidence record with
+`quality.strict_pathway_decision=accepted` or
+`quality.strict_pathway_decision=pathway_not_accepted`.
+`claim_verdict=supported` then means the audit decision is supported, not that
+the pathway is necessarily accepted.
 For strict user requests such as mandatory IRC and supplied R->P proof, a
 negative audit means the audited branch is not accepted. The agent should open a
 new scientifically justified branch unless the user stops the run or the audit

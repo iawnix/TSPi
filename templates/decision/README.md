@@ -44,6 +44,12 @@ Typical endpoint-first sequence:
 16. `update_pathway_audit_accepted.json`
 17. `end_pathway_audit_accepted.json`
 
+`start_pathway_audit.json` must keep `payload.pathway_ref` populated with the
+audited `pathway_id` and `step_id`. Before any pathway-audit `end_node`
+decision, register a `pathway_audit_summary` with
+`quality.strict_pathway_decision` using either the accepted or not-accepted
+update template, then cite that evidence in the close decision.
+
 When the initial hypothesis declares `mechanism_claims` that require
 `endpoint_identity_gate`, `intermediate_identity_gate`,
 `electronic_structure_gate`, `state_character_gate`, or

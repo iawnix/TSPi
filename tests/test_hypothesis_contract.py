@@ -444,6 +444,7 @@ def test_negative_pathway_audit_does_not_support_audited_prediction(tmp_path: Pa
                 "hypothesis": "The strict pathway is not accepted.",
                 "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_conn_001"]},
                 "branch_context": {"relation": "continue_parent", "from_node": "n001", "anchor_node": "n000"},
+                "pathway_ref": PATHWAY_REF,
                 "expected_evidence": ["pathway_audit_summary"],
             },
         },
@@ -460,15 +461,18 @@ def test_negative_pathway_audit_does_not_support_audited_prediction(tmp_path: Pa
                 "append_evidence": {
                     "evidence_id": "ev_pathway_audit",
                     "kind": "pathway_audit_summary",
-                    "role": "pathway_audit",
+                    "role": "pathway_audit_summary",
                     "evidence_tier": "local_parse",
                     "node_id": "n002",
                     "summary": "The strict pathway is not accepted.",
+                    **gate_artifact_metadata("nodes/n002/outputs/pathway_audit.json"),
                     "quality": {
                         "hypothesis_id": HYPOTHESIS_ID,
+                        "strict_pathway_supported": False,
+                        "strict_pathway_decision": "pathway_not_accepted",
                     },
                     "facts": {
-                        "verdict": "not_accepted",
+                        "audit_outcome": "pathway_not_accepted",
                         "whole_R_to_P_pathway_accepted": False,
                     },
                 }

@@ -167,6 +167,9 @@ def _validate_end_node_context(root: Path, decision: dict[str, Any]) -> None:
     closure = payload["closure"]
     mechanism = closure.get("mechanism", {}) if isinstance(closure.get("mechanism"), dict) else {}
 
+    if phase == "pathway_audit":
+        _validate_pathway_audit_ref(node)
+
     if phase in INITIAL_HYPOTHESIS_PHASES:
         if closure.get("program_status") == "completed":
             if not isinstance(node.get("initial_mechanism_hypothesis"), dict):
@@ -183,6 +186,16 @@ def _validate_end_node_context(root: Path, decision: dict[str, Any]) -> None:
         if mechanism_ref.get("hypothesis_id") != node_ref.get("hypothesis_id"):
             raise ContractError("closure.mechanism.hypothesis_ref must match node.hypothesis_ref")
         _validate_hypothesis_ref_exists(root, mechanism_ref)
+
+
+def _validate_pathway_audit_ref(node: dict[str, Any]) -> None:
+    ref = node.get("pathway_ref")
+    if not isinstance(ref, dict):
+        raise ContractError("pathway_audit node requires node.pathway_ref before closure")
+    for field in ("pathway_id", "step_id"):
+        value = ref.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ContractError(f"pathway_audit node requires node.pathway_ref.{field} before closure")
 
 
 def _validate_update_workspace_context(root: Path, decision: dict[str, Any]) -> None:

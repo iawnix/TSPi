@@ -20,6 +20,9 @@ from ..io import read_json
 PATHWAY_STEP_STATUS_PHASES = {"connectivity_validation", "accepted_audit"}
 INITIAL_HYPOTHESIS_PHASES = {"preflight", "endpoint"}
 IMPACT_SCOPES = {"solution_only", "prediction", "pathway_step", "hypothesis"}
+STRICT_PATHWAY_ACCEPTED = "accepted"
+STRICT_PATHWAY_NOT_ACCEPTED = {"pathway_not_accepted", "not_accepted"}
+STRICT_PATHWAY_DECISIONS = {STRICT_PATHWAY_ACCEPTED, *STRICT_PATHWAY_NOT_ACCEPTED}
 
 
 def compute_close_changes(root: Path, node: dict[str, Any], decision: dict[str, Any]) -> dict[Path, Any]:
@@ -70,7 +73,10 @@ def validate_pathway_audit_gates(root: Path, node: dict[str, Any], closure: dict
     if closure["program_status"] != "completed" or closure["claim_verdict"] != "supported":
         return
     registry = read_json(root / "evidence_registry.json")
-    if not _pathway_audit_accepts_pathway(registry.get("evidence", []), evidence_refs, closure):
+    strict_decision = _pathway_audit_strict_decision(registry.get("evidence", []), evidence_refs)
+    if strict_decision is None:
+        raise ValueError("pathway_audit requires pathway_audit_summary evidence with quality.strict_pathway_decision")
+    if strict_decision != STRICT_PATHWAY_ACCEPTED:
         return
     hypothesis = _hypothesis_for_node(root, node)
     hypothesis_id = node.get("hypothesis_ref", {}).get("hypothesis_id") if isinstance(node.get("hypothesis_ref"), dict) else None
@@ -447,11 +453,8 @@ def _validate_declared_mechanism_reflection_gates(
         validate_mechanism_reflection_gate(gate_evidence[role], role)
 
 
-def _pathway_audit_accepts_pathway(
-    evidence_records: list[Any],
-    evidence_refs: list[str],
-    closure: dict[str, Any],
-) -> bool:
+def _pathway_audit_strict_decision(evidence_records: list[Any], evidence_refs: list[str]) -> str | None:
+    invalid: list[str] = []
     allowed_refs = set(evidence_refs)
     for entry in evidence_records:
         if not isinstance(entry, dict):
@@ -459,14 +462,19 @@ def _pathway_audit_accepts_pathway(
         if entry.get("evidence_id") not in allowed_refs or entry.get("role") != "pathway_audit_summary":
             continue
         quality = entry.get("quality") if isinstance(entry.get("quality"), dict) else {}
-        facts = entry.get("facts") if isinstance(entry.get("facts"), dict) else {}
-        if (
-            quality.get("strict_pathway_supported") is True
-            or quality.get("strict_pathway_decision") == "accepted"
-            or facts.get("audit_outcome") == "accepted"
-            or facts.get("whole_R_to_P_pathway_accepted") is True
-        ):
-            return True
-    mechanism = closure.get("mechanism") if isinstance(closure.get("mechanism"), dict) else {}
-    facts = mechanism.get("facts") if isinstance(mechanism.get("facts"), dict) else {}
-    return facts.get("audit_outcome") == "accepted" or facts.get("whole_R_to_P_pathway_accepted") is True
+        raw_decision = quality.get("strict_pathway_decision")
+        decision = _normalize_strict_pathway_decision(raw_decision)
+        if decision in STRICT_PATHWAY_DECISIONS:
+            return decision
+        if raw_decision is not None:
+            invalid.append(str(raw_decision))
+    if invalid:
+        raise ValueError("pathway_audit_summary quality.strict_pathway_decision must be accepted or pathway_not_accepted")
+    return None
+
+
+def _normalize_strict_pathway_decision(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    decision = value.strip().lower()
+    return decision or None

@@ -10,6 +10,11 @@ CANDIDATE_GENERATION = ROOT / "references" / "candidate_generation.md"
 GAUSSIAN_VALIDATION = ROOT / "references" / "gaussian_validation.md"
 MECHANISM_REFLECTION = ROOT / "references" / "mechanism_reflection.md"
 AGENT_DECISION_PROTOCOL = ROOT / "references" / "agent_decision_protocol.md"
+DECISION_CONTRACT = ROOT / "references" / "decision_contract.md"
+PATHWAY_MODEL = ROOT / "references" / "pathway_model.md"
+REPORT_TEMPLATE = ROOT / "references" / "report_template.md"
+WORKSPACE_CONTRACT = ROOT / "references" / "workspace_contract.md"
+TEMPLATE_README = ROOT / "templates" / "decision" / "README.md"
 UPDATE_CANDIDATE_EVIDENCE = ROOT / "templates" / "decision" / "update_candidate_evidence.json"
 UPDATE_TSFREQ_EVIDENCE = ROOT / "templates" / "decision" / "update_tsfreq_evidence.json"
 
@@ -74,3 +79,24 @@ def test_skill_links_agent_decision_protocol_for_failed_exploration() -> None:
     assert "report_workspace.node_index" in protocol_text
     assert "nodes/<failed_node>/node.json" in protocol_text
     assert "Across independent repeated studies" in protocol_text
+
+
+def test_pathway_audit_contract_is_explicit_for_agents() -> None:
+    texts = {
+        "skill": SKILL.read_text(encoding="utf-8"),
+        "protocol": AGENT_DECISION_PROTOCOL.read_text(encoding="utf-8"),
+        "decision": DECISION_CONTRACT.read_text(encoding="utf-8"),
+        "pathway": PATHWAY_MODEL.read_text(encoding="utf-8"),
+        "report": REPORT_TEMPLATE.read_text(encoding="utf-8"),
+        "workspace": WORKSPACE_CONTRACT.read_text(encoding="utf-8"),
+        "templates": TEMPLATE_README.read_text(encoding="utf-8"),
+    }
+
+    assert "For `phase=pathway_audit`, `start_node.payload.pathway_ref` is mandatory" in texts["skill"]
+    assert "running node must already have `node.pathway_ref`" in texts["protocol"]
+    assert "quality.strict_pathway_decision=pathway_not_accepted" in texts["protocol"]
+    assert "For `phase=pathway_audit`, `payload.pathway_ref` is mandatory" in texts["decision"]
+    assert "Every `pathway_audit` start decision must include `payload.pathway_ref`" in texts["pathway"]
+    assert "do not infer it from" in texts["report"]
+    assert "quality.strict_pathway_decision" in texts["workspace"]
+    assert "`start_pathway_audit.json` must keep `payload.pathway_ref` populated" in texts["templates"]

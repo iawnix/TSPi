@@ -470,6 +470,88 @@ def test_workspace_validator_rejects_identity_required_accepted_artifact_missing
     assert any(item["code"] == "invalid_accepted_ts_mechanism_reflection_gates" for item in validation["findings"])
 
 
+def test_pathway_audit_close_requires_strict_pathway_decision(tmp_path):
+    workspace = tmp_path / "ws"
+    report_ref = make_accepted_workspace(workspace)
+
+    start_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "start_node",
+            "rationale": "Start pathway audit with an explicit pathway reference.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "phase": "pathway_audit",
+                "parent_node": "n003",
+                "hypothesis": "Pathway audit must record a strict decision.",
+                "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_pathway_001"]},
+                "branch_context": {"relation": "continue_parent", "from_node": "n003", "anchor_node": "n000"},
+                "pathway_ref": PATHWAY_REF,
+                "expected_evidence": ["pathway_audit_summary"],
+            },
+        },
+    )
+    update_workspace(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "update_workspace",
+            "rationale": "Register pathway audit evidence without the strict decision.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "append_evidence": {
+                    "evidence_id": "ev_pathway_missing_decision",
+                    "kind": "pathway_audit",
+                    "role": "pathway_audit_summary",
+                    "evidence_tier": "local_parse",
+                    "node_id": "n004",
+                    "summary": "The pathway audit evidence omits the strict pathway decision.",
+                    **gate_artifact_metadata("nodes/n004/outputs/pathway_audit.json"),
+                    "quality": {
+                        "hypothesis_id": HYPOTHESIS_ID,
+                        "strict_pathway_supported": True,
+                    },
+                }
+            },
+        },
+    )
+
+    with pytest.raises(ValueError, match="quality.strict_pathway_decision"):
+        end_node(
+            workspace,
+            {
+                "schema_version": "ts-decision",
+                "action": "end_node",
+                "rationale": "Attempt pathway audit close without strict decision evidence.",
+                "evidence_refs": ["ev_pathway_missing_decision"],
+                "report_ref": report_ref,
+                "payload": {
+                    "node_id": "n004",
+                    "closure": {
+                        "program_status": "completed",
+                        "claim_verdict": "supported",
+                        "program": {"summary": "Audit ran.", "evidence_refs": ["ev_pathway_missing_decision"]},
+                        "mechanism": {
+                            "summary": "Pathway is claimed accepted without strict decision evidence.",
+                            "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_pathway_001"]},
+                            "evidence_refs": ["ev_pathway_missing_decision"],
+                        },
+                        "implication": "This should not close.",
+                        "open_questions": [],
+                    },
+                },
+            },
+        )
+
+    node = read_json(workspace / "nodes" / "n004" / "node.json")
+    assert node["lifecycle"] == "running"
+    validation = validate_workspace(workspace)
+    assert validation["valid"] is True
+
+
 def test_pathway_audit_acceptance_requires_declared_identity_gate(tmp_path):
     workspace = tmp_path / "ws"
     report_ref = make_accepted_workspace(workspace, identity_claim=True)

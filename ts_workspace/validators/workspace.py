@@ -44,6 +44,9 @@ REQUIRED_DIRS = {"inputs", "nodes", "reports", "accepted", "rejected"}
 # Auto-created on first mutation; missing is a warning, not an error.
 SOFT_DIRS = {"decisions"}
 UNRESOLVED_TERMINAL_VERDICTS = {"refuted", "inconclusive", "not_evaluated"}
+STRICT_PATHWAY_ACCEPTED = "accepted"
+STRICT_PATHWAY_NOT_ACCEPTED = {"pathway_not_accepted", "not_accepted"}
+STRICT_PATHWAY_DECISIONS = {STRICT_PATHWAY_ACCEPTED, *STRICT_PATHWAY_NOT_ACCEPTED}
 SCHEMA_BY_FILE = {
     "manifest.json": "manifest.schema.json",
     "tree.json": "tree.schema.json",
@@ -262,6 +265,8 @@ def _validate_node(
         _validate_hypothesis_ref(node.get("hypothesis_ref"), hypothesis_ids, findings, source, "node.hypothesis_ref")
         if node.get("solution_ref") is not None:
             _validate_solution_ref(node.get("solution_ref"), findings, source, "node.solution_ref")
+    if phase == "pathway_audit":
+        _validate_pathway_ref(node.get("pathway_ref"), findings, source, "node.pathway_ref")
 
     closure = node.get("closure")
     if lifecycle == "running" and closure is not None:
@@ -383,6 +388,18 @@ def _validate_solution_ref(value: Any, findings: list[dict[str, str]], source: s
             _finding(findings, "error", "invalid_solution_ref", f"{label}.{field} must be a string or null", source)
         elif isinstance(nested, str) and not nested.strip():
             _finding(findings, "error", "invalid_solution_ref", f"{label}.{field} cannot be empty", source)
+
+
+def _validate_pathway_ref(value: Any, findings: list[dict[str, str]], source: str, label: str) -> None:
+    if not isinstance(value, dict):
+        _finding(findings, "error", "missing_pathway_ref", f"{label} is required", source)
+        return
+    pathway_id = value.get("pathway_id")
+    if not isinstance(pathway_id, str) or not pathway_id.strip():
+        _finding(findings, "error", "invalid_pathway_ref", f"{label}.pathway_id is required", source)
+    step_id = value.get("step_id")
+    if not isinstance(step_id, str) or not step_id.strip():
+        _finding(findings, "error", "invalid_pathway_ref", f"{label}.step_id is required", source)
 
 
 def _validate_tree_node_lineage(
@@ -805,12 +822,26 @@ def _validate_pathway_audit_mechanism_gates(
                 + _as_list(closure.get("mechanism", {}).get("evidence_refs") if isinstance(closure.get("mechanism"), dict) else [])
             )
         )
-        if not _pathway_audit_accepts_pathway(evidence_records, evidence_refs, closure):
+        source = f"nodes/{node_id}/node.json"
+        try:
+            strict_decision = _pathway_audit_strict_decision(evidence_records, evidence_refs)
+        except ValueError as exc:
+            _finding(findings, "error", "invalid_pathway_audit_strict_decision", str(exc), source)
+            continue
+        if strict_decision is None:
+            _finding(
+                findings,
+                "error",
+                "missing_pathway_audit_strict_decision",
+                "pathway_audit requires pathway_audit_summary evidence with quality.strict_pathway_decision",
+                source,
+            )
+            continue
+        if strict_decision != STRICT_PATHWAY_ACCEPTED:
             continue
         hypothesis_id = _node_hypothesis_id(node)
         hypothesis = _mechanism_hypothesis_by_id(mechanism_model, hypothesis_id)
         roles = mechanism_reflection_required_roles(hypothesis, include_shared_basin=True)
-        source = f"nodes/{node_id}/node.json"
         try:
             gate_evidence = mechanism_reflection_gate_evidence(evidence_records, evidence_refs, roles)
         except ValueError as exc:
@@ -839,27 +870,29 @@ def _node_hypothesis_id(node: dict[str, Any]) -> str | None:
     return str(hypothesis_id) if hypothesis_id else None
 
 
-def _pathway_audit_accepts_pathway(
-    evidence_records: list[dict[str, Any]],
-    evidence_refs: list[str],
-    closure: dict[str, Any],
-) -> bool:
+def _pathway_audit_strict_decision(evidence_records: list[dict[str, Any]], evidence_refs: list[str]) -> str | None:
+    invalid: list[str] = []
     allowed_refs = set(evidence_refs)
     for entry in evidence_records:
         if entry.get("evidence_id") not in allowed_refs or entry.get("role") != "pathway_audit_summary":
             continue
         quality = entry.get("quality") if isinstance(entry.get("quality"), dict) else {}
-        facts = entry.get("facts") if isinstance(entry.get("facts"), dict) else {}
-        if (
-            quality.get("strict_pathway_supported") is True
-            or quality.get("strict_pathway_decision") == "accepted"
-            or facts.get("audit_outcome") == "accepted"
-            or facts.get("whole_R_to_P_pathway_accepted") is True
-        ):
-            return True
-    mechanism = closure.get("mechanism") if isinstance(closure.get("mechanism"), dict) else {}
-    facts = mechanism.get("facts") if isinstance(mechanism.get("facts"), dict) else {}
-    return facts.get("audit_outcome") == "accepted" or facts.get("whole_R_to_P_pathway_accepted") is True
+        raw_decision = quality.get("strict_pathway_decision")
+        decision = _normalize_strict_pathway_decision(raw_decision)
+        if decision in STRICT_PATHWAY_DECISIONS:
+            return decision
+        if raw_decision is not None:
+            invalid.append(str(raw_decision))
+    if invalid:
+        raise ValueError("pathway_audit_summary quality.strict_pathway_decision must be accepted or pathway_not_accepted")
+    return None
+
+
+def _normalize_strict_pathway_decision(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    decision = value.strip().lower()
+    return decision or None
 
 
 def _validate_evidence_artifact_boundaries(

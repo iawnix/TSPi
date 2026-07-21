@@ -181,7 +181,9 @@ verbatim so downstream checks find them:
 - `endpoint_identity_gate`, `intermediate_identity_gate`,
   `electronic_structure_gate`, `state_character_gate`,
   `shared_basin_consistency_gate` — mechanism-identity reflection gates.
-- `pathway_audit_summary` — pathway audit conclusion.
+- `pathway_audit_summary` — pathway audit conclusion. For `pathway_audit`,
+  register this before `end_node` and include
+  `quality.strict_pathway_decision` as `accepted` or `pathway_not_accepted`.
 - `previous_attempt_summary` — used with `continue_parent` after a
   program-level failure on a prior attempt for the same scientific claim.
   Cite it from `branch_context.evidence_refs` so the failed attempt is

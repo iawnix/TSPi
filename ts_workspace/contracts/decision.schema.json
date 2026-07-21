@@ -77,6 +77,25 @@
       }
     },
     {
+      "if": {
+        "properties": {
+          "action": {"const": "start_node"},
+          "payload": {
+            "properties": {
+              "phase": {"const": "pathway_audit"}
+            },
+            "required": ["phase"]
+          }
+        },
+        "required": ["action", "payload"]
+      },
+      "then": {
+        "properties": {
+          "payload": {"required": ["pathway_ref"]}
+        }
+      }
+    },
+    {
       "if": {"properties": {"action": {"const": "end_node"}}},
       "then": {
         "properties": {

@@ -87,7 +87,9 @@ The evidence audit should retain:
 - Accepted-TS audit only when TS/Freq and connectivity gates both support the
    same hypothesis.
 - Pathway audit, including negative-audit conclusions such as
-   `pathway_not_accepted`.
+   `pathway_not_accepted`. Read this from `pathway_audit_summary` evidence,
+   especially `quality.strict_pathway_decision`; do not infer it from
+   `claim_verdict=supported` alone.
 
 ## Minimum Acceptance Gates
 

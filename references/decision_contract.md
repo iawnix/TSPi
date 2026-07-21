@@ -91,6 +91,11 @@ finalizer promotes `initial_mechanism_hypothesis` into
 `payload.solution_ref` is optional lineage metadata for grouping alternative
 search strategies under the same hypothesis. It must not be used as a verdict,
 retry state, or automatic branch selector.
+For `phase=pathway_audit`, `payload.pathway_ref` is mandatory and must name the
+audited `pathway_id` and `step_id`. Before closing that node, register and cite
+a `pathway_audit_summary` evidence record with
+`quality.strict_pathway_decision=accepted` or
+`quality.strict_pathway_decision=pathway_not_accepted`.
 
 When the agent opens a same-hypothesis replacement solution, the new
 `start_node` decision keeps the same `payload.hypothesis_ref`, supplies a new

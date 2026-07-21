@@ -743,7 +743,7 @@ def test_web_pathway_audit_not_accepted_is_not_rendered_as_success(tmp_path: Pat
                     "quality": {
                         "hypothesis_id": HYPOTHESIS_ID,
                         "strict_pathway_supported": False,
-                        "strict_pathway_decision": "not_accepted",
+                        "strict_pathway_decision": "pathway_not_accepted",
                         "accepted_ts_available": False,
                     },
                     "diagnostics": ["no_accepted_ts", "second_step_connectivity_gate_missing"],

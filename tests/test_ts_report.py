@@ -62,7 +62,7 @@ def test_report_labels_negative_pathway_audit_outcome(tmp_path: Path) -> None:
                     "quality": {
                         "hypothesis_id": HYPOTHESIS_ID,
                         "strict_pathway_supported": False,
-                        "strict_pathway_decision": "not_accepted",
+                        "strict_pathway_decision": "pathway_not_accepted",
                     },
                 }
             },

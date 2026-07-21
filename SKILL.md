@@ -243,11 +243,14 @@ They are not top-level node states.
    evidence references, and payload. Start from `templates/decision/` when a
    reusable shape is needed; do not copy JSON from `tests/`. Every post-`n000`
    mechanism node must include `payload.hypothesis_ref` that points to
-  `mechanism_model.hypotheses[]`. Use optional `payload.solution_ref` only to
+   `mechanism_model.hypotheses[]`. Use optional `payload.solution_ref` only to
    group alternative search strategies under the same hypothesis; it is
    lineage metadata, not a new state, verdict, or retry policy. Every post-`n000`
    `start_node` must include `payload.branch_context` so the agent's intended
    graph relation is explicit.
+   For `phase=pathway_audit`, `start_node.payload.pathway_ref` is mandatory
+   and must identify the audited `pathway_id` and `step_id`; this is the only
+   phase where `pathway_ref` is required by the start-decision contract.
 
    **Branch relation decision table** — pick one:
 
@@ -282,7 +285,13 @@ They are not top-level node states.
    validation artifact under `nodes/<node>/outputs/...` and record upstream
    files in `nodes/<node>/outputs/artifact_manifest.json`.
 8. Close the node with program facts, claim verdict, implication, and open
-   questions.
+   questions. Before closing a `pathway_audit` node, register a
+   `pathway_audit_summary` evidence record whose
+   `quality.strict_pathway_decision` is `accepted` or
+   `pathway_not_accepted`, then cite that evidence in the `end_node` decision.
+   `claim_verdict=supported` on the
+   audit node supports the audit conclusion only; it is not by itself pathway
+   success.
 9. Use `update_workspace` with `payload.repair_branch_anchor` only for explicit
    legacy lineage repair of non-running `new_solution_branch` nodes; it must
    move the branch to the current hypothesis `source_node` and records a repair
