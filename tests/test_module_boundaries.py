@@ -9,7 +9,7 @@ from ts_backends.gaussian import GaussianBackend, prepare_gaussian
 from ts_remote.base import Runner
 from ts_remote.ssh import SshRunner
 from ts_web import normalize_workspace, register_workspace
-from v3_helpers import make_accepted_workspace
+from strict_helpers import make_accepted_workspace
 
 
 def test_backend_prepares_command_without_workspace_write() -> None:

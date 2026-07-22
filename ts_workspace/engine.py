@@ -51,7 +51,7 @@ def init_workspace(
             "schema_version": "ts-workspace",
             "created_at": now_iso(),
             "current_focus": None,
-            "hypothesis_contract_version": "v3",
+            "hypothesis_contract_version": "strict",
             "accepted_ts_refs": [],
             "provenance": [],
         },

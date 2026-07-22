@@ -149,7 +149,7 @@ def test_init_refuses_to_overwrite_initialized_workspace(tmp_path: Path) -> None
 
 
 def test_init_force_reinitializes(tmp_path: Path) -> None:
-    from tests.v3_helpers import initial_mechanism_hypothesis
+    from tests.strict_helpers import initial_mechanism_hypothesis
     from ts_workspace import start_node
 
     workspace = tmp_path / "ws"
@@ -195,11 +195,11 @@ def test_init_force_requires_decision(tmp_path: Path) -> None:
 
 
 def test_mutation_rejects_mismatched_decision_action(tmp_path: Path) -> None:
-    from tests.v3_helpers import _report_ref, bootstrap_v3_workspace
+    from tests.strict_helpers import _report_ref, bootstrap_strict_workspace
     from ts_workspace import update_workspace
 
     workspace = tmp_path / "ws"
-    bootstrap_v3_workspace(workspace)
+    bootstrap_strict_workspace(workspace)
     decision = {
         "schema_version": "ts-decision",
         "decision_id": "dec_wrong_action",
@@ -219,11 +219,11 @@ def test_mutation_rejects_mismatched_decision_action(tmp_path: Path) -> None:
 
 
 def test_decision_snapshot_rejects_duplicate_id_with_different_content(tmp_path: Path) -> None:
-    from tests.v3_helpers import _report_ref, bootstrap_v3_workspace
+    from tests.strict_helpers import _report_ref, bootstrap_strict_workspace
     from ts_workspace import update_workspace
 
     workspace = tmp_path / "ws"
-    bootstrap_v3_workspace(workspace)
+    bootstrap_strict_workspace(workspace)
     first = {
         "schema_version": "ts-decision",
         "decision_id": "dec_duplicate",
@@ -248,11 +248,11 @@ def test_decision_snapshot_rejects_duplicate_id_with_different_content(tmp_path:
 
 
 def test_decision_snapshot_allows_duplicate_id_with_same_content(tmp_path: Path) -> None:
-    from tests.v3_helpers import _report_ref, bootstrap_v3_workspace
+    from tests.strict_helpers import _report_ref, bootstrap_strict_workspace
     from ts_workspace import update_workspace
 
     workspace = tmp_path / "ws"
-    bootstrap_v3_workspace(workspace)
+    bootstrap_strict_workspace(workspace)
     decision = {
         "schema_version": "ts-decision",
         "decision_id": "dec_idempotent",
@@ -272,12 +272,12 @@ def test_decision_snapshot_allows_duplicate_id_with_same_content(tmp_path: Path)
 
 
 def test_decision_snapshot_is_written_before_state_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from tests.v3_helpers import _report_ref, bootstrap_v3_workspace
+    from tests.strict_helpers import _report_ref, bootstrap_strict_workspace
     from ts_workspace import update_workspace
     from ts_workspace import engine
 
     workspace = tmp_path / "ws"
-    bootstrap_v3_workspace(workspace)
+    bootstrap_strict_workspace(workspace)
     decision = {
         "schema_version": "ts-decision",
         "decision_id": "dec_snapshot_first",
@@ -301,11 +301,11 @@ def test_decision_snapshot_is_written_before_state_files(tmp_path: Path, monkeyp
 
 
 def test_pending_transaction_without_snapshot_blocks_replay(tmp_path: Path) -> None:
-    from tests.v3_helpers import _report_ref, bootstrap_v3_workspace
+    from tests.strict_helpers import _report_ref, bootstrap_strict_workspace
     from ts_workspace import update_workspace
 
     workspace = tmp_path / "ws"
-    bootstrap_v3_workspace(workspace)
+    bootstrap_strict_workspace(workspace)
     decision = {
         "schema_version": "ts-decision",
         "decision_id": "dec_pending_no_snapshot",
@@ -334,10 +334,10 @@ def test_pending_transaction_without_snapshot_blocks_replay(tmp_path: Path) -> N
 
 
 def test_decision_snapshot_is_persisted(tmp_path: Path) -> None:
-    from tests.v3_helpers import bootstrap_v3_workspace
+    from tests.strict_helpers import bootstrap_strict_workspace
 
     workspace = tmp_path / "ws"
-    bootstrap_v3_workspace(workspace)
+    bootstrap_strict_workspace(workspace)
     assert (workspace / "decisions").is_dir()
 
     log_rows = [
@@ -355,7 +355,7 @@ def test_decision_snapshot_is_persisted(tmp_path: Path) -> None:
 
 
 def test_end_node_records_transaction_log(tmp_path: Path) -> None:
-    from tests.v3_helpers import make_accepted_workspace
+    from tests.strict_helpers import make_accepted_workspace
 
     workspace = tmp_path / "ws"
     make_accepted_workspace(workspace)
@@ -376,7 +376,7 @@ def test_end_node_records_transaction_log(tmp_path: Path) -> None:
 
 
 def test_pending_transaction_is_flagged_as_warning(tmp_path: Path) -> None:
-    from tests.v3_helpers import make_accepted_workspace
+    from tests.strict_helpers import make_accepted_workspace
 
     workspace = tmp_path / "ws"
     make_accepted_workspace(workspace)
@@ -402,11 +402,11 @@ def test_pending_transaction_is_flagged_as_warning(tmp_path: Path) -> None:
 
 
 def test_report_workspace_is_pure_read(tmp_path: Path) -> None:
-    from tests.v3_helpers import bootstrap_v3_workspace
+    from tests.strict_helpers import bootstrap_strict_workspace
     from ts_workspace import report_workspace, snapshot_report
 
     workspace = tmp_path / "ws"
-    bootstrap_v3_workspace(workspace)
+    bootstrap_strict_workspace(workspace)
     reports_dir = workspace / "reports"
 
     before = {path.name for path in reports_dir.iterdir()} if reports_dir.exists() else set()

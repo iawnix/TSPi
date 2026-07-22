@@ -89,7 +89,7 @@ nodes/<node_id>/scratch/
 nodes/<node_id>/remote/
 ```
 
-## v3 Hypothesis Model
+## Strict Hypothesis Model
 
 `init_workspace` creates:
 
@@ -114,7 +114,7 @@ are recorded. Candidate generation starts at `n001` with `parent_node=n000` and
 `payload.hypothesis_ref`.
 
 Legacy workspaces without `n000` or without `hypothesis_ref` are invalid under
-the v3 contract.
+the strict hypothesis contract.
 
 Later nodes may include optional `solution_ref`:
 

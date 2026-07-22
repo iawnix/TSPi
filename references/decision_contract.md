@@ -2,9 +2,9 @@
 
 A decision JSON is the only mutation instruction channel.
 
-The public schema version remains `ts-decision`, but v3 decisions are strict:
-the first node must submit a structured initial hypothesis, and all later
-mechanism phases must reference an existing hypothesis.
+The public schema version remains `ts-decision`, but strict decisions require
+the first node to submit a structured initial hypothesis, and all later
+mechanism phases to reference an existing hypothesis.
 
 Runtime decision shapes live under `templates/decision/`. Those files are the
 authoritative examples for agent-facing workspace mutation. Test files are

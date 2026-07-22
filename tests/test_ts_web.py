@@ -16,10 +16,10 @@ from ts_web.normalize import explorer_graph_payload_from_view
 from ts_web.registry import list_workspaces, register_workspaces
 from ts_web import server as ts_web_server
 from ts_web.server import create_server
-from v3_helpers import (
+from strict_helpers import (
     HYPOTHESIS_ID,
     HYPOTHESIS_REF,
-    bootstrap_v3_workspace,
+    bootstrap_strict_workspace,
     gate_artifact_metadata,
     make_accepted_workspace,
     make_branch_workspace,
@@ -592,7 +592,7 @@ def test_web_mechanism_analysis_uses_latest_tree_record(tmp_path: Path) -> None:
 
 def test_web_mechanism_analysis_includes_closure_facts_and_evidence_quality(tmp_path: Path) -> None:
     workspace = tmp_path / "mechanism-evidence"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
     start_node(
         workspace,
         {
@@ -700,7 +700,7 @@ def test_web_mechanism_analysis_includes_closure_facts_and_evidence_quality(tmp_
 
 def test_web_pathway_audit_not_accepted_is_not_rendered_as_success(tmp_path: Path) -> None:
     workspace = tmp_path / "negative-pathway-audit"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
     node_id = "n001_pathway_audit"
 
     start_node(
@@ -863,7 +863,7 @@ def _relative_files(root: Path) -> set[str]:
 
 
 def _make_refuted_terminal_workspace(workspace: Path) -> None:
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
     start_node(
         workspace,
         {

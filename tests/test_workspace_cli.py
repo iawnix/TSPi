@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from v3_helpers import HYPOTHESIS_ID, HYPOTHESIS_REF, initial_mechanism_hypothesis
+from strict_helpers import HYPOTHESIS_ID, HYPOTHESIS_REF, initial_mechanism_hypothesis
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "scripts" / "ts_workspace.py"
@@ -113,7 +113,7 @@ def test_workspace_cli_roundtrip(tmp_path: Path) -> None:
 def test_workspace_cli_validate_decision_rejects_missing_branch_context(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     _run("init_workspace", "--root", str(workspace))
-    _bootstrap_v3_cli_workspace(tmp_path, workspace)
+    _bootstrap_strict_cli_workspace(tmp_path, workspace)
     report_ref = {"report_id": _run("report_workspace", "--root", str(workspace))["report_id"], "workspace_root": str(workspace)}
 
     start_decision = _start_decision(report_ref, "n001", "connectivity_validation")
@@ -263,7 +263,7 @@ def _end_decision(report_ref: dict[str, str], node_id: str, claim_verdict: str) 
     }
 
 
-def _bootstrap_v3_cli_workspace(tmp_path: Path, workspace: Path) -> None:
+def _bootstrap_strict_cli_workspace(tmp_path: Path, workspace: Path) -> None:
     report = _run("report_workspace", "--root", str(workspace))
     report_ref = {"report_id": report["report_id"], "workspace_root": str(workspace)}
     start_path = tmp_path / "bootstrap_start.json"

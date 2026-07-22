@@ -7,11 +7,11 @@ import pytest
 from ts_workspace import end_node, report_workspace, start_node, update_workspace, validate_workspace
 from ts_workspace.io import read_json, write_json
 from ts_workspace.validators.decision import ContractError, validate_decision
-from v3_helpers import (
+from strict_helpers import (
     HYPOTHESIS_ID,
     HYPOTHESIS_REF,
     PATHWAY_REF,
-    bootstrap_v3_workspace,
+    bootstrap_strict_workspace,
     gate_artifact_metadata,
     make_accepted_workspace,
 )
@@ -20,7 +20,7 @@ from v3_helpers import (
 def test_n000_supported_closure_finalizes_focus_hypothesis(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
 
-    bootstrap_v3_workspace(workspace)
+    bootstrap_strict_workspace(workspace)
 
     mechanism = read_json(workspace / "mechanism_model.json")
     assert mechanism["focus_hypothesis_id"] == HYPOTHESIS_ID
@@ -50,7 +50,7 @@ def test_candidate_generation_requires_hypothesis_ref() -> None:
 
 def test_solution_ref_is_optional_lineage_not_state(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
     solution_ref = {
         "solution_id": "sol_scan_001",
         "strategy": "relaxed_scan_seed",
@@ -116,7 +116,7 @@ def test_solution_ref_rejects_blank_solution_id() -> None:
 
 def test_accepted_audit_gate_evidence_must_match_node_hypothesis(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
     start_node(
         workspace,
         {
@@ -200,7 +200,7 @@ def test_accepted_audit_gate_evidence_must_match_node_hypothesis(tmp_path: Path)
 
 def test_report_workspace_exposes_hypothesis_context(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    bootstrap_v3_workspace(workspace)
+    bootstrap_strict_workspace(workspace)
 
     report = report_workspace(workspace)
 
@@ -234,7 +234,7 @@ def test_report_treats_supported_accepted_audit_row_as_satisfied(tmp_path: Path)
 
 def test_report_treats_source_node_foundation_evidence_as_satisfied(tmp_path: Path) -> None:
     workspace = tmp_path / "source-evidence-report"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
     update_workspace(
         workspace,
         {
@@ -375,7 +375,7 @@ def _append_required_evidence(workspace: Path, role: str) -> None:
 
 def test_negative_pathway_audit_does_not_support_audited_prediction(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
 
     start_node(
         workspace,

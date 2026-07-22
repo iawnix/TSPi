@@ -7,11 +7,11 @@ import json
 from ts_report import build_final_report, build_report_package
 from ts_report.context import collect_report_context
 from ts_workspace import end_node, init_workspace, report_workspace, start_node, update_workspace
-from v3_helpers import (
+from strict_helpers import (
     HYPOTHESIS_ID,
     HYPOTHESIS_REF,
     PATHWAY_REF,
-    bootstrap_v3_workspace,
+    bootstrap_strict_workspace,
     gate_artifact_metadata,
     make_accepted_workspace,
 )
@@ -19,7 +19,7 @@ from v3_helpers import (
 
 def test_report_labels_negative_pathway_audit_outcome(tmp_path: Path) -> None:
     workspace = tmp_path / "negative-audit-report"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
     node_id = "n001_pathway_audit"
 
     start_node(

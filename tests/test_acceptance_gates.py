@@ -4,11 +4,11 @@ import pytest
 
 from ts_workspace import end_node, init_workspace, report_workspace, start_node, update_workspace, validate_workspace
 from ts_workspace.io import read_json, write_json
-from v3_helpers import (
+from strict_helpers import (
     HYPOTHESIS_ID,
     HYPOTHESIS_REF,
     PATHWAY_REF,
-    bootstrap_v3_workspace,
+    bootstrap_strict_workspace,
     gate_artifact_metadata,
     make_accepted_workspace,
 )
@@ -16,7 +16,7 @@ from v3_helpers import (
 
 def test_accepted_audit_requires_tsfreq_and_connectivity_gates(tmp_path):
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
 
     start_node(
         workspace,
@@ -92,7 +92,7 @@ def test_accepted_audit_requires_tsfreq_and_connectivity_gates(tmp_path):
 
 def test_accepted_audit_rejects_endpoint_recovery_after_failed_irc(tmp_path):
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
 
     start_node(
         workspace,
@@ -215,7 +215,7 @@ def test_workspace_validator_rejects_existing_non_strict_accepted_connectivity(t
 
 def test_stereochemical_hypothesis_requires_stereo_gate_for_acceptance(tmp_path):
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace, stereochemical=True)
+    report_ref = bootstrap_strict_workspace(workspace, stereochemical=True)
 
     start_node(
         workspace,
@@ -352,7 +352,7 @@ def test_workspace_validator_rejects_failed_stereo_gate(tmp_path):
 
 def test_accepted_audit_requires_declared_intermediate_identity_gate(tmp_path):
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace, identity_claim=True)
+    report_ref = bootstrap_strict_workspace(workspace, identity_claim=True)
 
     start_node(
         workspace,

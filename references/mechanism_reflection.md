@@ -6,8 +6,8 @@ IRC, Gaussian route mismatch, photochemistry/open-shell/non-adiabatic), see
 
 Mechanism reasoning is hypothesis management, not a hidden state machine.
 
-The v3 workspace contract is strict: every search starts with a structured
-mechanism hypothesis, and later nodes reference that hypothesis by
+The strict workspace contract requires every search to start with a structured
+mechanism hypothesis, and later nodes must reference that hypothesis by
 `hypothesis_ref`. A natural-language node `hypothesis` remains useful for
 display, but the authoritative mechanism object lives in
 `mechanism_model.json.hypotheses[]`.

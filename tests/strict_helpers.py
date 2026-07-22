@@ -141,7 +141,7 @@ def initial_mechanism_hypothesis(
     return hypothesis
 
 
-def bootstrap_v3_workspace(
+def bootstrap_strict_workspace(
     workspace: Path,
     *,
     pathway_ref: dict[str, str] | None = None,
@@ -325,7 +325,7 @@ def make_accepted_workspace(
     stereochemical: bool = False,
     identity_claim: bool = False,
 ) -> dict[str, str]:
-    report_ref = bootstrap_v3_workspace(
+    report_ref = bootstrap_strict_workspace(
         workspace,
         pathway_ref=PATHWAY_REF,
         stereochemical=stereochemical,
@@ -485,7 +485,7 @@ def make_accepted_workspace(
 
 
 def make_branch_workspace(workspace: Path) -> dict[str, str]:
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
     start_v3_node(
         workspace,
         report_ref,

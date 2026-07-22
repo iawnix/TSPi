@@ -10,12 +10,12 @@ from ts_workspace import end_node, init_workspace, report_workspace, start_node,
 from ts_workspace.io import read_json, write_json
 from ts_workspace.validators.decision import ContractError
 from ts_workspace.validators.decision_context import validate_decision_for_workspace
-from v3_helpers import HYPOTHESIS_REF, PATHWAY_REF, bootstrap_v3_workspace, gate_artifact_metadata, initial_mechanism_hypothesis
+from strict_helpers import HYPOTHESIS_REF, PATHWAY_REF, bootstrap_strict_workspace, gate_artifact_metadata, initial_mechanism_hypothesis
 
 
 def test_start_node_requires_branch_context_after_n000(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
 
     decision = _start_decision(report_ref, node_id="n001", phase="candidate_generation", include_branch_context=False)
 
@@ -29,7 +29,7 @@ def test_start_node_requires_branch_context_after_n000(tmp_path: Path) -> None:
 
 def test_validate_workspace_detects_missing_branch_context(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
 
     start_node(workspace, _start_decision(report_ref, node_id="n001", phase="connectivity_validation"))
     node = read_json(workspace / "nodes" / "n001" / "node.json")
@@ -47,7 +47,7 @@ def test_validate_workspace_detects_missing_branch_context(tmp_path: Path) -> No
 
 def test_validate_workspace_accepts_explicit_solution_branch(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
 
     start_node(
         workspace,
@@ -89,7 +89,7 @@ def test_validate_workspace_accepts_explicit_solution_branch(tmp_path: Path) -> 
 
 def test_new_solution_branch_requires_parent_to_match_anchor(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
 
     start_node(
         workspace,
@@ -125,7 +125,7 @@ def test_new_solution_branch_requires_parent_to_match_anchor(tmp_path: Path) -> 
 
 def test_validate_workspace_rejects_solution_branch_not_mounted_on_anchor(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
 
     start_node(
         workspace,
@@ -172,7 +172,7 @@ def test_validate_workspace_rejects_solution_branch_not_mounted_on_anchor(tmp_pa
 
 def test_new_solution_branch_requires_anchor_to_match_hypothesis_source(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
     _add_secondary_hypothesis(workspace, report_ref)
 
     start_node(
@@ -213,7 +213,7 @@ def test_new_solution_branch_requires_anchor_to_match_hypothesis_source(tmp_path
 
 def test_validate_workspace_warns_for_legacy_overbroad_solution_anchor(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
     _add_secondary_hypothesis(workspace, report_ref)
 
     start_node(
@@ -266,7 +266,7 @@ def test_validate_workspace_warns_for_legacy_overbroad_solution_anchor(tmp_path:
 
 def test_update_workspace_repairs_legacy_overbroad_solution_anchor(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
     _add_secondary_hypothesis(workspace, report_ref)
 
     start_node(
@@ -315,7 +315,7 @@ def test_update_workspace_repairs_legacy_overbroad_solution_anchor(tmp_path: Pat
 
 def test_update_workspace_refuses_to_repair_running_branch_anchor(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
     _add_secondary_hypothesis(workspace, report_ref)
 
     start_node(
@@ -354,7 +354,7 @@ def test_update_workspace_refuses_to_repair_running_branch_anchor(tmp_path: Path
 
 def test_non_linear_branch_from_older_node_ignores_recent_terminal_node(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
 
     start_node(workspace, _start_decision(report_ref, node_id="n001", phase="candidate_generation"))
     end_node(workspace, _end_decision(report_ref, "n001", "supported"))
@@ -379,7 +379,7 @@ def test_non_linear_branch_from_older_node_ignores_recent_terminal_node(tmp_path
 
 def test_validate_workspace_flags_terminal_unresolved_target(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
 
     start_node(workspace, _start_decision(report_ref, node_id="n001", phase="connectivity_validation"))
     end_node(workspace, _end_decision(report_ref, "n001", "refuted"))
@@ -393,7 +393,7 @@ def test_validate_workspace_flags_terminal_unresolved_target(tmp_path: Path) -> 
 
 def test_pathway_audit_supported_does_not_mark_audited_step_supported(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
 
     start_node(
         workspace,
@@ -449,7 +449,7 @@ def test_pathway_audit_supported_does_not_mark_audited_step_supported(tmp_path: 
 
 def test_validate_workspace_requires_strict_pathway_decision_for_closed_pathway_audit(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
 
     start_node(
         workspace,
@@ -507,7 +507,7 @@ def test_validate_workspace_requires_strict_pathway_decision_for_closed_pathway_
 
 def test_validate_workspace_requires_pathway_ref_for_pathway_audit(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
 
     start_node(
         workspace,
@@ -534,7 +534,7 @@ def test_validate_workspace_requires_pathway_ref_for_pathway_audit(tmp_path: Pat
 def test_tsfreq_support_does_not_mark_pathway_step_supported(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     pathway_ref = {"pathway_id": "p_test", "step_id": "s_r_to_p"}
-    report_ref = bootstrap_v3_workspace(workspace, pathway_ref=pathway_ref)
+    report_ref = bootstrap_strict_workspace(workspace, pathway_ref=pathway_ref)
 
     start_node(
         workspace,
@@ -555,7 +555,7 @@ def test_tsfreq_support_does_not_mark_pathway_step_supported(tmp_path: Path) -> 
 def test_connectivity_support_marks_pathway_step_supported(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     pathway_ref = {"pathway_id": "p_test", "step_id": "s_r_to_p"}
-    report_ref = bootstrap_v3_workspace(workspace, pathway_ref=pathway_ref)
+    report_ref = bootstrap_strict_workspace(workspace, pathway_ref=pathway_ref)
 
     start_node(
         workspace,
@@ -575,7 +575,7 @@ def test_connectivity_support_marks_pathway_step_supported(tmp_path: Path) -> No
 
 def test_update_workspace_rejects_cross_node_evidence_path(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
 
     start_node(workspace, _start_decision(report_ref, node_id="n001", phase="candidate_generation"))
     end_node(workspace, _end_decision(report_ref, "n001", "supported"))
@@ -607,7 +607,7 @@ def test_update_workspace_rejects_cross_node_evidence_path(tmp_path: Path) -> No
 
 def test_update_workspace_accepts_current_node_evidence_path(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
 
     start_node(workspace, _start_decision(report_ref, node_id="n001", phase="tsfreq_validation"))
     result = update_workspace(
@@ -638,7 +638,7 @@ def test_update_workspace_accepts_current_node_evidence_path(tmp_path: Path) -> 
 
 def test_validate_workspace_warns_for_legacy_cross_node_evidence_path(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    report_ref = bootstrap_v3_workspace(workspace)
+    report_ref = bootstrap_strict_workspace(workspace)
 
     start_node(workspace, _start_decision(report_ref, node_id="n001", phase="candidate_generation"))
     end_node(workspace, _end_decision(report_ref, "n001", "supported"))

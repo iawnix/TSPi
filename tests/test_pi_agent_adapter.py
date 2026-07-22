@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 from ts_workspace import report_workspace
-from v3_helpers import HYPOTHESIS_ID, bootstrap_v3_workspace
+from strict_helpers import HYPOTHESIS_ID, bootstrap_strict_workspace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,7 +27,7 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
 
 def test_pi_context_summary_from_report_workspace(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    bootstrap_v3_workspace(workspace)
+    bootstrap_strict_workspace(workspace)
     report = report_workspace(workspace)
     report_file = tmp_path / "report.json"
     report_file.write_text(json.dumps(report), encoding="utf-8")
@@ -56,7 +56,7 @@ def test_pi_context_summary_from_report_workspace(tmp_path: Path) -> None:
 def test_pi_context_helper_finds_workspace_from_ancestor(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     nested = workspace / "nodes" / "scratch"
-    bootstrap_v3_workspace(workspace)
+    bootstrap_strict_workspace(workspace)
     nested.mkdir(parents=True)
 
     script = (
