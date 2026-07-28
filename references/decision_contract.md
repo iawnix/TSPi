@@ -4,7 +4,7 @@ A decision JSON is the only mutation instruction channel.
 
 The public schema version remains `ts-decision`, but strict decisions require
 the first node to submit a structured initial hypothesis, and all later
-mechanism phases to reference an existing hypothesis.
+evidence-testing phases to reference an existing hypothesis.
 
 Runtime decision shapes live under `templates/decision/`. Those files are the
 authoritative examples for agent-facing workspace mutation. Test files are
@@ -19,7 +19,7 @@ selection.
 {
   "schema_version": "ts-decision",
   "action": "start_node",
-  "rationale": "Start endpoint-derived mechanism preflight.",
+  "rationale": "Start endpoint validation and initial hypothesis generation.",
   "evidence_refs": [],
   "report_ref": {
     "report_id": "rep_20260622T010000",
@@ -52,7 +52,7 @@ selection.
 }
 ```
 
-`end_node n000` must close with endpoint/preflight facts. If supported, the
+`end_node n000` must close with endpoint facts. If supported, the
 finalizer promotes `initial_mechanism_hypothesis` into
 `mechanism_model.hypotheses[]`.
 
@@ -96,6 +96,17 @@ audited `pathway_id` and `step_id`. Before closing that node, register and cite
 a `pathway_audit_summary` evidence record with
 `quality.strict_pathway_decision=accepted` or
 `quality.strict_pathway_decision=pathway_not_accepted`.
+
+## Later Hypothesis Generation
+
+A mechanism change is introduced before downstream testing with
+`phase=hypothesis_generation`, a complete
+`payload.initial_mechanism_hypothesis`, and
+`payload.branch_context.relation=new_hypothesis_branch`. The node does not use
+`payload.hypothesis_ref` because the new hypothesis does not exist in
+`mechanism_model.json` until supported closure promotes it. The initial object
+must declare its new `hypothesis_id`; use `parent_hypothesis_id` to identify the
+hypothesis being changed. `phase=endpoint` is reserved for `n000`.
 
 When the agent opens a same-hypothesis replacement solution, the new
 `start_node` decision keeps the same `payload.hypothesis_ref`, supplies a new
@@ -145,7 +156,7 @@ node and existing workspace state. Pick from:
   validation.
 - `new_hypothesis_branch` — the mechanism hypothesis changes (concerted →
   stepwise, ground-state → excited-state, ketone-side → ester-side treated
-  as distinct hypotheses).
+  as distinct hypotheses). Requires `phase=hypothesis_generation`.
 - `new_pathway_branch` — pathway topology or step model changes while
   hypothesis handling stays explicit.
 - `administrative_followup` — non-scientific control-plane work (monitoring

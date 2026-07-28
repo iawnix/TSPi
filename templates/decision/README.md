@@ -44,6 +44,20 @@ Typical endpoint-first sequence:
 16. `update_pathway_audit_accepted.json`
 17. `end_pathway_audit_accepted.json`
 
+Optional phase-specific sequences:
+
+- later mechanism hypothesis:
+  `start_hypothesis_generation.json` -> `update_hypothesis_evidence.json` ->
+  `end_hypothesis_generation_supported.json`
+- R/P conformer strategy:
+  `start_endpoint_conformer_generation.json` ->
+  `update_endpoint_conformer_evidence.json` ->
+  `end_endpoint_conformer_generation_supported.json`
+
+The conformer sequence uses `phase=candidate_generation` with
+`solution_ref.strategy=rp_conformer_generation`. Do not create new
+`phase=rp_conformer_generation` nodes.
+
 `start_pathway_audit.json` must keep `payload.pathway_ref` populated with the
 audited `pathway_id` and `step_id`. Before any pathway-audit `end_node`
 decision, register a `pathway_audit_summary` with

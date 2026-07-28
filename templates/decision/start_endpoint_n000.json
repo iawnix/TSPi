@@ -1,7 +1,7 @@
 {
   "schema_version": "ts-decision",
   "action": "start_node",
-  "rationale": "Start endpoint-derived mechanism preflight from user-provided reactant and product structures.",
+  "rationale": "Start endpoint validation and initial hypothesis generation from user-provided reactant and product structures.",
   "evidence_refs": [],
   "report_ref": {
     "report_id": "${REPORT_ID}",

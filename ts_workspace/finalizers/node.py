@@ -16,9 +16,9 @@ from ..evidence_gates import (
     validate_strict_connectivity_gate,
 )
 from ..io import read_json
+from ..validators.decision import WORKSPACE_HYPOTHESIS_CREATION_PHASES
 
 PATHWAY_STEP_STATUS_PHASES = {"connectivity_validation", "accepted_audit"}
-INITIAL_HYPOTHESIS_PHASES = {"preflight", "endpoint"}
 IMPACT_SCOPES = {"solution_only", "prediction", "pathway_step", "hypothesis"}
 STRICT_PATHWAY_ACCEPTED = "accepted"
 STRICT_PATHWAY_NOT_ACCEPTED = {"pathway_not_accepted", "not_accepted"}
@@ -93,7 +93,7 @@ def _update_mechanism_model(root: Path, node: dict[str, Any], closure: dict[str,
     path = root / "mechanism_model.json"
     model = read_json(path)
     model.setdefault("focus_hypothesis_id", None)
-    if node.get("phase") in INITIAL_HYPOTHESIS_PHASES:
+    if node.get("phase") in WORKSPACE_HYPOTHESIS_CREATION_PHASES:
         _finalize_initial_hypothesis(root, model, node, closure)
         changes[path] = model
         return
@@ -128,7 +128,7 @@ def _finalize_initial_hypothesis(root: Path, model: dict[str, Any], node: dict[s
         return
     initial = node.get("initial_mechanism_hypothesis")
     if not isinstance(initial, dict):
-        raise ValueError("completed endpoint/preflight node missing initial_mechanism_hypothesis")
+        raise ValueError("completed hypothesis-creation node missing initial_mechanism_hypothesis")
 
     mechanism = closure.get("mechanism", {}) if isinstance(closure.get("mechanism"), dict) else {}
     hypothesis = dict(initial)
@@ -432,7 +432,7 @@ def _impact_scope(node: dict[str, Any], closure: dict[str, Any]) -> str:
         return "hypothesis"
     if phase in PATHWAY_STEP_STATUS_PHASES:
         return "pathway_step"
-    if phase not in INITIAL_HYPOTHESIS_PHASES:
+    if phase not in WORKSPACE_HYPOTHESIS_CREATION_PHASES:
         return "prediction"
     return "solution_only"
 

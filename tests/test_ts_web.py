@@ -104,6 +104,8 @@ def test_static_ui_has_no_legacy_branch_edge_vocabulary() -> None:
     assert "branch_generated" not in html
     assert "branch_source" not in html
     assert 'e.kind.startsWith("branch")' not in html
+    assert 'label: "Endpoint"' in html
+    assert 'label: "Preflight"' not in html
 
 
 def test_static_ui_refresh_without_workspace_renders_empty_state() -> None:

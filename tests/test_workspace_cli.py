@@ -21,7 +21,7 @@ def test_workspace_cli_roundtrip(tmp_path: Path) -> None:
     start_n000 = {
         "schema_version": "ts-decision",
         "action": "start_node",
-        "rationale": "Start endpoint hypothesis preflight.",
+        "rationale": "Start endpoint validation and hypothesis generation.",
         "evidence_refs": [],
         "report_ref": report_ref,
         "payload": {
@@ -63,7 +63,7 @@ def test_workspace_cli_roundtrip(tmp_path: Path) -> None:
     end_decision = {
         "schema_version": "ts-decision",
         "action": "end_node",
-        "rationale": "Close endpoint hypothesis preflight.",
+        "rationale": "Close endpoint validation and hypothesis generation.",
         "evidence_refs": ["ev_hyp_0001"],
         "report_ref": report_ref,
         "payload": {
@@ -71,7 +71,7 @@ def test_workspace_cli_roundtrip(tmp_path: Path) -> None:
             "closure": {
                 "program_status": "completed",
                 "claim_verdict": "supported",
-                "program": {"summary": "Endpoint preflight completed.", "evidence_refs": ["ev_hyp_0001"]},
+                "program": {"summary": "Endpoint validation completed.", "evidence_refs": ["ev_hyp_0001"]},
                 "mechanism": {"summary": "Initial hypothesis is ready.", "evidence_refs": ["ev_hyp_0001"]},
                 "implication": "Open candidate generation next.",
                 "open_questions": [],
@@ -149,7 +149,7 @@ def test_explicit_n000_endpoint_node_keeps_next_auto_id_at_n001(tmp_path: Path) 
     start_endpoint = {
         "schema_version": "ts-decision",
         "action": "start_node",
-        "rationale": "Start explicit endpoint preflight.",
+        "rationale": "Start explicit endpoint validation.",
         "evidence_refs": [],
         "report_ref": report_ref,
         "payload": {
@@ -169,7 +169,7 @@ def test_explicit_n000_endpoint_node_keeps_next_auto_id_at_n001(tmp_path: Path) 
     close_endpoint = {
         "schema_version": "ts-decision",
         "action": "end_node",
-        "rationale": "Close endpoint preflight.",
+        "rationale": "Close endpoint validation.",
         "evidence_refs": ["ev_hyp_0001"],
         "report_ref": report_ref,
         "payload": {
@@ -191,7 +191,7 @@ def test_explicit_n000_endpoint_node_keeps_next_auto_id_at_n001(tmp_path: Path) 
     start_candidate = {
         "schema_version": "ts-decision",
         "action": "start_node",
-        "rationale": "Start candidate generation after endpoint preflight.",
+        "rationale": "Start candidate generation after endpoint validation.",
         "evidence_refs": [],
         "report_ref": report_ref,
         "payload": {

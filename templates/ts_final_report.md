@@ -130,7 +130,7 @@ confirms, and which electronic-structure claims remain unproven.}}
 
 | Node | Phase | Hypothesis ref | Program status | Claim verdict | Key evidence | Implication |
 | --- | --- | --- | --- | --- | --- | --- |
-| `n000` | endpoint/preflight | `{{hypothesis_id}}` | {{status}} | {{verdict}} | `{{refs}}` | {{implication}} |
+| `n000` | endpoint | `{{hypothesis_id}}` | {{status}} | {{verdict}} | `{{refs}}` | {{implication}} |
 | `{{node_id}}` | {{phase}} | `{{hypothesis_ref}}` | {{status}} | {{verdict}} | `{{refs}}` | {{implication}} |
 
 Rejected or superseded branches:

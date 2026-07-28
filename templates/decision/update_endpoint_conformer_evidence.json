@@ -1,0 +1,78 @@
+{
+  "schema_version": "ts-decision",
+  "action": "update_workspace",
+  "rationale": "Register the filtered R/P conformer ensemble and selected endpoint representatives.",
+  "evidence_refs": [],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
+  "payload": {
+    "append_evidence": [
+      {
+        "evidence_id": "${EV_ENDPOINT_CONFORMER_ENSEMBLE}",
+        "kind": "endpoint_conformer_search",
+        "role": "endpoint_conformer_ensemble",
+        "evidence_tier": "local_compute",
+        "node_id": "${CONFORMER_NODE_ID}",
+        "summary": "A graph- and atom-map-filtered R/P conformer ensemble was generated.",
+        "path": "${ENDPOINT_CONFORMER_ENSEMBLE_PATH}",
+        "quality": {
+          "hypothesis_id": "${HYPOTHESIS_ID}",
+          "endpoint_graph_preserved": true,
+          "atom_mapping_preserved": true
+        }
+      },
+      {
+        "evidence_id": "${EV_SELECTED_ENDPOINT_CONFORMER}",
+        "kind": "endpoint_conformer_selection",
+        "role": "selected_endpoint_conformer",
+        "evidence_tier": "local_parse",
+        "node_id": "${CONFORMER_NODE_ID}",
+        "summary": "R/P endpoint representatives were selected from the filtered ensemble with explicit provenance.",
+        "path": "${SELECTED_ENDPOINT_CONFORMER_PATH}",
+        "quality": {
+          "hypothesis_id": "${HYPOTHESIS_ID}",
+          "not_a_ts_candidate": true
+        }
+      },
+      {
+        "evidence_id": "${EV_ENDPOINT_IDENTITY_GATE}",
+        "kind": "endpoint_identity_validation",
+        "role": "endpoint_identity_gate",
+        "evidence_tier": "local_parse",
+        "node_id": "${CONFORMER_NODE_ID}",
+        "summary": "Selected R/P representatives preserve the declared endpoint identities, graphs, and atom mapping.",
+        "path": "${ENDPOINT_IDENTITY_GATE_PATH}",
+        "source_files": [
+          "${ENDPOINT_IDENTITY_GATE_PATH}"
+        ],
+        "source_sha256": "${SOURCE_SHA256}",
+        "parser_name": "${ENDPOINT_IDENTITY_PARSER_NAME}",
+        "parser_version": "${PARSER_VERSION}",
+        "normal_termination": true,
+        "diagnostics": [],
+        "quality": {
+          "hypothesis_id": "${HYPOTHESIS_ID}",
+          "endpoint_identity_gate_completed": true,
+          "endpoint_graph_preserved": true,
+          "atom_mapping_preserved": true,
+          "verdict_against_declared_claim": "supported"
+        }
+      },
+      {
+        "evidence_id": "${EV_ENDPOINT_MINIMUM_GATE}",
+        "kind": "endpoint_minimum_validation",
+        "role": "endpoint_minimum_gate",
+        "evidence_tier": "local_parse",
+        "node_id": "${CONFORMER_NODE_ID}",
+        "summary": "Selected endpoint representatives satisfy the declared stationary-minimum checks.",
+        "path": "${ENDPOINT_MINIMUM_GATE_PATH}",
+        "quality": {
+          "hypothesis_id": "${HYPOTHESIS_ID}",
+          "stationary_minimum_supported": true
+        }
+      }
+    ]
+  }
+}

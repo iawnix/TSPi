@@ -105,7 +105,8 @@ nodes/<node_id>/remote/
 ```
 
 Fresh endpoint-based searches must create an explicit `n000` node through
-`start_node` after `init_workspace`. Use `phase=endpoint` or `phase=preflight`.
+`start_node` after `init_workspace`. Use `phase=endpoint`; this phase is
+reserved for `n000`.
 The `n000` decision must include `payload.initial_mechanism_hypothesis`.
 
 Close `n000` after endpoint provenance, charge/multiplicity, atom-order
@@ -115,6 +116,18 @@ are recorded. Candidate generation starts at `n001` with `parent_node=n000` and
 
 Legacy workspaces without `n000` or without `hypothesis_ref` are invalid under
 the strict hypothesis contract.
+
+Introduce a later mechanism hypothesis with `phase=hypothesis_generation`, an
+`initial_mechanism_hypothesis`, and
+`branch_context.relation=new_hypothesis_branch`. The initial object must carry
+the new `hypothesis_id` and should identify the source hypothesis with
+`parent_hypothesis_id`. Legacy `preflight` nodes are read-compatible aliases
+for this function, but new decisions cannot create them.
+
+R/P conformer generation is represented as `phase=candidate_generation` with a
+conformer-specific `solution_ref.strategy`. Legacy
+`phase=rp_conformer_generation` nodes remain readable, but new decisions cannot
+create them.
 
 Later nodes may include optional `solution_ref`:
 
@@ -172,7 +185,14 @@ have specific consumers (validators, finalizers, report reader); use them
 verbatim so downstream checks find them:
 
 - `initial_mechanism_hypothesis` — required to close an `endpoint` or
-  `preflight` node that promotes an initial hypothesis.
+  `hypothesis_generation` node that promotes a hypothesis.
+- `endpoint_conformer_ensemble` — graph-preserving R/P conformers generated
+  under a `candidate_generation` strategy.
+- `selected_endpoint_conformer` — selected R/P representative with explicit
+  ensemble provenance and selection rationale.
+- `endpoint_minimum_gate` — endpoint stationary-minimum validation; it may be
+  owned by `endpoint` for supplied structures or by the conformer
+  `candidate_generation` node for generated representatives.
 - `tsfreq_gate`, `mode_assignment` — TS/Freq validation gates.
 - `connectivity_gate`, `irc_endpoint_assignment` — connectivity validation
   gates.

@@ -45,7 +45,7 @@ Do not infer workspace state from memory. Do not copy JSON from `tests/`.
 
 Read the current node's phase and use the matching reference:
 
-- `endpoint` or `preflight`: `references/decision_contract.md` and
+- `endpoint` or `hypothesis_generation`: `references/decision_contract.md` and
   `references/mechanism_reflection.md`
 - `candidate_generation`: `references/candidate_generation.md`
 - `tsfreq_validation`: `references/gaussian_validation.md`
@@ -149,7 +149,8 @@ Use `new_solution_branch` only when the candidate or search strategy really
 changes under the same hypothesis. It requires a new `solution_ref.solution_id`
 and `parent_node == branch_context.anchor_node == hypothesis.source_node`.
 
-Use `new_hypothesis_branch` when the mechanism hypothesis changes.
+Use `new_hypothesis_branch` with `phase=hypothesis_generation` when the
+mechanism hypothesis changes.
 
 Use `new_pathway_branch` when the pathway topology or step model changes.
 
@@ -167,6 +168,8 @@ Use templates as the starting point, not as a policy engine:
 
 - endpoint start/close: `start_endpoint_n000.json`,
   `end_endpoint_n000_supported.json`
+- later mechanism hypothesis: use `start_hypothesis_generation.json`
+- R/P conformer strategy: `start_endpoint_conformer_generation.json`
 - evidence registration: `update_*_evidence.json`
 - normal evidence-layer progression: `start_candidate_generation.json`,
   `start_tsfreq_validation.json`,

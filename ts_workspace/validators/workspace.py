@@ -23,12 +23,13 @@ from .decision import (
     ANCHORED_BRANCH_RELATIONS,
     FORBIDDEN_PUBLIC_FIELDS,
     HYPOTHESIS_REF_PHASES,
-    INITIAL_HYPOTHESIS_PHASES,
+    LEGACY_PHASES,
     VALID_CLAIM_VERDICTS,
     VALID_BRANCH_RELATIONS,
     VALID_LIFECYCLES,
-    VALID_PHASES,
     VALID_PROGRAM_STATUSES,
+    WORKSPACE_HYPOTHESIS_CREATION_PHASES,
+    WORKSPACE_PHASES,
 )
 
 REQUIRED_FILES = {
@@ -245,20 +246,31 @@ def _validate_node(
 ) -> None:
     if node.get("node_id") != expected_id:
         _finding(findings, "error", "node_id_mismatch", "node_id does not match tree entry", source)
-    if node.get("phase") not in VALID_PHASES:
+    phase = node.get("phase")
+    if phase not in WORKSPACE_PHASES:
         _finding(findings, "error", "invalid_phase", "node phase is invalid", source)
+    elif phase in LEGACY_PHASES:
+        replacement = "hypothesis_generation" if phase == "preflight" else "candidate_generation"
+        _finding(
+            findings,
+            "warning",
+            "legacy_phase",
+            f"legacy phase {phase} is read-compatible only; use {replacement} for new nodes",
+            source,
+        )
+    if expected_id != "n000" and phase == "endpoint":
+        _finding(findings, "error", "endpoint_phase_after_n000", "phase=endpoint is reserved for n000", source)
     lifecycle = node.get("lifecycle")
     if lifecycle not in VALID_LIFECYCLES:
         _finding(findings, "error", "invalid_lifecycle", "node lifecycle is invalid", source)
     if not isinstance(node.get("hypothesis"), str) or not node["hypothesis"].strip():
         _finding(findings, "error", "missing_hypothesis", "node hypothesis is required", source)
-    phase = node.get("phase")
-    if phase in INITIAL_HYPOTHESIS_PHASES and not isinstance(node.get("initial_mechanism_hypothesis"), dict):
+    if phase in WORKSPACE_HYPOTHESIS_CREATION_PHASES and not isinstance(node.get("initial_mechanism_hypothesis"), dict):
         _finding(
             findings,
             "error",
             "missing_initial_mechanism_hypothesis",
-            "endpoint/preflight node requires initial_mechanism_hypothesis",
+            "hypothesis-creation node requires initial_mechanism_hypothesis",
             source,
         )
     if phase in HYPOTHESIS_REF_PHASES:
@@ -432,6 +444,22 @@ def _validate_branch_contexts(
         relation = context.get("relation")
         if relation not in VALID_BRANCH_RELATIONS:
             _finding(findings, "error", "invalid_branch_context", "branch_context.relation is invalid", source)
+        if node.get("phase") == "hypothesis_generation" and relation != "new_hypothesis_branch":
+            _finding(
+                findings,
+                "error",
+                "invalid_hypothesis_generation_relation",
+                "hypothesis_generation requires relation=new_hypothesis_branch",
+                source,
+            )
+        if relation == "new_hypothesis_branch" and node.get("phase") not in {"hypothesis_generation", "preflight"}:
+            _finding(
+                findings,
+                "error",
+                "invalid_new_hypothesis_branch_phase",
+                "new_hypothesis_branch requires phase=hypothesis_generation",
+                source,
+            )
         from_node_id = context.get("from_node")
         anchor_node_id = context.get("anchor_node")
         for field, ref in (("from_node", from_node_id), ("anchor_node", anchor_node_id)):
@@ -518,10 +546,20 @@ def _validate_hypothesis_branch_context(
 ) -> None:
     if from_node is None:
         return
-    from_ref = from_node.get("hypothesis_ref") if isinstance(from_node.get("hypothesis_ref"), dict) else {}
-    new_ref = node.get("hypothesis_ref") if isinstance(node.get("hypothesis_ref"), dict) else {}
-    if from_ref and new_ref and from_ref.get("hypothesis_id") == new_ref.get("hypothesis_id"):
+    from_hypothesis_id = _node_hypothesis_id(from_node)
+    new_hypothesis_id = _node_hypothesis_id(node)
+    if from_hypothesis_id and from_hypothesis_id == new_hypothesis_id:
         _finding(findings, "error", "hypothesis_branch_same_hypothesis", "new_hypothesis_branch requires a different hypothesis_id", source)
+    initial = node.get("initial_mechanism_hypothesis")
+    parent_hypothesis_id = initial.get("parent_hypothesis_id") if isinstance(initial, dict) else None
+    if parent_hypothesis_id and from_hypothesis_id and parent_hypothesis_id != from_hypothesis_id:
+        _finding(
+            findings,
+            "error",
+            "hypothesis_branch_parent_mismatch",
+            "new hypothesis parent_hypothesis_id must match the from_node hypothesis",
+            source,
+        )
 
 
 def _validate_branch_events(tree: dict[str, Any], node_ids: set[str], findings: list[dict[str, str]]) -> None:
@@ -587,12 +625,13 @@ def _validate_branch_lineage(
                         f"branch event {field} must match new node branch_context",
                         path,
                     )
-        if "target_hypothesis_ref" in event and event.get("target_hypothesis_ref") != new_node.get("hypothesis_ref"):
+        expected_hypothesis_ref = _branch_target_hypothesis_ref(new_node)
+        if "target_hypothesis_ref" in event and event.get("target_hypothesis_ref") != expected_hypothesis_ref:
             _finding(
                 findings,
                 "error",
                 "branch_target_hypothesis_mismatch",
-                "branch target_hypothesis_ref must match the new node hypothesis_ref",
+                "branch target_hypothesis_ref must match the new node hypothesis",
                 path,
             )
         if "target_solution_ref" in event and event.get("target_solution_ref") != new_node.get("solution_ref"):
@@ -639,8 +678,8 @@ def _validate_initial_node_sequence(
     first = node_details.get(first_id, {})
     if first_id != "n000":
         _finding(findings, "error", "missing_n000", "first node must be n000", "tree.json.nodes[0]")
-    if first.get("phase") not in INITIAL_HYPOTHESIS_PHASES:
-        _finding(findings, "error", "invalid_n000_phase", "n000 must be endpoint or preflight", "nodes/n000/node.json")
+    if first.get("phase") not in {"endpoint", "preflight"}:
+        _finding(findings, "error", "invalid_n000_phase", "n000 must be endpoint", "nodes/n000/node.json")
     closure = first.get("closure")
     if isinstance(closure, dict) and closure.get("program_status") == "completed" and closure.get("claim_verdict") == "supported":
         if not hypothesis_ids:
@@ -864,10 +903,24 @@ def _validate_pathway_audit_mechanism_gates(
 
 def _node_hypothesis_id(node: dict[str, Any]) -> str | None:
     ref = node.get("hypothesis_ref")
-    if not isinstance(ref, dict):
-        return None
-    hypothesis_id = ref.get("hypothesis_id")
+    hypothesis_id = ref.get("hypothesis_id") if isinstance(ref, dict) else None
+    if not hypothesis_id:
+        initial = node.get("initial_mechanism_hypothesis")
+        hypothesis_id = initial.get("hypothesis_id") if isinstance(initial, dict) else None
     return str(hypothesis_id) if hypothesis_id else None
+
+
+def _branch_target_hypothesis_ref(node: dict[str, Any]) -> Any:
+    ref = node.get("hypothesis_ref")
+    if isinstance(ref, dict):
+        return ref
+    context = node.get("branch_context") if isinstance(node.get("branch_context"), dict) else {}
+    if node.get("phase") != "hypothesis_generation" or context.get("relation") != "new_hypothesis_branch":
+        return ref
+    hypothesis_id = _node_hypothesis_id(node)
+    if not hypothesis_id:
+        return None
+    return {"hypothesis_id": hypothesis_id, "prediction_ids": []}
 
 
 def _pathway_audit_strict_decision(evidence_records: list[dict[str, Any]], evidence_refs: list[str]) -> str | None:

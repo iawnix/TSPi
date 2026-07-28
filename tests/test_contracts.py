@@ -83,6 +83,33 @@ def test_pathway_audit_start_decision_requires_pathway_ref() -> None:
         validate_decision(decision)
 
 
+@pytest.mark.parametrize("legacy_phase", ["preflight", "rp_conformer_generation"])
+def test_start_decision_rejects_legacy_phase(legacy_phase: str) -> None:
+    decision = {
+        "schema_version": "ts-decision",
+        "action": "start_node",
+        "rationale": "Legacy phases are read-compatible but cannot be created.",
+        "evidence_refs": [],
+        "report_ref": {"report_id": "rep_test", "workspace_root": "ws"},
+        "payload": {
+            "node_id": "n001",
+            "parent_node": "n000",
+            "phase": legacy_phase,
+            "hypothesis": "This legacy phase must be rejected.",
+            "hypothesis_ref": {"hypothesis_id": "hyp_0001", "prediction_ids": []},
+            "expected_evidence": [],
+            "branch_context": {
+                "relation": "continue_parent",
+                "from_node": "n000",
+                "anchor_node": "n000",
+            },
+        },
+    }
+
+    with pytest.raises(ContractError, match="decision.schema.json"):
+        validate_decision(decision)
+
+
 def test_workspace_json_schema_rejects_tree_extra_top_level_field(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     init_workspace(workspace)

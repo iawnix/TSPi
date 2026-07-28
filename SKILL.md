@@ -179,9 +179,8 @@ Persistent node state has only three public concepts:
 
 Valid phases:
 
-- `preflight`
 - `endpoint`
-- `rp_conformer_generation`
+- `hypothesis_generation`
 - `candidate_generation`
 - `tsfreq_validation`
 - `connectivity_validation`
@@ -226,7 +225,7 @@ They are not top-level node states.
 
 1. Initialize a workspace with `init_workspace`.
 2. For a fresh endpoint-based run, start an explicit `node_id=n000`
-   `endpoint` or `preflight` node before candidate generation. Use it only for
+   `endpoint` node before candidate generation. Use it only for
    source hashes, charge/multiplicity, atom mapping, endpoint sanity checks,
    and the structured `initial_mechanism_hypothesis`. Close it before opening
    `n001`; do not put TS/Freq, IRC, connectivity, or accepted-TS claims in
@@ -242,12 +241,16 @@ They are not top-level node states.
 4. Construct a decision JSON with the action, rationale, report reference,
    evidence references, and payload. Start from `templates/decision/` when a
    reusable shape is needed; do not copy JSON from `tests/`. Every post-`n000`
-   mechanism node must include `payload.hypothesis_ref` that points to
+   evidence-testing node must include `payload.hypothesis_ref` that points to
    `mechanism_model.hypotheses[]`. Use optional `payload.solution_ref` only to
    group alternative search strategies under the same hypothesis; it is
    lineage metadata, not a new state, verdict, or retry policy. Every post-`n000`
    `start_node` must include `payload.branch_context` so the agent's intended
    graph relation is explicit.
+   Introduce a later mechanism hypothesis with
+   `phase=hypothesis_generation`, `payload.initial_mechanism_hypothesis`, and
+   `branch_context.relation=new_hypothesis_branch`; `endpoint` is reserved for
+   `n000`.
    For `phase=pathway_audit`, `start_node.payload.pathway_ref` is mandatory
    and must identify the audited `pathway_id` and `step_id`; this is the only
    phase where `pathway_ref` is required by the start-decision contract.
@@ -259,7 +262,7 @@ They are not top-level node states.
    | Same scientific object continues to next evidence layer (candidate → TS/Freq, TS/Freq → IRC, IRC → accepted audit, accepted → pathway audit) | `continue_parent` | `parent_node == from_node`. |
    | Same TS claim, IRC/protocol parameters changed after a program failure | `continue_parent` | `parent_node = TS/Freq-supported node`, `from_node = same`; cite the failed attempt via `reason_code` + evidence with role `previous_attempt_summary`. |
    | Same hypothesis, different candidate / search strategy | `new_solution_branch` | New `solution_ref.solution_id`; `parent_node == anchor_node == hypothesis.source_node`. |
-   | Different mechanism hypothesis | `new_hypothesis_branch` | `parent_node == anchor_node`. |
+   | Different mechanism hypothesis | `new_hypothesis_branch` | Use `phase=hypothesis_generation`; `parent_node == anchor_node`. |
    | Different pathway topology / step model | `new_pathway_branch` | `parent_node == anchor_node`. |
    | Monitoring, report packaging, workspace repair, visualization | `administrative_followup` | No chemistry verdict. |
 

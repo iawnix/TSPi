@@ -7,15 +7,15 @@ IRC, Gaussian route mismatch, photochemistry/open-shell/non-adiabatic), see
 Mechanism reasoning is hypothesis management, not a hidden state machine.
 
 The strict workspace contract requires every search to start with a structured
-mechanism hypothesis, and later nodes must reference that hypothesis by
-`hypothesis_ref`. A natural-language node `hypothesis` remains useful for
+mechanism hypothesis, and later evidence-testing nodes must reference that
+hypothesis by `hypothesis_ref`. A natural-language node `hypothesis` remains useful for
 display, but the authoritative mechanism object lives in
 `mechanism_model.json.hypotheses[]`.
 
 ## Initial Hypothesis
 
 The first node in a fresh workspace must be explicit `node_id=n000` with
-`phase=endpoint` or `phase=preflight`. Its start decision must include
+`phase=endpoint`. Its start decision must include
 `payload.initial_mechanism_hypothesis`.
 
 The initial hypothesis is derived from:
@@ -194,9 +194,9 @@ When `n000` closes with `program_status=completed` and
 `claim_verdict=supported`, the finalizer writes the hypothesis into
 `mechanism_model.json.hypotheses[]` and sets `focus_hypothesis_id`.
 
-## Later Nodes
+## Later Evidence-Testing Nodes
 
-All later mechanism phases must include `payload.hypothesis_ref`:
+All later evidence-testing phases must include `payload.hypothesis_ref`:
 
 ```json
 {
@@ -223,9 +223,9 @@ Allowed `closure.mechanism.revision.action` values:
 - `revise_hypothesis`
 - `supersede_hypothesis`
 
-New hypotheses must be introduced by a later `start_node` decision carrying
-`initial_mechanism_hypothesis` and, when replacing an unresolved branch, a
-canonical `payload.branch_context` relation.
+New hypotheses must be introduced by a later `start_node` decision with
+`phase=hypothesis_generation`, `initial_mechanism_hypothesis`, and
+`payload.branch_context.relation=new_hypothesis_branch`.
 
 Recommended changed variables:
 

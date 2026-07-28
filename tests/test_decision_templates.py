@@ -19,6 +19,12 @@ EXPECTED_TEMPLATE_FILES = {
     "start_endpoint_n000.json",
     "update_endpoint_evidence.json",
     "end_endpoint_n000_supported.json",
+    "start_hypothesis_generation.json",
+    "update_hypothesis_evidence.json",
+    "end_hypothesis_generation_supported.json",
+    "start_endpoint_conformer_generation.json",
+    "update_endpoint_conformer_evidence.json",
+    "end_endpoint_conformer_generation_supported.json",
     "start_candidate_generation.json",
     "update_candidate_evidence.json",
     "update_mechanism_identity_evidence.json",
@@ -148,6 +154,30 @@ DEFAULT_VALUES = {
     "BRANCH_ANCHOR_NODE": "n000",
     "BRANCH_CHANGED_VARIABLE": "solution_strategy",
     "BRANCH_REASON_CODE": "connectivity_refuted",
+    "NEW_HYPOTHESIS_NODE_ID": "n010",
+    "NEW_HYPOTHESIS_ID": "hyp_0010",
+    "NEW_HYPOTHESIS_SUMMARY": "Stepwise C-N formation on an alternative electronic surface.",
+    "NEW_REACTION_CLASS": "stepwise_bond_formation",
+    "NEW_ELEMENTARY_STEP_MODEL": "stepwise",
+    "NEW_ELECTRONIC_SURFACE": "alternative_surface",
+    "NEW_PRED_CANDIDATE_ID": "pred_candidate_010",
+    "NEW_CANDIDATE_EXPECTATION": "Candidate generation can produce a geometry specific to the alternative mechanism.",
+    "NEW_HYPOTHESIS_UNCERTAINTY": "The alternative surface remains untested.",
+    "NEW_HYPOTHESIS_CHANGED_VARIABLE": "electronic_state_model",
+    "NEW_HYPOTHESIS_REASON_CODE": "alternative_mechanism_proposed",
+    "NEW_HYPOTHESIS_FROM_NODE": "n000",
+    "EV_NEW_HYPOTHESIS": "ev_hyp_0010",
+    "CONFORMER_NODE_ID": "n020",
+    "CONFORMER_SOLUTION_ID": "sol_rp_conformer_020",
+    "EV_ENDPOINT_CONFORMER_ENSEMBLE": "ev_endpoint_conformer_ensemble_020",
+    "EV_SELECTED_ENDPOINT_CONFORMER": "ev_selected_endpoint_conformer_020",
+    "EV_ENDPOINT_IDENTITY_GATE": "ev_endpoint_identity_gate_020",
+    "EV_ENDPOINT_MINIMUM_GATE": "ev_endpoint_minimum_gate_020",
+    "ENDPOINT_CONFORMER_ENSEMBLE_PATH": "nodes/n020/outputs/endpoint_conformer_ensemble.json",
+    "SELECTED_ENDPOINT_CONFORMER_PATH": "nodes/n020/outputs/selected_endpoint_conformers.json",
+    "ENDPOINT_IDENTITY_GATE_PATH": "nodes/n020/outputs/endpoint_identity_gate.json",
+    "ENDPOINT_IDENTITY_PARSER_NAME": "endpoint_identity_parser",
+    "ENDPOINT_MINIMUM_GATE_PATH": "nodes/n020/outputs/endpoint_minimum_gate.json",
 }
 
 
@@ -240,6 +270,65 @@ def test_solution_branch_template_requires_explicit_branch_context(tmp_path: Pat
     lineage = report["solution_lineage"][0]
     assert lineage["hypothesis_id"] == "hyp_0001"
     assert [item["solution_id"] for item in lineage["solutions"]] == ["sol_qst2_001", "sol_scan_002"]
+
+
+def test_hypothesis_generation_templates_promote_later_hypothesis(tmp_path: Path) -> None:
+    workspace = tmp_path / "hypothesis_generation"
+    init_workspace(workspace)
+    for template_name in [
+        "start_endpoint_n000.json",
+        "update_endpoint_evidence.json",
+        "end_endpoint_n000_supported.json",
+        "start_hypothesis_generation.json",
+        "update_hypothesis_evidence.json",
+        "end_hypothesis_generation_supported.json",
+    ]:
+        _apply_template(workspace, template_name)
+
+    mechanism = json.loads((workspace / "mechanism_model.json").read_text(encoding="utf-8"))
+    assert mechanism["focus_hypothesis_id"] == "hyp_0010"
+    assert [item["hypothesis_id"] for item in mechanism["hypotheses"]] == ["hyp_0001", "hyp_0010"]
+    assert mechanism["hypotheses"][-1]["source_node"] == "n010"
+    assert mechanism["hypotheses"][-1]["parent_hypothesis_id"] == "hyp_0001"
+    tree = json.loads((workspace / "tree.json").read_text(encoding="utf-8"))
+    assert tree["branch_events"][-1]["target_hypothesis_ref"] == {
+        "hypothesis_id": "hyp_0010",
+        "prediction_ids": [],
+    }
+    assert validate_workspace(workspace)["valid"] is True
+
+
+def test_endpoint_conformer_templates_use_candidate_strategy_without_prediction_promotion(tmp_path: Path) -> None:
+    workspace = tmp_path / "endpoint_conformer_strategy"
+    init_workspace(workspace)
+    for template_name in [
+        "start_endpoint_n000.json",
+        "update_endpoint_evidence.json",
+        "end_endpoint_n000_supported.json",
+        "start_endpoint_conformer_generation.json",
+        "update_endpoint_conformer_evidence.json",
+        "end_endpoint_conformer_generation_supported.json",
+    ]:
+        _apply_template(workspace, template_name)
+
+    node = json.loads((workspace / "nodes" / "n020" / "node.json").read_text(encoding="utf-8"))
+    mechanism = json.loads((workspace / "mechanism_model.json").read_text(encoding="utf-8"))
+    assert node["phase"] == "candidate_generation"
+    assert node["solution_ref"]["strategy"] == "rp_conformer_generation"
+    assert mechanism["hypotheses"][0]["prediction_status"] == []
+    registry = json.loads((workspace / "evidence_registry.json").read_text(encoding="utf-8"))
+    roles = {item["role"] for item in registry["evidence"] if item["node_id"] == "n020"}
+    assert roles == {
+        "endpoint_conformer_ensemble",
+        "selected_endpoint_conformer",
+        "endpoint_identity_gate",
+        "endpoint_minimum_gate",
+    }
+    assert validate_workspace(workspace)["valid"] is True
+    report = report_workspace(workspace)
+    lineage = report["solution_lineage"][0]
+    assert lineage["hypothesis_id"] == "hyp_0001"
+    assert [item["solution_id"] for item in lineage["solutions"]] == ["sol_rp_conformer_020"]
 
 
 def _apply_template(workspace: Path, template_name: str) -> dict[str, Any]:

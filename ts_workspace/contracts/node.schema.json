@@ -8,7 +8,7 @@
     "node_id": {"type": "string", "minLength": 1},
     "parent_node": {"type": ["string", "null"]},
     "phase": {
-      "enum": ["preflight", "endpoint", "rp_conformer_generation", "candidate_generation", "tsfreq_validation", "connectivity_validation", "accepted_audit", "pathway_audit"]
+      "enum": ["endpoint", "hypothesis_generation", "candidate_generation", "tsfreq_validation", "connectivity_validation", "accepted_audit", "pathway_audit", "preflight", "rp_conformer_generation"]
     },
     "lifecycle": {"enum": ["running", "closed", "stopped"]},
     "hypothesis": {"type": "string", "minLength": 1},

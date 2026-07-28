@@ -25,17 +25,20 @@ VALID_ACTIONS = {
 MUTATION_ACTIONS = {"init_workspace", "start_node", "end_node", "update_workspace"}
 
 VALID_PHASES = {
-    "preflight",
     "endpoint",
-    "rp_conformer_generation",
+    "hypothesis_generation",
     "candidate_generation",
     "tsfreq_validation",
     "connectivity_validation",
     "accepted_audit",
     "pathway_audit",
 }
-INITIAL_HYPOTHESIS_PHASES = {"preflight", "endpoint"}
-HYPOTHESIS_REF_PHASES = VALID_PHASES - INITIAL_HYPOTHESIS_PHASES
+LEGACY_PHASES = {"preflight", "rp_conformer_generation"}
+WORKSPACE_PHASES = VALID_PHASES | LEGACY_PHASES
+HYPOTHESIS_CREATION_PHASES = {"endpoint", "hypothesis_generation"}
+LEGACY_HYPOTHESIS_CREATION_PHASES = {"preflight"}
+WORKSPACE_HYPOTHESIS_CREATION_PHASES = HYPOTHESIS_CREATION_PHASES | LEGACY_HYPOTHESIS_CREATION_PHASES
+HYPOTHESIS_REF_PHASES = WORKSPACE_PHASES - WORKSPACE_HYPOTHESIS_CREATION_PHASES
 
 VALID_LIFECYCLES = {"running", "closed", "stopped"}
 VALID_PROGRAM_STATUSES = {"completed", "failed", "stopped", "not_run"}
@@ -122,8 +125,13 @@ def _validate_start_payload(payload: dict[str, Any]) -> None:
     _require(phase in VALID_PHASES, "payload.phase is invalid")
     _require(_clean(payload.get("hypothesis")), "payload.hypothesis is required")
 
-    if phase in INITIAL_HYPOTHESIS_PHASES:
+    if phase in HYPOTHESIS_CREATION_PHASES:
         _validate_initial_mechanism_hypothesis(payload.get("initial_mechanism_hypothesis"))
+        if phase == "hypothesis_generation":
+            _require(
+                _clean(payload["initial_mechanism_hypothesis"].get("hypothesis_id")),
+                "hypothesis_generation requires initial_mechanism_hypothesis.hypothesis_id",
+            )
     else:
         _validate_hypothesis_ref(payload.get("hypothesis_ref"), "payload.hypothesis_ref")
         if payload.get("solution_ref") is not None:

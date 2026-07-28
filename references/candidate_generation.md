@@ -4,7 +4,7 @@ Candidate generation creates artifacts that test a structured mechanism
 hypothesis. It does not create free-floating candidates.
 
 For fresh endpoint-based searches, candidate generation must be parented to a
-closed `n000` endpoint/preflight node and must carry:
+closed `n000` endpoint node and must carry:
 
 ```json
 {
@@ -51,6 +51,21 @@ Common strategy layers:
   compatibility justify that strategy;
 - diabatic or crossing-point candidates only when the hypothesis justifies
   non-adiabatic or spin-surface exploration.
+
+### R/P conformer strategy
+
+R/P conformer or pose exploration uses `phase=candidate_generation`; do not
+create new `rp_conformer_generation` nodes. Set a conformer-specific
+`solution_ref.strategy`, preserve endpoint graph and atom mapping, and register:
+
+- `endpoint_conformer_ensemble` for the generated, filtered ensemble;
+- `selected_endpoint_conformer` for each chosen R/P representative;
+- `endpoint_identity_gate` for graph, identity, and atom-map validation;
+- `endpoint_minimum_gate` for stationary-minimum validation before closing the
+  conformer strategy as supported.
+
+These records establish usable endpoint representatives only. They are not
+TS candidates, TS/Freq support, or connectivity proof.
 
 Candidate ranking must include a mechanism-consistency review. A candidate
 that only satisfies target bond distances is not automatically chemically

@@ -9,14 +9,25 @@ Persistent node state has three concepts:
 
 Valid phases:
 
-- `preflight`
 - `endpoint`
-- `rp_conformer_generation`
+- `hypothesis_generation`
 - `candidate_generation`
 - `tsfreq_validation`
 - `connectivity_validation`
 - `accepted_audit`
 - `pathway_audit`
+
+`endpoint` is reserved for the mandatory `n000` endpoint and initial-hypothesis
+contract. `hypothesis_generation` introduces a later mechanism hypothesis and
+must use `branch_context.relation=new_hypothesis_branch`.
+
+R/P conformer or pose exploration is a `candidate_generation` strategy, not a
+separate evidence layer. Record it in `solution_ref.strategy` and register
+`endpoint_conformer_ensemble`, `selected_endpoint_conformer`, and any relevant
+endpoint identity or minimum gates before using a selected conformer downstream.
+
+Legacy `preflight` and `rp_conformer_generation` nodes remain readable and
+closable, but new `start_node` decisions must not create them.
 
 `closure.program_status` is an execution fact:
 

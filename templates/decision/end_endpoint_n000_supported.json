@@ -1,7 +1,7 @@
 {
   "schema_version": "ts-decision",
   "action": "end_node",
-  "rationale": "Close endpoint preflight with a structured initial mechanism hypothesis.",
+  "rationale": "Close endpoint validation with a structured initial mechanism hypothesis.",
   "evidence_refs": [
     "${EV_ENDPOINT_PROVENANCE}",
     "${EV_CHARGE_MULTIPLICITY}",

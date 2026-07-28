@@ -7,7 +7,7 @@
     "schema_version": {"const": "ts-artifact-manifest"},
     "node_id": {"type": "string", "minLength": 1},
     "phase": {
-      "enum": ["preflight", "endpoint", "rp_conformer_generation", "candidate_generation", "tsfreq_validation", "connectivity_validation", "accepted_audit", "pathway_audit"]
+      "enum": ["endpoint", "hypothesis_generation", "candidate_generation", "tsfreq_validation", "connectivity_validation", "accepted_audit", "pathway_audit", "preflight", "rp_conformer_generation"]
     },
     "claim_layer": {"type": "string", "minLength": 1},
     "cross_node_consumption_reason": {"type": "string"},

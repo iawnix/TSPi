@@ -1,0 +1,24 @@
+{
+  "schema_version": "ts-decision",
+  "action": "update_workspace",
+  "rationale": "Register the explicit proposal record for a new mechanism hypothesis.",
+  "evidence_refs": [],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
+  "payload": {
+    "append_evidence": {
+      "evidence_id": "${EV_NEW_HYPOTHESIS}",
+      "kind": "mechanism_hypothesis",
+      "role": "initial_mechanism_hypothesis",
+      "evidence_tier": "hypothesis",
+      "node_id": "${NEW_HYPOTHESIS_NODE_ID}",
+      "summary": "${NEW_HYPOTHESIS_SUMMARY}",
+      "quality": {
+        "hypothesis_id": "${NEW_HYPOTHESIS_ID}",
+        "uncertainty": "explicitly_unresolved"
+      }
+    }
+  }
+}

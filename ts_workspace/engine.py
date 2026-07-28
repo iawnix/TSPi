@@ -408,6 +408,12 @@ def _branch_event(node: dict[str, Any], branch_context: dict[str, Any], decision
     parent_node = node.get("parent_node")
     from_node = branch_context["from_node"]
     anchor_node = branch_context["anchor_node"]
+    target_hypothesis_ref = node.get("hypothesis_ref")
+    if branch_context["relation"] == "new_hypothesis_branch" and not target_hypothesis_ref:
+        initial = node.get("initial_mechanism_hypothesis")
+        hypothesis_id = initial.get("hypothesis_id") if isinstance(initial, dict) else None
+        if hypothesis_id:
+            target_hypothesis_ref = {"hypothesis_id": hypothesis_id, "prediction_ids": []}
     event = {
         "event_id": "br_" + sha256_json({"node_id": node_id, "branch_context": branch_context}).split(":", 1)[1][:10],
         "event_state": "resolved",
@@ -419,7 +425,7 @@ def _branch_event(node: dict[str, Any], branch_context: dict[str, Any], decision
         "is_rebased": parent_node == anchor_node and from_node != anchor_node,
         "rationale": decision["rationale"],
         "evidence_refs": branch_context.get("evidence_refs", []),
-        "target_hypothesis_ref": node.get("hypothesis_ref"),
+        "target_hypothesis_ref": target_hypothesis_ref,
         "target_solution_ref": node.get("solution_ref"),
         "created_by_decision": _decision_id(decision),
     }

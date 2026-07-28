@@ -160,7 +160,7 @@ def bootstrap_strict_workspace(
         {
             "schema_version": "ts-decision",
             "action": "start_node",
-            "rationale": "Start endpoint hypothesis preflight.",
+            "rationale": "Start endpoint validation and hypothesis generation.",
             "evidence_refs": [],
             "report_ref": report_ref,
             "payload": {
@@ -215,7 +215,7 @@ def bootstrap_strict_workspace(
         {
             "schema_version": "ts-decision",
             "action": "end_node",
-            "rationale": "Close endpoint preflight with a structured hypothesis.",
+            "rationale": "Close endpoint validation with a structured hypothesis.",
             "evidence_refs": ["ev_hyp_0001", "ev_endpoint_0001"],
             "report_ref": report_ref,
             "payload": {
@@ -223,7 +223,7 @@ def bootstrap_strict_workspace(
                 "closure": {
                     "program_status": "completed",
                     "claim_verdict": "supported",
-                    "program": {"summary": "Endpoint preflight completed.", "evidence_refs": ["ev_endpoint_0001"]},
+                    "program": {"summary": "Endpoint validation completed.", "evidence_refs": ["ev_endpoint_0001"]},
                     "mechanism": {"summary": "Initial mechanism hypothesis is ready.", "evidence_refs": ["ev_hyp_0001"]},
                     "implication": "Open a hypothesis-referenced search node.",
                     "open_questions": [],

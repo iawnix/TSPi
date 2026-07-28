@@ -1275,7 +1275,8 @@ const X_GAP = 72, Y_GAP = 26;
 
 /* Stage → label + icon. Patterns are matched case-insensitively against node.stage. */
 const STAGE_INFO_LIST = [
-  { match: /preflight|atom_map|endpoint_opt/i,         label: "Preflight",         icon: "preflight" },
+  { match: /^endpoint$|endpoint_opt|preflight|atom_map/i,
+                                                          label: "Endpoint",          icon: "endpoint" },
   { match: /gaussian.*neb|neb.*gaussian|external.*gaussian.*neb/i,
                                                           label: "Gaussian NEB",    icon: "candidate_generation" },
   { match: /gaussian|tsfreq|ts\/freq/i,                label: "Gaussian TS/Freq",  icon: "gaussian_tsfreq_validation" },
@@ -1287,7 +1288,7 @@ const STAGE_INFO_LIST = [
   { match: /candidate|neb|scan|qst|dimer|xtb/i,        label: "Candidate Gen",     icon: "candidate_generation" }
 ];
 const STAGE_ICON_PATHS = {
-  preflight:                  '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>',
+  endpoint:                   '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>',
   candidate_generation:       '<path d="M12 2.5l2.7 6.7 7.3 0.6-5.5 4.8 1.7 7.1L12 17.9 5.8 21.7l1.7-7.1L2 9.8l7.3-0.6z"/>',
   gaussian_tsfreq_validation: '<path d="M2 12 Q 6 4, 10 12 T 18 12 L 22 12"/>',
   qbics_dmecp:                '<circle cx="12" cy="4.5" r="1.8"/><circle cx="4.5" cy="14" r="1.8"/><circle cx="19.5" cy="14" r="1.8"/><circle cx="12" cy="20" r="1.8"/><line x1="11" y1="6" x2="5.5" y2="12.5"/><line x1="13" y1="6" x2="18.5" y2="12.5"/><line x1="6" y1="15.5" x2="11" y2="18.5"/><line x1="18" y1="15.5" x2="13" y2="18.5"/>',

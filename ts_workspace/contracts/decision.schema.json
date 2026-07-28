@@ -26,7 +26,7 @@
         "node_id": {"type": "string", "minLength": 1},
         "parent_node": {"type": ["string", "null"]},
         "phase": {
-          "enum": ["preflight", "endpoint", "rp_conformer_generation", "candidate_generation", "tsfreq_validation", "connectivity_validation", "accepted_audit", "pathway_audit"]
+          "enum": ["endpoint", "hypothesis_generation", "candidate_generation", "tsfreq_validation", "connectivity_validation", "accepted_audit", "pathway_audit"]
         },
         "hypothesis": {"type": "string", "minLength": 1},
         "hypothesis_ref": {"$ref": "mechanism.schema.json#/$defs/hypothesis_ref"},

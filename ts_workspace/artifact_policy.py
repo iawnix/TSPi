@@ -8,7 +8,9 @@ from typing import Any
 
 MECHANISM_REFLECTION_PHASES = {
     "endpoint",
+    "hypothesis_generation",
     "preflight",
+    "rp_conformer_generation",
     "candidate_generation",
     "tsfreq_validation",
     "connectivity_validation",
@@ -17,11 +19,14 @@ MECHANISM_REFLECTION_PHASES = {
 }
 
 ROLE_PHASE_OWNER = {
-    "endpoint_provenance": "endpoint",
-    "charge_multiplicity": "endpoint",
-    "atom_mapping": "endpoint",
-    "reaction_center_delta": "endpoint",
-    "initial_mechanism_hypothesis": "endpoint",
+    "endpoint_provenance": {"endpoint", "preflight"},
+    "charge_multiplicity": {"endpoint", "preflight"},
+    "atom_mapping": {"endpoint", "preflight"},
+    "reaction_center_delta": {"endpoint", "preflight"},
+    "initial_mechanism_hypothesis": {"endpoint", "hypothesis_generation", "preflight"},
+    "endpoint_conformer_ensemble": {"candidate_generation", "rp_conformer_generation"},
+    "selected_endpoint_conformer": {"candidate_generation", "rp_conformer_generation"},
+    "endpoint_minimum_gate": {"endpoint", "candidate_generation", "preflight", "rp_conformer_generation"},
     "candidate_geometry": "candidate_generation",
     "candidate_generation_log": "candidate_generation",
     "tsfreq_gate": "tsfreq_validation",
@@ -39,11 +44,9 @@ ROLE_PHASE_OWNER = {
     "pathway_audit_summary": "pathway_audit",
 }
 
-INITIAL_PHASES = {"endpoint", "preflight"}
-
 
 def expected_phase_for_role(role: Any) -> Any:
-    """Return the node phase that owns a structured evidence role."""
+    """Return the node phase or compatible phases for an evidence role."""
 
     if not isinstance(role, str):
         return None
@@ -58,8 +61,6 @@ def role_matches_phase(role: Any, phase: Any) -> bool:
         return True
     if isinstance(expected, (set, frozenset, list, tuple)):
         return phase in expected
-    if expected == "endpoint":
-        return phase in INITIAL_PHASES
     return phase == expected
 
 

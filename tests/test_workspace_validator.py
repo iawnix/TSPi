@@ -27,6 +27,156 @@ def test_start_node_requires_branch_context_after_n000(tmp_path: Path) -> None:
     assert not (workspace / "nodes" / "n001").exists()
 
 
+def test_start_node_rejects_endpoint_after_n000(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_strict_workspace(workspace)
+    hypothesis = initial_mechanism_hypothesis()
+    hypothesis["hypothesis_id"] = "hyp_0002"
+    decision = {
+        "schema_version": "ts-decision",
+        "action": "start_node",
+        "rationale": "Endpoint is reserved for the initial workspace node.",
+        "evidence_refs": [],
+        "report_ref": report_ref,
+        "payload": {
+            "node_id": "n001",
+            "parent_node": "n000",
+            "phase": "endpoint",
+            "hypothesis": "Invalid second endpoint node.",
+            "initial_mechanism_hypothesis": hypothesis,
+            "expected_evidence": ["initial_mechanism_hypothesis"],
+            "branch_context": {
+                "relation": "new_hypothesis_branch",
+                "from_node": "n000",
+                "anchor_node": "n000",
+            },
+        },
+    }
+
+    with pytest.raises(ContractError, match="phase=endpoint is reserved for n000"):
+        validate_decision_for_workspace(workspace, decision)
+
+
+def test_hypothesis_generation_requires_new_hypothesis_relation(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_strict_workspace(workspace)
+    hypothesis = initial_mechanism_hypothesis()
+    hypothesis["hypothesis_id"] = "hyp_0002"
+    hypothesis["parent_hypothesis_id"] = "hyp_0001"
+    decision = {
+        "schema_version": "ts-decision",
+        "action": "start_node",
+        "rationale": "A later hypothesis must use an explicit hypothesis branch.",
+        "evidence_refs": [],
+        "report_ref": report_ref,
+        "payload": {
+            "node_id": "n001",
+            "parent_node": "n000",
+            "phase": "hypothesis_generation",
+            "hypothesis": "Alternative mechanism hypothesis.",
+            "initial_mechanism_hypothesis": hypothesis,
+            "expected_evidence": ["initial_mechanism_hypothesis"],
+            "branch_context": {
+                "relation": "continue_parent",
+                "from_node": "n000",
+                "anchor_node": "n000",
+            },
+        },
+    }
+
+    with pytest.raises(ContractError, match="requires branch_context.relation=new_hypothesis_branch"):
+        validate_decision_for_workspace(workspace, decision)
+
+
+def test_new_hypothesis_relation_requires_hypothesis_generation_phase(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_strict_workspace(workspace)
+    decision = _start_decision(
+        report_ref,
+        node_id="n001",
+        phase="candidate_generation",
+        branch_context={
+            "relation": "new_hypothesis_branch",
+            "from_node": "n000",
+            "anchor_node": "n000",
+        },
+    )
+
+    with pytest.raises(ContractError, match="new_hypothesis_branch requires phase=hypothesis_generation"):
+        validate_decision_for_workspace(workspace, decision)
+
+
+def test_new_hypothesis_branch_requires_a_different_hypothesis_id(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_strict_workspace(workspace)
+    decision = {
+        "schema_version": "ts-decision",
+        "action": "start_node",
+        "rationale": "A hypothesis branch cannot reuse the parent hypothesis id.",
+        "evidence_refs": [],
+        "report_ref": report_ref,
+        "payload": {
+            "node_id": "n001",
+            "parent_node": "n000",
+            "phase": "hypothesis_generation",
+            "hypothesis": "Duplicate mechanism hypothesis.",
+            "initial_mechanism_hypothesis": initial_mechanism_hypothesis(),
+            "expected_evidence": ["initial_mechanism_hypothesis"],
+            "branch_context": {
+                "relation": "new_hypothesis_branch",
+                "from_node": "n000",
+                "anchor_node": "n000",
+            },
+        },
+    }
+
+    with pytest.raises(ContractError, match="requires a different hypothesis_id"):
+        validate_decision_for_workspace(workspace, decision)
+
+
+def test_validate_workspace_keeps_legacy_preflight_read_compatible(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    bootstrap_strict_workspace(workspace)
+    _rewrite_node_phase(workspace, "n000", "preflight")
+
+    validation = validate_workspace(workspace)
+
+    assert validation["valid"] is True
+    assert "legacy_phase" in _codes(validation)
+
+
+def test_validate_workspace_accepts_legacy_preflight_branch_event_without_target_ref(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_strict_workspace(workspace)
+    _add_secondary_hypothesis(workspace, report_ref)
+    _rewrite_node_phase(workspace, "n001", "preflight")
+    tree = read_json(workspace / "tree.json")
+    tree["branch_events"][-1]["target_hypothesis_ref"] = None
+    write_json(workspace / "tree.json", tree)
+
+    validation = validate_workspace(workspace)
+
+    assert validation["valid"] is True
+    assert "legacy_phase" in _codes(validation)
+
+
+def test_validate_workspace_keeps_legacy_rp_conformer_read_compatible(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_strict_workspace(workspace)
+    start_node(workspace, _start_decision(report_ref, node_id="n001", phase="candidate_generation"))
+    _rewrite_node_phase(workspace, "n001", "rp_conformer_generation")
+
+    validation = validate_workspace(workspace)
+
+    assert validation["valid"] is True
+    assert "legacy_phase" in _codes(validation)
+
+    end_node(workspace, _end_decision(report_ref, "n001", "inconclusive"))
+    node = read_json(workspace / "nodes" / "n001" / "node.json")
+    assert node["lifecycle"] == "closed"
+    assert validate_workspace(workspace)["valid"] is True
+
+
 def test_validate_workspace_detects_missing_branch_context(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     report_ref = bootstrap_strict_workspace(workspace)
@@ -670,6 +820,23 @@ def _report_ref(workspace: Path) -> dict[str, str]:
     return {"report_id": report["report_id"], "workspace_root": str(workspace)}
 
 
+def _rewrite_node_phase(workspace: Path, node_id: str, phase: str) -> None:
+    node_path = workspace / "nodes" / node_id / "node.json"
+    node = read_json(node_path)
+    node["phase"] = phase
+    write_json(node_path, node)
+
+    tree = read_json(workspace / "tree.json")
+    next(item for item in tree["nodes"] if item["node_id"] == node_id)["phase"] = phase
+    write_json(workspace / "tree.json", tree)
+
+    artifact_manifest_path = workspace / "nodes" / node_id / "outputs" / "artifact_manifest.json"
+    if artifact_manifest_path.exists():
+        artifact_manifest = read_json(artifact_manifest_path)
+        artifact_manifest["phase"] = phase
+        write_json(artifact_manifest_path, artifact_manifest)
+
+
 def _start_decision(
     report_ref: dict[str, str],
     *,
@@ -751,13 +918,13 @@ def _add_secondary_hypothesis(workspace: Path, report_ref: dict[str, str]) -> No
         {
             "schema_version": "ts-decision",
             "action": "start_node",
-            "rationale": "Start secondary hypothesis preflight.",
+            "rationale": "Start secondary hypothesis generation.",
             "evidence_refs": [],
             "report_ref": report_ref,
             "payload": {
                 "node_id": "n001",
                 "parent_node": "n000",
-                "phase": "preflight",
+                "phase": "hypothesis_generation",
                 "hypothesis": "Secondary initial mechanism hypothesis.",
                 "initial_mechanism_hypothesis": hypothesis,
                 "expected_evidence": ["initial_mechanism_hypothesis"],
@@ -798,7 +965,7 @@ def _add_secondary_hypothesis(workspace: Path, report_ref: dict[str, str]) -> No
         {
             "schema_version": "ts-decision",
             "action": "end_node",
-            "rationale": "Close secondary hypothesis preflight.",
+            "rationale": "Close secondary hypothesis generation.",
             "evidence_refs": ["ev_hyp_0002"],
             "report_ref": report_ref,
             "payload": {
@@ -806,7 +973,7 @@ def _add_secondary_hypothesis(workspace: Path, report_ref: dict[str, str]) -> No
                 "closure": {
                     "program_status": "completed",
                     "claim_verdict": "supported",
-                    "program": {"summary": "Secondary preflight completed.", "evidence_refs": []},
+                    "program": {"summary": "Secondary hypothesis generation completed.", "evidence_refs": []},
                     "mechanism": {"summary": "Secondary hypothesis is ready.", "evidence_refs": ["ev_hyp_0002"]},
                     "implication": "Open a hypothesis-referenced search node.",
                     "open_questions": [],
