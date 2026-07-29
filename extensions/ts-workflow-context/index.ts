@@ -19,7 +19,7 @@ const PACKAGE_ROOT = resolve(EXTENSION_DIR, "..", "..");
 const WORKSPACE_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_workspace.py");
 const RUNTIME_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_runtime.py");
 
-type TsCommand = "validate_decision" | "start_node" | "update_workspace" | "end_node";
+type TsCommand = "validate_decision" | "start_node" | "propose_hypothesis" | "update_workspace" | "end_node";
 
 export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event, ctx) => {
@@ -89,7 +89,9 @@ export default function (pi: ExtensionAPI) {
       "Use ts_workspace_decision with action=validate_decision before mutating when decision shape is uncertain.",
     ],
     parameters: Type.Object({
-      action: StringEnum(["validate_decision", "start_node", "update_workspace", "end_node"] as const),
+      action: StringEnum(
+        ["validate_decision", "start_node", "propose_hypothesis", "update_workspace", "end_node"] as const,
+      ),
       decisionFile: Type.String({ description: "Path to a decision JSON file." }),
       root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
     }),

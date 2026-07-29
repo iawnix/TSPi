@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ts_workspace import end_node, init_workspace, report_workspace, start_node, update_workspace
+from ts_workspace import end_node, init_workspace, propose_hypothesis, report_workspace, start_node, update_workspace
 
 
 HYPOTHESIS_ID = "hyp_0001"
@@ -90,7 +90,7 @@ def initial_mechanism_hypothesis(
         ],
         "uncertainties": ["Endpoint geometry does not prove the electronic timing."],
         "alternative_hypotheses": [{"summary": "Stepwise C-N formation.", "changed_variable": "elementary_step_order"}],
-        "evidence_refs": ["ev_hyp_0001"],
+        "evidence_refs": ["ev_endpoint_0001"],
     }
     if stereochemical:
         hypothesis["structured_claim"]["stereochemical_policy"] = {
@@ -160,21 +160,14 @@ def bootstrap_strict_workspace(
         {
             "schema_version": "ts-decision",
             "action": "start_node",
-            "rationale": "Start endpoint validation and hypothesis generation.",
+                "rationale": "Start endpoint validation.",
             "evidence_refs": [],
             "report_ref": report_ref,
             "payload": {
                 "node_id": "n000",
                 "phase": "endpoint",
-                "hypothesis": "Initial endpoint-derived mechanism hypothesis.",
-                "initial_mechanism_hypothesis": hypothesis,
-                "expected_evidence": [
-                    "endpoint_provenance",
-                    "charge_multiplicity",
-                    "atom_mapping",
-                    "reaction_center_delta",
-                    "initial_mechanism_hypothesis",
-                ],
+                "hypothesis": "The supplied structures define usable endpoint basins.",
+                "expected_evidence": ["reaction_center_delta"],
             },
         },
     )
@@ -183,20 +176,11 @@ def bootstrap_strict_workspace(
         {
             "schema_version": "ts-decision",
             "action": "update_workspace",
-            "rationale": "Register endpoint-derived hypothesis evidence.",
+            "rationale": "Register endpoint evidence.",
             "evidence_refs": [],
             "report_ref": report_ref,
             "payload": {
                 "append_evidence": [
-                    {
-                        "evidence_id": "ev_hyp_0001",
-                        "kind": "mechanism_hypothesis",
-                        "role": "initial_mechanism_hypothesis",
-                        "evidence_tier": "hypothesis",
-                        "node_id": "n000",
-                        "summary": "Endpoint-derived C-N formation hypothesis.",
-                        "quality": {"hypothesis_id": HYPOTHESIS_ID, "uncertainty": "medium"},
-                    },
                     {
                         "evidence_id": "ev_endpoint_0001",
                         "kind": "endpoint_delta",
@@ -204,7 +188,6 @@ def bootstrap_strict_workspace(
                         "evidence_tier": "manual_observation",
                         "node_id": "n000",
                         "summary": "C1-N2 is the dominant endpoint bond change.",
-                        "quality": {"hypothesis_id": HYPOTHESIS_ID},
                     },
                 ]
             },
@@ -215,8 +198,8 @@ def bootstrap_strict_workspace(
         {
             "schema_version": "ts-decision",
             "action": "end_node",
-            "rationale": "Close endpoint validation with a structured hypothesis.",
-            "evidence_refs": ["ev_hyp_0001", "ev_endpoint_0001"],
+            "rationale": "Close endpoint validation.",
+            "evidence_refs": ["ev_endpoint_0001"],
             "report_ref": report_ref,
             "payload": {
                 "node_id": "n000",
@@ -224,9 +207,30 @@ def bootstrap_strict_workspace(
                     "program_status": "completed",
                     "claim_verdict": "supported",
                     "program": {"summary": "Endpoint validation completed.", "evidence_refs": ["ev_endpoint_0001"]},
-                    "mechanism": {"summary": "Initial mechanism hypothesis is ready.", "evidence_refs": ["ev_hyp_0001"]},
-                    "implication": "Open a hypothesis-referenced search node.",
+                    "mechanism": {"summary": "Endpoint evidence can support a mechanism proposal.", "evidence_refs": []},
+                    "implication": "Propose a mechanism hypothesis.",
                     "open_questions": [],
+                },
+            },
+        },
+    )
+    propose_hypothesis(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "propose_hypothesis",
+            "rationale": "Propose the initial endpoint-derived hypothesis.",
+            "evidence_refs": ["ev_endpoint_0001"],
+            "report_ref": report_ref,
+            "payload": {
+                "proposed_hypothesis": hypothesis,
+                "proposal_context": {
+                    "kind": "initial",
+                    "from_node": "n000",
+                    "anchor_node": "n000",
+                    "changed_variable": "initial_mechanism_model",
+                    "reason_code": "endpoint_interpretation",
+                    "evidence_refs": ["ev_endpoint_0001"],
                 },
             },
         },

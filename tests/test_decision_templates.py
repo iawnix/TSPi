@@ -5,7 +5,15 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ts_workspace import end_node, init_workspace, report_workspace, start_node, update_workspace, validate_workspace
+from ts_workspace import (
+    end_node,
+    init_workspace,
+    propose_hypothesis,
+    report_workspace,
+    start_node,
+    update_workspace,
+    validate_workspace,
+)
 from ts_workspace.validators.decision import validate_decision
 from ts_workspace.validators.decision_context import validate_decision_for_workspace
 
@@ -19,9 +27,9 @@ EXPECTED_TEMPLATE_FILES = {
     "start_endpoint_n000.json",
     "update_endpoint_evidence.json",
     "end_endpoint_n000_supported.json",
-    "start_hypothesis_generation.json",
-    "update_hypothesis_evidence.json",
-    "end_hypothesis_generation_supported.json",
+    "propose_initial_hypothesis.json",
+    "propose_alternative_hypothesis.json",
+    "start_candidate_generation__alternative_hypothesis.json",
     "start_endpoint_conformer_generation.json",
     "update_endpoint_conformer_evidence.json",
     "end_endpoint_conformer_generation_supported.json",
@@ -155,6 +163,9 @@ DEFAULT_VALUES = {
     "BRANCH_CHANGED_VARIABLE": "solution_strategy",
     "BRANCH_REASON_CODE": "connectivity_refuted",
     "NEW_HYPOTHESIS_NODE_ID": "n010",
+    "NEW_HYPOTHESIS_SOLUTION_ID": "sol_hyp_0010_candidate_001",
+    "NEW_HYPOTHESIS_SOLUTION_STRATEGY": "alternative_mechanism_seed",
+    "NEW_HYPOTHESIS_SOLUTION_SUMMARY": "Candidate search under the alternative mechanism proposal.",
     "NEW_HYPOTHESIS_ID": "hyp_0010",
     "NEW_HYPOTHESIS_SUMMARY": "Stepwise C-N formation on an alternative electronic surface.",
     "NEW_REACTION_CLASS": "stepwise_bond_formation",
@@ -167,6 +178,7 @@ DEFAULT_VALUES = {
     "NEW_HYPOTHESIS_REASON_CODE": "alternative_mechanism_proposed",
     "NEW_HYPOTHESIS_FROM_NODE": "n000",
     "EV_NEW_HYPOTHESIS": "ev_hyp_0010",
+    "EV_NEW_HYPOTHESIS_BASIS": "ev_reaction_center_0001",
     "CONFORMER_NODE_ID": "n020",
     "CONFORMER_SOLUTION_ID": "sol_rp_conformer_020",
     "EV_ENDPOINT_CONFORMER_ENSEMBLE": "ev_endpoint_conformer_ensemble_020",
@@ -206,6 +218,7 @@ def test_runtime_templates_drive_complete_accepted_pathway_workspace(tmp_path: P
         "start_endpoint_n000.json",
         "update_endpoint_evidence.json",
         "end_endpoint_n000_supported.json",
+        "propose_initial_hypothesis.json",
         "start_candidate_generation.json",
         "update_candidate_evidence.json",
         "update_mechanism_identity_evidence.json",
@@ -238,6 +251,7 @@ def test_solution_branch_template_requires_explicit_branch_context(tmp_path: Pat
         "start_endpoint_n000.json",
         "update_endpoint_evidence.json",
         "end_endpoint_n000_supported.json",
+        "propose_initial_hypothesis.json",
         "start_candidate_generation.json",
     ]:
         _apply_template(workspace, template_name)
@@ -272,28 +286,43 @@ def test_solution_branch_template_requires_explicit_branch_context(tmp_path: Pat
     assert [item["solution_id"] for item in lineage["solutions"]] == ["sol_qst2_001", "sol_scan_002"]
 
 
-def test_hypothesis_generation_templates_promote_later_hypothesis(tmp_path: Path) -> None:
-    workspace = tmp_path / "hypothesis_generation"
+def test_hypothesis_proposal_is_not_a_node_and_first_evidence_node_activates_it(tmp_path: Path) -> None:
+    workspace = tmp_path / "hypothesis_proposal"
     init_workspace(workspace)
     for template_name in [
         "start_endpoint_n000.json",
         "update_endpoint_evidence.json",
         "end_endpoint_n000_supported.json",
-        "start_hypothesis_generation.json",
-        "update_hypothesis_evidence.json",
-        "end_hypothesis_generation_supported.json",
+        "propose_initial_hypothesis.json",
     ]:
         _apply_template(workspace, template_name)
+
+    proposal = _with_report_ref(workspace, _render_template("propose_alternative_hypothesis.json"))
+    _apply_decision(workspace, proposal)
 
     mechanism = json.loads((workspace / "mechanism_model.json").read_text(encoding="utf-8"))
     assert mechanism["focus_hypothesis_id"] == "hyp_0010"
     assert [item["hypothesis_id"] for item in mechanism["hypotheses"]] == ["hyp_0001", "hyp_0010"]
-    assert mechanism["hypotheses"][-1]["source_node"] == "n010"
+    assert mechanism["hypotheses"][-1]["source_node"] == "n000"
+    assert mechanism["hypotheses"][-1]["branch_anchor_node"] == "n000"
     assert mechanism["hypotheses"][-1]["parent_hypothesis_id"] == "hyp_0001"
+    assert mechanism["hypotheses"][-1]["status"] == "proposed"
     tree = json.loads((workspace / "tree.json").read_text(encoding="utf-8"))
+    assert [item["node_id"] for item in tree["nodes"]] == ["n000"]
+
+    first_test = _with_report_ref(
+        workspace,
+        _render_template("start_candidate_generation__alternative_hypothesis.json"),
+    )
+    _apply_decision(workspace, first_test)
+
+    mechanism = json.loads((workspace / "mechanism_model.json").read_text(encoding="utf-8"))
+    tree = json.loads((workspace / "tree.json").read_text(encoding="utf-8"))
+    assert mechanism["hypotheses"][-1]["status"] == "active"
+    assert mechanism["hypotheses"][-1]["activated_by_node"] == "n010"
     assert tree["branch_events"][-1]["target_hypothesis_ref"] == {
         "hypothesis_id": "hyp_0010",
-        "prediction_ids": [],
+        "prediction_ids": ["pred_candidate_010"],
     }
     assert validate_workspace(workspace)["valid"] is True
 
@@ -305,6 +334,7 @@ def test_endpoint_conformer_templates_use_candidate_strategy_without_prediction_
         "start_endpoint_n000.json",
         "update_endpoint_evidence.json",
         "end_endpoint_n000_supported.json",
+        "propose_initial_hypothesis.json",
         "start_endpoint_conformer_generation.json",
         "update_endpoint_conformer_evidence.json",
         "end_endpoint_conformer_generation_supported.json",
@@ -340,6 +370,9 @@ def _apply_decision(workspace: Path, decision: dict[str, Any]) -> dict[str, Any]
     if action == "start_node":
         validate_decision_for_workspace(workspace, decision)
         return start_node(workspace, decision)
+    if action == "propose_hypothesis":
+        validate_decision_for_workspace(workspace, decision)
+        return propose_hypothesis(workspace, decision)
     if action == "update_workspace":
         validate_decision(decision)
         return update_workspace(workspace, decision)

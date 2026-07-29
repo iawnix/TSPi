@@ -3,14 +3,14 @@
   "action": "start_node",
   "rationale": "Start candidate generation for the active mechanism hypothesis.",
   "evidence_refs": [
-    "${EV_INITIAL_HYPOTHESIS}"
+    "${EV_REACTION_CENTER_DELTA}"
   ],
   "report_ref": {
     "report_id": "${REPORT_ID}",
     "workspace_root": "${WORKSPACE_ROOT}"
   },
   "payload": {
-    "node_id": "n001",
+    "node_id": "${NODE_ID}",
     "parent_node": "n000",
     "phase": "candidate_generation",
     "hypothesis": "Generate a TS candidate consistent with the active reaction-center hypothesis.",

@@ -16,29 +16,27 @@ SCHEMA_VERSION = "ts-decision"
 VALID_ACTIONS = {
     "init_workspace",
     "start_node",
+    "propose_hypothesis",
     "end_node",
     "update_workspace",
     "ask_user",
     "stop",
 }
 
-MUTATION_ACTIONS = {"init_workspace", "start_node", "end_node", "update_workspace"}
+MUTATION_ACTIONS = {"init_workspace", "start_node", "propose_hypothesis", "end_node", "update_workspace"}
 
 VALID_PHASES = {
     "endpoint",
-    "hypothesis_generation",
     "candidate_generation",
     "tsfreq_validation",
     "connectivity_validation",
     "accepted_audit",
     "pathway_audit",
 }
-LEGACY_PHASES = {"preflight", "rp_conformer_generation"}
+LEGACY_PHASES = {"preflight", "rp_conformer_generation", "hypothesis_generation"}
 WORKSPACE_PHASES = VALID_PHASES | LEGACY_PHASES
-HYPOTHESIS_CREATION_PHASES = {"endpoint", "hypothesis_generation"}
-LEGACY_HYPOTHESIS_CREATION_PHASES = {"preflight"}
-WORKSPACE_HYPOTHESIS_CREATION_PHASES = HYPOTHESIS_CREATION_PHASES | LEGACY_HYPOTHESIS_CREATION_PHASES
-HYPOTHESIS_REF_PHASES = WORKSPACE_PHASES - WORKSPACE_HYPOTHESIS_CREATION_PHASES
+WORKSPACE_HYPOTHESIS_CREATION_PHASES = {"preflight", "hypothesis_generation"}
+HYPOTHESIS_REF_PHASES = WORKSPACE_PHASES - WORKSPACE_HYPOTHESIS_CREATION_PHASES - {"endpoint"}
 
 VALID_LIFECYCLES = {"running", "closed", "stopped"}
 VALID_PROGRAM_STATUSES = {"completed", "failed", "stopped", "not_run"}
@@ -50,8 +48,9 @@ VALID_BRANCH_RELATIONS = {
     "new_solution_branch",
     "new_hypothesis_branch",
     "new_pathway_branch",
-    "administrative_followup",
 }
+LEGACY_BRANCH_RELATIONS = {"administrative_followup"}
+WORKSPACE_BRANCH_RELATIONS = VALID_BRANCH_RELATIONS | LEGACY_BRANCH_RELATIONS
 ANCHORED_BRANCH_RELATIONS = {
     "new_solution_branch",
     "new_hypothesis_branch",
@@ -100,7 +99,7 @@ def validate_decision(decision: Any) -> dict[str, Any]:
     payload = decision.get("payload", {})
     _require(isinstance(payload, dict), "payload must be an object")
 
-    if action in {"start_node", "end_node", "update_workspace"}:
+    if action in {"start_node", "propose_hypothesis", "end_node", "update_workspace"}:
         report_ref = decision.get("report_ref")
         _require(isinstance(report_ref, dict), "mutation decision requires report_ref")
         _require(_clean(report_ref.get("report_id")), "report_ref.report_id is required")
@@ -108,6 +107,8 @@ def validate_decision(decision: Any) -> dict[str, Any]:
 
     if action == "start_node":
         _validate_start_payload(payload)
+    elif action == "propose_hypothesis":
+        _validate_propose_hypothesis_payload(payload, evidence_refs)
     elif action == "end_node":
         _validate_end_payload(payload)
     elif action == "update_workspace":
@@ -125,14 +126,14 @@ def _validate_start_payload(payload: dict[str, Any]) -> None:
     _require(phase in VALID_PHASES, "payload.phase is invalid")
     _require(_clean(payload.get("hypothesis")), "payload.hypothesis is required")
 
-    if phase in HYPOTHESIS_CREATION_PHASES:
-        _validate_initial_mechanism_hypothesis(payload.get("initial_mechanism_hypothesis"))
-        if phase == "hypothesis_generation":
-            _require(
-                _clean(payload["initial_mechanism_hypothesis"].get("hypothesis_id")),
-                "hypothesis_generation requires initial_mechanism_hypothesis.hypothesis_id",
-            )
+    if phase == "endpoint":
+        _require(payload.get("initial_mechanism_hypothesis") is None, "endpoint cannot create a mechanism hypothesis")
+        _require(payload.get("hypothesis_ref") is None, "endpoint cannot reference a mechanism hypothesis")
     else:
+        _require(
+            payload.get("initial_mechanism_hypothesis") is None,
+            "start_node cannot create a mechanism hypothesis; use propose_hypothesis",
+        )
         _validate_hypothesis_ref(payload.get("hypothesis_ref"), "payload.hypothesis_ref")
         if payload.get("solution_ref") is not None:
             _validate_solution_ref(payload.get("solution_ref"), "payload.solution_ref")
@@ -150,6 +151,37 @@ def _validate_start_payload(payload: dict[str, Any]) -> None:
     branch_context = payload.get("branch_context")
     if branch_context is not None:
         _validate_branch_context(branch_context)
+
+
+def _validate_propose_hypothesis_payload(payload: dict[str, Any], evidence_refs: list[Any]) -> None:
+    unexpected = sorted(set(payload) - {"proposed_hypothesis", "proposal_context"})
+    _require(not unexpected, f"propose_hypothesis payload contains unsupported fields: {', '.join(unexpected)}")
+    hypothesis = payload.get("proposed_hypothesis")
+    _validate_initial_mechanism_hypothesis(hypothesis)
+    _require(_clean(hypothesis.get("hypothesis_id")), "proposed_hypothesis.hypothesis_id is required")
+    _require(bool(evidence_refs), "propose_hypothesis requires evidence_refs")
+    hypothesis_refs = hypothesis.get("evidence_refs", [])
+    _require(
+        set(hypothesis_refs).issubset(set(evidence_refs)),
+        "proposed_hypothesis.evidence_refs must be cited by decision.evidence_refs",
+    )
+
+    context = payload.get("proposal_context")
+    _require(isinstance(context, dict), "payload.proposal_context is required")
+    kind = context.get("kind")
+    _require(kind in {"initial", "alternative"}, "proposal_context.kind is invalid")
+    for field in ("from_node", "anchor_node", "changed_variable", "reason_code"):
+        _require(_clean(context.get(field)), f"proposal_context.{field} is required")
+    refs = context.get("evidence_refs", [])
+    _require(isinstance(refs, list), "proposal_context.evidence_refs must be a list")
+    _require(all(_clean(item) for item in refs), "proposal_context.evidence_refs cannot contain empty values")
+    _require(set(refs).issubset(set(evidence_refs)), "proposal_context.evidence_refs must be cited by decision.evidence_refs")
+
+    parent_hypothesis_id = hypothesis.get("parent_hypothesis_id")
+    if kind == "initial":
+        _require(parent_hypothesis_id is None, "initial proposal cannot have parent_hypothesis_id")
+    else:
+        _require(_clean(parent_hypothesis_id), "alternative proposal requires parent_hypothesis_id")
 
 
 def _validate_end_payload(payload: dict[str, Any]) -> None:

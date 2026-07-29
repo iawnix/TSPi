@@ -36,7 +36,8 @@ Before every mutation after bootstrap:
    python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_decision --root <workspace> --decision-file decision.json
    ```
 
-7. Apply exactly one mutation: `start_node`, `update_workspace`, or `end_node`.
+7. Apply exactly one mutation: `start_node`, `propose_hypothesis`,
+   `update_workspace`, or `end_node`.
 8. Run `report_workspace` again before choosing the next action.
 
 Do not infer workspace state from memory. Do not copy JSON from `tests/`.
@@ -45,7 +46,7 @@ Do not infer workspace state from memory. Do not copy JSON from `tests/`.
 
 Read the current node's phase and use the matching reference:
 
-- `endpoint` or `hypothesis_generation`: `references/decision_contract.md` and
+- `endpoint`: `references/decision_contract.md` and
   `references/mechanism_reflection.md`
 - `candidate_generation`: `references/candidate_generation.md`
 - `tsfreq_validation`: `references/gaussian_validation.md`
@@ -54,6 +55,11 @@ Read the current node's phase and use the matching reference:
   `references/mechanism_reflection.md`
 - `pathway_audit`: `references/pathway_model.md` and
   `references/report_template.md`
+
+If an old workspace has a running `hypothesis_generation` node, treat it as a
+legacy close-compatible record and read `references/decision_contract.md` plus
+`references/mechanism_reflection.md`. Do not create another node with that
+phase.
 
 For `pathway_audit`, check these two contract points before closing:
 
@@ -103,7 +109,9 @@ Immediately run `report_workspace` and inspect:
 Use this report to decide one of:
 
 - `start_node` to continue the same evidence chain;
-- `start_node` to open a new solution, hypothesis, or pathway branch;
+- `start_node` to open a new solution or pathway branch;
+- `propose_hypothesis` to register an evidence-backed initial or alternative
+  mechanism proposal without creating a node;
 - `update_workspace` to register missing evidence or perform an explicit
   repair;
 - `stop` if no meaningful branch remains or the user asked to stop;
@@ -147,15 +155,20 @@ program or IRC protocol settings after a program-level failure.
 
 Use `new_solution_branch` only when the candidate or search strategy really
 changes under the same hypothesis. It requires a new `solution_ref.solution_id`
-and `parent_node == branch_context.anchor_node == hypothesis.source_node`.
+and `parent_node == branch_context.anchor_node ==
+hypothesis.branch_anchor_node` (legacy fallback: `source_node`).
 
-Use `new_hypothesis_branch` with `phase=hypothesis_generation` when the
-mechanism hypothesis changes.
+When the mechanism hypothesis changes, first use `propose_hypothesis` with
+`proposal_context.kind=alternative`. That mutation creates no node. Use
+`new_hypothesis_branch` only on the proposal's first evidence-producing node;
+its branch provenance must match the stored `proposal_context`.
 
 Use `new_pathway_branch` when the pathway topology or step model changes.
 
-Use `administrative_followup` for monitoring, report packaging, workspace
-repair, or visualization. It must not carry a chemistry verdict.
+Monitoring, report packaging, snapshots, workspace repair, and visualization
+do not create nodes. Use read/support commands or a supported
+`update_workspace` mutation. Historical `administrative_followup` records are
+read-compatible only.
 
 If two or more consecutive nodes under the same hypothesis fail by wrong basin,
 route ineffectiveness, ambiguous surface, repeated same-side IRC endpoints, or
@@ -168,7 +181,9 @@ Use templates as the starting point, not as a policy engine:
 
 - endpoint start/close: `start_endpoint_n000.json`,
   `end_endpoint_n000_supported.json`
-- later mechanism hypothesis: use `start_hypothesis_generation.json`
+- initial mechanism proposal: `propose_initial_hypothesis.json`
+- alternative mechanism proposal: `propose_alternative_hypothesis.json`, then
+  `start_candidate_generation__alternative_hypothesis.json`
 - R/P conformer strategy: `start_endpoint_conformer_generation.json`
 - evidence registration: `update_*_evidence.json`
 - normal evidence-layer progression: `start_candidate_generation.json`,

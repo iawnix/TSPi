@@ -12,7 +12,7 @@ Read this file when any of the following holds:
   assignments fall on the same side (product/product or reactant/reactant);
 - the same `hypothesis_ref` has ≥2 Gaussian route-mismatch diagnostics or
   route-ineffective closures;
-- the active `initial_mechanism_hypothesis.structured_claim.electronic_model`
+- the active hypothesis `structured_claim.electronic_model`
   marks `excited_state`, `open_shell`, or `non_adiabatic`;
 - any recent `reason_code` matches `wrong_basin|route_ineffective|surface_ambiguous`.
 

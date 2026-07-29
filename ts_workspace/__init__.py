@@ -3,6 +3,7 @@
 from .engine import (
     end_node,
     init_workspace,
+    propose_hypothesis,
     report_workspace,
     snapshot_report,
     start_node,
@@ -15,6 +16,7 @@ __all__ = [
     "ContractError",
     "end_node",
     "init_workspace",
+    "propose_hypothesis",
     "report_workspace",
     "snapshot_report",
     "start_node",

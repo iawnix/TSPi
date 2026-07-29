@@ -10,24 +10,27 @@ Persistent node state has three concepts:
 Valid phases:
 
 - `endpoint`
-- `hypothesis_generation`
 - `candidate_generation`
 - `tsfreq_validation`
 - `connectivity_validation`
 - `accepted_audit`
 - `pathway_audit`
 
-`endpoint` is reserved for the mandatory `n000` endpoint and initial-hypothesis
-contract. `hypothesis_generation` introduces a later mechanism hypothesis and
-must use `branch_context.relation=new_hypothesis_branch`.
+`endpoint` is reserved for the mandatory `n000` endpoint-validation contract.
+Hypothesis proposal is a `propose_hypothesis` mutation, not a phase or node.
+The proposal starts as `status=proposed`; its first evidence-producing node
+changes it to `active`. An alternative proposal's first node must use
+`branch_context.relation=new_hypothesis_branch` and match the stored
+`proposal_context`.
 
 R/P conformer or pose exploration is a `candidate_generation` strategy, not a
 separate evidence layer. Record it in `solution_ref.strategy` and register
 `endpoint_conformer_ensemble`, `selected_endpoint_conformer`, and any relevant
 endpoint identity or minimum gates before using a selected conformer downstream.
 
-Legacy `preflight` and `rp_conformer_generation` nodes remain readable and
-closable, but new `start_node` decisions must not create them.
+Legacy `preflight`, `rp_conformer_generation`, and `hypothesis_generation`
+nodes remain readable and closable, but new `start_node` decisions must not
+create them.
 
 `closure.program_status` is an execution fact:
 
@@ -75,7 +78,8 @@ keeps the same `hypothesis_ref`, uses a new `solution_ref`, and records
 `payload.branch_context.relation=new_solution_branch`. The workspace validates
 that referenced nodes exist, that the branch keeps the same `hypothesis_id`,
 that `payload.parent_node` equals `payload.branch_context.anchor_node`, and
-that the anchor is the current hypothesis `source_node`.
+that the anchor is the current hypothesis `branch_anchor_node` (with
+`source_node` only as a legacy fallback).
 The triggering node remains recorded in `payload.branch_context.from_node`.
 The workspace must not infer from node status that a new solution, hypothesis
 replacement, or stop decision is required.

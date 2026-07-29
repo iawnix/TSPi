@@ -24,6 +24,10 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
     assert "TS_WORKSPACE_ROOT" in manifest["scripts"]["install-env"]
     assert "postinstall" not in manifest["scripts"]
 
+    extension_source = (ROOT / "extensions" / "ts-workflow-context" / "index.ts").read_text(encoding="utf-8")
+    assert '"propose_hypothesis"' in extension_source
+    assert '["validate_decision", "start_node", "propose_hypothesis", "update_workspace", "end_node"]' in extension_source
+
 
 def test_pi_context_summary_from_report_workspace(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"

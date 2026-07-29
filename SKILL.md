@@ -91,6 +91,7 @@ export TS_AGENT_SKILL_ROOT=/path/to/transition-state-workflow
 ```bash
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" init_workspace  --root <root> [--decision-file decision.json] [--force]
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" start_node      --root <root> --decision-file decision.json
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" propose_hypothesis --root <root> --decision-file decision.json
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" update_workspace --root <root> --decision-file decision.json
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" end_node        --root <root> --decision-file decision.json
 ```
@@ -180,12 +181,15 @@ Persistent node state has only three public concepts:
 Valid phases:
 
 - `endpoint`
-- `hypothesis_generation`
 - `candidate_generation`
 - `tsfreq_validation`
 - `connectivity_validation`
 - `accepted_audit`
 - `pathway_audit`
+
+Legacy `preflight`, `rp_conformer_generation`, and `hypothesis_generation`
+nodes remain readable and closable. New `start_node` decisions cannot create
+them.
 
 Valid lifecycle values:
 
@@ -227,9 +231,9 @@ They are not top-level node states.
 2. For a fresh endpoint-based run, start an explicit `node_id=n000`
    `endpoint` node before candidate generation. Use it only for
    source hashes, charge/multiplicity, atom mapping, endpoint sanity checks,
-   and the structured `initial_mechanism_hypothesis`. Close it before opening
-   `n001`; do not put TS/Freq, IRC, connectivity, or accepted-TS claims in
-   `n000`.
+   and endpoint evidence. Close it before proposing the initial mechanism
+   hypothesis; do not put mechanism-hypothesis creation, TS/Freq, IRC,
+   connectivity, or accepted-TS claims in `n000`.
    Reactant/product endpoints define target basins for validation, not the
    candidate-generation method. Do not default to QST2/QST3 merely because R/P endpoints
    are available; justify QST use from endpoint optimization, atom mapping,
@@ -247,10 +251,13 @@ They are not top-level node states.
    lineage metadata, not a new state, verdict, or retry policy. Every post-`n000`
    `start_node` must include `payload.branch_context` so the agent's intended
    graph relation is explicit.
-   Introduce a later mechanism hypothesis with
-   `phase=hypothesis_generation`, `payload.initial_mechanism_hypothesis`, and
-   `branch_context.relation=new_hypothesis_branch`; `endpoint` is reserved for
-   `n000`.
+   Introduce the initial or a later mechanism hypothesis with the
+   `propose_hypothesis` mutation. It writes `mechanism_model.json` but creates no
+   node. A proposal must cite registered evidence and records `source_node`,
+   `branch_anchor_node`, and `proposal_context`. The first evidence-producing
+   node activates the proposed hypothesis. For an alternative proposal, that
+   node must use `branch_context.relation=new_hypothesis_branch` and exactly
+   match the stored proposal provenance.
    For `phase=pathway_audit`, `start_node.payload.pathway_ref` is mandatory
    and must identify the audited `pathway_id` and `step_id`; this is the only
    phase where `pathway_ref` is required by the start-decision contract.
@@ -261,10 +268,9 @@ They are not top-level node states.
    |---|---|---|
    | Same scientific object continues to next evidence layer (candidate → TS/Freq, TS/Freq → IRC, IRC → accepted audit, accepted → pathway audit) | `continue_parent` | `parent_node == from_node`. |
    | Same TS claim, IRC/protocol parameters changed after a program failure | `continue_parent` | `parent_node = TS/Freq-supported node`, `from_node = same`; cite the failed attempt via `reason_code` + evidence with role `previous_attempt_summary`. |
-   | Same hypothesis, different candidate / search strategy | `new_solution_branch` | New `solution_ref.solution_id`; `parent_node == anchor_node == hypothesis.source_node`. |
-   | Different mechanism hypothesis | `new_hypothesis_branch` | Use `phase=hypothesis_generation`; `parent_node == anchor_node`. |
+   | Same hypothesis, different candidate / search strategy | `new_solution_branch` | New `solution_ref.solution_id`; `parent_node == anchor_node == hypothesis.branch_anchor_node` (legacy fallback: `source_node`). |
+   | First evidence node for an alternative proposed hypothesis | `new_hypothesis_branch` | Match the stored `proposal_context`; `parent_node == anchor_node == hypothesis.branch_anchor_node`. |
    | Different pathway topology / step model | `new_pathway_branch` | `parent_node == anchor_node`. |
-   | Monitoring, report packaging, workspace repair, visualization | `administrative_followup` | No chemistry verdict. |
 
    **Program failure follow-up is not automatically a new branch.** A
    scheduler failure, IRC corrector convergence failure, parser desync, or
@@ -275,7 +281,11 @@ They are not top-level node states.
    `ts_workspace` records and validates topology; it must not decide whether
    to retry, switch solution, switch hypothesis, or stop.
 5. Run `validate_decision` for preflight when useful.
-6. Apply the mutation through `start_node`, `update_workspace`, or `end_node`.
+   Monitoring, report packaging, snapshots, workspace visualization, and other
+   control-plane support do not create nodes. Use their read/support commands or
+   `update_workspace` when an explicit supported mutation exists.
+6. Apply the mutation through `start_node`, `propose_hypothesis`,
+   `update_workspace`, or `end_node`.
 7. Use `ts_backends`, `ts_remote`, and `ts_structures` to create artifacts and
    evidence, then register evidence through `ts_workspace`. Keep node artifacts
    phase-owned: candidate-generation outputs stay under the candidate node;
@@ -297,8 +307,8 @@ They are not top-level node states.
    success.
 9. Use `update_workspace` with `payload.repair_branch_anchor` only for explicit
    legacy lineage repair of non-running `new_solution_branch` nodes; it must
-   move the branch to the current hypothesis `source_node` and records a repair
-   audit entry.
+   move the branch to the current hypothesis `branch_anchor_node` (falling back
+   to legacy `source_node`) and records a repair audit entry.
 10. Run `report_workspace` again before branching or stopping.
 11. Use `ts_report` only after the workspace validates. Prefer report-package
    output for final handoff so structure panels, vibration/IRC plots, energy
@@ -335,7 +345,7 @@ Read `references/strategy_reflection.md` when any of the following holds:
 assignments fall on the same side (product/product or reactant/reactant);
 (b) the same `hypothesis_ref` has ≥2 Gaussian route-mismatch diagnostics
 or route-ineffective closures;
-(c) the active `initial_mechanism_hypothesis.structured_claim.electronic_model`
+(c) the active hypothesis `structured_claim.electronic_model`
 marks `excited_state`, `open_shell`, or `non_adiabatic`;
 (d) any recent `reason_code` matches `wrong_basin|route_ineffective|surface_ambiguous`.
 

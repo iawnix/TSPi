@@ -93,8 +93,11 @@ def _update_mechanism_model(root: Path, node: dict[str, Any], closure: dict[str,
     path = root / "mechanism_model.json"
     model = read_json(path)
     model.setdefault("focus_hypothesis_id", None)
-    if node.get("phase") in WORKSPACE_HYPOTHESIS_CREATION_PHASES:
+    if _is_hypothesis_creation_node(node):
         _finalize_initial_hypothesis(root, model, node, closure)
+        changes[path] = model
+        return
+    if node.get("phase") == "endpoint":
         changes[path] = model
         return
 
@@ -432,9 +435,16 @@ def _impact_scope(node: dict[str, Any], closure: dict[str, Any]) -> str:
         return "hypothesis"
     if phase in PATHWAY_STEP_STATUS_PHASES:
         return "pathway_step"
-    if phase not in WORKSPACE_HYPOTHESIS_CREATION_PHASES:
+    if phase != "endpoint" and not _is_hypothesis_creation_node(node):
         return "prediction"
     return "solution_only"
+
+
+def _is_hypothesis_creation_node(node: dict[str, Any]) -> bool:
+    phase = node.get("phase")
+    if phase in WORKSPACE_HYPOTHESIS_CREATION_PHASES:
+        return True
+    return phase == "endpoint" and isinstance(node.get("initial_mechanism_hypothesis"), dict)
 
 
 def _validate_declared_mechanism_reflection_gates(

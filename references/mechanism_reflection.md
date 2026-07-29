@@ -6,17 +6,19 @@ IRC, Gaussian route mismatch, photochemistry/open-shell/non-adiabatic), see
 
 Mechanism reasoning is hypothesis management, not a hidden state machine.
 
-The strict workspace contract requires every search to start with a structured
-mechanism hypothesis, and later evidence-testing nodes must reference that
-hypothesis by `hypothesis_ref`. A natural-language node `hypothesis` remains useful for
-display, but the authoritative mechanism object lives in
+The strict workspace contract requires every search to validate endpoints,
+then register a structured mechanism proposal before evidence-testing nodes.
+Those nodes must reference that hypothesis by `hypothesis_ref`. A
+natural-language node `hypothesis` remains useful for display, but the
+authoritative mechanism object lives in
 `mechanism_model.json.hypotheses[]`.
 
 ## Initial Hypothesis
 
 The first node in a fresh workspace must be explicit `node_id=n000` with
-`phase=endpoint`. Its start decision must include
-`payload.initial_mechanism_hypothesis`.
+`phase=endpoint`. It records endpoint provenance and validation evidence only.
+After supported closure, use `action=propose_hypothesis` with
+`proposal_context.kind=initial`. Proposal is a workspace mutation, not a node.
 
 The initial hypothesis is derived from:
 
@@ -120,7 +122,6 @@ Minimum fields:
     "charge_multiplicity",
     "atom_mapping",
     "reaction_center_delta",
-    "initial_mechanism_hypothesis",
     "tsfreq_gate",
     "connectivity_gate",
     "stereochemical_connectivity_gate"
@@ -129,7 +130,7 @@ Minimum fields:
   "alternative_hypotheses": [
     {"summary": "Stepwise C-N formation.", "changed_variable": "elementary_step_order"}
   ],
-  "evidence_refs": ["ev_hyp_0001"]
+  "evidence_refs": ["ev_endpoint_provenance", "ev_reaction_center_delta"]
 }
 ```
 
@@ -188,11 +189,12 @@ Only include `stereochemical_policy` and `stereochemical_connectivity_gate`
 when the reaction question depends on stereoisomer identity. Once declared,
 accepted-audit closure requires a matched stereochemical connectivity gate.
 
-`n000` may not contain TS/Freq, IRC, connectivity, or accepted-TS claims. It
-only establishes whether the endpoint-derived mechanism hypothesis is usable.
-When `n000` closes with `program_status=completed` and
-`claim_verdict=supported`, the finalizer writes the hypothesis into
-`mechanism_model.json.hypotheses[]` and sets `focus_hypothesis_id`.
+`n000` may not contain mechanism-hypothesis creation, TS/Freq, IRC,
+connectivity, or accepted-TS claims. It only establishes whether the supplied
+endpoint basins are usable. A later `propose_hypothesis` mutation writes a
+`status=proposed` hypothesis into `mechanism_model.json.hypotheses[]` and sets
+`focus_hypothesis_id`. The first evidence-producing node that references it
+changes its status to `active` and records `activated_by_node`.
 
 ## Later Evidence-Testing Nodes
 
@@ -223,9 +225,12 @@ Allowed `closure.mechanism.revision.action` values:
 - `revise_hypothesis`
 - `supersede_hypothesis`
 
-New hypotheses must be introduced by a later `start_node` decision with
-`phase=hypothesis_generation`, `initial_mechanism_hypothesis`, and
-`payload.branch_context.relation=new_hypothesis_branch`.
+New hypotheses must be introduced by `action=propose_hypothesis` with cited,
+registered evidence and explicit `proposal_context`. An alternative proposal
+must identify `parent_hypothesis_id`. Its first evidence-producing node uses
+`payload.branch_context.relation=new_hypothesis_branch` and must match the
+stored proposal provenance. The proposal itself creates no node and has no
+`claim_verdict`.
 
 Recommended changed variables:
 

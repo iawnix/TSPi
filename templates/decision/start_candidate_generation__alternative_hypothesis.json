@@ -1,0 +1,47 @@
+{
+  "schema_version": "ts-decision",
+  "action": "start_node",
+  "rationale": "Start the first evidence-producing node for an alternative proposed mechanism hypothesis.",
+  "evidence_refs": [
+    "${EV_NEW_HYPOTHESIS_BASIS}"
+  ],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
+  "payload": {
+    "node_id": "${NEW_HYPOTHESIS_NODE_ID}",
+    "parent_node": "${BRANCH_ANCHOR_NODE}",
+    "phase": "candidate_generation",
+    "hypothesis": "Generate a candidate that tests the alternative proposed mechanism hypothesis.",
+    "hypothesis_ref": {
+      "hypothesis_id": "${NEW_HYPOTHESIS_ID}",
+      "prediction_ids": [
+        "${NEW_PRED_CANDIDATE_ID}"
+      ]
+    },
+    "solution_ref": {
+      "solution_id": "${NEW_HYPOTHESIS_SOLUTION_ID}",
+      "strategy": "${NEW_HYPOTHESIS_SOLUTION_STRATEGY}",
+      "summary": "${NEW_HYPOTHESIS_SOLUTION_SUMMARY}"
+    },
+    "branch_context": {
+      "relation": "new_hypothesis_branch",
+      "from_node": "${NEW_HYPOTHESIS_FROM_NODE}",
+      "anchor_node": "${BRANCH_ANCHOR_NODE}",
+      "changed_variable": "${NEW_HYPOTHESIS_CHANGED_VARIABLE}",
+      "reason_code": "${NEW_HYPOTHESIS_REASON_CODE}",
+      "evidence_refs": [
+        "${EV_NEW_HYPOTHESIS_BASIS}"
+      ]
+    },
+    "pathway_ref": {
+      "pathway_id": "${PATHWAY_ID}",
+      "step_id": "${STEP_ID}"
+    },
+    "expected_evidence": [
+      "candidate_geometry",
+      "candidate_generation_log"
+    ]
+  }
+}

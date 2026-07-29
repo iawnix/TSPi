@@ -21,15 +21,14 @@ def test_workspace_cli_roundtrip(tmp_path: Path) -> None:
     start_n000 = {
         "schema_version": "ts-decision",
         "action": "start_node",
-        "rationale": "Start endpoint validation and hypothesis generation.",
+        "rationale": "Start endpoint validation.",
         "evidence_refs": [],
         "report_ref": report_ref,
         "payload": {
             "node_id": "n000",
             "phase": "endpoint",
-            "hypothesis": "Initial endpoint-derived mechanism hypothesis.",
-            "initial_mechanism_hypothesis": initial_mechanism_hypothesis(),
-            "expected_evidence": ["initial_mechanism_hypothesis"],
+            "hypothesis": "The supplied structures define usable endpoint basins.",
+            "expected_evidence": ["reaction_center_delta"],
         },
     }
     start_path = tmp_path / "start_n000.json"
@@ -40,18 +39,17 @@ def test_workspace_cli_roundtrip(tmp_path: Path) -> None:
     update_decision = {
         "schema_version": "ts-decision",
         "action": "update_workspace",
-        "rationale": "Register initial mechanism hypothesis evidence.",
+        "rationale": "Register endpoint evidence for mechanism interpretation.",
         "evidence_refs": [],
         "report_ref": report_ref,
         "payload": {
             "append_evidence": {
-                "evidence_id": "ev_hyp_0001",
-                "kind": "mechanism_hypothesis",
-                "role": "initial_mechanism_hypothesis",
-                "evidence_tier": "hypothesis",
+                "evidence_id": "ev_endpoint_0001",
+                "kind": "endpoint_delta",
+                "role": "reaction_center_delta",
+                "evidence_tier": "manual_observation",
                 "node_id": "n000",
-                "summary": "Initial endpoint-derived hypothesis.",
-                "quality": {"hypothesis_id": HYPOTHESIS_ID},
+                "summary": "C1-N2 is the dominant endpoint bond change.",
             }
         },
     }
@@ -63,17 +61,17 @@ def test_workspace_cli_roundtrip(tmp_path: Path) -> None:
     end_decision = {
         "schema_version": "ts-decision",
         "action": "end_node",
-        "rationale": "Close endpoint validation and hypothesis generation.",
-        "evidence_refs": ["ev_hyp_0001"],
+        "rationale": "Close endpoint validation.",
+        "evidence_refs": ["ev_endpoint_0001"],
         "report_ref": report_ref,
         "payload": {
             "node_id": "n000",
             "closure": {
                 "program_status": "completed",
                 "claim_verdict": "supported",
-                "program": {"summary": "Endpoint validation completed.", "evidence_refs": ["ev_hyp_0001"]},
-                "mechanism": {"summary": "Initial hypothesis is ready.", "evidence_refs": ["ev_hyp_0001"]},
-                "implication": "Open candidate generation next.",
+                "program": {"summary": "Endpoint validation completed.", "evidence_refs": ["ev_endpoint_0001"]},
+                "mechanism": {"summary": "Endpoint evidence can support a mechanism proposal.", "evidence_refs": []},
+                "implication": "Propose a mechanism hypothesis.",
                 "open_questions": [],
             },
         },
@@ -82,6 +80,9 @@ def test_workspace_cli_roundtrip(tmp_path: Path) -> None:
     end_path.write_text(json.dumps(end_decision), encoding="utf-8")
     closed = _run("end_node", "--root", str(workspace), "--decision-file", str(end_path))
     assert closed["lifecycle"] == "closed"
+
+    proposed = _propose_initial_hypothesis(tmp_path, workspace, report_ref)
+    assert proposed == {"hypothesis_id": HYPOTHESIS_ID, "status": "proposed"}
 
     report = _run("report_workspace", "--root", str(workspace))
     report_ref = {"report_id": report["report_id"], "workspace_root": str(workspace)}
@@ -156,30 +157,29 @@ def test_explicit_n000_endpoint_node_keeps_next_auto_id_at_n001(tmp_path: Path) 
             "node_id": "n000",
             "phase": "endpoint",
             "hypothesis": "User-provided endpoints are ready for candidate generation.",
-            "initial_mechanism_hypothesis": initial_mechanism_hypothesis(),
-            "expected_evidence": ["endpoint_hashes", "charge_multiplicity", "atom_order_mapping"],
+            "expected_evidence": ["endpoint_hashes", "charge_multiplicity", "atom_order_mapping", "reaction_center_delta"],
         },
     }
     start_endpoint_path = tmp_path / "start_n000.json"
     start_endpoint_path.write_text(json.dumps(start_endpoint), encoding="utf-8")
     endpoint = _run("start_node", "--root", str(workspace), "--decision-file", str(start_endpoint_path))
     assert endpoint["node_id"] == "n000"
-    _register_initial_hypothesis_evidence(tmp_path, workspace, report_ref)
+    _register_endpoint_evidence(tmp_path, workspace, report_ref)
 
     close_endpoint = {
         "schema_version": "ts-decision",
         "action": "end_node",
         "rationale": "Close endpoint validation.",
-        "evidence_refs": ["ev_hyp_0001"],
+        "evidence_refs": ["ev_endpoint_0001"],
         "report_ref": report_ref,
         "payload": {
             "node_id": "n000",
             "closure": {
                 "program_status": "completed",
                 "claim_verdict": "supported",
-                "program": {"summary": "Endpoint checks completed.", "evidence_refs": ["ev_hyp_0001"]},
-                "mechanism": {"summary": "Inputs are suitable for candidate generation.", "evidence_refs": ["ev_hyp_0001"]},
-                "implication": "Open candidate generation.",
+                "program": {"summary": "Endpoint checks completed.", "evidence_refs": ["ev_endpoint_0001"]},
+                "mechanism": {"summary": "Inputs are suitable for mechanism interpretation.", "evidence_refs": []},
+                "implication": "Propose a mechanism hypothesis.",
                 "open_questions": [],
             },
         },
@@ -187,6 +187,7 @@ def test_explicit_n000_endpoint_node_keeps_next_auto_id_at_n001(tmp_path: Path) 
     close_endpoint_path = tmp_path / "close_n000.json"
     close_endpoint_path.write_text(json.dumps(close_endpoint), encoding="utf-8")
     _run("end_node", "--root", str(workspace), "--decision-file", str(close_endpoint_path))
+    _propose_initial_hypothesis(tmp_path, workspace, report_ref)
 
     start_candidate = {
         "schema_version": "ts-decision",
@@ -272,39 +273,38 @@ def _bootstrap_strict_cli_workspace(tmp_path: Path, workspace: Path) -> None:
             {
                 "schema_version": "ts-decision",
                 "action": "start_node",
-                "rationale": "Bootstrap endpoint hypothesis.",
+                    "rationale": "Bootstrap endpoint validation.",
                 "evidence_refs": [],
                 "report_ref": report_ref,
                 "payload": {
                     "node_id": "n000",
                     "phase": "endpoint",
-                    "hypothesis": "Initial endpoint hypothesis.",
-                    "initial_mechanism_hypothesis": initial_mechanism_hypothesis(),
-                    "expected_evidence": ["initial_mechanism_hypothesis"],
+                        "hypothesis": "Validate the supplied endpoint basins.",
+                        "expected_evidence": ["reaction_center_delta"],
                 },
             }
         ),
         encoding="utf-8",
     )
     _run("start_node", "--root", str(workspace), "--decision-file", str(start_path))
-    _register_initial_hypothesis_evidence(tmp_path, workspace, report_ref)
+    _register_endpoint_evidence(tmp_path, workspace, report_ref)
     end_path = tmp_path / "bootstrap_end.json"
     end_path.write_text(
         json.dumps(
             {
                 "schema_version": "ts-decision",
                 "action": "end_node",
-                "rationale": "Close endpoint hypothesis.",
-                "evidence_refs": ["ev_hyp_0001"],
+                "rationale": "Close endpoint validation.",
+                "evidence_refs": ["ev_endpoint_0001"],
                 "report_ref": report_ref,
                 "payload": {
                     "node_id": "n000",
                     "closure": {
                         "program_status": "completed",
                         "claim_verdict": "supported",
-                        "program": {"summary": "Endpoint complete.", "evidence_refs": ["ev_hyp_0001"]},
-                        "mechanism": {"summary": "Hypothesis ready.", "evidence_refs": ["ev_hyp_0001"]},
-                        "implication": "Continue.",
+                        "program": {"summary": "Endpoint complete.", "evidence_refs": ["ev_endpoint_0001"]},
+                        "mechanism": {"summary": "Endpoint evidence is ready for interpretation.", "evidence_refs": []},
+                        "implication": "Propose a mechanism hypothesis.",
                         "open_questions": [],
                     },
                 },
@@ -313,27 +313,27 @@ def _bootstrap_strict_cli_workspace(tmp_path: Path, workspace: Path) -> None:
         encoding="utf-8",
     )
     _run("end_node", "--root", str(workspace), "--decision-file", str(end_path))
+    _propose_initial_hypothesis(tmp_path, workspace, report_ref)
 
 
-def _register_initial_hypothesis_evidence(tmp_path: Path, workspace: Path, report_ref: dict[str, str]) -> None:
+def _register_endpoint_evidence(tmp_path: Path, workspace: Path, report_ref: dict[str, str]) -> None:
     update_path = tmp_path / "bootstrap_evidence.json"
     update_path.write_text(
         json.dumps(
             {
                 "schema_version": "ts-decision",
                 "action": "update_workspace",
-                "rationale": "Register initial hypothesis evidence.",
+                "rationale": "Register endpoint evidence.",
                 "evidence_refs": [],
                 "report_ref": report_ref,
                 "payload": {
                     "append_evidence": {
-                        "evidence_id": "ev_hyp_0001",
-                        "kind": "mechanism_hypothesis",
-                        "role": "initial_mechanism_hypothesis",
-                        "evidence_tier": "hypothesis",
+                        "evidence_id": "ev_endpoint_0001",
+                        "kind": "endpoint_delta",
+                        "role": "reaction_center_delta",
+                        "evidence_tier": "manual_observation",
                         "node_id": "n000",
-                        "summary": "Initial hypothesis.",
-                        "quality": {"hypothesis_id": HYPOTHESIS_ID},
+                        "summary": "C1-N2 is the dominant endpoint bond change.",
                     }
                 },
             }
@@ -341,6 +341,38 @@ def _register_initial_hypothesis_evidence(tmp_path: Path, workspace: Path, repor
         encoding="utf-8",
     )
     _run("update_workspace", "--root", str(workspace), "--decision-file", str(update_path))
+
+
+def _propose_initial_hypothesis(
+    tmp_path: Path,
+    workspace: Path,
+    report_ref: dict[str, str],
+) -> dict:
+    proposal_path = tmp_path / "propose_initial_hypothesis.json"
+    proposal_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "ts-decision",
+                "action": "propose_hypothesis",
+                "rationale": "Propose the initial endpoint-derived mechanism hypothesis.",
+                "evidence_refs": ["ev_endpoint_0001"],
+                "report_ref": report_ref,
+                "payload": {
+                    "proposed_hypothesis": initial_mechanism_hypothesis(),
+                    "proposal_context": {
+                        "kind": "initial",
+                        "from_node": "n000",
+                        "anchor_node": "n000",
+                        "changed_variable": "initial_mechanism_model",
+                        "reason_code": "endpoint_interpretation",
+                        "evidence_refs": ["ev_endpoint_0001"],
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return _run("propose_hypothesis", "--root", str(workspace), "--decision-file", str(proposal_path))
 
 
 def _run(*args: str) -> dict:

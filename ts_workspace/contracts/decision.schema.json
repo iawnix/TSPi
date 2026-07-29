@@ -7,7 +7,7 @@
     "schema_version": {"const": "ts-decision"},
     "decision_id": {"type": "string", "minLength": 1},
     "action": {
-      "enum": ["init_workspace", "start_node", "end_node", "update_workspace", "ask_user", "stop"]
+      "enum": ["init_workspace", "start_node", "propose_hypothesis", "end_node", "update_workspace", "ask_user", "stop"]
     },
     "rationale": {"type": "string", "minLength": 1},
     "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}},
@@ -26,13 +26,15 @@
         "node_id": {"type": "string", "minLength": 1},
         "parent_node": {"type": ["string", "null"]},
         "phase": {
-          "enum": ["endpoint", "hypothesis_generation", "candidate_generation", "tsfreq_validation", "connectivity_validation", "accepted_audit", "pathway_audit"]
+          "enum": ["endpoint", "candidate_generation", "tsfreq_validation", "connectivity_validation", "accepted_audit", "pathway_audit"]
         },
         "hypothesis": {"type": "string", "minLength": 1},
         "hypothesis_ref": {"$ref": "mechanism.schema.json#/$defs/hypothesis_ref"},
         "solution_ref": {"$ref": "#/$defs/solution_ref"},
         "branch_context": {"$ref": "#/$defs/branch_context"},
         "initial_mechanism_hypothesis": {"$ref": "mechanism.schema.json#/$defs/mechanism_hypothesis_input"},
+        "proposed_hypothesis": {"$ref": "mechanism.schema.json#/$defs/mechanism_hypothesis_input"},
+        "proposal_context": {"$ref": "#/$defs/proposal_context"},
         "expected_evidence": {"type": "array", "items": {"type": "string", "minLength": 1}},
         "pathway_ref": {"$ref": "#/$defs/pathway_ref"},
         "closure": {"$ref": "#/$defs/closure"},
@@ -65,8 +67,16 @@
   },
   "allOf": [
     {
-      "if": {"properties": {"action": {"enum": ["start_node", "end_node", "update_workspace"]}}},
+      "if": {"properties": {"action": {"enum": ["start_node", "propose_hypothesis", "end_node", "update_workspace"]}}},
       "then": {"required": ["report_ref"]}
+    },
+    {
+      "if": {"properties": {"action": {"const": "propose_hypothesis"}}},
+      "then": {
+        "properties": {
+          "payload": {"required": ["proposed_hypothesis", "proposal_context"]}
+        }
+      }
     },
     {
       "if": {"properties": {"action": {"const": "start_node"}}},
@@ -154,8 +164,21 @@
       "required": ["relation", "from_node", "anchor_node"],
       "properties": {
         "relation": {
-          "enum": ["continue_parent", "new_solution_branch", "new_hypothesis_branch", "new_pathway_branch", "administrative_followup"]
+          "enum": ["continue_parent", "new_solution_branch", "new_hypothesis_branch", "new_pathway_branch"]
         },
+        "from_node": {"type": "string", "minLength": 1},
+        "anchor_node": {"type": "string", "minLength": 1},
+        "changed_variable": {"type": "string", "minLength": 1},
+        "reason_code": {"type": "string", "minLength": 1},
+        "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      },
+      "additionalProperties": true
+    },
+    "proposal_context": {
+      "type": "object",
+      "required": ["kind", "from_node", "anchor_node", "changed_variable", "reason_code"],
+      "properties": {
+        "kind": {"enum": ["initial", "alternative"]},
         "from_node": {"type": "string", "minLength": 1},
         "anchor_node": {"type": "string", "minLength": 1},
         "changed_variable": {"type": "string", "minLength": 1},

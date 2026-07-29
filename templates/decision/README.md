@@ -29,26 +29,29 @@ Typical endpoint-first sequence:
 1. `start_endpoint_n000.json`
 2. `update_endpoint_evidence.json`
 3. `end_endpoint_n000_supported.json`
-4. `start_candidate_generation.json` for the first `solution_ref`
-5. `update_candidate_evidence.json`
-6. `end_candidate_generation_supported.json`
-7. `start_tsfreq_validation.json`
-8. `update_tsfreq_evidence.json`
-9. `end_tsfreq_validation_supported.json`
-10. `start_connectivity_validation__initial.json`
-11. `update_connectivity_evidence.json`
-12. `end_connectivity_validation_supported.json`
-13. `start_accepted_audit.json`
-14. `end_accepted_audit_supported.json`
-15. `start_pathway_audit.json`
-16. `update_pathway_audit_accepted.json`
-17. `end_pathway_audit_accepted.json`
+4. `propose_initial_hypothesis.json` (mutation only; no node)
+5. `start_candidate_generation.json` for the first `solution_ref`
+6. `update_candidate_evidence.json`
+7. `end_candidate_generation_supported.json`
+8. `start_tsfreq_validation.json`
+9. `update_tsfreq_evidence.json`
+10. `end_tsfreq_validation_supported.json`
+11. `start_connectivity_validation__initial.json`
+12. `update_connectivity_evidence.json`
+13. `end_connectivity_validation_supported.json`
+14. `start_accepted_audit.json`
+15. `end_accepted_audit_supported.json`
+16. `start_pathway_audit.json`
+17. `update_pathway_audit_accepted.json`
+18. `end_pathway_audit_accepted.json`
 
 Optional phase-specific sequences:
 
 - later mechanism hypothesis:
-  `start_hypothesis_generation.json` -> `update_hypothesis_evidence.json` ->
-  `end_hypothesis_generation_supported.json`
+  `propose_alternative_hypothesis.json` ->
+  `start_candidate_generation__alternative_hypothesis.json`. The second
+  template carries the matching `branch_context.relation=new_hypothesis_branch`;
+  the proposal itself does not create a node.
 - R/P conformer strategy:
   `start_endpoint_conformer_generation.json` ->
   `update_endpoint_conformer_evidence.json` ->
@@ -97,8 +100,12 @@ changed at the scientific level, not what changed at the program level.
   refuted a TS/Freq-supported candidate → different TS type). Keeps the same
   `hypothesis_ref`, assigns a new `solution_ref`, and records
   `payload.branch_context.relation=new_solution_branch`. `parent_node ==
-  anchor_node == hypothesis.source_node`; `from_node` records the failed or
-  triggering node.
+  anchor_node == hypothesis.branch_anchor_node` (legacy fallback:
+  `source_node`); `from_node` records the failed or triggering node.
+- `start_candidate_generation__alternative_hypothesis.json` — first
+  evidence-producing node after `propose_alternative_hypothesis.json`. Its
+  hypothesis and branch provenance placeholders must exactly match the stored
+  proposal; starting it activates that proposal.
 
 For a negative pathway audit, use `update_pathway_audit_not_accepted.json` and
 `end_pathway_audit_not_accepted.json`. That closes the current mechanism
@@ -108,3 +115,7 @@ scientifically meaningful, start it with
 `payload.branch_context` provenance. If the chemistry itself is being changed,
 create or revise the chemical hypothesis explicitly; do not encode that as an
 automatic retry policy.
+
+Monitoring, report packaging, snapshots, workspace repair, and visualization
+do not use `start_node`. Historical `administrative_followup` records are
+read-compatible only.

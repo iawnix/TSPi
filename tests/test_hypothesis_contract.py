@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from ts_workspace import end_node, report_workspace, start_node, update_workspace, validate_workspace
+from ts_workspace import end_node, propose_hypothesis, report_workspace, start_node, update_workspace, validate_workspace
 from ts_workspace.io import read_json, write_json
 from ts_workspace.validators.decision import ContractError, validate_decision
 from strict_helpers import (
@@ -13,11 +13,12 @@ from strict_helpers import (
     PATHWAY_REF,
     bootstrap_strict_workspace,
     gate_artifact_metadata,
+    initial_mechanism_hypothesis,
     make_accepted_workspace,
 )
 
 
-def test_n000_supported_closure_finalizes_focus_hypothesis(tmp_path: Path) -> None:
+def test_initial_proposal_registers_unvalidated_focus_hypothesis(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
 
     bootstrap_strict_workspace(workspace)
@@ -26,7 +27,10 @@ def test_n000_supported_closure_finalizes_focus_hypothesis(tmp_path: Path) -> No
     assert mechanism["focus_hypothesis_id"] == HYPOTHESIS_ID
     assert mechanism["hypotheses"][0]["hypothesis_id"] == HYPOTHESIS_ID
     assert mechanism["hypotheses"][0]["source_node"] == "n000"
-    assert mechanism["hypotheses"][0]["status"] == "active"
+    assert mechanism["hypotheses"][0]["status"] == "proposed"
+    assert mechanism["hypotheses"][0]["branch_anchor_node"] == "n000"
+    assert mechanism["hypotheses"][0]["proposal_context"]["kind"] == "initial"
+    assert read_json(workspace / "tree.json")["nodes"][-1]["node_id"] == "n000"
     assert validate_workspace(workspace)["valid"] is True
 
 
@@ -46,6 +50,147 @@ def test_candidate_generation_requires_hypothesis_ref() -> None:
 
     with pytest.raises(ContractError, match="payload.hypothesis_ref is required"):
         validate_decision(decision)
+
+
+def test_endpoint_start_cannot_embed_a_mechanism_hypothesis() -> None:
+    decision = {
+        "schema_version": "ts-decision",
+        "action": "start_node",
+        "rationale": "Endpoint validation must not create a mechanism hypothesis.",
+        "evidence_refs": [],
+        "report_ref": {"report_id": "rep_test", "workspace_root": "ws"},
+        "payload": {
+            "node_id": "n000",
+            "phase": "endpoint",
+            "hypothesis": "Validate endpoint basins.",
+            "initial_mechanism_hypothesis": initial_mechanism_hypothesis(),
+            "expected_evidence": [],
+        },
+    }
+
+    with pytest.raises(ContractError, match="endpoint cannot create a mechanism hypothesis"):
+        validate_decision(decision)
+
+
+def test_evidence_node_cannot_embed_a_mechanism_hypothesis() -> None:
+    decision = {
+        "schema_version": "ts-decision",
+        "action": "start_node",
+        "rationale": "Evidence nodes must reference, not create, mechanism hypotheses.",
+        "evidence_refs": [],
+        "report_ref": {"report_id": "rep_test", "workspace_root": "ws"},
+        "payload": {
+            "node_id": "n001",
+            "parent_node": "n000",
+            "phase": "candidate_generation",
+            "hypothesis": "Test a registered hypothesis.",
+            "hypothesis_ref": HYPOTHESIS_REF,
+            "initial_mechanism_hypothesis": initial_mechanism_hypothesis(),
+            "branch_context": {"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
+            "expected_evidence": ["candidate_geometry"],
+        },
+    }
+
+    with pytest.raises(ContractError, match="use propose_hypothesis"):
+        validate_decision(decision)
+
+
+def test_propose_hypothesis_requires_registered_evidence(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    bootstrap_strict_workspace(workspace)
+    hypothesis = initial_mechanism_hypothesis()
+    hypothesis["hypothesis_id"] = "hyp_0002"
+    hypothesis["parent_hypothesis_id"] = HYPOTHESIS_ID
+    hypothesis["evidence_refs"] = ["ev_missing"]
+    decision = {
+        "schema_version": "ts-decision",
+        "action": "propose_hypothesis",
+        "rationale": "Propose an evidence-driven alternative.",
+        "evidence_refs": ["ev_missing"],
+        "report_ref": {"report_id": report_workspace(workspace)["report_id"], "workspace_root": str(workspace)},
+        "payload": {
+            "proposed_hypothesis": hypothesis,
+            "proposal_context": {
+                "kind": "alternative",
+                "from_node": "n000",
+                "anchor_node": "n000",
+                "changed_variable": "elementary_step_model",
+                "reason_code": "alternative_mechanism",
+                "evidence_refs": ["ev_missing"],
+            },
+        },
+    }
+
+    with pytest.raises(ContractError, match="unknown evidence"):
+        propose_hypothesis(workspace, decision)
+
+
+def test_proposed_hypothesis_evidence_must_be_cited_by_decision() -> None:
+    hypothesis = initial_mechanism_hypothesis()
+    hypothesis["evidence_refs"] = ["ev_not_cited"]
+    decision = {
+        "schema_version": "ts-decision",
+        "action": "propose_hypothesis",
+        "rationale": "Proposal evidence must stay inside the decision evidence boundary.",
+        "evidence_refs": ["ev_endpoint_0001"],
+        "report_ref": {"report_id": "rep_test", "workspace_root": "ws"},
+        "payload": {
+            "proposed_hypothesis": hypothesis,
+            "proposal_context": {
+                "kind": "initial",
+                "from_node": "n000",
+                "anchor_node": "n000",
+                "changed_variable": "initial_mechanism_model",
+                "reason_code": "endpoint_interpretation",
+                "evidence_refs": ["ev_endpoint_0001"],
+            },
+        },
+    }
+
+    with pytest.raises(ContractError, match="proposed_hypothesis.evidence_refs must be cited"):
+        validate_decision(decision)
+
+
+def test_initial_proposal_requires_completed_supported_endpoint(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    bootstrap_strict_workspace(workspace)
+    node_path = workspace / "nodes" / "n000" / "node.json"
+    node = read_json(node_path)
+    node["closure"]["program_status"] = "not_run"
+    write_json(node_path, node)
+    write_json(
+        workspace / "mechanism_model.json",
+        {
+            "schema_version": "ts-mechanism",
+            "focus_hypothesis_id": None,
+            "hypotheses": [],
+            "accepted_facts": [],
+            "refuted_hypotheses": [],
+            "open_questions": [],
+        },
+    )
+    hypothesis = initial_mechanism_hypothesis()
+    decision = {
+        "schema_version": "ts-decision",
+        "action": "propose_hypothesis",
+        "rationale": "A supported verdict without completed endpoint work is insufficient.",
+        "evidence_refs": ["ev_endpoint_0001"],
+        "report_ref": {"report_id": report_workspace(workspace)["report_id"], "workspace_root": str(workspace)},
+        "payload": {
+            "proposed_hypothesis": hypothesis,
+            "proposal_context": {
+                "kind": "initial",
+                "from_node": "n000",
+                "anchor_node": "n000",
+                "changed_variable": "initial_mechanism_model",
+                "reason_code": "endpoint_interpretation",
+                "evidence_refs": ["ev_endpoint_0001"],
+            },
+        },
+    }
+
+    with pytest.raises(ContractError, match="completed, supported n000 endpoint"):
+        propose_hypothesis(workspace, decision)
 
 
 def test_solution_ref_is_optional_lineage_not_state(tmp_path: Path) -> None:
@@ -85,6 +230,9 @@ def test_solution_ref_is_optional_lineage_not_state(tmp_path: Path) -> None:
     assert node["solution_ref"] == solution_ref
     assert tree["nodes"][-1]["solution_ref"] == solution_ref
     assert report["node_index"][-1]["solution_ref"] == solution_ref
+    mechanism = read_json(workspace / "mechanism_model.json")
+    assert mechanism["hypotheses"][0]["status"] == "active"
+    assert mechanism["hypotheses"][0]["activated_by_node"] == "n001"
     assert validate_workspace(workspace)["valid"] is True
 
     tree["nodes"][-1].pop("solution_ref")
@@ -92,6 +240,38 @@ def test_solution_ref_is_optional_lineage_not_state(tmp_path: Path) -> None:
     validation = validate_workspace(workspace)
     assert validation["valid"] is False
     assert any(item["code"] == "solution_ref_mismatch" for item in validation["findings"])
+
+
+def test_workspace_validator_detects_corrupted_hypothesis_activation_provenance(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_strict_workspace(workspace)
+    start_node(
+        workspace,
+        {
+            "schema_version": "ts-decision",
+            "action": "start_node",
+            "rationale": "Activate the initial proposal with its first evidence node.",
+            "evidence_refs": [],
+            "report_ref": report_ref,
+            "payload": {
+                "node_id": "n001",
+                "parent_node": "n000",
+                "phase": "candidate_generation",
+                "hypothesis": "Test the initial proposal.",
+                "hypothesis_ref": HYPOTHESIS_REF,
+                "branch_context": {"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
+                "expected_evidence": ["candidate_geometry"],
+            },
+        },
+    )
+    mechanism = read_json(workspace / "mechanism_model.json")
+    mechanism["hypotheses"][0]["activated_by_node"] = "n999"
+    write_json(workspace / "mechanism_model.json", mechanism)
+
+    validation = validate_workspace(workspace)
+
+    assert validation["valid"] is False
+    assert any(item["code"] == "hypothesis_activation_node_missing" for item in validation["findings"])
 
 
 def test_solution_ref_rejects_blank_solution_id() -> None:

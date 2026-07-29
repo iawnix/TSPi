@@ -1,18 +1,16 @@
 {
   "schema_version": "ts-decision",
-  "action": "start_node",
-  "rationale": "Introduce a distinct mechanism hypothesis before testing it with downstream evidence-generating work.",
-  "evidence_refs": [],
+  "action": "propose_hypothesis",
+  "rationale": "Propose a distinct mechanism hypothesis from evidence that changes a declared mechanism variable.",
+  "evidence_refs": [
+    "${EV_NEW_HYPOTHESIS_BASIS}"
+  ],
   "report_ref": {
     "report_id": "${REPORT_ID}",
     "workspace_root": "${WORKSPACE_ROOT}"
   },
   "payload": {
-    "node_id": "${NEW_HYPOTHESIS_NODE_ID}",
-    "parent_node": "${BRANCH_ANCHOR_NODE}",
-    "phase": "hypothesis_generation",
-    "hypothesis": "${NEW_HYPOTHESIS_SUMMARY}",
-    "initial_mechanism_hypothesis": {
+    "proposed_hypothesis": {
       "hypothesis_id": "${NEW_HYPOTHESIS_ID}",
       "parent_hypothesis_id": "${HYPOTHESIS_ID}",
       "summary": "${NEW_HYPOTHESIS_SUMMARY}",
@@ -27,10 +25,7 @@
         "reaction_center": {
           "forming_bonds": [
             {
-              "atoms": [
-                "${FORMING_ATOM_A}",
-                "${FORMING_ATOM_B}"
-              ],
+              "atoms": ["${FORMING_ATOM_A}", "${FORMING_ATOM_B}"],
               "label": "${FORMING_BOND_LABEL}"
             }
           ],
@@ -38,9 +33,7 @@
           "transferred_atoms": [],
           "spectator_regions": []
         },
-        "reaction_class": [
-          "${NEW_REACTION_CLASS}"
-        ],
+        "reaction_class": ["${NEW_REACTION_CLASS}"],
         "elementary_step_model": "${NEW_ELEMENTARY_STEP_MODEL}",
         "electronic_model": {
           "surface": "${NEW_ELECTRONIC_SURFACE}"
@@ -52,33 +45,21 @@
           "prediction_id": "${NEW_PRED_CANDIDATE_ID}",
           "phase": "candidate_generation",
           "expectation": "${NEW_CANDIDATE_EXPECTATION}",
-          "required_evidence_roles": [
-            "candidate_geometry"
-          ]
+          "required_evidence_roles": ["candidate_geometry"]
         }
       ],
-      "required_evidence": [
-        "initial_mechanism_hypothesis",
-        "candidate_geometry"
-      ],
-      "uncertainties": [
-        "${NEW_HYPOTHESIS_UNCERTAINTY}"
-      ],
+      "required_evidence": ["candidate_geometry"],
+      "uncertainties": ["${NEW_HYPOTHESIS_UNCERTAINTY}"],
       "alternative_hypotheses": [],
-      "evidence_refs": [
-        "${EV_NEW_HYPOTHESIS}"
-      ]
+      "evidence_refs": ["${EV_NEW_HYPOTHESIS_BASIS}"]
     },
-    "expected_evidence": [
-      "initial_mechanism_hypothesis"
-    ],
-    "branch_context": {
-      "relation": "new_hypothesis_branch",
+    "proposal_context": {
+      "kind": "alternative",
       "from_node": "${NEW_HYPOTHESIS_FROM_NODE}",
       "anchor_node": "${BRANCH_ANCHOR_NODE}",
       "changed_variable": "${NEW_HYPOTHESIS_CHANGED_VARIABLE}",
       "reason_code": "${NEW_HYPOTHESIS_REASON_CODE}",
-      "evidence_refs": []
+      "evidence_refs": ["${EV_NEW_HYPOTHESIS_BASIS}"]
     }
   }
 }

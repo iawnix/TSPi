@@ -8,7 +8,16 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .engine import end_node, init_workspace, report_workspace, snapshot_report, start_node, update_workspace, validate_workspace
+from .engine import (
+    end_node,
+    init_workspace,
+    propose_hypothesis,
+    report_workspace,
+    snapshot_report,
+    start_node,
+    update_workspace,
+    validate_workspace,
+)
 from .validators.decision import ContractError, validate_decision
 from .validators.decision_context import detect_decision_warnings, validate_decision_for_workspace
 
@@ -35,7 +44,7 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("validate_workspace")
     p.add_argument("--root", required=True)
 
-    for command in ("validate_decision", "start_node", "update_workspace", "end_node"):
+    for command in ("validate_decision", "start_node", "propose_hypothesis", "update_workspace", "end_node"):
         p = sub.add_parser(command)
         p.add_argument("--root", required=True)
         p.add_argument("--decision-file", required=True)
@@ -79,6 +88,8 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
         if warnings:
             result = {**result, "warnings": warnings}
         return result
+    if command == "propose_hypothesis":
+        return propose_hypothesis(args.root, decision)
     if command == "update_workspace":
         return update_workspace(args.root, decision)
     if command == "end_node":

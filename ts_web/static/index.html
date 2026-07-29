@@ -1273,20 +1273,18 @@ const COLOR_VAR = {
 const NODE_W = 240, NODE_H = 84;
 const X_GAP = 72, Y_GAP = 26;
 
-/* Stage → label + icon. Patterns are matched case-insensitively against node.stage. */
-const STAGE_INFO_LIST = [
-  { match: /^endpoint$|endpoint_opt|preflight|atom_map/i,
-                                                          label: "Endpoint",          icon: "endpoint" },
-  { match: /gaussian.*neb|neb.*gaussian|external.*gaussian.*neb/i,
-                                                          label: "Gaussian NEB",    icon: "candidate_generation" },
-  { match: /gaussian|tsfreq|ts\/freq/i,                label: "Gaussian TS/Freq",  icon: "gaussian_tsfreq_validation" },
-  { match: /qbics|dmecp|mecp/i,                        label: "QBICS dMECP",       icon: "qbics_dmecp" },
-  { match: /connectivity|endpoint_check|displacement/i,label: "Connectivity",      icon: "connectivity_check" },
-  { match: /\birc\b/i,                                 label: "IRC",               icon: "irc" },
-  { match: /reflect/i,                                 label: "Reflection",        icon: "mechanism_reflection" },
-  { match: /report|final|accepted/i,                   label: "Report",            icon: "report" },
-  { match: /candidate|neb|scan|qst|dimer|xtb/i,        label: "Candidate Gen",     icon: "candidate_generation" }
-];
+/* Canonical phase labels come from the backend. This map only selects icons. */
+const STAGE_ICONS = {
+  endpoint: "endpoint",
+  candidate_generation: "candidate_generation",
+  tsfreq_validation: "gaussian_tsfreq_validation",
+  connectivity_validation: "connectivity_check",
+  accepted_audit: "accepted_audit",
+  pathway_audit: "pathway_audit",
+  preflight: "endpoint",
+  rp_conformer_generation: "candidate_generation",
+  hypothesis_generation: "mechanism_reflection"
+};
 const STAGE_ICON_PATHS = {
   endpoint:                   '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>',
   candidate_generation:       '<path d="M12 2.5l2.7 6.7 7.3 0.6-5.5 4.8 1.7 7.1L12 17.9 5.8 21.7l1.7-7.1L2 9.8l7.3-0.6z"/>',
@@ -1295,12 +1293,13 @@ const STAGE_ICON_PATHS = {
   connectivity_check:         '<path d="M9.5 12a4 4 0 0 1 4-4h3a4 4 0 0 1 0 8h-1.5"/><path d="M14.5 12a4 4 0 0 1-4 4h-3a4 4 0 0 1 0-8H9"/>',
   irc:                        '<polyline points="17 4 21 8 17 12"/><path d="M3 13V9a4 4 0 0 1 4-4h14"/><polyline points="7 20 3 16 7 12"/><path d="M21 11v4a4 4 0 0 1-4 4H3"/>',
   mechanism_reflection:       '<path d="M21 11.5a8.4 8.4 0 0 1-8.5 8.5 8.4 8.4 0 0 1-3.8-.9L3 21l1.9-5.7a8.4 8.4 0 0 1-.9-3.8 8.4 8.4 0 0 1 8.5-8.5 8.4 8.4 0 0 1 8.5 8.5z"/>',
-  report:                     '<path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><polyline points="14 3 14 9 20 9"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="14" y2="17"/>'
+  accepted_audit:             '<path d="M9 12l2 2 4-5"/><circle cx="12" cy="12" r="9"/>',
+  pathway_audit:              '<path d="M4 18l5-5 3 3 8-9"/><circle cx="4" cy="18" r="1"/><circle cx="20" cy="7" r="1"/>'
 };
-function stageInfo(stage) {
+function stageInfo(stage, canonicalLabel) {
   if (!stage) return { label: "—", icon: null };
-  for (const e of STAGE_INFO_LIST) if (e.match.test(stage)) return e;
-  return { label: stage.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase()), icon: null };
+  const fallback = stage.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  return { label: canonicalLabel || fallback, icon: STAGE_ICONS[stage] || null };
 }
 
 const state = {
@@ -1759,7 +1758,7 @@ function computeLineage(graph, selectedId) {
    Node card builder
    ============================================================ */
 function buildNode(n, p, lineage) {
-  const info = stageInfo(n.stage);
+  const info = stageInfo(n.stage, n.stage_label);
   const color = nodeColor(n);
   const isSelected = state.selected === n.id;
   const isFrontier = !!(n.frontier || n.active);

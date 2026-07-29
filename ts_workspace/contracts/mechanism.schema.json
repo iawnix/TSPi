@@ -58,7 +58,24 @@
             "hypothesis_id": {"type": "string", "minLength": 1},
             "status": {"enum": ["proposed", "active", "supported", "refuted", "superseded"]},
             "source_node": {"type": "string", "minLength": 1},
+            "branch_anchor_node": {"type": "string", "minLength": 1},
             "parent_hypothesis_id": {"type": ["string", "null"]},
+            "proposed_by_decision": {"type": "string", "minLength": 1},
+            "activated_by_node": {"type": "string", "minLength": 1},
+            "proposal_context": {
+              "type": "object",
+              "required": ["kind", "from_node", "anchor_node", "changed_variable", "reason_code"],
+              "properties": {
+                "kind": {"enum": ["initial", "alternative"]},
+                "from_node": {"type": "string", "minLength": 1},
+                "anchor_node": {"type": "string", "minLength": 1},
+                "changed_variable": {"type": "string", "minLength": 1},
+                "reason_code": {"type": "string", "minLength": 1},
+                "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}},
+                "created_at": {"type": "string", "minLength": 1}
+              },
+              "additionalProperties": true
+            },
             "prediction_status": {"type": "array"}
           },
           "additionalProperties": true

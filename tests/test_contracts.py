@@ -83,7 +83,7 @@ def test_pathway_audit_start_decision_requires_pathway_ref() -> None:
         validate_decision(decision)
 
 
-@pytest.mark.parametrize("legacy_phase", ["preflight", "rp_conformer_generation"])
+@pytest.mark.parametrize("legacy_phase", ["preflight", "rp_conformer_generation", "hypothesis_generation"])
 def test_start_decision_rejects_legacy_phase(legacy_phase: str) -> None:
     decision = {
         "schema_version": "ts-decision",
@@ -176,7 +176,6 @@ def test_init_refuses_to_overwrite_initialized_workspace(tmp_path: Path) -> None
 
 
 def test_init_force_reinitializes(tmp_path: Path) -> None:
-    from tests.strict_helpers import initial_mechanism_hypothesis
     from ts_workspace import start_node
 
     workspace = tmp_path / "ws"
@@ -204,8 +203,7 @@ def test_init_force_reinitializes(tmp_path: Path) -> None:
             "payload": {
                 "node_id": "n000",
                 "phase": "endpoint",
-                "hypothesis": "Fresh endpoint hypothesis.",
-                "initial_mechanism_hypothesis": initial_mechanism_hypothesis(),
+                "hypothesis": "Fresh endpoint validation claim.",
                 "expected_evidence": [],
             },
         },
@@ -437,9 +435,11 @@ def test_report_workspace_is_pure_read(tmp_path: Path) -> None:
     reports_dir = workspace / "reports"
 
     before = {path.name for path in reports_dir.iterdir()} if reports_dir.exists() else set()
-    report_workspace(workspace)
+    report = report_workspace(workspace)
     after = {path.name for path in reports_dir.iterdir()} if reports_dir.exists() else set()
     assert before == after, "report_workspace must not write files"
+    assert "propose_hypothesis" in report["allowed_decision_actions"]
+    assert "propose_hypothesis" in report["decision_contract"]["requires_report_ref"]
 
     snapshot = snapshot_report(workspace)
     assert (reports_dir / f"{snapshot['report_id']}.json").exists()

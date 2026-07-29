@@ -151,8 +151,46 @@ def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
         root_path / "tree.json": tree,
     }
     changes.update(_pathway_changes_for_node(root_path, node))
+    changes.update(_mechanism_changes_for_node_start(root_path, node))
     _commit_transaction(root_path, decision, changes, {"mutation_applied": True, "node_id": node_id})
     return {"node_id": node_id, "phase": node["phase"], "lifecycle": node["lifecycle"]}
+
+
+def propose_hypothesis(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
+    root_path = Path(root)
+    _require_decision_action(decision, "propose_hypothesis")
+    validate_decision_for_workspace(root_path, decision)
+    _require_initialized(root_path)
+
+    payload = decision["payload"]
+    hypothesis = dict(payload["proposed_hypothesis"])
+    context = dict(payload["proposal_context"])
+    hypothesis_id = hypothesis["hypothesis_id"]
+    decision_id = _decision_id(decision)
+    created_at = now_iso()
+    evidence_refs = sorted(set(hypothesis.get("evidence_refs", []) + decision.get("evidence_refs", [])))
+    context["evidence_refs"] = sorted(set(context.get("evidence_refs", []) + decision.get("evidence_refs", [])))
+    context["created_at"] = created_at
+    hypothesis.update(
+        {
+            "status": "proposed",
+            "source_node": context["from_node"],
+            "branch_anchor_node": context["anchor_node"],
+            "proposed_by_decision": decision_id,
+            "proposal_context": context,
+            "evidence_refs": evidence_refs,
+            "prediction_status": [],
+        }
+    )
+    hypothesis.setdefault("parent_hypothesis_id", None)
+
+    model_path = root_path / "mechanism_model.json"
+    model = read_json(model_path)
+    model.setdefault("hypotheses", []).append(hypothesis)
+    model["focus_hypothesis_id"] = hypothesis_id
+    result = {"mutation_applied": True, "hypothesis_id": hypothesis_id, "status": "proposed"}
+    _commit_transaction(root_path, decision, {model_path: model}, result)
+    return {"hypothesis_id": hypothesis_id, "status": "proposed"}
 
 
 def update_workspace(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
@@ -433,6 +471,24 @@ def _branch_event(node: dict[str, Any], branch_context: dict[str, Any], decision
         if branch_context.get(field):
             event[field] = branch_context[field]
     return event
+
+
+def _mechanism_changes_for_node_start(root: Path, node: dict[str, Any]) -> dict[Path, Any]:
+    hypothesis_ref = node.get("hypothesis_ref") if isinstance(node.get("hypothesis_ref"), dict) else {}
+    hypothesis_id = hypothesis_ref.get("hypothesis_id")
+    if not hypothesis_id:
+        return {}
+    path = root / "mechanism_model.json"
+    model = read_json(path)
+    for hypothesis in model.get("hypotheses", []):
+        if not isinstance(hypothesis, dict) or hypothesis.get("hypothesis_id") != hypothesis_id:
+            continue
+        if hypothesis.get("status") != "proposed":
+            return {}
+        hypothesis["status"] = "active"
+        hypothesis["activated_by_node"] = node["node_id"]
+        return {path: model}
+    return {}
 
 
 def _pathway_changes_for_node(root: Path, node: dict[str, Any]) -> dict[Path, Any]:

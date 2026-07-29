@@ -60,10 +60,17 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
             "pathway_model": "pathway_model.json",
             "knowledge_base": "knowledge_base.md",
         },
-        "allowed_decision_actions": ["start_node", "end_node", "update_workspace", "ask_user", "stop"],
+        "allowed_decision_actions": [
+            "start_node",
+            "propose_hypothesis",
+            "end_node",
+            "update_workspace",
+            "ask_user",
+            "stop",
+        ],
         "decision_contract": {
             "schema_version": "ts-decision",
-            "requires_report_ref": ["start_node", "end_node", "update_workspace"],
+            "requires_report_ref": ["start_node", "propose_hypothesis", "end_node", "update_workspace"],
             "mutation_channel": "ts_workspace",
         },
     }

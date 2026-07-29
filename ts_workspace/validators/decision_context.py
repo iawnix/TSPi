@@ -30,6 +30,8 @@ def validate_decision_for_workspace(root: str | Path, decision: dict[str, Any]) 
     validate_decision(decision)
     if decision.get("action") == "start_node":
         _validate_start_node_context(Path(root), decision)
+    elif decision.get("action") == "propose_hypothesis":
+        _validate_propose_hypothesis_context(Path(root), decision)
     elif decision.get("action") == "end_node":
         _validate_end_node_context(Path(root), decision)
     elif decision.get("action") == "update_workspace":
@@ -147,23 +149,19 @@ def _validate_start_node_context(root: Path, decision: dict[str, Any]) -> None:
     node_ids = set(ordered_node_ids)
     if not ordered_node_ids:
         if node_id != "n000":
-            raise ContractError("first node must be explicit n000 endpoint hypothesis node")
+            raise ContractError("first node must be explicit n000 endpoint node")
         if payload.get("phase") != "endpoint":
             raise ContractError("first node phase must be endpoint")
         return
 
     if payload.get("phase") == "endpoint":
         raise ContractError("phase=endpoint is reserved for n000")
-    if payload.get("phase") == "hypothesis_generation":
-        context = payload.get("branch_context") if isinstance(payload.get("branch_context"), dict) else {}
-        if context.get("relation") != "new_hypothesis_branch":
-            raise ContractError("phase=hypothesis_generation requires branch_context.relation=new_hypothesis_branch")
-
     _validate_parent_ref(payload.get("parent_node"), node_ids)
     _validate_branch_context(root, payload, node_ids)
 
     if payload.get("phase") in HYPOTHESIS_REF_PHASES:
         _validate_hypothesis_ref_exists(root, payload["hypothesis_ref"])
+        _validate_proposed_hypothesis_activation(root, payload)
 
 
 def _validate_end_node_context(root: Path, decision: dict[str, Any]) -> None:
@@ -177,9 +175,9 @@ def _validate_end_node_context(root: Path, decision: dict[str, Any]) -> None:
     if phase == "pathway_audit":
         _validate_pathway_audit_ref(node)
 
-    if phase in WORKSPACE_HYPOTHESIS_CREATION_PHASES:
+    if phase in WORKSPACE_HYPOTHESIS_CREATION_PHASES or phase == "endpoint":
         if closure.get("program_status") == "completed":
-            if not isinstance(node.get("initial_mechanism_hypothesis"), dict):
+            if phase in WORKSPACE_HYPOTHESIS_CREATION_PHASES and not isinstance(node.get("initial_mechanism_hypothesis"), dict):
                 raise ContractError("completed hypothesis-creation node requires initial_mechanism_hypothesis")
         return
 
@@ -193,6 +191,67 @@ def _validate_end_node_context(root: Path, decision: dict[str, Any]) -> None:
         if mechanism_ref.get("hypothesis_id") != node_ref.get("hypothesis_id"):
             raise ContractError("closure.mechanism.hypothesis_ref must match node.hypothesis_ref")
         _validate_hypothesis_ref_exists(root, mechanism_ref)
+
+
+def _validate_propose_hypothesis_context(root: Path, decision: dict[str, Any]) -> None:
+    _require_initialized(root)
+    payload = decision["payload"]
+    hypothesis = payload["proposed_hypothesis"]
+    context = payload["proposal_context"]
+    tree = read_json(root / "tree.json")
+    node_ids = set(_ordered_node_ids(tree))
+    for field in ("from_node", "anchor_node"):
+        node_id = context[field]
+        if node_id not in node_ids:
+            raise ContractError(f"proposal_context.{field} does not exist: {node_id}")
+
+    registry = read_json(root / "evidence_registry.json")
+    known_evidence_ids = {
+        item.get("evidence_id")
+        for item in registry.get("evidence", [])
+        if isinstance(item, dict)
+    }
+    missing_evidence = sorted(set(decision.get("evidence_refs", [])) - known_evidence_ids)
+    if missing_evidence:
+        raise ContractError(f"propose_hypothesis references unknown evidence: {', '.join(missing_evidence)}")
+
+    model = read_json(root / "mechanism_model.json")
+    hypothesis_id = hypothesis["hypothesis_id"]
+    known_hypotheses = {
+        item.get("hypothesis_id"): item
+        for group in ("hypotheses", "refuted_hypotheses")
+        for item in model.get(group, [])
+        if isinstance(item, dict) and item.get("hypothesis_id")
+    }
+    if hypothesis_id in known_hypotheses:
+        raise ContractError(f"hypothesis_id already exists: {hypothesis_id}")
+
+    kind = context["kind"]
+    parent_hypothesis_id = hypothesis.get("parent_hypothesis_id")
+    if kind == "initial":
+        if model.get("hypotheses"):
+            raise ContractError("initial hypothesis proposal requires an empty mechanism model")
+        if context["from_node"] != "n000" or context["anchor_node"] != "n000":
+            raise ContractError("initial hypothesis proposal must use from_node=anchor_node=n000")
+        n000 = _read_node(root, "n000")
+        closure = n000.get("closure") if isinstance(n000.get("closure"), dict) else {}
+        if (
+            n000.get("phase") != "endpoint"
+            or closure.get("program_status") != "completed"
+            or closure.get("claim_verdict") != "supported"
+        ):
+            raise ContractError("initial hypothesis proposal requires a completed, supported n000 endpoint node")
+        return
+
+    parent = known_hypotheses.get(parent_hypothesis_id)
+    if not isinstance(parent, dict):
+        raise ContractError(f"unknown parent_hypothesis_id: {parent_hypothesis_id}")
+    if parent.get("status") in {"refuted", "superseded"}:
+        raise ContractError("alternative hypothesis parent must not be refuted or superseded")
+    from_node = _read_node(root, context["from_node"])
+    from_hypothesis_id = _node_hypothesis_id(from_node)
+    if from_hypothesis_id and from_hypothesis_id != parent_hypothesis_id:
+        raise ContractError("alternative proposal parent_hypothesis_id must match the from_node hypothesis")
 
 
 def _validate_pathway_audit_ref(node: dict[str, Any]) -> None:
@@ -262,13 +321,13 @@ def _validate_branch_anchor_repair(root: Path, repair: Any) -> None:
     if context.get("relation") != "new_solution_branch":
         raise ContractError(f"repair_branch_anchor only applies to new_solution_branch nodes: {node_id}")
     hypothesis_ref = node.get("hypothesis_ref") if isinstance(node.get("hypothesis_ref"), dict) else {}
-    source_node = _hypothesis_source_node(root, hypothesis_ref.get("hypothesis_id"))
-    if source_node is None:
-        raise ContractError(f"repair_branch_anchor cannot resolve hypothesis source_node for {node_id}")
-    if new_anchor != source_node:
+    expected_anchor = _hypothesis_anchor_node(root, hypothesis_ref.get("hypothesis_id"))
+    if expected_anchor is None:
+        raise ContractError(f"repair_branch_anchor cannot resolve hypothesis branch anchor for {node_id}")
+    if new_anchor != expected_anchor:
         raise ContractError(
-            "repair_branch_anchor.new_anchor_node must match the hypothesis source_node: "
-            f"node_id={node_id}, source_node={source_node}, new_anchor_node={new_anchor}"
+            "repair_branch_anchor.new_anchor_node must match the hypothesis branch anchor: "
+            f"node_id={node_id}, expected_anchor={expected_anchor}, new_anchor_node={new_anchor}"
         )
 
 
@@ -332,15 +391,12 @@ def _validate_branch_context(root: Path, payload: dict[str, Any], node_ids: set[
         _require_parent_matches(payload, anchor_node_id, "anchor_node", relation)
     if relation == "new_solution_branch":
         _validate_new_solution_branch(from_node, payload)
-        _validate_solution_branch_anchor_matches_hypothesis_source(root, payload)
+        _validate_solution_branch_anchor_matches_hypothesis_anchor(root, payload)
     elif relation == "new_hypothesis_branch":
         _validate_new_hypothesis_branch(root, from_node, payload)
     elif relation == "new_pathway_branch":
         if not isinstance(payload.get("pathway_ref"), dict):
             raise ContractError("new_pathway_branch requires payload.pathway_ref")
-    elif relation == "administrative_followup":
-        if not isinstance(context.get("reason_code"), str) or not context["reason_code"].strip():
-            raise ContractError("administrative_followup requires payload.branch_context.reason_code")
 
 
 def _require_parent_matches(payload: dict[str, Any], expected_node: Any, expected_field: str, relation: Any) -> None:
@@ -364,41 +420,56 @@ def _validate_new_solution_branch(from_node: dict[str, Any], payload: dict[str, 
         raise ContractError("new_solution_branch requires a new solution_ref.solution_id")
 
 
-def _validate_solution_branch_anchor_matches_hypothesis_source(root: Path, payload: dict[str, Any]) -> None:
+def _validate_solution_branch_anchor_matches_hypothesis_anchor(root: Path, payload: dict[str, Any]) -> None:
     context = payload.get("branch_context") if isinstance(payload.get("branch_context"), dict) else {}
     anchor_node_id = context.get("anchor_node")
     hypothesis_ref = payload.get("hypothesis_ref") if isinstance(payload.get("hypothesis_ref"), dict) else {}
     hypothesis_id = hypothesis_ref.get("hypothesis_id")
-    source_node = _hypothesis_source_node(root, hypothesis_id)
-    if source_node is None:
+    anchor_node = _hypothesis_anchor_node(root, hypothesis_id)
+    if anchor_node is None:
         return
-    if anchor_node_id != source_node:
+    if anchor_node_id != anchor_node:
         raise ContractError(
-            "new_solution_branch anchor_node must match the hypothesis source_node: "
-            f"hypothesis_id={hypothesis_id}, source_node={source_node}, anchor_node={anchor_node_id}"
+            "new_solution_branch anchor_node must match the hypothesis branch anchor: "
+            f"hypothesis_id={hypothesis_id}, expected_anchor={anchor_node}, anchor_node={anchor_node_id}"
         )
 
 
 def _validate_new_hypothesis_branch(root: Path, from_node: dict[str, Any], payload: dict[str, Any]) -> None:
-    if payload.get("phase") != "hypothesis_generation":
-        raise ContractError("new_hypothesis_branch requires phase=hypothesis_generation")
-    new_hypothesis = payload.get("initial_mechanism_hypothesis")
-    new_hypothesis_id = new_hypothesis.get("hypothesis_id") if isinstance(new_hypothesis, dict) else None
+    hypothesis_ref = payload.get("hypothesis_ref")
+    new_hypothesis_id = hypothesis_ref.get("hypothesis_id") if isinstance(hypothesis_ref, dict) else None
+    hypothesis = _mechanism_hypothesis(root, new_hypothesis_id)
+    if not isinstance(hypothesis, dict) or hypothesis.get("status") != "proposed":
+        raise ContractError("new_hypothesis_branch requires a proposed hypothesis_ref")
+    proposal = hypothesis.get("proposal_context") if isinstance(hypothesis.get("proposal_context"), dict) else {}
+    if proposal.get("kind") != "alternative":
+        raise ContractError("new_hypothesis_branch requires an alternative hypothesis proposal")
+    context = payload.get("branch_context") if isinstance(payload.get("branch_context"), dict) else {}
+    for field in ("from_node", "anchor_node", "changed_variable", "reason_code"):
+        if context.get(field) != proposal.get(field):
+            raise ContractError(f"new_hypothesis_branch {field} must match the stored proposal_context")
     from_hypothesis_id = _node_hypothesis_id(from_node)
     if from_hypothesis_id and from_hypothesis_id == new_hypothesis_id:
         raise ContractError("new_hypothesis_branch requires a different hypothesis_id")
-    parent_hypothesis_id = new_hypothesis.get("parent_hypothesis_id") if isinstance(new_hypothesis, dict) else None
+    parent_hypothesis_id = hypothesis.get("parent_hypothesis_id")
     if parent_hypothesis_id and from_hypothesis_id and parent_hypothesis_id != from_hypothesis_id:
         raise ContractError("new hypothesis parent_hypothesis_id must match the from_node hypothesis")
-    model = read_json(root / "mechanism_model.json")
-    known_hypothesis_ids = {
-        item.get("hypothesis_id")
-        for group in ("hypotheses", "refuted_hypotheses")
-        for item in model.get(group, [])
-        if isinstance(item, dict)
-    }
-    if new_hypothesis_id in known_hypothesis_ids:
-        raise ContractError(f"hypothesis_id already exists: {new_hypothesis_id}")
+
+
+def _validate_proposed_hypothesis_activation(root: Path, payload: dict[str, Any]) -> None:
+    hypothesis_ref = payload.get("hypothesis_ref") if isinstance(payload.get("hypothesis_ref"), dict) else {}
+    hypothesis = _mechanism_hypothesis(root, hypothesis_ref.get("hypothesis_id"))
+    if not isinstance(hypothesis, dict) or hypothesis.get("status") != "proposed":
+        return
+    proposal = hypothesis.get("proposal_context") if isinstance(hypothesis.get("proposal_context"), dict) else {}
+    relation = payload.get("branch_context", {}).get("relation") if isinstance(payload.get("branch_context"), dict) else None
+    expected_relation = "continue_parent" if proposal.get("kind") == "initial" else "new_hypothesis_branch"
+    if relation != expected_relation:
+        raise ContractError(f"first evidence node for a proposed hypothesis requires relation={expected_relation}")
+    if proposal.get("kind") == "initial":
+        context = payload["branch_context"]
+        if context.get("from_node") != proposal.get("from_node") or context.get("anchor_node") != proposal.get("anchor_node"):
+            raise ContractError("initial hypothesis evidence node must match the stored proposal_context")
 
 
 def _node_hypothesis_id(node: dict[str, Any]) -> Any:
@@ -421,17 +492,22 @@ def _read_node(root: Path, node_id: str) -> dict[str, Any]:
     return node
 
 
-def _hypothesis_source_node(root: Path, hypothesis_id: Any) -> str | None:
+def _mechanism_hypothesis(root: Path, hypothesis_id: Any) -> dict[str, Any] | None:
     if not isinstance(hypothesis_id, str) or not hypothesis_id:
         return None
     model = read_json(root / "mechanism_model.json")
     for hypothesis in model.get("hypotheses", []):
-        if not isinstance(hypothesis, dict):
-            continue
-        if hypothesis.get("hypothesis_id") == hypothesis_id:
-            source_node = hypothesis.get("source_node")
-            return source_node if isinstance(source_node, str) and source_node else None
+        if isinstance(hypothesis, dict) and hypothesis.get("hypothesis_id") == hypothesis_id:
+            return hypothesis
     return None
+
+
+def _hypothesis_anchor_node(root: Path, hypothesis_id: Any) -> str | None:
+    hypothesis = _mechanism_hypothesis(root, hypothesis_id)
+    if not isinstance(hypothesis, dict):
+        return None
+    anchor_node = hypothesis.get("branch_anchor_node") or hypothesis.get("source_node")
+    return anchor_node if isinstance(anchor_node, str) and anchor_node else None
 
 
 def _next_node_id(tree: dict[str, Any]) -> str:

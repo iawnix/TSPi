@@ -1,7 +1,7 @@
 {
   "schema_version": "ts-decision",
   "action": "update_workspace",
-  "rationale": "Register endpoint provenance, charge/multiplicity, atom mapping, and the initial mechanism hypothesis.",
+  "rationale": "Register endpoint provenance, charge/multiplicity, atom mapping, and reaction-center deltas.",
   "evidence_refs": [],
   "report_ref": {
     "report_id": "${REPORT_ID}",
@@ -41,10 +41,7 @@
         "evidence_tier": "manual_observation",
         "node_id": "n000",
         "summary": "Reactant and product atom order or atom mapping was checked before mechanism hypothesis generation.",
-        "path": "${ATOM_MAPPING_REF}",
-        "quality": {
-          "hypothesis_id": "${HYPOTHESIS_ID}"
-        }
+        "path": "${ATOM_MAPPING_REF}"
       },
       {
         "evidence_id": "${EV_REACTION_CENTER_DELTA}",
@@ -52,27 +49,12 @@
         "role": "reaction_center_delta",
         "evidence_tier": "manual_observation",
         "node_id": "n000",
-        "summary": "Endpoint comparison identifies the proposed reaction-center bond changes.",
-        "quality": {
-          "hypothesis_id": "${HYPOTHESIS_ID}"
-        },
+        "summary": "Endpoint comparison identifies reaction-center bond changes for later hypothesis proposal.",
         "facts": {
           "forming_bonds": [
             "${FORMING_BOND_LABEL}"
           ],
           "breaking_bonds": []
-        }
-      },
-      {
-        "evidence_id": "${EV_INITIAL_HYPOTHESIS}",
-        "kind": "mechanism_hypothesis",
-        "role": "initial_mechanism_hypothesis",
-        "evidence_tier": "hypothesis",
-        "node_id": "n000",
-        "summary": "${INITIAL_HYPOTHESIS_SUMMARY}",
-        "quality": {
-          "hypothesis_id": "${HYPOTHESIS_ID}",
-          "uncertainty": "medium"
         }
       }
     ]

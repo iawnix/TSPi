@@ -116,6 +116,7 @@ python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" init_workspace --root <wor
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" report_workspace --root <workspace>
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_decision --root <workspace> --decision-file decision.json
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" start_node --root <workspace> --decision-file decision.json
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" propose_hypothesis --root <workspace> --decision-file decision.json
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" update_workspace --root <workspace> --decision-file decision.json
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" end_node --root <workspace> --decision-file decision.json
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_workspace --root <workspace>
@@ -123,6 +124,11 @@ python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_workspace --root 
 
 Run `report_workspace` before choosing or closing a node. Do not edit workspace
 state files by hand.
+
+The active flow is endpoint validation -> `propose_hypothesis` -> first
+evidence node. A proposal mutates `mechanism_model.json` but does not create a
+node. Reporting, monitoring, snapshots, visualization, and report packaging do
+not create nodes either.
 
 Use `templates/decision/` when preparing runtime decision JSON. Replace the
 `${NAME}` placeholders, run `validate_decision`, then apply the mutation. Do
@@ -183,7 +189,8 @@ Pi tools:
 - `ts_workspace_context`: run `report_workspace` and return a compact summary.
 - `ts_workspace_validate`: run `validate_workspace`.
 - `ts_workspace_decision`: run `validate_decision`, `start_node`,
-  `update_workspace`, or `end_node` through a decision JSON.
+  `propose_hypothesis`, `update_workspace`, or `end_node` through a decision
+  JSON.
 
 The Pi extension is a wrapper. Chemistry judgments, accepted-TS logic,
 Gaussian parsing, workspace state transitions, and branch-context rules stay in

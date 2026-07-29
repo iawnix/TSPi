@@ -80,6 +80,10 @@ Only `ts_workspace` may write root state files. Backends, remote helpers,
 structure analysis, web views, and final reports must return artifacts or
 read models instead of mutating the workspace.
 
+Reports, monitoring handoffs, snapshots, visualization, and report-package
+assembly do not create scientific nodes. `tree.json` contains only
+evidence-testing work represented by the active phase model.
+
 Node-scoped artifacts belong under:
 
 ```text
@@ -107,22 +111,26 @@ nodes/<node_id>/remote/
 Fresh endpoint-based searches must create an explicit `n000` node through
 `start_node` after `init_workspace`. Use `phase=endpoint`; this phase is
 reserved for `n000`.
-The `n000` decision must include `payload.initial_mechanism_hypothesis`.
+The `n000` decision must not include `payload.initial_mechanism_hypothesis` or
+`payload.hypothesis_ref`.
 
 Close `n000` after endpoint provenance, charge/multiplicity, atom-order
-mapping, source hashes, reaction-center delta, and initial mechanism evidence
-are recorded. Candidate generation starts at `n001` with `parent_node=n000` and
-`payload.hypothesis_ref`.
+mapping, source hashes, and reaction-center delta are recorded. Then use
+`action=propose_hypothesis` to register the initial evidence-backed mechanism
+hypothesis. Candidate generation starts at `n001` with `parent_node=n000` and
+`payload.hypothesis_ref`; that first evidence node activates the proposal.
 
 Legacy workspaces without `n000` or without `hypothesis_ref` are invalid under
 the strict hypothesis contract.
 
-Introduce a later mechanism hypothesis with `phase=hypothesis_generation`, an
-`initial_mechanism_hypothesis`, and
-`branch_context.relation=new_hypothesis_branch`. The initial object must carry
-the new `hypothesis_id` and should identify the source hypothesis with
-`parent_hypothesis_id`. Legacy `preflight` nodes are read-compatible aliases
-for this function, but new decisions cannot create them.
+Introduce a later mechanism hypothesis with `action=propose_hypothesis`,
+`proposal_context.kind=alternative`, a new `hypothesis_id`, and
+`parent_hypothesis_id`. The proposal must cite registered evidence and records
+both `source_node` and `branch_anchor_node`; it creates no node. Its first
+evidence node uses `branch_context.relation=new_hypothesis_branch` and must
+match the stored proposal provenance. Legacy `preflight` and
+`hypothesis_generation` nodes remain readable and closable, but new decisions
+cannot create them.
 
 R/P conformer generation is represented as `phase=candidate_generation` with a
 conformer-specific `solution_ref.strategy`. Legacy
@@ -165,7 +173,8 @@ For `new_solution_branch`, `new_hypothesis_branch`, and `new_pathway_branch`,
 the new node's `parent_node` must equal `branch_context.anchor_node`. The
 `from_node` records the failed or triggering node; it is not the structural
 parent unless it is also the anchor. For `new_solution_branch`, the anchor
-must also equal the current hypothesis `source_node`, so same-hypothesis
+must also equal the current hypothesis `branch_anchor_node` (falling back to
+legacy `source_node`), so same-hypothesis
 replacement solutions remain mounted inside the hypothesis branch rather than
 being lifted to a broader ancestor. The workspace validates this topology, but
 it does not decide that a solution is exhausted, that a hypothesis is refuted,
@@ -174,7 +183,8 @@ or that the search should continue.
 Legacy workspaces that predate this rule may be repaired through a validated
 `update_workspace` decision with `payload.repair_branch_anchor`. The repair is
 limited to non-running `new_solution_branch` nodes and requires
-`new_anchor_node` to equal the node hypothesis `source_node`; it updates the
+`new_anchor_node` to equal the node hypothesis `branch_anchor_node` (or legacy
+`source_node` fallback); it updates the
 node, tree node, edge, and branch event lineage together and records a
 `lineage_repairs` audit entry.
 
@@ -184,8 +194,10 @@ Evidence `role` is a free-form string, not a fixed enum. The following roles
 have specific consumers (validators, finalizers, report reader); use them
 verbatim so downstream checks find them:
 
-- `initial_mechanism_hypothesis` — required to close an `endpoint` or
-  `hypothesis_generation` node that promotes a hypothesis.
+- `initial_mechanism_hypothesis` — legacy evidence role consumed when closing
+  historical `preflight` or `hypothesis_generation` nodes. New hypotheses cite
+  their registered endpoint or branch-trigger evidence directly through
+  `propose_hypothesis`.
 - `endpoint_conformer_ensemble` — graph-preserving R/P conformers generated
   under a `candidate_generation` strategy.
 - `selected_endpoint_conformer` — selected R/P representative with explicit
@@ -214,8 +226,10 @@ validators or finalizers.
 
 ## Workspace State Files
 
-- `mechanism_model.hypotheses[]`: active, supported, refuted, or superseded
-  working mechanism hypotheses.
+- `mechanism_model.hypotheses[]`: proposed, active, supported, refuted, or
+  superseded working mechanism hypotheses. Proposal records include
+  `source_node`, `branch_anchor_node`, `proposal_context`, and decision
+  provenance.
 - `mechanism_model.accepted_facts[]`: accepted TS facts written only by
   `accepted_audit` after TS/Freq and connectivity gates are both present.
 - `pathway_model.json`: pathway and step topology. Hypotheses may reference a

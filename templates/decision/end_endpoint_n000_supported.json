@@ -1,13 +1,12 @@
 {
   "schema_version": "ts-decision",
   "action": "end_node",
-  "rationale": "Close endpoint validation with a structured initial mechanism hypothesis.",
+  "rationale": "Close endpoint validation before proposing a mechanism hypothesis.",
   "evidence_refs": [
     "${EV_ENDPOINT_PROVENANCE}",
     "${EV_CHARGE_MULTIPLICITY}",
     "${EV_ATOM_MAPPING}",
-    "${EV_REACTION_CENTER_DELTA}",
-    "${EV_INITIAL_HYPOTHESIS}"
+    "${EV_REACTION_CENTER_DELTA}"
   ],
   "report_ref": {
     "report_id": "${REPORT_ID}",
@@ -28,12 +27,10 @@
         ]
       },
       "mechanism": {
-        "summary": "The initial endpoint-derived mechanism hypothesis is ready for candidate generation or direct TS/Freq testing.",
-        "evidence_refs": [
-          "${EV_INITIAL_HYPOTHESIS}"
-        ]
+        "summary": "The endpoint facts are sufficient to formulate an explicit mechanism hypothesis, but no mechanism has been proposed or tested yet.",
+        "evidence_refs": []
       },
-      "implication": "Open the next hypothesis-referenced node.",
+      "implication": "Use propose_hypothesis before opening a hypothesis-referenced evidence node.",
       "open_questions": []
     }
   }
