@@ -122,3 +122,24 @@ def test_historical_node_and_backtrack_context_are_compact_and_explicit(tmp_path
     assert "trigger: n002" in completed.stdout
     assert "selected_checkpoint: n001" in completed.stdout
     assert "tooling only validates the resulting topology" in completed.stdout
+
+    node_context_file = tmp_path / "node_context.json"
+    node_context_file.write_text(json.dumps(node_context), encoding="utf-8")
+    node_script = (
+        "const fs=require('node:fs');"
+        "const helper=require('./extensions/ts-workflow-context/summary.cjs');"
+        "const value=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
+        "process.stdout.write(helper.buildNodeContextSummary(value));"
+    )
+    node_completed = subprocess.run(
+        ["node", "-e", node_script, str(node_context_file)],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    assert "artifact_paths: inputs=nodes/n001/inputs" in node_completed.stdout
+    assert "outputs=nodes/n001/outputs" in node_completed.stdout
+    assert "evidence_paths: (none)" in node_completed.stdout
+    assert "source_files: (none)" in node_completed.stdout

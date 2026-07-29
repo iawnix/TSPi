@@ -152,6 +152,8 @@ function buildNodeContextSummary(context, options = {}) {
   const node = objectOrEmpty(context.node);
   const hypothesis = objectOrEmpty(context.hypothesis);
   const pathway = objectOrEmpty(context.pathway);
+  const artifactRefs = objectOrEmpty(context.artifact_refs);
+  const nodeArtifacts = objectOrEmpty(artifactRefs.node_artifacts);
   const evidence = arrayOfObjects(context.evidence);
   const events = arrayOfObjects(context.branch_events);
   const decisions = arrayOfObjects(context.decisions);
@@ -170,6 +172,9 @@ function buildNodeContextSummary(context, options = {}) {
     `- active_hypothesis_record: ${hypothesis.hypothesis_id || "(none)"}/${hypothesis.status || "(none)"}; ${hypothesis.summary || ""}`,
     `- pathway_record: ${pathway.pathway_id || "(none)"}/${pathway.status || "(none)"}; ${pathway.pattern || ""}`,
     `- evidence: ${formatEvidenceList(evidence, maxItems)}`,
+    `- artifact_paths: ${formatArtifactPaths(nodeArtifacts)}`,
+    `- evidence_paths: ${formatList(arrayOfStrings(artifactRefs.evidence_paths), maxItems)}`,
+    `- source_files: ${formatList(arrayOfStrings(artifactRefs.source_files), maxItems)}`,
     `- branch_events: ${formatBranchList(events.map(normalizeBranchEvent), maxItems)}`,
     `- decisions: ${decisions.slice(0, maxItems).map((item) => `${item.decision_id || "?"}:${item.action || "?"}:${item.rationale || ""}`).join("; ") || "(none)"}`,
     "- contract: this node is immutable historical evidence; inspecting it does not select a branch or mutate the workspace.",
@@ -258,6 +263,13 @@ function formatEvidenceList(values, maxItems) {
     .slice(0, maxItems)
     .map((item) => `${item.evidence_id || "?"}/${item.role || item.kind || "evidence"}: ${item.summary || ""}`)
     .join("; ");
+}
+
+function formatArtifactPaths(value) {
+  const entries = ["inputs", "outputs", "remote", "scratch"]
+    .filter((key) => typeof value[key] === "string" && value[key].trim())
+    .map((key) => `${key}=${value[key]}`);
+  return entries.join(", ") || "(none)";
 }
 
 function normalizeBranchEvent(event) {
