@@ -23,14 +23,14 @@ def test_initial_proposal_registers_unvalidated_focus_hypothesis(tmp_path: Path)
 
     bootstrap_strict_workspace(workspace)
 
-    mechanism = read_json(workspace / "mechanism_model.json")
+    mechanism = read_json(workspace / "hypotheses.json")
     assert mechanism["focus_hypothesis_id"] == HYPOTHESIS_ID
     assert mechanism["hypotheses"][0]["hypothesis_id"] == HYPOTHESIS_ID
     assert mechanism["hypotheses"][0]["source_node"] == "n000"
     assert mechanism["hypotheses"][0]["status"] == "proposed"
     assert mechanism["hypotheses"][0]["branch_anchor_node"] == "n000"
     assert mechanism["hypotheses"][0]["proposal_context"]["kind"] == "initial"
-    assert read_json(workspace / "tree.json")["nodes"][-1]["node_id"] == "n000"
+    assert read_json(workspace / "research_state.json")["nodes"][-1]["node_id"] == "n000"
     assert validate_workspace(workspace)["valid"] is True
 
 
@@ -159,7 +159,7 @@ def test_initial_proposal_requires_completed_supported_endpoint(tmp_path: Path) 
     node["closure"]["program_status"] = "not_run"
     write_json(node_path, node)
     write_json(
-        workspace / "mechanism_model.json",
+        workspace / "hypotheses.json",
         {
             "schema_version": "ts-mechanism",
             "focus_hypothesis_id": None,
@@ -224,19 +224,19 @@ def test_solution_ref_is_optional_lineage_not_state(tmp_path: Path) -> None:
     )
 
     node = read_json(workspace / "nodes" / "n001" / "node.json")
-    tree = read_json(workspace / "tree.json")
+    tree = read_json(workspace / "research_state.json")
     report = report_workspace(workspace)
 
     assert node["solution_ref"] == solution_ref
     assert tree["nodes"][-1]["solution_ref"] == solution_ref
     assert report["node_index"][-1]["solution_ref"] == solution_ref
-    mechanism = read_json(workspace / "mechanism_model.json")
+    mechanism = read_json(workspace / "hypotheses.json")
     assert mechanism["hypotheses"][0]["status"] == "active"
     assert mechanism["hypotheses"][0]["activated_by_node"] == "n001"
     assert validate_workspace(workspace)["valid"] is True
 
     tree["nodes"][-1].pop("solution_ref")
-    write_json(workspace / "tree.json", tree)
+    write_json(workspace / "research_state.json", tree)
     validation = validate_workspace(workspace)
     assert validation["valid"] is False
     assert any(item["code"] == "solution_ref_mismatch" for item in validation["findings"])
@@ -264,9 +264,9 @@ def test_workspace_validator_detects_corrupted_hypothesis_activation_provenance(
             },
         },
     )
-    mechanism = read_json(workspace / "mechanism_model.json")
+    mechanism = read_json(workspace / "hypotheses.json")
     mechanism["hypotheses"][0]["activated_by_node"] = "n999"
-    write_json(workspace / "mechanism_model.json", mechanism)
+    write_json(workspace / "hypotheses.json", mechanism)
 
     validation = validate_workspace(workspace)
 
@@ -403,9 +403,9 @@ def test_report_treats_supported_accepted_audit_row_as_satisfied(tmp_path: Path)
     workspace = tmp_path / "accepted-report-row"
     make_accepted_workspace(workspace)
     _append_required_evidence(workspace, "accepted_audit")
-    manifest = read_json(workspace / "manifest.json")
+    manifest = read_json(workspace / "research_state.json")
     manifest["accepted_ts_refs"] = []
-    write_json(workspace / "manifest.json", manifest)
+    write_json(workspace / "research_state.json", manifest)
 
     report = report_workspace(workspace)
 
@@ -548,9 +548,9 @@ def test_report_treats_accepted_pathway_audit_as_satisfied_without_support_pollu
 
 
 def _append_required_evidence(workspace: Path, role: str) -> None:
-    mechanism = read_json(workspace / "mechanism_model.json")
+    mechanism = read_json(workspace / "hypotheses.json")
     mechanism["hypotheses"][0]["required_evidence"].append(role)
-    write_json(workspace / "mechanism_model.json", mechanism)
+    write_json(workspace / "hypotheses.json", mechanism)
 
 
 def test_negative_pathway_audit_does_not_support_audited_prediction(tmp_path: Path) -> None:

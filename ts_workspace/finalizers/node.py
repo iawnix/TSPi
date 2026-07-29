@@ -16,6 +16,7 @@ from ..evidence_gates import (
     validate_strict_connectivity_gate,
 )
 from ..io import read_json
+from ..state import HYPOTHESES_FILE, RESEARCH_STATE_FILE
 from ..validators.decision import WORKSPACE_HYPOTHESIS_CREATION_PHASES
 
 PATHWAY_STEP_STATUS_PHASES = {"connectivity_validation", "accepted_audit"}
@@ -25,17 +26,24 @@ STRICT_PATHWAY_NOT_ACCEPTED = {"pathway_not_accepted", "not_accepted"}
 STRICT_PATHWAY_DECISIONS = {STRICT_PATHWAY_ACCEPTED, *STRICT_PATHWAY_NOT_ACCEPTED}
 
 
-def compute_close_changes(root: Path, node: dict[str, Any], decision: dict[str, Any]) -> dict[Path, Any]:
+def compute_close_changes(
+    root: Path,
+    node: dict[str, Any],
+    decision: dict[str, Any],
+    research_state: dict[str, Any],
+) -> dict[Path, Any]:
     """Return proposed writes for closing a node without touching disk.
 
     Values are dicts (written as JSON) or strings (written as UTF-8 text).
     """
     closure = node["closure"]
     changes: dict[Path, Any] = {}
-    _update_mechanism_model(root, node, closure, changes)
-    _update_pathway_model(root, node, closure, changes)
-    _append_knowledge(root, node, closure, changes)
-    _write_acceptance_artifact(root, node, closure, changes)
+    hypotheses_path = root / HYPOTHESES_FILE
+    hypotheses = read_json(hypotheses_path)
+    _update_mechanism_model(root, hypotheses, node, closure)
+    _update_pathway_model(hypotheses, node, closure)
+    changes[hypotheses_path] = hypotheses
+    _write_acceptance_artifact(root, node, closure, research_state, changes)
     return changes
 
 
@@ -89,16 +97,12 @@ def validate_pathway_audit_gates(root: Path, node: dict[str, Any], closure: dict
     )
 
 
-def _update_mechanism_model(root: Path, node: dict[str, Any], closure: dict[str, Any], changes: dict[Path, Any]) -> None:
-    path = root / "mechanism_model.json"
-    model = read_json(path)
+def _update_mechanism_model(root: Path, model: dict[str, Any], node: dict[str, Any], closure: dict[str, Any]) -> None:
     model.setdefault("focus_hypothesis_id", None)
     if _is_hypothesis_creation_node(node):
         _finalize_initial_hypothesis(root, model, node, closure)
-        changes[path] = model
         return
     if node.get("phase") == "endpoint":
-        changes[path] = model
         return
 
     mechanism = closure.get("mechanism", {}) if isinstance(closure.get("mechanism"), dict) else {}
@@ -123,7 +127,6 @@ def _update_mechanism_model(root: Path, node: dict[str, Any], closure: dict[str,
         model.setdefault("accepted_facts", []).append(_mechanism_entry(node, closure, hypothesis_id, evidence_refs))
     elif closure["claim_verdict"] in {"inconclusive", "not_evaluated"}:
         model.setdefault("open_questions", []).append(_mechanism_entry(node, closure, hypothesis_id, evidence_refs))
-    changes[path] = model
 
 
 def _finalize_initial_hypothesis(root: Path, model: dict[str, Any], node: dict[str, Any], closure: dict[str, Any]) -> None:
@@ -164,7 +167,7 @@ def _find_hypothesis(model: dict[str, Any], hypothesis_id: str | None) -> dict[s
 
 
 def _hypothesis_for_node(root: Path, node: dict[str, Any]) -> dict[str, Any]:
-    model = read_json(root / "mechanism_model.json")
+    model = read_json(root / HYPOTHESES_FILE)
     hypothesis_id = node.get("hypothesis_ref", {}).get("hypothesis_id") if isinstance(node.get("hypothesis_ref"), dict) else None
     return _find_hypothesis(model, hypothesis_id)
 
@@ -268,25 +271,20 @@ def _mechanism_entry(
     }
 
 
-def _update_pathway_model(root: Path, node: dict[str, Any], closure: dict[str, Any], changes: dict[Path, Any]) -> None:
+def _update_pathway_model(model: dict[str, Any], node: dict[str, Any], closure: dict[str, Any]) -> None:
     pathway_ref = node.get("pathway_ref")
     if not pathway_ref:
         return
-    path = root / "pathway_model.json"
-    model = read_json(path)
     pathway_id = pathway_ref["pathway_id"]
     step_id = pathway_ref["step_id"]
     pathway = _ensure_pathway(model, pathway_id)
     step = _ensure_step(pathway, step_id)
     if node["phase"] == "pathway_audit":
         _record_pathway_audit(pathway, step, node, closure)
-        changes[path] = model
         return
     if node["phase"] not in PATHWAY_STEP_STATUS_PHASES:
-        changes[path] = model
         return
     if _impact_scope(node, closure) != "pathway_step":
-        changes[path] = model
         return
     verdict = closure["claim_verdict"]
     if verdict == "supported":
@@ -299,7 +297,6 @@ def _update_pathway_model(root: Path, node: dict[str, Any], closure: dict[str, A
         step["status"] = "active"
         step.setdefault("inconclusive_nodes", []).append(node["node_id"])
     pathway["status"] = _pathway_status_from_steps(pathway["steps"])
-    changes[path] = model
 
 
 def _record_pathway_audit(
@@ -318,27 +315,13 @@ def _record_pathway_audit(
     step.setdefault("audit_nodes", []).append(audit_record)
 
 
-def _append_knowledge(root: Path, node: dict[str, Any], closure: dict[str, Any], changes: dict[Path, Any]) -> None:
-    body = "\n".join(
-        [
-            f"- node: {node['node_id']}",
-            f"- phase: {node['phase']}",
-            f"- program_status: {closure['program_status']}",
-            f"- claim_verdict: {closure['claim_verdict']}",
-            f"- program: {closure.get('program', {}).get('summary', '')}",
-            f"- mechanism: {closure.get('mechanism', {}).get('summary', '')}",
-            f"- implication: {closure.get('implication', '')}",
-        ]
-    )
-    path = root / "knowledge_base.md"
-    existing = path.read_text(encoding="utf-8") if path.exists() else ""
-    if not existing:
-        existing = "# Knowledge Base\n\n"
-    section = f"## Node {node['node_id']} closure\n\n{body.strip()}\n\n"
-    changes[path] = existing + section
-
-
-def _write_acceptance_artifact(root: Path, node: dict[str, Any], closure: dict[str, Any], changes: dict[Path, Any]) -> None:
+def _write_acceptance_artifact(
+    root: Path,
+    node: dict[str, Any],
+    closure: dict[str, Any],
+    research_state: dict[str, Any],
+    changes: dict[Path, Any],
+) -> None:
     if node["phase"] != "accepted_audit":
         return
     if closure["program_status"] != "completed" or closure["claim_verdict"] != "supported":
@@ -362,8 +345,6 @@ def _write_acceptance_artifact(root: Path, node: dict[str, Any], closure: dict[s
     )
     for role in sorted(mechanism_roles):
         validate_mechanism_reflection_gate(mechanism_gate_evidence[role], role)
-    manifest_path = root / "manifest.json"
-    manifest = read_json(manifest_path)
     required_gates = ["tsfreq_gate", "connectivity_gate"]
     evidence_refs = [
         gate_evidence["tsfreq_gate"]["evidence_id"],
@@ -385,8 +366,8 @@ def _write_acceptance_artifact(root: Path, node: dict[str, Any], closure: dict[s
     }
     artifact_path = root / "accepted" / f"{artifact['accepted_id']}.json"
     changes[artifact_path] = artifact
-    manifest.setdefault("accepted_ts_refs", []).append(str(artifact_path.relative_to(root)))
-    changes[manifest_path] = manifest
+    research_state.setdefault("accepted_ts_refs", []).append(str(artifact_path.relative_to(root)))
+    changes[root / RESEARCH_STATE_FILE] = research_state
 
 
 def _ensure_pathway(model: dict[str, Any], pathway_id: str) -> dict[str, Any]:

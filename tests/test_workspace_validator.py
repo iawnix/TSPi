@@ -158,9 +158,9 @@ def test_validate_workspace_accepts_legacy_preflight_branch_event_without_target
     _rewrite_node_phase(workspace, "n002", "preflight")
     hypothesis = _secondary_hypothesis()
     _set_legacy_initial_hypothesis(workspace, "n002", hypothesis, clear_hypothesis_ref=True)
-    tree = read_json(workspace / "tree.json")
+    tree = read_json(workspace / "research_state.json")
     tree["branch_events"][-1]["target_hypothesis_ref"] = None
-    write_json(workspace / "tree.json", tree)
+    write_json(workspace / "research_state.json", tree)
 
     validation = validate_workspace(workspace)
 
@@ -205,7 +205,7 @@ def test_validate_workspace_keeps_legacy_hypothesis_generation_readable_and_clos
     node = read_json(node_path)
     node["branch_context"] = branch_context
     write_json(node_path, node)
-    tree = read_json(workspace / "tree.json")
+    tree = read_json(workspace / "research_state.json")
     tree["nodes"][1]["branch_context"] = branch_context
     tree["branch_events"][-1].update(
         {
@@ -213,11 +213,11 @@ def test_validate_workspace_keeps_legacy_hypothesis_generation_readable_and_clos
             "target_hypothesis_ref": {"hypothesis_id": "hyp_0002", "prediction_ids": []},
         }
     )
-    write_json(workspace / "tree.json", tree)
-    mechanism = read_json(workspace / "mechanism_model.json")
+    write_json(workspace / "research_state.json", tree)
+    mechanism = read_json(workspace / "hypotheses.json")
     mechanism["hypotheses"][0]["status"] = "proposed"
     mechanism["hypotheses"][0].pop("activated_by_node", None)
-    write_json(workspace / "mechanism_model.json", mechanism)
+    write_json(workspace / "hypotheses.json", mechanism)
     update_workspace(
         workspace,
         {
@@ -268,7 +268,7 @@ def test_validate_workspace_keeps_legacy_hypothesis_generation_readable_and_clos
         },
     )
 
-    model = read_json(workspace / "mechanism_model.json")
+    model = read_json(workspace / "hypotheses.json")
     secondary = next(item for item in model["hypotheses"] if item["hypothesis_id"] == "hyp_0002")
     assert secondary["status"] == "active"
     assert secondary["source_node"] == "n001"
@@ -283,9 +283,9 @@ def test_validate_workspace_detects_missing_branch_context(tmp_path: Path) -> No
     node = read_json(workspace / "nodes" / "n001" / "node.json")
     node.pop("branch_context", None)
     write_json(workspace / "nodes" / "n001" / "node.json", node)
-    tree = read_json(workspace / "tree.json")
+    tree = read_json(workspace / "research_state.json")
     tree["nodes"][1].pop("branch_context", None)
-    write_json(workspace / "tree.json", tree)
+    write_json(workspace / "research_state.json", tree)
 
     validation = validate_workspace(workspace)
 
@@ -329,7 +329,7 @@ def test_validate_workspace_accepts_explicit_solution_branch(tmp_path: Path) -> 
 
     assert validation["valid"] is True
     assert validation["findings"] == []
-    tree = read_json(workspace / "tree.json")
+    tree = read_json(workspace / "research_state.json")
     assert tree["edges"][-1] == {"parent_node": "n000", "child_node": "n002"}
     assert tree["branch_events"][-1]["parent_node"] == "n000"
     assert tree["branch_events"][-1]["is_rebased"] is True
@@ -405,12 +405,12 @@ def test_validate_workspace_rejects_solution_branch_not_mounted_on_anchor(tmp_pa
     node = read_json(workspace / "nodes" / "n002" / "node.json")
     node["parent_node"] = "n001"
     write_json(workspace / "nodes" / "n002" / "node.json", node)
-    tree = read_json(workspace / "tree.json")
+    tree = read_json(workspace / "research_state.json")
     tree["nodes"][2]["parent_node"] = "n001"
     tree["edges"][-1] = {"parent_node": "n001", "child_node": "n002"}
     tree["branch_events"][-1]["parent_node"] = "n001"
     tree["branch_events"][-1]["is_rebased"] = False
-    write_json(workspace / "tree.json", tree)
+    write_json(workspace / "research_state.json", tree)
 
     validation = validate_workspace(workspace)
 
@@ -418,7 +418,7 @@ def test_validate_workspace_rejects_solution_branch_not_mounted_on_anchor(tmp_pa
     assert "branch_parent_anchor_mismatch" in _codes(validation)
 
 
-def test_new_solution_branch_requires_anchor_to_match_hypothesis_branch_anchor(tmp_path: Path) -> None:
+def test_new_solution_branch_accepts_ancestor_checkpoint_distinct_from_hypothesis_origin(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     report_ref = bootstrap_strict_workspace(workspace)
     _add_secondary_hypothesis(workspace, report_ref)
@@ -453,13 +453,47 @@ def test_new_solution_branch_requires_anchor_to_match_hypothesis_branch_anchor(t
         hypothesis_ref={"hypothesis_id": "hyp_0002", "prediction_ids": ["pred_mode_001"]},
     )
 
-    with pytest.raises(ContractError, match="anchor_node must match the hypothesis branch anchor"):
+    assert validate_decision_for_workspace(workspace, decision) == decision
+    assert start_node(workspace, decision)["node_id"] == "n004"
+
+
+def test_new_solution_branch_rejects_checkpoint_outside_trigger_ancestry(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_strict_workspace(workspace)
+    start_node(workspace, _start_decision(report_ref, node_id="n001", phase="candidate_generation"))
+    end_node(workspace, _end_decision(report_ref, "n001", "refuted"))
+    start_node(
+        workspace,
+        _start_decision(
+            report_ref,
+            node_id="n002",
+            parent_node="n000",
+            phase="candidate_generation",
+            branch_context={"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
+        ),
+    )
+    end_node(workspace, _end_decision(report_ref, "n002", "supported"))
+    decision = _start_decision(
+        report_ref,
+        node_id="n003",
+        parent_node="n002",
+        phase="candidate_generation",
+        solution_ref={"solution_id": "sol_non_ancestor"},
+        branch_context={
+            "relation": "new_solution_branch",
+            "from_node": "n001",
+            "anchor_node": "n002",
+            "changed_variable": "solution_strategy",
+            "reason_code": "inspect_sibling_checkpoint",
+            "evidence_refs": [],
+        },
+    )
+
+    with pytest.raises(ContractError, match="anchor_node must be an ancestor"):
         validate_decision_for_workspace(workspace, decision)
-    with pytest.raises(ContractError, match="anchor_node must match the hypothesis branch anchor"):
-        start_node(workspace, decision)
 
 
-def test_validate_workspace_warns_for_legacy_overbroad_solution_anchor(tmp_path: Path) -> None:
+def test_validate_workspace_accepts_solution_anchor_at_older_ancestor(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     report_ref = bootstrap_strict_workspace(workspace)
     _add_secondary_hypothesis(workspace, report_ref)
@@ -487,7 +521,7 @@ def test_validate_workspace_warns_for_legacy_overbroad_solution_anchor(tmp_path:
         "evidence_refs": [],
     }
     write_json(workspace / "nodes" / "n003" / "node.json", node)
-    tree = read_json(workspace / "tree.json")
+    tree = read_json(workspace / "research_state.json")
     tree["nodes"][3]["parent_node"] = "n000"
     tree["nodes"][3]["branch_context"] = node["branch_context"]
     tree["edges"][-1] = {"parent_node": "n000", "child_node": "n003"}
@@ -502,17 +536,15 @@ def test_validate_workspace_warns_for_legacy_overbroad_solution_anchor(tmp_path:
             "changed_variable": "solution_strategy",
         }
     )
-    write_json(workspace / "tree.json", tree)
+    write_json(workspace / "research_state.json", tree)
 
     validation = validate_workspace(workspace)
 
     assert validation["valid"] is True
-    assert "overbroad_anchor_node_for_new_solution_branch" in _codes(validation)
-    finding = next(item for item in validation["findings"] if item["code"] == "overbroad_anchor_node_for_new_solution_branch")
-    assert finding["severity"] == "warning"
+    assert "branch_anchor_not_ancestor" not in _codes(validation)
 
 
-def test_update_workspace_repairs_legacy_overbroad_solution_anchor(tmp_path: Path) -> None:
+def test_update_workspace_repairs_solution_anchor_to_another_ancestor(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     report_ref = bootstrap_strict_workspace(workspace)
     _add_secondary_hypothesis(workspace, report_ref)
@@ -532,7 +564,7 @@ def test_update_workspace_repairs_legacy_overbroad_solution_anchor(tmp_path: Pat
     end_node(workspace, _end_decision(report_ref, "n003", "refuted", hypothesis_id="hyp_0002"))
     _force_overbroad_solution_anchor(workspace, "n003")
 
-    assert "overbroad_anchor_node_for_new_solution_branch" in _codes(validate_workspace(workspace))
+    assert validate_workspace(workspace)["valid"] is True
     result = update_workspace(
         workspace,
         {
@@ -554,7 +586,7 @@ def test_update_workspace_repairs_legacy_overbroad_solution_anchor(tmp_path: Pat
     assert result["repairs"]["branch_anchor"] == 1
     validation = validate_workspace(workspace)
     assert validation["valid"] is True
-    assert "overbroad_anchor_node_for_new_solution_branch" not in _codes(validation)
+    assert "branch_anchor_not_ancestor" not in _codes(validation)
     node = read_json(workspace / "nodes" / "n003" / "node.json")
     assert node["parent_node"] == "n001"
     assert node["branch_context"]["anchor_node"] == "n001"
@@ -684,7 +716,7 @@ def test_pathway_audit_supported_does_not_mark_audited_step_supported(tmp_path: 
     close_decision["payload"]["closure"]["mechanism"]["evidence_refs"] = ["ev_pathway_not_accepted"]
     end_node(workspace, close_decision)
 
-    model = json.loads((workspace / "pathway_model.json").read_text(encoding="utf-8"))
+    model = json.loads((workspace / "hypotheses.json").read_text(encoding="utf-8"))
     pathway = model["pathways"][0]
     step = pathway["steps"][0]
 
@@ -790,7 +822,7 @@ def test_tsfreq_support_does_not_mark_pathway_step_supported(tmp_path: Path) -> 
     )
     end_node(workspace, _end_decision(report_ref, "n001", "supported"))
 
-    model = json.loads((workspace / "pathway_model.json").read_text(encoding="utf-8"))
+    model = json.loads((workspace / "hypotheses.json").read_text(encoding="utf-8"))
     pathway = model["pathways"][0]
     step = pathway["steps"][0]
 
@@ -811,7 +843,7 @@ def test_connectivity_support_marks_pathway_step_supported(tmp_path: Path) -> No
     )
     end_node(workspace, _end_decision(report_ref, "n001", "supported"))
 
-    model = json.loads((workspace / "pathway_model.json").read_text(encoding="utf-8"))
+    model = json.loads((workspace / "hypotheses.json").read_text(encoding="utf-8"))
     pathway = model["pathways"][0]
     step = pathway["steps"][0]
 
@@ -924,9 +956,9 @@ def _rewrite_node_phase(workspace: Path, node_id: str, phase: str) -> None:
     node["phase"] = phase
     write_json(node_path, node)
 
-    tree = read_json(workspace / "tree.json")
+    tree = read_json(workspace / "research_state.json")
     next(item for item in tree["nodes"] if item["node_id"] == node_id)["phase"] = phase
-    write_json(workspace / "tree.json", tree)
+    write_json(workspace / "research_state.json", tree)
 
     artifact_manifest_path = workspace / "nodes" / node_id / "outputs" / "artifact_manifest.json"
     if artifact_manifest_path.exists():
@@ -1030,9 +1062,9 @@ def _set_legacy_initial_hypothesis(
     write_json(node_path, node)
 
     if clear_hypothesis_ref:
-        tree = read_json(workspace / "tree.json")
+        tree = read_json(workspace / "research_state.json")
         next(item for item in tree["nodes"] if item["node_id"] == node_id)["hypothesis_ref"] = None
-        write_json(workspace / "tree.json", tree)
+        write_json(workspace / "research_state.json", tree)
 
 
 def _add_secondary_hypothesis(workspace: Path, report_ref: dict[str, str]) -> None:
@@ -1120,7 +1152,7 @@ def _force_overbroad_solution_anchor(workspace: Path, node_id: str) -> None:
         "evidence_refs": [],
     }
     write_json(workspace / "nodes" / node_id / "node.json", node)
-    tree = read_json(workspace / "tree.json")
+    tree = read_json(workspace / "research_state.json")
     for entry in tree["nodes"]:
         if entry["node_id"] == node_id:
             entry["parent_node"] = "n000"
@@ -1144,7 +1176,7 @@ def _force_overbroad_solution_anchor(workspace: Path, node_id: str) -> None:
                 }
             )
             break
-    write_json(workspace / "tree.json", tree)
+    write_json(workspace / "research_state.json", tree)
 
 
 def _codes(validation: dict[str, Any]) -> set[str]:

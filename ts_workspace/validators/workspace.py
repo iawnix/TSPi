@@ -19,6 +19,7 @@ from ..evidence_gates import (
 )
 from ..io import read_json
 from ..schema_validation import schema_findings
+from ..state import EVIDENCE_FILE, HYPOTHESES_FILE, RESEARCH_STATE_FILE
 from .decision import (
     ANCHORED_BRANCH_RELATIONS,
     FORBIDDEN_PUBLIC_FIELDS,
@@ -33,12 +34,9 @@ from .decision import (
 )
 
 REQUIRED_FILES = {
-    "manifest.json",
-    "tree.json",
-    "evidence_registry.json",
-    "mechanism_model.json",
-    "pathway_model.json",
-    "knowledge_base.md",
+    RESEARCH_STATE_FILE,
+    HYPOTHESES_FILE,
+    EVIDENCE_FILE,
 }
 
 REQUIRED_DIRS = {"inputs", "nodes", "reports", "accepted", "rejected"}
@@ -49,11 +47,9 @@ STRICT_PATHWAY_ACCEPTED = "accepted"
 STRICT_PATHWAY_NOT_ACCEPTED = {"pathway_not_accepted", "not_accepted"}
 STRICT_PATHWAY_DECISIONS = {STRICT_PATHWAY_ACCEPTED, *STRICT_PATHWAY_NOT_ACCEPTED}
 SCHEMA_BY_FILE = {
-    "manifest.json": "manifest.schema.json",
-    "tree.json": "tree.schema.json",
-    "evidence_registry.json": "evidence_registry.schema.json",
-    "mechanism_model.json": "mechanism.schema.json",
-    "pathway_model.json": "pathway.schema.json",
+    RESEARCH_STATE_FILE: "research_state.schema.json",
+    HYPOTHESES_FILE: "hypotheses.schema.json",
+    EVIDENCE_FILE: "evidence_registry.schema.json",
 }
 
 
@@ -82,7 +78,7 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
             )
 
     loaded: dict[str, Any] = {}
-    for filename in sorted(REQUIRED_FILES - {"knowledge_base.md"}):
+    for filename in sorted(REQUIRED_FILES):
         path = root_path / filename
         if path.exists():
             try:
@@ -94,25 +90,24 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
             if schema_name:
                 findings.extend(schema_findings(schema_name, loaded[filename], filename))
 
-    mechanism_model = loaded.get("mechanism_model.json", {})
+    mechanism_model = loaded.get(HYPOTHESES_FILE, {})
     hypothesis_ids = _validate_mechanism_model(mechanism_model, findings)
-    hypothesis_anchor_nodes = _hypothesis_anchor_nodes(mechanism_model)
-    tree = loaded.get("tree.json", {})
+    tree = loaded.get(RESEARCH_STATE_FILE, {})
     node_entries = tree.get("nodes", []) if isinstance(tree, dict) else []
     node_ids = set()
     node_details: dict[str, dict[str, Any]] = {}
     ordered_node_ids: list[str] = []
     if not isinstance(node_entries, list):
-        _finding(findings, "error", "invalid_tree", "tree.nodes must be a list", "tree.json")
+        _finding(findings, "error", "invalid_tree", "research_state.nodes must be a list", RESEARCH_STATE_FILE)
         node_entries = []
 
     for entry in node_entries:
         if not isinstance(entry, dict):
-            _finding(findings, "error", "invalid_tree_node", "tree node entry must be an object", "tree.json")
+            _finding(findings, "error", "invalid_tree_node", "research state node entry must be an object", RESEARCH_STATE_FILE)
             continue
         node_id = entry.get("node_id")
         if not isinstance(node_id, str) or not node_id:
-            _finding(findings, "error", "invalid_node_id", "tree node missing node_id", "tree.json")
+            _finding(findings, "error", "invalid_node_id", "research state node missing node_id", RESEARCH_STATE_FILE)
             continue
         node_ids.add(node_id)
         ordered_node_ids.append(node_id)
@@ -131,21 +126,21 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
             continue
         node_details[node_id] = node
         _validate_node(node, node_id, hypothesis_ids, findings, str(node_path))
-        _validate_tree_node_lineage(entry, node, findings, f"tree.json.nodes[{len(ordered_node_ids) - 1}]")
+        _validate_tree_node_lineage(entry, node, findings, f"{RESEARCH_STATE_FILE}.nodes[{len(ordered_node_ids) - 1}]")
 
     current_node = tree.get("current_node") if isinstance(tree, dict) else None
     if current_node is not None and current_node not in node_ids:
-        _finding(findings, "error", "invalid_current_node", "tree.current_node does not exist", "tree.json")
+        _finding(findings, "error", "invalid_current_node", "research_state.current_node does not exist", RESEARCH_STATE_FILE)
     if isinstance(tree, dict):
         _validate_initial_node_sequence(ordered_node_ids, node_details, hypothesis_ids, findings)
         _validate_hypothesis_provenance(mechanism_model, node_details, findings)
-        _validate_branch_contexts(node_details, hypothesis_anchor_nodes, findings)
+        _validate_branch_contexts(node_details, findings)
         _validate_branch_events(tree, node_ids, findings)
         _validate_branch_lineage(tree, node_details, findings)
         _validate_unresolved_terminal_state(
             tree,
-            _as_dict(loaded.get("manifest.json")),
-            _as_dict(loaded.get("pathway_model.json")),
+            _as_dict(loaded.get(RESEARCH_STATE_FILE)),
+            _as_dict(loaded.get(HYPOTHESES_FILE)),
             ordered_node_ids,
             node_details,
             findings,
@@ -154,7 +149,7 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
     for filename, data in loaded.items():
         _reject_forbidden(data, findings, filename)
 
-    evidence = _as_dict(loaded.get("evidence_registry.json")).get("evidence", [])
+    evidence = _as_dict(loaded.get(EVIDENCE_FILE)).get("evidence", [])
     evidence_by_id: dict[str, dict[str, Any]] = {}
     if isinstance(evidence, list):
         ids: set[str] = set()
@@ -187,13 +182,13 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
 
     _validate_accepted_ts_refs(
         root_path,
-        _as_dict(loaded.get("manifest.json")),
-        _as_dict(loaded.get("mechanism_model.json")),
+        _as_dict(loaded.get(RESEARCH_STATE_FILE)),
+        _as_dict(loaded.get(HYPOTHESES_FILE)),
         evidence_by_id,
         findings,
     )
     _validate_pathway_audit_mechanism_gates(
-        _as_dict(loaded.get("mechanism_model.json")),
+        _as_dict(loaded.get(HYPOTHESES_FILE)),
         node_details,
         evidence_by_id,
         findings,
@@ -326,18 +321,18 @@ def _validate_node(
 
 
 def _validate_mechanism_model(model: Any, findings: list[dict[str, str]]) -> set[str]:
-    source = "mechanism_model.json"
+    source = HYPOTHESES_FILE
     hypothesis_ids: set[str] = set()
     if not isinstance(model, dict):
-        _finding(findings, "error", "invalid_mechanism_model", "mechanism_model must be an object", source)
+        _finding(findings, "error", "invalid_mechanism_model", "hypotheses state must be an object", source)
         return hypothesis_ids
-    if model.get("schema_version") != "ts-mechanism":
-        _finding(findings, "error", "invalid_mechanism_schema", "mechanism_model schema_version must be ts-mechanism", source)
+    if model.get("schema_version") != "ts-hypotheses":
+        _finding(findings, "error", "invalid_mechanism_schema", "hypotheses schema_version must be ts-hypotheses", source)
     if "focus_hypothesis_id" not in model:
-        _finding(findings, "error", "missing_focus_hypothesis_id", "mechanism_model.focus_hypothesis_id is required", source)
+        _finding(findings, "error", "missing_focus_hypothesis_id", "hypotheses.focus_hypothesis_id is required", source)
     hypotheses = model.get("hypotheses")
     if not isinstance(hypotheses, list):
-        _finding(findings, "error", "invalid_hypotheses", "mechanism_model.hypotheses must be a list", source)
+        _finding(findings, "error", "invalid_hypotheses", "hypotheses.hypotheses must be a list", source)
         return hypothesis_ids
     for index, hypothesis in enumerate(hypotheses):
         path = f"{source}.hypotheses[{index}]"
@@ -366,20 +361,6 @@ def _validate_mechanism_model(model: Any, findings: list[dict[str, str]]) -> set
     return hypothesis_ids
 
 
-def _hypothesis_anchor_nodes(model: Any) -> dict[str, str]:
-    if not isinstance(model, dict):
-        return {}
-    sources: dict[str, str] = {}
-    for hypothesis in model.get("hypotheses", []):
-        if not isinstance(hypothesis, dict):
-            continue
-        hypothesis_id = hypothesis.get("hypothesis_id")
-        anchor_node = hypothesis.get("branch_anchor_node") or hypothesis.get("source_node")
-        if isinstance(hypothesis_id, str) and isinstance(anchor_node, str) and hypothesis_id and anchor_node:
-            sources[hypothesis_id] = anchor_node
-    return sources
-
-
 def _validate_hypothesis_provenance(
     model: Any,
     node_details: dict[str, dict[str, Any]],
@@ -394,7 +375,7 @@ def _validate_hypothesis_provenance(
         if not isinstance(proposal, dict):
             continue
         hypothesis_id = hypothesis.get("hypothesis_id")
-        source = f"mechanism_model.json.hypotheses[{index}]"
+        source = f"{HYPOTHESES_FILE}.hypotheses[{index}]"
         if hypothesis.get("source_node") != proposal.get("from_node"):
             _finding(
                 findings,
@@ -561,7 +542,6 @@ def _validate_tree_node_lineage(
 
 def _validate_branch_contexts(
     node_details: dict[str, dict[str, Any]],
-    hypothesis_anchor_nodes: dict[str, str],
     findings: list[dict[str, str]],
 ) -> None:
     for node_id, node in node_details.items():
@@ -604,9 +584,16 @@ def _validate_branch_contexts(
                 f"{relation} requires parent_node to match branch_context.anchor_node",
                 source,
             )
+        if relation in ANCHORED_BRANCH_RELATIONS and not _is_ancestor(node_details, anchor_node_id, from_node_id):
+            _finding(
+                findings,
+                "error",
+                "branch_anchor_not_ancestor",
+                f"{relation} anchor_node must be an ancestor of branch_context.from_node",
+                source,
+            )
         if relation == "new_solution_branch":
             _validate_solution_branch_context(node, from_node, findings, source)
-            _validate_solution_branch_anchor(node, anchor_node_id, hypothesis_anchor_nodes, findings, source)
         elif relation == "new_hypothesis_branch":
             _validate_hypothesis_branch_context(node, from_node, findings, source)
         elif relation == "new_pathway_branch":
@@ -637,32 +624,6 @@ def _validate_solution_branch_context(
         _finding(findings, "error", "solution_branch_duplicate_solution", "new_solution_branch requires a new solution_ref.solution_id", source)
 
 
-def _validate_solution_branch_anchor(
-    node: dict[str, Any],
-    anchor_node_id: Any,
-    hypothesis_anchor_nodes: dict[str, str],
-    findings: list[dict[str, str]],
-    source: str,
-) -> None:
-    hypothesis_ref = node.get("hypothesis_ref") if isinstance(node.get("hypothesis_ref"), dict) else {}
-    hypothesis_id = hypothesis_ref.get("hypothesis_id")
-    if not isinstance(hypothesis_id, str):
-        return
-    expected_anchor = hypothesis_anchor_nodes.get(hypothesis_id)
-    if expected_anchor is None or anchor_node_id == expected_anchor:
-        return
-    _finding(
-        findings,
-        "warning",
-        "overbroad_anchor_node_for_new_solution_branch",
-        (
-            "new_solution_branch anchor_node should match the hypothesis branch anchor; "
-            f"hypothesis_id={hypothesis_id}, expected_anchor={expected_anchor}, anchor_node={anchor_node_id}"
-        ),
-        source,
-    )
-
-
 def _validate_hypothesis_branch_context(
     node: dict[str, Any],
     from_node: dict[str, Any] | None,
@@ -687,13 +648,30 @@ def _validate_hypothesis_branch_context(
         )
 
 
+def _is_ancestor(node_details: dict[str, dict[str, Any]], ancestor_id: Any, node_id: Any) -> bool:
+    if not isinstance(ancestor_id, str) or not isinstance(node_id, str):
+        return False
+    current: str | None = node_id
+    visited: set[str] = set()
+    while current and current not in visited:
+        if current == ancestor_id:
+            return True
+        visited.add(current)
+        node = node_details.get(current)
+        if node is None:
+            return False
+        parent = node.get("parent_node")
+        current = parent if isinstance(parent, str) and parent else None
+    return False
+
+
 def _validate_branch_events(tree: dict[str, Any], node_ids: set[str], findings: list[dict[str, str]]) -> None:
     events = tree.get("branch_events", [])
     if not isinstance(events, list):
-        _finding(findings, "error", "invalid_branch_events", "tree.branch_events must be a list", "tree.json")
+        _finding(findings, "error", "invalid_branch_events", "research_state.branch_events must be a list", RESEARCH_STATE_FILE)
         return
     for index, event in enumerate(events):
-        path = f"tree.json.branch_events[{index}]"
+        path = f"{RESEARCH_STATE_FILE}.branch_events[{index}]"
         if not isinstance(event, dict):
             _finding(findings, "error", "invalid_branch_event", "branch event must be an object", path)
             continue
@@ -716,7 +694,7 @@ def _validate_branch_lineage(
     findings: list[dict[str, str]],
 ) -> None:
     for index, event in enumerate(_branch_events(tree)):
-        path = f"tree.json.branch_events[{index}]"
+        path = f"{RESEARCH_STATE_FILE}.branch_events[{index}]"
         new_node = node_details.get(str(event.get("new_node")))
         from_node = node_details.get(str(event.get("from_node")))
         if new_node is None:
@@ -802,7 +780,7 @@ def _validate_initial_node_sequence(
     first_id = ordered_node_ids[0]
     first = node_details.get(first_id, {})
     if first_id != "n000":
-        _finding(findings, "error", "missing_n000", "first node must be n000", "tree.json.nodes[0]")
+        _finding(findings, "error", "missing_n000", "first node must be n000", f"{RESEARCH_STATE_FILE}.nodes[0]")
     if first.get("phase") not in {"endpoint", "preflight"}:
         _finding(findings, "error", "invalid_n000_phase", "n000 must be endpoint", "nodes/n000/node.json")
     closure = first.get("closure")
@@ -813,7 +791,7 @@ def _validate_initial_node_sequence(
                 "error",
                 "missing_finalized_hypothesis",
                 "supported n000 must finalize at least one mechanism hypothesis",
-                "mechanism_model.json.hypotheses",
+                f"{HYPOTHESES_FILE}.hypotheses",
             )
 
 
@@ -844,7 +822,7 @@ def _validate_unresolved_terminal_state(
             f"terminal node {terminal_id} is {verdict} and the workspace has no "
             "running node or accepted TS/pathway; agent decision is still required"
         ),
-        "tree.json.current_node",
+        f"{RESEARCH_STATE_FILE}.current_node",
     )
 
 
@@ -881,7 +859,7 @@ def _validate_accepted_ts_refs(
 ) -> None:
     for ref in _as_list(manifest.get("accepted_ts_refs")):
         if not isinstance(ref, str) or not ref:
-            _finding(findings, "error", "invalid_accepted_ts_ref", "accepted_ts_ref must be a non-empty string", "manifest.json")
+            _finding(findings, "error", "invalid_accepted_ts_ref", "accepted_ts_ref must be a non-empty string", RESEARCH_STATE_FILE)
             continue
         path = root / ref
         if not path.exists():

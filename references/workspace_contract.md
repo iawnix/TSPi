@@ -4,13 +4,22 @@ The workspace root is the only trusted state source.
 
 Required files:
 
-- `manifest.json`
-- `tree.json`
-- `mechanism_model.json`
-- `pathway_model.json`
+- `research_state.json`
+- `hypotheses.json`
 - `evidence_registry.json`
-- `knowledge_base.md`
 - `decision_log.jsonl`
+
+The three JSON files are the canonical scientific state:
+
+- `research_state.json`: workspace metadata, provenance, accepted artifact
+  references, nodes, edges, current node, and branch events.
+- `hypotheses.json`: mechanism hypotheses, testable predictions, accepted
+  facts, open questions, pathway hypotheses, and pathway steps.
+- `evidence_registry.json`: append-only evidence identities and artifact
+  provenance.
+
+Knowledge summaries, final reports, and UI views are derived from these files;
+they are not additional trusted state stores.
 
 Required directories:
 
@@ -38,6 +47,9 @@ destructive and removes workspace-owned state directories and root state files
 before creating a fresh workspace. Force reinitialization requires an
 `init_workspace` decision JSON so the destructive reset is auditable. Do not
 use it on a research directory unless that reset is explicitly intended.
+Use `migrate_workspace_state --root <workspace>` to convert a complete legacy
+six-file root layout. The command validates the new state and archives old
+root files under `legacy_state/`.
 
 ## Transaction Log
 
@@ -81,7 +93,7 @@ structure analysis, web views, and final reports must return artifacts or
 read models instead of mutating the workspace.
 
 Reports, monitoring handoffs, snapshots, visualization, and report-package
-assembly do not create scientific nodes. `tree.json` contains only
+assembly do not create scientific nodes. `research_state.json` contains only
 evidence-testing work represented by the active phase model.
 
 Node-scoped artifacts belong under:
@@ -99,12 +111,14 @@ nodes/<node_id>/remote/
 
 ```json
 {
-  "schema_version": "ts-mechanism",
+  "schema_version": "ts-hypotheses",
   "focus_hypothesis_id": null,
   "hypotheses": [],
   "accepted_facts": [],
   "refuted_hypotheses": [],
-  "open_questions": []
+  "open_questions": [],
+  "focus_pathway_id": null,
+  "pathways": []
 }
 ```
 
@@ -172,20 +186,18 @@ an explicit branch-context decision:
 For `new_solution_branch`, `new_hypothesis_branch`, and `new_pathway_branch`,
 the new node's `parent_node` must equal `branch_context.anchor_node`. The
 `from_node` records the failed or triggering node; it is not the structural
-parent unless it is also the anchor. For `new_solution_branch`, the anchor
-must also equal the current hypothesis `branch_anchor_node` (falling back to
-legacy `source_node`), so same-hypothesis
-replacement solutions remain mounted inside the hypothesis branch rather than
-being lifted to a broader ancestor. The workspace validates this topology, but
-it does not decide that a solution is exhausted, that a hypothesis is refuted,
-or that the search should continue.
+parent unless it is also the anchor. The agent selects the checkpoint after
+reading its historical node context. The anchor must be an ancestor of
+`from_node`; it does not have to equal the hypothesis proposal source. The
+workspace validates this topology, but it does not choose the checkpoint or
+decide that a solution is exhausted, that a hypothesis is refuted, or that the
+search should continue.
 
 Legacy workspaces that predate this rule may be repaired through a validated
 `update_workspace` decision with `payload.repair_branch_anchor`. The repair is
 limited to non-running `new_solution_branch` nodes and requires
-`new_anchor_node` to equal the node hypothesis `branch_anchor_node` (or legacy
-`source_node` fallback); it updates the
-node, tree node, edge, and branch event lineage together and records a
+`new_anchor_node` to be an ancestor of the branch `from_node`; it updates the
+node, research-state node, edge, and branch event lineage together and records a
 `lineage_repairs` audit entry.
 
 ## Evidence Roles
@@ -226,13 +238,13 @@ validators or finalizers.
 
 ## Workspace State Files
 
-- `mechanism_model.hypotheses[]`: proposed, active, supported, refuted, or
+- `hypotheses.json.hypotheses[]`: proposed, active, supported, refuted, or
   superseded working mechanism hypotheses. Proposal records include
   `source_node`, `branch_anchor_node`, `proposal_context`, and decision
   provenance.
-- `mechanism_model.accepted_facts[]`: accepted TS facts written only by
+- `hypotheses.json.accepted_facts[]`: accepted TS facts written only by
   `accepted_audit` after TS/Freq and connectivity gates are both present.
-- `pathway_model.json`: pathway and step topology. Hypotheses may reference a
+- `hypotheses.json.pathways[]`: pathway and step topology. Mechanism hypotheses may reference a
   pathway step, but do not duplicate pathway structure.
 
 The workspace validator checks required files, node JSON records, initial

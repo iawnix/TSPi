@@ -11,7 +11,7 @@ then register a structured mechanism proposal before evidence-testing nodes.
 Those nodes must reference that hypothesis by `hypothesis_ref`. A
 natural-language node `hypothesis` remains useful for display, but the
 authoritative mechanism object lives in
-`mechanism_model.json.hypotheses[]`.
+`hypotheses.json.hypotheses[]`.
 
 ## Initial Hypothesis
 
@@ -192,7 +192,7 @@ accepted-audit closure requires a matched stereochemical connectivity gate.
 `n000` may not contain mechanism-hypothesis creation, TS/Freq, IRC,
 connectivity, or accepted-TS claims. It only establishes whether the supplied
 endpoint basins are usable. A later `propose_hypothesis` mutation writes a
-`status=proposed` hypothesis into `mechanism_model.json.hypotheses[]` and sets
+`status=proposed` hypothesis into `hypotheses.json.hypotheses[]` and sets
 `focus_hypothesis_id`. The first evidence-producing node that references it
 changes its status to `active` and records `activated_by_node`.
 

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from ts_workspace import init_workspace, validate_workspace
+from ts_workspace import init_workspace, migrate_workspace_state, validate_workspace
 from ts_workspace.io import read_json, write_json
 from ts_workspace.schema_validation import check_all_contract_schemas
 from ts_workspace.validators.decision import ContractError, validate_decision
@@ -37,6 +37,8 @@ def test_required_schema_files_exist() -> None:
         "artifact_manifest.schema.json",
         "pathway.schema.json",
         "mechanism.schema.json",
+        "research_state.schema.json",
+        "hypotheses.schema.json",
     ]:
         path = ROOT / "ts_workspace" / "contracts" / name
         assert path.exists()
@@ -45,6 +47,81 @@ def test_required_schema_files_exist() -> None:
 
 def test_contract_schemas_are_valid_draft_2020_12() -> None:
     check_all_contract_schemas()
+
+
+def test_init_workspace_uses_three_canonical_root_state_files(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    init_workspace(workspace)
+
+    assert {path.name for path in workspace.glob("*.json")} == {
+        "research_state.json",
+        "hypotheses.json",
+        "evidence_registry.json",
+    }
+    for legacy_name in ("manifest.json", "tree.json", "mechanism_model.json", "pathway_model.json", "knowledge_base.md"):
+        assert not (workspace / legacy_name).exists()
+
+
+def test_migrate_workspace_state_archives_complete_legacy_layout(tmp_path: Path) -> None:
+    from tests.strict_helpers import bootstrap_strict_workspace
+
+    workspace = tmp_path / "ws"
+    bootstrap_strict_workspace(workspace)
+    research = read_json(workspace / "research_state.json")
+    hypotheses = read_json(workspace / "hypotheses.json")
+
+    write_json(
+        workspace / "manifest.json",
+        {
+            "schema_version": "ts-workspace",
+            "created_at": research["created_at"],
+            "current_focus": None,
+            "hypothesis_contract_version": research["hypothesis_contract_version"],
+            "accepted_ts_refs": research["accepted_ts_refs"],
+            "provenance": research["provenance"],
+        },
+    )
+    write_json(
+        workspace / "tree.json",
+        {
+            "schema_version": "ts-tree",
+            "nodes": research["nodes"],
+            "edges": research["edges"],
+            "current_node": research["current_node"],
+            "branch_events": research["branch_events"],
+        },
+    )
+    write_json(
+        workspace / "mechanism_model.json",
+        {
+            "schema_version": "ts-mechanism",
+            "focus_hypothesis_id": hypotheses["focus_hypothesis_id"],
+            "hypotheses": hypotheses["hypotheses"],
+            "accepted_facts": hypotheses["accepted_facts"],
+            "refuted_hypotheses": hypotheses["refuted_hypotheses"],
+            "open_questions": hypotheses["open_questions"],
+        },
+    )
+    write_json(
+        workspace / "pathway_model.json",
+        {
+            "schema_version": "ts-pathway",
+            "focus_pathway_id": hypotheses["focus_pathway_id"],
+            "pathways": hypotheses["pathways"],
+        },
+    )
+    (workspace / "knowledge_base.md").write_text("# Legacy Knowledge\n", encoding="utf-8")
+    (workspace / "research_state.json").unlink()
+    (workspace / "hypotheses.json").unlink()
+
+    result = migrate_workspace_state(workspace)
+
+    assert result["migrated"] is True
+    assert result["valid"] is True
+    assert read_json(workspace / "research_state.json")["nodes"] == research["nodes"]
+    assert read_json(workspace / "hypotheses.json")["hypotheses"] == hypotheses["hypotheses"]
+    assert (workspace / "legacy_state" / "knowledge_base.md").exists()
+    assert not (workspace / "manifest.json").exists()
 
 
 def test_decision_json_schema_rejects_invalid_payload_type() -> None:
@@ -113,9 +190,9 @@ def test_start_decision_rejects_legacy_phase(legacy_phase: str) -> None:
 def test_workspace_json_schema_rejects_tree_extra_top_level_field(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     init_workspace(workspace)
-    tree = read_json(workspace / "tree.json")
+    tree = read_json(workspace / "research_state.json")
     tree["unexpected_contract_field"] = True
-    write_json(workspace / "tree.json", tree)
+    write_json(workspace / "research_state.json", tree)
 
     validation = validate_workspace(workspace)
 
@@ -183,13 +260,13 @@ def test_init_force_reinitializes(tmp_path: Path) -> None:
     (workspace / "nodes" / "n000").mkdir(parents=True)
     write_json(workspace / "nodes" / "n000" / "node.json", {"node_id": "n000", "stale": True})
     (workspace / "accepted" / "accepted_ts_old.json").write_text("{}\n", encoding="utf-8")
-    tree = read_json(workspace / "tree.json")
+    tree = read_json(workspace / "research_state.json")
     tree["nodes"].append({"node_id": "n000", "phase": "endpoint"})
-    write_json(workspace / "tree.json", tree)
+    write_json(workspace / "research_state.json", tree)
 
     init_workspace(workspace, init_decision("dec_force_reinit"), force=True)
 
-    assert read_json(workspace / "tree.json")["nodes"] == []
+    assert read_json(workspace / "research_state.json")["nodes"] == []
     assert not (workspace / "nodes" / "n000" / "node.json").exists()
     assert not (workspace / "accepted" / "accepted_ts_old.json").exists()
     started = start_node(
@@ -256,7 +333,7 @@ def test_decision_snapshot_rejects_duplicate_id_with_different_content(tmp_path:
         "rationale": "First mutation with this explicit id.",
         "evidence_refs": [],
         "report_ref": _report_ref(workspace),
-        "payload": {"append_knowledge": "First note."},
+        "payload": {"append_provenance": [{"source": "first"}]},
     }
     update_workspace(workspace, first)
     second = {
@@ -285,15 +362,15 @@ def test_decision_snapshot_allows_duplicate_id_with_same_content(tmp_path: Path)
         "rationale": "Idempotent retry with identical content.",
         "evidence_refs": [],
         "report_ref": _report_ref(workspace),
-        "payload": {"append_knowledge": "Repeated note."},
+        "payload": {"append_provenance": [{"source": "repeated"}]},
     }
     update_workspace(workspace, decision)
-    knowledge_after_first = (workspace / "knowledge_base.md").read_text(encoding="utf-8")
+    state_after_first = read_json(workspace / "research_state.json")
     update_workspace(workspace, decision)
 
     snapshot = json.loads((workspace / "decisions" / "dec_idempotent.json").read_text(encoding="utf-8"))
     assert snapshot["payload"] == decision["payload"]
-    assert (workspace / "knowledge_base.md").read_text(encoding="utf-8") == knowledge_after_first
+    assert read_json(workspace / "research_state.json") == state_after_first
 
 
 def test_decision_snapshot_is_written_before_state_files(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -310,7 +387,7 @@ def test_decision_snapshot_is_written_before_state_files(tmp_path: Path, monkeyp
         "rationale": "Record write order for the transaction envelope.",
         "evidence_refs": [],
         "report_ref": _report_ref(workspace),
-        "payload": {"append_knowledge": "Snapshot should be written first."},
+        "payload": {"append_provenance": [{"source": "snapshot-order"}]},
     }
     writes: list[str] = []
     real_apply_change = engine.apply_change
@@ -338,7 +415,7 @@ def test_pending_transaction_without_snapshot_blocks_replay(tmp_path: Path) -> N
         "rationale": "This decision id already has an incomplete transaction.",
         "evidence_refs": [],
         "report_ref": _report_ref(workspace),
-        "payload": {"append_knowledge": "Should not be replayed."},
+        "payload": {"append_provenance": [{"source": "pending"}]},
     }
     with (workspace / "transaction_log.jsonl").open("a", encoding="utf-8") as handle:
         handle.write(
@@ -348,7 +425,7 @@ def test_pending_transaction_without_snapshot_blocks_replay(tmp_path: Path) -> N
                     "stage": "prepare",
                     "created_at": "1970-01-01T00:00:00+00:00",
                     "action": "update_workspace",
-                    "paths": ["knowledge_base.md"],
+                    "paths": ["research_state.json"],
                 }
             )
             + "\n"
@@ -414,7 +491,7 @@ def test_pending_transaction_is_flagged_as_warning(tmp_path: Path) -> None:
                     "stage": "prepare",
                     "created_at": "1970-01-01T00:00:00+00:00",
                     "action": "end_node",
-                    "paths": ["tree.json"],
+                    "paths": ["research_state.json"],
                 }
             )
             + "\n"
@@ -523,7 +600,7 @@ def test_update_workspace_cannot_write_closure() -> None:
         "evidence_refs": [],
         "report_ref": {"report_id": "rep_test", "workspace_root": "ws"},
         "payload": {
-            "append_knowledge": "A new fact.",
+            "append_provenance": [{"source": "new-fact"}],
             "closure": {"claim_verdict": "supported"},
         },
     }

@@ -1,14 +1,19 @@
 # Pathway Model
 
-`pathway_model.json` stores multiple pathway hypotheses at the same time. A
+`hypotheses.json` stores multiple pathway hypotheses at the same time. A
 single-step branch and a multi-step branch may coexist until evidence supports,
 refutes, or supersedes them.
 
-Minimal shape:
+Pathway fields inside the combined hypotheses state:
 
 ```json
 {
-  "schema_version": "ts-pathway",
+  "schema_version": "ts-hypotheses",
+  "focus_hypothesis_id": "hyp_0001",
+  "hypotheses": [],
+  "accepted_facts": [],
+  "refuted_hypotheses": [],
+  "open_questions": [],
   "focus_pathway_id": "p_two_step_001",
   "pathways": [
     {
@@ -38,7 +43,7 @@ Allowed pathway and step statuses:
 - `superseded`
 - `accepted`
 
-Branching appends events in `tree.json.branch_events[]`; it never deletes old
+Branching appends events in `research_state.json.branch_events[]`; it never deletes old
 nodes or hides a rejected branch.
 
 `pathway_audit` nodes may be recorded as `audit_nodes` on a pathway or step, but
@@ -49,7 +54,7 @@ continue with a new hypothesis branch after a negative audit is an agent
 decision, not a validator-enforced branch rule.
 Every `pathway_audit` start decision must include `payload.pathway_ref` with the
 audited `pathway_id` and `step_id`; without that reference the audit cannot be
-attached to `pathway_model.json`. Before closing the audit, register exactly
+attached to `hypotheses.json`. Before closing the audit, register exactly
 what the audit decided as a `pathway_audit_summary` evidence record with
 `quality.strict_pathway_decision=accepted` or
 `quality.strict_pathway_decision=pathway_not_accepted`.

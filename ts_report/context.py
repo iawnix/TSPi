@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ts_workspace.io import read_json
+from ts_workspace.state import EVIDENCE_FILE, HYPOTHESES_FILE, RESEARCH_STATE_FILE
 from ts_workspace.validators.workspace import validate_workspace
 
 from .extractors import (
@@ -29,11 +30,13 @@ def collect_report_context(root: str | Path) -> dict[str, Any]:
         errors = "; ".join(item["message"] for item in validation["findings"] if item["severity"] == "error")
         raise ValueError(f"workspace is invalid: {errors}")
 
-    manifest = read_json(root_path / "manifest.json")
-    tree = read_json(root_path / "tree.json")
-    evidence = read_json(root_path / "evidence_registry.json")
-    mechanism = read_json(root_path / "mechanism_model.json")
-    pathway = read_json(root_path / "pathway_model.json")
+    research_state = read_json(root_path / RESEARCH_STATE_FILE)
+    hypotheses = read_json(root_path / HYPOTHESES_FILE)
+    evidence = read_json(root_path / EVIDENCE_FILE)
+    manifest = research_state
+    tree = research_state
+    mechanism = hypotheses
+    pathway = hypotheses
     records = [item for item in evidence.get("evidence", []) if isinstance(item, dict)]
     nodes = [item for item in tree.get("nodes", []) if isinstance(item, dict)]
     accepted_refs = [str(item) for item in manifest.get("accepted_ts_refs", []) if item]

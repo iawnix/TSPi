@@ -44,9 +44,6 @@
             {"type": "array", "items": {"$ref": "evidence.schema.json"}}
           ]
         },
-        "append_knowledge": {
-          "type": ["string", "object", "array"]
-        },
         "append_provenance": {
           "anyOf": [
             {"type": "object"},
@@ -120,7 +117,6 @@
           "payload": {
             "anyOf": [
               {"required": ["append_evidence"]},
-              {"required": ["append_knowledge"]},
               {"required": ["append_provenance"]},
               {"required": ["repair_branch_anchor"]}
             ]

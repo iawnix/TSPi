@@ -4,8 +4,8 @@ import json
 import subprocess
 from pathlib import Path
 
-from ts_workspace import report_workspace
-from strict_helpers import HYPOTHESIS_ID, bootstrap_strict_workspace
+from ts_workspace import report_branch_context, report_node, report_workspace
+from strict_helpers import HYPOTHESIS_ID, bootstrap_strict_workspace, end_v3_node, start_v3_node
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -77,3 +77,48 @@ def test_pi_context_helper_finds_workspace_from_ancestor(tmp_path: Path) -> None
     )
 
     assert completed.stdout == str(workspace)
+
+
+def test_historical_node_and_backtrack_context_are_compact_and_explicit(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    report_ref = bootstrap_strict_workspace(workspace)
+    start_v3_node(workspace, report_ref, node_id="n001", phase="candidate_generation")
+    end_v3_node(workspace, report_ref, node_id="n001", claim_verdict="supported")
+    start_v3_node(
+        workspace,
+        report_ref,
+        node_id="n002",
+        parent_node="n001",
+        phase="connectivity_validation",
+    )
+    end_v3_node(workspace, report_ref, node_id="n002", claim_verdict="refuted")
+
+    node_context = report_node(workspace, "n001")
+    branch_context = report_branch_context(workspace, "n002", "n001")
+
+    assert node_context["node"]["node_id"] == "n001"
+    assert node_context["lineage"] == ["n000", "n001"]
+    assert "closure" not in node_context["node"]
+    assert branch_context["anchor_node"]["node"]["node_id"] == "n001"
+    assert [item["node_id"] for item in branch_context["path_delta"]] == ["n002"]
+
+    context_file = tmp_path / "branch_context.json"
+    context_file.write_text(json.dumps(branch_context), encoding="utf-8")
+    script = (
+        "const fs=require('node:fs');"
+        "const helper=require('./extensions/ts-workflow-context/summary.cjs');"
+        "const value=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
+        "process.stdout.write(helper.buildBranchContextSummary(value));"
+    )
+    completed = subprocess.run(
+        ["node", "-e", script, str(context_file)],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    assert "TS backtrack context:" in completed.stdout
+    assert "trigger: n002" in completed.stdout
+    assert "selected_checkpoint: n001" in completed.stdout
+    assert "tooling only validates the resulting topology" in completed.stdout

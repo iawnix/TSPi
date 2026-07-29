@@ -11,7 +11,10 @@ from typing import Any
 from .engine import (
     end_node,
     init_workspace,
+    migrate_workspace_state,
     propose_hypothesis,
+    report_branch_context,
+    report_node,
     report_workspace,
     snapshot_report,
     start_node,
@@ -38,6 +41,18 @@ def main(argv: list[str] | None = None) -> int:
     p = sub.add_parser("report_workspace")
     p.add_argument("--root", required=True)
 
+    p = sub.add_parser("migrate_workspace_state")
+    p.add_argument("--root", required=True)
+
+    p = sub.add_parser("report_node")
+    p.add_argument("--root", required=True)
+    p.add_argument("--node-id", required=True)
+
+    p = sub.add_parser("report_branch_context")
+    p.add_argument("--root", required=True)
+    p.add_argument("--from-node", required=True)
+    p.add_argument("--anchor-node", required=True)
+
     p = sub.add_parser("snapshot_report")
     p.add_argument("--root", required=True)
 
@@ -52,7 +67,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         result = _dispatch(args)
-    except ContractError as exc:
+    except (ContractError, ValueError) as exc:
         print(json.dumps({"valid": False, "error": str(exc)}, indent=2, sort_keys=True), file=sys.stderr)
         return 2
 
@@ -69,6 +84,12 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return init_workspace(args.root, decision, force=args.force)
     if command == "report_workspace":
         return report_workspace(args.root)
+    if command == "migrate_workspace_state":
+        return migrate_workspace_state(args.root)
+    if command == "report_node":
+        return report_node(args.root, args.node_id)
+    if command == "report_branch_context":
+        return report_branch_context(args.root, args.from_node, args.anchor_node)
     if command == "snapshot_report":
         return snapshot_report(args.root)
     if command == "validate_workspace":

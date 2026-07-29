@@ -8,7 +8,9 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const {
+  buildBranchContextSummary,
   buildContextSummary,
+  buildNodeContextSummary,
   parseJsonOutput,
   resolveWorkspaceRoot,
   toolText,
@@ -44,17 +46,39 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "ts_workspace_context",
     label: "TS Context",
-    description: "Read the current transition-state workspace report and return a compact context summary.",
+    description: "Read compact workspace, historical-node, or backtrack context from ts_workspace reports.",
     promptSnippet: "Summarize the current transition-state workspace state from report_workspace",
     promptGuidelines: [
       "Use ts_workspace_context before choosing or closing a transition-state workflow node.",
+      "Pass nodeId to inspect a historical node before deciding whether to reuse it.",
+      "Pass both fromNode and anchorNode to compare a failure trigger with a selected historical checkpoint before backtracking.",
       "Use ts_workspace_context instead of reading every workspace state file when only current state is needed.",
     ],
     parameters: Type.Object({
       root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
+      nodeId: Type.Optional(Type.String({ description: "Historical node to load as a compact context capsule." })),
+      fromNode: Type.Optional(Type.String({ description: "Current failure or branch trigger node." })),
+      anchorNode: Type.Optional(Type.String({ description: "Historical checkpoint selected for backtrack inspection." })),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
+      if (params.fromNode || params.anchorNode) {
+        if (!params.fromNode || !params.anchorNode) {
+          throw new Error("fromNode and anchorNode must be provided together");
+        }
+        const branchContext = await runJson(
+          pi,
+          "report_branch_context",
+          root,
+          ["--from-node", String(params.fromNode), "--anchor-node", String(params.anchorNode)],
+          signal,
+        );
+        return toolText(buildBranchContextSummary(branchContext), { branchContext });
+      }
+      if (params.nodeId) {
+        const nodeContext = await runJson(pi, "report_node", root, ["--node-id", String(params.nodeId)], signal);
+        return toolText(buildNodeContextSummary(nodeContext), { nodeContext });
+      }
       const report = await runJson(pi, "report_workspace", root, [], signal);
       const summary = buildContextSummary(report);
       return toolText(summary, { report });

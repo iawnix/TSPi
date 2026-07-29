@@ -60,6 +60,9 @@ Preserve these invariants when changing `ts_workspace`:
   `action=init_workspace` decision.
 - Root state files are not edited by agents or helper modules. All root state
   mutations go through `ts_workspace`.
+- Canonical scientific state is limited to `research_state.json`,
+  `hypotheses.json`, and `evidence_registry.json`; Markdown knowledge and
+  reports are generated views.
 - `decisions/<decision_id>.json` is the full submitted decision snapshot.
 - Reusing a `decision_id` is allowed only for identical decision content with
   an already committed transaction; the retry is a no-op.

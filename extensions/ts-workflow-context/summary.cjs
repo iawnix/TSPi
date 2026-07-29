@@ -4,11 +4,9 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const WORKSPACE_MARKERS = [
-  "manifest.json",
-  "tree.json",
+  "research_state.json",
   "evidence_registry.json",
-  "mechanism_model.json",
-  "pathway_model.json",
+  "hypotheses.json",
 ];
 
 function normalizePath(value, cwd = process.cwd()) {
@@ -56,6 +54,7 @@ function buildContextDetails(report) {
   const activeHypothesis = objectOrEmpty(hypothesisContext.active_hypothesis);
   const openNodes = arrayOfObjects(report.open_nodes);
   const branchEvents = arrayOfObjects(report.branch_events);
+  const branchFrontiers = arrayOfObjects(report.branch_frontiers);
 
   return {
     reportId: report.report_id || "",
@@ -96,6 +95,14 @@ function buildContextDetails(report) {
       changedVariable: event.changed_variable || "",
       reasonCode: event.reason_code || "",
     })),
+    branchFrontiers: branchFrontiers.map((node) => ({
+      nodeId: node.node_id || "",
+      phase: node.phase || "",
+      lifecycle: node.lifecycle || "",
+      claimVerdict: node.claim_verdict || "",
+      programStatus: node.program_status || "",
+      hasOutgoingBranch: Boolean(node.has_outgoing_branch),
+    })),
     allowedDecisionActions: arrayOfStrings(report.allowed_decision_actions),
   };
 }
@@ -121,6 +128,7 @@ function buildContextSummary(report, options = {}) {
   lines.push(`- refuted_predictions: ${formatList(details.refutedPredictions, maxItems)}`);
   lines.push(`- required_next_evidence: ${formatList(details.requiredNextEvidence, maxItems)}`);
   lines.push(`- branch_events: ${formatBranchList(details.branchEvents, maxItems)}`);
+  lines.push(`- history_checkpoints: ${formatCheckpointList(details.branchFrontiers, maxItems)}`);
   lines.push(`- allowed_decision_actions: ${formatList(details.allowedDecisionActions, maxItems)}`);
 
   if (details.validationFindings.length) {
@@ -137,6 +145,54 @@ function buildContextSummary(report, options = {}) {
   );
   lines.push("- contract: every post-n000 mechanism node must carry payload.hypothesis_ref.");
   return lines.join("\n");
+}
+
+function buildNodeContextSummary(context, options = {}) {
+  const maxItems = Number.isInteger(options.maxItems) ? options.maxItems : 8;
+  const node = objectOrEmpty(context.node);
+  const hypothesis = objectOrEmpty(context.hypothesis);
+  const pathway = objectOrEmpty(context.pathway);
+  const evidence = arrayOfObjects(context.evidence);
+  const events = arrayOfObjects(context.branch_events);
+  const decisions = arrayOfObjects(context.decisions);
+  const lines = [
+    "TS historical node context:",
+    `- node: ${node.node_id || "?"}; phase=${node.phase || "?"}; lifecycle=${node.lifecycle || "?"}`,
+    `- parent: ${node.parent_node || "(none)"}; lineage: ${formatList(arrayOfStrings(context.lineage), maxItems)}`,
+    `- program_status: ${node.program_status || "(none)"}; claim_verdict: ${node.claim_verdict || "(none)"}`,
+    `- hypothesis: ${node.hypothesis || "(none)"}`,
+    `- program_summary: ${node.program_summary || "(none)"}`,
+    `- program_facts: ${formatAnyList(node.program_facts, maxItems)}`,
+    `- mechanism_summary: ${node.mechanism_summary || "(none)"}`,
+    `- mechanism_facts: ${formatAnyList(node.mechanism_facts, maxItems)}`,
+    `- implication: ${node.implication || "(none)"}`,
+    `- open_questions: ${formatAnyList(node.open_questions, maxItems)}`,
+    `- active_hypothesis_record: ${hypothesis.hypothesis_id || "(none)"}/${hypothesis.status || "(none)"}; ${hypothesis.summary || ""}`,
+    `- pathway_record: ${pathway.pathway_id || "(none)"}/${pathway.status || "(none)"}; ${pathway.pattern || ""}`,
+    `- evidence: ${formatEvidenceList(evidence, maxItems)}`,
+    `- branch_events: ${formatBranchList(events.map(normalizeBranchEvent), maxItems)}`,
+    `- decisions: ${decisions.slice(0, maxItems).map((item) => `${item.decision_id || "?"}:${item.action || "?"}:${item.rationale || ""}`).join("; ") || "(none)"}`,
+    "- contract: this node is immutable historical evidence; inspecting it does not select a branch or mutate the workspace.",
+  ];
+  return lines.join("\n");
+}
+
+function buildBranchContextSummary(context, options = {}) {
+  const maxItems = Number.isInteger(options.maxItems) ? options.maxItems : 8;
+  const fromContext = objectOrEmpty(context.from_node);
+  const anchorContext = objectOrEmpty(context.anchor_node);
+  const fromNode = objectOrEmpty(fromContext.node);
+  const anchorNode = objectOrEmpty(anchorContext.node);
+  const pathDelta = arrayOfObjects(context.path_delta);
+  return [
+    "TS backtrack context:",
+    `- trigger: ${fromNode.node_id || "?"}:${fromNode.phase || "?"}/${fromNode.program_status || fromNode.lifecycle || "?"}/${fromNode.claim_verdict || "?"}`,
+    `- selected_checkpoint: ${anchorNode.node_id || "?"}:${anchorNode.phase || "?"}/${anchorNode.program_status || anchorNode.lifecycle || "?"}/${anchorNode.claim_verdict || "?"}`,
+    `- checkpoint_summary: ${anchorNode.mechanism_summary || anchorNode.hypothesis || "(none)"}`,
+    `- trigger_summary: ${fromNode.mechanism_summary || fromNode.program_summary || "(none)"}`,
+    `- attempted_since_checkpoint: ${pathDelta.slice(0, maxItems).map(formatNodeDelta).join("; ") || "(none)"}`,
+    "- contract: the agent must choose relation, parent, hypothesis, solution, and pathway after reviewing this context; tooling only validates the resulting topology.",
+  ].join("\n");
 }
 
 function parseJsonOutput(result) {
@@ -181,6 +237,44 @@ function formatBranchList(values, maxItems) {
     .join(", ");
 }
 
+function formatCheckpointList(values, maxItems) {
+  if (!values.length) {
+    return "(none)";
+  }
+  const unused = values.filter((item) => !item.hasOutgoingBranch).slice(-maxItems);
+  const remaining = Math.max(0, maxItems - unused.length);
+  const used = remaining ? values.filter((item) => item.hasOutgoingBranch).slice(-remaining) : [];
+  const candidates = unused.concat(used);
+  return candidates
+    .map((item) => `${item.nodeId || "?"}:${item.phase || "?"}/${item.programStatus || item.lifecycle || "?"}/${item.claimVerdict || "?"}`)
+    .join(", ");
+}
+
+function formatEvidenceList(values, maxItems) {
+  if (!values.length) {
+    return "(none)";
+  }
+  return values
+    .slice(0, maxItems)
+    .map((item) => `${item.evidence_id || "?"}/${item.role || item.kind || "evidence"}: ${item.summary || ""}`)
+    .join("; ");
+}
+
+function normalizeBranchEvent(event) {
+  return {
+    relation: event.relation || "",
+    fromNode: event.from_node || "",
+    anchorNode: event.anchor_node || "",
+    newNode: event.new_node || "",
+    changedVariable: event.changed_variable || "",
+    reasonCode: event.reason_code || "",
+  };
+}
+
+function formatNodeDelta(node) {
+  return `${node.node_id || "?"}:${node.phase || "?"}/${node.program_status || node.lifecycle || "?"}/${node.claim_verdict || "?"}:${node.mechanism_summary || node.program_summary || ""}`;
+}
+
 function formatList(values, maxItems) {
   if (!values.length) {
     return "(none)";
@@ -188,6 +282,24 @@ function formatList(values, maxItems) {
   const visible = values.slice(0, maxItems);
   const suffix = values.length > visible.length ? ` (+${values.length - visible.length} more)` : "";
   return visible.join(", ") + suffix;
+}
+
+function formatAnyList(value, maxItems) {
+  if (!Array.isArray(value) || !value.length) {
+    return "(none)";
+  }
+  const visible = value.slice(0, maxItems).map((item) => {
+    if (typeof item === "string") {
+      return item;
+    }
+    try {
+      return JSON.stringify(item);
+    } catch (_error) {
+      return String(item);
+    }
+  });
+  const suffix = value.length > visible.length ? ` (+${value.length - visible.length} more)` : "";
+  return visible.join("; ") + suffix;
 }
 
 function objectOrEmpty(value) {
@@ -224,8 +336,10 @@ if (require.main === module) {
 }
 
 module.exports = {
+  buildBranchContextSummary,
   buildContextDetails,
   buildContextSummary,
+  buildNodeContextSummary,
   findWorkspaceRoot,
   isWorkspaceRoot,
   parseJsonOutput,

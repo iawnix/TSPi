@@ -72,14 +72,15 @@ resolve a TS workspace root. For automatic prompt injection, resolution order:
 For tools and commands, an explicit `root` argument takes precedence over
 environment and ancestor discovery.
 
-The injected context is derived only from:
+The automatically injected per-turn context is derived only from:
 
 ```bash
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" report_workspace --root <workspace>
 ```
 
-It does not read or mutate workspace state files directly. `report_workspace`
-remains the only report source.
+It does not read or mutate workspace state files directly. Detailed historical
+context is loaded only after an explicit tool call through `report_node` or
+`report_branch_context`.
 
 The extension resolves the interpreter through:
 
@@ -99,7 +100,10 @@ source-checkout development behavior.
 
 ## Tools
 
-- `ts_workspace_context`: run `report_workspace` and return a compact summary.
+- `ts_workspace_context`: with no selector, run `report_workspace`; with
+  `nodeId`, return a compact historical-node capsule; with both `fromNode` and
+  `anchorNode`, return a backtrack comparison containing the trigger,
+  checkpoint, and intervening attempts.
 - `ts_workspace_validate`: run `validate_workspace`.
 - `ts_workspace_decision`: run `validate_decision`, `start_node`,
   `update_workspace`, or `end_node` using a decision JSON file.

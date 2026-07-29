@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TS hypotheses",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "focus_hypothesis_id",
+    "hypotheses",
+    "accepted_facts",
+    "refuted_hypotheses",
+    "open_questions",
+    "focus_pathway_id",
+    "pathways"
+  ],
+  "properties": {
+    "schema_version": {"const": "ts-hypotheses"},
+    "focus_hypothesis_id": {"type": ["string", "null"]},
+    "hypotheses": {"$ref": "mechanism.schema.json#/properties/hypotheses"},
+    "accepted_facts": {"$ref": "mechanism.schema.json#/properties/accepted_facts"},
+    "refuted_hypotheses": {"$ref": "mechanism.schema.json#/properties/refuted_hypotheses"},
+    "open_questions": {"$ref": "mechanism.schema.json#/properties/open_questions"},
+    "focus_pathway_id": {"type": ["string", "null"]},
+    "pathways": {"$ref": "pathway.schema.json#/properties/pathways"}
+  },
+  "additionalProperties": false
+}

@@ -16,6 +16,7 @@ def test_workspace_cli_roundtrip(tmp_path: Path) -> None:
     _run("init_workspace", "--root", str(workspace))
 
     report = _run("report_workspace", "--root", str(workspace))
+    assert report["readiness"]["highest_validated_layer"] == "endpoint"
     report_ref = {"report_id": report["report_id"], "workspace_root": str(workspace)}
 
     start_n000 = {
@@ -208,7 +209,7 @@ def test_explicit_n000_endpoint_node_keeps_next_auto_id_at_n001(tmp_path: Path) 
     start_candidate_path.write_text(json.dumps(start_candidate), encoding="utf-8")
     candidate = _run("start_node", "--root", str(workspace), "--decision-file", str(start_candidate_path))
 
-    tree = json.loads((workspace / "tree.json").read_text(encoding="utf-8"))
+    tree = json.loads((workspace / "research_state.json").read_text(encoding="utf-8"))
     assert candidate["node_id"] == "n001"
     assert tree["edges"] == [{"parent_node": "n000", "child_node": "n001"}]
 

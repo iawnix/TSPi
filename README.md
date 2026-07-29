@@ -114,6 +114,9 @@ Codex reads `SKILL.md` as the skill entrypoint. Public workspace commands:
 export TS_AGENT_SKILL_ROOT=<workspace>/.agents/skills/transition-state-workflow
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" init_workspace --root <workspace>
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" report_workspace --root <workspace>
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" report_node --root <workspace> --node-id <node>
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" report_branch_context --root <workspace> --from-node <trigger> --anchor-node <checkpoint>
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" migrate_workspace_state --root <legacy-workspace>
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_decision --root <workspace> --decision-file decision.json
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" start_node --root <workspace> --decision-file decision.json
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" propose_hypothesis --root <workspace> --decision-file decision.json
@@ -125,8 +128,11 @@ python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_workspace --root 
 Run `report_workspace` before choosing or closing a node. Do not edit workspace
 state files by hand.
 
+Canonical root state is limited to `research_state.json`, `hypotheses.json`,
+and `evidence_registry.json`. Knowledge summaries and reports are derived.
+
 The active flow is endpoint validation -> `propose_hypothesis` -> first
-evidence node. A proposal mutates `mechanism_model.json` but does not create a
+evidence node. A proposal mutates `hypotheses.json` but does not create a
 node. Reporting, monitoring, snapshots, visualization, and report packaging do
 not create nodes either.
 
@@ -186,7 +192,9 @@ Pi commands:
 
 Pi tools:
 
-- `ts_workspace_context`: run `report_workspace` and return a compact summary.
+- `ts_workspace_context`: return the compact workspace summary; pass `nodeId`
+  for a historical-node capsule or `fromNode` plus `anchorNode` for a
+  backtrack comparison.
 - `ts_workspace_validate`: run `validate_workspace`.
 - `ts_workspace_decision`: run `validate_decision`, `start_node`,
   `propose_hypothesis`, `update_workspace`, or `end_node` through a decision

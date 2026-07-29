@@ -33,7 +33,7 @@ CLI = ROOT / "scripts" / "ts_web.py"
 def test_normalize_workspace_uses_canonical_branch_events(tmp_path: Path) -> None:
     workspace = tmp_path / "branch"
     make_branch_workspace(workspace)
-    tree = json.loads((workspace / "tree.json").read_text(encoding="utf-8"))
+    tree = json.loads((workspace / "research_state.json").read_text(encoding="utf-8"))
     view = normalize_workspace(workspace)
     assert view["branch_edges"] == [
         {
@@ -143,7 +143,7 @@ def test_static_asset_resolves_from_current_ts_web_package() -> None:
 def test_branch_edges_and_events_dedupe_when_target_is_replacement(tmp_path: Path) -> None:
     workspace = tmp_path / "dedupe-branch"
     make_branch_workspace(workspace)
-    tree_path = workspace / "tree.json"
+    tree_path = workspace / "research_state.json"
     tree = json.loads(tree_path.read_text(encoding="utf-8"))
     event = next(item for item in tree["branch_events"] if item["new_node"] == "n002")
     event_id = event["event_id"]
@@ -474,7 +474,7 @@ def test_web_claim_state_reflects_pathway_model(tmp_path: Path) -> None:
     pathway_audited_row = register_workspace(pathway_audited, state, "pathway-audited")
     pathway_complete = tmp_path / "pathway-complete"
     make_accepted_workspace(pathway_complete)
-    (pathway_complete / "manifest.json").write_text(
+    (pathway_complete / "research_state.json").write_text(
         json.dumps(
             {
                 "schema_version": "ts-workspace",
@@ -485,7 +485,7 @@ def test_web_claim_state_reflects_pathway_model(tmp_path: Path) -> None:
         + "\n",
         encoding="utf-8",
     )
-    (pathway_complete / "pathway_model.json").write_text(
+    (pathway_complete / "hypotheses.json").write_text(
         json.dumps(
             {
                 "schema_version": "ts-pathway",
@@ -553,7 +553,7 @@ def test_web_mechanism_analysis_uses_latest_tree_record(tmp_path: Path) -> None:
         encoding="utf-8",
     )
 
-    tree = json.loads((workspace / "tree.json").read_text(encoding="utf-8"))
+    tree = json.loads((workspace / "research_state.json").read_text(encoding="utf-8"))
     tree["nodes"].append(
         {
             "node_id": node_id,
@@ -567,9 +567,9 @@ def test_web_mechanism_analysis_uses_latest_tree_record(tmp_path: Path) -> None:
         }
     )
     tree["edges"].append({"parent_node": "n001", "child_node": node_id})
-    (workspace / "tree.json").write_text(json.dumps(tree, indent=2) + "\n", encoding="utf-8")
+    (workspace / "research_state.json").write_text(json.dumps(tree, indent=2) + "\n", encoding="utf-8")
 
-    mechanism = json.loads((workspace / "mechanism_model.json").read_text(encoding="utf-8"))
+    mechanism = json.loads((workspace / "hypotheses.json").read_text(encoding="utf-8"))
     old_record = mechanism["accepted_facts"][0]
     new_record = {
         "node_id": node_id,
@@ -581,7 +581,7 @@ def test_web_mechanism_analysis_uses_latest_tree_record(tmp_path: Path) -> None:
         "evidence_refs": ["ev_conn_001", "ev_tsfreq_001"],
     }
     mechanism["accepted_facts"] = [new_record, old_record]
-    (workspace / "mechanism_model.json").write_text(json.dumps(mechanism, indent=2) + "\n", encoding="utf-8")
+    (workspace / "hypotheses.json").write_text(json.dumps(mechanism, indent=2) + "\n", encoding="utf-8")
 
     state = tmp_path / "web-state"
     row = register_workspace(workspace, state, "latest")

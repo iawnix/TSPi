@@ -218,8 +218,8 @@ def _validate_end_payload(payload: dict[str, Any]) -> None:
 
 
 def _validate_update_payload(payload: dict[str, Any]) -> None:
-    allowed = {"append_evidence", "append_knowledge", "append_provenance", "repair_branch_anchor"}
-    _require(any(key in payload for key in allowed), "update_workspace needs an append operation")
+    allowed = {"append_evidence", "append_provenance", "repair_branch_anchor"}
+    _require(any(key in payload for key in allowed), "update_workspace needs a supported operation")
     forbidden = {"lifecycle", "closure", "claim_verdict", "accepted_ts", "current_accepted_ts"}
     touched = forbidden.intersection(payload)
     _require(not touched, f"update_workspace cannot write {sorted(touched)}")
@@ -232,11 +232,6 @@ def _validate_update_payload(payload: dict[str, Any]) -> None:
             for field in ("evidence_id", "kind", "role", "evidence_tier", "node_id", "summary"):
                 _require(_clean(item.get(field)), f"append_evidence.{field} is required")
             _require(item["evidence_tier"] in VALID_EVIDENCE_TIERS, "append_evidence.evidence_tier is invalid")
-
-    knowledge = payload.get("append_knowledge")
-    if knowledge is not None:
-        _require(isinstance(knowledge, (str, dict, list)), "append_knowledge must be a string, object, or list")
-
 
 def _validate_hypothesis_ref(value: Any, path: str) -> None:
     _require(isinstance(value, dict), f"{path} is required")

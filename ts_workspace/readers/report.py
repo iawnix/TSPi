@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ..io import compact_id_time, read_json, write_json
+from ..state import EVIDENCE_FILE, HYPOTHESES_FILE, RESEARCH_STATE_FILE
 from ..validators.workspace import validate_workspace
 
 PATHWAY_AUDIT_PHASE = "pathway_audit"
@@ -20,11 +21,13 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
     validation = validate_workspace(root_path)
     report_id = f"rep_{compact_id_time()}"
 
-    manifest = _read_or_empty(root_path / "manifest.json")
-    tree = _read_or_empty(root_path / "tree.json")
-    evidence = _read_or_empty(root_path / "evidence_registry.json")
-    pathway = _read_or_empty(root_path / "pathway_model.json")
-    mechanism = _read_or_empty(root_path / "mechanism_model.json")
+    research_state = _read_or_empty(root_path / RESEARCH_STATE_FILE)
+    hypotheses = _read_or_empty(root_path / HYPOTHESES_FILE)
+    evidence = _read_or_empty(root_path / EVIDENCE_FILE)
+    tree = research_state
+    manifest = research_state
+    pathway = hypotheses
+    mechanism = hypotheses
 
     nodes = tree.get("nodes", []) if isinstance(tree, dict) else []
     branch_events = tree.get("branch_events", []) if isinstance(tree, dict) else []
@@ -53,12 +56,9 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
         "evidence_count": len(evidence.get("evidence", [])) if isinstance(evidence, dict) else 0,
         "branch_events": branch_events,
         "workspace_state_refs": {
-            "manifest": "manifest.json",
-            "tree": "tree.json",
-            "evidence_registry": "evidence_registry.json",
-            "mechanism_model": "mechanism_model.json",
-            "pathway_model": "pathway_model.json",
-            "knowledge_base": "knowledge_base.md",
+            "research_state": RESEARCH_STATE_FILE,
+            "hypotheses": HYPOTHESES_FILE,
+            "evidence_registry": EVIDENCE_FILE,
         },
         "allowed_decision_actions": [
             "start_node",
@@ -77,6 +77,73 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
     return report
 
 
+def report_node(root: str | Path, node_id: str) -> dict[str, Any]:
+    """Return a compact, read-only context capsule for one historical node."""
+
+    root_path = Path(root)
+    research_state = read_json(root_path / RESEARCH_STATE_FILE)
+    hypotheses = read_json(root_path / HYPOTHESES_FILE)
+    registry = read_json(root_path / EVIDENCE_FILE)
+    node_path = root_path / "nodes" / node_id / "node.json"
+    if not node_path.exists():
+        raise ValueError(f"unknown node: {node_id}")
+    node = read_json(node_path)
+    if not isinstance(node, dict):
+        raise ValueError(f"node record must be an object: {node_id}")
+
+    evidence_refs = _node_evidence_refs(node)
+    evidence = [
+        _evidence_capsule(entry)
+        for entry in registry.get("evidence", [])
+        if isinstance(entry, dict)
+        and (entry.get("node_id") == node_id or entry.get("evidence_id") in evidence_refs)
+    ]
+    events = [
+        _branch_event_capsule(event)
+        for event in research_state.get("branch_events", [])
+        if isinstance(event, dict) and node_id in {event.get("from_node"), event.get("anchor_node"), event.get("new_node")}
+    ]
+    hypothesis_id = _node_hypothesis_id(node)
+    pathway_ref = node.get("pathway_ref") if isinstance(node.get("pathway_ref"), dict) else {}
+
+    return {
+        "context_type": "node",
+        "workspace_root": str(root_path),
+        "node": _node_capsule(node),
+        "lineage": _lineage_to_root(research_state, node_id),
+        "evidence": evidence,
+        "branch_events": events,
+        "hypothesis": _hypothesis_capsule(
+            _find_by_id(hypotheses.get("hypotheses", []), "hypothesis_id", hypothesis_id)
+        ),
+        "pathway": _pathway_capsule(
+            _find_by_id(hypotheses.get("pathways", []), "pathway_id", pathway_ref.get("pathway_id"))
+        ),
+        "decisions": _node_decision_capsules(root_path, node),
+        "artifact_refs": _artifact_refs(node, evidence),
+    }
+
+
+def report_branch_context(root: str | Path, from_node: str, anchor_node: str) -> dict[str, Any]:
+    """Return the trigger, selected checkpoint, and intervening attempt summaries."""
+
+    root_path = Path(root)
+    research_state = read_json(root_path / RESEARCH_STATE_FILE)
+    path = _path_from_ancestor(research_state, anchor_node, from_node)
+    if path is None:
+        raise ValueError(f"anchor_node must be an ancestor of from_node: {anchor_node} -> {from_node}")
+    return {
+        "context_type": "branch",
+        "workspace_root": str(root_path),
+        "from_node": report_node(root_path, from_node),
+        "anchor_node": report_node(root_path, anchor_node),
+        "path_delta": [
+            _node_capsule(read_json(root_path / "nodes" / node_id / "node.json"))
+            for node_id in path[1:]
+        ],
+    }
+
+
 def snapshot_report(root: str | Path) -> dict[str, Any]:
     """Build a report and persist it under `reports/<report_id>.json`."""
     root_path = Path(root)
@@ -92,6 +159,198 @@ def _read_or_empty(path: Path) -> dict[str, Any]:
         return read_json(path)
     except Exception:  # noqa: BLE001
         return {}
+
+
+def _node_capsule(node: dict[str, Any]) -> dict[str, Any]:
+    closure = node.get("closure") if isinstance(node.get("closure"), dict) else {}
+    program = closure.get("program") if isinstance(closure.get("program"), dict) else {}
+    mechanism = closure.get("mechanism") if isinstance(closure.get("mechanism"), dict) else {}
+    return {
+        "node_id": node.get("node_id"),
+        "parent_node": node.get("parent_node"),
+        "phase": node.get("phase"),
+        "lifecycle": node.get("lifecycle"),
+        "hypothesis": node.get("hypothesis"),
+        "hypothesis_ref": node.get("hypothesis_ref"),
+        "solution_ref": node.get("solution_ref"),
+        "pathway_ref": node.get("pathway_ref"),
+        "branch_context": node.get("branch_context"),
+        "program_status": closure.get("program_status"),
+        "claim_verdict": closure.get("claim_verdict"),
+        "program_summary": program.get("summary"),
+        "program_facts": program.get("facts", []),
+        "mechanism_summary": mechanism.get("summary"),
+        "mechanism_facts": mechanism.get("facts", []),
+        "implication": closure.get("implication"),
+        "open_questions": closure.get("open_questions", []),
+        "evidence_refs": sorted(_node_evidence_refs(node)),
+        "created_by_decision": node.get("created_by_decision"),
+        "ended_by_decision": node.get("ended_by_decision"),
+    }
+
+
+def _node_evidence_refs(node: dict[str, Any]) -> set[str]:
+    refs = {str(item) for item in node.get("evidence_refs", []) if item}
+    context = node.get("branch_context") if isinstance(node.get("branch_context"), dict) else {}
+    refs.update(str(item) for item in context.get("evidence_refs", []) if item)
+    closure = node.get("closure") if isinstance(node.get("closure"), dict) else {}
+    for section_name in ("program", "mechanism"):
+        section = closure.get(section_name) if isinstance(closure.get(section_name), dict) else {}
+        refs.update(str(item) for item in section.get("evidence_refs", []) if item)
+    return refs
+
+
+def _node_hypothesis_id(node: dict[str, Any]) -> str | None:
+    ref = node.get("hypothesis_ref") if isinstance(node.get("hypothesis_ref"), dict) else {}
+    hypothesis_id = ref.get("hypothesis_id")
+    if not hypothesis_id:
+        initial = node.get("initial_mechanism_hypothesis")
+        hypothesis_id = initial.get("hypothesis_id") if isinstance(initial, dict) else None
+    return str(hypothesis_id) if hypothesis_id else None
+
+
+def _evidence_capsule(entry: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "evidence_id": entry.get("evidence_id"),
+        "node_id": entry.get("node_id"),
+        "kind": entry.get("kind"),
+        "role": entry.get("role"),
+        "evidence_tier": entry.get("evidence_tier"),
+        "summary": entry.get("summary"),
+        "quality": entry.get("quality", {}),
+        "diagnostics": entry.get("diagnostics", []),
+        "path": entry.get("path"),
+        "source_files": entry.get("source_files", []),
+        "normal_termination": entry.get("normal_termination"),
+    }
+
+
+def _branch_event_capsule(event: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: event.get(key)
+        for key in (
+            "event_id",
+            "relation",
+            "from_node",
+            "anchor_node",
+            "new_node",
+            "parent_node",
+            "is_rebased",
+            "changed_variable",
+            "reason_code",
+            "rationale",
+            "evidence_refs",
+        )
+        if key in event
+    }
+
+
+def _lineage_to_root(research_state: dict[str, Any], node_id: str) -> list[str]:
+    parents = {
+        str(item.get("node_id")): item.get("parent_node")
+        for item in research_state.get("nodes", [])
+        if isinstance(item, dict) and item.get("node_id")
+    }
+    lineage: list[str] = []
+    current: str | None = node_id
+    visited: set[str] = set()
+    while current and current not in visited:
+        visited.add(current)
+        lineage.append(current)
+        parent = parents.get(current)
+        current = parent if isinstance(parent, str) and parent else None
+    lineage.reverse()
+    return lineage
+
+
+def _path_from_ancestor(research_state: dict[str, Any], anchor_node: str, from_node: str) -> list[str] | None:
+    lineage = _lineage_to_root(research_state, from_node)
+    if anchor_node not in lineage:
+        return None
+    return lineage[lineage.index(anchor_node):]
+
+
+def _find_by_id(values: Any, key: str, expected: Any) -> dict[str, Any]:
+    if expected is None or not isinstance(values, list):
+        return {}
+    return next(
+        (item for item in values if isinstance(item, dict) and item.get(key) == expected),
+        {},
+    )
+
+
+def _hypothesis_capsule(hypothesis: dict[str, Any]) -> dict[str, Any]:
+    if not hypothesis:
+        return {}
+    return {
+        key: hypothesis.get(key)
+        for key in (
+            "hypothesis_id",
+            "status",
+            "summary",
+            "parent_hypothesis_id",
+            "source_node",
+            "branch_anchor_node",
+            "proposal_context",
+            "structured_claim",
+            "testable_predictions",
+            "prediction_status",
+            "required_evidence",
+            "uncertainties",
+            "evidence_refs",
+        )
+        if key in hypothesis
+    }
+
+
+def _pathway_capsule(pathway: dict[str, Any]) -> dict[str, Any]:
+    if not pathway:
+        return {}
+    return {
+        key: pathway.get(key)
+        for key in ("pathway_id", "label", "pattern", "status", "steps", "audit_nodes")
+        if key in pathway
+    }
+
+
+def _node_decision_capsules(root: Path, node: dict[str, Any]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for field in ("created_by_decision", "ended_by_decision"):
+        decision_id = node.get(field)
+        if not isinstance(decision_id, str) or not decision_id or decision_id in seen:
+            continue
+        seen.add(decision_id)
+        path = root / "decisions" / f"{decision_id}.json"
+        if not path.exists():
+            continue
+        decision = read_json(path)
+        if not isinstance(decision, dict):
+            continue
+        out.append(
+            {
+                "decision_id": decision_id,
+                "action": decision.get("action"),
+                "rationale": decision.get("rationale"),
+                "evidence_refs": decision.get("evidence_refs", []),
+            }
+        )
+    return out
+
+
+def _artifact_refs(node: dict[str, Any], evidence: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "node_artifacts": node.get("artifacts", {}),
+        "evidence_paths": sorted({str(item["path"]) for item in evidence if item.get("path")}),
+        "source_files": sorted(
+            {
+                str(source)
+                for item in evidence
+                for source in item.get("source_files", [])
+                if source
+            }
+        ),
+    }
 
 
 def _build_solution_lineage(nodes: list[Any], branch_events: list[Any]) -> list[dict[str, Any]]:
@@ -222,6 +481,8 @@ def _highest_validated_layer(
         return "pathway"
     if accepted_ts_ready:
         return "accepted_ts"
+    if not hypothesis_context.get("active_hypothesis"):
+        return "endpoint"
     required_next = set(str(item) for item in hypothesis_context.get("required_next_evidence", []) if item)
     if "connectivity_gate" not in required_next:
         return "connectivity"

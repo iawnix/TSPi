@@ -28,8 +28,8 @@ Render dependency boundary:
 
 Forbidden behavior:
 
-- edit `manifest.json`, `tree.json`, `mechanism_model.json`,
-  `pathway_model.json`, `evidence_registry.json`, or `decision_log.jsonl`;
+- edit `research_state.json`, `hypotheses.json`, `evidence_registry.json`, or
+  `decision_log.jsonl`;
 - close nodes or set scientific verdicts;
 - claim candidate, TS/Freq, connectivity, accepted-TS, or pathway success;
 - infer mechanism validity from a rendered image.

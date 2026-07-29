@@ -8,17 +8,20 @@ from collections.abc import Iterable
 from typing import Any
 
 from ts_workspace.io import read_json
+from ts_workspace.state import EVIDENCE_FILE, HYPOTHESES_FILE, RESEARCH_STATE_FILE
 from ts_workspace.validators.workspace import validate_workspace
 
 
 def normalize_workspace(source_root: str | Path, *, label: str | None = None) -> dict[str, Any]:
     root = Path(source_root).resolve()
     validation = validate_workspace(root)
-    tree = _read_json(root / "tree.json")
-    manifest = _read_json(root / "manifest.json")
-    evidence_registry = _read_json(root / "evidence_registry.json")
-    pathway_model = _read_json(root / "pathway_model.json")
-    mechanism_model = _read_json(root / "mechanism_model.json")
+    research_state = _read_json(root / RESEARCH_STATE_FILE)
+    hypotheses = _read_json(root / HYPOTHESES_FILE)
+    evidence_registry = _read_json(root / EVIDENCE_FILE)
+    tree = research_state
+    manifest = research_state
+    pathway_model = hypotheses
+    mechanism_model = hypotheses
 
     evidence_records = _list(evidence_registry.get("evidence"))
     nodes = [_normalize_node(root, row, evidence_records) for row in _list(tree.get("nodes"))]
@@ -60,9 +63,9 @@ def explorer_job_payload(
     """Return the full read-only payload consumed by the explorer UI."""
 
     root = Path(source_root).resolve()
-    manifest = _read_json(root / "manifest.json")
-    mechanism_model = _read_json(root / "mechanism_model.json")
-    pathway_model = _read_json(root / "pathway_model.json")
+    manifest = _read_json(root / RESEARCH_STATE_FILE)
+    mechanism_model = _read_json(root / HYPOTHESES_FILE)
+    pathway_model = mechanism_model
     view = normalize_workspace(root, label=label)
     graph = explorer_graph_payload_from_view(view)
     return {
@@ -97,9 +100,9 @@ def explorer_workspace_summary(
         except Exception:  # noqa: BLE001
             view = None
     if manifest is None:
-        manifest = _read_json(Path(source_root) / "manifest.json") if source_root else {}
+        manifest = _read_json(Path(source_root) / RESEARCH_STATE_FILE) if source_root else {}
     if pathway_model is None:
-        pathway_model = _read_json(Path(source_root) / "pathway_model.json") if source_root else {}
+        pathway_model = _read_json(Path(source_root) / HYPOTHESES_FILE) if source_root else {}
     accepted_refs = _list(manifest.get("accepted_ts_refs"))
     focus = view.get("focus", {}) if isinstance(view, dict) else {}
     summary = {

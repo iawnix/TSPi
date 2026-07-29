@@ -99,9 +99,9 @@ changed at the scientific level, not what changed at the program level.
   strategy really changed (e.g. QST → constrained scan; strict connectivity
   refuted a TS/Freq-supported candidate → different TS type). Keeps the same
   `hypothesis_ref`, assigns a new `solution_ref`, and records
-  `payload.branch_context.relation=new_solution_branch`. `parent_node ==
-  anchor_node == hypothesis.branch_anchor_node` (legacy fallback:
-  `source_node`); `from_node` records the failed or triggering node.
+  `payload.branch_context.relation=new_solution_branch`. The agent selects an
+  ancestor checkpoint and sets `parent_node == anchor_node`; `from_node`
+  records the failed or triggering node.
 - `start_candidate_generation__alternative_hypothesis.json` — first
   evidence-producing node after `propose_alternative_hypothesis.json`. Its
   hypothesis and branch provenance placeholders must exactly match the stored

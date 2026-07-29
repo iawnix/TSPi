@@ -35,7 +35,7 @@ def build_mechanism_interpretation(context: dict[str, Any]) -> dict[str, Any]:
     if verdict.get("stationary_endpoint_irc_complete") is False:
         boundaries.append("IRC endpoint assignment is not stationary-endpoint complete.")
 
-    summary = active.get("summary") or "Mechanism hypothesis is recorded in mechanism_model.json."
+    summary = active.get("summary") or "Mechanism hypothesis is recorded in hypotheses.json."
     if classification:
         summary = f"{summary} The distance profile is best described as {classification}."
     return {

@@ -90,7 +90,7 @@ hypothesis without creating a node:
 
 The mutation writes a `status=proposed` entry with `source_node`,
 `branch_anchor_node`, `proposed_by_decision`, and `proposal_context`. It has no
-`claim_verdict` and does not add an entry to `tree.json`. The first
+`claim_verdict` and does not add an entry to `research_state.json`. The first
 evidence-producing node that references it changes the status to `active`.
 Use `templates/decision/propose_initial_hypothesis.json` for the complete
 runtime shape.
@@ -163,12 +163,10 @@ When the agent opens a same-hypothesis replacement solution, the new
 `payload.parent_node` must equal `payload.branch_context.anchor_node`; the
 failed or triggering node is recorded separately in
 `payload.branch_context.from_node`. For same-hypothesis replacement solutions,
-the anchor must equal the current hypothesis
-`mechanism_model.hypotheses[].branch_anchor_node`; an older global ancestor is
-an overbroad anchor unless it is also that branch anchor. Legacy hypotheses
-without this field fall back to `source_node`. The preflight validates
-references, topology, and consistency; it does not decide whether the
-replacement should be made.
+the agent selects an existing checkpoint after inspecting its node context.
+The anchor must be an ancestor of `from_node`; it need not equal the hypothesis
+proposal source. The preflight validates references, topology, and consistency;
+it does not choose the checkpoint or decide whether replacement should occur.
 
 For legacy lineage repair, use `action=update_workspace` with
 `payload.repair_branch_anchor`:
@@ -177,12 +175,12 @@ For legacy lineage repair, use `action=update_workspace` with
 {
   "node_id": "n023",
   "new_anchor_node": "n020",
-  "reason_code": "overbroad_anchor_node_for_new_solution_branch"
+  "reason_code": "repair_branch_checkpoint"
 }
 ```
 
-The repair is rejected for running nodes and for anchors that do not match the
-node hypothesis `branch_anchor_node` (or legacy `source_node` fallback).
+The repair is rejected for running nodes and for anchors that are not ancestors
+of the recorded `branch_context.from_node`.
 
 ## Branch Relation Semantics
 
@@ -200,8 +198,8 @@ node and existing workspace state. Pick from:
   strategy (e.g. QST candidate failed → constrained scan candidate; strict
   connectivity refuted a TS/Freq-supported candidate → different TS-search
   method). Requires a new `solution_ref.solution_id` and
-  `parent_node == branch_context.anchor_node == hypothesis.branch_anchor_node`.
-  Legacy hypotheses without that field fall back to `source_node`. Do
+  `parent_node == branch_context.anchor_node`; the selected anchor must be an
+  ancestor of `branch_context.from_node`. Do
   not use for IRC-parameter changes, parser/scheduler follow-up, or next-layer
   validation.
 - `new_hypothesis_branch` — the first evidence node for an alternative
@@ -254,9 +252,10 @@ validates both JSON shape and workspace-context requirements. Mutation commands
 run the same validation internally before writing files and reject decision
 files whose `action` does not match the invoked mutation command.
 
-`update_workspace` may append evidence, knowledge, or provenance. It cannot
+`update_workspace` may append evidence or provenance and may apply an explicit
+lineage repair. It cannot
 close a node, write a verdict, accept a TS, rewrite a pathway, or mutate
-`mechanism_model.hypotheses[]`.
+`hypotheses.json.hypotheses[]`.
 
 Machine authority is `ts_workspace/contracts/decision.schema.json`, the pure
 Python decision validator, and the workspace-aware decision preflight used by

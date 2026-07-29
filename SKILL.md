@@ -242,17 +242,23 @@ They are not top-level node states.
    `references/agent_decision_protocol.md` before closing a node, choosing a
    branch relation, or deciding whether a previous failed exploration should
    affect the next action.
+   The canonical root state consists of `research_state.json`,
+   `hypotheses.json`, and `evidence_registry.json`; reports and knowledge
+   summaries are derived views. Use `report_node --node-id <node>` when an old
+   checkpoint may be relevant. Before a graph rebase, use
+   `report_branch_context --from-node <trigger> --anchor-node <checkpoint>` to
+   load the trigger, selected checkpoint, and attempts between them.
 4. Construct a decision JSON with the action, rationale, report reference,
    evidence references, and payload. Start from `templates/decision/` when a
    reusable shape is needed; do not copy JSON from `tests/`. Every post-`n000`
    evidence-testing node must include `payload.hypothesis_ref` that points to
-   `mechanism_model.hypotheses[]`. Use optional `payload.solution_ref` only to
+   `hypotheses.json.hypotheses[]`. Use optional `payload.solution_ref` only to
    group alternative search strategies under the same hypothesis; it is
    lineage metadata, not a new state, verdict, or retry policy. Every post-`n000`
    `start_node` must include `payload.branch_context` so the agent's intended
    graph relation is explicit.
    Introduce the initial or a later mechanism hypothesis with the
-   `propose_hypothesis` mutation. It writes `mechanism_model.json` but creates no
+   `propose_hypothesis` mutation. It writes `hypotheses.json` but creates no
    node. A proposal must cite registered evidence and records `source_node`,
    `branch_anchor_node`, and `proposal_context`. The first evidence-producing
    node activates the proposed hypothesis. For an alternative proposal, that
@@ -268,9 +274,9 @@ They are not top-level node states.
    |---|---|---|
    | Same scientific object continues to next evidence layer (candidate → TS/Freq, TS/Freq → IRC, IRC → accepted audit, accepted → pathway audit) | `continue_parent` | `parent_node == from_node`. |
    | Same TS claim, IRC/protocol parameters changed after a program failure | `continue_parent` | `parent_node = TS/Freq-supported node`, `from_node = same`; cite the failed attempt via `reason_code` + evidence with role `previous_attempt_summary`. |
-   | Same hypothesis, different candidate / search strategy | `new_solution_branch` | New `solution_ref.solution_id`; `parent_node == anchor_node == hypothesis.branch_anchor_node` (legacy fallback: `source_node`). |
-   | First evidence node for an alternative proposed hypothesis | `new_hypothesis_branch` | Match the stored `proposal_context`; `parent_node == anchor_node == hypothesis.branch_anchor_node`. |
-   | Different pathway topology / step model | `new_pathway_branch` | `parent_node == anchor_node`. |
+   | Same hypothesis, different candidate / search strategy | `new_solution_branch` | New `solution_ref.solution_id`; agent selects an ancestor checkpoint and sets `parent_node == anchor_node`. |
+   | First evidence node for an alternative proposed hypothesis | `new_hypothesis_branch` | Match the stored `proposal_context`; `parent_node == anchor_node`, and the anchor must be an ancestor of `from_node`. |
+   | Different pathway topology / step model | `new_pathway_branch` | `parent_node == anchor_node`; anchor must be an ancestor of `from_node`. |
 
    **Program failure follow-up is not automatically a new branch.** A
    scheduler failure, IRC corrector convergence failure, parser desync, or
@@ -306,9 +312,9 @@ They are not top-level node states.
    audit node supports the audit conclusion only; it is not by itself pathway
    success.
 9. Use `update_workspace` with `payload.repair_branch_anchor` only for explicit
-   legacy lineage repair of non-running `new_solution_branch` nodes; it must
-   move the branch to the current hypothesis `branch_anchor_node` (falling back
-   to legacy `source_node`) and records a repair audit entry.
+   lineage repair of non-running `new_solution_branch` nodes. The replacement
+   anchor must be an ancestor of the recorded `from_node`; the repair records
+   an audit entry and does not alter the historical checkpoint.
 10. Run `report_workspace` again before branching or stopping.
 11. Use `ts_report` only after the workspace validates. Prefer report-package
    output for final handoff so structure panels, vibration/IRC plots, energy

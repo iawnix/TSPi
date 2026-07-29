@@ -10,6 +10,7 @@ from typing import Any
 from ..artifact_policy import node_owner_from_artifact_path, role_matches_phase
 from ..evidence_gates import gate_artifact_metadata_diagnostic
 from ..io import read_json
+from ..state import HYPOTHESES_FILE, RESEARCH_STATE_FILE
 from .decision import (
     ANCHORED_BRANCH_RELATIONS,
     HYPOTHESIS_REF_PHASES,
@@ -100,7 +101,7 @@ def detect_decision_warnings(root: str | Path, decision: dict[str, Any]) -> list
 
 
 def _hypothesis_had_recent_tsfreq_support(root: Path, hypothesis_id: str) -> bool:
-    tree_path = root / "tree.json"
+    tree_path = root / RESEARCH_STATE_FILE
     if not tree_path.exists():
         return False
     try:
@@ -139,7 +140,7 @@ def _hypothesis_had_recent_tsfreq_support(root: Path, hypothesis_id: str) -> boo
 
 def _validate_start_node_context(root: Path, decision: dict[str, Any]) -> None:
     _require_initialized(root)
-    tree = read_json(root / "tree.json")
+    tree = read_json(root / RESEARCH_STATE_FILE)
     payload = decision["payload"]
     node_id = payload.get("node_id") or _next_node_id(tree)
     if (root / "nodes" / node_id / "node.json").exists():
@@ -198,12 +199,14 @@ def _validate_propose_hypothesis_context(root: Path, decision: dict[str, Any]) -
     payload = decision["payload"]
     hypothesis = payload["proposed_hypothesis"]
     context = payload["proposal_context"]
-    tree = read_json(root / "tree.json")
+    tree = read_json(root / RESEARCH_STATE_FILE)
     node_ids = set(_ordered_node_ids(tree))
     for field in ("from_node", "anchor_node"):
         node_id = context[field]
         if node_id not in node_ids:
             raise ContractError(f"proposal_context.{field} does not exist: {node_id}")
+    if not _is_ancestor(root, context["anchor_node"], context["from_node"]):
+        raise ContractError("proposal_context.anchor_node must be an ancestor of proposal_context.from_node")
 
     registry = read_json(root / "evidence_registry.json")
     known_evidence_ids = {
@@ -215,7 +218,7 @@ def _validate_propose_hypothesis_context(root: Path, decision: dict[str, Any]) -
     if missing_evidence:
         raise ContractError(f"propose_hypothesis references unknown evidence: {', '.join(missing_evidence)}")
 
-    model = read_json(root / "mechanism_model.json")
+    model = read_json(root / HYPOTHESES_FILE)
     hypothesis_id = hypothesis["hypothesis_id"]
     known_hypotheses = {
         item.get("hypothesis_id"): item
@@ -320,14 +323,11 @@ def _validate_branch_anchor_repair(root: Path, repair: Any) -> None:
     context = node.get("branch_context") if isinstance(node.get("branch_context"), dict) else {}
     if context.get("relation") != "new_solution_branch":
         raise ContractError(f"repair_branch_anchor only applies to new_solution_branch nodes: {node_id}")
-    hypothesis_ref = node.get("hypothesis_ref") if isinstance(node.get("hypothesis_ref"), dict) else {}
-    expected_anchor = _hypothesis_anchor_node(root, hypothesis_ref.get("hypothesis_id"))
-    if expected_anchor is None:
-        raise ContractError(f"repair_branch_anchor cannot resolve hypothesis branch anchor for {node_id}")
-    if new_anchor != expected_anchor:
+    from_node = context.get("from_node")
+    if not _is_ancestor(root, new_anchor, from_node):
         raise ContractError(
-            "repair_branch_anchor.new_anchor_node must match the hypothesis branch anchor: "
-            f"node_id={node_id}, expected_anchor={expected_anchor}, new_anchor_node={new_anchor}"
+            "repair_branch_anchor.new_anchor_node must be an ancestor of branch_context.from_node: "
+            f"node_id={node_id}, from_node={from_node}, new_anchor_node={new_anchor}"
         )
 
 
@@ -340,14 +340,14 @@ def _require_initialized(root: Path) -> None:
 def _ordered_node_ids(tree: dict[str, Any]) -> list[str]:
     nodes = tree.get("nodes", [])
     if not isinstance(nodes, list):
-        raise ContractError("tree.nodes must be a list")
+        raise ContractError("research_state.nodes must be a list")
     ordered: list[str] = []
     for entry in nodes:
         if not isinstance(entry, dict):
-            raise ContractError("tree node entry must be an object")
+            raise ContractError("research state node entry must be an object")
         node_id = entry.get("node_id")
         if not isinstance(node_id, str) or not node_id:
-            raise ContractError("tree node missing node_id")
+            raise ContractError("research state node missing node_id")
         ordered.append(node_id)
     return ordered
 
@@ -360,7 +360,7 @@ def _validate_parent_ref(parent_node: Any, node_ids: set[str]) -> None:
 
 
 def _validate_hypothesis_ref_exists(root: Path, hypothesis_ref: dict[str, Any]) -> None:
-    model = read_json(root / "mechanism_model.json")
+    model = read_json(root / HYPOTHESES_FILE)
     hypothesis_id = hypothesis_ref.get("hypothesis_id")
     ids = {
         item.get("hypothesis_id")
@@ -389,9 +389,12 @@ def _validate_branch_context(root: Path, payload: dict[str, Any], node_ids: set[
         _require_parent_matches(payload, from_node_id, "from_node", relation)
     elif relation in ANCHORED_BRANCH_RELATIONS:
         _require_parent_matches(payload, anchor_node_id, "anchor_node", relation)
+        if not _is_ancestor(root, anchor_node_id, from_node_id):
+            raise ContractError(
+                f"{relation} anchor_node must be an ancestor of branch_context.from_node"
+            )
     if relation == "new_solution_branch":
         _validate_new_solution_branch(from_node, payload)
-        _validate_solution_branch_anchor_matches_hypothesis_anchor(root, payload)
     elif relation == "new_hypothesis_branch":
         _validate_new_hypothesis_branch(root, from_node, payload)
     elif relation == "new_pathway_branch":
@@ -418,21 +421,6 @@ def _validate_new_solution_branch(from_node: dict[str, Any], payload: dict[str, 
     from_solution = from_node.get("solution_ref")
     if isinstance(from_solution, dict) and from_solution.get("solution_id") == solution_ref.get("solution_id"):
         raise ContractError("new_solution_branch requires a new solution_ref.solution_id")
-
-
-def _validate_solution_branch_anchor_matches_hypothesis_anchor(root: Path, payload: dict[str, Any]) -> None:
-    context = payload.get("branch_context") if isinstance(payload.get("branch_context"), dict) else {}
-    anchor_node_id = context.get("anchor_node")
-    hypothesis_ref = payload.get("hypothesis_ref") if isinstance(payload.get("hypothesis_ref"), dict) else {}
-    hypothesis_id = hypothesis_ref.get("hypothesis_id")
-    anchor_node = _hypothesis_anchor_node(root, hypothesis_id)
-    if anchor_node is None:
-        return
-    if anchor_node_id != anchor_node:
-        raise ContractError(
-            "new_solution_branch anchor_node must match the hypothesis branch anchor: "
-            f"hypothesis_id={hypothesis_id}, expected_anchor={anchor_node}, anchor_node={anchor_node_id}"
-        )
 
 
 def _validate_new_hypothesis_branch(root: Path, from_node: dict[str, Any], payload: dict[str, Any]) -> None:
@@ -495,19 +483,26 @@ def _read_node(root: Path, node_id: str) -> dict[str, Any]:
 def _mechanism_hypothesis(root: Path, hypothesis_id: Any) -> dict[str, Any] | None:
     if not isinstance(hypothesis_id, str) or not hypothesis_id:
         return None
-    model = read_json(root / "mechanism_model.json")
+    model = read_json(root / HYPOTHESES_FILE)
     for hypothesis in model.get("hypotheses", []):
         if isinstance(hypothesis, dict) and hypothesis.get("hypothesis_id") == hypothesis_id:
             return hypothesis
     return None
 
 
-def _hypothesis_anchor_node(root: Path, hypothesis_id: Any) -> str | None:
-    hypothesis = _mechanism_hypothesis(root, hypothesis_id)
-    if not isinstance(hypothesis, dict):
-        return None
-    anchor_node = hypothesis.get("branch_anchor_node") or hypothesis.get("source_node")
-    return anchor_node if isinstance(anchor_node, str) and anchor_node else None
+def _is_ancestor(root: Path, ancestor_id: Any, node_id: Any) -> bool:
+    if not isinstance(ancestor_id, str) or not isinstance(node_id, str):
+        return False
+    current: str | None = node_id
+    visited: set[str] = set()
+    while current and current not in visited:
+        if current == ancestor_id:
+            return True
+        visited.add(current)
+        node = _read_node(root, current)
+        parent = node.get("parent_node")
+        current = parent if isinstance(parent, str) and parent else None
+    return False
 
 
 def _next_node_id(tree: dict[str, Any]) -> str:

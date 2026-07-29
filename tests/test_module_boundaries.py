@@ -79,7 +79,7 @@ if "-o" in sys.argv:
     )
     fake.chmod(0o755)
     monkeypatch.setenv("TS_RENDER_XYZRENDER", str(fake))
-    state_files = ["manifest.json", "tree.json", "mechanism_model.json", "pathway_model.json", "evidence_registry.json"]
+    state_files = ["research_state.json", "hypotheses.json", "evidence_registry.json"]
     before = {name: (workspace / name).read_text(encoding="utf-8") for name in state_files}
 
     result = MolVisualizer().render_molecule(

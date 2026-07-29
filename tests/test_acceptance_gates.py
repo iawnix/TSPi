@@ -187,7 +187,7 @@ def test_accepted_audit_rejects_endpoint_recovery_after_failed_irc(tmp_path):
             },
         )
     node = read_json(workspace / "nodes" / "n001" / "node.json")
-    manifest = read_json(workspace / "manifest.json")
+    manifest = read_json(workspace / "research_state.json")
     assert node["lifecycle"] == "running"
     assert node["closure"] is None
     assert manifest["accepted_ts_refs"] == []
@@ -310,7 +310,7 @@ def test_stereochemical_gate_is_recorded_in_accepted_artifact(tmp_path):
     workspace = tmp_path / "ws"
     make_accepted_workspace(workspace, stereochemical=True)
 
-    manifest = read_json(workspace / "manifest.json")
+    manifest = read_json(workspace / "research_state.json")
     artifact = read_json(workspace / manifest["accepted_ts_refs"][0])
 
     assert "stereochemical_connectivity_gate" in artifact["required_gates"]
@@ -322,7 +322,7 @@ def test_workspace_validator_rejects_stereo_required_accepted_artifact_missing_s
     workspace = tmp_path / "ws"
     make_accepted_workspace(workspace, stereochemical=True)
 
-    manifest = read_json(workspace / "manifest.json")
+    manifest = read_json(workspace / "research_state.json")
     artifact_path = workspace / manifest["accepted_ts_refs"][0]
     artifact = read_json(artifact_path)
     artifact["evidence_refs"] = [item for item in artifact["evidence_refs"] if item != "ev_stereo_001"]
@@ -447,7 +447,7 @@ def test_declared_identity_gate_is_recorded_in_accepted_artifact(tmp_path):
     workspace = tmp_path / "ws"
     make_accepted_workspace(workspace, identity_claim=True)
 
-    manifest = read_json(workspace / "manifest.json")
+    manifest = read_json(workspace / "research_state.json")
     artifact = read_json(workspace / manifest["accepted_ts_refs"][0])
 
     assert "intermediate_identity_gate" in artifact["required_gates"]
@@ -459,7 +459,7 @@ def test_workspace_validator_rejects_identity_required_accepted_artifact_missing
     workspace = tmp_path / "ws"
     make_accepted_workspace(workspace, identity_claim=True)
 
-    manifest = read_json(workspace / "manifest.json")
+    manifest = read_json(workspace / "research_state.json")
     artifact_path = workspace / manifest["accepted_ts_refs"][0]
     artifact = read_json(artifact_path)
     artifact["evidence_refs"] = [item for item in artifact["evidence_refs"] if item != "ev_identity_001"]

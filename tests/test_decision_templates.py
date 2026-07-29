@@ -115,7 +115,7 @@ DEFAULT_VALUES = {
     "EV_CHARGE_MULTIPLICITY": "ev_charge_mult_0001",
     "EV_ATOM_MAPPING": "ev_atom_mapping_0001",
     "EV_REACTION_CENTER_DELTA": "ev_reaction_center_0001",
-    "ENDPOINT_PROVENANCE_PATH": "inputs/source_manifest.json",
+    "ENDPOINT_PROVENANCE_PATH": "inputs/source_research_state.json",
     "EV_CANDIDATE": "ev_candidate_001",
     "CANDIDATE_GEOMETRY_PATH": "nodes/n001/outputs/candidate.xyz",
     "LOCAL_GEOMETRY_CONSISTENCY_VERDICT": "supported",
@@ -271,7 +271,7 @@ def test_solution_branch_template_requires_explicit_branch_context(tmp_path: Pat
     started = start_node(workspace, solution_branch)
 
     assert started["node_id"] == "n002"
-    tree = json.loads((workspace / "tree.json").read_text(encoding="utf-8"))
+    tree = json.loads((workspace / "research_state.json").read_text(encoding="utf-8"))
     assert tree["branch_events"][-1]["relation"] == "new_solution_branch"
     assert tree["branch_events"][-1]["from_node"] == "n001"
     assert tree["branch_events"][-1]["anchor_node"] == "n000"
@@ -300,14 +300,14 @@ def test_hypothesis_proposal_is_not_a_node_and_first_evidence_node_activates_it(
     proposal = _with_report_ref(workspace, _render_template("propose_alternative_hypothesis.json"))
     _apply_decision(workspace, proposal)
 
-    mechanism = json.loads((workspace / "mechanism_model.json").read_text(encoding="utf-8"))
+    mechanism = json.loads((workspace / "hypotheses.json").read_text(encoding="utf-8"))
     assert mechanism["focus_hypothesis_id"] == "hyp_0010"
     assert [item["hypothesis_id"] for item in mechanism["hypotheses"]] == ["hyp_0001", "hyp_0010"]
     assert mechanism["hypotheses"][-1]["source_node"] == "n000"
     assert mechanism["hypotheses"][-1]["branch_anchor_node"] == "n000"
     assert mechanism["hypotheses"][-1]["parent_hypothesis_id"] == "hyp_0001"
     assert mechanism["hypotheses"][-1]["status"] == "proposed"
-    tree = json.loads((workspace / "tree.json").read_text(encoding="utf-8"))
+    tree = json.loads((workspace / "research_state.json").read_text(encoding="utf-8"))
     assert [item["node_id"] for item in tree["nodes"]] == ["n000"]
 
     first_test = _with_report_ref(
@@ -316,8 +316,8 @@ def test_hypothesis_proposal_is_not_a_node_and_first_evidence_node_activates_it(
     )
     _apply_decision(workspace, first_test)
 
-    mechanism = json.loads((workspace / "mechanism_model.json").read_text(encoding="utf-8"))
-    tree = json.loads((workspace / "tree.json").read_text(encoding="utf-8"))
+    mechanism = json.loads((workspace / "hypotheses.json").read_text(encoding="utf-8"))
+    tree = json.loads((workspace / "research_state.json").read_text(encoding="utf-8"))
     assert mechanism["hypotheses"][-1]["status"] == "active"
     assert mechanism["hypotheses"][-1]["activated_by_node"] == "n010"
     assert tree["branch_events"][-1]["target_hypothesis_ref"] == {
@@ -342,7 +342,7 @@ def test_endpoint_conformer_templates_use_candidate_strategy_without_prediction_
         _apply_template(workspace, template_name)
 
     node = json.loads((workspace / "nodes" / "n020" / "node.json").read_text(encoding="utf-8"))
-    mechanism = json.loads((workspace / "mechanism_model.json").read_text(encoding="utf-8"))
+    mechanism = json.loads((workspace / "hypotheses.json").read_text(encoding="utf-8"))
     assert node["phase"] == "candidate_generation"
     assert node["solution_ref"]["strategy"] == "rp_conformer_generation"
     assert mechanism["hypotheses"][0]["prediction_status"] == []

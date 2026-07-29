@@ -7,6 +7,9 @@ next action.
 The workspace is the only trusted state source. Use `report_workspace` as the
 decision dashboard, then drill into node and evidence files when a choice
 depends on previous success or failure.
+The canonical root state is `research_state.json`, `hypotheses.json`, and
+`evidence_registry.json`. Do not load all three files into the prompt by
+default; use their report projections.
 
 ## Required Decision Cycle
 
@@ -139,9 +142,12 @@ workspace state:
 - `decision_log.jsonl` and `transaction_log.jsonl` provide the mutation audit
   trail.
 
-When a previous failure may affect the next decision, read the failed node's
-`node.json`, the cited evidence records, and the referenced artifacts before
-choosing a branch relation.
+When a previous failure may affect the next decision, first run
+`report_node --node-id <node>` to load its compact context capsule. Before
+rebasing a new branch onto an old checkpoint, run
+`report_branch_context --from-node <trigger> --anchor-node <checkpoint>` to
+load both endpoints and the intervening attempts. Read raw artifacts only when
+their compact evidence summaries are insufficient.
 
 Across independent repeated studies, do not reuse old task directories or old
 TS structures unless the user explicitly asks for cross-run comparison. The
@@ -155,8 +161,8 @@ program or IRC protocol settings after a program-level failure.
 
 Use `new_solution_branch` only when the candidate or search strategy really
 changes under the same hypothesis. It requires a new `solution_ref.solution_id`
-and `parent_node == branch_context.anchor_node ==
-hypothesis.branch_anchor_node` (legacy fallback: `source_node`).
+and `parent_node == branch_context.anchor_node`. The agent selects the anchor;
+the validator only requires it to be an ancestor of `from_node`.
 
 When the mechanism hypothesis changes, first use `propose_hypothesis` with
 `proposal_context.kind=alternative`. That mutation creates no node. Use

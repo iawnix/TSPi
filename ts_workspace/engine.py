@@ -9,7 +9,22 @@ from typing import Any
 
 from .finalizers import compute_close_changes, validate_accepted_audit_gates, validate_pathway_audit_gates
 from .io import append_jsonl, apply_change, now_iso, read_json, sha256_json, write_json
-from .readers import report_workspace as build_report, snapshot_report as build_snapshot
+from .readers import (
+    report_branch_context as build_branch_context,
+    report_node as build_node_report,
+    report_workspace as build_report,
+    snapshot_report as build_snapshot,
+)
+from .state import (
+    HYPOTHESES_FILE,
+    LEGACY_STATE_FILES,
+    RESEARCH_STATE_FILE,
+    convert_legacy_state,
+    initial_hypotheses,
+    initial_research_state,
+    state_layout,
+)
+from .schema_validation import validate_contract
 from .validators.decision import ContractError, validate_decision as validate_decision_dict
 from .validators.decision_context import validate_decision_for_workspace
 from .validators.workspace import REQUIRED_DIRS, REQUIRED_FILES, SOFT_DIRS, validate_workspace as validate_workspace_dict
@@ -45,46 +60,68 @@ def init_workspace(
     for dirname in REQUIRED_DIRS | SOFT_DIRS:
         (root_path / dirname).mkdir(parents=True, exist_ok=True)
 
-    write_json(
-        root_path / "manifest.json",
-        {
-            "schema_version": "ts-workspace",
-            "created_at": now_iso(),
-            "current_focus": None,
-            "hypothesis_contract_version": "strict",
-            "accepted_ts_refs": [],
-            "provenance": [],
-        },
-    )
-    write_json(
-        root_path / "tree.json",
-        {
-            "schema_version": "ts-tree",
-            "nodes": [],
-            "edges": [],
-            "current_node": None,
-            "branch_events": [],
-        },
-    )
+    write_json(root_path / RESEARCH_STATE_FILE, initial_research_state())
     write_json(root_path / "evidence_registry.json", {"schema_version": "ts-evidence-registry", "evidence": []})
-    write_json(
-        root_path / "mechanism_model.json",
-        {
-            "schema_version": "ts-mechanism",
-            "focus_hypothesis_id": None,
-            "hypotheses": [],
-            "accepted_facts": [],
-            "refuted_hypotheses": [],
-            "open_questions": [],
-        },
-    )
-    write_json(root_path / "pathway_model.json", {"schema_version": "ts-pathway", "focus_pathway_id": None, "pathways": []})
-    (root_path / "knowledge_base.md").write_text("# Knowledge Base\n\n", encoding="utf-8")
+    write_json(root_path / HYPOTHESES_FILE, initial_hypotheses())
     (root_path / "decision_log.jsonl").touch()
 
     if decision is not None:
         _commit_transaction(root_path, decision, {}, {"mutation_applied": True})
     return {"root": str(root_path), "created": True, "valid": validate_workspace_dict(root_path)["valid"]}
+
+
+def migrate_workspace_state(root: str | Path) -> dict[str, Any]:
+    """Convert a complete legacy root layout and archive its old state files."""
+
+    root_path = Path(root)
+    layout = state_layout(root_path)
+    if layout == "current":
+        return {"root": str(root_path), "migrated": False, "reason": "already_current"}
+    if layout != "legacy":
+        raise ContractError(f"workspace state migration requires a complete legacy layout; found {layout}")
+
+    archive = root_path / "legacy_state"
+    if archive.exists() and any(archive.iterdir()):
+        raise ContractError(f"legacy state archive is not empty: {archive}")
+
+    for filename, schema_name in (
+        ("manifest.json", "manifest.schema.json"),
+        ("tree.json", "tree.schema.json"),
+        ("mechanism_model.json", "mechanism.schema.json"),
+        ("pathway_model.json", "pathway.schema.json"),
+        ("evidence_registry.json", "evidence_registry.schema.json"),
+    ):
+        validate_contract(schema_name, read_json(root_path / filename))
+
+    research_state, hypotheses = convert_legacy_state(root_path)
+    research_state.setdefault("provenance", []).append(
+        {
+            "kind": "state_model_migration",
+            "from_layout": "manifest+tree+mechanism+pathway+knowledge",
+            "to_layout": "research_state+hypotheses+evidence_registry",
+            "migrated_at": now_iso(),
+            "legacy_archive": "legacy_state",
+        }
+    )
+    validate_contract("research_state.schema.json", research_state)
+    validate_contract("hypotheses.schema.json", hypotheses)
+
+    write_json(root_path / RESEARCH_STATE_FILE, research_state)
+    write_json(root_path / HYPOTHESES_FILE, hypotheses)
+    archive.mkdir(parents=True, exist_ok=True)
+    for filename in sorted(LEGACY_STATE_FILES):
+        source = root_path / filename
+        if source.exists():
+            shutil.move(str(source), str(archive / filename))
+
+    validation = validate_workspace_dict(root_path)
+    return {
+        "root": str(root_path),
+        "migrated": True,
+        "legacy_archive": str(archive),
+        "valid": validation["valid"],
+        "findings": validation["findings"],
+    }
 
 
 def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
@@ -93,8 +130,8 @@ def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
     validate_decision_for_workspace(root_path, decision)
     _require_initialized(root_path)
     payload = decision["payload"]
-    tree = read_json(root_path / "tree.json")
-    node_id = payload.get("node_id") or _next_node_id(tree)
+    research_state = read_json(root_path / RESEARCH_STATE_FILE)
+    node_id = payload.get("node_id") or _next_node_id(research_state)
     if (root_path / "nodes" / node_id / "node.json").exists():
         raise ContractError(f"node already exists: {node_id}")
 
@@ -127,7 +164,7 @@ def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
         "closure": None,
     }
 
-    tree.setdefault("nodes", []).append(
+    research_state.setdefault("nodes", []).append(
         {
             "node_id": node_id,
             "parent_node": node["parent_node"],
@@ -140,18 +177,17 @@ def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
         }
         )
     if node["parent_node"]:
-        tree.setdefault("edges", []).append({"parent_node": node["parent_node"], "child_node": node_id})
+        research_state.setdefault("edges", []).append({"parent_node": node["parent_node"], "child_node": node_id})
     if node["branch_context"]:
-        tree.setdefault("branch_events", []).append(_branch_event(node, node["branch_context"], decision))
-    tree["current_node"] = node_id
+        research_state.setdefault("branch_events", []).append(_branch_event(node, node["branch_context"], decision))
+    research_state["current_node"] = node_id
 
     changes: dict[Path, Any] = {
         node_dir / "node.json": node,
         node_dir / "decision.md": decision["rationale"].strip() + "\n",
-        root_path / "tree.json": tree,
+        root_path / RESEARCH_STATE_FILE: research_state,
     }
-    changes.update(_pathway_changes_for_node(root_path, node))
-    changes.update(_mechanism_changes_for_node_start(root_path, node))
+    changes.update(_hypotheses_changes_for_node_start(root_path, node))
     _commit_transaction(root_path, decision, changes, {"mutation_applied": True, "node_id": node_id})
     return {"node_id": node_id, "phase": node["phase"], "lifecycle": node["lifecycle"]}
 
@@ -184,7 +220,7 @@ def propose_hypothesis(root: str | Path, decision: dict[str, Any]) -> dict[str, 
     )
     hypothesis.setdefault("parent_hypothesis_id", None)
 
-    model_path = root_path / "mechanism_model.json"
+    model_path = root_path / HYPOTHESES_FILE
     model = read_json(model_path)
     model.setdefault("hypotheses", []).append(hypothesis)
     model["focus_hypothesis_id"] = hypothesis_id
@@ -199,7 +235,7 @@ def update_workspace(root: str | Path, decision: dict[str, Any]) -> dict[str, An
     validate_decision_for_workspace(root_path, decision)
     _require_initialized(root_path)
     payload = decision["payload"]
-    appended: dict[str, int] = {"evidence": 0, "knowledge": 0, "provenance": 0}
+    appended: dict[str, int] = {"evidence": 0, "provenance": 0}
     changes: dict[Path, Any] = {}
 
     evidence = payload.get("append_evidence")
@@ -218,24 +254,13 @@ def update_workspace(root: str | Path, decision: dict[str, Any]) -> dict[str, An
             appended["evidence"] += 1
         changes[registry_path] = registry
 
-    knowledge = payload.get("append_knowledge")
-    if knowledge is not None:
-        knowledge_path = root_path / "knowledge_base.md"
-        text = knowledge_path.read_text(encoding="utf-8") if knowledge_path.exists() else ""
-        if not text:
-            text = "# Knowledge Base\n\n"
-        for title, body in _knowledge_entries(knowledge):
-            text += f"## {title}\n\n{body.strip()}\n\n"
-            appended["knowledge"] += 1
-        changes[knowledge_path] = text
-
     provenance = payload.get("append_provenance")
     if provenance is not None:
-        manifest_path = root_path / "manifest.json"
-        manifest = read_json(manifest_path)
+        research_path = root_path / RESEARCH_STATE_FILE
+        research_state = read_json(research_path)
         items = provenance if isinstance(provenance, list) else [provenance]
-        manifest.setdefault("provenance", []).extend(items)
-        changes[manifest_path] = manifest
+        research_state.setdefault("provenance", []).extend(items)
+        changes[research_path] = research_state
         appended["provenance"] += len(items)
 
     repair = payload.get("repair_branch_anchor")
@@ -275,22 +300,22 @@ def end_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
     node["ended_at"] = closure["closed_at"]
     node["evidence_refs"] = merged_evidence_refs
 
-    tree = read_json(root_path / "tree.json")
-    for entry in tree.get("nodes", []):
+    research_state = read_json(root_path / RESEARCH_STATE_FILE)
+    for entry in research_state.get("nodes", []):
         if entry.get("node_id") == node_id:
             entry["lifecycle"] = node["lifecycle"]
             entry["closed_at"] = closure["closed_at"]
             entry["claim_verdict"] = closure["claim_verdict"]
             entry["program_status"] = closure["program_status"]
             break
-    if tree.get("current_node") == node_id:
-        tree["current_node"] = None
+    if research_state.get("current_node") == node_id:
+        research_state["current_node"] = None
 
     changes: dict[Path, Any] = {
         node_path: node,
-        root_path / "tree.json": tree,
+        root_path / RESEARCH_STATE_FILE: research_state,
     }
-    changes.update(compute_close_changes(root_path, node, decision))
+    changes.update(compute_close_changes(root_path, node, decision, research_state))
     result = {"mutation_applied": True, "node_id": node_id, "lifecycle": node["lifecycle"]}
     _commit_transaction(root_path, decision, changes, result)
     return {"node_id": node_id, "lifecycle": node["lifecycle"], "closure": closure}
@@ -391,7 +416,7 @@ def _clear_workspace_owned_state(root: Path) -> None:
         path = root / dirname
         if path.exists():
             shutil.rmtree(path)
-    for filename in sorted(REQUIRED_FILES | {"decision_log.jsonl", "transaction_log.jsonl"}):
+    for filename in sorted(REQUIRED_FILES | LEGACY_STATE_FILES | {"decision_log.jsonl", "transaction_log.jsonl"}):
         path = root / filename
         if path.exists():
             if path.is_dir():
@@ -408,6 +433,16 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
 def snapshot_report(root: str | Path) -> dict[str, Any]:
     _require_initialized(Path(root))
     return build_snapshot(root)
+
+
+def report_node(root: str | Path, node_id: str) -> dict[str, Any]:
+    _require_initialized(Path(root))
+    return build_node_report(root, node_id)
+
+
+def report_branch_context(root: str | Path, from_node: str, anchor_node: str) -> dict[str, Any]:
+    _require_initialized(Path(root))
+    return build_branch_context(root, from_node, anchor_node)
 
 
 def validate_workspace(root: str | Path) -> dict[str, Any]:
@@ -473,30 +508,34 @@ def _branch_event(node: dict[str, Any], branch_context: dict[str, Any], decision
     return event
 
 
-def _mechanism_changes_for_node_start(root: Path, node: dict[str, Any]) -> dict[Path, Any]:
+def _hypotheses_changes_for_node_start(root: Path, node: dict[str, Any]) -> dict[Path, Any]:
+    path = root / HYPOTHESES_FILE
+    model = read_json(path)
+    changed = _activate_hypothesis_for_node(model, node)
+    changed = _ensure_pathway_for_node(model, node) or changed
+    return {path: model} if changed else {}
+
+
+def _activate_hypothesis_for_node(model: dict[str, Any], node: dict[str, Any]) -> bool:
     hypothesis_ref = node.get("hypothesis_ref") if isinstance(node.get("hypothesis_ref"), dict) else {}
     hypothesis_id = hypothesis_ref.get("hypothesis_id")
     if not hypothesis_id:
-        return {}
-    path = root / "mechanism_model.json"
-    model = read_json(path)
+        return False
     for hypothesis in model.get("hypotheses", []):
         if not isinstance(hypothesis, dict) or hypothesis.get("hypothesis_id") != hypothesis_id:
             continue
         if hypothesis.get("status") != "proposed":
-            return {}
+            return False
         hypothesis["status"] = "active"
         hypothesis["activated_by_node"] = node["node_id"]
-        return {path: model}
-    return {}
+        return True
+    return False
 
 
-def _pathway_changes_for_node(root: Path, node: dict[str, Any]) -> dict[Path, Any]:
+def _ensure_pathway_for_node(model: dict[str, Any], node: dict[str, Any]) -> bool:
     ref = node.get("pathway_ref")
     if not ref:
-        return {}
-    path = root / "pathway_model.json"
-    model = read_json(path)
+        return False
     pathway_id = ref["pathway_id"]
     step_id = ref["step_id"]
     for pathway in model.setdefault("pathways", []):
@@ -511,7 +550,7 @@ def _pathway_changes_for_node(root: Path, node: dict[str, Any]) -> dict[Path, An
     else:
         pathway["steps"].append({"step_id": step_id, "from": "unknown", "to": "unknown", "status": "active"})
     model["focus_pathway_id"] = pathway_id
-    return {path: model}
+    return True
 
 
 def _apply_repair_branch_anchor(
@@ -546,18 +585,18 @@ def _apply_repair_branch_anchor(
     )
     changes[node_path] = node
 
-    tree_path = root / "tree.json"
-    tree = read_json(tree_path) if tree_path not in changes else changes[tree_path]
-    for entry in tree.get("nodes", []):
+    research_path = root / RESEARCH_STATE_FILE
+    research_state = read_json(research_path) if research_path not in changes else changes[research_path]
+    for entry in research_state.get("nodes", []):
         if entry.get("node_id") == node_id:
             entry["parent_node"] = new_anchor
             entry["branch_context"] = context
             break
-    for edge in tree.get("edges", []):
+    for edge in research_state.get("edges", []):
         if edge.get("child_node") == node_id:
             edge["parent_node"] = new_anchor
             break
-    for event in tree.get("branch_events", []):
+    for event in research_state.get("branch_events", []):
         if event.get("new_node") != node_id:
             continue
         event["anchor_node"] = new_anchor
@@ -575,18 +614,4 @@ def _apply_repair_branch_anchor(
             }
         )
         break
-    changes[tree_path] = tree
-
-
-def _knowledge_entries(knowledge: str | dict[str, Any] | list[Any]) -> list[tuple[str, str]]:
-    if isinstance(knowledge, str):
-        return [("Workspace update", knowledge)]
-    if isinstance(knowledge, dict):
-        return [(str(knowledge.get("title", "Workspace update")), str(knowledge.get("body", "")))]
-    entries = []
-    for item in knowledge:
-        if isinstance(item, str):
-            entries.append(("Workspace update", item))
-        elif isinstance(item, dict):
-            entries.append((str(item.get("title", "Workspace update")), str(item.get("body", ""))))
-    return entries
+    changes[research_path] = research_state
