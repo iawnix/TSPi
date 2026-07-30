@@ -17,16 +17,42 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
 
     assert "pi-package" in manifest["keywords"]
     assert manifest["pi"]["skills"] == ["."]
-    assert manifest["pi"]["extensions"] == ["./extensions/ts-workflow-context"]
-    assert manifest["peerDependencies"]["@earendil-works/pi-coding-agent"] == "*"
-    assert manifest["peerDependencies"]["typebox"] == "*"
+    assert manifest["pi"]["extensions"] == [
+        "./extensions/ts-workflow-context",
+        "./extensions/ts-workflow-subagent/index.ts",
+    ]
+    assert "subagents" not in manifest["pi"]
+    assert not any("subagent" in name for name in manifest.get("dependencies", {}))
+    assert manifest["peerDependencies"]["@earendil-works/pi-ai"] == "^0.81.1"
+    assert manifest["peerDependencies"]["@earendil-works/pi-coding-agent"] == "^0.81.1"
+    assert manifest["peerDependencies"]["typebox"] == "^1.1.38"
     assert "--workspace-root" in manifest["scripts"]["install-env"]
     assert "TS_WORKSPACE_ROOT" in manifest["scripts"]["install-env"]
+    assert "tests/test_pi_subagent_contract.py" in manifest["scripts"]["test:pi-adapter"]
     assert "postinstall" not in manifest["scripts"]
 
     extension_source = (ROOT / "extensions" / "ts-workflow-context" / "index.ts").read_text(encoding="utf-8")
     assert '"propose_hypothesis"' in extension_source
-    assert '["validate_decision", "start_node", "propose_hypothesis", "update_workspace", "end_node"]' in extension_source
+    assert '["start_node", "propose_hypothesis", "update_workspace", "end_node"]' in extension_source
+    assert 'name: "ts_workspace_decision_validate"' in extension_source
+
+
+def test_pi_documentation_matches_loaded_extensions_and_tool_boundary() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    adapter = (ROOT / "references" / "pi_agent_adapter.md").read_text(encoding="utf-8")
+    maintainer = (ROOT / "docs" / "MAINTAINER_GUIDE.md").read_text(encoding="utf-8")
+    plan = (ROOT / "PLAN-subagents.md").read_text(encoding="utf-8")
+
+    assert "Pi `0.81.1`" in readme
+    assert "extensions/ts-workflow-subagent" in readme
+    assert "`ts_workspace_decision_validate`" in readme
+    assert "`ts_workspace_subagent`" in readme
+    assert "run `validate_decision`, `start_node`" not in readme
+    assert adapter.count("-e \"$TS_AGENT_SKILL_ROOT/extensions/") == 2
+    assert "temporary\nnon-OAuth API key" in adapter
+    assert "extensions/ts-workflow-subagent" in maintainer
+    assert "implementation not started" not in plan
+    assert "receives neither decision files nor preflight output" in plan
 
 
 def test_pi_context_summary_from_report_workspace(tmp_path: Path) -> None:
@@ -52,6 +78,7 @@ def test_pi_context_summary_from_report_workspace(tmp_path: Path) -> None:
     assert "do not edit workspace state files by hand" in payload["summary"]
     assert "scripts/ts_workspace.py" not in payload["summary"]
     assert "explicit TSAgentSkill root" in payload["summary"]
+    assert "ts_workspace_decision_validate" in payload["summary"]
     assert payload["details"]["workspaceRoot"] == str(workspace)
     assert payload["details"]["focusHypothesisId"] == HYPOTHESIS_ID
     assert payload["details"]["valid"] is True

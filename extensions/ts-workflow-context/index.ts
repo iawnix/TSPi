@@ -1,27 +1,20 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { resolve } from "node:path";
+import { requireWorkspaceRoot, runWorkspaceJson } from "../shared/workspace-cli.ts";
 
 const require = createRequire(import.meta.url);
 const {
   buildBranchContextSummary,
   buildContextSummary,
   buildNodeContextSummary,
-  parseJsonOutput,
   resolveWorkspaceRoot,
   toolText,
 } = require("./summary.cjs");
 
-const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
-const PACKAGE_ROOT = resolve(EXTENSION_DIR, "..", "..");
-const WORKSPACE_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_workspace.py");
-const RUNTIME_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_runtime.py");
-
-type TsCommand = "validate_decision" | "start_node" | "propose_hypothesis" | "update_workspace" | "end_node";
+type TsCommand = "start_node" | "propose_hypothesis" | "update_workspace" | "end_node";
 
 export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event, ctx) => {
@@ -30,7 +23,7 @@ export default function (pi: ExtensionAPI) {
       return;
     }
     try {
-      const report = await runJson(pi, "report_workspace", root, [], ctx.signal);
+      const report = await runWorkspaceJson(pi, "report_workspace", root, [], ctx.signal);
       const summary = buildContextSummary(report);
       return {
         systemPrompt: `${event.systemPrompt}\n\n${summary}`,
@@ -66,7 +59,7 @@ export default function (pi: ExtensionAPI) {
         if (!params.fromNode || !params.anchorNode) {
           throw new Error("fromNode and anchorNode must be provided together");
         }
-        const branchContext = await runJson(
+        const branchContext = await runWorkspaceJson(
           pi,
           "report_branch_context",
           root,
@@ -76,10 +69,10 @@ export default function (pi: ExtensionAPI) {
         return toolText(buildBranchContextSummary(branchContext), { branchContext });
       }
       if (params.nodeId) {
-        const nodeContext = await runJson(pi, "report_node", root, ["--node-id", String(params.nodeId)], signal);
+        const nodeContext = await runWorkspaceJson(pi, "report_node", root, ["--node-id", String(params.nodeId)], signal);
         return toolText(buildNodeContextSummary(nodeContext), { nodeContext });
       }
-      const report = await runJson(pi, "report_workspace", root, [], signal);
+      const report = await runWorkspaceJson(pi, "report_workspace", root, [], signal);
       const summary = buildContextSummary(report);
       return toolText(summary, { report });
     },
@@ -98,23 +91,44 @@ export default function (pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
-      const validation = await runJson(pi, "validate_workspace", root, [], signal);
+      const validation = await runWorkspaceJson(pi, "validate_workspace", root, [], signal);
       return toolText(JSON.stringify(validation, null, 2), { validation });
+    },
+  });
+
+  pi.registerTool({
+    name: "ts_workspace_decision_validate",
+    label: "TS Decision Preflight",
+    description: "Validate one ts_workspace decision JSON without mutating the workspace.",
+    promptSnippet: "Preflight a transition-state workspace decision JSON without applying it",
+    promptGuidelines: [
+      "Use ts_workspace_decision_validate when a decision's schema, evidence ownership, or branch topology is uncertain.",
+      "A valid preflight does not mutate the workspace and does not establish a scientific verdict.",
+    ],
+    parameters: Type.Object({
+      decisionFile: Type.String({ description: "Path to a decision JSON file." }),
+      root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
+    }),
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const root = requireWorkspaceRoot(params.root, ctx.cwd);
+      const decisionFile = resolve(ctx.cwd, String(params.decisionFile).replace(/^@+/, ""));
+      const result = await runWorkspaceJson(pi, "validate_decision", root, ["--decision-file", decisionFile], signal);
+      return toolText(JSON.stringify(result, null, 2), { result });
     },
   });
 
   pi.registerTool({
     name: "ts_workspace_decision",
     label: "TS Decision",
-    description: "Apply or preflight a ts_workspace decision JSON through the public control plane.",
-    promptSnippet: "Validate or apply a transition-state workspace decision JSON",
+    description: "Apply a mutating ts_workspace decision JSON through the public control plane.",
+    promptSnippet: "Apply a transition-state workspace mutation decision JSON",
     promptGuidelines: [
       "Use ts_workspace_decision for transition-state workspace mutations; do not edit manifest, tree, node, evidence, mechanism, or pathway state files by hand.",
-      "Use ts_workspace_decision with action=validate_decision before mutating when decision shape is uncertain.",
+      "Use ts_workspace_decision_validate before this tool when decision shape or topology is uncertain.",
     ],
     parameters: Type.Object({
       action: StringEnum(
-        ["validate_decision", "start_node", "propose_hypothesis", "update_workspace", "end_node"] as const,
+        ["start_node", "propose_hypothesis", "update_workspace", "end_node"] as const,
       ),
       decisionFile: Type.String({ description: "Path to a decision JSON file." }),
       root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
@@ -122,7 +136,7 @@ export default function (pi: ExtensionAPI) {
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
       const decisionFile = resolve(ctx.cwd, String(params.decisionFile).replace(/^@+/, ""));
-      const result = await runJson(pi, params.action as TsCommand, root, ["--decision-file", decisionFile], signal);
+      const result = await runWorkspaceJson(pi, params.action as TsCommand, root, ["--decision-file", decisionFile], signal);
       return toolText(JSON.stringify(result, null, 2), { result });
     },
   });
@@ -131,7 +145,7 @@ export default function (pi: ExtensionAPI) {
     description: "Show a compact transition-state workspace context summary.",
     handler: async (args, ctx) => {
       const root = requireWorkspaceRoot(args || "", ctx.cwd);
-      const report = await runJson(pi, "report_workspace", root, [], ctx.signal);
+      const report = await runWorkspaceJson(pi, "report_workspace", root, [], ctx.signal);
       const summary = buildContextSummary(report);
       ctx.ui.setWidget("ts-workspace-context", summary.split("\n"));
       ctx.ui.notify("TS workspace context refreshed", "info");
@@ -142,44 +156,10 @@ export default function (pi: ExtensionAPI) {
     description: "Validate a transition-state workspace.",
     handler: async (args, ctx) => {
       const root = requireWorkspaceRoot(args || "", ctx.cwd);
-      const validation = await runJson(pi, "validate_workspace", root, [], ctx.signal);
+      const validation = await runWorkspaceJson(pi, "validate_workspace", root, [], ctx.signal);
       const status = validation.valid ? "valid" : "invalid";
       ctx.ui.notify(`TS workspace ${status}`, validation.valid ? "info" : "warning");
       ctx.ui.setWidget("ts-workspace-validation", JSON.stringify(validation, null, 2).split("\n"));
     },
   });
-}
-
-async function runJson(pi: ExtensionAPI, command: string, root: string, extraArgs: string[], signal?: AbortSignal) {
-  const python = await resolvePythonExecutable(pi, root, signal);
-  const result = await pi.exec(python, [WORKSPACE_CLI, command, "--root", root, ...extraArgs], { signal });
-  return parseJsonOutput(result);
-}
-
-async function resolvePythonExecutable(pi: ExtensionAPI, workspaceRoot: string, signal?: AbortSignal): Promise<string> {
-  if (process.env.TS_AGENT_PYTHON) {
-    return process.env.TS_AGENT_PYTHON;
-  }
-  try {
-    const result = await pi.exec(
-      "python3",
-      [RUNTIME_CLI, "resolve", "--package-root", PACKAGE_ROOT, "--workspace-root", workspaceRoot, "--json"],
-      { signal }
-    );
-    const runtime = parseJsonOutput(result);
-    if (runtime && typeof runtime.python_executable === "string" && existsSync(runtime.python_executable)) {
-      return runtime.python_executable;
-    }
-  } catch (_error) {
-    return "python3";
-  }
-  return "python3";
-}
-
-function requireWorkspaceRoot(inputRoot: string | undefined, cwd: string): string {
-  const root = resolveWorkspaceRoot(inputRoot || "", cwd);
-  if (!root) {
-    throw new Error("No TS workspace root found. Pass root or set TS_WORKSPACE_ROOT.");
-  }
-  return root;
 }

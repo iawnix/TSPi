@@ -75,6 +75,24 @@ Concretely:
 - References: symptom-triggered reflection (mechanism identity, route
   strategy) that guides the next decision without gating it.
 
+## Pi Scientific Review Subagent
+
+Pi exposes `ts_workspace_subagent` for one bounded, independent review at a
+high-value decision boundary: unresolved mechanism ambiguity, candidate or
+TS/Freq quality concerns, connectivity conflicts, program-failure diagnosis,
+backtrack selection, or final-audit readiness. Do not call it every turn or
+after every tool result. Select a node or backtrack pair and only the evidence
+and text artifacts needed for the question.
+
+Each call uses a fresh in-memory, tool-free child session. It receives no parent
+history, skills, extensions, context files, or workspace write authority. Its
+structured result is advisory analysis, not registered evidence, a branch
+decision, an accepted-TS verdict, or pathway acceptance. The root agent must
+compare cited findings with primary artifacts, identify conflicts and missing
+evidence, then make and validate its own decision. Never copy a subagent claim
+into workspace state as evidence unless a deterministic artifact or registered
+evidence record independently supports it.
+
 ## Public Control Plane
 
 Two disjoint command sets. Mutation commands change workspace state and
@@ -287,6 +305,8 @@ They are not top-level node states.
    `ts_workspace` records and validates topology; it must not decide whether
    to retry, switch solution, switch hypothesis, or stop.
 5. Run `validate_decision` for preflight when useful.
+   In Pi, use the read-only `ts_workspace_decision_validate` tool; the separate
+   `ts_workspace_decision` tool accepts mutation actions only.
    Monitoring, report packaging, snapshots, workspace visualization, and other
    control-plane support do not create nodes. Use their read/support commands or
    `update_workspace` when an explicit supported mutation exists.

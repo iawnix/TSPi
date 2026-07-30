@@ -1,0 +1,1 @@
+Review whether accepted-TS and pathway-audit inputs are complete, internally consistent, and properly scoped. Report blockers and conflicts. The root agent owns all acceptance and pathway conclusions.

@@ -7,3 +7,4 @@ npm-debug.log*
 *.pyo
 *.tmp
 PLAN_*.md
+PLAN-*.md

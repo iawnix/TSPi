@@ -21,6 +21,8 @@ visualization artifact, not chemistry proof.
 - `ts_report`: final report package assembly from validated workspace evidence.
 - `extensions/ts-workflow-context`: Pi Agent extension for workspace context,
   validation, and decision tools.
+- `extensions/ts-workflow-subagent`: Pi 0.81.1+ extension for isolated,
+  tool-free scientific review sessions.
 - `templates/decision/`: runtime decision JSON templates for workspace
   mutations. These are operating examples; files under `tests/` are not.
 - `templates/ts_final_report.md`: fillable final-report template.
@@ -61,7 +63,7 @@ TS_WORKSPACE_ROOT=/path/to/ts-workspace
 TS_AGENT_RUNTIME_HOME=/path/to/runtime-home
 TS_AGENT_RUNTIME_MANIFEST=/path/to/env.json
 TS_AGENT_ENV_ROOT=/path/to/env-store
-TS_AGENT_PYTHON=/path/to/python
+TS_AGENT_PYTHON=/absolute/path/to/python
 TS_AGENT_DISABLE_RUNTIME_REEXEC=1
 ```
 
@@ -144,6 +146,9 @@ evidence provenance only, not a fixed retry policy.
 
 ## Pi Agent Usage
 
+The native subagent integration requires Pi `0.81.1` and matching
+`@earendil-works/pi-ai` / `@earendil-works/pi-coding-agent` packages.
+
 Install the package project-locally from the TS workspace. For maintained local
 workspaces, prefer registering the installed skill copy so Pi and Codex share
 the same package root:
@@ -180,8 +185,8 @@ cd /path/to/ts-workspace
 TS_WORKSPACE_ROOT=$PWD pi --approve --session-dir .pi/sessions
 ```
 
-Pi loads the root skill and `extensions/ts-workflow-context` from
-`package.json`.
+Pi loads the root skill, `extensions/ts-workflow-context`, and
+`extensions/ts-workflow-subagent` from `package.json`.
 
 Pi commands:
 
@@ -196,11 +201,13 @@ Pi tools:
   for a historical-node capsule or `fromNode` plus `anchorNode` for a
   backtrack comparison.
 - `ts_workspace_validate`: run `validate_workspace`.
-- `ts_workspace_decision`: run `validate_decision`, `start_node`,
-  `propose_hypothesis`, `update_workspace`, or `end_node` through a decision
-  JSON.
+- `ts_workspace_decision_validate`: preflight a decision JSON without mutation.
+- `ts_workspace_decision`: run `start_node`, `propose_hypothesis`,
+  `update_workspace`, or `end_node` through a decision JSON.
+- `ts_workspace_subagent`: run one bounded advisory review in a fresh,
+  in-memory, tool-free child session.
 
-The Pi extension is a wrapper. Chemistry judgments, accepted-TS logic,
+The Pi extensions are wrappers. Chemistry judgments, accepted-TS logic,
 Gaussian parsing, workspace state transitions, and branch-context rules stay in
 the Python kernel.
 

@@ -46,8 +46,13 @@ Keep state ownership narrow.
   workspace.
 - `ts_report` assembles final report packages from validated evidence. Missing
   evidence should be stated explicitly, not silently inferred.
-- `extensions/ts-workflow-context` is an adapter. Keep authority in the Python
-  kernel and expose it through thin Pi tools.
+- `extensions/shared` owns package-root and Python CLI resolution shared by Pi
+  adapters.
+- `extensions/ts-workflow-context` exposes compact context, validation, and
+  decision tools; only `ts_workspace_decision` mutates workspace state.
+- `extensions/ts-workflow-subagent` builds bounded task packets and delegates
+  to the isolated runtime under `subagents/`. The child remains tool-free and
+  advisory; it never becomes a second control plane.
 
 ## Control-Plane Invariants
 

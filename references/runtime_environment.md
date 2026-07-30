@@ -59,7 +59,8 @@ Override points:
 - `TS_AGENT_CONDA_EXE`: explicit Conda or Mamba executable for installation.
 - `TS_AGENT_CONDA_ROOT`: root directory of an existing Conda or Mamba
   installation, such as `/opt/miniforge3`.
-- `TS_AGENT_PYTHON`: explicit interpreter override for runtime execution.
+- `TS_AGENT_PYTHON`: absolute executable path used as an explicit interpreter
+  override for runtime execution.
 - `TS_AGENT_DISABLE_RUNTIME_REEXEC=1`: disable script self-reexec for tests.
 
 Install or refresh the runtime with explicit package and workspace roots:
