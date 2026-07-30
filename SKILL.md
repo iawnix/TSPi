@@ -34,6 +34,10 @@ decision JSON.
 - `ts_remote`: generic staging, submission, polling, fetch, and kill helpers.
   Remote code does not interpret chemistry. Gaussian remote execution lives in
   `ts_remote.gaussian`.
+- `ts_compute`: typed operational control plane. It validates calculation
+  intents, derives backend commands, enforces workspace and remote allowlists,
+  and writes only node-scoped calculation artifacts. It never edits canonical
+  research state or sets a scientific verdict.
 - `ts_web`: rendering-only explorer. It reads workspace state and prepares
   it for the browser UI; it does not mutate the source workspace. UI state
   (workspace registry, user preferences) lives in an explicit `--state-dir`
@@ -92,6 +96,29 @@ compare cited findings with primary artifacts, identify conflicts and missing
 evidence, then make and validate its own decision. Never copy a subagent claim
 into workspace state as evidence unless a deterministic artifact or registered
 evidence record independently supports it.
+
+## Pi Compute Operator
+
+Pi exposes `ts_workspace_compute_operator` as a separate, chemistry-blind child
+session. The Root Agent first owns and writes a `ts-calculation-intent/1` file,
+including purpose, evidence layer, backend, task type, input refs, expected
+artifacts, execution target, and `dry_run=true`. The operator then receives
+only the private tools required for one `prepare`, `inspect`, `collect`, or
+`parse` request. It inherits no parent history, skills, extensions, context
+files, or general `read`/`bash`/`edit`/`write` tools.
+
+The operator cannot select a mechanism or method, mutate canonical workspace
+state, submit or cancel a job, close a node, set `claim_verdict`, register
+evidence, or interpret program completion as scientific support. Its output is
+validated against the actual typed-tool result. Persisted status and parser
+facts remain operational artifacts until the Root Agent verifies the primary
+files and registers appropriate evidence through `ts_workspace`.
+
+Use the operator at operation boundaries, not every turn. A long job runs
+outside the child session. Invoke `inspect` when status has changed or a
+terminal/failure state needs attention; `ts_web` reads the durable node-scoped
+status without injecting unchanged job summaries into the conversation. See
+`references/compute_operator.md`.
 
 ## Public Control Plane
 
@@ -153,6 +180,7 @@ Gaussian local helper entrypoints are thin wrappers around backend boundaries:
 ```bash
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_backend.py" gaussian prepare --help
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_backend.py" gaussian parse --help
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_compute.py" --help
 ```
 
 Runtime and visualization entrypoints:

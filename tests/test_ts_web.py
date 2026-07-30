@@ -120,6 +120,63 @@ def test_accepted_audit_keeps_its_scientific_stage_label(tmp_path: Path) -> None
     assert accepted_audit["stage_label"] != "Report"
 
 
+def test_compute_status_is_visualized_separately_from_scientific_state(tmp_path: Path) -> None:
+    workspace = tmp_path / "accepted"
+    make_accepted_workspace(workspace)
+    node_id = "n001"
+    intent_id = "calc_web_001"
+    intent_ref = f"nodes/{node_id}/inputs/calculations/{intent_id}.json"
+    prepared_dir = workspace / "nodes" / node_id / "remote" / "calculations" / intent_id
+    result_dir = workspace / "nodes" / node_id / "outputs" / "calculations" / intent_id
+    (workspace / intent_ref).parent.mkdir(parents=True, exist_ok=True)
+    (workspace / intent_ref).write_text(
+        json.dumps(
+            {
+                "purpose": "Parse one Gaussian result.",
+                "backend": "gaussian",
+                "task_type": "opt_freq",
+                "evidence_layer": "tsfreq",
+            }
+        ),
+        encoding="utf-8",
+    )
+    prepared_dir.mkdir(parents=True, exist_ok=True)
+    (prepared_dir / "prepared.json").write_text(
+        json.dumps(
+            {
+                "intent_ref": intent_ref,
+                "prepared_at": "2026-07-30T12:00:00+08:00",
+                "prepared_task": {"backend": "gaussian"},
+                "execution_policy": {"kind": "remote"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    result_dir.mkdir(parents=True, exist_ok=True)
+    (result_dir / "calculation_result.json").write_text(
+        json.dumps(
+            {
+                "state": "parsed",
+                "program_status": "completed",
+                "error_class": None,
+                "artifact_refs": [f"nodes/{node_id}/outputs/candidate.log"],
+                "provenance": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    graph = explorer_graph_payload_from_view(normalize_workspace(workspace))
+    node = next(item for item in graph["nodes"] if item["id"] == node_id)
+
+    assert node["claim_verdict"] == "supported"
+    assert node["calculation_count"] == 1
+    assert node["calculation_state"] == "parsed"
+    assert node["calculation_program_status"] == "completed"
+    assert node["calculations"][0]["evidence_layer"] == "tsfreq"
+    assert "claim_verdict" not in node["calculations"][0]
+
+
 def test_static_ui_refresh_without_workspace_renders_empty_state() -> None:
     html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
 

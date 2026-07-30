@@ -275,6 +275,7 @@ def _normalize_node(root: Path, row: dict[str, Any], evidence_records: list[Any]
     program_status = closure.get("program_status") or row.get("program_status")
     phase = detail.get("phase", row.get("phase"))
     audit_display = _pathway_audit_display(str(node_id), phase, closure, evidence_records)
+    calculations = _normalize_calculations(root, str(node_id)) if node_id else []
     return {
         "node_id": node_id,
         "parent_node": detail.get("parent_node", row.get("parent_node")),
@@ -284,6 +285,7 @@ def _normalize_node(root: Path, row: dict[str, Any], evidence_records: list[Any]
         "pathway_ref": detail.get("pathway_ref"),
         "evidence_refs": detail.get("evidence_refs", []),
         "closure": closure or None,
+        "calculations": calculations,
         "display": {
             "label": audit_display.get("label") or _display_label(lifecycle, claim_verdict),
             "tone": audit_display.get("tone") or _display_tone(lifecycle, claim_verdict, program_status),
@@ -305,6 +307,8 @@ def _explorer_node(row: dict[str, Any], branch_events: list[Any]) -> dict[str, A
     claim_verdict = display.get("claim_verdict") or closure.get("claim_verdict")
     tone = display.get("tone") or _display_tone(lifecycle, claim_verdict, program_status)
     state_key = display.get("state") or _node_state_key(lifecycle, claim_verdict, program_status)
+    calculations = [item for item in _list(row.get("calculations")) if isinstance(item, dict)]
+    latest_calculation = calculations[-1] if calculations else {}
     branch_trigger_events: list[dict[str, Any]] = []
     generated_events: list[dict[str, Any]] = []
     for event in branch_events:
@@ -344,6 +348,10 @@ def _explorer_node(row: dict[str, Any], branch_events: list[Any]) -> dict[str, A
         "evidence_count": len(_list(row.get("evidence_refs"))),
         "evidence_refs": _list(row.get("evidence_refs")),
         "input_refs": _list(row.get("evidence_refs")),
+        "calculations": calculations,
+        "calculation_count": len(calculations),
+        "calculation_state": latest_calculation.get("state"),
+        "calculation_program_status": latest_calculation.get("program_status"),
         "active": lifecycle == "running",
         "frontier": lifecycle == "running",
         "branch_event_ids": branch_ids,
@@ -352,6 +360,54 @@ def _explorer_node(row: dict[str, Any], branch_events: list[Any]) -> dict[str, A
         "branch_badge": _branch_badge(branch_trigger_events, generated_events),
         "branch_origin": _branch_origin(branch_trigger_events, generated_events),
     }
+
+
+def _normalize_calculations(root: Path, node_id: str) -> list[dict[str, Any]]:
+    remote_root = root / "nodes" / node_id / "remote" / "calculations"
+    output_root = root / "nodes" / node_id / "outputs" / "calculations"
+    intent_ids = set()
+    if remote_root.is_dir():
+        intent_ids.update(path.name for path in remote_root.iterdir() if path.is_dir())
+    if output_root.is_dir():
+        intent_ids.update(path.name for path in output_root.iterdir() if path.is_dir())
+
+    calculations: list[dict[str, Any]] = []
+    for intent_id in sorted(intent_ids):
+        prepared = _read_json(remote_root / intent_id / "prepared.json")
+        status = _read_json(remote_root / intent_id / "status.json")
+        result = _read_json(output_root / intent_id / "calculation_result.json")
+        intent_ref = prepared.get("intent_ref")
+        intent = _read_json(root / str(intent_ref)) if isinstance(intent_ref, str) else {}
+        prepared_task = prepared.get("prepared_task") if isinstance(prepared.get("prepared_task"), dict) else {}
+        latest = result or status
+        provenance = latest.get("provenance") if isinstance(latest.get("provenance"), dict) else {}
+        updated_at = (
+            provenance.get("parsed_at")
+            or provenance.get("collected_at")
+            or provenance.get("observed_at")
+            or prepared.get("prepared_at")
+        )
+        calculations.append(
+            {
+                "intent_id": intent_id,
+                "purpose": intent.get("purpose"),
+                "backend": intent.get("backend") or prepared_task.get("backend"),
+                "task_type": intent.get("task_type"),
+                "evidence_layer": intent.get("evidence_layer"),
+                "target_kind": (
+                    prepared.get("execution_policy", {}).get("kind")
+                    if isinstance(prepared.get("execution_policy"), dict)
+                    else None
+                ),
+                "state": latest.get("state") or ("prepared" if prepared else "unknown"),
+                "program_status": latest.get("program_status") or "not_run",
+                "error_class": latest.get("error_class"),
+                "artifact_refs": _list(latest.get("artifact_refs")),
+                "prepared_at": prepared.get("prepared_at"),
+                "updated_at": updated_at,
+            }
+        )
+    return sorted(calculations, key=lambda item: (str(item.get("updated_at") or ""), str(item["intent_id"])))
 
 
 def _explorer_edges(nodes: list[dict[str, Any]], tree_edges: list[Any], branch_events: list[Any]) -> list[dict[str, Any]]:

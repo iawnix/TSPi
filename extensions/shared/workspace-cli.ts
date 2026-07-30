@@ -10,6 +10,7 @@ const { parseJsonOutput, resolveWorkspaceRoot } = require("../ts-workflow-contex
 const SHARED_DIR = dirname(fileURLToPath(import.meta.url));
 export const PACKAGE_ROOT = resolve(SHARED_DIR, "..", "..");
 const WORKSPACE_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_workspace.py");
+const COMPUTE_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_compute.py");
 const RUNTIME_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_runtime.py");
 
 export async function runWorkspaceJson(
@@ -21,6 +22,22 @@ export async function runWorkspaceJson(
 ) {
   const python = await resolvePythonExecutable(pi, root, signal);
   const result = await pi.exec(python, [WORKSPACE_CLI, command, "--root", root, ...extraArgs], { signal });
+  return parseJsonOutput(result);
+}
+
+export async function runComputeJson(
+  pi: ExtensionAPI,
+  command: string,
+  root: string,
+  extraArgs: string[],
+  signal?: AbortSignal,
+  timeoutMs = 60_000,
+) {
+  const python = await resolvePythonExecutable(pi, root, signal);
+  const operationSignal = deadlineSignal(signal, timeoutMs);
+  const result = await pi.exec(python, [COMPUTE_CLI, command, "--root", root, ...extraArgs], {
+    signal: operationSignal,
+  });
   return parseJsonOutput(result);
 }
 
@@ -63,4 +80,9 @@ async function resolvePythonExecutable(
     return "python3";
   }
   return "python3";
+}
+
+function deadlineSignal(parent: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return parent ? AbortSignal.any([parent, timeout]) : timeout;
 }

@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TS calculation result",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "job_id",
+    "intent_id",
+    "node_id",
+    "state",
+    "program_status",
+    "exit_status",
+    "artifact_refs",
+    "parser_facts",
+    "error_class",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {"const": "ts-calculation-result/1"},
+    "job_id": {"type": ["string", "null"]},
+    "intent_id": {"type": "string", "pattern": "^calc_[A-Za-z0-9_.-]+$"},
+    "node_id": {"type": "string", "minLength": 1},
+    "state": {
+      "enum": ["prepared", "submitted", "queued", "running", "completed", "failed", "stopped", "collected", "parsed", "missing", "unknown"]
+    },
+    "program_status": {"enum": ["completed", "failed", "stopped", "not_run"]},
+    "exit_status": {"type": ["integer", "null"]},
+    "artifact_refs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "parser_facts": {
+      "type": "object",
+      "propertyNames": {
+        "not": {
+          "enum": ["claim_verdict", "accepted_ts", "accepted_ts_ref", "pathway_accepted", "strict_pathway_decision"]
+        }
+      }
+    },
+    "error_class": {"type": ["string", "null"]},
+    "provenance": {"type": "object"}
+  },
+  "additionalProperties": false
+}

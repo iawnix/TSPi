@@ -185,8 +185,9 @@ cd /path/to/ts-workspace
 TS_WORKSPACE_ROOT=$PWD pi --approve --session-dir .pi/sessions
 ```
 
-Pi loads the root skill, `extensions/ts-workflow-context`, and
-`extensions/ts-workflow-subagent` from `package.json`.
+Pi loads the root skill, `extensions/ts-workflow-context`,
+`extensions/ts-workflow-subagent`, and `extensions/ts-workflow-compute` from
+`package.json`.
 
 Pi commands:
 
@@ -206,10 +207,19 @@ Pi tools:
   `update_workspace`, or `end_node` through a decision JSON.
 - `ts_workspace_subagent`: run one bounded advisory review in a fresh,
   in-memory, tool-free child session.
+- `ts_workspace_compute_operator`: run one bounded operational child session
+  for dry-run preparation, remote status/tail inspection, allowlisted artifact
+  collection, or deterministic parsing. The child receives only tools bound to
+  the requested intent. Submit and cancel tools are not installed.
 
 The Pi extensions are wrappers. Chemistry judgments, accepted-TS logic,
 Gaussian parsing, workspace state transitions, and branch-context rules stay in
 the Python kernel.
+
+Calculation intents and results are node-scoped operational artifacts, not a
+fourth canonical research-state file. See `references/compute_operator.md` for
+the intent contract, allowlist environment variables, artifact layout, and
+program/science boundary.
 
 ## Reporting
 

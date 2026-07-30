@@ -20,6 +20,7 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
     assert manifest["pi"]["extensions"] == [
         "./extensions/ts-workflow-context",
         "./extensions/ts-workflow-subagent/index.ts",
+        "./extensions/ts-workflow-compute/index.ts",
     ]
     assert "subagents" not in manifest["pi"]
     assert not any("subagent" in name for name in manifest.get("dependencies", {}))

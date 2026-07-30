@@ -1,8 +1,8 @@
 # Transition-State Workflow Native Pi Subagent Plan
 
-Status: scientific subagent MVP implemented and locally validated; compute
-operator deferred. GitHub-install and broader release probes remain release
-checks rather than completed unit coverage.
+Status: scientific subagent MVP and no-submit compute-operator MVP implemented
+and locally validated. Authorized submit/cancel, direct GitHub-install, and
+broader release probes remain deferred.
 
 Target branch: `feat/native-pi-subagent`
 
@@ -19,12 +19,12 @@ The package will expose two deliberately different execution planes:
 
 1. `ts_workspace_subagent`: a fresh, read-only scientific review session built
    with the Pi SDK.
-2. `ts_compute_operator`: a later, separately authorized operational session
-   backed by typed calculation and job-lifecycle tools.
+2. `ts_workspace_compute_operator`: a fresh operational session backed by
+   request-scoped typed calculation and job-lifecycle tools.
 
-The first implementation includes only `ts_workspace_subagent`. The compute
-operator remains disabled until its typed tools and authorization gates are
-implemented and tested.
+The current compute operator exposes dry-run prepare, inspect, collect, and
+parse only. Submit and cancel remain absent until separate host-created
+authorization capabilities and real probe tests are implemented.
 
 The root Pi agent remains the only scientific decision authority and the only
 caller allowed to mutate canonical TS workspace state.
@@ -109,7 +109,7 @@ It must not:
 
 ### 5.3 Compute operator
 
-The later compute operator may perform only explicitly exposed operational
+The compute operator may perform only explicitly exposed operational
 actions. It cannot select a mechanism, close a node, set `claim_verdict`, or
 interpret program completion as scientific support.
 
@@ -134,6 +134,17 @@ root Pi agent
   -> root reconciles advice with primary evidence
   -> root optionally calls ts_workspace_decision_validate
   -> root optionally calls ts_workspace_decision
+
+root Pi agent
+  -> create explicit calculation intent
+  -> ts_workspace_compute_operator
+       -> validate one operation request
+       -> create fresh in-memory Pi AgentSession
+       -> bind only request-scoped typed compute tools
+       -> expose no general filesystem, shell, mutation, submit, or cancel tool
+       -> validate report fields against actual tool results
+       -> return operational report + deterministic action results
+  -> root verifies primary artifacts and decides whether to register evidence
 ```
 
 The subagent is a real Pi `AgentSession`, but it does not inherit the parent
@@ -152,8 +163,18 @@ transition-state-workflow/
 │   ├── ts-workflow-context/
 │   │   ├── index.ts
 │   │   └── summary.cjs
-│   └── ts-workflow-subagent/
+│   ├── ts-workflow-subagent/
+│   │   └── index.ts
+│   └── ts-workflow-compute/
 │       └── index.ts
+├── compute-agent/
+│   ├── runtime.ts
+│   ├── prompt.md
+│   └── output-schema.cjs
+├── ts_compute/
+│   ├── control.py
+│   ├── cli.py
+│   └── contracts/
 ├── subagents/
 │   ├── runtime.ts
 │   ├── session-lifecycle.cjs
@@ -184,7 +205,8 @@ Register the new extension through the standard package manifest:
     "skills": ["."],
     "extensions": [
       "./extensions/ts-workflow-context",
-      "./extensions/ts-workflow-subagent/index.ts"
+      "./extensions/ts-workflow-subagent/index.ts",
+      "./extensions/ts-workflow-compute/index.ts"
     ]
   }
 }
@@ -414,9 +436,10 @@ reasoning directly cause remote side effects.
   records receipts.
 - Backend and remote contracts already prohibit workspace verdicts.
 
-The missing layer is a set of Pi typed tools with workspace path validation,
-backend/host allowlists, authorization gates, timeouts, idempotency, and compact
-job status returns.
+The implemented no-submit layer provides typed tools with workspace path
+validation, backend/host allowlists, fixed timeouts, idempotent intent
+preparation, and compact job status returns. Submit/cancel capability gates are
+still intentionally absent.
 
 ### 15.3 Calculation intent
 
@@ -431,10 +454,10 @@ The root agent creates an explicit intent before operational work:
   "evidence_layer": "tsfreq",
   "backend": "gaussian",
   "task_type": "opt_freq",
-  "input_refs": [],
+  "input_refs": {"gjf": "nodes/n012/inputs/candidate.gjf"},
   "settings": {},
   "expected_artifacts": [],
-  "execution_target": {},
+  "execution_target": {"kind": "local"},
   "dry_run": true
 }
 ```
@@ -490,8 +513,9 @@ Operational tools must:
 
 ### 15.5 Authorization
 
-The default compute-operator session contains only prepare, status, tail,
-collect, and parse tools.
+Each compute-operator session contains only the tools required by its selected
+operation: one tool for prepare, collect, or parse; status plus optional tail
+for inspect.
 
 Submit or cancel tools may be injected into one compute session only after a
 current-turn user authorization or a separately documented fixed policy. The
@@ -558,7 +582,7 @@ intent.
 
 ## 16. Implementation Phases
 
-### Phase A: Native scientific subagent contracts
+### Phase A: Native scientific subagent contracts - complete
 
 1. Add request, packet, output, and role-layer schemas.
 2. Add prompt modules with one shared authority contract.
@@ -566,7 +590,7 @@ intent.
    limits.
 4. Do not change root behavior yet.
 
-### Phase B: Pi SDK runtime and tool
+### Phase B: Pi SDK runtime and tool - complete
 
 1. Implement the fully isolated in-memory AgentSession runtime.
 2. Register `ts_workspace_subagent` through a new package extension.
@@ -574,7 +598,7 @@ intent.
 4. Add lightweight session metadata after valid runs.
 5. Keep the child tool-free.
 
-### Phase C: Root orchestration and decision preflight
+### Phase C: Root orchestration and decision preflight - complete
 
 1. Add concise delegation triggers and reconciliation rules to `SKILL.md`.
 2. Add `ts_workspace_decision_validate`.
@@ -582,21 +606,22 @@ intent.
 4. Verify fallback behavior when the child model is unavailable or output is
    invalid.
 
-### Phase D: Typed compute tools, dry-run first
+### Phase D: Typed compute tools, dry-run first - complete
 
 1. Wrap existing backend prepare/parse and remote status/collect functions.
 2. Enforce node-scoped paths, allowlists, timeouts, and typed results.
 3. Expose prepare/status/tail/collect/parse only.
 4. Test with synthetic workspaces and local dry-runs; do not submit jobs.
 
-### Phase E: Compute operator
+### Phase E: Compute operator - MVP complete
 
 1. Create a separate isolated operator runtime with only typed compute tools.
 2. Add calculation-intent and result validation.
-3. Add job-delta tracking without all-turn injection.
-4. Validate program-failure classification against deterministic parser facts.
+3. Keep durable status node-scoped and inject no automatic all-turn job summary.
+4. Validate basic remote and Gaussian program-failure classes against
+   deterministic status/parser facts.
 
-### Phase F: Authorized external side effects
+### Phase F: Authorized external side effects - deferred
 
 1. Add submit only after explicit authorization tests pass.
 2. Validate real receipt, duplicate prevention, poll, collect, and parser flow on
@@ -625,7 +650,7 @@ repair remain out of scope until the single-agent paths are stable and measured.
 
 ### 17.2 Pi integration validation
 
-- project-local package reference loads both extensions;
+- project-local package reference loads all three extensions;
 - GitHub/git-installed package resolves prompts and package root correctly;
 - a synthetic workspace supports workspace, node, and backtrack review calls;
 - the child context contains only the replacement prompt and task packet;
@@ -697,9 +722,15 @@ authorization.
 
 ## 20. Definition of Done: Compute Operator
 
+The no-submit MVP satisfies the typed-tool, path, schema, isolation, and
+program/science separation requirements below. The full definition remains
+open until Phase F adds separately authorized submit/cancel capabilities and an
+approved end-to-end remote probe.
+
 - Existing backend and remote mechanisms are exposed only through typed tools.
 - Prepare/status/tail/collect/parse are path-restricted and dry-run-safe.
-- Submit and cancel are separate, absent by default, and capability-gated.
+- Submit and cancel are separate, absent by default, and must become
+  capability-gated before either is implemented.
 - Calculation intent and result schemas preserve program/science separation.
 - Long jobs return through receipts and changed/terminal deltas, not persistent
   LLM waits or all-turn summaries.

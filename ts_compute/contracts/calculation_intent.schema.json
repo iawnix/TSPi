@@ -1,0 +1,69 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TS calculation intent",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "intent_id",
+    "node_id",
+    "purpose",
+    "evidence_layer",
+    "backend",
+    "task_type",
+    "input_refs",
+    "settings",
+    "expected_artifacts",
+    "execution_target",
+    "dry_run"
+  ],
+  "properties": {
+    "schema_version": {"const": "ts-calculation-intent/1"},
+    "intent_id": {"type": "string", "pattern": "^calc_[A-Za-z0-9_.-]+$", "maxLength": 128},
+    "node_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$", "maxLength": 128},
+    "purpose": {"type": "string", "minLength": 1, "maxLength": 2000},
+    "evidence_layer": {
+      "enum": ["endpoint", "candidate", "tsfreq", "connectivity", "accepted_audit", "pathway_audit"]
+    },
+    "backend": {"enum": ["gaussian", "xtb", "ase_neb", "qbics_dmecp"]},
+    "task_type": {"type": "string", "minLength": 1, "maxLength": 64},
+    "input_refs": {
+      "type": "object",
+      "minProperties": 1,
+      "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9_]*$"},
+      "additionalProperties": {"type": "string", "minLength": 1, "maxLength": 4096}
+    },
+    "settings": {
+      "type": "object",
+      "additionalProperties": {"type": "string", "maxLength": 4096}
+    },
+    "expected_artifacts": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 4096}
+    },
+    "execution_target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {"kind": {"const": "local"}},
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "login_host", "compute_host", "remote_dir"],
+          "properties": {
+            "kind": {"const": "remote"},
+            "login_host": {"type": "string", "minLength": 1, "maxLength": 255},
+            "compute_host": {"type": "string", "minLength": 1, "maxLength": 255},
+            "remote_dir": {"type": "string", "minLength": 1, "maxLength": 4096}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "dry_run": {"type": "boolean"}
+  },
+  "additionalProperties": false
+}

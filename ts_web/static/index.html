@@ -2224,6 +2224,9 @@ function renderSummary(payload, node) {
         ${summaryRow("lifecycle", node.lifecycle, "mono")}
         ${summaryRow("program_status", node.program_status, "mono")}
         ${summaryRow("claim_verdict", node.claim_verdict, "mono")}
+        ${node.calculation_count ? summaryRow("calculation_count", node.calculation_count, "mono") : ""}
+        ${node.calculation_state ? summaryRow("calculation_state", node.calculation_state, "mono") : ""}
+        ${node.calculation_program_status ? summaryRow("calculation_program_status", node.calculation_program_status, "mono") : ""}
         ${summaryRow("reason_code", node.reason_code, "mono")}
         ${summaryRow("parent", node.parent_id, "mono")}
         ${Array.isArray(node.input_refs) && node.input_refs.length ? summaryRow("input_refs", node.input_refs.join(", "), "mono") : ""}
@@ -2231,11 +2234,28 @@ function renderSummary(payload, node) {
         ${Array.isArray(node.generated_from_branch_event_ids) && node.generated_from_branch_event_ids.length ? summaryRow("generated_from_branch", node.generated_from_branch_event_ids.join(", "), "mono") : ""}
       </div>
     </div>
+    ${renderCalculations(node.calculations)}
     ${renderBranchOrigin(node)}
     <div class="summary-card">
       <div class="summary-title">Latest Action</div>
       <div class="summary-text${action ? " action-token" : " muted"}">${action ? escapeHtml(action) : "No latest action recorded."}</div>
     </div>
+  </div>`;
+}
+
+function renderCalculations(calculations) {
+  if (!Array.isArray(calculations) || !calculations.length) return "";
+  return `<div class="summary-card">
+    <div class="summary-title">Calculations</div>
+    ${calculations.map(calc => `<div class="summary-grid" style="margin-bottom:10px;">
+      ${summaryRow("intent", calc.intent_id, "mono")}
+      ${summaryRow("backend", calc.backend, "mono")}
+      ${summaryRow("task_type", calc.task_type, "mono")}
+      ${summaryRow("evidence_layer", calc.evidence_layer, "mono")}
+      ${summaryRow("state", calc.state, "mono")}
+      ${summaryRow("program_status", calc.program_status, "mono")}
+      ${summaryRow("error_class", calc.error_class, "mono")}
+    </div>`).join("")}
   </div>`;
 }
 
