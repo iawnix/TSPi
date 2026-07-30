@@ -1,30 +1,31 @@
 # Compute Operator Contract
 
-The Pi root surface contains one `ts_workspace_compute_operator`. Each call
-creates a fresh in-memory child session and privately binds only the typed tools
-needed for one operation:
+`ts_workspace_compute_operator` creates one fresh backend child session for one
+bound operation:
 
-- `prepare`: validate and persist one dry-run intent;
-- `inspect`: poll status, then optionally read one bounded log tail;
+- `prepare`: validate and persist a dry-run intent;
+- `inspect`: poll status and optionally read one bounded tail;
 - `collect`: fetch an allowlisted expected-artifact subset;
-- `parse`: run the deterministic parser for one selected-node output.
+- `parse`: run a deterministic parser on a local attempt artifact.
 
-The child has no parent history, general filesystem tools, shell, workspace
-mutation tools, scientific review tools, recursive delegation, submit, or
-cancel capability.
+The child has no parent history, general filesystem, shell, workspace mutation,
+scientific review, recursive delegation, submit, or cancel tools. It receives
+only the selected private backend skill and request-scoped typed tools.
 
-## Calculation Intent
+## Calculation Intent V2
 
-The Root Agent chooses the scientific purpose and method before delegation.
-Write a `ts-calculation-intent/1` JSON object, for example:
+The Root Agent selects purpose, method, scope, and execution target before
+delegation.
 
 ```json
 {
-  "schema_version": "ts-calculation-intent/1",
+  "schema_version": "ts-calculation-intent/2",
   "intent_id": "calc_n012_optfreq_001",
   "node_id": "n012",
-  "purpose": "Evaluate the selected candidate for pred_mode_001.",
-  "evidence_layer": "tsfreq",
+  "purpose": "Produce TS/Freq evidence for pred_mode_001.",
+  "validation_scope": "tsfreq",
+  "attempt_kind": "primary",
+  "recalculation_ref": null,
   "backend": "gaussian",
   "task_type": "opt_freq",
   "input_refs": {
@@ -32,71 +33,108 @@ Write a `ts-calculation-intent/1` JSON object, for example:
   },
   "settings": {},
   "expected_artifacts": [
-    "nodes/n012/outputs/candidate.log"
+    "nodes/n012/attempts/calc_n012_optfreq_001/outputs/candidate.log"
   ],
-  "execution_target": {
-    "kind": "local"
-  },
+  "execution_target": {"kind": "local"},
   "dry_run": true
 }
 ```
 
-The current operator rejects `dry_run=false`. Commands are derived from an
-allowlisted backend; an intent cannot supply a shell command.
+`validation_scope` is null for candidate-search calculations and must match a
+validation node when the selected node is a validation node.
 
-Supported backend/task/input-role combinations:
+Attempt kinds:
 
-| Backend | Task types | Required input roles |
-|---|---|---|
-| `gaussian` | `sp`, `opt`, `freq`, `opt_freq`, `irc` | `gjf` |
-| `xtb` | `opt` | `xyz` |
-| `ase_neb` | `neb` | `reactant`, `product` |
-| `qbics_dmecp` | `dmecp` | `config` |
+- `primary`: first operational attempt for the node objective;
+- `retry`: technical retry under the same node;
+- `recalculation`: method change with a non-null source reference.
 
-Gaussian preparation checks that the input route contains the operation flags
-required by the declared task type. It does not choose or rewrite the route.
+Example recalculation reference:
 
-## Remote Allowlist
+```json
+{
+  "source_node": "n012",
+  "source_intent_id": "calc_n012_optfreq_001",
+  "changed_settings": ["functional", "basis_set"],
+  "purpose": "method_robustness"
+}
+```
 
-Remote targets are disabled unless all applicable host policy variables are
-set:
+The source attempt must exist locally. A recalculation result inherits no
+scientific verdict from its source.
+
+## Supported Backends
+
+| Backend | Task types | Input roles | Private skill |
+|---|---|---|---|
+| `gaussian` | `sp`, `opt`, `freq`, `opt_freq`, `irc` | `gjf` | `backend-gaussian` |
+| `xtb` | `opt` | `xyz` | `backend-xtb` |
+| `ase_neb` | `neb` | `reactant`, `product` | `backend-ase` |
+| `qbics_dmecp` | `dmecp` | `config` | `backend-qbics` |
+
+`backend-rdkit` is a private skill contract but is not exposed by the compute
+operator until a typed RDKit adapter is implemented and tested.
+
+An intent cannot supply a shell command. Gaussian preparation verifies that
+the existing route contains flags required by the declared task type; it does
+not choose or rewrite the route.
+
+## Local Authority
+
+Every v2 attempt is self-contained:
+
+```text
+nodes/<node>/attempts/<intent>/
+├── intent.json
+├── prepared.json
+├── status.json
+└── outputs/
+    ├── collected/
+    ├── parsed/
+    └── calculation_result.json
+```
+
+These are operational artifacts, not canonical scientific state. `ts_web`
+shows their state separately from node lifecycle, hypothesis status, and audit
+status.
+
+Legacy `ts-calculation-intent/1` and its split `inputs/remote/outputs`
+directories remain readable.
+
+## Remote Execution Mirror
+
+Remote targets must be allowlisted and explicitly non-authoritative:
+
+```json
+{
+  "kind": "remote",
+  "authority": "execution_mirror",
+  "login_host": "login-a",
+  "compute_host": "compute-a",
+  "remote_dir": "/remote/project/n012/calc_n012_optfreq_001"
+}
+```
+
+Host policy:
 
 ```bash
 export TS_COMPUTE_LOGIN_HOSTS=login-a,login-b
 export TS_COMPUTE_COMPUTE_HOSTS=compute-a,compute-b
 export TS_COMPUTE_REMOTE_ROOTS=/remote/project-a,/remote/project-b
-export TS_COMPUTE_SSH_CONFIG=/absolute/path/to/ssh_config  # optional
+export TS_COMPUTE_SSH_CONFIG=/absolute/path/to/ssh_config
 ```
 
-Hosts require exact matches. `remote_dir` must be an absolute POSIX path under
-one configured root. Model-supplied authorization strings are not accepted.
+No remote artifact becomes authoritative before collection and local hash or
+parser verification. Collection refuses to overwrite existing local files.
 
-## Durable Artifacts
-
-For `intent_id=calc_x`, operational records live under the selected node:
-
-```text
-nodes/<node>/inputs/calculations/calc_x.json
-nodes/<node>/remote/calculations/calc_x/prepared.json
-nodes/<node>/remote/calculations/calc_x/status.json
-nodes/<node>/outputs/calculations/calc_x/collected/
-nodes/<node>/outputs/calculations/calc_x/parsed/
-nodes/<node>/outputs/calculations/calc_x/calculation_result.json
-```
-
-These records are not canonical scientific state. `ts_web` displays them as a
-separate calculation state alongside, but never merged with, node lifecycle and
-`claim_verdict`.
-
-## Interpretation Boundary
+## Program And Science Boundary
 
 - remote/process failure -> program failure;
-- normal termination -> program completion only;
-- Gaussian parser output -> deterministic parser facts only;
-- wrong imaginary mode -> TS/Freq-layer scientific issue;
-- same-basin displacement -> connectivity-layer scientific issue;
-- missing strict R/P proof -> accepted/pathway audit blocker.
+- normal termination -> program success only;
+- parser output -> deterministic parser facts only;
+- wrong imaginary mode -> evidence for a later mechanism evaluation;
+- same-basin displacement -> connectivity evidence;
+- missing strict R/P proof -> audit blocker.
 
-The Root Agent must verify primary artifacts, register evidence through a
-decision, and make the scientific judgment. No automatic repair or resubmission
-is allowed.
+The Root Agent verifies primary artifacts, registers evidence through
+`ts_workspace`, and opens a mechanism or audit node to interpret it.

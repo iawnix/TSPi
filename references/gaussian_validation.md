@@ -29,9 +29,9 @@ Record:
   free-energy correction when available.
 
 One imaginary frequency is necessary but not sufficient for an accepted TS. The
-mode must support the current phase claim, the final local geometry and
-available electronic diagnostics must not contradict the mechanism, and
-connectivity must be validated in a separate evidence layer.
+mode must support the validation node's declared prediction, the final local
+geometry and available electronic diagnostics must not contradict the
+mechanism, and connectivity must be validated in a separate evidence layer.
 
 Strict TS/Freq support requires all of:
 

@@ -515,7 +515,8 @@ def test_report_workspace_is_pure_read(tmp_path: Path) -> None:
     report = report_workspace(workspace)
     after = {path.name for path in reports_dir.iterdir()} if reports_dir.exists() else set()
     assert before == after, "report_workspace must not write files"
-    assert "propose_hypothesis" in report["allowed_decision_actions"]
+    assert "propose_hypothesis" not in report["allowed_decision_actions"]
+    assert "propose_hypothesis" in report["legacy_allowed_decision_actions"]
     assert "propose_hypothesis" in report["decision_contract"]["requires_report_ref"]
 
     snapshot = snapshot_report(workspace)

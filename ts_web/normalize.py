@@ -274,12 +274,37 @@ def _normalize_node(root: Path, row: dict[str, Any], evidence_records: list[Any]
     claim_verdict = closure.get("claim_verdict") or row.get("claim_verdict")
     program_status = closure.get("program_status") or row.get("program_status")
     phase = detail.get("phase", row.get("phase"))
+    node_type = detail.get("node_type", row.get("node_type"))
+    program = closure.get("program") if isinstance(closure.get("program"), dict) else {}
+    hypothesis_section = closure.get("hypothesis") if isinstance(closure.get("hypothesis"), dict) else {}
+    audit_section = closure.get("audit") if isinstance(closure.get("audit"), dict) else {}
+    program_outcome = program.get("outcome")
+    hypothesis_status = hypothesis_section.get("status")
+    audit_status = audit_section.get("status")
+    scope = (
+        detail.get("validation_scope")
+        or detail.get("audit_scope")
+        or detail.get("candidate_kind")
+        or detail.get("mechanism_action")
+    )
     audit_display = _pathway_audit_display(str(node_id), phase, closure, evidence_records)
     calculations = _normalize_calculations(root, str(node_id)) if node_id else []
+    if node_type:
+        label, tone, state = _v2_display(lifecycle, program_outcome, hypothesis_status, audit_status)
+        audit_display = {}
+    else:
+        label = audit_display.get("label") or _display_label(lifecycle, claim_verdict)
+        tone = audit_display.get("tone") or _display_tone(lifecycle, claim_verdict, program_status)
+        state = audit_display.get("state")
     return {
         "node_id": node_id,
         "parent_node": detail.get("parent_node", row.get("parent_node")),
         "phase": phase,
+        "node_type": node_type,
+        "scope": scope,
+        "objective": detail.get("objective", row.get("objective")),
+        "attempt_kind": detail.get("attempt_kind", row.get("attempt_kind")),
+        "recalculation_ref": detail.get("recalculation_ref", row.get("recalculation_ref")),
         "lifecycle": lifecycle,
         "hypothesis": detail.get("hypothesis", row.get("hypothesis")),
         "pathway_ref": detail.get("pathway_ref"),
@@ -287,12 +312,15 @@ def _normalize_node(root: Path, row: dict[str, Any], evidence_records: list[Any]
         "closure": closure or None,
         "calculations": calculations,
         "display": {
-            "label": audit_display.get("label") or _display_label(lifecycle, claim_verdict),
-            "tone": audit_display.get("tone") or _display_tone(lifecycle, claim_verdict, program_status),
-            "state": audit_display.get("state"),
+            "label": label,
+            "tone": tone,
+            "state": state,
             "audit_outcome": audit_display.get("audit_outcome"),
             "program_status": program_status,
             "claim_verdict": claim_verdict,
+            "program_outcome": program_outcome,
+            "hypothesis_status": hypothesis_status,
+            "audit_status": audit_status,
         },
     }
 
@@ -305,6 +333,9 @@ def _explorer_node(row: dict[str, Any], branch_events: list[Any]) -> dict[str, A
     program = closure.get("program") if isinstance(closure.get("program"), dict) else {}
     program_status = display.get("program_status") or closure.get("program_status")
     claim_verdict = display.get("claim_verdict") or closure.get("claim_verdict")
+    program_outcome = display.get("program_outcome")
+    hypothesis_status = display.get("hypothesis_status")
+    audit_status = display.get("audit_status")
     tone = display.get("tone") or _display_tone(lifecycle, claim_verdict, program_status)
     state_key = display.get("state") or _node_state_key(lifecycle, claim_verdict, program_status)
     calculations = [item for item in _list(row.get("calculations")) if isinstance(item, dict)]
@@ -323,14 +354,24 @@ def _explorer_node(row: dict[str, Any], branch_events: list[Any]) -> dict[str, A
     branch_trigger_ids = [str(event["event_id"]) for event in branch_trigger_events]
     generated_ids = [str(event["event_id"]) for event in generated_events]
     branch_ids = _dedupe(branch_trigger_ids + generated_ids)
-    state_line = _closure_line(closure, program_status, claim_verdict)
+    state_line = _closure_line(
+        closure,
+        program_outcome or program_status,
+        hypothesis_status or audit_status or claim_verdict,
+    )
+    stage = row.get("node_type") or row.get("phase")
     return {
         "id": node_id,
         "node_id": node_id,
         "parent_id": row.get("parent_node"),
-        "stage": row.get("phase"),
-        "stage_label": _phase_label(row.get("phase")),
-        "card_phase": row.get("phase"),
+        "stage": stage,
+        "stage_label": _phase_label(stage),
+        "card_phase": stage,
+        "node_type": row.get("node_type"),
+        "scope": row.get("scope"),
+        "objective": row.get("objective"),
+        "attempt_kind": row.get("attempt_kind"),
+        "recalculation_ref": row.get("recalculation_ref"),
         "card_label": display.get("label") or state_key,
         "card_line": display.get("label") or state_key,
         "card_color": _tone_color(tone),
@@ -343,6 +384,9 @@ def _explorer_node(row: dict[str, Any], branch_events: list[Any]) -> dict[str, A
         "lifecycle": lifecycle,
         "program_status": program_status,
         "claim_verdict": claim_verdict,
+        "program_outcome": program_outcome,
+        "hypothesis_status": hypothesis_status,
+        "audit_status": audit_status,
         "reason_code": closure.get("reason_code") or program.get("reason_code"),
         "closure": closure or None,
         "evidence_count": len(_list(row.get("evidence_refs"))),
@@ -363,19 +407,40 @@ def _explorer_node(row: dict[str, Any], branch_events: list[Any]) -> dict[str, A
 
 
 def _normalize_calculations(root: Path, node_id: str) -> list[dict[str, Any]]:
+    attempt_root = root / "nodes" / node_id / "attempts"
     remote_root = root / "nodes" / node_id / "remote" / "calculations"
     output_root = root / "nodes" / node_id / "outputs" / "calculations"
-    intent_ids = set()
+    locations: dict[str, tuple[Path, Path, Path, str]] = {}
+    if attempt_root.is_dir():
+        for path in attempt_root.iterdir():
+            if path.is_dir():
+                locations[path.name] = (
+                    path / "prepared.json",
+                    path / "status.json",
+                    path / "outputs" / "calculation_result.json",
+                    "local_attempt",
+                )
+    legacy_ids = set()
     if remote_root.is_dir():
-        intent_ids.update(path.name for path in remote_root.iterdir() if path.is_dir())
+        legacy_ids.update(path.name for path in remote_root.iterdir() if path.is_dir())
     if output_root.is_dir():
-        intent_ids.update(path.name for path in output_root.iterdir() if path.is_dir())
+        legacy_ids.update(path.name for path in output_root.iterdir() if path.is_dir())
+    for intent_id in legacy_ids:
+        locations.setdefault(
+            intent_id,
+            (
+                remote_root / intent_id / "prepared.json",
+                remote_root / intent_id / "status.json",
+                output_root / intent_id / "calculation_result.json",
+                "legacy",
+            ),
+        )
 
     calculations: list[dict[str, Any]] = []
-    for intent_id in sorted(intent_ids):
-        prepared = _read_json(remote_root / intent_id / "prepared.json")
-        status = _read_json(remote_root / intent_id / "status.json")
-        result = _read_json(output_root / intent_id / "calculation_result.json")
+    for intent_id, (prepared_path, status_path, result_path, storage) in sorted(locations.items()):
+        prepared = _read_json(prepared_path)
+        status = _read_json(status_path)
+        result = _read_json(result_path)
         intent_ref = prepared.get("intent_ref")
         intent = _read_json(root / str(intent_ref)) if isinstance(intent_ref, str) else {}
         prepared_task = prepared.get("prepared_task") if isinstance(prepared.get("prepared_task"), dict) else {}
@@ -394,8 +459,17 @@ def _normalize_calculations(root: Path, node_id: str) -> list[dict[str, Any]]:
                 "backend": intent.get("backend") or prepared_task.get("backend"),
                 "task_type": intent.get("task_type"),
                 "evidence_layer": intent.get("evidence_layer"),
+                "validation_scope": intent.get("validation_scope"),
+                "attempt_kind": intent.get("attempt_kind"),
+                "recalculation_ref": intent.get("recalculation_ref"),
+                "storage": storage,
                 "target_kind": (
                     prepared.get("execution_policy", {}).get("kind")
+                    if isinstance(prepared.get("execution_policy"), dict)
+                    else None
+                ),
+                "remote_authority": (
+                    prepared.get("execution_policy", {}).get("authority")
                     if isinstance(prepared.get("execution_policy"), dict)
                     else None
                 ),
@@ -1133,6 +1207,33 @@ def _display_label(lifecycle: str | None, claim_verdict: str | None) -> str:
     if lifecycle == "stopped":
         return "stopped"
     return claim_verdict or lifecycle or "unknown"
+
+
+def _v2_display(
+    lifecycle: str | None,
+    program_outcome: str | None,
+    hypothesis_status: str | None,
+    audit_status: str | None,
+) -> tuple[str, str, str]:
+    if lifecycle == "running":
+        return "running", "active", "running"
+    if lifecycle == "stopped":
+        return "stopped", "blocked", "stopped"
+    if program_outcome == "failure":
+        return "program failure", "blocked", "program_failure"
+    if hypothesis_status == "supported":
+        return "hypothesis supported", "supported", "hypothesis_supported"
+    if hypothesis_status == "unsupported":
+        return "hypothesis unsupported", "refuted", "hypothesis_unsupported"
+    if hypothesis_status == "ambiguous":
+        return "hypothesis ambiguous", "inconclusive", "hypothesis_ambiguous"
+    if audit_status == "accepted":
+        return "audit accepted", "supported", "audit_accepted"
+    if audit_status == "not_accepted":
+        return "audit not accepted", "audit_negative", "audit_not_accepted"
+    if audit_status == "ambiguous":
+        return "audit ambiguous", "inconclusive", "audit_ambiguous"
+    return lifecycle or "unknown", "neutral", lifecycle or "unknown"
 
 
 def _display_tone(lifecycle: str | None, claim_verdict: str | None, program_status: str | None) -> str:

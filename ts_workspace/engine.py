@@ -7,8 +7,15 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from .finalizers import compute_close_changes, validate_accepted_audit_gates, validate_pathway_audit_gates
+from .finalizers import (
+    compute_close_changes,
+    compute_v2_close_changes,
+    validate_accepted_audit_gates,
+    validate_pathway_audit_gates,
+    validate_v2_audit_gates,
+)
 from .io import append_jsonl, apply_change, now_iso, read_json, sha256_json, write_json
+from .ontology import DECISION_SCHEMA as DECISION_SCHEMA_V2, NODE_SCHEMA as NODE_SCHEMA_V2
 from .readers import (
     report_branch_context as build_branch_context,
     report_node as build_node_report,
@@ -125,6 +132,8 @@ def migrate_workspace_state(root: str | Path) -> dict[str, Any]:
 
 
 def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
+    if decision.get("schema_version") == DECISION_SCHEMA_V2:
+        return _start_node_v2(root, decision)
     root_path = Path(root)
     _require_decision_action(decision, "start_node")
     validate_decision_for_workspace(root_path, decision)
@@ -163,7 +172,6 @@ def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
         },
         "closure": None,
     }
-
     research_state.setdefault("nodes", []).append(
         {
             "node_id": node_id,
@@ -277,6 +285,8 @@ def update_workspace(root: str | Path, decision: dict[str, Any]) -> dict[str, An
 
 
 def end_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
+    if decision.get("schema_version") == DECISION_SCHEMA_V2:
+        return _end_node_v2(root, decision)
     root_path = Path(root)
     _require_decision_action(decision, "end_node")
     validate_decision_for_workspace(root_path, decision)
@@ -319,6 +329,314 @@ def end_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
     result = {"mutation_applied": True, "node_id": node_id, "lifecycle": node["lifecycle"]}
     _commit_transaction(root_path, decision, changes, result)
     return {"node_id": node_id, "lifecycle": node["lifecycle"], "closure": closure}
+
+
+def _start_node_v2(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
+    root_path = Path(root)
+    _require_decision_action(decision, "start_node")
+    validate_decision_for_workspace(root_path, decision)
+    _require_initialized(root_path)
+    payload = decision["payload"]
+    research_state = read_json(root_path / RESEARCH_STATE_FILE)
+    node_id = payload.get("node_id") or _next_node_id(research_state)
+    node_dir = root_path / "nodes" / node_id
+    if (node_dir / "node.json").exists():
+        raise ContractError(f"node already exists: {node_id}")
+    for dirname in ("inputs", "outputs", "scratch", "remote", "attempts"):
+        (node_dir / dirname).mkdir(parents=True, exist_ok=True)
+
+    node = {
+        "schema_version": NODE_SCHEMA_V2,
+        "node_id": node_id,
+        "parent_node": payload.get("parent_node"),
+        "node_type": payload["node_type"],
+        "objective": payload["objective"],
+        "lifecycle": "running",
+        "mechanism_action": payload.get("mechanism_action"),
+        "candidate_kind": payload.get("candidate_kind"),
+        "validation_scope": payload.get("validation_scope"),
+        "audit_scope": payload.get("audit_scope"),
+        "attempt_kind": payload.get("attempt_kind", "primary"),
+        "recalculation_ref": payload.get("recalculation_ref"),
+        "expected_evidence": payload.get("expected_evidence", []),
+        "evidence_refs": decision.get("evidence_refs", []),
+        "hypothesis_ref": payload.get("hypothesis_ref"),
+        "proposed_hypothesis": payload.get("proposed_hypothesis"),
+        "pathway_ref": payload.get("pathway_ref"),
+        "branch_context": payload.get("branch_context"),
+        "created_by_decision": _decision_id(decision),
+        "started_at": now_iso(),
+        "artifacts": {
+            "inputs": f"nodes/{node_id}/inputs",
+            "outputs": f"nodes/{node_id}/outputs",
+            "attempts": f"nodes/{node_id}/attempts",
+            "scratch": f"nodes/{node_id}/scratch",
+            "remote": f"nodes/{node_id}/remote",
+        },
+        "closure": None,
+    }
+    for optional_field in ("mechanism_action", "candidate_kind", "validation_scope", "audit_scope"):
+        if node[optional_field] is None:
+            node.pop(optional_field)
+    tree_entry = {
+        key: node.get(key)
+        for key in (
+            "node_id",
+            "parent_node",
+            "node_type",
+            "objective",
+            "lifecycle",
+            "mechanism_action",
+            "candidate_kind",
+            "validation_scope",
+            "audit_scope",
+            "attempt_kind",
+            "recalculation_ref",
+            "hypothesis_ref",
+            "pathway_ref",
+            "branch_context",
+        )
+        if node.get(key) is not None
+    }
+    tree_entry["parent_node"] = node.get("parent_node")
+    research_state.setdefault("nodes", []).append(tree_entry)
+    if node["parent_node"]:
+        research_state.setdefault("edges", []).append({"parent_node": node["parent_node"], "child_node": node_id})
+    if node["branch_context"]:
+        research_state.setdefault("branch_events", []).append(_branch_event_v2(node, decision))
+    research_state["current_node"] = node_id
+
+    changes: dict[Path, Any] = {
+        node_dir / "node.json": node,
+        node_dir / "decision.md": decision["rationale"].strip() + "\n",
+        root_path / RESEARCH_STATE_FILE: research_state,
+    }
+    changes.update(_hypotheses_changes_for_node_start(root_path, node))
+    result = {"mutation_applied": True, "node_id": node_id, "node_type": node["node_type"]}
+    _commit_transaction(root_path, decision, changes, result)
+    return {"node_id": node_id, "node_type": node["node_type"], "lifecycle": node["lifecycle"]}
+
+
+def _end_node_v2(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
+    root_path = Path(root)
+    _require_decision_action(decision, "end_node")
+    validate_decision_for_workspace(root_path, decision)
+    _require_initialized(root_path)
+    node_id = decision["payload"]["node_id"]
+    node_path = root_path / "nodes" / node_id / "node.json"
+    node = read_json(node_path)
+    closure = dict(decision["payload"]["closure"])
+    closure["closed_at"] = now_iso()
+    node["closure"] = closure
+    node["lifecycle"] = "closed"
+    node["ended_by_decision"] = _decision_id(decision)
+    node["ended_at"] = closure["closed_at"]
+    node["evidence_refs"] = _v2_closure_evidence_refs(node, decision, closure)
+    validate_v2_audit_gates(root_path, node, closure, node["evidence_refs"])
+
+    research_state = read_json(root_path / RESEARCH_STATE_FILE)
+    for entry in research_state.get("nodes", []):
+        if entry.get("node_id") != node_id:
+            continue
+        entry["lifecycle"] = "closed"
+        entry["closed_at"] = closure["closed_at"]
+        entry["program_outcome"] = closure["program"]["outcome"]
+        if isinstance(closure.get("hypothesis"), dict):
+            entry["hypothesis_status"] = closure["hypothesis"]["status"]
+        if isinstance(closure.get("audit"), dict):
+            entry["audit_status"] = closure["audit"]["status"]
+            entry["study_complete"] = closure["audit"]["study_complete"]
+        if isinstance(closure.get("intake"), dict):
+            entry["intake_status"] = closure["intake"]["status"]
+        break
+    if research_state.get("current_node") == node_id:
+        research_state["current_node"] = None
+
+    changes: dict[Path, Any] = {
+        node_path: node,
+        root_path / RESEARCH_STATE_FILE: research_state,
+    }
+    changes.update(compute_v2_close_changes(root_path, node, research_state))
+    changes.update(_v2_hypothesis_close_changes(root_path, node, closure))
+    result = {"mutation_applied": True, "node_id": node_id, "lifecycle": "closed"}
+    _commit_transaction(root_path, decision, changes, result)
+    return {"node_id": node_id, "node_type": node["node_type"], "lifecycle": "closed", "closure": closure}
+
+
+def _v2_closure_evidence_refs(
+    node: dict[str, Any],
+    decision: dict[str, Any],
+    closure: dict[str, Any],
+) -> list[str]:
+    refs = set(str(item) for item in node.get("evidence_refs", []) if item)
+    refs.update(str(item) for item in decision.get("evidence_refs", []) if item)
+    for section in ("program", "hypothesis", "audit"):
+        value = closure.get(section)
+        if isinstance(value, dict):
+            refs.update(str(item) for item in value.get("evidence_refs", []) if item)
+    return sorted(refs)
+
+
+def _v2_hypothesis_close_changes(root: Path, node: dict[str, Any], closure: dict[str, Any]) -> dict[Path, Any]:
+    if node.get("node_type") not in {"mechanism", "audit"}:
+        return {}
+    model_path = root / HYPOTHESES_FILE
+    model = read_json(model_path)
+    changed = False
+    hypothesis_section = closure.get("hypothesis") if isinstance(closure.get("hypothesis"), dict) else None
+    if node.get("node_type") == "mechanism" and hypothesis_section is not None:
+        if node.get("mechanism_action") == "propose":
+            hypothesis = dict(node["proposed_hypothesis"])
+            hypothesis.update(
+                {
+                    "protocol_version": "ts-hypothesis/2",
+                    "status": hypothesis_section["status"],
+                    "source_node": node["node_id"],
+                    "branch_anchor_node": _v2_branch_anchor(node),
+                    "proposed_by_decision": node["created_by_decision"],
+                    "evidence_refs": sorted(set(node.get("evidence_refs", []) + hypothesis_section.get("evidence_refs", []))),
+                    "prediction_status": [],
+                    "assessment_history": [
+                        _v2_hypothesis_assessment(node, hypothesis_section)
+                    ],
+                }
+            )
+            hypothesis.setdefault("parent_hypothesis_id", None)
+            model.setdefault("hypotheses", []).append(hypothesis)
+            model["focus_hypothesis_id"] = hypothesis["hypothesis_id"] if hypothesis["status"] != "unsupported" else None
+        else:
+            hypothesis_id = node["hypothesis_ref"]["hypothesis_id"]
+            hypothesis = _find_hypothesis_record(model, hypothesis_id)
+            hypothesis["status"] = hypothesis_section["status"]
+            hypothesis.setdefault("assessment_history", []).append(_v2_hypothesis_assessment(node, hypothesis_section))
+            _append_v2_prediction_status(hypothesis, node, hypothesis_section)
+            hypothesis["evidence_refs"] = sorted(set(hypothesis.get("evidence_refs", []) + hypothesis_section.get("evidence_refs", [])))
+            model["focus_hypothesis_id"] = hypothesis_id if hypothesis["status"] != "unsupported" else None
+            if hypothesis["status"] == "unsupported":
+                model.setdefault("refuted_hypotheses", []).append(_v2_hypothesis_assessment(node, hypothesis_section))
+        changed = True
+
+    audit = closure.get("audit") if isinstance(closure.get("audit"), dict) else None
+    if node.get("node_type") == "audit" and audit is not None:
+        record = {
+            "node_id": node["node_id"],
+            "audit_scope": node.get("audit_scope"),
+            "status": audit["status"],
+            "study_complete": audit["study_complete"],
+            "hypothesis_ref": node.get("hypothesis_ref"),
+            "pathway_ref": node.get("pathway_ref"),
+            "evidence_refs": audit.get("evidence_refs", []),
+            "summary": audit["summary"],
+        }
+        model.setdefault("audit_records", []).append(record)
+        _apply_v2_pathway_audit(model, node, audit)
+        changed = True
+    return {model_path: model} if changed else {}
+
+
+def _v2_hypothesis_assessment(node: dict[str, Any], section: dict[str, Any]) -> dict[str, Any]:
+    ref = section.get("hypothesis_ref") if isinstance(section.get("hypothesis_ref"), dict) else {}
+    return {
+        "node_id": node["node_id"],
+        "node_type": node["node_type"],
+        "status": section["status"],
+        "summary": section["summary"],
+        "evidence_refs": section.get("evidence_refs", []),
+        "revision": section.get("revision"),
+        "prediction_ids": ref.get("prediction_ids", []),
+    }
+
+
+def _append_v2_prediction_status(
+    hypothesis: dict[str, Any],
+    node: dict[str, Any],
+    section: dict[str, Any],
+) -> None:
+    ref = section.get("hypothesis_ref") if isinstance(section.get("hypothesis_ref"), dict) else {}
+    prediction_ids = ref.get("prediction_ids", [])
+    if not prediction_ids:
+        return
+    hypothesis.setdefault("prediction_status", []).append(
+        {
+            "node_id": node["node_id"],
+            "node_type": node["node_type"],
+            "hypothesis_status": section["status"],
+            "prediction_ids": prediction_ids,
+            "evidence_refs": section.get("evidence_refs", []),
+        }
+    )
+
+
+def _find_hypothesis_record(model: dict[str, Any], hypothesis_id: str) -> dict[str, Any]:
+    for hypothesis in model.get("hypotheses", []):
+        if isinstance(hypothesis, dict) and hypothesis.get("hypothesis_id") == hypothesis_id:
+            return hypothesis
+    raise ContractError(f"unknown hypothesis_id: {hypothesis_id}")
+
+
+def _v2_branch_anchor(node: dict[str, Any]) -> str:
+    context = node.get("branch_context") if isinstance(node.get("branch_context"), dict) else {}
+    return str(context.get("anchor_node") or node.get("parent_node") or node["node_id"])
+
+
+def _apply_v2_pathway_audit(model: dict[str, Any], node: dict[str, Any], audit: dict[str, Any]) -> None:
+    ref = node.get("pathway_ref") if isinstance(node.get("pathway_ref"), dict) else None
+    if not ref:
+        return
+    pathway_id = ref["pathway_id"]
+    pathway = next(
+        (item for item in model.setdefault("pathways", []) if item.get("pathway_id") == pathway_id),
+        None,
+    )
+    if pathway is None:
+        pathway = {"pathway_id": pathway_id, "label": pathway_id, "pattern": "unspecified", "status": "active", "steps": []}
+        model["pathways"].append(pathway)
+    pathway.setdefault("audit_nodes", []).append(node["node_id"])
+    status = {
+        "accepted": "accepted",
+        "not_accepted": "refuted",
+        "ambiguous": "active",
+    }[audit["status"]]
+    if node.get("audit_scope") == "elementary_step" and ref.get("step_id"):
+        step_id = ref["step_id"]
+        step = next((item for item in pathway.setdefault("steps", []) if item.get("step_id") == step_id), None)
+        if step is None:
+            step = {"step_id": step_id, "from": "unknown", "to": "unknown", "status": "active"}
+            pathway["steps"].append(step)
+        step["status"] = status
+        step.setdefault("audit_nodes", []).append(node["node_id"])
+        step_statuses = {item.get("status") for item in pathway["steps"] if isinstance(item, dict)}
+        pathway["status"] = (
+            "refuted"
+            if "refuted" in step_statuses
+            else "accepted"
+            if step_statuses and step_statuses <= {"accepted"}
+            else "active"
+        )
+    elif node.get("audit_scope") == "pathway":
+        pathway["status"] = status
+    model["focus_pathway_id"] = pathway_id
+
+
+def _branch_event_v2(node: dict[str, Any], decision: dict[str, Any]) -> dict[str, Any]:
+    context = node["branch_context"]
+    return {
+        "event_id": "br_" + sha256_json({"node_id": node["node_id"], "branch_context": context}).split(":", 1)[1][:10],
+        "event_state": "resolved",
+        "relation": context["relation"],
+        "from_node": context["from_node"],
+        "anchor_node": context["anchor_node"],
+        "new_node": node["node_id"],
+        "parent_node": node.get("parent_node"),
+        "is_rebased": node.get("parent_node") == context["anchor_node"] and context["from_node"] != context["anchor_node"],
+        "rationale": decision["rationale"],
+        "evidence_refs": context.get("evidence_refs", []),
+        "target_hypothesis_ref": node.get("hypothesis_ref"),
+        "target_solution_ref": None,
+        "created_by_decision": _decision_id(decision),
+        **({"reason_code": context["reason_code"]} if context.get("reason_code") else {}),
+        **({"changed_variable": context["changed_variable"]} if context.get("changed_variable") else {}),
+    }
 
 
 def _commit_transaction(
@@ -537,18 +855,19 @@ def _ensure_pathway_for_node(model: dict[str, Any], node: dict[str, Any]) -> boo
     if not ref:
         return False
     pathway_id = ref["pathway_id"]
-    step_id = ref["step_id"]
+    step_id = ref.get("step_id")
     for pathway in model.setdefault("pathways", []):
         if pathway.get("pathway_id") == pathway_id:
             break
     else:
         pathway = {"pathway_id": pathway_id, "label": pathway_id, "pattern": "unspecified", "status": "active", "steps": []}
         model["pathways"].append(pathway)
-    for step in pathway.setdefault("steps", []):
-        if step.get("step_id") == step_id:
-            break
-    else:
-        pathway["steps"].append({"step_id": step_id, "from": "unknown", "to": "unknown", "status": "active"})
+    if step_id:
+        for step in pathway.setdefault("steps", []):
+            if step.get("step_id") == step_id:
+                break
+        else:
+            pathway["steps"].append({"step_id": step_id, "from": "unknown", "to": "unknown", "status": "active"})
     model["focus_pathway_id"] = pathway_id
     return True
 

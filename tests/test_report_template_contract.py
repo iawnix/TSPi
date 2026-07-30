@@ -31,5 +31,6 @@ def test_report_template_contract_keeps_acceptance_gates_explicit() -> None:
     assert "Minimum Acceptance Gates" in text
     assert "tsfreq_gate" in text
     assert "connectivity_gate" in text
-    assert "accepted_audit" in text
+    assert "audit/transition_state" in text
+    assert "accepted artifact" in text
     assert "pathway_not_accepted" in text

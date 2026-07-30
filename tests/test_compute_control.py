@@ -15,6 +15,7 @@ from ts_compute import (
     prepare_calculation,
 )
 from ts_compute.contracts import validate_compute_contract
+from ts_compute.control import _validate_intent_node_scope
 from ts_remote.job_lifecycle import RemoteJobStatus
 
 
@@ -51,6 +52,36 @@ def _intent(workspace: Path, *, target: dict[str, str] | None = None) -> Path:
         "dry_run": True,
     }
     path = workspace / "nodes" / "n001" / "scratch" / "intent.json"
+    path.write_text(json.dumps(value), encoding="utf-8")
+    return path
+
+
+def _intent_v2(
+    workspace: Path,
+    *,
+    intent_id: str = "calc_n001_optfreq_v2_001",
+    attempt_kind: str = "primary",
+    recalculation_ref: dict[str, object] | None = None,
+    validation_scope: str | None = "tsfreq",
+    target: dict[str, str] | None = None,
+) -> Path:
+    value = {
+        "schema_version": "ts-calculation-intent/2",
+        "intent_id": intent_id,
+        "node_id": "n001",
+        "purpose": "Evaluate the selected candidate with an attempt-scoped calculation.",
+        "validation_scope": validation_scope,
+        "attempt_kind": attempt_kind,
+        "recalculation_ref": recalculation_ref,
+        "backend": "gaussian",
+        "task_type": "opt_freq",
+        "input_refs": {"gjf": "nodes/n001/inputs/candidate.gjf"},
+        "settings": {},
+        "expected_artifacts": [f"nodes/n001/attempts/{intent_id}/outputs/candidate.log"],
+        "execution_target": target or {"kind": "local"},
+        "dry_run": True,
+    }
+    path = workspace / "nodes" / "n001" / "scratch" / f"{intent_id}.json"
     path.write_text(json.dumps(value), encoding="utf-8")
     return path
 
@@ -122,6 +153,90 @@ def test_prepare_is_node_scoped_idempotent_and_preserves_research_state(tmp_path
     intent_path.write_text(json.dumps(changed), encoding="utf-8")
     with pytest.raises(ComputeContractError, match="different content"):
         prepare_calculation(workspace, intent_path)
+
+
+def test_v2_prepare_uses_local_attempt_directory_and_explicit_scope(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    intent_path = _intent_v2(workspace)
+
+    prepared = prepare_calculation(workspace, intent_path)
+
+    attempt = workspace / "nodes/n001/attempts/calc_n001_optfreq_v2_001"
+    assert (attempt / "intent.json").is_file()
+    assert (attempt / "prepared.json").is_file()
+    assert not (workspace / "nodes/n001/remote/calculations/calc_n001_optfreq_v2_001").exists()
+    assert prepared["result"]["provenance"]["validation_scope"] == "tsfreq"
+    assert prepared["result"]["provenance"]["attempt_kind"] == "primary"
+    assert prepared["prepared"]["prepared_task"]["expected_artifacts"] == [
+        "nodes/n001/attempts/calc_n001_optfreq_v2_001/outputs/candidate.log"
+    ]
+
+    value = json.loads(intent_path.read_text(encoding="utf-8"))
+    value["validation_scope"] = "connectivity"
+    value["intent_id"] = "calc_n001_wrong_scope"
+    value["expected_artifacts"] = ["nodes/n001/attempts/calc_n001_wrong_scope/outputs/candidate.log"]
+    intent_path.write_text(json.dumps(value), encoding="utf-8")
+    with pytest.raises(ComputeContractError, match="must match legacy node phase"):
+        prepare_calculation(workspace, intent_path)
+
+    value["validation_scope"] = "tsfreq"
+    with pytest.raises(ComputeContractError, match="allowed only for candidate_search or validation"):
+        _validate_intent_node_scope(
+            workspace,
+            value,
+            {"schema_version": "ts-node/2", "node_type": "mechanism", "mechanism_action": "evaluate"},
+        )
+
+
+def test_v2_recalculation_requires_local_source_attempt_and_remote_mirror_label(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = _workspace(tmp_path)
+    prepare_calculation(workspace, _intent_v2(workspace))
+
+    recalculation_id = "calc_n001_optfreq_v2_recalc"
+    source_ref = {
+        "source_node": "n001",
+        "source_intent_id": "calc_n001_optfreq_v2_001",
+        "changed_settings": ["functional", "basis_set"],
+        "purpose": "method_robustness",
+    }
+    result = prepare_calculation(
+        workspace,
+        _intent_v2(
+            workspace,
+            intent_id=recalculation_id,
+            attempt_kind="recalculation",
+            recalculation_ref=source_ref,
+        ),
+    )
+    assert result["result"]["provenance"]["recalculation_ref"] == source_ref
+
+    missing_source = _intent_v2(
+        workspace,
+        intent_id="calc_n001_missing_source",
+        attempt_kind="recalculation",
+        recalculation_ref={**source_ref, "source_intent_id": "calc_missing"},
+    )
+    with pytest.raises(ComputeContractError, match="one local source attempt"):
+        prepare_calculation(workspace, missing_source)
+
+    _allow_remote(monkeypatch)
+    remote = _remote_target()
+    remote["authority"] = "execution_mirror"
+    remote_intent = _intent_v2(workspace, intent_id="calc_n001_remote_v2", target=remote)
+    remote_result = prepare_calculation(workspace, remote_intent)
+    assert remote_result["prepared"]["execution_policy"]["authority"] == "execution_mirror"
+    assert remote_result["result"]["provenance"]["remote_authority"] == "execution_mirror"
+
+    invalid = json.loads(remote_intent.read_text(encoding="utf-8"))
+    invalid["intent_id"] = "calc_n001_remote_unlabelled"
+    invalid["expected_artifacts"] = ["nodes/n001/attempts/calc_n001_remote_unlabelled/outputs/candidate.log"]
+    del invalid["execution_target"]["authority"]
+    remote_intent.write_text(json.dumps(invalid), encoding="utf-8")
+    with pytest.raises(ComputeContractError, match="calculation_intent_v2.schema.json validation failed"):
+        prepare_calculation(workspace, remote_intent)
 
 
 def test_prepare_rejects_non_dry_run_path_escape_and_wrong_route(tmp_path: Path) -> None:

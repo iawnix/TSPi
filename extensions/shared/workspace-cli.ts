@@ -1,7 +1,8 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { accessSync, constants, existsSync } from "node:fs";
+import { accessSync, constants, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { createRequire } from "node:module";
-import { dirname, isAbsolute, resolve } from "node:path";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
@@ -23,6 +24,23 @@ export async function runWorkspaceJson(
   const python = await resolvePythonExecutable(pi, root, signal);
   const result = await pi.exec(python, [WORKSPACE_CLI, command, "--root", root, ...extraArgs], { signal });
   return parseJsonOutput(result);
+}
+
+export async function runWorkspaceDecisionJson(
+  pi: ExtensionAPI,
+  command: string,
+  root: string,
+  decision: unknown,
+  signal?: AbortSignal,
+) {
+  const tempRoot = mkdtempSync(join(tmpdir(), "ts-workspace-decision-"));
+  const decisionFile = join(tempRoot, "decision.json");
+  try {
+    writeFileSync(decisionFile, `${JSON.stringify(decision, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    return await runWorkspaceJson(pi, command, root, ["--decision-file", decisionFile], signal);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
 }
 
 export async function runComputeJson(

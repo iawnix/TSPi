@@ -20,7 +20,25 @@
     "refuted_hypotheses": {"$ref": "mechanism.schema.json#/properties/refuted_hypotheses"},
     "open_questions": {"$ref": "mechanism.schema.json#/properties/open_questions"},
     "focus_pathway_id": {"type": ["string", "null"]},
-    "pathways": {"$ref": "pathway.schema.json#/properties/pathways"}
+    "pathways": {"$ref": "pathway.schema.json#/properties/pathways"},
+    "audit_records": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["node_id", "audit_scope", "status", "study_complete", "summary", "evidence_refs"],
+        "properties": {
+          "node_id": {"type": "string", "minLength": 1},
+          "audit_scope": {"enum": ["transition_state", "elementary_step", "pathway", "study"]},
+          "status": {"enum": ["accepted", "not_accepted", "ambiguous"]},
+          "study_complete": {"type": "boolean"},
+          "hypothesis_ref": {"type": ["object", "null"]},
+          "pathway_ref": {"type": ["object", "null"]},
+          "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}},
+          "summary": {"type": "string", "minLength": 1}
+        },
+        "additionalProperties": false
+      }
+    }
   },
   "additionalProperties": false
 }

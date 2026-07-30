@@ -45,6 +45,7 @@ def initial_hypotheses() -> dict[str, Any]:
         "open_questions": [],
         "focus_pathway_id": None,
         "pathways": [],
+        "audit_records": [],
     }
 
 

@@ -2205,12 +2205,12 @@ function renderNode() {
 }
 
 function renderSummary(payload, node) {
-  const hypothesis = node.hypothesis || "";
+  const hypothesis = node.objective || node.hypothesis || "";
   const action = node.decision || "";
   return `<div class="summary-stack">
     <div class="summary-card primary">
-      <div class="summary-title">Hypothesis</div>
-      <div class="summary-text${hypothesis ? "" : " muted"}">${hypothesis ? escapeHtml(hypothesis) : "No node hypothesis recorded."}</div>
+      <div class="summary-title">Objective</div>
+      <div class="summary-text${hypothesis ? "" : " muted"}">${hypothesis ? escapeHtml(hypothesis) : "No node objective recorded."}</div>
     </div>
     <div class="summary-card">
       <div class="summary-title">Status</div>
@@ -2221,9 +2221,16 @@ function renderSummary(payload, node) {
         ${summaryRow("state", node.node_state, "chip", "node_state")}
         ${summaryRow("state_line", node.state_line)}
         ${summaryRow("stage", node.stage)}
+        ${summaryRow("node_type", node.node_type, "mono")}
+        ${summaryRow("scope", node.scope, "mono")}
         ${summaryRow("lifecycle", node.lifecycle, "mono")}
         ${summaryRow("program_status", node.program_status, "mono")}
         ${summaryRow("claim_verdict", node.claim_verdict, "mono")}
+        ${summaryRow("program_outcome", node.program_outcome, "mono")}
+        ${summaryRow("hypothesis_status", node.hypothesis_status, "mono")}
+        ${summaryRow("audit_status", node.audit_status, "mono")}
+        ${summaryRow("attempt_kind", node.attempt_kind, "mono")}
+        ${node.recalculation_ref ? summaryRow("recalculation_ref", JSON.stringify(node.recalculation_ref), "mono") : ""}
         ${node.calculation_count ? summaryRow("calculation_count", node.calculation_count, "mono") : ""}
         ${node.calculation_state ? summaryRow("calculation_state", node.calculation_state, "mono") : ""}
         ${node.calculation_program_status ? summaryRow("calculation_program_status", node.calculation_program_status, "mono") : ""}
@@ -2252,6 +2259,11 @@ function renderCalculations(calculations) {
       ${summaryRow("backend", calc.backend, "mono")}
       ${summaryRow("task_type", calc.task_type, "mono")}
       ${summaryRow("evidence_layer", calc.evidence_layer, "mono")}
+      ${summaryRow("validation_scope", calc.validation_scope, "mono")}
+      ${summaryRow("attempt_kind", calc.attempt_kind, "mono")}
+      ${summaryRow("storage", calc.storage, "mono")}
+      ${summaryRow("remote_authority", calc.remote_authority, "mono")}
+      ${calc.recalculation_ref ? summaryRow("recalculation_ref", JSON.stringify(calc.recalculation_ref), "mono") : ""}
       ${summaryRow("state", calc.state, "mono")}
       ${summaryRow("program_status", calc.program_status, "mono")}
       ${summaryRow("error_class", calc.error_class, "mono")}

@@ -87,8 +87,8 @@ export default function (pi: ExtensionAPI) {
         signal,
       });
       pi.appendEntry("ts-workspace-subagent-run", result.metadata);
-      return toolText(JSON.stringify(result.advice, null, 2), {
-        advice: result.advice,
+      return toolText(JSON.stringify(result.result, null, 2), {
+        result: result.result,
         run: result.metadata,
       });
     },

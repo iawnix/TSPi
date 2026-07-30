@@ -1,17 +1,21 @@
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
+import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
-import { requireWorkspaceRoot, runComputeJson } from "../shared/workspace-cli.ts";
+import { requireWorkspaceRoot, runComputeJson, runWorkspaceJson } from "../shared/workspace-cli.ts";
 import { runComputeOperator } from "../../compute-agent/runtime.ts";
 
 const require = createRequire(import.meta.url);
 const { toolText } = require("../ts-workflow-context/summary.cjs");
 const OPERATIONS = ["prepare", "inspect", "collect", "parse"] as const;
+const BACKENDS = ["gaussian", "ase_neb", "xtb", "qbics_dmecp"] as const;
 
 type OperatorRequest = {
   operation: typeof OPERATIONS[number];
+  backend: typeof BACKENDS[number];
+  nodeId: string;
   intentFile?: string;
   intentId?: string;
   tailArtifact?: string;
@@ -29,14 +33,16 @@ export default function (pi: ExtensionAPI) {
     description: "Run one fresh Pi compute subagent with only request-scoped prepare, status/tail, collect, or parse tools; submission and cancellation are unavailable.",
     promptSnippet: "Delegate one bounded transition-state calculation operation",
     promptGuidelines: [
-      "Create the calculation intent and select its method, purpose, evidence layer, and target before calling the compute operator.",
+      "Create the calculation intent and select its node, method, purpose, validation scope, and target before calling the compute operator.",
       "Treat operator results as program and parser facts, not registered evidence, claim_verdict, accepted TS, or pathway acceptance.",
       "Use inspect for changed or terminal jobs instead of polling unchanged work every turn.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
       operation: StringEnum(OPERATIONS),
-      intentFile: Type.Optional(Type.String({ description: "For prepare: JSON file conforming to ts-calculation-intent/1." })),
+      backend: StringEnum(BACKENDS),
+      nodeId: Type.String({ minLength: 1, maxLength: 128, description: "Workspace node that owns this calculation attempt." }),
+      intentFile: Type.Optional(Type.String({ description: "For prepare: JSON file conforming to ts-calculation-intent/2 or legacy /1." })),
       intentId: Type.Optional(Type.String({ minLength: 6, maxLength: 128 })),
       tailArtifact: Type.Optional(Type.String({ minLength: 1, maxLength: 255, description: "For inspect: allowlisted remote artifact basename." })),
       tailLines: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
@@ -50,6 +56,8 @@ export default function (pi: ExtensionAPI) {
       const request = validateOperatorRequest(
         {
           operation: params.operation,
+          backend: params.backend,
+          nodeId: params.nodeId,
           intentFile: params.intentFile ? resolve(ctx.cwd, String(params.intentFile).replace(/^@+/, "")) : undefined,
           intentId: params.intentId,
           tailArtifact: params.tailArtifact,
@@ -60,20 +68,45 @@ export default function (pi: ExtensionAPI) {
       );
       const actions: ActionLog = [];
       const tools = createScopedComputeTools(pi, root, request, actions);
+      const workspaceReport = await runWorkspaceJson(pi, "report_workspace", root, [], signal);
+      const focus = (
+        workspaceReport.focus && typeof workspaceReport.focus === "object"
+          ? workspaceReport.focus
+          : {}
+      ) as Record<string, unknown>;
       const packet = {
-        schema_version: "ts-compute-operator-task/1",
+        schema_version: "ts-agent-task/1",
+        task_id: `agent_${randomUUID()}`,
+        role: "backend",
         authority: "operational",
         operation: request.operation,
-        intent_id: request.intentId || null,
-        available_tools: tools.map((tool) => tool.name),
-        constraints: {
-          workspace_mutation: false,
-          scientific_verdicts: false,
-          submit: false,
-          cancel: false,
-          recursive_delegation: false,
+        objective: `Execute the bound ${request.operation} operation for backend ${request.backend}.`,
+        workspace: {
+          root,
+          report_id: typeof workspaceReport.report_id === "string" ? workspaceReport.report_id : null,
+          revision: typeof workspaceReport.workspace_revision === "string" ? workspaceReport.workspace_revision : null,
         },
-        output_contract: "ts-compute-operator-report/1",
+        scope: {
+          report_id: typeof workspaceReport.report_id === "string" ? workspaceReport.report_id : null,
+          node_ids: [request.nodeId],
+          hypothesis_id: typeof focus.focus_hypothesis_id === "string" ? focus.focus_hypothesis_id : null,
+          pathway_id: typeof focus.focus_pathway_id === "string" ? focus.focus_pathway_id : null,
+        },
+        inputs: {
+          intent_id: request.intentId || null,
+          node_id: request.nodeId,
+          backend: request.backend,
+          basis_allowlist: [],
+        },
+        capabilities: tools.map((tool) => tool.name),
+        constraints: {
+          canonical_workspace_mutation: false,
+          scientific_decision: false,
+          recursive_delegation: false,
+          remote_authority: "execution_mirror",
+          external_side_effects: false,
+        },
+        output_contract: "ts-agent-result/1",
       };
       const parentAuth = ctx.modelRegistry.isUsingOAuth(ctx.model)
         ? undefined
@@ -83,6 +116,7 @@ export default function (pi: ExtensionAPI) {
         result = await runComputeOperator({
           workspaceRoot: root,
           packet,
+          backend: request.backend,
           tools,
           actions,
           parentModel: ctx.model,
@@ -96,6 +130,7 @@ export default function (pi: ExtensionAPI) {
         if (completedActions.length) {
           pi.appendEntry("ts-workspace-compute-operator-failed", {
             operation: request.operation,
+            backend: request.backend,
             intent_id: request.intentId || null,
             completed_actions: completedActions,
           });
@@ -195,6 +230,8 @@ function createScopedComputeTools(
 
 function validateOperatorRequest(request: OperatorRequest): OperatorRequest {
   if (!OPERATIONS.includes(request.operation)) throw new Error(`unsupported compute operation: ${request.operation}`);
+  if (!BACKENDS.includes(request.backend)) throw new Error(`unsupported compute backend: ${request.backend}`);
+  if (typeof request.nodeId !== "string" || !request.nodeId.trim()) throw new Error("compute operation requires nodeId");
   const supplied = (key: keyof OperatorRequest) => request[key] !== undefined;
   if (request.operation === "prepare") {
     if (!request.intentFile) throw new Error("prepare requires intentFile");

@@ -12,6 +12,9 @@ class EvidenceGateError(ValueError):
 BASE_ACCEPTED_GATE_ROLES = {"connectivity_gate", "tsfreq_gate"}
 STEREOCHEMICAL_GATE_ROLE = "stereochemical_connectivity_gate"
 PATHWAY_AUDIT_GATE_ROLE = "pathway_audit_summary"
+STRICT_PATHWAY_ACCEPTED = "accepted"
+STRICT_PATHWAY_NOT_ACCEPTED = {"pathway_not_accepted", "not_accepted"}
+STRICT_PATHWAY_DECISIONS = {STRICT_PATHWAY_ACCEPTED, *STRICT_PATHWAY_NOT_ACCEPTED}
 MECHANISM_REFLECTION_GATE_ROLES = {
     "endpoint_identity_gate",
     "intermediate_identity_gate",
@@ -20,6 +23,30 @@ MECHANISM_REFLECTION_GATE_ROLES = {
     "shared_basin_consistency_gate",
 }
 MACHINE_GATE_ROLES = BASE_ACCEPTED_GATE_ROLES | {STEREOCHEMICAL_GATE_ROLE, PATHWAY_AUDIT_GATE_ROLE}
+
+
+def strict_pathway_decision(evidence_records: list[Any], evidence_refs: list[str]) -> str | None:
+    """Return the strict accepted/not-accepted decision cited by an audit."""
+
+    invalid: list[str] = []
+    allowed_refs = set(evidence_refs)
+    for entry in evidence_records:
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("evidence_id") not in allowed_refs or entry.get("role") != PATHWAY_AUDIT_GATE_ROLE:
+            continue
+        quality = entry.get("quality") if isinstance(entry.get("quality"), dict) else {}
+        raw_decision = quality.get("strict_pathway_decision")
+        decision = _normalized(raw_decision)
+        if decision in STRICT_PATHWAY_DECISIONS:
+            return decision
+        if raw_decision is not None:
+            invalid.append(str(raw_decision))
+    if invalid:
+        raise EvidenceGateError(
+            "pathway_audit_summary quality.strict_pathway_decision must be accepted or pathway_not_accepted"
+        )
+    return None
 
 
 def accepted_gate_evidence(

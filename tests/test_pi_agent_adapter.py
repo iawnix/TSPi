@@ -33,9 +33,12 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
     assert "postinstall" not in manifest["scripts"]
 
     extension_source = (ROOT / "extensions" / "ts-workflow-context" / "index.ts").read_text(encoding="utf-8")
-    assert '"propose_hypothesis"' in extension_source
-    assert '["start_node", "propose_hypothesis", "update_workspace", "end_node"]' in extension_source
-    assert 'name: "ts_workspace_decision_validate"' in extension_source
+    assert 'const DECISION_ACTIONS = ["start_node", "update_workspace", "end_node"]' in extension_source
+    assert 'name: "ts_workspace_decide"' in extension_source
+    assert 'name: "ts_workspace_validate"' in extension_source
+    assert 'name: "ts_workspace_apply"' in extension_source
+    assert 'name: "ts_workspace_decision_validate"' not in extension_source
+    assert 'name: "ts_workspace_decision"' not in extension_source
 
 
 def test_pi_documentation_matches_loaded_extensions_and_tool_boundary() -> None:
@@ -46,10 +49,12 @@ def test_pi_documentation_matches_loaded_extensions_and_tool_boundary() -> None:
 
     assert "Pi `0.81.1`" in readme
     assert "extensions/ts-workflow-subagent" in readme
-    assert "`ts_workspace_decision_validate`" in readme
+    assert "`ts_workspace_decide`" in readme
+    assert "`ts_workspace_validate`" in readme
+    assert "`ts_workspace_apply`" in readme
     assert "`ts_workspace_subagent`" in readme
     assert "run `validate_decision`, `start_node`" not in readme
-    assert adapter.count("-e \"$TS_AGENT_SKILL_ROOT/extensions/") == 2
+    assert adapter.count("-e \"$TS_AGENT_SKILL_ROOT/extensions/") == 3
     assert "temporary\nnon-OAuth API key" in adapter
     assert "extensions/ts-workflow-subagent" in maintainer
     assert "implementation not started" not in plan
@@ -79,7 +84,7 @@ def test_pi_context_summary_from_report_workspace(tmp_path: Path) -> None:
     assert "do not edit workspace state files by hand" in payload["summary"]
     assert "scripts/ts_workspace.py" not in payload["summary"]
     assert "explicit TSAgentSkill root" in payload["summary"]
-    assert "ts_workspace_decision_validate" in payload["summary"]
+    assert "ts_workspace_context/ts_workspace_decide/ts_workspace_validate/ts_workspace_apply" in payload["summary"]
     assert payload["details"]["workspaceRoot"] == str(workspace)
     assert payload["details"]["focusHypothesisId"] == HYPOTHESIS_ID
     assert payload["details"]["valid"] is True

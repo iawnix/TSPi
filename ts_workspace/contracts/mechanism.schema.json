@@ -56,7 +56,7 @@
           "required": ["hypothesis_id", "status", "source_node"],
           "properties": {
             "hypothesis_id": {"type": "string", "minLength": 1},
-            "status": {"enum": ["proposed", "active", "supported", "refuted", "superseded"]},
+            "status": {"enum": ["proposed", "active", "supported", "refuted", "superseded", "unsupported", "ambiguous"]},
             "source_node": {"type": "string", "minLength": 1},
             "branch_anchor_node": {"type": "string", "minLength": 1},
             "parent_hypothesis_id": {"type": ["string", "null"]},
@@ -105,13 +105,18 @@
     },
     "testable_prediction": {
       "type": "object",
-      "required": ["prediction_id", "phase", "expectation"],
+      "required": ["prediction_id", "expectation"],
       "properties": {
         "prediction_id": {"type": "string", "minLength": 1},
         "phase": {"type": "string", "minLength": 1},
+        "validation_scope": {"enum": ["tsfreq", "connectivity", "electronic_structure", "state_character", "thermochemistry", "method_robustness", "geometry_identity"]},
         "expectation": {"type": "string", "minLength": 1},
         "required_evidence_roles": {"type": "array", "items": {"type": "string"}}
       },
+      "anyOf": [
+        {"required": ["phase"]},
+        {"required": ["validation_scope"]}
+      ],
       "additionalProperties": true
     },
     "mechanism_claim": {

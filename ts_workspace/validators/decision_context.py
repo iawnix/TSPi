@@ -7,9 +7,10 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
-from ..artifact_policy import node_owner_from_artifact_path, role_matches_phase
+from ..artifact_policy import node_owner_from_artifact_path, role_matches_node
 from ..evidence_gates import gate_artifact_metadata_diagnostic
-from ..io import read_json
+from ..io import read_json, sha256_json
+from ..ontology import DECISION_SCHEMA as DECISION_SCHEMA_V2
 from ..state import HYPOTHESES_FILE, RESEARCH_STATE_FILE
 from .decision import (
     ANCHORED_BRANCH_RELATIONS,
@@ -29,6 +30,8 @@ def validate_decision_for_workspace(root: str | Path, decision: dict[str, Any]) 
     """Validate a decision against both JSON shape and current workspace state."""
 
     validate_decision(decision)
+    if decision.get("schema_version") == DECISION_SCHEMA_V2:
+        return _validate_decision_for_workspace_v2(Path(root), decision)
     if decision.get("action") == "start_node":
         _validate_start_node_context(Path(root), decision)
     elif decision.get("action") == "propose_hypothesis":
@@ -38,6 +41,232 @@ def validate_decision_for_workspace(root: str | Path, decision: dict[str, Any]) 
     elif decision.get("action") == "update_workspace":
         _validate_update_workspace_context(Path(root), decision)
     return decision
+
+
+def _validate_decision_for_workspace_v2(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
+    action = decision.get("action")
+    if action in {"start_node", "end_node", "update_workspace"}:
+        expected_revision = _workspace_revision(root)
+        if decision.get("base_revision") != expected_revision:
+            raise ContractError(
+                "stale workspace decision: base_revision does not match current workspace revision"
+            )
+    if action == "start_node":
+        _validate_start_node_context_v2(root, decision)
+    elif action == "end_node":
+        _validate_end_node_context_v2(root, decision)
+    elif action == "update_workspace":
+        _validate_update_workspace_context(root, decision)
+    return decision
+
+
+def _workspace_revision(root: Path) -> str:
+    return sha256_json(
+        {
+            "research_state": read_json(root / RESEARCH_STATE_FILE),
+            "hypotheses": read_json(root / HYPOTHESES_FILE),
+            "evidence": read_json(root / "evidence_registry.json"),
+        }
+    )
+
+
+def _validate_start_node_context_v2(root: Path, decision: dict[str, Any]) -> None:
+    _require_initialized(root)
+    tree = read_json(root / RESEARCH_STATE_FILE)
+    payload = decision["payload"]
+    node_id = payload.get("node_id") or _next_node_id(tree)
+    if (root / "nodes" / node_id / "node.json").exists():
+        raise ContractError(f"node already exists: {node_id}")
+
+    ordered_node_ids = _ordered_node_ids(tree)
+    node_ids = set(ordered_node_ids)
+    if not ordered_node_ids:
+        if node_id != "n000" or payload.get("node_type") != "intake":
+            raise ContractError("first node must be explicit n000 with node_type=intake")
+        if payload.get("parent_node") is not None or payload.get("branch_context") is not None:
+            raise ContractError("n000 intake cannot have a parent or branch_context")
+        return
+
+    if payload.get("node_type") == "intake":
+        raise ContractError("node_type=intake is reserved for n000")
+    _validate_parent_ref(payload.get("parent_node"), node_ids)
+    _validate_branch_context_v2(root, payload, node_ids)
+    _require_known_evidence_refs(root, decision.get("evidence_refs", []), "decision.evidence_refs")
+
+    recalculation = payload.get("recalculation_ref")
+    if isinstance(recalculation, dict):
+        source_node = recalculation.get("source_node")
+        if source_node not in node_ids:
+            raise ContractError(f"recalculation_ref.source_node does not exist: {source_node}")
+        context = payload.get("branch_context", {})
+        if context.get("from_node") != source_node:
+            raise ContractError("recalculation_of requires branch_context.from_node to match recalculation_ref.source_node")
+
+    node_type = payload.get("node_type")
+    mechanism_action = payload.get("mechanism_action")
+    if node_type == "mechanism" and mechanism_action == "propose":
+        _validate_v2_hypothesis_proposal_context(root, payload, decision.get("evidence_refs", []))
+        return
+
+    hypothesis_ref = payload.get("hypothesis_ref")
+    hypothesis = _v2_hypothesis(root, hypothesis_ref)
+    if not isinstance(hypothesis, dict):
+        hypothesis_id = hypothesis_ref.get("hypothesis_id") if isinstance(hypothesis_ref, dict) else None
+        raise ContractError(f"unknown hypothesis_ref.hypothesis_id: {hypothesis_id}")
+    if hypothesis.get("status") in {"unsupported", "refuted", "superseded"} and node_type in {"candidate_search", "validation"}:
+        raise ContractError("candidate or validation work cannot target an unsupported hypothesis")
+    if node_type == "validation":
+        prediction_ids = hypothesis_ref.get("prediction_ids", [])
+        if not prediction_ids:
+            raise ContractError("validation node requires at least one hypothesis_ref.prediction_id")
+        predictions = {
+            item.get("prediction_id"): item
+            for item in hypothesis.get("testable_predictions", [])
+            if isinstance(item, dict) and item.get("prediction_id")
+        }
+        missing = sorted(set(prediction_ids) - set(predictions))
+        if missing:
+            raise ContractError(f"unknown validation prediction_ids: {', '.join(missing)}")
+        mismatched = sorted(
+            prediction_id
+            for prediction_id in prediction_ids
+            if predictions[prediction_id].get("validation_scope") != payload.get("validation_scope")
+        )
+        if mismatched:
+            raise ContractError(
+                "validation_scope does not match referenced predictions: " + ", ".join(mismatched)
+            )
+
+
+def _validate_end_node_context_v2(root: Path, decision: dict[str, Any]) -> None:
+    _require_initialized(root)
+    node = _read_node(root, decision["payload"]["node_id"])
+    if node.get("schema_version") != "ts-node/2":
+        raise ContractError("ts-decision/2 can close only a ts-node/2 node")
+    if node.get("lifecycle") != "running":
+        raise ContractError(f"node is not running: {node.get('node_id')}")
+
+    closure = decision["payload"]["closure"]
+    node_type = node.get("node_type")
+    hypothesis_section = closure.get("hypothesis")
+    audit_section = closure.get("audit")
+    intake_section = closure.get("intake")
+    if node_type == "intake":
+        if not isinstance(intake_section, dict):
+            raise ContractError("intake closure requires closure.intake")
+        if hypothesis_section is not None or audit_section is not None:
+            raise ContractError("intake closure cannot set hypothesis or audit status")
+    elif node_type == "mechanism":
+        if not isinstance(hypothesis_section, dict):
+            raise ContractError("mechanism closure requires closure.hypothesis")
+        if audit_section is not None or intake_section is not None:
+            raise ContractError("mechanism closure cannot set intake or audit status")
+        target_id = _mechanism_target_hypothesis_id(node)
+        closure_ref = hypothesis_section.get("hypothesis_ref")
+        closure_id = closure_ref.get("hypothesis_id") if isinstance(closure_ref, dict) else None
+        if closure_id != target_id:
+            raise ContractError("closure.hypothesis.hypothesis_ref must match the mechanism node target")
+    elif node_type in {"candidate_search", "validation"}:
+        if hypothesis_section is not None or audit_section is not None or intake_section is not None:
+            raise ContractError(f"{node_type} closure may record program facts only; use a mechanism node for hypothesis status")
+        if closure["program"]["outcome"] == "not_run":
+            raise ContractError(f"{node_type} closure requires a program success or failure outcome")
+    elif node_type == "audit":
+        if not isinstance(audit_section, dict):
+            raise ContractError("audit closure requires closure.audit")
+        if intake_section is not None or hypothesis_section is not None:
+            raise ContractError("audit closure cannot set intake or hypothesis status")
+
+    refs = set(decision.get("evidence_refs", []))
+    refs.update(closure.get("program", {}).get("evidence_refs", []))
+    if isinstance(hypothesis_section, dict):
+        refs.update(hypothesis_section.get("evidence_refs", []))
+    if isinstance(audit_section, dict):
+        refs.update(audit_section.get("evidence_refs", []))
+    _require_known_evidence_refs(root, sorted(refs), "closure evidence_refs")
+
+
+def _validate_branch_context_v2(root: Path, payload: dict[str, Any], node_ids: set[str]) -> None:
+    context = payload.get("branch_context")
+    if not isinstance(context, dict):
+        raise ContractError("payload.branch_context is required after n000")
+    from_node = context.get("from_node")
+    anchor_node = context.get("anchor_node")
+    if from_node not in node_ids or anchor_node not in node_ids:
+        raise ContractError("branch_context from_node and anchor_node must exist")
+    relation = context.get("relation")
+    if relation in {"continue_parent", "recalculation_of"}:
+        _require_parent_matches(payload, from_node, "from_node", relation)
+    else:
+        _require_parent_matches(payload, anchor_node, "anchor_node", relation)
+        if not _is_ancestor(root, anchor_node, from_node):
+            raise ContractError(f"{relation} anchor_node must be an ancestor of branch_context.from_node")
+    _require_known_evidence_refs(root, context.get("evidence_refs", []), "branch_context.evidence_refs")
+
+
+def _validate_v2_hypothesis_proposal_context(root: Path, payload: dict[str, Any], evidence_refs: list[Any]) -> None:
+    proposed = payload["proposed_hypothesis"]
+    hypothesis_id = proposed["hypothesis_id"]
+    model = read_json(root / HYPOTHESES_FILE)
+    known = {
+        item.get("hypothesis_id"): item
+        for item in model.get("hypotheses", [])
+        if isinstance(item, dict) and item.get("hypothesis_id")
+    }
+    if hypothesis_id in known:
+        raise ContractError(f"hypothesis_id already exists: {hypothesis_id}")
+    _require_known_evidence_refs(root, evidence_refs, "mechanism proposal evidence_refs")
+    parent_hypothesis_id = proposed.get("parent_hypothesis_id")
+    if not known:
+        if parent_hypothesis_id is not None:
+            raise ContractError("initial mechanism proposal cannot have parent_hypothesis_id")
+        if payload.get("parent_node") != "n000":
+            raise ContractError("initial mechanism proposal must be parented to n000")
+        return
+    if not isinstance(parent_hypothesis_id, str) or parent_hypothesis_id not in known:
+        raise ContractError("alternative mechanism proposal requires a known parent_hypothesis_id")
+    parent_ref = payload.get("hypothesis_ref")
+    if not isinstance(parent_ref, dict) or parent_ref.get("hypothesis_id") != parent_hypothesis_id:
+        raise ContractError("alternative mechanism proposal hypothesis_ref must identify its parent hypothesis")
+    if payload.get("branch_context", {}).get("relation") != "new_hypothesis_branch":
+        raise ContractError("alternative mechanism proposal requires relation=new_hypothesis_branch")
+
+
+def _v2_hypothesis(root: Path, ref: Any) -> dict[str, Any] | None:
+    hypothesis_id = ref.get("hypothesis_id") if isinstance(ref, dict) else None
+    if not isinstance(hypothesis_id, str) or not hypothesis_id:
+        return None
+    model = read_json(root / HYPOTHESES_FILE)
+    return next(
+        (
+            item
+            for item in model.get("hypotheses", [])
+            if isinstance(item, dict) and item.get("hypothesis_id") == hypothesis_id
+        ),
+        None,
+    )
+
+
+def _mechanism_target_hypothesis_id(node: dict[str, Any]) -> Any:
+    if node.get("mechanism_action") == "propose":
+        proposed = node.get("proposed_hypothesis")
+        return proposed.get("hypothesis_id") if isinstance(proposed, dict) else None
+    ref = node.get("hypothesis_ref")
+    return ref.get("hypothesis_id") if isinstance(ref, dict) else None
+
+
+def _require_known_evidence_refs(root: Path, refs: Any, label: str) -> None:
+    if not refs:
+        return
+    registry = read_json(root / "evidence_registry.json")
+    known = {
+        item.get("evidence_id")
+        for item in registry.get("evidence", [])
+        if isinstance(item, dict) and item.get("evidence_id")
+    }
+    missing = sorted(set(str(item) for item in refs if item) - known)
+    if missing:
+        raise ContractError(f"{label} references unknown evidence: {', '.join(missing)}")
 
 
 def detect_decision_warnings(root: str | Path, decision: dict[str, Any]) -> list[dict[str, str]]:
@@ -288,10 +517,12 @@ def _validate_update_workspace_context(root: Path, decision: dict[str, Any]) -> 
             continue
         node = _read_node(root, node_id)
         path = entry.get("path")
-        if isinstance(path, str) and path.strip() and not role_matches_phase(entry.get("role"), node.get("phase")):
+        if isinstance(path, str) and path.strip() and not role_matches_node(entry.get("role"), node):
             raise ContractError(
-                "append_evidence.role does not match the node phase for a path-bearing artifact: "
-                f"role={entry.get('role')!r}, node={node_id}, phase={node.get('phase')!r}"
+                "append_evidence.role does not match the node type/scope for a path-bearing artifact: "
+                f"role={entry.get('role')!r}, node={node_id}, "
+                f"type={node.get('node_type') or node.get('phase')!r}, "
+                f"scope={node.get('validation_scope') or node.get('audit_scope') or node.get('candidate_kind')!r}"
             )
         owner = node_owner_from_artifact_path(path)
         if owner is not None and owner != node_id:

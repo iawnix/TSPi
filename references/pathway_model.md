@@ -1,66 +1,65 @@
 # Pathway Model
 
-`hypotheses.json` stores multiple pathway hypotheses at the same time. A
-single-step branch and a multi-step branch may coexist until evidence supports,
-refutes, or supersedes them.
-
-Pathway fields inside the combined hypotheses state:
+`hypotheses.json.pathways[]` may hold competing single- and multi-step pathway
+hypotheses. Branching appends nodes and events; it never deletes rejected
+history.
 
 ```json
 {
-  "schema_version": "ts-hypotheses",
-  "focus_hypothesis_id": "hyp_0001",
-  "hypotheses": [],
-  "accepted_facts": [],
-  "refuted_hypotheses": [],
-  "open_questions": [],
-  "focus_pathway_id": "p_two_step_001",
-  "pathways": [
-    {
-      "pathway_id": "p_two_step_001",
-      "label": "two-step via Int1",
-      "pattern": "R->TS1->Int1->TS2->P",
-      "status": "active",
-      "steps": [
-        {
-          "step_id": "s1",
-          "from": "R",
-          "to": "Int1",
-          "status": "active"
-        }
-      ]
-    }
+  "pathway_id": "p_two_step_001",
+  "label": "two-step via Int1",
+  "pattern": "R->TS1->Int1->TS2->P",
+  "status": "active",
+  "steps": [
+    {"step_id": "s1", "from": "R", "to": "Int1", "status": "active"},
+    {"step_id": "s2", "from": "Int1", "to": "P", "status": "proposed"}
   ]
 }
 ```
 
-Allowed pathway and step statuses:
+Pathway and step status values remain explicit model state. A backend, parser,
+candidate node, or validation node cannot change them.
 
-- `proposed`
-- `active`
-- `supported`
-- `refuted`
-- `superseded`
-- `accepted`
+## Pathway Audit
 
-Branching appends events in `research_state.json.branch_events[]`; it never deletes old
-nodes or hides a rejected branch.
+Use `node_type=audit, audit_scope=pathway`. Every pathway audit start decision
+must include `payload.pathway_ref` with `pathway_id` and, when auditing one
+step, `step_id`.
 
-`pathway_audit` nodes may be recorded as `audit_nodes` on a pathway or step, but
-their phase-level `claim_verdict` must not automatically mutate the audited step
-to `supported` or `refuted`. Pathway or step status should change only from
-elementary-step evidence or an explicit accepted-pathway contract. Whether to
-continue with a new hypothesis branch after a negative audit is an agent
-decision, not a validator-enforced branch rule.
-Every `pathway_audit` start decision must include `payload.pathway_ref` with the
-audited `pathway_id` and `step_id`; without that reference the audit cannot be
-attached to `hypotheses.json`. Before closing the audit, register exactly
-what the audit decided as a `pathway_audit_summary` evidence record with
-`quality.strict_pathway_decision=accepted` or
-`quality.strict_pathway_decision=pathway_not_accepted`.
-`claim_verdict=supported` then means the audit decision is supported, not that
-the pathway is necessarily accepted.
-For strict user requests such as mandatory IRC and supplied R->P proof, a
-negative audit means the audited branch is not accepted. The agent should open a
-new scientifically justified branch unless the user stops the run or the audit
-also documents that no meaningful branch remains.
+Before closing, register a `pathway_audit_summary` evidence record with:
+
+```text
+quality.strict_pathway_decision=accepted
+```
+
+or:
+
+```text
+quality.strict_pathway_decision=pathway_not_accepted
+```
+
+Then set `closure.audit.status=accepted|not_accepted` to match that strict
+decision and cite the evidence. If the evidence is still ambiguous, do not
+close the pathway audit; obtain the missing discriminator or stop the node
+without a scientific audit verdict. `study_complete` is separate. A
+not-accepted pathway branch does not complete a strict search while a
+meaningful alternative branch remains.
+
+## Multi-Step Requirements
+
+For `R->TS1->Int1->TS2->P`:
+
+- each TS has separate TS/Freq and connectivity evidence;
+- the shared intermediate has identity and minimum evidence;
+- step endpoint assignments refer to the same local intermediate basin;
+- each accepted elementary step has an audit record;
+- the pathway audit checks the complete ordered chain.
+
+Geometry-only connectivity does not prove electronic timing, spin/state
+character, or intermediate identity. Add the corresponding validation scopes
+when those claims are part of the hypothesis.
+
+## Legacy
+
+Legacy `pathway_audit` phase nodes and `claim_verdict` remain readable. Their
+verdict applies to the audit analysis, not automatically to pathway success.

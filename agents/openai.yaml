@@ -1,3 +1,4 @@
-display_name: Transition-State Workflow
-short_description: Chemistry-hypothesis-driven transition-state workspace control.
-default_prompt: Use the transition-state workflow to initialize a workspace, validate endpoints, propose evidence-backed hypotheses without creating proposal nodes, run node-scoped computation, validate evidence, and close mechanism branches.
+interface:
+  display_name: "Transition-State Workflow"
+  short_description: "Evidence-driven TS research with isolated agents"
+  default_prompt: "Use the transition-state workflow to manage an auditable research tree: normalize intake, create and test mechanism hypotheses, separate candidate search from validation and audit, delegate bounded backend or review work, and keep program outcomes distinct from scientific status."

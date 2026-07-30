@@ -1,208 +1,133 @@
 # Agent Decision Protocol
 
-This protocol is for agents using the skill during live transition-state
-research. It defines what to read before closing a node and before choosing the
-next action.
+The Root Agent chooses research direction. `ts_workspace` validates state,
+evidence references, authority, and topology; it does not select the next node.
 
-The workspace is the only trusted state source. Use `report_workspace` as the
-decision dashboard, then drill into node and evidence files when a choice
-depends on previous success or failure.
-The canonical root state is `research_state.json`, `hypotheses.json`, and
-`evidence_registry.json`. Do not load all three files into the prompt by
-default; use their report projections.
+## Decision Loop
 
-## Required Decision Cycle
+1. Read `report_workspace` or `ts_workspace_context`.
+2. Name the active hypothesis and prediction.
+3. State the highest evidence layer actually supported.
+4. Identify the discriminator that could change the hypothesis status.
+5. Load only relevant historical node or branch context.
+6. Choose one research act and one branch relation.
+7. Construct and validate `ts-decision/2` against the current revision.
+8. Apply one mutation.
 
-Before every mutation after bootstrap:
+Program success, parser output, subagent advice, and visual inspection are inputs
+to this decision, not decisions themselves.
 
-1. Run:
+## Choosing A Node Type
 
-   ```bash
-   export TS_AGENT_SKILL_ROOT=/path/to/transition-state-workflow
-   python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" report_workspace --root <workspace>
-   ```
+- New user inputs or missing constraints: `intake` (`n000` only for a new
+  workspace; ask the user rather than reopening intake later).
+- Propose, compare, revise, or evaluate a hypothesis: `mechanism`.
+- Generate structures without testing TS validity: `candidate_search`.
+- Produce a declared test: `validation` with the matching scope.
+- Decide acceptance or completion from registered evidence: `audit`.
 
-2. Read the current-node files relevant to the decision:
+Wavefunction, population, orbital, spin, or state analysis is a validation act,
+normally `electronic_structure` or `state_character`. It does not directly set
+hypothesis status. Open a later mechanism evaluation node.
 
-   - `nodes/<node_id>/node.json`
-   - current-node artifacts under `nodes/<node_id>/outputs/`
-   - `nodes/<node_id>/outputs/artifact_manifest.json` when this node consumed
-     upstream artifacts
-   - relevant records in `evidence_registry.json`
+## Evidence Before Status
 
-3. Read the phase-specific reference named below.
-4. Start from a matching file in `templates/decision/`.
-5. Write a decision JSON whose `action` matches the command.
-6. Run:
+- `program.outcome=success` means the operation completed.
+- `hypothesis.status=unsupported` requires a contradicted prediction or
+  explicit decision boundary.
+- Missing or conflicting evidence is `ambiguous`.
+- `audit.status=accepted` means the audited object passed its declared gates.
+- A pathway audit can be `not_accepted` while the overall study remains open.
 
-   ```bash
-   python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_decision --root <workspace> --decision-file decision.json
-   ```
+For a pathway audit, the running node must already have `node.pathway_ref`.
+Before closure, register a pathway audit record with
+`quality.strict_pathway_decision=accepted` or
+`quality.strict_pathway_decision=pathway_not_accepted` and cite it in the close
+decision.
 
-7. Apply exactly one mutation: `start_node`, `propose_hypothesis`,
-   `update_workspace`, or `end_node`.
-8. Run `report_workspace` again before choosing the next action.
+## Previous Failed Exploration
 
-Do not infer workspace state from memory. Do not copy JSON from `tests/`.
+A previous failed exploration affects the next decision only after its scope is
+checked.
 
-## Before Closing A Node
+Read:
 
-Read the current node's phase and use the matching reference:
+- `report_workspace.node_index` for candidate checkpoints;
+- `nodes/<failed_node>/node.json` through `report_node`, not direct prompt
+  injection;
+- `report_branch_context(from_node, anchor_node)` for the trigger, selected
+  checkpoint, and attempts between them;
+- registered evidence and local attempt artifacts for the failure cause.
 
-- `endpoint`: `references/decision_contract.md` and
-  `references/mechanism_reflection.md`
-- `candidate_generation`: `references/candidate_generation.md`
-- `tsfreq_validation`: `references/gaussian_validation.md`
-- `connectivity_validation`: `references/connectivity_validation.md`
-- `accepted_audit`: `references/workspace_contract.md` and
-  `references/mechanism_reflection.md`
-- `pathway_audit`: `references/pathway_model.md` and
-  `references/report_template.md`
+Classify the failure:
 
-If an old workspace has a running `hypothesis_generation` node, treat it as a
-legacy close-compatible record and read `references/decision_contract.md` plus
-`references/mechanism_reflection.md`. Do not create another node with that
-phase.
+- program failure: scheduler, executable, SCF, optimizer, parser, scratch,
+  transfer, or timeout;
+- candidate failure: structure does not provide a useful TS seed;
+- validation contradiction: evidence conflicts with a prediction;
+- audit blocker: required evidence is missing or inconsistent;
+- scope mismatch: the old result tests another hypothesis, pathway, charge,
+  multiplicity, state, or method boundary.
 
-For `pathway_audit`, check these two contract points before closing:
+Do not reopen or rewrite the failed node. Decide whether to retry an attempt,
+recalculate, continue, branch from a historical anchor, revise the hypothesis,
+ask the user, or stop.
 
-- The running node must already have `node.pathway_ref` from the
-  `start_node.payload.pathway_ref` decision. It must name the audited
-  `pathway_id` and `step_id`; do not close a pathway audit that cannot be tied
-  to a pathway step.
-- Register a `pathway_audit_summary` evidence record first, using
-  `update_pathway_audit_accepted.json` or
-  `update_pathway_audit_not_accepted.json`. The evidence must carry
-  `quality.strict_pathway_decision=accepted` or
-  `quality.strict_pathway_decision=pathway_not_accepted`, and the `end_node`
-  decision must cite that evidence ref.
+Across independent repeated studies, a historical failure is a prior, not a
+workspace fact, until its structures, method, scope, and artifacts are verified
+for the current study.
 
-Then choose an `end_*` decision template that matches the evidence actually
-available. If a phase is not supported, close it as `refuted`,
-`inconclusive`, or `not_evaluated` as appropriate.
+## Branch Relations
 
-Program failures and chemistry failures are different:
+### `continue_parent`
 
-- Program failure: scheduler failure, parser failure, route syntax issue,
-  optimizer crash, IRC corrector failure. Use `program_status=failed` and
-  `claim_verdict=not_evaluated`.
-- Chemistry failure: calculation completed but evidence refutes the claim. Use
-  `program_status=completed` and the appropriate `claim_verdict`.
+Use when the same scientific object proceeds to another evidence act. The new
+node's parent is `from_node`.
 
-When the program failed, read `references/program_runtime_failures.md` before
-closing or launching a follow-up node. Use it to identify the first hard failure,
-decide what evidence to preserve, and distinguish a protocol retry from a real
-candidate, hypothesis, or pathway change.
+### `new_solution_branch`
 
-## After Closing A Node
+Use when the hypothesis is retained but the candidate or search strategy
+changes. Select an ancestor checkpoint after loading it. The new parent is the
+anchor; the failed trigger remains `from_node`.
 
-Immediately run `report_workspace` and inspect:
+### `new_hypothesis_branch`
 
-- `valid` and `validation_findings`
-- `readiness.highest_validated_layer`
-- `readiness.blocking_evidence`
-- `hypothesis_context.required_next_evidence`
-- `hypothesis_context.open_predictions`
-- `open_nodes`
-- `branch_frontiers`
-- `solution_lineage`
-- `branch_events`
-- `node_index`
+Use for an alternative mechanism proposal with a new hypothesis ID and a known
+parent hypothesis. The proposal itself is a `mechanism/propose` node.
 
-Use this report to decide one of:
+### `new_pathway_branch`
 
-- `start_node` to continue the same evidence chain;
-- `start_node` to open a new solution or pathway branch;
-- `propose_hypothesis` to register an evidence-backed initial or alternative
-  mechanism proposal without creating a node;
-- `update_workspace` to register missing evidence or perform an explicit
-  repair;
-- `stop` if no meaningful branch remains or the user asked to stop;
-- `ask_user` if the next chemistry decision depends on user preference.
+Use when elementary-step decomposition, intermediate topology, or pathway
+assignment changes.
 
-## Seeing Previous Failed Exploration
+### `recalculation_of`
 
-Within the same workspace, the agent can see previous failed exploration. It is
-not all loaded into the prompt automatically, but it is reachable through the
-workspace state:
+Use only for a scientifically meaningful method change that receives a new
+research node. A technical retry stays under the existing node as
+`ts-calculation-intent/2 attempt_kind=retry`.
 
-- `report_workspace.node_index` lists all known nodes and their lifecycle,
-  phase, verdict, and program status.
-- `report_workspace.branch_frontiers` shows closed or stopped nodes and whether
-  they already led to a follow-up branch.
-- `report_workspace.solution_lineage` groups attempts by hypothesis and
-  `solution_ref`.
-- `report_workspace.branch_events` records branch provenance, including
-  `from_node`, `anchor_node`, `reason_code`, and `changed_variable`.
-- `nodes/<failed_node>/node.json` contains closure summaries, program facts,
-  mechanism facts, evidence refs, and open questions.
-- `evidence_registry.json` links evidence ids to node-scoped artifact paths.
-- `decisions/<decision_id>.json` stores the full decision snapshot that created
-  or closed a node.
-- `decision_log.jsonl` and `transaction_log.jsonl` provide the mutation audit
-  trail.
+## Backtracking
 
-When a previous failure may affect the next decision, first run
-`report_node --node-id <node>` to load its compact context capsule. Before
-rebasing a new branch onto an old checkpoint, run
-`report_branch_context --from-node <trigger> --anchor-node <checkpoint>` to
-load both endpoints and the intervening attempts. Read raw artifacts only when
-their compact evidence summaries are insufficient.
+Backtracking means:
 
-Across independent repeated studies, do not reuse old task directories or old
-TS structures unless the user explicitly asks for cross-run comparison. The
-previous-failed-exploration rule applies inside the active workspace only.
+1. select `from_node` as the current trigger;
+2. select an ancestor `anchor_node` whose scientific state remains usable;
+3. inspect `report_branch_context`;
+4. create a new node parented to the anchor with the chosen relation;
+5. preserve all failed descendants as history.
 
-## Choosing The Next Branch Relation
+The validator checks ancestry and references. It cannot decide which anchor is
+scientifically useful.
 
-Use `continue_parent` when the same scientific object continues to the next
-evidence layer, or when the same TS claim is re-validated with different
-program or IRC protocol settings after a program-level failure.
+## Subagent Use
 
-Use `new_solution_branch` only when the candidate or search strategy really
-changes under the same hypothesis. It requires a new `solution_ref.solution_id`
-and `parent_node == branch_context.anchor_node`. The agent selects the anchor;
-the validator only requires it to be an ancestor of `from_node`.
+Use independent review only when it may change a decision: competing
+hypotheses, ambiguous validation, conflicting evidence, failure diagnosis,
+backtrack selection, or audit readiness. The result is advisory and cannot be
+registered as primary evidence without independent local artifact support.
 
-When the mechanism hypothesis changes, first use `propose_hypothesis` with
-`proposal_context.kind=alternative`. That mutation creates no node. Use
-`new_hypothesis_branch` only on the proposal's first evidence-producing node;
-its branch provenance must match the stored `proposal_context`.
+## Legacy Templates
 
-Use `new_pathway_branch` when the pathway topology or step model changes.
-
-Monitoring, report packaging, snapshots, workspace repair, and visualization
-do not create nodes. Use read/support commands or a supported
-`update_workspace` mutation. Historical `administrative_followup` records are
-read-compatible only.
-
-If two or more consecutive nodes under the same hypothesis fail by wrong basin,
-route ineffectiveness, ambiguous surface, repeated same-side IRC endpoints, or
-route mismatch, read `references/strategy_reflection.md` before opening another
-node.
-
-## Template Routing
-
-Use templates as the starting point, not as a policy engine:
-
-- endpoint start/close: `start_endpoint_n000.json`,
-  `end_endpoint_n000_supported.json`
-- initial mechanism proposal: `propose_initial_hypothesis.json`
-- alternative mechanism proposal: `propose_alternative_hypothesis.json`, then
-  `start_candidate_generation__alternative_hypothesis.json`
-- R/P conformer strategy: `start_endpoint_conformer_generation.json`
-- evidence registration: `update_*_evidence.json`
-- normal evidence-layer progression: `start_candidate_generation.json`,
-  `start_tsfreq_validation.json`,
-  `start_connectivity_validation__initial.json`, `start_accepted_audit.json`,
-  `start_pathway_audit.json`
-- same TS claim with changed IRC/protocol after program failure:
-  `start_connectivity_validation__protocol_variant.json`
-- real replacement candidate or search strategy:
-  `start_solution_branch__strategy_change.json`
-- negative pathway audit: `update_pathway_audit_not_accepted.json`,
-  `end_pathway_audit_not_accepted.json`
-
-If no template matches, do not force the nearest template. Read
-`references/decision_contract.md`, construct the minimal valid decision, and
-run `validate_decision` before mutation.
+`templates/decision/` describes the legacy phase protocol. Use it only for an
+existing legacy workspace. New v2 decisions should be constructed from
+`references/decision_contract.md` or by the Pi four-tool control plane.

@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TS isolated agent task",
+  "type": "object",
+  "required": ["schema_version", "task_id", "role", "authority", "operation", "objective", "workspace", "scope", "inputs", "capabilities", "constraints", "output_contract"],
+  "properties": {
+    "schema_version": {"const": "ts-agent-task/1"},
+    "task_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "role": {"enum": ["review", "backend", "render", "report", "email"]},
+    "authority": {"enum": ["advisory", "operational"]},
+    "operation": {"type": "string", "minLength": 1, "maxLength": 128},
+    "objective": {"type": "string", "minLength": 1, "maxLength": 4000},
+    "workspace": {
+      "type": "object",
+      "required": ["root", "report_id", "revision"],
+      "properties": {
+        "root": {"type": "string", "minLength": 1, "maxLength": 4096},
+        "report_id": {"type": ["string", "null"]},
+        "revision": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "scope": {"$ref": "#/$defs/scope"},
+    "inputs": {"type": "object"},
+    "capabilities": {"type": "array", "uniqueItems": true, "maxItems": 32, "items": {"type": "string", "minLength": 1, "maxLength": 128}},
+    "constraints": {
+      "type": "object",
+      "required": ["canonical_workspace_mutation", "scientific_decision", "recursive_delegation", "remote_authority", "external_side_effects"],
+      "properties": {
+        "canonical_workspace_mutation": {"const": false},
+        "scientific_decision": {"const": false},
+        "recursive_delegation": {"const": false},
+        "remote_authority": {"const": "execution_mirror"},
+        "external_side_effects": {"type": "boolean"}
+      },
+      "additionalProperties": false
+    },
+    "output_contract": {"const": "ts-agent-result/1"}
+  },
+  "allOf": [
+    {"if": {"properties": {"role": {"const": "review"}}}, "then": {"properties": {"authority": {"const": "advisory"}}}},
+    {"if": {"properties": {"role": {"enum": ["backend", "render", "report", "email"]}}}, "then": {"properties": {"authority": {"const": "operational"}}}}
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "scope": {
+      "type": "object",
+      "required": ["report_id", "node_ids", "hypothesis_id", "pathway_id"],
+      "properties": {
+        "report_id": {"type": ["string", "null"]},
+        "node_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "hypothesis_id": {"type": ["string", "null"]},
+        "pathway_id": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    }
+  }
+}

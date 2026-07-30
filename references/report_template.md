@@ -89,7 +89,8 @@ The evidence audit should retain:
 - Pathway audit, including negative-audit conclusions such as
    `pathway_not_accepted`. Read this from `pathway_audit_summary` evidence,
    especially `quality.strict_pathway_decision`; do not infer it from
-   `claim_verdict=supported` alone.
+   an audit node's generic completion alone. Legacy `claim_verdict=supported`
+   is likewise insufficient.
 
 ## Minimum Acceptance Gates
 
@@ -103,7 +104,8 @@ Accepted TS language is allowed only when all are present:
   `electronic_structure_gate`, `state_character_gate`, and/or
   `shared_basin_consistency_gate` for the same `hypothesis_id` when the
   hypothesis declares the corresponding mechanism claims;
-- an `accepted_audit` node or accepted artifact written by `ts_workspace`;
+- an accepted `audit/transition_state` or `audit/elementary_step` node and the
+  accepted artifact written by `ts_workspace`;
 - no unresolved contradiction in pathway audit evidence for the reported
   pathway step.
 
@@ -121,6 +123,6 @@ state the next branch or open question separately.
 - Use tables for node history, key structures, energy profile, and artifact
   provenance.
 - Keep numeric values tied to units and artifact paths.
-- Distinguish program status from scientific claim verdict.
+- Distinguish `program.outcome`, `hypothesis.status`, and `audit.status`.
 - Cite evidence IDs rather than relying on prose memory.
 - Put long coordinate blocks or full log excerpts in appendices or file links.

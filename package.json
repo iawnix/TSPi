@@ -13,7 +13,7 @@
     "install-env": "python3 scripts/install_env.py --package-root . --workspace-root \"${TS_WORKSPACE_ROOT:?set TS_WORKSPACE_ROOT to the TS workspace root}\" --with-render --json",
     "install-env:core": "python3 scripts/install_env.py --package-root . --workspace-root \"${TS_WORKSPACE_ROOT:?set TS_WORKSPACE_ROOT to the TS workspace root}\" --json",
     "test": "python3 scripts/ts_runtime.py run -m pytest -q",
-    "test:pi-adapter": "python3 scripts/ts_runtime.py run -m pytest -q tests/test_pi_agent_adapter.py tests/test_pi_subagent_contract.py tests/test_pi_compute_tools.py"
+    "test:pi-adapter": "python3 scripts/ts_runtime.py run -m pytest -q tests/test_pi_agent_adapter.py tests/test_pi_subagent_contract.py tests/test_pi_compute_tools.py tests/test_agent_protocol.py"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "^0.81.1",

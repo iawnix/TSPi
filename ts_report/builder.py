@@ -6,7 +6,15 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .context import collect_report_context, pathway_audit_outcome_for_node
+from .context import (
+    collect_report_context,
+    node_audit_status,
+    node_hypothesis_status,
+    node_label,
+    node_program_outcome,
+    node_scientific_status,
+    pathway_audit_outcome_for_node,
+)
 from .figures import write_report_assets
 
 
@@ -47,6 +55,7 @@ def render_final_report(context: dict[str, Any]) -> str:
         "| --- | --- |",
         f"| Workspace | `{context['workspace_root']}` |",
         f"| Highest validated layer | `{context['highest_validated_layer']}` |",
+        f"| Validation scopes reached | `{', '.join(context.get('validation_scopes_reached', [])) or 'none'}` |",
         f"| Final claim | `{context['final_claim']}` |",
         f"| Accepted TS refs | `{', '.join(context.get('accepted_ts_refs', [])) or 'none'}` |",
         f"| Nodes | {len(context.get('nodes', []))} |",
@@ -84,7 +93,7 @@ def render_final_report(context: dict[str, Any]) -> str:
         "",
         "## 9. Search Tree Summary",
         "",
-        "| Node | Phase | Lifecycle | Program status | Claim verdict | Audit outcome |",
+        "| Node | Type / scope | Lifecycle | Program outcome | Hypothesis status | Audit status / outcome |",
         "| --- | --- | --- | --- | --- | --- |",
     ]
     records = context.get("evidence_records", [])
@@ -92,16 +101,17 @@ def render_final_report(context: dict[str, Any]) -> str:
         audit_note = _pathway_audit_note(node, records)
         audit_outcome = audit_note.removeprefix(" (audit_outcome=").removesuffix(")") if audit_note else ""
         lines.append(
-            f"| `{node['node_id']}` | {node['phase']} | {node['lifecycle']} | "
-            f"{node.get('program_status', '')} | {node.get('claim_verdict', 'open')} | {audit_outcome} |"
+            f"| `{node['node_id']}` | {node_label(node)} | {node['lifecycle']} | "
+            f"{node_program_outcome(node)} | {node_hypothesis_status(node)} | "
+            f"{node_audit_status(node) or audit_outcome} |"
         )
 
     lines.extend(["", "Node index:", ""])
     for node in context.get("nodes", []):
         audit_note = _pathway_audit_note(node, records)
         lines.append(
-            f"- {node['node_id']}: {node['phase']} / {node['lifecycle']} / "
-            f"{node.get('claim_verdict', 'open')}{audit_note}"
+            f"- {node['node_id']}: {node_label(node)} / {node['lifecycle']} / "
+            f"{node_scientific_status(node)}{audit_note}"
         )
 
     lines.extend(
@@ -157,7 +167,7 @@ def _conclusion_sentence(context: dict[str, Any]) -> str:
             "**Conclusion.** The transition state is accepted by TS/Freq and connectivity gates, "
             "but no accepted pathway audit is present."
         )
-    return f"**Conclusion.** Highest supported layer is `{highest}`; do not report beyond that layer."
+    return f"**Conclusion.** Highest evidence layer reached is `{highest}`; no higher scientific conclusion is accepted."
 
 
 def _reaction_overview_lines(context: dict[str, Any]) -> list[str]:
@@ -372,7 +382,9 @@ def _key_facts(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _pathway_audit_note(node: dict[str, Any], records: list[Any]) -> str:
-    if node.get("phase") != "pathway_audit":
+    if node.get("phase") != "pathway_audit" and not (
+        node.get("node_type") == "audit" and node.get("audit_scope") == "pathway"
+    ):
         return ""
     outcome = pathway_audit_outcome_for_node(node.get("node_id"), records)
     if outcome:

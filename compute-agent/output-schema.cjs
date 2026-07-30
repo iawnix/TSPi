@@ -1,10 +1,8 @@
 "use strict";
 
+const { validateAgentResult, validateAgentTask } = require("../subagents/agent-protocol.cjs");
+
 const MAX_OUTPUT_BYTES = 16 * 1024;
-const TOP_LEVEL_KEYS = [
-  "schema_version", "authority", "operation", "intent_id", "node_id", "summary", "state",
-  "program_status", "error_class", "artifact_refs", "limitations",
-];
 const REQUIRED_TOOLS = {
   prepare: "ts_workspace_compute_prepare",
   inspect: "ts_workspace_compute_status",
@@ -33,42 +31,51 @@ function normalizeJsonText(text) {
 }
 
 function validateOperatorReport(value, packet, actions) {
-  if (!isPlainObject(packet) || packet.schema_version !== "ts-compute-operator-task/1") {
-    throw new Error("invalid compute operator task packet");
-  }
-  if (!isPlainObject(value)) throw new Error("compute operator report must be an object");
-  rejectUnknownKeys(value, TOP_LEVEL_KEYS, "compute operator report");
-  if (value.schema_version !== "ts-compute-operator-report/1") throw new Error("invalid compute operator report schema_version");
-  if (value.authority !== "operational") throw new Error("compute operator authority must be operational");
-  if (value.operation !== packet.operation) throw new Error("compute operator operation does not match task packet");
+  const task = validateAgentTask(packet);
+  if (task.role !== "backend") throw new Error("compute operator requires role=backend task");
+  const report = validateAgentResult(value, task);
   if (!Array.isArray(actions) || actions.length < 1 || actions.length > 2) {
     throw new Error("compute operator must execute one or two scoped actions");
   }
-  const requiredTool = REQUIRED_TOOLS[packet.operation];
+  const requiredTool = REQUIRED_TOOLS[task.operation];
   const requiredActions = actions.filter((action) => isPlainObject(action) && action.tool === requiredTool);
   const requiredAction = requiredActions[0];
   if (!requiredAction) throw new Error(`compute operator did not call required tool: ${requiredTool}`);
   if (requiredActions.length !== 1) throw new Error(`compute operator must call ${requiredTool} exactly once`);
-  if (packet.operation !== "inspect" && actions.length !== 1) {
-    throw new Error(`${packet.operation} compute operation must execute exactly one action`);
+  if (task.operation !== "inspect" && actions.length !== 1) {
+    throw new Error(`${task.operation} compute operation must execute exactly one action`);
   }
-  if (packet.operation === "inspect") {
+  if (task.operation === "inspect") {
     const tailCount = actions.filter((action) => isPlainObject(action) && action.tool === "ts_workspace_compute_tail").length;
     if (tailCount > 1) throw new Error("compute operator may call ts_workspace_compute_tail at most once");
   }
+
   const canonical = operationResult(requiredAction.result);
   if (!isPlainObject(canonical)) throw new Error("required compute tool returned no canonical result");
+  const canonicalProgram = {
+    outcome: mapProgramOutcome(canonical.program_status),
+    state: stringOrNull(canonical.state),
+    error_class: stringOrNull(canonical.error_class),
+    exit_status: Number.isInteger(canonical.exit_status) ? canonical.exit_status : null,
+  };
+  if (JSON.stringify(report.program) !== JSON.stringify(canonicalProgram)) {
+    throw new Error("compute operator program does not match tool result");
+  }
+  if (report.outcome !== "success") throw new Error("successful compute tool execution requires outcome=success");
 
-  const intentId = nullableString(value.intent_id, "intent_id", 128);
-  const nodeId = nullableString(value.node_id, "node_id", 128);
-  const state = nullableString(value.state, "state", 64);
-  const programStatus = nullableString(value.program_status, "program_status", 64);
-  const errorClass = nullableString(value.error_class, "error_class", 256);
-  assertSame(intentId, stringOrNull(canonical.intent_id), "intent_id");
-  assertSame(nodeId, stringOrNull(canonical.node_id), "node_id");
-  assertSame(state, stringOrNull(canonical.state), "state");
-  assertSame(programStatus, stringOrNull(canonical.program_status), "program_status");
-  assertSame(errorClass, stringOrNull(canonical.error_class), "error_class");
+  const inputs = task.inputs;
+  const backend = requireString(inputs.backend, "task inputs.backend", 64);
+  const provenance = isPlainObject(canonical.provenance) ? canonical.provenance : {};
+  if (provenance.backend && provenance.backend !== backend) {
+    throw new Error("compute operator backend does not match tool result");
+  }
+  const payload = validatePayload(report.payload);
+  assertSame(payload.intent_id, stringOrNull(canonical.intent_id), "intent_id");
+  assertSame(payload.node_id, stringOrNull(canonical.node_id), "node_id");
+  assertSame(payload.backend, backend, "backend");
+  if (JSON.stringify(task.scope.node_ids) !== JSON.stringify([payload.node_id])) {
+    throw new Error("compute operator node_id does not match task scope");
+  }
 
   const allowedArtifacts = new Set();
   for (const action of actions) {
@@ -77,23 +84,33 @@ function validateOperatorReport(value, packet, actions) {
       if (typeof ref === "string") allowedArtifacts.add(ref);
     }
   }
-  const artifactRefs = stringArray(value.artifact_refs, "artifact_refs", 64, 4096);
-  for (const ref of artifactRefs) {
+  for (const ref of report.artifact_refs) {
     if (!allowedArtifacts.has(ref)) throw new Error(`compute operator invented artifact ref: ${ref}`);
+  }
+  for (const [index, fact] of report.facts.entries()) {
+    if (!['program', 'parser'].includes(fact.kind)) throw new Error(`facts[${index}].kind is invalid for backend role`);
+    for (const ref of fact.basis_refs) {
+      if (!allowedArtifacts.has(ref)) throw new Error(`facts[${index}] cites an unknown artifact: ${ref}`);
+    }
   }
 
   return {
-    schema_version: "ts-compute-operator-report/1",
-    authority: "operational",
-    operation: packet.operation,
-    intent_id: intentId,
-    node_id: nodeId,
-    summary: requireString(value.summary, "summary", 4000),
-    state,
-    program_status: programStatus,
-    error_class: errorClass,
-    artifact_refs: artifactRefs,
-    limitations: optionalStringArray(value.limitations, "limitations", 16, 1000),
+    ...report,
+    payload,
+    provenance: {
+      source: "typed_compute_tools",
+      action_names: actions.map((action) => action.tool),
+    },
+  };
+}
+
+function validatePayload(value) {
+  if (!isPlainObject(value)) throw new Error("backend payload must be an object");
+  rejectUnknownKeys(value, ["intent_id", "node_id", "backend"], "backend payload");
+  return {
+    intent_id: nullableString(value.intent_id, "payload.intent_id", 128),
+    node_id: nullableString(value.node_id, "payload.node_id", 128),
+    backend: requireString(value.backend, "payload.backend", 64),
   };
 }
 
@@ -102,20 +119,15 @@ function operationResult(value) {
   return isPlainObject(value.result) ? value.result : value;
 }
 
+function mapProgramOutcome(value) {
+  if (value === "completed") return "success";
+  if (value === "failed" || value === "stopped") return "failure";
+  if (value === "not_run") return "not_run";
+  throw new Error(`invalid canonical program_status: ${value}`);
+}
+
 function assertSame(actual, expected, label) {
   if (actual !== expected) throw new Error(`compute operator ${label} does not match tool result`);
-}
-
-function stringArray(value, label, maxItems, maxLength) {
-  if (!Array.isArray(value)) throw new Error(`${label} must be an array`);
-  if (value.length > maxItems) throw new Error(`${label} exceeds ${maxItems} items`);
-  return value.map((item, index) => requireString(item, `${label}[${index}]`, maxLength));
-}
-
-function optionalStringArray(value, label, maxItems, maxLength) {
-  if (value === undefined || value === null) return [];
-  if (typeof value === "string") return [requireString(value, label, maxLength)];
-  return stringArray(value, label, maxItems, maxLength);
 }
 
 function nullableString(value, label, maxLength) {

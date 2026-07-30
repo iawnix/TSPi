@@ -1,5 +1,10 @@
 # Runtime Decision Templates
 
+> Compatibility scope: these templates implement the legacy `ts-decision`
+> phase protocol. Use them only when continuing a legacy workspace. New
+> `ts-decision/2` research uses `references/decision_contract.md` or Pi's
+> `ts_workspace_decide -> ts_workspace_validate -> ts_workspace_apply` flow.
+
 These templates are the runtime starting point for `ts_workspace` mutations.
 Use them when preparing a real decision JSON, then run:
 

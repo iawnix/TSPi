@@ -1,262 +1,235 @@
 # Decision Contract
 
-A decision JSON is the only mutation instruction channel.
+New mutations use `ts-decision/2`. A decision is selected by the Root Agent,
+validated against the live workspace, and applied transactionally.
 
-The public schema version remains `ts-decision`. Strict decisions use `n000`
-only for endpoint validation, register a mechanism hypothesis through a
-separate `propose_hypothesis` mutation, and require all later evidence-testing
-nodes to reference a registered hypothesis.
+Required mutation provenance:
 
-Runtime decision shapes live under `templates/decision/`. Those files are the
-authoritative examples for agent-facing workspace mutation. Test files are
-regression fixtures only and must not be used as operating examples for live TS
-research. Templates define JSON shape, provenance, evidence roles, and closure
-semantics; they do not encode fixed retry classification or automatic branch
-selection.
+- unique `decision_id`
+- `report_ref.report_id` and `report_ref.workspace_root`
+- current `base_revision`
+- explicit rationale and evidence refs
+- one bounded payload
 
-## Start `n000`
+Pi constructs this envelope with `ts_workspace_decide`; Codex may construct it
+directly and run `validate_decision`.
+
+## Start Intake
+
+`n000` is the only intake node and has no parent or branch context.
 
 ```json
 {
-  "schema_version": "ts-decision",
+  "schema_version": "ts-decision/2",
+  "decision_id": "dec_intake_start",
   "action": "start_node",
-  "rationale": "Start endpoint validation.",
+  "rationale": "Normalize the supplied structures and research constraints.",
   "evidence_refs": [],
-  "report_ref": {
-    "report_id": "rep_20260622T010000",
-    "workspace_root": "tssearch_example"
-  },
+  "report_ref": {"report_id": "rep_...", "workspace_root": "/path/to/workspace"},
+  "base_revision": "sha256:...",
   "payload": {
     "node_id": "n000",
-    "phase": "endpoint",
-    "hypothesis": "The supplied structures define usable endpoint basins.",
-    "expected_evidence": [
-      "endpoint_provenance",
-      "charge_multiplicity",
-      "atom_mapping",
-      "reaction_center_delta"
-    ]
+    "parent_node": null,
+    "node_type": "intake",
+    "objective": "Normalize user inputs, structures, constraints, and completion criteria."
   }
 }
 ```
 
-`end_node n000` closes only the endpoint claim. It does not create or promote a
-mechanism hypothesis.
+Close intake with `closure.intake.status=ready|needs_input` and
+`closure.program.outcome=not_run` unless a real program ran.
 
-## Propose A Hypothesis
+## Propose A Hypothesis Node
 
-After `n000` is supported and its evidence is registered, create the initial
-hypothesis without creating a node:
+Hypothesis creation is a mechanism node, not a root-level mutation.
 
 ```json
 {
-  "schema_version": "ts-decision",
-  "action": "propose_hypothesis",
-  "rationale": "Propose an endpoint-derived mechanism hypothesis.",
-  "evidence_refs": ["ev_endpoint_0001"],
-  "report_ref": {
-    "report_id": "rep_20260622T010500",
-    "workspace_root": "tssearch_example"
-  },
+  "schema_version": "ts-decision/2",
+  "decision_id": "dec_mechanism_start",
+  "action": "start_node",
+  "rationale": "Create a falsifiable endpoint-derived mechanism model.",
+  "evidence_refs": ["ev_intake_001"],
+  "report_ref": {"report_id": "rep_...", "workspace_root": "/path/to/workspace"},
+  "base_revision": "sha256:...",
   "payload": {
+    "node_id": "n001",
+    "parent_node": "n000",
+    "node_type": "mechanism",
+    "objective": "Propose a falsifiable mechanism.",
+    "mechanism_action": "propose",
     "proposed_hypothesis": {
       "hypothesis_id": "hyp_0001",
-      "summary": "Concerted C-N formation on the singlet surface.",
+      "parent_hypothesis_id": null,
+      "summary": "Concerted bond formation on the singlet surface.",
       "derived_from": {},
       "structured_claim": {
         "reaction_center": {"forming_bonds": [], "breaking_bonds": []},
         "reaction_class": ["bond_formation"],
         "elementary_step_model": "concerted",
-        "electronic_model": {"surface": "ground_state"}
+        "electronic_model": {"spin_surface": "singlet"}
       },
       "mechanism_claims": [],
-      "testable_predictions": [],
-      "required_evidence": [],
-      "uncertainties": ["Endpoint geometry does not prove reaction timing."],
+      "testable_predictions": [
+        {
+          "prediction_id": "pred_mode_001",
+          "validation_scope": "tsfreq",
+          "expectation": "One imaginary mode follows the declared reaction coordinate.",
+          "required_evidence_roles": ["tsfreq_gate"]
+        }
+      ],
+      "required_evidence": ["tsfreq_gate"],
+      "uncertainties": ["Connectivity is not yet tested."],
       "alternative_hypotheses": [],
-      "evidence_refs": ["ev_endpoint_0001"]
-    },
-    "proposal_context": {
-      "kind": "initial",
-      "from_node": "n000",
-      "anchor_node": "n000",
-      "changed_variable": "initial_mechanism_model",
-      "reason_code": "endpoint_interpretation",
-      "evidence_refs": ["ev_endpoint_0001"]
-    }
-  }
-}
-```
-
-The mutation writes a `status=proposed` entry with `source_node`,
-`branch_anchor_node`, `proposed_by_decision`, and `proposal_context`. It has no
-`claim_verdict` and does not add an entry to `research_state.json`. The first
-evidence-producing node that references it changes the status to `active`.
-Use `templates/decision/propose_initial_hypothesis.json` for the complete
-runtime shape.
-
-## Later Mechanism Nodes
-
-```json
-{
-  "schema_version": "ts-decision",
-  "action": "start_node",
-  "rationale": "Open TS/Freq validation for the active hypothesis.",
-  "evidence_refs": ["ev_candidate_001"],
-  "report_ref": {
-    "report_id": "rep_20260622T010500",
-    "workspace_root": "tssearch_example"
-  },
-  "payload": {
-    "parent_node": "n000",
-    "phase": "tsfreq_validation",
-    "hypothesis": "The candidate is a first-order saddle for hyp_0001.",
-    "hypothesis_ref": {
-      "hypothesis_id": "hyp_0001",
-      "prediction_ids": ["pred_mode_001"]
-    },
-    "solution_ref": {
-      "solution_id": "sol_scan_001",
-      "strategy": "relaxed_scan_seed",
-      "summary": "A constrained scan will seed this TS/Freq attempt."
+      "evidence_refs": ["ev_intake_001"]
     },
     "branch_context": {
       "relation": "continue_parent",
       "from_node": "n000",
       "anchor_node": "n000"
+    }
+  }
+}
+```
+
+Close a proposal mechanism node with `closure.hypothesis`, normally
+`status=ambiguous` until evidence is produced.
+
+## Start Candidate Or Validation Work
+
+Candidate search requires `candidate_kind`. Validation requires
+`validation_scope` and prediction IDs whose declared scope matches.
+
+```json
+{
+  "schema_version": "ts-decision/2",
+  "decision_id": "dec_validation_start",
+  "action": "start_node",
+  "rationale": "Test the declared imaginary-mode prediction.",
+  "evidence_refs": ["ev_candidate_001"],
+  "report_ref": {"report_id": "rep_...", "workspace_root": "/path/to/workspace"},
+  "base_revision": "sha256:...",
+  "payload": {
+    "node_id": "n003",
+    "parent_node": "n002",
+    "node_type": "validation",
+    "objective": "Produce TS/Freq evidence for pred_mode_001.",
+    "validation_scope": "tsfreq",
+    "hypothesis_ref": {
+      "hypothesis_id": "hyp_0001",
+      "prediction_ids": ["pred_mode_001"]
+    },
+    "branch_context": {
+      "relation": "continue_parent",
+      "from_node": "n002",
+      "anchor_node": "n002"
     },
     "expected_evidence": ["gaussian_output", "imaginary_mode_summary"]
   }
 }
 ```
 
-`closure.mechanism.hypothesis_ref` must match the node's
-`payload.hypothesis_ref`.
-`payload.solution_ref` is optional lineage metadata for grouping alternative
-search strategies under the same hypothesis. It must not be used as a verdict,
-retry state, or automatic branch selector.
-For `phase=pathway_audit`, `payload.pathway_ref` is mandatory and must name the
-audited `pathway_id` and `step_id`. Before closing that node, register and cite
-a `pathway_audit_summary` evidence record with
-`quality.strict_pathway_decision=accepted` or
-`quality.strict_pathway_decision=pathway_not_accepted`.
+Candidate and validation closures may record `closure.program` only. They must
+not contain `closure.hypothesis` or `closure.audit`.
 
-## Alternative Hypothesis Proposal
+## Interpret Evidence
 
-Use `action=propose_hypothesis` with `proposal_context.kind=alternative` and a
-new `proposed_hypothesis.hypothesis_id`. The hypothesis must include
-`parent_hypothesis_id`, and the proposal must cite already registered evidence.
-`proposal_context.from_node` identifies the evidence-producing trigger;
-`proposal_context.anchor_node` becomes the new hypothesis
-`branch_anchor_node`.
-
-The first evidence node for that proposal uses
-`branch_context.relation=new_hypothesis_branch`, references the proposed
-`hypothesis_id`, and exactly matches the stored `from_node`, `anchor_node`,
-`changed_variable`, and `reason_code`. This node activates the hypothesis. See
-`templates/decision/propose_alternative_hypothesis.json`.
-
-When the agent opens a same-hypothesis replacement solution, the new
-`start_node` decision keeps the same `payload.hypothesis_ref`, supplies a new
-`payload.solution_ref`, and records
-`payload.branch_context.relation=new_solution_branch`. The new node's
-`payload.parent_node` must equal `payload.branch_context.anchor_node`; the
-failed or triggering node is recorded separately in
-`payload.branch_context.from_node`. For same-hypothesis replacement solutions,
-the agent selects an existing checkpoint after inspecting its node context.
-The anchor must be an ancestor of `from_node`; it need not equal the hypothesis
-proposal source. The preflight validates references, topology, and consistency;
-it does not choose the checkpoint or decide whether replacement should occur.
-
-For legacy lineage repair, use `action=update_workspace` with
-`payload.repair_branch_anchor`:
+Open a mechanism node with `mechanism_action=evaluate` after the relevant
+validation nodes. Its closure may set:
 
 ```json
 {
-  "node_id": "n023",
-  "new_anchor_node": "n020",
-  "reason_code": "repair_branch_checkpoint"
-}
-```
-
-The repair is rejected for running nodes and for anchors that are not ancestors
-of the recorded `branch_context.from_node`.
-
-## Branch Relation Semantics
-
-`branch_context.relation` records the intended graph relation between the new
-node and existing workspace state. Pick from:
-
-- `continue_parent` — same scientific object continues to the next evidence
-  layer, or the same TS claim is re-validated with different protocol
-  parameters. Requires `parent_node == branch_context.from_node`. A failed
-  program attempt (e.g. IRC corrector convergence failure) that continues
-  verifying the same TS claim is `continue_parent`, not a new branch; cite
-  the failed attempt through `reason_code`, closure facts, and evidence with
-  role `previous_attempt_summary`.
-- `new_solution_branch` — same hypothesis, different candidate / search
-  strategy (e.g. QST candidate failed → constrained scan candidate; strict
-  connectivity refuted a TS/Freq-supported candidate → different TS-search
-  method). Requires a new `solution_ref.solution_id` and
-  `parent_node == branch_context.anchor_node`; the selected anchor must be an
-  ancestor of `branch_context.from_node`. Do
-  not use for IRC-parameter changes, parser/scheduler follow-up, or next-layer
-  validation.
-- `new_hypothesis_branch` — the first evidence node for an alternative
-  `status=proposed` hypothesis. It must match that hypothesis's stored
-  `proposal_context`; later nodes under the same hypothesis use another
-  scientifically appropriate relation.
-- `new_pathway_branch` — pathway topology or step model changes while
-  hypothesis handling stays explicit.
-
-Monitoring, report packaging, snapshots, workspace repair, and visualization
-do not create nodes. Historical `administrative_followup` records remain
-read-compatible only.
-
-## Closure Revision
-
-```json
-{
-  "mechanism": {
-    "summary": "The imaginary mode does not follow the reaction center.",
-    "hypothesis_ref": {"hypothesis_id": "hyp_0001", "prediction_ids": ["pred_mode_001"]},
-    "revision": {
-      "action": "refute_prediction",
-      "prediction_ids": ["pred_mode_001"],
-      "changed_variable": "reaction_center"
+  "hypothesis": {
+    "status": "unsupported",
+    "summary": "The declared electronic prediction is contradicted.",
+    "evidence_refs": ["ev_wavefunction_001"],
+    "hypothesis_ref": {
+      "hypothesis_id": "hyp_0001",
+      "prediction_ids": ["pred_state_001"]
     },
-    "evidence_refs": ["ev_mode_002"]
+    "revision": {
+      "action": "refute_hypothesis",
+      "changed_variable": "state_character"
+    }
   }
 }
 ```
 
-Allowed actions:
+`unsupported` requires cited contradictory evidence. Missing evidence is
+`ambiguous`.
 
-- `init_workspace`
-- `start_node`
-- `propose_hypothesis`
-- `end_node`
-- `update_workspace`
-- `ask_user`
-- `stop`
+## Audit
 
-`start_node`, `propose_hypothesis`, `end_node`, and `update_workspace` require a
-`report_ref`.
-`report_workspace` should be run before the decision is written.
-First-time `init_workspace` may bootstrap without a decision file, but
-destructive force reinitialization must pass an `action=init_workspace`
-decision so the reset is auditable.
+Audit scopes are `transition_state`, `elementary_step`, `pathway`, and `study`.
+For `node_type=audit, audit_scope=pathway`, `payload.pathway_ref` is mandatory.
+Before closing a pathway audit, register and cite evidence whose quality
+contains a strict accepted or pathway-not-accepted decision. A supported audit
+analysis does not by itself mean pathway success.
 
-The public `validate_decision --root <root> --decision-file <file>` preflight
-validates both JSON shape and workspace-context requirements. Mutation commands
-run the same validation internally before writing files and reject decision
-files whose `action` does not match the invoked mutation command.
+Audit closures set `closure.audit.status=accepted|not_accepted|ambiguous` and
+`study_complete=true|false`. Study completion belongs only to an audit node.
 
-`update_workspace` may append evidence or provenance and may apply an explicit
-lineage repair. It cannot
-close a node, write a verdict, accept a TS, rewrite a pathway, or mutate
-`hypotheses.json.hypotheses[]`.
+For `audit_scope=pathway`, ambiguity is not a valid closure shortcut. Register
+and cite one `pathway_audit_summary` with
+`quality.strict_pathway_decision=accepted|pathway_not_accepted`, then set
+`closure.audit.status=accepted|not_accepted` to match it. If the discriminator
+is unresolved, keep the audit open or stop it without a scientific closure.
 
-Machine authority is `ts_workspace/contracts/decision.schema.json`, the pure
-Python decision validator, and the workspace-aware decision preflight used by
-the public CLI.
+## Recalculation
+
+A method change that can alter the scientific conclusion creates a new node:
+
+```json
+{
+  "node_type": "validation",
+  "validation_scope": "method_robustness",
+  "attempt_kind": "recalculation",
+  "recalculation_ref": {
+    "source_node": "n003",
+    "source_intent_id": "calc_n003_optfreq_001",
+    "changed_settings": ["functional", "basis_set"],
+    "purpose": "method_robustness"
+  },
+  "branch_context": {
+    "relation": "recalculation_of",
+    "from_node": "n003",
+    "anchor_node": "n003"
+  }
+}
+```
+
+A technical retry does not create a recalculation node. Record a new
+`ts-calculation-intent/2` attempt with `attempt_kind=retry` under the same node.
+
+## Branch Relations
+
+- `continue_parent`: continue the same scientific object.
+- `new_solution_branch`: replace candidate or search strategy under the same
+  hypothesis.
+- `new_hypothesis_branch`: propose an alternative hypothesis.
+- `new_pathway_branch`: change pathway topology or elementary-step model.
+- `recalculation_of`: refine or challenge a prior result with changed method.
+
+The Root Agent selects the relation. Validators check references and topology
+only.
+
+## Apply Sequence
+
+Pi:
+
+```text
+ts_workspace_context -> ts_workspace_decide -> ts_workspace_validate -> ts_workspace_apply
+```
+
+Codex:
+
+```text
+report_workspace -> construct ts-decision/2 -> validate_decision -> matching mutation command
+```
+
+Any mutation built from a stale `base_revision` is rejected.
+
+## Legacy
+
+The `ts-decision` schema and `propose_hypothesis` command remain compatible for
+existing phase workspaces. Do not use them for new v2 studies.

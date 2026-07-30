@@ -9,10 +9,18 @@
       "type": "array",
       "items": {
         "type": "object",
-        "required": ["node_id", "parent_node", "phase", "lifecycle", "hypothesis"],
+        "required": ["node_id", "parent_node", "lifecycle"],
         "properties": {
           "node_id": {"type": "string", "minLength": 1},
           "parent_node": {"type": ["string", "null"]},
+          "node_type": {"enum": ["intake", "mechanism", "candidate_search", "validation", "audit"]},
+          "objective": {"type": "string", "minLength": 1},
+          "mechanism_action": {"enum": ["propose", "compare", "revise", "evaluate"]},
+          "candidate_kind": {"enum": ["transition_state", "endpoint_conformer", "intermediate", "crossing_point"]},
+          "validation_scope": {"enum": ["tsfreq", "connectivity", "electronic_structure", "state_character", "thermochemistry", "method_robustness", "geometry_identity"]},
+          "audit_scope": {"enum": ["transition_state", "elementary_step", "pathway", "study"]},
+          "attempt_kind": {"enum": ["primary", "recalculation"]},
+          "recalculation_ref": {"type": ["object", "null"]},
           "phase": {
             "enum": ["endpoint", "hypothesis_generation", "candidate_generation", "tsfreq_validation", "connectivity_validation", "accepted_audit", "pathway_audit", "preflight", "rp_conformer_generation"]
           },
@@ -42,8 +50,17 @@
           },
           "closed_at": {"type": "string"},
           "program_status": {"enum": ["completed", "failed", "stopped", "not_run"]},
-          "claim_verdict": {"enum": ["supported", "refuted", "inconclusive", "not_evaluated"]}
+          "claim_verdict": {"enum": ["supported", "refuted", "inconclusive", "not_evaluated"]},
+          "program_outcome": {"enum": ["success", "failure", "not_run"]},
+          "hypothesis_status": {"enum": ["supported", "unsupported", "ambiguous"]},
+          "audit_status": {"enum": ["accepted", "not_accepted", "ambiguous"]},
+          "intake_status": {"enum": ["ready", "needs_input"]},
+          "study_complete": {"type": "boolean"}
         },
+        "anyOf": [
+          {"required": ["phase", "hypothesis"]},
+          {"required": ["node_type", "objective"]}
+        ],
         "additionalProperties": true
       }
     },
@@ -69,7 +86,7 @@
           "event_id": {"type": "string", "minLength": 1},
           "event_state": {"enum": ["active", "resolved", "superseded"]},
           "relation": {
-            "enum": ["continue_parent", "new_solution_branch", "new_hypothesis_branch", "new_pathway_branch", "administrative_followup"]
+            "enum": ["continue_parent", "new_solution_branch", "new_hypothesis_branch", "new_pathway_branch", "recalculation_of", "administrative_followup"]
           },
           "from_node": {"type": "string", "minLength": 1},
           "anchor_node": {"type": "string", "minLength": 1},
@@ -112,7 +129,7 @@
       "required": ["relation", "from_node", "anchor_node"],
       "properties": {
         "relation": {
-          "enum": ["continue_parent", "new_solution_branch", "new_hypothesis_branch", "new_pathway_branch", "administrative_followup"]
+          "enum": ["continue_parent", "new_solution_branch", "new_hypothesis_branch", "new_pathway_branch", "recalculation_of", "administrative_followup"]
         },
         "from_node": {"type": "string", "minLength": 1},
         "anchor_node": {"type": "string", "minLength": 1},

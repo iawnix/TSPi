@@ -59,75 +59,88 @@ def _packet(tmp_path: Path, *, artifact_ref: str | None = None) -> dict[str, obj
     return json.loads(completed.stdout)
 
 
-def _validate_advice(tmp_path: Path, packet: dict[str, object], advice: dict[str, object], *, check: bool = True):
+def _validate_result(tmp_path: Path, packet: dict[str, object], result: dict[str, object], *, check: bool = True):
     packet_file = tmp_path / "packet.json"
     advice_file = tmp_path / "advice.json"
     packet_file.write_text(json.dumps(packet), encoding="utf-8")
-    advice_file.write_text(json.dumps(advice), encoding="utf-8")
+    advice_file.write_text(json.dumps(result), encoding="utf-8")
     script = (
         "const fs=require('node:fs');"
         f"const helper=require({json.dumps(str(OUTPUT_SCHEMA))});"
         "const packet=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
         "const advice=fs.readFileSync(process.argv[2],'utf8');"
-        "try { process.stdout.write(JSON.stringify(helper.parseAndValidateAdvice(advice,packet))); }"
+        "try { process.stdout.write(JSON.stringify(helper.parseAndValidateReviewResult(advice,packet))); }"
         "catch (error) { process.stderr.write(String(error.message||error)); process.exitCode=2; }"
     )
     return _node_json(script, str(packet_file), str(advice_file), check=check)
 
 
-def _valid_advice(packet: dict[str, object]) -> dict[str, object]:
+def _valid_result(packet: dict[str, object]) -> dict[str, object]:
     scope = packet["scope"]
     assert isinstance(scope, dict)
     return {
-        "schema_version": "ts-subagent-advice/1",
+        "schema_version": "ts-agent-result/1",
+        "task_id": packet["task_id"],
+        "role": "review",
         "authority": "advisory",
-        "review_type": "mechanism",
+        "operation": "mechanism",
+        "outcome": "success",
+        "summary": "The endpoint evidence leaves the electronic timing unresolved.",
         "scope": {
             "report_id": scope["report_id"],
             "node_ids": scope["node_ids"],
             "hypothesis_id": scope["hypothesis_id"],
             "pathway_id": scope["pathway_id"],
         },
-        "findings": [
+        "facts": [
             {
+                "kind": "review",
                 "layer": "mechanism",
                 "statement": "Endpoint support does not establish electronic timing.",
                 "status": "uncertain",
                 "basis_refs": ["ev_endpoint_0001"],
             }
         ],
-        "missing_evidence": ["A discriminating electronic-structure diagnostic."],
-        "conflicts": [],
-        "options": [
-            {
-                "action": "Evaluate one method-appropriate electronic diagnostic.",
-                "discriminator": "Whether it contradicts the proposed timing model.",
-                "risks": ["Method dependence."],
-            }
-        ],
+        "artifact_refs": [],
+        "program": None,
+        "payload": {
+            "missing_evidence": ["A discriminating electronic-structure diagnostic."],
+            "conflicts": [],
+            "options": [
+                {
+                    "action": "Evaluate one method-appropriate electronic diagnostic.",
+                    "discriminator": "Whether it contradicts the proposed timing model.",
+                    "risks": ["Method dependence."],
+                }
+            ],
+        },
         "limitations": ["Advisory review only."],
+        "provenance": {"source": "bounded_task_packet"},
     }
 
 
 def test_task_packet_is_report_derived_bounded_and_advisory(tmp_path: Path) -> None:
     packet = _packet(tmp_path)
 
-    assert packet["schema_version"] == "ts-subagent-task/1"
+    assert packet["schema_version"] == "ts-agent-task/1"
+    assert packet["role"] == "review"
     assert packet["authority"] == "advisory"
-    assert packet["review_type"] == "mechanism"
-    assert packet["evidence_ceiling"] == ["mechanism"]
-    assert packet["workspace_root"] == str(tmp_path / "ws")
+    assert packet["operation"] == "mechanism"
+    assert packet["inputs"]["evidence_ceiling"] == ["mechanism"]
+    assert packet["workspace"]["root"] == str(tmp_path / "ws")
     assert "workspace_root" not in packet["scope"]
     assert packet["scope"]["node_ids"] == ["n000"]
-    assert packet["evidence"][0]["evidence_id"] == "ev_endpoint_0001"
-    assert packet["artifact_excerpts"][0]["ref"] == "nodes/n000/outputs/endpoint-summary.json"
-    assert packet["artifact_excerpts"][0]["text"] == '{"endpoint":"supported"}\n'
-    assert packet["basis_allowlist"] == [
+    assert packet["inputs"]["evidence"][0]["evidence_id"] == "ev_endpoint_0001"
+    assert packet["inputs"]["artifact_excerpts"][0]["ref"] == "nodes/n000/outputs/endpoint-summary.json"
+    assert packet["inputs"]["artifact_excerpts"][0]["text"] == '{"endpoint":"supported"}\n'
+    assert packet["inputs"]["basis_allowlist"] == [
         "ev_endpoint_0001",
         "nodes/n000/outputs/endpoint-summary.json",
     ]
-    assert "TS workspace context:" in packet["context"]["workspace"]
-    assert "TS historical node context:" in packet["context"]["node"]
+    assert "TS workspace context:" in packet["inputs"]["context"]["workspace"]
+    assert "TS historical node context:" in packet["inputs"]["context"]["node"]
+    assert packet["constraints"]["scientific_decision"] is False
+    assert packet["constraints"]["remote_authority"] == "execution_mirror"
 
 
 @pytest.mark.parametrize(
@@ -141,19 +154,19 @@ def test_task_packet_rejects_unscoped_artifacts(tmp_path: Path, artifact_ref: st
 
 def test_advice_validation_accepts_bounded_evidence_referenced_output(tmp_path: Path) -> None:
     packet = _packet(tmp_path)
-    completed = _validate_advice(tmp_path, packet, _valid_advice(packet))
+    completed = _validate_result(tmp_path, packet, _valid_result(packet))
     result = json.loads(completed.stdout)
 
     assert result["authority"] == "advisory"
-    assert result["findings"][0]["basis_refs"] == ["ev_endpoint_0001"]
+    assert result["facts"][0]["basis_refs"] == ["ev_endpoint_0001"]
 
 
 def test_advice_validation_rejects_cross_layer_claim(tmp_path: Path) -> None:
     packet = _packet(tmp_path)
-    advice = _valid_advice(packet)
-    advice["findings"][0]["layer"] = "connectivity"
+    advice = _valid_result(packet)
+    advice["facts"][0]["layer"] = "connectivity"
 
-    completed = _validate_advice(tmp_path, packet, advice, check=False)
+    completed = _validate_result(tmp_path, packet, advice, check=False)
 
     assert completed.returncode == 2
     assert "evidence ceiling" in completed.stderr
@@ -161,30 +174,30 @@ def test_advice_validation_rejects_cross_layer_claim(tmp_path: Path) -> None:
 
 def test_advice_validation_rejects_unknown_basis_and_authoritative_fields(tmp_path: Path) -> None:
     packet = _packet(tmp_path)
-    advice = _valid_advice(packet)
-    advice["findings"][0]["basis_refs"] = ["ev_invented"]
-    completed = _validate_advice(tmp_path, packet, advice, check=False)
+    advice = _valid_result(packet)
+    advice["facts"][0]["basis_refs"] = ["ev_invented"]
+    completed = _validate_result(tmp_path, packet, advice, check=False)
     assert completed.returncode == 2
     assert "outside task packet" in completed.stderr
 
-    advice = _valid_advice(packet)
-    advice["accepted_ts"] = True
-    completed = _validate_advice(tmp_path, packet, advice, check=False)
+    advice = _valid_result(packet)
+    advice["payload"]["hypothesis_status"] = "supported"
+    completed = _validate_result(tmp_path, packet, advice, check=False)
     assert completed.returncode == 2
-    assert "unknown fields" in completed.stderr
+    assert "authoritative field" in completed.stderr
 
 
 def test_advice_validation_rejects_uncited_and_oversized_output(tmp_path: Path) -> None:
     packet = _packet(tmp_path)
-    advice = _valid_advice(packet)
-    advice["findings"][0]["basis_refs"] = []
-    completed = _validate_advice(tmp_path, packet, advice, check=False)
+    advice = _valid_result(packet)
+    advice["facts"][0]["basis_refs"] = []
+    completed = _validate_result(tmp_path, packet, advice, check=False)
     assert completed.returncode == 2
     assert "must cite task packet evidence" in completed.stderr
 
-    oversized = _valid_advice(packet)
+    oversized = _valid_result(packet)
     oversized["limitations"] = ["x" * (16 * 1024)]
-    completed = _validate_advice(tmp_path, packet, oversized, check=False)
+    completed = _validate_result(tmp_path, packet, oversized, check=False)
     assert completed.returncode == 2
     assert "output exceeds" in completed.stderr
 
@@ -204,8 +217,8 @@ def test_prompt_modules_are_private_and_define_all_review_modes() -> None:
     core = (prompt_dir / "core.md").read_text(encoding="utf-8")
     assert "Return exactly one JSON object" in core
     assert "no authority to mutate" in core
-    assert "missing_evidence" in core
-    assert "Every finding must cite at least one entry" in core
+    assert "payload.missing_evidence" in core
+    assert "Every fact must cite at least one allowlisted basis" in core
 
 
 def test_session_lifecycle_success_disables_prompt_expansion() -> None:
@@ -275,7 +288,7 @@ def test_pi_subagent_runtime_and_extension_enforce_isolation() -> None:
     assert "getAgentsFiles: () => ({ agentsFiles: [] })" in runtime
     assert "const extensionsResult = { extensions: [], errors: [], runtime: createExtensionRuntime() }" in runtime
     assert "withDisposableSession" in runtime
-    assert "parseAndValidateAdvice" in runtime
+    assert "parseAndValidateReviewResult" in runtime
     assert "setRuntimeApiKey" in runtime
     assert 'name: "ts_workspace_subagent"' in extension
     assert 'executionMode: "sequential"' in extension

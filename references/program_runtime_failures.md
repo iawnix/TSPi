@@ -14,11 +14,13 @@ Keep these concerns separate:
 
 - Program failure: the calculation did not complete a usable protocol step
   because the executable, scheduler, input syntax, SCF, optimizer, IRC, parser,
-  scratch, memory, or artifact fetch failed. Close the node with
-  `program_status=failed` and `claim_verdict=not_evaluated`.
+  scratch, memory, or artifact fetch failed. Close a candidate or validation
+  node with `closure.program.outcome=failure`; do not add a hypothesis or audit
+  status.
 - Chemistry failure: the calculation completed and the evidence refutes the
-  phase claim. Close with `program_status=completed` and the appropriate
-  `claim_verdict`.
+  declared prediction. Close the validation node with
+  `closure.program.outcome=success`, register the negative evidence, then use a
+  `mechanism/evaluate` node to set `hypothesis.status=unsupported|ambiguous`.
 - Strategy choice: retrying, changing a route keyword, replacing a candidate,
   changing a hypothesis, or stopping remains an agent decision. Do not encode it
   as a validator rule.
@@ -120,8 +122,11 @@ runtime on similar seeds.
 
 ## Decision Guidance
 
-- Same calculation claim, same candidate, only program settings changed:
-  usually use `continue_parent`.
+- Same research node and scientific protocol, only a technical recovery changed:
+  use `ts-calculation-intent/2 attempt_kind=retry` under that node.
+- A method/basis/model change that can alter the conclusion opens a new node of
+  the same scientific type with `attempt_kind=recalculation` and
+  `branch_context.relation=recalculation_of`.
 - Same hypothesis but a different candidate-generation strategy or replacement
   TS candidate: use `new_solution_branch`.
 - Different mechanism, electronic state, charge/multiplicity interpretation, or
@@ -135,13 +140,14 @@ runtime on similar seeds.
 
 A useful `previous_attempt_summary` should include:
 
-- node id, phase, program, host, input path, output path, and exit state;
+- node id, node type/scope, calculation intent, program, host, input path,
+  output path, and exit state;
 - the first hard failure signal, not only the last line of stderr;
 - route intent versus route readback when Gaussian output exists;
 - whether any geometry, checkpoint, Hessian, or frequency artifact is reusable;
 - what changed in the proposed next attempt;
-- why the next attempt is a protocol retry, solution branch, hypothesis branch,
-  or stop decision.
+- why the next act is a technical retry, recalculation, solution branch,
+  hypothesis branch, or stop decision.
 
 ## Source Note
 

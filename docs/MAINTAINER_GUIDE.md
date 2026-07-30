@@ -48,11 +48,18 @@ Keep state ownership narrow.
   evidence should be stated explicitly, not silently inferred.
 - `extensions/shared` owns package-root and Python CLI resolution shared by Pi
   adapters.
-- `extensions/ts-workflow-context` exposes compact context, validation, and
-  decision tools; only `ts_workspace_decision` mutates workspace state.
+- `extensions/ts-workflow-context` exposes the four-tool control plane;
+  `ts_workspace_context`, `ts_workspace_decide`, and `ts_workspace_validate`
+  are read-only, while only `ts_workspace_apply` mutates canonical state.
 - `extensions/ts-workflow-subagent` builds bounded task packets and delegates
   to the isolated runtime under `subagents/`. The child remains tool-free and
   advisory; it never becomes a second control plane.
+- `extensions/ts-workflow-compute` creates a fresh backend session with one
+  selected private backend skill and request-scoped typed tools.
+- `subagents/agent-protocol.cjs` and `contracts/agent_*.schema.json` own the
+  cross-agent task/result protocol and authority-field rejection.
+- `agent-skills/` contains private child skills. They must not be added to
+  `package.json.pi.skills` or loaded into the Root Agent.
 
 ## Control-Plane Invariants
 

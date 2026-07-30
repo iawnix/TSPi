@@ -17,6 +17,7 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const { parseAndValidateOperatorReport } = require("./output-schema.cjs");
+const { loadBackendSkill } = require("./skill-loader.cjs");
 const { promptWithDeadline, withDisposableSession } = require("../subagents/session-lifecycle.cjs");
 const COMPUTE_AGENT_DIR = dirname(fileURLToPath(import.meta.url));
 const SYSTEM_PROMPT = readFileSync(resolve(COMPUTE_AGENT_DIR, "prompt.md"), "utf8").trim();
@@ -29,6 +30,7 @@ let activeRun = false;
 interface ComputeRunOptions {
   workspaceRoot: string;
   packet: Record<string, unknown>;
+  backend: string;
   tools: ToolDefinition[];
   actions: ActionLog;
   parentModel: Model<any>;
@@ -62,7 +64,8 @@ export async function runComputeOperator(options: ComputeRunOptions) {
       throw new Error(`Compute ModelRuntime has no configured auth for provider: ${model.provider}`);
     }
     const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } });
-    const resourceLoader = isolatedResourceLoader();
+    const systemPrompt = `${SYSTEM_PROMPT}\n\nSelected private backend skill:\n${loadBackendSkill(options.backend)}`;
+    const resourceLoader = isolatedResourceLoader(systemPrompt);
     return await withDisposableSession(
       () => createAgentSession({
         cwd: options.workspaceRoot,
@@ -101,7 +104,9 @@ export async function runComputeOperator(options: ComputeRunOptions) {
         const actions = options.actions.map((action) => ({ tool: action.tool, result: action.result }));
         const metadata = {
           operation: String(options.packet.operation),
-          intent_id: options.packet.intent_id || report.intent_id,
+          backend: options.backend,
+          task_id: String(options.packet.task_id),
+          intent_id: (options.packet.inputs as Record<string, unknown>).intent_id || report.payload.intent_id,
           action_names: actions.map((action) => action.tool),
           action_digest: createHash("sha256").update(JSON.stringify(actions)).digest("hex"),
           output_digest: createHash("sha256").update(JSON.stringify(report)).digest("hex"),
@@ -126,7 +131,7 @@ export async function runComputeOperator(options: ComputeRunOptions) {
   }
 }
 
-function isolatedResourceLoader(): ResourceLoader {
+function isolatedResourceLoader(systemPrompt: string): ResourceLoader {
   const extensionsResult = { extensions: [], errors: [], runtime: createExtensionRuntime() };
   return {
     getExtensions: () => extensionsResult,
@@ -134,7 +139,7 @@ function isolatedResourceLoader(): ResourceLoader {
     getPrompts: () => ({ prompts: [], diagnostics: [] }),
     getThemes: () => ({ themes: [], diagnostics: [] }),
     getAgentsFiles: () => ({ agentsFiles: [] }),
-    getSystemPrompt: () => SYSTEM_PROMPT,
+    getSystemPrompt: () => systemPrompt,
     getAppendSystemPrompt: () => [],
     extendResources: () => {},
     reload: async () => {},

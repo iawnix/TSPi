@@ -8,6 +8,7 @@ const {
   buildContextSummary,
   buildNodeContextSummary,
 } = require("../extensions/ts-workflow-context/summary.cjs");
+const { validateAgentTask } = require("./agent-protocol.cjs");
 
 const REVIEW_CEILINGS = Object.freeze({
   mechanism: ["mechanism"],
@@ -82,39 +83,50 @@ function buildTaskPacket({ runId, workspaceRoot, request, workspaceReport, nodeC
 
   const nodeIds = collectNodeIds(nodeContext, branchContext);
   const focus = isPlainObject(workspaceReport.focus) ? workspaceReport.focus : {};
+  const scope = {
+    report_id: typeof workspaceReport.report_id === "string" ? workspaceReport.report_id : null,
+    node_ids: nodeIds,
+    hypothesis_id: stringOrNull(focus.focus_hypothesis_id),
+    pathway_id: stringOrNull(focus.focus_pathway_id),
+  };
   const packet = {
-    schema_version: "ts-subagent-task/1",
-    run_id: requireString(runId, "runId", 128),
+    schema_version: "ts-agent-task/1",
+    task_id: requireString(runId, "runId", 128),
+    role: "review",
     authority: "advisory",
-    review_type: normalized.reviewType,
-    evidence_ceiling: [...REVIEW_CEILINGS[normalized.reviewType]],
-    question: normalized.question,
-    workspace_root: root,
-    scope: {
-      report_id: typeof workspaceReport.report_id === "string" ? workspaceReport.report_id : "",
-      node_ids: nodeIds,
-      hypothesis_id: stringOrNull(focus.focus_hypothesis_id),
-      pathway_id: stringOrNull(focus.focus_pathway_id),
+    operation: normalized.reviewType,
+    objective: normalized.question,
+    workspace: {
+      root,
+      report_id: scope.report_id,
+      revision: stringOrNull(workspaceReport.workspace_revision),
     },
-    context: {
-      workspace: buildContextSummary(workspaceReport),
-      node: nodeContext ? buildNodeContextSummary(nodeContext) : null,
-      backtrack: branchContext ? buildBranchContextSummary(branchContext) : null,
-    },
-    evidence: selectedEvidenceIds.map((id) => evidenceMap.get(id)),
-    artifact_excerpts: artifactExcerpts,
-    basis_allowlist: [...selectedEvidenceIds, ...artifactExcerpts.map((item) => item.ref)],
-    output_contract: {
-      schema_version: "ts-subagent-advice/1",
-      authority: "advisory",
-      json_only: true,
+    scope,
+    inputs: {
+      context: {
+        workspace: buildContextSummary(workspaceReport),
+        node: nodeContext ? buildNodeContextSummary(nodeContext) : null,
+        backtrack: branchContext ? buildBranchContextSummary(branchContext) : null,
+      },
+      evidence: selectedEvidenceIds.map((id) => evidenceMap.get(id)),
+      artifact_excerpts: artifactExcerpts,
+      basis_allowlist: [...selectedEvidenceIds, ...artifactExcerpts.map((item) => item.ref)],
       evidence_ceiling: [...REVIEW_CEILINGS[normalized.reviewType]],
     },
+    capabilities: [],
+    constraints: {
+      canonical_workspace_mutation: false,
+      scientific_decision: false,
+      recursive_delegation: false,
+      remote_authority: "execution_mirror",
+      external_side_effects: false,
+    },
+    output_contract: "ts-agent-result/1",
   };
 
   const packetBytes = Buffer.byteLength(JSON.stringify(packet), "utf8");
   if (packetBytes > LIMITS.maxPacketBytes) throw new Error(`task packet exceeds ${LIMITS.maxPacketBytes} bytes`);
-  return packet;
+  return validateAgentTask(packet);
 }
 
 function validateSelectedContexts(request, nodeContext, branchContext) {

@@ -58,6 +58,7 @@ function buildContextDetails(report) {
 
   return {
     reportId: report.report_id || "",
+    workspaceRevision: report.workspace_revision || "",
     workspaceRoot: report.workspace_root || "",
     valid: Boolean(report.valid),
     validationFindings: arrayOfObjects(report.validation_findings).map((item) => ({
@@ -72,16 +73,17 @@ function buildContextDetails(report) {
     acceptedTsRefs: arrayOfStrings(focus.accepted_ts_refs),
     openNodes: openNodes.map((node) => ({
       nodeId: node.node_id || "",
-      phase: node.phase || "",
+      nodeType: node.node_type || node.phase || "",
+      scope: node.validation_scope || node.audit_scope || node.candidate_kind || node.mechanism_action || "",
       lifecycle: node.lifecycle || "",
-      hypothesis: node.hypothesis || "",
+      objective: node.objective || node.hypothesis || "",
     })),
     closedNodeCount: numberOrZero(report.closed_node_count),
     evidenceCount: numberOrZero(report.evidence_count),
     hypothesisSummary: activeHypothesis.summary || "",
     openPredictions: arrayOfObjects(hypothesisContext.open_predictions).map((prediction) => ({
       predictionId: prediction.prediction_id || "",
-      phase: prediction.phase || "",
+      scope: prediction.validation_scope || prediction.phase || "",
       expectation: prediction.expectation || "",
     })),
     supportedPredictions: arrayOfStrings(hypothesisContext.supported_predictions),
@@ -97,10 +99,14 @@ function buildContextDetails(report) {
     })),
     branchFrontiers: branchFrontiers.map((node) => ({
       nodeId: node.node_id || "",
-      phase: node.phase || "",
+      nodeType: node.node_type || node.phase || "",
+      scope: node.scope || "",
       lifecycle: node.lifecycle || "",
       claimVerdict: node.claim_verdict || "",
       programStatus: node.program_status || "",
+      hypothesisStatus: node.hypothesis_status || "",
+      programOutcome: node.program_outcome || "",
+      auditStatus: node.audit_status || "",
       hasOutgoingBranch: Boolean(node.has_outgoing_branch),
     })),
     allowedDecisionActions: arrayOfStrings(report.allowed_decision_actions),
@@ -113,7 +119,7 @@ function buildContextSummary(report, options = {}) {
   const lines = [
     "TS workspace context:",
     `- workspace: ${details.workspaceRoot || "(unknown)"}`,
-    `- report: ${details.reportId || "(none)"}; valid: ${details.valid}`,
+    `- report: ${details.reportId || "(none)"}; revision: ${details.workspaceRevision || "(none)"}; valid: ${details.valid}`,
     `- current_node: ${details.currentNode || "(none)"}; focus_hypothesis: ${details.focusHypothesisId || "(none)"}`,
     `- focus_pathway: ${details.focusPathwayId || "(none)"}; accepted_ts_refs: ${formatList(details.acceptedTsRefs, maxItems)}`,
     `- open_nodes: ${details.openNodes.length ? details.openNodes.map(formatNode).join("; ") : "(none)"}`,
@@ -141,9 +147,9 @@ function buildContextSummary(report, options = {}) {
   }
 
   lines.push(
-    "- contract: use ts_workspace_context/ts_workspace_validate/ts_workspace_decision_validate/ts_workspace_decision; do not edit workspace state files by hand; shell fallbacks must use an explicit TSAgentSkill root, not cwd-relative scripts."
+    "- contract: use ts_workspace_context/ts_workspace_decide/ts_workspace_validate/ts_workspace_apply; do not edit workspace state files by hand; shell fallbacks must use an explicit TSAgentSkill root, not cwd-relative scripts."
   );
-  lines.push("- contract: every post-n000 mechanism node must carry payload.hypothesis_ref.");
+  lines.push("- contract: n000 is intake; only mechanism nodes set hypothesis status; candidate and validation nodes return program facts and evidence only.");
   return lines.join("\n");
 }
 
@@ -159,10 +165,10 @@ function buildNodeContextSummary(context, options = {}) {
   const decisions = arrayOfObjects(context.decisions);
   const lines = [
     "TS historical node context:",
-    `- node: ${node.node_id || "?"}; phase=${node.phase || "?"}; lifecycle=${node.lifecycle || "?"}`,
+    `- node: ${node.node_id || "?"}; type=${node.node_type || node.phase || "?"}; scope=${node.validation_scope || node.audit_scope || node.candidate_kind || node.mechanism_action || "(none)"}; lifecycle=${node.lifecycle || "?"}`,
     `- parent: ${node.parent_node || "(none)"}; lineage: ${formatList(arrayOfStrings(context.lineage), maxItems)}`,
-    `- program_status: ${node.program_status || "(none)"}; claim_verdict: ${node.claim_verdict || "(none)"}`,
-    `- hypothesis: ${node.hypothesis || "(none)"}`,
+    `- program: ${node.program_outcome || node.program_status || "(none)"}; hypothesis_status: ${node.hypothesis_status || node.claim_verdict || "(none)"}; audit_status: ${node.audit_status || "(none)"}`,
+    `- objective: ${node.objective || node.hypothesis || "(none)"}`,
     `- program_summary: ${node.program_summary || "(none)"}`,
     `- program_facts: ${formatAnyList(node.program_facts, maxItems)}`,
     `- mechanism_summary: ${node.mechanism_summary || "(none)"}`,
@@ -191,8 +197,8 @@ function buildBranchContextSummary(context, options = {}) {
   const pathDelta = arrayOfObjects(context.path_delta);
   return [
     "TS backtrack context:",
-    `- trigger: ${fromNode.node_id || "?"}:${fromNode.phase || "?"}/${fromNode.program_status || fromNode.lifecycle || "?"}/${fromNode.claim_verdict || "?"}`,
-    `- selected_checkpoint: ${anchorNode.node_id || "?"}:${anchorNode.phase || "?"}/${anchorNode.program_status || anchorNode.lifecycle || "?"}/${anchorNode.claim_verdict || "?"}`,
+    `- trigger: ${formatNodeState(fromNode)}`,
+    `- selected_checkpoint: ${formatNodeState(anchorNode)}`,
     `- checkpoint_summary: ${anchorNode.mechanism_summary || anchorNode.hypothesis || "(none)"}`,
     `- trigger_summary: ${fromNode.mechanism_summary || fromNode.program_summary || "(none)"}`,
     `- attempted_since_checkpoint: ${pathDelta.slice(0, maxItems).map(formatNodeDelta).join("; ") || "(none)"}`,
@@ -219,7 +225,8 @@ function toolText(text, details = {}) {
 }
 
 function formatNode(node) {
-  return `${node.nodeId || "node"}:${node.phase || "phase"}/${node.lifecycle || "state"}`;
+  const scope = node.scope ? `:${node.scope}` : "";
+  return `${node.nodeId || "node"}:${node.nodeType || "type"}${scope}/${node.lifecycle || "state"}`;
 }
 
 function formatPredictionList(values, maxItems) {
@@ -228,7 +235,7 @@ function formatPredictionList(values, maxItems) {
   }
   return values
     .slice(0, maxItems)
-    .map((item) => `${item.predictionId || "prediction"}:${item.phase || "phase"}`)
+    .map((item) => `${item.predictionId || "prediction"}:${item.scope || "scope"}`)
     .join(", ");
 }
 
@@ -251,7 +258,7 @@ function formatCheckpointList(values, maxItems) {
   const used = remaining ? values.filter((item) => item.hasOutgoingBranch).slice(-remaining) : [];
   const candidates = unused.concat(used);
   return candidates
-    .map((item) => `${item.nodeId || "?"}:${item.phase || "?"}/${item.programStatus || item.lifecycle || "?"}/${item.claimVerdict || "?"}`)
+    .map((item) => `${item.nodeId || "?"}:${item.nodeType || "?"}${item.scope ? `:${item.scope}` : ""}/${item.programOutcome || item.programStatus || item.lifecycle || "?"}/${item.hypothesisStatus || item.auditStatus || item.claimVerdict || "?"}`)
     .join(", ");
 }
 
@@ -284,7 +291,15 @@ function normalizeBranchEvent(event) {
 }
 
 function formatNodeDelta(node) {
-  return `${node.node_id || "?"}:${node.phase || "?"}/${node.program_status || node.lifecycle || "?"}/${node.claim_verdict || "?"}:${node.mechanism_summary || node.program_summary || ""}`;
+  return `${formatNodeState(node)}:${node.mechanism_summary || node.program_summary || node.objective || ""}`;
+}
+
+function formatNodeState(node) {
+  const type = node.node_type || node.phase || "?";
+  const scope = node.validation_scope || node.audit_scope || node.candidate_kind || node.mechanism_action || "";
+  const program = node.program_outcome || node.program_status || node.lifecycle || "?";
+  const science = node.hypothesis_status || node.audit_status || node.claim_verdict || "?";
+  return `${node.node_id || "?"}:${type}${scope ? `:${scope}` : ""}/${program}/${science}`;
 }
 
 function formatList(values, maxItems) {

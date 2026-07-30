@@ -14,7 +14,8 @@ Use explicit evidence:
 - endpoint optimization or IRC when required.
 
 Connectivity evidence should be registered separately from TS/Freq evidence.
-Accepted TS audit requires both layers.
+An accepted `audit/transition_state` or `audit/elementary_step` requires both
+layers.
 
 IRC endpoint assignment proves basin connectivity under the chosen method and
 settings. It does not by itself prove an endpoint's electronic identity,
@@ -30,9 +31,9 @@ If a hypothesis has stereochemical requirements, declare them in
 `structured_claim.stereochemical_policy`,
 `structured_claim.stereochemical_requirements`, or by listing
 `stereochemical_connectivity_gate` in `required_evidence`. The
-`connectivity_validation` node must then register a separate
+`validation/connectivity` node must then register a separate
 `stereochemical_connectivity_gate` evidence record with
 `quality.stereochemistry_matched=true` or
-`quality.stereochemical_verdict=matched`. Accepted TS audit cannot close as
-supported for that hypothesis until the stereochemical gate is present and
+`quality.stereochemical_verdict=matched`. The corresponding audit cannot close
+with `audit.status=accepted` until the stereochemical gate is present and
 matched.

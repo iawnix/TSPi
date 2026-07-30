@@ -92,11 +92,12 @@ def test_pathway_audit_contract_is_explicit_for_agents() -> None:
         "templates": TEMPLATE_README.read_text(encoding="utf-8"),
     }
 
-    assert "For `phase=pathway_audit`, `start_node.payload.pathway_ref` is mandatory" in texts["skill"]
+    assert "For `node_type=audit, audit_scope=pathway`, `payload.pathway_ref` is mandatory" in texts["skill"]
     assert "running node must already have `node.pathway_ref`" in texts["protocol"]
     assert "quality.strict_pathway_decision=pathway_not_accepted" in texts["protocol"]
-    assert "For `phase=pathway_audit`, `payload.pathway_ref` is mandatory" in texts["decision"]
-    assert "Every `pathway_audit` start decision must include `payload.pathway_ref`" in texts["pathway"]
+    assert "For `node_type=audit, audit_scope=pathway`, `payload.pathway_ref` is mandatory" in texts["decision"]
+    assert "Every pathway audit start decision" in texts["pathway"]
+    assert "must include `payload.pathway_ref`" in texts["pathway"]
     assert "do not infer it from" in texts["report"]
     assert "quality.strict_pathway_decision" in texts["workspace"]
     assert "`start_pathway_audit.json` must keep `payload.pathway_ref` populated" in texts["templates"]

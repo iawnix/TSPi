@@ -15,7 +15,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
-const { parseAndValidateAdvice } = require("./output-schema.cjs");
+const { parseAndValidateReviewResult } = require("./output-schema.cjs");
 const { promptWithDeadline, withDisposableSession } = require("./session-lifecycle.cjs");
 
 const SUBAGENT_DIR = dirname(fileURLToPath(import.meta.url));
@@ -46,7 +46,7 @@ interface ReviewRunOptions {
 }
 
 export interface ReviewRunResult {
-  advice: Record<string, unknown>;
+  result: Record<string, unknown>;
   metadata: {
     run_id: string;
     review_type: string;
@@ -77,7 +77,7 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
 
   try {
     const timeoutMs = normalizeTimeout(options.timeoutMs);
-    const systemPrompt = loadSystemPrompt(String(options.packet.review_type || ""));
+    const systemPrompt = loadSystemPrompt(String(options.packet.operation || ""));
     const agentDir = getAgentDir();
     const modelRuntime = await ModelRuntime.create({
       authPath: join(agentDir, "auth.json"),
@@ -128,17 +128,17 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
           signal: options.signal,
         });
         const output = session.getLastAssistantText();
-        const advice = parseAndValidateAdvice(output || "", options.packet);
+        const result = parseAndValidateReviewResult(output || "", options.packet);
         const stats = session.getSessionStats();
         const scope = options.packet.scope as Record<string, unknown>;
         return {
-          advice,
+          result,
           metadata: {
-            run_id: String(options.packet.run_id),
-            review_type: String(options.packet.review_type),
+            run_id: String(options.packet.task_id),
+            review_type: String(options.packet.operation),
             report_id: String(scope.report_id || ""),
             node_ids: Array.isArray(scope.node_ids) ? scope.node_ids.map(String) : [],
-            output_digest: createHash("sha256").update(JSON.stringify(advice)).digest("hex"),
+            output_digest: createHash("sha256").update(JSON.stringify(result)).digest("hex"),
             schema_valid: true,
             model: `${model.provider}/${model.id}`,
             thinking_level: session.thinkingLevel,

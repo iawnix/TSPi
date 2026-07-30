@@ -1,84 +1,110 @@
 # State Model
 
-Persistent node state has three concepts:
+New research uses `ts-node/2`. A node is one bounded research act, not one turn,
+one remote job, or a mandatory pipeline stage.
 
-- `phase`: the scientific claim layer under test.
-- `lifecycle`: whether the node is running, closed, or administratively
-  stopped.
-- `closure`: the close record written by `end_node`.
+## Node Types
 
-Valid phases:
+- `intake`: `n000` only. Normalize user input, structures, constraints, and
+  completion criteria.
+- `mechanism`: propose, compare, revise, or evaluate a hypothesis.
+- `candidate_search`: generate a transition-state, endpoint-conformer,
+  intermediate, or crossing-point candidate.
+- `validation`: produce evidence for one declared prediction and scope.
+- `audit`: audit a transition state, elementary step, pathway, or complete
+  study.
 
-- `endpoint`
-- `candidate_generation`
-- `tsfreq_validation`
-- `connectivity_validation`
-- `accepted_audit`
-- `pathway_audit`
+Validation scopes:
 
-`endpoint` is reserved for the mandatory `n000` endpoint-validation contract.
-Hypothesis proposal is a `propose_hypothesis` mutation, not a phase or node.
-The proposal starts as `status=proposed`; its first evidence-producing node
-changes it to `active`. An alternative proposal's first node must use
-`branch_context.relation=new_hypothesis_branch` and match the stored
-`proposal_context`.
+- `tsfreq`
+- `connectivity`
+- `electronic_structure`
+- `state_character`
+- `thermochemistry`
+- `method_robustness`
+- `geometry_identity`
 
-R/P conformer or pose exploration is a `candidate_generation` strategy, not a
-separate evidence layer. Record it in `solution_ref.strategy` and register
-`endpoint_conformer_ensemble`, `selected_endpoint_conformer`, and any relevant
-endpoint identity or minimum gates before using a selected conformer downstream.
+Frequency and connectivity/IRC are distinct evidence gates even though both
+use `node_type=validation`.
 
-Legacy `preflight`, `rp_conformer_generation`, and `hypothesis_generation`
-nodes remain readable and closable, but new `start_node` decisions must not
-create them.
+## Independent State Axes
 
-`closure.program_status` is an execution fact:
+`node.lifecycle`:
 
-- `completed`
-- `failed`
+- `running`
+- `closed`
 - `stopped`
+
+`closure.program.outcome`:
+
+- `success`
+- `failure`
 - `not_run`
 
-`closure.claim_verdict` is the phase-level scientific judgment:
+`closure.hypothesis.status`, mechanism nodes only:
 
 - `supported`
-- `refuted`
-- `inconclusive`
-- `not_evaluated`
+- `unsupported`
+- `ambiguous`
 
-For `pathway_audit`, the verdict applies to the audit conclusion, not directly
-to the pathway. A supported audit can support a negative conclusion such as
-`pathway_not_accepted` or missing connectivity. Views and reports must expose
-that audit outcome separately instead of displaying the node as pathway success.
-Report aggregation must not count `pathway_audit` verdicts as direct support or
-refutation of the audited prediction. Use the underlying elementary-step phases
-for `supported_predictions` and `refuted_predictions`; expose audit outcomes in
-a separate audit summary. Report summaries may expose branch state such as
-`current_branch_not_accepted`, but must not emit next-action recommendations;
-branch choice remains an agent decision.
+`closure.audit.status`, audit nodes only:
 
-Specific diagnostics such as a wrong imaginary mode, collapsed endpoint,
-scheduler failure, parser failure, or RMSD disagreement are reason codes or
-evidence diagnostics. They are not top-level node states and must not steer the
-framework as fixed branches.
+- `accepted`
+- `not_accepted`
+- `ambiguous`
 
-`solution_ref` is optional lineage metadata for grouping alternative search
-strategies under the same `hypothesis_ref`. It does not add a lifecycle value,
-claim verdict, branch disposition, or retry classification, and it does not
-choose `branch_context.relation`. A failed Gaussian route, wrong-basin
-TS/Freq result, or exhausted scan remains an execution fact, evidence
-diagnostic, closure fact, or decision rationale; the agent must still make an
-explicit next decision from the evidence. Same-claim protocol changes (e.g.
-different IRC integrator on the same TS/Freq-supported checkpoint) keep the
-existing `solution_ref` and use `branch_context.relation = continue_parent`;
-they are not a new solution branch.
+Missing, weak, or conflicting evidence is `ambiguous`. `unsupported` requires a
+declared prediction or decision boundary to be contradicted. Program failure
+does not evaluate a hypothesis.
 
-If the agent decides a failed route is only a solution failure, the next node
-keeps the same `hypothesis_ref`, uses a new `solution_ref`, and records
-`payload.branch_context.relation=new_solution_branch`. The workspace validates
-that referenced nodes exist, that the branch keeps the same `hypothesis_id`,
-that `payload.parent_node` equals `payload.branch_context.anchor_node`, and
-that the selected anchor is an ancestor of `payload.branch_context.from_node`.
-The triggering node remains recorded in `payload.branch_context.from_node`.
-The workspace must not infer from node status that a new solution, hypothesis
-replacement, or stop decision is required.
+Candidate and validation nodes cannot write hypothesis or audit status. Their
+closures contain program facts and evidence references. A later mechanism node
+interprets whether those facts support or falsify the hypothesis.
+
+## Hypotheses
+
+The initial hypothesis is created by a `mechanism` node with
+`mechanism_action=propose` and `proposed_hypothesis`. Alternative hypotheses use
+another mechanism proposal node and `relation=new_hypothesis_branch`.
+
+Prediction objects declare `validation_scope`, expected observation, and
+required evidence roles. A validation node must cite prediction IDs whose scope
+matches the node.
+
+## Recalculation
+
+Recalculation is not a node type.
+
+- Technical retry: a new calculation attempt under the same node with
+  `attempt_kind=retry`.
+- Scientifically meaningful method change: a new node of the same scientific
+  type with `attempt_kind=recalculation`, `recalculation_ref`, and
+  `branch_context.relation=recalculation_of`.
+
+The recalculation relation records the source node or intent, changed settings,
+and purpose (`repair`, `refinement`, or `method_robustness`). It does not copy a
+scientific verdict.
+
+## Branches And Backtracking
+
+Every post-`n000` node records one relation:
+
+- `continue_parent`
+- `new_solution_branch`
+- `new_hypothesis_branch`
+- `new_pathway_branch`
+- `recalculation_of`
+
+`from_node` is the trigger. `anchor_node` is the historical checkpoint selected
+by the Root Agent. Backtracking creates a new child from the anchor; it never
+rewrites historical nodes.
+
+Use `report_node` and `report_branch_context` to load only the relevant history
+before selecting an anchor.
+
+## Legacy Compatibility
+
+`ts-decision` and phase nodes (`endpoint`, `candidate_generation`,
+`tsfreq_validation`, `connectivity_validation`, `accepted_audit`, and
+`pathway_audit`) remain readable and closable. Legacy `program_status` and
+`claim_verdict` remain visible in reports. Do not create them for new studies.

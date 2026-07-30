@@ -5,8 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ..artifact_policy import consumed_paths_from_manifest, node_owner_from_artifact_path, role_matches_phase
+from ..artifact_policy import consumed_paths_from_manifest, node_owner_from_artifact_path, role_matches_node
 from ..evidence_gates import (
+    STRICT_PATHWAY_ACCEPTED,
     STEREOCHEMICAL_GATE_ROLE,
     accepted_gate_evidence,
     gate_artifact_metadata_diagnostic,
@@ -15,9 +16,22 @@ from ..evidence_gates import (
     mechanism_reflection_required_roles,
     stereochemical_gate_diagnostic,
     strict_connectivity_diagnostic,
+    strict_pathway_decision,
     validate_mechanism_reflection_gate,
 )
 from ..io import read_json
+from ..ontology import (
+    AUDIT_SCOPES,
+    AUDIT_STATUSES,
+    CANDIDATE_KINDS,
+    HYPOTHESIS_STATUSES,
+    INTAKE_STATUSES,
+    MECHANISM_ACTIONS,
+    NODE_SCHEMA as NODE_SCHEMA_V2,
+    NODE_TYPES,
+    PROGRAM_OUTCOMES,
+    VALIDATION_SCOPES,
+)
 from ..schema_validation import schema_findings
 from ..state import EVIDENCE_FILE, HYPOTHESES_FILE, RESEARCH_STATE_FILE
 from .decision import (
@@ -43,9 +57,6 @@ REQUIRED_DIRS = {"inputs", "nodes", "reports", "accepted", "rejected"}
 # Auto-created on first mutation; missing is a warning, not an error.
 SOFT_DIRS = {"decisions"}
 UNRESOLVED_TERMINAL_VERDICTS = {"refuted", "inconclusive", "not_evaluated"}
-STRICT_PATHWAY_ACCEPTED = "accepted"
-STRICT_PATHWAY_NOT_ACCEPTED = {"pathway_not_accepted", "not_accepted"}
-STRICT_PATHWAY_DECISIONS = {STRICT_PATHWAY_ACCEPTED, *STRICT_PATHWAY_NOT_ACCEPTED}
 SCHEMA_BY_FILE = {
     RESEARCH_STATE_FILE: "research_state.schema.json",
     HYPOTHESES_FILE: "hypotheses.schema.json",
@@ -120,7 +131,8 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001
             _finding(findings, "error", "invalid_node_json", str(exc), str(node_path))
             continue
-        findings.extend(schema_findings("node.schema.json", node, str(node_path)))
+        node_schema = "node_v2.schema.json" if isinstance(node, dict) and node.get("schema_version") == NODE_SCHEMA_V2 else "node.schema.json"
+        findings.extend(schema_findings(node_schema, node, str(node_path)))
         if not isinstance(node, dict):
             _finding(findings, "error", "invalid_node_json", "node.json must contain an object", str(node_path))
             continue
@@ -187,6 +199,11 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
         evidence_by_id,
         findings,
     )
+    _validate_v2_accepted_audit_refs(
+        _as_dict(loaded.get(RESEARCH_STATE_FILE)),
+        node_details,
+        findings,
+    )
     _validate_pathway_audit_mechanism_gates(
         _as_dict(loaded.get(HYPOTHESES_FILE)),
         node_details,
@@ -240,6 +257,9 @@ def _validate_node(
     findings: list[dict[str, str]],
     source: str,
 ) -> None:
+    if node.get("schema_version") == NODE_SCHEMA_V2:
+        _validate_node_v2(node, expected_id, hypothesis_ids, findings, source)
+        return
     if node.get("node_id") != expected_id:
         _finding(findings, "error", "node_id_mismatch", "node_id does not match tree entry", source)
     phase = node.get("phase")
@@ -318,6 +338,69 @@ def _validate_node(
                     "closure mechanism hypothesis_ref must match node hypothesis_ref",
                     source,
                 )
+
+
+def _validate_node_v2(
+    node: dict[str, Any],
+    expected_id: str,
+    hypothesis_ids: set[str],
+    findings: list[dict[str, str]],
+    source: str,
+) -> None:
+    if node.get("node_id") != expected_id:
+        _finding(findings, "error", "node_id_mismatch", "node_id does not match tree entry", source)
+    node_type = node.get("node_type")
+    if node_type not in NODE_TYPES:
+        _finding(findings, "error", "invalid_node_type", "node_type is invalid", source)
+    if expected_id == "n000" and node_type != "intake":
+        _finding(findings, "error", "invalid_n000_type", "n000 must use node_type=intake", source)
+    if expected_id != "n000" and node_type == "intake":
+        _finding(findings, "error", "intake_after_n000", "node_type=intake is reserved for n000", source)
+    if not isinstance(node.get("objective"), str) or not node["objective"].strip():
+        _finding(findings, "error", "missing_objective", "v2 node objective is required", source)
+    if node.get("lifecycle") not in VALID_LIFECYCLES:
+        _finding(findings, "error", "invalid_lifecycle", "node lifecycle is invalid", source)
+    if node_type == "mechanism" and node.get("mechanism_action") not in MECHANISM_ACTIONS:
+        _finding(findings, "error", "invalid_mechanism_action", "mechanism_action is invalid", source)
+    if node_type == "candidate_search" and node.get("candidate_kind") not in CANDIDATE_KINDS:
+        _finding(findings, "error", "invalid_candidate_kind", "candidate_kind is invalid", source)
+    if node_type == "validation" and node.get("validation_scope") not in VALIDATION_SCOPES:
+        _finding(findings, "error", "invalid_validation_scope", "validation_scope is invalid", source)
+    if node_type == "audit" and node.get("audit_scope") not in AUDIT_SCOPES:
+        _finding(findings, "error", "invalid_audit_scope", "audit_scope is invalid", source)
+
+    if node_type in {"candidate_search", "validation", "audit"} or (
+        node_type == "mechanism" and node.get("mechanism_action") != "propose"
+    ):
+        _validate_hypothesis_ref(node.get("hypothesis_ref"), hypothesis_ids, findings, source, "node.hypothesis_ref")
+    if node_type == "mechanism" and node.get("mechanism_action") == "propose":
+        proposed = node.get("proposed_hypothesis")
+        if not isinstance(proposed, dict) or not isinstance(proposed.get("hypothesis_id"), str):
+            _finding(findings, "error", "missing_proposed_hypothesis", "mechanism proposal requires proposed_hypothesis", source)
+
+    closure = node.get("closure")
+    lifecycle = node.get("lifecycle")
+    if lifecycle == "running" and closure is not None:
+        _finding(findings, "error", "running_node_has_closure", "running node cannot have closure", source)
+    if lifecycle in {"closed", "stopped"}:
+        if not isinstance(closure, dict):
+            _finding(findings, "error", "missing_closure", "closed or stopped node requires closure", source)
+            return
+        program = closure.get("program") if isinstance(closure.get("program"), dict) else {}
+        if program.get("outcome") not in PROGRAM_OUTCOMES:
+            _finding(findings, "error", "invalid_program_outcome", "closure.program.outcome is invalid", source)
+        if node_type == "intake":
+            intake = closure.get("intake") if isinstance(closure.get("intake"), dict) else {}
+            if intake.get("status") not in INTAKE_STATUSES:
+                _finding(findings, "error", "invalid_intake_status", "intake closure status is invalid", source)
+        if node_type == "mechanism":
+            hypothesis = closure.get("hypothesis") if isinstance(closure.get("hypothesis"), dict) else {}
+            if hypothesis.get("status") not in HYPOTHESIS_STATUSES:
+                _finding(findings, "error", "invalid_hypothesis_status", "mechanism closure hypothesis status is invalid", source)
+        if node_type == "audit":
+            audit = closure.get("audit") if isinstance(closure.get("audit"), dict) else {}
+            if audit.get("status") not in AUDIT_STATUSES:
+                _finding(findings, "error", "invalid_audit_status", "audit closure status is invalid", source)
 
 
 def _validate_mechanism_model(model: Any, findings: list[dict[str, str]]) -> set[str]:
@@ -573,9 +656,9 @@ def _validate_branch_contexts(
             elif ref not in node_details:
                 _finding(findings, "error", "invalid_branch_context_node", f"branch_context.{field} does not exist: {ref}", source)
         from_node = node_details.get(str(from_node_id))
-        if relation == "continue_parent":
+        if relation in {"continue_parent", "recalculation_of"}:
             if node.get("parent_node") != from_node_id:
-                _finding(findings, "error", "invalid_branch_context", "continue_parent requires parent_node to match from_node", source)
+                _finding(findings, "error", "invalid_branch_context", f"{relation} requires parent_node to match from_node", source)
         elif relation in ANCHORED_BRANCH_RELATIONS and node.get("parent_node") != anchor_node_id:
             _finding(
                 findings,
@@ -592,10 +675,24 @@ def _validate_branch_contexts(
                 f"{relation} anchor_node must be an ancestor of branch_context.from_node",
                 source,
             )
+        if relation == "recalculation_of":
+            recalculation = node.get("recalculation_ref") if isinstance(node.get("recalculation_ref"), dict) else {}
+            if node.get("attempt_kind") != "recalculation":
+                _finding(findings, "error", "invalid_recalculation", "recalculation_of requires attempt_kind=recalculation", source)
+            if recalculation.get("source_node") != from_node_id:
+                _finding(findings, "error", "invalid_recalculation", "recalculation_ref.source_node must match branch_context.from_node", source)
+        elif node.get("schema_version") == NODE_SCHEMA_V2 and node.get("attempt_kind") == "recalculation":
+            _finding(findings, "error", "invalid_recalculation", "attempt_kind=recalculation requires relation=recalculation_of", source)
         if relation == "new_solution_branch":
             _validate_solution_branch_context(node, from_node, findings, source)
         elif relation == "new_hypothesis_branch":
-            _validate_hypothesis_branch_context(node, from_node, findings, source)
+            if node.get("schema_version") == NODE_SCHEMA_V2 and node.get("mechanism_action") == "propose":
+                proposed = node.get("proposed_hypothesis") if isinstance(node.get("proposed_hypothesis"), dict) else {}
+                from_hypothesis_id = _node_hypothesis_id(from_node or {})
+                if proposed.get("parent_hypothesis_id") != from_hypothesis_id:
+                    _finding(findings, "error", "hypothesis_branch_parent_mismatch", "proposed parent_hypothesis_id must match from_node hypothesis", source)
+            else:
+                _validate_hypothesis_branch_context(node, from_node, findings, source)
         elif relation == "new_pathway_branch":
             if not isinstance(node.get("pathway_ref"), dict):
                 _finding(findings, "error", "invalid_branch_context", "new_pathway_branch requires node.pathway_ref", source)
@@ -781,6 +878,10 @@ def _validate_initial_node_sequence(
     first = node_details.get(first_id, {})
     if first_id != "n000":
         _finding(findings, "error", "missing_n000", "first node must be n000", f"{RESEARCH_STATE_FILE}.nodes[0]")
+    if first.get("schema_version") == NODE_SCHEMA_V2:
+        if first.get("node_type") != "intake":
+            _finding(findings, "error", "invalid_n000_type", "n000 must be intake", "nodes/n000/node.json")
+        return
     if first.get("phase") not in {"endpoint", "preflight"}:
         _finding(findings, "error", "invalid_n000_phase", "n000 must be endpoint", "nodes/n000/node.json")
     closure = first.get("closure")
@@ -927,6 +1028,32 @@ def _validate_accepted_ts_refs(
                 _finding(findings, "error", "invalid_accepted_ts_mechanism_reflection_gate", str(exc), ref)
 
 
+def _validate_v2_accepted_audit_refs(
+    research_state: dict[str, Any],
+    node_details: dict[str, dict[str, Any]],
+    findings: list[dict[str, str]],
+) -> None:
+    accepted_refs = set(str(item) for item in _as_list(research_state.get("accepted_ts_refs")) if item)
+    for node_id, node in node_details.items():
+        if node.get("schema_version") != NODE_SCHEMA_V2 or node.get("node_type") != "audit":
+            continue
+        if node.get("audit_scope") not in {"transition_state", "elementary_step"}:
+            continue
+        closure = node.get("closure") if isinstance(node.get("closure"), dict) else {}
+        audit = closure.get("audit") if isinstance(closure.get("audit"), dict) else {}
+        if node.get("lifecycle") not in {"closed", "stopped"} or audit.get("status") != "accepted":
+            continue
+        expected_ref = f"accepted/accepted_ts_{node_id}.json"
+        if expected_ref not in accepted_refs:
+            _finding(
+                findings,
+                "error",
+                "missing_v2_accepted_ts_ref",
+                f"accepted v2 audit is missing accepted artifact ref: {expected_ref}",
+                f"nodes/{node_id}/node.json",
+            )
+
+
 def _artifact_hypothesis_id(artifact: dict[str, Any]) -> str | None:
     hypothesis_ref = artifact.get("hypothesis_ref")
     if not isinstance(hypothesis_ref, dict):
@@ -952,21 +1079,40 @@ def _validate_pathway_audit_mechanism_gates(
 ) -> None:
     evidence_records = list(evidence_by_id.values())
     for node_id, node in node_details.items():
-        if node.get("phase") != "pathway_audit":
+        is_v2 = (
+            node.get("schema_version") == NODE_SCHEMA_V2
+            and node.get("node_type") == "audit"
+            and node.get("audit_scope") == "pathway"
+        )
+        is_legacy = node.get("phase") == "pathway_audit"
+        if not is_v2 and not is_legacy:
             continue
         closure = node.get("closure") if isinstance(node.get("closure"), dict) else {}
-        if closure.get("program_status") != "completed" or closure.get("claim_verdict") != "supported":
-            continue
-        evidence_refs = sorted(
-            set(
-                _as_list(node.get("evidence_refs"))
-                + _as_list(closure.get("program", {}).get("evidence_refs") if isinstance(closure.get("program"), dict) else [])
-                + _as_list(closure.get("mechanism", {}).get("evidence_refs") if isinstance(closure.get("mechanism"), dict) else [])
+        if is_v2:
+            if node.get("lifecycle") not in {"closed", "stopped"}:
+                continue
+            audit = closure.get("audit") if isinstance(closure.get("audit"), dict) else {}
+            evidence_refs = sorted(
+                set(
+                    _as_list(node.get("evidence_refs"))
+                    + _as_list(closure.get("program", {}).get("evidence_refs") if isinstance(closure.get("program"), dict) else [])
+                    + _as_list(audit.get("evidence_refs"))
+                )
             )
-        )
+        else:
+            if closure.get("program_status") != "completed" or closure.get("claim_verdict") != "supported":
+                continue
+            audit = {}
+            evidence_refs = sorted(
+                set(
+                    _as_list(node.get("evidence_refs"))
+                    + _as_list(closure.get("program", {}).get("evidence_refs") if isinstance(closure.get("program"), dict) else [])
+                    + _as_list(closure.get("mechanism", {}).get("evidence_refs") if isinstance(closure.get("mechanism"), dict) else [])
+                )
+            )
         source = f"nodes/{node_id}/node.json"
         try:
-            strict_decision = _pathway_audit_strict_decision(evidence_records, evidence_refs)
+            strict_decision = strict_pathway_decision(evidence_records, evidence_refs)
         except ValueError as exc:
             _finding(findings, "error", "invalid_pathway_audit_strict_decision", str(exc), source)
             continue
@@ -979,6 +1125,17 @@ def _validate_pathway_audit_mechanism_gates(
                 source,
             )
             continue
+        if is_v2:
+            expected_status = "accepted" if strict_decision == STRICT_PATHWAY_ACCEPTED else "not_accepted"
+            if audit.get("status") != expected_status:
+                _finding(
+                    findings,
+                    "error",
+                    "pathway_audit_status_mismatch",
+                    "closure.audit.status must match pathway_audit_summary quality.strict_pathway_decision",
+                    source,
+                )
+                continue
         if strict_decision != STRICT_PATHWAY_ACCEPTED:
             continue
         hypothesis_id = _node_hypothesis_id(node)
@@ -1026,31 +1183,6 @@ def _branch_target_hypothesis_ref(node: dict[str, Any]) -> Any:
     return {"hypothesis_id": hypothesis_id, "prediction_ids": []}
 
 
-def _pathway_audit_strict_decision(evidence_records: list[dict[str, Any]], evidence_refs: list[str]) -> str | None:
-    invalid: list[str] = []
-    allowed_refs = set(evidence_refs)
-    for entry in evidence_records:
-        if entry.get("evidence_id") not in allowed_refs or entry.get("role") != "pathway_audit_summary":
-            continue
-        quality = entry.get("quality") if isinstance(entry.get("quality"), dict) else {}
-        raw_decision = quality.get("strict_pathway_decision")
-        decision = _normalize_strict_pathway_decision(raw_decision)
-        if decision in STRICT_PATHWAY_DECISIONS:
-            return decision
-        if raw_decision is not None:
-            invalid.append(str(raw_decision))
-    if invalid:
-        raise ValueError("pathway_audit_summary quality.strict_pathway_decision must be accepted or pathway_not_accepted")
-    return None
-
-
-def _normalize_strict_pathway_decision(value: Any) -> str | None:
-    if not isinstance(value, str):
-        return None
-    decision = value.strip().lower()
-    return decision or None
-
-
 def _validate_evidence_artifact_boundaries(
     root: Path,
     evidence: list[Any],
@@ -1070,13 +1202,14 @@ def _validate_evidence_artifact_boundaries(
         if node is None:
             _finding(findings, "error", "unknown_evidence_node", f"evidence {evidence_id} references unknown node {node_id}", source)
             continue
-        phase = node.get("phase")
-        if not role_matches_phase(item.get("role"), phase):
+        if not role_matches_node(item.get("role"), node):
             _finding(
                 findings,
                 "warning",
-                "evidence_role_phase_mismatch",
-                f"evidence {evidence_id} role {item.get('role')!r} is not owned by node phase {phase!r}",
+                "evidence_role_node_mismatch",
+                f"evidence {evidence_id} role {item.get('role')!r} is not owned by "
+                f"node type/scope {(node.get('node_type') or node.get('phase'))!r}/"
+                f"{(node.get('validation_scope') or node.get('audit_scope') or node.get('candidate_kind'))!r}",
                 source,
             )
         path = item.get("path")
@@ -1125,7 +1258,10 @@ def _artifact_manifest(
     if isinstance(manifest, dict):
         if manifest.get("node_id") != node_id:
             _finding(findings, "error", "artifact_manifest_node_mismatch", "artifact manifest node_id must match node", str(path))
-        if manifest.get("phase") != node.get("phase"):
+        if node.get("schema_version") == NODE_SCHEMA_V2:
+            if manifest.get("node_type") != node.get("node_type"):
+                _finding(findings, "error", "artifact_manifest_node_type_mismatch", "artifact manifest node_type must match node", str(path))
+        elif manifest.get("phase") != node.get("phase"):
             _finding(findings, "error", "artifact_manifest_phase_mismatch", "artifact manifest phase must match node phase", str(path))
     cache[node_id] = manifest if isinstance(manifest, dict) else None
     return cache[node_id]
