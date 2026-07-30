@@ -227,6 +227,9 @@ def test_report_package_writes_visual_mechanism_assets(tmp_path: Path) -> None:
     assert Path(result["assets_dir"], "r_ts_p_structure_panel.svg").exists()
     assert Path(result["assets_dir"], "irc_key_distance_profile.svg").exists()
     assert context["mechanism_interpretation"]["classification"]
+    manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
+    assert manifest["workspace_revision"] == context["workspace_revision"]
+    assert Path(result["manifest"]).is_file()
 
 
 def test_energy_profile_uses_reactant_product_zpe_corrections(tmp_path: Path) -> None:

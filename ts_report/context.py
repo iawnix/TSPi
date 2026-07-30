@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ts_workspace.io import read_json
+from ts_workspace.io import read_json, sha256_json
 from ts_workspace.ontology import node_scope_of, node_type_of
 from ts_workspace.state import EVIDENCE_FILE, HYPOTHESES_FILE, RESEARCH_STATE_FILE
 from ts_workspace.validators.workspace import validate_workspace
@@ -49,6 +49,9 @@ def collect_report_context(root: str | Path) -> dict[str, Any]:
     validation_scopes = validation_scopes_reached(nodes, records)
     context: dict[str, Any] = {
         "workspace_root": str(root_path),
+        "workspace_revision": sha256_json(
+            {"research_state": research_state, "hypotheses": hypotheses, "evidence": evidence}
+        ),
         "manifest": manifest,
         "pathway_model": pathway,
         "nodes": nodes,

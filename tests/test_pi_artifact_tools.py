@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -159,9 +160,14 @@ def test_artifact_node_scope_must_match_workspace_report(tmp_path: Path) -> None
 
 def test_email_cli_creates_local_draft_without_send_surface(tmp_path: Path) -> None:
     workspace = _artifact_workspace(tmp_path)
+    binding = _package_binding(workspace)
     request = {
         "schema_version": "ts-email-draft/1",
         "summary_ref": "reports/run-001/email_summary.md",
+        "summary_digest": binding["summary_digest"],
+        "manifest_ref": "reports/run-001/package_manifest.json",
+        "manifest_digest": binding["manifest_digest"],
+        "source_workspace_revision": binding["workspace_revision"],
         "draft_ref": "reports/email/draft-001.json",
         "recipients": ["researcher@example.org"],
         "subject": "TS study update",
@@ -192,11 +198,54 @@ def test_email_cli_creates_local_draft_without_send_surface(tmp_path: Path) -> N
     draft = json.loads((workspace / "reports" / "email" / "draft-001.json").read_text(encoding="utf-8"))
     assert draft["delivery"] == {"send_available": False, "status": "draft_only"}
     assert draft["recipients"] == ["researcher@example.org"]
+    assert draft["package_manifest_digest"] == binding["manifest_digest"]
 
     source = (ROOT / "scripts" / "ts_email.py").read_text(encoding="utf-8")
     assert "smtplib" not in source
     assert "requests" not in source
     assert "send_message" not in source
+
+
+def test_email_cli_rechecks_summary_digest_at_write_time(tmp_path: Path) -> None:
+    workspace = _artifact_workspace(tmp_path)
+    binding = _package_binding(workspace)
+    (workspace / "reports" / "run-001" / "email_summary.md").write_text("changed\n", encoding="utf-8")
+    request = {
+        "schema_version": "ts-email-draft/1",
+        "summary_ref": "reports/run-001/email_summary.md",
+        "summary_digest": binding["summary_digest"],
+        "manifest_ref": "reports/run-001/package_manifest.json",
+        "manifest_digest": binding["manifest_digest"],
+        "source_workspace_revision": binding["workspace_revision"],
+        "draft_ref": "reports/email/draft-changed.json",
+        "recipients": ["researcher@example.org"],
+        "subject": "TS study update",
+        "body": "Bound body.",
+    }
+    request_file = tmp_path / "changed-request.json"
+    request_file.write_text(json.dumps(request), encoding="utf-8")
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "ts_email.py"),
+            "draft",
+            "--root",
+            str(workspace),
+            "--request-file",
+            str(request_file),
+            "--json",
+        ],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert "summary digest changed" in completed.stderr
+    assert not (workspace / "reports" / "email" / "draft-changed.json").exists()
 
 
 def test_report_cli_returns_structured_package_refs(tmp_path: Path) -> None:
@@ -225,6 +274,16 @@ def test_report_cli_returns_structured_package_refs(tmp_path: Path) -> None:
     assert result["context"] == str(package_dir / "report_context.json")
     assert result["email_summary"] == str(package_dir / "email_summary.md")
     assert result["assets_dir"] == str(package_dir / "assets")
+    assert result["manifest"] == str(package_dir / "package_manifest.json")
+    assert result["manifest_digest"].startswith("sha256:")
+    manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
+    assert manifest["schema_version"] == "ts-report-package/1"
+    assert manifest["workspace_revision"] == result["workspace_revision"]
+    assert {row["ref"] for row in manifest["files"]} >= {
+        "final_report.md",
+        "report_context.json",
+        "email_summary.md",
+    }
 
 
 def test_report_package_validates_before_creating_output(tmp_path: Path) -> None:
@@ -234,6 +293,30 @@ def test_report_package_validates_before_creating_output(tmp_path: Path) -> None
     with pytest.raises(ValueError, match="workspace is invalid"):
         build_report_package(workspace, package_dir)
     assert not package_dir.exists()
+
+
+def test_report_package_is_no_overwrite_and_email_rejects_tampering(tmp_path: Path) -> None:
+    workspace = tmp_path / "report-workspace"
+    bootstrap_strict_workspace(workspace)
+    package_dir = workspace / "reports" / "operator-package"
+    build_report_package(workspace, package_dir)
+    with pytest.raises(ValueError, match="already exists"):
+        build_report_package(workspace, package_dir)
+    assert not list(package_dir.parent.glob(f".{package_dir.name}.tmp-*"))
+
+    (package_dir / "email_summary.md").write_text("tampered\n", encoding="utf-8")
+    failed = _request_contract(
+        "validateEmailRequest",
+        workspace,
+        {
+            "operation": "draft",
+            "summaryRef": "reports/operator-package/email_summary.md",
+            "draftRef": "reports/email/tampered.json",
+            "recipients": ["researcher@example.org"],
+        },
+        check=False,
+    )
+    assert "digest mismatch" in failed.stderr
 
 
 @pytest.mark.parametrize("role", ["render", "report", "email"])
@@ -281,7 +364,43 @@ def _artifact_workspace(tmp_path: Path) -> Path:
     (workspace / "nodes" / "n001" / "node.json").write_text("{}\n", encoding="utf-8")
     (workspace / "reports" / "run-001" / "email_summary.md").write_text("Subject: TS report\n\nReady.\n", encoding="utf-8")
     (workspace / "reports" / "run-001" / "report_context.json").write_text("{}\n", encoding="utf-8")
+    _write_package_manifest(workspace / "reports" / "run-001")
     return workspace
+
+
+def _write_package_manifest(package_dir: Path) -> None:
+    files = []
+    for name in ("email_summary.md", "report_context.json"):
+        path = package_dir / name
+        files.append({"ref": name, "sha256": _sha256(path), "size_bytes": path.stat().st_size})
+    (package_dir / "package_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "ts-report-package/1",
+                "workspace_revision": "sha256:" + "1" * 64,
+                "files": files,
+            },
+            indent=2,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+
+def _package_binding(workspace: Path) -> dict[str, str]:
+    package_dir = workspace / "reports" / "run-001"
+    manifest = json.loads((package_dir / "package_manifest.json").read_text(encoding="utf-8"))
+    summary = next(row for row in manifest["files"] if row["ref"] == "email_summary.md")
+    return {
+        "summary_digest": summary["sha256"],
+        "manifest_digest": _sha256(package_dir / "package_manifest.json"),
+        "workspace_revision": manifest["workspace_revision"],
+    }
+
+
+def _sha256(path: Path) -> str:
+    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _request_contract(
@@ -371,17 +490,25 @@ def _artifact_protocol_fixture(role: str) -> tuple[dict[str, object], dict[str, 
             "context_ref": "reports/run-001/report_context.json",
             "email_summary_ref": "reports/run-001/email_summary.md",
             "assets_ref": "reports/run-001/assets",
+            "manifest_ref": "reports/run-001/package_manifest.json",
+            "manifest_digest": "sha256:" + "2" * 64,
+            "workspace_revision": "sha256:" + "1" * 64,
             "artifact_refs": [
                 "reports/run-001/final_report.md",
                 "reports/run-001/report_context.json",
                 "reports/run-001/email_summary.md",
                 "reports/run-001/assets",
+                "reports/run-001/package_manifest.json",
             ],
         },
         "email": {
             "operation": "draft",
             "state": "drafted",
             "summary_ref": "reports/run-001/email_summary.md",
+            "summary_digest": "sha256:" + "3" * 64,
+            "manifest_ref": "reports/run-001/package_manifest.json",
+            "manifest_digest": "sha256:" + "2" * 64,
+            "source_workspace_revision": "sha256:" + "1" * 64,
             "draft_ref": "reports/email/draft-001.json",
             "recipients": ["researcher@example.org"],
             "subject": "TS study update",

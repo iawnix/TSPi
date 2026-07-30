@@ -100,23 +100,31 @@ function validatePayload(role, value, canonical, task) {
     return payload;
   }
   if (role === "report") {
-    const keys = ["operation", "package_ref", "report_ref", "context_ref", "email_summary_ref", "assets_ref"];
+    const keys = ["operation", "package_ref", "report_ref", "context_ref", "email_summary_ref", "assets_ref", "manifest_ref", "manifest_digest", "workspace_revision"];
     rejectUnknownKeys(value, keys, "report payload");
     const payload = Object.fromEntries(keys.map((key) => [key, requireString(value[key], `payload.${key}`, 4096)]));
     assertSame(payload.operation, "build", "report operation");
     for (const key of keys.slice(1)) assertSame(payload[key], canonical[key], `report ${key}`);
     return payload;
   }
-  rejectUnknownKeys(value, ["operation", "summary_ref", "draft_ref", "recipients", "subject"], "email payload");
+  rejectUnknownKeys(value, ["operation", "summary_ref", "summary_digest", "manifest_ref", "manifest_digest", "source_workspace_revision", "draft_ref", "recipients", "subject"], "email payload");
   const payload = {
     operation: requireString(value.operation, "payload.operation", 64),
     summary_ref: requireString(value.summary_ref, "payload.summary_ref", 4096),
+    summary_digest: requireString(value.summary_digest, "payload.summary_digest", 128),
+    manifest_ref: requireString(value.manifest_ref, "payload.manifest_ref", 4096),
+    manifest_digest: requireString(value.manifest_digest, "payload.manifest_digest", 128),
+    source_workspace_revision: requireString(value.source_workspace_revision, "payload.source_workspace_revision", 128),
     draft_ref: requireString(value.draft_ref, "payload.draft_ref", 4096),
     recipients: uniqueStringArray(value.recipients, "payload.recipients", 20, 320),
     subject: requireString(value.subject, "payload.subject", 300),
   };
   assertSame(payload.operation, "draft", "email operation");
   assertSame(payload.summary_ref, canonical.summary_ref, "email summary_ref");
+  assertSame(payload.summary_digest, canonical.summary_digest, "email summary_digest");
+  assertSame(payload.manifest_ref, canonical.manifest_ref, "email manifest_ref");
+  assertSame(payload.manifest_digest, canonical.manifest_digest, "email manifest_digest");
+  assertSame(payload.source_workspace_revision, canonical.source_workspace_revision, "email source_workspace_revision");
   assertSame(payload.draft_ref, canonical.draft_ref, "email draft_ref");
   if (JSON.stringify(payload.recipients) !== JSON.stringify(canonical.recipients)) {
     throw new Error("email recipients do not match the typed tool result");

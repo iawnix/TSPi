@@ -37,6 +37,12 @@ function validateOperatorReport(value, packet, actions) {
   if (!Array.isArray(actions) || actions.length < 1 || actions.length > 2) {
     throw new Error("compute operator must execute one or two scoped actions");
   }
+  for (const action of actions) {
+    const actionResult = operationResult(action && action.result);
+    if (!isPlainObject(actionResult) || actionResult.action_status === "started") {
+      throw new Error("compute operator contains an incomplete typed action");
+    }
+  }
   const requiredTool = REQUIRED_TOOLS[task.operation];
   const requiredActions = actions.filter((action) => isPlainObject(action) && action.tool === requiredTool);
   const requiredAction = requiredActions[0];
@@ -65,9 +71,13 @@ function validateOperatorReport(value, packet, actions) {
 
   const inputs = task.inputs;
   const backend = requireString(inputs.backend, "task inputs.backend", 64);
+  const intentDigest = requireString(inputs.intent_digest, "task inputs.intent_digest", 256);
   const provenance = isPlainObject(canonical.provenance) ? canonical.provenance : {};
   if (provenance.backend && provenance.backend !== backend) {
     throw new Error("compute operator backend does not match tool result");
+  }
+  if (provenance.intent_digest !== intentDigest) {
+    throw new Error("compute operator intent digest does not match tool result");
   }
   const payload = validatePayload(report.payload);
   assertSame(payload.intent_id, stringOrNull(canonical.intent_id), "intent_id");

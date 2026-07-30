@@ -1,0 +1,403 @@
+from __future__ import annotations
+
+import json
+import os
+import re
+import select
+import shutil
+import subprocess
+import sys
+import threading
+import time
+from types import SimpleNamespace
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
+
+import pytest
+
+from strict_helpers import bootstrap_strict_workspace
+
+
+ROOT = Path(__file__).resolve().parents[1]
+EXPECTED_TOOLS = {
+    "ts_workspace_context",
+    "ts_workspace_decide",
+    "ts_workspace_validate",
+    "ts_workspace_apply",
+    "ts_workspace_subagent",
+    "ts_workspace_compute_operator",
+    "ts_workspace_render_operator",
+    "ts_workspace_report_operator",
+    "ts_workspace_email_operator",
+}
+
+
+def test_real_pi_offline_loads_extensions_and_public_tool_inventory(tmp_path: Path) -> None:
+    pi = _pi_binary()
+    if pi is None:
+        pytest.skip("Pi executable is not installed")
+    version = subprocess.run(
+        [pi, "--version"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    ).stdout.strip()
+    if _version_tuple(version) < (0, 81, 1):
+        pytest.skip(f"Pi {version} is older than the supported integration surface")
+
+    workspace = tmp_path / "workspace"
+    bootstrap_strict_workspace(workspace)
+    env = {
+        **os.environ,
+        "PI_CODING_AGENT_DIR": str(tmp_path / "pi-agent"),
+        "PI_OFFLINE": "1",
+        "TS_AGENT_PYTHON": sys.executable,
+        "TS_WORKSPACE_ROOT": str(workspace),
+    }
+    installed = subprocess.run(
+        [pi, "install", "-l", str(ROOT), "--approve"],
+        cwd=workspace,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=45,
+        check=False,
+    )
+    assert installed.returncode == 0, installed.stderr
+    settings = json.loads((workspace / ".pi" / "settings.json").read_text(encoding="utf-8"))
+    assert len(settings["packages"]) == 1
+    assert (workspace / settings["packages"][0]).resolve() == ROOT
+
+    command = [
+        pi,
+        "--mode",
+        "rpc",
+        "--offline",
+        "--no-session",
+        "--session-dir",
+        str(tmp_path / "pi-sessions"),
+        "--no-context-files",
+        "--no-skills",
+        "--no-builtin-tools",
+        "--approve",
+        "--extension",
+        str(ROOT / "tests" / "pi_inventory_probe.ts"),
+    ]
+
+    completed = subprocess.run(
+        command,
+        cwd=workspace,
+        env=env,
+        input=json.dumps({"id": "inventory", "type": "prompt", "message": "/ts-test-inventory"}) + "\n",
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=45,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    rows = [json.loads(line) for line in completed.stdout.splitlines() if line.strip().startswith("{")]
+    notification = next(
+        row
+        for row in rows
+        if row.get("type") == "extension_ui_request"
+        and row.get("method") == "notify"
+        and str(row.get("message", "")).startswith("TS_TEST_INVENTORY:")
+    )
+    inventory = json.loads(notification["message"].split(":", 1)[1])
+    assert set(inventory["active"]) == EXPECTED_TOOLS
+    assert EXPECTED_TOOLS <= set(inventory["all"])
+    assert "ts_workspace_compute_submit" not in inventory["all"]
+    assert "ts_workspace_compute_cancel" not in inventory["all"]
+    assert "ts_workspace_email_send" not in inventory["all"]
+
+
+def test_real_pi_child_session_uses_only_recording_provider_tool(tmp_path: Path) -> None:
+    pi = _pi_binary()
+    if pi is None:
+        pytest.skip("Pi executable is not installed")
+    workspace = tmp_path / "workspace"
+    bootstrap_strict_workspace(workspace)
+    (workspace / "inputs").mkdir(exist_ok=True)
+    (workspace / "inputs" / "reactant.xyz").write_text("1\nR\nH 0 0 0\n", encoding="utf-8")
+    agent_dir = tmp_path / "pi-agent"
+    agent_dir.mkdir()
+
+    requests: list[dict[str, object]] = []
+    with _recording_server(requests) as base_url:
+        (agent_dir / "models.json").write_text(
+            json.dumps(
+                {
+                    "providers": {
+                        "ts-recording": {
+                            "baseUrl": f"{base_url}/v1",
+                            "api": "openai-completions",
+                            "apiKey": "recording-key",
+                            "models": [
+                                {
+                                    "id": "recording-model",
+                                    "name": "TS Recording Model",
+                                    "reasoning": False,
+                                    "input": ["text"],
+                                    "contextWindow": 32000,
+                                    "maxTokens": 4096,
+                                    "cost": {
+                                        "input": 0,
+                                        "output": 0,
+                                        "cacheRead": 0,
+                                        "cacheWrite": 0,
+                                    },
+                                }
+                            ],
+                        }
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        env = {
+            **os.environ,
+            "PI_CODING_AGENT_DIR": str(agent_dir),
+            "PI_OFFLINE": "1",
+        }
+        completed = _run_rpc_until(
+            [
+                pi,
+                "--mode",
+                "rpc",
+                "--offline",
+                "--no-session",
+                "--session-dir",
+                str(tmp_path / "pi-sessions"),
+                "--no-context-files",
+                "--no-skills",
+                "--no-extensions",
+                "--no-builtin-tools",
+                "--approve",
+                "--extension",
+                str(ROOT / "tests" / "pi_child_probe.ts"),
+            ],
+            cwd=workspace,
+            env=env,
+            command={"id": "child", "type": "prompt", "message": "/ts-test-child"},
+            notification_prefix="TS_TEST_CHILD:",
+            timeout=45,
+        )
+
+    assert completed.returncode == 0, completed.stderr
+    rows = [json.loads(line) for line in completed.stdout.splitlines() if line.strip().startswith("{")]
+    errors = [row for row in rows if str(row.get("message", "")).startswith("TS_TEST_CHILD_ERROR:")]
+    assert not errors, errors
+    notification = next(
+        (
+            row
+            for row in rows
+            if row.get("type") == "extension_ui_request"
+            and str(row.get("message", "")).startswith("TS_TEST_CHILD:")
+        ),
+        None,
+    )
+    assert notification is not None, {"stdout": completed.stdout, "stderr": completed.stderr, "requests": requests}
+    result = json.loads(notification["message"].split(":", 1)[1])
+    assert result["report"]["payload"]["output_ref"] == "nodes/n000/outputs/recording.png"
+    assert result["metadata"]["action_names"] == ["ts_workspace_render_execute"]
+    assert len(requests) == 2
+    assert [tool["function"]["name"] for tool in requests[0]["tools"]] == ["ts_workspace_render_execute"]
+    assert "Execute this bounded render operation" in requests[0]["messages"][-1]["content"][0]["text"]
+    assert any(message.get("role") == "tool" for message in requests[1]["messages"])
+
+
+def _pi_binary() -> str | None:
+    configured = os.environ.get("PI_TEST_BINARY")
+    if configured:
+        return configured
+    discovered = shutil.which("pi")
+    if discovered:
+        return discovered
+    fallback = Path.home() / ".npm-global" / "bin" / "pi"
+    return str(fallback) if fallback.is_file() else None
+
+
+def _version_tuple(value: str) -> tuple[int, int, int]:
+    match = re.search(r"(\d+)\.(\d+)\.(\d+)", value)
+    return tuple(map(int, match.groups())) if match else (0, 0, 0)
+
+
+def _run_rpc_until(
+    argv: list[str],
+    *,
+    cwd: Path,
+    env: dict[str, str],
+    command: dict[str, object],
+    notification_prefix: str,
+    timeout: float,
+) -> SimpleNamespace:
+    process = subprocess.Popen(
+        argv,
+        cwd=cwd,
+        env=env,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    assert process.stdin is not None
+    assert process.stdout is not None
+    assert process.stderr is not None
+    process.stdin.write(json.dumps(command) + "\n")
+    process.stdin.flush()
+    stdout_lines: list[str] = []
+    deadline = time.monotonic() + timeout
+    try:
+        while time.monotonic() < deadline:
+            ready, _, _ = select.select([process.stdout], [], [], 0.1)
+            if not ready:
+                if process.poll() is not None:
+                    break
+                continue
+            line = process.stdout.readline()
+            if not line:
+                break
+            stdout_lines.append(line)
+            if notification_prefix in line:
+                break
+        process.stdin.close()
+        returncode = process.wait(timeout=10)
+    except Exception:
+        process.kill()
+        process.wait(timeout=5)
+        raise
+    stdout_lines.extend(process.stdout.readlines())
+    return SimpleNamespace(
+        returncode=returncode,
+        stdout="".join(stdout_lines),
+        stderr=process.stderr.read(),
+    )
+
+
+class _RecordingHandler(BaseHTTPRequestHandler):
+    requests: list[dict[str, object]]
+
+    def do_POST(self) -> None:  # noqa: N802
+        length = int(self.headers.get("content-length", "0"))
+        body = json.loads(self.rfile.read(length))
+        self.requests.append(body)
+        response = _tool_call_chunks() if len(self.requests) == 1 else _result_chunks()
+        payload = "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in response) + "data: [DONE]\n\n"
+        self.send_response(200)
+        self.send_header("Content-Type", "text/event-stream")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        self.wfile.write(payload.encode("utf-8"))
+
+    def log_message(self, _format: str, *_args: object) -> None:
+        return
+
+
+class _RecordingServer:
+    def __init__(self, requests: list[dict[str, object]]) -> None:
+        handler = type("RecordingHandler", (_RecordingHandler,), {"requests": requests})
+        self.server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
+        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+
+    def __enter__(self) -> str:
+        self.thread.start()
+        host, port = self.server.server_address
+        return f"http://{host}:{port}"
+
+    def __exit__(self, *_args: object) -> None:
+        self.server.shutdown()
+        self.thread.join(timeout=5)
+        self.server.server_close()
+
+
+def _recording_server(requests: list[dict[str, object]]) -> _RecordingServer:
+    return _RecordingServer(requests)
+
+
+def _tool_call_chunks() -> list[dict[str, object]]:
+    return [
+        {
+            "id": "chatcmpl-tool",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "recording-model",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {
+                        "role": "assistant",
+                        "tool_calls": [
+                            {
+                                "index": 0,
+                                "id": "call_recording_001",
+                                "type": "function",
+                                "function": {"name": "ts_workspace_render_execute", "arguments": "{}"},
+                            }
+                        ],
+                    },
+                    "finish_reason": None,
+                }
+            ],
+        },
+        {
+            "id": "chatcmpl-tool",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "recording-model",
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}],
+        },
+    ]
+
+
+def _result_chunks() -> list[dict[str, object]]:
+    scope = {
+        "report_id": "rep_recording_001",
+        "node_ids": ["n000"],
+        "hypothesis_id": None,
+        "pathway_id": None,
+    }
+    report = {
+        "schema_version": "ts-agent-result/1",
+        "task_id": "agent_recording_001",
+        "role": "render",
+        "authority": "operational",
+        "operation": "render",
+        "outcome": "success",
+        "summary": "The bound recording render completed.",
+        "scope": scope,
+        "facts": [],
+        "artifact_refs": ["nodes/n000/outputs/recording.png"],
+        "program": None,
+        "payload": {
+            "operation": "render",
+            "node_id": "n000",
+            "output_ref": "nodes/n000/outputs/recording.png",
+        },
+        "limitations": ["Recording-provider integration test."],
+        "provenance": {},
+    }
+    return [
+        {
+            "id": "chatcmpl-result",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "recording-model",
+            "choices": [
+                {
+                    "index": 0,
+                    "delta": {"role": "assistant", "content": json.dumps(report)},
+                    "finish_reason": None,
+                }
+            ],
+        },
+        {
+            "id": "chatcmpl-result",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "recording-model",
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        },
+    ]

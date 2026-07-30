@@ -8,6 +8,7 @@ from collections.abc import Iterable
 from typing import Any
 
 from ts_workspace.io import read_json
+from ts_workspace.operational import operational_snapshot
 from ts_workspace.state import EVIDENCE_FILE, HYPOTHESES_FILE, RESEARCH_STATE_FILE
 from ts_workspace.validators.workspace import validate_workspace
 
@@ -24,7 +25,9 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
     mechanism_model = hypotheses
 
     evidence_records = _list(evidence_registry.get("evidence"))
-    nodes = [_normalize_node(root, row, evidence_records) for row in _list(tree.get("nodes"))]
+    operations = operational_snapshot(root)
+    agent_runs = operations["agent_runs"]
+    nodes = [_normalize_node(root, row, evidence_records, agent_runs) for row in _list(tree.get("nodes"))]
     branch_events = _list(tree.get("branch_events"))
     decision_events = _normalize_decision_events(root / "decision_log.jsonl")
     return {
@@ -42,6 +45,9 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         "edges": _list(tree.get("edges")),
         "branch_edges": [_normalize_branch_event(event) for event in branch_events],
         "decision_events": decision_events,
+        "operational_revision": operations["operational_revision"],
+        "operational_summary": operations["operational_summary"],
+        "agent_runs": agent_runs,
         "pathways": _list(pathway_model.get("pathways")),
         "evidence": evidence_records,
         "mechanism": {
@@ -203,6 +209,9 @@ def explorer_graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
         },
         "evidence_summary": evidence["summary"],
         "evidence": {"records": evidence["records"]},
+        "operational_revision": view.get("operational_revision"),
+        "operational_summary": view.get("operational_summary", {}),
+        "agent_runs": _list(view.get("agent_runs")),
         "presentation": _explorer_presentation(),
     }
 
@@ -264,7 +273,12 @@ def list_node_files(source_root: str | Path, node_id: str) -> dict[str, Any]:
     return {"node_id": node_id, "files": files}
 
 
-def _normalize_node(root: Path, row: dict[str, Any], evidence_records: list[Any]) -> dict[str, Any]:
+def _normalize_node(
+    root: Path,
+    row: dict[str, Any],
+    evidence_records: list[Any],
+    agent_runs: list[dict[str, Any]],
+) -> dict[str, Any]:
     node_id = row.get("node_id")
     detail = _read_json(root / "nodes" / str(node_id) / "node.json") if node_id else {}
     lifecycle = detail.get("lifecycle") or row.get("lifecycle")
@@ -289,6 +303,7 @@ def _normalize_node(root: Path, row: dict[str, Any], evidence_records: list[Any]
     )
     audit_display = _pathway_audit_display(str(node_id), phase, closure, evidence_records)
     calculations = _normalize_calculations(root, str(node_id)) if node_id else []
+    node_agent_runs = [run for run in agent_runs if node_id in _list(run.get("node_ids"))]
     if node_type:
         label, tone, state = _v2_display(lifecycle, program_outcome, hypothesis_status, audit_status)
         audit_display = {}
@@ -311,6 +326,7 @@ def _normalize_node(root: Path, row: dict[str, Any], evidence_records: list[Any]
         "evidence_refs": detail.get("evidence_refs", []),
         "closure": closure or None,
         "calculations": calculations,
+        "agent_runs": node_agent_runs,
         "display": {
             "label": label,
             "tone": tone,
@@ -339,7 +355,9 @@ def _explorer_node(row: dict[str, Any], branch_events: list[Any]) -> dict[str, A
     tone = display.get("tone") or _display_tone(lifecycle, claim_verdict, program_status)
     state_key = display.get("state") or _node_state_key(lifecycle, claim_verdict, program_status)
     calculations = [item for item in _list(row.get("calculations")) if isinstance(item, dict)]
+    agent_runs = [item for item in _list(row.get("agent_runs")) if isinstance(item, dict)]
     latest_calculation = calculations[-1] if calculations else {}
+    latest_agent_run = agent_runs[-1] if agent_runs else {}
     branch_trigger_events: list[dict[str, Any]] = []
     generated_events: list[dict[str, Any]] = []
     for event in branch_events:
@@ -396,6 +414,10 @@ def _explorer_node(row: dict[str, Any], branch_events: list[Any]) -> dict[str, A
         "calculation_count": len(calculations),
         "calculation_state": latest_calculation.get("state"),
         "calculation_program_status": latest_calculation.get("program_status"),
+        "agent_runs": agent_runs,
+        "agent_run_count": len(agent_runs),
+        "agent_run_status": latest_agent_run.get("status"),
+        "agent_run_role": latest_agent_run.get("role"),
         "active": lifecycle == "running",
         "frontier": lifecycle == "running",
         "branch_event_ids": branch_ids,

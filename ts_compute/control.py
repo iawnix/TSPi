@@ -36,12 +36,75 @@ BACKENDS: dict[str, tuple[set[str], set[str], Callable[[BackendTask], PreparedTa
     "ase_neb": ({"reactant", "product"}, {"neb"}, prepare_ase_neb),
     "qbics_dmecp": ({"config"}, {"dmecp"}, prepare_qbics_dmecp),
 }
+OPERATIONS = {"prepare", "inspect", "collect", "parse"}
 
 
-def prepare_calculation(root: str | Path, intent_file: str | Path) -> dict[str, Any]:
+def preflight_calculation(
+    root: str | Path,
+    operation: str,
+    node_id: str,
+    backend: str,
+    *,
+    intent_file: str | Path | None = None,
+    intent_id: str | None = None,
+    artifact_ref: str | None = None,
+) -> dict[str, Any]:
     workspace = _workspace_root(root)
-    intent = _read_object(Path(intent_file), "calculation intent")
+    if operation not in OPERATIONS:
+        raise ComputeContractError(f"unsupported compute operation: {operation}")
+    if backend not in BACKENDS:
+        raise ComputeContractError(f"unsupported compute backend: {backend}")
+    if operation == "prepare":
+        if intent_file is None or intent_id is not None:
+            raise ComputeContractError("prepare preflight requires intent_file and forbids intent_id")
+        intent_path, intent_ref = _intent_source(workspace, intent_file)
+        intent = _read_object(intent_path, "calculation intent")
+        _validate_intent(intent)
+        _require_request_scope(intent, node_id, backend)
+        node = _load_node(workspace, node_id)
+        if node.get("lifecycle") != "running":
+            raise ComputeContractError(f"calculation preparation requires a running node: {node_id}")
+        _validate_intent_node_scope(workspace, intent, node)
+        prepared = _prepared_task_for_intent(workspace, intent)
+        policy = _validate_execution_target(intent["execution_target"])
+        if policy["kind"] == "remote":
+            _require_unique_remote_basenames(prepared.expected_artifacts)
+    else:
+        if intent_id is None or intent_file is not None:
+            raise ComputeContractError(f"{operation} preflight requires intent_id and forbids intent_file")
+        workspace, intent, prepared_record = _load_prepared(workspace, intent_id)
+        _require_request_scope(intent, node_id, backend)
+        intent_ref = str(prepared_record["intent_ref"])
+        if operation in {"inspect", "collect"}:
+            _remote_config(workspace, intent, prepared_record)
+        if operation == "parse":
+            if artifact_ref is None:
+                raise ComputeContractError("parse preflight requires artifact_ref")
+            normalized_artifact = _workspace_ref(workspace, artifact_ref, read=True)
+            _require_calculation_output_ref(intent, normalized_artifact)
+            artifact_ref = normalized_artifact
+    return {
+        "schema_version": "ts-compute-binding/1",
+        "operation": operation,
+        "node_id": str(intent["node_id"]),
+        "backend": str(intent["backend"]),
+        "intent_id": str(intent["intent_id"]),
+        "intent_ref": intent_ref,
+        "intent_digest": sha256_json(intent),
+        "artifact_ref": artifact_ref,
+    }
+
+
+def prepare_calculation(
+    root: str | Path,
+    intent_file: str | Path,
+    expected_intent_digest: str | None = None,
+) -> dict[str, Any]:
+    workspace = _workspace_root(root)
+    intent_path, _ = _intent_source(workspace, intent_file)
+    intent = _read_object(intent_path, "calculation intent")
     _validate_intent(intent)
+    _require_expected_intent_digest(intent, expected_intent_digest)
     if intent["dry_run"] is not True:
         raise ComputeContractError("compute tools currently require dry_run=true; submit is not available")
 
@@ -100,8 +163,12 @@ def prepare_calculation(root: str | Path, intent_file: str | Path) -> dict[str, 
     return {"intent": intent, "prepared": prepared_record, "result": result}
 
 
-def calculation_status(root: str | Path, intent_id: str) -> dict[str, Any]:
-    workspace, intent, prepared = _load_prepared(root, intent_id)
+def calculation_status(
+    root: str | Path,
+    intent_id: str,
+    expected_intent_digest: str | None = None,
+) -> dict[str, Any]:
+    workspace, intent, prepared = _load_prepared(root, intent_id, expected_intent_digest)
     config = _remote_config(workspace, intent, prepared)
     status = job_lifecycle.poll(config)
     state, program_status, error_class = _status_semantics(status.state)
@@ -125,8 +192,14 @@ def calculation_status(root: str | Path, intent_id: str) -> dict[str, Any]:
     return result
 
 
-def calculation_tail(root: str | Path, intent_id: str, artifact: str | None = None, lines: int = 80) -> dict[str, Any]:
-    workspace, intent, prepared = _load_prepared(root, intent_id)
+def calculation_tail(
+    root: str | Path,
+    intent_id: str,
+    artifact: str | None = None,
+    lines: int = 80,
+    expected_intent_digest: str | None = None,
+) -> dict[str, Any]:
+    workspace, intent, prepared = _load_prepared(root, intent_id, expected_intent_digest)
     config = _remote_config(workspace, intent, prepared)
     if not 1 <= int(lines) <= 500:
         raise ComputeContractError("tail lines must be between 1 and 500")
@@ -150,8 +223,13 @@ def calculation_tail(root: str | Path, intent_id: str, artifact: str | None = No
     }
 
 
-def collect_calculation(root: str | Path, intent_id: str, artifacts: list[str] | None = None) -> dict[str, Any]:
-    workspace, intent, prepared = _load_prepared(root, intent_id)
+def collect_calculation(
+    root: str | Path,
+    intent_id: str,
+    artifacts: list[str] | None = None,
+    expected_intent_digest: str | None = None,
+) -> dict[str, Any]:
+    workspace, intent, prepared = _load_prepared(root, intent_id, expected_intent_digest)
     config = _remote_config(workspace, intent, prepared)
     expected_names = list(config.expected_artifacts)
     selected = artifacts or expected_names
@@ -185,8 +263,13 @@ def collect_calculation(root: str | Path, intent_id: str, artifacts: list[str] |
     return result
 
 
-def parse_calculation(root: str | Path, intent_id: str, artifact_ref: str) -> dict[str, Any]:
-    workspace, intent, prepared = _load_prepared(root, intent_id)
+def parse_calculation(
+    root: str | Path,
+    intent_id: str,
+    artifact_ref: str,
+    expected_intent_digest: str | None = None,
+) -> dict[str, Any]:
+    workspace, intent, prepared = _load_prepared(root, intent_id, expected_intent_digest)
     if intent["backend"] != "gaussian":
         raise ComputeContractError(f"no deterministic parser is exposed for backend: {intent['backend']}")
     source_ref = _workspace_ref(workspace, artifact_ref, read=True)
@@ -371,7 +454,11 @@ def _remote_config(workspace: Path, intent: dict[str, Any], prepared: dict[str, 
     )
 
 
-def _load_prepared(root: str | Path, intent_id: str) -> tuple[Path, dict[str, Any], dict[str, Any]]:
+def _load_prepared(
+    root: str | Path,
+    intent_id: str,
+    expected_intent_digest: str | None = None,
+) -> tuple[Path, dict[str, Any], dict[str, Any]]:
     if not intent_id.startswith("calc_") or any(char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-" for char in intent_id[5:]):
         raise ComputeContractError("invalid intent_id")
     workspace = _workspace_root(root)
@@ -387,6 +474,7 @@ def _load_prepared(root: str | Path, intent_id: str) -> tuple[Path, dict[str, An
         raise ComputeContractError("prepared calculation has no intent_ref")
     intent = _read_object(workspace / _workspace_ref(workspace, intent_ref, read=True), "calculation intent")
     _validate_intent(intent)
+    _require_expected_intent_digest(intent, expected_intent_digest)
     if sha256_json(intent) != prepared.get("intent_digest"):
         raise ComputeContractError(f"calculation intent digest mismatch: {intent_id}")
     if intent.get("intent_id") != intent_id or intent.get("node_id") != prepared.get("node_id"):
@@ -409,6 +497,55 @@ def _workspace_root(root: str | Path) -> Path:
     if not (workspace / "research_state.json").is_file() or not (workspace / "nodes").is_dir():
         raise ComputeContractError(f"not an initialized TS workspace: {workspace}")
     return workspace
+
+
+def _intent_source(workspace: Path, value: str | Path) -> tuple[Path, str]:
+    source = Path(value).expanduser()
+    if source.is_absolute():
+        lexical = Path(os.path.abspath(source))
+        try:
+            ref = lexical.relative_to(workspace.resolve(strict=True)).as_posix()
+        except (OSError, ValueError) as exc:
+            raise ComputeContractError("calculation intent file must be inside the TS workspace") from exc
+        resolved = lexical.resolve(strict=True)
+        try:
+            resolved.relative_to(workspace.resolve(strict=True))
+        except ValueError as exc:
+            raise ComputeContractError("calculation intent file must be inside the TS workspace") from exc
+    else:
+        ref = _workspace_ref(workspace, source.as_posix(), read=True)
+        resolved = (workspace / ref).resolve(strict=True)
+    parts = PurePosixPath(ref).parts
+    allowed = (
+        len(parts) >= 4
+        and parts[0] == "nodes"
+        and parts[2] in {"inputs", "scratch"}
+        and resolved.suffix.lower() == ".json"
+    )
+    if not allowed:
+        raise ComputeContractError("calculation intent file must be JSON under nodes/<node>/inputs or nodes/<node>/scratch")
+    current = workspace
+    for part in parts:
+        current = current / part
+        if current.is_symlink():
+            raise ComputeContractError(f"calculation intent path contains a symbolic link: {ref}")
+    return resolved, ref
+
+
+def _require_request_scope(intent: dict[str, Any], node_id: str, backend: str) -> None:
+    if intent.get("node_id") != node_id:
+        raise ComputeContractError(
+            f"compute request node_id does not match calculation intent: {node_id} != {intent.get('node_id')}"
+        )
+    if intent.get("backend") != backend:
+        raise ComputeContractError(
+            f"compute request backend does not match calculation intent: {backend} != {intent.get('backend')}"
+        )
+
+
+def _require_expected_intent_digest(intent: dict[str, Any], expected: str | None) -> None:
+    if expected is not None and sha256_json(intent) != expected:
+        raise ComputeContractError("calculation intent changed after compute preflight")
 
 
 def _load_node(workspace: Path, node_id: str) -> dict[str, Any]:
@@ -572,6 +709,7 @@ def _result(
         "error_class": error_class,
         "provenance": {
             "backend": intent["backend"],
+            "intent_digest": sha256_json(intent),
             "intent_schema": intent["schema_version"],
             "validation_scope": intent.get("validation_scope", intent.get("evidence_layer")),
             "attempt_kind": intent.get("attempt_kind", "legacy"),

@@ -100,7 +100,14 @@ def test_compute_operator_output_is_bound_to_actual_tool_result(tmp_path: Path) 
         "objective": "Prepare the bound Gaussian calculation.",
         "workspace": {"root": "/tmp/ws", "report_id": "rep_001", "revision": "rev_001"},
         "scope": {"report_id": "rep_001", "node_ids": ["n001"], "hypothesis_id": None, "pathway_id": None},
-        "inputs": {"intent_id": None, "node_id": "n001", "backend": "gaussian", "basis_allowlist": []},
+        "inputs": {
+            "intent_id": None,
+            "intent_ref": "nodes/n001/scratch/intent.json",
+            "intent_digest": "sha256:test",
+            "node_id": "n001",
+            "backend": "gaussian",
+            "basis_allowlist": [],
+        },
         "capabilities": ["ts_workspace_compute_prepare"],
         "constraints": {
             "canonical_workspace_mutation": False,
@@ -122,7 +129,7 @@ def test_compute_operator_output_is_bound_to_actual_tool_result(tmp_path: Path) 
                 "error_class": None,
                 "artifact_refs": ["nodes/n001/inputs/calculations/calc_test.json"],
                 "exit_status": None,
-                "provenance": {"backend": "gaussian"},
+                "provenance": {"backend": "gaussian", "intent_digest": "sha256:test"},
             }
         },
     }
@@ -153,6 +160,20 @@ def test_compute_operator_output_is_bound_to_actual_tool_result(tmp_path: Path) 
     assert completed.returncode == 2
     assert "program does not match" in completed.stderr
 
+    report["program"]["state"] = "prepared"
+    action["result"]["result"]["provenance"]["intent_digest"] = "sha256:changed"
+    completed = _validate_operator_output(tmp_path, packet, [action], report, check=False)
+    assert "intent digest does not match" in completed.stderr
+
+    action["result"] = {
+        "action_status": "started",
+        "state": "started",
+        "program_status": "not_run",
+        "artifact_refs": [],
+    }
+    completed = _validate_operator_output(tmp_path, packet, [action], report, check=False)
+    assert "incomplete typed action" in completed.stderr
+
 
 def test_compute_operator_rejects_scientific_fields_and_missing_required_action(tmp_path: Path) -> None:
     packet = {
@@ -164,7 +185,14 @@ def test_compute_operator_rejects_scientific_fields_and_missing_required_action(
         "objective": "Inspect the bound Gaussian calculation.",
         "workspace": {"root": "/tmp/ws", "report_id": "rep_001", "revision": "rev_001"},
         "scope": {"report_id": "rep_001", "node_ids": ["n001"], "hypothesis_id": None, "pathway_id": None},
-        "inputs": {"intent_id": "calc_test", "node_id": "n001", "backend": "gaussian", "basis_allowlist": []},
+        "inputs": {
+            "intent_id": "calc_test",
+            "intent_ref": "nodes/n001/attempts/calc_test/intent.json",
+            "intent_digest": "sha256:test",
+            "node_id": "n001",
+            "backend": "gaussian",
+            "basis_allowlist": [],
+        },
         "capabilities": ["ts_workspace_compute_status", "ts_workspace_compute_tail"],
         "constraints": {
             "canonical_workspace_mutation": False,

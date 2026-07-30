@@ -9,6 +9,7 @@ import { runComputeOperator } from "../../compute-agent/runtime.ts";
 
 const require = createRequire(import.meta.url);
 const { toolText } = require("../ts-workflow-context/summary.cjs");
+const { beginAgentRun, completeAgentRun, failAgentRun } = require("../../subagents/run-journal.cjs");
 const OPERATIONS = ["prepare", "inspect", "collect", "parse"] as const;
 const BACKENDS = ["gaussian", "ase_neb", "xtb", "qbics_dmecp"] as const;
 
@@ -22,6 +23,8 @@ type OperatorRequest = {
   tailLines?: number;
   artifacts?: string[];
   artifactRef?: string;
+  intentDigest?: string;
+  intentRef?: string;
 };
 
 type ActionLog = { tool: string; result: Record<string, unknown> }[];
@@ -66,6 +69,12 @@ export default function (pi: ExtensionAPI) {
           artifactRef: params.artifactRef,
         },
       );
+      const binding = await preflightOperatorRequest(pi, root, request, signal);
+      request.intentFile = request.operation === "prepare" ? binding.intentRef : undefined;
+      request.intentId = binding.intentId;
+      request.intentDigest = binding.intentDigest;
+      request.intentRef = binding.intentRef;
+      request.artifactRef = binding.artifactRef;
       const actions: ActionLog = [];
       const tools = createScopedComputeTools(pi, root, request, actions);
       const workspaceReport = await runWorkspaceJson(pi, "report_workspace", root, [], signal);
@@ -94,6 +103,8 @@ export default function (pi: ExtensionAPI) {
         },
         inputs: {
           intent_id: request.intentId || null,
+          intent_ref: request.intentRef || null,
+          intent_digest: request.intentDigest,
           node_id: request.nodeId,
           backend: request.backend,
           basis_allowlist: [],
@@ -108,11 +119,12 @@ export default function (pi: ExtensionAPI) {
         },
         output_contract: "ts-agent-result/1",
       };
-      const parentAuth = ctx.modelRegistry.isUsingOAuth(ctx.model)
-        ? undefined
-        : await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
+      const journal = beginAgentRun(root, packet);
       let result;
       try {
+        const parentAuth = ctx.modelRegistry.isUsingOAuth(ctx.model)
+          ? undefined
+          : await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
         result = await runComputeOperator({
           workspaceRoot: root,
           packet,
@@ -127,23 +139,40 @@ export default function (pi: ExtensionAPI) {
         });
       } catch (error) {
         const completedActions = compactCompletedActions(actions);
-        if (completedActions.length) {
-          pi.appendEntry("ts-workspace-compute-operator-failed", {
+        const runRef = failAgentRun(journal, {
+          actions,
+          error,
+          metadata: {
             operation: request.operation,
             backend: request.backend,
             intent_id: request.intentId || null,
-            completed_actions: completedActions,
-          });
+          },
+        });
+        pi.appendEntry("ts-workspace-compute-operator-failed", {
+          task_id: packet.task_id,
+          operation: request.operation,
+          backend: request.backend,
+          intent_id: request.intentId || null,
+          completed_actions: completedActions,
+          run_ref: runRef,
+        });
+        if (completedActions.length) {
           const message = error instanceof Error ? error.message : String(error);
           throw new Error(`${message}; completed compute actions: ${JSON.stringify(completedActions)}`);
         }
         throw error;
       }
-      pi.appendEntry("ts-workspace-compute-operator-run", result.metadata);
+      const runRef = completeAgentRun(journal, {
+        actions: result.actions,
+        result: result.report,
+        metadata: result.metadata,
+      });
+      const metadata = { ...result.metadata, run_ref: runRef };
+      pi.appendEntry("ts-workspace-compute-operator-run", metadata);
       return toolText(JSON.stringify({ report: result.report, actions: result.actions }, null, 2), {
         report: result.report,
         actions: result.actions,
-        run: result.metadata,
+        run: metadata,
       });
     },
   });
@@ -164,12 +193,13 @@ function createScopedComputeTools(
       executionMode: "sequential",
       parameters: Type.Object({}, { additionalProperties: false }),
       async execute(_toolCallId, _params, signal) {
+        const action = reserveAction(actions, name);
         const raw = await run(signal);
         if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
           throw new Error(`${name} returned a non-object result`);
         }
         const result = raw as Record<string, unknown>;
-        actions.push({ tool: name, result });
+        action.result = result;
         return toolText(JSON.stringify(result, null, 2), { result });
       },
     });
@@ -180,14 +210,20 @@ function createScopedComputeTools(
       "ts_workspace_compute_prepare",
       "TS Compute Prepare",
       "Validate and persist the pre-bound dry-run calculation intent and derive backend metadata. Call exactly once.",
-      (signal) => runComputeJson(pi, "prepare", root, ["--intent-file", request.intentFile as string], signal, 60_000),
+      (signal) => runComputeJson(pi, "prepare", root, [
+        "--intent-file", request.intentFile as string,
+        "--expected-intent-digest", request.intentDigest as string,
+      ], signal, 60_000),
     );
   } else if (request.operation === "inspect") {
     add(
       "ts_workspace_compute_status",
       "TS Compute Status",
       "Poll the pre-bound allowlisted remote calculation. Call this first and exactly once.",
-      (signal) => runComputeJson(pi, "status", root, ["--intent-id", request.intentId as string], signal, 45_000),
+      (signal) => runComputeJson(pi, "status", root, [
+        "--intent-id", request.intentId as string,
+        "--expected-intent-digest", request.intentDigest as string,
+      ], signal, 45_000),
     );
     add(
       "ts_workspace_compute_tail",
@@ -195,6 +231,7 @@ function createScopedComputeTools(
       "Read one bounded pre-bound remote artifact tail when status needs diagnostics. Call at most once.",
       (signal) => {
         const args = ["--intent-id", request.intentId as string, "--lines", String(request.tailLines || 80)];
+        args.push("--expected-intent-digest", request.intentDigest as string);
         if (request.tailArtifact) args.push("--artifact", request.tailArtifact);
         return runComputeJson(pi, "tail", root, args, signal, 45_000);
       },
@@ -206,6 +243,7 @@ function createScopedComputeTools(
       "Fetch the pre-bound allowlisted artifact subset into the selected node. Call exactly once.",
       (signal) => {
         const args = ["--intent-id", request.intentId as string];
+        args.push("--expected-intent-digest", request.intentDigest as string);
         for (const artifact of request.artifacts || []) args.push("--artifact", artifact);
         return runComputeJson(pi, "collect", root, args, signal, 300_000);
       },
@@ -219,13 +257,55 @@ function createScopedComputeTools(
         pi,
         "parse",
         root,
-        ["--intent-id", request.intentId as string, "--artifact-ref", request.artifactRef as string],
+        [
+          "--intent-id", request.intentId as string,
+          "--artifact-ref", request.artifactRef as string,
+          "--expected-intent-digest", request.intentDigest as string,
+        ],
         signal,
         90_000,
       ),
     );
   }
   return definitions;
+}
+
+async function preflightOperatorRequest(
+  pi: ExtensionAPI,
+  root: string,
+  request: OperatorRequest,
+  signal?: AbortSignal,
+) {
+  const args = [
+    "--operation", request.operation,
+    "--node-id", request.nodeId,
+    "--backend", request.backend,
+  ];
+  if (request.operation === "prepare") {
+    args.push("--intent-file", request.intentFile as string);
+  } else {
+    args.push("--intent-id", request.intentId as string);
+  }
+  if (request.artifactRef) args.push("--artifact-ref", request.artifactRef);
+  const raw = await runComputeJson(pi, "preflight", root, args, signal, 60_000);
+  if (!raw || typeof raw !== "object" || raw.schema_version !== "ts-compute-binding/1") {
+    throw new Error("compute preflight returned an invalid binding");
+  }
+  if (raw.operation !== request.operation || raw.node_id !== request.nodeId || raw.backend !== request.backend) {
+    throw new Error("compute preflight binding does not match the requested operation scope");
+  }
+  for (const key of ["intent_id", "intent_ref", "intent_digest"] as const) {
+    if (typeof raw[key] !== "string" || !raw[key]) throw new Error(`compute preflight has no ${key}`);
+  }
+  if (request.operation === "parse" && (typeof raw.artifact_ref !== "string" || !raw.artifact_ref)) {
+    throw new Error("compute parse preflight has no artifact_ref");
+  }
+  return {
+    intentId: raw.intent_id as string,
+    intentRef: raw.intent_ref as string,
+    intentDigest: raw.intent_digest as string,
+    artifactRef: typeof raw.artifact_ref === "string" ? raw.artifact_ref : undefined,
+  };
 }
 
 function validateOperatorRequest(request: OperatorRequest): OperatorRequest {
@@ -270,4 +350,16 @@ function compactCompletedActions(actions: ActionLog) {
       artifact_refs: Array.isArray(raw.artifact_refs) ? raw.artifact_refs : [],
     };
   });
+}
+
+function reserveAction(actions: ActionLog, toolName: string) {
+  if (actions.some((action) => action.tool === toolName)) {
+    throw new Error(`${toolName} may be called only once`);
+  }
+  const action = {
+    tool: toolName,
+    result: { action_status: "started", state: "started", program_status: "not_run", artifact_refs: [] },
+  };
+  actions.push(action);
+  return action;
 }

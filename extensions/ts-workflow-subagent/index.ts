@@ -11,6 +11,7 @@ import { runScientificReview } from "../../subagents/runtime.ts";
 const require = createRequire(import.meta.url);
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
 const { buildTaskPacket, validateSubagentRequest } = require(resolve(EXTENSION_DIR, "..", "..", "subagents", "task-packet.cjs"));
+const { beginAgentRun, completeAgentRun, failAgentRun } = require(resolve(EXTENSION_DIR, "..", "..", "subagents", "run-journal.cjs"));
 const { toolText } = require("../ts-workflow-context/summary.cjs");
 
 const REVIEW_TYPES = ["mechanism", "candidate", "tsfreq", "connectivity", "final_audit", "program_failure"] as const;
@@ -74,23 +75,40 @@ export default function (pi: ExtensionAPI) {
         nodeContext,
         branchContext,
       });
-      const parentAuth = ctx.modelRegistry.isUsingOAuth(ctx.model)
-        ? undefined
-        : await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
-      const result = await runScientificReview({
-        workspaceRoot: root,
-        packet,
-        parentModel: ctx.model,
-        parentApiKey: parentAuth?.ok ? parentAuth.apiKey : undefined,
-        thinkingLevel: pi.getThinkingLevel(),
-        timeoutMs: params.timeoutSeconds ? params.timeoutSeconds * 1000 : undefined,
-        signal,
-      });
-      pi.appendEntry("ts-workspace-subagent-run", result.metadata);
-      return toolText(JSON.stringify(result.result, null, 2), {
-        result: result.result,
-        run: result.metadata,
-      });
+      const journal = beginAgentRun(root, packet);
+      try {
+        const parentAuth = ctx.modelRegistry.isUsingOAuth(ctx.model)
+          ? undefined
+          : await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
+        const result = await runScientificReview({
+          workspaceRoot: root,
+          packet,
+          parentModel: ctx.model,
+          parentApiKey: parentAuth?.ok ? parentAuth.apiKey : undefined,
+          thinkingLevel: pi.getThinkingLevel(),
+          timeoutMs: params.timeoutSeconds ? params.timeoutSeconds * 1000 : undefined,
+          signal,
+        });
+        const runRef = completeAgentRun(journal, {
+          actions: [],
+          result: result.result,
+          metadata: result.metadata,
+        });
+        const metadata = { ...result.metadata, run_ref: runRef };
+        pi.appendEntry("ts-workspace-subagent-run", metadata);
+        return toolText(JSON.stringify(result.result, null, 2), {
+          result: result.result,
+          run: metadata,
+        });
+      } catch (error) {
+        const runRef = failAgentRun(journal, { actions: [], error });
+        pi.appendEntry("ts-workspace-subagent-failed", {
+          task_id: packet.task_id,
+          review_type: packet.operation,
+          run_ref: runRef,
+        });
+        throw error;
+      }
     },
   });
 }

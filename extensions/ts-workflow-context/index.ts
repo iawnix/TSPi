@@ -39,7 +39,7 @@ export default function (pi: ExtensionAPI) {
       "Pass nodeId to inspect a historical node before deciding whether to reuse it.",
       "Pass both fromNode and anchorNode to compare a failure trigger with a selected historical checkpoint before backtracking.",
       "Use ts_workspace_context instead of reading every workspace state file when only current state is needed.",
-      "Use mode=delta after a known workspace revision; unchanged workspaces return no repeated summary.",
+      "Use mode=delta with both known scientific and operational revisions; unchanged workspaces return no repeated summary.",
     ],
     parameters: Type.Object({
       mode: Type.Optional(StringEnum(CONTEXT_MODES)),
@@ -48,6 +48,7 @@ export default function (pi: ExtensionAPI) {
       fromNode: Type.Optional(Type.String({ description: "Current failure or branch trigger node." })),
       anchorNode: Type.Optional(Type.String({ description: "Historical checkpoint selected for backtrack inspection." })),
       sinceRevision: Type.Optional(Type.String({ description: "Known workspace revision for mode=delta." })),
+      sinceOperationalRevision: Type.Optional(Type.String({ description: "Known operational revision for mode=delta." })),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
@@ -71,14 +72,46 @@ export default function (pi: ExtensionAPI) {
         return toolText(buildNodeContextSummary(nodeContext), { nodeContext });
       }
       const report = await runWorkspaceJson(pi, "report_workspace", root, [], signal);
-      if (mode === "delta" && params.sinceRevision === report.workspace_revision) {
-        return toolText(`TS workspace unchanged at ${report.workspace_revision}.`, {
-          changed: false,
-          workspaceRevision: report.workspace_revision,
-        });
+      if (mode === "delta") {
+        const scientificChanged = params.sinceRevision !== report.workspace_revision;
+        const operationalKnown = typeof params.sinceOperationalRevision === "string";
+        const operationalChanged = operationalKnown
+          ? params.sinceOperationalRevision !== report.operational_revision
+          : false;
+        if (!scientificChanged && !operationalChanged) {
+          const operationNote = operationalKnown
+            ? ` and operational state ${report.operational_revision}`
+            : `; current operational revision is ${report.operational_revision}`;
+          return toolText(`TS scientific workspace unchanged at ${report.workspace_revision}${operationNote}.`, {
+            changed: false,
+            scientificChanged: false,
+            operationalChanged: false,
+            workspaceRevision: report.workspace_revision,
+            operationalRevision: report.operational_revision,
+          });
+        }
+        if (!scientificChanged && operationalChanged) {
+          const operations = report.operational_summary || {};
+          return toolText(
+            `TS scientific workspace unchanged at ${report.workspace_revision}. Operational state changed to ${report.operational_revision}: calculation_files=${operations.calculation_file_count || 0}; agent_runs=${operations.agent_run_count || 0}; failed=${operations.agent_run_failed_count || 0}; pending=${operations.agent_run_pending_count || 0}.`,
+            {
+              report,
+              changed: true,
+              scientificChanged: false,
+              operationalChanged: true,
+            },
+          );
+        }
       }
       const summary = buildContextSummary(report);
-      return toolText(summary, { report, changed: mode === "delta" ? true : undefined });
+      return toolText(summary, {
+        report,
+        changed: mode === "delta" ? true : undefined,
+        scientificChanged: mode === "delta" ? true : undefined,
+        operationalChanged: mode === "delta" && typeof params.sinceOperationalRevision === "string"
+          ? params.sinceOperationalRevision !== report.operational_revision
+          : undefined,
+      });
     },
   });
 
@@ -121,7 +154,7 @@ export default function (pi: ExtensionAPI) {
     description: "Validate one ts_workspace decision JSON without mutating the workspace.",
     promptSnippet: "Preflight a transition-state workspace decision JSON without applying it",
     promptGuidelines: [
-      "Use ts_workspace_decision_validate when a decision's schema, evidence ownership, or branch topology is uncertain.",
+      "Use ts_workspace_validate when a decision's schema, evidence ownership, or branch topology is uncertain.",
       "A valid preflight does not mutate the workspace and does not establish a scientific verdict.",
     ],
     parameters: Type.Object({

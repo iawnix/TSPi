@@ -1,7 +1,8 @@
 # Pi Agent Adapter
 
 The Pi package is a thin adapter around the Python workspace and compute
-kernels. It supports Pi `0.81.1`.
+kernels. It supports Pi `>=0.81.1 <1.0.0` and is currently tested with Pi
+`0.83.0`.
 
 ## Package And Runtime Paths
 
@@ -67,7 +68,8 @@ It does not execute `report_workspace` every turn. Context is pulled through
 `ts_workspace_context`:
 
 - `summary`: current compact read model
-- `delta`: return no repeated summary when `sinceRevision` is unchanged
+- `delta`: distinguish scientific and operational changes using
+  `sinceRevision` and `sinceOperationalRevision`
 - `node`: one historical node capsule
 - `branch`: trigger, selected checkpoint, and intervening attempts
 - `audit`: audit-oriented current read model
@@ -103,9 +105,11 @@ It receives no parent conversation, context files, root skills, extensions,
 workspace tools, decision files, or preflight output. Its `ts-agent-result/1`
 is advisory and must cite the packet allowlist.
 
-Run metadata is recorded with `appendEntry` outside canonical workspace state.
-It records scope, model, usage, duration, and output digest, not scientific
-evidence.
+Run metadata remains available through Pi `appendEntry`, and the host also
+persists an immutable workspace journal under `nodes/<node>/agent-runs/` or
+`operations/agent-runs/`. The journal records task, actions, result, status,
+model metadata, duration, and bounded failures. It is noncanonical operational
+state, never scientific evidence.
 
 The child recreates the selected model. A temporary
 non-OAuth API key may be copied into the child runtime in memory; it is never
@@ -138,6 +142,11 @@ Long-running jobs are external processes, not persistent LLM sessions. Invoke
 Each creates a fresh session with exactly one private artifact skill and one
 typed tool. Request paths reject traversal, symlinks, and overwrite. Output
 validators bind artifacts and role payloads to the actual typed action.
+
+Report packages are published atomically with a `ts-report-package/1`
+`package_manifest.json`. The manifest binds the source scientific revision and
+all package files by SHA-256. Email draft preflight and execution both verify
+the manifest and selected summary digest.
 
 Email sending is absent. The draft operator has no network, sender, mailbox,
 credential, address-discovery, or send capability. See

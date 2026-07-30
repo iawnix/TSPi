@@ -6,5 +6,6 @@ description: Private local email-draft guidance for a fresh artifact-scoped TS s
 # Email Operator
 
 - Draft from an approved report summary and explicit recipients; never infer addresses or sender identity.
+- Preserve the typed tool's report-manifest, summary-digest, and source-revision binding exactly.
 - This operator is draft-only. Sending, network access, sender selection, mailbox access, and credentials are unavailable.
 - Return draft metadata and the local artifact ref. Never include credentials or treat drafting as a research action.

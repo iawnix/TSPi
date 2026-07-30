@@ -6,6 +6,7 @@ from .control import (
     calculation_tail,
     collect_calculation,
     parse_calculation,
+    preflight_calculation,
     prepare_calculation,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "calculation_tail",
     "collect_calculation",
     "parse_calculation",
+    "preflight_calculation",
     "prepare_calculation",
 ]

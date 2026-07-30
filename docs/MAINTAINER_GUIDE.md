@@ -33,6 +33,9 @@ Keep state ownership narrow.
   accepted close decision, such as accepted-audit facts.
 - `ts_workspace/readers` builds read-only summaries such as
   `report_workspace`.
+- `ts_workspace/operational.py` indexes calculation state and immutable
+  agent-run journals. This changes `operational_revision`, never canonical
+  scientific state or evidence.
 - `ts_backends` prepares inputs and parses backend artifacts. It must not write
   workspace verdicts, accepted TS facts, or branch decisions.
 - `ts_remote` stages, submits, polls, fetches, and kills remote jobs. It must
@@ -63,6 +66,8 @@ Keep state ownership narrow.
   private-skill loading, and role-specific action/result binding.
 - `subagents/agent-protocol.cjs` and `contracts/agent_*.schema.json` own the
   cross-agent task/result protocol and authority-field rejection.
+- `subagents/run-journal.cjs` is the host-only write boundary for durable child
+  task, action, result, and failure records.
 - `agent-skills/` contains private child skills. They must not be added to
   `package.json.pi.skills` or loaded into the Root Agent.
 
@@ -215,6 +220,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q \
   tests/test_remote_job_lifecycle.py \
   tests/test_pi_agent_adapter.py \
   tests/test_pi_artifact_tools.py \
+  tests/test_pi_runtime_integration.py \
   -p no:cacheprovider
 ```
 

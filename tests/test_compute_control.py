@@ -12,6 +12,7 @@ from ts_compute import (
     calculation_tail,
     collect_calculation,
     parse_calculation,
+    preflight_calculation,
     prepare_calculation,
 )
 from ts_compute.contracts import validate_compute_contract
@@ -125,6 +126,51 @@ def _gaussian_log() -> str:
             " Normal termination of Gaussian 16",
         ]
     )
+
+
+def test_compute_preflight_binds_workspace_intent_scope_and_digest(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    intent_path = _intent_v2(workspace)
+    binding = preflight_calculation(
+        workspace,
+        "prepare",
+        "n001",
+        "gaussian",
+        intent_file=intent_path,
+    )
+
+    assert binding["schema_version"] == "ts-compute-binding/1"
+    assert binding["node_id"] == "n001"
+    assert binding["backend"] == "gaussian"
+    assert binding["intent_ref"].startswith("nodes/n001/scratch/")
+    assert binding["intent_digest"].startswith("sha256:")
+
+    with pytest.raises(ComputeContractError, match="node_id does not match"):
+        preflight_calculation(workspace, "prepare", "n000", "gaussian", intent_file=intent_path)
+    with pytest.raises(ComputeContractError, match="backend does not match"):
+        preflight_calculation(workspace, "prepare", "n001", "xtb", intent_file=intent_path)
+
+
+def test_compute_preflight_rejects_external_or_changed_intent(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    intent_path = _intent_v2(workspace)
+    outside = tmp_path / "outside.json"
+    outside.write_text(intent_path.read_text(encoding="utf-8"), encoding="utf-8")
+
+    with pytest.raises(ComputeContractError, match="inside the TS workspace"):
+        preflight_calculation(workspace, "prepare", "n001", "gaussian", intent_file=outside)
+
+    linked = intent_path.with_name("linked-intent.json")
+    linked.symlink_to(intent_path)
+    with pytest.raises(ComputeContractError, match="symbolic link"):
+        preflight_calculation(workspace, "prepare", "n001", "gaussian", intent_file=linked)
+
+    binding = preflight_calculation(workspace, "prepare", "n001", "gaussian", intent_file=intent_path)
+    changed = json.loads(intent_path.read_text(encoding="utf-8"))
+    changed["purpose"] = "Changed after preflight."
+    intent_path.write_text(json.dumps(changed), encoding="utf-8")
+    with pytest.raises(ComputeContractError, match="changed after compute preflight"):
+        prepare_calculation(workspace, intent_path, binding["intent_digest"])
 
 
 def test_prepare_is_node_scoped_idempotent_and_preserves_research_state(tmp_path: Path) -> None:

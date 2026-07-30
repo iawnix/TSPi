@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ..io import compact_id_time, read_json, sha256_json, write_json
+from ..operational import agent_run_index, operational_snapshot
 from ..state import EVIDENCE_FILE, HYPOTHESES_FILE, RESEARCH_STATE_FILE
 from ..validators.workspace import validate_workspace
 
@@ -37,10 +38,12 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
     workspace_revision = sha256_json(
         {"research_state": research_state, "hypotheses": hypotheses, "evidence": evidence}
     )
+    operations = operational_snapshot(root_path)
 
     report = {
         "report_id": report_id,
         "workspace_revision": workspace_revision,
+        "operational_revision": operations["operational_revision"],
         "workspace_root": str(root_path),
         "valid": validation["valid"],
         "validation_findings": validation["findings"],
@@ -59,6 +62,8 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
         "closed_node_count": len(closed_nodes),
         "evidence_count": len(evidence.get("evidence", [])) if isinstance(evidence, dict) else 0,
         "branch_events": branch_events,
+        "agent_runs": operations["agent_runs"],
+        "operational_summary": operations["operational_summary"],
         "workspace_state_refs": {
             "research_state": RESEARCH_STATE_FILE,
             "hypotheses": HYPOTHESES_FILE,
@@ -111,6 +116,7 @@ def report_node(root: str | Path, node_id: str) -> dict[str, Any]:
     ]
     hypothesis_id = _node_hypothesis_id(node)
     pathway_ref = node.get("pathway_ref") if isinstance(node.get("pathway_ref"), dict) else {}
+    agent_runs = [row for row in agent_run_index(root_path) if node_id in row.get("node_ids", [])]
 
     return {
         "context_type": "node",
@@ -127,6 +133,7 @@ def report_node(root: str | Path, node_id: str) -> dict[str, Any]:
         ),
         "decisions": _node_decision_capsules(root_path, node),
         "artifact_refs": _artifact_refs(node, evidence),
+        "agent_runs": agent_runs,
     }
 
 

@@ -16,6 +16,7 @@ import { runArtifactOperator } from "../../artifact-agent/runtime.ts";
 
 const require = createRequire(import.meta.url);
 const { toolText } = require("../ts-workflow-context/summary.cjs");
+const { beginAgentRun, completeAgentRun, failAgentRun } = require("../../subagents/run-journal.cjs");
 const {
   RENDER_OPERATIONS,
   validateEmailRequest,
@@ -40,6 +41,11 @@ type EmailRequest = {
   summaryRef: string;
   summaryPath: string;
   contextRef: string;
+  manifestRef: string;
+  manifestDigest: string;
+  summaryDigest: string;
+  contextDigest: string;
+  workspaceRevision: string;
   draftRef: string;
   draftPath: string;
   recipients: string[];
@@ -165,10 +171,15 @@ export default function (pi: ExtensionAPI) {
         [],
         {
           summary_ref: request.summaryRef,
+          summary_digest: request.summaryDigest,
           summary_text: summaryText,
+          context_digest: request.contextDigest,
+          manifest_ref: request.manifestRef,
+          manifest_digest: request.manifestDigest,
+          source_workspace_revision: request.workspaceRevision,
           draft_ref: request.draftRef,
           recipients: request.recipients,
-          basis_allowlist: [request.summaryRef, request.contextRef],
+          basis_allowlist: [request.summaryRef, request.contextRef, request.manifestRef],
         },
         tools,
         signal,
@@ -241,6 +252,7 @@ function createReportTool(
         context_ref: `${request.packageRef}/report_context.json`,
         email_summary_ref: `${request.packageRef}/email_summary.md`,
         assets_ref: `${request.packageRef}/assets`,
+        manifest_ref: `${request.packageRef}/package_manifest.json`,
       };
       const rawKeys = {
         package_ref: "package_dir",
@@ -248,6 +260,7 @@ function createReportTool(
         context_ref: "context",
         email_summary_ref: "email_summary",
         assets_ref: "assets_dir",
+        manifest_ref: "manifest",
       } as const;
       for (const [key, ref] of Object.entries(refs)) {
         const actual = raw && typeof raw === "object"
@@ -257,11 +270,19 @@ function createReportTool(
           throw new Error(`report builder returned an unexpected ${key}`);
         }
       }
+      if (typeof raw.manifest_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(raw.manifest_digest)) {
+        throw new Error("report builder returned no manifest digest");
+      }
+      if (typeof raw.workspace_revision !== "string" || !/^sha256:[0-9a-f]{64}$/.test(raw.workspace_revision)) {
+        throw new Error("report builder returned no source workspace revision");
+      }
       return {
         operation: "build",
         state: "built",
         ...refs,
-        artifact_refs: [refs.report_ref, refs.context_ref, refs.email_summary_ref, refs.assets_ref],
+        manifest_digest: raw.manifest_digest,
+        workspace_revision: raw.workspace_revision,
+        artifact_refs: [refs.report_ref, refs.context_ref, refs.email_summary_ref, refs.assets_ref, refs.manifest_ref],
       };
     },
   );
@@ -287,6 +308,10 @@ function createEmailDraftTool(
         operation: "draft",
         state: "started",
         summary_ref: request.summaryRef,
+        summary_digest: request.summaryDigest,
+        manifest_ref: request.manifestRef,
+        manifest_digest: request.manifestDigest,
+        source_workspace_revision: request.workspaceRevision,
         draft_ref: request.draftRef,
         recipients: request.recipients,
         subject: params.subject,
@@ -295,6 +320,10 @@ function createEmailDraftTool(
       const raw = await runEmailDraftJson(pi, root, {
         schema_version: "ts-email-draft/1",
         summary_ref: request.summaryRef,
+        summary_digest: request.summaryDigest,
+        manifest_ref: request.manifestRef,
+        manifest_digest: request.manifestDigest,
+        source_workspace_revision: request.workspaceRevision,
         draft_ref: request.draftRef,
         recipients: request.recipients,
         subject: params.subject,
@@ -394,11 +423,12 @@ async function executeChild(
   signal?: AbortSignal,
 ) {
   if (!ctx.model) throw new Error(`No parent model is selected for TS ${role} delegation`);
-  const parentAuth = ctx.modelRegistry.isUsingOAuth(ctx.model)
-    ? undefined
-    : await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
+  const journal = beginAgentRun(root, packet);
   let result;
   try {
+    const parentAuth = ctx.modelRegistry.isUsingOAuth(ctx.model)
+      ? undefined
+      : await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
     result = await runArtifactOperator({
       workspaceRoot: root,
       packet,
@@ -412,26 +442,40 @@ async function executeChild(
       signal,
     });
   } catch (error) {
+    const attemptedActions = actions.map((action) => ({
+      tool: action.tool,
+      state: typeof action.result.state === "string" ? action.result.state : null,
+      artifact_refs: Array.isArray(action.result.artifact_refs) ? action.result.artifact_refs : [],
+    }));
+    const runRef = failAgentRun(journal, {
+      actions,
+      error,
+      metadata: { role, operation: String(packet.operation) },
+    });
+    pi.appendEntry("ts-workspace-artifact-operator-failed", {
+      task_id: packet.task_id,
+      role,
+      operation: String(packet.operation),
+      attempted_actions: attemptedActions,
+      run_ref: runRef,
+    });
     if (actions.length) {
-      pi.appendEntry("ts-workspace-artifact-operator-failed", {
-        role,
-        operation: String(packet.operation),
-        attempted_actions: actions.map((action) => ({
-          tool: action.tool,
-          state: typeof action.result.state === "string" ? action.result.state : null,
-          artifact_refs: Array.isArray(action.result.artifact_refs) ? action.result.artifact_refs : [],
-        })),
-      });
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`${message}; a bounded artifact action was attempted and may have created local output`);
     }
     throw error;
   }
-  pi.appendEntry("ts-workspace-artifact-operator-run", result.metadata);
+  const runRef = completeAgentRun(journal, {
+    actions: result.actions,
+    result: result.report,
+    metadata: result.metadata,
+  });
+  const metadata = { ...result.metadata, run_ref: runRef };
+  pi.appendEntry("ts-workspace-artifact-operator-run", metadata);
   return toolText(JSON.stringify({ report: result.report, actions: result.actions }, null, 2), {
     report: result.report,
     actions: result.actions,
-    run: result.metadata,
+    run: metadata,
   });
 }
 

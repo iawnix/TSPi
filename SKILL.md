@@ -99,8 +99,8 @@ state files between decide, validate, and apply. A stale `base_revision` is
 rejected.
 
 Pi injects only a short control-plane reminder at turn start, not the full
-workspace report. Use `mode=delta` after a known revision. Load historical
-context only when needed:
+workspace report. Use `mode=delta` with the last scientific and operational
+revisions. Load historical context only when needed:
 
 - `mode=node, nodeId=<id>` for one checkpoint;
 - `mode=branch, fromNode=<trigger>, anchorNode=<checkpoint>` before backtrack;
@@ -170,6 +170,11 @@ backend, render, report, and email results are non-authoritative. Results that
 contain hypothesis status, branch context, acceptance, or strict pathway
 decision fields are rejected.
 
+The Pi host journals each run under the owning node's `agent-runs/` directory,
+or under `operations/agent-runs/` for study-level work. These records drive
+`operational_revision`; they are not evidence and never change the scientific
+`workspace_revision`.
+
 Read `references/pi_agent_adapter.md`, `references/compute_operator.md`, and
 `references/artifact_operators.md` when changing or debugging delegation.
 
@@ -217,6 +222,8 @@ hypothesis revision, user escalation, or stop.
   workspaces or derives scientific status in browser JavaScript.
 - `ts_report` runs only after workspace validation. Keep electronic, E+ZPE,
   and free energies distinct and expose missing corrections.
+- Report package creation is atomic and no-overwrite. Verify
+  `package_manifest.json` before using its email summary or assets.
 
 Use `templates/ts_final_report.md` for final reporting.
 

@@ -25,8 +25,8 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
     ]
     assert "subagents" not in manifest["pi"]
     assert not any("subagent" in name for name in manifest.get("dependencies", {}))
-    assert manifest["peerDependencies"]["@earendil-works/pi-ai"] == "^0.81.1"
-    assert manifest["peerDependencies"]["@earendil-works/pi-coding-agent"] == "^0.81.1"
+    assert manifest["peerDependencies"]["@earendil-works/pi-ai"] == ">=0.81.1 <1.0.0"
+    assert manifest["peerDependencies"]["@earendil-works/pi-coding-agent"] == ">=0.81.1 <1.0.0"
     assert manifest["peerDependencies"]["typebox"] == "^1.1.38"
     assert "--workspace-root" in manifest["scripts"]["install-env"]
     assert "TS_WORKSPACE_ROOT" in manifest["scripts"]["install-env"]
@@ -46,9 +46,8 @@ def test_pi_documentation_matches_loaded_extensions_and_tool_boundary() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
     adapter = (ROOT / "references" / "pi_agent_adapter.md").read_text(encoding="utf-8")
     maintainer = (ROOT / "docs" / "MAINTAINER_GUIDE.md").read_text(encoding="utf-8")
-    plan = (ROOT / "PLAN-subagents.md").read_text(encoding="utf-8")
 
-    assert "Pi `0.81.1`" in readme
+    assert "Pi `>=0.81.1 <1.0.0`" in readme
     assert "extensions/ts-workflow-subagent" in readme
     assert "extensions/ts-workflow-artifacts" in readme
     assert "`ts_workspace_decide`" in readme
@@ -60,8 +59,6 @@ def test_pi_documentation_matches_loaded_extensions_and_tool_boundary() -> None:
     assert "temporary\nnon-OAuth API key" in adapter
     assert "extensions/ts-workflow-subagent" in maintainer
     assert "extensions/ts-workflow-artifacts" in maintainer
-    assert "implementation not started" not in plan
-    assert "receives neither decision files nor preflight output" in plan
 
 
 def test_pi_context_summary_from_report_workspace(tmp_path: Path) -> None:
@@ -84,11 +81,13 @@ def test_pi_context_summary_from_report_workspace(tmp_path: Path) -> None:
     assert "TS workspace context:" in payload["summary"]
     assert f"focus_hypothesis: {HYPOTHESIS_ID}" in payload["summary"]
     assert "required_next_evidence:" in payload["summary"]
+    assert "operational_revision:" in payload["summary"]
     assert "do not edit workspace state files by hand" in payload["summary"]
     assert "scripts/ts_workspace.py" not in payload["summary"]
     assert "explicit TSAgentSkill root" in payload["summary"]
     assert "ts_workspace_context/ts_workspace_decide/ts_workspace_validate/ts_workspace_apply" in payload["summary"]
     assert payload["details"]["workspaceRoot"] == str(workspace)
+    assert payload["details"]["operationalRevision"].startswith("sha256:")
     assert payload["details"]["focusHypothesisId"] == HYPOTHESIS_ID
     assert payload["details"]["valid"] is True
 
@@ -134,6 +133,7 @@ def test_historical_node_and_backtrack_context_are_compact_and_explicit(tmp_path
 
     assert node_context["node"]["node_id"] == "n001"
     assert node_context["lineage"] == ["n000", "n001"]
+    assert node_context["agent_runs"] == []
     assert "closure" not in node_context["node"]
     assert branch_context["anchor_node"]["node"]["node_id"] == "n001"
     assert [item["node_id"] for item in branch_context["path_delta"]] == ["n002"]

@@ -55,10 +55,13 @@ function buildContextDetails(report) {
   const openNodes = arrayOfObjects(report.open_nodes);
   const branchEvents = arrayOfObjects(report.branch_events);
   const branchFrontiers = arrayOfObjects(report.branch_frontiers);
+  const operationalSummary = objectOrEmpty(report.operational_summary);
+  const agentRuns = arrayOfObjects(report.agent_runs);
 
   return {
     reportId: report.report_id || "",
     workspaceRevision: report.workspace_revision || "",
+    operationalRevision: report.operational_revision || "",
     workspaceRoot: report.workspace_root || "",
     valid: Boolean(report.valid),
     validationFindings: arrayOfObjects(report.validation_findings).map((item) => ({
@@ -80,6 +83,20 @@ function buildContextDetails(report) {
     })),
     closedNodeCount: numberOrZero(report.closed_node_count),
     evidenceCount: numberOrZero(report.evidence_count),
+    operationalSummary: {
+      trackedFileCount: numberOrZero(operationalSummary.tracked_file_count),
+      calculationFileCount: numberOrZero(operationalSummary.calculation_file_count),
+      agentRunCount: numberOrZero(operationalSummary.agent_run_count),
+      agentRunFailedCount: numberOrZero(operationalSummary.agent_run_failed_count),
+      agentRunPendingCount: numberOrZero(operationalSummary.agent_run_pending_count),
+    },
+    latestAgentRuns: agentRuns.slice(-5).map((run) => ({
+      taskId: run.task_id || "",
+      role: run.role || "",
+      operation: run.operation || "",
+      status: run.status || "",
+      runRef: run.run_ref || "",
+    })),
     hypothesisSummary: activeHypothesis.summary || "",
     openPredictions: arrayOfObjects(hypothesisContext.open_predictions).map((prediction) => ({
       predictionId: prediction.prediction_id || "",
@@ -120,6 +137,7 @@ function buildContextSummary(report, options = {}) {
     "TS workspace context:",
     `- workspace: ${details.workspaceRoot || "(unknown)"}`,
     `- report: ${details.reportId || "(none)"}; revision: ${details.workspaceRevision || "(none)"}; valid: ${details.valid}`,
+    `- operational_revision: ${details.operationalRevision || "(none)"}; calculations=${details.operationalSummary.calculationFileCount}; agent_runs=${details.operationalSummary.agentRunCount}; failed=${details.operationalSummary.agentRunFailedCount}; pending=${details.operationalSummary.agentRunPendingCount}`,
     `- current_node: ${details.currentNode || "(none)"}; focus_hypothesis: ${details.focusHypothesisId || "(none)"}`,
     `- focus_pathway: ${details.focusPathwayId || "(none)"}; accepted_ts_refs: ${formatList(details.acceptedTsRefs, maxItems)}`,
     `- open_nodes: ${details.openNodes.length ? details.openNodes.map(formatNode).join("; ") : "(none)"}`,
@@ -136,6 +154,9 @@ function buildContextSummary(report, options = {}) {
   lines.push(`- branch_events: ${formatBranchList(details.branchEvents, maxItems)}`);
   lines.push(`- history_checkpoints: ${formatCheckpointList(details.branchFrontiers, maxItems)}`);
   lines.push(`- allowed_decision_actions: ${formatList(details.allowedDecisionActions, maxItems)}`);
+  if (details.latestAgentRuns.length) {
+    lines.push(`- latest_agent_runs: ${details.latestAgentRuns.map(formatAgentRun).join(", ")}`);
+  }
 
   if (details.validationFindings.length) {
     lines.push(
@@ -163,6 +184,7 @@ function buildNodeContextSummary(context, options = {}) {
   const evidence = arrayOfObjects(context.evidence);
   const events = arrayOfObjects(context.branch_events);
   const decisions = arrayOfObjects(context.decisions);
+  const agentRuns = arrayOfObjects(context.agent_runs);
   const lines = [
     "TS historical node context:",
     `- node: ${node.node_id || "?"}; type=${node.node_type || node.phase || "?"}; scope=${node.validation_scope || node.audit_scope || node.candidate_kind || node.mechanism_action || "(none)"}; lifecycle=${node.lifecycle || "?"}`,
@@ -183,6 +205,7 @@ function buildNodeContextSummary(context, options = {}) {
     `- source_files: ${formatList(arrayOfStrings(artifactRefs.source_files), maxItems)}`,
     `- branch_events: ${formatBranchList(events.map(normalizeBranchEvent), maxItems)}`,
     `- decisions: ${decisions.slice(0, maxItems).map((item) => `${item.decision_id || "?"}:${item.action || "?"}:${item.rationale || ""}`).join("; ") || "(none)"}`,
+    `- agent_runs: ${agentRuns.slice(-maxItems).map((item) => `${item.task_id || "?"}:${item.role || "?"}/${item.operation || "?"}/${item.status || "?"}`).join("; ") || "(none)"}`,
     "- contract: this node is immutable historical evidence; inspecting it does not select a branch or mutate the workspace.",
   ];
   return lines.join("\n");
@@ -227,6 +250,10 @@ function toolText(text, details = {}) {
 function formatNode(node) {
   const scope = node.scope ? `:${node.scope}` : "";
   return `${node.nodeId || "node"}:${node.nodeType || "type"}${scope}/${node.lifecycle || "state"}`;
+}
+
+function formatAgentRun(run) {
+  return `${run.taskId || "run"}:${run.role || "role"}/${run.operation || "operation"}/${run.status || "status"}`;
 }
 
 function formatPredictionList(values, maxItems) {

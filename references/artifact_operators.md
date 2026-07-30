@@ -30,17 +30,23 @@ report builder, which first validates the workspace and writes:
 <packageRef>/report_context.json
 <packageRef>/email_summary.md
 <packageRef>/assets/
+<packageRef>/package_manifest.json
 ```
 
-The child may summarize generated artifacts but cannot add hypotheses,
-acceptance decisions, or unsupported causal claims.
+The builder publishes the directory atomically and refuses overwrite. The
+`ts-report-package/1` manifest binds the source scientific
+`workspace_revision` and each generated file by SHA-256. The child may
+summarize generated artifacts but cannot add hypotheses, acceptance decisions,
+or unsupported causal claims.
 
 ## Email Draft
 
 `ts_workspace_email_operator` accepts only `operation=draft`, a generated
 `email_summary.md`, a new JSON `draftRef` under `reports/`, and explicit
 recipient addresses. The selected summary must have a sibling
-`report_context.json`.
+`report_context.json` and `package_manifest.json`. Preflight verifies the
+manifest, context, and selected summary digests. The deterministic draft writer
+repeats those checks so a post-preflight file change is rejected.
 
 The child writes one local `ts-email-draft/1` artifact. The body is passed to
 the deterministic script through a mode-0600 temporary request file and is not

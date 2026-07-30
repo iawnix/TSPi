@@ -177,6 +177,45 @@ def test_compute_status_is_visualized_separately_from_scientific_state(tmp_path:
     assert "claim_verdict" not in node["calculations"][0]
 
 
+def test_agent_runs_are_visualized_separately_from_evidence(tmp_path: Path) -> None:
+    workspace = tmp_path / "accepted"
+    make_accepted_workspace(workspace)
+    run_dir = workspace / "nodes" / "n001" / "agent-runs" / "agent_web_001"
+    run_dir.mkdir(parents=True)
+    (run_dir / "task.json").write_text(
+        json.dumps(
+            {
+                "task_id": "agent_web_001",
+                "role": "backend",
+                "authority": "operational",
+                "operation": "inspect",
+                "scope": {"node_ids": ["n001"]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "status": "failed",
+                "started_at": "2026-07-30T12:00:00+08:00",
+                "finished_at": "2026-07-30T12:00:01+08:00",
+                "error": {"code": "TS_SUBAGENT_TIMEOUT", "message": "timed out"},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    graph = explorer_graph_payload_from_view(normalize_workspace(workspace))
+    node = next(item for item in graph["nodes"] if item["id"] == "n001")
+
+    assert node["agent_run_count"] == 1
+    assert node["agent_run_status"] == "failed"
+    assert node["agent_runs"][0]["error_code"] == "TS_SUBAGENT_TIMEOUT"
+    assert graph["operational_summary"]["agent_run_failed_count"] == 1
+    assert graph["evidence_summary"]["count"] == len(graph["evidence"]["records"])
+
+
 def test_static_ui_refresh_without_workspace_renders_empty_state() -> None:
     html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
 

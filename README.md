@@ -103,7 +103,8 @@ Do not edit `research_state.json`, `hypotheses.json`, or
 
 ## Pi Agent Usage
 
-The native adapters require Pi `0.81.1` and matching Pi SDK packages. Pi
+The native adapters support Pi `>=0.81.1 <1.0.0` with matching Pi SDK packages
+and are currently validated against Pi `0.83.0`. Pi
 project-local installation registers a package reference; it does not copy the
 skill into a requested directory.
 
@@ -114,13 +115,16 @@ cd /path/to/ts-workspace
 pi install -l /absolute/path/to/TSAgentSkill --approve
 ```
 
-Direct GitHub installation:
+Direct GitHub installation of this development branch:
 
 ```bash
 cd /path/to/ts-workspace
-pi install -l https://github.com/iawnix/TSAgentSkill --approve
+pi install -l git:github.com/iawnix/TSAgentSkill@pi_ts_subagents --approve
 TS_WORKSPACE_ROOT=$PWD pi --approve --session-dir .pi/sessions
 ```
+
+An unpinned GitHub URL resolves the repository default branch (`main`). Until
+this work is merged or tagged, it does not select `pi_ts_subagents`.
 
 Pi loads these extensions from the resolved package root:
 
@@ -151,8 +155,9 @@ Pi also exposes:
   summary and explicit recipients. Sending is unavailable.
 
 `before_agent_start` injects only a short control-plane reminder. It does not
-inject a full workspace report every turn. Use `mode=delta` after a known
-revision to avoid repeated unchanged context.
+inject a full workspace report every turn. Use `mode=delta` with the last
+scientific `workspace_revision` and `operational_revision` to avoid repeated
+unchanged context while still seeing new calculation or agent-run state.
 
 See `references/pi_agent_adapter.md`.
 
@@ -219,6 +224,11 @@ contain authoritative hypothesis, branch, acceptance, or strict pathway
 decision fields. Private role skills live under `agent-skills/` and are loaded
 only into the selected fresh child session.
 
+The Pi host persists every child task under `nodes/<node>/agent-runs/<task>/`
+for one-node work or `operations/agent-runs/<task>/` for study-level work.
+These immutable operational records are never evidence and do not change the
+scientific `workspace_revision`.
+
 ## Reporting
 
 Generate the final package only from a validated workspace:
@@ -228,6 +238,11 @@ python "$TS_AGENT_SKILL_ROOT/scripts/ts_report.py" \
   --root <workspace> \
   --package-dir <workspace>/reports/final_report_package
 ```
+
+Package creation is no-overwrite and atomic. `package_manifest.json` uses
+`ts-report-package/1` and binds the source `workspace_revision`, report,
+context, email summary, and assets by SHA-256. Email drafting rejects a changed
+manifest or summary.
 
 Use `templates/ts_final_report.md`. Keep electronic, E+ZPE, and available free
 energy values distinct; report missing corrections explicitly. Accepted-TS

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import os
+import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -27,22 +31,84 @@ def build_report_package(root: str | Path, output_dir: str | Path | None = None)
     root_path = Path(root)
     package_dir = Path(output_dir) if output_dir is not None else root_path / "reports" / "final_report_package"
     context = collect_report_context(root_path)
-    package_dir.mkdir(parents=True, exist_ok=True)
-    context["assets"] = write_report_assets(root_path, context, package_dir / "assets")
+    if package_dir.exists():
+        raise ValueError(f"report package already exists: {package_dir}")
+    package_dir.parent.mkdir(parents=True, exist_ok=True)
+    staging_dir = Path(tempfile.mkdtemp(prefix=f".{package_dir.name}.tmp-", dir=package_dir.parent))
+    try:
+        context["assets"] = write_report_assets(root_path, context, staging_dir / "assets")
+        context["assets"] = _rebase_paths(context["assets"], staging_dir, package_dir)
+
+        context_path = staging_dir / "report_context.json"
+        report_path = staging_dir / "final_report.md"
+        email_path = staging_dir / "email_summary.md"
+        context_path.write_text(json.dumps(_json_safe(context), indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        report_path.write_text(render_final_report(context), encoding="utf-8")
+        email_path.write_text(render_email_summary(context), encoding="utf-8")
+        manifest_path = staging_dir / "package_manifest.json"
+        manifest = _package_manifest(staging_dir, context["workspace_revision"])
+        manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        manifest_digest = _sha256_file(manifest_path)
+        if package_dir.exists():
+            raise ValueError(f"report package already exists: {package_dir}")
+        os.rename(staging_dir, package_dir)
+    except Exception:
+        shutil.rmtree(staging_dir, ignore_errors=True)
+        raise
 
     context_path = package_dir / "report_context.json"
     report_path = package_dir / "final_report.md"
     email_path = package_dir / "email_summary.md"
-    context_path.write_text(json.dumps(_json_safe(context), indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    report_path.write_text(render_final_report(context), encoding="utf-8")
-    email_path.write_text(render_email_summary(context), encoding="utf-8")
+    manifest_path = package_dir / "package_manifest.json"
     return {
         "package_dir": str(package_dir),
         "report": str(report_path),
         "context": str(context_path),
         "email_summary": str(email_path),
         "assets_dir": str(package_dir / "assets"),
+        "manifest": str(manifest_path),
+        "manifest_digest": manifest_digest,
+        "workspace_revision": str(context["workspace_revision"]),
     }
+
+
+def _package_manifest(package_dir: Path, workspace_revision: str) -> dict[str, Any]:
+    files = []
+    for path in sorted(package_dir.rglob("*")):
+        if not path.is_file() or path.is_symlink() or path.name == "package_manifest.json":
+            continue
+        files.append(
+            {
+                "ref": path.relative_to(package_dir).as_posix(),
+                "sha256": _sha256_file(path),
+                "size_bytes": path.stat().st_size,
+            }
+        )
+    return {
+        "schema_version": "ts-report-package/1",
+        "workspace_revision": workspace_revision,
+        "files": files,
+    }
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return "sha256:" + digest.hexdigest()
+
+
+def _rebase_paths(value: Any, old_root: Path, new_root: Path) -> Any:
+    if isinstance(value, dict):
+        return {key: _rebase_paths(item, old_root, new_root) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_rebase_paths(item, old_root, new_root) for item in value]
+    if isinstance(value, str):
+        old = str(old_root)
+        if value == old or value.startswith(f"{old}{os.sep}"):
+            return str(new_root) + value[len(old) :]
+    return value
 
 
 def render_final_report(context: dict[str, Any]) -> str:

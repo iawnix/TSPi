@@ -1573,7 +1573,9 @@ function renderSidebars() {
     // server-supplied workspace_state presentation (one source of truth).
     claim_state:  claimState,
     accepted_ts:  acceptedTs,
-    frontier:     frontierNodes
+    frontier:     frontierNodes,
+    agent_runs:   graph.operational_summary?.agent_run_count ?? 0,
+    agent_failures: graph.operational_summary?.agent_run_failed_count ?? 0
   });
   renderKv("mechKv", {
     class:      mechanism.reaction_class,
@@ -2234,6 +2236,9 @@ function renderSummary(payload, node) {
         ${node.calculation_count ? summaryRow("calculation_count", node.calculation_count, "mono") : ""}
         ${node.calculation_state ? summaryRow("calculation_state", node.calculation_state, "mono") : ""}
         ${node.calculation_program_status ? summaryRow("calculation_program_status", node.calculation_program_status, "mono") : ""}
+        ${node.agent_run_count ? summaryRow("agent_run_count", node.agent_run_count, "mono") : ""}
+        ${node.agent_run_status ? summaryRow("agent_run_status", node.agent_run_status, "mono") : ""}
+        ${node.agent_run_role ? summaryRow("agent_run_role", node.agent_run_role, "mono") : ""}
         ${summaryRow("reason_code", node.reason_code, "mono")}
         ${summaryRow("parent", node.parent_id, "mono")}
         ${Array.isArray(node.input_refs) && node.input_refs.length ? summaryRow("input_refs", node.input_refs.join(", "), "mono") : ""}
@@ -2242,6 +2247,7 @@ function renderSummary(payload, node) {
       </div>
     </div>
     ${renderCalculations(node.calculations)}
+    ${renderAgentRuns(node.agent_runs)}
     ${renderBranchOrigin(node)}
     <div class="summary-card">
       <div class="summary-title">Latest Action</div>
@@ -2267,6 +2273,23 @@ function renderCalculations(calculations) {
       ${summaryRow("state", calc.state, "mono")}
       ${summaryRow("program_status", calc.program_status, "mono")}
       ${summaryRow("error_class", calc.error_class, "mono")}
+    </div>`).join("")}
+  </div>`;
+}
+
+function renderAgentRuns(runs) {
+  if (!Array.isArray(runs) || !runs.length) return "";
+  return `<div class="summary-card">
+    <div class="summary-title">Agent Runs</div>
+    ${runs.map(run => `<div class="summary-grid" style="margin-bottom:10px;">
+      ${summaryRow("task", run.task_id, "mono")}
+      ${summaryRow("role", run.role, "mono")}
+      ${summaryRow("operation", run.operation, "mono")}
+      ${summaryRow("authority", run.authority, "mono")}
+      ${summaryRow("status", run.status, "mono")}
+      ${summaryRow("run_ref", run.run_ref, "mono")}
+      ${summaryRow("error_code", run.error_code, "mono")}
+      ${summaryRow("error", run.error_message)}
     </div>`).join("")}
   </div>`;
 }
