@@ -158,13 +158,20 @@ The child gets only request-scoped typed tools and one private backend skill.
 It cannot select methods, submit/cancel work, register evidence, or set a
 scientific status.
 
+Use `ts_workspace_render_operator` for one node-owned local render,
+`ts_workspace_report_operator` for one new validated report package, and
+`ts_workspace_email_operator` for one local email draft from a generated report
+summary. Each child gets one private role skill and one path-bound typed tool.
+The email operator cannot send, access a network, select a sender, infer
+addresses, or read credentials.
+
 All isolated roles use `ts-agent-task/1` and `ts-agent-result/1`. Review,
 backend, render, report, and email results are non-authoritative. Results that
 contain hypothesis status, branch context, acceptance, or strict pathway
 decision fields are rejected.
 
-Read `references/pi_agent_adapter.md` and `references/compute_operator.md` when
-changing or debugging delegation.
+Read `references/pi_agent_adapter.md`, `references/compute_operator.md`, and
+`references/artifact_operators.md` when changing or debugging delegation.
 
 ## Calculation Attempts
 
@@ -230,4 +237,4 @@ Load only what the current act needs:
 - Backend delegation: `references/compute_operator.md`,
   `references/backend_contract.md`, `references/remote_contract.md`
 - Rendering and reporting: `references/render_contract.md`,
-  `references/report_template.md`
+  `references/report_template.md`, `references/artifact_operators.md`

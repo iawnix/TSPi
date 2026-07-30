@@ -12,6 +12,9 @@ const SHARED_DIR = dirname(fileURLToPath(import.meta.url));
 export const PACKAGE_ROOT = resolve(SHARED_DIR, "..", "..");
 const WORKSPACE_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_workspace.py");
 const COMPUTE_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_compute.py");
+const RENDER_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_render.py");
+const REPORT_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_report.py");
+const EMAIL_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_email.py");
 const RUNTIME_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_runtime.py");
 
 export async function runWorkspaceJson(
@@ -59,6 +62,54 @@ export async function runComputeJson(
   return parseJsonOutput(result);
 }
 
+export async function runRenderJson(
+  pi: ExtensionAPI,
+  root: string,
+  args: string[],
+  signal?: AbortSignal,
+) {
+  return runPackageJson(pi, root, RENDER_CLI, args, signal, 300_000);
+}
+
+export async function runReportJson(
+  pi: ExtensionAPI,
+  root: string,
+  packagePath: string,
+  signal?: AbortSignal,
+) {
+  return runPackageJson(
+    pi,
+    root,
+    REPORT_CLI,
+    ["--root", root, "--package-dir", packagePath, "--json"],
+    signal,
+    300_000,
+  );
+}
+
+export async function runEmailDraftJson(
+  pi: ExtensionAPI,
+  root: string,
+  request: unknown,
+  signal?: AbortSignal,
+) {
+  const tempRoot = mkdtempSync(join(tmpdir(), "ts-email-draft-"));
+  const requestFile = join(tempRoot, "request.json");
+  try {
+    writeFileSync(requestFile, `${JSON.stringify(request, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    return await runPackageJson(
+      pi,
+      root,
+      EMAIL_CLI,
+      ["draft", "--root", root, "--request-file", requestFile, "--json"],
+      signal,
+      60_000,
+    );
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
 export function requireWorkspaceRoot(inputRoot: string | undefined, cwd: string): string {
   const root = resolveWorkspaceRoot(inputRoot || "", cwd);
   if (!root) {
@@ -98,6 +149,20 @@ async function resolvePythonExecutable(
     return "python3";
   }
   return "python3";
+}
+
+async function runPackageJson(
+  pi: ExtensionAPI,
+  root: string,
+  script: string,
+  args: string[],
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+) {
+  const python = await resolvePythonExecutable(pi, root, signal);
+  const operationSignal = deadlineSignal(signal, timeoutMs);
+  const result = await pi.exec(python, [script, ...args], { signal: operationSignal });
+  return parseJsonOutput(result);
 }
 
 function deadlineSignal(parent: AbortSignal | undefined, timeoutMs: number): AbortSignal {

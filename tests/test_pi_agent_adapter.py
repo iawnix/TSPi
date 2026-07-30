@@ -21,6 +21,7 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
         "./extensions/ts-workflow-context",
         "./extensions/ts-workflow-subagent/index.ts",
         "./extensions/ts-workflow-compute/index.ts",
+        "./extensions/ts-workflow-artifacts/index.ts",
     ]
     assert "subagents" not in manifest["pi"]
     assert not any("subagent" in name for name in manifest.get("dependencies", {}))
@@ -49,14 +50,16 @@ def test_pi_documentation_matches_loaded_extensions_and_tool_boundary() -> None:
 
     assert "Pi `0.81.1`" in readme
     assert "extensions/ts-workflow-subagent" in readme
+    assert "extensions/ts-workflow-artifacts" in readme
     assert "`ts_workspace_decide`" in readme
     assert "`ts_workspace_validate`" in readme
     assert "`ts_workspace_apply`" in readme
     assert "`ts_workspace_subagent`" in readme
     assert "run `validate_decision`, `start_node`" not in readme
-    assert adapter.count("-e \"$TS_AGENT_SKILL_ROOT/extensions/") == 3
+    assert adapter.count("-e \"$TS_AGENT_SKILL_ROOT/extensions/") == 4
     assert "temporary\nnon-OAuth API key" in adapter
     assert "extensions/ts-workflow-subagent" in maintainer
+    assert "extensions/ts-workflow-artifacts" in maintainer
     assert "implementation not started" not in plan
     assert "receives neither decision files nor preflight output" in plan
 

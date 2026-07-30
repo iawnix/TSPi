@@ -37,12 +37,13 @@ they deliberately share `TS_AGENT_ENV_ROOT`.
 
 ## Load
 
-Package installation loads the root skill and three extensions declared in
+Package installation loads the root skill and four extensions declared in
 `package.json`:
 
 - `extensions/ts-workflow-context`
 - `extensions/ts-workflow-subagent`
 - `extensions/ts-workflow-compute`
+- `extensions/ts-workflow-artifacts`
 
 Temporary extension-only smoke:
 
@@ -50,7 +51,8 @@ Temporary extension-only smoke:
 pi --skill "$TS_AGENT_SKILL_ROOT" \
   -e "$TS_AGENT_SKILL_ROOT/extensions/ts-workflow-context/index.ts" \
   -e "$TS_AGENT_SKILL_ROOT/extensions/ts-workflow-subagent/index.ts" \
-  -e "$TS_AGENT_SKILL_ROOT/extensions/ts-workflow-compute/index.ts"
+  -e "$TS_AGENT_SKILL_ROOT/extensions/ts-workflow-compute/index.ts" \
+  -e "$TS_AGENT_SKILL_ROOT/extensions/ts-workflow-artifacts/index.ts"
 ```
 
 ## Context Policy
@@ -124,9 +126,26 @@ error class, and artifact refs to actual typed-tool results.
 Long-running jobs are external processes, not persistent LLM sessions. Invoke
 `inspect` on meaningful state changes or failure diagnosis, not every turn.
 
+## Artifact Operators
+
+- `ts_workspace_render_operator`: one node-owned local render with allowlisted
+  inputs and one new output path.
+- `ts_workspace_report_operator`: one validated report package under
+  `reports/`.
+- `ts_workspace_email_operator`: one local draft JSON from a generated report
+  summary and explicit recipients.
+
+Each creates a fresh session with exactly one private artifact skill and one
+typed tool. Request paths reject traversal, symlinks, and overwrite. Output
+validators bind artifacts and role payloads to the actual typed action.
+
+Email sending is absent. The draft operator has no network, sender, mailbox,
+credential, address-discovery, or send capability. See
+`references/artifact_operators.md`.
+
 ## Communication Protocol
 
-Both review and backend delegation use:
+All review, backend, render, report, and email-draft delegation uses:
 
 - `ts-agent-task/1`
 - `ts-agent-result/1`

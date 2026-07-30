@@ -15,6 +15,8 @@ remain readable and closable, but they are not the model for new studies.
   status, collection, and deterministic parsing.
 - `subagents/`: fresh Pi review sessions and the shared
   `ts-agent-task/1` / `ts-agent-result/1` protocol.
+- `artifact-agent/`: fresh render, report, and email-draft sessions with
+  request-scoped typed tools and role-specific result binding.
 - `agent-skills/`: private backend, render, report, and email skills. They are
   not registered in the root Pi/Codex skill inventory.
 - `ts_render`: local molecular rendering through `xyzrender` only.
@@ -125,6 +127,7 @@ Pi loads these extensions from the resolved package root:
 - `extensions/ts-workflow-context`
 - `extensions/ts-workflow-subagent`
 - `extensions/ts-workflow-compute`
+- `extensions/ts-workflow-artifacts`
 
 The workspace control surface is exactly:
 
@@ -141,6 +144,11 @@ Pi also exposes:
 - `ts_workspace_subagent`: fresh, tool-free advisory scientific review.
 - `ts_workspace_compute_operator`: fresh backend operator with only the typed
   tools bound to one `prepare`, `inspect`, `collect`, or `parse` request.
+- `ts_workspace_render_operator`: node-scoped local render with bound paths.
+- `ts_workspace_report_operator`: validated report-package build under
+  `reports/`.
+- `ts_workspace_email_operator`: local draft JSON from a generated report
+  summary and explicit recipients. Sending is unavailable.
 
 `before_agent_start` injects only a short control-plane reminder. It does not
 inject a full workspace report every turn. Use `mode=delta` after a known

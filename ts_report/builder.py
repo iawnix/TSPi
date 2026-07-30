@@ -26,8 +26,8 @@ def build_final_report(root: str | Path) -> str:
 def build_report_package(root: str | Path, output_dir: str | Path | None = None) -> dict[str, str]:
     root_path = Path(root)
     package_dir = Path(output_dir) if output_dir is not None else root_path / "reports" / "final_report_package"
-    package_dir.mkdir(parents=True, exist_ok=True)
     context = collect_report_context(root_path)
+    package_dir.mkdir(parents=True, exist_ok=True)
     context["assets"] = write_report_assets(root_path, context, package_dir / "assets")
 
     context_path = package_dir / "report_context.json"

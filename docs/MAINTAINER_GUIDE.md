@@ -56,6 +56,11 @@ Keep state ownership narrow.
   advisory; it never becomes a second control plane.
 - `extensions/ts-workflow-compute` creates a fresh backend session with one
   selected private backend skill and request-scoped typed tools.
+- `extensions/ts-workflow-artifacts` creates fresh render, report, and
+  email-draft sessions. Each receives one private role skill and one path-bound
+  typed tool; email sending is not implemented.
+- `artifact-agent/` owns artifact request paths, fresh-session runtime,
+  private-skill loading, and role-specific action/result binding.
 - `subagents/agent-protocol.cjs` and `contracts/agent_*.schema.json` own the
   cross-agent task/result protocol and authority-field rejection.
 - `agent-skills/` contains private child skills. They must not be added to
@@ -209,6 +214,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q \
   tests/test_ts_render.py \
   tests/test_remote_job_lifecycle.py \
   tests/test_pi_agent_adapter.py \
+  tests/test_pi_artifact_tools.py \
   -p no:cacheprovider
 ```
 

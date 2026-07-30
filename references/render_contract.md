@@ -9,7 +9,7 @@ export TS_AGENT_SKILL_ROOT=/path/to/transition-state-workflow
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" diagnostic --json
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" render input.xyz -o nodes/n001/outputs/render.png
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" compare r.xyz ts.xyz p.xyz -o nodes/n001/outputs/compare.png
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" animate irc.xyz -o nodes/n001/outputs/irc.mp4
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" animate irc.xyz -o nodes/n001/outputs/irc.gif
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" mechanism r.xyz ts.xyz p.xyz -o nodes/n001/outputs/mechanism.png
 ```
 

@@ -1,11 +1,12 @@
 # Isolated Agent Architecture
 
 Status: node ontology, four-tool context/control plane, generic agent protocol,
-scientific review subagent, and backend compute operator are implemented.
-Private render, report, and email skills are defined; request-scoped execution
-adapters for those three artifact roles are a later milestone.
+scientific review, backend compute, render, report, and email-draft operators
+are implemented. Email sending remains unavailable pending a host-issued,
+current-turn authorization capability.
 
-Branch: `refactor/research-node-ontology`
+Foundation branch: `refactor/research-node-ontology`
+Artifact branch: `feat/pi-artifact-operators`
 
 ## Authority Model
 
@@ -34,9 +35,9 @@ Roles:
 |---|---|---|
 | `review` | advisory | tool-free bounded scientific review |
 | `backend` | operational | typed `prepare|inspect|collect|parse` tools |
-| `render` | operational | private skill defined; typed adapter pending |
-| `report` | operational | private skill defined; typed adapter pending |
-| `email` | operational | private skill defined; draft/send adapter pending explicit authorization design |
+| `render` | operational | typed node-scoped local render |
+| `report` | operational | typed validated report-package build |
+| `email` | operational | typed local draft only; sending unavailable |
 
 No child may set hypothesis status, choose a branch, accept a TS/pathway, mark
 the study complete, or mutate canonical state.
@@ -244,18 +245,23 @@ registration.
 An LLM session does not stay alive while a Gaussian or cluster job runs.
 Durable status files and `ts_web` carry monitoring state.
 
-## Render, Report, And Email Milestone
+## Render, Report, And Email Operators
 
-Private skills already define the role boundaries:
+Private skills and request-scoped adapters enforce these role boundaries:
 
 - render: allowlisted local molecular input to declared visual artifact;
 - report: validated read model to report package without new claims;
-- email: draft from approved report summary; send only with explicit current-
-  turn authorization and fixed recipient data.
+- email: local draft from a generated report summary and explicit recipients;
+  no sending, network, sender selection, or credentials.
 
-Before exposing these child roles, implement request-scoped typed tools and
-role-specific result validators. Do not expose generic shell, filesystem write,
-or network tools.
+Each role receives exactly one typed child tool. Paths reject traversal,
+symlinks, and overwrite. Role-specific validators bind every returned artifact,
+node, recipient, and subject to the typed action result. Generic shell,
+filesystem, network, and canonical workspace tools remain unavailable.
+
+Email sending is a separate milestone. It requires a host-issued capability
+bound to exact recipients, current-turn authorization, and the selected draft
+digest; model-supplied authorization fields are never sufficient.
 
 ## Validation Matrix
 
@@ -264,6 +270,10 @@ or network tools.
 - review evidence-ceiling and basis allowlist;
 - backend tool/result binding;
 - one selected private backend skill per session;
+- one selected artifact skill and typed tool per render/report/email-draft
+  session;
+- traversal, symlink, overwrite, recipient-change, and invented-artifact
+  rejection;
 - abort, timeout, and unconditional disposal;
 - v2 attempt paths and remote mirror label;
 - report and `ts_web` separation of program, hypothesis, and audit status;
