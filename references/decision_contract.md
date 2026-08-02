@@ -11,8 +11,8 @@ Required mutation provenance:
 - explicit rationale and evidence refs
 - one bounded payload
 
-Pi constructs this envelope with `ts_workspace_decide`; Codex may construct it
-directly and run `validate_decision`.
+Pi constructs this envelope with `ts_workspace_decide`, validates it with
+`ts_workspace_validate`, and applies it with `ts_workspace_apply`.
 
 ## Start Intake
 
@@ -215,16 +215,8 @@ only.
 
 ## Apply Sequence
 
-Pi:
-
 ```text
 ts_workspace_context -> ts_workspace_decide -> ts_workspace_validate -> ts_workspace_apply
-```
-
-Codex:
-
-```text
-report_workspace -> construct ts-decision/2 -> validate_decision -> matching mutation command
 ```
 
 Any mutation built from a stale `base_revision` is rejected.

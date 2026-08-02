@@ -15,6 +15,12 @@ Remote helpers do not parse chemistry and do not write workspace verdicts.
 Receipts should be stored under `nodes/<node_id>/remote/` and then registered as
 evidence or provenance through `ts_workspace`.
 
+For scheduler-backed execution, `ts_remote.mcp` talks to the bundled
+`cluster_mcp` service through `ts-cluster-job/1`. Use it for manifest-bound
+transfer, submission, status, collection, and explicit cancellation. Read
+`cluster_mcp.md` before configuring scopes or transport. Raw MCP tools remain a
+host implementation boundary and are not registered into Pi agent sessions.
+
 Backends expose calculation intent as `PreparedTask` data: command, input paths,
 environment, and expected artifacts. xTB, ASE-NEB, and other local adapters feed
 that data into `ts_remote.job_lifecycle.config_from_prepared_task()` when the

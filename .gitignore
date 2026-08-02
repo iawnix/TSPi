@@ -6,3 +6,6 @@ npm-debug.log*
 *.pyc
 *.pyo
 *.tmp
+cluster_mcp/config.toml
+cluster_mcp/auth.toml
+.cluster_mcp/

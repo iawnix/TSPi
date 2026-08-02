@@ -114,7 +114,7 @@ def test_real_pi_offline_loads_extensions_and_public_tool_inventory(tmp_path: Pa
     assert "ts_workspace_email_send" not in inventory["all"]
 
 
-def test_real_pi_child_session_uses_only_recording_provider_tool(tmp_path: Path) -> None:
+def test_real_pi_render_child_session_uses_only_bound_tool(tmp_path: Path) -> None:
     pi = _pi_binary()
     if pi is None:
         pytest.skip("Pi executable is not installed")
@@ -126,64 +126,17 @@ def test_real_pi_child_session_uses_only_recording_provider_tool(tmp_path: Path)
     agent_dir.mkdir()
 
     requests: list[dict[str, object]] = []
-    with _recording_server(requests) as base_url:
-        (agent_dir / "models.json").write_text(
-            json.dumps(
-                {
-                    "providers": {
-                        "ts-recording": {
-                            "baseUrl": f"{base_url}/v1",
-                            "api": "openai-completions",
-                            "apiKey": "recording-key",
-                            "models": [
-                                {
-                                    "id": "recording-model",
-                                    "name": "TS Recording Model",
-                                    "reasoning": False,
-                                    "input": ["text"],
-                                    "contextWindow": 32000,
-                                    "maxTokens": 4096,
-                                    "cost": {
-                                        "input": 0,
-                                        "output": 0,
-                                        "cacheRead": 0,
-                                        "cacheWrite": 0,
-                                    },
-                                }
-                            ],
-                        }
-                    }
-                }
-            ),
-            encoding="utf-8",
-        )
-        env = {
-            **os.environ,
-            "PI_CODING_AGENT_DIR": str(agent_dir),
-            "PI_OFFLINE": "1",
-        }
-        completed = _run_rpc_until(
-            [
-                pi,
-                "--mode",
-                "rpc",
-                "--offline",
-                "--no-session",
-                "--session-dir",
-                str(tmp_path / "pi-sessions"),
-                "--no-context-files",
-                "--no-skills",
-                "--no-extensions",
-                "--no-builtin-tools",
-                "--approve",
-                "--extension",
-                str(ROOT / "tests" / "pi_child_probe.ts"),
-            ],
-            cwd=workspace,
-            env=env,
-            command={"id": "child", "type": "prompt", "message": "/ts-test-child"},
+    responses = [_tool_call_chunks("ts_workspace_render_execute"), _render_result_chunks()]
+    with _recording_server(requests, responses) as base_url:
+        _write_recording_model(agent_dir, base_url)
+        completed = _run_child_probe(
+            pi=pi,
+            workspace=workspace,
+            agent_dir=agent_dir,
+            session_dir=tmp_path / "pi-sessions",
+            extension=ROOT / "tests" / "pi_child_probe.ts",
+            command="/ts-test-child",
             notification_prefix="TS_TEST_CHILD:",
-            timeout=45,
         )
 
     assert completed.returncode == 0, completed.stderr
@@ -206,6 +159,96 @@ def test_real_pi_child_session_uses_only_recording_provider_tool(tmp_path: Path)
     assert len(requests) == 2
     assert [tool["function"]["name"] for tool in requests[0]["tools"]] == ["ts_workspace_render_execute"]
     assert "Execute this bounded render operation" in requests[0]["messages"][-1]["content"][0]["text"]
+    assert any(message.get("role") == "tool" for message in requests[1]["messages"])
+
+
+def test_real_pi_review_child_session_has_no_tools(tmp_path: Path) -> None:
+    pi = _pi_binary()
+    if pi is None:
+        pytest.skip("Pi executable is not installed")
+    workspace = tmp_path / "workspace"
+    bootstrap_strict_workspace(workspace)
+    agent_dir = tmp_path / "pi-agent"
+    agent_dir.mkdir()
+
+    requests: list[dict[str, object]] = []
+    with _recording_server(requests, [_review_result_chunks()]) as base_url:
+        _write_recording_model(agent_dir, base_url)
+        completed = _run_child_probe(
+            pi=pi,
+            workspace=workspace,
+            agent_dir=agent_dir,
+            session_dir=tmp_path / "pi-sessions",
+            extension=ROOT / "tests" / "pi_review_probe.ts",
+            command="/ts-test-review-child",
+            notification_prefix="TS_TEST_REVIEW:",
+        )
+
+    assert completed.returncode == 0, completed.stderr
+    rows = [json.loads(line) for line in completed.stdout.splitlines() if line.strip().startswith("{")]
+    errors = [row for row in rows if str(row.get("message", "")).startswith("TS_TEST_REVIEW_ERROR:")]
+    assert not errors, errors
+    notification = next(
+        (
+            row
+            for row in rows
+            if row.get("type") == "extension_ui_request"
+            and str(row.get("message", "")).startswith("TS_TEST_REVIEW:")
+        ),
+        None,
+    )
+    assert notification is not None, {"stdout": completed.stdout, "stderr": completed.stderr, "requests": requests}
+    result = json.loads(notification["message"].split(":", 1)[1])
+    assert result["result"]["role"] == "review"
+    assert result["metadata"]["review_type"] == "mechanism"
+    assert len(requests) == 1
+    assert not requests[0].get("tools")
+    assert "Review this bounded TS workspace task packet" in requests[0]["messages"][-1]["content"][0]["text"]
+
+
+def test_real_pi_compute_child_session_uses_only_bound_prepare_tool(tmp_path: Path) -> None:
+    pi = _pi_binary()
+    if pi is None:
+        pytest.skip("Pi executable is not installed")
+    workspace = tmp_path / "workspace"
+    bootstrap_strict_workspace(workspace)
+    agent_dir = tmp_path / "pi-agent"
+    agent_dir.mkdir()
+
+    requests: list[dict[str, object]] = []
+    responses = [_tool_call_chunks("ts_workspace_compute_prepare"), _compute_result_chunks()]
+    with _recording_server(requests, responses) as base_url:
+        _write_recording_model(agent_dir, base_url)
+        completed = _run_child_probe(
+            pi=pi,
+            workspace=workspace,
+            agent_dir=agent_dir,
+            session_dir=tmp_path / "pi-sessions",
+            extension=ROOT / "tests" / "pi_compute_probe.ts",
+            command="/ts-test-compute-child",
+            notification_prefix="TS_TEST_COMPUTE:",
+        )
+
+    assert completed.returncode == 0, completed.stderr
+    rows = [json.loads(line) for line in completed.stdout.splitlines() if line.strip().startswith("{")]
+    errors = [row for row in rows if str(row.get("message", "")).startswith("TS_TEST_COMPUTE_ERROR:")]
+    assert not errors, errors
+    notification = next(
+        (
+            row
+            for row in rows
+            if row.get("type") == "extension_ui_request"
+            and str(row.get("message", "")).startswith("TS_TEST_COMPUTE:")
+        ),
+        None,
+    )
+    assert notification is not None, {"stdout": completed.stdout, "stderr": completed.stderr, "requests": requests}
+    result = json.loads(notification["message"].split(":", 1)[1])
+    assert result["report"]["payload"]["backend"] == "gaussian"
+    assert result["metadata"]["action_names"] == ["ts_workspace_compute_prepare"]
+    assert len(requests) == 2
+    assert [tool["function"]["name"] for tool in requests[0]["tools"]] == ["ts_workspace_compute_prepare"]
+    assert "Execute this bounded compute operation" in requests[0]["messages"][-1]["content"][0]["text"]
     assert any(message.get("role") == "tool" for message in requests[1]["messages"])
 
 
@@ -277,14 +320,83 @@ def _run_rpc_until(
     )
 
 
+def _run_child_probe(
+    *,
+    pi: str,
+    workspace: Path,
+    agent_dir: Path,
+    session_dir: Path,
+    extension: Path,
+    command: str,
+    notification_prefix: str,
+) -> SimpleNamespace:
+    env = {
+        **os.environ,
+        "PI_CODING_AGENT_DIR": str(agent_dir),
+        "PI_OFFLINE": "1",
+    }
+    return _run_rpc_until(
+        [
+            pi,
+            "--mode",
+            "rpc",
+            "--offline",
+            "--no-session",
+            "--session-dir",
+            str(session_dir),
+            "--no-context-files",
+            "--no-skills",
+            "--no-extensions",
+            "--no-builtin-tools",
+            "--approve",
+            "--extension",
+            str(extension),
+        ],
+        cwd=workspace,
+        env=env,
+        command={"id": "child", "type": "prompt", "message": command},
+        notification_prefix=notification_prefix,
+        timeout=45,
+    )
+
+
+def _write_recording_model(agent_dir: Path, base_url: str) -> None:
+    config = {
+        "providers": {
+            "ts-recording": {
+                "baseUrl": f"{base_url}/v1",
+                "api": "openai-completions",
+                "apiKey": "recording-key",
+                "models": [
+                    {
+                        "id": "recording-model",
+                        "name": "TS Recording Model",
+                        "reasoning": False,
+                        "input": ["text"],
+                        "contextWindow": 32000,
+                        "maxTokens": 4096,
+                        "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+                    }
+                ],
+            }
+        }
+    }
+    (agent_dir / "models.json").write_text(json.dumps(config), encoding="utf-8")
+
+
 class _RecordingHandler(BaseHTTPRequestHandler):
     requests: list[dict[str, object]]
+    responses: list[list[dict[str, object]]]
 
     def do_POST(self) -> None:  # noqa: N802
         length = int(self.headers.get("content-length", "0"))
         body = json.loads(self.rfile.read(length))
+        response_index = len(self.requests)
         self.requests.append(body)
-        response = _tool_call_chunks() if len(self.requests) == 1 else _result_chunks()
+        if response_index >= len(self.responses):
+            self.send_error(500, "recording response sequence exhausted")
+            return
+        response = self.responses[response_index]
         payload = "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in response) + "data: [DONE]\n\n"
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -297,8 +409,12 @@ class _RecordingHandler(BaseHTTPRequestHandler):
 
 
 class _RecordingServer:
-    def __init__(self, requests: list[dict[str, object]]) -> None:
-        handler = type("RecordingHandler", (_RecordingHandler,), {"requests": requests})
+    def __init__(
+        self,
+        requests: list[dict[str, object]],
+        responses: list[list[dict[str, object]]],
+    ) -> None:
+        handler = type("RecordingHandler", (_RecordingHandler,), {"requests": requests, "responses": responses})
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
 
@@ -313,11 +429,14 @@ class _RecordingServer:
         self.server.server_close()
 
 
-def _recording_server(requests: list[dict[str, object]]) -> _RecordingServer:
-    return _RecordingServer(requests)
+def _recording_server(
+    requests: list[dict[str, object]],
+    responses: list[list[dict[str, object]]],
+) -> _RecordingServer:
+    return _RecordingServer(requests, responses)
 
 
-def _tool_call_chunks() -> list[dict[str, object]]:
+def _tool_call_chunks(tool_name: str) -> list[dict[str, object]]:
     return [
         {
             "id": "chatcmpl-tool",
@@ -334,7 +453,7 @@ def _tool_call_chunks() -> list[dict[str, object]]:
                                 "index": 0,
                                 "id": "call_recording_001",
                                 "type": "function",
-                                "function": {"name": "ts_workspace_render_execute", "arguments": "{}"},
+                                "function": {"name": tool_name, "arguments": "{}"},
                             }
                         ],
                     },
@@ -352,7 +471,7 @@ def _tool_call_chunks() -> list[dict[str, object]]:
     ]
 
 
-def _result_chunks() -> list[dict[str, object]]:
+def _render_result_chunks() -> list[dict[str, object]]:
     scope = {
         "report_id": "rep_recording_001",
         "node_ids": ["n000"],
@@ -379,6 +498,82 @@ def _result_chunks() -> list[dict[str, object]]:
         "limitations": ["Recording-provider integration test."],
         "provenance": {},
     }
+    return _assistant_result_chunks(report)
+
+
+def _review_result_chunks() -> list[dict[str, object]]:
+    scope = {
+        "report_id": "rep_review_001",
+        "node_ids": ["n000"],
+        "hypothesis_id": None,
+        "pathway_id": None,
+    }
+    report = {
+        "schema_version": "ts-agent-result/1",
+        "task_id": "agent_review_001",
+        "role": "review",
+        "authority": "advisory",
+        "operation": "mechanism",
+        "outcome": "partial",
+        "summary": "The bounded context is insufficient for a mechanism conclusion.",
+        "scope": scope,
+        "facts": [],
+        "artifact_refs": [],
+        "program": None,
+        "payload": {
+            "missing_evidence": ["Primary mechanism evidence was not included."],
+            "conflicts": [],
+            "options": [
+                {
+                    "action": "Request one discriminating primary artifact.",
+                    "discriminator": "The artifact should distinguish the competing mechanism predictions.",
+                    "risks": ["No scientific status can be assigned from this review."],
+                }
+            ],
+        },
+        "limitations": ["Recording-provider integration test."],
+        "provenance": {},
+    }
+    return _assistant_result_chunks(report)
+
+
+def _compute_result_chunks() -> list[dict[str, object]]:
+    intent_id = "intent_recording_001"
+    artifact_ref = f"nodes/n000/attempts/{intent_id}/prepared.json"
+    scope = {
+        "report_id": "rep_compute_001",
+        "node_ids": ["n000"],
+        "hypothesis_id": None,
+        "pathway_id": None,
+    }
+    report = {
+        "schema_version": "ts-agent-result/1",
+        "task_id": "agent_compute_001",
+        "role": "backend",
+        "authority": "operational",
+        "operation": "prepare",
+        "outcome": "success",
+        "summary": "The bound Gaussian preparation completed without running a job.",
+        "scope": scope,
+        "facts": [
+            {
+                "kind": "program",
+                "layer": None,
+                "statement": "The calculation intent was prepared but not executed.",
+                "status": "observed",
+                "basis_refs": [artifact_ref],
+            }
+        ],
+        "artifact_refs": [artifact_ref],
+        "program": {"outcome": "not_run", "state": "prepared", "error_class": None, "exit_status": None},
+        "payload": {"intent_id": intent_id, "node_id": "n000", "backend": "gaussian"},
+        "limitations": ["No calculation was submitted."],
+        "provenance": {},
+    }
+    return _assistant_result_chunks(report)
+
+
+def _assistant_result_chunks(report: dict[str, object]) -> list[dict[str, object]]:
     return [
         {
             "id": "chatcmpl-result",

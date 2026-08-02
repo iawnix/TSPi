@@ -11,9 +11,9 @@ templates, and chemistry evidence.
 
 - Edit the maintenance repository, not an installed copy:
   `/home/iaw/Codex/Project/2026-06-13/transition-state-workflow-refactor`.
-- The installed Codex skill copy is deployment output:
-  `/home/iaw/TS/.agents/skills/transition-state-workflow`.
-- `SKILL.md` is the Codex entrypoint and operating contract.
+- A Pi-managed `.pi/git/...` checkout or local package reference is deployment
+  output, not an authored source tree.
+- `SKILL.md` is the Pi Root Agent entrypoint and operating contract.
 - `references/` holds focused contract notes for humans and agents.
 - `templates/decision/` holds runtime decision JSON starting points.
 - `tests/` holds regression fixtures only. Do not treat test JSON as live
@@ -40,6 +40,9 @@ Keep state ownership narrow.
   workspace verdicts, accepted TS facts, or branch decisions.
 - `ts_remote` stages, submits, polls, fetches, and kills remote jobs. It must
   not interpret chemistry.
+- `cluster_mcp` owns authenticated cluster file transfer, scheduler execution,
+  durable submission state, and MCP transport. It must not mutate the local TS
+  workspace or expose submission/cancellation as public Pi tools.
 - `ts_structures` analyzes structures and returns evidence-shaped diagnostics.
   It must not mutate workspace state.
 - `ts_render` writes visualization artifacts only. It must not mutate root
@@ -167,6 +170,12 @@ and have `ts_web` consume that result.
   closure, accepted facts, pathway acceptance, or branch decisions.
 - Remote helpers should return receipts, statuses, fetched files, or errors.
   They should not infer mechanism identity.
+- TS Cluster MCP requests must bind intent identity, complete input hashes,
+  expected artifacts, and execution resources. Preserve known scheduler job
+  IDs after post-submit failures, and make ambiguous submit/cancel outcomes
+  fail closed against automatic replay.
+- Keep `files:write` no-overwrite for the Pi principal. Generic replacement
+  requires the separate `files:overwrite` scope, which Pi must not receive.
 - Runtime setup must stay isolated from shared Conda `base`. Public scripts
   should resolve the workspace-owned runtime manifest when a workspace root is
   known and fall back to the current interpreter for development checkouts.
@@ -218,9 +227,13 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q \
   tests/test_runtime_env.py \
   tests/test_ts_render.py \
   tests/test_remote_job_lifecycle.py \
+  tests/test_cluster_mcp_ts_jobs.py \
   tests/test_pi_agent_adapter.py \
+  tests/test_pi_subagent_contract.py \
+  tests/test_pi_compute_tools.py \
   tests/test_pi_artifact_tools.py \
   tests/test_pi_runtime_integration.py \
+  tests/test_agent_protocol.py \
   -p no:cacheprovider
 ```
 
@@ -245,44 +258,41 @@ If Pi package metadata, extension files, or `package.json` changed:
 npm pack --dry-run
 ```
 
-## Release And Sync Procedure
+## Release Procedure
 
 Use this flow for maintained skill changes.
 
 1. Edit the maintenance repository.
 2. Run focused tests and the full pytest suite.
 3. Commit with a message that names the contract or module changed.
-4. Push `main` to `https://github.com/iawnix/TSAgentSkill`.
-5. Sync the installed skill copy:
+4. Push the intended release branch to
+   `https://github.com/iawnix/TSAgentSkill`.
+5. In a clean Pi workspace, install the exact branch or tag:
 
 ```bash
-rsync -a --delete \
-  --exclude .git \
-  --exclude __pycache__ \
-  --exclude .pytest_cache \
-  --exclude .runtime \
-  /home/iaw/Codex/Project/2026-06-13/transition-state-workflow-refactor/ \
-  /home/iaw/TS/.agents/skills/transition-state-workflow/
+cd /path/to/clean-ts-workspace
+pi install -l git:github.com/iawnix/TSAgentSkill@<branch-or-tag> --approve
 ```
 
-6. Validate the installed copy:
+6. Resolve the Pi-managed package root and validate its workspace-owned
+   runtime without placing an environment in the package checkout:
 
 ```bash
-cd /home/iaw/TS
-export TS_AGENT_SKILL_ROOT=/home/iaw/TS/.agents/skills/transition-state-workflow
-export TS_WORKSPACE_ROOT=/home/iaw/TS
+export TS_AGENT_SKILL_ROOT=/path/reported/by/pi/package/installation
+export TS_WORKSPACE_ROOT=/path/to/clean-ts-workspace
 python3 "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
   --package-root "$TS_AGENT_SKILL_ROOT" \
   --workspace-root "$TS_WORKSPACE_ROOT" \
   --conda-root /path/to/miniforge3 \
+  --dry-run \
   --with-render \
   --json
-PYTHONDONTWRITEBYTECODE=1 python3 "$TS_AGENT_SKILL_ROOT/scripts/ts_runtime.py" run -m pytest -q
-python3 "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" diagnostic --json
 ```
 
-7. If the behavior affects active research, record any remaining discrepancy in
-   `/home/iaw/TS/.TODO.md`.
+7. Start Pi from the clean workspace and verify the nine public tools. Private
+   child skills must remain absent from the Root Agent inventory. Run the
+   recording-provider integration tests to verify zero-tool review sessions and
+   one-tool compute and artifact sessions.
 
 ## Review Checklist
 
@@ -297,4 +307,6 @@ Before merging or syncing, answer these questions:
 - Did `ts_web` remain read-only over source workspaces?
 - Are templates updated without copying test fixtures into operating examples?
 - Are tests covering the failure mode, not only the successful path?
-- Does the installed skill copy match the maintenance source after sync?
+- Do cluster operations remain host-authorized operational facts rather than
+  public Pi actions or scientific evidence?
+- Does a fresh branch- or tag-pinned Pi install resolve the expected commit?

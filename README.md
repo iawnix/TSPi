@@ -1,9 +1,13 @@
 # TSAgentSkill
 
 TSAgentSkill is an evidence- and hypothesis-driven transition-state research
-workflow for Codex and Pi Agent. It separates scientific decisions, program
+workflow for Pi Agent. It separates scientific decisions, program
 execution, evidence registration, branch topology, reporting, and read-only
 visualization.
+
+This branch supports Pi Agent only. The Python packages and command-line
+entrypoints are implementation kernels used by the Pi extensions, not a
+separately supported agent runtime.
 
 New work uses `ts-decision/2` and `ts-node/2`. Legacy phase-based workspaces
 remain readable and closable, but they are not the model for new studies.
@@ -13,12 +17,14 @@ remain readable and closable, but they are not the model for new studies.
 - `ts_workspace`: the only canonical research-state control plane.
 - `ts_compute` and `ts_backends`: typed calculation intents, preparation,
   status, collection, and deterministic parsing.
+- `cluster_mcp` and `ts_remote.mcp`: authenticated, manifest-bound file
+  transfer and OpenPBS/Torque execution without scientific authority.
 - `subagents/`: fresh Pi review sessions and the shared
   `ts-agent-task/1` / `ts-agent-result/1` protocol.
 - `artifact-agent/`: fresh render, report, and email-draft sessions with
   request-scoped typed tools and role-specific result binding.
 - `agent-skills/`: private backend, render, report, and email skills. They are
-  not registered in the root Pi/Codex skill inventory.
+  not registered in the Root Agent's Pi skill inventory.
 - `ts_render`: local molecular rendering through `xyzrender` only.
 - `ts_report`: report-package assembly from validated workspace evidence.
 - `ts_web`: read-only workspace normalization and visualization.
@@ -29,12 +35,15 @@ is only a program fact.
 
 ## Install
 
-Clone or install the package, then create a workspace-owned runtime:
+Create the research workspace, install this branch project-locally through Pi,
+then create a workspace-owned runtime from the Pi-managed checkout:
 
 ```bash
-git clone https://github.com/iawnix/TSAgentSkill.git
-export TS_AGENT_SKILL_ROOT=$PWD/TSAgentSkill
-export TS_WORKSPACE_ROOT=/path/to/ts-workspace
+mkdir -p /path/to/ts-workspace
+cd /path/to/ts-workspace
+pi install -l git:github.com/iawnix/TSAgentSkill@pi_ts_subagents --approve
+export TS_WORKSPACE_ROOT=$PWD
+export TS_AGENT_SKILL_ROOT=$PWD/.pi/git/github.com/iawnix/TSAgentSkill
 python "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
   --package-root "$TS_AGENT_SKILL_ROOT" \
   --workspace-root "$TS_WORKSPACE_ROOT" \
@@ -55,7 +64,7 @@ The default Conda prefix store is:
 <workspace>/.agents/envs/transition-state-workflow/<environment-hash>/
 ```
 
-Therefore separate Codex and Pi workspaces do not collide by default. Set the
+Therefore separate Pi research workspaces do not collide by default. Set the
 same `TS_AGENT_ENV_ROOT` only when deliberate environment sharing is wanted.
 The package checkout, including a Pi `.pi/git/...` checkout installed directly
 from GitHub, never owns the workspace runtime when `--workspace-root` is used.
@@ -74,32 +83,6 @@ TS_WORKSPACE_ROOT=/path/to/ts-workspace npm run install-env:core
 It does not require or probe Blender, FFmpeg, OpenBabel, Mayavi, or PyVista.
 Missing render support does not block workspace validation or calculation
 parsing.
-
-## Codex Usage
-
-Install or sync this package under a workspace skill directory such as:
-
-```text
-<workspace>/.agents/skills/transition-state-workflow/
-```
-
-Set an explicit package root for shell fallback commands:
-
-```bash
-export TS_AGENT_SKILL_ROOT=<workspace>/.agents/skills/transition-state-workflow
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" report_workspace --root <workspace>
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" report_node --root <workspace> --node-id <node>
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" report_branch_context --root <workspace> --from-node <trigger> --anchor-node <checkpoint>
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_decision --root <workspace> --decision-file decision.json
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" start_node --root <workspace> --decision-file decision.json
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" update_workspace --root <workspace> --decision-file decision.json
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" end_node --root <workspace> --decision-file decision.json
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_workspace --root <workspace>
-```
-
-Read `references/decision_contract.md` before constructing new v2 decisions.
-Do not edit `research_state.json`, `hypotheses.json`, or
-`evidence_registry.json` by hand.
 
 ## Pi Agent Usage
 
@@ -212,6 +195,14 @@ A remote directory must declare `authority=execution_mirror`. Results become
 usable only after collection and local verification. See
 `references/compute_operator.md`.
 
+For scheduler-backed execution, the bundled TS Cluster MCP binds one
+`submission_id` to the intent digest, complete input manifest, expected
+artifacts, and resource request. It persists known scheduler IDs across
+post-`qsub` failures and forbids automatic retry after ambiguous submission or
+cancellation outcomes. It is a host-side execution boundary, not a public Pi
+tool or a source of scientific evidence. Deployment and scope rules are in
+`references/cluster_mcp.md`.
+
 ## Agent Protocol
 
 All isolated roles communicate through:
@@ -255,3 +246,9 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q
 npm run test:pi-adapter
 npm pack --dry-run --json
 ```
+
+The Pi integration suite runs the real Pi executable with a local recording
+provider. It verifies the nine-tool Root Agent inventory, a tool-free review
+child, a compute child with exactly one request-bound tool, and an artifact
+child with exactly one request-bound tool. Before release, also test one clean,
+branch- or tag-pinned GitHub installation from a network that can reach GitHub.

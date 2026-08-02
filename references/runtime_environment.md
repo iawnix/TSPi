@@ -7,7 +7,7 @@ create the Python environment automatically.
 Keep three roots separate:
 
 - `package_root`: the skill code checkout or installed copy. This may be a
-  Codex `.agents/skills` tree, a Pi `.pi/git` checkout, or a development tree.
+  Pi `.pi/git` checkout, a Pi local package reference, or a development tree.
 - `workspace_root`: the TS research workspace that owns state and runtime
   metadata.
 - `runtime_home`: the directory that stores the runtime manifest.
@@ -26,19 +26,12 @@ are workspace-owned:
 <workspace_root>/.agents/envs/transition-state-workflow/<environment-spec-hash>/
 ```
 
-This is the preferred Codex and Pi contract. It keeps runtime state out of Pi
+This is the preferred Pi contract. It keeps runtime state out of Pi
 Git package checkouts, which may be reset or cleaned during package updates,
 and it keeps local Pi path installs from reusing a development-tree runtime.
 
-When no workspace root or runtime override is supplied, installed Codex copies
-under `.agents/skills` use:
-
-```text
-<workspace_root>/.agents/runtime/transition-state-workflow/env.json
-<workspace_root>/.agents/envs/transition-state-workflow/<environment-spec-hash>/
-```
-
-Other source checkouts fall back to package-parent stores:
+When no workspace root or runtime override is supplied, source checkouts fall
+back to package-parent stores:
 
 ```text
 <package_parent>/.runtime/transition-state-workflow/env.json

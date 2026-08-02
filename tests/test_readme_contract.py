@@ -24,13 +24,30 @@ def test_readme_documents_install_and_agent_entrypoints() -> None:
 
     for phrase in [
         "TSAgentSkill",
+        "This branch supports Pi Agent only.",
+        "pi install -l git:github.com/iawnix/TSAgentSkill@pi_ts_subagents --approve",
+        "$PWD/.pi/git/github.com/iawnix/TSAgentSkill",
         "--workspace-root \"$TS_WORKSPACE_ROOT\"",
         "TS_WORKSPACE_ROOT=/path/to/ts-workspace npm run install-env",
-        "Codex Usage",
         "Pi Agent Usage",
         "templates/ts_final_report.md",
     ]:
         assert phrase in text
+
+    assert "Codex Usage" not in text
+
+
+def test_public_agent_contract_is_pi_only() -> None:
+    paths = [
+        README,
+        SKILL,
+        ROOT / "references" / "runtime_environment.md",
+        ROOT / "references" / "pi_agent_adapter.md",
+        ROOT / "references" / "decision_contract.md",
+    ]
+
+    for path in paths:
+        assert "Codex" not in path.read_text(encoding="utf-8"), path
 
 
 def test_readme_keeps_render_dependency_boundary_explicit() -> None:

@@ -1,6 +1,6 @@
 ---
 name: transition-state-workflow
-description: Evidence- and hypothesis-driven transition-state research for Codex and Pi, with auditable node trees, isolated calculation/review agents, Gaussian and other backend boundaries, TS/Freq and connectivity gates, recalculation lineage, read-only web views, and final reports. Use for TS searches, mechanism testing, IRC/connectivity validation, program-failure recovery, pathway audits, and continuation of an existing TS workspace.
+description: Evidence- and hypothesis-driven transition-state research for Pi Agent, with auditable node trees, isolated calculation/review agents, Gaussian and other backend boundaries, TS/Freq and connectivity gates, recalculation lineage, read-only web views, and final reports. Use for TS searches, mechanism testing, IRC/connectivity validation, program-failure recovery, pathway audits, and continuation of an existing TS workspace.
 ---
 
 # Transition-State Workflow
@@ -21,6 +21,8 @@ operations; they do not choose chemistry.
   mechanism node alone may set hypothesis status.
 - Remote files are execution mirrors. Collect and verify locally before using
   them as evidence.
+- Cluster submission or cancellation requires explicit current-turn host
+  authorization. Do not treat the bundled MCP client as standing permission.
 - `ts_web` is read-only.
 - Sending email requires explicit current-turn authorization.
 
@@ -106,20 +108,6 @@ revisions. Load historical context only when needed:
 - `mode=branch, fromNode=<trigger>, anchorNode=<checkpoint>` before backtrack;
 - `mode=audit` before acceptance or completion review.
 
-## Codex Control Plane
-
-Resolve the installed skill root explicitly:
-
-```bash
-export TS_AGENT_SKILL_ROOT=/path/to/transition-state-workflow
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" report_workspace --root <workspace>
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_decision --root <workspace> --decision-file decision.json
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" start_node --root <workspace> --decision-file decision.json
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" update_workspace --root <workspace> --decision-file decision.json
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" end_node --root <workspace> --decision-file decision.json
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_workspace --root <workspace>
-```
-
 Construct new decisions from `references/decision_contract.md`. Files under
 `templates/decision/` are legacy-compatible examples; tests are fixtures, not
 operating instructions.
@@ -194,6 +182,11 @@ A remote target must declare `authority=execution_mirror`. Long jobs outlive
 child sessions; inspect only when state changes or a bounded failure diagnostic
 is needed. Do not poll unchanged jobs every turn.
 
+When a configured scheduler service is used, follow
+`references/cluster_mcp.md`. Preserve its manifest and idempotency bindings;
+never retry an ambiguous submit or cancel with the same or a new identifier
+until the scheduler state has been reconciled by the host.
+
 ## Evidence And Audits
 
 - Register evidence only after verifying local source files and provenance.
@@ -242,6 +235,7 @@ Load only what the current act needs:
 - Runtime and Pi: `references/runtime_environment.md`,
   `references/pi_agent_adapter.md`
 - Backend delegation: `references/compute_operator.md`,
-  `references/backend_contract.md`, `references/remote_contract.md`
+  `references/backend_contract.md`, `references/remote_contract.md`,
+  `references/cluster_mcp.md`
 - Rendering and reporting: `references/render_contract.md`,
   `references/report_template.md`, `references/artifact_operators.md`

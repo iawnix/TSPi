@@ -33,7 +33,7 @@ Default manifest and environment store:
 <workspace>/.agents/envs/transition-state-workflow/<environment-hash>/
 ```
 
-Separate Pi and Codex workspaces therefore use separate full prefixes unless
+Separate Pi research workspaces therefore use separate full prefixes unless
 they deliberately share `TS_AGENT_ENV_ROOT`.
 
 ## Load

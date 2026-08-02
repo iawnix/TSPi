@@ -8,3 +8,6 @@ npm-debug.log*
 *.tmp
 PLAN_*.md
 PLAN-*.md
+cluster_mcp/config.toml
+cluster_mcp/auth.toml
+.cluster_mcp/
