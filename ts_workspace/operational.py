@@ -13,6 +13,7 @@ def operational_snapshot(root: str | Path) -> dict[str, Any]:
     root_path = Path(root)
     files = _operational_files(root_path)
     agent_runs = agent_run_index(root_path)
+    pending_controls = _pending_controls(root_path, files)
     return {
         "operational_revision": sha256_json(
             {
@@ -23,12 +24,14 @@ def operational_snapshot(root: str | Path) -> dict[str, Any]:
             }
         ),
         "agent_runs": agent_runs,
+        "pending_controls": pending_controls,
         "operational_summary": {
             "tracked_file_count": len(files),
             "calculation_file_count": sum(1 for path in files if "agent-runs" not in path.parts),
             "agent_run_count": len(agent_runs),
             "agent_run_failed_count": sum(1 for row in agent_runs if row.get("status") == "failed"),
             "agent_run_pending_count": sum(1 for row in agent_runs if row.get("status") == "pending"),
+            "control_pending_count": len(pending_controls),
         },
     }
 
@@ -70,8 +73,14 @@ def agent_run_index(root: str | Path) -> list[dict[str, Any]]:
 def _operational_files(root: Path) -> list[Path]:
     patterns = (
         "nodes/*/attempts/*/status.json",
+        "nodes/*/attempts/*/*_guard.json",
+        "nodes/*/attempts/*/*_result.json",
+        "nodes/*/attempts/*/*_receipt.json",
         "nodes/*/attempts/*/outputs/calculation_result.json",
         "nodes/*/remote/calculations/*/status.json",
+        "nodes/*/remote/calculations/*/*_guard.json",
+        "nodes/*/remote/calculations/*/*_result.json",
+        "nodes/*/remote/calculations/*/*_receipt.json",
         "nodes/*/outputs/calculations/*/calculation_result.json",
         "nodes/*/agent-runs/*/*.json",
         "operations/agent-runs/*/*.json",
@@ -83,6 +92,25 @@ def _operational_files(root: Path) -> list[Path]:
         if path.is_file() and not path.is_symlink()
     }
     return sorted(files, key=lambda path: path.relative_to(root).as_posix())
+
+
+def _pending_controls(root: Path, files: list[Path]) -> list[dict[str, str]]:
+    pending: list[dict[str, str]] = []
+    for guard in files:
+        if not guard.name.endswith("_guard.json"):
+            continue
+        operation = guard.name.removesuffix("_guard.json")
+        result = guard.parent / f"{operation}_result.json"
+        if result.is_file() and not result.is_symlink():
+            continue
+        pending.append(
+            {
+                "operation": operation,
+                "intent_id": guard.parent.name,
+                "guard_ref": guard.relative_to(root).as_posix(),
+            }
+        )
+    return pending
 
 
 def _sha256_file(path: Path) -> str:

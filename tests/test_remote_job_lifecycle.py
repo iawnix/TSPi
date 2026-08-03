@@ -158,6 +158,34 @@ def test_poll_reports_missing_remote_dir(monkeypatch) -> None:
     assert job_lifecycle.poll(config).state == "missing_remote_dir"
 
 
+def test_kill_binds_remote_pid_before_signalling(monkeypatch) -> None:
+    calls: list[list[str]] = []
+    config = job_lifecycle.RemoteJobConfig(
+        node_id="n001",
+        login_host="login",
+        compute_host="compute",
+        remote_dir="/remote/n001",
+        command=["true"],
+    )
+    observed = job_lifecycle.RemoteJobStatus(
+        node_id="n001",
+        host="compute",
+        remote_dir="/remote/n001",
+        state="killed",
+        pid="123",
+    )
+    monkeypatch.setattr(job_lifecycle, "_run", lambda argv, _dry_run: calls.append(list(argv)))
+    monkeypatch.setattr(job_lifecycle, "poll", lambda _config: observed)
+
+    result = job_lifecycle.kill(config, expected_pid="123")
+
+    assert result == observed
+    remote_command = calls[0][-1]
+    assert "expected_pid=123" in remote_command
+    assert '"$pid" != "$expected_pid"' in remote_command
+    assert "remote PID changed before cancellation" in remote_command
+
+
 def test_fetch_uses_expected_artifacts_and_can_tolerate_missing(monkeypatch, tmp_path: Path) -> None:
     calls: list[list[str]] = []
 

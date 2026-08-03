@@ -42,7 +42,7 @@ Keep state ownership narrow.
   not interpret chemistry.
 - `cluster_mcp` owns authenticated cluster file transfer, scheduler execution,
   durable submission state, and MCP transport. It must not mutate the local TS
-  workspace or expose submission/cancellation as public Pi tools.
+  workspace or expose raw scheduler/MCP tools to Pi agent inventories.
 - `ts_structures` analyzes structures and returns evidence-shaped diagnostics.
   It must not mutate workspace state.
 - `ts_render` writes visualization artifacts only. It must not mutate root
@@ -61,7 +61,9 @@ Keep state ownership narrow.
   to the isolated runtime under `subagents/`. The child remains tool-free and
   advisory; it never becomes a second control plane.
 - `extensions/ts-workflow-compute` creates a fresh backend session with one
-  selected private backend skill and request-scoped typed tools.
+  selected private backend skill and request-scoped typed tools. Submit/cancel
+  must preflight and obtain current-call host UI confirmation before child
+  creation; the child receives no authorization data.
 - `extensions/ts-workflow-artifacts` creates fresh render, report, and
   email-draft sessions. Each receives one private role skill and one path-bound
   typed tool; email sending is not implemented.
@@ -174,6 +176,12 @@ and have `ts_web` consume that result.
   expected artifacts, and execution resources. Preserve known scheduler job
   IDs after post-submit failures, and make ambiguous submit/cancel outcomes
   fail closed against automatic replay.
+- Keep SSH and MCP transport selection in `execution_target.transport`; keep
+  MCP endpoint, token, and timeout in host environment variables only.
+- Persist submit/cancel outcomes separately from mutable status polling so an
+  ambiguous outcome cannot become replayable after a later status refresh.
+- Include control guards, results, and receipts in `operational_revision`; a
+  guard without its result must surface through `pending_controls`.
 - Keep `files:write` no-overwrite for the Pi principal. Generic replacement
   requires the separate `files:overwrite` scope, which Pi must not receive.
 - Runtime setup must stay isolated from shared Conda `base`. Public scripts
@@ -228,6 +236,7 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q \
   tests/test_ts_render.py \
   tests/test_remote_job_lifecycle.py \
   tests/test_cluster_mcp_ts_jobs.py \
+  tests/test_compute_control.py \
   tests/test_pi_agent_adapter.py \
   tests/test_pi_subagent_contract.py \
   tests/test_pi_compute_tools.py \
@@ -307,6 +316,6 @@ Before merging or syncing, answer these questions:
 - Did `ts_web` remain read-only over source workspaces?
 - Are templates updated without copying test fixtures into operating examples?
 - Are tests covering the failure mode, not only the successful path?
-- Do cluster operations remain host-authorized operational facts rather than
-  public Pi actions or scientific evidence?
+- Do cluster operations remain current-call host-authorized operational facts,
+  with no raw transport tools or authorization fields exposed to agents?
 - Does a fresh branch- or tag-pinned Pi install resolve the expected commit?

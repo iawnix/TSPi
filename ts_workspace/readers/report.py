@@ -63,6 +63,7 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
         "evidence_count": len(evidence.get("evidence", [])) if isinstance(evidence, dict) else 0,
         "branch_events": branch_events,
         "agent_runs": operations["agent_runs"],
+        "pending_controls": operations["pending_controls"],
         "operational_summary": operations["operational_summary"],
         "workspace_state_refs": {
             "research_state": RESEARCH_STATE_FILE,

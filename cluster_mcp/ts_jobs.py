@@ -22,6 +22,9 @@ _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
 _BACKENDS = frozenset({"gaussian", "xtb", "ase_neb", "qbics_dmecp"})
 _REPLAYABLE_STATES = frozenset({"submitted"})
+_SENSITIVE_ENV_KEY = re.compile(
+    r"(?:^|_)(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?|AUTHORIZATION|API_KEY|PRIVATE_KEY)(?:$|_)"
+)
 
 
 def validate_ts_submission_id(value: Any) -> str:
@@ -97,7 +100,7 @@ def validate_ts_submission_request(value: dict[str, Any]) -> dict[str, Any]:
             raise SecurityError(f"expected_artifacts contains duplicate path: {path}")
         expected.append(path)
 
-    execution = _execution(value.get("execution"))
+    execution = validate_ts_execution(value.get("execution"))
 
     return {
         "schema_version": "ts-cluster-job/1",
@@ -389,7 +392,7 @@ def _require_descendant(path: str, directory: str, label: str) -> None:
         raise SecurityError(f"{label} must be inside workdir")
 
 
-def _execution(value: Any) -> dict[str, Any]:
+def validate_ts_execution(value: Any) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise SecurityError("execution must be an object")
     keys = {
@@ -434,6 +437,16 @@ def _execution(value: Any) -> dict[str, Any]:
         isinstance(key, str) and isinstance(item, str) for key, item in environment.items()
     ):
         raise SecurityError("execution.environment must contain string values")
+    forbidden_environment = sorted(
+        key
+        for key in environment
+        if key.startswith("TS_CLUSTER_MCP_") or _SENSITIVE_ENV_KEY.search(key)
+    )
+    if forbidden_environment:
+        raise SecurityError(
+            "execution.environment contains host connection or credential fields: "
+            + ", ".join(forbidden_environment)
+        )
     gpu_devices = value.get("gpu_devices")
     if not isinstance(gpu_devices, list) or not all(
         isinstance(item, int) and not isinstance(item, bool) for item in gpu_devices

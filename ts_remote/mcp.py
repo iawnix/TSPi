@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import binascii
 import hashlib
 import ipaddress
 import json
@@ -256,9 +257,68 @@ class TSClusterMCPClient:
             "ts_cancel_submission",
             {"submission_id": submission_id, "confirmation": f"{submission_id}:{job_id}"},
         )
-        if result.get("submission_id") != submission_id or result.get("job_id") != job_id:
+        if (
+            result.get("schema_version") != "ts-cluster-cancellation-result/1"
+            or result.get("state") != "cancelled"
+            or result.get("submission_id") != submission_id
+            or result.get("job_id") != job_id
+        ):
             raise MCPClientError("MCP cancellation result does not match the requested submission")
         return result
+
+    def read_tail(self, remote_path: str, *, max_bytes: int = 32 * 1024) -> dict[str, Any]:
+        if isinstance(max_bytes, bool) or not 1 <= max_bytes <= 1024 * 1024:
+            raise MCPClientError("MCP tail max_bytes must be between 1 and 1048576")
+        before = self.caller.call_tool(
+            "file_info",
+            {"path": remote_path, "include_sha256": True},
+        )
+        if before.get("path") != remote_path or before.get("type") != "file":
+            raise MCPClientError("MCP tail source is not the requested regular file")
+        size = before.get("size")
+        if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+            raise MCPClientError("MCP tail source has an invalid size")
+        digest = _validated_sha256(before.get("sha256"), "MCP tail source")
+        offset = max(0, size - max_bytes)
+        chunk = self.caller.call_tool(
+            "download_chunk",
+            {"path": remote_path, "offset": offset, "max_bytes": max_bytes},
+        )
+        if (
+            chunk.get("path") != remote_path
+            or chunk.get("offset") != offset
+            or chunk.get("size") != size
+            or chunk.get("eof") is not True
+        ):
+            raise MCPClientError("MCP tail chunk metadata is inconsistent")
+        try:
+            payload = base64.b64decode(str(chunk.get("data_base64", "")), validate=True)
+        except (binascii.Error, ValueError) as exc:
+            raise MCPClientError("MCP tail returned invalid base64") from exc
+        if (
+            len(payload) > max_bytes
+            or chunk.get("next_offset") != offset + len(payload)
+            or offset + len(payload) != size
+        ):
+            raise MCPClientError("MCP tail next_offset is inconsistent")
+        after = self.caller.call_tool(
+            "file_info",
+            {"path": remote_path, "include_sha256": True},
+        )
+        if (
+            after.get("path") != remote_path
+            or after.get("type") != "file"
+            or after.get("size") != size
+            or not secrets.compare_digest(_validated_sha256(after.get("sha256"), "MCP tail source"), digest)
+        ):
+            raise MCPClientError("MCP tail source changed during transfer")
+        return {
+            "path": remote_path,
+            "offset": offset,
+            "size": size,
+            "sha256": digest,
+            "data": payload,
+        }
 
     def download_file(
         self,
@@ -303,7 +363,7 @@ class TSClusterMCPClient:
                         raise MCPClientError("MCP download source size changed during transfer")
                     try:
                         payload = base64.b64decode(str(chunk.get("data_base64", "")), validate=True)
-                    except ValueError as exc:
+                    except (binascii.Error, ValueError) as exc:
                         raise MCPClientError("MCP download returned invalid base64") from exc
                     handle.write(payload)
                     digest.update(payload)

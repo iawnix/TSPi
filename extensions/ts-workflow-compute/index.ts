@@ -10,7 +10,8 @@ import { runComputeOperator } from "../../compute-agent/runtime.ts";
 const require = createRequire(import.meta.url);
 const { toolText } = require("../ts-workflow-context/summary.cjs");
 const { beginAgentRun, completeAgentRun, failAgentRun } = require("../../subagents/run-journal.cjs");
-const OPERATIONS = ["prepare", "inspect", "collect", "parse"] as const;
+const { authorizeComputeControl } = require("./authorization.cjs");
+const OPERATIONS = ["prepare", "submit", "inspect", "collect", "cancel", "parse"] as const;
 const BACKENDS = ["gaussian", "ase_neb", "xtb", "qbics_dmecp"] as const;
 
 type OperatorRequest = {
@@ -25,6 +26,10 @@ type OperatorRequest = {
   artifactRef?: string;
   intentDigest?: string;
   intentRef?: string;
+  transport?: string;
+  remoteDir?: string;
+  jobId?: string;
+  executionSummary?: Record<string, unknown>;
 };
 
 type ActionLog = { tool: string; result: Record<string, unknown> }[];
@@ -33,12 +38,13 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "ts_workspace_compute_operator",
     label: "TS Compute Operator",
-    description: "Run one fresh Pi compute subagent with only request-scoped prepare, status/tail, collect, or parse tools; submission and cancellation are unavailable.",
+    description: "Run one fresh Pi compute subagent with request-scoped prepare, submit, status/tail, collect, cancel, or parse tools. Submit and cancel require a new host confirmation on every call.",
     promptSnippet: "Delegate one bounded transition-state calculation operation",
     promptGuidelines: [
       "Create the calculation intent and select its node, method, purpose, validation scope, and target before calling the compute operator.",
       "Treat operator results as program and parser facts, not registered evidence, claim_verdict, accepted TS, or pathway acceptance.",
       "Use inspect for changed or terminal jobs instead of polling unchanged work every turn.",
+      "Call submit or cancel only when the current Pi host can ask the user for explicit confirmation.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
@@ -52,7 +58,7 @@ export default function (pi: ExtensionAPI) {
       artifacts: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 255 }), { maxItems: 32 })),
       artifactRef: Type.Optional(Type.String({ minLength: 1, maxLength: 4096, description: "For parse: workspace-relative selected-node output." })),
       root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
-    }),
+    }, { additionalProperties: false }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       if (!ctx.model) throw new Error("No parent model is selected for TS compute delegation");
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
@@ -75,6 +81,13 @@ export default function (pi: ExtensionAPI) {
       request.intentDigest = binding.intentDigest;
       request.intentRef = binding.intentRef;
       request.artifactRef = binding.artifactRef;
+      request.transport = binding.transport;
+      request.remoteDir = binding.remoteDir;
+      request.jobId = binding.jobId;
+      request.executionSummary = binding.executionSummary;
+      if (request.operation === "submit" || request.operation === "cancel") {
+        await authorizeComputeControl(ctx, request);
+      }
       const actions: ActionLog = [];
       const tools = createScopedComputeTools(pi, root, request, actions);
       const workspaceReport = await runWorkspaceJson(pi, "report_workspace", root, [], signal);
@@ -115,7 +128,7 @@ export default function (pi: ExtensionAPI) {
           scientific_decision: false,
           recursive_delegation: false,
           remote_authority: "execution_mirror",
-          external_side_effects: false,
+          external_side_effects: request.operation === "submit" || request.operation === "cancel",
         },
         output_contract: "ts-agent-result/1",
       };
@@ -134,7 +147,7 @@ export default function (pi: ExtensionAPI) {
           parentModel: ctx.model,
           parentApiKey: parentAuth?.ok ? parentAuth.apiKey : undefined,
           thinkingLevel: pi.getThinkingLevel(),
-          timeoutMs: request.operation === "collect" ? 360_000 : 180_000,
+          timeoutMs: ["submit", "collect"].includes(request.operation) ? 360_000 : 180_000,
           signal,
         });
       } catch (error) {
@@ -215,6 +228,16 @@ function createScopedComputeTools(
         "--expected-intent-digest", request.intentDigest as string,
       ], signal, 60_000),
     );
+  } else if (request.operation === "submit") {
+    add(
+      "ts_workspace_compute_submit",
+      "TS Compute Submit",
+      "Submit the pre-bound remote calculation after host authorization. Call exactly once and never retry.",
+      (signal) => runComputeJson(pi, "submit", root, [
+        "--intent-id", request.intentId as string,
+        "--expected-intent-digest", request.intentDigest as string,
+      ], signal, 300_000),
+    );
   } else if (request.operation === "inspect") {
     add(
       "ts_workspace_compute_status",
@@ -246,6 +269,20 @@ function createScopedComputeTools(
         args.push("--expected-intent-digest", request.intentDigest as string);
         for (const artifact of request.artifacts || []) args.push("--artifact", artifact);
         return runComputeJson(pi, "collect", root, args, signal, 300_000);
+      },
+    );
+  } else if (request.operation === "cancel") {
+    add(
+      "ts_workspace_compute_cancel",
+      "TS Compute Cancel",
+      "Cancel the pre-bound remote calculation after host authorization. Call exactly once and never retry.",
+      (signal) => {
+        const args = [
+          "--intent-id", request.intentId as string,
+          "--expected-intent-digest", request.intentDigest as string,
+        ];
+        if (request.jobId) args.push("--expected-job-id", request.jobId);
+        return runComputeJson(pi, "cancel", root, args, signal, 120_000);
       },
     );
   } else if (request.operation === "parse") {
@@ -305,6 +342,10 @@ async function preflightOperatorRequest(
     intentRef: raw.intent_ref as string,
     intentDigest: raw.intent_digest as string,
     artifactRef: typeof raw.artifact_ref === "string" ? raw.artifact_ref : undefined,
+    transport: requireBindingString(raw.transport, "transport"),
+    remoteDir: typeof raw.remote_dir === "string" ? raw.remote_dir : undefined,
+    jobId: typeof raw.job_id === "string" ? raw.job_id : undefined,
+    executionSummary: isPlainObject(raw.execution_summary) ? raw.execution_summary : {},
   };
 }
 
@@ -333,6 +374,15 @@ function validateOperatorRequest(request: OperatorRequest): OperatorRequest {
     throw new Error(`${request.operation} does not accept artifactRef`);
   }
   return request;
+}
+
+function requireBindingString(value: unknown, label: string): string {
+  if (typeof value !== "string" || !value) throw new Error(`compute preflight has no ${label}`);
+  return value;
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
 function compactCompletedActions(actions: ActionLog) {

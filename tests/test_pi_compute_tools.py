@@ -7,37 +7,53 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_SCHEMA = ROOT / "compute-agent" / "output-schema.cjs"
+AUTHORIZATION = ROOT / "extensions" / "ts-workflow-compute" / "authorization.cjs"
 
 
-def test_pi_package_registers_only_non_submit_compute_extension() -> None:
+def test_pi_package_registers_one_compute_operator_extension() -> None:
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     extensions = package["pi"]["extensions"]
 
     assert "./extensions/ts-workflow-compute/index.ts" in extensions
-    assert not [value for value in extensions if "submit" in value or "cancel" in value]
+    assert [value for value in extensions if "ts-workflow-compute" in value] == [
+        "./extensions/ts-workflow-compute/index.ts"
+    ]
 
 
 def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -> None:
     source = (ROOT / "extensions" / "ts-workflow-compute" / "index.ts").read_text(encoding="utf-8")
+    output_schema = OUTPUT_SCHEMA.read_text(encoding="utf-8")
     names = {
         "ts_workspace_compute_prepare",
+        "ts_workspace_compute_submit",
         "ts_workspace_compute_status",
         "ts_workspace_compute_tail",
         "ts_workspace_compute_collect",
+        "ts_workspace_compute_cancel",
         "ts_workspace_compute_parse",
     }
 
     for name in names:
         assert f'"{name}"' in source
+    for operation, name in {
+        "prepare": "ts_workspace_compute_prepare",
+        "submit": "ts_workspace_compute_submit",
+        "inspect": "ts_workspace_compute_status",
+        "collect": "ts_workspace_compute_collect",
+        "cancel": "ts_workspace_compute_cancel",
+        "parse": "ts_workspace_compute_parse",
+    }.items():
+        assert f'{operation}: "{name}"' in output_schema
     assert 'name: "ts_workspace_compute_operator"' in source
     assert "createScopedComputeTools" in source
     assert "runComputeOperator" in source
     assert "completed compute actions" in source
     assert 'pi.appendEntry("ts-workspace-compute-operator-failed"' in source
-    assert "ts_workspace_compute_submit" not in source
-    assert "ts_workspace_compute_cancel" not in source
     assert "command:" not in source
-    assert "authorization" not in source
+    assert "authorizeComputeControl(ctx, request)" in source
+    assert "ctx.hasUI" not in source
+    assert "authorized" not in source
+    assert "additionalProperties: false" in source
     assert "executionMode: \"sequential\"" in source
     assert "runComputeJson" in source
     assert "nodeId: Type.String" in source
@@ -80,9 +96,62 @@ def test_compute_operator_runtime_is_fresh_isolated_and_tool_scoped() -> None:
     assert "parseAndValidateOperatorReport" in runtime
     assert "noTools: \"all\"" not in runtime
     assert "Program completion is not evidence" in prompt
-    assert "submit or cancel" in prompt
+    assert "For `submit` or `cancel`" in prompt
+    assert "never infer, request, copy, or return authorization data" in prompt
     assert "loadBackendSkill(options.backend)" in runtime
     assert "Selected private backend skill" in runtime
+
+
+def test_compute_control_authorization_fails_closed_and_is_request_scoped(tmp_path: Path) -> None:
+    script = (
+        f"const helper=require({json.dumps(str(AUTHORIZATION))});"
+        "const mode=process.argv[1];"
+        "const calls=[];"
+        "const request={operation:mode==='cancel'?'cancel':'submit',intentId:'calc_test',"
+        "intentDigest:'sha256:'+('a'.repeat(64)),backend:'gaussian',nodeId:'n001',"
+        "transport:'mcp',remoteDir:'runs/n001',jobId:'42001.cluster',"
+        "executionSummary:{kind:'remote',transport:'mcp',remote_dir:'runs/n001',queue:'workq'}};"
+        "const ctx=mode==='headless'?{hasUI:false,ui:{confirm:async()=>{calls.push('bad');return true;}}}:"
+        "{hasUI:true,ui:{confirm:async(title,message)=>{calls.push({title,message});return mode==='approve'||mode==='cancel';}}};"
+        "helper.authorizeComputeControl(ctx,request).then(value=>{"
+        "process.stdout.write(JSON.stringify({ok:true,value:value===undefined?'undefined':value,calls}));"
+        "}).catch(error=>{process.stdout.write(JSON.stringify({ok:false,error:String(error.message||error),calls}));});"
+    )
+
+    def invoke(mode: str) -> dict[str, object]:
+        completed = subprocess.run(
+            ["node", "-e", script, mode],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        return json.loads(completed.stdout)
+
+    headless = invoke("headless")
+    assert headless["ok"] is False
+    assert "interactive Pi host confirmation" in headless["error"]
+    assert headless["calls"] == []
+
+    denied = invoke("deny")
+    assert denied["ok"] is False
+    assert "not authorized by the user" in denied["error"]
+    assert len(denied["calls"]) == 1
+
+    approved = invoke("approve")
+    assert approved["ok"] is True
+    assert approved["value"] == "undefined"
+    assert len(approved["calls"]) == 1
+    message = approved["calls"][0]["message"]
+    assert "Intent: calc_test" in message
+    assert "queue" in message
+    assert "applies only to this call" in message
+    assert "token" not in message.lower()
+
+    cancelled = invoke("cancel")
+    assert cancelled["ok"] is True
+    assert "Bound job: 42001.cluster" in cancelled["calls"][0]["message"]
 
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     assert package["pi"]["skills"] == ["."]

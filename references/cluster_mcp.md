@@ -64,6 +64,10 @@ Pi principal must not receive.
 - every expected artifact path;
 - the complete queue, resources, environment, and GPU-device request.
 
+The execution environment rejects credential-like keys and
+`TS_CLUSTER_MCP_*`; connection and authentication settings stay on the Pi host
+and cluster service, outside scheduler job data.
+
 The server stores this request before `qsub`. An identical submitted request is
 replayed without another scheduler call. Reusing a `submission_id` with changed
 content is rejected. A scheduler ID is persisted immediately after a successful
@@ -88,7 +92,19 @@ digest-bound uploads, binds downloads to a server-side SHA-256 descriptor, and
 returns node/intent-bound receipts. Raw cluster
 MCP tools are not registered in the Pi Root Agent or child-agent inventories.
 
-Submission and cancellation still require a separate current-turn host
-authorization design before Pi public tools may expose them. The presence of
-the MCP client and server is not authorization to perform external side
-effects.
+The calculation intent selects `transport=mcp` but contains no endpoint, token,
+or credential. Configure the Pi host only:
+
+```bash
+export TS_CLUSTER_MCP_URL=https://cluster.example/mcp
+export TS_CLUSTER_MCP_TOKEN='<at-least-32-random-ascii-characters>'
+export TS_CLUSTER_MCP_TIMEOUT=60
+```
+
+`ts_workspace_compute_operator` exposes submit/cancel through a narrower host
+wrapper. It performs preflight, fails closed when `ctx.hasUI` is false, asks for
+a fresh confirmation containing the bound intent/target/job details, and only
+then creates a fresh child with exactly one request-scoped tool. Confirmation
+is not encoded in model parameters or the task packet. User denial ends the
+call before any child or external operation. The presence of the MCP client and
+server is never standing authorization.

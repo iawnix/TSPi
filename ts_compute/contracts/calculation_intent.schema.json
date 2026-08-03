@@ -55,6 +55,7 @@
           "required": ["kind", "login_host", "compute_host", "remote_dir"],
           "properties": {
             "kind": {"const": "remote"},
+            "transport": {"const": "ssh"},
             "login_host": {"type": "string", "minLength": 1, "maxLength": 255},
             "compute_host": {"type": "string", "minLength": 1, "maxLength": 255},
             "remote_dir": {"type": "string", "minLength": 1, "maxLength": 4096}

@@ -140,11 +140,13 @@ backtrack, or audit boundaries. Each call creates a fresh tool-free session
 with no parent history, root skills, extensions, `AGENTS.md`, or workspace
 write access.
 
-Use `ts_workspace_compute_operator` for one bound `prepare`, `inspect`,
-`collect`, or `parse` operation. Pass the backend selected by the Root Agent.
-The child gets only request-scoped typed tools and one private backend skill.
-It cannot select methods, submit/cancel work, register evidence, or set a
-scientific status.
+Use `ts_workspace_compute_operator` for one bound `prepare`, `submit`,
+`inspect`, `collect`, `cancel`, or `parse` operation. Pass the backend selected
+by the Root Agent. The child gets only request-scoped typed tools and one
+private backend skill. It cannot select methods, change the intent, register
+evidence, or set a scientific status. `submit` and `cancel` fail closed without
+an interactive Pi UI and require a fresh host confirmation before the child is
+created; no authorization field is passed to the child.
 
 Use `ts_workspace_render_operator` for one node-owned local render,
 `ts_workspace_report_operator` for one new validated report package, and
@@ -178,14 +180,19 @@ New attempt authority lives under:
 nodes/<node>/attempts/<intent>/
 ```
 
-A remote target must declare `authority=execution_mirror`. Long jobs outlive
-child sessions; inspect only when state changes or a bounded failure diagnostic
-is needed. Do not poll unchanged jobs every turn.
+A remote target must declare `authority=execution_mirror` and selects
+`transport=ssh|mcp`; omitted transport on legacy SSH targets means `ssh`. MCP
+connection URL, token, and timeout are host environment settings, never intent
+fields. Long jobs outlive child sessions; inspect only when state changes or a
+bounded failure diagnostic is needed. Do not poll unchanged jobs every turn.
+Before SSH cancellation, inspect once to bind the current remote PID.
 
 When a configured scheduler service is used, follow
 `references/cluster_mcp.md`. Preserve its manifest and idempotency bindings;
 never retry an ambiguous submit or cancel with the same or a new identifier
 until the scheduler state has been reconciled by the host.
+An `unresolved_controls` context entry means a pre-side-effect guard has no
+final result; stop automatic control and reconcile the scheduler manually.
 
 ## Evidence And Audits
 

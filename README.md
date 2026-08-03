@@ -16,7 +16,8 @@ remain readable and closable, but they are not the model for new studies.
 
 - `ts_workspace`: the only canonical research-state control plane.
 - `ts_compute` and `ts_backends`: typed calculation intents, preparation,
-  status, collection, and deterministic parsing.
+  host-authorized submission/cancellation, status, collection, and
+  deterministic parsing.
 - `cluster_mcp` and `ts_remote.mcp`: authenticated, manifest-bound file
   transfer and OpenPBS/Torque execution without scientific authority.
 - `subagents/`: fresh Pi review sessions and the shared
@@ -130,7 +131,9 @@ Pi also exposes:
 
 - `ts_workspace_subagent`: fresh, tool-free advisory scientific review.
 - `ts_workspace_compute_operator`: fresh backend operator with only the typed
-  tools bound to one `prepare`, `inspect`, `collect`, or `parse` request.
+  tools bound to one `prepare`, `submit`, `inspect`, `collect`, `cancel`, or
+  `parse` request. `submit/cancel` require a fresh interactive host confirmation
+  on every call and are unavailable in headless Pi sessions.
 - `ts_workspace_render_operator`: node-scoped local render with bound paths.
 - `ts_workspace_report_operator`: validated report-package build under
   `reports/`.
@@ -181,6 +184,12 @@ New calculation intents use `ts-calculation-intent/2` and declare:
 - one allowlisted backend and task type
 - a local or allowlisted remote execution target
 
+Remote intents select `transport=ssh|mcp`. Legacy remote intents without the
+field remain SSH-compatible. SSH policy comes from `TS_COMPUTE_*`; MCP
+connection settings come only from `TS_CLUSTER_MCP_URL`,
+`TS_CLUSTER_MCP_TOKEN`, and `TS_CLUSTER_MCP_TIMEOUT`. Endpoints and credentials
+are forbidden in calculation intents.
+
 All local authority for one attempt lives under:
 
 ```text
@@ -188,6 +197,8 @@ nodes/<node>/attempts/<intent>/
 ├── intent.json
 ├── prepared.json
 ├── status.json
+├── submit_guard.json / submit_result.json
+├── cancel_guard.json / cancel_result.json
 └── outputs/
 ```
 
@@ -199,8 +210,10 @@ For scheduler-backed execution, the bundled TS Cluster MCP binds one
 `submission_id` to the intent digest, complete input manifest, expected
 artifacts, and resource request. It persists known scheduler IDs across
 post-`qsub` failures and forbids automatic retry after ambiguous submission or
-cancellation outcomes. It is a host-side execution boundary, not a public Pi
-tool or a source of scientific evidence. Deployment and scope rules are in
+cancellation outcomes. Raw MCP tools are a host-side boundary and are not in
+the Root or child inventories; the public compute operator creates one scoped
+wrapper only after current-call authorization. Scheduler records are not
+scientific evidence. Deployment and scope rules are in
 `references/cluster_mcp.md`.
 
 ## Agent Protocol

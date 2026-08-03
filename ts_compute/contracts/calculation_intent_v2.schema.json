@@ -40,9 +40,22 @@
           "properties": {
             "kind": {"const": "remote"},
             "authority": {"const": "execution_mirror"},
+            "transport": {"const": "ssh"},
             "login_host": {"type": "string", "minLength": 1, "maxLength": 255},
             "compute_host": {"type": "string", "minLength": 1, "maxLength": 255},
             "remote_dir": {"type": "string", "minLength": 1, "maxLength": 4096}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "authority", "transport", "remote_dir", "execution"],
+          "properties": {
+            "kind": {"const": "remote"},
+            "authority": {"const": "execution_mirror"},
+            "transport": {"const": "mcp"},
+            "remote_dir": {"type": "string", "minLength": 1, "maxLength": 4096},
+            "execution": {"$ref": "#/$defs/mcp_execution"}
           },
           "additionalProperties": false
         }
@@ -57,5 +70,34 @@
       "else": {"properties": {"recalculation_ref": {"type": "null"}}}
     }
   ],
+  "$defs": {
+    "mcp_execution": {
+      "type": "object",
+      "required": ["queue", "nodes", "ncpus", "memory", "walltime", "ngpus", "mpiprocs", "ompthreads", "host", "place", "environment", "gpu_devices"],
+      "properties": {
+        "queue": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"},
+        "nodes": {"type": "integer", "minimum": 1},
+        "ncpus": {"type": "integer", "minimum": 1},
+        "memory": {"type": "string", "pattern": "^[1-9][0-9]*(?:kb|mb|gb|tb)$"},
+        "walltime": {"type": "string", "pattern": "^[0-9]{1,4}:[0-5][0-9]:[0-5][0-9]$"},
+        "ngpus": {"type": "integer", "minimum": 0},
+        "mpiprocs": {"type": ["integer", "null"], "minimum": 1},
+        "ompthreads": {"type": ["integer", "null"], "minimum": 1},
+        "host": {"type": ["string", "null"], "maxLength": 128},
+        "place": {"type": ["string", "null"], "enum": [null, "free", "pack", "scatter", "excl", "shared"]},
+        "environment": {
+          "type": "object",
+          "propertyNames": {"pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+          "additionalProperties": {"type": "string", "maxLength": 16384}
+        },
+        "gpu_devices": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {"type": "integer", "minimum": 0, "maximum": 63}
+        }
+      },
+      "additionalProperties": false
+    }
+  },
   "additionalProperties": false
 }

@@ -9,12 +9,14 @@ from typing import Any
 
 from .contracts import ComputeContractError
 from .control import (
+    cancel_calculation,
     calculation_status,
     calculation_tail,
     collect_calculation,
     parse_calculation,
     preflight_calculation,
     prepare_calculation,
+    submit_calculation,
 )
 
 
@@ -29,14 +31,18 @@ def main(argv: list[str] | None = None) -> int:
 
     preflight = sub.add_parser("preflight")
     preflight.add_argument("--root", required=True)
-    preflight.add_argument("--operation", required=True, choices=("prepare", "inspect", "collect", "parse"))
+    preflight.add_argument(
+        "--operation",
+        required=True,
+        choices=("prepare", "submit", "inspect", "collect", "cancel", "parse"),
+    )
     preflight.add_argument("--node-id", required=True)
     preflight.add_argument("--backend", required=True)
     preflight.add_argument("--intent-file")
     preflight.add_argument("--intent-id")
     preflight.add_argument("--artifact-ref")
 
-    for command in ("status", "tail", "collect", "parse"):
+    for command in ("submit", "status", "tail", "collect", "cancel", "parse"):
         item = sub.add_parser(command)
         item.add_argument("--root", required=True)
         item.add_argument("--intent-id", required=True)
@@ -48,6 +54,8 @@ def main(argv: list[str] | None = None) -> int:
             item.add_argument("--artifact", action="append", default=[])
         elif command == "parse":
             item.add_argument("--artifact-ref", required=True)
+        elif command == "cancel":
+            item.add_argument("--expected-job-id")
 
     args = parser.parse_args(argv)
     try:
@@ -72,12 +80,21 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
         )
     if args.command == "prepare":
         return prepare_calculation(args.root, args.intent_file, args.expected_intent_digest)
+    if args.command == "submit":
+        return submit_calculation(args.root, args.intent_id, args.expected_intent_digest)
     if args.command == "status":
         return calculation_status(args.root, args.intent_id, args.expected_intent_digest)
     if args.command == "tail":
         return calculation_tail(args.root, args.intent_id, args.artifact, args.lines, args.expected_intent_digest)
     if args.command == "collect":
         return collect_calculation(args.root, args.intent_id, args.artifact or None, args.expected_intent_digest)
+    if args.command == "cancel":
+        return cancel_calculation(
+            args.root,
+            args.intent_id,
+            args.expected_intent_digest,
+            args.expected_job_id,
+        )
     if args.command == "parse":
         return parse_calculation(args.root, args.intent_id, args.artifact_ref, args.expected_intent_digest)
     raise ComputeContractError(f"unknown compute command: {args.command}")

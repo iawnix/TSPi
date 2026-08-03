@@ -106,6 +106,7 @@ class _ServiceCaller:
             return self.service.download_chunk(
                 str(arguments["path"]),
                 offset=int(arguments.get("offset", 0)),
+                max_bytes=(int(arguments["max_bytes"]) if arguments.get("max_bytes") is not None else None),
             )
         if name == "ts_submit_job":
             return self.service.submit_ts_job(dict(arguments["request"]))
@@ -427,6 +428,10 @@ def test_ts_mcp_client_upload_submit_status_and_download(tmp_path: Path) -> None
     assert receipt.scheduler_id == "42001.cluster"
     assert receipt.metadata["submission_id"] == request["submission_id"]
     assert client.status("tsjob_client_000001", include_history=True)["scheduler"]["state"] == "F"
+
+    tail = client.read_tail(source_remote, max_bytes=16)
+    assert tail["data"] == source.read_bytes()[-16:]
+    assert tail["size"] == source.stat().st_size
 
     downloaded = tmp_path / "downloaded.gjf"
     result = client.download_file(source_remote, downloaded, expected_sha256=hashlib.sha256(source.read_bytes()).hexdigest())

@@ -12,14 +12,24 @@
 - record receipts.
 
 Remote helpers do not parse chemistry and do not write workspace verdicts.
-Receipts should be stored under `nodes/<node_id>/remote/` and then registered as
-evidence or provenance through `ts_workspace`.
+Receipts and status records stay under the calculation attempt as operational
+provenance. They are never evidence by themselves.
 
 For scheduler-backed execution, `ts_remote.mcp` talks to the bundled
 `cluster_mcp` service through `ts-cluster-job/1`. Use it for manifest-bound
 transfer, submission, status, collection, and explicit cancellation. Read
 `cluster_mcp.md` before configuring scopes or transport. Raw MCP tools remain a
 host implementation boundary and are not registered into Pi agent sessions.
+The Root compute operator may create one request-scoped submit or cancel wrapper
+only after an interactive current-call confirmation.
+
+`execution_target.transport` selects `ssh` or `mcp`. SSH uses an absolute
+allowlisted `remote_dir`; MCP uses a principal-workspace-relative `remote_dir`
+and complete scheduler resources. Legacy remote targets without `transport`
+remain SSH-compatible. MCP connection URL, token, and timeout come only from
+`TS_CLUSTER_MCP_URL`, `TS_CLUSTER_MCP_TOKEN`, and `TS_CLUSTER_MCP_TIMEOUT`.
+SSH cancellation requires a previously inspected PID and verifies that the
+remote PID file still matches before sending a signal.
 
 Backends expose calculation intent as `PreparedTask` data: command, input paths,
 environment, and expected artifacts. xTB, ASE-NEB, and other local adapters feed

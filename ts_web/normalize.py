@@ -47,6 +47,7 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         "decision_events": decision_events,
         "operational_revision": operations["operational_revision"],
         "operational_summary": operations["operational_summary"],
+        "pending_controls": operations["pending_controls"],
         "agent_runs": agent_runs,
         "pathways": _list(pathway_model.get("pathways")),
         "evidence": evidence_records,

@@ -267,10 +267,16 @@ def tail(config: RemoteJobConfig, *, artifact: str | None = None, lines: int = 8
     return completed.stdout
 
 
-def kill(config: RemoteJobConfig) -> RemoteJobStatus:
+def kill(config: RemoteJobConfig, *, expected_pid: str | None = None) -> RemoteJobStatus:
+    expected = shlex.quote(expected_pid or "")
     remote = (
         f"cd {shlex.quote(config.remote_dir)} 2>/dev/null || exit 3\n"
         f"pid=$(cat {shlex.quote(config.pid_name)} 2>/dev/null || true)\n"
+        f"expected_pid={expected}\n"
+        "if [[ -n \"$expected_pid\" && \"$pid\" != \"$expected_pid\" ]]; then\n"
+        "    echo \"remote PID changed before cancellation\" >&2\n"
+        "    exit 6\n"
+        "fi\n"
         "if [[ -n \"$pid\" ]]; then kill \"$pid\" 2>/dev/null || true; fi\n"
         "end_time=$(date -Is)\n"
         f"cat > {shlex.quote(config.status_name)} <<EOF\n"

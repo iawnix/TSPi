@@ -5,8 +5,10 @@ const { validateAgentResult, validateAgentTask } = require("../subagents/agent-p
 const MAX_OUTPUT_BYTES = 16 * 1024;
 const REQUIRED_TOOLS = {
   prepare: "ts_workspace_compute_prepare",
+  submit: "ts_workspace_compute_submit",
   inspect: "ts_workspace_compute_status",
   collect: "ts_workspace_compute_collect",
+  cancel: "ts_workspace_compute_cancel",
   parse: "ts_workspace_compute_parse",
 };
 
