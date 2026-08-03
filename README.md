@@ -213,8 +213,9 @@ post-`qsub` failures and forbids automatic retry after ambiguous submission or
 cancellation outcomes. Raw MCP tools are a host-side boundary and are not in
 the Root or child inventories; the public compute operator creates one scoped
 wrapper only after current-call authorization. Scheduler records are not
-scientific evidence. Deployment and scope rules are in
-`references/cluster_mcp.md`.
+scientific evidence. Complete server installation, `cluster-mcp check`, token
+mapping, SSH-tunnel and direct-HTTPS setup, Pi smoke testing, systemd operation,
+and scope rules are in `references/cluster_mcp.md`.
 
 ## Agent Protocol
 

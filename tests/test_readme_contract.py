@@ -14,6 +14,7 @@ DECISION_CONTRACT = ROOT / "references" / "decision_contract.md"
 PATHWAY_MODEL = ROOT / "references" / "pathway_model.md"
 REPORT_TEMPLATE = ROOT / "references" / "report_template.md"
 WORKSPACE_CONTRACT = ROOT / "references" / "workspace_contract.md"
+CLUSTER_MCP = ROOT / "references" / "cluster_mcp.md"
 TEMPLATE_README = ROOT / "templates" / "decision" / "README.md"
 UPDATE_CANDIDATE_EVIDENCE = ROOT / "templates" / "decision" / "update_candidate_evidence.json"
 UPDATE_TSFREQ_EVIDENCE = ROOT / "templates" / "decision" / "update_tsfreq_evidence.json"
@@ -55,6 +56,25 @@ def test_readme_keeps_render_dependency_boundary_explicit() -> None:
 
     assert "`ts_render` uses `xyzrender` only" in text
     assert "does not require or probe Blender, FFmpeg, OpenBabel, Mayavi, or" in text
+
+
+def test_cluster_mcp_documentation_covers_secure_installation_and_pi_smoke() -> None:
+    readme_text = README.read_text(encoding="utf-8")
+    mcp_text = CLUSTER_MCP.read_text(encoding="utf-8")
+
+    assert "Complete server installation, `cluster-mcp check`, token" in readme_text
+    for phrase in [
+        "## Install the Server Environment",
+        "scripts/ts_cluster_mcp.py\" check",
+        "It does not call `qsub` or `qdel`.",
+        "ssh -N -L 127.0.0.1:8765:127.0.0.1:8765 cluster-login",
+        "TS_CLUSTER_MCP_TOKEN` | the same bearer secret",
+        "## Use Direct HTTPS",
+        "cluster_capabilities",
+        "## Run Under systemd",
+        "Do not run the service as `root`.",
+    ]:
+        assert phrase in mcp_text
 
 
 def test_candidate_generation_does_not_default_to_qst_from_endpoints() -> None:
