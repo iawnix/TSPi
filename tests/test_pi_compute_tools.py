@@ -45,6 +45,9 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     }.items():
         assert f'{operation}: "{name}"' in output_schema
     assert 'name: "ts_workspace_compute_operator"' in source
+    assert 'name: "ts_workspace_mcp_status"' in source
+    assert 'pi.registerCommand("ts-mcp"' in source
+    assert "Usage: /ts-mcp status|doctor|queues" in source
     assert "createScopedComputeTools" in source
     assert "runComputeOperator" in source
     assert "completed compute actions" in source
@@ -56,7 +59,11 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     assert "additionalProperties: false" in source
     assert "executionMode: \"sequential\"" in source
     assert "runComputeJson" in source
+    assert "runMcpDiagnosticJson" in source
     assert "nodeId: Type.String" in source
+    assert source.index("await requireHealthyMcpConnection") < source.index("await authorizeComputeControl")
+    assert 'request.transport === "mcp"' in source
+    assert "MCP_PREFLIGHT_OPERATIONS" in source
 
 
 def test_compute_contracts_exclude_workspace_verdicts_and_arbitrary_commands() -> None:

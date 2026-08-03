@@ -311,23 +311,22 @@ export RUNTIME_PYTHON="$(
 ```
 
 With the SSH tunnel or HTTPS endpoint active and all `TS_CLUSTER_MCP_*`
-variables exported, call only the read-only `cluster_capabilities` tool through
-the typed client:
+variables exported, run the packaged read-only diagnostic through the Pi
+workspace runtime. Its `status` and `doctor` modes call only
+`cluster_capabilities`:
 
 ```bash
-PYTHONPATH="$TS_AGENT_SKILL_ROOT" "$RUNTIME_PYTHON" - <<'PY'
-from ts_remote.mcp import MCPConnectionSettings, SDKToolCaller, TSClusterMCPClient
-
-settings = MCPConnectionSettings.from_environment()
-client = TSClusterMCPClient(SDKToolCaller(settings))
-print(client.capabilities())
-PY
+PYTHONPATH="$TS_AGENT_SKILL_ROOT" "$RUNTIME_PYTHON" \
+  "$TS_AGENT_SKILL_ROOT/scripts/ts_compute.py" mcp-diagnostic --mode doctor
 ```
 
 The result should report `server = cluster-mcp`, the expected scheduler,
 principal `pi-ts`, workspace prefix, queue allowlist, and TS scopes. This smoke
 test does not submit, cancel, upload, overwrite, or register scientific
-evidence. Start Pi from the same environment after it passes.
+evidence. Start Pi from the same environment after it passes, then use
+`/ts-mcp status` or `/ts-mcp queues` for user-facing checks. The Agent sees the
+read-only `ts_workspace_mcp_status` tool registration without receiving an MCP
+report on every turn.
 
 ## Run Under systemd
 
@@ -465,7 +464,8 @@ selects `transport=mcp` but never contains the endpoint, bearer token, or other
 credentials.
 
 `ts_workspace_compute_operator` exposes submission and cancellation through a
-narrow host wrapper. It performs preflight, fails closed without an interactive
-UI, asks for a fresh confirmation containing the bound intent and target, and
-only then creates a fresh child with exactly one request-scoped tool. The
-presence of the MCP client, server, or scopes is never standing authorization.
+narrow host wrapper. It binds the intent, performs a read-only MCP connection
+preflight, fails closed without an interactive UI, asks for a fresh confirmation
+containing the bound intent and target, and only then creates a fresh child with
+exactly one request-scoped tool. The presence of the MCP client, server, or
+scopes is never standing authorization.

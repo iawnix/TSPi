@@ -118,14 +118,22 @@ rejected.
 
 ## Backend Operator
 
+`ts_workspace_mcp_status` gives the Root Agent an on-demand read-only MCP
+surface with `status`, `doctor`, and `queues` modes. The equivalent user command
+is `/ts-mcp status|doctor|queues`. Neither surface uploads files, controls jobs,
+or injects an MCP report every turn.
+
 `ts_workspace_compute_operator` creates a separate fresh session with only the
 typed tools needed for one operation. The Root Agent supplies the selected
 backend. The runtime loads exactly one matching private backend skill from
 `agent-skills/`; no other private skill enters the child context.
 
-Available operations are `prepare`, `inspect`, `collect`, and `parse`. Submit
-and cancel are absent. The output validator binds IDs, state, program outcome,
-error class, and artifact refs to actual typed-tool results.
+Available operations are `prepare`, `submit`, `inspect`, `collect`, `cancel`,
+and `parse`. Submit and cancel require fresh interactive host confirmation on
+every call and fail closed in headless Pi. MCP-backed control, inspection, and
+collection run a read-only connection preflight before confirmation or child
+creation. The output validator binds IDs, state, program outcome, error class,
+and artifact refs to actual typed-tool results.
 
 Long-running jobs are external processes, not persistent LLM sessions. Invoke
 `inspect` on meaningful state changes or failure diagnosis, not every turn.

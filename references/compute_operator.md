@@ -177,6 +177,12 @@ stops before child creation. Ambiguous submission or cancellation is written to
 an immutable control result and cannot be automatically replayed. An exclusive
 control guard is written before the first remote side effect; a guard without a
 final result means the host was interrupted and requires manual reconciliation.
+For MCP `submit`, `inspect`, `collect`, and `cancel`, intent binding is followed
+by a read-only `cluster_capabilities` probe before confirmation or child
+creation. A failed probe stops the operation with a classified, redacted error.
+Use `ts_workspace_mcp_status` or `/ts-mcp doctor` for details and `/ts-mcp
+queues` for the read-only scheduler queue list. These diagnostics never expose
+raw MCP mutation tools.
 MCP submission returns its scheduler ID immediately. SSH cancellation requires
 one prior `inspect` so the confirmation and remote kill are both bound to the
 observed PID; a changed PID is rejected remotely before signaling a process.

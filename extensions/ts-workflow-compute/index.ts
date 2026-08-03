@@ -4,7 +4,12 @@ import { Type } from "typebox";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
-import { requireWorkspaceRoot, runComputeJson, runWorkspaceJson } from "../shared/workspace-cli.ts";
+import {
+  requireWorkspaceRoot,
+  runComputeJson,
+  runMcpDiagnosticJson,
+  runWorkspaceJson,
+} from "../shared/workspace-cli.ts";
 import { runComputeOperator } from "../../compute-agent/runtime.ts";
 
 const require = createRequire(import.meta.url);
@@ -13,6 +18,8 @@ const { beginAgentRun, completeAgentRun, failAgentRun } = require("../../subagen
 const { authorizeComputeControl } = require("./authorization.cjs");
 const OPERATIONS = ["prepare", "submit", "inspect", "collect", "cancel", "parse"] as const;
 const BACKENDS = ["gaussian", "ase_neb", "xtb", "qbics_dmecp"] as const;
+const MCP_DIAGNOSTIC_MODES = ["status", "doctor", "queues"] as const;
+const MCP_PREFLIGHT_OPERATIONS = new Set(["submit", "inspect", "collect", "cancel"]);
 
 type OperatorRequest = {
   operation: typeof OPERATIONS[number];
@@ -35,6 +42,28 @@ type OperatorRequest = {
 type ActionLog = { tool: string; result: Record<string, unknown> }[];
 
 export default function (pi: ExtensionAPI) {
+  pi.registerTool({
+    name: "ts_workspace_mcp_status",
+    label: "TS Workspace MCP Status",
+    description: "Run a read-only TS Cluster MCP status, diagnostic, or queue probe. Use only for an MCP calculation request, explicit MCP diagnostics, or a connection failure; do not call every turn or poll unchanged status.",
+    promptSnippet: "Diagnose the configured TS Cluster MCP connection without changing jobs or files",
+    promptGuidelines: [
+      "Use mode=status before preparing an MCP calculation when connection health is unknown.",
+      "Use mode=doctor after configuration, connection, timeout, authentication, or protocol failures.",
+      "Use mode=queues only when queue selection or queue availability is relevant.",
+      "This tool is read-only and cannot upload files, submit jobs, cancel jobs, mutate workspace state, or authorize compute control.",
+    ],
+    executionMode: "sequential",
+    parameters: Type.Object({
+      mode: Type.Optional(StringEnum(MCP_DIAGNOSTIC_MODES)),
+    }, { additionalProperties: false }),
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const mode = params.mode || "status";
+      const result = await runMcpDiagnosticJson(pi, mode, ctx.cwd, signal);
+      return toolText(JSON.stringify(result, null, 2), { result });
+    },
+  });
+
   pi.registerTool({
     name: "ts_workspace_compute_operator",
     label: "TS Compute Operator",
@@ -85,6 +114,9 @@ export default function (pi: ExtensionAPI) {
       request.remoteDir = binding.remoteDir;
       request.jobId = binding.jobId;
       request.executionSummary = binding.executionSummary;
+      if (request.transport === "mcp" && MCP_PREFLIGHT_OPERATIONS.has(request.operation)) {
+        await requireHealthyMcpConnection(pi, root, request.operation, signal);
+      }
       if (request.operation === "submit" || request.operation === "cancel") {
         await authorizeComputeControl(ctx, request);
       }
@@ -189,6 +221,44 @@ export default function (pi: ExtensionAPI) {
       });
     },
   });
+
+  pi.registerCommand("ts-mcp", {
+    description: "Show read-only TS Cluster MCP status, diagnostics, or queues.",
+    handler: async (args, ctx) => {
+      const candidate = String(args || "").trim();
+      if (!MCP_DIAGNOSTIC_MODES.includes(candidate as typeof MCP_DIAGNOSTIC_MODES[number])) {
+        const usage = "Usage: /ts-mcp status|doctor|queues";
+        ctx.ui.setWidget("ts-workspace-mcp", [usage]);
+        ctx.ui.notify(usage, "warning");
+        return;
+      }
+      const mode = candidate as typeof MCP_DIAGNOSTIC_MODES[number];
+      const result = await runMcpDiagnosticJson(pi, mode, ctx.cwd, ctx.signal);
+      ctx.ui.setWidget("ts-workspace-mcp", JSON.stringify(result, null, 2).split("\n"));
+      ctx.ui.notify(
+        result.ok === true ? `TS Cluster MCP ${mode} passed` : `TS Cluster MCP ${mode} failed`,
+        result.ok === true ? "info" : "warning",
+      );
+    },
+  });
+}
+
+async function requireHealthyMcpConnection(
+  pi: ExtensionAPI,
+  root: string,
+  operation: OperatorRequest["operation"],
+  signal?: AbortSignal,
+) {
+  const result = await runMcpDiagnosticJson(pi, "status", root, signal);
+  if (!isPlainObject(result) || result.schema_version !== "ts-mcp-diagnostic/1") {
+    throw new Error("MCP connection preflight returned an invalid diagnostic result");
+  }
+  if (result.ok !== true) {
+    const error = isPlainObject(result.error) ? result.error : {};
+    const errorClass = typeof error.class === "string" ? error.class : "unknown_error";
+    const message = typeof error.message === "string" ? error.message : "MCP connection is unavailable";
+    throw new Error(`MCP ${operation} preflight failed (${errorClass}): ${message}`);
+  }
 }
 
 function createScopedComputeTools(

@@ -18,6 +18,7 @@ from .control import (
     prepare_calculation,
     submit_calculation,
 )
+from .mcp_diagnostics import MCP_DIAGNOSTIC_MODES, diagnose_mcp
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -41,6 +42,9 @@ def main(argv: list[str] | None = None) -> int:
     preflight.add_argument("--intent-file")
     preflight.add_argument("--intent-id")
     preflight.add_argument("--artifact-ref")
+
+    mcp_diagnostic = sub.add_parser("mcp-diagnostic")
+    mcp_diagnostic.add_argument("--mode", choices=sorted(MCP_DIAGNOSTIC_MODES), default="status")
 
     for command in ("submit", "status", "tail", "collect", "cancel", "parse"):
         item = sub.add_parser(command)
@@ -68,6 +72,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
+    if args.command == "mcp-diagnostic":
+        return diagnose_mcp(args.mode)
     if args.command == "preflight":
         return preflight_calculation(
             args.root,

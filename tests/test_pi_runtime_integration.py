@@ -26,6 +26,7 @@ EXPECTED_TOOLS = {
     "ts_workspace_apply",
     "ts_workspace_subagent",
     "ts_workspace_compute_operator",
+    "ts_workspace_mcp_status",
     "ts_workspace_render_operator",
     "ts_workspace_report_operator",
     "ts_workspace_email_operator",

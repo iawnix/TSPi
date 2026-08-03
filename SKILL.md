@@ -148,6 +148,13 @@ evidence, or set a scientific status. `submit` and `cancel` fail closed without
 an interactive Pi UI and require a fresh host confirmation before the child is
 created; no authorization field is passed to the child.
 
+Use `ts_workspace_mcp_status` only when preparing MCP-backed work, answering an
+explicit MCP question, selecting a queue, or diagnosing a connection failure.
+Choose `status`, `doctor`, or `queues`; do not call it every turn or poll an
+unchanged connection. Users may run the same read-only checks with
+`/ts-mcp status|doctor|queues`. MCP submit, cancel, upload, and arbitrary tool
+calls are not exposed by this diagnostic surface.
+
 Use `ts_workspace_render_operator` for one node-owned local render,
 `ts_workspace_report_operator` for one new validated report package, and
 `ts_workspace_email_operator` for one local email draft from a generated report
@@ -185,6 +192,9 @@ A remote target must declare `authority=execution_mirror` and selects
 connection URL, token, and timeout are host environment settings, never intent
 fields. Long jobs outlive child sessions; inspect only when state changes or a
 bounded failure diagnostic is needed. Do not poll unchanged jobs every turn.
+For MCP `submit`, `inspect`, `collect`, and `cancel`, the host automatically
+runs a read-only capability probe after intent binding and before confirmation
+or child creation.
 Before SSH cancellation, inspect once to bind the current remote PID.
 
 When a configured scheduler service is used, follow

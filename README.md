@@ -130,6 +130,9 @@ The workspace control surface is exactly:
 Pi also exposes:
 
 - `ts_workspace_subagent`: fresh, tool-free advisory scientific review.
+- `ts_workspace_mcp_status`: read-only `status`, `doctor`, or `queues` probe
+  for the configured TS Cluster MCP. It has no upload, submit, cancel, or
+  workspace mutation capability.
 - `ts_workspace_compute_operator`: fresh backend operator with only the typed
   tools bound to one `prepare`, `submit`, `inspect`, `collect`, `cancel`, or
   `parse` request. `submit/cancel` require a fresh interactive host confirmation
@@ -139,6 +142,10 @@ Pi also exposes:
   `reports/`.
 - `ts_workspace_email_operator`: local draft JSON from a generated report
   summary and explicit recipients. Sending is unavailable.
+
+Users can run the same MCP diagnostics with
+`/ts-mcp status|doctor|queues`. The command and Agent tool are on demand; they
+do not add MCP output to every turn's context.
 
 `before_agent_start` injects only a short control-plane reminder. It does not
 inject a full workspace report every turn. Use `mode=delta` with the last
@@ -212,7 +219,8 @@ artifacts, and resource request. It persists known scheduler IDs across
 post-`qsub` failures and forbids automatic retry after ambiguous submission or
 cancellation outcomes. Raw MCP tools are a host-side boundary and are not in
 the Root or child inventories; the public compute operator creates one scoped
-wrapper only after current-call authorization. Scheduler records are not
+wrapper only after a read-only connection preflight and current-call
+authorization. Scheduler records are not
 scientific evidence. Complete server installation, `cluster-mcp check`, token
 mapping, SSH-tunnel and direct-HTTPS setup, Pi smoke testing, systemd operation,
 and scope rules are in `references/cluster_mcp.md`.

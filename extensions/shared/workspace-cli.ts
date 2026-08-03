@@ -62,6 +62,22 @@ export async function runComputeJson(
   return parseJsonOutput(result);
 }
 
+export async function runMcpDiagnosticJson(
+  pi: ExtensionAPI,
+  mode: "status" | "doctor" | "queues",
+  cwd: string,
+  signal?: AbortSignal,
+  timeoutMs = 75_000,
+) {
+  const workspaceRoot = resolveWorkspaceRoot("", cwd) || undefined;
+  const python = await resolvePythonExecutable(pi, workspaceRoot, signal);
+  const operationSignal = deadlineSignal(signal, timeoutMs);
+  const result = await pi.exec(python, [COMPUTE_CLI, "mcp-diagnostic", "--mode", mode], {
+    signal: operationSignal,
+  });
+  return parseJsonOutput(result);
+}
+
 export async function runRenderJson(
   pi: ExtensionAPI,
   root: string,
@@ -120,7 +136,7 @@ export function requireWorkspaceRoot(inputRoot: string | undefined, cwd: string)
 
 async function resolvePythonExecutable(
   pi: ExtensionAPI,
-  workspaceRoot: string,
+  workspaceRoot: string | undefined,
   signal?: AbortSignal,
 ): Promise<string> {
   if (process.env.TS_AGENT_PYTHON) {
@@ -136,9 +152,12 @@ async function resolvePythonExecutable(
     return configured;
   }
   try {
+    const args = [RUNTIME_CLI, "resolve", "--package-root", PACKAGE_ROOT];
+    if (workspaceRoot) args.push("--workspace-root", workspaceRoot);
+    args.push("--json");
     const result = await pi.exec(
       "python3",
-      [RUNTIME_CLI, "resolve", "--package-root", PACKAGE_ROOT, "--workspace-root", workspaceRoot, "--json"],
+      args,
       { signal },
     );
     const runtime = parseJsonOutput(result);
