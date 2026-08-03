@@ -15,13 +15,16 @@ TOKEN = "diagnostic-secret-token-value-1234567890"
 
 
 class _Caller:
-    def __init__(self, responses: dict[str, dict[str, object]]) -> None:
+    def __init__(self, responses: dict[str, dict[str, object] | Exception]) -> None:
         self.responses = responses
         self.calls: list[tuple[str, dict[str, object]]] = []
 
     def call_tool(self, name: str, arguments: dict[str, object]) -> dict[str, object]:
         self.calls.append((name, arguments))
-        return self.responses[name]
+        response = self.responses[name]
+        if isinstance(response, Exception):
+            raise response
+        return response
 
 
 class _FailingClient:
@@ -80,6 +83,134 @@ def test_mcp_queue_probe_calls_only_list_queues(monkeypatch) -> None:
     assert result["ok"] is True
     assert result["queues"] == queues
     assert caller.calls == [("list_queues", {})]
+
+
+def test_mcp_node_probe_calls_only_list_nodes(monkeypatch) -> None:
+    nodes = [{"name": "compute-0-1", "state": "free", "ncpus_free_total": "24/24"}]
+    caller = _Caller({"list_nodes": {"nodes": nodes}})
+    monkeypatch.setattr(mcp_diagnostics, "_connection_settings", _settings)
+    monkeypatch.setattr(mcp_diagnostics, "_client", lambda _settings: TSClusterMCPClient(caller))
+
+    result = mcp_diagnostics.diagnose_mcp("nodes")
+
+    assert result["ok"] is True
+    assert result["nodes"] == nodes
+    assert caller.calls == [("list_nodes", {})]
+
+
+def test_mcp_cluster_probe_combines_only_read_only_scheduler_views(monkeypatch) -> None:
+    capabilities = {
+        "server": "cluster-mcp",
+        "scheduler": "torque",
+        "allowed_queues": ["batch"],
+    }
+    queues = [
+        {
+            "name": "batch",
+            "allowed_for_submission": True,
+            "enabled": "True",
+            "started": "True",
+            "total_jobs": 3,
+        }
+    ]
+    nodes = [
+        {
+            "name": "compute-0-1",
+            "state": "free",
+            "ncpus_free_total": "24/24",
+            "ngpus_free_total": "0/0",
+            "running_jobs": 0,
+            "jobs": ["unbounded-detail"],
+        }
+    ]
+    caller = _Caller(
+        {
+            "cluster_capabilities": capabilities,
+            "list_queues": {"queues": queues},
+            "list_nodes": {"nodes": nodes},
+        }
+    )
+    monkeypatch.setattr(mcp_diagnostics, "_connection_settings", _settings)
+    monkeypatch.setattr(mcp_diagnostics, "_client", lambda _settings: TSClusterMCPClient(caller))
+
+    result = mcp_diagnostics.diagnose_mcp("cluster")
+
+    assert result["ok"] is True
+    assert result["partial"] is False
+    assert result["capabilities"]["scheduler"] == "torque"
+    assert result["queue_summary"] == {
+        "total_queues": 1,
+        "allowed_for_submission": 1,
+        "gpu_queues": 0,
+        "enabled": 1,
+        "started": 1,
+        "reported_total_jobs": 3,
+    }
+    assert result["node_summary"]["total_nodes"] == 1
+    assert result["node_summary"]["cpu"] == {
+        "reported_nodes": 1,
+        "free": 24,
+        "total": 24,
+        "nodes_with_free": 1,
+    }
+    assert "nodes" not in result
+    assert "queues" not in result
+    assert "unbounded-detail" not in json.dumps(result)
+    assert caller.calls == [
+        ("cluster_capabilities", {}),
+        ("list_queues", {}),
+        ("list_nodes", {}),
+    ]
+
+
+def test_mcp_cluster_probe_retains_partial_results(monkeypatch) -> None:
+    caller = _Caller(
+        {
+            "cluster_capabilities": {"server": "cluster-mcp", "scheduler": "torque"},
+            "list_queues": MCPClientError("queue probe failed"),
+            "list_nodes": {"nodes": [{"state": "free", "ncpus_free_total": "8/16"}]},
+        }
+    )
+    monkeypatch.setattr(mcp_diagnostics, "_connection_settings", _settings)
+    monkeypatch.setattr(mcp_diagnostics, "_client", lambda _settings: TSClusterMCPClient(caller))
+
+    result = mcp_diagnostics.diagnose_mcp("cluster")
+
+    assert result["ok"] is False
+    assert result["partial"] is True
+    assert result["components"] == {"capabilities": "pass", "queues": "fail", "nodes": "pass"}
+    assert result["errors"]["queues"]["class"] == "protocol_error"
+    assert result["node_summary"]["cpu"]["free"] == 8
+
+
+def test_mcp_cluster_probe_output_is_bounded_by_aggregation(monkeypatch) -> None:
+    nodes = [
+        {
+            "name": f"compute-{index}",
+            "state": "free" if index % 2 == 0 else "job-exclusive",
+            "ncpus_free_total": "8/16",
+            "jobs": [f"job-{index}-{item}" for item in range(20)],
+        }
+        for index in range(500)
+    ]
+    caller = _Caller(
+        {
+            "cluster_capabilities": {"server": "cluster-mcp", "scheduler": "torque"},
+            "list_queues": {"queues": []},
+            "list_nodes": {"nodes": nodes},
+        }
+    )
+    monkeypatch.setattr(mcp_diagnostics, "_connection_settings", _settings)
+    monkeypatch.setattr(mcp_diagnostics, "_client", lambda _settings: TSClusterMCPClient(caller))
+
+    result = mcp_diagnostics.diagnose_mcp("cluster")
+    serialized = json.dumps(result)
+
+    assert result["node_summary"]["total_nodes"] == 500
+    assert result["node_summary"]["cpu"]["total"] == 8000
+    assert len(serialized) < 3000
+    assert "compute-499" not in serialized
+    assert "job-499-19" not in serialized
 
 
 def test_mcp_doctor_classifies_and_redacts_authentication_failure(monkeypatch) -> None:

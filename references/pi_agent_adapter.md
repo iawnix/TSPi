@@ -119,9 +119,14 @@ rejected.
 ## Backend Operator
 
 `ts_workspace_mcp_status` gives the Root Agent an on-demand read-only MCP
-surface with `status`, `doctor`, and `queues` modes. The equivalent user command
-is `/ts-mcp status|doctor|queues`. Neither surface uploads files, controls jobs,
-or injects an MCP report every turn.
+surface with `status`, `doctor`, `queues`, `nodes`, and combined `cluster`
+modes. Use `cluster` for a bounded aggregate view of the configured MCP target;
+use `queues` or `nodes` for detailed scheduler views. Follow the calculation
+intent's transport or the user's explicit target and never switch between MCP
+and SSH automatically after a failure. Reports comparing transports must
+distinguish MCP-derived from SSH-derived facts. The equivalent user command is
+`/ts-mcp status|doctor|queues|nodes|cluster`. Neither surface uploads files,
+controls jobs, or injects an MCP report every turn.
 
 `ts_workspace_compute_operator` creates a separate fresh session with only the
 typed tools needed for one operation. The Root Agent supplies the selected

@@ -180,9 +180,13 @@ final result means the host was interrupted and requires manual reconciliation.
 For MCP `submit`, `inspect`, `collect`, and `cancel`, intent binding is followed
 by a read-only `cluster_capabilities` probe before confirmation or child
 creation. A failed probe stops the operation with a classified, redacted error.
-Use `ts_workspace_mcp_status` or `/ts-mcp doctor` for details and `/ts-mcp
-queues` for the read-only scheduler queue list. These diagnostics never expose
-raw MCP mutation tools.
+Use `ts_workspace_mcp_status` or `/ts-mcp doctor` for connection details,
+`/ts-mcp queues` or `/ts-mcp nodes` for one scheduler view, and `/ts-mcp
+cluster` for combined cluster status. Use these read-only diagnostics only for
+an intent whose selected transport is MCP. Do not change from MCP to SSH or from
+SSH to MCP automatically after a failure; report the failure and require an
+explicit transport decision. Label the source when comparing transports. These
+diagnostics never expose raw MCP mutation tools.
 MCP submission returns its scheduler ID immediately. SSH cancellation requires
 one prior `inspect` so the confirmation and remote kill are both bound to the
 observed PID; a changed PID is rejected remotely before signaling a process.

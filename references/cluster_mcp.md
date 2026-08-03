@@ -324,9 +324,14 @@ The result should report `server = cluster-mcp`, the expected scheduler,
 principal `pi-ts`, workspace prefix, queue allowlist, and TS scopes. This smoke
 test does not submit, cancel, upload, overwrite, or register scientific
 evidence. Start Pi from the same environment after it passes, then use
-`/ts-mcp status` or `/ts-mcp queues` for user-facing checks. The Agent sees the
-read-only `ts_workspace_mcp_status` tool registration without receiving an MCP
-report on every turn.
+`/ts-mcp cluster` for a combined capability, queue, and node view, or
+`/ts-mcp status|queues|nodes` for narrower user-facing checks. The combined view
+contains aggregate queue and node resource counts, not raw per-node job lists.
+Use it only for the configured MCP target. Follow the calculation intent's
+transport or the user's explicit target, and never switch to SSH automatically
+after an MCP failure. Reports that compare transports must identify the source
+of each result. The Agent sees the read-only `ts_workspace_mcp_status` tool
+registration without receiving an MCP report on every turn.
 
 ## Run Under systemd
 

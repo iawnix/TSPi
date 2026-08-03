@@ -148,12 +148,17 @@ evidence, or set a scientific status. `submit` and `cancel` fail closed without
 an interactive Pi UI and require a fresh host confirmation before the child is
 created; no authorization field is passed to the child.
 
-Use `ts_workspace_mcp_status` only when preparing MCP-backed work, answering an
-explicit MCP question, selecting a queue, or diagnosing a connection failure.
-Choose `status`, `doctor`, or `queues`; do not call it every turn or poll an
-unchanged connection. Users may run the same read-only checks with
-`/ts-mcp status|doctor|queues`. MCP submit, cancel, upload, and arbitrary tool
-calls are not exposed by this diagnostic surface.
+Use `ts_workspace_mcp_status` for general cluster-status and resource-availability
+questions, preparing MCP-backed work, selecting a queue, or diagnosing a
+connection failure. For a general question about the configured MCP target, use
+`mode=cluster`; use `status`, `doctor`, `queues`, or `nodes` for narrower checks.
+Follow the active calculation intent's `transport` or the user's explicit target.
+Never switch between MCP and SSH automatically after a failure; report the
+failure and require an explicit transport decision. Label MCP-derived and
+SSH-derived facts separately when comparing them. Do not call the diagnostic
+every turn or poll an unchanged connection. Users may run the same checks with
+`/ts-mcp status|doctor|queues|nodes|cluster`. MCP submit, cancel, upload, and
+arbitrary tool calls are not exposed by this diagnostic surface.
 
 Use `ts_workspace_render_operator` for one node-owned local render,
 `ts_workspace_report_operator` for one new validated report package, and

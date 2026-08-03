@@ -18,7 +18,7 @@ const { beginAgentRun, completeAgentRun, failAgentRun } = require("../../subagen
 const { authorizeComputeControl } = require("./authorization.cjs");
 const OPERATIONS = ["prepare", "submit", "inspect", "collect", "cancel", "parse"] as const;
 const BACKENDS = ["gaussian", "ase_neb", "xtb", "qbics_dmecp"] as const;
-const MCP_DIAGNOSTIC_MODES = ["status", "doctor", "queues"] as const;
+const MCP_DIAGNOSTIC_MODES = ["status", "doctor", "queues", "nodes", "cluster"] as const;
 const MCP_PREFLIGHT_OPERATIONS = new Set(["submit", "inspect", "collect", "cancel"]);
 
 type OperatorRequest = {
@@ -45,12 +45,14 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "ts_workspace_mcp_status",
     label: "TS Workspace MCP Status",
-    description: "Run a read-only TS Cluster MCP status, diagnostic, or queue probe. Use only for an MCP calculation request, explicit MCP diagnostics, or a connection failure; do not call every turn or poll unchanged status.",
-    promptSnippet: "Diagnose the configured TS Cluster MCP connection without changing jobs or files",
+    description: "Run a read-only TS Cluster MCP connection, queue, node, or aggregated cluster-status probe. Use for cluster-status questions, MCP calculation preparation, queue selection, or connection diagnosis; do not call every turn or poll unchanged status.",
+    promptSnippet: "Query the configured TS Cluster MCP without changing jobs or files",
     promptGuidelines: [
+      "For a general status or resource-availability question about the configured MCP target, use mode=cluster.",
       "Use mode=status before preparing an MCP calculation when connection health is unknown.",
       "Use mode=doctor after configuration, connection, timeout, authentication, or protocol failures.",
-      "Use mode=queues only when queue selection or queue availability is relevant.",
+      "Use mode=queues or mode=nodes when only that scheduler view is relevant.",
+      "Follow the calculation intent transport or the user's explicit target; never switch between MCP and SSH automatically after a failure.",
       "This tool is read-only and cannot upload files, submit jobs, cancel jobs, mutate workspace state, or authorize compute control.",
     ],
     executionMode: "sequential",
@@ -223,11 +225,11 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("ts-mcp", {
-    description: "Show read-only TS Cluster MCP status, diagnostics, or queues.",
+    description: "Show read-only TS Cluster MCP connection, queue, node, or aggregated cluster status.",
     handler: async (args, ctx) => {
       const candidate = String(args || "").trim();
       if (!MCP_DIAGNOSTIC_MODES.includes(candidate as typeof MCP_DIAGNOSTIC_MODES[number])) {
-        const usage = "Usage: /ts-mcp status|doctor|queues";
+        const usage = "Usage: /ts-mcp status|doctor|queues|nodes|cluster";
         ctx.ui.setWidget("ts-workspace-mcp", [usage]);
         ctx.ui.notify(usage, "warning");
         return;

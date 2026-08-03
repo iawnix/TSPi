@@ -47,7 +47,9 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     assert 'name: "ts_workspace_compute_operator"' in source
     assert 'name: "ts_workspace_mcp_status"' in source
     assert 'pi.registerCommand("ts-mcp"' in source
-    assert "Usage: /ts-mcp status|doctor|queues" in source
+    assert "Usage: /ts-mcp status|doctor|queues|nodes|cluster" in source
+    assert "about the configured MCP target, use mode=cluster" in source
+    assert "never switch between MCP and SSH automatically" in source
     assert "createScopedComputeTools" in source
     assert "runComputeOperator" in source
     assert "completed compute actions" in source
@@ -83,6 +85,9 @@ def test_compute_cli_is_package_relative_and_runtime_aware() -> None:
     script = (ROOT / "scripts" / "ts_compute.py").read_text(encoding="utf-8")
 
     assert 'resolve(PACKAGE_ROOT, "scripts", "ts_compute.py")' in shared
+    assert '"nodes" | "cluster"' in shared
+    assert "findRuntimeWorkspaceRoot(cwd)" in shared
+    assert 'join(current, ".agents", "runtime", "transition-state-workflow", "env.json")' in shared
     assert "AbortSignal.timeout(timeoutMs)" in shared
     assert "seed_workspace_root_from_argv()" in script
     assert "ensure_runtime_python(ROOT)" in script

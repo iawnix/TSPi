@@ -64,12 +64,12 @@ export async function runComputeJson(
 
 export async function runMcpDiagnosticJson(
   pi: ExtensionAPI,
-  mode: "status" | "doctor" | "queues",
+  mode: "status" | "doctor" | "queues" | "nodes" | "cluster",
   cwd: string,
   signal?: AbortSignal,
   timeoutMs = 75_000,
 ) {
-  const workspaceRoot = resolveWorkspaceRoot("", cwd) || undefined;
+  const workspaceRoot = resolveWorkspaceRoot("", cwd) || findRuntimeWorkspaceRoot(cwd);
   const python = await resolvePythonExecutable(pi, workspaceRoot, signal);
   const operationSignal = deadlineSignal(signal, timeoutMs);
   const result = await pi.exec(python, [COMPUTE_CLI, "mcp-diagnostic", "--mode", mode], {
@@ -132,6 +132,17 @@ export function requireWorkspaceRoot(inputRoot: string | undefined, cwd: string)
     throw new Error("No TS workspace root found. Pass root or set TS_WORKSPACE_ROOT.");
   }
   return root;
+}
+
+function findRuntimeWorkspaceRoot(start: string): string | undefined {
+  let current = resolve(start);
+  while (true) {
+    const manifest = join(current, ".agents", "runtime", "transition-state-workflow", "env.json");
+    if (existsSync(manifest)) return current;
+    const parent = dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
+  }
 }
 
 async function resolvePythonExecutable(

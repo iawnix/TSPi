@@ -154,6 +154,15 @@ class TSClusterMCPClient:
             raise MCPClientError("MCP server returned an invalid queue list")
         return result
 
+    def list_nodes(self) -> dict[str, Any]:
+        result = self.caller.call_tool("list_nodes", {})
+        if not isinstance(result, dict):
+            raise MCPClientError("MCP server returned an invalid node list")
+        nodes = result.get("nodes")
+        if not isinstance(nodes, list) or any(not isinstance(node, dict) for node in nodes):
+            raise MCPClientError("MCP server returned an invalid node list")
+        return result
+
     def ensure_directory(self, path: str) -> None:
         result = self.caller.call_tool("ts_ensure_directory", {"path": path})
         if result.get("path") != path or not isinstance(result.get("created"), bool):

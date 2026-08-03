@@ -130,9 +130,9 @@ The workspace control surface is exactly:
 Pi also exposes:
 
 - `ts_workspace_subagent`: fresh, tool-free advisory scientific review.
-- `ts_workspace_mcp_status`: read-only `status`, `doctor`, or `queues` probe
-  for the configured TS Cluster MCP. It has no upload, submit, cancel, or
-  workspace mutation capability.
+- `ts_workspace_mcp_status`: read-only `status`, `doctor`, `queues`, `nodes`,
+  or aggregated `cluster` probe for the configured TS Cluster MCP. It has no
+  upload, submit, cancel, or workspace mutation capability.
 - `ts_workspace_compute_operator`: fresh backend operator with only the typed
   tools bound to one `prepare`, `submit`, `inspect`, `collect`, `cancel`, or
   `parse` request. `submit/cancel` require a fresh interactive host confirmation
@@ -144,7 +144,7 @@ Pi also exposes:
   summary and explicit recipients. Sending is unavailable.
 
 Users can run the same MCP diagnostics with
-`/ts-mcp status|doctor|queues`. The command and Agent tool are on demand; they
+`/ts-mcp status|doctor|queues|nodes|cluster`. The command and Agent tool are on demand; they
 do not add MCP output to every turn's context.
 
 `before_agent_start` injects only a short control-plane reminder. It does not

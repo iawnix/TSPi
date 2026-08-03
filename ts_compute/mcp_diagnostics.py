@@ -10,7 +10,7 @@ from typing import Any
 from ts_remote.mcp import MCPClientError, MCPConnectionSettings, SDKToolCaller, TSClusterMCPClient
 
 
-MCP_DIAGNOSTIC_MODES = frozenset({"status", "doctor", "queues"})
+MCP_DIAGNOSTIC_MODES = frozenset({"status", "doctor", "queues", "nodes", "cluster"})
 SCHEMA_VERSION = "ts-mcp-diagnostic/1"
 
 
@@ -39,6 +39,16 @@ def diagnose_mcp(mode: str = "status") -> dict[str, Any]:
                 "connection": connection,
                 "queues": client.list_queues()["queues"],
             }
+        elif mode == "nodes":
+            result = {
+                "schema_version": SCHEMA_VERSION,
+                "mode": mode,
+                "ok": True,
+                "connection": connection,
+                "nodes": client.list_nodes()["nodes"],
+            }
+        elif mode == "cluster":
+            result = _cluster_summary(client, connection)
         else:
             result = {
                 "schema_version": SCHEMA_VERSION,
@@ -90,6 +100,128 @@ def _failure(
     if mode == "doctor":
         result["checks"] = _doctor_checks(error_class, phase)
     return _sanitize(result)
+
+
+def _cluster_summary(
+    client: TSClusterMCPClient,
+    connection: dict[str, Any],
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "mode": "cluster",
+        "connection": connection,
+        "components": {},
+    }
+    errors: dict[str, dict[str, str]] = {}
+
+    try:
+        result["capabilities"] = _capability_summary(client.capabilities())
+        result["components"]["capabilities"] = "pass"
+    except Exception as exc:
+        result["components"]["capabilities"] = "fail"
+        errors["capabilities"] = _component_error(exc)
+
+    try:
+        result["queue_summary"] = _queue_summary(client.list_queues()["queues"])
+        result["components"]["queues"] = "pass"
+    except Exception as exc:
+        result["components"]["queues"] = "fail"
+        errors["queues"] = _component_error(exc)
+
+    try:
+        result["node_summary"] = _node_summary(client.list_nodes()["nodes"])
+        result["components"]["nodes"] = "pass"
+    except Exception as exc:
+        result["components"]["nodes"] = "fail"
+        errors["nodes"] = _component_error(exc)
+
+    passed = sum(value == "pass" for value in result["components"].values())
+    result["ok"] = not errors
+    result["partial"] = bool(errors) and passed > 0
+    if errors:
+        result["errors"] = errors
+    return result
+
+
+def _component_error(error: Exception) -> dict[str, str]:
+    return {
+        "class": _classify_error(error, "probe"),
+        "message": _redact_text(str(error) or type(error).__name__),
+    }
+
+
+def _queue_summary(queues: list[dict[str, Any]]) -> dict[str, Any]:
+    total_jobs = [_integer(queue.get("total_jobs")) for queue in queues]
+    reported_jobs = [value for value in total_jobs if value is not None]
+    return {
+        "total_queues": len(queues),
+        "allowed_for_submission": sum(queue.get("allowed_for_submission") is True for queue in queues),
+        "gpu_queues": sum(queue.get("is_gpu_queue") is True for queue in queues),
+        "enabled": sum(_truthy(queue.get("enabled")) for queue in queues),
+        "started": sum(_truthy(queue.get("started")) for queue in queues),
+        "reported_total_jobs": sum(reported_jobs) if reported_jobs else None,
+    }
+
+
+def _node_summary(nodes: list[dict[str, Any]]) -> dict[str, Any]:
+    state_counts: dict[str, int] = {}
+    cpu_pairs: list[tuple[int, int]] = []
+    gpu_pairs: list[tuple[int, int]] = []
+    running_jobs: list[int] = []
+    for node in nodes:
+        state = str(node.get("state") or "unknown")
+        state_counts[state] = state_counts.get(state, 0) + 1
+        cpu = _free_total(node.get("ncpus_free_total"))
+        if cpu is not None:
+            cpu_pairs.append(cpu)
+        gpu = _free_total(node.get("ngpus_free_total"))
+        if gpu is not None:
+            gpu_pairs.append(gpu)
+        running = _integer(node.get("running_jobs"))
+        if running is not None:
+            running_jobs.append(running)
+    return {
+        "total_nodes": len(nodes),
+        "state_counts": dict(sorted(state_counts.items())),
+        "cpu": _resource_summary(cpu_pairs),
+        "gpu": _resource_summary(gpu_pairs),
+        "reported_running_jobs": sum(running_jobs) if running_jobs else None,
+    }
+
+
+def _resource_summary(pairs: list[tuple[int, int]]) -> dict[str, int]:
+    return {
+        "reported_nodes": len(pairs),
+        "free": sum(free for free, _total in pairs),
+        "total": sum(total for _free, total in pairs),
+        "nodes_with_free": sum(free > 0 for free, _total in pairs),
+    }
+
+
+def _free_total(value: Any) -> tuple[int, int] | None:
+    if not isinstance(value, str):
+        return None
+    parts = value.split("/", 1)
+    if len(parts) != 2:
+        return None
+    free, total = (_integer(part.strip()) for part in parts)
+    if free is None or total is None or free > total:
+        return None
+    return free, total
+
+
+def _integer(value: Any) -> int | None:
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
+def _truthy(value: Any) -> bool:
+    return value is True or (isinstance(value, str) and value.strip().lower() == "true")
 
 
 def _classify_error(error: Exception, phase: str) -> str:
