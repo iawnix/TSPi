@@ -4,18 +4,25 @@
 bound operation:
 
 - `prepare`: validate and persist a bound intent without executing it;
-- `submit`: perform one host-authorized remote submission;
+- `submit`: perform one pre-bound remote submission;
 - `inspect`: poll status and optionally read one bounded tail;
 - `collect`: fetch an allowlisted expected-artifact subset;
-- `cancel`: perform one host-authorized cancellation of the bound job;
+- `cancel`: perform one pre-bound cancellation of the bound job;
 - `parse`: run a deterministic parser on a local attempt artifact.
+
+`collect` remains one child-tool call. When its durable local status exists but
+is not terminal, the shared control layer performs one fresh remote status
+query before enforcing the terminal-status gate. It never infers completion
+from backend log text or downloads artifacts while the refreshed state remains
+active or unresolved.
 
 The child has no parent history, general filesystem, shell, workspace mutation,
 scientific review, or recursive delegation. It receives only the selected
 private backend skill and request-scoped typed tools. For submit/cancel, the
-Root host confirms the exact preflight binding before creating a fresh child
-with exactly one control tool. The child receives no reusable authorization
-object, token, endpoint, or credentials.
+Root Agent validates the exact preflight binding before creating a fresh child
+with exactly one control tool. No interactive approval step is required. The
+child receives no raw MCP client, endpoint, credentials, or arbitrary command
+surface.
 
 The operator report uses `outcome=success|partial|failure|not_run`; this is the
 operator execution outcome, not the calculation's program outcome. A typed
@@ -59,8 +66,8 @@ validation node when the selected node is a validation node.
 
 `dry_run=true` supports preparation and inspection workflows but cannot be
 submitted or cancelled. Set `dry_run=false` only when the intent is intended
-for a later explicitly authorized control call. Preparation itself has no
-remote side effect in either case.
+for a later control call. Preparation itself has no remote side effect in
+either case.
 
 Attempt kinds:
 
@@ -179,16 +186,17 @@ Do not place tokens, passwords, API keys, authorization values, or
 those keys. Cluster software setup belongs in server policy or non-secret
 execution variables.
 
-Every submit/cancel call runs preflight first. The Pi host confirmation shows
-operation, node, backend, intent ID and digest, transport, target, resources,
-and the bound scheduler job ID when available. A headless host or user denial
-stops before child creation. Ambiguous submission or cancellation is written to
-an immutable control result and cannot be automatically replayed. An exclusive
-control guard is written before the first remote side effect; a guard without a
-final result means the host was interrupted and requires manual reconciliation.
+Every submit/cancel call runs preflight first and binds the operation, node,
+backend, intent ID and digest, transport, target, resources, and scheduler job
+ID when available. The Root Agent then creates the request-scoped child without
+an interactive approval step. Ambiguous submission or cancellation is written
+to an immutable control result and cannot be automatically replayed. An
+exclusive control guard is written before the first remote side effect; a guard
+without a final result means the host was interrupted and requires manual
+reconciliation.
 For MCP `submit`, `inspect`, `collect`, and `cancel`, intent binding is followed
-by a read-only `cluster_capabilities` probe before confirmation or child
-creation. A failed probe stops the operation with a classified, redacted error.
+by a read-only `cluster_capabilities` probe before child creation. A failed
+probe stops the operation with a classified, redacted error.
 Use `ts_workspace_mcp_status` or `/ts-mcp doctor` for connection details,
 `/ts-mcp queues` or `/ts-mcp nodes` for one scheduler view, and `/ts-mcp
 cluster` for combined cluster status. Use these read-only diagnostics only for
@@ -201,10 +209,10 @@ software profile with an existing activation script and an allowlisted target
 queue. The server sources that profile before executing the manifest-bound
 runner. The runner owns a private random `GAUSS_SCRDIR`, refuses output
 overwrite, and removes scratch on exit. Missing or inconsistent registration
-fails before host authorization and is checked again before scheduler access.
+fails before child creation and is checked again before scheduler access.
 MCP submission returns its scheduler ID immediately. SSH cancellation requires
-one prior `inspect` so the confirmation and remote kill are both bound to the
-observed PID; a changed PID is rejected remotely before signaling a process.
+one prior `inspect` so the preflight binding and remote kill are both bound to
+the observed PID; a changed PID is rejected remotely before signaling a process.
 
 Host policy:
 

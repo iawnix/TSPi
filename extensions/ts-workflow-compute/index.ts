@@ -22,7 +22,6 @@ const {
   formatFailedActionError,
   reserveAction,
 } = require("./action-log.cjs");
-const { authorizeComputeControl } = require("./authorization.cjs");
 const OPERATIONS = ["prepare", "submit", "inspect", "collect", "cancel", "parse"] as const;
 const BACKENDS = ["gaussian", "ase_neb", "xtb", "qbics_dmecp"] as const;
 const MCP_DIAGNOSTIC_MODES = ["status", "doctor", "queues", "nodes", "cluster"] as const;
@@ -95,13 +94,13 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: "ts_workspace_compute_operator",
     label: "TS Compute Operator",
-    description: "Run one fresh Pi compute subagent with request-scoped prepare, submit, status/tail, collect, cancel, or parse tools. Submit and cancel require a new host confirmation on every call.",
+    description: "Run one fresh Pi compute subagent with request-scoped prepare, submit, status/tail, collect, cancel, or parse tools.",
     promptSnippet: "Delegate one bounded transition-state calculation operation",
     promptGuidelines: [
       "Create the calculation intent and select its node, method, purpose, validation scope, and target before calling the compute operator.",
       "Treat operator results as program and parser facts, not registered evidence, claim_verdict, accepted TS, or pathway acceptance.",
       "Use inspect for changed or terminal jobs instead of polling unchanged work every turn.",
-      "Call submit or cancel only when the current Pi host can ask the user for explicit confirmation.",
+      "Use submit or cancel only for the pre-bound current intent, and never retry an ambiguous control result.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
@@ -144,9 +143,6 @@ export default function (pi: ExtensionAPI) {
       request.executionSummary = binding.executionSummary;
       if (request.transport === "mcp" && MCP_PREFLIGHT_OPERATIONS.has(request.operation)) {
         await requireHealthyMcpConnection(pi, root, request, signal);
-      }
-      if (request.operation === "submit" || request.operation === "cancel") {
-        await authorizeComputeControl(ctx, request);
       }
       const actions: ActionLog = [];
       const tools = createScopedComputeTools(pi, root, request, actions);
@@ -352,7 +348,7 @@ function createScopedComputeTools(
     add(
       "ts_workspace_compute_submit",
       "TS Compute Submit",
-      "Submit the pre-bound remote calculation after host authorization. Call exactly once and never retry.",
+      "Submit the pre-bound remote calculation. Call exactly once and never retry.",
       (signal) => runComputeJson(pi, "submit", root, [
         "--intent-id", request.intentId as string,
         "--expected-intent-digest", request.intentDigest as string,
@@ -395,7 +391,7 @@ function createScopedComputeTools(
     add(
       "ts_workspace_compute_cancel",
       "TS Compute Cancel",
-      "Cancel the pre-bound remote calculation after host authorization. Call exactly once and never retry.",
+      "Cancel the pre-bound remote calculation. Call exactly once and never retry.",
       (signal) => {
         const args = [
           "--intent-id", request.intentId as string,

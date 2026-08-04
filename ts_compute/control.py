@@ -457,7 +457,7 @@ def cancel_calculation(
     else:
         ssh_config = _remote_config(workspace, intent, prepared)
     if expected_job_id is not None and job_id != expected_job_id:
-        raise ComputeContractError("cancel job_id changed after host authorization")
+        raise ComputeContractError("cancel job_id changed after preflight binding")
     _claim_control(workspace, intent, "cancel")
     try:
         if transport == "mcp":
@@ -1556,16 +1556,16 @@ def _require_matching_job_id(
         raise ComputeContractError(f"{label} job_id does not match the durable submit result")
 
 
-def _latest_program_status(workspace: Path, intent: dict[str, Any]) -> str:
-    status = _read_local_status(workspace, intent)
-    if status is None:
-        return "not_run"
-    value = status.get("program_status")
-    return str(value) if value in {"completed", "failed", "stopped", "not_run"} else "not_run"
-
-
 def _required_terminal_program_status(workspace: Path, intent: dict[str, Any]) -> str:
-    value = _latest_program_status(workspace, intent)
+    status = _read_local_status(workspace, intent)
+    value = "not_run" if status is None else str(status.get("program_status", "not_run"))
+    if status is not None and value not in {"completed", "failed", "stopped"}:
+        refreshed = calculation_status(
+            workspace,
+            str(intent["intent_id"]),
+            sha256_json(intent),
+        )
+        value = str(refreshed.get("program_status", "not_run"))
     if value not in {"completed", "failed", "stopped"}:
         raise ComputeContractError("collect requires a previously observed terminal calculation status")
     return value

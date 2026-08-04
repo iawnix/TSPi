@@ -250,6 +250,19 @@ function parseJsonOutput(result) {
   if (typeof result === "string" && result.trim()) {
     return JSON.parse(result);
   }
+  if (result && typeof result === "object" && typeof result.stderr === "string" && result.stderr.trim()) {
+    const stderr = result.stderr.trim();
+    let payload;
+    try {
+      payload = JSON.parse(stderr);
+    } catch (_error) {
+      payload = undefined;
+    }
+    if (payload && typeof payload === "object" && typeof payload.error === "string" && payload.error.trim()) {
+      throw new Error(payload.error.trim());
+    }
+    throw new Error(stderr);
+  }
   throw new Error("command result did not contain JSON stdout");
 }
 

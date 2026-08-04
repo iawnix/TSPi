@@ -21,7 +21,8 @@ transfer, submission, status, collection, and explicit cancellation. Read
 `cluster_mcp.md` before configuring scopes or transport. Raw MCP tools remain a
 host implementation boundary and are not registered into Pi agent sessions.
 The Root compute operator may create one request-scoped submit or cancel wrapper
-only after an interactive current-call confirmation.
+after exact intent, digest, target, and job binding. No interactive confirmation
+is required.
 
 `execution_target.transport` selects `ssh` or `mcp`. SSH uses an absolute
 allowlisted `remote_dir`; MCP uses a principal-workspace-relative `remote_dir`

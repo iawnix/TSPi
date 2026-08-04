@@ -114,6 +114,25 @@ def test_pi_context_helper_finds_workspace_from_ancestor(tmp_path: Path) -> None
     assert completed.stdout == str(workspace)
 
 
+def test_pi_json_parser_surfaces_structured_stderr() -> None:
+    script = (
+        "const helper=require('./extensions/ts-workflow-context/summary.cjs');"
+        "try { helper.parseJsonOutput({stdout:'',stderr:JSON.stringify({"
+        "ok:false,error:'collect requires a terminal calculation status'})}); }"
+        "catch (error) { process.stdout.write(String(error.message || error)); }"
+    )
+    completed = subprocess.run(
+        ["node", "-e", script],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    assert completed.stdout == "collect requires a terminal calculation status"
+
+
 def test_historical_node_and_backtrack_context_are_compact_and_explicit(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     report_ref = bootstrap_strict_workspace(workspace)

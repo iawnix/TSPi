@@ -134,11 +134,11 @@ backend. The runtime loads exactly one matching private backend skill from
 `agent-skills/`; no other private skill enters the child context.
 
 Available operations are `prepare`, `submit`, `inspect`, `collect`, `cancel`,
-and `parse`. Submit and cancel require fresh interactive host confirmation on
-every call and fail closed in headless Pi. MCP-backed control, inspection, and
-collection run a read-only connection preflight before confirmation or child
-creation. The output validator binds IDs, state, program outcome, error class,
-and artifact refs to actual typed-tool results.
+and `parse`. The Root Agent can run submit and cancel directly in interactive or
+headless Pi after exact intent binding. MCP-backed control, inspection, and
+collection run a read-only connection preflight before child creation. The
+output validator binds IDs, state, program outcome, error class, and artifact
+refs to actual typed-tool results.
 
 Model output is normalized only at the parse boundary for two legacy aliases:
 top-level `outcome=completed` becomes `success`, and singular fact

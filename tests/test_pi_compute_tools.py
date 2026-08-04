@@ -7,7 +7,6 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_SCHEMA = ROOT / "compute-agent" / "output-schema.cjs"
-AUTHORIZATION = ROOT / "extensions" / "ts-workflow-compute" / "authorization.cjs"
 ACTION_LOG = ROOT / "extensions" / "ts-workflow-compute" / "action-log.cjs"
 
 
@@ -61,7 +60,8 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     assert "completed compute actions" in source
     assert 'pi.appendEntry("ts-workspace-compute-operator-failed"' in source
     assert "command:" not in source
-    assert "authorizeComputeControl(ctx, request)" in source
+    assert "authorizeComputeControl" not in source
+    assert "ctx.ui.confirm" not in source
     assert "ctx.hasUI" not in source
     assert "authorized" not in source
     assert "additionalProperties: false" in source
@@ -69,7 +69,7 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     assert "runComputeJson" in source
     assert "runMcpDiagnosticJson" in source
     assert "nodeId: Type.String" in source
-    assert source.index("await requireHealthyMcpConnection") < source.index("await authorizeComputeControl")
+    assert source.index("await requireHealthyMcpConnection") < source.index("const actions: ActionLog = []")
     assert 'request.transport === "mcp"' in source
     assert "MCP_PREFLIGHT_OPERATIONS" in source
     assert "server has no gaussian software profile" in source
@@ -121,7 +121,7 @@ def test_compute_operator_runtime_is_fresh_isolated_and_tool_scoped() -> None:
     assert "never use singular `artifact_ref`" in prompt
     assert "remote basename is not a durable local artifact ref" in prompt
     assert "For `submit` or `cancel`" in prompt
-    assert "never infer, request, copy, or return authorization data" in prompt
+    assert "Root Agent has already preflighted and bound the exact operation" in prompt
     assert "loadBackendSkill(options.backend)" in runtime
     assert "Selected private backend skill" in runtime
 
@@ -157,57 +157,18 @@ def test_compute_action_failure_replaces_started_record_and_redacts_diagnostics(
     assert "[REDACTED]" in output["message"]
 
 
-def test_compute_control_authorization_fails_closed_and_is_request_scoped(tmp_path: Path) -> None:
-    script = (
-        f"const helper=require({json.dumps(str(AUTHORIZATION))});"
-        "const mode=process.argv[1];"
-        "const calls=[];"
-        "const request={operation:mode==='cancel'?'cancel':'submit',intentId:'calc_test',"
-        "intentDigest:'sha256:'+('a'.repeat(64)),backend:'gaussian',nodeId:'n001',"
-        "transport:'mcp',remoteDir:'runs/n001',jobId:'42001.cluster',"
-        "executionSummary:{kind:'remote',transport:'mcp',remote_dir:'runs/n001',queue:'workq'}};"
-        "const ctx=mode==='headless'?{hasUI:false,ui:{confirm:async()=>{calls.push('bad');return true;}}}:"
-        "{hasUI:true,ui:{confirm:async(title,message)=>{calls.push({title,message});return mode==='approve'||mode==='cancel';}}};"
-        "helper.authorizeComputeControl(ctx,request).then(value=>{"
-        "process.stdout.write(JSON.stringify({ok:true,value:value===undefined?'undefined':value,calls}));"
-        "}).catch(error=>{process.stdout.write(JSON.stringify({ok:false,error:String(error.message||error),calls}));});"
-    )
+def test_compute_control_has_no_interactive_authorization_gate() -> None:
+    source = (ROOT / "extensions" / "ts-workflow-compute" / "index.ts").read_text(encoding="utf-8")
+    prompt = (ROOT / "compute-agent" / "prompt.md").read_text(encoding="utf-8")
 
-    def invoke(mode: str) -> dict[str, object]:
-        completed = subprocess.run(
-            ["node", "-e", script, mode],
-            cwd=ROOT,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True,
-        )
-        return json.loads(completed.stdout)
+    assert not (ROOT / "extensions" / "ts-workflow-compute" / "authorization.cjs").exists()
+    assert "authorizeComputeControl" not in source
+    assert "ctx.ui.confirm" not in source
+    assert "interactive Pi host confirmation" not in source
+    assert "Root Agent has already preflighted and bound the exact operation" in prompt
 
-    headless = invoke("headless")
-    assert headless["ok"] is False
-    assert "interactive Pi host confirmation" in headless["error"]
-    assert headless["calls"] == []
 
-    denied = invoke("deny")
-    assert denied["ok"] is False
-    assert "not authorized by the user" in denied["error"]
-    assert len(denied["calls"]) == 1
-
-    approved = invoke("approve")
-    assert approved["ok"] is True
-    assert approved["value"] == "undefined"
-    assert len(approved["calls"]) == 1
-    message = approved["calls"][0]["message"]
-    assert "Intent: calc_test" in message
-    assert "queue" in message
-    assert "applies only to this call" in message
-    assert "token" not in message.lower()
-
-    cancelled = invoke("cancel")
-    assert cancelled["ok"] is True
-    assert "Bound job: 42001.cluster" in cancelled["calls"][0]["message"]
-
+def test_compute_private_skills_are_registered() -> None:
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     assert package["pi"]["skills"] == ["."]
     private_skills = {path.parent.name for path in (ROOT / "agent-skills").glob("*/SKILL.md")}

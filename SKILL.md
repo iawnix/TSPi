@@ -21,8 +21,8 @@ operations; they do not choose chemistry.
   mechanism node alone may set hypothesis status.
 - Remote files are execution mirrors. Collect and verify locally before using
   them as evidence.
-- Cluster submission or cancellation requires explicit current-turn host
-  authorization. Do not treat the bundled MCP client as standing permission.
+- Cluster submission or cancellation runs only through the pre-bound compute
+  operator; never expose raw transport controls or retry ambiguous results.
 - `ts_web` is read-only.
 - Sending email requires explicit current-turn authorization.
 
@@ -144,9 +144,9 @@ Use `ts_workspace_compute_operator` for one bound `prepare`, `submit`,
 `inspect`, `collect`, `cancel`, or `parse` operation. Pass the backend selected
 by the Root Agent. The child gets only request-scoped typed tools and one
 private backend skill. It cannot select methods, change the intent, register
-evidence, or set a scientific status. `submit` and `cancel` fail closed without
-an interactive Pi UI and require a fresh host confirmation before the child is
-created; no authorization field is passed to the child.
+evidence, or set a scientific status. For `submit` and `cancel`, the Root Agent
+directly creates a child with one operation bound to the current intent digest
+and target; no separate interactive approval is required.
 
 Use `ts_workspace_mcp_status` for general cluster-status and resource-availability
 questions, preparing MCP-backed work, selecting a queue, or diagnosing a
@@ -198,8 +198,8 @@ connection URL, token, and timeout are host environment settings, never intent
 fields. Long jobs outlive child sessions; inspect only when state changes or a
 bounded failure diagnostic is needed. Do not poll unchanged jobs every turn.
 For MCP `submit`, `inspect`, `collect`, and `cancel`, the host automatically
-runs a read-only capability probe after intent binding and before confirmation
-or child creation.
+runs a read-only capability probe after intent binding and before child
+creation.
 Before SSH cancellation, inspect once to bind the current remote PID.
 
 When a configured scheduler service is used, follow

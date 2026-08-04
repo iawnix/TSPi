@@ -253,9 +253,9 @@ export TS_CLUSTER_MCP_TIMEOUT=60
 ```
 
 The tunnel authenticates the SSH connection; MCP still requires its bearer
-token. Neither mechanism is standing authorization for job submission or
-cancellation. Pi asks for a fresh current-call confirmation before each such
-operation.
+token and principal scopes. After exact intent binding and a read-only
+capability preflight, the Root Agent may submit or cancel through the scoped
+compute operator without an additional Pi UI confirmation.
 
 ## Use Direct HTTPS
 
@@ -470,10 +470,10 @@ credentials.
 
 `ts_workspace_compute_operator` exposes submission and cancellation through a
 narrow host wrapper. It binds the intent, performs a read-only MCP connection
-preflight, fails closed without an interactive UI, asks for a fresh confirmation
-containing the bound intent and target, and only then creates a fresh child with
-exactly one request-scoped tool. The presence of the MCP client, server, or
-scopes is never standing authorization.
+preflight, and creates a fresh child with exactly one request-scoped tool. The
+Root Agent can invoke this path directly in interactive or headless Pi; the MCP
+principal scopes, server policy, intent digest, target binding, and durable
+control guards remain enforced.
 
 ## Register Gaussian For TS Jobs
 
@@ -511,5 +511,5 @@ After restarting the service, use read-only checks only:
 
 The capability result must contain a `gaussian` profile with
 `activation_script_exists=true` and the expected queue allowlist. The compute
-operator repeats this check before asking for submit authorization. Do not use a
-real Gaussian submission as a registration probe.
+operator repeats this check before creating a submit child.
+Do not use a real Gaussian submission as a registration probe.

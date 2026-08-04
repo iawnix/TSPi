@@ -591,6 +591,7 @@ def test_mcp_transport_submit_status_tail_collect_and_cancel(
             self.request: dict[str, object] | None = None
             self.uploads: list[tuple[str, str]] = []
             self.cancels: list[tuple[str, str]] = []
+            self.scheduler_state = "R"
 
         def ensure_directory(self, path: str) -> None:
             assert path == "runs/n001/calc_n001_optfreq_v2_001"
@@ -614,13 +615,16 @@ def test_mcp_transport_submit_status_tail_collect_and_cancel(
         def status(self, submission_id: str, *, include_history: bool):
             assert include_history is True
             assert self.request is not None
+            scheduler = {"state": self.scheduler_state}
+            if self.scheduler_state == "F":
+                scheduler["exit_status"] = 0
             return {
                 "schema_version": "ts-cluster-submission/1",
                 "submission_id": submission_id,
                 "state": "submitted",
                 "job_id": "42001.cluster",
                 "request": self.request,
-                "scheduler": {"state": "F", "exit_status": 0},
+                "scheduler": scheduler,
             }
 
         def read_tail(self, remote_path: str, *, max_bytes: int):
@@ -669,8 +673,8 @@ def test_mcp_transport_submit_status_tail_collect_and_cancel(
     assert 'rm -rf -- "$scratch_root"' in runner_text
 
     status = calculation_status(workspace, intent_id)
-    assert status["state"] == "completed"
-    assert status["program_status"] == "completed"
+    assert status["state"] == "running"
+    assert status["program_status"] == "not_run"
     assert status["job_id"] == "42001.cluster"
     status_path = workspace / f"nodes/n001/attempts/{intent_id}/status.json"
     bound_status = status_path.read_bytes()
@@ -688,7 +692,9 @@ def test_mcp_transport_submit_status_tail_collect_and_cancel(
     client.status = original_status
     tail = calculation_tail(workspace, intent_id, "candidate.log", 1)
     assert tail["text"] == "Normal termination"
+    client.scheduler_state = "F"
     collected = collect_calculation(workspace, intent_id, ["candidate.log"])
+    assert collected["program_status"] == "completed"
     assert collected["artifact_refs"] == [
         "nodes/n001/attempts/calc_n001_optfreq_v2_001/outputs/collected/candidate.log"
     ]
@@ -753,7 +759,7 @@ def test_mcp_cancel_is_bound_to_preflight_job_id(
     )
     assert binding["job_id"] == "42001.cluster"
 
-    with pytest.raises(ComputeContractError, match="changed after host authorization"):
+    with pytest.raises(ComputeContractError, match="changed after preflight binding"):
         cancel_calculation(workspace, intent_id, expected_job_id="other.cluster")
     cancelled = cancel_calculation(workspace, intent_id, expected_job_id=binding["job_id"])
     assert cancelled["state"] == "stopped"
@@ -822,15 +828,18 @@ def test_status_tail_and_collect_use_prepared_remote_scope(
     prepare_calculation(workspace, _intent(workspace, target=_remote_target()))
     seen: dict[str, object] = {}
 
+    poll_states = iter(["running", "completed"])
+
     def fake_poll(config):
-        seen["poll"] = config
+        seen.setdefault("poll", []).append(config)
+        state = next(poll_states)
         return RemoteJobStatus(
             node_id="n001",
             host="compute.test",
             remote_dir="/remote/ts/n001/calc_n001_optfreq_001",
-            state="completed",
+            state=state,
             pid="123",
-            exit_status=0,
+            exit_status=0 if state == "completed" else None,
             files=["candidate.log"],
         )
 
@@ -852,8 +861,8 @@ def test_status_tail_and_collect_use_prepared_remote_scope(
     tail = calculation_tail(workspace, "calc_n001_optfreq_001", "candidate.log", 40)
     collected = collect_calculation(workspace, "calc_n001_optfreq_001", ["candidate.log"])
 
-    assert status["state"] == "completed"
-    assert status["program_status"] == "completed"
+    assert status["state"] == "running"
+    assert status["program_status"] == "not_run"
     assert tail["text"] == "normal termination\n"
     assert seen["tail"] == ("candidate.log", 40)
     assert seen["fetch"] == (["candidate.log"], False)
@@ -861,7 +870,8 @@ def test_status_tail_and_collect_use_prepared_remote_scope(
     assert collected["artifact_refs"] == [
         "nodes/n001/outputs/calculations/calc_n001_optfreq_001/collected/candidate.log"
     ]
-    config = seen["poll"]
+    assert len(seen["poll"]) == 2
+    config = seen["poll"][-1]
     assert config.login_host == "login.test"
     assert config.compute_host == "compute.test"
     assert config.command == ["g16", "candidate.gjf"]
@@ -882,6 +892,39 @@ def test_collect_requires_terminal_status(tmp_path: Path, monkeypatch: pytest.Mo
 
     with pytest.raises(ComputeContractError, match="terminal calculation status"):
         collect_calculation(workspace, "calc_n001_optfreq_001", ["candidate.log"])
+
+
+def test_collect_refreshes_once_and_rejects_active_status(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = _workspace(tmp_path)
+    _allow_remote(monkeypatch)
+    prepare_calculation(workspace, _intent(workspace, target=_remote_target()))
+    polls = 0
+
+    def fake_poll(_config):
+        nonlocal polls
+        polls += 1
+        return RemoteJobStatus(
+            node_id="n001",
+            host="compute.test",
+            remote_dir="/remote/ts/n001/calc_n001_optfreq_001",
+            state="running",
+            pid="123",
+        )
+
+    def unexpected_fetch(*_args, **_kwargs):
+        raise AssertionError("active calculation artifacts must not be fetched")
+
+    monkeypatch.setattr("ts_compute.control.job_lifecycle.poll", fake_poll)
+    monkeypatch.setattr("ts_compute.control.job_lifecycle.fetch", unexpected_fetch)
+
+    calculation_status(workspace, "calc_n001_optfreq_001")
+    with pytest.raises(ComputeContractError, match="terminal calculation status"):
+        collect_calculation(workspace, "calc_n001_optfreq_001", ["candidate.log"])
+
+    assert polls == 2
 
 
 def test_prepared_backend_metadata_is_revalidated_before_remote_access(

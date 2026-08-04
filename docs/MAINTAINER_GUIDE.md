@@ -62,8 +62,8 @@ Keep state ownership narrow.
   advisory; it never becomes a second control plane.
 - `extensions/ts-workflow-compute` creates a fresh backend session with one
   selected private backend skill and request-scoped typed tools. Submit/cancel
-  must preflight and obtain current-call host UI confirmation before child
-  creation; the child receives no authorization data.
+  must bind and preflight the exact request before child creation; the child
+  receives no raw transport access.
 - `extensions/ts-workflow-artifacts` creates fresh render, report, and
   email-draft sessions. Each receives one private role skill and one path-bound
   typed tool; email sending is not implemented.
@@ -316,6 +316,6 @@ Before merging or syncing, answer these questions:
 - Did `ts_web` remain read-only over source workspaces?
 - Are templates updated without copying test fixtures into operating examples?
 - Are tests covering the failure mode, not only the successful path?
-- Do cluster operations remain current-call host-authorized operational facts,
-  with no raw transport tools or authorization fields exposed to agents?
+- Do cluster operations remain pre-bound operational facts, with no raw
+  transport tools exposed to agents?
 - Does a fresh branch- or tag-pinned Pi install resolve the expected commit?
