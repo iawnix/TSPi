@@ -22,6 +22,11 @@ from cluster_mcp.ts_jobs import validate_ts_submission_request
 from .base import RemoteReceipt
 
 
+# The cluster contract uses the stable initialize handshake; avoid an extra
+# server/discover probe on every short-lived HTTP tool call.
+MCP_CLIENT_MODE = "legacy"
+
+
 class MCPClientError(RuntimeError):
     """Raised when the MCP transport or TS cluster contract is invalid."""
 
@@ -91,7 +96,13 @@ class SDKToolCaller:
         try:
             asyncio.get_running_loop()
         except RuntimeError:
-            return asyncio.run(self._call_tool(name, arguments))
+            try:
+                return asyncio.run(self._call_tool(name, arguments))
+            except MCPClientError:
+                raise
+            except Exception as exc:
+                detail = _exception_detail(exc)
+                raise MCPClientError(f"MCP tool {name!r} failed: {detail}") from exc
         raise MCPClientError("Synchronous TS MCP calls cannot run inside an active event loop")
 
     async def _call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
@@ -105,6 +116,7 @@ class SDKToolCaller:
         if self.server is not None:
             async with Client(
                 self.server,
+                mode=MCP_CLIENT_MODE,
                 read_timeout_seconds=self.settings.timeout_seconds,
                 raise_exceptions=True,
             ) as client:
@@ -124,6 +136,7 @@ class SDKToolCaller:
                 target = streamable_http_client(self.settings.endpoint, http_client=http_client)
                 async with Client(
                     target,
+                    mode=MCP_CLIENT_MODE,
                     read_timeout_seconds=self.settings.timeout_seconds,
                     raise_exceptions=True,
                 ) as client:
@@ -131,11 +144,34 @@ class SDKToolCaller:
                     return _structured_result(result)
         async with Client(
             target,
+            mode=MCP_CLIENT_MODE,
             read_timeout_seconds=self.settings.timeout_seconds,
             raise_exceptions=True,
         ) as client:
             result = await client.call_tool(name, arguments)
             return _structured_result(result)
+
+
+def _exception_detail(error: Exception) -> str:
+    """Expose useful TaskGroup leaf errors without losing the original traceback."""
+
+    leaves: list[BaseException] = []
+
+    def collect(current: BaseException) -> None:
+        if isinstance(current, BaseExceptionGroup):
+            for child in current.exceptions:
+                collect(child)
+            return
+        leaves.append(current)
+
+    collect(error)
+    details: list[str] = []
+    for leaf in leaves:
+        message = str(leaf).strip()
+        detail = f"{type(leaf).__name__}: {message}" if message else type(leaf).__name__
+        if detail not in details:
+            details.append(detail)
+    return "; ".join(details[:4]) or type(error).__name__
 
 
 class TSClusterMCPClient:

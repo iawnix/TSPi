@@ -1,9 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
+import socket
 import subprocess
 import sys
+import threading
+import time
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -20,6 +25,7 @@ from cluster_mcp.errors import SecurityError
 from cluster_mcp.service import ClusterService
 from cluster_mcp.ts_jobs import validate_ts_submission_request
 from ts_remote.mcp import (
+    MCP_CLIENT_MODE,
     MCPClientError,
     MCPConnectionSettings,
     TSClusterMCPClient,
@@ -496,3 +502,72 @@ def test_mcp_sdk_in_memory_transport_exposes_ts_tools(tmp_path: Path, monkeypatc
         transport="streamable-http",
     )
     assert http_server is not None
+
+
+def test_mcp_sdk_authenticated_http_transport_round_trip(tmp_path: Path, monkeypatch) -> None:
+    pytest.importorskip("mcp")
+    uvicorn = pytest.importorskip("uvicorn")
+    from cluster_mcp.http_transport import (
+        ClientNetworkAllowlistMiddleware,
+        transport_security_settings,
+    )
+    from cluster_mcp.server import create_server
+
+    token = "authenticated-http-test-token-value-1234567890"
+    listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(128)
+    port = int(listener.getsockname()[1])
+
+    service = _service(tmp_path)
+    http = replace(
+        service.config.http,
+        port=port,
+        public_url=f"http://127.0.0.1:{port}/mcp",
+    )
+    config = replace(service.config, http=http)
+    monkeypatch.setenv("CLUSTER_MCP_HTTP_TOKEN", token)
+    mcp_server = create_server(
+        config,
+        principal="pi-ts",
+        auth_method="http-bearer",
+        transport="streamable-http",
+    )
+    app = mcp_server.streamable_http_app(
+        host=http.host,
+        streamable_http_path=http.path,
+        stateless_http=http.stateless,
+        json_response=http.json_response,
+        transport_security=transport_security_settings(http),
+    )
+    app = ClientNetworkAllowlistMiddleware(app, http.allowed_client_networks)
+    server = uvicorn.Server(uvicorn.Config(app, log_level="error"))
+    thread = threading.Thread(
+        target=lambda: asyncio.run(server.serve(sockets=[listener])),
+        daemon=True,
+    )
+    thread.start()
+    deadline = time.monotonic() + 5
+    while not server.started and thread.is_alive() and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    try:
+        assert server.started
+        caller = SDKToolCaller(
+            MCPConnectionSettings(
+                f"http://127.0.0.1:{port}/mcp",
+                token=token,
+                timeout_seconds=5,
+            )
+        )
+        capabilities = TSClusterMCPClient(caller).capabilities()
+        assert capabilities["server"] == "cluster-mcp"
+        assert capabilities["authentication"]["principal"] == "pi-ts"
+        assert MCP_CLIENT_MODE == "legacy"
+    finally:
+        server.should_exit = True
+        thread.join(timeout=5)
+        listener.close()
+
+    assert not thread.is_alive()

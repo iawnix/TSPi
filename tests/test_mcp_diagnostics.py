@@ -7,7 +7,7 @@ import sys
 from pathlib import Path
 
 from ts_compute import mcp_diagnostics
-from ts_remote.mcp import MCPClientError, MCPConnectionSettings, TSClusterMCPClient
+from ts_remote.mcp import MCPClientError, MCPConnectionSettings, SDKToolCaller, TSClusterMCPClient
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -239,6 +239,32 @@ def test_mcp_doctor_classifies_timeout(monkeypatch) -> None:
     result = mcp_diagnostics.diagnose_mcp("doctor")
 
     assert result["error"]["class"] == "timeout"
+    assert result["checks"]["connection"] == "fail"
+
+
+def test_sdk_tool_caller_exposes_task_group_leaf_for_diagnostics(monkeypatch) -> None:
+    caller = SDKToolCaller(_settings())
+
+    async def fail(_name: str, _arguments: dict[str, object]) -> dict[str, object]:
+        raise ExceptionGroup(
+            "unhandled errors in a TaskGroup",
+            [ConnectionResetError("peer reset during MCP response")],
+        )
+
+    monkeypatch.setattr(caller, "_call_tool", fail)
+    monkeypatch.setattr(mcp_diagnostics, "_connection_settings", _settings)
+    monkeypatch.setattr(
+        mcp_diagnostics,
+        "_client",
+        lambda _settings: TSClusterMCPClient(caller),
+    )
+
+    result = mcp_diagnostics.diagnose_mcp("doctor")
+
+    assert result["ok"] is False
+    assert result["error"]["class"] == "connection_failed"
+    assert "ConnectionResetError: peer reset during MCP response" in result["error"]["message"]
+    assert "unhandled errors in a TaskGroup" not in result["error"]["message"]
     assert result["checks"]["connection"] == "fail"
 
 
