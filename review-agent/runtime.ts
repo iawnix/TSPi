@@ -16,7 +16,7 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const { parseAndValidateReviewResult } = require("./output-schema.cjs");
-const { promptWithDeadline, withDisposableSession } = require("./session-lifecycle.cjs");
+const { promptWithDeadline, withDisposableSession } = require("../agent-core/session-lifecycle.cjs");
 
 const SUBAGENT_DIR = dirname(fileURLToPath(import.meta.url));
 const PROMPT_DIR = resolve(SUBAGENT_DIR, "prompts");

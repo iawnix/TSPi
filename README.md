@@ -20,8 +20,12 @@ remain readable and closable, but they are not the model for new studies.
   deterministic parsing.
 - `cluster_mcp` and `ts_remote.mcp`: authenticated, manifest-bound file
   transfer and OpenPBS/Torque execution without scientific authority.
-- `subagents/`: fresh Pi review sessions and the shared
-  `ts-agent-task/1` / `ts-agent-result/1` protocol.
+- `agent-core/`: shared `ts-agent-task/1` / `ts-agent-result/1` protocol,
+  result normalization, disposable-session lifecycle, and durable run journal.
+- `review-agent/`: fresh, tool-free Pi scientific-review sessions with bounded
+  task packets, review prompts, and review-specific result validation.
+- `compute-agent/`: fresh backend sessions with one selected private backend
+  skill, request-scoped typed tools, and compute-specific result binding.
 - `artifact-agent/`: fresh render, report, and email-draft sessions with
   request-scoped typed tools and role-specific result binding.
 - `agent-skills/`: private backend, render, report, and email skills. They are

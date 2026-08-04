@@ -15,7 +15,7 @@ import { runComputeOperator } from "../../compute-agent/runtime.ts";
 
 const require = createRequire(import.meta.url);
 const { toolText } = require("../ts-workflow-context/summary.cjs");
-const { beginAgentRun, completeAgentRun, failAgentRun } = require("../../subagents/run-journal.cjs");
+const { beginAgentRun, completeAgentRun, failAgentRun } = require("../../agent-core/run-journal.cjs");
 const {
   completeAction,
   failAction,

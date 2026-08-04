@@ -1,6 +1,6 @@
 "use strict";
 
-const { validateAgentResult, validateAgentTask } = require("../subagents/agent-protocol.cjs");
+const { validateAgentResult, validateAgentTask } = require("../agent-core/agent-protocol.cjs");
 
 const MAX_OUTPUT_BYTES = 16 * 1024;
 const REQUIRED_TOOLS = Object.freeze({

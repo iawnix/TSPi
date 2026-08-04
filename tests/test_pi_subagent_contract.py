@@ -11,9 +11,9 @@ from ts_workspace import report_node, report_workspace
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TASK_PACKET = ROOT / "subagents" / "task-packet.cjs"
-OUTPUT_SCHEMA = ROOT / "subagents" / "output-schema.cjs"
-SESSION_LIFECYCLE = ROOT / "subagents" / "session-lifecycle.cjs"
+TASK_PACKET = ROOT / "review-agent" / "task-packet.cjs"
+OUTPUT_SCHEMA = ROOT / "review-agent" / "output-schema.cjs"
+SESSION_LIFECYCLE = ROOT / "agent-core" / "session-lifecycle.cjs"
 
 
 def _node_json(script: str, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -218,7 +218,7 @@ def test_advice_validation_rejects_uncited_and_oversized_output(tmp_path: Path) 
 
 
 def test_prompt_modules_are_private_and_define_all_review_modes() -> None:
-    prompt_dir = ROOT / "subagents" / "prompts"
+    prompt_dir = ROOT / "review-agent" / "prompts"
     assert {path.name for path in prompt_dir.glob("*.md")} == {
         "core.md",
         "mechanism.md",
@@ -228,7 +228,7 @@ def test_prompt_modules_are_private_and_define_all_review_modes() -> None:
         "final-audit.md",
         "program-failure.md",
     }
-    assert not list((ROOT / "subagents").rglob("SKILL.md"))
+    assert not list((ROOT / "review-agent").rglob("SKILL.md"))
     core = (prompt_dir / "core.md").read_text(encoding="utf-8")
     assert "Return exactly one JSON object" in core
     assert "no authority to mutate" in core
@@ -236,6 +236,25 @@ def test_prompt_modules_are_private_and_define_all_review_modes() -> None:
     assert "Every fact must cite at least one allowlisted basis" in core
     assert "never use `completed`" in core
     assert "never use singular `artifact_ref`" in core
+
+
+def test_agent_directories_separate_shared_core_from_review_implementation() -> None:
+    core_dir = ROOT / "agent-core"
+    review_dir = ROOT / "review-agent"
+
+    assert not (ROOT / "subagents").exists()
+    assert {path.name for path in core_dir.iterdir()} == {
+        "agent-protocol.cjs",
+        "result-normalization.cjs",
+        "run-journal.cjs",
+        "session-lifecycle.cjs",
+    }
+    assert {path.name for path in review_dir.iterdir()} == {
+        "output-schema.cjs",
+        "prompts",
+        "runtime.ts",
+        "task-packet.cjs",
+    }
 
 
 def test_session_lifecycle_success_disables_prompt_expansion() -> None:
@@ -296,7 +315,7 @@ def test_disposable_session_covers_success_and_error(mode: str) -> None:
 
 
 def test_pi_subagent_runtime_and_extension_enforce_isolation() -> None:
-    runtime = (ROOT / "subagents" / "runtime.ts").read_text(encoding="utf-8")
+    runtime = (ROOT / "review-agent" / "runtime.ts").read_text(encoding="utf-8")
     extension = (ROOT / "extensions" / "ts-workflow-subagent" / "index.ts").read_text(encoding="utf-8")
 
     assert 'noTools: "all"' in runtime
@@ -311,4 +330,4 @@ def test_pi_subagent_runtime_and_extension_enforce_isolation() -> None:
     assert 'executionMode: "sequential"' in extension
     assert 'pi.appendEntry("ts-workspace-subagent-run"' in extension
     assert "getApiKeyAndHeaders" in extension
-    assert "parentApiKey" not in (ROOT / "subagents" / "task-packet.cjs").read_text(encoding="utf-8")
+    assert "parentApiKey" not in (ROOT / "review-agent" / "task-packet.cjs").read_text(encoding="utf-8")

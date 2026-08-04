@@ -57,22 +57,26 @@ Keep state ownership narrow.
 - `extensions/ts-workflow-context` exposes the four-tool control plane;
   `ts_workspace_context`, `ts_workspace_decide`, and `ts_workspace_validate`
   are read-only, while only `ts_workspace_apply` mutates canonical state.
-- `extensions/ts-workflow-subagent` builds bounded task packets and delegates
-  to the isolated runtime under `subagents/`. The child remains tool-free and
-  advisory; it never becomes a second control plane.
+- `extensions/ts-workflow-subagent` delegates bounded review requests to
+  `review-agent/`. The child remains tool-free and advisory; it never becomes
+  a second control plane.
 - `extensions/ts-workflow-compute` creates a fresh backend session with one
   selected private backend skill and request-scoped typed tools. Submit/cancel
   must bind and preflight the exact request before child creation; the child
   receives no raw transport access.
+- `compute-agent/` owns the backend fresh-session runtime, private-skill
+  loading, and compute-specific action/result binding.
 - `extensions/ts-workflow-artifacts` creates fresh render, report, and
   email-draft sessions. Each receives one private role skill and one path-bound
   typed tool; email sending is not implemented.
 - `artifact-agent/` owns artifact request paths, fresh-session runtime,
   private-skill loading, and role-specific action/result binding.
-- `subagents/agent-protocol.cjs` and `contracts/agent_*.schema.json` own the
+- `review-agent/` owns scientific-review task packets, prompts, fresh-session
+  runtime, and review-specific result validation.
+- `agent-core/agent-protocol.cjs` and `contracts/agent_*.schema.json` own the
   cross-agent task/result protocol and authority-field rejection.
-- `subagents/run-journal.cjs` is the host-only write boundary for durable child
-  task, action, result, and failure records.
+- `agent-core/run-journal.cjs` is the host-only write boundary for durable
+  child task, action, result, and failure records.
 - `agent-skills/` contains private child skills. They must not be added to
   `package.json.pi.skills` or loaded into the Root Agent.
 

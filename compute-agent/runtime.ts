@@ -18,7 +18,7 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 const { parseAndValidateOperatorReport } = require("./output-schema.cjs");
 const { loadBackendSkill } = require("./skill-loader.cjs");
-const { promptWithDeadline, withDisposableSession } = require("../subagents/session-lifecycle.cjs");
+const { promptWithDeadline, withDisposableSession } = require("../agent-core/session-lifecycle.cjs");
 const COMPUTE_AGENT_DIR = dirname(fileURLToPath(import.meta.url));
 const SYSTEM_PROMPT = readFileSync(resolve(COMPUTE_AGENT_DIR, "prompt.md"), "utf8").trim();
 

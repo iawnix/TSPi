@@ -8,7 +8,7 @@ const {
   buildContextSummary,
   buildNodeContextSummary,
 } = require("../extensions/ts-workflow-context/summary.cjs");
-const { validateAgentTask } = require("./agent-protocol.cjs");
+const { validateAgentTask } = require("../agent-core/agent-protocol.cjs");
 
 const REVIEW_CEILINGS = Object.freeze({
   mechanism: ["mechanism"],

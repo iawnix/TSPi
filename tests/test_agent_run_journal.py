@@ -10,7 +10,7 @@ from ts_workspace import report_workspace
 
 
 ROOT = Path(__file__).resolve().parents[1]
-JOURNAL = ROOT / "subagents" / "run-journal.cjs"
+JOURNAL = ROOT / "agent-core" / "run-journal.cjs"
 
 
 def test_node_agent_run_changes_only_operational_revision(tmp_path: Path) -> None:
