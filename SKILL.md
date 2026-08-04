@@ -208,6 +208,10 @@ never retry an ambiguous submit or cancel with the same or a new identifier
 until the scheduler state has been reconciled by the host.
 An `unresolved_controls` context entry means a pre-side-effect guard has no
 final result; stop automatic control and reconcile the scheduler manually.
+MCP Gaussian submission requires a server `software.gaussian` profile with an
+existing activation script and an allowed queue. Installation of `g16` alone is
+not registration. Do not bypass a failed profile preflight with a PATH override
+or an automatic SSH fallback.
 
 ## Evidence And Audits
 

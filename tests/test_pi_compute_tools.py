@@ -8,6 +8,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_SCHEMA = ROOT / "compute-agent" / "output-schema.cjs"
 AUTHORIZATION = ROOT / "extensions" / "ts-workflow-compute" / "authorization.cjs"
+ACTION_LOG = ROOT / "extensions" / "ts-workflow-compute" / "action-log.cjs"
 
 
 def test_pi_package_registers_one_compute_operator_extension() -> None:
@@ -47,6 +48,11 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     assert 'name: "ts_workspace_compute_operator"' in source
     assert 'name: "ts_workspace_mcp_status"' in source
     assert 'pi.registerCommand("ts-mcp"' in source
+    assert 'pi.registerEntryRenderer<McpDiagnosticEntryData>("ts-workspace-mcp-diagnostic"' in source
+    assert 'pi.appendEntry<McpDiagnosticEntryData>("ts-workspace-mcp-diagnostic"' in source
+    assert 'keyHint("app.tools.expand", "to expand")' in source
+    assert 'ctx.ui.setWidget("ts-workspace-mcp", undefined)' in source
+    assert 'ctx.ui.setWidget("ts-workspace-mcp", JSON.stringify' not in source
     assert "Usage: /ts-mcp status|doctor|queues|nodes|cluster" in source
     assert "about the configured MCP target, use mode=cluster" in source
     assert "never switch between MCP and SSH automatically" in source
@@ -66,6 +72,9 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     assert source.index("await requireHealthyMcpConnection") < source.index("await authorizeComputeControl")
     assert 'request.transport === "mcp"' in source
     assert "MCP_PREFLIGHT_OPERATIONS" in source
+    assert "server has no gaussian software profile" in source
+    assert "gaussian activation script is unavailable" in source
+    assert "profile does not allow queue" in source
 
 
 def test_compute_contracts_exclude_workspace_verdicts_and_arbitrary_commands() -> None:
@@ -108,10 +117,44 @@ def test_compute_operator_runtime_is_fresh_isolated_and_tool_scoped() -> None:
     assert "parseAndValidateOperatorReport" in runtime
     assert "noTools: \"all\"" not in runtime
     assert "Program completion is not evidence" in prompt
+    assert "never use `completed`" in prompt
+    assert "never use singular `artifact_ref`" in prompt
+    assert "remote basename is not a durable local artifact ref" in prompt
     assert "For `submit` or `cancel`" in prompt
     assert "never infer, request, copy, or return authorization data" in prompt
     assert "loadBackendSkill(options.backend)" in runtime
     assert "Selected private backend skill" in runtime
+
+
+def test_compute_action_failure_replaces_started_record_and_redacts_diagnostics() -> None:
+    script = (
+        f"const helper=require({json.dumps(str(ACTION_LOG))});"
+        "const actions=[];"
+        "const action=helper.reserveAction(actions,'ts_workspace_compute_status');"
+        "const error=new Error('Bearer abc.def token=topsecret https://user:pass@example.test/status');"
+        "const result=helper.failAction(action,error,{intentId:'calc_test',nodeId:'n001',"
+        "backend:'gaussian',intentDigest:'sha256:test'});"
+        "process.stdout.write(JSON.stringify({actions,result,message:helper.formatFailedActionError(action.tool,result)}));"
+    )
+    completed = subprocess.run(
+        ["node", "-e", script],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    output = json.loads(completed.stdout)
+
+    assert output["actions"][0]["result"]["action_status"] == "failed"
+    assert output["result"]["program_status"] == "not_run"
+    assert output["result"]["state"] == "unknown"
+    assert output["result"]["error_class"] == "tool_execution_error"
+    assert "started" not in json.dumps(output["actions"])
+    assert "abc.def" not in output["message"]
+    assert "topsecret" not in output["message"]
+    assert "user:pass" not in output["message"]
+    assert "[REDACTED]" in output["message"]
 
 
 def test_compute_control_authorization_fails_closed_and_is_request_scoped(tmp_path: Path) -> None:
@@ -309,6 +352,100 @@ def test_compute_operator_rejects_scientific_fields_and_missing_required_action(
     completed = _validate_operator_output(tmp_path, packet, [], report, check=False)
     assert completed.returncode == 2
     assert "execute one or two" in completed.stderr
+
+
+def test_compute_inspect_accepts_failed_status_plus_tail_as_partial_diagnostic(tmp_path: Path) -> None:
+    packet = {
+        "schema_version": "ts-agent-task/1",
+        "task_id": "agent_fe328914-a6da-4d2c-8dcc-5048afded0d5",
+        "role": "backend",
+        "authority": "operational",
+        "operation": "inspect",
+        "objective": "Inspect the bound Gaussian calculation.",
+        "workspace": {"root": "/tmp/ws", "report_id": "rep_001", "revision": "rev_001"},
+        "scope": {"report_id": "rep_001", "node_ids": ["n002"], "hypothesis_id": None, "pathway_id": None},
+        "inputs": {
+            "intent_id": "calc_n002_ma_optfreq_001",
+            "intent_ref": "nodes/n002/attempts/calc_n002_ma_optfreq_001/intent.json",
+            "intent_digest": "sha256:test",
+            "node_id": "n002",
+            "backend": "gaussian",
+            "basis_allowlist": [],
+        },
+        "capabilities": ["ts_workspace_compute_status", "ts_workspace_compute_tail"],
+        "constraints": {
+            "canonical_workspace_mutation": False,
+            "scientific_decision": False,
+            "recursive_delegation": False,
+            "remote_authority": "execution_mirror",
+            "external_side_effects": False,
+        },
+        "output_contract": "ts-agent-result/1",
+    }
+    actions = [
+        {
+            "tool": "ts_workspace_compute_status",
+            "result": {
+                "action_status": "failed",
+                "state": "unknown",
+                "program_status": "not_run",
+                "error_class": "tool_execution_error",
+                "exit_status": None,
+                "intent_id": "calc_n002_ma_optfreq_001",
+                "node_id": "n002",
+                "artifact_refs": [],
+                "provenance": {"backend": "gaussian", "intent_digest": "sha256:test"},
+            },
+        },
+        {
+            "tool": "ts_workspace_compute_tail",
+            "result": {
+                "schema_version": "ts-calculation-tail/1",
+                "intent_id": "calc_n002_ma_optfreq_001",
+                "node_id": "n002",
+                "artifact": "remote_job.stderr",
+                "lines": 100,
+                "truncated": False,
+                "text": "exec: g16: not found",
+            },
+        },
+    ]
+    report = {
+        "schema_version": "ts-agent-result/1",
+        "task_id": packet["task_id"],
+        "role": "backend",
+        "authority": "operational",
+        "operation": "inspect",
+        "outcome": "partial",
+        "summary": "Status failed, but the bounded stderr tail identified a launcher error.",
+        "scope": packet["scope"],
+        "facts": [
+            {
+                "kind": "program",
+                "layer": "program",
+                "statement": "The remote launcher reported that g16 was not found.",
+                "status": "observed",
+                "artifact_ref": "remote_job.stderr",
+            }
+        ],
+        "artifact_refs": [],
+        "program": {"outcome": "not_run", "state": "unknown", "error_class": "tool_execution_error", "exit_status": None},
+        "payload": {"intent_id": "calc_n002_ma_optfreq_001", "node_id": "n002", "backend": "gaussian"},
+        "limitations": ["The failed status action did not establish a canonical program state."],
+        "provenance": {},
+    }
+
+    completed = _validate_operator_output(tmp_path, packet, actions, report)
+    result = json.loads(completed.stdout)
+    expected_ref = (
+        f"nodes/n002/agent-runs/{packet['task_id']}/actions.json#/actions/1/result"
+    )
+
+    assert result["outcome"] == "partial"
+    assert result["facts"][0]["basis_refs"] == [expected_ref]
+    assert "artifact_ref" not in result["facts"][0]
+    assert result["program"]["outcome"] == "not_run"
+    assert not ({"claim_verdict", "hypothesis_status", "accepted_ts"} & set(result))
 
 
 def _validate_operator_output(

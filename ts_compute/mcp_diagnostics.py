@@ -321,6 +321,31 @@ def _capability_summary(payload: dict[str, Any]) -> dict[str, Any]:
             for key in ("latest", "supported")
             if key in protocol
         }
+    software = payload.get("software")
+    if isinstance(software, dict):
+        profiles = software.get("software")
+        summary["software"] = {
+            "profiles": [
+                {
+                    key: profile[key]
+                    for key in (
+                        "name",
+                        "kind",
+                        "activation_script_exists",
+                        "allowed_queues",
+                        "requires_gpu",
+                    )
+                    if key in profile
+                }
+                for profile in profiles
+                if isinstance(profile, dict)
+            ]
+            if isinstance(profiles, list)
+            else [],
+            "load_error_names": sorted(software.get("load_errors", {}))
+            if isinstance(software.get("load_errors"), dict)
+            else [],
+        }
     if summary.get("server") != "cluster-mcp":
         raise MCPClientError("MCP endpoint is not a TS cluster-mcp server")
     return summary

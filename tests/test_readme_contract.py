@@ -71,6 +71,9 @@ def test_cluster_mcp_documentation_covers_secure_installation_and_pi_smoke() -> 
         "TS_CLUSTER_MCP_TOKEN` | the same bearer secret",
         "## Use Direct HTTPS",
         "cluster_capabilities",
+        "## Register Gaussian For TS Jobs",
+        "software.gaussian",
+        "real Gaussian submission as a registration probe.",
         "## Run Under systemd",
         "Do not run the service as `root`.",
     ]:

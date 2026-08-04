@@ -1,6 +1,7 @@
 "use strict";
 
 const { validateAgentResult, validateAgentTask } = require("../subagents/agent-protocol.cjs");
+const { normalizeAgentResultInput } = require("../subagents/result-normalization.cjs");
 
 const MAX_OUTPUT_BYTES = 16 * 1024;
 const REQUIRED_TOOLS = {
@@ -23,7 +24,11 @@ function parseAndValidateOperatorReport(text, packet, actions) {
   } catch (error) {
     throw new Error(`compute operator output must be JSON only: ${error instanceof Error ? error.message : String(error)}`);
   }
-  return validateOperatorReport(value, packet, actions);
+  const task = validateAgentTask(packet);
+  const normalized = normalizeAgentResultInput(value, {
+    resolveFactRef: (ref) => resolveComputeFactRef(ref, task, actions),
+  });
+  return validateOperatorReport(normalized, task, actions);
 }
 
 function normalizeJsonText(text) {
@@ -69,7 +74,10 @@ function validateOperatorReport(value, packet, actions) {
   if (JSON.stringify(report.program) !== JSON.stringify(canonicalProgram)) {
     throw new Error("compute operator program does not match tool result");
   }
-  if (report.outcome !== "success") throw new Error("successful compute tool execution requires outcome=success");
+  const expectedOutcome = expectedReportOutcome(actions);
+  if (report.outcome !== expectedOutcome) {
+    throw new Error(`compute operator outcome must be ${expectedOutcome} for the recorded actions`);
+  }
 
   const inputs = task.inputs;
   const backend = requireString(inputs.backend, "task inputs.backend", 64);
@@ -90,11 +98,17 @@ function validateOperatorReport(value, packet, actions) {
   }
 
   const allowedArtifacts = new Set();
-  for (const action of actions) {
+  const allowedBasisRefs = new Set();
+  for (const [index, action] of actions.entries()) {
     const result = operationResult(action && action.result);
     for (const ref of result && Array.isArray(result.artifact_refs) ? result.artifact_refs : []) {
-      if (typeof ref === "string") allowedArtifacts.add(ref);
+      if (typeof ref === "string") {
+        allowedArtifacts.add(ref);
+        allowedBasisRefs.add(ref);
+      }
     }
+    const actionRef = actionResultRef(task, index);
+    if (actionRef) allowedBasisRefs.add(actionRef);
   }
   for (const ref of report.artifact_refs) {
     if (!allowedArtifacts.has(ref)) throw new Error(`compute operator invented artifact ref: ${ref}`);
@@ -102,7 +116,7 @@ function validateOperatorReport(value, packet, actions) {
   for (const [index, fact] of report.facts.entries()) {
     if (!['program', 'parser'].includes(fact.kind)) throw new Error(`facts[${index}].kind is invalid for backend role`);
     for (const ref of fact.basis_refs) {
-      if (!allowedArtifacts.has(ref)) throw new Error(`facts[${index}] cites an unknown artifact: ${ref}`);
+      if (!allowedBasisRefs.has(ref)) throw new Error(`facts[${index}] cites an unknown basis: ${ref}`);
     }
   }
 
@@ -112,6 +126,7 @@ function validateOperatorReport(value, packet, actions) {
     provenance: {
       source: "typed_compute_tools",
       action_names: actions.map((action) => action.tool),
+      action_result_refs: actions.map((_action, index) => actionResultRef(task, index)).filter(Boolean),
     },
   };
 }
@@ -136,6 +151,39 @@ function mapProgramOutcome(value) {
   if (value === "failed" || value === "stopped") return "failure";
   if (value === "not_run") return "not_run";
   throw new Error(`invalid canonical program_status: ${value}`);
+}
+
+function expectedReportOutcome(actions) {
+  const failedCount = actions.filter((action) => operationResult(action && action.result)?.action_status === "failed").length;
+  if (!failedCount) return "success";
+  return failedCount < actions.length ? "partial" : "failure";
+}
+
+function resolveComputeFactRef(ref, task, actions) {
+  for (const [index, action] of actions.entries()) {
+    const result = operationResult(action && action.result);
+    if (!isPlainObject(result)) continue;
+    if (Array.isArray(result.artifact_refs) && result.artifact_refs.includes(ref)) return ref;
+    if (
+      action.tool === "ts_workspace_compute_tail"
+      && typeof result.artifact === "string"
+      && (ref === result.artifact || ref.endsWith(`/${result.artifact}`))
+    ) {
+      return actionResultRef(task, index) || ref;
+    }
+  }
+  return ref;
+}
+
+function actionResultRef(task, index) {
+  const nodeIds = task && task.scope && Array.isArray(task.scope.node_ids) ? task.scope.node_ids : [];
+  const taskId = task && task.task_id;
+  if (nodeIds.length !== 1 || !safeId(nodeIds[0]) || !safeId(taskId)) return null;
+  return `nodes/${nodeIds[0]}/agent-runs/${taskId}/actions.json#/actions/${index}/result`;
+}
+
+function safeId(value) {
+  return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(value);
 }
 
 function assertSame(actual, expected, label) {

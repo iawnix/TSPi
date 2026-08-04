@@ -15,7 +15,7 @@ from typing import Any, Callable
 from . import __version__
 from .audit import AuditLogger
 from .auth import AuthRegistry, Principal
-from .config import AppConfig
+from .config import AppConfig, SoftwareProfile
 from .errors import ConfigurationError, SecurityError
 from .models import (
     JobSubmission,
@@ -126,6 +126,7 @@ class ClusterService:
     def capabilities(self) -> dict[str, Any]:
         self._require_any("cluster:read")
         transport = "streamable-http" if self.auth_context.auth_method == "http-bearer" else "stdio"
+        software = self.software.describe()
         return {
             "server": "cluster-mcp",
             "version": __version__,
@@ -145,6 +146,7 @@ class ClusterService:
                 "max_chunk_bytes": self.config.workspace.max_chunk_bytes,
                 "base64_chunked": True,
             },
+            "software": software,
             "security_notes": [
                 "All file paths are relative to the authenticated principal workspace.",
                 "PBS commands are executed as argv without a shell.",
@@ -383,6 +385,7 @@ class ClusterService:
         gpu_devices: list[int] | None = None,
         expected_source_sha256: str | None = None,
         metadata: dict[str, Any] | None = None,
+        script_prelude: tuple[str, ...] = (),
         scheduler_accept_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         script = self.policy.require_file(script_path)
@@ -426,7 +429,10 @@ class ClusterService:
             name=name,
             queue=queue,
             workdir=workdir,
-            body_lines=(f"exec /usr/bin/env bash -- {shlex.quote(str(snapshot))}",),
+            body_lines=(
+                *script_prelude,
+                f"exec /usr/bin/env bash -- {shlex.quote(str(snapshot))}",
+            ),
             environment=environment,
             gpu_devices=gpu_devices,
             metadata={
@@ -482,21 +488,49 @@ class ClusterService:
         result["source_script_sha256"] = source_digest
         return result
 
+    def _ts_software_profile(
+        self,
+        backend: str,
+        execution: dict[str, Any],
+    ) -> SoftwareProfile | None:
+        profile = self.software.profiles.get(backend)
+        if profile is None:
+            if backend == "gaussian":
+                raise ConfigurationError(
+                    "TS backend 'gaussian' requires a matching server software profile"
+                )
+            return None
+        queue = str(execution["queue"])
+        if queue not in profile.allowed_queues:
+            raise SecurityError(
+                f"TS backend profile {backend!r} is not allowed in queue {queue!r}"
+            )
+        if profile.requires_gpu and int(execution["ngpus"]) < 1:
+            raise SecurityError(f"TS backend profile {backend!r} requires at least one GPU")
+        if profile.activation_script is not None and not profile.activation_script.is_file():
+            raise ConfigurationError(
+                f"Activation script for TS backend profile {backend!r} is missing: "
+                f"{profile.activation_script}"
+            )
+        return profile
+
     def submit_ts_job(self, request: dict[str, Any]) -> dict[str, Any]:
         principal = self._require_any("ts:submit")
         normalized = validate_ts_submission_request(request)
         replay = self.ts_submissions.replay(normalized, principal=principal.name)
         if replay is not None:
             return {**replay, "replayed": True}
+        execution = normalized["execution"]
+        profile = self._ts_software_profile(str(normalized["backend"]), execution)
         script_digest = self._verify_ts_files(normalized)
         replay = self.ts_submissions.reserve(normalized, principal=principal.name)
         if replay is not None:
             return {**replay, "replayed": True}
 
         submission_id = str(normalized["submission_id"])
-        execution = normalized["execution"]
         environment = {
             **execution["environment"],
+            **(profile.environment if profile is not None else {}),
             "TS_CLUSTER_SUBMISSION_ID": submission_id,
             "TS_CLUSTER_INTENT_ID": str(normalized["intent_id"]),
             "TS_CLUSTER_INTENT_DIGEST": str(normalized["intent_digest"]),
@@ -536,7 +570,13 @@ class ClusterService:
                     "backend": normalized["backend"],
                     "input_manifest": normalized["input_manifest"],
                     "expected_artifacts": normalized["expected_artifacts"],
+                    "software_profile": profile.name if profile is not None else None,
                 },
+                script_prelude=(
+                    (f"source {shlex.quote(str(profile.activation_script))}",)
+                    if profile is not None and profile.activation_script is not None
+                    else ()
+                ),
                 scheduler_accept_callback=record_scheduler_accept,
             )
             result = {

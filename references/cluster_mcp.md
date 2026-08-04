@@ -474,3 +474,42 @@ preflight, fails closed without an interactive UI, asks for a fresh confirmation
 containing the bound intent and target, and only then creates a fresh child with
 exactly one request-scoped tool. The presence of the MCP client, server, or
 scopes is never standing authorization.
+
+## Register Gaussian For TS Jobs
+
+Installing Gaussian on the cluster is not sufficient. The MCP server must have
+a same-name `software.gaussian` profile so that `backend=gaussian` can bind a
+server-owned activation script and queue policy before `qsub` is reachable:
+
+```toml
+[software.gaussian]
+description = "Gaussian 16"
+command = ["/home/agent/soft/gaussian/bin/gaussian16-run"]
+activation_script = "/home/agent/soft/gaussian/activate_gaussian16.sh"
+default_queue = "batch"
+allowed_queues = ["batch", "fat", "fata"]
+requires_gpu = false
+
+[software.gaussian.environment]
+GAUSSIAN16_DEFER_SCRATCH = "1"
+```
+
+The profile name must be exactly `gaussian`. The server validates profile
+presence, activation-script existence, queue membership, and GPU requirements
+before reserving a TS submission. Profile environment values override matching
+intent environment values. The server then sources the activation script in
+the PBS wrapper. The manifest-bound Gaussian runner creates a private random
+scratch directory, exports `GAUSS_SCRDIR`, refuses to overwrite the declared
+output, and cleans scratch on exit.
+
+After restarting the service, use read-only checks only:
+
+```text
+/ts-mcp status
+/ts-mcp cluster
+```
+
+The capability result must contain a `gaussian` profile with
+`activation_script_exists=true` and the expected queue allowlist. The compute
+operator repeats this check before asking for submit authorization. Do not use a
+real Gaussian submission as a registration probe.

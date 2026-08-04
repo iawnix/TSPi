@@ -1,6 +1,7 @@
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { keyHint, type ExtensionAPI, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
+import { Text } from "@earendil-works/pi-tui";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
@@ -15,6 +16,12 @@ import { runComputeOperator } from "../../compute-agent/runtime.ts";
 const require = createRequire(import.meta.url);
 const { toolText } = require("../ts-workflow-context/summary.cjs");
 const { beginAgentRun, completeAgentRun, failAgentRun } = require("../../subagents/run-journal.cjs");
+const {
+  completeAction,
+  failAction,
+  formatFailedActionError,
+  reserveAction,
+} = require("./action-log.cjs");
 const { authorizeComputeControl } = require("./authorization.cjs");
 const OPERATIONS = ["prepare", "submit", "inspect", "collect", "cancel", "parse"] as const;
 const BACKENDS = ["gaussian", "ase_neb", "xtb", "qbics_dmecp"] as const;
@@ -40,8 +47,27 @@ type OperatorRequest = {
 };
 
 type ActionLog = { tool: string; result: Record<string, unknown> }[];
+type McpDiagnosticEntryData = {
+  mode: typeof MCP_DIAGNOSTIC_MODES[number];
+  result: Record<string, unknown>;
+};
 
 export default function (pi: ExtensionAPI) {
+  pi.registerEntryRenderer<McpDiagnosticEntryData>("ts-workspace-mcp-diagnostic", (entry, { expanded }, theme) => {
+    const data = entry.data;
+    const result = data?.result || {};
+    const mode = data?.mode || "status";
+    const ok = result.ok === true;
+    const label = theme.fg(ok ? "success" : "error", ok ? "passed" : "failed");
+    let text = `${theme.fg("accent", `TS Cluster MCP ${mode}`)}: ${label}`;
+    if (expanded) {
+      text += `\n${theme.fg("dim", JSON.stringify(result, null, 2))}`;
+    } else {
+      text += ` ${theme.fg("muted", `(${keyHint("app.tools.expand", "to expand")})`)}`;
+    }
+    return new Text(text, 1, 0);
+  });
+
   pi.registerTool({
     name: "ts_workspace_mcp_status",
     label: "TS Workspace MCP Status",
@@ -117,7 +143,7 @@ export default function (pi: ExtensionAPI) {
       request.jobId = binding.jobId;
       request.executionSummary = binding.executionSummary;
       if (request.transport === "mcp" && MCP_PREFLIGHT_OPERATIONS.has(request.operation)) {
-        await requireHealthyMcpConnection(pi, root, request.operation, signal);
+        await requireHealthyMcpConnection(pi, root, request, signal);
       }
       if (request.operation === "submit" || request.operation === "cancel") {
         await authorizeComputeControl(ctx, request);
@@ -227,16 +253,16 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("ts-mcp", {
     description: "Show read-only TS Cluster MCP connection, queue, node, or aggregated cluster status.",
     handler: async (args, ctx) => {
+      ctx.ui.setWidget("ts-workspace-mcp", undefined);
       const candidate = String(args || "").trim();
       if (!MCP_DIAGNOSTIC_MODES.includes(candidate as typeof MCP_DIAGNOSTIC_MODES[number])) {
         const usage = "Usage: /ts-mcp status|doctor|queues|nodes|cluster";
-        ctx.ui.setWidget("ts-workspace-mcp", [usage]);
         ctx.ui.notify(usage, "warning");
         return;
       }
       const mode = candidate as typeof MCP_DIAGNOSTIC_MODES[number];
       const result = await runMcpDiagnosticJson(pi, mode, ctx.cwd, ctx.signal);
-      ctx.ui.setWidget("ts-workspace-mcp", JSON.stringify(result, null, 2).split("\n"));
+      pi.appendEntry<McpDiagnosticEntryData>("ts-workspace-mcp-diagnostic", { mode, result });
       ctx.ui.notify(
         result.ok === true ? `TS Cluster MCP ${mode} passed` : `TS Cluster MCP ${mode} failed`,
         result.ok === true ? "info" : "warning",
@@ -248,7 +274,7 @@ export default function (pi: ExtensionAPI) {
 async function requireHealthyMcpConnection(
   pi: ExtensionAPI,
   root: string,
-  operation: OperatorRequest["operation"],
+  request: OperatorRequest,
   signal?: AbortSignal,
 ) {
   const result = await runMcpDiagnosticJson(pi, "status", root, signal);
@@ -259,7 +285,29 @@ async function requireHealthyMcpConnection(
     const error = isPlainObject(result.error) ? result.error : {};
     const errorClass = typeof error.class === "string" ? error.class : "unknown_error";
     const message = typeof error.message === "string" ? error.message : "MCP connection is unavailable";
-    throw new Error(`MCP ${operation} preflight failed (${errorClass}): ${message}`);
+    throw new Error(`MCP ${request.operation} preflight failed (${errorClass}): ${message}`);
+  }
+  if (request.operation === "submit" && request.backend === "gaussian") {
+    const capabilities = isPlainObject(result.capabilities) ? result.capabilities : {};
+    const software = isPlainObject(capabilities.software) ? capabilities.software : {};
+    const profiles = Array.isArray(software.profiles) ? software.profiles : [];
+    const gaussian = profiles.find(
+      (profile) => isPlainObject(profile) && profile.name === "gaussian" && profile.kind === "profile",
+    );
+    if (!isPlainObject(gaussian)) {
+      throw new Error("MCP Gaussian submit preflight failed: server has no gaussian software profile");
+    }
+    if (gaussian.activation_script_exists !== true) {
+      throw new Error("MCP Gaussian submit preflight failed: gaussian activation script is unavailable");
+    }
+    const queue = isPlainObject(request.executionSummary) ? request.executionSummary.queue : undefined;
+    if (
+      typeof queue === "string"
+      && Array.isArray(gaussian.allowed_queues)
+      && !gaussian.allowed_queues.includes(queue)
+    ) {
+      throw new Error(`MCP Gaussian submit preflight failed: profile does not allow queue ${queue}`);
+    }
   }
 }
 
@@ -279,13 +327,13 @@ function createScopedComputeTools(
       parameters: Type.Object({}, { additionalProperties: false }),
       async execute(_toolCallId, _params, signal) {
         const action = reserveAction(actions, name);
-        const raw = await run(signal);
-        if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
-          throw new Error(`${name} returned a non-object result`);
+        try {
+          const result = completeAction(action, await run(signal), name) as Record<string, unknown>;
+          return toolText(JSON.stringify(result, null, 2), { result });
+        } catch (error) {
+          const failed = failAction(action, error, request) as Record<string, unknown>;
+          throw new Error(formatFailedActionError(name, failed));
         }
-        const result = raw as Record<string, unknown>;
-        action.result = result;
-        return toolText(JSON.stringify(result, null, 2), { result });
       },
     });
   };
@@ -472,16 +520,4 @@ function compactCompletedActions(actions: ActionLog) {
       artifact_refs: Array.isArray(raw.artifact_refs) ? raw.artifact_refs : [],
     };
   });
-}
-
-function reserveAction(actions: ActionLog, toolName: string) {
-  if (actions.some((action) => action.tool === toolName)) {
-    throw new Error(`${toolName} may be called only once`);
-  }
-  const action = {
-    tool: toolName,
-    result: { action_status: "started", state: "started", program_status: "not_run", artifact_refs: [] },
-  };
-  actions.push(action);
-  return action;
 }

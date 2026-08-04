@@ -225,6 +225,12 @@ scientific evidence. Complete server installation, `cluster-mcp check`, token
 mapping, SSH-tunnel and direct-HTTPS setup, Pi smoke testing, systemd operation,
 and scope rules are in `references/cluster_mcp.md`.
 
+Gaussian MCP execution additionally requires a server-side
+`software.gaussian` profile. The profile binds the activation script, queue
+allowlist, and server-owned environment; a bare `g16` installation or client
+PATH override is insufficient. Registration and read-only verification are
+documented in `references/cluster_mcp.md`.
+
 ## Agent Protocol
 
 All isolated roles communicate through:

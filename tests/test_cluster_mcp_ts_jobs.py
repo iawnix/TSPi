@@ -19,9 +19,11 @@ from cluster_mcp.config import (
     AuthSettings,
     HTTPSettings,
     SchedulerSettings,
+    SoftwareProfile,
     WorkspaceSettings,
+    load_config,
 )
-from cluster_mcp.errors import SecurityError
+from cluster_mcp.errors import ConfigurationError, SecurityError
 from cluster_mcp.service import ClusterService
 from cluster_mcp.ts_jobs import validate_ts_submission_request
 from ts_remote.mcp import (
@@ -129,7 +131,13 @@ class _ServiceCaller:
         raise AssertionError(name)
 
 
-def _service(tmp_path: Path, scheduler_type=_Scheduler) -> ClusterService:
+def _service(
+    tmp_path: Path,
+    scheduler_type=_Scheduler,
+    *,
+    software: dict[str, SoftwareProfile] | None = None,
+) -> ClusterService:
+    tmp_path.mkdir(parents=True, exist_ok=True)
     root = tmp_path / "cluster"
     auth_file = tmp_path / "auth.toml"
     auth_file.write_text(
@@ -143,6 +151,20 @@ workspace_prefix = "pi-ts"
         encoding="utf-8",
     )
     auth_file.chmod(0o600)
+    if software is None:
+        activation = tmp_path / "activate_gaussian16.sh"
+        activation.write_text("export PATH=/opt/gaussian/g16:$PATH\n", encoding="utf-8")
+        software = {
+            "gaussian": SoftwareProfile(
+                name="gaussian",
+                description="Gaussian 16",
+                command=("/opt/gaussian/bin/gaussian16-run",),
+                activation_script=activation,
+                default_queue="workq",
+                allowed_queues=("workq",),
+                environment={"GAUSSIAN16_DEFER_SCRATCH": "1"},
+            )
+        }
     config = AppConfig(
         source_path=tmp_path / "config.toml",
         workspace=WorkspaceSettings(root=root, min_free_bytes=0),
@@ -150,7 +172,7 @@ workspace_prefix = "pi-ts"
         audit=AuditSettings(enabled=False, path=root / ".cluster_mcp" / "audit.jsonl"),
         auth=AuthSettings(required=True, principals_file=auth_file),
         http=HTTPSettings(),
-        software={},
+        software=software,
     )
     service = ClusterService(config, principal="pi-ts", auth_method="local")
     service.initialize()
@@ -207,6 +229,7 @@ def _request(service: ClusterService, *, submission_id: str = "tsjob_calc_000001
 def test_ts_submission_is_manifest_bound_and_idempotent(tmp_path: Path) -> None:
     service = _service(tmp_path)
     request = _request(service)
+    request["execution"]["environment"]["GAUSSIAN16_DEFER_SCRATCH"] = "0"
 
     first = service.submit_ts_job(request)
     second = service.submit_ts_job(request)
@@ -219,11 +242,70 @@ def test_ts_submission_is_manifest_bound_and_idempotent(tmp_path: Path) -> None:
     submission = service.scheduler.submissions[0]
     assert submission.environment["TS_CLUSTER_SUBMISSION_ID"] == request["submission_id"]
     assert submission.environment["TS_CLUSTER_INTENT_DIGEST"] == request["intent_digest"]
+    assert submission.environment["GAUSSIAN16_DEFER_SCRATCH"] == "1"
     assert submission.metadata["kind"] == "ts_calculation"
+    assert submission.metadata["software_profile"] == "gaussian"
+    assert submission.body_lines[0].startswith("source ")
+    assert submission.body_lines[1].startswith("exec /usr/bin/env bash -- ")
 
     record = service.get_ts_submission(str(request["submission_id"]), include_history=True)
     assert record["state"] == "submitted"
     assert record["scheduler"]["state"] == "F"
+
+
+def test_example_config_registers_same_name_gaussian_profile() -> None:
+    config = load_config(Path(__file__).resolve().parents[1] / "cluster_mcp" / "config.example.toml")
+
+    profile = config.software["gaussian"]
+    assert profile.name == "gaussian"
+    assert profile.activation_script is not None
+    assert profile.environment == {"GAUSSIAN16_DEFER_SCRATCH": "1"}
+
+
+def test_gaussian_ts_submission_requires_registered_server_profile(tmp_path: Path) -> None:
+    service = _service(tmp_path, software={})
+    request = _request(service)
+
+    with pytest.raises(ConfigurationError, match="requires a matching server software profile"):
+        service.submit_ts_job(request)
+
+    assert service.scheduler.submissions == []
+    with pytest.raises(SecurityError, match="Unknown TS submission"):
+        service.ts_submissions.get(str(request["submission_id"]))
+
+
+def test_gaussian_ts_profile_checks_activation_and_queue_before_reservation(tmp_path: Path) -> None:
+    missing_activation = tmp_path / "missing-activation.sh"
+    profile = SoftwareProfile(
+        name="gaussian",
+        description="Gaussian 16",
+        command=("/opt/gaussian/bin/gaussian16-run",),
+        activation_script=missing_activation,
+        default_queue="workq",
+        allowed_queues=("workq",),
+    )
+    service = _service(tmp_path, software={"gaussian": profile})
+    request = _request(service)
+
+    with pytest.raises(ConfigurationError, match="Activation script.*missing"):
+        service.submit_ts_job(request)
+    assert service.scheduler.submissions == []
+
+    activation = tmp_path / "activation.sh"
+    activation.write_text("export PATH=/opt/gaussian/g16:$PATH\n", encoding="utf-8")
+    restricted = SoftwareProfile(
+        name="gaussian",
+        description="Gaussian 16",
+        command=("/opt/gaussian/bin/gaussian16-run",),
+        activation_script=activation,
+        default_queue="fat",
+        allowed_queues=("fat",),
+    )
+    service = _service(tmp_path / "queue-case", software={"gaussian": restricted})
+    request = _request(service, submission_id="tsjob_calc_queue_000001")
+    with pytest.raises(SecurityError, match="not allowed in queue"):
+        service.submit_ts_job(request)
+    assert service.scheduler.submissions == []
 
 
 def test_ts_submission_rejects_rebinding_and_changed_inputs(tmp_path: Path) -> None:
@@ -491,6 +573,8 @@ def test_mcp_sdk_in_memory_transport_exposes_ts_tools(tmp_path: Path, monkeypatc
     capabilities = client.capabilities()
     assert capabilities["server"] == "cluster-mcp"
     assert "ts:submit" in capabilities["authentication"]["scopes"]
+    assert capabilities["software"]["software"][0]["name"] == "gaussian"
+    assert capabilities["software"]["software"][0]["activation_script_exists"] is True
     client.ensure_directory("sdk-smoke/outputs")
     assert (service.policy.root / "sdk-smoke" / "outputs").is_dir()
 

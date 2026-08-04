@@ -54,6 +54,20 @@ def test_mcp_status_returns_only_compact_safe_capabilities(monkeypatch) -> None:
                     "token": TOKEN,
                 },
                 "allowed_queues": ["batch"],
+                "software": {
+                    "software": [
+                        {
+                            "name": "gaussian",
+                            "kind": "profile",
+                            "command": ["/private/gaussian16-run"],
+                            "activation_script": "/private/activate.sh",
+                            "activation_script_exists": True,
+                            "allowed_queues": ["batch"],
+                            "requires_gpu": False,
+                        }
+                    ],
+                    "load_errors": {},
+                },
                 "private_server_field": TOKEN,
             }
         }
@@ -68,6 +82,19 @@ def test_mcp_status_returns_only_compact_safe_capabilities(monkeypatch) -> None:
     assert result["capabilities"]["authentication"]["principal"] == "pi-ts"
     assert "token" not in result["capabilities"]["authentication"]
     assert "private_server_field" not in result["capabilities"]
+    assert result["capabilities"]["software"] == {
+        "profiles": [
+            {
+                "name": "gaussian",
+                "kind": "profile",
+                "activation_script_exists": True,
+                "allowed_queues": ["batch"],
+                "requires_gpu": False,
+            }
+        ],
+        "load_error_names": [],
+    }
+    assert "/private/gaussian16-run" not in json.dumps(result)
     assert TOKEN not in json.dumps(result)
     assert caller.calls == [("cluster_capabilities", {})]
 

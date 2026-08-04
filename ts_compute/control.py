@@ -825,13 +825,7 @@ def _submit_mcp(
     )
     script_ref = f"{base_ref}/run_mcp_job.sh"
     script_path = workspace / script_ref
-    redirect = f" > {shlex.quote(stdout_name)} 2> remote_job.stderr"
-    script_text = (
-        "#!/usr/bin/env bash\n"
-        "set -Eeuo pipefail\n"
-        "umask 077\n"
-        f"exec {shlex.join(command)}{redirect}\n"
-    )
+    script_text = _mcp_runner_script(prepared_task, command, stdout_name)
     _write_text_once(script_path, script_text, "MCP runner script")
 
     remote_dir = str(policy["remote_dir"])
@@ -866,6 +860,60 @@ def _submit_mcp(
     for remote_path, source in sorted(input_files.items()):
         client.upload_file(source, remote_path)
     return client.submit(request)
+
+
+def _mcp_runner_script(
+    prepared_task: dict[str, Any],
+    command: list[str],
+    stdout_name: str,
+) -> str:
+    if prepared_task.get("backend") != "gaussian":
+        redirect = f" > {shlex.quote(stdout_name)} 2> remote_job.stderr"
+        return (
+            "#!/usr/bin/env bash\n"
+            "set -Eeuo pipefail\n"
+            "umask 077\n"
+            f"exec {shlex.join(command)}{redirect}\n"
+        )
+    if len(command) != 2 or Path(command[0]).name != "g16":
+        raise ComputeContractError("Gaussian MCP execution requires one g16 input")
+    input_name = command[1]
+    return (
+        "#!/usr/bin/env bash\n"
+        "set -Eeuo pipefail\n"
+        "umask 077\n"
+        "scratch_base=${TMPDIR:-/tmp}\n"
+        'scratch_root=$(mktemp -d "${scratch_base%/}/ts-gaussian.XXXXXX")\n'
+        "export GAUSS_SCRDIR=\"$scratch_root\"\n"
+        "cleanup() {\n"
+        "  local rc=$?\n"
+        "  trap - EXIT INT TERM\n"
+        "  case \"$scratch_root\" in\n"
+        '    "${scratch_base%/}"/ts-gaussian.*)\n'
+        "      if [[ -d \"$scratch_root\" && ! -L \"$scratch_root\" ]]; then\n"
+        "        rm -rf -- \"$scratch_root\"\n"
+        "      elif [[ -e \"$scratch_root\" || -L \"$scratch_root\" ]]; then\n"
+        '        echo "ERROR: unsafe Gaussian scratch path; kept $scratch_root" >&2\n'
+        "        rc=1\n"
+        "      fi\n"
+        "      ;;\n"
+        "    *)\n"
+        '      echo "ERROR: unsafe Gaussian scratch path; kept $scratch_root" >&2\n'
+        "      rc=1\n"
+        "      ;;\n"
+        "  esac\n"
+        "  exit \"$rc\"\n"
+        "}\n"
+        "trap cleanup EXIT\n"
+        "trap 'exit 130' INT\n"
+        "trap 'exit 143' TERM\n"
+        f"if [[ -e {shlex.quote(stdout_name)} || -L {shlex.quote(stdout_name)} ]]; then\n"
+        f"  echo {shlex.quote(f'Refusing to overwrite Gaussian output: {stdout_name}')} >&2\n"
+        "  exit 2\n"
+        "fi\n"
+        "set -o noclobber\n"
+        f"g16 < {shlex.quote(input_name)} > {shlex.quote(stdout_name)} 2> remote_job.stderr\n"
+    )
 
 
 def _status_mcp(intent: dict[str, Any], policy: dict[str, Any]) -> dict[str, Any]:

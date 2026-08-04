@@ -161,6 +161,21 @@ def test_advice_validation_accepts_bounded_evidence_referenced_output(tmp_path: 
     assert result["facts"][0]["basis_refs"] == ["ev_endpoint_0001"]
 
 
+def test_advice_parse_boundary_normalizes_legacy_completed_and_artifact_ref(tmp_path: Path) -> None:
+    packet = _packet(tmp_path)
+    advice = _valid_result(packet)
+    advice["outcome"] = "completed"
+    fact = advice["facts"][0]
+    fact["artifact_ref"] = fact.pop("basis_refs")[0]
+
+    completed = _validate_result(tmp_path, packet, advice)
+    result = json.loads(completed.stdout)
+
+    assert result["outcome"] == "success"
+    assert result["facts"][0]["basis_refs"] == ["ev_endpoint_0001"]
+    assert "artifact_ref" not in result["facts"][0]
+
+
 def test_advice_validation_rejects_cross_layer_claim(tmp_path: Path) -> None:
     packet = _packet(tmp_path)
     advice = _valid_result(packet)
@@ -219,6 +234,8 @@ def test_prompt_modules_are_private_and_define_all_review_modes() -> None:
     assert "no authority to mutate" in core
     assert "payload.missing_evidence" in core
     assert "Every fact must cite at least one allowlisted basis" in core
+    assert "never use `completed`" in core
+    assert "never use singular `artifact_ref`" in core
 
 
 def test_session_lifecycle_success_disables_prompt_expansion() -> None:

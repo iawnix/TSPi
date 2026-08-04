@@ -661,7 +661,12 @@ def test_mcp_transport_submit_status_tail_collect_and_cancel(
     assert str(client.request["intent_digest"]).count("sha256:") == 1
     assert {name for name, _remote in client.uploads} == {"candidate.gjf", "run_mcp_job.sh"}
     runner = workspace / f"nodes/n001/attempts/{intent_id}/run_mcp_job.sh"
-    assert "g16 candidate.gjf > candidate.log 2> remote_job.stderr" in runner.read_text(encoding="utf-8")
+    runner_text = runner.read_text(encoding="utf-8")
+    assert 'scratch_root=$(mktemp -d "${scratch_base%/}/ts-gaussian.XXXXXX")' in runner_text
+    assert 'export GAUSS_SCRDIR="$scratch_root"' in runner_text
+    assert "trap cleanup EXIT" in runner_text
+    assert "g16 < candidate.gjf > candidate.log 2> remote_job.stderr" in runner_text
+    assert 'rm -rf -- "$scratch_root"' in runner_text
 
     status = calculation_status(workspace, intent_id)
     assert status["state"] == "completed"

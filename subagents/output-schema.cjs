@@ -1,6 +1,7 @@
 "use strict";
 
 const { validateAgentResult, validateAgentTask } = require("./agent-protocol.cjs");
+const { normalizeAgentResultInput } = require("./result-normalization.cjs");
 const { REVIEW_CEILINGS } = require("./task-packet.cjs");
 
 const MAX_OUTPUT_BYTES = 16 * 1024;
@@ -16,7 +17,7 @@ function parseAndValidateReviewResult(text, packet) {
   } catch (error) {
     throw new Error(`review agent output must be JSON only: ${error instanceof Error ? error.message : String(error)}`);
   }
-  return validateReviewResult(value, packet);
+  return validateReviewResult(normalizeAgentResultInput(value), packet);
 }
 
 function validateReviewResult(value, packet) {

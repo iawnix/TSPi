@@ -140,6 +140,12 @@ collection run a read-only connection preflight before confirmation or child
 creation. The output validator binds IDs, state, program outcome, error class,
 and artifact refs to actual typed-tool results.
 
+Model output is normalized only at the parse boundary for two legacy aliases:
+top-level `outcome=completed` becomes `success`, and singular fact
+`artifact_ref` becomes canonical `basis_refs`. The versioned JSON schema and
+shared protocol validator remain strict. Unknown outcomes, unbound basis refs,
+and authoritative scientific fields are still rejected.
+
 Long-running jobs are external processes, not persistent LLM sessions. Invoke
 `inspect` on meaningful state changes or failure diagnosis, not every turn.
 

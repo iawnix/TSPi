@@ -17,6 +17,15 @@ Root host confirms the exact preflight binding before creating a fresh child
 with exactly one control tool. The child receives no reusable authorization
 object, token, endpoint, or credentials.
 
+The operator report uses `outcome=success|partial|failure|not_run`; this is the
+operator execution outcome, not the calculation's program outcome. A typed
+tool exception is journaled as `action_status=failed`, `state=unknown`, and
+`program_status=not_run` before the error returns to the child. For `inspect`,
+a failed status action plus a successful bounded tail is `outcome=partial`.
+The tail basename is not a local artifact. A program fact derived from it may
+cite only the persisted `actions.json#/actions/<index>/result` record, and it
+never implies a scientific verdict.
+
 ## Calculation Intent V2
 
 The Root Agent selects purpose, method, scope, and execution target before
@@ -187,6 +196,12 @@ an intent whose selected transport is MCP. Do not change from MCP to SSH or from
 SSH to MCP automatically after a failure; report the failure and require an
 explicit transport decision. Label the source when comparing transports. These
 diagnostics never expose raw MCP mutation tools.
+For `backend=gaussian`, submit additionally requires a same-name server
+software profile with an existing activation script and an allowlisted target
+queue. The server sources that profile before executing the manifest-bound
+runner. The runner owns a private random `GAUSS_SCRDIR`, refuses output
+overwrite, and removes scratch on exit. Missing or inconsistent registration
+fails before host authorization and is checked again before scheduler access.
 MCP submission returns its scheduler ID immediately. SSH cancellation requires
 one prior `inspect` so the confirmation and remote kill are both bound to the
 observed PID; a changed PID is rejected remotely before signaling a process.

@@ -44,3 +44,17 @@ token_env_var = "CLUSTER_MCP_HTTP_TOKEN"
 allowed_client_networks = ["127.0.0.1/32", "::1/128"]
 stateless = true
 json_response = true
+
+# A TS backend uses a same-name software profile when one is configured.
+# Gaussian requires this profile; the server sources the activation script
+# before running the manifest-bound TS script.
+[software.gaussian]
+description = "Gaussian 16"
+command = ["/absolute/path/to/gaussian16-run"]
+activation_script = "/absolute/path/to/activate_gaussian16.sh"
+default_queue = "workq"
+allowed_queues = ["workq"]
+requires_gpu = false
+
+[software.gaussian.environment]
+GAUSSIAN16_DEFER_SCRATCH = "1"
