@@ -24,6 +24,7 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
     assert manifest["pi"]["skills"] == ["./skills/transition-state-workflow"]
     assert manifest["pi"]["extensions"] == [
         "./extensions/ts-workflow-control",
+        "./extensions/ts-workflow-ui/index.ts",
         "./extensions/ts-workflow-review/index.ts",
         "./extensions/ts-workflow-compute/index.ts",
         "./extensions/ts-workflow-artifacts/index.ts",
@@ -98,7 +99,7 @@ def test_pi_documentation_matches_loaded_extensions_and_tool_boundary() -> None:
     assert "`ts_workspace_decision_apply`" in readme
     assert "`ts_subagent_review`" in readme
     assert "run `validate_decision`, `start_node`" not in readme
-    assert adapter.count("-e \"$TS_AGENT_SKILL_ROOT/extensions/") == 4
+    assert adapter.count("-e \"$TS_AGENT_SKILL_ROOT/extensions/") == 5
     assert 'pi --skill "$TS_AGENT_SKILL_ROOT/skills/transition-state-workflow"' in adapter
     assert "temporary\nnon-OAuth API key" in adapter
     assert "extensions/ts-workflow-review" in maintainer

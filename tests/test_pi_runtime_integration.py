@@ -297,6 +297,84 @@ def test_real_pi_compute_child_session_uses_only_bound_prepare_tool(tmp_path: Pa
     assert any(message.get("role") == "tool" for message in requests[1]["messages"])
 
 
+@pytest.mark.parametrize("outcome", ["success", "failure"])
+def test_real_pi_public_subagent_emits_ui_lifecycle_updates(tmp_path: Path, outcome: str) -> None:
+    pi = _pi_binary()
+    if pi is None:
+        pytest.skip("Pi executable is not installed")
+    workspace = tmp_path / "workspace"
+    bootstrap_strict_workspace(workspace)
+    agent_dir = tmp_path / "pi-agent"
+    agent_dir.mkdir()
+    env = {
+        **os.environ,
+        "PI_CODING_AGENT_DIR": str(agent_dir),
+        "PI_OFFLINE": "1",
+        "TS_AGENT_PYTHON": sys.executable,
+        "TS_WORKSPACE_ROOT": str(workspace),
+    }
+    requests: list[dict[str, object]] = []
+    child_response = _review_result_for_request if outcome == "success" else _invalid_review_result
+    responses = [
+        _tool_call_chunks(
+            "ts_subagent_review",
+            {"reviewType": "mechanism", "question": "Review the bounded mechanism evidence.", "nodeId": "n000"},
+        ),
+        child_response,
+        _assistant_text_chunks("The bounded review call finished."),
+    ]
+    with _recording_server(requests, responses) as base_url:
+        _write_recording_model(agent_dir, base_url)
+        installed = subprocess.run(
+            [pi, "install", "-l", str(ROOT), "--approve"],
+            cwd=workspace,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=45,
+            check=False,
+        )
+        assert installed.returncode == 0, installed.stderr
+        completed = _run_rpc_until(
+            [
+                pi,
+                "--mode",
+                "rpc",
+                "--offline",
+                "--no-session",
+                "--session-dir",
+                str(tmp_path / "pi-sessions"),
+                "--no-context-files",
+                "--no-builtin-tools",
+                "--approve",
+                "--model",
+                "ts-recording/recording-model",
+            ],
+            cwd=workspace,
+            env=env,
+            command={"id": "lifecycle", "type": "prompt", "message": "Run the bounded mechanism review now."},
+            notification_prefix='"type":"agent_end"',
+            timeout=45,
+        )
+
+    assert completed.returncode == 0, completed.stderr
+    rows = [json.loads(line) for line in completed.stdout.splitlines() if line.strip().startswith("{")]
+    status_texts = [
+        str(row["statusText"])
+        for row in rows
+        if row.get("type") == "extension_ui_request"
+        and row.get("method") == "setStatus"
+        and row.get("statusKey") == "ts-subagent"
+        and row.get("statusText")
+    ]
+    phases = [next(phase for phase in ("preflight", "starting", "running", "validating", "completed", "failed", "cancelled") if phase in text) for text in status_texts]
+    deduplicated = [phase for index, phase in enumerate(phases) if index == 0 or phase != phases[index - 1]]
+    expected = ["preflight", "starting", "running", "validating", "completed" if outcome == "success" else "failed"]
+    assert deduplicated == expected, {"stdout": completed.stdout, "stderr": completed.stderr, "requests": requests}
+    assert len(requests) == 3
+
+
 def _pi_binary() -> str | None:
     configured = os.environ.get("PI_TEST_BINARY")
     if configured:
@@ -431,7 +509,7 @@ def _write_recording_model(agent_dir: Path, base_url: str) -> None:
 
 class _RecordingHandler(BaseHTTPRequestHandler):
     requests: list[dict[str, object]]
-    responses: list[list[dict[str, object]]]
+    responses: list[object]
 
     def do_POST(self) -> None:  # noqa: N802
         length = int(self.headers.get("content-length", "0"))
@@ -441,7 +519,8 @@ class _RecordingHandler(BaseHTTPRequestHandler):
         if response_index >= len(self.responses):
             self.send_error(500, "recording response sequence exhausted")
             return
-        response = self.responses[response_index]
+        configured = self.responses[response_index]
+        response = configured(body) if callable(configured) else configured
         payload = "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in response) + "data: [DONE]\n\n"
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -457,7 +536,7 @@ class _RecordingServer:
     def __init__(
         self,
         requests: list[dict[str, object]],
-        responses: list[list[dict[str, object]]],
+        responses: list[object],
     ) -> None:
         handler = type("RecordingHandler", (_RecordingHandler,), {"requests": requests, "responses": responses})
         self.server = ThreadingHTTPServer(("127.0.0.1", 0), handler)
@@ -476,12 +555,12 @@ class _RecordingServer:
 
 def _recording_server(
     requests: list[dict[str, object]],
-    responses: list[list[dict[str, object]]],
+    responses: list[object],
 ) -> _RecordingServer:
     return _RecordingServer(requests, responses)
 
 
-def _tool_call_chunks(tool_name: str) -> list[dict[str, object]]:
+def _tool_call_chunks(tool_name: str, arguments: dict[str, object] | None = None) -> list[dict[str, object]]:
     return [
         {
             "id": "chatcmpl-tool",
@@ -498,7 +577,7 @@ def _tool_call_chunks(tool_name: str) -> list[dict[str, object]]:
                                 "index": 0,
                                 "id": "call_recording_001",
                                 "type": "function",
-                                "function": {"name": tool_name, "arguments": "{}"},
+                                "function": {"name": tool_name, "arguments": json.dumps(arguments or {})},
                             }
                         ],
                     },
@@ -589,8 +668,12 @@ def _report_result_chunks() -> list[dict[str, object]]:
     return _assistant_result_chunks(report)
 
 
-def _review_result_chunks() -> list[dict[str, object]]:
-    scope = {
+def _review_result_chunks(
+    *,
+    task_id: str = "agent_review_001",
+    scope: dict[str, object] | None = None,
+) -> list[dict[str, object]]:
+    scope = scope or {
         "report_id": "rep_review_001",
         "node_ids": ["n000"],
         "hypothesis_id": None,
@@ -598,7 +681,7 @@ def _review_result_chunks() -> list[dict[str, object]]:
     }
     report = {
         "schema_version": "ts-agent-result/1",
-        "task_id": "agent_review_001",
+        "task_id": task_id,
         "role": "review",
         "authority": "advisory",
         "operation": "mechanism",
@@ -623,6 +706,41 @@ def _review_result_chunks() -> list[dict[str, object]]:
         "provenance": {},
     }
     return _assistant_result_chunks(report)
+
+
+def _review_result_for_request(request: dict[str, object]) -> list[dict[str, object]]:
+    messages = request.get("messages")
+    assert isinstance(messages, list) and messages
+    content = messages[-1].get("content")
+    if isinstance(content, list):
+        prompt = "".join(str(part.get("text", "")) for part in content if isinstance(part, dict))
+    else:
+        prompt = str(content or "")
+    packet = json.loads(prompt.split("\n\n", 1)[1])
+    return _review_result_chunks(task_id=packet["task_id"], scope=packet["scope"])
+
+
+def _invalid_review_result(_request: dict[str, object]) -> list[dict[str, object]]:
+    return _assistant_text_chunks('{"invalid":true}')
+
+
+def _assistant_text_chunks(text: str) -> list[dict[str, object]]:
+    return [
+        {
+            "id": "chatcmpl-text",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "recording-model",
+            "choices": [{"index": 0, "delta": {"role": "assistant", "content": text}, "finish_reason": None}],
+        },
+        {
+            "id": "chatcmpl-text",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "recording-model",
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        },
+    ]
 
 
 def _compute_result_chunks() -> list[dict[str, object]]:

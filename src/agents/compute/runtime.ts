@@ -38,6 +38,7 @@ interface ComputeRunOptions {
   thinkingLevel: ThinkingLevel;
   timeoutMs: number;
   signal?: AbortSignal;
+  onLifecycle?: (phase: "starting" | "running" | "validating") => void;
 }
 
 export async function runComputeOperator(options: ComputeRunOptions) {
@@ -91,7 +92,7 @@ export async function runComputeOperator(options: ComputeRunOptions) {
         await promptWithDeadline(
           session,
           `Execute this bounded compute operation and return the required JSON object.\n\n${JSON.stringify(options.packet)}`,
-          { timeoutMs: options.timeoutMs, signal: options.signal },
+          { timeoutMs: options.timeoutMs, signal: options.signal, onLifecycle: options.onLifecycle },
         );
         let report;
         try {
@@ -129,6 +130,7 @@ export async function runComputeOperator(options: ComputeRunOptions) {
         };
         return { report, actions, metadata };
       },
+      { onLifecycle: options.onLifecycle },
     );
   } finally {
     activeRun = false;

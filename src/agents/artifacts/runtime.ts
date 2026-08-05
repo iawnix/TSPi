@@ -39,6 +39,7 @@ interface ArtifactRunOptions {
   thinkingLevel: ThinkingLevel;
   timeoutMs: number;
   signal?: AbortSignal;
+  onLifecycle?: (phase: "starting" | "running" | "validating") => void;
 }
 
 export async function runArtifactOperator(options: ArtifactRunOptions) {
@@ -92,7 +93,7 @@ export async function runArtifactOperator(options: ArtifactRunOptions) {
         await promptWithDeadline(
           session,
           `Execute this bounded ${options.role} operation and return the required JSON object.\n\n${JSON.stringify(options.packet)}`,
-          { timeoutMs: options.timeoutMs, signal: options.signal },
+          { timeoutMs: options.timeoutMs, signal: options.signal, onLifecycle: options.onLifecycle },
         );
         let report;
         try {
@@ -126,6 +127,7 @@ export async function runArtifactOperator(options: ArtifactRunOptions) {
         };
         return { report, actions, metadata };
       },
+      { onLifecycle: options.onLifecycle },
     );
   } finally {
     activeRun = false;

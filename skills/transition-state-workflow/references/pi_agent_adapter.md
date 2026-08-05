@@ -38,10 +38,11 @@ they deliberately share `TS_AGENT_ENV_ROOT`.
 
 ## Load
 
-Package installation loads the root skill and four extensions declared in
+Package installation loads the root skill and five extensions declared in
 `package.json`:
 
 - `extensions/ts-workflow-control`
+- `extensions/ts-workflow-ui`
 - `extensions/ts-workflow-review`
 - `extensions/ts-workflow-compute`
 - `extensions/ts-workflow-artifacts`
@@ -51,6 +52,7 @@ Temporary extension-only smoke:
 ```bash
 pi --skill "$TS_AGENT_SKILL_ROOT/skills/transition-state-workflow" \
   -e "$TS_AGENT_SKILL_ROOT/extensions/ts-workflow-control/index.ts" \
+  -e "$TS_AGENT_SKILL_ROOT/extensions/ts-workflow-ui/index.ts" \
   -e "$TS_AGENT_SKILL_ROOT/extensions/ts-workflow-review/index.ts" \
   -e "$TS_AGENT_SKILL_ROOT/extensions/ts-workflow-compute/index.ts" \
   -e "$TS_AGENT_SKILL_ROOT/extensions/ts-workflow-artifacts/index.ts"
@@ -178,10 +180,17 @@ All review, backend, render, report, and email-draft delegation uses:
 
 - `ts-agent-task/1`
 - `ts-agent-result/1`
+- `ts-subagent-status/1` for transient UI-only lifecycle updates
 
 The result validator recursively rejects fields owned by the Root Agent,
 including hypothesis status, branch context, claim verdict, accepted TS,
 strict pathway decision, and study completion.
+
+The UI lifecycle progresses through `preflight`, `starting`, `running`, and
+`validating`, followed by `completed`, `failed`, or `cancelled`. `running` is
+emitted only after the isolated child session exists. The UI extension renders
+these updates through Pi status/widget APIs and existing run journal entries;
+it registers no tools and never changes compute approval or scientific state.
 
 ## Boundary
 

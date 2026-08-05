@@ -43,6 +43,7 @@ interface ReviewRunOptions {
   thinkingLevel: ThinkingLevel;
   timeoutMs?: number;
   signal?: AbortSignal;
+  onLifecycle?: (phase: "starting" | "running" | "validating") => void;
 }
 
 export interface ReviewRunResult {
@@ -126,6 +127,7 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
         await promptWithDeadline(session, buildTaskPrompt(options.packet), {
           timeoutMs,
           signal: options.signal,
+          onLifecycle: options.onLifecycle,
         });
         const output = session.getLastAssistantText();
         const result = parseAndValidateReviewResult(output || "", options.packet);
@@ -154,6 +156,7 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
           },
         };
       },
+      { onLifecycle: options.onLifecycle },
     );
   } finally {
     activeRun = false;

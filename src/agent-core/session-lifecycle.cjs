@@ -59,7 +59,10 @@ async function promptWithDeadline(session, prompt, options = {}) {
       .then(() => session.prompt(prompt, { expandPromptTemplates: false }))
       .then(
         (value) => {
-          if (!interrupted) finish(resolve, value);
+          if (!interrupted) {
+            emitLifecycle(options.onLifecycle, "validating");
+            finish(resolve, value);
+          }
         },
         (error) => {
           if (!interrupted) finish(reject, error);
@@ -82,16 +85,27 @@ async function abortWithGrace(session, abortGraceMs) {
   }
 }
 
-async function withDisposableSession(createSession, useSession) {
+async function withDisposableSession(createSession, useSession, options = {}) {
   if (typeof createSession !== "function" || typeof useSession !== "function") {
     throw new Error("withDisposableSession requires create and use functions");
   }
   let created;
   try {
+    emitLifecycle(options.onLifecycle, "starting");
     created = await createSession();
+    emitLifecycle(options.onLifecycle, "running");
     return await useSession(created);
   } finally {
     created?.session?.dispose?.();
+  }
+}
+
+function emitLifecycle(callback, phase) {
+  if (typeof callback !== "function") return;
+  try {
+    callback(phase);
+  } catch {
+    // Observability must never change the child-agent execution outcome.
   }
 }
 

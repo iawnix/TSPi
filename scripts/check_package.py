@@ -19,6 +19,7 @@ SKILL_ENTRY = "./skills/transition-state-workflow"
 THEME_ENTRIES = ["./themes/ts-theme.json"]
 EXTENSION_ENTRIES = [
     "./extensions/ts-workflow-control",
+    "./extensions/ts-workflow-ui/index.ts",
     "./extensions/ts-workflow-review/index.ts",
     "./extensions/ts-workflow-compute/index.ts",
     "./extensions/ts-workflow-artifacts/index.ts",
@@ -37,6 +38,7 @@ PACKAGE_FILES = [
     "extensions/ts-workflow-control/*.ts",
     "extensions/ts-workflow-control/*.cjs",
     "extensions/ts-workflow-review/*.ts",
+    "extensions/ts-workflow-ui/*.ts",
     "scripts/*.py",
     "skills/",
     "themes/*.json",
@@ -75,7 +77,9 @@ REQUIRED_TARBALL_FILES = {
     "skills/transition-state-workflow/SKILL.md",
     "themes/ts-theme.json",
     "extensions/shared/tool-catalog.ts",
+    "extensions/shared/subagent-status.ts",
     "extensions/ts-workflow-control/index.ts",
+    "extensions/ts-workflow-ui/index.ts",
     "extensions/ts-workflow-review/index.ts",
     "extensions/ts-workflow-compute/index.ts",
     "extensions/ts-workflow-artifacts/index.ts",

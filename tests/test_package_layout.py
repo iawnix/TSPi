@@ -23,6 +23,7 @@ EXPECTED_FILES = [
     "extensions/ts-workflow-control/*.ts",
     "extensions/ts-workflow-control/*.cjs",
     "extensions/ts-workflow-review/*.ts",
+    "extensions/ts-workflow-ui/*.ts",
     "scripts/*.py",
     "skills/",
     "themes/*.json",

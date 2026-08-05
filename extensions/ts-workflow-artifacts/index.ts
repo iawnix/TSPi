@@ -13,6 +13,7 @@ import {
   runWorkspaceJson,
 } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
+import { createSubagentStatusReporter, terminalStatusForError } from "../shared/subagent-status.ts";
 import { runArtifactOperator } from "../../src/agents/artifacts/runtime.ts";
 
 const require = createRequire(import.meta.url);
@@ -28,6 +29,7 @@ const {
 } = require("../../src/agents/artifacts/request-contract.cjs");
 
 type ArtifactRole = "render" | "report" | "email";
+type StatusReporter = ReturnType<typeof createSubagentStatusReporter>;
 type ActionLog = { tool: string; result: Record<string, unknown> }[];
 type RenderRequest = {
   operation: "render" | "compare" | "animate" | "mechanism";
@@ -75,7 +77,16 @@ export default function (pi: ExtensionAPI) {
       outputRef: Type.String({ minLength: 1, maxLength: 4096 }),
       root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
     }),
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const taskId = `agent_${randomUUID()}`;
+      const reportStatus = createSubagentStatusReporter({
+        tool_call_id: toolCallId,
+        task_id: taskId,
+        role: "render",
+        operation: params.operation,
+        node_id: params.nodeId,
+      }, onUpdate);
+      reportStatus("preflight");
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
       const request = validateRenderRequest(root, {
         operation: params.operation,
@@ -99,9 +110,10 @@ export default function (pi: ExtensionAPI) {
           basis_allowlist: request.inputRefs,
         },
         tools,
+        taskId,
         signal,
       );
-      return executeChild(pi, ctx, root, "render", packet, tools, actions, 240_000, signal);
+      return executeChild(pi, ctx, root, "render", packet, tools, actions, 240_000, reportStatus, signal);
     },
   });
 
@@ -120,7 +132,16 @@ export default function (pi: ExtensionAPI) {
       packageRef: Type.String({ minLength: 1, maxLength: 4096, description: "New workspace-relative package directory under reports/." }),
       root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
     }),
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const taskId = `agent_${randomUUID()}`;
+      const reportStatus = createSubagentStatusReporter({
+        tool_call_id: toolCallId,
+        task_id: taskId,
+        role: "report",
+        operation: "build",
+        target_ref: params.packageRef,
+      }, onUpdate);
+      reportStatus("preflight");
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
       const request = validateReportRequest(root, { operation: params.operation, packageRef: params.packageRef }) as ReportRequest;
       const actions: ActionLog = [];
@@ -134,9 +155,10 @@ export default function (pi: ExtensionAPI) {
         [],
         { package_ref: request.packageRef, basis_allowlist: [] },
         tools,
+        taskId,
         signal,
       );
-      return executeChild(pi, ctx, root, "report", packet, tools, actions, 300_000, signal);
+      return executeChild(pi, ctx, root, "report", packet, tools, actions, 300_000, reportStatus, signal);
     },
   });
 
@@ -157,7 +179,16 @@ export default function (pi: ExtensionAPI) {
       recipients: Type.Array(Type.String({ minLength: 3, maxLength: 320 }), { minItems: 1, maxItems: 20 }),
       root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
     }),
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const taskId = `agent_${randomUUID()}`;
+      const reportStatus = createSubagentStatusReporter({
+        tool_call_id: toolCallId,
+        task_id: taskId,
+        role: "email",
+        operation: "draft",
+        target_ref: params.summaryRef.replace(/\/email_summary\.md$/, ""),
+      }, onUpdate);
+      reportStatus("preflight");
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
       const request = validateEmailRequest(root, {
         operation: params.operation,
@@ -188,9 +219,10 @@ export default function (pi: ExtensionAPI) {
           basis_allowlist: [request.summaryRef, request.contextRef, request.manifestRef],
         },
         tools,
+        taskId,
         signal,
       );
-      return executeChild(pi, ctx, root, "email", packet, tools, actions, 180_000, signal);
+      return executeChild(pi, ctx, root, "email", packet, tools, actions, 180_000, reportStatus, signal);
     },
   });
 }
@@ -376,6 +408,7 @@ async function buildPacket(
   nodeIds: string[],
   inputs: Record<string, unknown>,
   tools: ToolDefinition[],
+  taskId: string,
   signal?: AbortSignal,
 ) {
   const workspaceReport = await runWorkspaceJson(pi, "report_workspace", root, [], signal);
@@ -385,7 +418,7 @@ async function buildPacket(
     : {};
   return {
     schema_version: "ts-agent-task/1",
-    task_id: `agent_${randomUUID()}`,
+    task_id: taskId,
     role,
     authority: "operational",
     operation,
@@ -423,6 +456,7 @@ async function executeChild(
   tools: ToolDefinition[],
   actions: ActionLog,
   timeoutMs: number,
+  reportStatus: StatusReporter,
   signal?: AbortSignal,
 ) {
   if (!ctx.model) throw new Error(`No parent model is selected for TS ${role} delegation`);
@@ -443,6 +477,7 @@ async function executeChild(
       thinkingLevel: pi.getThinkingLevel(),
       timeoutMs,
       signal,
+      onLifecycle: reportStatus,
     });
   } catch (error) {
     const attemptedActions = actions.map((action) => ({
@@ -470,6 +505,8 @@ async function executeChild(
       ...failure,
       run_ref: runRef,
     });
+    const terminal = terminalStatusForError(error);
+    reportStatus(terminal.phase, { failure_kind: terminal.failure_kind });
     if (actions.length) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`${message}; a bounded artifact action was attempted and may have created local output`);
@@ -483,6 +520,7 @@ async function executeChild(
   });
   const metadata = { ...result.metadata, run_ref: runRef };
   pi.appendEntry("ts-workspace-artifact-operator-run", metadata);
+  reportStatus("completed");
   return toolText(JSON.stringify({ report: result.report, actions: result.actions }, null, 2), {
     report: result.report,
     actions: result.actions,

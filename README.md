@@ -119,6 +119,7 @@ this work is merged or tagged, it does not select `pi_ts_subagents`.
 Pi loads these extensions from the resolved package root:
 
 - `extensions/ts-workflow-control`
+- `extensions/ts-workflow-ui`
 - `extensions/ts-workflow-review`
 - `extensions/ts-workflow-compute`
 - `extensions/ts-workflow-artifacts`
@@ -130,6 +131,12 @@ Public tool prefixes describe execution rather than subject matter:
 - `ts_subagent_*` creates one fresh, isolated child model session.
 - `ts_mcp_*` runs deterministic MCP or cluster diagnostics without a child
   model session.
+
+The package-owned UI extension observes `ts_subagent_*` lifecycle updates. It
+shows a compact footer status and a two-line active-child panel, then renders
+completed or failed run entries in history. It does not replace Pi's header,
+footer, editor, or title, and it has no workspace, MCP, authorization, model,
+or scientific-decision capability.
 
 The workspace control surface is exactly:
 

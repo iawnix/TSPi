@@ -7,6 +7,7 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { requireWorkspaceRoot, runWorkspaceJson } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
+import { createSubagentStatusReporter, terminalStatusForError } from "../shared/subagent-status.ts";
 import { runScientificReview } from "../../src/agents/review/runtime.ts";
 
 const require = createRequire(import.meta.url);
@@ -41,7 +42,16 @@ export default function (pi: ExtensionAPI) {
       artifactRefs: Type.Optional(Type.Array(Type.String(), { maxItems: 4 })),
       timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 180, description: "Host timeout in seconds. Defaults to 90." })),
     }),
-    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+    async execute(toolCallId, params, signal, onUpdate, ctx) {
+      const taskId = `sub_${randomUUID()}`;
+      const reportStatus = createSubagentStatusReporter({
+        tool_call_id: toolCallId,
+        task_id: taskId,
+        role: "review",
+        operation: params.reviewType,
+        node_id: params.nodeId || params.fromNode,
+      }, onUpdate);
+      reportStatus("preflight");
       if (!ctx.model) {
         throw new Error("No parent model is selected for TS subagent delegation");
       }
@@ -70,7 +80,7 @@ export default function (pi: ExtensionAPI) {
           )
         : null;
       const packet = buildTaskPacket({
-        runId: `sub_${randomUUID()}`,
+        runId: taskId,
         workspaceRoot: root,
         request,
         workspaceReport,
@@ -90,6 +100,7 @@ export default function (pi: ExtensionAPI) {
           thinkingLevel: pi.getThinkingLevel(),
           timeoutMs: params.timeoutSeconds ? params.timeoutSeconds * 1000 : undefined,
           signal,
+          onLifecycle: reportStatus,
         });
         const runRef = completeAgentRun(journal, {
           actions: [],
@@ -98,6 +109,7 @@ export default function (pi: ExtensionAPI) {
         });
         const metadata = { ...result.metadata, run_ref: runRef };
         pi.appendEntry("ts-workspace-subagent-run", metadata);
+        reportStatus("completed");
         return toolText(JSON.stringify(result.result, null, 2), {
           result: result.result,
           run: metadata,
@@ -117,6 +129,8 @@ export default function (pi: ExtensionAPI) {
           ...failure,
           run_ref: runRef,
         });
+        const terminal = terminalStatusForError(error);
+        reportStatus(terminal.phase, { failure_kind: terminal.failure_kind });
         throw error;
       }
     },
