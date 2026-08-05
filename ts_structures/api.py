@@ -7,7 +7,7 @@ from typing import Any
 
 from .flexibility import select_reaction_center
 from .internals import angle, dihedral, distance, heavy_atom_indices, mapped_indices, read_xyz
-from .rmsd import centered_rmsd
+from .rmsd import kabsch_transform, rmsd
 from .stereo import compare_stereochemistry
 
 
@@ -28,21 +28,44 @@ def compare_structures(
     tgt_symbols, tgt_coords = read_xyz(target_structure)
     if len(ref_symbols) != len(tgt_symbols):
         return _result("mismatched", "low", {}, ["atom count differs"])
+    if not ref_symbols:
+        return _result("mismatched", "low", {}, ["structures contain no atoms"])
 
     mapping = mapped_indices(len(ref_symbols), atom_mapping)
-    heavy = [pair for pair in mapping if ref_symbols[pair[0]].upper() != "H"]
-    heavy = heavy or mapping
-    heavy_ref = [ref_coords[index] for index, _ in heavy]
-    heavy_tgt = [tgt_coords[index] for _, index in heavy]
-    heavy_rmsd = centered_rmsd(heavy_ref, heavy_tgt) if heavy_ref else 0.0
+    element_mismatches = [
+        (ref_index, target_index, ref_symbols[ref_index], tgt_symbols[target_index])
+        for ref_index, target_index in mapping
+        if ref_symbols[ref_index].upper() != tgt_symbols[target_index].upper()
+    ]
+    if element_mismatches:
+        return _result("mismatched", "low", {}, [f"mapped atom elements differ: {element_mismatches}"])
+
+    heavy_pairs = [pair for pair in mapping if ref_symbols[pair[0]].upper() != "H"]
+    fit_pairs = heavy_pairs or mapping
+    fit_selection = "heavy_atoms" if heavy_pairs else "all_atoms"
+    fit_reference = [ref_coords[index] for index, _ in fit_pairs]
+    fit_target = [tgt_coords[index] for _, index in fit_pairs]
+    alignment = kabsch_transform(fit_reference, fit_target)
+    aligned_tgt_coords = alignment.apply(tgt_coords)
+    aligned_fit_target = [aligned_tgt_coords[index] for _, index in fit_pairs]
+    heavy_rmsd = rmsd(fit_reference, aligned_fit_target)
 
     fallback_center = heavy_atom_indices(ref_symbols) or list(range(len(ref_symbols)))
     center_ref_indices = select_reaction_center(len(ref_symbols), reaction_center_atoms, fallback_center)
     center_pairs = [(index, mapping[index][1]) for index in center_ref_indices]
-    center_rmsd = centered_rmsd([ref_coords[index] for index, _ in center_pairs], [tgt_coords[index] for _, index in center_pairs])
+    center_rmsd = rmsd(
+        [ref_coords[index] for index, _ in center_pairs],
+        [aligned_tgt_coords[index] for _, index in center_pairs],
+    )
     stereo_rows, stereo_diagnostics = compare_stereochemistry(ref_coords, tgt_coords, mapping, stereochemical_checks)
 
     metrics: dict[str, Any] = {
+        "alignment": {
+            "method": "kabsch",
+            "fit_selection": fit_selection,
+            "fit_atom_count": len(fit_pairs),
+            "reflection_allowed": False,
+        },
         "heavy_atom_rmsd": round(heavy_rmsd, 6),
         "reaction_center_rmsd": round(center_rmsd, 6),
         "key_bonds": _bond_metrics(ref_coords, tgt_coords, key_bonds or [], mapping),

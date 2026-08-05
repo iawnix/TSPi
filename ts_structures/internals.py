@@ -66,6 +66,13 @@ def mapped_indices(count: int, atom_mapping: list[int] | None) -> list[tuple[int
         return [(index, index) for index in range(count)]
     if len(atom_mapping) != count:
         raise ValueError("atom mapping length must match reference atom count")
+    if any(type(target_index) is not int for target_index in atom_mapping):
+        raise ValueError("atom mapping indices must be integers")
+    invalid = [target_index for target_index in atom_mapping if target_index < 0 or target_index >= count]
+    if invalid:
+        raise ValueError(f"atom mapping target index out of range: {invalid}")
+    if len(set(atom_mapping)) != count:
+        raise ValueError("atom mapping must be a one-to-one target permutation")
     return [(index, target_index) for index, target_index in enumerate(atom_mapping)]
 
 
