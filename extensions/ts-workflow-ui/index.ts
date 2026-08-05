@@ -6,6 +6,8 @@ import type {
   ToolExecutionUpdateEvent,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import { TspiEditor } from "./editor.ts";
+import { createTspiStartupHeader } from "./startup.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 import {
   isTsSubagentStatus,
@@ -172,6 +174,13 @@ export default function (pi: ExtensionAPI) {
     }
   };
 
+  pi.on("session_start", (_event, ctx) => {
+    if (ctx.mode !== "tui") return;
+    const workspaceRoot = process.env.TS_WORKSPACE_ROOT || ctx.cwd;
+    ctx.ui.setHeader((_tui, theme) => createTspiStartupHeader(theme, workspaceRoot));
+    ctx.ui.setEditorComponent((tui, theme, keybindings) => new TspiEditor(tui, theme, keybindings));
+  });
+
   pi.on("tool_execution_start", (event, ctx) => {
     if (reduceTsSubagentUiState(state, event, Date.now())) updateUi(ctx);
   });
@@ -189,6 +198,10 @@ export default function (pi: ExtensionAPI) {
     state.latestToolCallId = undefined;
     ctx.ui.setStatus(STATUS_KEY, undefined);
     ctx.ui.setWidget(WIDGET_KEY, undefined);
+    if (ctx.mode === "tui") {
+      ctx.ui.setHeader(undefined);
+      ctx.ui.setEditorComponent(undefined);
+    }
   });
 
   const historyEntries = [

@@ -7,7 +7,10 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 STATUS = ROOT / "extensions" / "shared" / "subagent-status.ts"
+PROFILE = ROOT / "extensions" / "shared" / "package-profile.ts"
 UI = ROOT / "extensions" / "ts-workflow-ui" / "index.ts"
+EDITOR = ROOT / "extensions" / "ts-workflow-ui" / "editor.ts"
+STARTUP = ROOT / "extensions" / "ts-workflow-ui" / "startup.ts"
 SESSION_LIFECYCLE = ROOT / "src" / "agent-core" / "session-lifecycle.cjs"
 TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
 
@@ -117,6 +120,72 @@ process.stdout.write(JSON.stringify({{ panels, completed, timeoutPhase, abortPha
     assert result["remaining"] == 0
 
 
+def test_tspi_startup_profile_matches_package_manifest() -> None:
+    script = f"""
+import {{ TS_PACKAGE_PROFILE }} from {json.dumps(PROFILE.as_uri())};
+process.stdout.write(JSON.stringify(TS_PACKAGE_PROFILE));
+"""
+    profile = _node_json(script)
+    manifest = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+
+    assert profile["version"] == manifest["version"]
+    assert [profile["skill"]["path"]] == manifest["pi"]["skills"]
+    assert [item["path"] for item in profile["extensions"]] == manifest["pi"]["extensions"]
+    assert [profile["theme"]["path"]] == manifest["pi"]["themes"]
+
+
+def test_tspi_startup_render_is_compact_and_width_safe() -> None:
+    script = f"""
+import {{ renderTspiStartupLines }} from {json.dumps(STARTUP.as_uri())};
+const widths = [18, 40, 48, 60, 100, 140];
+const rendered = widths.map((width) => ({{ width, lines: renderTspiStartupLines("/home/iaw/TS-pi-agent", width) }}));
+process.stdout.write(JSON.stringify(rendered));
+"""
+    rendered = _node_json(script)
+
+    for view in rendered:
+        assert 7 <= len(view["lines"]) <= 15
+        assert all(len(line) <= view["width"] for line in view["lines"])
+        assert view["lines"][0].startswith("╭")
+        assert "TSPi" in view["lines"][0]
+        assert view["lines"][-1].startswith("╰")
+        assert all(line.endswith(("╮", "╯", "│")) for line in view["lines"])
+
+    narrow = rendered[0]["lines"]
+    assert any("● π ● TSPi" in line for line in narrow)
+
+    wide = rendered[-1]["lines"]
+    assert any("╭──────────────╮" in line for line in wide)
+    assert any("╭───╯              ╰───╮" in line for line in wide)
+    assert any("●──╯         π            ╰──●  TSPi" in line for line in wide)
+    assert sum("TSPi" in line for line in wide) == 2  # frame label plus logo wordmark
+    assert any("Evidence-driven TS search, compute, validation, and audit." in line for line in wide)
+    assert any("Skill        transition-state-workflow" in line for line in wide)
+    assert any("control · ui · review · compute · artifacts" in line for line in wide)
+    assert any("Theme        ts-theme" in line for line in wide)
+    assert any("/ts-context · /ts-validate · /ts-mcp" in line for line in wide)
+
+
+def test_tspi_editor_replaces_default_borders_with_width_safe_rounded_frame() -> None:
+    script = f"""
+import {{ visibleWidth }} from "@earendil-works/pi-tui";
+import {{ applyTspiRoundedEditorBorders }} from {json.dumps(EDITOR.as_uri())};
+const rendered = [12, 40].map((width) => {{
+  const lines = applyTspiRoundedEditorBorders(["─".repeat(width), "  input", "─".repeat(width)], width, (value) => value, "COMMAND");
+  return {{ width, lines, widths: lines.map(visibleWidth) }};
+}});
+process.stdout.write(JSON.stringify(rendered));
+"""
+    rendered = _node_json(script)
+
+    for view in rendered:
+        assert view["widths"] == [view["width"]] * 3
+        assert view["lines"][0].startswith("╭") and view["lines"][0].endswith("╮")
+        assert view["lines"][1].startswith("│") and view["lines"][1].endswith("│")
+        assert view["lines"][2].startswith("╰") and view["lines"][2].endswith("╯")
+    assert "COMMAND" in rendered[-1]["lines"][0]
+
+
 def test_ui_extension_is_observational_and_registers_history_renderers() -> None:
     script = f"""
 import installUi from {json.dumps(UI.as_uri())};
@@ -133,9 +202,12 @@ const calls = [];
 const ui = {{
   setStatus: (...args) => calls.push(["status", ...args]),
   setWidget: (...args) => calls.push(["widget", ...args]),
+  setHeader: (...args) => calls.push(["header", ...args]),
+  setEditorComponent: (...args) => calls.push(["editor", ...args]),
 }};
-const ctx = {{ ui }};
+const ctx = {{ ui, mode: "tui", cwd: "/home/iaw/TS-pi-agent" }};
 const args = {{ operation: "compare", nodeId: "n009" }};
+await handlers.session_start({{ type: "session_start", reason: "startup" }}, ctx);
 await handlers.tool_execution_start({{ type: "tool_execution_start", toolCallId: "call", toolName: "ts_subagent_render", args }}, ctx);
 await handlers.tool_execution_update({{ type: "tool_execution_update", toolCallId: "call", toolName: "ts_subagent_render", args, partialResult: {{ details: {{ schema_version: "ts-subagent-status/1", tool_call_id: "call", task_id: "agent", role: "render", operation: "compare", phase: "running", node_id: "n009" }} }} }}, ctx);
 await handlers.tool_execution_end({{ type: "tool_execution_end", toolCallId: "call", toolName: "ts_subagent_render", result: {{}}, isError: false }}, ctx);
@@ -146,12 +218,15 @@ process.stdout.write(JSON.stringify({{
   registeredTools,
   statuses: calls.filter((item) => item[0] === "status").map((item) => item[2]),
   widgets: calls.filter((item) => item[0] === "widget").length,
+  headers: calls.filter((item) => item[0] === "header").length,
+  editors: calls.filter((item) => item[0] === "editor").length,
 }}));
 """
     result = _node_json(script)
     assert result["registeredTools"] == 0
     assert result["handlerNames"] == [
         "session_shutdown",
+        "session_start",
         "tool_execution_end",
         "tool_execution_start",
         "tool_execution_update",
@@ -169,6 +244,8 @@ process.stdout.write(JSON.stringify({{
     assert any(value and "running" in value for value in result["statuses"])
     assert result["statuses"][-1] is None
     assert result["widgets"] >= 4
+    assert result["headers"] == 2
+    assert result["editors"] == 2
 
 
 def test_all_five_public_subagent_tools_emit_status_updates() -> None:
@@ -185,9 +262,9 @@ def test_all_five_public_subagent_tools_emit_status_updates() -> None:
         assert "onLifecycle: reportStatus" in source
         assert "reportStatus(\"completed\"" in source
         assert "terminalStatusForError(error)" in source
-    assert "setHeader" not in ui
+    assert "setHeader" in ui
     assert "setFooter" not in ui
-    assert "setEditorComponent" not in ui
+    assert "setEditorComponent" in ui
     assert "setTitle" not in ui
     assert "registerTool" not in ui
 
