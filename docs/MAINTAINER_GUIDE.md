@@ -208,6 +208,16 @@ and have `ts_web` consume that result.
   expected artifacts, and execution resources. Preserve known scheduler job
   IDs after post-submit failures, and make ambiguous submit/cancel outcomes
   fail closed against automatic replay.
+- Keep the MCP workspace namespace in `.agents/workspace-identity.json`, not in
+  canonical research files. New prepared records must persist the identity,
+  logical requested directory, resolved `workspaces/<workspace_id>/...` path,
+  namespace version, and workspace-bound submission ID as one immutable
+  execution policy. Existing prepared records without that namespace marker
+  must remain readable with their original path and submission ID.
+- Treat one persisted workspace identity as one operational collision domain.
+  Multiple agents in that workspace share its per-intent guards; independently
+  initialized workspaces must have different identities even when intent IDs
+  are identical. Identity creation must not change `workspace_revision`.
 - Keep SSH and MCP transport selection in `execution_target.transport`; keep
   MCP endpoint, token, and timeout in host environment variables only.
 - Persist submit/cancel outcomes separately from mutable status polling so an

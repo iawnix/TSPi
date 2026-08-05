@@ -38,6 +38,7 @@ from ts_remote.mcp import (
     build_ts_job_request,
 )
 from ts_workspace.io import now_iso, read_json, sha256_json, write_json
+from ts_workspace.identity import WorkspaceIdentityError, workspace_id
 
 from cluster_mcp.ts_jobs import validate_ts_execution
 
@@ -86,7 +87,7 @@ def preflight_calculation(
             raise ComputeContractError(f"calculation preparation requires a running node: {node_id}")
         _validate_intent_node_scope(workspace, intent, node)
         prepared = _prepared_task_for_intent(workspace, intent)
-        execution_policy = _validate_execution_target(intent["execution_target"])
+        execution_policy = _execution_policy_for_prepare(workspace, intent)
         if execution_policy["kind"] == "remote":
             _require_unique_remote_basenames(prepared.expected_artifacts)
             _remote_stdout_name(asdict(prepared))
@@ -165,7 +166,7 @@ def prepare_calculation(
     _validate_intent_node_scope(workspace, intent, node)
 
     prepared = _prepared_task_for_intent(workspace, intent)
-    execution_policy = _validate_execution_target(intent["execution_target"])
+    execution_policy = _execution_policy_for_prepare(workspace, intent)
     if execution_policy["kind"] == "remote":
         _require_unique_remote_basenames(prepared.expected_artifacts)
         _remote_stdout_name(asdict(prepared))
@@ -473,7 +474,7 @@ def cancel_calculation(
         if transport == "mcp":
             if job_id is None:
                 raise ComputeContractError("MCP cancellation requires a known scheduler job_id")
-            cancellation = _mcp_client().cancel(_mcp_submission_id(str(intent["intent_id"])), job_id)
+            cancellation = _mcp_client().cancel(_prepared_mcp_submission_id(intent, policy), job_id)
             provenance = {
                 "transport": "mcp",
                 "remote_dir": policy["remote_dir"],
@@ -704,6 +705,46 @@ def _validate_execution_target(target: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def _execution_policy_for_prepare(
+    workspace: Path,
+    intent: dict[str, Any],
+    *,
+    create_identity: bool = True,
+) -> dict[str, Any]:
+    policy = _validate_execution_target(intent["execution_target"])
+    if policy.get("transport") != "mcp":
+        return policy
+    try:
+        identity = workspace_id(workspace, create=create_identity)
+    except WorkspaceIdentityError as exc:
+        raise ComputeContractError(f"cannot bind MCP calculation to workspace identity: {exc}") from exc
+    logical_remote_dir = str(policy["remote_dir"])
+    submission_id = _mcp_submission_id(identity, str(intent["intent_id"]))
+    return {
+        **policy,
+        "namespace_version": "ts-mcp-workspace/1",
+        "workspace_id": identity,
+        "requested_remote_dir": logical_remote_dir,
+        "remote_dir": f"workspaces/{identity}/{logical_remote_dir}",
+        "submission_id": submission_id,
+    }
+
+
+def _expected_prepared_execution_policy(
+    workspace: Path,
+    intent: dict[str, Any],
+    prepared_policy: Any,
+) -> dict[str, Any]:
+    raw_policy = _validate_execution_target(intent["execution_target"])
+    if raw_policy.get("transport") != "mcp" or not _has_workspace_mcp_namespace(prepared_policy):
+        return raw_policy
+    return _execution_policy_for_prepare(workspace, intent, create_identity=False)
+
+
+def _has_workspace_mcp_namespace(policy: Any) -> bool:
+    return isinstance(policy, dict) and policy.get("namespace_version") == "ts-mcp-workspace/1"
+
+
 def _remote_config(workspace: Path, intent: dict[str, Any], prepared: dict[str, Any]) -> job_lifecycle.RemoteJobConfig:
     target = prepared.get("execution_policy")
     if (
@@ -782,6 +823,9 @@ def _execution_summary(
         execution = policy["execution"]
         summary.update(
             {
+                "workspace_id": policy.get("workspace_id"),
+                "requested_remote_dir": policy.get("requested_remote_dir"),
+                "submission_id": policy.get("submission_id"),
                 "queue": execution["queue"],
                 "nodes": execution["nodes"],
                 "ncpus": execution["ncpus"],
@@ -863,7 +907,7 @@ def _submit_mcp(
         raise ComputeContractError(f"MCP expected artifacts overlap staged inputs: {sorted(overlap)}")
     execution = _merged_mcp_execution(policy, prepared_task)
     request = build_ts_job_request(
-        submission_id=_mcp_submission_id(str(intent["intent_id"])),
+        submission_id=_prepared_mcp_submission_id(intent, policy),
         intent_id=str(intent["intent_id"]),
         intent_digest=sha256_json(intent),
         node_id=str(intent["node_id"]),
@@ -936,7 +980,7 @@ def _mcp_runner_script(
 
 
 def _status_mcp(intent: dict[str, Any], policy: dict[str, Any]) -> dict[str, Any]:
-    submission_id = _mcp_submission_id(str(intent["intent_id"]))
+    submission_id = _prepared_mcp_submission_id(intent, policy)
     try:
         record = _mcp_client().status(submission_id, include_history=True)
     except MCPClientError as exc:
@@ -1093,9 +1137,28 @@ def _collected_output_dir(workspace: Path, intent: dict[str, Any]) -> Path:
     return workspace / output_ref / "collected"
 
 
-def _mcp_submission_id(intent_id: str) -> str:
+def _mcp_submission_id(workspace_identity: str, intent_id: str) -> str:
+    bound = f"{workspace_identity}\0{intent_id}"
+    digest = hashlib.sha256(bound.encode("utf-8")).hexdigest()[:16]
+    return f"tsjob_{workspace_identity}_{intent_id[:60]}_{digest}"
+
+
+def _legacy_mcp_submission_id(intent_id: str) -> str:
     digest = hashlib.sha256(intent_id.encode("utf-8")).hexdigest()[:16]
     return f"tsjob_{intent_id[:88]}_{digest}"
+
+
+def _prepared_mcp_submission_id(intent: dict[str, Any], policy: dict[str, Any]) -> str:
+    submission_id = policy.get("submission_id")
+    if _has_workspace_mcp_namespace(policy):
+        workspace_identity = policy.get("workspace_id")
+        if not isinstance(workspace_identity, str) or not isinstance(submission_id, str):
+            raise ComputeContractError("prepared MCP workspace binding is incomplete")
+        expected = _mcp_submission_id(workspace_identity, str(intent["intent_id"]))
+        if submission_id != expected:
+            raise ComputeContractError("prepared MCP submission_id does not match workspace identity")
+        return submission_id
+    return _legacy_mcp_submission_id(str(intent["intent_id"]))
 
 
 def _receipt_ref(intent: dict[str, Any], transport: str) -> str:
@@ -1137,7 +1200,11 @@ def _load_prepared(
     expected_task = asdict(_prepared_task_for_intent(workspace, intent))
     if prepared.get("prepared_task") != expected_task:
         raise ComputeContractError("prepared backend metadata does not match the calculation intent")
-    expected_policy = _validate_execution_target(intent["execution_target"])
+    expected_policy = _expected_prepared_execution_policy(
+        workspace,
+        intent,
+        prepared.get("execution_policy"),
+    )
     if prepared.get("execution_policy") != expected_policy:
         raise ComputeContractError("prepared execution policy does not match the calculation intent")
     if expected_policy["kind"] == "remote":
@@ -1638,7 +1705,7 @@ def _collection_program_status(
 
     if transport == "mcp":
         expected_metadata = {
-            "submission_id": _mcp_submission_id(str(intent["intent_id"])),
+            "submission_id": _prepared_mcp_submission_id(intent, policy),
             "intent_id": intent["intent_id"],
             "intent_digest": sha256_json(intent),
             "backend": intent["backend"],

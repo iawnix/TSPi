@@ -25,9 +25,15 @@ after exact intent, digest, target, and job binding. No interactive confirmation
 is required.
 
 `execution_target.transport` selects `ssh` or `mcp`. SSH uses an absolute
-allowlisted `remote_dir`; MCP uses a principal-workspace-relative `remote_dir`
-and complete scheduler resources. Legacy remote targets without `transport`
-remain SSH-compatible. MCP connection URL, token, and timeout come only from
+allowlisted `remote_dir`; an MCP intent uses a logical workspace-relative
+`remote_dir` and complete scheduler resources. New MCP preparations bind that
+logical path to `workspaces/<workspace_id>/<remote_dir>` using the persistent
+non-scientific identity in `.agents/workspace-identity.json`. The resolved path
+and workspace-bound submission ID are persisted in `prepared.json`; later
+operations do not derive them from the Pi process. Legacy prepared records
+without the namespace marker retain their original paths and submission IDs.
+Legacy remote targets without `transport` remain SSH-compatible. MCP
+connection URL, token, and timeout come only from
 `TS_CLUSTER_MCP_URL`, `TS_CLUSTER_MCP_TOKEN`, and `TS_CLUSTER_MCP_TIMEOUT`.
 SSH cancellation requires a previously inspected PID and verifies that the
 remote PID file still matches before sending a signal.

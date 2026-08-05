@@ -224,6 +224,23 @@ nodes/<node>/attempts/<intent>/
 └── outputs/
 ```
 
+Each initialized workspace also owns a persistent, non-scientific identity at
+`.agents/workspace-identity.json`. For new MCP preparations, the logical
+`remote_dir` from the intent is retained as `requested_remote_dir`, while the
+bound execution path is stored in `prepared.json` as:
+
+```text
+workspaces/<workspace_id>/<requested_remote_dir>
+```
+
+The MCP `submission_id` is bound to both `workspace_id` and `intent_id`. This
+separates independent Pi workspaces that share one MCP principal. Agents
+working in the same workspace intentionally share the identity and remain
+serialized by the existing per-intent submit/cancel guards. The identity does
+not enter canonical scientific state or `workspace_revision`. Existing
+prepared records without `namespace_version=ts-mcp-workspace/1` keep their
+legacy paths and submission IDs for inspect and collect compatibility.
+
 A remote directory must declare `authority=execution_mirror`. Results become
 usable only after collection and local verification. See
 `skills/transition-state-workflow/references/compute_operator.md`.

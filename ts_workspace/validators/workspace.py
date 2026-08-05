@@ -20,6 +20,7 @@ from ..evidence_gates import (
     validate_mechanism_reflection_gate,
 )
 from ..evidence_lifecycle import EvidenceLifecycleError, evidence_lifecycle_view
+from ..identity import IDENTITY_REF, WorkspaceIdentityError, read_workspace_identity
 from ..io import read_json
 from ..ontology import (
     AUDIT_SCOPES,
@@ -88,6 +89,21 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
                 f"missing {dirname}/ (auto-created on next mutation)",
                 dirname,
             )
+
+    identity_path = root_path / IDENTITY_REF
+    if not identity_path.exists() and not identity_path.is_symlink():
+        _finding(
+            findings,
+            "warning",
+            "missing_workspace_identity",
+            "missing workspace identity (auto-created before the next MCP preparation)",
+            IDENTITY_REF,
+        )
+    else:
+        try:
+            read_workspace_identity(root_path)
+        except WorkspaceIdentityError as exc:
+            _finding(findings, "error", "invalid_workspace_identity", str(exc), IDENTITY_REF)
 
     loaded: dict[str, Any] = {}
     for filename in sorted(REQUIRED_FILES):

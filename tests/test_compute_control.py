@@ -610,10 +610,17 @@ def test_mcp_transport_submit_status_tail_collect_and_cancel(
     workspace = _workspace(tmp_path)
     _configure_mcp(monkeypatch)
     intent_id = "calc_n001_optfreq_v2_001"
-    prepare_calculation(
+    prepared = prepare_calculation(
         workspace,
         _intent_v2(workspace, target=_mcp_target(), dry_run=False),
     )
+    policy = prepared["prepared"]["execution_policy"]
+    workspace_id = policy["workspace_id"]
+    remote_dir = f"workspaces/{workspace_id}/runs/n001/calc_n001_optfreq_v2_001"
+    assert policy["namespace_version"] == "ts-mcp-workspace/1"
+    assert policy["requested_remote_dir"] == "runs/n001/calc_n001_optfreq_v2_001"
+    assert policy["remote_dir"] == remote_dir
+    assert policy["submission_id"].startswith(f"tsjob_{workspace_id}_{intent_id}_")
 
     class FakeMCPClient:
         def __init__(self) -> None:
@@ -623,7 +630,7 @@ def test_mcp_transport_submit_status_tail_collect_and_cancel(
             self.scheduler_state = "R"
 
         def ensure_directory(self, path: str) -> None:
-            assert path == "runs/n001/calc_n001_optfreq_v2_001"
+            assert path == remote_dir
 
         def upload_file(self, source: Path, remote_path: str):
             self.uploads.append((source.name, remote_path))
@@ -697,6 +704,8 @@ def test_mcp_transport_submit_status_tail_collect_and_cancel(
     assert submitted["job_id"] == "42001.cluster"
     assert client.request is not None
     assert client.request["intent_digest"] == binding["intent_digest"]
+    assert client.request["workdir"] == remote_dir
+    assert client.request["submission_id"] == policy["submission_id"]
     assert str(client.request["intent_digest"]).count("sha256:") == 1
     assert {name for name, _remote in client.uploads} == {"candidate.gjf", "run_mcp_job.sh"}
     runner = workspace / f"nodes/n001/attempts/{intent_id}/run_mcp_job.sh"
@@ -743,6 +752,107 @@ def test_mcp_transport_submit_status_tail_collect_and_cancel(
 
     with pytest.raises(ComputeContractError, match="active or unresolved"):
         cancel_calculation(workspace, intent_id, expected_job_id="42001.cluster")
+
+
+def test_mcp_namespace_separates_identical_intents_in_two_workspaces(tmp_path: Path) -> None:
+    first_workspace = _workspace(tmp_path / "first")
+    second_workspace = _workspace(tmp_path / "second")
+
+    first = prepare_calculation(
+        first_workspace,
+        _intent_v2(first_workspace, target=_mcp_target(), dry_run=False),
+    )["prepared"]["execution_policy"]
+    second = prepare_calculation(
+        second_workspace,
+        _intent_v2(second_workspace, target=_mcp_target(), dry_run=False),
+    )["prepared"]["execution_policy"]
+
+    assert first["workspace_id"] != second["workspace_id"]
+    assert first["requested_remote_dir"] == second["requested_remote_dir"]
+    assert first["remote_dir"] != second["remote_dir"]
+    assert first["submission_id"] != second["submission_id"]
+    assert first["remote_dir"].startswith(f"workspaces/{first['workspace_id']}/")
+    assert second["remote_dir"].startswith(f"workspaces/{second['workspace_id']}/")
+
+
+def test_legacy_mcp_prepared_record_keeps_unscoped_paths_and_submission_id(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = _workspace(tmp_path)
+    _configure_mcp(monkeypatch)
+    intent_id = "calc_n001_optfreq_v2_001"
+    prepared_result = prepare_calculation(
+        workspace,
+        _intent_v2(workspace, target=_mcp_target(), dry_run=False),
+    )
+    prepared = prepared_result["prepared"]
+    prepared["execution_policy"] = prepared_result["intent"]["execution_target"]
+    prepared_path = workspace / f"nodes/n001/attempts/{intent_id}/prepared.json"
+    prepared_path.write_text(json.dumps(prepared), encoding="utf-8")
+    (workspace / ".agents/workspace-identity.json").unlink()
+    seen: dict[str, object] = {}
+
+    class FakeLegacyMCPClient:
+        def ensure_directory(self, path: str) -> None:
+            seen["remote_dir"] = path
+
+        def upload_file(self, _source: Path, _remote_path: str):
+            return {"uploaded": True}
+
+        def submit(self, request):
+            seen["request"] = request
+            return RemoteReceipt(
+                node_id="n001",
+                host="cluster-mcp",
+                remote_dir=request["workdir"],
+                command=["mcp", "ts_submit_job", request["submission_id"]],
+                receipt_path=f"{request['workdir']}/ts_submission.json",
+                scheduler_id="42002.cluster",
+                metadata={
+                    "submission_id": request["submission_id"],
+                    "intent_id": request["intent_id"],
+                    "intent_digest": request["intent_digest"],
+                    "backend": request["backend"],
+                    "expected_artifacts": json.dumps(request["expected_artifacts"]),
+                },
+            )
+
+        def status(self, submission_id: str, *, include_history: bool):
+            request = seen["request"]
+            assert isinstance(request, dict)
+            assert include_history is True
+            return {
+                "schema_version": "ts-cluster-submission/1",
+                "submission_id": submission_id,
+                "state": "submitted",
+                "job_id": "42002.cluster",
+                "request": request,
+                "scheduler": {"state": "F", "exit_status": 0},
+            }
+
+        def download_file(self, remote_path: str, destination: Path):
+            seen["download"] = remote_path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(_gaussian_log(), encoding="utf-8")
+            return {"path": str(destination), "size": destination.stat().st_size, "sha256": "3" * 64}
+
+    monkeypatch.setattr("ts_compute.control._mcp_client", lambda: FakeLegacyMCPClient())
+
+    submitted = submit_calculation(workspace, intent_id)
+    status = calculation_status(workspace, intent_id)
+    collected = collect_calculation(workspace, intent_id, ["candidate.log"])
+
+    request = seen["request"]
+    assert isinstance(request, dict)
+    assert seen["remote_dir"] == "runs/n001/calc_n001_optfreq_v2_001"
+    assert request["workdir"] == "runs/n001/calc_n001_optfreq_v2_001"
+    assert request["submission_id"].startswith(f"tsjob_{intent_id}_")
+    assert "ws_" not in request["submission_id"]
+    assert submitted["provenance"]["submission_id"] == request["submission_id"]
+    assert status["state"] == "completed"
+    assert seen["download"] == "runs/n001/calc_n001_optfreq_v2_001/candidate.log"
+    assert collected["program_status"] == "completed"
 
 
 def test_mcp_cancel_is_bound_to_preflight_job_id(

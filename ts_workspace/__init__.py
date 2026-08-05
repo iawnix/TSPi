@@ -14,21 +14,25 @@ from .engine import (
     validate_decision_dry_run,
     validate_workspace,
 )
+from .identity import ensure_workspace_identity, read_workspace_identity, workspace_id
 from .validators.decision import ContractError, validate_decision
 
 __all__ = [
     "ContractError",
     "end_node",
+    "ensure_workspace_identity",
     "init_workspace",
     "migrate_workspace_state",
     "propose_hypothesis",
     "report_branch_context",
     "report_node",
     "report_workspace",
+    "read_workspace_identity",
     "snapshot_report",
     "start_node",
     "update_workspace",
     "validate_decision_dry_run",
     "validate_decision",
     "validate_workspace",
+    "workspace_id",
 ]

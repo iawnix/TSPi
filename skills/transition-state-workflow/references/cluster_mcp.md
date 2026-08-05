@@ -26,6 +26,9 @@ that a completed program supports a hypothesis.
 Run the server on the cluster login node or a protected cluster gateway. Keep
 the Pi research workspace and all canonical state on the Pi host. The cluster
 workspace is an execution mirror owned by one authenticated MCP principal.
+Within that principal tree, new TSAgent preparations isolate independent local
+workspaces under `workspaces/<workspace_id>/...`; they do not rely on the Pi
+process ID or a globally unique intent ID.
 
 The recommended first deployment is:
 
@@ -452,6 +455,15 @@ The TS-specific MCP tools are:
 manifest, expected artifacts, scheduler resources, and execution environment.
 Credential-like variables and `TS_CLUSTER_MCP_*` are rejected from scheduler
 job environments.
+
+For TSAgent clients using `ts-mcp-workspace/1`, the submitted `workdir` has the
+form `workspaces/<workspace_id>/<logical remote_dir>` and `submission_id` is
+bound to both the persistent workspace identity and calculation intent. Two Pi
+agents attached to different initialized workspaces therefore use disjoint
+paths even under the same MCP principal. Agents attached to the same workspace
+share the identity by design and rely on the local per-intent control guards.
+The server remains compatible with older prepared jobs whose workdir and
+submission ID predate this namespace.
 
 The server stores the request before `qsub`. An identical submitted request is
 replayed without another scheduler call. Reusing a `submission_id` with changed

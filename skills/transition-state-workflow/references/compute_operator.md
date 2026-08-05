@@ -193,6 +193,29 @@ shape:
 }
 ```
 
+The intent value above is a logical directory, not the final principal-relative
+path. During prepare, the compute kernel reads or creates the persistent
+`.agents/workspace-identity.json` record and writes this immutable binding into
+the attempt's `prepared.json`:
+
+```json
+{
+  "namespace_version": "ts-mcp-workspace/1",
+  "workspace_id": "ws_<24 lowercase hex characters>",
+  "requested_remote_dir": "runs/n012/calc_n012_optfreq_001",
+  "remote_dir": "workspaces/ws_<24 lowercase hex characters>/runs/n012/calc_n012_optfreq_001",
+  "submission_id": "tsjob_<workspace-bound value>"
+}
+```
+
+All later MCP operations use the prepared binding rather than reconstructing a
+path from the current process or Pi session. Independently initialized
+workspaces therefore cannot collide when they use the same principal and
+intent ID. Multiple agents intentionally operating on one workspace share the
+same identity and the same per-intent atomic control guards. Prepared records
+created before `ts-mcp-workspace/1` continue to use their original unscoped
+directory and legacy intent-bound submission ID.
+
 The MCP endpoint, bearer token, and timeout are never intent data:
 
 ```bash

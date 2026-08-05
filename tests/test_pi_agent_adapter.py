@@ -126,11 +126,13 @@ def test_pi_context_summary_from_report_workspace(tmp_path: Path) -> None:
     assert f"focus_hypothesis: {HYPOTHESIS_ID}" in payload["summary"]
     assert "required_next_evidence:" in payload["summary"]
     assert "operational_revision:" in payload["summary"]
+    assert f"compute_workspace_id: {report['workspace_id']}" in payload["summary"]
     assert "do not edit workspace state files by hand" in payload["summary"]
     assert "scripts/ts_workspace.py" not in payload["summary"]
     assert "explicit TSAgentSkill root" in payload["summary"]
     assert "ts_workspace_context/ts_workspace_decision_draft/ts_workspace_decision_validate/ts_workspace_decision_apply" in payload["summary"]
     assert payload["details"]["workspaceRoot"] == str(workspace)
+    assert payload["details"]["workspaceId"] == report["workspace_id"]
     assert payload["details"]["operationalRevision"].startswith("sha256:")
     assert payload["details"]["focusHypothesisId"] == HYPOTHESIS_ID
     assert payload["details"]["valid"] is True

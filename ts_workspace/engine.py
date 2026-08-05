@@ -16,6 +16,7 @@ from .finalizers import (
     validate_v2_audit_gates,
 )
 from .evidence_lifecycle import evidence_lifecycle_view
+from .identity import IDENTITY_REF, ensure_workspace_identity
 from .io import append_jsonl, apply_change, now_iso, read_json, sha256_json, write_json
 from .ontology import DECISION_SCHEMA as DECISION_SCHEMA_V2, NODE_SCHEMA as NODE_SCHEMA_V2
 from .readers import (
@@ -63,6 +64,7 @@ def init_workspace(
         validate_decision_dict(decision)
     elif force:
         raise ContractError("force reinitialize requires an init_workspace decision")
+    _require_safe_identity_parent(root_path)
     if not force:
         existing = [
             filename
@@ -85,10 +87,16 @@ def init_workspace(
     write_json(root_path / "evidence_registry.json", {"schema_version": "ts-evidence-registry", "evidence": []})
     write_json(root_path / HYPOTHESES_FILE, initial_hypotheses())
     (root_path / "decision_log.jsonl").touch()
+    identity = ensure_workspace_identity(root_path)
 
     if decision is not None:
         _commit_transaction(root_path, decision, {}, {"mutation_applied": True})
-    return {"root": str(root_path), "created": True, "valid": validate_workspace_dict(root_path)["valid"]}
+    return {
+        "root": str(root_path),
+        "workspace_id": identity["workspace_id"],
+        "created": True,
+        "valid": validate_workspace_dict(root_path)["valid"],
+    }
 
 
 def migrate_workspace_state(root: str | Path) -> dict[str, Any]:
@@ -745,6 +753,7 @@ def _transaction_committed(root: Path, decision_id: str) -> bool:
 
 def _clear_workspace_owned_state(root: Path) -> None:
     """Remove files and directories owned by the TS workspace before force reinit."""
+    identity_path = _require_safe_identity_parent(root)
     for dirname in sorted(REQUIRED_DIRS | SOFT_DIRS):
         path = root / dirname
         if path.exists():
@@ -756,6 +765,15 @@ def _clear_workspace_owned_state(root: Path) -> None:
                 shutil.rmtree(path)
             else:
                 path.unlink()
+    if identity_path.exists() or identity_path.is_symlink():
+        identity_path.unlink()
+
+
+def _require_safe_identity_parent(root: Path) -> Path:
+    identity_path = root / IDENTITY_REF
+    if identity_path.parent.is_symlink():
+        raise ContractError(f"workspace identity path cannot contain a symbolic link: {identity_path}")
+    return identity_path
 
 
 def report_workspace(root: str | Path) -> dict[str, Any]:

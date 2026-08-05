@@ -61,6 +61,7 @@ function buildContextDetails(report) {
 
   return {
     reportId: report.report_id || "",
+    workspaceId: report.workspace_id || "",
     workspaceRevision: report.workspace_revision || "",
     operationalRevision: report.operational_revision || "",
     workspaceRoot: report.workspace_root || "",
@@ -142,7 +143,7 @@ function buildContextSummary(report, options = {}) {
   const maxItems = Number.isInteger(options.maxItems) ? options.maxItems : 5;
   const lines = [
     "TS workspace context:",
-    `- workspace: ${details.workspaceRoot || "(unknown)"}`,
+    `- workspace: ${details.workspaceRoot || "(unknown)"}; compute_workspace_id: ${details.workspaceId || "(missing)"}`,
     `- report: ${details.reportId || "(none)"}; revision: ${details.workspaceRevision || "(none)"}; valid: ${details.valid}`,
     `- operational_revision: ${details.operationalRevision || "(none)"}; calculations=${details.operationalSummary.calculationFileCount}; agent_runs=${details.operationalSummary.agentRunCount}; failed=${details.operationalSummary.agentRunFailedCount}; pending=${details.operationalSummary.agentRunPendingCount}; pending_controls=${details.operationalSummary.controlPendingCount}`,
     `- current_node: ${details.currentNode || "(none)"}; focus_hypothesis: ${details.focusHypothesisId || "(none)"}`,

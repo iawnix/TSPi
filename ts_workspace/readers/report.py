@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from ..evidence_lifecycle import EvidenceLifecycleError, evidence_lifecycle_view
+from ..identity import IDENTITY_REF, WorkspaceIdentityError, read_workspace_identity
 from ..io import compact_id_time, read_json, sha256_json, write_json
 from ..operational import agent_run_index, operational_snapshot
 from ..state import EVIDENCE_FILE, HYPOTHESES_FILE, RESEARCH_STATE_FILE
@@ -51,9 +52,14 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
         {"research_state": research_state, "hypotheses": hypotheses, "evidence": evidence}
     )
     operations = operational_snapshot(root_path)
+    try:
+        identity = read_workspace_identity(root_path)
+    except WorkspaceIdentityError:
+        identity = {}
 
     report = {
         "report_id": report_id,
+        "workspace_id": identity.get("workspace_id"),
         "workspace_revision": workspace_revision,
         "operational_revision": operations["operational_revision"],
         "workspace_root": str(root_path),
@@ -80,6 +86,7 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
         "pending_controls": operations["pending_controls"],
         "operational_summary": operations["operational_summary"],
         "workspace_state_refs": {
+            "workspace_identity": IDENTITY_REF,
             "research_state": RESEARCH_STATE_FILE,
             "hypotheses": HYPOTHESES_FILE,
             "evidence_registry": EVIDENCE_FILE,

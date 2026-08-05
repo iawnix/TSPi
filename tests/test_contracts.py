@@ -39,6 +39,7 @@ def test_required_schema_files_exist() -> None:
         "mechanism.schema.json",
         "research_state.schema.json",
         "hypotheses.schema.json",
+        "workspace_identity.schema.json",
     ]:
         path = ROOT / "ts_workspace" / "contracts" / name
         assert path.exists()
@@ -256,7 +257,7 @@ def test_init_force_reinitializes(tmp_path: Path) -> None:
     from ts_workspace import start_node
 
     workspace = tmp_path / "ws"
-    init_workspace(workspace)
+    initial = init_workspace(workspace)
     (workspace / "nodes" / "n000").mkdir(parents=True)
     write_json(workspace / "nodes" / "n000" / "node.json", {"node_id": "n000", "stale": True})
     (workspace / "accepted" / "accepted_ts_old.json").write_text("{}\n", encoding="utf-8")
@@ -264,8 +265,9 @@ def test_init_force_reinitializes(tmp_path: Path) -> None:
     tree["nodes"].append({"node_id": "n000", "phase": "endpoint"})
     write_json(workspace / "research_state.json", tree)
 
-    init_workspace(workspace, init_decision("dec_force_reinit"), force=True)
+    reinitialized = init_workspace(workspace, init_decision("dec_force_reinit"), force=True)
 
+    assert reinitialized["workspace_id"] != initial["workspace_id"]
     assert read_json(workspace / "research_state.json")["nodes"] == []
     assert not (workspace / "nodes" / "n000" / "node.json").exists()
     assert not (workspace / "accepted" / "accepted_ts_old.json").exists()
