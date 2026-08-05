@@ -165,7 +165,7 @@ function colorContent(theme: Theme, content: string): string {
 function colorLogoContent(theme: Theme, content: string): string | undefined {
   if (content.includes(TSPI_LOGO_MIDDLE)) {
     const painted = [
-      theme.fg("success", "●"),
+      theme.fg("borderAccent", "●"),
       theme.fg("accent", "──╯         "),
       theme.bold(theme.fg("text", "π")),
       theme.fg("accent", "            ╰──"),
@@ -176,7 +176,7 @@ function colorLogoContent(theme: Theme, content: string): string | undefined {
   }
   if (content.includes(TSPI_COMPACT_LOGO)) {
     const painted = [
-      theme.fg("success", "●"),
+      theme.fg("borderAccent", "●"),
       theme.bold(theme.fg("text", " π ")),
       theme.fg("warning", "●"),
       theme.bold(theme.fg("accent", " TSPi")),
