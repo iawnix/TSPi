@@ -5,16 +5,40 @@ import { TS_PACKAGE_PROFILE } from "../shared/package-profile.ts";
 const FULL_LAYOUT_MIN_WIDTH = 48;
 const LABEL_WIDTH = 13;
 const ITEM_SEPARATOR = " · ";
-const TSPI_COMPACT_LOGO = "● π ● TSPi";
-const TSPI_LOGO_MIDDLE = "●──╯         π            ╰──●  TSPi";
-const TSPI_LOGO_LINES = Object.freeze([
-  "       ╭──────────────╮",
-  "   ╭───╯              ╰───╮",
-  TSPI_LOGO_MIDDLE,
-  "   ╰──────────────────────╯",
+const PIXEL = "■";
+const EMPTY_PIXEL = " ".repeat(visibleWidth(PIXEL));
+const TSPI_COMPACT_LOGO = "TSπ";
+const T_MASK = Object.freeze([
+  "WWWWW",
+  "  W  ",
+  "  W  ",
+  "  W  ",
+  "  W  ",
+  "  W  ",
+  "  W  ",
 ]);
+const S_MASK = Object.freeze([
+  "WWWWW",
+  "W    ",
+  "W    ",
+  "WWWWW",
+  "    W",
+  "    W",
+  "WWWWW",
+]);
+const PI_MASK = Object.freeze([
+  "PPPPPPP",
+  " P   P ",
+  " P   P ",
+  " P   P ",
+  " P   P ",
+  " P  PP ",
+  "P    PP",
+]);
+const TSPI_LOGO_MASK = Object.freeze(T_MASK.map((line, index) => `${line}  ${S_MASK[index]}  ${PI_MASK[index]}`));
+const TSPI_LOGO_LINES = Object.freeze(TSPI_LOGO_MASK.map(renderPixelMask));
 const TSPI_LOGO_WIDTH = Math.max(...TSPI_LOGO_LINES.map((line) => visibleWidth(line)));
-const TSPI_LOGO_CONTENT = new Set(TSPI_LOGO_LINES.map((line) => line.trim()));
+const TSPI_LOGO_MIN_WIDTH = TSPI_LOGO_WIDTH + 4;
 
 export function renderTspiStartupLines(workspaceRoot: string, width: number): string[] {
   const safeWidth = Math.max(1, Math.floor(width));
@@ -70,8 +94,12 @@ export function createTspiStartupHeader(theme: Theme, workspaceRoot: string): Co
 }
 
 function renderTspiLogo(width: number): string[] {
-  if (width < TSPI_LOGO_WIDTH) return [centerPlainText(TSPI_COMPACT_LOGO, width)];
-  return TSPI_LOGO_LINES.map((line) => centerPlainText(padPlainText(line, TSPI_LOGO_WIDTH), width));
+  if (width < TSPI_LOGO_MIN_WIDTH) return [centerPlainText(TSPI_COMPACT_LOGO, width)];
+  return TSPI_LOGO_LINES.map((line) => centerPlainText(line, width));
+}
+
+function renderPixelMask(mask: string): string {
+  return [...mask].map((cell) => cell === " " ? EMPTY_PIXEL : PIXEL).join("");
 }
 
 function renderRow(label: string, items: readonly string[], width: number): string[] {
@@ -151,7 +179,6 @@ function colorContent(theme: Theme, content: string): string {
   const trimmed = content.trim();
   const paintedLogo = colorLogoContent(theme, content);
   if (paintedLogo) return paintedLogo;
-  if (TSPI_LOGO_CONTENT.has(trimmed)) return theme.fg("accent", content);
   if (trimmed === TS_PACKAGE_PROFILE.title) return theme.bold(theme.fg("text", content));
   if (content.trimEnd() === TS_PACKAGE_PROFILE.description) return theme.fg("muted", content);
 
@@ -163,27 +190,36 @@ function colorContent(theme: Theme, content: string): string {
 }
 
 function colorLogoContent(theme: Theme, content: string): string | undefined {
-  if (content.includes(TSPI_LOGO_MIDDLE)) {
-    const painted = [
-      theme.fg("borderAccent", "●"),
-      theme.fg("accent", "──╯         "),
-      theme.bold(theme.fg("text", "π")),
-      theme.fg("accent", "            ╰──"),
-      theme.fg("warning", "●"),
-      theme.bold(theme.fg("accent", "  TSPi")),
-    ].join("");
-    return replacePlainSegment(content, TSPI_LOGO_MIDDLE, painted);
-  }
+  const logo = paintLogoLines(theme, content, TSPI_LOGO_LINES, TSPI_LOGO_MASK);
+  if (logo) return logo;
   if (content.includes(TSPI_COMPACT_LOGO)) {
-    const painted = [
-      theme.fg("borderAccent", "●"),
-      theme.bold(theme.fg("text", " π ")),
-      theme.fg("warning", "●"),
-      theme.bold(theme.fg("accent", " TSPi")),
-    ].join("");
+    const painted = `${theme.fg("mdLink", "TS")}${theme.bold(theme.fg("text", "π"))}`;
     return replacePlainSegment(content, TSPI_COMPACT_LOGO, painted);
   }
   return undefined;
+}
+
+function paintLogoLines(
+  theme: Theme,
+  content: string,
+  lines: readonly string[],
+  masks: readonly string[],
+): string | undefined {
+  for (let index = 0; index < lines.length; index++) {
+    const line = lines[index];
+    if (content.includes(line)) {
+      return replacePlainSegment(content, line, paintPixelMask(theme, masks[index]));
+    }
+  }
+  return undefined;
+}
+
+function paintPixelMask(theme: Theme, mask: string): string {
+  return [...mask].map((cell) => {
+    if (cell === " ") return EMPTY_PIXEL;
+    if (cell === "P") return theme.bold(theme.fg("text", PIXEL));
+    return theme.fg("mdLink", PIXEL);
+  }).join("");
 }
 
 function replacePlainSegment(content: string, segment: string, painted: string): string | undefined {
