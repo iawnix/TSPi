@@ -128,6 +128,6 @@ registered as primary evidence without independent local artifact support.
 
 ## Legacy Templates
 
-`templates/decision/` describes the legacy phase protocol. Use it only for an
+`assets/templates/decision/` describes the legacy phase protocol. Use it only for an
 existing legacy workspace. New v2 decisions should be constructed from
 `references/decision_contract.md` or by the Pi four-tool control plane.

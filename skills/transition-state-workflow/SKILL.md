@@ -52,7 +52,7 @@ same node. A scientifically meaningful method change opens a new node of the
 same scientific type with `attempt_kind=recalculation`,
 `recalculation_ref`, and `branch_context.relation=recalculation_of`.
 
-Read `docs/RESEARCH_NODE_ONTOLOGY.md` and `references/state_model.md` when node
+Read `references/research_node_ontology.md` and `references/state_model.md` when node
 type, scope, or status semantics are in question.
 
 ## Status Axes
@@ -109,7 +109,7 @@ revisions. Load historical context only when needed:
 - `mode=audit` before acceptance or completion review.
 
 Construct new decisions from `references/decision_contract.md`. Files under
-`templates/decision/` are legacy-compatible examples; tests are fixtures, not
+`assets/templates/decision/` are legacy-compatible examples; tests are fixtures, not
 operating instructions.
 
 ## Hypothesis And Branch Rules
@@ -244,13 +244,13 @@ hypothesis revision, user escalation, or stop.
 - Report package creation is atomic and no-overwrite. Verify
   `package_manifest.json` before using its email summary or assets.
 
-Use `templates/ts_final_report.md` for final reporting.
+Use `assets/templates/ts_final_report.md` for final reporting.
 
 ## References
 
 Load only what the current act needs:
 
-- Node and decision semantics: `docs/RESEARCH_NODE_ONTOLOGY.md`,
+- Node and decision semantics: `references/research_node_ontology.md`,
   `references/state_model.md`, `references/decision_contract.md`
 - Branch and history choice: `references/agent_decision_protocol.md`
 - Candidate strategy: `references/candidate_generation.md`

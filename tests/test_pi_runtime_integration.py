@@ -80,7 +80,6 @@ def test_real_pi_offline_loads_extensions_and_public_tool_inventory(tmp_path: Pa
         "--session-dir",
         str(tmp_path / "pi-sessions"),
         "--no-context-files",
-        "--no-skills",
         "--no-builtin-tools",
         "--approve",
         "--extension",

@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { runArtifactOperator } from "../artifact-agent/runtime.ts";
+import { runArtifactOperator } from "../src/agents/artifacts/runtime.ts";
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("ts-test-child", {

@@ -1,7 +1,8 @@
 # Maintainer Guide
 
-This guide is for changing TSAgentSkill code. It complements `SKILL.md`,
-`README.md`, and the files in `references/`; it does not replace them.
+This guide is for changing the `@iawnix/ts-agent` Pi Package. It complements
+`README.md` and the public Skill under `skills/transition-state-workflow/`; it
+does not replace them.
 
 The central rule is simple: the Python workspace kernel is the authority for
 state integrity, while agents decide research direction from reports,
@@ -13,11 +14,31 @@ templates, and chemistry evidence.
   `/home/iaw/Codex/Project/2026-06-13/transition-state-workflow-refactor`.
 - A Pi-managed `.pi/git/...` checkout or local package reference is deployment
   output, not an authored source tree.
-- `SKILL.md` is the Pi Root Agent entrypoint and operating contract.
-- `references/` holds focused contract notes for humans and agents.
-- `templates/decision/` holds runtime decision JSON starting points.
+- `skills/transition-state-workflow/SKILL.md` is the Pi Root Agent entrypoint
+  and operating contract.
+- `skills/transition-state-workflow/references/` holds focused contract notes
+  for humans and agents.
+- `skills/transition-state-workflow/assets/templates/decision/` holds runtime
+  decision JSON starting points.
 - `tests/` holds regression fixtures only. Do not treat test JSON as live
   operating examples.
+
+## Package Boundary
+
+- `package.json.pi.skills` registers only
+  `skills/transition-state-workflow/`. Private child skills are implementation
+  inputs, not Root Agent inventory.
+- `package.json.pi.extensions` is the public Pi adapter surface. Keep public
+  tool names and schemas stable unless the package contract is intentionally
+  versioned.
+- Pi SDK packages are peer dependencies and exact development dependencies.
+  `typebox` is a direct runtime dependency because extensions import it.
+- `src/` owns TypeScript/CJS agent implementation. The Python packages and
+  `cluster_mcp` remain separate runtime kernels in this phase.
+- Keep `package.json.files` explicit. `npm run test:package` must reject tests,
+  caches, credentials, legacy root layouts, omitted runtime files, and files
+  outside the allowlist.
+- Keep `private: true` until publication is explicitly authorized.
 
 ## Module Ownership
 
@@ -58,27 +79,28 @@ Keep state ownership narrow.
   `ts_workspace_context`, `ts_workspace_decide`, and `ts_workspace_validate`
   are read-only, while only `ts_workspace_apply` mutates canonical state.
 - `extensions/ts-workflow-subagent` delegates bounded review requests to
-  `review-agent/`. The child remains tool-free and advisory; it never becomes
+  `src/agents/review/`. The child remains tool-free and advisory; it never becomes
   a second control plane.
 - `extensions/ts-workflow-compute` creates a fresh backend session with one
   selected private backend skill and request-scoped typed tools. Submit/cancel
   must bind and preflight the exact request before child creation; the child
   receives no raw transport access.
-- `compute-agent/` owns the backend fresh-session runtime, private-skill
+- `src/agents/compute/` owns the backend fresh-session runtime, private-skill
   loading, and compute-specific action/result binding.
 - `extensions/ts-workflow-artifacts` creates fresh render, report, and
   email-draft sessions. Each receives one private role skill and one path-bound
   typed tool; email sending is not implemented.
-- `artifact-agent/` owns artifact request paths, fresh-session runtime,
+- `src/agents/artifacts/` owns artifact request paths, fresh-session runtime,
   private-skill loading, and role-specific action/result binding.
-- `review-agent/` owns scientific-review task packets, prompts, fresh-session
+- `src/agents/review/` owns scientific-review task packets, prompts, fresh-session
   runtime, and review-specific result validation.
-- `agent-core/agent-protocol.cjs` and `contracts/agent_*.schema.json` own the
+- `src/agent-core/agent-protocol.cjs` and `contracts/agent_*.schema.json` own the
   cross-agent task/result protocol and authority-field rejection.
-- `agent-core/run-journal.cjs` is the host-only write boundary for durable
+- `src/agent-core/run-journal.cjs` is the host-only write boundary for durable
   child task, action, result, and failure records.
-- `agent-skills/` contains private child skills. They must not be added to
-  `package.json.pi.skills` or loaded into the Root Agent.
+- `src/agents/compute/private-skills/` and
+  `src/agents/artifacts/private-skills/` contain private child skills. They
+  must not be added to `package.json.pi.skills` or loaded into the Root Agent.
 
 ## Control-Plane Invariants
 
@@ -149,7 +171,8 @@ Use this checklist for state-model changes.
 - Update `ts_workspace/readers/report.py` if agents need the new state in
   `report_workspace`.
 - Update `ts_web/normalize.py` only after the authoritative read shape exists.
-- Update decision templates in `templates/decision/`.
+- Update decision templates in
+  `skills/transition-state-workflow/assets/templates/decision/`.
 - Update references and tests in the same change.
 
 Avoid parallel vocabularies. If a label, color, `claim_state`, or status is
@@ -268,7 +291,8 @@ python3 "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" diagnostic --json
 If Pi package metadata, extension files, or `package.json` changed:
 
 ```bash
-npm pack --dry-run
+npm run typecheck
+npm run test:package
 ```
 
 ## Release Procedure
@@ -302,7 +326,7 @@ python3 "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
   --json
 ```
 
-7. Start Pi from the clean workspace and verify the nine public tools. Private
+7. Start Pi from the clean workspace and verify the ten public tools. Private
    child skills must remain absent from the Root Agent inventory. Run the
    recording-provider integration tests to verify zero-tool review sessions and
    one-tool compute and artifact sessions.

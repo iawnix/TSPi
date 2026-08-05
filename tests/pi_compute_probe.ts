@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
-import { runComputeOperator } from "../compute-agent/runtime.ts";
+import { runComputeOperator } from "../src/agents/compute/runtime.ts";
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("ts-test-compute-child", {

@@ -2,6 +2,7 @@ __pycache__/
 .pytest_cache/
 .runtime/
 node_modules/
+.npm-cache/
 npm-debug.log*
 *.pyc
 *.pyo

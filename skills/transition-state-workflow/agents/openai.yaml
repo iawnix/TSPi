@@ -1,0 +1,4 @@
+interface:
+  display_name: "Transition-State Workflow"
+  short_description: "Evidence-driven transition-state research workflow"
+  default_prompt: "Use $transition-state-workflow to continue this transition-state study from the current workspace evidence."

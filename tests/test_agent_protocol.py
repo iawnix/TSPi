@@ -8,7 +8,7 @@ from jsonschema import Draft202012Validator
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROTOCOL = ROOT / "agent-core" / "agent-protocol.cjs"
+PROTOCOL = ROOT / "src" / "agent-core" / "agent-protocol.cjs"
 
 
 def _task() -> dict[str, object]:

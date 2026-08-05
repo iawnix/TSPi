@@ -585,7 +585,7 @@ def test_decision_warnings_are_silent_on_continue_parent() -> None:
 
 def test_strategy_reflection_reference_rejects_named_priors() -> None:
     """Strategy reflection is generic; project-specific priors must not leak in."""
-    path = ROOT / "references" / "strategy_reflection.md"
+    path = ROOT / "skills" / "transition-state-workflow" / "references" / "strategy_reflection.md"
     assert path.exists(), "strategy_reflection.md must exist"
     text = path.read_text(encoding="utf-8")
     forbidden = ["EDAA", "Wolff", "trans1x_", "TSResearch_"]

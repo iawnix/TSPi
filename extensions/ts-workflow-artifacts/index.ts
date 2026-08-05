@@ -12,18 +12,18 @@ import {
   runReportJson,
   runWorkspaceJson,
 } from "../shared/workspace-cli.ts";
-import { runArtifactOperator } from "../../artifact-agent/runtime.ts";
+import { runArtifactOperator } from "../../src/agents/artifacts/runtime.ts";
 
 const require = createRequire(import.meta.url);
 const { toolText } = require("../ts-workflow-context/summary.cjs");
-const { beginAgentRun, completeAgentRun, failAgentRun } = require("../../agent-core/run-journal.cjs");
+const { beginAgentRun, completeAgentRun, failAgentRun } = require("../../src/agent-core/run-journal.cjs");
 const {
   RENDER_OPERATIONS,
   validateEmailRequest,
   validateRenderRequest,
   validateReportRequest,
   validateTaskNodeScope,
-} = require("../../artifact-agent/request-contract.cjs");
+} = require("../../src/agents/artifacts/request-contract.cjs");
 
 type ArtifactRole = "render" | "report" | "email";
 type ActionLog = { tool: string; result: Record<string, unknown> }[];
@@ -50,6 +50,10 @@ type EmailRequest = {
   draftPath: string;
   recipients: string[];
 };
+const EMAIL_DRAFT_PARAMETERS = Type.Object({
+  subject: Type.String({ minLength: 1, maxLength: 300 }),
+  body: Type.String({ minLength: 1, maxLength: 20_000 }),
+}, { additionalProperties: false });
 
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
@@ -294,15 +298,12 @@ function createEmailDraftTool(
   request: EmailRequest,
   actions: ActionLog,
 ): ToolDefinition {
-  const tool: ToolDefinition = {
+  const tool: ToolDefinition<typeof EMAIL_DRAFT_PARAMETERS> = {
     name: "ts_workspace_email_draft_write",
     label: "TS Email Draft Write",
     description: "Write one local draft JSON for the pre-bound report summary and recipients. No sending is available.",
     executionMode: "sequential",
-    parameters: Type.Object({
-      subject: Type.String({ minLength: 1, maxLength: 300 }),
-      body: Type.String({ minLength: 1, maxLength: 20_000 }),
-    }, { additionalProperties: false }),
+    parameters: EMAIL_DRAFT_PARAMETERS,
     async execute(_toolCallId, params, signal) {
       const action = reserveAction(actions, tool.name, {
         operation: "draft",

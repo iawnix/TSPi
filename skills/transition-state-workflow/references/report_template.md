@@ -52,7 +52,7 @@ evidence rather than silently omitted.
 
 ## Required Report Sections
 
-Use `templates/ts_final_report.md` as the fillable template. A completed report
+Use `assets/templates/ts_final_report.md` as the fillable template. A completed report
 should include:
 
 1. Executive verdict and highest validated evidence layer.

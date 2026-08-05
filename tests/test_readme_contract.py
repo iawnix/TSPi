@@ -5,19 +5,22 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
-SKILL = ROOT / "SKILL.md"
-CANDIDATE_GENERATION = ROOT / "references" / "candidate_generation.md"
-GAUSSIAN_VALIDATION = ROOT / "references" / "gaussian_validation.md"
-MECHANISM_REFLECTION = ROOT / "references" / "mechanism_reflection.md"
-AGENT_DECISION_PROTOCOL = ROOT / "references" / "agent_decision_protocol.md"
-DECISION_CONTRACT = ROOT / "references" / "decision_contract.md"
-PATHWAY_MODEL = ROOT / "references" / "pathway_model.md"
-REPORT_TEMPLATE = ROOT / "references" / "report_template.md"
-WORKSPACE_CONTRACT = ROOT / "references" / "workspace_contract.md"
-CLUSTER_MCP = ROOT / "references" / "cluster_mcp.md"
-TEMPLATE_README = ROOT / "templates" / "decision" / "README.md"
-UPDATE_CANDIDATE_EVIDENCE = ROOT / "templates" / "decision" / "update_candidate_evidence.json"
-UPDATE_TSFREQ_EVIDENCE = ROOT / "templates" / "decision" / "update_tsfreq_evidence.json"
+SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
+REFERENCES = SKILL_ROOT / "references"
+TEMPLATES = SKILL_ROOT / "assets" / "templates"
+SKILL = SKILL_ROOT / "SKILL.md"
+CANDIDATE_GENERATION = REFERENCES / "candidate_generation.md"
+GAUSSIAN_VALIDATION = REFERENCES / "gaussian_validation.md"
+MECHANISM_REFLECTION = REFERENCES / "mechanism_reflection.md"
+AGENT_DECISION_PROTOCOL = REFERENCES / "agent_decision_protocol.md"
+DECISION_CONTRACT = REFERENCES / "decision_contract.md"
+PATHWAY_MODEL = REFERENCES / "pathway_model.md"
+REPORT_TEMPLATE = REFERENCES / "report_template.md"
+WORKSPACE_CONTRACT = REFERENCES / "workspace_contract.md"
+CLUSTER_MCP = REFERENCES / "cluster_mcp.md"
+TEMPLATE_README = TEMPLATES / "decision" / "README.md"
+UPDATE_CANDIDATE_EVIDENCE = TEMPLATES / "decision" / "update_candidate_evidence.json"
+UPDATE_TSFREQ_EVIDENCE = TEMPLATES / "decision" / "update_tsfreq_evidence.json"
 
 
 def test_readme_documents_install_and_agent_entrypoints() -> None:
@@ -31,7 +34,8 @@ def test_readme_documents_install_and_agent_entrypoints() -> None:
         "--workspace-root \"$TS_WORKSPACE_ROOT\"",
         "TS_WORKSPACE_ROOT=/path/to/ts-workspace npm run install-env",
         "Pi Agent Usage",
-        "templates/ts_final_report.md",
+        "ten-tool Root Agent inventory",
+        "skills/transition-state-workflow/assets/templates/ts_final_report.md",
     ]:
         assert phrase in text
 
@@ -42,9 +46,9 @@ def test_public_agent_contract_is_pi_only() -> None:
     paths = [
         README,
         SKILL,
-        ROOT / "references" / "runtime_environment.md",
-        ROOT / "references" / "pi_agent_adapter.md",
-        ROOT / "references" / "decision_contract.md",
+        REFERENCES / "runtime_environment.md",
+        REFERENCES / "pi_agent_adapter.md",
+        REFERENCES / "decision_contract.md",
     ]
 
     for path in paths:

@@ -6,7 +6,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-OUTPUT_SCHEMA = ROOT / "compute-agent" / "output-schema.cjs"
+COMPUTE_AGENT = ROOT / "src" / "agents" / "compute"
+OUTPUT_SCHEMA = COMPUTE_AGENT / "output-schema.cjs"
 ACTION_LOG = ROOT / "extensions" / "ts-workflow-compute" / "action-log.cjs"
 
 
@@ -103,8 +104,8 @@ def test_compute_cli_is_package_relative_and_runtime_aware() -> None:
 
 
 def test_compute_operator_runtime_is_fresh_isolated_and_tool_scoped() -> None:
-    runtime = (ROOT / "compute-agent" / "runtime.ts").read_text(encoding="utf-8")
-    prompt = (ROOT / "compute-agent" / "prompt.md").read_text(encoding="utf-8")
+    runtime = (COMPUTE_AGENT / "runtime.ts").read_text(encoding="utf-8")
+    prompt = (COMPUTE_AGENT / "prompt.md").read_text(encoding="utf-8")
 
     assert 'noTools: "builtin"' in runtime
     assert "customTools: options.tools" in runtime
@@ -112,6 +113,8 @@ def test_compute_operator_runtime_is_fresh_isolated_and_tool_scoped() -> None:
     assert "SessionManager.inMemory(options.workspaceRoot)" in runtime
     assert "SettingsManager.inMemory" in runtime
     assert "getAgentsFiles: () => ({ agentsFiles: [] })" in runtime
+    assert "getSystemPromptSource: () => undefined" in runtime
+    assert "getAppendSystemPromptSources: () => []" in runtime
     assert "getSkills: () => ({ skills: [], diagnostics: [] })" in runtime
     assert "withDisposableSession" in runtime
     assert "parseAndValidateOperatorReport" in runtime
@@ -159,7 +162,7 @@ def test_compute_action_failure_replaces_started_record_and_redacts_diagnostics(
 
 def test_compute_control_has_no_interactive_authorization_gate() -> None:
     source = (ROOT / "extensions" / "ts-workflow-compute" / "index.ts").read_text(encoding="utf-8")
-    prompt = (ROOT / "compute-agent" / "prompt.md").read_text(encoding="utf-8")
+    prompt = (COMPUTE_AGENT / "prompt.md").read_text(encoding="utf-8")
 
     assert not (ROOT / "extensions" / "ts-workflow-compute" / "authorization.cjs").exists()
     assert "authorizeComputeControl" not in source
@@ -170,8 +173,8 @@ def test_compute_control_has_no_interactive_authorization_gate() -> None:
 
 def test_compute_private_skills_are_registered() -> None:
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert package["pi"]["skills"] == ["."]
-    private_skills = {path.parent.name for path in (ROOT / "agent-skills").glob("*/SKILL.md")}
+    assert package["pi"]["skills"] == ["./skills/transition-state-workflow"]
+    private_skills = {path.parent.name for path in (COMPUTE_AGENT / "private-skills").glob("*/SKILL.md")}
     assert {"backend-gaussian", "backend-ase", "backend-rdkit", "backend-xtb"} <= private_skills
 
 

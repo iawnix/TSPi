@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { runScientificReview } from "../review-agent/runtime.ts";
+import { runScientificReview } from "../src/agents/review/runtime.ts";
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("ts-test-review-child", {

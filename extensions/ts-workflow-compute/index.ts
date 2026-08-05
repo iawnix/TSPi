@@ -11,11 +11,11 @@ import {
   runMcpDiagnosticJson,
   runWorkspaceJson,
 } from "../shared/workspace-cli.ts";
-import { runComputeOperator } from "../../compute-agent/runtime.ts";
+import { runComputeOperator } from "../../src/agents/compute/runtime.ts";
 
 const require = createRequire(import.meta.url);
 const { toolText } = require("../ts-workflow-context/summary.cjs");
-const { beginAgentRun, completeAgentRun, failAgentRun } = require("../../agent-core/run-journal.cjs");
+const { beginAgentRun, completeAgentRun, failAgentRun } = require("../../src/agent-core/run-journal.cjs");
 const {
   completeAction,
   failAction,

@@ -13,8 +13,9 @@ from ts_report import build_report_package
 
 
 ROOT = Path(__file__).resolve().parents[1]
-REQUEST_CONTRACT = ROOT / "artifact-agent" / "request-contract.cjs"
-OUTPUT_SCHEMA = ROOT / "artifact-agent" / "output-schema.cjs"
+ARTIFACT_AGENT = ROOT / "src" / "agents" / "artifacts"
+REQUEST_CONTRACT = ARTIFACT_AGENT / "request-contract.cjs"
+OUTPUT_SCHEMA = ARTIFACT_AGENT / "output-schema.cjs"
 
 
 def test_pi_package_registers_artifact_extension_and_root_tools() -> None:
@@ -39,13 +40,15 @@ def test_pi_package_registers_artifact_extension_and_root_tools() -> None:
 
 
 def test_artifact_runtime_is_fresh_skill_scoped_and_without_builtin_tools() -> None:
-    runtime = (ROOT / "artifact-agent" / "runtime.ts").read_text(encoding="utf-8")
-    prompt = (ROOT / "artifact-agent" / "prompt.md").read_text(encoding="utf-8")
+    runtime = (ARTIFACT_AGENT / "runtime.ts").read_text(encoding="utf-8")
+    prompt = (ARTIFACT_AGENT / "prompt.md").read_text(encoding="utf-8")
     assert 'noTools: "builtin"' in runtime
     assert "customTools: options.tools" in runtime
     assert "SessionManager.inMemory(options.workspaceRoot)" in runtime
     assert "SettingsManager.inMemory" in runtime
     assert "getAgentsFiles: () => ({ agentsFiles: [] })" in runtime
+    assert "getSystemPromptSource: () => undefined" in runtime
+    assert "getAppendSystemPromptSources: () => []" in runtime
     assert "getSkills: () => ({ skills: [], diagnostics: [] })" in runtime
     assert "withDisposableSession" in runtime
     assert "loadArtifactSkill(options.role)" in runtime

@@ -14,6 +14,7 @@ from ts_runtime.env import (
     default_env_store,
     default_runtime_home,
     legacy_runtime_manifest_path,
+    package_root_from_file,
     runtime_manifest_path,
     seed_workspace_root_from_argv,
     spec_sha256,
@@ -22,6 +23,20 @@ from ts_runtime.env import (
 import ts_runtime.cli as runtime_cli
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_package_root_detection_uses_package_markers_with_nested_skill(tmp_path: Path) -> None:
+    package = tmp_path / "package"
+    source_file = package / "src" / "agents" / "compute" / "runtime.ts"
+    source_file.parent.mkdir(parents=True)
+    source_file.write_text("export {};\n", encoding="utf-8")
+    (package / "scripts").mkdir()
+    skill = package / "skills" / "transition-state-workflow" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text("---\nname: transition-state-workflow\ndescription: test\n---\n", encoding="utf-8")
+    (package / "package.json").write_text("{}\n", encoding="utf-8")
+
+    assert package_root_from_file(source_file) == package
 
 
 def test_default_env_prefix_is_spec_hash_scoped(tmp_path: Path) -> None:

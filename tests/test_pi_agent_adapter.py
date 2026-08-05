@@ -10,13 +10,17 @@ from strict_helpers import HYPOTHESIS_ID, bootstrap_strict_workspace, end_v3_nod
 
 ROOT = Path(__file__).resolve().parents[1]
 SUMMARY = ROOT / "extensions" / "ts-workflow-context" / "summary.cjs"
+SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
 
 
 def test_pi_package_manifest_exposes_skill_and_extension() -> None:
     manifest = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
 
     assert "pi-package" in manifest["keywords"]
-    assert manifest["pi"]["skills"] == ["."]
+    assert manifest["name"] == "@iawnix/ts-agent"
+    assert manifest["version"] == "0.3.0"
+    assert manifest["private"] is True
+    assert manifest["pi"]["skills"] == ["./skills/transition-state-workflow"]
     assert manifest["pi"]["extensions"] == [
         "./extensions/ts-workflow-context",
         "./extensions/ts-workflow-subagent/index.ts",
@@ -27,7 +31,9 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
     assert not any("subagent" in name for name in manifest.get("dependencies", {}))
     assert manifest["peerDependencies"]["@earendil-works/pi-ai"] == ">=0.81.1 <1.0.0"
     assert manifest["peerDependencies"]["@earendil-works/pi-coding-agent"] == ">=0.81.1 <1.0.0"
-    assert manifest["peerDependencies"]["typebox"] == "^1.1.38"
+    assert manifest["peerDependencies"]["@earendil-works/pi-tui"] == ">=0.81.1 <1.0.0"
+    assert manifest["dependencies"]["typebox"] == "^1.3.7"
+    assert manifest["engines"]["node"] == ">=22.19.0"
     assert "--workspace-root" in manifest["scripts"]["install-env"]
     assert "TS_WORKSPACE_ROOT" in manifest["scripts"]["install-env"]
     assert "tests/test_pi_subagent_contract.py" in manifest["scripts"]["test:pi-adapter"]
@@ -44,7 +50,7 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
 
 def test_pi_documentation_matches_loaded_extensions_and_tool_boundary() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    adapter = (ROOT / "references" / "pi_agent_adapter.md").read_text(encoding="utf-8")
+    adapter = (SKILL_ROOT / "references" / "pi_agent_adapter.md").read_text(encoding="utf-8")
     maintainer = (ROOT / "docs" / "MAINTAINER_GUIDE.md").read_text(encoding="utf-8")
 
     assert "Pi `>=0.81.1 <1.0.0`" in readme
@@ -56,6 +62,7 @@ def test_pi_documentation_matches_loaded_extensions_and_tool_boundary() -> None:
     assert "`ts_workspace_subagent`" in readme
     assert "run `validate_decision`, `start_node`" not in readme
     assert adapter.count("-e \"$TS_AGENT_SKILL_ROOT/extensions/") == 4
+    assert 'pi --skill "$TS_AGENT_SKILL_ROOT/skills/transition-state-workflow"' in adapter
     assert "temporary\nnon-OAuth API key" in adapter
     assert "extensions/ts-workflow-subagent" in maintainer
     assert "extensions/ts-workflow-artifacts" in maintainer

@@ -1,7 +1,8 @@
-# TSAgentSkill
+# @iawnix/ts-agent
 
-TSAgentSkill is an evidence- and hypothesis-driven transition-state research
-workflow for Pi Agent. It separates scientific decisions, program
+`@iawnix/ts-agent` is the Pi Package maintained in the TSAgentSkill repository.
+It provides an evidence- and hypothesis-driven transition-state research
+workflow and separates scientific decisions, program
 execution, evidence registration, branch topology, reporting, and read-only
 visualization.
 
@@ -14,22 +15,23 @@ remain readable and closable, but they are not the model for new studies.
 
 ## Architecture
 
+- `skills/transition-state-workflow/`: the only public Pi Skill, including its
+  on-demand references and reusable report/decision assets.
+- `extensions/`: the public Pi tool and command adapters.
+- `src/agent-core/`: shared `ts-agent-task/1` / `ts-agent-result/1` protocol,
+  result normalization, disposable-session lifecycle, and durable run journal.
+- `src/agents/review/`: fresh, tool-free Pi scientific-review sessions with
+  bounded task packets and review-specific result validation.
+- `src/agents/compute/`: fresh backend sessions, compute-specific result
+  binding, and private backend skills.
+- `src/agents/artifacts/`: fresh render, report, and email-draft sessions,
+  request contracts, and private artifact skills.
 - `ts_workspace`: the only canonical research-state control plane.
 - `ts_compute` and `ts_backends`: typed calculation intents, preparation,
   pre-bound submission/cancellation, status, collection, and
   deterministic parsing.
 - `cluster_mcp` and `ts_remote.mcp`: authenticated, manifest-bound file
   transfer and OpenPBS/Torque execution without scientific authority.
-- `agent-core/`: shared `ts-agent-task/1` / `ts-agent-result/1` protocol,
-  result normalization, disposable-session lifecycle, and durable run journal.
-- `review-agent/`: fresh, tool-free Pi scientific-review sessions with bounded
-  task packets, review prompts, and review-specific result validation.
-- `compute-agent/`: fresh backend sessions with one selected private backend
-  skill, request-scoped typed tools, and compute-specific result binding.
-- `artifact-agent/`: fresh render, report, and email-draft sessions with
-  request-scoped typed tools and role-specific result binding.
-- `agent-skills/`: private backend, render, report, and email skills. They are
-  not registered in the Root Agent's Pi skill inventory.
 - `ts_render`: local molecular rendering through `xyzrender` only.
 - `ts_report`: report-package assembly from validated workspace evidence.
 - `ts_web`: read-only workspace normalization and visualization.
@@ -156,7 +158,7 @@ inject a full workspace report every turn. Use `mode=delta` with the last
 scientific `workspace_revision` and `operational_revision` to avoid repeated
 unchanged context while still seeing new calculation or agent-run state.
 
-See `references/pi_agent_adapter.md`.
+See `skills/transition-state-workflow/references/pi_agent_adapter.md`.
 
 ## Research Nodes
 
@@ -215,7 +217,7 @@ nodes/<node>/attempts/<intent>/
 
 A remote directory must declare `authority=execution_mirror`. Results become
 usable only after collection and local verification. See
-`references/compute_operator.md`.
+`skills/transition-state-workflow/references/compute_operator.md`.
 
 For scheduler-backed execution, the bundled TS Cluster MCP binds one
 `submission_id` to the intent digest, complete input manifest, expected
@@ -227,13 +229,14 @@ wrapper after a read-only connection preflight and exact intent binding.
 Scheduler records are not
 scientific evidence. Complete server installation, `cluster-mcp check`, token
 mapping, SSH-tunnel and direct-HTTPS setup, Pi smoke testing, systemd operation,
-and scope rules are in `references/cluster_mcp.md`.
+and scope rules are in
+`skills/transition-state-workflow/references/cluster_mcp.md`.
 
 Gaussian MCP execution additionally requires a server-side
 `software.gaussian` profile. The profile binds the activation script, queue
 allowlist, and server-owned environment; a bare `g16` installation or client
 PATH override is insufficient. Registration and read-only verification are
-documented in `references/cluster_mcp.md`.
+documented in `skills/transition-state-workflow/references/cluster_mcp.md`.
 
 ## Agent Protocol
 
@@ -244,8 +247,9 @@ All isolated roles communicate through:
 
 Roles are `review`, `backend`, `render`, `report`, and `email`. Results cannot
 contain authoritative hypothesis, branch, acceptance, or strict pathway
-decision fields. Private role skills live under `agent-skills/` and are loaded
-only into the selected fresh child session.
+decision fields. Private role skills live under the owning
+`src/agents/<role>/private-skills/` directory and are loaded only into the
+selected fresh child session.
 
 The Pi host persists every child task under `nodes/<node>/agent-runs/<task>/`
 for one-node work or `operations/agent-runs/<task>/` for study-level work.
@@ -267,20 +271,22 @@ Package creation is no-overwrite and atomic. `package_manifest.json` uses
 context, email summary, and assets by SHA-256. Email drafting rejects a changed
 manifest or summary.
 
-Use `templates/ts_final_report.md`. Keep electronic, E+ZPE, and available free
-energy values distinct; report missing corrections explicitly. Accepted-TS
-language still requires separate TS/Freq, connectivity, and audit support.
+Use `skills/transition-state-workflow/assets/templates/ts_final_report.md`.
+Keep electronic, E+ZPE, and available free energy values distinct; report
+missing corrections explicitly. Accepted-TS language still requires separate
+TS/Freq, connectivity, and audit support.
 
 ## Validation
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q
 npm run test:pi-adapter
-npm pack --dry-run --json
+npm run typecheck
+npm run test:package
 ```
 
 The Pi integration suite runs the real Pi executable with a local recording
-provider. It verifies the nine-tool Root Agent inventory, a tool-free review
+provider. It verifies the ten-tool Root Agent inventory, a tool-free review
 child, a compute child with exactly one request-bound tool, and an artifact
 child with exactly one request-bound tool. Before release, also test one clean,
 branch- or tag-pinned GitHub installation from a network that can reach GitHub.

@@ -49,7 +49,7 @@ Package installation loads the root skill and four extensions declared in
 Temporary extension-only smoke:
 
 ```bash
-pi --skill "$TS_AGENT_SKILL_ROOT" \
+pi --skill "$TS_AGENT_SKILL_ROOT/skills/transition-state-workflow" \
   -e "$TS_AGENT_SKILL_ROOT/extensions/ts-workflow-context/index.ts" \
   -e "$TS_AGENT_SKILL_ROOT/extensions/ts-workflow-subagent/index.ts" \
   -e "$TS_AGENT_SKILL_ROOT/extensions/ts-workflow-compute/index.ts" \
@@ -131,7 +131,8 @@ controls jobs, or injects an MCP report every turn.
 `ts_workspace_compute_operator` creates a separate fresh session with only the
 typed tools needed for one operation. The Root Agent supplies the selected
 backend. The runtime loads exactly one matching private backend skill from
-`agent-skills/`; no other private skill enters the child context.
+`src/agents/compute/private-skills/`; no other private skill enters the child
+context.
 
 Available operations are `prepare`, `submit`, `inspect`, `collect`, `cancel`,
 and `parse`. The Root Agent can run submit and cancel directly in interactive or

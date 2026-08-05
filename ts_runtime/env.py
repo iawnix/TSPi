@@ -1,4 +1,4 @@
-"""Conda runtime discovery for TSAgentSkill.
+"""Conda runtime discovery for the TS Agent Pi package.
 
 The skill can be installed as source code in one location while its Python
 environment lives in a workspace-local environment store. Public scripts call
@@ -22,16 +22,21 @@ RUNTIME_MANIFEST_OVERRIDE = "TS_AGENT_RUNTIME_MANIFEST"
 WORKSPACE_ROOT_OVERRIDE = "TS_WORKSPACE_ROOT"
 MANIFEST_VERSION = "ts-agent-runtime-v1"
 SKILL_NAME = "transition-state-workflow"
+PACKAGE_SKILL_PATH = Path("skills") / SKILL_NAME / "SKILL.md"
 
 
 def package_root_from_file(path: str | Path) -> Path:
-    """Return the package root for a file under this skill tree."""
+    """Return the package root for a file shipped by this Pi package."""
 
     current = Path(path).resolve()
     if current.is_file():
         current = current.parent
     for parent in [current, *current.parents]:
-        if (parent / "SKILL.md").exists() and (parent / "scripts").exists():
+        if (
+            (parent / "package.json").is_file()
+            and (parent / "scripts").is_dir()
+            and (parent / PACKAGE_SKILL_PATH).is_file()
+        ):
             return parent
     return Path(__file__).resolve().parents[1]
 

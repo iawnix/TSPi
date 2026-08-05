@@ -1,7 +1,7 @@
 "use strict";
 
-const { validateAgentResult, validateAgentTask } = require("../agent-core/agent-protocol.cjs");
-const { normalizeAgentResultInput } = require("../agent-core/result-normalization.cjs");
+const { validateAgentResult, validateAgentTask } = require("../../agent-core/agent-protocol.cjs");
+const { normalizeAgentResultInput } = require("../../agent-core/result-normalization.cjs");
 const { REVIEW_CEILINGS } = require("./task-packet.cjs");
 
 const MAX_OUTPUT_BYTES = 16 * 1024;

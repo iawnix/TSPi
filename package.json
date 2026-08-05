@@ -1,7 +1,8 @@
 {
-  "name": "ts-agent-skill",
-  "version": "0.2.0",
+  "name": "@iawnix/ts-agent",
+  "version": "0.3.0",
   "private": true,
+  "type": "module",
   "description": "Native Pi package for evidence-driven transition-state research with isolated operators.",
   "keywords": [
     "pi-package",
@@ -15,16 +16,75 @@
     "install-env": "python3 scripts/install_env.py --package-root . --workspace-root \"${TS_WORKSPACE_ROOT:?set TS_WORKSPACE_ROOT to the TS workspace root}\" --with-render --json",
     "install-env:core": "python3 scripts/install_env.py --package-root . --workspace-root \"${TS_WORKSPACE_ROOT:?set TS_WORKSPACE_ROOT to the TS workspace root}\" --json",
     "test": "python3 scripts/ts_runtime.py run -m pytest -q",
-    "test:pi-adapter": "python3 scripts/ts_runtime.py run -m pytest -q tests/test_pi_agent_adapter.py tests/test_pi_subagent_contract.py tests/test_pi_compute_tools.py tests/test_pi_artifact_tools.py tests/test_pi_runtime_integration.py tests/test_agent_protocol.py"
+    "test:pi-adapter": "python3 scripts/ts_runtime.py run -m pytest -q tests/test_pi_agent_adapter.py tests/test_pi_subagent_contract.py tests/test_pi_compute_tools.py tests/test_pi_artifact_tools.py tests/test_pi_runtime_integration.py tests/test_agent_protocol.py",
+    "test:package": "python3 scripts/check_package.py",
+    "typecheck": "tsc --noEmit"
+  },
+  "files": [
+    "README.md",
+    "environment.yml",
+    "cluster_mcp/*.py",
+    "cluster_mcp/schedulers/*.py",
+    "cluster_mcp/*.example.toml",
+    "contracts/*.json",
+    "extensions/shared/*.ts",
+    "extensions/ts-workflow-artifacts/*.ts",
+    "extensions/ts-workflow-compute/*.ts",
+    "extensions/ts-workflow-compute/*.cjs",
+    "extensions/ts-workflow-context/*.ts",
+    "extensions/ts-workflow-context/*.cjs",
+    "extensions/ts-workflow-subagent/*.ts",
+    "scripts/*.py",
+    "skills/",
+    "src/agent-core/*.cjs",
+    "src/agents/review/*.ts",
+    "src/agents/review/*.cjs",
+    "src/agents/review/prompts/*.md",
+    "src/agents/compute/*.ts",
+    "src/agents/compute/*.cjs",
+    "src/agents/compute/*.md",
+    "src/agents/compute/private-skills/*/SKILL.md",
+    "src/agents/artifacts/*.ts",
+    "src/agents/artifacts/*.cjs",
+    "src/agents/artifacts/*.md",
+    "src/agents/artifacts/private-skills/*/SKILL.md",
+    "ts_backends/*.py",
+    "ts_compute/*.py",
+    "ts_compute/contracts/*.json",
+    "ts_remote/*.py",
+    "ts_render/*.py",
+    "ts_report/*.py",
+    "ts_runtime/*.py",
+    "ts_structures/*.py",
+    "ts_web/*.py",
+    "ts_web/static/*.html",
+    "ts_workspace/*.py",
+    "ts_workspace/contracts/*.json",
+    "ts_workspace/finalizers/*.py",
+    "ts_workspace/readers/*.py",
+    "ts_workspace/validators/*.py"
+  ],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "dependencies": {
+    "typebox": "^1.3.7"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": ">=0.81.1 <1.0.0",
     "@earendil-works/pi-coding-agent": ">=0.81.1 <1.0.0",
-    "typebox": "^1.1.38"
+    "@earendil-works/pi-tui": ">=0.81.1 <1.0.0"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "0.83.0",
+    "@earendil-works/pi-coding-agent": "0.83.0",
+    "@earendil-works/pi-tui": "0.83.0",
+    "@types/node": "24.12.4",
+    "typescript": "5.9.3"
   },
   "pi": {
     "skills": [
-      "."
+      "./skills/transition-state-workflow"
     ],
     "extensions": [
       "./extensions/ts-workflow-context",

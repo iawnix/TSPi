@@ -26,7 +26,7 @@ Evidence paths are node-owned. A `tsfreq_validation` evidence record for
 `n002` should cite an artifact under `nodes/n002/outputs/...`, not the
 candidate node that originally generated the Gaussian log. When a node consumes
 an upstream file, create `nodes/<node>/outputs/artifact_manifest.json` using
-`templates/artifact_manifest.json` and put the upstream file under
+`assets/templates/artifact_manifest.json` and put the upstream file under
 `consumed_artifacts`.
 
 Typical endpoint-first sequence:

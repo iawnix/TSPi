@@ -4,8 +4,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TEMPLATE = ROOT / "templates" / "ts_final_report.md"
-CONTRACT = ROOT / "references" / "report_template.md"
+SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
+TEMPLATE = SKILL_ROOT / "assets" / "templates" / "ts_final_report.md"
+CONTRACT = SKILL_ROOT / "references" / "report_template.md"
 
 
 def test_report_template_contains_required_evidence_layers() -> None:

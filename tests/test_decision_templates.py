@@ -19,7 +19,7 @@ from ts_workspace.validators.decision_context import validate_decision_for_works
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TEMPLATE_DIR = ROOT / "templates" / "decision"
+TEMPLATE_DIR = ROOT / "skills" / "transition-state-workflow" / "assets" / "templates" / "decision"
 PLACEHOLDER_RE = re.compile(r"\$\{([A-Z0-9_]+)\}")
 
 EXPECTED_TEMPLATE_FILES = {

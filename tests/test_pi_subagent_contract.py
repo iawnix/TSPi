@@ -11,9 +11,11 @@ from ts_workspace import report_node, report_workspace
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TASK_PACKET = ROOT / "review-agent" / "task-packet.cjs"
-OUTPUT_SCHEMA = ROOT / "review-agent" / "output-schema.cjs"
-SESSION_LIFECYCLE = ROOT / "agent-core" / "session-lifecycle.cjs"
+AGENT_CORE = ROOT / "src" / "agent-core"
+REVIEW_AGENT = ROOT / "src" / "agents" / "review"
+TASK_PACKET = REVIEW_AGENT / "task-packet.cjs"
+OUTPUT_SCHEMA = REVIEW_AGENT / "output-schema.cjs"
+SESSION_LIFECYCLE = AGENT_CORE / "session-lifecycle.cjs"
 
 
 def _node_json(script: str, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
@@ -218,7 +220,7 @@ def test_advice_validation_rejects_uncited_and_oversized_output(tmp_path: Path) 
 
 
 def test_prompt_modules_are_private_and_define_all_review_modes() -> None:
-    prompt_dir = ROOT / "review-agent" / "prompts"
+    prompt_dir = REVIEW_AGENT / "prompts"
     assert {path.name for path in prompt_dir.glob("*.md")} == {
         "core.md",
         "mechanism.md",
@@ -228,7 +230,7 @@ def test_prompt_modules_are_private_and_define_all_review_modes() -> None:
         "final-audit.md",
         "program-failure.md",
     }
-    assert not list((ROOT / "review-agent").rglob("SKILL.md"))
+    assert not list(REVIEW_AGENT.rglob("SKILL.md"))
     core = (prompt_dir / "core.md").read_text(encoding="utf-8")
     assert "Return exactly one JSON object" in core
     assert "no authority to mutate" in core
@@ -239,10 +241,12 @@ def test_prompt_modules_are_private_and_define_all_review_modes() -> None:
 
 
 def test_agent_directories_separate_shared_core_from_review_implementation() -> None:
-    core_dir = ROOT / "agent-core"
-    review_dir = ROOT / "review-agent"
+    core_dir = AGENT_CORE
+    review_dir = REVIEW_AGENT
 
     assert not (ROOT / "subagents").exists()
+    for legacy in ("agent-core", "review-agent", "compute-agent", "artifact-agent", "agent-skills"):
+        assert not (ROOT / legacy).exists()
     assert {path.name for path in core_dir.iterdir()} == {
         "agent-protocol.cjs",
         "result-normalization.cjs",
@@ -315,13 +319,15 @@ def test_disposable_session_covers_success_and_error(mode: str) -> None:
 
 
 def test_pi_subagent_runtime_and_extension_enforce_isolation() -> None:
-    runtime = (ROOT / "review-agent" / "runtime.ts").read_text(encoding="utf-8")
+    runtime = (REVIEW_AGENT / "runtime.ts").read_text(encoding="utf-8")
     extension = (ROOT / "extensions" / "ts-workflow-subagent" / "index.ts").read_text(encoding="utf-8")
 
     assert 'noTools: "all"' in runtime
     assert "SessionManager.inMemory(options.workspaceRoot)" in runtime
     assert "SettingsManager.inMemory" in runtime
     assert "getAgentsFiles: () => ({ agentsFiles: [] })" in runtime
+    assert "getSystemPromptSource: () => undefined" in runtime
+    assert "getAppendSystemPromptSources: () => []" in runtime
     assert "const extensionsResult = { extensions: [], errors: [], runtime: createExtensionRuntime() }" in runtime
     assert "withDisposableSession" in runtime
     assert "parseAndValidateReviewResult" in runtime
@@ -330,4 +336,4 @@ def test_pi_subagent_runtime_and_extension_enforce_isolation() -> None:
     assert 'executionMode: "sequential"' in extension
     assert 'pi.appendEntry("ts-workspace-subagent-run"' in extension
     assert "getApiKeyAndHeaders" in extension
-    assert "parentApiKey" not in (ROOT / "review-agent" / "task-packet.cjs").read_text(encoding="utf-8")
+    assert "parentApiKey" not in (REVIEW_AGENT / "task-packet.cjs").read_text(encoding="utf-8")
