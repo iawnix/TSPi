@@ -5,7 +5,7 @@ import { TS_PACKAGE_PROFILE } from "../shared/package-profile.ts";
 const FULL_LAYOUT_MIN_WIDTH = 48;
 const LABEL_WIDTH = 13;
 const ITEM_SEPARATOR = " · ";
-const PIXEL = "■";
+const PIXEL = "██";
 const EMPTY_PIXEL = " ".repeat(visibleWidth(PIXEL));
 const TSPI_COMPACT_LOGO = "TSπ";
 const T_MASK = Object.freeze([

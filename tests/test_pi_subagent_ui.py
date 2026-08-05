@@ -137,11 +137,11 @@ process.stdout.write(JSON.stringify(TS_PACKAGE_PROFILE));
 def test_tspi_startup_render_is_compact_and_width_safe() -> None:
     script = f"""
 import {{ createTspiStartupHeader, renderTspiStartupLines }} from {json.dumps(STARTUP.as_uri())};
-const widths = [18, 26, 27, 40, 60, 100, 140];
+const widths = [18, 40, 47, 48, 60, 100, 140];
 const rendered = widths.map((width) => ({{ width, lines: renderTspiStartupLines("/home/iaw/TS-pi-agent", width) }}));
 const blockColors = [];
 const theme = {{
-  fg: (color, text) => {{ if (text.includes("■")) blockColors.push(color); return text; }},
+  fg: (color, text) => {{ if (text.includes("█")) blockColors.push(color); return text; }},
   bold: (text) => text,
 }};
 createTspiStartupHeader(theme, "/home/iaw/TS-pi-agent").render(100);
@@ -161,18 +161,18 @@ process.stdout.write(JSON.stringify({{ rendered, blockColors }}));
     narrow = rendered[0]["lines"]
     assert any("TSπ" in line for line in narrow)
 
-    below_boundary = next(view["lines"] for view in rendered if view["width"] == 26)
-    assert not any("■" in line for line in below_boundary)
+    below_boundary = next(view["lines"] for view in rendered if view["width"] == 47)
+    assert not any("█" in line for line in below_boundary)
 
-    at_boundary = next(view["lines"] for view in rendered if view["width"] == 27)
-    assert len([line for line in at_boundary if "■" in line]) == 7
+    at_boundary = next(view["lines"] for view in rendered if view["width"] == 48)
+    assert len([line for line in at_boundary if "█" in line]) == 7
 
     wide = rendered[-1]["lines"]
-    pixel_lines = [line for line in wide if "■" in line]
+    pixel_lines = [line for line in wide if "█" in line]
     assert len(pixel_lines) == 7
-    assert all("██" not in line for line in pixel_lines)
-    assert any("■■■■■  ■■■■■  ■■■■■■■" in line for line in pixel_lines)
-    assert any("■    ■■" in line for line in pixel_lines)
+    assert all("■" not in line for line in pixel_lines)
+    assert any("██████████    ██████████    ██████████████" in line for line in pixel_lines)
+    assert any("██        ████" in line for line in pixel_lines)
     assert sum("TSPi" in line for line in wide) == 1
     assert {"mdLink", "text"} <= set(result["blockColors"])
     assert any("Evidence-driven TS search, compute, validation, and audit." in line for line in wide)
