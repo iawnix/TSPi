@@ -36,6 +36,7 @@
     "extensions/ts-workflow-review/*.ts",
     "scripts/*.py",
     "skills/",
+    "themes/*.json",
     "src/agent-core/*.cjs",
     "src/agents/review/*.ts",
     "src/agents/review/*.cjs",
@@ -85,6 +86,9 @@
   "pi": {
     "skills": [
       "./skills/transition-state-workflow"
+    ],
+    "themes": [
+      "./themes/ts-theme.json"
     ],
     "extensions": [
       "./extensions/ts-workflow-control",

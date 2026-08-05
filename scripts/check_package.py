@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_NAME = "@iawnix/ts-agent"
 PACKAGE_VERSION = "0.3.0"
 SKILL_ENTRY = "./skills/transition-state-workflow"
+THEME_ENTRIES = ["./themes/ts-theme.json"]
 EXTENSION_ENTRIES = [
     "./extensions/ts-workflow-control",
     "./extensions/ts-workflow-review/index.ts",
@@ -38,6 +39,7 @@ PACKAGE_FILES = [
     "extensions/ts-workflow-review/*.ts",
     "scripts/*.py",
     "skills/",
+    "themes/*.json",
     "src/agent-core/*.cjs",
     "src/agents/review/*.ts",
     "src/agents/review/*.cjs",
@@ -71,6 +73,7 @@ REQUIRED_TARBALL_FILES = {
     "environment.yml",
     "scripts/install_env.py",
     "skills/transition-state-workflow/SKILL.md",
+    "themes/ts-theme.json",
     "extensions/shared/tool-catalog.ts",
     "extensions/ts-workflow-control/index.ts",
     "extensions/ts-workflow-review/index.ts",
@@ -134,12 +137,18 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     else:
         if pi.get("skills") != [SKILL_ENTRY]:
             errors.append(f"pi.skills must contain only {SKILL_ENTRY}")
+        if pi.get("themes") != THEME_ENTRIES:
+            errors.append("pi.themes does not match the public theme inventory")
         if pi.get("extensions") != EXTENSION_ENTRIES:
             errors.append("pi.extensions does not match the public extension inventory")
 
     skill_path = ROOT / SKILL_ENTRY.removeprefix("./") / "SKILL.md"
     if not skill_path.is_file():
         errors.append(f"registered skill entry is missing SKILL.md: {skill_path.relative_to(ROOT)}")
+    for entry in THEME_ENTRIES:
+        path = ROOT / entry.removeprefix("./")
+        if not path.is_file():
+            errors.append(f"registered theme entry is missing: {path.relative_to(ROOT)}")
     for entry in EXTENSION_ENTRIES:
         path = ROOT / entry.removeprefix("./")
         expected = path / "index.ts" if path.is_dir() else path

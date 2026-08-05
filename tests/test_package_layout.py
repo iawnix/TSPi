@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
 AGENTS_ROOT = ROOT / "src" / "agents"
+THEME_PATH = ROOT / "themes" / "ts-theme.json"
 EXPECTED_FILES = [
     "README.md",
     "environment.yml",
@@ -23,6 +25,7 @@ EXPECTED_FILES = [
     "extensions/ts-workflow-review/*.ts",
     "scripts/*.py",
     "skills/",
+    "themes/*.json",
     "src/agent-core/*.cjs",
     "src/agents/review/*.ts",
     "src/agents/review/*.cjs",
@@ -97,9 +100,29 @@ def test_private_skills_are_owned_by_their_only_consuming_agent() -> None:
 def test_package_manifest_exposes_only_the_public_skill_and_allowlisted_runtime() -> None:
     manifest = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     assert manifest["pi"]["skills"] == ["./skills/transition-state-workflow"]
+    assert manifest["pi"]["themes"] == ["./themes/ts-theme.json"]
     assert manifest["files"] == EXPECTED_FILES
     assert manifest["private"] is True
     assert "tests/" not in manifest["files"]
     assert "docs/" not in manifest["files"]
     assert "src/agents/compute/private-skills" not in manifest["pi"]["skills"]
     assert "src/agents/artifacts/private-skills" not in manifest["pi"]["skills"]
+
+
+def test_ts_theme_loads_with_pi_theme_loader() -> None:
+    script = """
+import { loadThemeFromPath } from "./node_modules/@earendil-works/pi-coding-agent/dist/modes/interactive/theme/theme.js";
+const theme = loadThemeFromPath(process.argv[1]);
+process.stdout.write(JSON.stringify({ name: theme.name, sourcePath: theme.sourcePath }));
+"""
+    completed = subprocess.run(
+        ["node", "--input-type=module", "--eval", script, str(THEME_PATH)],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    loaded = json.loads(completed.stdout)
+    assert loaded == {"name": "ts-theme", "sourcePath": str(THEME_PATH)}
