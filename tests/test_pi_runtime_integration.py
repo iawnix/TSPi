@@ -21,15 +21,15 @@ from strict_helpers import bootstrap_strict_workspace
 ROOT = Path(__file__).resolve().parents[1]
 EXPECTED_TOOLS = {
     "ts_workspace_context",
-    "ts_workspace_decide",
-    "ts_workspace_validate",
-    "ts_workspace_apply",
-    "ts_workspace_subagent",
-    "ts_workspace_compute_operator",
-    "ts_workspace_mcp_status",
-    "ts_workspace_render_operator",
-    "ts_workspace_report_operator",
-    "ts_workspace_email_operator",
+    "ts_workspace_decision_draft",
+    "ts_workspace_decision_validate",
+    "ts_workspace_decision_apply",
+    "ts_subagent_review",
+    "ts_subagent_compute",
+    "ts_mcp_inspect",
+    "ts_subagent_render",
+    "ts_subagent_report",
+    "ts_subagent_email_draft",
 }
 
 
@@ -160,6 +160,51 @@ def test_real_pi_render_child_session_uses_only_bound_tool(tmp_path: Path) -> No
     assert [tool["function"]["name"] for tool in requests[0]["tools"]] == ["ts_workspace_render_execute"]
     assert "Execute this bounded render operation" in requests[0]["messages"][-1]["content"][0]["text"]
     assert any(message.get("role") == "tool" for message in requests[1]["messages"])
+
+
+def test_real_pi_report_child_loads_private_report_skill_and_bound_tool(tmp_path: Path) -> None:
+    pi = _pi_binary()
+    if pi is None:
+        pytest.skip("Pi executable is not installed")
+    workspace = tmp_path / "workspace"
+    bootstrap_strict_workspace(workspace)
+    agent_dir = tmp_path / "pi-agent"
+    agent_dir.mkdir()
+
+    requests: list[dict[str, object]] = []
+    responses = [_tool_call_chunks("ts_workspace_report_build"), _report_result_chunks()]
+    with _recording_server(requests, responses) as base_url:
+        _write_recording_model(agent_dir, base_url)
+        completed = _run_child_probe(
+            pi=pi,
+            workspace=workspace,
+            agent_dir=agent_dir,
+            session_dir=tmp_path / "pi-sessions",
+            extension=ROOT / "tests" / "pi_report_probe.ts",
+            command="/ts-test-report-child",
+            notification_prefix="TS_TEST_REPORT:",
+        )
+
+    assert completed.returncode == 0, completed.stderr
+    rows = [json.loads(line) for line in completed.stdout.splitlines() if line.strip().startswith("{")]
+    errors = [row for row in rows if str(row.get("message", "")).startswith("TS_TEST_REPORT_ERROR:")]
+    assert not errors, errors
+    notification = next(
+        (
+            row
+            for row in rows
+            if row.get("type") == "extension_ui_request"
+            and str(row.get("message", "")).startswith("TS_TEST_REPORT:")
+        ),
+        None,
+    )
+    assert notification is not None, {"stdout": completed.stdout, "stderr": completed.stderr, "requests": requests}
+    result = json.loads(notification["message"].split(":", 1)[1])
+    assert result["report"]["payload"]["package_ref"] == "reports/recording-report"
+    assert result["metadata"]["action_names"] == ["ts_workspace_report_build"]
+    assert len(requests) == 2
+    assert [tool["function"]["name"] for tool in requests[0]["tools"]] == ["ts_workspace_report_build"]
+    assert "Research Report Operator" in json.dumps(requests[0]["messages"])
 
 
 def test_real_pi_review_child_session_has_no_tools(tmp_path: Path) -> None:
@@ -494,6 +539,49 @@ def _render_result_chunks() -> list[dict[str, object]]:
             "operation": "render",
             "node_id": "n000",
             "output_ref": "nodes/n000/outputs/recording.png",
+        },
+        "limitations": ["Recording-provider integration test."],
+        "provenance": {},
+    }
+    return _assistant_result_chunks(report)
+
+
+def _report_result_chunks() -> list[dict[str, object]]:
+    package_ref = "reports/recording-report"
+    scope = {
+        "report_id": "rep_report_001",
+        "node_ids": [],
+        "hypothesis_id": None,
+        "pathway_id": None,
+    }
+    report = {
+        "schema_version": "ts-agent-result/1",
+        "task_id": "agent_report_001",
+        "role": "report",
+        "authority": "operational",
+        "operation": "build",
+        "outcome": "success",
+        "summary": "The bound recording report build completed.",
+        "scope": scope,
+        "facts": [],
+        "artifact_refs": [
+            f"{package_ref}/final_report.md",
+            f"{package_ref}/report_context.json",
+            f"{package_ref}/email_summary.md",
+            f"{package_ref}/assets",
+            f"{package_ref}/package_manifest.json",
+        ],
+        "program": None,
+        "payload": {
+            "operation": "build",
+            "package_ref": package_ref,
+            "report_ref": f"{package_ref}/final_report.md",
+            "context_ref": f"{package_ref}/report_context.json",
+            "email_summary_ref": f"{package_ref}/email_summary.md",
+            "assets_ref": f"{package_ref}/assets",
+            "manifest_ref": f"{package_ref}/package_manifest.json",
+            "manifest_digest": "sha256:" + "5" * 64,
+            "workspace_revision": "sha256:" + "6" * 64,
         },
         "limitations": ["Recording-provider integration test."],
         "provenance": {},

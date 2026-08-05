@@ -4,6 +4,7 @@ import { Type } from "typebox";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { requireWorkspaceRoot, runWorkspaceDecisionJson, runWorkspaceJson } from "../shared/workspace-cli.ts";
+import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 
 const require = createRequire(import.meta.url);
 const {
@@ -25,20 +26,20 @@ export default function (pi: ExtensionAPI) {
       return;
     }
     return {
-      systemPrompt: `${event.systemPrompt}\n\nTS workspace active: ${root}. Use ts_workspace_context on demand; only ts_workspace_apply mutates canonical state.`,
+      systemPrompt: `${event.systemPrompt}\n\nTS workspace active: ${root}. Use ${TS_PUBLIC_TOOL_NAMES.workspaceContext} on demand; only ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply} mutates canonical state.`,
     };
   });
 
   pi.registerTool({
-    name: "ts_workspace_context",
+    name: TS_PUBLIC_TOOL_NAMES.workspaceContext,
     label: "TS Context",
     description: "Read compact workspace, historical-node, or backtrack context from ts_workspace reports.",
     promptSnippet: "Summarize the current transition-state workspace state from report_workspace",
     promptGuidelines: [
-      "Use ts_workspace_context before choosing or closing a transition-state workflow node.",
+      `Use ${TS_PUBLIC_TOOL_NAMES.workspaceContext} before choosing or closing a transition-state workflow node.`,
       "Pass nodeId to inspect a historical node before deciding whether to reuse it.",
       "Pass both fromNode and anchorNode to compare a failure trigger with a selected historical checkpoint before backtracking.",
-      "Use ts_workspace_context instead of reading every workspace state file when only current state is needed.",
+      `Use ${TS_PUBLIC_TOOL_NAMES.workspaceContext} instead of reading every workspace state file when only current state is needed.`,
       "Use mode=delta with both known scientific and operational revisions; unchanged workspaces return no repeated summary.",
     ],
     parameters: Type.Object({
@@ -116,13 +117,13 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: "ts_workspace_decide",
+    name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionDraft,
     label: "TS Decision Draft",
     description: "Build one non-mutating ts-decision/2 draft from the Root Agent's selected action and payload.",
     promptSnippet: "Create a versioned TS workspace decision draft without applying it",
     promptGuidelines: [
       "The Root Agent must choose the scientific action before calling this tool; the tool only adds decision identity and current report provenance.",
-      "Pass the returned decision unchanged to ts_workspace_validate, then ts_workspace_apply.",
+      `Pass the returned decision unchanged to ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate}, then ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply}.`,
     ],
     parameters: Type.Object({
       action: StringEnum(DECISION_ACTIONS),
@@ -149,12 +150,12 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: "ts_workspace_validate",
+    name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate,
     label: "TS Decision Validate",
     description: "Validate one ts_workspace decision JSON without mutating the workspace.",
     promptSnippet: "Preflight a transition-state workspace decision JSON without applying it",
     promptGuidelines: [
-      "Use ts_workspace_validate when a decision's schema, evidence ownership, or branch topology is uncertain.",
+      `Use ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate} when a decision's schema, evidence ownership, or branch topology is uncertain.`,
       "A valid preflight does not mutate the workspace and does not establish a scientific verdict.",
     ],
     parameters: Type.Object({
@@ -169,13 +170,13 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: "ts_workspace_apply",
+    name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply,
     label: "TS Decision Apply",
     description: "Apply a mutating ts_workspace decision JSON through the public control plane.",
     promptSnippet: "Apply a transition-state workspace mutation decision JSON",
     promptGuidelines: [
-      "Use ts_workspace_apply for transition-state workspace mutations; do not edit canonical state files by hand.",
-      "Apply only a decision returned by ts_workspace_decide and accepted by ts_workspace_validate.",
+      `Use ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply} for transition-state workspace mutations; do not edit canonical state files by hand.`,
+      `Apply only a decision returned by ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionDraft} and accepted by ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate}.`,
     ],
     parameters: Type.Object({
       decision: Type.Any(),

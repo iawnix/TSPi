@@ -11,6 +11,7 @@ from .engine import (
     snapshot_report,
     start_node,
     update_workspace,
+    validate_decision_dry_run,
     validate_workspace,
 )
 from .validators.decision import ContractError, validate_decision
@@ -27,6 +28,7 @@ __all__ = [
     "snapshot_report",
     "start_node",
     "update_workspace",
+    "validate_decision_dry_run",
     "validate_decision",
     "validate_workspace",
 ]

@@ -41,8 +41,8 @@ they deliberately share `TS_AGENT_ENV_ROOT`.
 Package installation loads the root skill and four extensions declared in
 `package.json`:
 
-- `extensions/ts-workflow-context`
-- `extensions/ts-workflow-subagent`
+- `extensions/ts-workflow-control`
+- `extensions/ts-workflow-review`
 - `extensions/ts-workflow-compute`
 - `extensions/ts-workflow-artifacts`
 
@@ -50,8 +50,8 @@ Temporary extension-only smoke:
 
 ```bash
 pi --skill "$TS_AGENT_SKILL_ROOT/skills/transition-state-workflow" \
-  -e "$TS_AGENT_SKILL_ROOT/extensions/ts-workflow-context/index.ts" \
-  -e "$TS_AGENT_SKILL_ROOT/extensions/ts-workflow-subagent/index.ts" \
+  -e "$TS_AGENT_SKILL_ROOT/extensions/ts-workflow-control/index.ts" \
+  -e "$TS_AGENT_SKILL_ROOT/extensions/ts-workflow-review/index.ts" \
   -e "$TS_AGENT_SKILL_ROOT/extensions/ts-workflow-compute/index.ts" \
   -e "$TS_AGENT_SKILL_ROOT/extensions/ts-workflow-artifacts/index.ts"
 ```
@@ -61,7 +61,7 @@ pi --skill "$TS_AGENT_SKILL_ROOT/skills/transition-state-workflow" \
 `before_agent_start` injects only this kind of reminder:
 
 ```text
-TS workspace active: <root>. Use ts_workspace_context on demand; only ts_workspace_apply mutates canonical state.
+TS workspace active: <root>. Use ts_workspace_context on demand; only ts_workspace_decision_apply mutates canonical state.
 ```
 
 It does not execute `report_workspace` every turn. Context is pulled through
@@ -80,19 +80,19 @@ ancestor containing canonical state files.
 ## Four Workspace Tools
 
 - `ts_workspace_context`: read-only context.
-- `ts_workspace_decide`: Root Agent-selected action plus payload becomes a
+- `ts_workspace_decision_draft`: Root Agent-selected action plus payload becomes a
   non-mutating `ts-decision/2` with current report and revision.
-- `ts_workspace_validate`: workspace-aware preflight of the supplied decision
+- `ts_workspace_decision_validate`: workspace-aware preflight of the supplied decision
   object through a private temporary file.
-- `ts_workspace_apply`: invoke the matching mutation command transactionally,
+- `ts_workspace_decision_apply`: invoke the matching mutation command transactionally,
   then return refreshed compact context.
 
-`ts_workspace_apply` is the only mutating Pi workspace tool. The action is read
+`ts_workspace_decision_apply` is the only mutating Pi workspace tool. The action is read
 from the validated decision; there is no model-supplied shell command.
 
 ## Review Subagent
 
-`ts_workspace_subagent` creates a fresh in-memory, tool-free Pi session for one
+`ts_subagent_review` creates a fresh in-memory, tool-free Pi session for one
 bounded review. It receives:
 
 - one `ts-agent-task/1` packet;
@@ -116,9 +116,9 @@ non-OAuth API key may be copied into the child runtime in memory; it is never
 included in packets, results, entries, or workspace files. Model fallback is
 rejected.
 
-## Backend Operator
+## Compute Subagent
 
-`ts_workspace_mcp_status` gives the Root Agent an on-demand read-only MCP
+`ts_mcp_inspect` gives the Root Agent an on-demand read-only MCP
 surface with `status`, `doctor`, `queues`, `nodes`, and combined `cluster`
 modes. Use `cluster` for a bounded aggregate view of the configured MCP target;
 use `queues` or `nodes` for detailed scheduler views. Follow the calculation
@@ -128,7 +128,7 @@ distinguish MCP-derived from SSH-derived facts. The equivalent user command is
 `/ts-mcp status|doctor|queues|nodes|cluster`. Neither surface uploads files,
 controls jobs, or injects an MCP report every turn.
 
-`ts_workspace_compute_operator` creates a separate fresh session with only the
+`ts_subagent_compute` creates a separate fresh session with only the
 typed tools needed for one operation. The Root Agent supplies the selected
 backend. The runtime loads exactly one matching private backend skill from
 `src/agents/compute/private-skills/`; no other private skill enters the child
@@ -150,13 +150,13 @@ and authoritative scientific fields are still rejected.
 Long-running jobs are external processes, not persistent LLM sessions. Invoke
 `inspect` on meaningful state changes or failure diagnosis, not every turn.
 
-## Artifact Operators
+## Artifact Subagents
 
-- `ts_workspace_render_operator`: one node-owned local render with allowlisted
+- `ts_subagent_render`: one node-owned local render with allowlisted
   inputs and one new output path.
-- `ts_workspace_report_operator`: one validated report package under
+- `ts_subagent_report`: one validated report package under
   `reports/`.
-- `ts_workspace_email_operator`: one local draft JSON from a generated report
+- `ts_subagent_email_draft`: one local draft JSON from a generated report
   summary and explicit recipients.
 
 Each creates a fresh session with exactly one private artifact skill and one
@@ -168,7 +168,7 @@ Report packages are published atomically with a `ts-report-package/1`
 all package files by SHA-256. Email draft preflight and execution both verify
 the manifest and selected summary digest.
 
-Email sending is absent. The draft operator has no network, sender, mailbox,
+Email sending is absent. The draft subagent has no network, sender, mailbox,
 credential, address-discovery, or send capability. See
 `references/artifact_operators.md`.
 

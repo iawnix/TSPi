@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from ..evidence_lifecycle import EvidenceLifecycleError, evidence_lifecycle_view
 from ..io import compact_id_time, read_json, sha256_json, write_json
 from ..operational import agent_run_index, operational_snapshot
 from ..state import EVIDENCE_FILE, HYPOTHESES_FILE, RESEARCH_STATE_FILE
@@ -25,6 +26,17 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
     research_state = _read_or_empty(root_path / RESEARCH_STATE_FILE)
     hypotheses = _read_or_empty(root_path / HYPOTHESES_FILE)
     evidence = _read_or_empty(root_path / EVIDENCE_FILE)
+    evidence_records = evidence.get("evidence", []) if isinstance(evidence, dict) else []
+    try:
+        lifecycle_view = evidence_lifecycle_view(evidence_records)
+        active_evidence_records = lifecycle_view.active_records
+        lifecycle_counts: dict[str, int] = {}
+        for status in lifecycle_view.status_by_id.values():
+            lifecycle_counts[status] = lifecycle_counts.get(status, 0) + 1
+    except EvidenceLifecycleError:
+        active_evidence_records = [item for item in evidence_records if isinstance(item, dict)]
+        lifecycle_counts = {"unresolved": len(active_evidence_records)}
+    active_evidence = {"schema_version": "ts-evidence-registry", "evidence": active_evidence_records}
     tree = research_state
     manifest = research_state
     pathway = hypotheses
@@ -34,7 +46,7 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
     branch_events = tree.get("branch_events", []) if isinstance(tree, dict) else []
     open_nodes = [item for item in nodes if item.get("lifecycle") == "running"]
     closed_nodes = [item for item in nodes if item.get("lifecycle") in {"closed", "stopped"}]
-    hypothesis_context = _build_hypothesis_context(mechanism, evidence, manifest)
+    hypothesis_context = _build_hypothesis_context(mechanism, active_evidence, manifest)
     workspace_revision = sha256_json(
         {"research_state": research_state, "hypotheses": hypotheses, "evidence": evidence}
     )
@@ -60,7 +72,9 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
         "readiness": _build_readiness(validation, manifest, hypothesis_context),
         "open_nodes": open_nodes,
         "closed_node_count": len(closed_nodes),
-        "evidence_count": len(evidence.get("evidence", [])) if isinstance(evidence, dict) else 0,
+        "evidence_count": len(active_evidence_records),
+        "evidence_history_count": len(evidence_records),
+        "evidence_lifecycle": lifecycle_counts,
         "branch_events": branch_events,
         "agent_runs": operations["agent_runs"],
         "pending_controls": operations["pending_controls"],
@@ -96,6 +110,8 @@ def report_node(root: str | Path, node_id: str) -> dict[str, Any]:
     research_state = read_json(root_path / RESEARCH_STATE_FILE)
     hypotheses = read_json(root_path / HYPOTHESES_FILE)
     registry = read_json(root_path / EVIDENCE_FILE)
+    evidence_records = registry.get("evidence", [])
+    lifecycle_view = evidence_lifecycle_view(evidence_records)
     node_path = root_path / "nodes" / node_id / "node.json"
     if not node_path.exists():
         raise ValueError(f"unknown node: {node_id}")
@@ -104,11 +120,12 @@ def report_node(root: str | Path, node_id: str) -> dict[str, Any]:
         raise ValueError(f"node record must be an object: {node_id}")
 
     evidence_refs = _node_evidence_refs(node)
+    resolved_evidence_refs = set(lifecycle_view.resolve_refs(sorted(evidence_refs)))
     evidence = [
         _evidence_capsule(entry)
-        for entry in registry.get("evidence", [])
+        for entry in lifecycle_view.active_records
         if isinstance(entry, dict)
-        and (entry.get("node_id") == node_id or entry.get("evidence_id") in evidence_refs)
+        and (entry.get("node_id") == node_id or entry.get("evidence_id") in resolved_evidence_refs)
     ]
     events = [
         _branch_event_capsule(event)
@@ -125,6 +142,11 @@ def report_node(root: str | Path, node_id: str) -> dict[str, Any]:
         "node": _node_capsule(node),
         "lineage": _lineage_to_root(research_state, node_id),
         "evidence": evidence,
+        "evidence_lifecycle": {
+            evidence_id: lifecycle_view.status_by_id.get(evidence_id)
+            for evidence_id in sorted(evidence_refs)
+            if evidence_id in lifecycle_view.status_by_id
+        },
         "branch_events": events,
         "hypothesis": _hypothesis_capsule(
             _find_by_id(hypotheses.get("hypotheses", []), "hypothesis_id", hypothesis_id)
@@ -253,6 +275,8 @@ def _evidence_capsule(entry: dict[str, Any]) -> dict[str, Any]:
         "path": entry.get("path"),
         "source_files": entry.get("source_files", []),
         "normal_termination": entry.get("normal_termination"),
+        "supersedes_evidence_id": entry.get("supersedes_evidence_id"),
+        "lifecycle_status": "active",
     }
 
 
@@ -630,8 +654,11 @@ def _pathway_audit_summaries(rows: list[Any], evidence: dict[str, Any]) -> list[
 
 
 def _pathway_audit_outcome(row: dict[str, Any], evidence_records: list[Any]) -> str | None:
-    evidence_refs = set(str(item) for item in row.get("evidence_refs", []) if item)
-    for record in evidence_records:
+    lifecycle_view = evidence_lifecycle_view(evidence_records)
+    evidence_refs = set(
+        lifecycle_view.resolve_refs([str(item) for item in row.get("evidence_refs", []) if item])
+    )
+    for record in lifecycle_view.active_records:
         if not isinstance(record, dict) or str(record.get("evidence_id")) not in evidence_refs:
             continue
         quality = record.get("quality") if isinstance(record.get("quality"), dict) else {}

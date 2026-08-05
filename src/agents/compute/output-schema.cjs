@@ -1,6 +1,7 @@
 "use strict";
 
 const { validateAgentResult, validateAgentTask } = require("../../agent-core/agent-protocol.cjs");
+const { COMPUTE_FACT_KINDS } = require("../../agent-core/fact-kinds.cjs");
 const { normalizeAgentResultInput } = require("../../agent-core/result-normalization.cjs");
 
 const MAX_OUTPUT_BYTES = 16 * 1024;
@@ -114,7 +115,9 @@ function validateOperatorReport(value, packet, actions) {
     if (!allowedArtifacts.has(ref)) throw new Error(`compute operator invented artifact ref: ${ref}`);
   }
   for (const [index, fact] of report.facts.entries()) {
-    if (!['program', 'parser'].includes(fact.kind)) throw new Error(`facts[${index}].kind is invalid for backend role`);
+    if (!COMPUTE_FACT_KINDS.includes(fact.kind)) {
+      throw new Error(`facts[${index}].kind is invalid for backend role`);
+    }
     for (const ref of fact.basis_refs) {
       if (!allowedBasisRefs.has(ref)) throw new Error(`facts[${index}] cites an unknown basis: ${ref}`);
     }

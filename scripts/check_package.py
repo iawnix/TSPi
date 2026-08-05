@@ -17,8 +17,8 @@ PACKAGE_NAME = "@iawnix/ts-agent"
 PACKAGE_VERSION = "0.3.0"
 SKILL_ENTRY = "./skills/transition-state-workflow"
 EXTENSION_ENTRIES = [
-    "./extensions/ts-workflow-context",
-    "./extensions/ts-workflow-subagent/index.ts",
+    "./extensions/ts-workflow-control",
+    "./extensions/ts-workflow-review/index.ts",
     "./extensions/ts-workflow-compute/index.ts",
     "./extensions/ts-workflow-artifacts/index.ts",
 ]
@@ -33,9 +33,9 @@ PACKAGE_FILES = [
     "extensions/ts-workflow-artifacts/*.ts",
     "extensions/ts-workflow-compute/*.ts",
     "extensions/ts-workflow-compute/*.cjs",
-    "extensions/ts-workflow-context/*.ts",
-    "extensions/ts-workflow-context/*.cjs",
-    "extensions/ts-workflow-subagent/*.ts",
+    "extensions/ts-workflow-control/*.ts",
+    "extensions/ts-workflow-control/*.cjs",
+    "extensions/ts-workflow-review/*.ts",
     "scripts/*.py",
     "skills/",
     "src/agent-core/*.cjs",
@@ -71,14 +71,21 @@ REQUIRED_TARBALL_FILES = {
     "environment.yml",
     "scripts/install_env.py",
     "skills/transition-state-workflow/SKILL.md",
-    "extensions/ts-workflow-context/index.ts",
-    "extensions/ts-workflow-subagent/index.ts",
+    "extensions/shared/tool-catalog.ts",
+    "extensions/ts-workflow-control/index.ts",
+    "extensions/ts-workflow-review/index.ts",
     "extensions/ts-workflow-compute/index.ts",
     "extensions/ts-workflow-artifacts/index.ts",
     "src/agent-core/agent-protocol.cjs",
+    "src/agent-core/fact-kinds.cjs",
+    "src/agent-core/failure-taxonomy.cjs",
     "src/agents/review/runtime.ts",
+    "src/agents/review/prompts/core.md",
     "src/agents/compute/runtime.ts",
     "src/agents/artifacts/runtime.ts",
+    "src/agents/artifacts/skill-loader.cjs",
+    "src/agents/artifacts/private-skills/research-report/SKILL.md",
+    "ts_workspace/evidence_lifecycle.py",
 }
 LEGACY_PREFIXES = (
     "agent-core/",

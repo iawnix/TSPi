@@ -45,8 +45,8 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
         "parse": "ts_workspace_compute_parse",
     }.items():
         assert f'{operation}: "{name}"' in output_schema
-    assert 'name: "ts_workspace_compute_operator"' in source
-    assert 'name: "ts_workspace_mcp_status"' in source
+    assert "name: TS_PUBLIC_TOOL_NAMES.subagentCompute" in source
+    assert "name: TS_PUBLIC_TOOL_NAMES.mcpInspect" in source
     assert 'pi.registerCommand("ts-mcp"' in source
     assert 'pi.registerEntryRenderer<McpDiagnosticEntryData>("ts-workspace-mcp-diagnostic"' in source
     assert 'pi.appendEntry<McpDiagnosticEntryData>("ts-workspace-mcp-diagnostic"' in source
@@ -59,6 +59,11 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     assert "createScopedComputeTools" in source
     assert "runComputeOperator" in source
     assert "completed compute actions" in source
+    assert 'operation: Type.Literal("parse")' in source
+    assert "intentId: INTENT_ID_PARAMETER" in source
+    assert "artifactRef: Type.String" in source
+    assert "report_serialization_failed_after_action" in source
+    assert "retry_safe: false" in source
     assert 'pi.appendEntry("ts-workspace-compute-operator-failed"' in source
     assert "command:" not in source
     assert "authorizeComputeControl" not in source
@@ -243,6 +248,28 @@ def test_compute_operator_output_is_bound_to_actual_tool_result(tmp_path: Path) 
     completed = _validate_operator_output(tmp_path, packet, [action], report, fenced=True)
     assert json.loads(completed.stdout)["program"]["state"] == "prepared"
 
+    basis_ref = "nodes/n001/inputs/calculations/calc_test.json"
+    for alias, canonical in {
+        "preparation": "compute_preparation",
+        "compute_preparation": "compute_preparation",
+        "submission": "submission",
+        "artifact_collection": "collection",
+        "collection": "collection",
+        "program": "program_status",
+        "program_status": "program_status",
+        "parser": "parser",
+    }.items():
+        report["facts"] = [{
+            "kind": alias,
+            "layer": None,
+            "statement": "Typed compute fact.",
+            "status": "observed",
+            "basis_refs": [basis_ref],
+        }]
+        completed = _validate_operator_output(tmp_path, packet, [action], report)
+        assert json.loads(completed.stdout)["facts"][0]["kind"] == canonical
+    report["facts"] = []
+
     report["program"]["state"] = "completed"
     completed = _validate_operator_output(tmp_path, packet, [action], report, check=False)
     assert completed.returncode == 2
@@ -407,6 +434,7 @@ def test_compute_inspect_accepts_failed_status_plus_tail_as_partial_diagnostic(t
 
     assert result["outcome"] == "partial"
     assert result["facts"][0]["basis_refs"] == [expected_ref]
+    assert result["facts"][0]["kind"] == "program_status"
     assert "artifact_ref" not in result["facts"][0]
     assert result["program"]["outcome"] == "not_run"
     assert not ({"claim_verdict", "hypothesis_status", "accepted_ts"} & set(result))

@@ -19,6 +19,7 @@ from .engine import (
     snapshot_report,
     start_node,
     update_workspace,
+    validate_decision_dry_run,
     validate_workspace,
 )
 from .validators.decision import ContractError, validate_decision
@@ -97,10 +98,11 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
 
     decision = _load_decision(args.decision_file)
     if command == "validate_decision":
-        validate_decision_for_workspace(args.root, decision)
+        dry_run = validate_decision_dry_run(args.root, decision)
         return {
             "valid": True,
             "action": decision["action"],
+            "dry_run": dry_run,
             "warnings": detect_decision_warnings(args.root, decision),
         }
     if command == "start_node":

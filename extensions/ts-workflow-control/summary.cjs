@@ -178,7 +178,7 @@ function buildContextSummary(report, options = {}) {
   }
 
   lines.push(
-    "- contract: use ts_workspace_context/ts_workspace_decide/ts_workspace_validate/ts_workspace_apply; do not edit workspace state files by hand; shell fallbacks must use an explicit TSAgentSkill root, not cwd-relative scripts."
+    "- contract: use ts_workspace_context/ts_workspace_decision_draft/ts_workspace_decision_validate/ts_workspace_decision_apply; do not edit workspace state files by hand; shell fallbacks must use an explicit TSAgentSkill root, not cwd-relative scripts."
   );
   lines.push("- contract: n000 is intake; only mechanism nodes set hypothesis status; candidate and validation nodes return program facts and evidence only.");
   return lines.join("\n");

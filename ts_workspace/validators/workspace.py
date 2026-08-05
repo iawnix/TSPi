@@ -19,6 +19,7 @@ from ..evidence_gates import (
     strict_pathway_decision,
     validate_mechanism_reflection_gate,
 )
+from ..evidence_lifecycle import EvidenceLifecycleError, evidence_lifecycle_view
 from ..io import read_json
 from ..ontology import (
     AUDIT_SCOPES,
@@ -162,8 +163,25 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
         _reject_forbidden(data, findings, filename)
 
     evidence = _as_dict(loaded.get(EVIDENCE_FILE)).get("evidence", [])
-    evidence_by_id: dict[str, dict[str, Any]] = {}
     if isinstance(evidence, list):
+        try:
+            lifecycle_view = evidence_lifecycle_view(evidence)
+            active_evidence = lifecycle_view.active_records
+            active_evidence_ids = {
+                str(item.get("evidence_id")) for item in active_evidence if item.get("evidence_id")
+            }
+        except EvidenceLifecycleError as exc:
+            _finding(
+                findings,
+                "error",
+                "invalid_evidence_lifecycle",
+                str(exc),
+                "evidence_registry.json",
+            )
+            active_evidence = [item for item in evidence if isinstance(item, dict)]
+            active_evidence_ids = {
+                str(item.get("evidence_id")) for item in active_evidence if item.get("evidence_id")
+            }
         ids: set[str] = set()
         for item in evidence:
             if not isinstance(item, dict):
@@ -176,7 +194,8 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
                 _finding(findings, "error", "duplicate_evidence_id", f"duplicate evidence {evidence_id}", "evidence_registry.json")
             else:
                 ids.add(evidence_id)
-                evidence_by_id[evidence_id] = item
+            if evidence_id not in active_evidence_ids:
+                continue
             quality = item.get("quality") if isinstance(item.get("quality"), dict) else {}
             hypothesis_id = quality.get("hypothesis_id")
             if hypothesis_id is not None and hypothesis_id not in hypothesis_ids:
@@ -190,13 +209,13 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
             gate_diagnostic = gate_artifact_metadata_diagnostic(item)
             if gate_diagnostic:
                 _finding(findings, "error", "missing_gate_artifact_metadata", gate_diagnostic, "evidence_registry.json")
-        _validate_evidence_artifact_boundaries(root_path, evidence, node_details, findings)
+        _validate_evidence_artifact_boundaries(root_path, active_evidence, node_details, findings)
 
     _validate_accepted_ts_refs(
         root_path,
         _as_dict(loaded.get(RESEARCH_STATE_FILE)),
         _as_dict(loaded.get(HYPOTHESES_FILE)),
-        evidence_by_id,
+        evidence,
         findings,
     )
     _validate_v2_accepted_audit_refs(
@@ -207,7 +226,7 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
     _validate_pathway_audit_mechanism_gates(
         _as_dict(loaded.get(HYPOTHESES_FILE)),
         node_details,
-        evidence_by_id,
+        evidence,
         findings,
     )
     _validate_pending_transactions(root_path, findings)
@@ -955,7 +974,7 @@ def _validate_accepted_ts_refs(
     root: Path,
     manifest: dict[str, Any],
     mechanism_model: dict[str, Any],
-    evidence_by_id: dict[str, dict[str, Any]],
+    evidence_records: list[Any],
     findings: list[dict[str, str]],
 ) -> None:
     for ref in _as_list(manifest.get("accepted_ts_refs")):
@@ -981,7 +1000,7 @@ def _validate_accepted_ts_refs(
         require_stereo = hypothesis_requires_stereochemical_gate(hypothesis)
         try:
             gate_evidence = accepted_gate_evidence(
-                list(evidence_by_id.values()),
+                evidence_records,
                 evidence_refs,
                 require_stereochemical_gate=require_stereo,
             )
@@ -1006,7 +1025,7 @@ def _validate_accepted_ts_refs(
         mechanism_roles = mechanism_reflection_required_roles(hypothesis, include_shared_basin=False)
         try:
             mechanism_gate_evidence = mechanism_reflection_gate_evidence(
-                list(evidence_by_id.values()),
+                evidence_records,
                 evidence_refs,
                 mechanism_roles,
             )
@@ -1074,10 +1093,9 @@ def _mechanism_hypothesis_by_id(model: dict[str, Any], hypothesis_id: str | None
 def _validate_pathway_audit_mechanism_gates(
     mechanism_model: dict[str, Any],
     node_details: dict[str, dict[str, Any]],
-    evidence_by_id: dict[str, dict[str, Any]],
+    evidence_records: list[Any],
     findings: list[dict[str, str]],
 ) -> None:
-    evidence_records = list(evidence_by_id.values())
     for node_id, node in node_details.items():
         is_v2 = (
             node.get("schema_version") == NODE_SCHEMA_V2

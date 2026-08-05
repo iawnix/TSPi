@@ -192,7 +192,7 @@ def test_read_gjf_route_extracts_multiline_route(tmp_path: Path) -> None:
     assert gaussian.read_gjf_route(gjf) == "#P M062X/6-31G(d,p) Opt=(TS,CalcFC,MaxCycle=200) Freq"
 
 
-def test_parse_log_reports_route_readback_and_effective_step_mismatch(tmp_path: Path) -> None:
+def test_parse_log_keeps_route_readback_separate_from_effective_step_limits(tmp_path: Path) -> None:
     log = "\n".join(
         [
             " Entering Link 1 = synthetic",
@@ -214,7 +214,79 @@ def test_parse_log_reports_route_readback_and_effective_step_mismatch(tmp_path: 
     assert checked["matched"] is False
     assert "route_text_differs" in checked["mismatches"]
     assert "maxcycle_differs" in checked["mismatches"]
-    assert "maxcycle_not_seen_in_effective_step_limits" in checked["mismatches"]
+    assert "maxcycle_not_seen_in_effective_step_limits" not in checked["mismatches"]
+    assert checked["effective_step_maxima"] == [102]
+    assert checked["effective_step_limits_are_route_validation"] is False
+
+
+def test_log_route_normalizes_gaussian_keyword_line_wraps(tmp_path: Path) -> None:
+    log = "\n".join(
+        [
+            " Entering Link 1 = synthetic",
+            " #P M062X/6-31G(d,p) Opt=(TS,CalcFC,MaxCycle=200) Fre",
+            " q Int=UltraFin",
+            " e SCF=(XQC,Tight,MaxCycle=512) NoSymm",
+            " -------------------------------------------------------------------",
+            " Step number 3 out of a maximum of 114",
+            job(),
+        ]
+    )
+    expected = (
+        "#P M062X/6-31G(d,p) Opt=(TS,CalcFC,MaxCycle=200) "
+        "Freq Int=UltraFine SCF=(XQC,Tight,MaxCycle=512) NoSymm"
+    )
+    parsed = parse_text(tmp_path, log)
+    checked = gaussian.parse_log(tmp_path / "case.log", expected_route=expected)["summary"]["route_expectation"]
+
+    assert parsed["summary"]["gaussian_route_settings"]["has_freq"] is True
+    assert "Freq" in parsed["summary"]["gaussian_route"]
+    assert "UltraFine" in parsed["summary"]["gaussian_route"]
+    assert checked["matched"] is True
+    assert checked["mismatches"] == []
+    assert checked["effective_step_maxima"] == [114]
+
+
+def test_irc_parser_excludes_coordinate_free_point_zero(tmp_path: Path) -> None:
+    log = "\n".join(
+        [
+            " #P M062X/6-31G(d,p) IRC=(Forward,MaxPoints=2)",
+            " -------------------------------------------------------------------",
+            " Point Number:   0          Path Number:   1",
+            " Point Number  1 in FORWARD path direction.",
+            " SCF Done:  E(RM062X) =  -40.100000 A.U.",
+            " Point Number:   1          Path Number:   1",
+            "                    CURRENT STRUCTURE",
+            " Center Atomic Coordinates",
+            "      1          6        0.000000  0.000000  0.000000",
+            "      2          1        1.000000  0.000000  0.000000",
+            " NET REACTION COORDINATE UP TO THIS POINT = 0.10000",
+            " Point Number  2 in FORWARD path direction.",
+            " SCF Done:  E(RM062X) =  -40.200000 A.U.",
+            " Point Number:   2          Path Number:   1",
+            "                    CURRENT STRUCTURE",
+            " Center Atomic Coordinates",
+            "      1          6        0.100000  0.000000  0.000000",
+            "      2          1        1.100000  0.000000  0.000000",
+            " NET REACTION COORDINATE UP TO THIS POINT = 0.20000",
+            " Calculation of FORWARD path complete.",
+            " Normal termination of Gaussian 16",
+        ]
+    )
+    path = tmp_path / "irc.log"
+    path.write_text(log, encoding="utf-8")
+
+    parsed = gaussian.parse_irc_log(path)
+    summary = parsed["summary"]
+
+    assert summary["point_zero_marker_present"] is True
+    assert summary["point_zero_policy"] == "coordinate_free_ts_marker_excluded"
+    assert summary["first_point_number"] == 1
+    assert summary["last_point_number"] == 2
+    assert summary["point_count"] == 2
+    assert summary["max_points_reached"] is True
+    assert summary["path_complete_marker"] is True
+    assert len(parsed["points"]) == 2
+    assert parsed["atoms"][0] == ("C", 0.1, 0.0, 0.0)
 
 
 def test_valid_ts_section_validates_and_extracts_standard_orientation(tmp_path: Path) -> None:

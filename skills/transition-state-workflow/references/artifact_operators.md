@@ -6,7 +6,7 @@ parent history, and no canonical workspace mutation authority.
 
 ## Render
 
-`ts_workspace_render_operator` accepts:
+`ts_subagent_render` accepts:
 
 - `operation=render|compare|animate|mechanism`;
 - one owning `nodeId`;
@@ -21,7 +21,7 @@ the Root Agent registers separately.
 
 ## Report
 
-`ts_workspace_report_operator` accepts `operation=build` and one new
+`ts_subagent_report` accepts `operation=build` and one new
 `packageRef` under `reports/`. The typed child tool calls the deterministic
 report builder, which first validates the workspace and writes:
 
@@ -41,7 +41,7 @@ or unsupported causal claims.
 
 ## Email Draft
 
-`ts_workspace_email_operator` accepts only `operation=draft`, a generated
+`ts_subagent_email_draft` accepts only `operation=draft`, a generated
 `email_summary.md`, a new JSON `draftRef` under `reports/`, and explicit
 recipient addresses. The selected summary must have a sibling
 `report_context.json` and `package_manifest.json`. Preflight verifies the

@@ -1,5 +1,7 @@
 "use strict";
 
+const { FACT_KINDS } = require("./fact-kinds.cjs");
+
 const ROLES = Object.freeze(["review", "backend", "render", "report", "email"]);
 const AUTHORITIES = Object.freeze({
   review: "advisory",
@@ -151,7 +153,7 @@ function validateConstraints(value) {
 function validateFact(value, index) {
   rejectUnknownKeys(value, ["kind", "layer", "statement", "status", "basis_refs"], `facts[${index}]`);
   return {
-    kind: requireEnum(value.kind, `facts[${index}].kind`, ["review", "program", "parser", "render", "report", "email"]),
+    kind: requireEnum(value.kind, `facts[${index}].kind`, FACT_KINDS),
     layer: nullableString(value.layer, `facts[${index}].layer`, 64),
     statement: requireString(value.statement, `facts[${index}].statement`, 2000),
     status: requireEnum(value.status, `facts[${index}].status`, ["observed", "supported", "contradicted", "uncertain"]),

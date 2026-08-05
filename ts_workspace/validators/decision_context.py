@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from ..artifact_policy import node_owner_from_artifact_path, role_matches_node
+from ..evidence_lifecycle import evidence_lifecycle_view
 from ..evidence_gates import gate_artifact_metadata_diagnostic
 from ..io import read_json, sha256_json
 from ..ontology import DECISION_SCHEMA as DECISION_SCHEMA_V2
@@ -259,12 +260,12 @@ def _require_known_evidence_refs(root: Path, refs: Any, label: str) -> None:
     if not refs:
         return
     registry = read_json(root / "evidence_registry.json")
-    known = {
-        item.get("evidence_id")
-        for item in registry.get("evidence", [])
-        if isinstance(item, dict) and item.get("evidence_id")
-    }
-    missing = sorted(set(str(item) for item in refs if item) - known)
+    view = evidence_lifecycle_view(registry.get("evidence", []))
+    missing = sorted(
+        str(item)
+        for item in refs
+        if item and view.resolve_ref(str(item)) is None
+    )
     if missing:
         raise ContractError(f"{label} references unknown evidence: {', '.join(missing)}")
 
@@ -438,12 +439,12 @@ def _validate_propose_hypothesis_context(root: Path, decision: dict[str, Any]) -
         raise ContractError("proposal_context.anchor_node must be an ancestor of proposal_context.from_node")
 
     registry = read_json(root / "evidence_registry.json")
-    known_evidence_ids = {
-        item.get("evidence_id")
-        for item in registry.get("evidence", [])
-        if isinstance(item, dict)
-    }
-    missing_evidence = sorted(set(decision.get("evidence_refs", [])) - known_evidence_ids)
+    lifecycle_view = evidence_lifecycle_view(registry.get("evidence", []))
+    missing_evidence = sorted(
+        evidence_id
+        for evidence_id in set(decision.get("evidence_refs", []))
+        if lifecycle_view.resolve_ref(str(evidence_id)) is None
+    )
     if missing_evidence:
         raise ContractError(f"propose_hypothesis references unknown evidence: {', '.join(missing_evidence)}")
 
@@ -509,6 +510,8 @@ def _validate_update_workspace_context(root: Path, decision: dict[str, Any]) -> 
     if evidence is None:
         return
     entries = evidence if isinstance(evidence, list) else [evidence]
+    registry = read_json(root / "evidence_registry.json")
+    evidence_lifecycle_view([*registry.get("evidence", []), *entries])
     for entry in entries:
         if not isinstance(entry, dict):
             continue
@@ -517,7 +520,12 @@ def _validate_update_workspace_context(root: Path, decision: dict[str, Any]) -> 
             continue
         node = _read_node(root, node_id)
         path = entry.get("path")
-        if isinstance(path, str) and path.strip() and not role_matches_node(entry.get("role"), node):
+        if (
+            entry.get("kind") != "evidence_lifecycle"
+            and isinstance(path, str)
+            and path.strip()
+            and not role_matches_node(entry.get("role"), node)
+        ):
             raise ContractError(
                 "append_evidence.role does not match the node type/scope for a path-bearing artifact: "
                 f"role={entry.get('role')!r}, node={node_id}, "

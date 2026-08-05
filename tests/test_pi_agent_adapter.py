@@ -9,7 +9,8 @@ from strict_helpers import HYPOTHESIS_ID, bootstrap_strict_workspace, end_v3_nod
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SUMMARY = ROOT / "extensions" / "ts-workflow-context" / "summary.cjs"
+SUMMARY = ROOT / "extensions" / "ts-workflow-control" / "summary.cjs"
+TOOL_CATALOG = ROOT / "extensions" / "shared" / "tool-catalog.ts"
 SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
 
 
@@ -22,8 +23,8 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
     assert manifest["private"] is True
     assert manifest["pi"]["skills"] == ["./skills/transition-state-workflow"]
     assert manifest["pi"]["extensions"] == [
-        "./extensions/ts-workflow-context",
-        "./extensions/ts-workflow-subagent/index.ts",
+        "./extensions/ts-workflow-control",
+        "./extensions/ts-workflow-review/index.ts",
         "./extensions/ts-workflow-compute/index.ts",
         "./extensions/ts-workflow-artifacts/index.ts",
     ]
@@ -39,13 +40,49 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
     assert "tests/test_pi_subagent_contract.py" in manifest["scripts"]["test:pi-adapter"]
     assert "postinstall" not in manifest["scripts"]
 
-    extension_source = (ROOT / "extensions" / "ts-workflow-context" / "index.ts").read_text(encoding="utf-8")
+    extension_source = (ROOT / "extensions" / "ts-workflow-control" / "index.ts").read_text(encoding="utf-8")
     assert 'const DECISION_ACTIONS = ["start_node", "update_workspace", "end_node"]' in extension_source
-    assert 'name: "ts_workspace_decide"' in extension_source
-    assert 'name: "ts_workspace_validate"' in extension_source
-    assert 'name: "ts_workspace_apply"' in extension_source
-    assert 'name: "ts_workspace_decision_validate"' not in extension_source
+    assert "name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionDraft" in extension_source
+    assert "name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate" in extension_source
+    assert "name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply" in extension_source
     assert 'name: "ts_workspace_decision"' not in extension_source
+
+
+def test_public_tool_catalog_separates_workspace_subagent_and_mcp_execution() -> None:
+    catalog = TOOL_CATALOG.read_text(encoding="utf-8")
+    expected = {
+        "workspaceContext": "ts_workspace_context",
+        "workspaceDecisionDraft": "ts_workspace_decision_draft",
+        "workspaceDecisionValidate": "ts_workspace_decision_validate",
+        "workspaceDecisionApply": "ts_workspace_decision_apply",
+        "mcpInspect": "ts_mcp_inspect",
+        "subagentReview": "ts_subagent_review",
+        "subagentCompute": "ts_subagent_compute",
+        "subagentRender": "ts_subagent_render",
+        "subagentReport": "ts_subagent_report",
+        "subagentEmailDraft": "ts_subagent_email_draft",
+    }
+    for key, name in expected.items():
+        assert f'{key}: "{name}"' in catalog
+
+    for key in ("workspaceContext", "workspaceDecisionDraft", "workspaceDecisionValidate", "workspaceDecisionApply"):
+        assert f'[TS_PUBLIC_TOOL_NAMES.{key}]: "deterministic_workspace"' in catalog
+    assert '[TS_PUBLIC_TOOL_NAMES.mcpInspect]: "deterministic_infrastructure"' in catalog
+    for key in ("subagentReview", "subagentCompute", "subagentRender", "subagentReport", "subagentEmailDraft"):
+        assert f'[TS_PUBLIC_TOOL_NAMES.{key}]: "child_agent"' in catalog
+
+    for legacy in (
+        "ts_workspace_decide",
+        "ts_workspace_validate",
+        "ts_workspace_apply",
+        "ts_workspace_subagent",
+        "ts_workspace_compute_operator",
+        "ts_workspace_render_operator",
+        "ts_workspace_report_operator",
+        "ts_workspace_email_operator",
+        "ts_workspace_mcp_status",
+    ):
+        assert f'"{legacy}"' not in catalog
 
 
 def test_pi_documentation_matches_loaded_extensions_and_tool_boundary() -> None:
@@ -54,17 +91,17 @@ def test_pi_documentation_matches_loaded_extensions_and_tool_boundary() -> None:
     maintainer = (ROOT / "docs" / "MAINTAINER_GUIDE.md").read_text(encoding="utf-8")
 
     assert "Pi `>=0.81.1 <1.0.0`" in readme
-    assert "extensions/ts-workflow-subagent" in readme
+    assert "extensions/ts-workflow-review" in readme
     assert "extensions/ts-workflow-artifacts" in readme
-    assert "`ts_workspace_decide`" in readme
-    assert "`ts_workspace_validate`" in readme
-    assert "`ts_workspace_apply`" in readme
-    assert "`ts_workspace_subagent`" in readme
+    assert "`ts_workspace_decision_draft`" in readme
+    assert "`ts_workspace_decision_validate`" in readme
+    assert "`ts_workspace_decision_apply`" in readme
+    assert "`ts_subagent_review`" in readme
     assert "run `validate_decision`, `start_node`" not in readme
     assert adapter.count("-e \"$TS_AGENT_SKILL_ROOT/extensions/") == 4
     assert 'pi --skill "$TS_AGENT_SKILL_ROOT/skills/transition-state-workflow"' in adapter
     assert "temporary\nnon-OAuth API key" in adapter
-    assert "extensions/ts-workflow-subagent" in maintainer
+    assert "extensions/ts-workflow-review" in maintainer
     assert "extensions/ts-workflow-artifacts" in maintainer
 
 
@@ -92,7 +129,7 @@ def test_pi_context_summary_from_report_workspace(tmp_path: Path) -> None:
     assert "do not edit workspace state files by hand" in payload["summary"]
     assert "scripts/ts_workspace.py" not in payload["summary"]
     assert "explicit TSAgentSkill root" in payload["summary"]
-    assert "ts_workspace_context/ts_workspace_decide/ts_workspace_validate/ts_workspace_apply" in payload["summary"]
+    assert "ts_workspace_context/ts_workspace_decision_draft/ts_workspace_decision_validate/ts_workspace_decision_apply" in payload["summary"]
     assert payload["details"]["workspaceRoot"] == str(workspace)
     assert payload["details"]["operationalRevision"].startswith("sha256:")
     assert payload["details"]["focusHypothesisId"] == HYPOTHESIS_ID
@@ -106,7 +143,7 @@ def test_pi_context_helper_finds_workspace_from_ancestor(tmp_path: Path) -> None
     nested.mkdir(parents=True)
 
     script = (
-        "const helper = require('./extensions/ts-workflow-context/summary.cjs');"
+        "const helper = require('./extensions/ts-workflow-control/summary.cjs');"
         "process.stdout.write(helper.findWorkspaceRoot(process.argv[1]) || '');"
     )
     completed = subprocess.run(
@@ -123,7 +160,7 @@ def test_pi_context_helper_finds_workspace_from_ancestor(tmp_path: Path) -> None
 
 def test_pi_json_parser_surfaces_structured_stderr() -> None:
     script = (
-        "const helper=require('./extensions/ts-workflow-context/summary.cjs');"
+        "const helper=require('./extensions/ts-workflow-control/summary.cjs');"
         "try { helper.parseJsonOutput({stdout:'',stderr:JSON.stringify({"
         "ok:false,error:'collect requires a terminal calculation status'})}); }"
         "catch (error) { process.stdout.write(String(error.message || error)); }"
@@ -168,7 +205,7 @@ def test_historical_node_and_backtrack_context_are_compact_and_explicit(tmp_path
     context_file.write_text(json.dumps(branch_context), encoding="utf-8")
     script = (
         "const fs=require('node:fs');"
-        "const helper=require('./extensions/ts-workflow-context/summary.cjs');"
+        "const helper=require('./extensions/ts-workflow-control/summary.cjs');"
         "const value=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
         "process.stdout.write(helper.buildBranchContextSummary(value));"
     )
@@ -189,7 +226,7 @@ def test_historical_node_and_backtrack_context_are_compact_and_explicit(tmp_path
     node_context_file.write_text(json.dumps(node_context), encoding="utf-8")
     node_script = (
         "const fs=require('node:fs');"
-        "const helper=require('./extensions/ts-workflow-context/summary.cjs');"
+        "const helper=require('./extensions/ts-workflow-control/summary.cjs');"
         "const value=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
         "process.stdout.write(helper.buildNodeContextSummary(value));"
     )

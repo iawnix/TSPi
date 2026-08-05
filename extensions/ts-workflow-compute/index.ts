@@ -11,11 +11,13 @@ import {
   runMcpDiagnosticJson,
   runWorkspaceJson,
 } from "../shared/workspace-cli.ts";
+import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 import { runComputeOperator } from "../../src/agents/compute/runtime.ts";
 
 const require = createRequire(import.meta.url);
-const { toolText } = require("../ts-workflow-context/summary.cjs");
+const { toolText } = require("../ts-workflow-control/summary.cjs");
 const { beginAgentRun, completeAgentRun, failAgentRun } = require("../../src/agent-core/run-journal.cjs");
+const { classifyUpstreamModelFailure } = require("../../src/agent-core/failure-taxonomy.cjs");
 const {
   completeAction,
   failAction,
@@ -26,6 +28,48 @@ const OPERATIONS = ["prepare", "submit", "inspect", "collect", "cancel", "parse"
 const BACKENDS = ["gaussian", "ase_neb", "xtb", "qbics_dmecp"] as const;
 const MCP_DIAGNOSTIC_MODES = ["status", "doctor", "queues", "nodes", "cluster"] as const;
 const MCP_PREFLIGHT_OPERATIONS = new Set(["submit", "inspect", "collect", "cancel"]);
+const OPERATOR_COMMON_PARAMETERS = {
+  backend: StringEnum(BACKENDS),
+  nodeId: Type.String({ minLength: 1, maxLength: 128, description: "Workspace node that owns this calculation attempt." }),
+  root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
+};
+const INTENT_ID_PARAMETER = Type.String({ minLength: 6, maxLength: 128 });
+const COMPUTE_OPERATOR_PARAMETERS = Type.Union([
+  Type.Object({
+    ...OPERATOR_COMMON_PARAMETERS,
+    operation: Type.Literal("prepare"),
+    intentFile: Type.String({ description: "JSON file conforming to ts-calculation-intent/2 or legacy /1." }),
+  }, { additionalProperties: false }),
+  Type.Object({
+    ...OPERATOR_COMMON_PARAMETERS,
+    operation: Type.Literal("submit"),
+    intentId: INTENT_ID_PARAMETER,
+  }, { additionalProperties: false }),
+  Type.Object({
+    ...OPERATOR_COMMON_PARAMETERS,
+    operation: Type.Literal("inspect"),
+    intentId: INTENT_ID_PARAMETER,
+    tailArtifact: Type.Optional(Type.String({ minLength: 1, maxLength: 255, description: "Allowlisted remote artifact basename." })),
+    tailLines: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+  }, { additionalProperties: false }),
+  Type.Object({
+    ...OPERATOR_COMMON_PARAMETERS,
+    operation: Type.Literal("collect"),
+    intentId: INTENT_ID_PARAMETER,
+    artifacts: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 255 }), { maxItems: 32 })),
+  }, { additionalProperties: false }),
+  Type.Object({
+    ...OPERATOR_COMMON_PARAMETERS,
+    operation: Type.Literal("cancel"),
+    intentId: INTENT_ID_PARAMETER,
+  }, { additionalProperties: false }),
+  Type.Object({
+    ...OPERATOR_COMMON_PARAMETERS,
+    operation: Type.Literal("parse"),
+    intentId: INTENT_ID_PARAMETER,
+    artifactRef: Type.String({ minLength: 1, maxLength: 4096, description: "Workspace-relative selected-node output." }),
+  }, { additionalProperties: false }),
+]);
 
 type OperatorRequest = {
   operation: typeof OPERATIONS[number];
@@ -68,8 +112,8 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: "ts_workspace_mcp_status",
-    label: "TS Workspace MCP Status",
+    name: TS_PUBLIC_TOOL_NAMES.mcpInspect,
+    label: "TS MCP Inspect",
     description: "Run a read-only TS Cluster MCP connection, queue, node, or aggregated cluster-status probe. Use for cluster-status questions, MCP calculation preparation, queue selection, or connection diagnosis; do not call every turn or poll unchanged status.",
     promptSnippet: "Query the configured TS Cluster MCP without changing jobs or files",
     promptGuidelines: [
@@ -92,43 +136,33 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: "ts_workspace_compute_operator",
-    label: "TS Compute Operator",
+    name: TS_PUBLIC_TOOL_NAMES.subagentCompute,
+    label: "TS Compute Subagent",
     description: "Run one fresh Pi compute subagent with request-scoped prepare, submit, status/tail, collect, cancel, or parse tools.",
     promptSnippet: "Delegate one bounded transition-state calculation operation",
     promptGuidelines: [
-      "Create the calculation intent and select its node, method, purpose, validation scope, and target before calling the compute operator.",
-      "Treat operator results as program and parser facts, not registered evidence, claim_verdict, accepted TS, or pathway acceptance.",
+      "Create the calculation intent and select its node, method, purpose, validation scope, and target before calling the compute subagent.",
+      "Treat subagent results as program and parser facts, not registered evidence, claim_verdict, accepted TS, or pathway acceptance.",
       "Use inspect for changed or terminal jobs instead of polling unchanged work every turn.",
       "Use submit or cancel only for the pre-bound current intent, and never retry an ambiguous control result.",
     ],
     executionMode: "sequential",
-    parameters: Type.Object({
-      operation: StringEnum(OPERATIONS),
-      backend: StringEnum(BACKENDS),
-      nodeId: Type.String({ minLength: 1, maxLength: 128, description: "Workspace node that owns this calculation attempt." }),
-      intentFile: Type.Optional(Type.String({ description: "For prepare: JSON file conforming to ts-calculation-intent/2 or legacy /1." })),
-      intentId: Type.Optional(Type.String({ minLength: 6, maxLength: 128 })),
-      tailArtifact: Type.Optional(Type.String({ minLength: 1, maxLength: 255, description: "For inspect: allowlisted remote artifact basename." })),
-      tailLines: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
-      artifacts: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 255 }), { maxItems: 32 })),
-      artifactRef: Type.Optional(Type.String({ minLength: 1, maxLength: 4096, description: "For parse: workspace-relative selected-node output." })),
-      root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
-    }, { additionalProperties: false }),
+    parameters: COMPUTE_OPERATOR_PARAMETERS,
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       if (!ctx.model) throw new Error("No parent model is selected for TS compute delegation");
-      const root = requireWorkspaceRoot(params.root, ctx.cwd);
+      const input = params as unknown as OperatorRequest & { root?: string };
+      const root = requireWorkspaceRoot(input.root, ctx.cwd);
       const request = validateOperatorRequest(
         {
-          operation: params.operation,
-          backend: params.backend,
-          nodeId: params.nodeId,
-          intentFile: params.intentFile ? resolve(ctx.cwd, String(params.intentFile).replace(/^@+/, "")) : undefined,
-          intentId: params.intentId,
-          tailArtifact: params.tailArtifact,
-          tailLines: params.tailLines,
-          artifacts: params.artifacts,
-          artifactRef: params.artifactRef,
+          operation: input.operation,
+          backend: input.backend,
+          nodeId: input.nodeId,
+          intentFile: input.intentFile ? resolve(ctx.cwd, String(input.intentFile).replace(/^@+/, "")) : undefined,
+          intentId: input.intentId,
+          tailArtifact: input.tailArtifact,
+          tailLines: input.tailLines,
+          artifacts: input.artifacts,
+          artifactRef: input.artifactRef,
         },
       );
       const binding = await preflightOperatorRequest(pi, root, request, signal);
@@ -208,6 +242,7 @@ export default function (pi: ExtensionAPI) {
         });
       } catch (error) {
         const completedActions = compactCompletedActions(actions);
+        const failure = classifyOperatorFailure(error, completedActions);
         const runRef = failAgentRun(journal, {
           actions,
           error,
@@ -215,6 +250,7 @@ export default function (pi: ExtensionAPI) {
             operation: request.operation,
             backend: request.backend,
             intent_id: request.intentId || null,
+            ...failure,
           },
         });
         pi.appendEntry("ts-workspace-compute-operator-failed", {
@@ -223,11 +259,15 @@ export default function (pi: ExtensionAPI) {
           backend: request.backend,
           intent_id: request.intentId || null,
           completed_actions: completedActions,
+          ...failure,
           run_ref: runRef,
         });
         if (completedActions.length) {
           const message = error instanceof Error ? error.message : String(error);
-          throw new Error(`${message}; completed compute actions: ${JSON.stringify(completedActions)}`);
+          throw new Error(
+            `${message}; failure_class=${failure.failure_class}; retry_safe=${failure.retry_safe}; `
+            + `completed compute actions: ${JSON.stringify(completedActions)}`,
+          );
         }
         throw error;
       }
@@ -508,6 +548,11 @@ function compactCompletedActions(actions: ActionLog) {
       : action.result;
     return {
       tool: action.tool,
+      action_status: raw.action_status === "failed"
+        ? "failed"
+        : raw.action_status === "started"
+          ? "started"
+          : "completed",
       intent_id: raw.intent_id || null,
       node_id: raw.node_id || null,
       state: raw.state || null,
@@ -516,4 +561,39 @@ function compactCompletedActions(actions: ActionLog) {
       artifact_refs: Array.isArray(raw.artifact_refs) ? raw.artifact_refs : [],
     };
   });
+}
+
+function classifyOperatorFailure(error: unknown, actions: ReturnType<typeof compactCompletedActions>) {
+  const code = isPlainObject(error) && typeof error.code === "string" ? error.code : null;
+  const actionOutcome = actions.length === 0
+    ? "not_executed"
+    : actions.some((action) => action.action_status === "started")
+      ? "unknown"
+    : actions.every((action) => action.action_status === "failed")
+      ? "failed"
+      : actions.some((action) => action.action_status === "failed")
+      ? "partial"
+      : "succeeded";
+  const upstreamFailure = classifyUpstreamModelFailure(error, { replaySafe: actions.length === 0 });
+  if (upstreamFailure) {
+    return { ...upstreamFailure, action_outcome: actionOutcome };
+  }
+  if (code === "REPORT_SERIALIZATION_FAILED_AFTER_ACTION") {
+    return {
+      failure_class: "report_serialization_failed_after_action",
+      failure_stage: "report_serialization",
+      failure_domain: "compute_operator",
+      upstream_status: null,
+      action_outcome: actionOutcome,
+      retry_safe: false,
+    };
+  }
+  return {
+    failure_class: actions.length ? "operator_failed_after_action" : "operator_failed_before_action",
+    failure_stage: actions.length ? "operator" : "pre_action",
+    failure_domain: "compute_operator",
+    upstream_status: null,
+    action_outcome: actionOutcome,
+    retry_safe: actions.length === 0,
+  };
 }

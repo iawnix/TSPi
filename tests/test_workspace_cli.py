@@ -34,6 +34,10 @@ def test_workspace_cli_roundtrip(tmp_path: Path) -> None:
     }
     start_path = tmp_path / "start_n000.json"
     start_path.write_text(json.dumps(start_n000), encoding="utf-8")
+    preflight = _run("validate_decision", "--root", str(workspace), "--decision-file", str(start_path))
+    assert preflight["dry_run"]["executed"] is True
+    assert preflight["dry_run"]["action"] == "start_node"
+    assert not (workspace / "nodes/n000").exists()
     started = _run("start_node", "--root", str(workspace), "--decision-file", str(start_path))
     assert started["node_id"] == "n000"
 

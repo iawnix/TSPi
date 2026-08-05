@@ -64,3 +64,15 @@ the route echoed in the log, key settings such as `MaxCycle`, `MaxPoints`, and
 `StepSize`, and effective step limits reported by Gaussian. A mismatch is a
 diagnostic that should be registered in the node evidence and considered before
 retrying or accepting the calculation.
+
+The parser normalizes Gaussian route echo wrapping before checking keywords,
+including splits such as `Fre q`, `Ultra Fine`, and `Ultr aFine`. Route
+`MaxCycle` is the requested optimizer setting; Gaussian's internal effective
+step maxima are runtime diagnostics and are not required to repeat that number.
+Do not report `maxcycle_not_seen_in_effective_step_limits` merely because these
+two concepts differ.
+
+For IRC, Gaussian point 0 is a TS path marker and may have no `CURRENT
+STRUCTURE` block. The deterministic IRC parser excludes a coordinate-free point
+0 and begins the coordinate series at point 1. It writes the path summary,
+point table, and final endpoint XYZ without interpreting endpoint identity.

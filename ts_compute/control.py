@@ -18,7 +18,15 @@ from typing import Any, Callable
 
 from ts_backends.ase_neb import prepare_ase_neb
 from ts_backends.base import BackendTask, PreparedTask
-from ts_backends.gaussian import parse_log, prepare_gaussian, read_gjf_route, route_settings, write_parse_artifacts
+from ts_backends.gaussian import (
+    parse_irc_log,
+    parse_log,
+    prepare_gaussian,
+    read_gjf_route,
+    route_settings,
+    write_irc_parse_artifacts,
+    write_parse_artifacts,
+)
 from ts_backends.qbics_dmecp import prepare_qbics_dmecp
 from ts_backends.xtb import prepare_xtb_opt
 from ts_remote import job_lifecycle
@@ -105,6 +113,8 @@ def preflight_calculation(
     if execution_policy.get("transport") == "mcp" and operation != "prepare":
         connection_summary = _mcp_connection_summary()
     status = _read_local_status(workspace, intent)
+    if operation == "collect":
+        _collection_program_status(workspace, intent, prepared_record, execution_policy)
     if operation in {"submit", "cancel"}:
         control = _read_control_result(workspace, intent, operation)
         if control is not None and control.get("state") == "unknown":
@@ -377,7 +387,7 @@ def collect_calculation(
         raise ComputeContractError("calculation intent has no expected artifacts to collect")
     if len(selected) != len(set(selected)) or any(name not in expected_names for name in selected):
         raise ComputeContractError("collect artifacts must be a unique subset of the prepared expected artifacts")
-    program_status = _required_terminal_program_status(workspace, intent)
+    program_status = _collection_program_status(workspace, intent, prepared, policy)
     output_dir = _collected_output_dir(workspace, intent)
     existing = [name for name in selected if (output_dir / Path(name).name).exists()]
     if existing:
@@ -545,14 +555,18 @@ def parse_calculation(
     gjf_ref = intent["input_refs"].get("gjf")
     if gjf_ref:
         expected_route = read_gjf_route(workspace / _workspace_ref(workspace, gjf_ref, read=True))
-    parsed = parse_log(source, expected_route=expected_route)
+    is_irc = intent.get("task_type") == "irc"
+    parsed = parse_irc_log(source) if is_irc else parse_log(source, expected_route=expected_route)
     summary = parsed.get("summary")
     if not isinstance(summary, dict):
         raise ComputeContractError("Gaussian parser returned an invalid summary")
     parse_dir = workspace / output_ref / "parsed"
     if parse_dir.exists() and any(parse_dir.iterdir()):
         raise ComputeContractError("parse output directory is non-empty without a matching calculation result")
-    write_parse_artifacts(parsed, parse_dir, source.stem, source.name)
+    if is_irc:
+        write_irc_parse_artifacts(parsed, parse_dir, source.stem, source.name)
+    else:
+        write_parse_artifacts(parsed, parse_dir, source.stem, source.name)
     parsed_refs = sorted(path.relative_to(workspace).as_posix() for path in parse_dir.glob("*") if path.is_file())
     normal = bool(summary.get("normal_termination"))
     result = _result(
@@ -566,8 +580,8 @@ def parse_calculation(
             "parsed_at": now_iso(),
             "source_ref": source_ref,
             "source_sha256": source_sha256,
-            "parser_name": "ts_backends.gaussian.parse_log",
-            "parser_contract": "gaussian-tsfreq-parser/1",
+            "parser_name": "ts_backends.gaussian.parse_irc_log" if is_irc else "ts_backends.gaussian.parse_log",
+            "parser_contract": "gaussian-irc-parser/1" if is_irc else "gaussian-tsfreq-parser/1",
         },
     )
     _write_result(workspace, intent, result)
@@ -578,7 +592,12 @@ def _validate_backend_request(intent: dict[str, Any], inputs: dict[str, str], wo
     backend = str(intent["backend"])
     required_inputs, task_types, _ = BACKENDS[backend]
     if set(inputs) != required_inputs:
-        raise ComputeContractError(f"{backend} input roles must be exactly: {sorted(required_inputs)}")
+        missing = sorted(required_inputs - set(inputs))
+        unexpected = sorted(set(inputs) - required_inputs)
+        raise ComputeContractError(
+            f"{backend} input roles must be exactly {sorted(required_inputs)}; "
+            f"missing={missing}; unexpected={unexpected}"
+        )
     if intent["task_type"] not in task_types:
         raise ComputeContractError(f"unsupported {backend} task_type: {intent['task_type']}")
     if backend != "gaussian":
@@ -978,6 +997,8 @@ def _mcp_status_semantics(
     if scheduler_state in {"F", "C"}:
         if exit_status == 0:
             return "completed", "completed", None, exit_status
+        if exit_status is None:
+            return "completed", "not_run", None, exit_status
         return "failed", "failed", "remote_job_failed", exit_status
     if submission_state == "submitted":
         return "submitted", "not_run", None, exit_status
@@ -1556,19 +1577,82 @@ def _require_matching_job_id(
         raise ComputeContractError(f"{label} job_id does not match the durable submit result")
 
 
-def _required_terminal_program_status(workspace: Path, intent: dict[str, Any]) -> str:
+def _collection_program_status(
+    workspace: Path,
+    intent: dict[str, Any],
+    prepared: dict[str, Any],
+    policy: dict[str, Any],
+) -> str:
+    """Validate the immutable submission binding without consulting the scheduler."""
+
+    submitted = _read_control_result(workspace, intent, "submit")
+    if submitted is None or submitted.get("state") != "submitted":
+        raise ComputeContractError("collect requires a durable successful submit result")
+    transport = str(policy["transport"])
+    remote_dir = str(policy["remote_dir"])
+    provenance = submitted.get("provenance")
+    if not isinstance(provenance, dict) or any(
+        provenance.get(key) != expected
+        for key, expected in {"transport": transport, "remote_dir": remote_dir}.items()
+    ):
+        raise ComputeContractError("collect submit result does not match the prepared remote target")
+
+    receipt_ref = _receipt_ref(intent, transport)
+    if provenance.get("receipt_ref") != receipt_ref or receipt_ref not in submitted.get("artifact_refs", []):
+        raise ComputeContractError("collect submit result is not bound to its durable receipt")
+    receipt_path = workspace / receipt_ref
+    if receipt_path.is_symlink():
+        raise ComputeContractError("collect receipt cannot be a symbolic link")
+    receipt = _read_object(receipt_path, "remote receipt")
+    if any(
+        receipt.get(key) != expected
+        for key, expected in {
+            "node_id": intent["node_id"],
+            "remote_dir": remote_dir,
+            "scheduler_id": submitted.get("job_id"),
+        }.items()
+    ):
+        raise ComputeContractError("collect receipt does not match the durable submit result")
+    receipt_path_remote = receipt.get("receipt_path")
+    if not isinstance(receipt_path_remote, str) or str(PurePosixPath(receipt_path_remote).parent) != remote_dir:
+        raise ComputeContractError("collect receipt path is outside the prepared remote directory")
+
+    metadata = receipt.get("metadata")
+    if not isinstance(metadata, dict):
+        raise ComputeContractError("collect receipt has no artifact manifest metadata")
+    try:
+        manifest = json.loads(str(metadata.get("expected_artifacts", "")))
+    except json.JSONDecodeError as exc:
+        raise ComputeContractError("collect receipt artifact manifest is invalid JSON") from exc
+    expected_names = _expected_remote_names(prepared)
+    if not isinstance(manifest, list) or any(not isinstance(item, str) for item in manifest):
+        raise ComputeContractError("collect receipt artifact manifest must be a string array")
+    allowed_manifest = {
+        name: {name, f"{remote_dir.rstrip('/')}/{name}"}
+        for name in expected_names
+    }
+    if len(manifest) != len(expected_names) or any(
+        item not in allowed_manifest.get(Path(item).name, set()) for item in manifest
+    ) or [Path(item).name for item in manifest] != expected_names:
+        raise ComputeContractError("collect receipt artifact manifest does not match prepared artifacts")
+
+    if transport == "mcp":
+        expected_metadata = {
+            "submission_id": _mcp_submission_id(str(intent["intent_id"])),
+            "intent_id": intent["intent_id"],
+            "intent_digest": sha256_json(intent),
+            "backend": intent["backend"],
+        }
+        if any(metadata.get(key) != expected for key, expected in expected_metadata.items()):
+            raise ComputeContractError("collect MCP receipt is not bound to the prepared intent")
+        if provenance.get("submission_id") != expected_metadata["submission_id"]:
+            raise ComputeContractError("collect submit result has a mismatched MCP submission_id")
+
     status = _read_local_status(workspace, intent)
-    value = "not_run" if status is None else str(status.get("program_status", "not_run"))
-    if status is not None and value not in {"completed", "failed", "stopped"}:
-        refreshed = calculation_status(
-            workspace,
-            str(intent["intent_id"]),
-            sha256_json(intent),
-        )
-        value = str(refreshed.get("program_status", "not_run"))
-    if value not in {"completed", "failed", "stopped"}:
-        raise ComputeContractError("collect requires a previously observed terminal calculation status")
-    return value
+    if status is None:
+        return "not_run"
+    value = str(status.get("program_status", "not_run"))
+    return value if value in {"completed", "failed", "stopped"} else "not_run"
 
 
 def _remote_artifact_names(config: job_lifecycle.RemoteJobConfig) -> set[str]:

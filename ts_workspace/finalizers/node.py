@@ -17,6 +17,7 @@ from ..evidence_gates import (
     validate_stereochemical_connectivity_gate,
     validate_strict_connectivity_gate,
 )
+from ..evidence_lifecycle import evidence_lifecycle_view
 from ..io import read_json
 from ..state import HYPOTHESES_FILE, RESEARCH_STATE_FILE
 from ..validators.decision import WORKSPACE_HYPOTHESIS_CREATION_PHASES
@@ -305,10 +306,12 @@ def _ensure_unique_hypothesis_id(model: dict[str, Any], hypothesis_id: str) -> N
 
 def _require_initial_hypothesis_evidence(root: Path, evidence_refs: list[str]) -> None:
     registry = read_json(root / "evidence_registry.json")
-    for entry in registry.get("evidence", []):
+    view = evidence_lifecycle_view(registry.get("evidence", []))
+    resolved_refs = set(view.resolve_refs(evidence_refs))
+    for entry in view.active_records:
         if not isinstance(entry, dict):
             continue
-        if entry.get("evidence_id") in evidence_refs and entry.get("role") == "initial_mechanism_hypothesis":
+        if entry.get("evidence_id") in resolved_refs and entry.get("role") == "initial_mechanism_hypothesis":
             return
     raise ValueError("initial hypothesis requires evidence role initial_mechanism_hypothesis")
 

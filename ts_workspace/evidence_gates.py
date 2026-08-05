@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from .evidence_lifecycle import evidence_lifecycle_view
+
 
 class EvidenceGateError(ValueError):
     """Raised when evidence cannot satisfy a workflow gate."""
@@ -29,7 +31,7 @@ def strict_pathway_decision(evidence_records: list[Any], evidence_refs: list[str
     """Return the strict accepted/not-accepted decision cited by an audit."""
 
     invalid: list[str] = []
-    allowed_refs = set(evidence_refs)
+    evidence_records, allowed_refs = _active_evidence_scope(evidence_records, evidence_refs)
     for entry in evidence_records:
         if not isinstance(entry, dict):
             continue
@@ -63,7 +65,7 @@ def accepted_gate_evidence(
     report hypothesis mismatches first.
     """
 
-    allowed_refs = set(evidence_refs)
+    evidence_records, allowed_refs = _active_evidence_scope(evidence_records, evidence_refs)
     recognized_roles = set(BASE_ACCEPTED_GATE_ROLES)
     recognized_roles.add(STEREOCHEMICAL_GATE_ROLE)
     gate_evidence: dict[str, Any] = {}
@@ -155,7 +157,7 @@ def mechanism_reflection_gate_evidence(
 ) -> dict[str, Any]:
     """Return evidence records satisfying declared mechanism-reflection roles."""
 
-    allowed_refs = set(evidence_refs)
+    evidence_records, allowed_refs = _active_evidence_scope(evidence_records, evidence_refs)
     required = set(required_roles) & MECHANISM_REFLECTION_GATE_ROLES
     gate_evidence: dict[str, Any] = {}
     gate_hypothesis_ids: set[str] = set()
@@ -197,6 +199,14 @@ def validate_mechanism_reflection_gate(record: dict[str, Any], role: str) -> Non
     pending_key = role.replace("_gate", "_gate_pending")
     if quality.get(pending_key) is True:
         raise EvidenceGateError(f"{role} is still pending: {evidence_id}")
+
+
+def _active_evidence_scope(
+    evidence_records: list[Any],
+    evidence_refs: list[str],
+) -> tuple[list[dict[str, Any]], set[str]]:
+    view = evidence_lifecycle_view(evidence_records)
+    return view.active_records, set(view.resolve_refs(evidence_refs))
 
 
 def validate_strict_connectivity_gate(connectivity_gate: dict[str, Any]) -> None:

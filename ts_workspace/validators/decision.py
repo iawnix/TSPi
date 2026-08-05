@@ -420,6 +420,25 @@ def _validate_update_payload(payload: dict[str, Any]) -> None:
             for field in ("evidence_id", "kind", "role", "evidence_tier", "node_id", "summary"):
                 _require(_clean(item.get(field)), f"append_evidence.{field} is required")
             _require(item["evidence_tier"] in VALID_EVIDENCE_TIERS, "append_evidence.evidence_tier is invalid")
+            is_lifecycle_event = item.get("kind") == "evidence_lifecycle"
+            if is_lifecycle_event:
+                _require(
+                    item.get("role") == "evidence_lifecycle",
+                    "evidence lifecycle event must use role=evidence_lifecycle",
+                )
+                _require(
+                    item.get("lifecycle_status") in {"withdrawn", "invalidated"},
+                    "evidence lifecycle event requires lifecycle_status withdrawn or invalidated",
+                )
+                _require(
+                    _clean(item.get("supersedes_evidence_id")),
+                    "evidence lifecycle event requires supersedes_evidence_id",
+                )
+            else:
+                _require(
+                    item.get("lifecycle_status") is None,
+                    "lifecycle_status is reserved for evidence lifecycle events",
+                )
 
 def _validate_hypothesis_ref(value: Any, path: str) -> None:
     _require(isinstance(value, dict), f"{path} is required")

@@ -17,6 +17,8 @@
     "parser_name": {"type": "string", "minLength": 1},
     "parser_version": {"type": "string", "minLength": 1},
     "normal_termination": {"type": "boolean"},
+    "supersedes_evidence_id": {"type": "string", "minLength": 1},
+    "lifecycle_status": {"enum": ["withdrawn", "invalidated"]},
     "summary": {"type": "string", "minLength": 1},
     "quality": {"type": "object"},
     "diagnostics": {"type": "array", "items": {"type": "string"}}

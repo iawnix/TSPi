@@ -105,6 +105,18 @@ contains `quality.strict_pathway_decision=accepted` or
 Evidence registration does not itself set hypothesis or audit status. The Root
 Agent opens the appropriate mechanism or audit node.
 
+Evidence history is append-only. To replace an incomplete or incorrectly owned
+record, append a new evidence record with
+`supersedes_evidence_id=<old_evidence_id>`. To retain a record in history while
+removing it from the current evidence view, append an `evidence_lifecycle`
+record with `role=evidence_lifecycle`,
+`lifecycle_status=withdrawn|invalidated`, and
+`supersedes_evidence_id=<target_evidence_id>`. Targets must be earlier active
+records. Validators, scientific gates, and default reports consume active
+evidence only; references to superseded evidence resolve to the active
+replacement. Withdrawn and invalidated references resolve to no current
+evidence and therefore cannot satisfy a gate.
+
 ## Recalculation And Retries
 
 - Technical retry: another attempt under the same node with
@@ -130,3 +142,8 @@ Workspace validation checks:
 
 Warnings expose suspicious but recoverable state. Validators do not choose the
 next branch, retry, hypothesis, or stop decision.
+
+`validate_decision` runs the same mutation and finalizer path as apply against
+an isolated temporary workspace copy. Therefore a successful preflight must
+cover finalizer-only evidence gates as well as schema and context checks while
+leaving the source workspace unchanged.

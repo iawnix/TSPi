@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
-const { parseJsonOutput, resolveWorkspaceRoot } = require("../ts-workflow-context/summary.cjs");
+const { parseJsonOutput, resolveWorkspaceRoot } = require("../ts-workflow-control/summary.cjs");
 
 const SHARED_DIR = dirname(fileURLToPath(import.meta.url));
 export const PACKAGE_ROOT = resolve(SHARED_DIR, "..", "..");

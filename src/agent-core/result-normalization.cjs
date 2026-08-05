@@ -1,5 +1,7 @@
 "use strict";
 
+const { normalizeFactKind } = require("./fact-kinds.cjs");
+
 function normalizeAgentResultInput(value, options = {}) {
   if (!isPlainObject(value)) return value;
   const normalized = { ...value };
@@ -12,6 +14,7 @@ function normalizeAgentResultInput(value, options = {}) {
   normalized.facts = normalized.facts.map((fact, index) => {
     if (!isPlainObject(fact)) return fact;
     const normalizedFact = { ...fact };
+    normalizedFact.kind = normalizeFactKind(normalizedFact.kind);
     if (
       Object.prototype.hasOwnProperty.call(normalizedFact, "artifact_ref")
       && !Object.prototype.hasOwnProperty.call(normalizedFact, "basis_refs")

@@ -7,7 +7,7 @@ const {
   buildBranchContextSummary,
   buildContextSummary,
   buildNodeContextSummary,
-} = require("../../../extensions/ts-workflow-context/summary.cjs");
+} = require("../../../extensions/ts-workflow-control/summary.cjs");
 const { validateAgentTask } = require("../../agent-core/agent-protocol.cjs");
 
 const REVIEW_CEILINGS = Object.freeze({

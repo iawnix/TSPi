@@ -11,8 +11,8 @@ Required mutation provenance:
 - explicit rationale and evidence refs
 - one bounded payload
 
-Pi constructs this envelope with `ts_workspace_decide`, validates it with
-`ts_workspace_validate`, and applies it with `ts_workspace_apply`.
+Pi constructs this envelope with `ts_workspace_decision_draft`, validates it with
+`ts_workspace_decision_validate`, and applies it with `ts_workspace_decision_apply`.
 
 ## Start Intake
 
@@ -216,7 +216,7 @@ only.
 ## Apply Sequence
 
 ```text
-ts_workspace_context -> ts_workspace_decide -> ts_workspace_validate -> ts_workspace_apply
+ts_workspace_context -> ts_workspace_decision_draft -> ts_workspace_decision_validate -> ts_workspace_decision_apply
 ```
 
 Any mutation built from a stale `base_revision` is rejected.

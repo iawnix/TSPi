@@ -98,7 +98,11 @@ export async function runComputeOperator(options: ComputeRunOptions) {
           report = parseAndValidateOperatorReport(session.getLastAssistantText() || "", options.packet, options.actions);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          throw new Error(`compute operator report validation failed: ${message}`);
+          const wrapped = new Error(`compute operator report validation failed: ${message}`) as Error & { code?: string };
+          if (options.actions.some((action) => action.result?.action_status !== "started")) {
+            wrapped.code = "REPORT_SERIALIZATION_FAILED_AFTER_ACTION";
+          }
+          throw wrapped;
         }
         const stats = session.getSessionStats();
         const actions = options.actions.map((action) => ({ tool: action.tool, result: action.result }));

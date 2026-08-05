@@ -118,35 +118,44 @@ this work is merged or tagged, it does not select `pi_ts_subagents`.
 
 Pi loads these extensions from the resolved package root:
 
-- `extensions/ts-workflow-context`
-- `extensions/ts-workflow-subagent`
+- `extensions/ts-workflow-control`
+- `extensions/ts-workflow-review`
 - `extensions/ts-workflow-compute`
 - `extensions/ts-workflow-artifacts`
+
+Public tool prefixes describe execution rather than subject matter:
+
+- `ts_workspace_*` calls the deterministic workspace control plane without a
+  child model session.
+- `ts_subagent_*` creates one fresh, isolated child model session.
+- `ts_mcp_*` runs deterministic MCP or cluster diagnostics without a child
+  model session.
 
 The workspace control surface is exactly:
 
 - `ts_workspace_context`: read `summary`, `delta`, `node`, `branch`, or
   `audit` context on demand.
-- `ts_workspace_decide`: construct a non-mutating `ts-decision/2` draft with
-  current report and revision provenance.
-- `ts_workspace_validate`: validate that draft against the live workspace.
-- `ts_workspace_apply`: transactionally apply a validated mutation and return
-  refreshed compact context.
+- `ts_workspace_decision_draft`: construct a non-mutating `ts-decision/2`
+  draft with current report and revision provenance.
+- `ts_workspace_decision_validate`: validate that draft against the live
+  workspace.
+- `ts_workspace_decision_apply`: transactionally apply a validated mutation
+  and return refreshed compact context.
 
 Pi also exposes:
 
-- `ts_workspace_subagent`: fresh, tool-free advisory scientific review.
-- `ts_workspace_mcp_status`: read-only `status`, `doctor`, `queues`, `nodes`,
+- `ts_subagent_review`: fresh, tool-free advisory scientific review.
+- `ts_mcp_inspect`: read-only `status`, `doctor`, `queues`, `nodes`,
   or aggregated `cluster` probe for the configured TS Cluster MCP. It has no
   upload, submit, cancel, or workspace mutation capability.
-- `ts_workspace_compute_operator`: fresh backend operator with only the typed
+- `ts_subagent_compute`: fresh backend subagent with only the typed
   tools bound to one `prepare`, `submit`, `inspect`, `collect`, `cancel`, or
   `parse` request. The Root Agent can run `submit/cancel` directly after
   preflight; no interactive confirmation is required.
-- `ts_workspace_render_operator`: node-scoped local render with bound paths.
-- `ts_workspace_report_operator`: validated report-package build under
+- `ts_subagent_render`: node-scoped local render with bound paths.
+- `ts_subagent_report`: validated report-package build under
   `reports/`.
-- `ts_workspace_email_operator`: local draft JSON from a generated report
+- `ts_subagent_email_draft`: local draft JSON from a generated report
   summary and explicit recipients. Sending is unavailable.
 
 Users can run the same MCP diagnostics with
@@ -224,7 +233,7 @@ For scheduler-backed execution, the bundled TS Cluster MCP binds one
 artifacts, and resource request. It persists known scheduler IDs across
 post-`qsub` failures and forbids automatic retry after ambiguous submission or
 cancellation outcomes. Raw MCP tools are a host-side boundary and are not in
-the Root or child inventories; the public compute operator creates one scoped
+the Root or child inventories; the public compute subagent creates one scoped
 wrapper after a read-only connection preflight and exact intent binding.
 Scheduler records are not
 scientific evidence. Complete server installation, `cluster-mcp check`, token

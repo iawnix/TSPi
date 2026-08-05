@@ -12,11 +12,13 @@ import {
   runReportJson,
   runWorkspaceJson,
 } from "../shared/workspace-cli.ts";
+import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 import { runArtifactOperator } from "../../src/agents/artifacts/runtime.ts";
 
 const require = createRequire(import.meta.url);
-const { toolText } = require("../ts-workflow-context/summary.cjs");
+const { toolText } = require("../ts-workflow-control/summary.cjs");
 const { beginAgentRun, completeAgentRun, failAgentRun } = require("../../src/agent-core/run-journal.cjs");
+const { classifyUpstreamModelFailure } = require("../../src/agent-core/failure-taxonomy.cjs");
 const {
   RENDER_OPERATIONS,
   validateEmailRequest,
@@ -57,12 +59,12 @@ const EMAIL_DRAFT_PARAMETERS = Type.Object({
 
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
-    name: "ts_workspace_render_operator",
-    label: "TS Render Operator",
+    name: TS_PUBLIC_TOOL_NAMES.subagentRender,
+    label: "TS Render Subagent",
     description: "Run one fresh render subagent with a single path-bound local rendering tool.",
     promptSnippet: "Render bounded local transition-state artifacts",
     promptGuidelines: [
-      "Select the owning node and exact workspace-relative input/output refs before calling the render operator.",
+      "Select the owning node and exact workspace-relative input/output refs before calling the render subagent.",
       "Treat rendered images as visualization artifacts, never as scientific support or acceptance evidence.",
     ],
     executionMode: "sequential",
@@ -104,8 +106,8 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: "ts_workspace_report_operator",
-    label: "TS Report Operator",
+    name: TS_PUBLIC_TOOL_NAMES.subagentReport,
+    label: "TS Report Subagent",
     description: "Run one fresh report subagent that builds a validated local report package without adding claims.",
     promptSnippet: "Build a bounded transition-state report package",
     promptGuidelines: [
@@ -139,13 +141,13 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: "ts_workspace_email_operator",
-    label: "TS Email Draft Operator",
+    name: TS_PUBLIC_TOOL_NAMES.subagentEmailDraft,
+    label: "TS Email Draft Subagent",
     description: "Run one fresh email subagent that writes a local draft artifact; sending and network access are unavailable.",
     promptSnippet: "Draft an email from a generated TS report summary",
     promptGuidelines: [
       "Use only explicit recipients and a generated report email_summary.md.",
-      "This operator is draft-only. It cannot send, infer addresses, select a sender, or access credentials.",
+      "This subagent is draft-only. It cannot send, infer addresses, select a sender, or access credentials.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
@@ -448,16 +450,24 @@ async function executeChild(
       state: typeof action.result.state === "string" ? action.result.state : null,
       artifact_refs: Array.isArray(action.result.artifact_refs) ? action.result.artifact_refs : [],
     }));
+    const failure = classifyUpstreamModelFailure(error, { replaySafe: actions.length === 0 }) || {
+      failure_class: actions.length ? "artifact_operator_failed_after_action" : "artifact_operator_failed_before_action",
+      failure_stage: actions.length ? "operator" : "pre_action",
+      failure_domain: "artifact_operator",
+      upstream_status: null,
+      retry_safe: actions.length === 0,
+    };
     const runRef = failAgentRun(journal, {
       actions,
       error,
-      metadata: { role, operation: String(packet.operation) },
+      metadata: { role, operation: String(packet.operation), ...failure },
     });
     pi.appendEntry("ts-workspace-artifact-operator-failed", {
       task_id: packet.task_id,
       role,
       operation: String(packet.operation),
       attempted_actions: attemptedActions,
+      ...failure,
       run_ref: runRef,
     });
     if (actions.length) {

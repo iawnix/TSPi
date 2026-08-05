@@ -1,6 +1,6 @@
 # Compute Operator Contract
 
-`ts_workspace_compute_operator` creates one fresh backend child session for one
+`ts_subagent_compute` creates one fresh backend child session for one
 bound operation:
 
 - `prepare`: validate and persist a bound intent without executing it;
@@ -10,11 +10,14 @@ bound operation:
 - `cancel`: perform one pre-bound cancellation of the bound job;
 - `parse`: run a deterministic parser on a local attempt artifact.
 
-`collect` remains one child-tool call. When its durable local status exists but
-is not terminal, the shared control layer performs one fresh remote status
-query before enforcing the terminal-status gate. It never infers completion
-from backend log text or downloads artifacts while the refreshed state remains
-active or unresolved.
+`collect` remains one child-tool call, but it does not query the scheduler or
+require that a finished job remain visible in scheduler history. Before
+download, the shared control layer binds the immutable submit result, durable
+receipt, job ID, remote directory, intent digest, and expected-artifact
+manifest. It then downloads only the bound artifact names without overwrite.
+An observed local terminal program status is preserved; otherwise collection
+uses `program_status=not_run` until a deterministic local parser establishes
+the program outcome.
 
 The child has no parent history, general filesystem, shell, workspace mutation,
 scientific review, or recursive delegation. It receives only the selected
@@ -32,6 +35,19 @@ a failed status action plus a successful bounded tail is `outcome=partial`.
 The tail basename is not a local artifact. A program fact derived from it may
 cite only the persisted `actions.json#/actions/<index>/result` record, and it
 never implies a scientific verdict.
+
+Facts use one shared vocabulary across typed actions and wrapper reports:
+`compute_preparation`, `submission`, `inspection`, `collection`,
+`cancellation`, `program_status`, and `parser`. Legacy aliases are normalized
+only at the report parse boundary. If an action succeeded but report
+serialization failed, the journal records
+`failure_class=report_serialization_failed_after_action` and
+`retry_safe=false`; this is distinct from an action that never ran and from a
+remote program failure. An upstream API/SSE interruption such as `408 stream
+disconnected before completion` is recorded under
+`failure_domain=upstream_model_api` and `failure_stage=model_stream`, never as
+an MCP, scheduler, Gaussian, or canonical-workspace failure. It is replay-safe
+only when no bounded action ran before the interruption.
 
 ## Calculation Intent V2
 
@@ -103,7 +119,11 @@ operator until a typed RDKit adapter is implemented and tested.
 
 An intent cannot supply a shell command. Gaussian preparation verifies that
 the existing route contains flags required by the declared task type; it does
-not choose or rewrite the route.
+not choose or rewrite the route. Backend input roles are exact: Gaussian
+accepts only `input_refs.gjf`; unexpected roles such as `source_xyz` are
+rejected with explicit `missing=[...]` and `unexpected=[...]` diagnostics.
+The public Pi `parse` schema requires both `intentId` and `artifactRef` before
+the call reaches the adapter.
 
 ## Local Authority
 
@@ -197,7 +217,7 @@ reconciliation.
 For MCP `submit`, `inspect`, `collect`, and `cancel`, intent binding is followed
 by a read-only `cluster_capabilities` probe before child creation. A failed
 probe stops the operation with a classified, redacted error.
-Use `ts_workspace_mcp_status` or `/ts-mcp doctor` for connection details,
+Use `ts_mcp_inspect` or `/ts-mcp doctor` for connection details,
 `/ts-mcp queues` or `/ts-mcp nodes` for one scheduler view, and `/ts-mcp
 cluster` for combined cluster status. Use these read-only diagnostics only for
 an intent whose selected transport is MCP. Do not change from MCP to SSH or from

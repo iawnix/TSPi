@@ -16,6 +16,17 @@ from ts_workspace.io import write_json
 Coord = Tuple[str, float, float, float]
 Frame = Tuple[str, List[Coord]]
 
+ROUTE_KEYWORDS_WITH_KNOWN_LINE_WRAPS = (
+    ("noeigentest", "NoEigenTest"),
+    ("maxcycles", "MaxCycles"),
+    ("maxcycle", "MaxCycle"),
+    ("ultrafine", "UltraFine"),
+    ("verytight", "VeryTight"),
+    ("calcfc", "CalcFC"),
+    ("nosymm", "NoSymm"),
+    ("freq", "Freq"),
+)
+
 
 PERIODIC_TABLE = [
     "",
@@ -185,9 +196,19 @@ def route_requires_extra_section(route: str) -> bool:
 
 
 def compact_route(route: str) -> str:
-    route = route.strip()
+    route = normalize_route_readback(route).strip()
     route = re.sub(r"^\s*#\s*[pnPN]?\s*", "", route)
     return re.sub(r"\s+", " ", route).strip().lower()
+
+
+def normalize_route_readback(route: str) -> str:
+    """Repair Gaussian fixed-width line wraps inside known route keywords."""
+
+    normalized = route
+    for keyword, canonical in ROUTE_KEYWORDS_WITH_KNOWN_LINE_WRAPS:
+        pattern = r"\b" + r"\s*".join(re.escape(character) for character in keyword) + r"\b"
+        normalized = re.sub(pattern, canonical, normalized, flags=re.IGNORECASE)
+    return re.sub(r"\s+", " ", normalized).strip()
 
 
 def read_gjf_route(path: Path) -> str:
@@ -204,7 +225,7 @@ def read_gjf_route(path: Path) -> str:
         if not stripped:
             break
         route_lines.append(stripped)
-    return " ".join(route_lines)
+    return normalize_route_readback(" ".join(route_lines))
 
 
 def extract_log_route(lines: list[str]) -> str | None:
@@ -222,7 +243,7 @@ def extract_log_route(lines: list[str]) -> str | None:
         break
     if not route_lines:
         return None
-    return " ".join(route_lines)
+    return normalize_route_readback(" ".join(route_lines))
 
 
 def route_settings(route: str | None) -> dict[str, object]:
@@ -261,9 +282,6 @@ def route_expectation(expected_route: str | None, log_route: str | None, text: s
         if key in expected_settings and key in log_settings and expected_settings[key] != log_settings[key]:
             mismatches.append(f"{key}_differs")
     effective_maxima = sorted({int(value) for value in re.findall(r"out of a maximum of\s+(\d+)", text, flags=re.I)})
-    expected_maxcycle = expected_settings.get("maxcycle")
-    if isinstance(expected_maxcycle, int) and effective_maxima and expected_maxcycle not in effective_maxima:
-        mismatches.append("maxcycle_not_seen_in_effective_step_limits")
     return {
         "checked": True,
         "matched": not mismatches,
@@ -273,6 +291,7 @@ def route_expectation(expected_route: str | None, log_route: str | None, text: s
         "expected_settings": expected_settings,
         "log_settings": log_settings,
         "effective_step_maxima": effective_maxima,
+        "effective_step_limits_are_route_validation": False,
     }
 
 
@@ -479,12 +498,182 @@ def final_geometry(lines: list[str]) -> list[Coord]:
     return []
 
 
+IRC_POINT_RE = re.compile(r"Point Number:\s*(\d+)\s+Path Number:\s*(\d+)")
+IRC_DIRECTION_RE = re.compile(r"Point Number\s+\d+\s+in\s+(FORWARD|REVERSE)\s+path direction", re.I)
+IRC_COORD_RE = re.compile(
+    r"^\s*(\d+)\s+(\d+)\s+([-+0-9.DEde]+)\s+([-+0-9.DEde]+)\s+([-+0-9.DEde]+)\s*$"
+)
+IRC_REACTION_COORDINATE_RE = re.compile(
+    r"NET REACTION COORDINATE UP TO THIS POINT\s*=\s*([-+0-9.DEde]+)", re.I
+)
+SCF_ENERGY_RE = re.compile(r"SCF Done:\s+E\([^)]+\)\s*=\s*([-+0-9.DEde]+)", re.I)
+
+
+def parse_irc_path(lines: list[str], route: str | None = None) -> dict[str, object]:
+    """Parse Gaussian IRC path points; point 0 is a coordinate-free TS marker."""
+
+    points: list[dict[str, object]] = []
+    last_scf_energy: float | None = None
+    point_zero_marker_present = False
+    direction = None
+    for index, line in enumerate(lines):
+        energy_match = SCF_ENERGY_RE.search(line)
+        if energy_match:
+            last_scf_energy = float(energy_match.group(1).replace("D", "E").replace("d", "e"))
+        direction_match = IRC_DIRECTION_RE.search(line)
+        if direction_match and direction is None:
+            direction = direction_match.group(1).lower()
+        point_match = IRC_POINT_RE.search(line)
+        if point_match is None:
+            continue
+        point_number = int(point_match.group(1))
+        path_number = int(point_match.group(2))
+        if point_number == 0:
+            point_zero_marker_present = True
+            continue
+        if last_scf_energy is None:
+            raise ValueError(f"Gaussian IRC point {point_number} has no preceding SCF energy")
+        atoms, reaction_coordinate = _parse_irc_current_structure(lines, index, point_number)
+        points.append(
+            {
+                "point_number": point_number,
+                "path_number": path_number,
+                "reaction_coordinate": reaction_coordinate,
+                "electronic_energy_hartree": last_scf_energy,
+                "atoms": atoms,
+            }
+        )
+
+    if not points:
+        raise ValueError("Gaussian IRC log contains no coordinate-bearing path points")
+    point_numbers = [int(point["point_number"]) for point in points]
+    if point_numbers != list(range(1, point_numbers[-1] + 1)):
+        raise ValueError(f"Gaussian IRC point sequence is not contiguous from 1: {point_numbers}")
+    route_values = route_settings(route)
+    max_points = route_values.get("maxpoints")
+    endpoint_atoms = points[-1]["atoms"]
+    if not isinstance(endpoint_atoms, list):
+        raise TypeError("internal parser error: IRC endpoint atoms have unexpected shape")
+    compact_points = [
+        {key: point[key] for key in ("point_number", "path_number", "reaction_coordinate", "electronic_energy_hartree")}
+        for point in points
+    ]
+    return {
+        "schema_version": "gaussian-irc-path/1",
+        "direction": direction,
+        "point_zero_policy": "coordinate_free_ts_marker_excluded",
+        "point_zero_marker_present": point_zero_marker_present,
+        "first_point_number": point_numbers[0],
+        "last_point_number": point_numbers[-1],
+        "point_count": len(points),
+        "max_points_requested": max_points,
+        "max_points_reached": isinstance(max_points, int) and point_numbers[-1] == max_points,
+        "path_complete_marker": bool(
+            direction
+            and f"Calculation of {direction.upper()} path complete." in "\n".join(lines)
+        ),
+        "points": compact_points,
+        "endpoint_atoms": endpoint_atoms,
+        "coordinate_points": points,
+    }
+
+
+def _parse_irc_current_structure(
+    lines: list[str],
+    point_line_index: int,
+    point_number: int,
+) -> tuple[list[Coord], float | None]:
+    structure_index = None
+    scan_end = min(point_line_index + 250, len(lines))
+    for index in range(point_line_index + 1, scan_end):
+        if IRC_POINT_RE.search(lines[index]):
+            break
+        if "CURRENT STRUCTURE" in lines[index]:
+            structure_index = index
+            break
+    if structure_index is None:
+        raise ValueError(f"Gaussian IRC point {point_number} has no CURRENT STRUCTURE block")
+
+    atoms: list[Coord] = []
+    reaction_coordinate = None
+    for line in lines[structure_index + 1 : scan_end]:
+        match = IRC_COORD_RE.match(line)
+        if match:
+            center = int(match.group(1))
+            atomic_number = int(match.group(2))
+            if center != len(atoms) + 1:
+                raise ValueError(f"Gaussian IRC point {point_number} has non-contiguous atom centers")
+            element = PERIODIC_TABLE[atomic_number] if atomic_number < len(PERIODIC_TABLE) else f"X{atomic_number}"
+            atoms.append(
+                (
+                    element,
+                    float(match.group(3).replace("D", "E").replace("d", "e")),
+                    float(match.group(4).replace("D", "E").replace("d", "e")),
+                    float(match.group(5).replace("D", "E").replace("d", "e")),
+                )
+            )
+            continue
+        coordinate_match = IRC_REACTION_COORDINATE_RE.search(line)
+        if coordinate_match:
+            reaction_coordinate = float(
+                coordinate_match.group(1).replace("D", "E").replace("d", "e")
+            )
+            if atoms:
+                break
+        if atoms and IRC_POINT_RE.search(line):
+            break
+    if not atoms:
+        raise ValueError(f"Gaussian IRC point {point_number} CURRENT STRUCTURE has no coordinates")
+    return atoms, reaction_coordinate
+
+
 def write_xyz(path: Path, atoms: list[Coord], comment: str) -> None:
     lines = [str(len(atoms)), comment]
     for element, x, y, z in atoms:
         lines.append(f"{element:<3s} {x:16.8f} {y:16.8f} {z:16.8f}")
     lines.append("")
     path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def parse_irc_log(log_path: Path, section_index: int | None = None) -> dict[str, object]:
+    text = log_path.read_text(encoding="utf-8", errors="replace")
+    lines = text.splitlines()
+    section = select_job_section(lines, section_index)
+    section_lines = section["lines"]
+    if not isinstance(section_lines, list):
+        raise TypeError("internal parser error: section lines are unavailable")
+    section_text = "\n".join(section_lines)
+    route = extract_log_route(section_lines)
+    path = parse_irc_path(section_lines, route)
+    endpoint_atoms = path.pop("endpoint_atoms")
+    coordinate_points = path.pop("coordinate_points")
+    summary = {
+        **path,
+        "log": str(log_path),
+        "section_count": section["section_count"],
+        "selected_section_index": section["index"],
+        "gaussian_route": route,
+        "gaussian_route_settings": route_settings(route),
+        "normal_termination": "Normal termination of Gaussian" in section_text,
+        "error_termination": "Error termination" in section_text,
+        "endpoint_geometry_atoms": len(endpoint_atoms),
+    }
+    return {"summary": summary, "points": coordinate_points, "atoms": endpoint_atoms}
+
+
+def write_irc_parse_artifacts(parsed: dict[str, object], output_dir: Path, log_stem: str, log_name: str) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    summary = parsed["summary"]
+    points = parsed["points"]
+    atoms = parsed["atoms"]
+    if not isinstance(summary, dict) or not isinstance(points, list) or not isinstance(atoms, list):
+        raise TypeError("parsed Gaussian IRC artifact has unexpected shape")
+    write_json(output_dir / "irc_path_summary.json", summary)
+    write_json(
+        output_dir / "irc_path_points.json",
+        {"schema_version": "gaussian-irc-points/1", "points": points},
+    )
+    write_xyz(output_dir / f"{log_stem}_endpoint.xyz", atoms, f"IRC endpoint extracted from {log_name}")
 
 
 def parse_log(

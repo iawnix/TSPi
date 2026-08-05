@@ -6,24 +6,26 @@ import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { requireWorkspaceRoot, runWorkspaceJson } from "../shared/workspace-cli.ts";
+import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 import { runScientificReview } from "../../src/agents/review/runtime.ts";
 
 const require = createRequire(import.meta.url);
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
 const { buildTaskPacket, validateSubagentRequest } = require(resolve(EXTENSION_DIR, "..", "..", "src", "agents", "review", "task-packet.cjs"));
 const { beginAgentRun, completeAgentRun, failAgentRun } = require(resolve(EXTENSION_DIR, "..", "..", "src", "agent-core", "run-journal.cjs"));
-const { toolText } = require("../ts-workflow-context/summary.cjs");
+const { classifyUpstreamModelFailure } = require(resolve(EXTENSION_DIR, "..", "..", "src", "agent-core", "failure-taxonomy.cjs"));
+const { toolText } = require("../ts-workflow-control/summary.cjs");
 
 const REVIEW_TYPES = ["mechanism", "candidate", "tsfreq", "connectivity", "final_audit", "program_failure"] as const;
 
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
-    name: "ts_workspace_subagent",
-    label: "TS Scientific Review",
+    name: TS_PUBLIC_TOOL_NAMES.subagentReview,
+    label: "TS Review Subagent",
     description: "Run one fresh, tool-free Pi subagent for bounded advisory review of selected TS workspace evidence.",
     promptSnippet: "Delegate a bounded independent review of selected transition-state workspace evidence",
     promptGuidelines: [
-      "Use ts_workspace_subagent only at an ambiguity, failure-analysis, branch-selection, or final-audit boundary where an independent review can change the next decision.",
+      `Use ${TS_PUBLIC_TOOL_NAMES.subagentReview} only at an ambiguity, failure-analysis, branch-selection, or final-audit boundary where an independent review can change the next decision.`,
       "Treat its output as advisory analysis, not registered evidence or an accepted/pathway verdict; reconcile it against primary artifacts before mutating the workspace.",
       "Select nodeId or fromNode+anchorNode and explicit evidenceRefs/artifactRefs to keep the review scoped.",
     ],
@@ -101,10 +103,18 @@ export default function (pi: ExtensionAPI) {
           run: metadata,
         });
       } catch (error) {
-        const runRef = failAgentRun(journal, { actions: [], error });
+        const failure = classifyUpstreamModelFailure(error, { replaySafe: true }) || {
+          failure_class: "review_operator_failed",
+          failure_stage: "operator",
+          failure_domain: "review_operator",
+          upstream_status: null,
+          retry_safe: true,
+        };
+        const runRef = failAgentRun(journal, { actions: [], error, metadata: failure });
         pi.appendEntry("ts-workspace-subagent-failed", {
           task_id: packet.task_id,
           review_type: packet.operation,
+          ...failure,
           run_ref: runRef,
         });
         throw error;

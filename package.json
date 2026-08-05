@@ -31,9 +31,9 @@
     "extensions/ts-workflow-artifacts/*.ts",
     "extensions/ts-workflow-compute/*.ts",
     "extensions/ts-workflow-compute/*.cjs",
-    "extensions/ts-workflow-context/*.ts",
-    "extensions/ts-workflow-context/*.cjs",
-    "extensions/ts-workflow-subagent/*.ts",
+    "extensions/ts-workflow-control/*.ts",
+    "extensions/ts-workflow-control/*.cjs",
+    "extensions/ts-workflow-review/*.ts",
     "scripts/*.py",
     "skills/",
     "src/agent-core/*.cjs",
@@ -87,8 +87,8 @@
       "./skills/transition-state-workflow"
     ],
     "extensions": [
-      "./extensions/ts-workflow-context",
-      "./extensions/ts-workflow-subagent/index.ts",
+      "./extensions/ts-workflow-control",
+      "./extensions/ts-workflow-review/index.ts",
       "./extensions/ts-workflow-compute/index.ts",
       "./extensions/ts-workflow-artifacts/index.ts"
     ]

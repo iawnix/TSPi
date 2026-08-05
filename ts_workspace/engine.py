@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ from .finalizers import (
     validate_pathway_audit_gates,
     validate_v2_audit_gates,
 )
+from .evidence_lifecycle import evidence_lifecycle_view
 from .io import append_jsonl, apply_change, now_iso, read_json, sha256_json, write_json
 from .ontology import DECISION_SCHEMA as DECISION_SCHEMA_V2, NODE_SCHEMA as NODE_SCHEMA_V2
 from .readers import (
@@ -35,6 +37,18 @@ from .schema_validation import validate_contract
 from .validators.decision import ContractError, validate_decision as validate_decision_dict
 from .validators.decision_context import validate_decision_for_workspace
 from .validators.workspace import REQUIRED_DIRS, REQUIRED_FILES, SOFT_DIRS, validate_workspace as validate_workspace_dict
+
+
+DRY_RUN_EXCLUDED_DIRS = frozenset({
+    ".agents",
+    ".git",
+    ".pi",
+    ".pytest_cache",
+    ".runtime",
+    ".venv",
+    "__pycache__",
+    "node_modules",
+})
 
 
 def init_workspace(
@@ -260,6 +274,7 @@ def update_workspace(root: str | Path, decision: dict[str, Any]) -> dict[str, An
             registry.setdefault("evidence", []).append(stored)
             existing.add(entry["evidence_id"])
             appended["evidence"] += 1
+        evidence_lifecycle_view(registry.get("evidence", []))
         changes[registry_path] = registry
 
     provenance = payload.get("append_provenance")
@@ -765,6 +780,38 @@ def report_branch_context(root: str | Path, from_node: str, anchor_node: str) ->
 
 def validate_workspace(root: str | Path) -> dict[str, Any]:
     return validate_workspace_dict(root)
+
+
+def validate_decision_dry_run(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
+    """Run a mutation decision through its real finalizer on a disposable snapshot."""
+
+    root_path = Path(root).resolve()
+    validate_decision_for_workspace(root_path, decision)
+    action = str(decision.get("action"))
+    mutation = {
+        "start_node": start_node,
+        "propose_hypothesis": propose_hypothesis,
+        "update_workspace": update_workspace,
+        "end_node": end_node,
+    }.get(action)
+    if mutation is None:
+        return {"executed": False, "action": action, "reason": "non_mutation_decision"}
+
+    with tempfile.TemporaryDirectory(prefix="ts-workspace-decision-") as temporary:
+        snapshot = Path(temporary) / "workspace"
+        shutil.copytree(
+            root_path,
+            snapshot,
+            symlinks=True,
+            ignore_dangling_symlinks=True,
+            ignore=_ignore_dry_run_entries,
+        )
+        result = mutation(snapshot, decision)
+    return {"executed": True, "action": action, "result": result}
+
+
+def _ignore_dry_run_entries(_directory: str, names: list[str]) -> set[str]:
+    return {name for name in names if name in DRY_RUN_EXCLUDED_DIRS}
 
 
 def _require_initialized(root: Path) -> None:

@@ -24,10 +24,9 @@ def test_pi_package_registers_artifact_extension_and_root_tools() -> None:
     assert "tests/test_pi_artifact_tools.py" in package["scripts"]["test:pi-adapter"]
 
     source = (ROOT / "extensions" / "ts-workflow-artifacts" / "index.ts").read_text(encoding="utf-8")
+    for key in ("subagentRender", "subagentReport", "subagentEmailDraft"):
+        assert f"name: TS_PUBLIC_TOOL_NAMES.{key}" in source
     for name in (
-        "ts_workspace_render_operator",
-        "ts_workspace_report_operator",
-        "ts_workspace_email_operator",
         "ts_workspace_render_execute",
         "ts_workspace_report_build",
         "ts_workspace_email_draft_write",

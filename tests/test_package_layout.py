@@ -18,9 +18,9 @@ EXPECTED_FILES = [
     "extensions/ts-workflow-artifacts/*.ts",
     "extensions/ts-workflow-compute/*.ts",
     "extensions/ts-workflow-compute/*.cjs",
-    "extensions/ts-workflow-context/*.ts",
-    "extensions/ts-workflow-context/*.cjs",
-    "extensions/ts-workflow-subagent/*.ts",
+    "extensions/ts-workflow-control/*.ts",
+    "extensions/ts-workflow-control/*.cjs",
+    "extensions/ts-workflow-review/*.ts",
     "scripts/*.py",
     "skills/",
     "src/agent-core/*.cjs",
@@ -64,10 +64,18 @@ def test_public_skill_uses_nested_pi_skill_layout() -> None:
 
 
 def test_agent_sources_have_explicit_ownership_boundaries() -> None:
+    assert (ROOT / "extensions" / "shared" / "tool-catalog.ts").is_file()
+    assert not (ROOT / "extensions" / "ts-workflow-context").exists()
+    assert not (ROOT / "extensions" / "ts-workflow-subagent").exists()
     assert (ROOT / "src" / "agent-core" / "agent-protocol.cjs").is_file()
+    assert (ROOT / "src" / "agent-core" / "fact-kinds.cjs").is_file()
+    assert (ROOT / "src" / "agent-core" / "failure-taxonomy.cjs").is_file()
     assert (AGENTS_ROOT / "review" / "runtime.ts").is_file()
+    assert (AGENTS_ROOT / "review" / "prompts" / "core.md").is_file()
     assert (AGENTS_ROOT / "compute" / "runtime.ts").is_file()
     assert (AGENTS_ROOT / "artifacts" / "runtime.ts").is_file()
+    assert (AGENTS_ROOT / "artifacts" / "private-skills" / "research-report" / "SKILL.md").is_file()
+    assert (ROOT / "ts_workspace" / "evidence_lifecycle.py").is_file()
     for legacy in ("agent-core", "review-agent", "compute-agent", "artifact-agent", "agent-skills"):
         assert not (ROOT / legacy).exists()
 

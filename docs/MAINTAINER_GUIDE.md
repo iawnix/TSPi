@@ -31,6 +31,10 @@ templates, and chemistry evidence.
 - `package.json.pi.extensions` is the public Pi adapter surface. Keep public
   tool names and schemas stable unless the package contract is intentionally
   versioned.
+- Public tool prefixes are an execution contract: `ts_workspace_*` is a direct
+  deterministic workspace call, `ts_subagent_*` creates a child model session,
+  and `ts_mcp_*` is a direct deterministic infrastructure diagnostic. Do not
+  register compatibility aliases that blur these categories.
 - Pi SDK packages are peer dependencies and exact development dependencies.
   `typebox` is a direct runtime dependency because extensions import it.
 - `src/` owns TypeScript/CJS agent implementation. The Python packages and
@@ -74,11 +78,12 @@ Keep state ownership narrow.
 - `ts_report` assembles final report packages from validated evidence. Missing
   evidence should be stated explicitly, not silently inferred.
 - `extensions/shared` owns package-root and Python CLI resolution shared by Pi
-  adapters.
-- `extensions/ts-workflow-context` exposes the four-tool control plane;
-  `ts_workspace_context`, `ts_workspace_decide`, and `ts_workspace_validate`
-  are read-only, while only `ts_workspace_apply` mutates canonical state.
-- `extensions/ts-workflow-subagent` delegates bounded review requests to
+  adapters, plus the canonical public tool-name and execution-class catalog.
+- `extensions/ts-workflow-control` exposes the four-tool control plane;
+  `ts_workspace_context`, `ts_workspace_decision_draft`, and
+  `ts_workspace_decision_validate` are read-only, while only
+  `ts_workspace_decision_apply` mutates canonical state.
+- `extensions/ts-workflow-review` delegates bounded review requests to
   `src/agents/review/`. The child remains tool-free and advisory; it never becomes
   a second control plane.
 - `extensions/ts-workflow-compute` creates a fresh backend session with one
@@ -207,6 +212,16 @@ and have `ts_web` consume that result.
   MCP endpoint, token, and timeout in host environment variables only.
 - Persist submit/cancel outcomes separately from mutable status polling so an
   ambiguous outcome cannot become replayable after a later status refresh.
+- Keep collection independent of scheduler-history visibility. Revalidate the
+  immutable submit result, receipt, job ID, remote directory, intent digest,
+  and expected-artifact manifest before download; do not call status from the
+  collect path.
+- Treat Torque `C`/`F` as terminal scheduler states. When no exit status is
+  available, expose `state=completed` with `program_status=not_run` and let the
+  collected primary log determine the program outcome.
+- Classify incomplete upstream model streams as `upstream_model_api` at the
+  `model_stream` stage. Do not attribute them to a typed action, transport,
+  scientific program, or canonical workspace mutation.
 - Include control guards, results, and receipts in `operational_revision`; a
   guard without its result must surface through `pending_controls`.
 - Keep `files:write` no-overwrite for the Pi principal. Generic replacement

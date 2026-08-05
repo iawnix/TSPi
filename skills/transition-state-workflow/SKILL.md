@@ -92,11 +92,11 @@ compatibility, and the elementary-step model.
 Use these four tools in order when mutating:
 
 1. `ts_workspace_context`: `summary|delta|node|branch|audit` context.
-2. `ts_workspace_decide`: non-mutating `ts-decision/2` draft.
-3. `ts_workspace_validate`: workspace-aware preflight.
-4. `ts_workspace_apply`: transactional mutation and refreshed compact context.
+2. `ts_workspace_decision_draft`: non-mutating `ts-decision/2` draft.
+3. `ts_workspace_decision_validate`: workspace-aware preflight.
+4. `ts_workspace_decision_apply`: transactional mutation and refreshed compact context.
 
-Only `ts_workspace_apply` mutates canonical state. Do not hand-edit decision or
+Only `ts_workspace_decision_apply` mutates canonical state. Do not hand-edit decision or
 state files between decide, validate, and apply. A stale `base_revision` is
 rejected.
 
@@ -135,12 +135,16 @@ exploration to choose an anchor or branch relation.
 
 ## Isolated Agents
 
-Use `ts_workspace_subagent` only at high-value ambiguity, failure-analysis,
+Every `ts_subagent_*` tool creates a fresh child model session. In contrast,
+`ts_workspace_*` tools call the deterministic workspace control plane directly,
+and `ts_mcp_*` tools run deterministic infrastructure diagnostics.
+
+Use `ts_subagent_review` only at high-value ambiguity, failure-analysis,
 backtrack, or audit boundaries. Each call creates a fresh tool-free session
 with no parent history, root skills, extensions, `AGENTS.md`, or workspace
 write access.
 
-Use `ts_workspace_compute_operator` for one bound `prepare`, `submit`,
+Use `ts_subagent_compute` for one bound `prepare`, `submit`,
 `inspect`, `collect`, `cancel`, or `parse` operation. Pass the backend selected
 by the Root Agent. The child gets only request-scoped typed tools and one
 private backend skill. It cannot select methods, change the intent, register
@@ -148,7 +152,7 @@ evidence, or set a scientific status. For `submit` and `cancel`, the Root Agent
 directly creates a child with one operation bound to the current intent digest
 and target; no separate interactive approval is required.
 
-Use `ts_workspace_mcp_status` for general cluster-status and resource-availability
+Use `ts_mcp_inspect` for general cluster-status and resource-availability
 questions, preparing MCP-backed work, selecting a queue, or diagnosing a
 connection failure. For a general question about the configured MCP target, use
 `mode=cluster`; use `status`, `doctor`, `queues`, or `nodes` for narrower checks.
@@ -160,11 +164,11 @@ every turn or poll an unchanged connection. Users may run the same checks with
 `/ts-mcp status|doctor|queues|nodes|cluster`. MCP submit, cancel, upload, and
 arbitrary tool calls are not exposed by this diagnostic surface.
 
-Use `ts_workspace_render_operator` for one node-owned local render,
-`ts_workspace_report_operator` for one new validated report package, and
-`ts_workspace_email_operator` for one local email draft from a generated report
+Use `ts_subagent_render` for one node-owned local render,
+`ts_subagent_report` for one new validated report package, and
+`ts_subagent_email_draft` for one local email draft from a generated report
 summary. Each child gets one private role skill and one path-bound typed tool.
-The email operator cannot send, access a network, select a sender, infer
+The email subagent cannot send, access a network, select a sender, infer
 addresses, or read credentials.
 
 All isolated roles use `ts-agent-task/1` and `ts-agent-result/1`. Review,

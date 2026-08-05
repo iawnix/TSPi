@@ -249,6 +249,8 @@ def test_agent_directories_separate_shared_core_from_review_implementation() -> 
         assert not (ROOT / legacy).exists()
     assert {path.name for path in core_dir.iterdir()} == {
         "agent-protocol.cjs",
+        "fact-kinds.cjs",
+        "failure-taxonomy.cjs",
         "result-normalization.cjs",
         "run-journal.cjs",
         "session-lifecycle.cjs",
@@ -320,7 +322,7 @@ def test_disposable_session_covers_success_and_error(mode: str) -> None:
 
 def test_pi_subagent_runtime_and_extension_enforce_isolation() -> None:
     runtime = (REVIEW_AGENT / "runtime.ts").read_text(encoding="utf-8")
-    extension = (ROOT / "extensions" / "ts-workflow-subagent" / "index.ts").read_text(encoding="utf-8")
+    extension = (ROOT / "extensions" / "ts-workflow-review" / "index.ts").read_text(encoding="utf-8")
 
     assert 'noTools: "all"' in runtime
     assert "SessionManager.inMemory(options.workspaceRoot)" in runtime
@@ -332,7 +334,7 @@ def test_pi_subagent_runtime_and_extension_enforce_isolation() -> None:
     assert "withDisposableSession" in runtime
     assert "parseAndValidateReviewResult" in runtime
     assert "setRuntimeApiKey" in runtime
-    assert 'name: "ts_workspace_subagent"' in extension
+    assert "name: TS_PUBLIC_TOOL_NAMES.subagentReview" in extension
     assert 'executionMode: "sequential"' in extension
     assert 'pi.appendEntry("ts-workspace-subagent-run"' in extension
     assert "getApiKeyAndHeaders" in extension

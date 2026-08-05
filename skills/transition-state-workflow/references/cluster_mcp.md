@@ -330,7 +330,7 @@ contains aggregate queue and node resource counts, not raw per-node job lists.
 Use it only for the configured MCP target. Follow the calculation intent's
 transport or the user's explicit target, and never switch to SSH automatically
 after an MCP failure. Reports that compare transports must identify the source
-of each result. The Agent sees the read-only `ts_workspace_mcp_status` tool
+of each result. The Agent sees the read-only `ts_mcp_inspect` tool
 registration without receiving an MCP report on every turn.
 
 ## Run Under systemd
@@ -468,7 +468,7 @@ be verified locally, parsed deterministically, and registered through a later
 selects `transport=mcp` but never contains the endpoint, bearer token, or other
 credentials.
 
-`ts_workspace_compute_operator` exposes submission and cancellation through a
+`ts_subagent_compute` exposes submission and cancellation through a
 narrow host wrapper. It binds the intent, performs a read-only MCP connection
 preflight, and creates a fresh child with exactly one request-scoped tool. The
 Root Agent can invoke this path directly in interactive or headless Pi; the MCP

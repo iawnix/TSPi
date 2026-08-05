@@ -166,6 +166,35 @@ def _gaussian_log() -> str:
     )
 
 
+def _gaussian_irc_log() -> str:
+    return "\n".join(
+        [
+            " Entering Link 1 = synthetic",
+            " #P B3LYP/6-31G(d) IRC=(Forward,MaxPoints=2)",
+            " -------------------------------------------------------------------",
+            " Point Number:   0          Path Number:   1",
+            " Point Number  1 in FORWARD path direction.",
+            " SCF Done:  E(RB3LYP) =  -40.100000 A.U.",
+            " Point Number:   1          Path Number:   1",
+            "                    CURRENT STRUCTURE",
+            " Center Atomic Coordinates",
+            "      1          6        0.000000  0.000000  0.000000",
+            "      2          1        1.000000  0.000000  0.000000",
+            " NET REACTION COORDINATE UP TO THIS POINT = 0.10000",
+            " Point Number  2 in FORWARD path direction.",
+            " SCF Done:  E(RB3LYP) =  -40.200000 A.U.",
+            " Point Number:   2          Path Number:   1",
+            "                    CURRENT STRUCTURE",
+            " Center Atomic Coordinates",
+            "      1          6        0.100000  0.000000  0.000000",
+            "      2          1        1.100000  0.000000  0.000000",
+            " NET REACTION COORDINATE UP TO THIS POINT = 0.20000",
+            " Calculation of FORWARD path complete.",
+            " Normal termination of Gaussian 16",
+        ]
+    )
+
+
 def test_compute_preflight_binds_workspace_intent_scope_and_digest(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     intent_path = _intent_v2(workspace)
@@ -609,7 +638,13 @@ def test_mcp_transport_submit_status_tail_collect_and_cancel(
                 command=["mcp", "ts_submit_job", request["submission_id"]],
                 receipt_path=f"{request['workdir']}/ts_submission.json",
                 scheduler_id="42001.cluster",
-                metadata={"submission_id": request["submission_id"]},
+                metadata={
+                    "submission_id": request["submission_id"],
+                    "intent_id": request["intent_id"],
+                    "intent_digest": request["intent_digest"],
+                    "backend": request["backend"],
+                    "expected_artifacts": json.dumps(request["expected_artifacts"]),
+                },
             )
 
         def status(self, submission_id: str, *, include_history: bool):
@@ -692,7 +727,14 @@ def test_mcp_transport_submit_status_tail_collect_and_cancel(
     client.status = original_status
     tail = calculation_tail(workspace, intent_id, "candidate.log", 1)
     assert tail["text"] == "Normal termination"
+    client.scheduler_state = "C"
+    status = calculation_status(workspace, intent_id)
+    assert status["state"] == "completed"
+    assert status["program_status"] == "not_run"
+    assert status["error_class"] is None
     client.scheduler_state = "F"
+    status = calculation_status(workspace, intent_id)
+    assert status["program_status"] == "completed"
     collected = collect_calculation(workspace, intent_id, ["candidate.log"])
     assert collected["program_status"] == "completed"
     assert collected["artifact_refs"] == [
@@ -804,6 +846,19 @@ def test_prepare_rejects_canonical_state_as_backend_input(tmp_path: Path) -> Non
         prepare_calculation(workspace, intent_path)
 
 
+def test_gaussian_prepare_reports_unexpected_input_roles(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    source_xyz = workspace / "nodes/n001/inputs/source.xyz"
+    source_xyz.write_text("1\nsource\nH 0 0 0\n", encoding="utf-8")
+    intent_path = _intent(workspace)
+    intent = json.loads(intent_path.read_text(encoding="utf-8"))
+    intent["input_refs"]["source_xyz"] = "nodes/n001/inputs/source.xyz"
+    intent_path.write_text(json.dumps(intent), encoding="utf-8")
+
+    with pytest.raises(ComputeContractError, match=r"unexpected=\['source_xyz'\]"):
+        prepare_calculation(workspace, intent_path)
+
+
 def test_remote_target_requires_host_and_directory_allowlists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     workspace = _workspace(tmp_path)
     intent_path = _intent(workspace, target=_remote_target())
@@ -825,10 +880,10 @@ def test_status_tail_and_collect_use_prepared_remote_scope(
 ) -> None:
     workspace = _workspace(tmp_path)
     _allow_remote(monkeypatch)
-    prepare_calculation(workspace, _intent(workspace, target=_remote_target()))
+    prepare_calculation(workspace, _intent(workspace, target=_remote_target(), dry_run=False))
     seen: dict[str, object] = {}
 
-    poll_states = iter(["running", "completed"])
+    poll_states = iter(["running"])
 
     def fake_poll(config):
         seen.setdefault("poll", []).append(config)
@@ -856,7 +911,20 @@ def test_status_tail_and_collect_use_prepared_remote_scope(
     monkeypatch.setattr("ts_compute.control.job_lifecycle.poll", fake_poll)
     monkeypatch.setattr("ts_compute.control.job_lifecycle.tail", fake_tail)
     monkeypatch.setattr("ts_compute.control.job_lifecycle.fetch", fake_fetch)
+    monkeypatch.setattr(
+        "ts_compute.control.job_lifecycle.submit_async",
+        lambda config: RemoteReceipt(
+            node_id=config.node_id,
+            host=config.compute_host,
+            remote_dir=config.remote_dir,
+            command=config.command,
+            receipt_path=f"{config.remote_dir}/remote_receipt.json",
+            scheduler_id="123",
+            metadata={"expected_artifacts": json.dumps(list(config.expected_artifacts))},
+        ),
+    )
 
+    submit_calculation(workspace, "calc_n001_optfreq_001")
     status = calculation_status(workspace, "calc_n001_optfreq_001")
     tail = calculation_tail(workspace, "calc_n001_optfreq_001", "candidate.log", 40)
     collected = collect_calculation(workspace, "calc_n001_optfreq_001", ["candidate.log"])
@@ -866,11 +934,11 @@ def test_status_tail_and_collect_use_prepared_remote_scope(
     assert tail["text"] == "normal termination\n"
     assert seen["tail"] == ("candidate.log", 40)
     assert seen["fetch"] == (["candidate.log"], False)
-    assert collected["program_status"] == "completed"
+    assert collected["program_status"] == "not_run"
     assert collected["artifact_refs"] == [
         "nodes/n001/outputs/calculations/calc_n001_optfreq_001/collected/candidate.log"
     ]
-    assert len(seen["poll"]) == 2
+    assert len(seen["poll"]) == 1
     config = seen["poll"][-1]
     assert config.login_host == "login.test"
     assert config.compute_host == "compute.test"
@@ -885,22 +953,22 @@ def test_status_tail_and_collect_use_prepared_remote_scope(
         collect_calculation(workspace, "calc_n001_optfreq_001", ["candidate.log"])
 
 
-def test_collect_requires_terminal_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_collect_requires_durable_submit_binding(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     workspace = _workspace(tmp_path)
     _allow_remote(monkeypatch)
     prepare_calculation(workspace, _intent(workspace, target=_remote_target()))
 
-    with pytest.raises(ComputeContractError, match="terminal calculation status"):
+    with pytest.raises(ComputeContractError, match="durable successful submit result"):
         collect_calculation(workspace, "calc_n001_optfreq_001", ["candidate.log"])
 
 
-def test_collect_refreshes_once_and_rejects_active_status(
+def test_collect_does_not_refresh_active_scheduler_status(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace = _workspace(tmp_path)
     _allow_remote(monkeypatch)
-    prepare_calculation(workspace, _intent(workspace, target=_remote_target()))
+    prepare_calculation(workspace, _intent(workspace, target=_remote_target(), dry_run=False))
     polls = 0
 
     def fake_poll(_config):
@@ -914,17 +982,32 @@ def test_collect_refreshes_once_and_rejects_active_status(
             pid="123",
         )
 
-    def unexpected_fetch(*_args, **_kwargs):
-        raise AssertionError("active calculation artifacts must not be fetched")
+    def fake_fetch(config, *, artifacts, tolerate_missing):
+        config.output_dir.mkdir(parents=True, exist_ok=True)
+        (config.output_dir / "candidate.log").write_text(_gaussian_log(), encoding="utf-8")
+        return list(artifacts)
 
     monkeypatch.setattr("ts_compute.control.job_lifecycle.poll", fake_poll)
-    monkeypatch.setattr("ts_compute.control.job_lifecycle.fetch", unexpected_fetch)
+    monkeypatch.setattr("ts_compute.control.job_lifecycle.fetch", fake_fetch)
+    monkeypatch.setattr(
+        "ts_compute.control.job_lifecycle.submit_async",
+        lambda config: RemoteReceipt(
+            node_id=config.node_id,
+            host=config.compute_host,
+            remote_dir=config.remote_dir,
+            command=config.command,
+            receipt_path=f"{config.remote_dir}/remote_receipt.json",
+            scheduler_id="123",
+            metadata={"expected_artifacts": json.dumps(list(config.expected_artifacts))},
+        ),
+    )
 
+    submit_calculation(workspace, "calc_n001_optfreq_001")
     calculation_status(workspace, "calc_n001_optfreq_001")
-    with pytest.raises(ComputeContractError, match="terminal calculation status"):
-        collect_calculation(workspace, "calc_n001_optfreq_001", ["candidate.log"])
+    collected = collect_calculation(workspace, "calc_n001_optfreq_001", ["candidate.log"])
 
-    assert polls == 2
+    assert collected["program_status"] == "not_run"
+    assert polls == 1
 
 
 def test_prepared_backend_metadata_is_revalidated_before_remote_access(
@@ -975,6 +1058,48 @@ def test_gaussian_parse_returns_program_facts_without_workspace_verdict(tmp_path
     foreign.write_text(_gaussian_log(), encoding="utf-8")
     with pytest.raises(ComputeContractError, match="nodes/n001/outputs"):
         parse_calculation(workspace, "calc_n001_optfreq_001", "nodes/n000/outputs/candidate.log")
+
+
+def test_gaussian_irc_parse_writes_attempt_contract_artifacts(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    intent_id = "calc_n001_irc_001"
+    gjf = workspace / "nodes/n001/inputs/irc.gjf"
+    gjf.write_text(
+        "%chk=irc.chk\n#P B3LYP/6-31G(d) IRC=(Forward,MaxPoints=2)\n\nIRC\n\n0 1\nH 0 0 0\n\n",
+        encoding="utf-8",
+    )
+    intent = {
+        "schema_version": "ts-calculation-intent/1",
+        "intent_id": intent_id,
+        "node_id": "n001",
+        "purpose": "Parse one forward IRC path without making a connectivity verdict.",
+        "evidence_layer": "connectivity",
+        "backend": "gaussian",
+        "task_type": "irc",
+        "input_refs": {"gjf": "nodes/n001/inputs/irc.gjf"},
+        "settings": {},
+        "expected_artifacts": ["nodes/n001/outputs/irc.log"],
+        "execution_target": {"kind": "local"},
+        "dry_run": True,
+    }
+    intent_path = workspace / "nodes/n001/scratch/irc-intent.json"
+    intent_path.write_text(json.dumps(intent), encoding="utf-8")
+    prepare_calculation(workspace, intent_path)
+    source = workspace / "nodes/n001/outputs/irc.log"
+    source.write_text(_gaussian_irc_log(), encoding="utf-8")
+
+    result = parse_calculation(workspace, intent_id, "nodes/n001/outputs/irc.log")
+
+    parse_dir = workspace / f"nodes/n001/outputs/calculations/{intent_id}/parsed"
+    assert result["program_status"] == "completed"
+    assert result["provenance"]["parser_contract"] == "gaussian-irc-parser/1"
+    assert result["parser_facts"]["first_point_number"] == 1
+    assert result["parser_facts"]["last_point_number"] == 2
+    assert result["parser_facts"]["point_zero_policy"] == "coordinate_free_ts_marker_excluded"
+    assert (parse_dir / "irc_path_summary.json").is_file()
+    assert (parse_dir / "irc_path_points.json").is_file()
+    assert (parse_dir / "irc_endpoint.xyz").is_file()
+    assert (workspace / f"nodes/n001/outputs/calculations/{intent_id}/calculation_result.json").is_file()
 
 
 def test_compute_result_contract_rejects_scientific_verdict_fields() -> None:
