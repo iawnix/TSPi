@@ -1,0 +1,18 @@
+{
+  "schema_version": "ts-decision/2",
+  "decision_id": "${DECISION_ID}",
+  "action": "end_node",
+  "rationale": "Close the audit with an explicit evidence-backed status.",
+  "evidence_refs": ["${EVIDENCE_ID}"],
+  "base_revision": "${BASE_REVISION}",
+  "report_ref": {"report_id": "${REPORT_ID}", "workspace_root": "${WORKSPACE_ROOT}"},
+  "payload": {
+    "node_id": "${NODE_ID}",
+    "closure": {
+      "summary": "The declared evidence gates were audited.",
+      "program": {"outcome": "not_run", "summary": "The audit reused registered evidence.", "evidence_refs": ["${EVIDENCE_ID}"]},
+      "audit": {"status": "ambiguous", "study_complete": false, "summary": "The evidence does not yet support acceptance.", "evidence_refs": ["${EVIDENCE_ID}"]},
+      "open_questions": []
+    }
+  }
+}

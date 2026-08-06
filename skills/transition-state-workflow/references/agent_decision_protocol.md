@@ -126,8 +126,8 @@ hypotheses, ambiguous validation, conflicting evidence, failure diagnosis,
 backtrack selection, or audit readiness. The result is advisory and cannot be
 registered as primary evidence without independent local artifact support.
 
-## Legacy Templates
+## Decision Templates
 
-`assets/templates/decision/` describes the legacy phase protocol. Use it only for an
-existing legacy workspace. New v2 decisions should be constructed from
-`references/decision_contract.md` or by the Pi four-tool control plane.
+`assets/templates/decision/` contains minimal `ts-decision/2` examples. Build
+workspace-specific decisions from `references/decision_contract.md` or the Pi
+four-tool control plane, then validate before applying.

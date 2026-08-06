@@ -38,8 +38,8 @@ nodes/<node>/attempts/<intent>/
 └── outputs/
 ```
 
-Node-level inputs, non-calculation outputs, scratch, and legacy remote folders
-may also exist. Attempt records are operational artifacts, not a fourth
+Node-level inputs, non-calculation outputs, scratch, and remote folders may
+also exist. Attempt records are operational artifacts, not a fourth
 canonical state file.
 
 ## Decisions And Transactions
@@ -60,8 +60,7 @@ An unmatched prepare row is reported as `pending_transaction`. Inspect the
 snapshot and listed paths; do not blindly replay append-style writes.
 
 `init_workspace --force` is destructive and requires an explicit auditable
-decision. Legacy six-file roots may be converted with
-`migrate_workspace_state`.
+decision. Old workspace layouts are not migrated by this package.
 
 ## New Research Contract
 
@@ -76,7 +75,7 @@ decision. Legacy six-file roots may be converted with
 - Mechanism closures cannot set audit status.
 - Audit closures cannot create a hypothesis verdict.
 
-Legacy phase nodes remain readable and closable.
+Every node must conform to `ts-node/2`.
 
 ## Evidence
 

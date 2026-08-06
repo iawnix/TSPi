@@ -19,8 +19,8 @@ REPORT_TEMPLATE = REFERENCES / "report_template.md"
 WORKSPACE_CONTRACT = REFERENCES / "workspace_contract.md"
 CLUSTER_MCP = REFERENCES / "cluster_mcp.md"
 TEMPLATE_README = TEMPLATES / "decision" / "README.md"
-UPDATE_CANDIDATE_EVIDENCE = TEMPLATES / "decision" / "update_candidate_evidence.json"
-UPDATE_TSFREQ_EVIDENCE = TEMPLATES / "decision" / "update_tsfreq_evidence.json"
+UPDATE_EVIDENCE = TEMPLATES / "decision" / "update_evidence.json"
+FINAL_REPORT = TEMPLATES / "ts_final_report.md"
 
 
 def test_readme_documents_install_and_agent_entrypoints() -> None:
@@ -53,6 +53,15 @@ def test_public_agent_contract_is_pi_only() -> None:
 
     for path in paths:
         assert "Codex" not in path.read_text(encoding="utf-8"), path
+
+
+def test_final_report_template_uses_v2_node_vocabulary() -> None:
+    text = FINAL_REPORT.read_text(encoding="utf-8")
+
+    assert "| Node | Node type / scope |" in text
+    assert "{{node_type}} / {{scope}}" in text
+    for legacy_term in ("{{phase}}", "Claim verdict", "Program status"):
+        assert legacy_term not in text
 
 
 def test_readme_keeps_render_dependency_boundary_explicit() -> None:
@@ -101,17 +110,15 @@ def test_mechanism_reflection_requires_geometry_and_electronic_checks() -> None:
     normalized_candidate = " ".join(candidate_text.split())
     gaussian_text = GAUSSIAN_VALIDATION.read_text(encoding="utf-8")
     normalized_gaussian = " ".join(gaussian_text.split())
-    candidate_template = UPDATE_CANDIDATE_EVIDENCE.read_text(encoding="utf-8")
-    tsfreq_template = UPDATE_TSFREQ_EVIDENCE.read_text(encoding="utf-8")
+    evidence_template = UPDATE_EVIDENCE.read_text(encoding="utf-8")
 
     assert "local geometry and electronic structure" in mechanism_text
     assert "Every candidate-generation and TS/Freq reflection" in mechanism_text
     assert "A candidate that only satisfies target bond distances is not automatically" in normalized_candidate
-    assert "local_geometry_consistency" in candidate_template
-    assert "electronic_structure_consistency" in candidate_template
+    assert '"node_id": "${NODE_ID}"' in evidence_template
+    assert '"evidence_tier": "manual_observation"' in evidence_template
     assert "the final local geometry and available electronic diagnostics must not contradict" in normalized_gaussian
     assert "Do not start IRC from a TS/Freq result whose mechanism-consistency review is refuted" in normalized_gaussian
-    assert "connectivity_claim_allowed_without_irc" in tsfreq_template
 
 
 def test_skill_links_agent_decision_protocol_for_failed_exploration() -> None:
@@ -144,4 +151,4 @@ def test_pathway_audit_contract_is_explicit_for_agents() -> None:
     assert "must include `payload.pathway_ref`" in texts["pathway"]
     assert "do not infer it from" in texts["report"]
     assert "quality.strict_pathway_decision" in texts["workspace"]
-    assert "`start_pathway_audit.json` must keep `payload.pathway_ref` populated" in texts["templates"]
+    assert "Every post-`n000` start carries explicit `branch_context`" in texts["templates"]

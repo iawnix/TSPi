@@ -774,7 +774,7 @@ def _compute_result_chunks() -> list[dict[str, object]]:
         "scope": scope,
         "facts": [
             {
-                "kind": "program",
+                "kind": "compute_preparation",
                 "layer": None,
                 "statement": "The calculation intent was prepared but not executed.",
                 "status": "observed",

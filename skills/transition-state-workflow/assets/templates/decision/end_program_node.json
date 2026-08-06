@@ -1,0 +1,17 @@
+{
+  "schema_version": "ts-decision/2",
+  "decision_id": "${DECISION_ID}",
+  "action": "end_node",
+  "rationale": "Close candidate or validation work with program facts only.",
+  "evidence_refs": ["${EVIDENCE_ID}"],
+  "base_revision": "${BASE_REVISION}",
+  "report_ref": {"report_id": "${REPORT_ID}", "workspace_root": "${WORKSPACE_ROOT}"},
+  "payload": {
+    "node_id": "${NODE_ID}",
+    "closure": {
+      "summary": "The bounded program work is complete.",
+      "program": {"outcome": "success", "summary": "The program completed successfully.", "evidence_refs": ["${EVIDENCE_ID}"]},
+      "open_questions": []
+    }
+  }
+}

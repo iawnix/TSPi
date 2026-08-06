@@ -89,7 +89,7 @@ The evidence audit should retain:
 - Pathway audit, including negative-audit conclusions such as
    `pathway_not_accepted`. Read this from `pathway_audit_summary` evidence,
    especially `quality.strict_pathway_decision`; do not infer it from
-   an audit node's generic completion alone. Legacy `claim_verdict=supported`
+   an audit node's generic completion alone. `closure.audit.status=accepted`
    is likewise insufficient.
 
 ## Minimum Acceptance Gates

@@ -1,0 +1,23 @@
+{
+  "schema_version": "ts-decision/2",
+  "decision_id": "${DECISION_ID}",
+  "action": "end_node",
+  "rationale": "Record the hypothesis assessment without changing program facts.",
+  "evidence_refs": ["${EVIDENCE_ID}"],
+  "base_revision": "${BASE_REVISION}",
+  "report_ref": {"report_id": "${REPORT_ID}", "workspace_root": "${WORKSPACE_ROOT}"},
+  "payload": {
+    "node_id": "${NODE_ID}",
+    "closure": {
+      "summary": "The mechanism assessment is complete.",
+      "program": {"outcome": "not_run", "summary": "No external program was required.", "evidence_refs": []},
+      "hypothesis": {
+        "status": "ambiguous",
+        "summary": "The hypothesis remains testable and requires validation evidence.",
+        "evidence_refs": ["${EVIDENCE_ID}"],
+        "hypothesis_ref": {"hypothesis_id": "${HYPOTHESIS_ID}", "prediction_ids": []}
+      },
+      "open_questions": []
+    }
+  }
+}

@@ -3,8 +3,6 @@
 from .engine import (
     end_node,
     init_workspace,
-    migrate_workspace_state,
-    propose_hypothesis,
     report_branch_context,
     report_node,
     report_workspace,
@@ -22,8 +20,6 @@ __all__ = [
     "end_node",
     "ensure_workspace_identity",
     "init_workspace",
-    "migrate_workspace_state",
-    "propose_hypothesis",
     "report_branch_context",
     "report_node",
     "report_workspace",

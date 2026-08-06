@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
-from ts_workspace import end_node, init_workspace, propose_hypothesis, report_workspace, start_node, update_workspace
+from ts_workspace import end_node, init_workspace, report_workspace, start_node, update_workspace
 
 
 HYPOTHESIS_ID = "hyp_0001"
@@ -68,13 +69,13 @@ def initial_mechanism_hypothesis(
         "testable_predictions": [
             {
                 "prediction_id": "pred_mode_001",
-                "phase": "tsfreq_validation",
+                "validation_scope": "tsfreq",
                 "expectation": "The imaginary mode involves C1-N2 formation.",
                 "required_evidence_roles": ["tsfreq_gate", "mode_assignment"],
             },
             {
                 "prediction_id": "pred_conn_001",
-                "phase": "connectivity_validation",
+                "validation_scope": "connectivity",
                 "expectation": "Displacement endpoints map to the proposed reactant and product basins.",
                 "required_evidence_roles": ["connectivity_gate"],
             },
@@ -107,7 +108,7 @@ def initial_mechanism_hypothesis(
         hypothesis["testable_predictions"].append(
             {
                 "prediction_id": "pred_stereo_001",
-                "phase": "connectivity_validation",
+                "validation_scope": "connectivity",
                 "expectation": "IRC endpoints preserve the declared stereochemical assignment.",
                 "required_evidence_roles": ["stereochemical_connectivity_gate"],
             }
@@ -149,7 +150,6 @@ def bootstrap_strict_workspace(
     identity_claim: bool = False,
 ) -> dict[str, str]:
     init_workspace(workspace)
-    report_ref = _report_ref(workspace)
     hypothesis = initial_mechanism_hypothesis(
         pathway_ref=pathway_ref,
         stereochemical=stereochemical,
@@ -157,29 +157,25 @@ def bootstrap_strict_workspace(
     )
     start_node(
         workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "start_node",
-                "rationale": "Start endpoint validation.",
-            "evidence_refs": [],
-            "report_ref": report_ref,
-            "payload": {
+        _decision(
+            workspace,
+            "start_node",
+            {
                 "node_id": "n000",
-                "phase": "endpoint",
-                "hypothesis": "The supplied structures define usable endpoint basins.",
+                "parent_node": None,
+                "node_type": "intake",
+                "objective": "Normalize the supplied endpoint structures.",
                 "expected_evidence": ["reaction_center_delta"],
             },
-        },
+            rationale="Start endpoint intake.",
+        ),
     )
     update_workspace(
         workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "update_workspace",
-            "rationale": "Register endpoint evidence.",
-            "evidence_refs": [],
-            "report_ref": report_ref,
-            "payload": {
+        _decision(
+            workspace,
+            "update_workspace",
+            {
                 "append_evidence": [
                     {
                         "evidence_id": "ev_endpoint_0001",
@@ -191,72 +187,103 @@ def bootstrap_strict_workspace(
                     },
                 ]
             },
-        },
+            rationale="Register endpoint evidence.",
+        ),
     )
     end_node(
         workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "end_node",
-            "rationale": "Close endpoint validation.",
-            "evidence_refs": ["ev_endpoint_0001"],
-            "report_ref": report_ref,
-            "payload": {
+        _decision(
+            workspace,
+            "end_node",
+            {
                 "node_id": "n000",
                 "closure": {
-                    "program_status": "completed",
-                    "claim_verdict": "supported",
-                    "program": {"summary": "Endpoint validation completed.", "evidence_refs": ["ev_endpoint_0001"]},
-                    "mechanism": {"summary": "Endpoint evidence can support a mechanism proposal.", "evidence_refs": []},
-                    "implication": "Propose a mechanism hypothesis.",
+                    "summary": "Endpoint intake completed.",
+                    "program": {
+                        "outcome": "not_run",
+                        "summary": "No external program was required.",
+                        "evidence_refs": ["ev_endpoint_0001"],
+                    },
+                    "intake": {"status": "ready"},
                     "open_questions": [],
                 },
             },
-        },
+            rationale="Close endpoint intake.",
+            evidence_refs=["ev_endpoint_0001"],
+        ),
     )
-    propose_hypothesis(
+    start_node(
         workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "propose_hypothesis",
-            "rationale": "Propose the initial endpoint-derived hypothesis.",
-            "evidence_refs": ["ev_endpoint_0001"],
-            "report_ref": report_ref,
-            "payload": {
+        _decision(
+            workspace,
+            "start_node",
+            {
+                "node_id": "n_hypothesis",
+                "parent_node": "n000",
+                "node_type": "mechanism",
+                "objective": "Propose the initial endpoint-derived mechanism.",
+                "mechanism_action": "propose",
                 "proposed_hypothesis": hypothesis,
-                "proposal_context": {
-                    "kind": "initial",
+                "branch_context": {
+                    "relation": "continue_parent",
                     "from_node": "n000",
                     "anchor_node": "n000",
-                    "changed_variable": "initial_mechanism_model",
-                    "reason_code": "endpoint_interpretation",
                     "evidence_refs": ["ev_endpoint_0001"],
                 },
             },
-        },
+            rationale="Propose the initial endpoint-derived hypothesis.",
+            evidence_refs=["ev_endpoint_0001"],
+        ),
+    )
+    end_node(
+        workspace,
+        _decision(
+            workspace,
+            "end_node",
+            {
+                "node_id": "n_hypothesis",
+                "closure": {
+                    "summary": "The endpoint-derived hypothesis is explicit and testable.",
+                    "program": {
+                        "outcome": "not_run",
+                        "summary": "No external program was required.",
+                        "evidence_refs": ["ev_endpoint_0001"],
+                    },
+                    "hypothesis": {
+                        "status": "ambiguous",
+                        "summary": "The hypothesis requires candidate and validation evidence.",
+                        "evidence_refs": ["ev_endpoint_0001"],
+                        "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": []},
+                    },
+                    "open_questions": [],
+                },
+            },
+            rationale="Close the initial mechanism proposal.",
+            evidence_refs=["ev_endpoint_0001"],
+        ),
     )
     return _report_ref(workspace)
 
 
-def start_v3_node(
+def start_research_node(
     workspace: Path,
     report_ref: dict[str, str],
     *,
     node_id: str,
-    phase: str,
-    parent_node: str = "n000",
+    node_type: str,
+    scope: str,
+    parent_node: str = "n_hypothesis",
     pathway_ref: dict[str, str] | None = None,
     prediction_ids: list[str] | None = None,
     branch_context: dict[str, Any] | None = None,
-    solution_ref: dict[str, Any] | None = None,
     evidence_refs: list[str] | None = None,
 ) -> None:
     ref = {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": prediction_ids or ["pred_mode_001"]}
     payload: dict[str, Any] = {
         "node_id": node_id,
         "parent_node": parent_node,
-        "phase": phase,
-        "hypothesis": f"Test {phase} under {HYPOTHESIS_ID}.",
+        "node_type": node_type,
+        "objective": f"Run {scope} work under {HYPOTHESIS_ID}.",
         "hypothesis_ref": ref,
         "expected_evidence": [],
         "branch_context": branch_context or {
@@ -265,61 +292,63 @@ def start_v3_node(
             "anchor_node": "n000",
         },
     }
+    scope_field = {
+        "candidate_search": "candidate_kind",
+        "validation": "validation_scope",
+        "audit": "audit_scope",
+    }[node_type]
+    payload[scope_field] = scope
     if pathway_ref is not None:
         payload["pathway_ref"] = pathway_ref
-    if solution_ref is not None:
-        payload["solution_ref"] = solution_ref
     start_node(
         workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "start_node",
-            "rationale": f"Start {node_id}.",
-            "evidence_refs": evidence_refs or [],
-            "report_ref": report_ref,
-            "payload": payload,
-        },
+        _decision(
+            workspace,
+            "start_node",
+            payload,
+            rationale=f"Start {node_id}.",
+            evidence_refs=evidence_refs,
+        ),
     )
 
 
-def end_v3_node(
+def end_research_node(
     workspace: Path,
     report_ref: dict[str, str],
     *,
     node_id: str,
-    claim_verdict: str,
+    audit_status: str | None = None,
+    program_outcome: str = "success",
     evidence_refs: list[str] | None = None,
     prediction_ids: list[str] | None = None,
-    revision: dict[str, Any] | None = None,
 ) -> None:
     refs = evidence_refs or []
-    mechanism: dict[str, Any] = {
-        "summary": "Hypothesis prediction was evaluated.",
-        "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": prediction_ids or ["pred_mode_001"]},
-        "evidence_refs": refs,
+    node = json.loads((workspace / "nodes" / node_id / "node.json").read_text(encoding="utf-8"))
+    closure: dict[str, Any] = {
+        "summary": f"Close {node_id}.",
+        "program": {
+            "outcome": program_outcome,
+            "summary": "Program completed." if program_outcome == "success" else "Program did not complete successfully.",
+            "evidence_refs": refs,
+        },
+        "open_questions": [],
     }
-    if revision is not None:
-        mechanism["revision"] = revision
+    if node.get("node_type") == "audit":
+        closure["audit"] = {
+            "status": audit_status or "ambiguous",
+            "study_complete": audit_status == "accepted",
+            "summary": "The declared evidence gates were audited.",
+            "evidence_refs": refs,
+        }
     end_node(
         workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "end_node",
-            "rationale": f"Close {node_id}.",
-            "evidence_refs": refs,
-            "report_ref": report_ref,
-            "payload": {
-                "node_id": node_id,
-                "closure": {
-                    "program_status": "completed",
-                    "claim_verdict": claim_verdict,
-                    "program": {"summary": "Program completed.", "evidence_refs": refs},
-                    "mechanism": mechanism,
-                    "implication": "Choose the next hypothesis test.",
-                    "open_questions": [],
-                },
-            },
-        },
+        _decision(
+            workspace,
+            "end_node",
+            {"node_id": node_id, "closure": closure},
+            rationale=f"Close {node_id}.",
+            evidence_refs=refs,
+        ),
     )
 
 
@@ -336,11 +365,12 @@ def make_accepted_workspace(
         identity_claim=identity_claim,
     )
 
-    start_v3_node(
+    start_research_node(
         workspace,
         report_ref,
         node_id="n001",
-        phase="tsfreq_validation",
+        node_type="validation",
+        scope="tsfreq",
         pathway_ref=PATHWAY_REF,
         prediction_ids=["pred_mode_001"],
     )
@@ -364,22 +394,22 @@ def make_accepted_workspace(
             },
         },
     )
-    end_v3_node(
+    end_research_node(
         workspace,
         report_ref,
         node_id="n001",
-        claim_verdict="supported",
         evidence_refs=["ev_tsfreq_001"],
         prediction_ids=["pred_mode_001"],
     )
 
     report_ref = _report_ref(workspace)
-    start_v3_node(
+    start_research_node(
         workspace,
         report_ref,
         node_id="n002",
         parent_node="n001",
-        phase="connectivity_validation",
+        node_type="validation",
+        scope="connectivity",
         pathway_ref=PATHWAY_REF,
         prediction_ids=["pred_conn_001"],
     )
@@ -454,11 +484,10 @@ def make_accepted_workspace(
             }
         )
     _append_evidence(workspace, report_ref, connectivity_evidence)
-    end_v3_node(
+    end_research_node(
         workspace,
         report_ref,
         node_id="n002",
-        claim_verdict="supported",
         evidence_refs=[item["evidence_id"] for item in connectivity_evidence],
         prediction_ids=["pred_conn_001"] + (["pred_stereo_001"] if stereochemical else []),
     )
@@ -467,21 +496,22 @@ def make_accepted_workspace(
     gate_refs = ["ev_tsfreq_001", "ev_conn_001"] + (["ev_stereo_001"] if stereochemical else [])
     if identity_claim:
         gate_refs.append("ev_identity_001")
-    start_v3_node(
+    start_research_node(
         workspace,
         report_ref,
         node_id="n003",
         parent_node="n002",
-        phase="accepted_audit",
+        node_type="audit",
+        scope="transition_state",
         pathway_ref=PATHWAY_REF,
         prediction_ids=["pred_mode_001", "pred_conn_001"],
         evidence_refs=gate_refs,
     )
-    end_v3_node(
+    end_research_node(
         workspace,
         report_ref,
         node_id="n003",
-        claim_verdict="supported",
+        audit_status="accepted",
         evidence_refs=gate_refs,
         prediction_ids=["pred_mode_001", "pred_conn_001"],
     )
@@ -490,34 +520,30 @@ def make_accepted_workspace(
 
 def make_branch_workspace(workspace: Path) -> dict[str, str]:
     report_ref = bootstrap_strict_workspace(workspace)
-    start_v3_node(
+    start_research_node(
         workspace,
         report_ref,
         node_id="n001",
-        phase="connectivity_validation",
+        node_type="validation",
+        scope="connectivity",
         pathway_ref=PATHWAY_REF,
         prediction_ids=["pred_conn_001"],
     )
-    end_v3_node(
+    end_research_node(
         workspace,
         report_ref,
         node_id="n001",
-        claim_verdict="refuted",
         prediction_ids=["pred_conn_001"],
-        revision={
-            "action": "refute_prediction",
-            "prediction_ids": ["pred_conn_001"],
-            "changed_variable": "reaction_center",
-        },
     )
 
     report_ref = _report_ref(workspace)
-    start_v3_node(
+    start_research_node(
         workspace,
         report_ref,
         node_id="n002",
         parent_node="n000",
-        phase="candidate_generation",
+        node_type="candidate_search",
+        scope="transition_state",
         pathway_ref={"pathway_id": "p_revised", "step_id": "s1"},
         prediction_ids=["pred_mode_001"],
         branch_context={
@@ -548,17 +574,35 @@ def _append_evidence(workspace: Path, report_ref: dict[str, str], evidence: dict
     roles = ",".join(str(item.get("role", "")) for item in entries)
     update_workspace(
         workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "update_workspace",
-            "rationale": f"Register {roles} evidence.",
-            "evidence_refs": [],
-            "report_ref": report_ref,
-            "payload": {"append_evidence": evidence},
-        },
+        _decision(
+            workspace,
+            "update_workspace",
+            {"append_evidence": evidence},
+            rationale=f"Register {roles} evidence.",
+        ),
     )
 
 
 def _report_ref(workspace: Path) -> dict[str, str]:
     report = report_workspace(workspace)
     return {"report_id": report["report_id"], "workspace_root": str(workspace)}
+
+
+def _decision(
+    workspace: Path,
+    action: str,
+    payload: dict[str, Any],
+    *,
+    rationale: str,
+    evidence_refs: list[str] | None = None,
+) -> dict[str, Any]:
+    report = report_workspace(workspace)
+    return {
+        "schema_version": "ts-decision/2",
+        "action": action,
+        "rationale": rationale,
+        "evidence_refs": evidence_refs or [],
+        "report_ref": {"report_id": report["report_id"], "workspace_root": str(workspace)},
+        "base_revision": report["workspace_revision"],
+        "payload": payload,
+    }

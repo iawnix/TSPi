@@ -115,7 +115,7 @@ def test_force_reinitialize_refuses_symlinked_identity_directory_before_clearing
     external.mkdir()
     identity_dir.symlink_to(external, target_is_directory=True)
     decision = {
-        "schema_version": "ts-decision",
+        "schema_version": "ts-decision/2",
         "decision_id": "dec_force_symlink_guard",
         "action": "init_workspace",
         "rationale": "A force reinitialize must not follow an external identity directory.",

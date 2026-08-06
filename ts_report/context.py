@@ -81,29 +81,22 @@ def highest_validated_layer(nodes: list[dict[str, Any]], accepted_refs: list[str
                 return "pathway"
     if accepted_refs or any(_is_accepted_ts_audit(node) for node in nodes):
         return "accepted_ts"
-    if any(_v2_validation_reached(node, records, "connectivity", "connectivity_gate") for node in nodes) or any(
-        node.get("phase") == "connectivity_validation" and node.get("claim_verdict") == "supported" for node in nodes
-    ):
+    if any(_validation_reached(node, records, "connectivity", "connectivity_gate") for node in nodes):
         return "connectivity"
-    if any(_v2_validation_reached(node, records, "tsfreq", "tsfreq_gate") for node in nodes) or any(
-        node.get("phase") == "tsfreq_validation" and node.get("claim_verdict") == "supported" for node in nodes
-    ):
+    if any(_validation_reached(node, records, "tsfreq", "tsfreq_gate") for node in nodes):
         return "tsfreq"
     if validation_scopes_reached(nodes, records):
         return "validation"
-    if any(_v2_candidate_reached(node, records) for node in nodes) or any(
-        node.get("phase") == "candidate_generation" and node.get("claim_verdict") == "supported" for node in nodes
-    ):
+    if any(_candidate_reached(node, records) for node in nodes):
         return "candidate"
-    return "intake" if any(_is_v2_node(node) for node in nodes) else "endpoint"
+    return "intake"
 
 
 def validation_scopes_reached(nodes: list[dict[str, Any]], records: list[dict[str, Any]]) -> list[str]:
     scopes: set[str] = set()
     for node in nodes:
         if (
-            _is_v2_node(node)
-            and node_type_of(node) == "validation"
+            node_type_of(node) == "validation"
             and _node_is_closed(node)
             and node_program_outcome(node) == "success"
             and _node_has_any_evidence(node, records)
@@ -129,8 +122,6 @@ def final_claim(nodes: list[dict[str, Any]], records: list[dict[str, Any]]) -> s
 
 
 def node_label(node: dict[str, Any]) -> str:
-    if not _is_v2_node(node):
-        return str(node.get("phase") or "unknown")
     node_type = node_type_of(node) or "unknown"
     scope = node_scope_of(node)
     return f"{node_type}/{scope}" if scope else node_type
@@ -139,9 +130,7 @@ def node_label(node: dict[str, Any]) -> str:
 def node_program_outcome(node: dict[str, Any]) -> str:
     closure = node.get("closure") if isinstance(node.get("closure"), dict) else {}
     program = closure.get("program") if isinstance(closure.get("program"), dict) else {}
-    if _is_v2_node(node):
-        return str(node.get("program_outcome") or program.get("outcome") or "")
-    return str(node.get("program_status") or closure.get("program_status") or "")
+    return str(node.get("program_outcome") or program.get("outcome") or "")
 
 
 def node_hypothesis_status(node: dict[str, Any]) -> str:
@@ -157,9 +146,6 @@ def node_audit_status(node: dict[str, Any]) -> str:
 
 
 def node_scientific_status(node: dict[str, Any]) -> str:
-    if not _is_v2_node(node):
-        closure = node.get("closure") if isinstance(node.get("closure"), dict) else {}
-        return str(node.get("claim_verdict") or closure.get("claim_verdict") or "open")
     if node_type_of(node) == "mechanism":
         return node_hypothesis_status(node) or "open"
     if node_type_of(node) == "audit":
@@ -172,16 +158,12 @@ def node_scientific_status(node: dict[str, Any]) -> str:
 
 
 def _is_pathway_audit(node: dict[str, Any]) -> bool:
-    return node.get("phase") == "pathway_audit" or (
-        node_type_of(node) == "audit" and node_scope_of(node) == "pathway"
-    )
+    return node_type_of(node) == "audit" and node_scope_of(node) == "pathway"
 
 
 def _is_accepted_ts_audit(node: dict[str, Any]) -> bool:
     if not _node_is_closed(node):
         return False
-    if node.get("phase") == "accepted_audit":
-        return node.get("claim_verdict") == "supported"
     return (
         node_type_of(node) == "audit"
         and node_scope_of(node) in {"transition_state", "elementary_step"}
@@ -193,19 +175,14 @@ def _node_is_closed(node: dict[str, Any]) -> bool:
     return node.get("lifecycle") in {"closed", "stopped"}
 
 
-def _is_v2_node(node: dict[str, Any]) -> bool:
-    return isinstance(node.get("node_type"), str)
-
-
-def _v2_validation_reached(
+def _validation_reached(
     node: dict[str, Any],
     records: list[dict[str, Any]],
     scope: str,
     role: str,
 ) -> bool:
     return (
-        _is_v2_node(node)
-        and node_type_of(node) == "validation"
+        node_type_of(node) == "validation"
         and node_scope_of(node) == scope
         and _node_is_closed(node)
         and node_program_outcome(node) == "success"
@@ -213,10 +190,9 @@ def _v2_validation_reached(
     )
 
 
-def _v2_candidate_reached(node: dict[str, Any], records: list[dict[str, Any]]) -> bool:
+def _candidate_reached(node: dict[str, Any], records: list[dict[str, Any]]) -> bool:
     return (
-        _is_v2_node(node)
-        and node_type_of(node) == "candidate_search"
+        node_type_of(node) == "candidate_search"
         and _node_is_closed(node)
         and node_program_outcome(node) == "success"
         and _node_has_evidence_role(

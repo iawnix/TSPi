@@ -2,7 +2,6 @@
 
 const { validateAgentResult, validateAgentTask } = require("../../agent-core/agent-protocol.cjs");
 const { COMPUTE_FACT_KINDS } = require("../../agent-core/fact-kinds.cjs");
-const { normalizeAgentResultInput } = require("../../agent-core/result-normalization.cjs");
 
 const MAX_OUTPUT_BYTES = 16 * 1024;
 const REQUIRED_TOOLS = {
@@ -24,14 +23,11 @@ function parseAndValidateOperatorReport(text, packet, actions) {
       value = {};
     }
   }
-  const normalized = normalizeAgentResultInput(value, {
-    resolveFactRef: (ref) => resolveComputeFactRef(ref, task, actions),
-  });
   if (!Array.isArray(actions) || actions.length === 0) {
-    return validateOperatorReport(normalized, task, actions);
+    return validateOperatorReport(value, task, actions);
   }
   requireCompletedActions(actions);
-  return validateOperatorReport(buildDeterministicReport(normalized, task, actions), task, actions);
+  return validateOperatorReport(buildDeterministicReport(value, task, actions), task, actions);
 }
 
 function normalizeJsonText(text) {
@@ -249,22 +245,6 @@ function actionStatus(value) {
     && ["submission_ambiguous", "cancellation_ambiguous"].includes(result.error_class)
   ) return "unknown";
   return "completed";
-}
-
-function resolveComputeFactRef(ref, task, actions) {
-  for (const [index, action] of actions.entries()) {
-    const result = operationResult(action && action.result);
-    if (!isPlainObject(result)) continue;
-    if (Array.isArray(result.artifact_refs) && result.artifact_refs.includes(ref)) return ref;
-    if (
-      action.tool === "ts_workspace_compute_tail"
-      && typeof result.artifact === "string"
-      && (ref === result.artifact || ref.endsWith(`/${result.artifact}`))
-    ) {
-      return actionResultRef(task, index) || ref;
-    }
-  }
-  return ref;
 }
 
 function actionResultRef(task, index) {

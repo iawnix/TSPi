@@ -284,11 +284,6 @@ def _normalize_node(
     detail = _read_json(root / "nodes" / str(node_id) / "node.json") if node_id else {}
     lifecycle = detail.get("lifecycle") or row.get("lifecycle")
     closure = detail.get("closure") or {}
-    # closure is the authoritative source per SKILL.md; tree row is only a fallback
-    # when node.json is missing or hasn't been closed yet.
-    claim_verdict = closure.get("claim_verdict") or row.get("claim_verdict")
-    program_status = closure.get("program_status") or row.get("program_status")
-    phase = detail.get("phase", row.get("phase"))
     node_type = detail.get("node_type", row.get("node_type"))
     program = closure.get("program") if isinstance(closure.get("program"), dict) else {}
     hypothesis_section = closure.get("hypothesis") if isinstance(closure.get("hypothesis"), dict) else {}
@@ -302,20 +297,23 @@ def _normalize_node(
         or detail.get("candidate_kind")
         or detail.get("mechanism_action")
     )
-    audit_display = _pathway_audit_display(str(node_id), phase, closure, evidence_records)
+    audit_display = _pathway_audit_display(
+        str(node_id),
+        node_type,
+        scope,
+        audit_status,
+        evidence_records,
+    )
     calculations = _normalize_calculations(root, str(node_id)) if node_id else []
     node_agent_runs = [run for run in agent_runs if node_id in _list(run.get("node_ids"))]
-    if node_type:
-        label, tone, state = _v2_display(lifecycle, program_outcome, hypothesis_status, audit_status)
-        audit_display = {}
-    else:
-        label = audit_display.get("label") or _display_label(lifecycle, claim_verdict)
-        tone = audit_display.get("tone") or _display_tone(lifecycle, claim_verdict, program_status)
-        state = audit_display.get("state")
+    label, tone, state = _node_display(lifecycle, program_outcome, hypothesis_status, audit_status)
+    if audit_display:
+        label = audit_display["label"]
+        tone = audit_display["tone"]
+        state = audit_display["state"]
     return {
         "node_id": node_id,
         "parent_node": detail.get("parent_node", row.get("parent_node")),
-        "phase": phase,
         "node_type": node_type,
         "scope": scope,
         "objective": detail.get("objective", row.get("objective")),
@@ -333,8 +331,6 @@ def _normalize_node(
             "tone": tone,
             "state": state,
             "audit_outcome": audit_display.get("audit_outcome"),
-            "program_status": program_status,
-            "claim_verdict": claim_verdict,
             "program_outcome": program_outcome,
             "hypothesis_status": hypothesis_status,
             "audit_status": audit_status,
@@ -348,13 +344,17 @@ def _explorer_node(row: dict[str, Any], branch_events: list[Any]) -> dict[str, A
     display = row.get("display") if isinstance(row.get("display"), dict) else {}
     closure = row.get("closure") if isinstance(row.get("closure"), dict) else {}
     program = closure.get("program") if isinstance(closure.get("program"), dict) else {}
-    program_status = display.get("program_status") or closure.get("program_status")
-    claim_verdict = display.get("claim_verdict") or closure.get("claim_verdict")
     program_outcome = display.get("program_outcome")
     hypothesis_status = display.get("hypothesis_status")
     audit_status = display.get("audit_status")
-    tone = display.get("tone") or _display_tone(lifecycle, claim_verdict, program_status)
-    state_key = display.get("state") or _node_state_key(lifecycle, claim_verdict, program_status)
+    label, default_tone, default_state = _node_display(
+        lifecycle,
+        program_outcome,
+        hypothesis_status,
+        audit_status,
+    )
+    tone = display.get("tone") or default_tone
+    state_key = display.get("state") or default_state
     calculations = [item for item in _list(row.get("calculations")) if isinstance(item, dict)]
     agent_runs = [item for item in _list(row.get("agent_runs")) if isinstance(item, dict)]
     latest_calculation = calculations[-1] if calculations else {}
@@ -375,34 +375,31 @@ def _explorer_node(row: dict[str, Any], branch_events: list[Any]) -> dict[str, A
     branch_ids = _dedupe(branch_trigger_ids + generated_ids)
     state_line = _closure_line(
         closure,
-        program_outcome or program_status,
-        hypothesis_status or audit_status or claim_verdict,
+        program_outcome,
+        hypothesis_status or audit_status,
     )
-    stage = row.get("node_type") or row.get("phase")
+    stage = row.get("node_type")
     return {
         "id": node_id,
         "node_id": node_id,
         "parent_id": row.get("parent_node"),
         "stage": stage,
-        "stage_label": _phase_label(stage),
-        "card_phase": stage,
+        "stage_label": _stage_label(stage, row.get("scope")),
         "node_type": row.get("node_type"),
         "scope": row.get("scope"),
         "objective": row.get("objective"),
         "attempt_kind": row.get("attempt_kind"),
         "recalculation_ref": row.get("recalculation_ref"),
-        "card_label": display.get("label") or state_key,
-        "card_line": display.get("label") or state_key,
+        "card_label": display.get("label") or label,
+        "card_line": display.get("label") or label,
         "card_color": _tone_color(tone),
         "color": _tone_color(tone),
         "node_state": state_key,
-        "state_label": display.get("label") or state_key,
+        "state_label": display.get("label") or label,
         "state_line": state_line,
         "hypothesis": row.get("hypothesis"),
         "pathway_ref": row.get("pathway_ref"),
         "lifecycle": lifecycle,
-        "program_status": program_status,
-        "claim_verdict": claim_verdict,
         "program_outcome": program_outcome,
         "hypothesis_status": hypothesis_status,
         "audit_status": audit_status,
@@ -734,7 +731,11 @@ def _mechanism_lines(records: list[Any]) -> list[str]:
         )
         prefix = " / ".join(
             str(item)
-            for item in (record.get("node_id"), record.get("phase"), record.get("claim_verdict"))
+            for item in (
+                record.get("node_id") or record.get("source_node"),
+                record.get("node_type"),
+                record.get("status"),
+            )
             if item
         )
         lines.append(f"{prefix}: {summary}" if prefix and summary else prefix or str(record))
@@ -766,10 +767,13 @@ def _closure_fact_lines(node: dict[str, Any]) -> list[str]:
         return []
     node_id = node.get("node_id")
     out: list[str] = []
-    mechanism = closure.get("mechanism") if isinstance(closure.get("mechanism"), dict) else {}
+    hypothesis = closure.get("hypothesis") if isinstance(closure.get("hypothesis"), dict) else {}
+    audit = closure.get("audit") if isinstance(closure.get("audit"), dict) else {}
     program = closure.get("program") if isinstance(closure.get("program"), dict) else {}
-    for fact in _list(mechanism.get("facts")):
-        out.append(f"{node_id} / mechanism fact: {fact}")
+    for fact in _list(hypothesis.get("facts")):
+        out.append(f"{node_id} / hypothesis fact: {fact}")
+    for fact in _list(audit.get("facts")):
+        out.append(f"{node_id} / audit fact: {fact}")
     for fact in _list(program.get("facts")):
         out.append(f"{node_id} / program fact: {fact}")
     return out
@@ -787,7 +791,7 @@ def _evidence_refs_for_closure(closure: Any) -> list[str]:
     if not isinstance(closure, dict):
         return []
     refs: list[str] = []
-    for key in ("program", "mechanism"):
+    for key in ("program", "hypothesis", "audit"):
         section = closure.get(key)
         if isinstance(section, dict):
             refs.extend(str(ref) for ref in _list(section.get("evidence_refs")) if ref)
@@ -1110,7 +1114,13 @@ def _view_needs_followup(view: dict[str, Any] | None) -> bool:
         return False
     last = nodes[-1]
     display = last.get("display") if isinstance(last.get("display"), dict) else {}
-    return display.get("claim_verdict") in {"refuted", "inconclusive", "not_evaluated"}
+    return display.get("state") in {
+        "program_failure",
+        "hypothesis_unsupported",
+        "hypothesis_ambiguous",
+        "audit_not_accepted",
+        "audit_ambiguous",
+    }
 
 
 def _latest_pathway_audit_outcome(view: dict[str, Any] | None) -> str | None:
@@ -1127,13 +1137,14 @@ def _latest_pathway_audit_outcome(view: dict[str, Any] | None) -> str | None:
 
 def _pathway_audit_display(
     node_id: str,
-    phase: Any,
-    closure: dict[str, Any],
+    node_type: Any,
+    scope: Any,
+    audit_status: Any,
     evidence_records: list[Any],
 ) -> dict[str, str]:
-    if phase != "pathway_audit" or not closure:
+    if node_type != "audit" or scope != "pathway" or not audit_status:
         return {}
-    outcome = _pathway_audit_outcome(node_id, closure, evidence_records)
+    outcome = _pathway_audit_outcome(node_id, audit_status, evidence_records)
     if outcome == "pathway_not_accepted":
         return {
             "label": "pathway not accepted",
@@ -1151,7 +1162,7 @@ def _pathway_audit_display(
     return {}
 
 
-def _pathway_audit_outcome(node_id: str, closure: dict[str, Any], evidence_records: list[Any]) -> str | None:
+def _pathway_audit_outcome(node_id: str, audit_status: str, evidence_records: list[Any]) -> str | None:
     for record in evidence_records:
         if not isinstance(record, dict) or str(record.get("node_id") or "") != node_id:
             continue
@@ -1160,16 +1171,9 @@ def _pathway_audit_outcome(node_id: str, closure: dict[str, Any], evidence_recor
         decision = _record_pathway_audit_decision(record)
         if decision in {"accepted", "pathway_accepted"}:
             return "accepted"
-    text_parts = [
-        closure.get("reason_code"),
-        closure.get("implication"),
-        closure.get("mechanism", {}).get("summary") if isinstance(closure.get("mechanism"), dict) else "",
-        closure.get("program", {}).get("summary") if isinstance(closure.get("program"), dict) else "",
-    ]
-    text = " ".join(str(part or "").lower() for part in text_parts)
-    if any(marker in text for marker in ("not_accepted", "not accepted", "missing connectivity", "no accepted ts")):
+    if audit_status == "not_accepted":
         return "pathway_not_accepted"
-    if any(marker in text for marker in ("pathway_accepted", "pathway accepted", "strict_r_to_p_pathway_accepted")):
+    if audit_status == "accepted":
         return "accepted"
     return None
 
@@ -1224,15 +1228,7 @@ def _put_if_present(target: dict[str, Any], key: str, value: Any) -> None:
     target[key] = value
 
 
-def _display_label(lifecycle: str | None, claim_verdict: str | None) -> str:
-    if lifecycle == "running":
-        return "running"
-    if lifecycle == "stopped":
-        return "stopped"
-    return claim_verdict or lifecycle or "unknown"
-
-
-def _v2_display(
+def _node_display(
     lifecycle: str | None,
     program_outcome: str | None,
     hypothesis_status: str | None,
@@ -1259,30 +1255,6 @@ def _v2_display(
     return lifecycle or "unknown", "neutral", lifecycle or "unknown"
 
 
-def _display_tone(lifecycle: str | None, claim_verdict: str | None, program_status: str | None) -> str:
-    if lifecycle == "running":
-        return "active"
-    if program_status in {"failed", "stopped"}:
-        return "blocked"
-    if claim_verdict == "supported":
-        return "supported"
-    if claim_verdict == "refuted":
-        return "refuted"
-    if claim_verdict == "inconclusive":
-        return "inconclusive"
-    return "neutral"
-
-
-def _node_state_key(lifecycle: str | None, claim_verdict: str | None, program_status: str | None) -> str:
-    if lifecycle == "running":
-        return "running"
-    if lifecycle == "stopped":
-        return "stopped"
-    if program_status == "failed":
-        return "failed"
-    return claim_verdict or lifecycle or "unknown"
-
-
 def _tone_color(tone: str | None) -> str:
     return {
         "active": "accent",
@@ -1295,19 +1267,21 @@ def _tone_color(tone: str | None) -> str:
     }.get(str(tone or ""), "grey")
 
 
-def _phase_label(phase: Any) -> str:
-    return str(phase or "").replace("_", " ").strip().title() if phase else ""
+def _stage_label(node_type: Any, scope: Any) -> str:
+    parts = [str(item).replace("_", " ").strip().title() for item in (node_type, scope) if item]
+    return " / ".join(parts)
 
 
-def _closure_line(closure: dict[str, Any], program_status: Any, claim_verdict: Any) -> str:
+def _closure_line(closure: dict[str, Any], program_outcome: Any, scientific_status: Any) -> str:
     for value in (
-        closure.get("implication"),
-        closure.get("mechanism", {}).get("summary") if isinstance(closure.get("mechanism"), dict) else "",
+        closure.get("summary"),
+        closure.get("hypothesis", {}).get("summary") if isinstance(closure.get("hypothesis"), dict) else "",
+        closure.get("audit", {}).get("summary") if isinstance(closure.get("audit"), dict) else "",
         closure.get("program", {}).get("summary") if isinstance(closure.get("program"), dict) else "",
     ):
         if value:
             return str(value)
-    return " / ".join(str(item) for item in (program_status, claim_verdict) if item)
+    return " / ".join(str(item) for item in (program_outcome, scientific_status) if item)
 
 
 def _render_closure_reflection(node: dict[str, Any]) -> str:
@@ -1316,20 +1290,20 @@ def _render_closure_reflection(node: dict[str, Any]) -> str:
         return ""
     lines = ["# Closure Reflection", ""]
     status = [
-        ("phase", node.get("phase") or node.get("stage")),
+        ("node_type", node.get("node_type")),
+        ("scope", node.get("scope") or node.get("validation_scope") or node.get("audit_scope") or node.get("candidate_kind") or node.get("mechanism_action")),
         ("lifecycle", node.get("lifecycle")),
-        ("program_status", closure.get("program_status")),
-        ("claim_verdict", closure.get("claim_verdict")),
+        ("program_outcome", closure.get("program", {}).get("outcome") if isinstance(closure.get("program"), dict) else None),
+        ("hypothesis_status", closure.get("hypothesis", {}).get("status") if isinstance(closure.get("hypothesis"), dict) else None),
+        ("audit_status", closure.get("audit", {}).get("status") if isinstance(closure.get("audit"), dict) else None),
         ("closed_at", closure.get("closed_at") or node.get("ended_at")),
-        ("reason_code", closure.get("reason_code") or node.get("reason_code")),
     ]
     for key, value in status:
         if value:
             lines.append(f"- {key}: {value}")
     _append_closure_section(lines, "Program", closure.get("program"))
-    _append_closure_section(lines, "Mechanism", closure.get("mechanism"))
-    if closure.get("implication"):
-        lines.extend(["", "## Implication", "", str(closure["implication"])])
+    _append_closure_section(lines, "Hypothesis", closure.get("hypothesis"))
+    _append_closure_section(lines, "Audit", closure.get("audit"))
     open_questions = _list(closure.get("open_questions"))
     if open_questions:
         lines.extend(["", "## Open Questions", ""])

@@ -478,8 +478,8 @@ bound to both the persistent workspace identity and calculation intent. Two Pi
 agents attached to different initialized workspaces therefore use disjoint
 paths even under the same MCP principal. Agents attached to the same workspace
 share the identity by design and rely on the local per-intent control guards.
-The server remains compatible with older prepared jobs whose workdir and
-submission ID predate this namespace.
+TSAgent rejects prepared records whose workdir and submission ID predate this
+namespace.
 
 The server stores the request before `qsub`. An identical submitted request is
 replayed without another scheduler call. Reusing a `submission_id` with changed

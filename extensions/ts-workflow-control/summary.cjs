@@ -79,7 +79,7 @@ function buildContextDetails(report) {
     acceptedTsRefs: arrayOfStrings(focus.accepted_ts_refs),
     openNodes: openNodes.map((node) => ({
       nodeId: node.node_id || "",
-      nodeType: node.node_type || node.phase || "",
+      nodeType: node.node_type || "",
       scope: node.validation_scope || node.audit_scope || node.candidate_kind || node.mechanism_action || "",
       lifecycle: node.lifecycle || "",
       objective: node.objective || node.hypothesis || "",
@@ -121,7 +121,7 @@ function buildContextDetails(report) {
     hypothesisSummary: activeHypothesis.summary || "",
     openPredictions: arrayOfObjects(hypothesisContext.open_predictions).map((prediction) => ({
       predictionId: prediction.prediction_id || "",
-      scope: prediction.validation_scope || prediction.phase || "",
+      scope: prediction.validation_scope || "",
       expectation: prediction.expectation || "",
     })),
     supportedPredictions: arrayOfStrings(hypothesisContext.supported_predictions),
@@ -137,11 +137,9 @@ function buildContextDetails(report) {
     })),
     branchFrontiers: branchFrontiers.map((node) => ({
       nodeId: node.node_id || "",
-      nodeType: node.node_type || node.phase || "",
+      nodeType: node.node_type || "",
       scope: node.scope || "",
       lifecycle: node.lifecycle || "",
-      claimVerdict: node.claim_verdict || "",
-      programStatus: node.program_status || "",
       hypothesisStatus: node.hypothesis_status || "",
       programOutcome: node.program_outcome || "",
       auditStatus: node.audit_status || "",
@@ -214,9 +212,9 @@ function buildNodeContextSummary(context, options = {}) {
   const agentRuns = arrayOfObjects(context.agent_runs);
   const lines = [
     "TS historical node context:",
-    `- node: ${node.node_id || "?"}; type=${node.node_type || node.phase || "?"}; scope=${node.validation_scope || node.audit_scope || node.candidate_kind || node.mechanism_action || "(none)"}; lifecycle=${node.lifecycle || "?"}`,
+    `- node: ${node.node_id || "?"}; type=${node.node_type || "?"}; scope=${node.validation_scope || node.audit_scope || node.candidate_kind || node.mechanism_action || "(none)"}; lifecycle=${node.lifecycle || "?"}`,
     `- parent: ${node.parent_node || "(none)"}; lineage: ${formatList(arrayOfStrings(context.lineage), maxItems)}`,
-    `- program: ${node.program_outcome || node.program_status || "(none)"}; hypothesis_status: ${node.hypothesis_status || node.claim_verdict || "(none)"}; audit_status: ${node.audit_status || "(none)"}`,
+    `- program: ${node.program_outcome || "(none)"}; hypothesis_status: ${node.hypothesis_status || "(none)"}; audit_status: ${node.audit_status || "(none)"}`,
     `- objective: ${node.objective || node.hypothesis || "(none)"}`,
     `- program_summary: ${node.program_summary || "(none)"}`,
     `- program_facts: ${formatAnyList(node.program_facts, maxItems)}`,
@@ -325,7 +323,7 @@ function formatCheckpointList(values, maxItems) {
   const used = remaining ? values.filter((item) => item.hasOutgoingBranch).slice(-remaining) : [];
   const candidates = unused.concat(used);
   return candidates
-    .map((item) => `${item.nodeId || "?"}:${item.nodeType || "?"}${item.scope ? `:${item.scope}` : ""}/${item.programOutcome || item.programStatus || item.lifecycle || "?"}/${item.hypothesisStatus || item.auditStatus || item.claimVerdict || "?"}`)
+    .map((item) => `${item.nodeId || "?"}:${item.nodeType || "?"}${item.scope ? `:${item.scope}` : ""}/${item.programOutcome || item.lifecycle || "?"}/${item.hypothesisStatus || item.auditStatus || "?"}`)
     .join(", ");
 }
 
@@ -362,10 +360,10 @@ function formatNodeDelta(node) {
 }
 
 function formatNodeState(node) {
-  const type = node.node_type || node.phase || "?";
+  const type = node.node_type || "?";
   const scope = node.validation_scope || node.audit_scope || node.candidate_kind || node.mechanism_action || "";
-  const program = node.program_outcome || node.program_status || node.lifecycle || "?";
-  const science = node.hypothesis_status || node.audit_status || node.claim_verdict || "?";
+  const program = node.program_outcome || node.lifecycle || "?";
+  const science = node.hypothesis_status || node.audit_status || "?";
   return `${node.node_id || "?"}:${type}${scope ? `:${scope}` : ""}/${program}/${science}`;
 }
 

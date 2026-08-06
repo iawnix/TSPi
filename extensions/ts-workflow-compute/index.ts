@@ -64,7 +64,7 @@ const COMPUTE_OPERATOR_PARAMETERS = Type.Union([
   Type.Object({
     ...OPERATOR_COMMON_PARAMETERS,
     operation: Type.Literal("prepare"),
-    intentFile: Type.String({ description: "JSON file conforming to ts-calculation-intent/2 or legacy /1." }),
+    intentFile: Type.String({ description: "JSON file conforming to ts-calculation-intent/2." }),
   }, { additionalProperties: false }),
   Type.Object({
     ...OPERATOR_COMMON_PARAMETERS,

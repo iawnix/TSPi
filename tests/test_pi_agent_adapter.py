@@ -5,7 +5,7 @@ import subprocess
 from pathlib import Path
 
 from ts_workspace import report_branch_context, report_node, report_workspace
-from strict_helpers import HYPOTHESIS_ID, bootstrap_strict_workspace, end_v3_node, start_v3_node
+from strict_helpers import HYPOTHESIS_ID, bootstrap_strict_workspace, end_research_node, start_research_node
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -187,22 +187,30 @@ def test_pi_json_parser_surfaces_structured_stderr() -> None:
 def test_historical_node_and_backtrack_context_are_compact_and_explicit(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     report_ref = bootstrap_strict_workspace(workspace)
-    start_v3_node(workspace, report_ref, node_id="n001", phase="candidate_generation")
-    end_v3_node(workspace, report_ref, node_id="n001", claim_verdict="supported")
-    start_v3_node(
+    start_research_node(
+        workspace,
+        report_ref,
+        node_id="n001",
+        node_type="candidate_search",
+        scope="transition_state",
+    )
+    end_research_node(workspace, report_ref, node_id="n001")
+    start_research_node(
         workspace,
         report_ref,
         node_id="n002",
         parent_node="n001",
-        phase="connectivity_validation",
+        node_type="validation",
+        scope="connectivity",
+        prediction_ids=["pred_conn_001"],
     )
-    end_v3_node(workspace, report_ref, node_id="n002", claim_verdict="refuted")
+    end_research_node(workspace, report_ref, node_id="n002", program_outcome="failure")
 
     node_context = report_node(workspace, "n001")
     branch_context = report_branch_context(workspace, "n002", "n001")
 
     assert node_context["node"]["node_id"] == "n001"
-    assert node_context["lineage"] == ["n000", "n001"]
+    assert node_context["lineage"] == ["n000", "n_hypothesis", "n001"]
     assert node_context["agent_runs"] == []
     assert "closure" not in node_context["node"]
     assert branch_context["anchor_node"]["node"]["node_id"] == "n001"

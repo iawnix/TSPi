@@ -130,10 +130,10 @@ confirms, and which electronic-structure claims remain unproven.}}
 
 ## 10. Search Tree Summary
 
-| Node | Phase | Hypothesis ref | Program status | Claim verdict | Key evidence | Implication |
+| Node | Node type / scope | Hypothesis ref | Program outcome | Scientific status | Key evidence | Implication |
 | --- | --- | --- | --- | --- | --- | --- |
-| `n000` | endpoint | n/a | {{status}} | {{verdict}} | `{{refs}}` | {{implication}} |
-| `{{node_id}}` | {{phase}} | `{{hypothesis_ref}}` | {{status}} | {{verdict}} | `{{refs}}` | {{implication}} |
+| `n000` | intake | n/a | {{program_outcome}} | {{scientific_status}} | `{{refs}}` | {{implication}} |
+| `{{node_id}}` | {{node_type}} / {{scope}} | `{{hypothesis_ref}}` | {{program_outcome}} | {{scientific_status}} | `{{refs}}` | {{implication}} |
 
 Rejected or superseded branches:
 

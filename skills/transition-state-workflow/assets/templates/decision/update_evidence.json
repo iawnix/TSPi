@@ -1,0 +1,19 @@
+{
+  "schema_version": "ts-decision/2",
+  "decision_id": "${DECISION_ID}",
+  "action": "update_workspace",
+  "rationale": "Register node-owned evidence.",
+  "evidence_refs": [],
+  "base_revision": "${BASE_REVISION}",
+  "report_ref": {"report_id": "${REPORT_ID}", "workspace_root": "${WORKSPACE_ROOT}"},
+  "payload": {
+    "append_evidence": {
+      "evidence_id": "${EVIDENCE_ID}",
+      "kind": "manual_observation",
+      "role": "diagnostic",
+      "evidence_tier": "manual_observation",
+      "node_id": "${NODE_ID}",
+      "summary": "${EVIDENCE_SUMMARY}"
+    }
+  }
+}

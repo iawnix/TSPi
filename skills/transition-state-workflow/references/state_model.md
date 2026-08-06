@@ -102,9 +102,5 @@ rewrites historical nodes.
 Use `report_node` and `report_branch_context` to load only the relevant history
 before selecting an anchor.
 
-## Legacy Compatibility
-
-`ts-decision` and phase nodes (`endpoint`, `candidate_generation`,
-`tsfreq_validation`, `connectivity_validation`, `accepted_audit`, and
-`pathway_audit`) remain readable and closable. Legacy `program_status` and
-`claim_verdict` remain visible in reports. Do not create them for new studies.
+Only `ts-node/2` records are valid workspace nodes. The validator rejects
+phase-based nodes and old closure fields rather than converting them.

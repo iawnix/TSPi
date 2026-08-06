@@ -108,8 +108,8 @@ revisions. Load historical context only when needed:
 - `mode=branch, fromNode=<trigger>, anchorNode=<checkpoint>` before backtrack;
 - `mode=audit` before acceptance or completion review.
 
-Construct new decisions from `references/decision_contract.md`. Files under
-`assets/templates/decision/` are legacy-compatible examples; tests are fixtures, not
+Construct decisions from `references/decision_contract.md`. Files under
+`assets/templates/decision/` are minimal v2 examples; tests are fixtures, not
 operating instructions.
 
 ## Hypothesis And Branch Rules
@@ -187,18 +187,18 @@ Read `references/pi_agent_adapter.md`, `references/compute_operator.md`, and
 
 ## Calculation Attempts
 
-Use `ts-calculation-intent/2` for new work. Declare `validation_scope`,
+Use `ts-calculation-intent/2` for every calculation. Declare `validation_scope`,
 `attempt_kind`, `recalculation_ref`, backend, task type, inputs, expected local
 artifacts, and execution target.
 
-New attempt authority lives under:
+Attempt authority lives under:
 
 ```text
 nodes/<node>/attempts/<intent>/
 ```
 
-A remote target must declare `authority=execution_mirror` and selects
-`transport=ssh|mcp`; omitted transport on legacy SSH targets means `ssh`. MCP
+A remote target must declare `authority=execution_mirror` and explicitly select
+`transport=ssh|mcp`. MCP
 connection URL, token, and timeout are host environment settings, never intent
 fields. Long jobs outlive child sessions; inspect only when state changes or a
 bounded failure diagnostic is needed. Do not poll unchanged jobs every turn.

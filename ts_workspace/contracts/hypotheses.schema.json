@@ -10,7 +10,8 @@
     "refuted_hypotheses",
     "open_questions",
     "focus_pathway_id",
-    "pathways"
+    "pathways",
+    "audit_records"
   ],
   "properties": {
     "schema_version": {"const": "ts-hypotheses"},

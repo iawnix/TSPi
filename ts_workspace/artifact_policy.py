@@ -8,44 +8,6 @@ from typing import Any
 from .ontology import node_scope_of, node_type_of
 
 
-MECHANISM_REFLECTION_PHASES = {
-    "endpoint",
-    "hypothesis_generation",
-    "preflight",
-    "rp_conformer_generation",
-    "candidate_generation",
-    "tsfreq_validation",
-    "connectivity_validation",
-    "accepted_audit",
-    "pathway_audit",
-}
-
-ROLE_PHASE_OWNER = {
-    "endpoint_provenance": {"endpoint", "preflight"},
-    "charge_multiplicity": {"endpoint", "preflight"},
-    "atom_mapping": {"endpoint", "preflight"},
-    "reaction_center_delta": {"endpoint", "preflight"},
-    "initial_mechanism_hypothesis": {"endpoint", "hypothesis_generation", "preflight"},
-    "endpoint_conformer_ensemble": {"candidate_generation", "rp_conformer_generation"},
-    "selected_endpoint_conformer": {"candidate_generation", "rp_conformer_generation"},
-    "endpoint_minimum_gate": {"endpoint", "candidate_generation", "preflight", "rp_conformer_generation"},
-    "candidate_geometry": "candidate_generation",
-    "candidate_generation_log": "candidate_generation",
-    "tsfreq_gate": "tsfreq_validation",
-    "mode_assignment": "tsfreq_validation",
-    "connectivity_gate": "connectivity_validation",
-    "irc_endpoint_assignment": "connectivity_validation",
-    "stereochemical_connectivity_gate": "connectivity_validation",
-    "endpoint_identity_gate": MECHANISM_REFLECTION_PHASES,
-    "intermediate_identity_gate": MECHANISM_REFLECTION_PHASES,
-    "electronic_structure_gate": MECHANISM_REFLECTION_PHASES,
-    "state_character_gate": MECHANISM_REFLECTION_PHASES,
-    "shared_basin_consistency_gate": MECHANISM_REFLECTION_PHASES,
-    "accepted_audit": "accepted_audit",
-    "pathway_audit": "pathway_audit",
-    "pathway_audit_summary": "pathway_audit",
-}
-
 ROLE_NODE_OWNER = {
     "endpoint_provenance": {"intake": None},
     "charge_multiplicity": {"intake": None},
@@ -76,32 +38,11 @@ ROLE_NODE_OWNER = {
 }
 
 
-def expected_phase_for_role(role: Any) -> Any:
-    """Return the node phase or compatible phases for an evidence role."""
-
-    if not isinstance(role, str):
-        return None
-    return ROLE_PHASE_OWNER.get(role)
-
-
-def role_matches_phase(role: Any, phase: Any) -> bool:
-    """Whether an evidence role is compatible with a node phase."""
-
-    expected = expected_phase_for_role(role)
-    if expected is None:
-        return True
-    if isinstance(expected, (set, frozenset, list, tuple)):
-        return phase in expected
-    return phase == expected
-
-
 def role_matches_node(role: Any, node: Any) -> bool:
-    """Whether an evidence role is compatible with a v2 or legacy node."""
+    """Whether an evidence role is compatible with a node type and scope."""
 
     if not isinstance(node, dict):
         return True
-    if node.get("schema_version") != "ts-node/2":
-        return role_matches_phase(role, node.get("phase"))
     if not isinstance(role, str):
         return True
     expected = ROLE_NODE_OWNER.get(role)

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from strict_helpers import bootstrap_strict_workspace, start_v3_node
+from strict_helpers import bootstrap_strict_workspace, start_research_node
 from ts_compute import (
     ComputeContractError,
     cancel_calculation,
@@ -29,11 +29,12 @@ from ts_workspace.readers.report import report_workspace
 def _workspace(tmp_path: Path) -> Path:
     workspace = tmp_path / "workspace"
     report_ref = bootstrap_strict_workspace(workspace)
-    start_v3_node(
+    start_research_node(
         workspace,
         report_ref,
         node_id="n001",
-        phase="tsfreq_validation",
+        node_type="validation",
+        scope="tsfreq",
     )
     gjf = workspace / "nodes" / "n001" / "inputs" / "candidate.gjf"
     gjf.write_text(
@@ -49,23 +50,12 @@ def _intent(
     target: dict[str, object] | None = None,
     dry_run: bool = True,
 ) -> Path:
-    value = {
-        "schema_version": "ts-calculation-intent/1",
-        "intent_id": "calc_n001_optfreq_001",
-        "node_id": "n001",
-        "purpose": "Evaluate the selected candidate at the TS/Freq evidence layer.",
-        "evidence_layer": "tsfreq",
-        "backend": "gaussian",
-        "task_type": "opt_freq",
-        "input_refs": {"gjf": "nodes/n001/inputs/candidate.gjf"},
-        "settings": {},
-        "expected_artifacts": ["nodes/n001/outputs/candidate.log"],
-        "execution_target": target or {"kind": "local"},
-        "dry_run": dry_run,
-    }
-    path = workspace / "nodes" / "n001" / "scratch" / "intent.json"
-    path.write_text(json.dumps(value), encoding="utf-8")
-    return path
+    return _intent_v2(
+        workspace,
+        intent_id="calc_n001_optfreq_001",
+        target=target,
+        dry_run=dry_run,
+    )
 
 
 def _intent_v2(
@@ -102,6 +92,8 @@ def _intent_v2(
 def _remote_target() -> dict[str, str]:
     return {
         "kind": "remote",
+        "authority": "execution_mirror",
+        "transport": "ssh",
         "login_host": "login.test",
         "compute_host": "compute.test",
         "remote_dir": "/remote/ts/n001/calc_n001_optfreq_001",
@@ -242,6 +234,17 @@ def test_compute_preflight_rejects_external_or_changed_intent(tmp_path: Path) ->
         prepare_calculation(workspace, intent_path, binding["intent_digest"])
 
 
+def test_prepare_rejects_legacy_intent_schema(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    intent_path = _intent(workspace)
+    intent = json.loads(intent_path.read_text(encoding="utf-8"))
+    intent["schema_version"] = "ts-calculation-intent/1"
+    intent_path.write_text(json.dumps(intent), encoding="utf-8")
+
+    with pytest.raises(ComputeContractError, match="unsupported calculation intent schema_version"):
+        prepare_calculation(workspace, intent_path)
+
+
 def test_prepare_is_node_scoped_idempotent_and_preserves_research_state(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     intent_path = _intent(workspace)
@@ -259,8 +262,8 @@ def test_prepare_is_node_scoped_idempotent_and_preserves_research_state(tmp_path
         "g16",
         "nodes/n001/inputs/candidate.gjf",
     ]
-    assert (workspace / "nodes/n001/inputs/calculations/calc_n001_optfreq_001.json").is_file()
-    assert (workspace / "nodes/n001/remote/calculations/calc_n001_optfreq_001/prepared.json").is_file()
+    assert (workspace / "nodes/n001/attempts/calc_n001_optfreq_001/intent.json").is_file()
+    assert (workspace / "nodes/n001/attempts/calc_n001_optfreq_001/prepared.json").is_file()
     assert {name: (workspace / name).read_bytes() for name in state_files} == before
 
     changed = json.loads(intent_path.read_text(encoding="utf-8"))
@@ -291,7 +294,7 @@ def test_v2_prepare_uses_local_attempt_directory_and_explicit_scope(tmp_path: Pa
     value["intent_id"] = "calc_n001_wrong_scope"
     value["expected_artifacts"] = ["nodes/n001/attempts/calc_n001_wrong_scope/outputs/candidate.log"]
     intent_path.write_text(json.dumps(value), encoding="utf-8")
-    with pytest.raises(ComputeContractError, match="must match legacy node phase"):
+    with pytest.raises(ComputeContractError, match="must match the validation node"):
         prepare_calculation(workspace, intent_path)
 
     value["validation_scope"] = "tsfreq"
@@ -339,7 +342,6 @@ def test_v2_recalculation_requires_local_source_attempt_and_remote_mirror_label(
 
     _allow_remote(monkeypatch)
     remote = _remote_target()
-    remote["authority"] = "execution_mirror"
     remote_intent = _intent_v2(workspace, intent_id="calc_n001_remote_v2", target=remote)
     remote_result = prepare_calculation(workspace, remote_intent)
     assert remote_result["prepared"]["execution_policy"]["authority"] == "execution_mirror"
@@ -374,7 +376,7 @@ def test_prepare_accepts_executable_intent_and_rejects_path_escape_and_wrong_rou
     intent["input_refs"]["gjf"] = "nodes/n001/inputs/candidate.gjf"
     intent["expected_artifacts"] = ["nodes/n000/outputs/foreign.log"]
     intent_path.write_text(json.dumps(intent), encoding="utf-8")
-    with pytest.raises(ComputeContractError, match="nodes/n001/outputs"):
+    with pytest.raises(ComputeContractError, match="nodes/n001/attempts/calc_n001_optfreq_unsafe/outputs"):
         prepare_calculation(workspace, intent_path)
 
     intent["expected_artifacts"] = ["nodes/n001/outputs/candidate.log"]
@@ -555,7 +557,7 @@ def test_control_guard_survives_host_process_interruption(
     with pytest.raises(KeyboardInterrupt):
         submit_calculation(workspace, "calc_n001_optfreq_001")
 
-    base = workspace / "nodes/n001/remote/calculations/calc_n001_optfreq_001"
+    base = workspace / "nodes/n001/attempts/calc_n001_optfreq_001"
     assert (base / "submit_guard.json").is_file()
     assert not (base / "submit_result.json").exists()
     operations = operational_snapshot(workspace)
@@ -564,7 +566,7 @@ def test_control_guard_survives_host_process_interruption(
         {
             "operation": "submit",
             "intent_id": "calc_n001_optfreq_001",
-            "guard_ref": "nodes/n001/remote/calculations/calc_n001_optfreq_001/submit_guard.json",
+            "guard_ref": "nodes/n001/attempts/calc_n001_optfreq_001/submit_guard.json",
         }
     ]
     with pytest.raises(ComputeContractError, match="durable control guard"):
@@ -1055,7 +1057,7 @@ def test_mcp_namespace_separates_identical_intents_in_two_workspaces(tmp_path: P
     assert second["remote_dir"].startswith(f"workspaces/{second['workspace_id']}/")
 
 
-def test_legacy_mcp_prepared_record_keeps_unscoped_paths_and_submission_id(
+def test_mcp_prepared_record_without_workspace_namespace_is_rejected(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1070,69 +1072,9 @@ def test_legacy_mcp_prepared_record_keeps_unscoped_paths_and_submission_id(
     prepared["execution_policy"] = prepared_result["intent"]["execution_target"]
     prepared_path = workspace / f"nodes/n001/attempts/{intent_id}/prepared.json"
     prepared_path.write_text(json.dumps(prepared), encoding="utf-8")
-    (workspace / ".agents/workspace-identity.json").unlink()
-    seen: dict[str, object] = {}
 
-    class FakeLegacyMCPClient:
-        def ensure_directory(self, path: str) -> None:
-            seen["remote_dir"] = path
-
-        def upload_file(self, _source: Path, _remote_path: str):
-            return {"uploaded": True}
-
-        def submit(self, request):
-            seen["request"] = request
-            return RemoteReceipt(
-                node_id="n001",
-                host="cluster-mcp",
-                remote_dir=request["workdir"],
-                command=["mcp", "ts_submit_job", request["submission_id"]],
-                receipt_path=f"{request['workdir']}/ts_submission.json",
-                scheduler_id="42002.cluster",
-                metadata={
-                    "submission_id": request["submission_id"],
-                    "intent_id": request["intent_id"],
-                    "intent_digest": request["intent_digest"],
-                    "backend": request["backend"],
-                    "expected_artifacts": json.dumps(request["expected_artifacts"]),
-                },
-            )
-
-        def status(self, submission_id: str, *, include_history: bool):
-            request = seen["request"]
-            assert isinstance(request, dict)
-            assert include_history is True
-            return {
-                "schema_version": "ts-cluster-submission/1",
-                "submission_id": submission_id,
-                "state": "submitted",
-                "job_id": "42002.cluster",
-                "request": request,
-                "scheduler": {"state": "F", "exit_status": 0},
-            }
-
-        def download_file(self, remote_path: str, destination: Path):
-            seen["download"] = remote_path
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(_gaussian_log(), encoding="utf-8")
-            return {"path": str(destination), "size": destination.stat().st_size, "sha256": "3" * 64}
-
-    monkeypatch.setattr("ts_compute.control._mcp_client", lambda: FakeLegacyMCPClient())
-
-    submitted = submit_calculation(workspace, intent_id)
-    status = calculation_status(workspace, intent_id)
-    collected = collect_calculation(workspace, intent_id, ["candidate.log"])
-
-    request = seen["request"]
-    assert isinstance(request, dict)
-    assert seen["remote_dir"] == "runs/n001/calc_n001_optfreq_v2_001"
-    assert request["workdir"] == "runs/n001/calc_n001_optfreq_v2_001"
-    assert request["submission_id"].startswith(f"tsjob_{intent_id}_")
-    assert "ws_" not in request["submission_id"]
-    assert submitted["provenance"]["submission_id"] == request["submission_id"]
-    assert status["state"] == "completed"
-    assert seen["download"] == "runs/n001/calc_n001_optfreq_v2_001/candidate.log"
-    assert collected["program_status"] == "completed"
+    with pytest.raises(ComputeContractError, match="execution policy does not match"):
+        submit_calculation(workspace, intent_id)
 
 
 def test_mcp_cancel_is_bound_to_preflight_job_id(
@@ -1264,6 +1206,16 @@ def test_remote_target_requires_host_and_directory_allowlists(tmp_path: Path, mo
         prepare_calculation(workspace, intent_path)
 
 
+def test_remote_target_requires_explicit_transport(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    target = _remote_target()
+    del target["transport"]
+    intent_path = _intent(workspace, target=target)
+
+    with pytest.raises(ComputeContractError, match="calculation_intent_v2.schema.json validation failed"):
+        prepare_calculation(workspace, intent_path)
+
+
 def test_status_tail_and_collect_use_prepared_remote_scope(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1326,7 +1278,7 @@ def test_status_tail_and_collect_use_prepared_remote_scope(
     assert seen["fetch"] == (["candidate.log"], False)
     assert collected["program_status"] == "not_run"
     assert collected["artifact_refs"] == [
-        "nodes/n001/outputs/calculations/calc_n001_optfreq_001/collected/candidate.log"
+        "nodes/n001/attempts/calc_n001_optfreq_001/outputs/collected/candidate.log"
     ]
     assert len(seen["poll"]) == 1
     config = seen["poll"][-1]
@@ -1407,7 +1359,7 @@ def test_prepared_backend_metadata_is_revalidated_before_remote_access(
     workspace = _workspace(tmp_path)
     _allow_remote(monkeypatch)
     prepare_calculation(workspace, _intent(workspace, target=_remote_target()))
-    prepared_path = workspace / "nodes/n001/remote/calculations/calc_n001_optfreq_001/prepared.json"
+    prepared_path = workspace / "nodes/n001/attempts/calc_n001_optfreq_001/prepared.json"
     prepared = json.loads(prepared_path.read_text(encoding="utf-8"))
     prepared["prepared_task"]["command"] = ["arbitrary-command"]
     prepared_path.write_text(json.dumps(prepared), encoding="utf-8")
@@ -1419,11 +1371,16 @@ def test_prepared_backend_metadata_is_revalidated_before_remote_access(
 def test_gaussian_parse_returns_program_facts_without_workspace_verdict(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     prepare_calculation(workspace, _intent(workspace))
-    log = workspace / "nodes" / "n001" / "outputs" / "candidate.log"
+    log = workspace / "nodes" / "n001" / "attempts" / "calc_n001_optfreq_001" / "outputs" / "candidate.log"
+    log.parent.mkdir(parents=True, exist_ok=True)
     log.write_text(_gaussian_log(), encoding="utf-8")
     state_before = (workspace / "research_state.json").read_bytes()
 
-    result = parse_calculation(workspace, "calc_n001_optfreq_001", "nodes/n001/outputs/candidate.log")
+    result = parse_calculation(
+        workspace,
+        "calc_n001_optfreq_001",
+        "nodes/n001/attempts/calc_n001_optfreq_001/outputs/candidate.log",
+    )
 
     assert result["state"] == "parsed"
     assert result["program_status"] == "completed"
@@ -1432,21 +1389,25 @@ def test_gaussian_parse_returns_program_facts_without_workspace_verdict(tmp_path
     assert "claim_verdict" not in result
     assert "accepted_ts" not in result
     assert (workspace / "research_state.json").read_bytes() == state_before
-    assert (workspace / "nodes/n001/outputs/calculations/calc_n001_optfreq_001/calculation_result.json").is_file()
-    assert (workspace / "nodes/n001/outputs/calculations/calc_n001_optfreq_001/parsed/validation_summary.json").is_file()
+    assert (workspace / "nodes/n001/attempts/calc_n001_optfreq_001/outputs/calculation_result.json").is_file()
+    assert (workspace / "nodes/n001/attempts/calc_n001_optfreq_001/outputs/parsed/validation_summary.json").is_file()
     assert parse_calculation(
         workspace,
         "calc_n001_optfreq_001",
-        "nodes/n001/outputs/candidate.log",
+        "nodes/n001/attempts/calc_n001_optfreq_001/outputs/candidate.log",
     ) == result
 
     log.write_text(_gaussian_log() + "\n additional completed output\n", encoding="utf-8")
     with pytest.raises(ComputeContractError, match="different source content"):
-        parse_calculation(workspace, "calc_n001_optfreq_001", "nodes/n001/outputs/candidate.log")
+        parse_calculation(
+            workspace,
+            "calc_n001_optfreq_001",
+            "nodes/n001/attempts/calc_n001_optfreq_001/outputs/candidate.log",
+        )
 
     foreign = workspace / "nodes" / "n000" / "outputs" / "candidate.log"
     foreign.write_text(_gaussian_log(), encoding="utf-8")
-    with pytest.raises(ComputeContractError, match="nodes/n001/outputs"):
+    with pytest.raises(ComputeContractError, match="nodes/n001/attempts/calc_n001_optfreq_001/outputs"):
         parse_calculation(workspace, "calc_n001_optfreq_001", "nodes/n000/outputs/candidate.log")
 
 
@@ -1459,28 +1420,31 @@ def test_gaussian_irc_parse_writes_attempt_contract_artifacts(tmp_path: Path) ->
         encoding="utf-8",
     )
     intent = {
-        "schema_version": "ts-calculation-intent/1",
+        "schema_version": "ts-calculation-intent/2",
         "intent_id": intent_id,
         "node_id": "n001",
         "purpose": "Parse one forward IRC path without making a connectivity verdict.",
-        "evidence_layer": "connectivity",
+        "validation_scope": "tsfreq",
+        "attempt_kind": "primary",
+        "recalculation_ref": None,
         "backend": "gaussian",
         "task_type": "irc",
         "input_refs": {"gjf": "nodes/n001/inputs/irc.gjf"},
         "settings": {},
-        "expected_artifacts": ["nodes/n001/outputs/irc.log"],
+        "expected_artifacts": [f"nodes/n001/attempts/{intent_id}/outputs/irc.log"],
         "execution_target": {"kind": "local"},
         "dry_run": True,
     }
     intent_path = workspace / "nodes/n001/scratch/irc-intent.json"
     intent_path.write_text(json.dumps(intent), encoding="utf-8")
     prepare_calculation(workspace, intent_path)
-    source = workspace / "nodes/n001/outputs/irc.log"
+    source = workspace / f"nodes/n001/attempts/{intent_id}/outputs/irc.log"
+    source.parent.mkdir(parents=True, exist_ok=True)
     source.write_text(_gaussian_irc_log(), encoding="utf-8")
 
-    result = parse_calculation(workspace, intent_id, "nodes/n001/outputs/irc.log")
+    result = parse_calculation(workspace, intent_id, f"nodes/n001/attempts/{intent_id}/outputs/irc.log")
 
-    parse_dir = workspace / f"nodes/n001/outputs/calculations/{intent_id}/parsed"
+    parse_dir = workspace / f"nodes/n001/attempts/{intent_id}/outputs/parsed"
     assert result["program_status"] == "completed"
     assert result["provenance"]["parser_contract"] == "gaussian-irc-parser/1"
     assert result["parser_facts"]["first_point_number"] == 1
@@ -1489,7 +1453,7 @@ def test_gaussian_irc_parse_writes_attempt_contract_artifacts(tmp_path: Path) ->
     assert (parse_dir / "irc_path_summary.json").is_file()
     assert (parse_dir / "irc_path_points.json").is_file()
     assert (parse_dir / "irc_endpoint.xyz").is_file()
-    assert (workspace / f"nodes/n001/outputs/calculations/{intent_id}/calculation_result.json").is_file()
+    assert (workspace / f"nodes/n001/attempts/{intent_id}/outputs/calculation_result.json").is_file()
 
 
 def test_compute_result_contract_rejects_scientific_verdict_fields() -> None:

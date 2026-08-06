@@ -1,1183 +1,179 @@
 from __future__ import annotations
 
-import json
+from copy import deepcopy
 from pathlib import Path
-from typing import Any
 
 import pytest
 
-from ts_workspace import (
-    end_node,
-    init_workspace,
-    propose_hypothesis,
-    report_workspace,
-    start_node,
-    update_workspace,
-    validate_workspace,
-)
+from strict_helpers import HYPOTHESIS_ID, bootstrap_strict_workspace, initial_mechanism_hypothesis
+from ts_workspace import report_workspace, start_node, validate_workspace
 from ts_workspace.io import read_json, write_json
 from ts_workspace.validators.decision import ContractError
 from ts_workspace.validators.decision_context import validate_decision_for_workspace
-from strict_helpers import HYPOTHESIS_REF, PATHWAY_REF, bootstrap_strict_workspace, gate_artifact_metadata, initial_mechanism_hypothesis
 
 
-def test_start_node_requires_branch_context_after_n000(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-
-    decision = _start_decision(report_ref, node_id="n001", phase="candidate_generation", include_branch_context=False)
-
-    with pytest.raises(ContractError, match="payload.branch_context is required"):
-        validate_decision_for_workspace(workspace, decision)
-    with pytest.raises(ContractError, match="payload.branch_context is required"):
-        start_node(workspace, decision)
-
-    assert not (workspace / "nodes" / "n001").exists()
-
-
-def test_start_node_rejects_endpoint_after_n000(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-    decision = {
-        "schema_version": "ts-decision",
-        "action": "start_node",
-        "rationale": "Endpoint is reserved for the initial workspace node.",
-        "evidence_refs": [],
-        "report_ref": report_ref,
-        "payload": {
-            "node_id": "n001",
-            "parent_node": "n000",
-            "phase": "endpoint",
-            "hypothesis": "Invalid second endpoint node.",
-            "expected_evidence": ["reaction_center_delta"],
-            "branch_context": {
-                "relation": "continue_parent",
-                "from_node": "n000",
-                "anchor_node": "n000",
-            },
-        },
-    }
-
-    with pytest.raises(ContractError, match="phase=endpoint is reserved for n000"):
-        validate_decision_for_workspace(workspace, decision)
-
-
-def test_start_node_rejects_legacy_hypothesis_generation_phase(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-    hypothesis = initial_mechanism_hypothesis()
-    hypothesis["hypothesis_id"] = "hyp_0002"
-    hypothesis["parent_hypothesis_id"] = "hyp_0001"
-    decision = {
-        "schema_version": "ts-decision",
-        "action": "start_node",
-        "rationale": "A later hypothesis must use an explicit hypothesis branch.",
-        "evidence_refs": [],
-        "report_ref": report_ref,
-        "payload": {
-            "node_id": "n001",
-            "parent_node": "n000",
-            "phase": "hypothesis_generation",
-            "hypothesis": "Alternative mechanism hypothesis.",
-            "initial_mechanism_hypothesis": hypothesis,
-            "expected_evidence": ["initial_mechanism_hypothesis"],
-            "branch_context": {
-                "relation": "continue_parent",
-                "from_node": "n000",
-                "anchor_node": "n000",
-            },
-        },
-    }
-
-    with pytest.raises(ContractError, match="'hypothesis_generation' is not one of"):
-        validate_decision_for_workspace(workspace, decision)
-
-
-def test_new_hypothesis_branch_requires_alternative_proposal(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-    decision = _start_decision(
-        report_ref,
-        node_id="n001",
-        phase="candidate_generation",
-        branch_context={
-            "relation": "new_hypothesis_branch",
-            "from_node": "n000",
-            "anchor_node": "n000",
-        },
-    )
-
-    with pytest.raises(ContractError, match="requires an alternative hypothesis proposal"):
-        validate_decision_for_workspace(workspace, decision)
-
-
-def test_propose_hypothesis_rejects_duplicate_hypothesis_id(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-    hypothesis = initial_mechanism_hypothesis()
-    hypothesis["parent_hypothesis_id"] = "hyp_0001"
-    decision = {
-        "schema_version": "ts-decision",
-        "action": "propose_hypothesis",
-        "rationale": "A proposal cannot reuse an existing hypothesis id.",
-        "evidence_refs": ["ev_endpoint_0001"],
-        "report_ref": report_ref,
-        "payload": {
-            "proposed_hypothesis": hypothesis,
-            "proposal_context": {
-                "kind": "alternative",
-                "from_node": "n000",
-                "anchor_node": "n000",
-                "changed_variable": "electronic_state_model",
-                "reason_code": "duplicate_id_test",
-                "evidence_refs": ["ev_endpoint_0001"],
-            },
-        },
-    }
-
-    with pytest.raises(ContractError, match="hypothesis_id already exists: hyp_0001"):
-        validate_decision_for_workspace(workspace, decision)
-
-
-def test_validate_workspace_keeps_legacy_preflight_read_compatible(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    bootstrap_strict_workspace(workspace)
-    _rewrite_node_phase(workspace, "n000", "preflight")
-    _set_legacy_initial_hypothesis(workspace, "n000", initial_mechanism_hypothesis())
-
-    validation = validate_workspace(workspace)
-
-    assert validation["valid"] is True
-    assert "legacy_phase" in _codes(validation)
-
-
-def test_validate_workspace_accepts_legacy_preflight_branch_event_without_target_ref(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-    _add_secondary_hypothesis(workspace, report_ref)
-    _rewrite_node_phase(workspace, "n002", "preflight")
-    hypothesis = _secondary_hypothesis()
-    _set_legacy_initial_hypothesis(workspace, "n002", hypothesis, clear_hypothesis_ref=True)
-    tree = read_json(workspace / "research_state.json")
-    tree["branch_events"][-1]["target_hypothesis_ref"] = None
-    write_json(workspace / "research_state.json", tree)
-
-    validation = validate_workspace(workspace)
-
-    assert validation["valid"] is True
-    assert "legacy_phase" in _codes(validation)
-
-
-def test_validate_workspace_keeps_legacy_rp_conformer_read_compatible(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-    start_node(workspace, _start_decision(report_ref, node_id="n001", phase="candidate_generation"))
-    _rewrite_node_phase(workspace, "n001", "rp_conformer_generation")
-
-    validation = validate_workspace(workspace)
-
-    assert validation["valid"] is True
-    assert "legacy_phase" in _codes(validation)
-
-    end_node(workspace, _end_decision(report_ref, "n001", "inconclusive"))
-    node = read_json(workspace / "nodes" / "n001" / "node.json")
-    assert node["lifecycle"] == "closed"
-    assert validate_workspace(workspace)["valid"] is True
-
-
-def test_validate_workspace_keeps_legacy_hypothesis_generation_readable_and_closable(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-    start_node(workspace, _start_decision(report_ref, node_id="n001", phase="candidate_generation"))
-
-    hypothesis = _secondary_hypothesis()
-    _rewrite_node_phase(workspace, "n001", "hypothesis_generation")
-    _set_legacy_initial_hypothesis(workspace, "n001", hypothesis, clear_hypothesis_ref=True)
-    branch_context = {
-        "relation": "new_hypothesis_branch",
-        "from_node": "n000",
-        "anchor_node": "n000",
-        "changed_variable": "electronic_state_model",
-        "reason_code": "legacy_hypothesis_generation",
-        "evidence_refs": [],
-    }
-    node_path = workspace / "nodes" / "n001" / "node.json"
-    node = read_json(node_path)
-    node["branch_context"] = branch_context
-    write_json(node_path, node)
-    tree = read_json(workspace / "research_state.json")
-    tree["nodes"][1]["branch_context"] = branch_context
-    tree["branch_events"][-1].update(
-        {
-            **branch_context,
-            "target_hypothesis_ref": {"hypothesis_id": "hyp_0002", "prediction_ids": []},
-        }
-    )
-    write_json(workspace / "research_state.json", tree)
-    mechanism = read_json(workspace / "hypotheses.json")
-    mechanism["hypotheses"][0]["status"] = "proposed"
-    mechanism["hypotheses"][0].pop("activated_by_node", None)
-    write_json(workspace / "hypotheses.json", mechanism)
-    update_workspace(
-        workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "update_workspace",
-            "rationale": "Register evidence from a legacy hypothesis-generation node.",
-            "evidence_refs": [],
-            "report_ref": report_ref,
-            "payload": {
-                "append_evidence": {
-                    "evidence_id": "ev_legacy_hyp_0002",
-                    "kind": "mechanism_hypothesis",
-                    "role": "initial_mechanism_hypothesis",
-                    "evidence_tier": "hypothesis",
-                    "node_id": "n001",
-                    "summary": "Legacy alternative mechanism hypothesis.",
-                }
-            },
-        },
-    )
-
-    validation = validate_workspace(workspace)
-    assert validation["valid"] is True
-    assert "legacy_phase" in _codes(validation)
-
-    end_node(
-        workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "end_node",
-            "rationale": "Close a running legacy hypothesis-generation node.",
-            "evidence_refs": ["ev_legacy_hyp_0002"],
-            "report_ref": report_ref,
-            "payload": {
-                "node_id": "n001",
-                "closure": {
-                    "program_status": "completed",
-                    "claim_verdict": "supported",
-                    "program": {"summary": "Legacy node completed.", "evidence_refs": []},
-                    "mechanism": {
-                        "summary": "Legacy hypothesis remains close-compatible.",
-                        "evidence_refs": ["ev_legacy_hyp_0002"],
-                    },
-                    "implication": "Continue with an evidence-producing node.",
-                    "open_questions": [],
-                },
-            },
-        },
-    )
-
-    model = read_json(workspace / "hypotheses.json")
-    secondary = next(item for item in model["hypotheses"] if item["hypothesis_id"] == "hyp_0002")
-    assert secondary["status"] == "active"
-    assert secondary["source_node"] == "n001"
-    assert validate_workspace(workspace)["valid"] is True
-
-
-def test_validate_workspace_detects_missing_branch_context(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-
-    start_node(workspace, _start_decision(report_ref, node_id="n001", phase="connectivity_validation"))
-    node = read_json(workspace / "nodes" / "n001" / "node.json")
-    node.pop("branch_context", None)
-    write_json(workspace / "nodes" / "n001" / "node.json", node)
-    tree = read_json(workspace / "research_state.json")
-    tree["nodes"][1].pop("branch_context", None)
-    write_json(workspace / "research_state.json", tree)
-
-    validation = validate_workspace(workspace)
-
-    assert validation["valid"] is False
-    assert "missing_branch_context" in _codes(validation)
-
-
-def test_validate_workspace_accepts_explicit_solution_branch(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-
-    start_node(
-        workspace,
-        _start_decision(
-            report_ref,
-            node_id="n001",
-            phase="candidate_generation",
-            solution_ref={"solution_id": "sol_qst2_001"},
-        ),
-    )
-    end_node(workspace, _end_decision(report_ref, "n001", "refuted"))
-    start_node(
-        workspace,
-        _start_decision(
-            report_ref,
-            node_id="n002",
-            phase="candidate_generation",
-            solution_ref={"solution_id": "sol_scan_002", "parent_solution_id": "sol_qst2_001"},
-            branch_context={
-                "relation": "new_solution_branch",
-                "from_node": "n001",
-                "anchor_node": "n000",
-                "changed_variable": "solution_strategy",
-                "reason_code": "route_failed",
-                "evidence_refs": [],
-            },
-        ),
-    )
-
-    validation = validate_workspace(workspace)
-
-    assert validation["valid"] is True
-    assert validation["findings"] == []
-    tree = read_json(workspace / "research_state.json")
-    assert tree["edges"][-1] == {"parent_node": "n000", "child_node": "n002"}
-    assert tree["branch_events"][-1]["parent_node"] == "n000"
-    assert tree["branch_events"][-1]["is_rebased"] is True
-
-
-def test_new_solution_branch_requires_parent_to_match_anchor(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-
-    start_node(
-        workspace,
-        _start_decision(
-            report_ref,
-            node_id="n001",
-            phase="candidate_generation",
-            solution_ref={"solution_id": "sol_qst2_001"},
-        ),
-    )
-    end_node(workspace, _end_decision(report_ref, "n001", "refuted"))
-    decision = _start_decision(
-        report_ref,
-        node_id="n002",
-        parent_node="n001",
-        phase="candidate_generation",
-        solution_ref={"solution_id": "sol_scan_002", "parent_solution_id": "sol_qst2_001"},
-        branch_context={
-            "relation": "new_solution_branch",
-            "from_node": "n001",
-            "anchor_node": "n000",
-            "changed_variable": "solution_strategy",
-            "reason_code": "route_failed",
-            "evidence_refs": [],
-        },
-    )
-
-    with pytest.raises(ContractError, match="new_solution_branch branch_context requires parent_node to match anchor_node"):
-        validate_decision_for_workspace(workspace, decision)
-    with pytest.raises(ContractError, match="new_solution_branch branch_context requires parent_node to match anchor_node"):
-        start_node(workspace, decision)
-
-
-def test_validate_workspace_rejects_solution_branch_not_mounted_on_anchor(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-
-    start_node(
-        workspace,
-        _start_decision(
-            report_ref,
-            node_id="n001",
-            phase="candidate_generation",
-            solution_ref={"solution_id": "sol_qst2_001"},
-        ),
-    )
-    end_node(workspace, _end_decision(report_ref, "n001", "refuted"))
-    start_node(
-        workspace,
-        _start_decision(
-            report_ref,
-            node_id="n002",
-            phase="candidate_generation",
-            solution_ref={"solution_id": "sol_scan_002", "parent_solution_id": "sol_qst2_001"},
-            branch_context={
-                "relation": "new_solution_branch",
-                "from_node": "n001",
-                "anchor_node": "n000",
-                "changed_variable": "solution_strategy",
-                "reason_code": "route_failed",
-                "evidence_refs": [],
-            },
-        ),
-    )
-    node = read_json(workspace / "nodes" / "n002" / "node.json")
-    node["parent_node"] = "n001"
-    write_json(workspace / "nodes" / "n002" / "node.json", node)
-    tree = read_json(workspace / "research_state.json")
-    tree["nodes"][2]["parent_node"] = "n001"
-    tree["edges"][-1] = {"parent_node": "n001", "child_node": "n002"}
-    tree["branch_events"][-1]["parent_node"] = "n001"
-    tree["branch_events"][-1]["is_rebased"] = False
-    write_json(workspace / "research_state.json", tree)
-
-    validation = validate_workspace(workspace)
-
-    assert validation["valid"] is False
-    assert "branch_parent_anchor_mismatch" in _codes(validation)
-
-
-def test_new_solution_branch_accepts_ancestor_checkpoint_distinct_from_hypothesis_origin(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-    _add_secondary_hypothesis(workspace, report_ref)
-
-    start_node(
-        workspace,
-        _start_decision(
-            report_ref,
-            node_id="n003",
-            parent_node="n002",
-            phase="candidate_generation",
-            solution_ref={"solution_id": "sol_secondary_001"},
-            branch_context={"relation": "continue_parent", "from_node": "n002", "anchor_node": "n001"},
-            hypothesis_ref={"hypothesis_id": "hyp_0002", "prediction_ids": ["pred_mode_001"]},
-        ),
-    )
-    end_node(workspace, _end_decision(report_ref, "n003", "refuted", hypothesis_id="hyp_0002"))
-    decision = _start_decision(
-        report_ref,
-        node_id="n004",
-        parent_node="n000",
-        phase="candidate_generation",
-        solution_ref={"solution_id": "sol_secondary_002", "parent_solution_id": "sol_secondary_001"},
-        branch_context={
-            "relation": "new_solution_branch",
-            "from_node": "n003",
-            "anchor_node": "n000",
-            "changed_variable": "solution_strategy",
-            "reason_code": "route_failed",
-            "evidence_refs": [],
-        },
-        hypothesis_ref={"hypothesis_id": "hyp_0002", "prediction_ids": ["pred_mode_001"]},
-    )
-
-    assert validate_decision_for_workspace(workspace, decision) == decision
-    assert start_node(workspace, decision)["node_id"] == "n004"
-
-
-def test_new_solution_branch_rejects_checkpoint_outside_trigger_ancestry(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-    start_node(workspace, _start_decision(report_ref, node_id="n001", phase="candidate_generation"))
-    end_node(workspace, _end_decision(report_ref, "n001", "refuted"))
-    start_node(
-        workspace,
-        _start_decision(
-            report_ref,
-            node_id="n002",
-            parent_node="n000",
-            phase="candidate_generation",
-            branch_context={"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
-        ),
-    )
-    end_node(workspace, _end_decision(report_ref, "n002", "supported"))
-    decision = _start_decision(
-        report_ref,
-        node_id="n003",
-        parent_node="n002",
-        phase="candidate_generation",
-        solution_ref={"solution_id": "sol_non_ancestor"},
-        branch_context={
-            "relation": "new_solution_branch",
-            "from_node": "n001",
-            "anchor_node": "n002",
-            "changed_variable": "solution_strategy",
-            "reason_code": "inspect_sibling_checkpoint",
-            "evidence_refs": [],
-        },
-    )
-
-    with pytest.raises(ContractError, match="anchor_node must be an ancestor"):
-        validate_decision_for_workspace(workspace, decision)
-
-
-def test_validate_workspace_accepts_solution_anchor_at_older_ancestor(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-    _add_secondary_hypothesis(workspace, report_ref)
-
-    start_node(
-        workspace,
-        _start_decision(
-            report_ref,
-            node_id="n003",
-            parent_node="n002",
-            phase="candidate_generation",
-            solution_ref={"solution_id": "sol_secondary_001"},
-            branch_context={"relation": "continue_parent", "from_node": "n002", "anchor_node": "n001"},
-            hypothesis_ref={"hypothesis_id": "hyp_0002", "prediction_ids": ["pred_mode_001"]},
-        ),
-    )
-    node = read_json(workspace / "nodes" / "n003" / "node.json")
-    node["parent_node"] = "n000"
-    node["branch_context"] = {
-        "relation": "new_solution_branch",
-        "from_node": "n002",
-        "anchor_node": "n000",
-        "changed_variable": "solution_strategy",
-        "reason_code": "legacy_overbroad_anchor",
-        "evidence_refs": [],
-    }
-    write_json(workspace / "nodes" / "n003" / "node.json", node)
-    tree = read_json(workspace / "research_state.json")
-    tree["nodes"][3]["parent_node"] = "n000"
-    tree["nodes"][3]["branch_context"] = node["branch_context"]
-    tree["edges"][-1] = {"parent_node": "n000", "child_node": "n003"}
-    tree["branch_events"][-1].update(
-        {
-            "relation": "new_solution_branch",
-            "from_node": "n002",
-            "anchor_node": "n000",
-            "parent_node": "n000",
-            "is_rebased": True,
-            "reason_code": "legacy_overbroad_anchor",
-            "changed_variable": "solution_strategy",
-        }
-    )
-    write_json(workspace / "research_state.json", tree)
-
-    validation = validate_workspace(workspace)
-
-    assert validation["valid"] is True
-    assert "branch_anchor_not_ancestor" not in _codes(validation)
-
-
-def test_update_workspace_repairs_solution_anchor_to_another_ancestor(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-    _add_secondary_hypothesis(workspace, report_ref)
-
-    start_node(
-        workspace,
-        _start_decision(
-            report_ref,
-            node_id="n003",
-            parent_node="n002",
-            phase="candidate_generation",
-            solution_ref={"solution_id": "sol_secondary_001"},
-            branch_context={"relation": "continue_parent", "from_node": "n002", "anchor_node": "n001"},
-            hypothesis_ref={"hypothesis_id": "hyp_0002", "prediction_ids": ["pred_mode_001"]},
-        ),
-    )
-    end_node(workspace, _end_decision(report_ref, "n003", "refuted", hypothesis_id="hyp_0002"))
-    _force_overbroad_solution_anchor(workspace, "n003")
-
-    assert validate_workspace(workspace)["valid"] is True
-    result = update_workspace(
-        workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "update_workspace",
-            "rationale": "Repair legacy solution branch anchor to the hypothesis source node.",
-            "evidence_refs": [],
-            "report_ref": report_ref,
-            "payload": {
-                "repair_branch_anchor": {
-                    "node_id": "n003",
-                    "new_anchor_node": "n001",
-                    "reason_code": "test_overbroad_anchor_repair",
-                }
-            },
-        },
-    )
-
-    assert result["repairs"]["branch_anchor"] == 1
-    validation = validate_workspace(workspace)
-    assert validation["valid"] is True
-    assert "branch_anchor_not_ancestor" not in _codes(validation)
-    node = read_json(workspace / "nodes" / "n003" / "node.json")
-    assert node["parent_node"] == "n001"
-    assert node["branch_context"]["anchor_node"] == "n001"
-    assert node["lineage_repairs"][0]["reason_code"] == "test_overbroad_anchor_repair"
-
-
-def test_update_workspace_refuses_to_repair_running_branch_anchor(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-    _add_secondary_hypothesis(workspace, report_ref)
-
-    start_node(
-        workspace,
-        _start_decision(
-            report_ref,
-            node_id="n003",
-            parent_node="n002",
-            phase="candidate_generation",
-            solution_ref={"solution_id": "sol_secondary_001"},
-            branch_context={"relation": "continue_parent", "from_node": "n002", "anchor_node": "n001"},
-            hypothesis_ref={"hypothesis_id": "hyp_0002", "prediction_ids": ["pred_mode_001"]},
-        ),
-    )
-    _force_overbroad_solution_anchor(workspace, "n003")
-
-    with pytest.raises(ContractError, match="refuses to reparent running node"):
-        update_workspace(
-            workspace,
-            {
-                "schema_version": "ts-decision",
-                "action": "update_workspace",
-                "rationale": "Attempt to repair a running node.",
-                "evidence_refs": [],
-                "report_ref": report_ref,
-                "payload": {
-                    "repair_branch_anchor": {
-                        "node_id": "n003",
-                        "new_anchor_node": "n001",
-                        "reason_code": "running_node_repair_attempt",
-                    }
-                },
-            },
-        )
-
-
-def test_non_linear_branch_from_older_node_ignores_recent_terminal_node(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-
-    start_node(workspace, _start_decision(report_ref, node_id="n001", phase="candidate_generation"))
-    end_node(workspace, _end_decision(report_ref, "n001", "supported"))
-    start_node(workspace, _start_decision(report_ref, node_id="n002", phase="connectivity_validation"))
-    end_node(workspace, _end_decision(report_ref, "n002", "refuted"))
-    start_node(
-        workspace,
-        _start_decision(
-            report_ref,
-            node_id="n003",
-            parent_node="n001",
-            phase="tsfreq_validation",
-            branch_context={"relation": "continue_parent", "from_node": "n001", "anchor_node": "n000"},
-        ),
-    )
-
-    validation = validate_workspace(workspace)
-
-    assert validation["valid"] is True
-    assert validation["findings"] == []
-
-
-def test_validate_workspace_flags_terminal_unresolved_target(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-
-    start_node(workspace, _start_decision(report_ref, node_id="n001", phase="connectivity_validation"))
-    end_node(workspace, _end_decision(report_ref, "n001", "refuted"))
-
-    validation = validate_workspace(workspace)
-
-    assert validation["valid"] is True
-    assert _codes(validation) == {"terminal_unresolved_no_running_node"}
-    assert validation["findings"][0]["severity"] == "warning"
-
-
-def test_pathway_audit_supported_does_not_mark_audited_step_supported(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-
-    start_node(
-        workspace,
-        _start_decision(
-            report_ref,
-            node_id="n001",
-            phase="pathway_audit",
-            pathway_ref={"pathway_id": "p_test", "step_id": "s_i_to_p"},
-        ),
-    )
-    update_workspace(
-        workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "update_workspace",
-            "rationale": "Register a negative pathway audit summary.",
-            "evidence_refs": [],
-            "report_ref": report_ref,
-            "payload": {
-                "append_evidence": {
-                    "evidence_id": "ev_pathway_not_accepted",
-                    "kind": "pathway_audit",
-                    "role": "pathway_audit_summary",
-                    "evidence_tier": "local_parse",
-                    "node_id": "n001",
-                    "summary": "This branch does not strictly support the audited pathway.",
-                    **gate_artifact_metadata("nodes/n001/outputs/pathway_audit.json"),
-                    "quality": {
-                        "hypothesis_id": HYPOTHESIS_REF["hypothesis_id"],
-                        "strict_pathway_supported": False,
-                        "strict_pathway_decision": "pathway_not_accepted",
-                    },
-                }
-            },
-        },
-    )
-    close_decision = _end_decision(report_ref, "n001", "supported")
-    close_decision["evidence_refs"] = ["ev_pathway_not_accepted"]
-    close_decision["payload"]["closure"]["program"]["evidence_refs"] = ["ev_pathway_not_accepted"]
-    close_decision["payload"]["closure"]["mechanism"]["evidence_refs"] = ["ev_pathway_not_accepted"]
-    end_node(workspace, close_decision)
-
-    model = json.loads((workspace / "hypotheses.json").read_text(encoding="utf-8"))
-    pathway = model["pathways"][0]
-    step = pathway["steps"][0]
-
-    assert pathway["status"] == "active"
-    assert step["status"] == "active"
-    assert pathway["audit_nodes"][0]["node_id"] == "n001"
-    assert step["audit_nodes"][0]["node_id"] == "n001"
-    assert validate_workspace(workspace)["valid"] is True
-
-
-def test_validate_workspace_requires_strict_pathway_decision_for_closed_pathway_audit(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-
-    start_node(
-        workspace,
-        _start_decision(
-            report_ref,
-            node_id="n001",
-            phase="pathway_audit",
-            pathway_ref={"pathway_id": "p_test", "step_id": "s_i_to_p"},
-        ),
-    )
-    update_workspace(
-        workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "update_workspace",
-            "rationale": "Register a pathway audit summary with a strict decision.",
-            "evidence_refs": [],
-            "report_ref": report_ref,
-            "payload": {
-                "append_evidence": {
-                    "evidence_id": "ev_pathway_audit",
-                    "kind": "pathway_audit",
-                    "role": "pathway_audit_summary",
-                    "evidence_tier": "local_parse",
-                    "node_id": "n001",
-                    "summary": "The pathway audit was accepted.",
-                    **gate_artifact_metadata("nodes/n001/outputs/pathway_audit.json"),
-                    "quality": {
-                        "hypothesis_id": HYPOTHESIS_REF["hypothesis_id"],
-                        "strict_pathway_supported": True,
-                        "strict_pathway_decision": "accepted",
-                    },
-                }
-            },
-        },
-    )
-    close_decision = _end_decision(report_ref, "n001", "supported")
-    close_decision["evidence_refs"] = ["ev_pathway_audit"]
-    close_decision["payload"]["closure"]["program"]["evidence_refs"] = ["ev_pathway_audit"]
-    close_decision["payload"]["closure"]["mechanism"]["evidence_refs"] = ["ev_pathway_audit"]
-    end_node(workspace, close_decision)
-
-    registry_path = workspace / "evidence_registry.json"
-    registry = read_json(registry_path)
-    for entry in registry["evidence"]:
-        if entry.get("evidence_id") == "ev_pathway_audit":
-            entry["quality"].pop("strict_pathway_decision", None)
-            break
-    write_json(registry_path, registry)
-    validation = validate_workspace(workspace)
-
-    assert validation["valid"] is False
-    assert "missing_pathway_audit_strict_decision" in _codes(validation)
-
-
-def test_validate_workspace_requires_pathway_ref_for_pathway_audit(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-
-    start_node(
-        workspace,
-        _start_decision(
-            report_ref,
-            node_id="n001",
-            phase="pathway_audit",
-            pathway_ref={"pathway_id": "p_test", "step_id": "s_i_to_p"},
-        ),
-    )
-    node_path = workspace / "nodes" / "n001" / "node.json"
-    node = read_json(node_path)
-    node.pop("pathway_ref", None)
-    write_json(node_path, node)
-
-    validation = validate_workspace(workspace)
-
-    assert validation["valid"] is False
-    assert "missing_pathway_ref" in _codes(validation)
-    with pytest.raises(ContractError, match="node.pathway_ref"):
-        end_node(workspace, _end_decision(report_ref, "n001", "supported"))
-
-
-def test_tsfreq_support_does_not_mark_pathway_step_supported(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    pathway_ref = {"pathway_id": "p_test", "step_id": "s_r_to_p"}
-    report_ref = bootstrap_strict_workspace(workspace, pathway_ref=pathway_ref)
-
-    start_node(
-        workspace,
-        _start_decision(report_ref, node_id="n001", phase="tsfreq_validation", pathway_ref=pathway_ref),
-    )
-    end_node(workspace, _end_decision(report_ref, "n001", "supported"))
-
-    model = json.loads((workspace / "hypotheses.json").read_text(encoding="utf-8"))
-    pathway = model["pathways"][0]
-    step = pathway["steps"][0]
-
-    assert pathway["status"] == "active"
-    assert step["status"] == "active"
-    assert "supporting_nodes" not in step
-    assert validate_workspace(workspace)["valid"] is True
-
-
-def test_connectivity_support_marks_pathway_step_supported(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    pathway_ref = {"pathway_id": "p_test", "step_id": "s_r_to_p"}
-    report_ref = bootstrap_strict_workspace(workspace, pathway_ref=pathway_ref)
-
-    start_node(
-        workspace,
-        _start_decision(report_ref, node_id="n001", phase="connectivity_validation", pathway_ref=pathway_ref),
-    )
-    end_node(workspace, _end_decision(report_ref, "n001", "supported"))
-
-    model = json.loads((workspace / "hypotheses.json").read_text(encoding="utf-8"))
-    pathway = model["pathways"][0]
-    step = pathway["steps"][0]
-
-    assert pathway["status"] == "supported"
-    assert step["status"] == "supported"
-    assert step["supporting_nodes"] == ["n001"]
-    assert validate_workspace(workspace)["valid"] is True
-
-
-def test_update_workspace_rejects_cross_node_evidence_path(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-
-    start_node(workspace, _start_decision(report_ref, node_id="n001", phase="candidate_generation"))
-    end_node(workspace, _end_decision(report_ref, "n001", "supported"))
-    start_node(workspace, _start_decision(report_ref, node_id="n002", phase="tsfreq_validation"))
-
-    with pytest.raises(ContractError, match="different node artifact directory"):
-        update_workspace(
-            workspace,
-            {
-                "schema_version": "ts-decision",
-                "action": "update_workspace",
-                "rationale": "Register TS/Freq evidence with an invalid cross-node path.",
-                "evidence_refs": [],
-                "report_ref": report_ref,
-                "payload": {
-                    "append_evidence": {
-                        "evidence_id": "ev_tsfreq_cross_node",
-                        "kind": "gaussian_tsfreq_validation",
-                        "role": "tsfreq_gate",
-                        "evidence_tier": "local_parse",
-                        "node_id": "n002",
-                        "summary": "This wrongly points to the candidate node output.",
-                        "path": "nodes/n001/outputs/qst2_parse/validation_summary.json",
-                    }
-                },
-            },
-        )
-
-
-def test_update_workspace_accepts_current_node_evidence_path(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-
-    start_node(workspace, _start_decision(report_ref, node_id="n001", phase="tsfreq_validation"))
-    result = update_workspace(
-        workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "update_workspace",
-            "rationale": "Register TS/Freq evidence with a node-owned path.",
-            "evidence_refs": [],
-            "report_ref": report_ref,
-            "payload": {
-                "append_evidence": {
-                    "evidence_id": "ev_tsfreq_owned",
-                    "kind": "gaussian_tsfreq_validation",
-                    "role": "tsfreq_gate",
-                    "evidence_tier": "local_parse",
-                    "node_id": "n001",
-                    "summary": "This points to the TS/Freq node output.",
-                    "path": "nodes/n001/outputs/validation_summary.json",
-                    **gate_artifact_metadata("nodes/n001/outputs/validation_summary.json"),
-                }
-            },
-        },
-    )
-
-    assert result["appended"]["evidence"] == 1
-
-
-def test_validate_workspace_warns_for_legacy_cross_node_evidence_path(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-
-    start_node(workspace, _start_decision(report_ref, node_id="n001", phase="candidate_generation"))
-    end_node(workspace, _end_decision(report_ref, "n001", "supported"))
-    start_node(workspace, _start_decision(report_ref, node_id="n002", phase="tsfreq_validation"))
-
-    registry = read_json(workspace / "evidence_registry.json")
-    registry["evidence"].append(
-        {
-            "evidence_id": "ev_legacy_cross_node",
-            "kind": "gaussian_tsfreq_validation",
-            "role": "tsfreq_gate",
-            "evidence_tier": "local_parse",
-            "node_id": "n002",
-            "summary": "Legacy evidence points to a previous node path.",
-            "path": "nodes/n001/outputs/qst2_parse/validation_summary.json",
-            **gate_artifact_metadata("nodes/n002/outputs/validation_summary.json"),
-        }
-    )
-    write_json(workspace / "evidence_registry.json", registry)
-
-    validation = validate_workspace(workspace)
-
-    assert validation["valid"] is True
-    assert {"cross_node_evidence_path", "missing_artifact_manifest_consumed_path"} <= _codes(validation)
-
-
-def _report_ref(workspace: Path) -> dict[str, str]:
+def _start_decision(workspace: Path, payload: dict, *, evidence_refs: list[str] | None = None) -> dict:
     report = report_workspace(workspace)
-    return {"report_id": report["report_id"], "workspace_root": str(workspace)}
-
-
-def _rewrite_node_phase(workspace: Path, node_id: str, phase: str) -> None:
-    node_path = workspace / "nodes" / node_id / "node.json"
-    node = read_json(node_path)
-    node["phase"] = phase
-    write_json(node_path, node)
-
-    tree = read_json(workspace / "research_state.json")
-    next(item for item in tree["nodes"] if item["node_id"] == node_id)["phase"] = phase
-    write_json(workspace / "research_state.json", tree)
-
-    artifact_manifest_path = workspace / "nodes" / node_id / "outputs" / "artifact_manifest.json"
-    if artifact_manifest_path.exists():
-        artifact_manifest = read_json(artifact_manifest_path)
-        artifact_manifest["phase"] = phase
-        write_json(artifact_manifest_path, artifact_manifest)
-
-
-def _start_decision(
-    report_ref: dict[str, str],
-    *,
-    node_id: str,
-    phase: str,
-    parent_node: str = "n000",
-    branch_context: dict[str, Any] | None = None,
-    include_branch_context: bool = True,
-    solution_ref: dict[str, Any] | None = None,
-    pathway_ref: dict[str, str] | None = None,
-    hypothesis_ref: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    payload: dict[str, Any] = {
-        "node_id": node_id,
-        "parent_node": parent_node,
-        "phase": phase,
-        "hypothesis": f"Test {phase} hypothesis.",
-        "hypothesis_ref": hypothesis_ref or HYPOTHESIS_REF,
-        "expected_evidence": [],
-    }
-    if include_branch_context:
-        payload["branch_context"] = branch_context or {
-            "relation": "continue_parent",
-            "from_node": parent_node,
-            "anchor_node": "n000",
-        }
-    if solution_ref is not None:
-        payload["solution_ref"] = solution_ref
-    if pathway_ref is not None:
-        payload["pathway_ref"] = pathway_ref
     return {
-        "schema_version": "ts-decision",
+        "schema_version": "ts-decision/2",
+        "decision_id": f"dec_{payload.get('node_id', 'auto')}",
         "action": "start_node",
-        "rationale": f"Start {node_id}.",
-        "evidence_refs": [],
-        "report_ref": report_ref,
+        "rationale": "Exercise workspace-aware v2 validation.",
+        "evidence_refs": evidence_refs or [],
+        "report_ref": {"report_id": report["report_id"], "workspace_root": str(workspace)},
+        "base_revision": report["workspace_revision"],
         "payload": payload,
     }
 
 
-def _end_decision(report_ref: dict[str, str], node_id: str, claim_verdict: str, *, hypothesis_id: str | None = None) -> dict[str, Any]:
-    hypothesis_ref = {"hypothesis_id": hypothesis_id or HYPOTHESIS_REF["hypothesis_id"], "prediction_ids": HYPOTHESIS_REF["prediction_ids"]}
+def _candidate_payload(node_id: str = "n001") -> dict:
     return {
-        "schema_version": "ts-decision",
-        "action": "end_node",
-        "rationale": f"Close {node_id}.",
-        "evidence_refs": [],
-        "report_ref": report_ref,
-        "payload": {
-            "node_id": node_id,
-            "closure": {
-                "program_status": "completed",
-                "claim_verdict": claim_verdict,
-                "program": {"summary": "Program completed.", "evidence_refs": []},
-                "mechanism": {
-                    "summary": "Claim was evaluated.",
-                    "hypothesis_ref": hypothesis_ref,
-                    "revision": {
-                        "action": "refute_prediction",
-                        "prediction_ids": HYPOTHESIS_REF["prediction_ids"],
-                        "changed_variable": "reaction_center",
-                    } if claim_verdict == "refuted" else None,
-                    "evidence_refs": [],
-                },
-                "implication": "Choose a follow-up branch.",
-                "open_questions": [],
-            },
-        },
+        "node_id": node_id,
+        "parent_node": "n_hypothesis",
+        "node_type": "candidate_search",
+        "candidate_kind": "transition_state",
+        "objective": "Generate a TS candidate.",
+        "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": []},
+        "branch_context": {"relation": "continue_parent", "from_node": "n_hypothesis", "anchor_node": "n000"},
+        "expected_evidence": ["candidate_geometry"],
     }
 
 
-def _secondary_hypothesis() -> dict[str, Any]:
-    hypothesis = initial_mechanism_hypothesis()
-    hypothesis["hypothesis_id"] = "hyp_0002"
-    hypothesis["parent_hypothesis_id"] = "hyp_0001"
-    hypothesis["summary"] = "Secondary hypothesis with a non-root source node."
-    hypothesis["evidence_refs"] = ["ev_hyp_0002"]
-    return hypothesis
+def test_post_intake_node_requires_branch_context(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    bootstrap_strict_workspace(workspace)
+    payload = _candidate_payload()
+    payload.pop("branch_context")
+    decision = _start_decision(workspace, payload)
+
+    with pytest.raises(ContractError, match="branch_context is required"):
+        validate_decision_for_workspace(workspace, decision)
+    with pytest.raises(ContractError, match="branch_context is required"):
+        start_node(workspace, decision)
+    assert not (workspace / "nodes" / "n001").exists()
 
 
-def _set_legacy_initial_hypothesis(
-    workspace: Path,
-    node_id: str,
-    hypothesis: dict[str, Any],
-    *,
-    clear_hypothesis_ref: bool = False,
-) -> None:
-    node_path = workspace / "nodes" / node_id / "node.json"
+def test_intake_is_reserved_for_n000(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    bootstrap_strict_workspace(workspace)
+    decision = _start_decision(
+        workspace,
+        {
+            "node_id": "n001",
+            "parent_node": "n_hypothesis",
+            "node_type": "intake",
+            "objective": "Invalid second intake.",
+            "branch_context": {"relation": "continue_parent", "from_node": "n_hypothesis", "anchor_node": "n000"},
+        },
+    )
+    with pytest.raises(ContractError, match="reserved for n000"):
+        validate_decision_for_workspace(workspace, decision)
+
+
+def test_phase_node_is_not_read_compatible(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    bootstrap_strict_workspace(workspace)
+    node_path = workspace / "nodes" / "n_hypothesis" / "node.json"
     node = read_json(node_path)
-    node["initial_mechanism_hypothesis"] = hypothesis
-    if clear_hypothesis_ref:
-        node["hypothesis_ref"] = None
+    node["schema_version"] = "ts-node"
+    node["phase"] = "hypothesis_generation"
+    node.pop("node_type")
     write_json(node_path, node)
 
-    if clear_hypothesis_ref:
-        tree = read_json(workspace / "research_state.json")
-        next(item for item in tree["nodes"] if item["node_id"] == node_id)["hypothesis_ref"] = None
-        write_json(workspace / "research_state.json", tree)
+    validation = validate_workspace(workspace)
+    assert validation["valid"] is False
+    assert any(item["code"] == "schema_validation_failed" for item in validation["findings"])
 
 
-def _add_secondary_hypothesis(workspace: Path, report_ref: dict[str, str]) -> None:
-    start_node(
-        workspace,
-        _start_decision(report_ref, node_id="n001", phase="candidate_generation"),
-    )
-    update_workspace(
-        workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "update_workspace",
-            "rationale": "Register secondary hypothesis evidence.",
-            "evidence_refs": [],
-            "report_ref": report_ref,
-            "payload": {
-                "append_evidence": {
-                    "evidence_id": "ev_hyp_0002",
-                    "kind": "mechanism_hypothesis",
-                    "role": "initial_mechanism_hypothesis",
-                    "evidence_tier": "hypothesis",
-                    "node_id": "n001",
-                    "summary": "The first search result motivates an alternative mechanism hypothesis.",
-                    "quality": {"hypothesis_id": "hyp_0001"},
-                }
-            },
-        },
-    )
-    end_node(workspace, _end_decision(report_ref, "n001", "supported"))
-    hypothesis = _secondary_hypothesis()
-    propose_hypothesis(
-        workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "propose_hypothesis",
-            "rationale": "Propose a secondary hypothesis from the first search result.",
-            "evidence_refs": ["ev_hyp_0002"],
-            "report_ref": report_ref,
-            "payload": {
-                "proposed_hypothesis": hypothesis,
-                "proposal_context": {
-                    "kind": "alternative",
-                    "from_node": "n001",
-                    "anchor_node": "n001",
-                    "changed_variable": "electronic_state_model",
-                    "reason_code": "secondary_hypothesis_for_anchor_test",
-                    "evidence_refs": ["ev_hyp_0002"],
-                },
-            },
-        },
-    )
-    start_node(
-        workspace,
-        _start_decision(
-            report_ref,
-            node_id="n002",
-            parent_node="n001",
-            phase="candidate_generation",
-            hypothesis_ref={"hypothesis_id": "hyp_0002", "prediction_ids": ["pred_mode_001"]},
-            branch_context={
-                "relation": "new_hypothesis_branch",
-                "from_node": "n001",
-                "anchor_node": "n001",
-                "changed_variable": "electronic_state_model",
-                "reason_code": "secondary_hypothesis_for_anchor_test",
-                "evidence_refs": ["ev_hyp_0002"],
-            },
-        ),
-    )
-    end_node(
-        workspace,
-        _end_decision(report_ref, "n002", "supported", hypothesis_id="hyp_0002"),
-    )
-
-
-def _force_overbroad_solution_anchor(workspace: Path, node_id: str) -> None:
-    node = read_json(workspace / "nodes" / node_id / "node.json")
-    node["parent_node"] = "n000"
-    node["branch_context"] = {
-        "relation": "new_solution_branch",
-        "from_node": "n002",
+def test_new_hypothesis_branch_requires_mechanism_proposal(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    bootstrap_strict_workspace(workspace)
+    payload = _candidate_payload()
+    payload["parent_node"] = "n000"
+    payload["branch_context"] = {
+        "relation": "new_hypothesis_branch",
+        "from_node": "n_hypothesis",
         "anchor_node": "n000",
-        "changed_variable": "solution_strategy",
-        "reason_code": "legacy_overbroad_anchor",
-        "evidence_refs": [],
+        "changed_variable": "electronic_model",
+        "reason_code": "alternative_model",
     }
-    write_json(workspace / "nodes" / node_id / "node.json", node)
-    tree = read_json(workspace / "research_state.json")
-    for entry in tree["nodes"]:
-        if entry["node_id"] == node_id:
-            entry["parent_node"] = "n000"
-            entry["branch_context"] = node["branch_context"]
-            break
-    for edge in tree["edges"]:
-        if edge["child_node"] == node_id:
-            edge["parent_node"] = "n000"
-            break
-    for event in tree["branch_events"]:
-        if event["new_node"] == node_id:
-            event.update(
-                {
-                    "relation": "new_solution_branch",
-                    "from_node": "n002",
-                    "anchor_node": "n000",
-                    "parent_node": "n000",
-                    "is_rebased": True,
-                    "reason_code": "legacy_overbroad_anchor",
-                    "changed_variable": "solution_strategy",
-                }
-            )
-            break
-    write_json(workspace / "research_state.json", tree)
+    decision = _start_decision(workspace, payload)
+    with pytest.raises(ContractError, match="requires a mechanism proposal node"):
+        validate_decision_for_workspace(workspace, decision)
 
 
-def _codes(validation: dict[str, Any]) -> set[str]:
-    return {finding["code"] for finding in validation["findings"]}
+def test_solution_branch_parent_must_match_anchor(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    bootstrap_strict_workspace(workspace)
+    payload = _candidate_payload()
+    payload["branch_context"] = {
+        "relation": "new_solution_branch",
+        "from_node": "n_hypothesis",
+        "anchor_node": "n000",
+        "changed_variable": "search_strategy",
+        "reason_code": "new_seed",
+    }
+    decision = _start_decision(workspace, payload)
+    with pytest.raises(ContractError, match="parent_node to match anchor_node"):
+        validate_decision_for_workspace(workspace, decision)
+
+
+def test_workspace_validator_rechecks_branch_parent(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    bootstrap_strict_workspace(workspace)
+    payload = _candidate_payload()
+    start_node(workspace, _start_decision(workspace, payload))
+    state_path = workspace / "research_state.json"
+    state = read_json(state_path)
+    state["branch_events"][-1]["parent_node"] = "n000"
+    write_json(state_path, state)
+
+    validation = validate_workspace(workspace)
+    assert validation["valid"] is False
+    assert any("parent" in item["code"] for item in validation["findings"])
+
+
+def test_validation_scope_must_match_prediction(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    bootstrap_strict_workspace(workspace)
+    decision = _start_decision(
+        workspace,
+        {
+            "node_id": "n001",
+            "parent_node": "n_hypothesis",
+            "node_type": "validation",
+            "validation_scope": "connectivity",
+            "objective": "Misbind a TS/Freq prediction.",
+            "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_mode_001"]},
+            "branch_context": {"relation": "continue_parent", "from_node": "n_hypothesis", "anchor_node": "n000"},
+        },
+    )
+    with pytest.raises(ContractError, match="validation_scope does not match"):
+        validate_decision_for_workspace(workspace, decision)
+
+
+def test_duplicate_hypothesis_id_is_rejected(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    bootstrap_strict_workspace(workspace)
+    hypothesis = deepcopy(initial_mechanism_hypothesis())
+    hypothesis["parent_hypothesis_id"] = HYPOTHESIS_ID
+    decision = _start_decision(
+        workspace,
+        {
+            "node_id": "n002",
+            "parent_node": "n000",
+            "node_type": "mechanism",
+            "mechanism_action": "propose",
+            "objective": "Reuse an existing hypothesis id.",
+            "proposed_hypothesis": hypothesis,
+            "branch_context": {
+                "relation": "new_hypothesis_branch",
+                "from_node": "n_hypothesis",
+                "anchor_node": "n000",
+                "changed_variable": "electronic_model",
+                "reason_code": "duplicate",
+            },
+        },
+    )
+    with pytest.raises(ContractError, match="hypothesis_id already exists"):
+        validate_decision_for_workspace(workspace, decision)

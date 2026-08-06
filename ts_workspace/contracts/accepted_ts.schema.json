@@ -3,17 +3,21 @@
   "title": "Accepted TS artifact",
   "type": "object",
   "required": [
+    "schema_version",
     "accepted_id",
     "node_id",
-    "phase",
+    "node_type",
+    "audit_scope",
     "hypothesis_ref",
     "required_gates",
     "evidence_refs"
   ],
   "properties": {
+    "schema_version": {"const": "ts-accepted/2"},
     "accepted_id": {"type": "string", "minLength": 1},
     "node_id": {"type": "string", "minLength": 1},
-    "phase": {"const": "accepted_audit"},
+    "node_type": {"const": "audit"},
+    "audit_scope": {"enum": ["transition_state", "elementary_step"]},
     "hypothesis_ref": {"$ref": "mechanism.schema.json#/$defs/hypothesis_ref"},
     "required_gates": {
       "type": "array",
@@ -48,5 +52,5 @@
       }
     }
   ],
-  "additionalProperties": true
+  "additionalProperties": false
 }

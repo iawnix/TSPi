@@ -87,11 +87,12 @@ def test_invalidated_alias_is_preserved_but_removed_from_current_findings(tmp_pa
     update_workspace(
         workspace,
         {
-            "schema_version": "ts-decision",
+            "schema_version": "ts-decision/2",
             "action": "update_workspace",
             "rationale": "Invalidate the incorrectly owned legacy alias without deleting history.",
             "evidence_refs": [],
             "report_ref": report_ref,
+            "base_revision": report_workspace(workspace)["workspace_revision"],
             "payload": {
                 "append_evidence": {
                     "evidence_id": "ev_bad_alias_invalidation",

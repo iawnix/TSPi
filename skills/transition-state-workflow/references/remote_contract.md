@@ -30,9 +30,9 @@ allowlisted `remote_dir`; an MCP intent uses a logical workspace-relative
 logical path to `workspaces/<workspace_id>/<remote_dir>` using the persistent
 non-scientific identity in `.agents/workspace-identity.json`. The resolved path
 and workspace-bound submission ID are persisted in `prepared.json`; later
-operations do not derive them from the Pi process. Legacy prepared records
-without the namespace marker retain their original paths and submission IDs.
-Legacy remote targets without `transport` remain SSH-compatible. MCP
+operations do not derive them from the Pi process. Prepared MCP records without
+the namespace marker or matching workspace binding are rejected. Remote targets
+without an explicit `transport` are also rejected. MCP
 connection URL, token, and timeout come only from
 `TS_CLUSTER_MCP_URL`, `TS_CLUSTER_MCP_TOKEN`, and `TS_CLUSTER_MCP_TIMEOUT`.
 SSH cancellation requires a previously inspected PID and verifies that the

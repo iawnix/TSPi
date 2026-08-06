@@ -14,7 +14,7 @@ job.
 | `validation` | Generate evidence for a declared prediction or mechanism claim. | Backend operator; Root interprets evidence |
 | `audit` | Audit a TS, elementary step, pathway, or complete study against registered evidence. | Root agent with optional independent review |
 
-`phase` is a legacy field. New decisions use `node_type`.
+Workspace decisions use `node_type`; `phase` is not part of the contract.
 
 ## Validation Scopes
 

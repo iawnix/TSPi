@@ -448,9 +448,7 @@ def _key_facts(record: dict[str, Any]) -> dict[str, Any]:
 
 
 def _pathway_audit_note(node: dict[str, Any], records: list[Any]) -> str:
-    if node.get("phase") != "pathway_audit" and not (
-        node.get("node_type") == "audit" and node.get("audit_scope") == "pathway"
-    ):
+    if node.get("node_type") != "audit" or node.get("audit_scope") != "pathway":
         return ""
     outcome = pathway_audit_outcome_for_node(node.get("node_id"), records)
     if outcome:

@@ -163,19 +163,18 @@ def test_advice_validation_accepts_bounded_evidence_referenced_output(tmp_path: 
     assert result["facts"][0]["basis_refs"] == ["ev_endpoint_0001"]
 
 
-def test_advice_parse_boundary_normalizes_legacy_completed_and_artifact_ref(tmp_path: Path) -> None:
+@pytest.mark.parametrize("legacy_field", ["outcome", "artifact_ref"])
+def test_advice_validation_rejects_legacy_result_aliases(tmp_path: Path, legacy_field: str) -> None:
     packet = _packet(tmp_path)
     advice = _valid_result(packet)
-    advice["outcome"] = "completed"
-    fact = advice["facts"][0]
-    fact["artifact_ref"] = fact.pop("basis_refs")[0]
+    if legacy_field == "outcome":
+        advice["outcome"] = "completed"
+    else:
+        fact = advice["facts"][0]
+        fact["artifact_ref"] = fact.pop("basis_refs")[0]
 
-    completed = _validate_result(tmp_path, packet, advice)
-    result = json.loads(completed.stdout)
-
-    assert result["outcome"] == "success"
-    assert result["facts"][0]["basis_refs"] == ["ev_endpoint_0001"]
-    assert "artifact_ref" not in result["facts"][0]
+    completed = _validate_result(tmp_path, packet, advice, check=False)
+    assert completed.returncode == 2
 
 
 def test_advice_validation_rejects_cross_layer_claim(tmp_path: Path) -> None:
@@ -251,7 +250,6 @@ def test_agent_directories_separate_shared_core_from_review_implementation() -> 
         "agent-protocol.cjs",
         "fact-kinds.cjs",
         "failure-taxonomy.cjs",
-        "result-normalization.cjs",
         "run-journal.cjs",
         "session-lifecycle.cjs",
     }

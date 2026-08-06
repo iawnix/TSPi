@@ -12,9 +12,6 @@ from ..operational import agent_run_index, operational_snapshot
 from ..state import EVIDENCE_FILE, HYPOTHESES_FILE, RESEARCH_STATE_FILE
 from ..validators.workspace import validate_workspace
 
-PATHWAY_AUDIT_PHASE = "pathway_audit"
-
-
 def report_workspace(root: str | Path) -> dict[str, Any]:
     """Build a read-only report context. This function does NOT write to disk.
 
@@ -102,12 +99,9 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
             "ask_user",
             "stop",
         ],
-        "legacy_allowed_decision_actions": ["propose_hypothesis"],
         "decision_contract": {
             "schema_version": "ts-decision/2",
-            "legacy_schema_version": "ts-decision",
-            "requires_report_ref": ["start_node", "propose_hypothesis", "end_node", "update_workspace"],
-            "v2_requires_report_ref": ["start_node", "end_node", "update_workspace"],
+            "requires_report_ref": ["start_node", "end_node", "update_workspace"],
             "mutation_channel": "ts_workspace",
         },
     }
@@ -211,13 +205,11 @@ def _read_or_empty(path: Path) -> dict[str, Any]:
 def _node_capsule(node: dict[str, Any]) -> dict[str, Any]:
     closure = node.get("closure") if isinstance(node.get("closure"), dict) else {}
     program = closure.get("program") if isinstance(closure.get("program"), dict) else {}
-    mechanism = closure.get("mechanism") if isinstance(closure.get("mechanism"), dict) else {}
     hypothesis = closure.get("hypothesis") if isinstance(closure.get("hypothesis"), dict) else {}
     audit = closure.get("audit") if isinstance(closure.get("audit"), dict) else {}
     return {
         "node_id": node.get("node_id"),
         "parent_node": node.get("parent_node"),
-        "phase": node.get("phase"),
         "node_type": node.get("node_type"),
         "objective": node.get("objective"),
         "mechanism_action": node.get("mechanism_action"),
@@ -227,22 +219,16 @@ def _node_capsule(node: dict[str, Any]) -> dict[str, Any]:
         "attempt_kind": node.get("attempt_kind"),
         "recalculation_ref": node.get("recalculation_ref"),
         "lifecycle": node.get("lifecycle"),
-        "hypothesis": node.get("hypothesis"),
         "hypothesis_ref": node.get("hypothesis_ref"),
         "solution_ref": node.get("solution_ref"),
         "pathway_ref": node.get("pathway_ref"),
         "branch_context": node.get("branch_context"),
-        "program_status": closure.get("program_status"),
-        "claim_verdict": closure.get("claim_verdict"),
         "program_outcome": program.get("outcome"),
         "hypothesis_status": hypothesis.get("status"),
         "audit_status": audit.get("status"),
         "study_complete": audit.get("study_complete"),
         "program_summary": program.get("summary"),
         "program_facts": program.get("facts", []),
-        "mechanism_summary": mechanism.get("summary"),
-        "mechanism_facts": mechanism.get("facts", []),
-        "implication": closure.get("implication"),
         "open_questions": closure.get("open_questions", []),
         "evidence_refs": sorted(_node_evidence_refs(node)),
         "created_by_decision": node.get("created_by_decision"),
@@ -255,7 +241,7 @@ def _node_evidence_refs(node: dict[str, Any]) -> set[str]:
     context = node.get("branch_context") if isinstance(node.get("branch_context"), dict) else {}
     refs.update(str(item) for item in context.get("evidence_refs", []) if item)
     closure = node.get("closure") if isinstance(node.get("closure"), dict) else {}
-    for section_name in ("program", "mechanism", "hypothesis", "audit"):
+    for section_name in ("program", "hypothesis", "audit"):
         section = closure.get(section_name) if isinstance(closure.get(section_name), dict) else {}
         refs.update(str(item) for item in section.get("evidence_refs", []) if item)
     return refs
@@ -264,9 +250,6 @@ def _node_evidence_refs(node: dict[str, Any]) -> set[str]:
 def _node_hypothesis_id(node: dict[str, Any]) -> str | None:
     ref = node.get("hypothesis_ref") if isinstance(node.get("hypothesis_ref"), dict) else {}
     hypothesis_id = ref.get("hypothesis_id")
-    if not hypothesis_id:
-        initial = node.get("initial_mechanism_hypothesis")
-        hypothesis_id = initial.get("hypothesis_id") if isinstance(initial, dict) else None
     if not hypothesis_id:
         proposed = node.get("proposed_hypothesis")
         hypothesis_id = proposed.get("hypothesis_id") if isinstance(proposed, dict) else None
@@ -357,7 +340,6 @@ def _hypothesis_capsule(hypothesis: dict[str, Any]) -> dict[str, Any]:
             "parent_hypothesis_id",
             "source_node",
             "branch_anchor_node",
-            "proposal_context",
             "structured_claim",
             "testable_predictions",
             "prediction_status",
@@ -439,14 +421,16 @@ def _build_solution_lineage(nodes: list[Any], branch_events: list[Any]) -> list[
                 "solution_ref": solution_ref,
                 "nodes": [],
                 "latest_lifecycle": None,
-                "latest_program_status": None,
-                "latest_claim_verdict": None,
+                "latest_program_outcome": None,
+                "latest_hypothesis_status": None,
+                "latest_audit_status": None,
             },
         )
         solution["nodes"].append(node.get("node_id"))
         solution["latest_lifecycle"] = node.get("lifecycle")
-        solution["latest_program_status"] = node.get("program_status")
-        solution["latest_claim_verdict"] = node.get("claim_verdict")
+        solution["latest_program_outcome"] = node.get("program_outcome")
+        solution["latest_hypothesis_status"] = node.get("hypothesis_status")
+        solution["latest_audit_status"] = node.get("audit_status")
 
     for event in branch_events:
         if not isinstance(event, dict):
@@ -504,11 +488,8 @@ def _build_branch_frontiers(nodes: list[Any], branch_events: list[Any]) -> list[
             {
                 "node_id": node_id,
                 "lifecycle": node.get("lifecycle"),
-                "phase": node.get("phase"),
                 "node_type": node.get("node_type"),
                 "scope": node.get("validation_scope") or node.get("audit_scope") or node.get("candidate_kind") or node.get("mechanism_action"),
-                "claim_verdict": node.get("claim_verdict"),
-                "program_status": node.get("program_status"),
                 "hypothesis_status": node.get("hypothesis_status"),
                 "program_outcome": node.get("program_outcome"),
                 "audit_status": node.get("audit_status"),
@@ -569,7 +550,7 @@ def _build_hypothesis_context(mechanism: dict[str, Any], evidence: dict[str, Any
     hypotheses = [item for item in mechanism.get("hypotheses", []) if isinstance(item, dict)]
     active = next((item for item in hypotheses if item.get("hypothesis_id") == focus_id), None)
     prediction_status = active.get("prediction_status", []) if isinstance(active, dict) else []
-    pathway_audits = _pathway_audit_summaries(prediction_status, evidence)
+    pathway_audits = _pathway_audit_summaries(mechanism.get("audit_records", []), evidence)
     claim_prediction_status = _claim_prediction_rows(prediction_status)
     supported = _prediction_ids_by_verdict(claim_prediction_status, "supported")
     refuted = _prediction_ids_by_verdict(claim_prediction_status, "refuted")
@@ -608,22 +589,13 @@ def _build_hypothesis_context(mechanism: dict[str, Any], evidence: dict[str, Any
 
 def _claim_prediction_rows(rows: list[Any]) -> list[dict[str, Any]]:
     """Rows whose verdict directly evaluates the referenced prediction."""
-    return [
-        row for row in rows
-        if isinstance(row, dict) and row.get("phase") != PATHWAY_AUDIT_PHASE
-    ]
+    return [row for row in rows if isinstance(row, dict)]
 
 
 def _satisfied_audit_roles(rows: list[Any], manifest: dict[str, Any]) -> set[str]:
     roles: set[str] = set()
     if manifest.get("accepted_ts_refs"):
         roles.add("accepted_audit")
-
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        if row.get("phase") == "accepted_audit" and row.get("claim_verdict") == "supported":
-            roles.add("accepted_audit")
 
     return roles
 
@@ -648,13 +620,14 @@ def _pathway_audit_summaries(rows: list[Any], evidence: dict[str, Any]) -> list[
     evidence_records = evidence.get("evidence", []) if isinstance(evidence, dict) else []
     summaries: list[dict[str, Any]] = []
     for row in rows:
-        if not isinstance(row, dict) or row.get("phase") != PATHWAY_AUDIT_PHASE:
+        if not isinstance(row, dict) or row.get("audit_scope") != "pathway":
             continue
         outcome = _pathway_audit_outcome(row, evidence_records)
+        hypothesis_ref = row.get("hypothesis_ref") if isinstance(row.get("hypothesis_ref"), dict) else {}
         item = {
             "node_id": row.get("node_id"),
-            "claim_verdict": row.get("claim_verdict"),
-            "prediction_ids": [str(item) for item in row.get("prediction_ids", []) if item],
+            "audit_status": row.get("status"),
+            "prediction_ids": [str(item) for item in hypothesis_ref.get("prediction_ids", []) if item],
             "evidence_refs": [str(item) for item in row.get("evidence_refs", []) if item],
             "audit_outcome": outcome,
         }
@@ -665,6 +638,11 @@ def _pathway_audit_summaries(rows: list[Any], evidence: dict[str, Any]) -> list[
 
 
 def _pathway_audit_outcome(row: dict[str, Any], evidence_records: list[Any]) -> str | None:
+    status = row.get("status")
+    if status == "accepted":
+        return "accepted"
+    if status == "not_accepted":
+        return "pathway_not_accepted"
     lifecycle_view = evidence_lifecycle_view(evidence_records)
     evidence_refs = set(
         lifecycle_view.resolve_refs([str(item) for item in row.get("evidence_refs", []) if item])
@@ -683,8 +661,6 @@ def _pathway_audit_outcome(row: dict[str, Any], evidence_records: list[Any]) -> 
             return decision
         if quality.get("strict_pathway_supported") is False or facts.get("whole_R_to_P_pathway_accepted") is False:
             return "pathway_not_accepted"
-    if row.get("claim_verdict") == "supported":
-        return "audit_supported"
     return None
 
 
@@ -698,9 +674,6 @@ def _prediction_ids_by_verdict(rows: list[Any], verdict: str) -> set[str]:
 
 
 def _prediction_row_verdict(row: dict[str, Any]) -> str | None:
-    legacy = row.get("claim_verdict")
-    if isinstance(legacy, str):
-        return legacy
     return {
         "supported": "supported",
         "unsupported": "refuted",

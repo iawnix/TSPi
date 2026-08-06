@@ -183,7 +183,7 @@ process.stdout.write(JSON.stringify({{ completions, successCalls, failureCalls: 
 
 
 def test_compute_contracts_exclude_workspace_verdicts_and_arbitrary_commands() -> None:
-    intent = json.loads((ROOT / "ts_compute" / "contracts" / "calculation_intent.schema.json").read_text(encoding="utf-8"))
+    intent = json.loads((ROOT / "ts_compute" / "contracts" / "calculation_intent_v2.schema.json").read_text(encoding="utf-8"))
     result = json.loads((ROOT / "ts_compute" / "contracts" / "calculation_result.schema.json").read_text(encoding="utf-8"))
 
     assert intent["additionalProperties"] is False
@@ -345,7 +345,7 @@ def test_compute_operator_output_is_bound_to_actual_tool_result(tmp_path: Path) 
                 "state": "prepared",
                 "program_status": "not_run",
                 "error_class": None,
-                "artifact_refs": ["nodes/n001/inputs/calculations/calc_test.json"],
+                "artifact_refs": ["nodes/n001/attempts/calc_test/intent.json"],
                 "exit_status": None,
                 "provenance": {"backend": "gaussian", "intent_digest": "sha256:test"},
             }
@@ -361,7 +361,7 @@ def test_compute_operator_output_is_bound_to_actual_tool_result(tmp_path: Path) 
         "summary": "The dry-run intent was prepared.",
         "scope": packet["scope"],
         "facts": [],
-        "artifact_refs": ["nodes/n001/inputs/calculations/calc_test.json"],
+        "artifact_refs": ["nodes/n001/attempts/calc_test/intent.json"],
         "program": {"outcome": "not_run", "state": "prepared", "error_class": None, "exit_status": None},
         "payload": {"intent_id": "calc_test", "node_id": "n001", "backend": "gaussian"},
         "limitations": ["No job was submitted."],
@@ -373,31 +373,17 @@ def test_compute_operator_output_is_bound_to_actual_tool_result(tmp_path: Path) 
     completed = _validate_operator_output(tmp_path, packet, [action], report, fenced=True)
     assert json.loads(completed.stdout)["program"]["state"] == "prepared"
 
-    basis_ref = "nodes/n001/inputs/calculations/calc_test.json"
-    for alias in {
-        "preparation",
-        "compute_preparation",
-        "submission",
-        "artifact_collection",
-        "collection",
-        "program",
-        "program_status",
-        "parser",
-    }:
-        report["facts"] = [{
-            "kind": alias,
-            "layer": None,
-            "statement": "Typed compute fact.",
-            "status": "observed",
-            "basis_refs": [basis_ref],
-        }]
-        completed = _validate_operator_output(tmp_path, packet, [action], report)
-        deterministic = json.loads(completed.stdout)
-        assert deterministic["facts"][0]["kind"] == "compute_preparation"
-        assert deterministic["facts"][0]["status"] == "observed"
-    report["facts"][0]["status"] = "unknown"
+    report["facts"] = [{
+        "kind": "compute_preparation",
+        "layer": None,
+        "statement": "Typed compute fact.",
+        "status": "observed",
+        "basis_refs": ["nodes/n001/attempts/calc_test/intent.json"],
+    }]
     completed = _validate_operator_output(tmp_path, packet, [action], report)
-    assert json.loads(completed.stdout)["facts"][0]["status"] == "observed"
+    deterministic = json.loads(completed.stdout)
+    assert deterministic["facts"][0]["kind"] == "compute_preparation"
+    assert deterministic["facts"][0]["status"] == "observed"
     report["facts"] = []
 
     report["program"]["state"] = "completed"
@@ -603,11 +589,11 @@ def test_compute_inspect_accepts_failed_status_plus_tail_as_partial_diagnostic(t
         "scope": packet["scope"],
         "facts": [
             {
-                "kind": "program",
+                "kind": "inspection",
                 "layer": "program",
                 "statement": "The remote launcher reported that g16 was not found.",
                 "status": "observed",
-                "artifact_ref": "remote_job.stderr",
+                "basis_refs": [f"nodes/n002/agent-runs/{packet['task_id']}/actions.json#/actions/0/result"],
             }
         ],
         "artifact_refs": [],

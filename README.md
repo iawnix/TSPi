@@ -10,8 +10,8 @@ This branch supports Pi Agent only. The Python packages and command-line
 entrypoints are implementation kernels used by the Pi extensions, not a
 separately supported agent runtime.
 
-New work uses `ts-decision/2` and `ts-node/2`. Legacy phase-based workspaces
-remain readable and closable, but they are not the model for new studies.
+The workspace contract is `ts-decision/2` and `ts-node/2`. Phase-based
+workspaces are rejected and must be recreated under the current ontology.
 
 ## Architecture
 
@@ -209,7 +209,7 @@ Candidate and validation nodes cannot set hypothesis status.
 
 ## Calculation Attempts
 
-New calculation intents use `ts-calculation-intent/2` and declare:
+Calculation intents use `ts-calculation-intent/2` and declare:
 
 - `validation_scope`
 - `attempt_kind=primary|retry|recalculation`
@@ -217,8 +217,8 @@ New calculation intents use `ts-calculation-intent/2` and declare:
 - one allowlisted backend and task type
 - a local or allowlisted remote execution target
 
-Remote intents select `transport=ssh|mcp`. Legacy remote intents without the
-field remain SSH-compatible. SSH policy comes from `TS_COMPUTE_*`; MCP
+Remote intents must select `transport=ssh|mcp` explicitly. SSH policy comes
+from `TS_COMPUTE_*`; MCP
 connection settings come only from `TS_CLUSTER_MCP_URL`,
 `TS_CLUSTER_MCP_TOKEN`, and `TS_CLUSTER_MCP_TIMEOUT`. Endpoints and credentials
 are forbidden in calculation intents.
@@ -251,9 +251,9 @@ The MCP `submission_id` is bound to both `workspace_id` and `intent_id`. This
 separates independent Pi workspaces that share one MCP principal. Agents
 working in the same workspace intentionally share the identity and remain
 serialized by the existing per-intent submit/cancel guards. The identity does
-not enter canonical scientific state or `workspace_revision`. Existing
-prepared records without `namespace_version=ts-mcp-workspace/1` keep their
-legacy paths and submission IDs for inspect and collect compatibility.
+not enter canonical scientific state or `workspace_revision`. Every MCP
+prepared record must contain `namespace_version=ts-mcp-workspace/1` and the
+matching workspace-bound path and submission ID; incomplete records are rejected.
 
 A remote directory must declare `authority=execution_mirror`. Results become
 usable only after collection and local verification. See

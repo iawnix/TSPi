@@ -29,7 +29,7 @@ from ..ontology import (
     HYPOTHESIS_STATUSES,
     INTAKE_STATUSES,
     MECHANISM_ACTIONS,
-    NODE_SCHEMA as NODE_SCHEMA_V2,
+    NODE_SCHEMA,
     NODE_TYPES,
     PROGRAM_OUTCOMES,
     VALIDATION_SCOPES,
@@ -39,14 +39,7 @@ from ..state import EVIDENCE_FILE, HYPOTHESES_FILE, RESEARCH_STATE_FILE
 from .decision import (
     ANCHORED_BRANCH_RELATIONS,
     FORBIDDEN_PUBLIC_FIELDS,
-    HYPOTHESIS_REF_PHASES,
-    LEGACY_PHASES,
-    VALID_CLAIM_VERDICTS,
-    VALID_LIFECYCLES,
-    VALID_PROGRAM_STATUSES,
-    WORKSPACE_BRANCH_RELATIONS,
-    WORKSPACE_HYPOTHESIS_CREATION_PHASES,
-    WORKSPACE_PHASES,
+    VALID_BRANCH_RELATIONS,
 )
 
 REQUIRED_FILES = {
@@ -58,7 +51,8 @@ REQUIRED_FILES = {
 REQUIRED_DIRS = {"inputs", "nodes", "reports", "accepted", "rejected"}
 # Auto-created on first mutation; missing is a warning, not an error.
 SOFT_DIRS = {"decisions"}
-UNRESOLVED_TERMINAL_VERDICTS = {"refuted", "inconclusive", "not_evaluated"}
+VALID_LIFECYCLES = {"running", "closed", "stopped"}
+UNRESOLVED_TERMINAL_STATUSES = {"unsupported", "ambiguous", "not_accepted", "failure", "needs_input"}
 SCHEMA_BY_FILE = {
     RESEARCH_STATE_FILE: "research_state.schema.json",
     HYPOTHESES_FILE: "hypotheses.schema.json",
@@ -148,8 +142,7 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001
             _finding(findings, "error", "invalid_node_json", str(exc), str(node_path))
             continue
-        node_schema = "node_v2.schema.json" if isinstance(node, dict) and node.get("schema_version") == NODE_SCHEMA_V2 else "node.schema.json"
-        findings.extend(schema_findings(node_schema, node, str(node_path)))
+        findings.extend(schema_findings("node_v2.schema.json", node, str(node_path)))
         if not isinstance(node, dict):
             _finding(findings, "error", "invalid_node_json", "node.json must contain an object", str(node_path))
             continue
@@ -292,96 +285,8 @@ def _validate_node(
     findings: list[dict[str, str]],
     source: str,
 ) -> None:
-    if node.get("schema_version") == NODE_SCHEMA_V2:
-        _validate_node_v2(node, expected_id, hypothesis_ids, findings, source)
-        return
-    if node.get("node_id") != expected_id:
-        _finding(findings, "error", "node_id_mismatch", "node_id does not match tree entry", source)
-    phase = node.get("phase")
-    if phase not in WORKSPACE_PHASES:
-        _finding(findings, "error", "invalid_phase", "node phase is invalid", source)
-    elif phase in LEGACY_PHASES:
-        replacement = {
-            "preflight": "endpoint",
-            "rp_conformer_generation": "candidate_generation",
-            "hypothesis_generation": "propose_hypothesis action",
-        }[phase]
-        _finding(
-            findings,
-            "warning",
-            "legacy_phase",
-            f"legacy phase {phase} is read-compatible only; use {replacement} for new nodes",
-            source,
-        )
-    if expected_id != "n000" and phase == "endpoint":
-        _finding(findings, "error", "endpoint_phase_after_n000", "phase=endpoint is reserved for n000", source)
-    if phase == "endpoint" and isinstance(node.get("initial_mechanism_hypothesis"), dict):
-        _finding(
-            findings,
-            "warning",
-            "legacy_endpoint_embedded_hypothesis",
-            "legacy endpoint embeds a mechanism hypothesis; new endpoint nodes use propose_hypothesis after closure",
-            source,
-        )
-    lifecycle = node.get("lifecycle")
-    if lifecycle not in VALID_LIFECYCLES:
-        _finding(findings, "error", "invalid_lifecycle", "node lifecycle is invalid", source)
-    if not isinstance(node.get("hypothesis"), str) or not node["hypothesis"].strip():
-        _finding(findings, "error", "missing_hypothesis", "node hypothesis is required", source)
-    if phase in WORKSPACE_HYPOTHESIS_CREATION_PHASES and not isinstance(node.get("initial_mechanism_hypothesis"), dict):
-        _finding(
-            findings,
-            "error",
-            "missing_initial_mechanism_hypothesis",
-            "hypothesis-creation node requires initial_mechanism_hypothesis",
-            source,
-        )
-    if phase in HYPOTHESIS_REF_PHASES:
-        _validate_hypothesis_ref(node.get("hypothesis_ref"), hypothesis_ids, findings, source, "node.hypothesis_ref")
-        if node.get("solution_ref") is not None:
-            _validate_solution_ref(node.get("solution_ref"), findings, source, "node.solution_ref")
-    if phase == "pathway_audit":
-        _validate_pathway_ref(node.get("pathway_ref"), findings, source, "node.pathway_ref")
-
-    closure = node.get("closure")
-    if lifecycle == "running" and closure is not None:
-        _finding(findings, "error", "running_node_has_closure", "running node cannot have closure", source)
-    if lifecycle in {"closed", "stopped"}:
-        if not isinstance(closure, dict):
-            _finding(findings, "error", "missing_closure", "closed or stopped node requires closure", source)
-            return
-        if closure.get("program_status") not in VALID_PROGRAM_STATUSES:
-            _finding(findings, "error", "invalid_program_status", "closure.program_status is invalid", source)
-        if closure.get("claim_verdict") not in VALID_CLAIM_VERDICTS:
-            _finding(findings, "error", "invalid_claim_verdict", "closure.claim_verdict is invalid", source)
-        mechanism = closure.get("mechanism") if isinstance(closure.get("mechanism"), dict) else {}
-        if phase in HYPOTHESIS_REF_PHASES:
-            _validate_hypothesis_ref(
-                mechanism.get("hypothesis_ref"),
-                hypothesis_ids,
-                findings,
-                source,
-                "closure.mechanism.hypothesis_ref",
-            )
-            node_ref = node.get("hypothesis_ref") if isinstance(node.get("hypothesis_ref"), dict) else {}
-            mech_ref = mechanism.get("hypothesis_ref") if isinstance(mechanism.get("hypothesis_ref"), dict) else {}
-            if node_ref.get("hypothesis_id") != mech_ref.get("hypothesis_id"):
-                _finding(
-                    findings,
-                    "error",
-                    "mismatched_closure_hypothesis_ref",
-                    "closure mechanism hypothesis_ref must match node hypothesis_ref",
-                    source,
-                )
-
-
-def _validate_node_v2(
-    node: dict[str, Any],
-    expected_id: str,
-    hypothesis_ids: set[str],
-    findings: list[dict[str, str]],
-    source: str,
-) -> None:
+    if node.get("schema_version") != NODE_SCHEMA:
+        _finding(findings, "error", "invalid_node_schema", "node schema_version must be ts-node/2", source)
     if node.get("node_id") != expected_id:
         _finding(findings, "error", "node_id_mismatch", "node_id does not match tree entry", source)
     node_type = node.get("node_type")
@@ -489,112 +394,49 @@ def _validate_hypothesis_provenance(
     for index, hypothesis in enumerate(model.get("hypotheses", [])):
         if not isinstance(hypothesis, dict):
             continue
-        proposal = hypothesis.get("proposal_context")
-        if not isinstance(proposal, dict):
-            continue
         hypothesis_id = hypothesis.get("hypothesis_id")
         source = f"{HYPOTHESES_FILE}.hypotheses[{index}]"
-        if hypothesis.get("source_node") != proposal.get("from_node"):
+        source_node_id = hypothesis.get("source_node")
+        source_node = node_details.get(str(source_node_id))
+        if not isinstance(source_node, dict):
             _finding(
                 findings,
                 "error",
-                "hypothesis_proposal_source_mismatch",
-                f"proposal source_node does not match proposal_context.from_node for {hypothesis_id}",
+                "hypothesis_source_node_missing",
+                f"source_node does not reference an existing node for {hypothesis_id}: {source_node_id}",
                 source,
             )
-        if hypothesis.get("branch_anchor_node") != proposal.get("anchor_node"):
+            continue
+        proposed = source_node.get("proposed_hypothesis")
+        if (
+            source_node.get("node_type") != "mechanism"
+            or source_node.get("mechanism_action") != "propose"
+            or not isinstance(proposed, dict)
+            or proposed.get("hypothesis_id") != hypothesis_id
+        ):
             _finding(
                 findings,
                 "error",
-                "hypothesis_proposal_anchor_mismatch",
-                f"branch_anchor_node does not match proposal_context.anchor_node for {hypothesis_id}",
+                "hypothesis_source_node_mismatch",
+                f"source_node is not the mechanism proposal node for {hypothesis_id}",
                 source,
             )
-        for field in ("from_node", "anchor_node"):
-            node_id = proposal.get(field)
-            if node_id not in node_details:
-                _finding(
-                    findings,
-                    "error",
-                    "hypothesis_proposal_node_missing",
-                    f"proposal_context.{field} does not reference an existing node: {node_id}",
-                    source,
-                )
-        if not isinstance(hypothesis.get("proposed_by_decision"), str) or not hypothesis["proposed_by_decision"].strip():
+        if hypothesis.get("proposed_by_decision") != source_node.get("created_by_decision"):
             _finding(
                 findings,
                 "error",
                 "hypothesis_proposal_decision_missing",
-                f"proposed_by_decision is required for proposed hypothesis {hypothesis_id}",
+                f"proposed_by_decision must match the source node decision for {hypothesis_id}",
                 source,
             )
-        proposal_evidence = set(str(item) for item in proposal.get("evidence_refs", []) if item)
-        hypothesis_evidence = set(str(item) for item in hypothesis.get("evidence_refs", []) if item)
-        if not proposal_evidence.issubset(hypothesis_evidence):
+        context = source_node.get("branch_context") if isinstance(source_node.get("branch_context"), dict) else {}
+        expected_anchor = context.get("anchor_node") or source_node.get("parent_node") or source_node_id
+        if hypothesis.get("branch_anchor_node") != expected_anchor:
             _finding(
                 findings,
                 "error",
-                "hypothesis_proposal_evidence_mismatch",
-                f"proposal evidence is not retained by hypothesis {hypothesis_id}",
-                source,
-            )
-
-        activated_by = hypothesis.get("activated_by_node")
-        referencing_nodes = [
-            node
-            for node in node_details.values()
-            if _node_hypothesis_id(node) == hypothesis_id and node.get("phase") not in WORKSPACE_HYPOTHESIS_CREATION_PHASES
-        ]
-        if hypothesis.get("status") == "proposed":
-            if activated_by or referencing_nodes:
-                _finding(
-                    findings,
-                    "error",
-                    "proposed_hypothesis_already_referenced",
-                    f"status=proposed hypothesis {hypothesis_id} cannot have an evidence node",
-                    source,
-                )
-            continue
-        if not isinstance(activated_by, str) or activated_by not in node_details:
-            _finding(
-                findings,
-                "error",
-                "hypothesis_activation_node_missing",
-                f"activated_by_node does not reference an existing node for {hypothesis_id}: {activated_by}",
-                source,
-            )
-            continue
-        activation_node = node_details[activated_by]
-        if _node_hypothesis_id(activation_node) != hypothesis_id:
-            _finding(
-                findings,
-                "error",
-                "hypothesis_activation_ref_mismatch",
-                f"activated_by_node does not reference hypothesis {hypothesis_id}",
-                source,
-            )
-        context = activation_node.get("branch_context") if isinstance(activation_node.get("branch_context"), dict) else {}
-        expected_relation = "continue_parent" if proposal.get("kind") == "initial" else "new_hypothesis_branch"
-        if context.get("relation") != expected_relation:
-            _finding(
-                findings,
-                "error",
-                "hypothesis_activation_relation_mismatch",
-                f"activation node for {hypothesis_id} must use relation={expected_relation}",
-                source,
-            )
-        fields = ("from_node", "anchor_node") if proposal.get("kind") == "initial" else (
-            "from_node",
-            "anchor_node",
-            "changed_variable",
-            "reason_code",
-        )
-        if any(context.get(field) != proposal.get(field) for field in fields):
-            _finding(
-                findings,
-                "error",
-                "hypothesis_activation_provenance_mismatch",
-                f"activation node provenance does not match proposal_context for {hypothesis_id}",
+                "hypothesis_proposal_anchor_mismatch",
+                f"branch_anchor_node does not match the mechanism proposal node for {hypothesis_id}",
                 source,
             )
 
@@ -617,33 +459,6 @@ def _validate_hypothesis_ref(
     prediction_ids = value.get("prediction_ids", [])
     if not isinstance(prediction_ids, list):
         _finding(findings, "error", "invalid_hypothesis_ref", f"{label}.prediction_ids must be a list", source)
-
-
-def _validate_solution_ref(value: Any, findings: list[dict[str, str]], source: str, label: str) -> None:
-    if not isinstance(value, dict):
-        _finding(findings, "error", "invalid_solution_ref", f"{label} must be an object", source)
-        return
-    solution_id = value.get("solution_id")
-    if not isinstance(solution_id, str) or not solution_id.strip():
-        _finding(findings, "error", "invalid_solution_ref", f"{label}.solution_id is required", source)
-    for field in ("summary", "strategy", "parent_solution_id"):
-        nested = value.get(field)
-        if nested is not None and not isinstance(nested, str):
-            _finding(findings, "error", "invalid_solution_ref", f"{label}.{field} must be a string or null", source)
-        elif isinstance(nested, str) and not nested.strip():
-            _finding(findings, "error", "invalid_solution_ref", f"{label}.{field} cannot be empty", source)
-
-
-def _validate_pathway_ref(value: Any, findings: list[dict[str, str]], source: str, label: str) -> None:
-    if not isinstance(value, dict):
-        _finding(findings, "error", "missing_pathway_ref", f"{label} is required", source)
-        return
-    pathway_id = value.get("pathway_id")
-    if not isinstance(pathway_id, str) or not pathway_id.strip():
-        _finding(findings, "error", "invalid_pathway_ref", f"{label}.pathway_id is required", source)
-    step_id = value.get("step_id")
-    if not isinstance(step_id, str) or not step_id.strip():
-        _finding(findings, "error", "invalid_pathway_ref", f"{label}.step_id is required", source)
 
 
 def _validate_tree_node_lineage(
@@ -673,16 +488,8 @@ def _validate_branch_contexts(
             _finding(findings, "error", "missing_branch_context", "post-n000 node requires branch_context", source)
             continue
         relation = context.get("relation")
-        if relation not in WORKSPACE_BRANCH_RELATIONS:
+        if relation not in VALID_BRANCH_RELATIONS:
             _finding(findings, "error", "invalid_branch_context", "branch_context.relation is invalid", source)
-        if node.get("phase") == "hypothesis_generation" and relation != "new_hypothesis_branch":
-            _finding(
-                findings,
-                "error",
-                "invalid_hypothesis_generation_relation",
-                "hypothesis_generation requires relation=new_hypothesis_branch",
-                source,
-            )
         from_node_id = context.get("from_node")
         anchor_node_id = context.get("anchor_node")
         for field, ref in (("from_node", from_node_id), ("anchor_node", anchor_node_id)):
@@ -716,12 +523,12 @@ def _validate_branch_contexts(
                 _finding(findings, "error", "invalid_recalculation", "recalculation_of requires attempt_kind=recalculation", source)
             if recalculation.get("source_node") != from_node_id:
                 _finding(findings, "error", "invalid_recalculation", "recalculation_ref.source_node must match branch_context.from_node", source)
-        elif node.get("schema_version") == NODE_SCHEMA_V2 and node.get("attempt_kind") == "recalculation":
+        elif node.get("attempt_kind") == "recalculation":
             _finding(findings, "error", "invalid_recalculation", "attempt_kind=recalculation requires relation=recalculation_of", source)
         if relation == "new_solution_branch":
             _validate_solution_branch_context(node, from_node, findings, source)
         elif relation == "new_hypothesis_branch":
-            if node.get("schema_version") == NODE_SCHEMA_V2 and node.get("mechanism_action") == "propose":
+            if node.get("mechanism_action") == "propose":
                 proposed = node.get("proposed_hypothesis") if isinstance(node.get("proposed_hypothesis"), dict) else {}
                 from_hypothesis_id = _node_hypothesis_id(from_node or {})
                 if proposed.get("parent_hypothesis_id") != from_hypothesis_id:
@@ -731,9 +538,6 @@ def _validate_branch_contexts(
         elif relation == "new_pathway_branch":
             if not isinstance(node.get("pathway_ref"), dict):
                 _finding(findings, "error", "invalid_branch_context", "new_pathway_branch requires node.pathway_ref", source)
-        elif relation == "administrative_followup":
-            if not isinstance(context.get("reason_code"), str) or not context["reason_code"].strip():
-                _finding(findings, "error", "invalid_branch_context", "administrative_followup requires reason_code", source)
 
 
 def _validate_solution_branch_context(
@@ -808,7 +612,7 @@ def _validate_branch_events(tree: dict[str, Any], node_ids: set[str], findings: 
             _finding(findings, "error", "invalid_branch_event", "branch event must be an object", path)
             continue
         relation = event.get("relation")
-        if relation not in WORKSPACE_BRANCH_RELATIONS:
+        if relation not in VALID_BRANCH_RELATIONS:
             _finding(findings, "error", "invalid_branch_event", "relation is invalid", path)
         for field in ("from_node", "anchor_node", "new_node", "parent_node"):
             node_id = event.get(field)
@@ -913,22 +717,8 @@ def _validate_initial_node_sequence(
     first = node_details.get(first_id, {})
     if first_id != "n000":
         _finding(findings, "error", "missing_n000", "first node must be n000", f"{RESEARCH_STATE_FILE}.nodes[0]")
-    if first.get("schema_version") == NODE_SCHEMA_V2:
-        if first.get("node_type") != "intake":
-            _finding(findings, "error", "invalid_n000_type", "n000 must be intake", "nodes/n000/node.json")
-        return
-    if first.get("phase") not in {"endpoint", "preflight"}:
-        _finding(findings, "error", "invalid_n000_phase", "n000 must be endpoint", "nodes/n000/node.json")
-    closure = first.get("closure")
-    if isinstance(closure, dict) and closure.get("program_status") == "completed" and closure.get("claim_verdict") == "supported":
-        if isinstance(first.get("initial_mechanism_hypothesis"), dict) and not hypothesis_ids:
-            _finding(
-                findings,
-                "error",
-                "missing_finalized_hypothesis",
-                "supported n000 must finalize at least one mechanism hypothesis",
-                f"{HYPOTHESES_FILE}.hypotheses",
-            )
+    if first.get("node_type") != "intake":
+        _finding(findings, "error", "invalid_n000_type", "n000 must be intake", "nodes/n000/node.json")
 
 
 def _validate_unresolved_terminal_state(
@@ -949,13 +739,13 @@ def _validate_unresolved_terminal_state(
     terminal = node_details.get(terminal_id, {})
     if not _is_unresolved_closed(terminal):
         return
-    verdict = _claim_verdict(terminal)
+    status = _terminal_status(terminal)
     _finding(
         findings,
         "warning",
         "terminal_unresolved_no_running_node",
         (
-            f"terminal node {terminal_id} is {verdict} and the workspace has no "
+            f"terminal node {terminal_id} is {status} and the workspace has no "
             "running node or accepted TS/pathway; agent decision is still required"
         ),
         f"{RESEARCH_STATE_FILE}.current_node",
@@ -967,14 +757,20 @@ def _branch_events(tree: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _is_unresolved_closed(node: dict[str, Any]) -> bool:
-    return node.get("lifecycle") in {"closed", "stopped"} and _claim_verdict(node) in UNRESOLVED_TERMINAL_VERDICTS
+    return node.get("lifecycle") in {"closed", "stopped"} and _terminal_status(node) in UNRESOLVED_TERMINAL_STATUSES
 
 
-def _claim_verdict(node: dict[str, Any]) -> str | None:
+def _terminal_status(node: dict[str, Any]) -> str | None:
     closure = node.get("closure")
     if isinstance(closure, dict):
-        return closure.get("claim_verdict")
-    return node.get("claim_verdict")
+        for section_name in ("hypothesis", "audit", "intake"):
+            section = closure.get(section_name)
+            if isinstance(section, dict) and isinstance(section.get("status"), str):
+                return section["status"]
+        program = closure.get("program")
+        if isinstance(program, dict):
+            return program.get("outcome")
+    return None
 
 
 def _has_accepted_claim(manifest: dict[str, Any], pathway_model: dict[str, Any]) -> bool:
@@ -1070,7 +866,7 @@ def _validate_v2_accepted_audit_refs(
 ) -> None:
     accepted_refs = set(str(item) for item in _as_list(research_state.get("accepted_ts_refs")) if item)
     for node_id, node in node_details.items():
-        if node.get("schema_version") != NODE_SCHEMA_V2 or node.get("node_type") != "audit":
+        if node.get("node_type") != "audit":
             continue
         if node.get("audit_scope") not in {"transition_state", "elementary_step"}:
             continue
@@ -1113,37 +909,19 @@ def _validate_pathway_audit_mechanism_gates(
     findings: list[dict[str, str]],
 ) -> None:
     for node_id, node in node_details.items():
-        is_v2 = (
-            node.get("schema_version") == NODE_SCHEMA_V2
-            and node.get("node_type") == "audit"
-            and node.get("audit_scope") == "pathway"
-        )
-        is_legacy = node.get("phase") == "pathway_audit"
-        if not is_v2 and not is_legacy:
+        if node.get("node_type") != "audit" or node.get("audit_scope") != "pathway":
             continue
         closure = node.get("closure") if isinstance(node.get("closure"), dict) else {}
-        if is_v2:
-            if node.get("lifecycle") not in {"closed", "stopped"}:
-                continue
-            audit = closure.get("audit") if isinstance(closure.get("audit"), dict) else {}
-            evidence_refs = sorted(
-                set(
-                    _as_list(node.get("evidence_refs"))
-                    + _as_list(closure.get("program", {}).get("evidence_refs") if isinstance(closure.get("program"), dict) else [])
-                    + _as_list(audit.get("evidence_refs"))
-                )
+        if node.get("lifecycle") not in {"closed", "stopped"}:
+            continue
+        audit = closure.get("audit") if isinstance(closure.get("audit"), dict) else {}
+        evidence_refs = sorted(
+            set(
+                _as_list(node.get("evidence_refs"))
+                + _as_list(closure.get("program", {}).get("evidence_refs") if isinstance(closure.get("program"), dict) else [])
+                + _as_list(audit.get("evidence_refs"))
             )
-        else:
-            if closure.get("program_status") != "completed" or closure.get("claim_verdict") != "supported":
-                continue
-            audit = {}
-            evidence_refs = sorted(
-                set(
-                    _as_list(node.get("evidence_refs"))
-                    + _as_list(closure.get("program", {}).get("evidence_refs") if isinstance(closure.get("program"), dict) else [])
-                    + _as_list(closure.get("mechanism", {}).get("evidence_refs") if isinstance(closure.get("mechanism"), dict) else [])
-                )
-            )
+        )
         source = f"nodes/{node_id}/node.json"
         try:
             strict_decision = strict_pathway_decision(evidence_records, evidence_refs)
@@ -1159,17 +937,16 @@ def _validate_pathway_audit_mechanism_gates(
                 source,
             )
             continue
-        if is_v2:
-            expected_status = "accepted" if strict_decision == STRICT_PATHWAY_ACCEPTED else "not_accepted"
-            if audit.get("status") != expected_status:
-                _finding(
-                    findings,
-                    "error",
-                    "pathway_audit_status_mismatch",
-                    "closure.audit.status must match pathway_audit_summary quality.strict_pathway_decision",
-                    source,
-                )
-                continue
+        expected_status = "accepted" if strict_decision == STRICT_PATHWAY_ACCEPTED else "not_accepted"
+        if audit.get("status") != expected_status:
+            _finding(
+                findings,
+                "error",
+                "pathway_audit_status_mismatch",
+                "closure.audit.status must match pathway_audit_summary quality.strict_pathway_decision",
+                source,
+            )
+            continue
         if strict_decision != STRICT_PATHWAY_ACCEPTED:
             continue
         hypothesis_id = _node_hypothesis_id(node)
@@ -1198,9 +975,9 @@ def _validate_pathway_audit_mechanism_gates(
 def _node_hypothesis_id(node: dict[str, Any]) -> str | None:
     ref = node.get("hypothesis_ref")
     hypothesis_id = ref.get("hypothesis_id") if isinstance(ref, dict) else None
-    if not hypothesis_id:
-        initial = node.get("initial_mechanism_hypothesis")
-        hypothesis_id = initial.get("hypothesis_id") if isinstance(initial, dict) else None
+    if not hypothesis_id and node.get("mechanism_action") == "propose":
+        proposed = node.get("proposed_hypothesis")
+        hypothesis_id = proposed.get("hypothesis_id") if isinstance(proposed, dict) else None
     return str(hypothesis_id) if hypothesis_id else None
 
 
@@ -1209,7 +986,7 @@ def _branch_target_hypothesis_ref(node: dict[str, Any]) -> Any:
     if isinstance(ref, dict):
         return ref
     context = node.get("branch_context") if isinstance(node.get("branch_context"), dict) else {}
-    if node.get("phase") != "hypothesis_generation" or context.get("relation") != "new_hypothesis_branch":
+    if node.get("mechanism_action") != "propose" or context.get("relation") != "new_hypothesis_branch":
         return ref
     hypothesis_id = _node_hypothesis_id(node)
     if not hypothesis_id:
@@ -1242,7 +1019,7 @@ def _validate_evidence_artifact_boundaries(
                 "warning",
                 "evidence_role_node_mismatch",
                 f"evidence {evidence_id} role {item.get('role')!r} is not owned by "
-                f"node type/scope {(node.get('node_type') or node.get('phase'))!r}/"
+                f"node type/scope {node.get('node_type')!r}/"
                 f"{(node.get('validation_scope') or node.get('audit_scope') or node.get('candidate_kind'))!r}",
                 source,
             )
@@ -1292,11 +1069,8 @@ def _artifact_manifest(
     if isinstance(manifest, dict):
         if manifest.get("node_id") != node_id:
             _finding(findings, "error", "artifact_manifest_node_mismatch", "artifact manifest node_id must match node", str(path))
-        if node.get("schema_version") == NODE_SCHEMA_V2:
-            if manifest.get("node_type") != node.get("node_type"):
-                _finding(findings, "error", "artifact_manifest_node_type_mismatch", "artifact manifest node_type must match node", str(path))
-        elif manifest.get("phase") != node.get("phase"):
-            _finding(findings, "error", "artifact_manifest_phase_mismatch", "artifact manifest phase must match node phase", str(path))
+        if manifest.get("node_type") != node.get("node_type"):
+            _finding(findings, "error", "artifact_manifest_node_type_mismatch", "artifact manifest node_type must match node", str(path))
     cache[node_id] = manifest if isinstance(manifest, dict) else None
     return cache[node_id]
 

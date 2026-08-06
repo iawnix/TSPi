@@ -1273,17 +1273,13 @@ const COLOR_VAR = {
 const NODE_W = 240, NODE_H = 84;
 const X_GAP = 72, Y_GAP = 26;
 
-/* Canonical phase labels come from the backend. This map only selects icons. */
-const STAGE_ICONS = {
-  endpoint: "endpoint",
-  candidate_generation: "candidate_generation",
-  tsfreq_validation: "gaussian_tsfreq_validation",
-  connectivity_validation: "connectivity_check",
-  accepted_audit: "accepted_audit",
-  pathway_audit: "pathway_audit",
-  preflight: "endpoint",
-  rp_conformer_generation: "candidate_generation",
-  hypothesis_generation: "mechanism_reflection"
+/* Node labels come from the backend. This map only selects icons. */
+const NODE_TYPE_ICONS = {
+  intake: "endpoint",
+  mechanism: "mechanism_reflection",
+  candidate_search: "candidate_generation",
+  validation: "gaussian_tsfreq_validation",
+  audit: "accepted_audit"
 };
 const STAGE_ICON_PATHS = {
   endpoint:                   '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>',
@@ -1296,10 +1292,13 @@ const STAGE_ICON_PATHS = {
   accepted_audit:             '<path d="M9 12l2 2 4-5"/><circle cx="12" cy="12" r="9"/>',
   pathway_audit:              '<path d="M4 18l5-5 3 3 8-9"/><circle cx="4" cy="18" r="1"/><circle cx="20" cy="7" r="1"/>'
 };
-function stageInfo(stage, canonicalLabel) {
-  if (!stage) return { label: "—", icon: null };
-  const fallback = stage.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-  return { label: canonicalLabel || fallback, icon: STAGE_ICONS[stage] || null };
+function stageInfo(nodeType, canonicalLabel, scope) {
+  if (!nodeType) return { label: "—", icon: null };
+  const fallback = nodeType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  let icon = NODE_TYPE_ICONS[nodeType] || null;
+  if (nodeType === "validation" && scope === "connectivity") icon = "connectivity_check";
+  if (nodeType === "audit" && scope === "pathway") icon = "pathway_audit";
+  return { label: canonicalLabel || fallback, icon };
 }
 
 const state = {
@@ -1760,7 +1759,7 @@ function computeLineage(graph, selectedId) {
    Node card builder
    ============================================================ */
 function buildNode(n, p, lineage) {
-  const info = stageInfo(n.stage, n.stage_label);
+  const info = stageInfo(n.stage, n.stage_label, n.scope);
   const color = nodeColor(n);
   const isSelected = state.selected === n.id;
   const isFrontier = !!(n.frontier || n.active);
@@ -2130,10 +2129,10 @@ function renderNode() {
   const head = document.getElementById("nodeHead");
   const statusLine = node.card_line || node.state_line || node.state_label || node.node_state || "Unknown";
   const statusColor = node.card_color || node.color || presColor("node_state", node.node_state);
-  const stageLabel = node.stage_label || stageInfo(node.stage).label || node.stage;
+  const stageLabel = node.stage_label || stageInfo(node.stage, null, node.scope).label || node.stage;
   head.innerHTML = node.node_id || payload.node_id ? `
     <span class="id">${escapeHtml(payload.node_id || node.node_id || "")}</span>
-    <span class="chip" data-color="${escapeHtml(statusColor)}" title="${escapeHtml(node.reason_code || node.program_status || "")}">${escapeHtml(statusLine)}</span>
+    <span class="chip" data-color="${escapeHtml(statusColor)}" title="${escapeHtml(node.reason_code || node.program_outcome || "")}">${escapeHtml(statusLine)}</span>
     ${node.stage ? `<span class="chip no-dot" title="${escapeHtml(node.stage)}">${escapeHtml(stageLabel)}</span>` : ""}
   ` : `<span class="muted">No node selected.</span>`;
 
@@ -2219,15 +2218,12 @@ function renderSummary(payload, node) {
       <div class="summary-grid">
         ${summaryRow("node", payload.node_id, "mono")}
         ${summaryRow("card_status", node.card_line || node.card_label)}
-        ${summaryRow("card_phase", node.card_phase, "mono")}
         ${summaryRow("state", node.node_state, "chip", "node_state")}
         ${summaryRow("state_line", node.state_line)}
         ${summaryRow("stage", node.stage)}
         ${summaryRow("node_type", node.node_type, "mono")}
         ${summaryRow("scope", node.scope, "mono")}
         ${summaryRow("lifecycle", node.lifecycle, "mono")}
-        ${summaryRow("program_status", node.program_status, "mono")}
-        ${summaryRow("claim_verdict", node.claim_verdict, "mono")}
         ${summaryRow("program_outcome", node.program_outcome, "mono")}
         ${summaryRow("hypothesis_status", node.hypothesis_status, "mono")}
         ${summaryRow("audit_status", node.audit_status, "mono")}

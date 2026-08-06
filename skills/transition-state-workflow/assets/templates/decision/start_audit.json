@@ -1,0 +1,19 @@
+{
+  "schema_version": "ts-decision/2",
+  "decision_id": "${DECISION_ID}",
+  "action": "start_node",
+  "rationale": "Audit the strict transition-state evidence gates.",
+  "evidence_refs": ["${EVIDENCE_ID}"],
+  "base_revision": "${BASE_REVISION}",
+  "report_ref": {"report_id": "${REPORT_ID}", "workspace_root": "${WORKSPACE_ROOT}"},
+  "payload": {
+    "node_id": "${NODE_ID}",
+    "parent_node": "${PARENT_NODE}",
+    "node_type": "audit",
+    "audit_scope": "transition_state",
+    "objective": "Audit TS/Freq and connectivity evidence against the hypothesis.",
+    "hypothesis_ref": {"hypothesis_id": "${HYPOTHESIS_ID}", "prediction_ids": []},
+    "branch_context": {"relation": "continue_parent", "from_node": "${PARENT_NODE}", "anchor_node": "n000"},
+    "expected_evidence": ["tsfreq_gate", "connectivity_gate"]
+  }
+}

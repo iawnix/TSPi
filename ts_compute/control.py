@@ -47,10 +47,7 @@ from cluster_mcp.ts_jobs import validate_ts_execution
 from .contracts import ComputeContractError, validate_compute_contract
 
 
-INTENT_SCHEMAS = {
-    "ts-calculation-intent/1": "calculation_intent.schema.json",
-    "ts-calculation-intent/2": "calculation_intent_v2.schema.json",
-}
+INTENT_SCHEMA = "calculation_intent_v2.schema.json"
 RESULT_SCHEMA = "calculation_result.schema.json"
 MAX_TAIL_BYTES = 32 * 1024
 BACKENDS: dict[str, tuple[set[str], set[str], Callable[[BackendTask], PreparedTask]]] = {
@@ -112,7 +109,7 @@ def preflight_calculation(
         intent_ref = str(prepared_record["intent_ref"])
         execution_policy = _prepared_execution_policy(prepared_record)
         if operation in {"submit", "inspect", "collect", "cancel"}:
-            _require_remote_execution(intent, execution_policy, operation)
+            _require_remote_execution(execution_policy, operation)
         if operation in {"submit", "cancel"} and intent.get("dry_run") is not False:
             raise ComputeContractError(f"{operation} requires an intent with dry_run=false")
         if operation == "parse":
@@ -189,7 +186,7 @@ def prepare_calculation(
     if execution_policy.get("transport") == "mcp":
         _merged_mcp_execution(execution_policy, asdict(prepared))
 
-    intent_ref, prepared_ref = _record_refs(node_id, str(intent["intent_id"]), str(intent["schema_version"]))
+    intent_ref, prepared_ref = _record_refs(node_id, str(intent["intent_id"]))
     intent_path = workspace / intent_ref
     prepared_path = workspace / prepared_ref
     _write_once(intent_path, intent, "intent_id")
@@ -199,8 +196,8 @@ def prepare_calculation(
         "node_id": node_id,
         "intent_ref": intent_ref,
         "intent_digest": sha256_json(intent),
-        "attempt_kind": intent.get("attempt_kind", "legacy"),
-        "validation_scope": intent.get("validation_scope", intent.get("evidence_layer")),
+        "attempt_kind": intent["attempt_kind"],
+        "validation_scope": intent["validation_scope"],
         "prepared_at": now_iso(),
         "prepared_task": asdict(prepared),
         "execution_policy": execution_policy,
@@ -240,7 +237,7 @@ def submit_calculation(
 ) -> dict[str, Any]:
     workspace, intent, prepared = _load_prepared(root, intent_id, expected_intent_digest)
     policy = _prepared_execution_policy(prepared)
-    _require_remote_execution(intent, policy, "submit")
+    _require_remote_execution(policy, "submit")
     if intent.get("dry_run") is not False:
         raise ComputeContractError("submit requires an intent with dry_run=false")
     existing = _read_control_result(workspace, intent, "submit")
@@ -352,7 +349,7 @@ def calculation_status(
 ) -> dict[str, Any]:
     workspace, intent, prepared = _load_prepared(root, intent_id, expected_intent_digest)
     policy = _prepared_execution_policy(prepared)
-    _require_remote_execution(intent, policy, "inspect")
+    _require_remote_execution(policy, "inspect")
     if policy["transport"] == "mcp":
         observed = _status_mcp(intent, policy)
         submission_record = observed.pop("_submission_record", None)
@@ -410,7 +407,7 @@ def calculation_tail(
     if not 1 <= int(lines) <= 500:
         raise ComputeContractError("tail lines must be between 1 and 500")
     policy = _prepared_execution_policy(prepared)
-    _require_remote_execution(intent, policy, "inspect")
+    _require_remote_execution(policy, "inspect")
     if policy["transport"] == "mcp":
         expected = _expected_remote_names(prepared)
         stdout_name = _remote_stdout_name(prepared)
@@ -449,7 +446,7 @@ def collect_calculation(
 ) -> dict[str, Any]:
     workspace, intent, prepared = _load_prepared(root, intent_id, expected_intent_digest)
     policy = _prepared_execution_policy(prepared)
-    _require_remote_execution(intent, policy, "collect")
+    _require_remote_execution(policy, "collect")
     expected_names = _expected_remote_names(prepared)
     selected = artifacts or expected_names
     if not selected:
@@ -505,7 +502,7 @@ def cancel_calculation(
 ) -> dict[str, Any]:
     workspace, intent, prepared = _load_prepared(root, intent_id, expected_intent_digest)
     policy = _prepared_execution_policy(prepared)
-    _require_remote_execution(intent, policy, "cancel")
+    _require_remote_execution(policy, "cancel")
     if intent.get("dry_run") is not False:
         raise ComputeContractError("cancel requires an intent with dry_run=false")
     previous = _read_control_result(workspace, intent, "cancel")
@@ -633,7 +630,7 @@ def parse_calculation(
     if source.suffix.lower() not in {".log", ".out"}:
         raise ComputeContractError("Gaussian parser accepts only .log or .out artifacts")
 
-    _, _, output_ref = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]), str(intent["schema_version"]))
+    _, _, output_ref = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]))
     result_path = workspace / output_ref / "calculation_result.json"
     source_sha256 = _sha256_file(source)
     if result_path.is_file():
@@ -730,7 +727,6 @@ def _prepared_task_for_intent(workspace: Path, intent: dict[str, Any]) -> Prepar
         workspace,
         str(intent["node_id"]),
         str(intent["intent_id"]),
-        str(intent["schema_version"]),
         prepared,
         intent["expected_artifacts"],
     )
@@ -740,7 +736,6 @@ def _normalize_prepared_task(
     workspace: Path,
     node_id: str,
     intent_id: str,
-    schema_version: str,
     prepared: PreparedTask,
     expected_artifacts: list[str],
 ) -> PreparedTask:
@@ -751,10 +746,7 @@ def _normalize_prepared_task(
     normalized_expected = []
     for ref in expected:
         normalized = _workspace_ref(workspace, ref, read=False)
-        if schema_version == "ts-calculation-intent/2":
-            _require_attempt_output_ref(node_id, intent_id, normalized)
-        else:
-            _require_node_output_ref(node_id, normalized)
+        _require_attempt_output_ref(node_id, intent_id, normalized)
         normalized_expected.append(normalized)
     return replace(prepared, input_paths=input_paths, expected_artifacts=normalized_expected)
 
@@ -762,7 +754,9 @@ def _normalize_prepared_task(
 def _validate_execution_target(target: dict[str, Any]) -> dict[str, Any]:
     if target["kind"] == "local":
         return {"kind": "local"}
-    transport = str(target.get("transport", "ssh"))
+    transport = target.get("transport")
+    if not isinstance(transport, str):
+        raise ComputeContractError("remote execution target requires explicit transport")
     if transport == "mcp":
         try:
             execution = validate_ts_execution(target.get("execution"))
@@ -825,16 +819,11 @@ def _execution_policy_for_prepare(
 def _expected_prepared_execution_policy(
     workspace: Path,
     intent: dict[str, Any],
-    prepared_policy: Any,
 ) -> dict[str, Any]:
     raw_policy = _validate_execution_target(intent["execution_target"])
-    if raw_policy.get("transport") != "mcp" or not _has_workspace_mcp_namespace(prepared_policy):
+    if raw_policy.get("transport") != "mcp":
         return raw_policy
     return _execution_policy_for_prepare(workspace, intent, create_identity=False)
-
-
-def _has_workspace_mcp_namespace(policy: Any) -> bool:
-    return isinstance(policy, dict) and policy.get("namespace_version") == "ts-mcp-workspace/1"
 
 
 def _remote_config(workspace: Path, intent: dict[str, Any], prepared: dict[str, Any]) -> job_lifecycle.RemoteJobConfig:
@@ -852,7 +841,7 @@ def _remote_config(workspace: Path, intent: dict[str, Any], prepared: dict[str, 
     expected = tuple(Path(ref).name for ref in prepared_task["expected_artifacts"])
     if len(expected) != len(set(expected)):
         raise ComputeContractError("expected remote artifacts have colliding basenames")
-    _, _, output_ref = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]), str(intent["schema_version"]))
+    _, _, output_ref = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]))
     ssh_config = os.environ.get("TS_COMPUTE_SSH_CONFIG")
     ssh_path = Path(ssh_config).expanduser().resolve() if ssh_config else None
     if ssh_path is not None and (not ssh_path.is_file() or not ssh_path.is_absolute()):
@@ -882,15 +871,9 @@ def _prepared_execution_policy(prepared: dict[str, Any]) -> dict[str, Any]:
     return policy
 
 
-def _require_remote_execution(
-    intent: dict[str, Any],
-    policy: dict[str, Any],
-    operation: str,
-) -> None:
+def _require_remote_execution(policy: dict[str, Any], operation: str) -> None:
     if policy.get("kind") != "remote" or policy.get("transport") not in {"ssh", "mcp"}:
         raise ComputeContractError(f"{operation} requires a prepared SSH or MCP remote target")
-    if intent.get("schema_version") == "ts-calculation-intent/1" and policy["transport"] == "mcp":
-        raise ComputeContractError("MCP execution requires ts-calculation-intent/2")
 
 
 def _execution_summary(
@@ -978,7 +961,6 @@ def _submit_mcp(
         base_ref, _, _ = _runtime_refs(
             str(intent["node_id"]),
             str(intent["intent_id"]),
-            str(intent["schema_version"]),
         )
         script_ref = f"{base_ref}/run_mcp_job.sh"
         script_path = workspace / script_ref
@@ -1358,7 +1340,6 @@ def _collected_output_dir(workspace: Path, intent: dict[str, Any]) -> Path:
     _, _, output_ref = _runtime_refs(
         str(intent["node_id"]),
         str(intent["intent_id"]),
-        str(intent["schema_version"]),
     )
     return workspace / output_ref / "collected"
 
@@ -1369,29 +1350,23 @@ def _mcp_submission_id(workspace_identity: str, intent_id: str) -> str:
     return f"tsjob_{workspace_identity}_{intent_id[:60]}_{digest}"
 
 
-def _legacy_mcp_submission_id(intent_id: str) -> str:
-    digest = hashlib.sha256(intent_id.encode("utf-8")).hexdigest()[:16]
-    return f"tsjob_{intent_id[:88]}_{digest}"
-
-
 def _prepared_mcp_submission_id(intent: dict[str, Any], policy: dict[str, Any]) -> str:
+    if policy.get("namespace_version") != "ts-mcp-workspace/1":
+        raise ComputeContractError("prepared MCP calculation requires ts-mcp-workspace/1 namespace")
     submission_id = policy.get("submission_id")
-    if _has_workspace_mcp_namespace(policy):
-        workspace_identity = policy.get("workspace_id")
-        if not isinstance(workspace_identity, str) or not isinstance(submission_id, str):
-            raise ComputeContractError("prepared MCP workspace binding is incomplete")
-        expected = _mcp_submission_id(workspace_identity, str(intent["intent_id"]))
-        if submission_id != expected:
-            raise ComputeContractError("prepared MCP submission_id does not match workspace identity")
-        return submission_id
-    return _legacy_mcp_submission_id(str(intent["intent_id"]))
+    workspace_identity = policy.get("workspace_id")
+    if not isinstance(workspace_identity, str) or not isinstance(submission_id, str):
+        raise ComputeContractError("prepared MCP workspace binding is incomplete")
+    expected = _mcp_submission_id(workspace_identity, str(intent["intent_id"]))
+    if submission_id != expected:
+        raise ComputeContractError("prepared MCP submission_id does not match workspace identity")
+    return submission_id
 
 
 def _receipt_ref(intent: dict[str, Any], transport: str) -> str:
     base, _, _ = _runtime_refs(
         str(intent["node_id"]),
         str(intent["intent_id"]),
-        str(intent["schema_version"]),
     )
     return f"{base}/{transport}_receipt.json"
 
@@ -1404,10 +1379,7 @@ def _load_prepared(
     if not intent_id.startswith("calc_") or any(char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-" for char in intent_id[5:]):
         raise ComputeContractError("invalid intent_id")
     workspace = _workspace_root(root)
-    matches = [
-        *list((workspace / "nodes").glob(f"*/attempts/{intent_id}/prepared.json")),
-        *list((workspace / "nodes").glob(f"*/remote/calculations/{intent_id}/prepared.json")),
-    ]
+    matches = list((workspace / "nodes").glob(f"*/attempts/{intent_id}/prepared.json"))
     if len(matches) != 1:
         raise ComputeContractError(f"expected exactly one prepared calculation for {intent_id}; found {len(matches)}")
     prepared = _read_object(matches[0], "prepared calculation")
@@ -1426,11 +1398,7 @@ def _load_prepared(
     expected_task = asdict(_prepared_task_for_intent(workspace, intent))
     if prepared.get("prepared_task") != expected_task:
         raise ComputeContractError("prepared backend metadata does not match the calculation intent")
-    expected_policy = _expected_prepared_execution_policy(
-        workspace,
-        intent,
-        prepared.get("execution_policy"),
-    )
+    expected_policy = _expected_prepared_execution_policy(workspace, intent)
     if prepared.get("execution_policy") != expected_policy:
         raise ComputeContractError("prepared execution policy does not match the calculation intent")
     if expected_policy["kind"] == "remote":
@@ -1506,31 +1474,22 @@ def _load_node(workspace: Path, node_id: str) -> dict[str, Any]:
 
 def _validate_intent(intent: dict[str, Any]) -> None:
     schema_version = intent.get("schema_version")
-    schema_name = INTENT_SCHEMAS.get(str(schema_version))
-    if schema_name is None:
+    if schema_version != "ts-calculation-intent/2":
         raise ComputeContractError(f"unsupported calculation intent schema_version: {schema_version}")
-    validate_compute_contract(schema_name, intent)
+    validate_compute_contract(INTENT_SCHEMA, intent)
 
 
 def _validate_intent_node_scope(workspace: Path, intent: dict[str, Any], node: dict[str, Any]) -> None:
-    if intent.get("schema_version") != "ts-calculation-intent/2":
-        return
     scope = intent.get("validation_scope")
-    if node.get("schema_version") == "ts-node/2":
-        node_type = node.get("node_type")
-        if node_type not in {"candidate_search", "validation"}:
-            raise ComputeContractError("v2 calculations are allowed only for candidate_search or validation nodes")
-        if node_type == "validation" and scope != node.get("validation_scope"):
-            raise ComputeContractError("calculation validation_scope must match the validation node")
-        if node_type == "candidate_search" and scope is not None:
-            raise ComputeContractError("candidate_search calculation requires validation_scope=null")
-    else:
-        legacy_scope = {
-            "tsfreq_validation": "tsfreq",
-            "connectivity_validation": "connectivity",
-        }.get(str(node.get("phase")))
-        if legacy_scope is not None and scope != legacy_scope:
-            raise ComputeContractError(f"calculation validation_scope must match legacy node phase: {legacy_scope}")
+    if node.get("schema_version") != "ts-node/2":
+        raise ComputeContractError("calculations require a ts-node/2 workspace node")
+    node_type = node.get("node_type")
+    if node_type not in {"candidate_search", "validation"}:
+        raise ComputeContractError("calculations are allowed only for candidate_search or validation nodes")
+    if node_type == "validation" and scope != node.get("validation_scope"):
+        raise ComputeContractError("calculation validation_scope must match the validation node")
+    if node_type == "candidate_search" and scope is not None:
+        raise ComputeContractError("candidate_search calculation requires validation_scope=null")
 
     if intent.get("attempt_kind") != "recalculation":
         return
@@ -1542,7 +1501,6 @@ def _validate_intent_node_scope(workspace: Path, intent: dict[str, Any], node: d
     if source_intent is not None:
         source_matches = [
             *list((workspace / "nodes" / source_node).glob(f"attempts/{source_intent}/intent.json")),
-            *list((workspace / "nodes" / source_node).glob(f"inputs/calculations/{source_intent}.json")),
         ]
         if len(source_matches) != 1:
             raise ComputeContractError(
@@ -1572,12 +1530,6 @@ def _workspace_ref(workspace: Path, value: str, *, read: bool) -> str:
     return normalized
 
 
-def _require_node_output_ref(node_id: str, ref: str) -> None:
-    prefix = f"nodes/{node_id}/outputs/"
-    if not ref.startswith(prefix) or ref == prefix:
-        raise ComputeContractError(f"calculation output must be under {prefix}")
-
-
 def _require_attempt_output_ref(node_id: str, intent_id: str, ref: str) -> None:
     prefix = f"nodes/{node_id}/attempts/{intent_id}/outputs/"
     if not ref.startswith(prefix) or ref == prefix:
@@ -1586,10 +1538,7 @@ def _require_attempt_output_ref(node_id: str, intent_id: str, ref: str) -> None:
 
 def _require_calculation_output_ref(intent: dict[str, Any], ref: str) -> None:
     node_id = str(intent["node_id"])
-    if intent.get("schema_version") == "ts-calculation-intent/2":
-        _require_attempt_output_ref(node_id, str(intent["intent_id"]), ref)
-    else:
-        _require_node_output_ref(node_id, ref)
+    _require_attempt_output_ref(node_id, str(intent["intent_id"]), ref)
 
 
 def _require_compute_input_ref(ref: str) -> None:
@@ -1603,22 +1552,14 @@ def _require_compute_input_ref(ref: str) -> None:
     raise ComputeContractError("calculation inputs must come from workspace inputs or node inputs/outputs")
 
 
-def _record_refs(node_id: str, intent_id: str, schema_version: str) -> tuple[str, str]:
-    if schema_version == "ts-calculation-intent/2":
-        base = f"nodes/{node_id}/attempts/{intent_id}"
-        return f"{base}/intent.json", f"{base}/prepared.json"
-    return (
-        f"nodes/{node_id}/inputs/calculations/{intent_id}.json",
-        f"nodes/{node_id}/remote/calculations/{intent_id}/prepared.json",
-    )
+def _record_refs(node_id: str, intent_id: str) -> tuple[str, str]:
+    base = f"nodes/{node_id}/attempts/{intent_id}"
+    return f"{base}/intent.json", f"{base}/prepared.json"
 
 
-def _runtime_refs(node_id: str, intent_id: str, schema_version: str) -> tuple[str, str, str]:
-    if schema_version == "ts-calculation-intent/2":
-        base = f"nodes/{node_id}/attempts/{intent_id}"
-        return base, f"{base}/status.json", f"{base}/outputs"
-    base = f"nodes/{node_id}/remote/calculations/{intent_id}"
-    return base, f"{base}/status.json", f"nodes/{node_id}/outputs/calculations/{intent_id}"
+def _runtime_refs(node_id: str, intent_id: str) -> tuple[str, str, str]:
+    base = f"nodes/{node_id}/attempts/{intent_id}"
+    return base, f"{base}/status.json", f"{base}/outputs"
 
 
 def _control_result_ref(
@@ -1631,7 +1572,6 @@ def _control_result_ref(
     base, _, _ = _runtime_refs(
         str(intent["node_id"]),
         str(intent["intent_id"]),
-        str(intent["schema_version"]),
     )
     suffix = f"{operation}_result.json" if attempt == 1 else f"{operation}_attempt_{attempt:04d}_result.json"
     return f"{base}/{suffix}"
@@ -1647,7 +1587,6 @@ def _control_guard_ref(
     base, _, _ = _runtime_refs(
         str(intent["node_id"]),
         str(intent["intent_id"]),
-        str(intent["schema_version"]),
     )
     suffix = f"{operation}_guard.json" if attempt == 1 else f"{operation}_attempt_{attempt:04d}_guard.json"
     return f"{base}/{suffix}"
@@ -1659,7 +1598,6 @@ def _control_reconciliation_ref(intent: dict[str, Any], operation: str) -> str:
     base, _, _ = _runtime_refs(
         str(intent["node_id"]),
         str(intent["intent_id"]),
-        str(intent["schema_version"]),
     )
     return f"{base}/{operation}_reconciliation.json"
 
@@ -1695,7 +1633,6 @@ def _read_local_status(workspace: Path, intent: dict[str, Any]) -> dict[str, Any
     _, status_ref, _ = _runtime_refs(
         str(intent["node_id"]),
         str(intent["intent_id"]),
-        str(intent["schema_version"]),
     )
     path = workspace / status_ref
     if path.is_symlink():
@@ -1712,7 +1649,6 @@ def _write_status(workspace: Path, intent: dict[str, Any], result: dict[str, Any
     _, status_ref, _ = _runtime_refs(
         str(intent["node_id"]),
         str(intent["intent_id"]),
-        str(intent["schema_version"]),
     )
     write_json(workspace / status_ref, result)
 
@@ -1853,13 +1789,12 @@ def _latest_control_attempt(
     base, _, _ = _runtime_refs(
         str(intent["node_id"]),
         str(intent["intent_id"]),
-        str(intent["schema_version"]),
     )
     root = workspace / base
     attempts: set[int] = set()
     for kind in ("guard", "result"):
-        legacy = root / f"{operation}_{kind}.json"
-        if legacy.exists() or legacy.is_symlink():
+        initial = root / f"{operation}_{kind}.json"
+        if initial.exists() or initial.is_symlink():
             attempts.add(1)
         prefix = f"{operation}_attempt_"
         suffix = f"_{kind}.json"
@@ -1912,7 +1847,7 @@ def _validate_bound_result(intent: dict[str, Any], result: dict[str, Any], label
 
 
 def _write_result(workspace: Path, intent: dict[str, Any], result: dict[str, Any]) -> None:
-    _, _, output_ref = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]), str(intent["schema_version"]))
+    _, _, output_ref = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]))
     write_json(workspace / output_ref / "calculation_result.json", result)
 
 
@@ -1944,8 +1879,8 @@ def _result(
             "backend": intent["backend"],
             "intent_digest": sha256_json(intent),
             "intent_schema": intent["schema_version"],
-            "validation_scope": intent.get("validation_scope", intent.get("evidence_layer")),
-            "attempt_kind": intent.get("attempt_kind", "legacy"),
+            "validation_scope": intent["validation_scope"],
+            "attempt_kind": intent["attempt_kind"],
             "recalculation_ref": intent.get("recalculation_ref"),
             "remote_authority": "execution_mirror" if intent.get("execution_target", {}).get("kind") == "remote" else None,
             **(provenance or {}),

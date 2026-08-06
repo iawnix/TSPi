@@ -2,13 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "TS node artifact manifest",
   "type": "object",
-  "required": ["schema_version", "node_id", "phase", "owned_artifacts", "consumed_artifacts", "evidence_refs"],
+  "required": ["schema_version", "node_id", "node_type", "owned_artifacts", "consumed_artifacts", "evidence_refs"],
   "properties": {
-    "schema_version": {"const": "ts-artifact-manifest"},
+    "schema_version": {"const": "ts-artifact-manifest/2"},
     "node_id": {"type": "string", "minLength": 1},
-    "phase": {
-      "enum": ["endpoint", "hypothesis_generation", "candidate_generation", "tsfreq_validation", "connectivity_validation", "accepted_audit", "pathway_audit", "preflight", "rp_conformer_generation"]
-    },
+    "node_type": {"enum": ["intake", "mechanism", "candidate_search", "validation", "audit"]},
+    "mechanism_action": {"enum": ["propose", "compare", "revise", "evaluate"]},
+    "candidate_kind": {"enum": ["transition_state", "endpoint_conformer", "intermediate", "crossing_point"]},
+    "validation_scope": {"enum": ["tsfreq", "connectivity", "electronic_structure", "state_character", "thermochemistry", "method_robustness", "geometry_identity"]},
+    "audit_scope": {"enum": ["transition_state", "elementary_step", "pathway", "study"]},
     "claim_layer": {"type": "string", "minLength": 1},
     "cross_node_consumption_reason": {"type": "string"},
     "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}},

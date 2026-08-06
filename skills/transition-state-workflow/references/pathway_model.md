@@ -59,7 +59,8 @@ Geometry-only connectivity does not prove electronic timing, spin/state
 character, or intermediate identity. Add the corresponding validation scopes
 when those claims are part of the hypothesis.
 
-## Legacy
+## Audit Interpretation
 
-Legacy `pathway_audit` phase nodes and `claim_verdict` remain readable. Their
+Pathway audit nodes use `node_type=audit`, `audit_scope=pathway`, and an
+explicit `closure.audit.status`. Their
 verdict applies to the audit analysis, not automatically to pathway success.

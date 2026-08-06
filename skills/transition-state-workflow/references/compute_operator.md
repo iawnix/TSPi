@@ -146,7 +146,7 @@ the call reaches the adapter.
 
 ## Local Authority
 
-Every v2 attempt is self-contained:
+Every attempt is self-contained:
 
 ```text
 nodes/<node>/attempts/<intent>/
@@ -165,9 +165,6 @@ These are operational artifacts, not canonical scientific state. `ts_web`
 shows their state separately from node lifecycle, hypothesis status, and audit
 status.
 
-Legacy `ts-calculation-intent/1` and its split `inputs/remote/outputs`
-directories remain readable.
-
 ## Remote Execution Mirror
 
 Remote targets must be allowlisted and explicitly non-authoritative:
@@ -183,7 +180,7 @@ Remote targets must be allowlisted and explicitly non-authoritative:
 }
 ```
 
-Legacy remote intents without `transport` are treated as SSH. SSH host and path
+Remote intents without an explicit `transport` are rejected. SSH host and path
 policy remains environment-owned through `TS_COMPUTE_*`.
 
 MCP targets use a workspace-relative cluster directory and a complete resource
@@ -232,8 +229,8 @@ path from the current process or Pi session. Independently initialized
 workspaces therefore cannot collide when they use the same principal and
 intent ID. Multiple agents intentionally operating on one workspace share the
 same identity and the same per-intent atomic control guards. Prepared records
-created before `ts-mcp-workspace/1` continue to use their original unscoped
-directory and legacy intent-bound submission ID.
+without `ts-mcp-workspace/1`, a workspace identity, the workspace-bound
+directory, or the matching submission ID are rejected.
 
 The MCP endpoint, bearer token, and timeout are never intent data:
 

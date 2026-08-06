@@ -221,7 +221,6 @@ ts_workspace_context -> ts_workspace_decision_draft -> ts_workspace_decision_val
 
 Any mutation built from a stale `base_revision` is rejected.
 
-## Legacy
-
-The `ts-decision` schema and `propose_hypothesis` command remain compatible for
-existing phase workspaces. Do not use them for new v2 studies.
+Only `ts-decision/2` is accepted. A mechanism hypothesis is created by a
+`start_node` decision with `node_type=mechanism`,
+`mechanism_action=propose`, and `proposed_hypothesis`.
