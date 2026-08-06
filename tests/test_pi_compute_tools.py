@@ -9,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 COMPUTE_AGENT = ROOT / "src" / "agents" / "compute"
 OUTPUT_SCHEMA = COMPUTE_AGENT / "output-schema.cjs"
 ACTION_LOG = ROOT / "extensions" / "ts-workflow-compute" / "action-log.cjs"
+COMPUTE_EXTENSION = ROOT / "extensions" / "ts-workflow-compute" / "index.ts"
+TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
 
 
 def test_pi_package_registers_one_compute_operator_extension() -> None:
@@ -51,9 +53,11 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     assert 'pi.registerEntryRenderer<McpDiagnosticEntryData>("ts-workspace-mcp-diagnostic"' in source
     assert 'pi.appendEntry<McpDiagnosticEntryData>("ts-workspace-mcp-diagnostic"' in source
     assert 'keyHint("app.tools.expand", "to expand")' in source
-    assert 'ctx.ui.setWidget("ts-workspace-mcp", undefined)' in source
+    assert "MCP_DIAGNOSTIC_WIDGET_KEY" in source
     assert 'ctx.ui.setWidget("ts-workspace-mcp", JSON.stringify' not in source
     assert "Usage: /ts-mcp status|doctor|queues|nodes|cluster" in source
+    assert "getArgumentCompletions" in source
+    assert "This check is read-only" in source
     assert "about the configured MCP target, use mode=cluster" in source
     assert "never switch between MCP and SSH automatically" in source
     assert "createScopedComputeTools" in source
@@ -84,6 +88,98 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     assert "server has no gaussian software profile" in source
     assert "gaussian activation script is unavailable" in source
     assert "profile does not allow queue" in source
+
+
+def test_ts_mcp_command_previews_modes_and_shows_progress_until_result() -> None:
+    script = f"""
+import installCompute from {json.dumps(COMPUTE_EXTENSION.as_uri())};
+process.env.TS_AGENT_PYTHON = "/usr/bin/python3";
+const commands = {{}};
+const entries = [];
+const execCalls = [];
+let failNext = false;
+const pi = {{
+  registerEntryRenderer: () => {{}},
+  registerTool: () => {{}},
+  registerCommand: (name, command) => {{ commands[name] = command; }},
+  exec: async (command, args) => {{
+    execCalls.push([command, args]);
+    if (failNext) throw new Error("diagnostic process stopped");
+    return {{ stdout: JSON.stringify({{
+      schema_version: "ts-mcp-diagnostic/1",
+      mode: "status",
+      ok: true,
+      connection: {{ endpoint: "http://127.0.0.1:18766/mcp", authenticated: true }},
+      capabilities: {{}},
+    }}) }};
+  }},
+  appendEntry: (type, data) => entries.push([type, data]),
+}};
+installCompute(pi);
+const uiCalls = [];
+const ctx = {{
+  cwd: "/tmp/tspi-workspace",
+  signal: new AbortController().signal,
+  ui: {{
+    setStatus: (...args) => uiCalls.push(["status", ...args]),
+    setWidget: (...args) => uiCalls.push(["widget", ...args]),
+    notify: (...args) => uiCalls.push(["notify", ...args]),
+  }},
+}};
+const completions = await commands["ts-mcp"].getArgumentCompletions("");
+await commands["ts-mcp"].handler("status", ctx);
+const successCalls = uiCalls.splice(0);
+failNext = true;
+let failureMessage;
+try {{
+  await commands["ts-mcp"].handler("doctor", ctx);
+}} catch (error) {{
+  failureMessage = error.message;
+}}
+process.stdout.write(JSON.stringify({{ completions, successCalls, failureCalls: uiCalls, failureMessage, entries, execCalls }}));
+"""
+    result = _node_json(script)
+    success_calls = result["successCalls"]
+
+    assert [item["value"] for item in result["completions"]] == [
+        "status",
+        "doctor",
+        "queues",
+        "nodes",
+        "cluster",
+    ]
+    assert all(item["description"] for item in result["completions"])
+    assert ["status", "ts-workspace-mcp-command", "TS MCP · status · checking"] in success_calls
+    assert any(
+        call[0] == "widget"
+        and call[1] == "ts-workspace-mcp"
+        and isinstance(call[2], list)
+        and call[2][0] == "◌ TS MCP · status · running"
+        and call[2][1] == "Read-only · connection and capabilities"
+        for call in success_calls
+    )
+    assert any(
+        call[0] == "notify"
+        and call[1] == "Check the MCP connection and advertised capabilities. This check is read-only."
+        for call in success_calls
+    )
+    assert success_calls[-2:] == [
+        ["status", "ts-workspace-mcp-command", None],
+        ["widget", "ts-workspace-mcp", None],
+    ]
+    assert result["failureMessage"] == "diagnostic process stopped"
+    assert [
+        "notify",
+        "TS Cluster MCP doctor stopped before a result was returned",
+        "error",
+    ] in result["failureCalls"]
+    assert result["failureCalls"][-2:] == [
+        ["status", "ts-workspace-mcp-command", None],
+        ["widget", "ts-workspace-mcp", None],
+    ]
+    assert result["entries"][0][0] == "ts-workspace-mcp-diagnostic"
+    assert result["entries"][0][1]["result"]["ok"] is True
+    assert result["execCalls"][0][1][-2:] == ["--mode", "status"]
 
 
 def test_compute_contracts_exclude_workspace_verdicts_and_arbitrary_commands() -> None:
@@ -562,3 +658,16 @@ def _validate_operator_output(
         stderr=subprocess.PIPE,
         check=check,
     )
+
+
+def _node_json(script: str):
+    completed = subprocess.run(
+        ["node", "--experimental-loader", str(TS_LOADER), "--input-type=module", "--eval", script],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return json.loads(completed.stdout)

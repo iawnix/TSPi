@@ -169,7 +169,9 @@ Pi also exposes:
 
 Users can run the same MCP diagnostics with
 `/ts-mcp status|doctor|queues|nodes|cluster`. The command and Agent tool are on demand; they
-do not add MCP output to every turn's context.
+do not add MCP output to every turn's context. Command completion explains each
+read-only mode, and an above-editor activity panel remains visible until the
+diagnostic returns or stops with an error.
 
 `before_agent_start` injects only a short control-plane reminder. It does not
 inject a full workspace report every turn. Use `mode=delta` with the last

@@ -28,6 +28,31 @@ const {
 const OPERATIONS = ["prepare", "submit", "inspect", "collect", "cancel", "parse"] as const;
 const BACKENDS = ["gaussian", "ase_neb", "xtb", "qbics_dmecp"] as const;
 const MCP_DIAGNOSTIC_MODES = ["status", "doctor", "queues", "nodes", "cluster"] as const;
+type McpDiagnosticMode = typeof MCP_DIAGNOSTIC_MODES[number];
+const MCP_DIAGNOSTIC_STATUS_KEY = "ts-workspace-mcp-command";
+const MCP_DIAGNOSTIC_WIDGET_KEY = "ts-workspace-mcp";
+const MCP_DIAGNOSTIC_ACTIVITY = Object.freeze({
+  status: {
+    description: "Check the MCP connection and advertised capabilities",
+    detail: "Read-only · connection and capabilities",
+  },
+  doctor: {
+    description: "Check transport, scheduler, storage, registry, and software health",
+    detail: "Read-only · full control-path health",
+  },
+  queues: {
+    description: "Read the scheduler queue state",
+    detail: "Read-only · scheduler queue state",
+  },
+  nodes: {
+    description: "Read compute-node state and available resources",
+    detail: "Read-only · compute-node resources",
+  },
+  cluster: {
+    description: "Read capabilities, queues, nodes, and control health",
+    detail: "Read-only · cluster summary",
+  },
+} satisfies Record<McpDiagnosticMode, { description: string; detail: string }>);
 const MCP_PREFLIGHT_OPERATIONS = new Set(["submit", "inspect", "collect", "cancel"]);
 const OPERATOR_COMMON_PARAMETERS = {
   backend: StringEnum(BACKENDS),
@@ -92,7 +117,7 @@ type OperatorRequest = {
 
 type ActionLog = { tool: string; result: Record<string, unknown> }[];
 type McpDiagnosticEntryData = {
-  mode: typeof MCP_DIAGNOSTIC_MODES[number];
+  mode: McpDiagnosticMode;
   result: Record<string, unknown>;
 };
 
@@ -304,21 +329,49 @@ export default function (pi: ExtensionAPI) {
 
   pi.registerCommand("ts-mcp", {
     description: "Show read-only TS Cluster MCP connection, queue, node, or aggregated cluster status.",
+    getArgumentCompletions: (prefix) => {
+      const candidate = prefix.trim().toLowerCase();
+      const matches = MCP_DIAGNOSTIC_MODES
+        .filter((mode) => mode.startsWith(candidate))
+        .map((mode) => ({
+          value: mode,
+          label: mode,
+          description: MCP_DIAGNOSTIC_ACTIVITY[mode].description,
+        }));
+      return matches.length > 0 ? matches : null;
+    },
     handler: async (args, ctx) => {
-      ctx.ui.setWidget("ts-workspace-mcp", undefined);
+      ctx.ui.setStatus(MCP_DIAGNOSTIC_STATUS_KEY, undefined);
+      ctx.ui.setWidget(MCP_DIAGNOSTIC_WIDGET_KEY, undefined);
       const candidate = String(args || "").trim();
-      if (!MCP_DIAGNOSTIC_MODES.includes(candidate as typeof MCP_DIAGNOSTIC_MODES[number])) {
+      if (!MCP_DIAGNOSTIC_MODES.includes(candidate as McpDiagnosticMode)) {
         const usage = "Usage: /ts-mcp status|doctor|queues|nodes|cluster";
         ctx.ui.notify(usage, "warning");
         return;
       }
-      const mode = candidate as typeof MCP_DIAGNOSTIC_MODES[number];
-      const result = await runMcpDiagnosticJson(pi, mode, ctx.cwd, ctx.signal);
-      pi.appendEntry<McpDiagnosticEntryData>("ts-workspace-mcp-diagnostic", { mode, result });
-      ctx.ui.notify(
-        result.ok === true ? `TS Cluster MCP ${mode} passed` : `TS Cluster MCP ${mode} failed`,
-        result.ok === true ? "info" : "warning",
+      const mode = candidate as McpDiagnosticMode;
+      const activity = MCP_DIAGNOSTIC_ACTIVITY[mode];
+      ctx.ui.setStatus(MCP_DIAGNOSTIC_STATUS_KEY, `TS MCP · ${mode} · checking`);
+      ctx.ui.setWidget(
+        MCP_DIAGNOSTIC_WIDGET_KEY,
+        [`◌ TS MCP · ${mode} · running`, activity.detail],
+        { placement: "aboveEditor" },
       );
+      ctx.ui.notify(`${activity.description}. This check is read-only.`, "info");
+      try {
+        const result = await runMcpDiagnosticJson(pi, mode, ctx.cwd, ctx.signal);
+        pi.appendEntry<McpDiagnosticEntryData>("ts-workspace-mcp-diagnostic", { mode, result });
+        ctx.ui.notify(
+          result.ok === true ? `TS Cluster MCP ${mode} passed` : `TS Cluster MCP ${mode} failed`,
+          result.ok === true ? "info" : "warning",
+        );
+      } catch (error) {
+        ctx.ui.notify(`TS Cluster MCP ${mode} stopped before a result was returned`, "error");
+        throw error;
+      } finally {
+        ctx.ui.setStatus(MCP_DIAGNOSTIC_STATUS_KEY, undefined);
+        ctx.ui.setWidget(MCP_DIAGNOSTIC_WIDGET_KEY, undefined);
+      }
     },
   });
 }
