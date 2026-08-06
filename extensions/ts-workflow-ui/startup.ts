@@ -1,30 +1,41 @@
-import type { Theme } from "@earendil-works/pi-coding-agent";
-import { visibleWidth, type Component } from "@earendil-works/pi-tui";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth, type Component, type TUI } from "@earendil-works/pi-tui";
 import { TS_PACKAGE_PROFILE } from "../shared/package-profile.ts";
+import {
+  borderLine,
+  boxedLine,
+  center,
+  formatCwd,
+  formatModelLabel,
+  formatThinkingLabel,
+  headerColumnWidths,
+  padRight,
+  stripAnsi,
+  twoColumn,
+} from "./render-utils.ts";
 
-const FULL_LAYOUT_MIN_WIDTH = 48;
-const LABEL_WIDTH = 13;
-const ITEM_SEPARATOR = " · ";
+const LOGO_ANIMATION_INTERVAL_MS = 90;
 const PIXEL = "██";
 const EMPTY_PIXEL = " ".repeat(visibleWidth(PIXEL));
 const TSPI_COMPACT_LOGO = "TSπ";
+const TSPI_ANIMATION_FRAMES = 11;
 const T_MASK = Object.freeze([
-  "WWWWW",
-  "  W  ",
-  "  W  ",
-  "  W  ",
-  "  W  ",
-  "  W  ",
-  "  W  ",
+  "TTTTT",
+  "  T  ",
+  "  T  ",
+  "  T  ",
+  "  T  ",
+  "  T  ",
+  "  T  ",
 ]);
 const S_MASK = Object.freeze([
-  "WWWWW",
-  "W    ",
-  "W    ",
-  "WWWWW",
-  "    W",
-  "    W",
-  "WWWWW",
+  "SSSSS",
+  "S    ",
+  "S    ",
+  "SSSSS",
+  "    S",
+  "    S",
+  "SSSSS",
 ]);
 const PI_MASK = Object.freeze([
   "PPPPPPP",
@@ -35,195 +46,199 @@ const PI_MASK = Object.freeze([
   " P  PP ",
   "P    PP",
 ]);
-const TSPI_LOGO_MASK = Object.freeze(T_MASK.map((line, index) => `${line}  ${S_MASK[index]}  ${PI_MASK[index]}`));
-const TSPI_LOGO_LINES = Object.freeze(TSPI_LOGO_MASK.map(renderPixelMask));
-const TSPI_LOGO_WIDTH = Math.max(...TSPI_LOGO_LINES.map((line) => visibleWidth(line)));
-const TSPI_LOGO_MIN_WIDTH = TSPI_LOGO_WIDTH + 4;
+const TSPI_MASK = Object.freeze(T_MASK.map((line, index) => `${line}  ${S_MASK[index]}  ${PI_MASK[index]}`));
+const TSPI_LOGO_WIDTH = TSPI_MASK[0]!.length * visibleWidth(PIXEL);
 
-export function renderTspiStartupLines(workspaceRoot: string, width: number): string[] {
-  const safeWidth = Math.max(1, Math.floor(width));
-  const profile = TS_PACKAGE_PROFILE;
-  const innerWidth = safeWidth >= 4 ? safeWidth - 2 : safeWidth;
-  const content = renderTspiStartupContent(workspaceRoot, innerWidth);
-
-  if (safeWidth < 4) return fitLines(content, safeWidth);
-  return [
-    frameLine("╭", "╮", `${profile.displayName} v${profile.version}`, safeWidth),
-    ...content.map((line) => `│${padPlainText(line, innerWidth)}│`),
-    frameLine("╰", "╯", "", safeWidth),
-  ];
+interface StartupPalette {
+  accent: (text: string) => string;
+  dim: (text: string) => string;
+  link: (text: string) => string;
+  muted: (text: string) => string;
+  success: (text: string) => string;
+  text: (text: string) => string;
+  warning: (text: string) => string;
+  bold: (text: string) => string;
 }
 
-function renderTspiStartupContent(workspaceRoot: string, width: number): string[] {
-  const profile = TS_PACKAGE_PROFILE;
-  const logo = renderTspiLogo(width);
-
-  if (width < FULL_LAYOUT_MIN_WIDTH - 2) {
-    return fitLines([
-      ...logo,
-      profile.title,
-      ...renderRow("Workspace", [workspaceRoot], width),
-      ...renderRow(
-        "Resources",
-        [`1 skill`, `${profile.extensions.length} extensions`, profile.theme.name],
-        width,
-      ),
-      ...renderRow("Commands", profile.commands, width),
-    ], width);
-  }
-
-  return fitLines([
-    ...logo,
-    profile.title,
-    profile.description,
-    ...renderRow("Workspace", [workspaceRoot], width),
-    ...renderRow("Skill", [profile.skill.name], width),
-    ...renderRow("Extensions", profile.extensions.map((extension) => extension.name), width),
-    ...renderRow("Theme", [profile.theme.name], width),
-    ...renderRow("Commands", profile.commands, width),
-  ], width);
+export interface TspiStartupDetails {
+  compact?: boolean;
+  frame?: number;
+  mcpEndpoint?: string;
+  modelLabel?: string;
+  thinkingLabel?: string;
 }
 
-export function createTspiStartupHeader(theme: Theme, workspaceRoot: string): Component {
-  return {
+export function renderTspiStartupLines(
+  workspaceRoot: string,
+  width: number,
+  details: TspiStartupDetails = {},
+): string[] {
+  return renderStartup(
+    workspaceRoot,
+    width,
+    {
+      accent: identity,
+      dim: identity,
+      link: identity,
+      muted: identity,
+      success: identity,
+      text: identity,
+      warning: identity,
+      bold: identity,
+    },
+    details,
+  ).map(stripAnsi);
+}
+
+export function createTspiStartupHeader(
+  pi: ExtensionAPI,
+  ctx: ExtensionContext,
+  tui: TUI,
+  workspaceRoot = process.env.TS_WORKSPACE_ROOT || ctx.cwd,
+): Component & { dispose(): void } {
+  let frame = 0;
+  let timer: ReturnType<typeof setInterval> | undefined;
+
+  const component = {
     render(width: number): string[] {
-      return renderTspiStartupLines(workspaceRoot, width).map((line) => colorLine(theme, line));
+      const theme = ctx.ui.theme;
+      return renderStartup(workspaceRoot, width, themePalette(theme), {
+        compact: tui.terminal.rows > 0 && tui.terminal.rows < 25,
+        frame,
+        mcpEndpoint: process.env.TS_CLUSTER_MCP_URL,
+        modelLabel: formatModelLabel(ctx.model),
+        thinkingLabel: formatThinkingLabel(pi.getThinkingLevel()),
+      });
     },
     invalidate(): void {},
+    dispose(): void {
+      if (!timer) return;
+      clearInterval(timer);
+      timer = undefined;
+    },
+  };
+
+  timer = setInterval(() => {
+    if (frame >= TSPI_ANIMATION_FRAMES - 1) {
+      component.dispose();
+      return;
+    }
+    frame += 1;
+    tui.requestRender();
+  }, LOGO_ANIMATION_INTERVAL_MS);
+  timer.unref?.();
+  return component;
+}
+
+function renderStartup(
+  workspaceRoot: string,
+  width: number,
+  palette: StartupPalette,
+  details: TspiStartupDetails,
+): string[] {
+  const safeWidth = Math.max(1, Math.floor(width));
+  const profile = TS_PACKAGE_PROFILE;
+  if (safeWidth < 20) {
+    return [truncateToWidth(palette.accent(`${TSPI_COMPACT_LOGO} ${profile.displayName}`), safeWidth, "")];
+  }
+
+  const innerWidth = safeWidth - 2;
+  const { leftWidth, rightWidth, useRightColumn } = headerColumnWidths(innerWidth);
+  const frame = details.frame ?? TSPI_ANIMATION_FRAMES - 1;
+  const model = details.modelLabel || "Default model";
+  const thinking = details.thinkingLabel || "ready";
+  const cwd = formatCwd(workspaceRoot);
+  const fullLogo = leftWidth >= TSPI_LOGO_WIDTH;
+  const logo = fullLogo
+    ? renderLogoFrame(frame, palette)
+    : [palette.accent(TSPI_COMPACT_LOGO)];
+  const visibleLogo = details.compact && logo.length > 1 ? logo.slice(1, 6) : logo;
+  const heroLines = [
+    ...visibleLogo.map((line) => center(line, leftWidth)),
+    center(palette.bold(profile.displayName), leftWidth),
+    center(palette.muted("Evidence-driven transition-state workflow."), leftWidth),
+    center(palette.dim(`${model} · ${thinking}`), leftWidth),
+    center(palette.dim(cwd), leftWidth),
+  ];
+
+  const divider = palette.accent("─".repeat(Math.max(8, Math.min(22, rightWidth))));
+  const packageSummary = `1 skill · ${profile.extensions.length} extensions`;
+  const rightLines = [
+    "",
+    palette.accent(palette.bold("Workspace")),
+    palette.muted(formatCwd(workspaceRoot)),
+    palette.accent(palette.bold(details.mcpEndpoint ? "MCP configured" : "MCP")),
+    palette.muted(mcpLabel(details.mcpEndpoint)),
+    divider,
+    palette.accent(palette.bold("Package")),
+    palette.muted(packageSummary),
+    palette.muted(profile.theme.name),
+    divider,
+    palette.accent(palette.bold("Commands")),
+    ...profile.commands.map((command) => palette.muted(command)),
+  ];
+
+  const bodyHeight = useRightColumn ? Math.max(heroLines.length, rightLines.length) : heroLines.length;
+  const label = `${palette.accent(TSPI_COMPACT_LOGO)} ${palette.dim(`v${profile.version}`)}`;
+  const lines = [borderLine("╭", label, "╮", safeWidth, palette.accent)];
+  for (let index = 0; index < bodyHeight; index++) {
+    const left = heroLines[index] || "";
+    const content = useRightColumn
+      ? twoColumn(left, rightLines[index] || "", leftWidth, rightWidth, palette.accent)
+      : padRight(left, leftWidth);
+    lines.push(boxedLine(content, safeWidth, palette.accent));
+  }
+  lines.push(borderLine("╰", "", "╯", safeWidth, palette.accent));
+  return lines.map((line) => truncateToWidth(line, safeWidth, ""));
+}
+
+function renderLogoFrame(frameIndex: number, palette: StartupPalette): string[] {
+  const frame = Math.max(0, Math.min(TSPI_ANIMATION_FRAMES - 1, frameIndex));
+  return TSPI_MASK.map((row, y) => {
+    let line = "";
+    for (const cell of row) {
+      if (cell === " ") {
+        line += EMPTY_PIXEL;
+        continue;
+      }
+      const offset = cell === "T" ? 0 : cell === "S" ? 1 : 2;
+      line += frame >= Math.min(7, y + offset) ? paintLogoCell(cell, frame, palette) : EMPTY_PIXEL;
+    }
+    return line;
+  });
+}
+
+function paintLogoCell(cell: string, frame: number, palette: StartupPalette): string {
+  if (frame === 8) return palette.warning(PIXEL);
+  if (frame === 9) return palette.accent(PIXEL);
+  if (cell === "P") return palette.text(PIXEL);
+  if (cell === "S") return palette.success(PIXEL);
+  return palette.link(PIXEL);
+}
+
+function mcpLabel(endpoint?: string): string {
+  if (!endpoint) return "not configured";
+  try {
+    const url = new URL(endpoint);
+    return url.host;
+  } catch {
+    return "configured";
+  }
+}
+
+function themePalette(theme: Theme): StartupPalette {
+  return {
+    accent: (text) => theme.fg("accent", text),
+    dim: (text) => theme.fg("dim", text),
+    link: (text) => theme.fg("mdLink", text),
+    muted: (text) => theme.fg("muted", text),
+    success: (text) => theme.fg("success", text),
+    text: (text) => theme.fg("text", text),
+    warning: (text) => theme.fg("warning", text),
+    bold: (text) => theme.bold(text),
   };
 }
 
-function renderTspiLogo(width: number): string[] {
-  if (width < TSPI_LOGO_MIN_WIDTH) return [centerPlainText(TSPI_COMPACT_LOGO, width)];
-  return TSPI_LOGO_LINES.map((line) => centerPlainText(line, width));
-}
-
-function renderPixelMask(mask: string): string {
-  return [...mask].map((cell) => cell === " " ? EMPTY_PIXEL : PIXEL).join("");
-}
-
-function renderRow(label: string, items: readonly string[], width: number): string[] {
-  if (width <= LABEL_WIDTH + 3) {
-    return [`${label} ${items.join(ITEM_SEPARATOR)}`];
-  }
-
-  const contentWidth = width - LABEL_WIDTH;
-  const contentLines = wrapItems(items, contentWidth);
-  return contentLines.map((line, index) => `${index === 0 ? label.padEnd(LABEL_WIDTH) : " ".repeat(LABEL_WIDTH)}${line}`);
-}
-
-function wrapItems(items: readonly string[], width: number): string[] {
-  const lines: string[] = [];
-  let current = "";
-
-  for (const item of items) {
-    const candidate = current ? `${current}${ITEM_SEPARATOR}${item}` : item;
-    if (current && visibleWidth(candidate) > width) {
-      lines.push(current);
-      current = item;
-    } else {
-      current = candidate;
-    }
-  }
-
-  if (current) lines.push(current);
-  return lines.length > 0 ? lines : [""];
-}
-
-function fitLines(lines: string[], width: number): string[] {
-  return lines.map((line) => truncatePlainText(line, width));
-}
-
-function centerPlainText(value: string, width: number): string {
-  const clipped = truncatePlainText(value, width);
-  const padding = Math.max(0, width - visibleWidth(clipped));
-  return `${" ".repeat(Math.floor(padding / 2))}${clipped}`;
-}
-
-function frameLine(left: string, right: string, label: string, width: number): string {
-  if (width === 1) return "─";
-  const innerWidth = width - 2;
-  const decoratedLabel = label ? `── ${label} ` : "";
-  const body = visibleWidth(decoratedLabel) <= innerWidth
-    ? `${decoratedLabel}${"─".repeat(innerWidth - visibleWidth(decoratedLabel))}`
-    : "─".repeat(innerWidth);
-  return `${left}${body}${right}`;
-}
-
-function padPlainText(value: string, width: number): string {
-  const clipped = truncatePlainText(value, width);
-  return `${clipped}${" ".repeat(Math.max(0, width - visibleWidth(clipped)))}`;
-}
-
-function truncatePlainText(value: string, width: number): string {
-  if (visibleWidth(value) <= width) return value;
-  let result = "";
-  for (const character of value) {
-    const candidate = `${result}${character}`;
-    if (visibleWidth(candidate) > width) break;
-    result = candidate;
-  }
-  return result;
-}
-
-function colorLine(theme: Theme, line: string): string {
-  if (line.startsWith("╭") || line.startsWith("╰")) return theme.bold(theme.fg("accent", line));
-  if (!line.startsWith("│") || !line.endsWith("│")) return theme.fg("muted", line);
-
-  const content = line.slice(1, -1);
-  const painted = colorContent(theme, content);
-  return `${theme.fg("accent", "│")}${painted}${theme.fg("accent", "│")}`;
-}
-
-function colorContent(theme: Theme, content: string): string {
-  const trimmed = content.trim();
-  const paintedLogo = colorLogoContent(theme, content);
-  if (paintedLogo) return paintedLogo;
-  if (trimmed === TS_PACKAGE_PROFILE.title) return theme.bold(theme.fg("text", content));
-  if (content.trimEnd() === TS_PACKAGE_PROFILE.description) return theme.fg("muted", content);
-
-  const row = content.match(/^([A-Za-z]+)(\s{2,})(.*)$/);
-  if (row) {
-    return `${theme.bold(theme.fg("accent", row[1]))}${row[2]}${theme.fg("text", row[3])}`;
-  }
-  return theme.fg(content.startsWith(" ") ? "dim" : "muted", content);
-}
-
-function colorLogoContent(theme: Theme, content: string): string | undefined {
-  const logo = paintLogoLines(theme, content, TSPI_LOGO_LINES, TSPI_LOGO_MASK);
-  if (logo) return logo;
-  if (content.includes(TSPI_COMPACT_LOGO)) {
-    const painted = `${theme.fg("mdLink", "TS")}${theme.bold(theme.fg("text", "π"))}`;
-    return replacePlainSegment(content, TSPI_COMPACT_LOGO, painted);
-  }
-  return undefined;
-}
-
-function paintLogoLines(
-  theme: Theme,
-  content: string,
-  lines: readonly string[],
-  masks: readonly string[],
-): string | undefined {
-  for (let index = 0; index < lines.length; index++) {
-    const line = lines[index];
-    if (content.includes(line)) {
-      return replacePlainSegment(content, line, paintPixelMask(theme, masks[index]));
-    }
-  }
-  return undefined;
-}
-
-function paintPixelMask(theme: Theme, mask: string): string {
-  return [...mask].map((cell) => {
-    if (cell === " ") return EMPTY_PIXEL;
-    if (cell === "P") return theme.bold(theme.fg("text", PIXEL));
-    return theme.fg("mdLink", PIXEL);
-  }).join("");
-}
-
-function replacePlainSegment(content: string, segment: string, painted: string): string | undefined {
-  const offset = content.indexOf(segment);
-  if (offset < 0) return undefined;
-  return `${content.slice(0, offset)}${painted}${content.slice(offset + segment.length)}`;
+function identity(text: string): string {
+  return text;
 }

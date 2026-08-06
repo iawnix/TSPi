@@ -81,11 +81,11 @@ Keep state ownership narrow.
   adapters, plus the canonical public tool-name, execution-class catalog, and
   versioned child-lifecycle status contract.
 - `extensions/ts-workflow-ui` observes `ts_subagent_*` execution updates and
-  renders the TSPi startup header, rounded input editor, and
-  status/widget/history views. It must remain presentation-only and must not
-  own tools, workspace writes, model calls, MCP access, approvals, or
-  scientific decisions. It deliberately leaves Pi footer/title ownership
-  untouched.
+  owns the TSPi startup header, rounded input editor, session footer, terminal
+  title request, and status/widget/history views. It must remain
+  presentation-only and must not own tools, workspace writes, model calls, MCP
+  probes, approvals, or scientific decisions. Launchers that load this UI must
+  disable other extensions that compete for Pi header/footer/editor ownership.
 - `extensions/ts-workflow-control` exposes the four-tool control plane;
   `ts_workspace_context`, `ts_workspace_decision_draft`, and
   `ts_workspace_decision_validate` are read-only, while only

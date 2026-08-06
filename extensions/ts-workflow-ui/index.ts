@@ -1,13 +1,15 @@
 import type {
   ExtensionAPI,
   ExtensionContext,
+  Theme,
   ToolExecutionEndEvent,
   ToolExecutionStartEvent,
   ToolExecutionUpdateEvent,
 } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { Text, truncateToWidth, type TUI } from "@earendil-works/pi-tui";
 import { TspiEditor } from "./editor.ts";
 import { createTspiStartupHeader } from "./startup.ts";
+import { fitColumns, formatCwd } from "./render-utils.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 import {
   isTsSubagentStatus,
@@ -21,6 +23,22 @@ const STATUS_KEY = "ts-subagent";
 const WIDGET_KEY = "ts-subagent-status";
 const TERMINAL_HOLD_MS = 2500;
 const TERMINAL_PHASES = new Set<TsSubagentPhase>(["completed", "failed", "cancelled"]);
+type AgentState = "idle" | "thinking" | "tool" | "compacting" | "error";
+
+const ICONS = Object.freeze({
+  session: "◆",
+  git: "⑂",
+  cwd: "▣",
+  ephemeral: "○",
+  model: "◇",
+  context: "◔",
+  thinking: "◌",
+  idle: "●",
+  tool: "⚒",
+  compacting: "↻",
+  error: "✕",
+  ts: "π",
+});
 const SUBAGENT_TOOLS = new Set<string>([
   TS_PUBLIC_TOOL_NAMES.subagentReview,
   TS_PUBLIC_TOOL_NAMES.subagentCompute,
@@ -135,19 +153,98 @@ export function formatTsSubagentHistory(
 }
 
 export default function (pi: ExtensionAPI) {
-  const state = createTsSubagentUiState();
+  const subagentState = createTsSubagentUiState();
+  let agentState: AgentState = "idle";
+  const activeTools = new Map<string, string>();
   let timer: ReturnType<typeof setInterval> | undefined;
   let latestContext: ExtensionContext | undefined;
+  let activeTui: TUI | undefined;
+  let activeHeader: ReturnType<typeof createTspiStartupHeader> | undefined;
+
+  const requestRender = () => activeTui?.requestRender();
+
+  const setAgentState = (next: AgentState) => {
+    agentState = next;
+    requestRender();
+  };
+
+  const disposeHeader = () => {
+    activeHeader?.dispose();
+    activeHeader = undefined;
+  };
+
+  const installUi = (ctx: ExtensionContext) => {
+    if (ctx.mode !== "tui") return;
+    const workspaceRoot = process.env.TS_WORKSPACE_ROOT || ctx.cwd;
+    disposeHeader();
+    ctx.ui.setHeader((tui) => {
+      activeTui = tui;
+      activeHeader = createTspiStartupHeader(pi, ctx, tui, workspaceRoot);
+      return activeHeader;
+    });
+    ctx.ui.setFooter((tui, theme, footerData) => {
+      activeTui = tui;
+      const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
+      return {
+        dispose: unsubscribe,
+        invalidate() {},
+        render(width: number): string[] {
+          const branch = footerData.getGitBranch();
+          const sessionName = ctx.sessionManager.getSessionName();
+          const sessionId = ctx.sessionManager.getSessionId().slice(0, 8);
+          const sessionIdentity = sessionName || `#${sessionId}`;
+          const persisted = Boolean(ctx.sessionManager.getSessionFile());
+          const leftParts = [
+            iconLabel("session", sessionIdentity),
+            branch ? iconLabel("git", branch) : undefined,
+            width >= 100 ? iconLabel("cwd", formatCwd(ctx.cwd)) : undefined,
+            !persisted ? iconLabel("ephemeral") : undefined,
+          ].filter((value): value is string => Boolean(value));
+          const left = theme.fg("muted", leftParts.join(" · "));
+
+          const activeTool = activeTools.size === 1
+            ? compactToolLabel([...activeTools.values()][0] || "tool")
+            : activeTools.size > 1 ? `${activeTools.size} tools` : undefined;
+          const run = latestRun(subagentState);
+          const rightParts = [
+            agentStateLabel(agentState, activeTool),
+            run ? iconLabel("ts", `${roleLabel(run.status.role)} ${run.status.phase}`) : undefined,
+            iconLabel("context", contextText(ctx)),
+            width >= 72 ? iconLabel("thinking", pi.getThinkingLevel()) : undefined,
+            iconLabel("model", ctx.model?.id || "Default model"),
+          ].filter((value): value is string => Boolean(value));
+          let right = stateColor(theme, agentState, rightParts.join(" · "));
+
+          if (width >= 120) {
+            const statuses = [...footerData.getExtensionStatuses().entries()]
+              .filter(([key]) => key !== STATUS_KEY)
+              .map(([, value]) => value);
+            if (statuses.length > 0) right = `${right} · ${statuses.join(" · ")}`;
+          }
+          if (width < 58) return [truncateToWidth(right, width, "")];
+          return [fitColumns(left, right, width)];
+        },
+      };
+    });
+    ctx.ui.setEditorComponent((tui, theme, keybindings) => {
+      activeTui = tui;
+      return new TspiEditor(tui, theme, keybindings, ctx);
+    });
+    ctx.ui.setWorkingIndicator();
+    ctx.ui.setTitle(`TSPi · ${formatCwd(ctx.cwd)}`);
+    requestRender();
+  };
 
   const updateUi = (ctx: ExtensionContext, now = Date.now()) => {
     latestContext = ctx;
-    pruneTsSubagentUiState(state, now);
-    const run = latestRun(state);
+    pruneTsSubagentUiState(subagentState, now);
+    const run = latestRun(subagentState);
     if (!run) {
       ctx.ui.setStatus(STATUS_KEY, undefined);
       ctx.ui.setWidget(WIDGET_KEY, undefined);
       if (timer) clearInterval(timer);
       timer = undefined;
+      requestRender();
       return;
     }
     const role = roleLabel(run.status.role);
@@ -172,36 +269,63 @@ export default function (pi: ExtensionAPI) {
       }, 1000);
       timer.unref?.();
     }
+    requestRender();
   };
 
   pi.on("session_start", (_event, ctx) => {
-    if (ctx.mode !== "tui") return;
-    const workspaceRoot = process.env.TS_WORKSPACE_ROOT || ctx.cwd;
-    ctx.ui.setHeader((_tui, theme) => createTspiStartupHeader(theme, workspaceRoot));
-    ctx.ui.setEditorComponent((tui, theme, keybindings) => new TspiEditor(tui, theme, keybindings));
+    latestContext = ctx;
+    activeTools.clear();
+    setAgentState("idle");
+    installUi(ctx);
   });
 
   pi.on("tool_execution_start", (event, ctx) => {
-    if (reduceTsSubagentUiState(state, event, Date.now())) updateUi(ctx);
+    activeTools.set(event.toolCallId, event.toolName);
+    setAgentState("tool");
+    if (reduceTsSubagentUiState(subagentState, event, Date.now())) updateUi(ctx);
   });
   pi.on("tool_execution_update", (event, ctx) => {
-    if (reduceTsSubagentUiState(state, event, Date.now())) updateUi(ctx);
+    if (reduceTsSubagentUiState(subagentState, event, Date.now())) updateUi(ctx);
   });
   pi.on("tool_execution_end", (event, ctx) => {
-    if (reduceTsSubagentUiState(state, event, Date.now())) updateUi(ctx);
+    if (reduceTsSubagentUiState(subagentState, event, Date.now())) updateUi(ctx);
+    activeTools.delete(event.toolCallId);
+    setAgentState(event.isError ? "error" : activeTools.size > 0 ? "tool" : "thinking");
   });
 
+  pi.on("agent_start", (_event, ctx) => {
+    latestContext = ctx;
+    setAgentState("thinking");
+    ctx.ui.setWorkingMessage("[o_o] TSPi is thinking");
+  });
+  pi.on("agent_settled", (_event, ctx) => {
+    activeTools.clear();
+    setAgentState("idle");
+    ctx.ui.setWorkingMessage();
+  });
+  pi.on("session_before_compact", () => setAgentState("compacting"));
+  pi.on("session_compact", () => setAgentState("thinking"));
+  pi.on("model_select", requestRender);
+  pi.on("thinking_level_select", requestRender);
+  pi.on("session_info_changed", requestRender);
+
   pi.on("session_shutdown", (_event, ctx) => {
+    disposeHeader();
     if (timer) clearInterval(timer);
     timer = undefined;
-    state.runs.clear();
-    state.latestToolCallId = undefined;
+    subagentState.runs.clear();
+    subagentState.latestToolCallId = undefined;
+    activeTools.clear();
     ctx.ui.setStatus(STATUS_KEY, undefined);
     ctx.ui.setWidget(WIDGET_KEY, undefined);
     if (ctx.mode === "tui") {
       ctx.ui.setHeader(undefined);
+      ctx.ui.setFooter(undefined);
       ctx.ui.setEditorComponent(undefined);
+      ctx.ui.setWorkingMessage();
     }
+    activeTui = undefined;
+    latestContext = undefined;
   });
 
   const historyEntries = [
@@ -219,6 +343,44 @@ export default function (pi: ExtensionAPI) {
       return new Text(`${theme.fg(color, lines[0])}${lines.slice(1).map((line) => `\n${theme.fg("dim", line)}`).join("")}`, 1, 0);
     });
   }
+}
+
+function contextText(ctx: ExtensionContext): string {
+  const usage = ctx.getContextUsage();
+  if (!usage || usage.percent === null) return "?";
+  return `${Math.round(usage.percent)}%`;
+}
+
+function iconLabel(name: keyof typeof ICONS, value?: string): string {
+  return value ? `${ICONS[name]} ${value}` : ICONS[name];
+}
+
+function agentStateLabel(state: AgentState, toolName?: string): string {
+  if (state === "tool") return iconLabel("tool", toolName);
+  return iconLabel(state);
+}
+
+function stateColor(theme: Theme, state: AgentState, text: string): string {
+  if (state === "error") return theme.fg("error", text);
+  if (state === "idle") return theme.fg("muted", text);
+  if (state === "compacting") return theme.fg("warning", text);
+  return theme.fg("accent", text);
+}
+
+function compactToolLabel(toolName: string): string {
+  const labels: Record<string, string> = {
+    [TS_PUBLIC_TOOL_NAMES.workspaceContext]: "TS context",
+    [TS_PUBLIC_TOOL_NAMES.workspaceDecisionDraft]: "TS draft",
+    [TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate]: "TS validate",
+    [TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply]: "TS apply",
+    [TS_PUBLIC_TOOL_NAMES.mcpInspect]: "TS MCP",
+    [TS_PUBLIC_TOOL_NAMES.subagentReview]: "TS review",
+    [TS_PUBLIC_TOOL_NAMES.subagentCompute]: "TS compute",
+    [TS_PUBLIC_TOOL_NAMES.subagentRender]: "TS render",
+    [TS_PUBLIC_TOOL_NAMES.subagentReport]: "TS report",
+    [TS_PUBLIC_TOOL_NAMES.subagentEmailDraft]: "TS email",
+  };
+  return labels[toolName] || toolName;
 }
 
 function fallbackStatus(event: ToolExecutionStartEvent): TsSubagentStatus {

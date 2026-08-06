@@ -132,12 +132,13 @@ Public tool prefixes describe execution rather than subject matter:
 - `ts_mcp_*` runs deterministic MCP or cluster diagnostics without a child
   model session.
 
-The package-owned UI extension installs a compact TSPi startup header and a
-rounded input editor, then observes `ts_subagent_*` lifecycle updates. It shows
-a compact footer status and a two-line active-child panel, then renders
-completed or failed run entries in history. It does not replace Pi's footer or
-title, and it has no workspace, MCP, authorization, model, or
-scientific-decision capability.
+The package-owned UI extension installs a MyPi-compatible animated TSPi header,
+mode-aware rounded editor, session footer, working state, and terminal title
+request.
+It adds the configured workspace/MCP endpoint and observes `ts_subagent_*`
+lifecycle updates through a two-line active-child panel and history entries.
+The UI reads presentation state only: it does not probe MCP, write workspace
+state, request authorization, call a model, or make scientific decisions.
 
 The workspace control surface is exactly:
 
