@@ -26,7 +26,7 @@
         }
       ]
     },
-    "backend": {"enum": ["gaussian", "xtb", "ase_neb", "qbics_dmecp"]},
+    "backend": {"enum": ["gaussian", "xtb", "crest", "ase_neb", "qbics_dmecp"]},
     "task_type": {"type": "string", "minLength": 1, "maxLength": 64},
     "input_refs": {"type": "object", "minProperties": 1, "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9_]*$"}, "additionalProperties": {"type": "string", "minLength": 1, "maxLength": 4096}},
     "settings": {"type": "object", "additionalProperties": {"type": "string", "maxLength": 4096}},

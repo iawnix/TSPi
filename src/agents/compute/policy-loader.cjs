@@ -10,6 +10,7 @@ const BACKEND_POLICY_FILES = Object.freeze({
   ase_neb: "ase.md",
   rdkit: "rdkit.md",
   xtb: "xtb.md",
+  crest: "crest.md",
   qbics_dmecp: "qbics.md",
 });
 

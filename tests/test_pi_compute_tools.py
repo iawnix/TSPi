@@ -327,7 +327,7 @@ def test_compute_backend_policies_are_packaged_but_not_registered_as_skills() ->
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     assert package["pi"]["skills"] == ["./skills/transition-state-workflow"]
     policies = {path.stem for path in (COMPUTE_AGENT / "backends").glob("*.md")}
-    assert policies == {"gaussian", "ase", "qbics", "rdkit", "xtb"}
+    assert policies == {"gaussian", "ase", "crest", "qbics", "rdkit", "xtb"}
     assert "src/agents/compute/backends/*.md" in package["files"]
     assert not list(COMPUTE_AGENT.rglob("SKILL.md"))
 

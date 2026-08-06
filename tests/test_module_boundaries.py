@@ -13,7 +13,12 @@ from strict_helpers import make_accepted_workspace
 
 
 def test_backend_prepares_command_without_workspace_write() -> None:
-    task = BackendTask(node_id="n001", work_dir="nodes/n001", inputs={"gjf": "nodes/n001/inputs/ts.gjf"})
+    task = BackendTask(
+        node_id="n001",
+        task_type="opt_freq",
+        work_dir="nodes/n001",
+        inputs={"gjf": "nodes/n001/inputs/ts.gjf"},
+    )
     prepared = prepare_gaussian(task)
     assert prepared.backend == "gaussian"
     assert prepared.command == ["g16", "nodes/n001/inputs/ts.gjf"]

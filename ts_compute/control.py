@@ -18,6 +18,12 @@ from typing import Any, Callable
 
 from ts_backends.ase_neb import prepare_ase_neb
 from ts_backends.base import BackendTask, PreparedTask
+from ts_backends.crest import (
+    CREST_REQUIRED_ARTIFACTS,
+    parse_crest_artifacts,
+    prepare_crest,
+    write_crest_parse_artifacts,
+)
 from ts_backends.gaussian import (
     parse_irc_log,
     parse_log,
@@ -28,7 +34,12 @@ from ts_backends.gaussian import (
     write_parse_artifacts,
 )
 from ts_backends.qbics_dmecp import prepare_qbics_dmecp
-from ts_backends.xtb import prepare_xtb_opt
+from ts_backends.xtb import (
+    XTB_REQUIRED_ARTIFACTS,
+    parse_xtb_artifacts,
+    prepare_xtb,
+    write_xtb_parse_artifacts,
+)
 from ts_remote import job_lifecycle
 from ts_remote.base import RemoteReceipt
 from ts_remote.mcp import (
@@ -50,11 +61,21 @@ from .contracts import ComputeContractError, validate_compute_contract
 INTENT_SCHEMA = "calculation_intent_v2.schema.json"
 RESULT_SCHEMA = "calculation_result.schema.json"
 MAX_TAIL_BYTES = 32 * 1024
-BACKENDS: dict[str, tuple[set[str], set[str], Callable[[BackendTask], PreparedTask]]] = {
-    "gaussian": ({"gjf"}, {"sp", "opt", "freq", "opt_freq", "irc"}, prepare_gaussian),
-    "xtb": ({"xyz"}, {"opt"}, prepare_xtb_opt),
-    "ase_neb": ({"reactant", "product"}, {"neb"}, prepare_ase_neb),
-    "qbics_dmecp": ({"config"}, {"dmecp"}, prepare_qbics_dmecp),
+BACKENDS: dict[str, dict[str, tuple[set[str], Callable[[BackendTask], PreparedTask]]]] = {
+    "gaussian": {
+        task_type: ({"gjf"}, prepare_gaussian)
+        for task_type in {"sp", "opt", "freq", "opt_freq", "irc"}
+    },
+    "xtb": {
+        "sp": ({"xyz"}, prepare_xtb),
+        "opt": ({"xyz"}, prepare_xtb),
+        "freq": ({"xyz"}, prepare_xtb),
+        "opt_freq": ({"xyz"}, prepare_xtb),
+        "md": ({"xyz", "control"}, prepare_xtb),
+    },
+    "crest": {"conformer_search": ({"xyz"}, prepare_crest)},
+    "ase_neb": {"neb": ({"reactant", "product"}, prepare_ase_neb)},
+    "qbics_dmecp": {"dmecp": ({"config"}, prepare_qbics_dmecp)},
 }
 OPERATIONS = {"prepare", "submit", "inspect", "collect", "cancel", "parse"}
 
@@ -618,8 +639,6 @@ def parse_calculation(
     expected_intent_digest: str | None = None,
 ) -> dict[str, Any]:
     workspace, intent, prepared = _load_prepared(root, intent_id, expected_intent_digest)
-    if intent["backend"] != "gaussian":
-        raise ComputeContractError(f"no deterministic parser is exposed for backend: {intent['backend']}")
     source_ref = _workspace_ref(workspace, artifact_ref, read=True)
     _require_calculation_output_ref(intent, source_ref)
     prepared_task = prepared["prepared_task"]
@@ -627,60 +646,151 @@ def parse_calculation(
     if Path(source_ref).name not in expected:
         raise ComputeContractError("parse artifact basename is outside the prepared expected artifacts")
     source = workspace / source_ref
-    if source.suffix.lower() not in {".log", ".out"}:
+    backend = str(intent["backend"])
+    if backend == "gaussian" and source.suffix.lower() not in {".log", ".out"}:
         raise ComputeContractError("Gaussian parser accepts only .log or .out artifacts")
+    if backend == "xtb" and source.name != "xtb.out":
+        raise ComputeContractError("xTB parser requires the bound xtb.out artifact")
+    if backend == "crest" and source.name != "crest.out":
+        raise ComputeContractError("CREST parser requires the bound crest.out artifact")
+    if backend not in {"gaussian", "xtb", "crest"}:
+        raise ComputeContractError(f"no deterministic parser is exposed for backend: {backend}")
+
+    parse_inputs = _bound_parse_artifacts(workspace, intent, prepared_task, source_ref)
+    parser_inputs = [
+        {"ref": ref, "sha256": _sha256_file(path)}
+        for _, (ref, path) in sorted(parse_inputs.items())
+    ]
 
     _, _, output_ref = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]))
     result_path = workspace / output_ref / "calculation_result.json"
     source_sha256 = _sha256_file(source)
+    previous: dict[str, Any] | None = None
     if result_path.is_file():
-        existing = _read_object(result_path, "calculation result")
-        validate_compute_contract(RESULT_SCHEMA, existing)
-        provenance = existing.get("provenance") if isinstance(existing.get("provenance"), dict) else {}
-        if provenance.get("source_ref") == source_ref and provenance.get("source_sha256") == source_sha256:
-            return existing
-        raise ComputeContractError("parse refuses to overwrite a result from different source content; use a new intent_id")
+        previous = _read_object(result_path, "calculation result")
+        _validate_bound_result(intent, previous, "calculation result")
+        provenance = previous.get("provenance") if isinstance(previous.get("provenance"), dict) else {}
+        if previous.get("state") == "parsed":
+            same_inputs = provenance.get("parser_inputs") == parser_inputs
+            if same_inputs:
+                return previous
+            raise ComputeContractError(
+                "parse refuses to overwrite a result from different source content; use a new intent_id"
+            )
 
-    expected_route = None
-    gjf_ref = intent["input_refs"].get("gjf")
-    if gjf_ref:
-        expected_route = read_gjf_route(workspace / _workspace_ref(workspace, gjf_ref, read=True))
-    is_irc = intent.get("task_type") == "irc"
-    parsed = parse_irc_log(source) if is_irc else parse_log(source, expected_route=expected_route)
+    is_irc = backend == "gaussian" and intent.get("task_type") == "irc"
+    if backend == "gaussian":
+        expected_route = None
+        gjf_ref = intent["input_refs"].get("gjf")
+        if gjf_ref:
+            expected_route = read_gjf_route(workspace / _workspace_ref(workspace, gjf_ref, read=True))
+        parsed = parse_irc_log(source) if is_irc else parse_log(source, expected_route=expected_route)
+    elif backend == "xtb":
+        parsed = parse_xtb_artifacts(
+            str(intent["task_type"]),
+            {name: path for name, (_, path) in parse_inputs.items()},
+        )
+    else:
+        parsed = parse_crest_artifacts(
+            {name: path for name, (_, path) in parse_inputs.items()}
+        )
     summary = parsed.get("summary")
     if not isinstance(summary, dict):
-        raise ComputeContractError("Gaussian parser returned an invalid summary")
+        raise ComputeContractError(f"{backend} parser returned an invalid summary")
     parse_dir = workspace / output_ref / "parsed"
     if parse_dir.exists() and any(parse_dir.iterdir()):
         raise ComputeContractError("parse output directory is non-empty without a matching calculation result")
-    if is_irc:
+    if backend == "gaussian" and is_irc:
         write_irc_parse_artifacts(parsed, parse_dir, source.stem, source.name)
-    else:
+    elif backend == "gaussian":
         write_parse_artifacts(parsed, parse_dir, source.stem, source.name)
+    elif backend == "xtb":
+        write_xtb_parse_artifacts(parsed, parse_dir)
+    else:
+        write_crest_parse_artifacts(parsed, parse_dir)
     parsed_refs = sorted(path.relative_to(workspace).as_posix() for path in parse_dir.glob("*") if path.is_file())
-    normal = bool(summary.get("normal_termination"))
+    raw_refs = sorted(ref for ref, _ in parse_inputs.values())
+    program_status, error_class = _parsed_program_outcome(backend, summary)
     result = _result(
         intent,
+        job_id=(previous.get("job_id") if previous else None),
         state="parsed",
-        program_status="completed" if normal else "failed",
-        artifact_refs=[source_ref, *parsed_refs],
+        program_status=program_status,
+        exit_status=(previous.get("exit_status") if previous else None),
+        artifact_refs=[*raw_refs, *parsed_refs],
         parser_facts=summary,
-        error_class=None if normal else "gaussian_error_termination",
+        error_class=error_class,
         provenance={
             "parsed_at": now_iso(),
             "source_ref": source_ref,
             "source_sha256": source_sha256,
-            "parser_name": "ts_backends.gaussian.parse_irc_log" if is_irc else "ts_backends.gaussian.parse_log",
-            "parser_contract": "gaussian-irc-parser/1" if is_irc else "gaussian-tsfreq-parser/1",
+            "parser_inputs": parser_inputs,
+            "parser_name": _parser_name(backend, is_irc),
+            "parser_contract": _parser_contract(backend, is_irc),
         },
     )
     _write_result(workspace, intent, result)
     return result
 
 
+def _bound_parse_artifacts(
+    workspace: Path,
+    intent: dict[str, Any],
+    prepared_task: dict[str, Any],
+    source_ref: str,
+) -> dict[str, tuple[str, Path]]:
+    source = workspace / source_ref
+    expected_names = {Path(str(ref)).name for ref in prepared_task["expected_artifacts"]}
+    artifacts: dict[str, tuple[str, Path]] = {}
+    for name in sorted(expected_names):
+        candidate = source.parent / name
+        if not candidate.exists():
+            continue
+        if candidate.is_symlink() or not candidate.is_file():
+            raise ComputeContractError(f"parse artifact is not a regular file: {candidate}")
+        ref = candidate.resolve().relative_to(workspace).as_posix()
+        _require_calculation_output_ref(intent, ref)
+        artifacts[name] = (ref, candidate)
+    if source.name not in artifacts:
+        raise ComputeContractError("parse primary artifact is missing from its bound artifact set")
+    return artifacts
+
+
+def _parsed_program_outcome(backend: str, summary: dict[str, Any]) -> tuple[str, str | None]:
+    if backend == "gaussian":
+        normal = bool(summary.get("normal_termination"))
+        return ("completed", None) if normal else ("failed", "gaussian_error_termination")
+    prefix = "xtb" if backend == "xtb" else "crest"
+    if not summary.get("execution_completed"):
+        return "failed", f"{prefix}_error_termination"
+    if not summary.get("artifacts_complete"):
+        return "failed", f"{prefix}_artifacts_incomplete"
+    if not summary.get("task_completed"):
+        return "failed", f"{prefix}_task_incomplete"
+    return "completed", None
+
+
+def _parser_name(backend: str, is_irc: bool) -> str:
+    if backend == "gaussian":
+        return "ts_backends.gaussian.parse_irc_log" if is_irc else "ts_backends.gaussian.parse_log"
+    if backend == "xtb":
+        return "ts_backends.xtb.parse_xtb_artifacts"
+    return "ts_backends.crest.parse_crest_artifacts"
+
+
+def _parser_contract(backend: str, is_irc: bool) -> str:
+    if backend == "gaussian":
+        return "gaussian-irc-parser/1" if is_irc else "gaussian-tsfreq-parser/1"
+    return "xtb-task-parser/1" if backend == "xtb" else "crest-conformer-parser/1"
+
+
 def _validate_backend_request(intent: dict[str, Any], inputs: dict[str, str], workspace: Path) -> None:
     backend = str(intent["backend"])
-    required_inputs, task_types, _ = BACKENDS[backend]
+    task_type = str(intent["task_type"])
+    tasks = BACKENDS[backend]
+    if task_type not in tasks:
+        raise ComputeContractError(f"unsupported {backend} task_type: {task_type}")
+    required_inputs, _ = tasks[task_type]
     if set(inputs) != required_inputs:
         missing = sorted(required_inputs - set(inputs))
         unexpected = sorted(set(inputs) - required_inputs)
@@ -688,8 +798,6 @@ def _validate_backend_request(intent: dict[str, Any], inputs: dict[str, str], wo
             f"{backend} input roles must be exactly {sorted(required_inputs)}; "
             f"missing={missing}; unexpected={unexpected}"
         )
-    if intent["task_type"] not in task_types:
-        raise ComputeContractError(f"unsupported {backend} task_type: {intent['task_type']}")
     if backend != "gaussian":
         return
     gjf = workspace / inputs["gjf"]
@@ -715,21 +823,43 @@ def _prepared_task_for_intent(workspace: Path, intent: dict[str, Any]) -> Prepar
         _require_compute_input_ref(normalized)
         inputs[role] = normalized
     _validate_backend_request(intent, inputs, workspace)
-    _, _, prepare = BACKENDS[str(intent["backend"])]
+    backend = str(intent["backend"])
+    task_type = str(intent["task_type"])
+    _, prepare = BACKENDS[backend][task_type]
     task = BackendTask(
         node_id=str(intent["node_id"]),
+        task_type=task_type,
         work_dir=f"nodes/{intent['node_id']}",
         inputs=inputs,
         settings={str(key): str(value) for key, value in intent["settings"].items()},
     )
     prepared = prepare(task)
-    return _normalize_prepared_task(
+    normalized = _normalize_prepared_task(
         workspace,
         str(intent["node_id"]),
         str(intent["intent_id"]),
         prepared,
         intent["expected_artifacts"],
     )
+    _validate_required_backend_artifacts(intent, normalized)
+    return normalized
+
+
+def _validate_required_backend_artifacts(intent: dict[str, Any], prepared: PreparedTask) -> None:
+    backend = str(intent["backend"])
+    task_type = str(intent["task_type"])
+    if backend == "xtb":
+        required = XTB_REQUIRED_ARTIFACTS[task_type]
+    elif backend == "crest":
+        required = CREST_REQUIRED_ARTIFACTS
+    else:
+        return
+    names = {Path(ref).name for ref in prepared.expected_artifacts}
+    missing = sorted(required - names)
+    if missing:
+        raise ComputeContractError(
+            f"{backend} {task_type} expected_artifacts are missing required files: {missing}"
+        )
 
 
 def _normalize_prepared_task(

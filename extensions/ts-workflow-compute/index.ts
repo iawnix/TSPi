@@ -27,7 +27,7 @@ const {
   reserveAction,
 } = require("./action-log.cjs");
 const OPERATIONS = ["prepare", "submit", "inspect", "collect", "cancel", "parse"] as const;
-const BACKENDS = ["gaussian", "ase_neb", "xtb", "qbics_dmecp"] as const;
+const BACKENDS = ["gaussian", "ase_neb", "xtb", "crest", "qbics_dmecp"] as const;
 const MCP_DIAGNOSTIC_MODES = ["status", "doctor", "queues", "nodes", "cluster"] as const;
 type McpDiagnosticMode = typeof MCP_DIAGNOSTIC_MODES[number];
 const MCP_DIAGNOSTIC_STATUS_KEY = "ts-workspace-mcp-command";

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 @dataclass(frozen=True)
 class BackendTask:
     node_id: str
+    task_type: str
     work_dir: str
     inputs: dict[str, str]
     settings: dict[str, str] = field(default_factory=dict)

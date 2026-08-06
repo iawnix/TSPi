@@ -8,7 +8,7 @@ import pytest
 
 from ts_backends.ase_neb import prepare_ase_neb
 from ts_backends.base import BackendTask
-from ts_backends.xtb import prepare_xtb_opt
+from ts_backends.xtb import prepare_xtb
 from ts_remote import job_lifecycle
 
 
@@ -217,9 +217,10 @@ def test_backend_prepared_tasks_feed_generic_remote_config(tmp_path: Path) -> No
     for path in [xyz, reactant, product]:
         path.write_text("1\nh\nH 0 0 0\n", encoding="utf-8")
 
-    xtb = prepare_xtb_opt(
+    xtb = prepare_xtb(
         BackendTask(
             node_id="n010",
+            task_type="opt",
             work_dir="nodes/n010",
             inputs={"xyz": str(xyz)},
             settings={"charge": "0", "uhf": "0"},
@@ -233,13 +234,25 @@ def test_backend_prepared_tasks_feed_generic_remote_config(tmp_path: Path) -> No
         output_dir=tmp_path / "xtb-pulled",
     )
 
-    assert xtb_remote.command == ["xtb", "candidate.xyz", "--opt", "--chrg", "0", "--uhf", "0"]
+    assert xtb_remote.command == [
+        "xtb",
+        "candidate.xyz",
+        "--opt",
+        "normal",
+        "--chrg",
+        "0",
+        "--uhf",
+        "0",
+        "--gfn",
+        "2",
+    ]
     assert xtb_remote.input_paths == (xyz,)
     assert xtb_remote.expected_artifacts == ("xtbopt.xyz", "xtb.out")
 
     neb = prepare_ase_neb(
         BackendTask(
             node_id="n011",
+            task_type="neb",
             work_dir="nodes/n011",
             inputs={"reactant": str(reactant), "product": str(product)},
             settings={"images": "5"},

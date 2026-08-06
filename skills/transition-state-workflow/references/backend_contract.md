@@ -18,3 +18,13 @@ The expected flow is:
 3. Local or remote execution creates artifacts.
 4. Parsed facts are registered through `update_workspace`.
 5. `end_node` writes the closure and triggers finalizers.
+
+Deterministic parsers may consume multiple files only when every file is bound
+by the prepared attempt manifest and resides beside the selected primary
+artifact. The parser records a digest for each consumed input. It must report
+execution completion, requested-task completion, convergence, and artifact
+completeness separately.
+
+xTB supports `sp`, `opt`, `freq`, `opt_freq`, and `md`. CREST is a separate
+`crest/conformer_search` backend because its command lifecycle and ensemble
+artifacts are not xTB task artifacts.

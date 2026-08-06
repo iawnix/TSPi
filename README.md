@@ -217,6 +217,14 @@ Calculation intents use `ts-calculation-intent/2` and declare:
 - one allowlisted backend and task type
 - a local or allowlisted remote execution target
 
+The deterministic calculation matrix includes Gaussian
+`sp|opt|freq|opt_freq|irc`, xTB `sp|opt|freq|opt_freq|md`, CREST
+`conformer_search`, ASE `neb`, and QBICS `dmecp`. xTB and CREST parsing binds a
+primary `xtb.out` or `crest.out` plus the task-required sibling artifacts from
+the prepared manifest. Parsed facts distinguish process completion, requested
+task completion, convergence, and artifact completeness; they never make a TS,
+connectivity, conformer-selection, or mechanism verdict.
+
 Remote intents must select `transport=ssh|mcp` explicitly. SSH policy comes
 from `TS_COMPUTE_*`; MCP
 connection settings come only from `TS_CLUSTER_MCP_URL`,

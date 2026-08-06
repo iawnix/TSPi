@@ -453,6 +453,7 @@ function backendLabel(value?: string): string | undefined {
     gaussian: "Gaussian",
     ase_neb: "ASE NEB",
     xtb: "xTB",
+    crest: "CREST",
     qbics_dmecp: "QBICS DMECp",
     rdkit: "RDKit",
   };

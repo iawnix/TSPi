@@ -20,7 +20,7 @@ _INTENT_ID = re.compile(r"^calc_[A-Za-z0-9_.-]{1,123}$")
 _NODE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 _DIGEST = re.compile(r"^sha256:[0-9a-f]{64}$")
 _SHA256 = re.compile(r"^[0-9a-f]{64}$")
-_BACKENDS = frozenset({"gaussian", "xtb", "ase_neb", "qbics_dmecp"})
+_BACKENDS = frozenset({"gaussian", "xtb", "crest", "ase_neb", "qbics_dmecp"})
 _REPLAYABLE_STATES = frozenset({"submitted"})
 _SENSITIVE_ENV_KEY = re.compile(
     r"(?:^|_)(?:TOKEN|SECRET|PASSWORD|PASSWD|CREDENTIALS?|AUTHORIZATION|API_KEY|PRIVATE_KEY)(?:$|_)"

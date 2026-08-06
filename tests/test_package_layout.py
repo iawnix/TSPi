@@ -91,7 +91,7 @@ def test_agent_sources_have_explicit_ownership_boundaries() -> None:
 def test_operator_policies_are_owned_by_their_only_consuming_agent() -> None:
     compute = {path.stem for path in (AGENTS_ROOT / "compute" / "backends").glob("*.md")}
     artifacts = {path.stem for path in (AGENTS_ROOT / "artifacts" / "roles").glob("*.md")}
-    assert compute == {"ase", "gaussian", "qbics", "rdkit", "xtb"}
+    assert compute == {"ase", "crest", "gaussian", "qbics", "rdkit", "xtb"}
     assert artifacts == {"email", "render", "report"}
     assert compute.isdisjoint(artifacts)
     assert not list(AGENTS_ROOT.rglob("SKILL.md"))
@@ -135,7 +135,14 @@ process.stdout.write(JSON.stringify({{
     assert "# Email Role Policy" in result["artifact"]
     assert "# Render Role Policy" not in result["artifact"]
     assert "---" not in result["compute"] + result["artifact"]
-    assert set(result["computeFiles"]) == {"gaussian", "ase_neb", "rdkit", "xtb", "qbics_dmecp"}
+    assert set(result["computeFiles"]) == {
+        "gaussian",
+        "ase_neb",
+        "crest",
+        "rdkit",
+        "xtb",
+        "qbics_dmecp",
+    }
     assert set(result["roleFiles"]) == {"render", "report", "email"}
     assert result["computeError"] == "No compute backend policy is registered for: missing"
     assert result["artifactError"] == "No artifact role policy is registered for: missing"
