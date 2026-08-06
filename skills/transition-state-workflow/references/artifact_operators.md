@@ -1,8 +1,9 @@
 # Artifact Operators
 
 Pi exposes three fresh operational child sessions for bounded local artifacts.
-Each child receives one private skill, one typed tool, no built-in tools, no
-parent history, and no canonical workspace mutation authority.
+Each child receives the shared artifact policy, one selected role policy, one
+typed tool, no built-in tools, no parent history, and no canonical workspace
+mutation authority. Policy fragments are not Pi skills.
 
 ## Render
 

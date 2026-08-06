@@ -38,7 +38,7 @@ def test_pi_package_registers_artifact_extension_and_root_tools() -> None:
     assert "ts_workspace_email_send" not in source
 
 
-def test_artifact_runtime_is_fresh_skill_scoped_and_without_builtin_tools() -> None:
+def test_artifact_runtime_is_fresh_policy_scoped_and_without_builtin_tools() -> None:
     runtime = (ARTIFACT_AGENT / "runtime.ts").read_text(encoding="utf-8")
     prompt = (ARTIFACT_AGENT / "prompt.md").read_text(encoding="utf-8")
     assert 'noTools: "builtin"' in runtime
@@ -50,7 +50,8 @@ def test_artifact_runtime_is_fresh_skill_scoped_and_without_builtin_tools() -> N
     assert "getAppendSystemPromptSources: () => []" in runtime
     assert "getSkills: () => ({ skills: [], diagnostics: [] })" in runtime
     assert "withDisposableSession" in runtime
-    assert "loadArtifactSkill(options.role)" in runtime
+    assert "loadArtifactPolicy(options.role)" in runtime
+    assert "Artifact operator policy" in runtime
     assert "external_side_effects: false as const" in runtime
     assert "no general shell" in prompt
     assert "email-send" in prompt

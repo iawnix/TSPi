@@ -221,6 +221,9 @@ connection settings come only from `TS_CLUSTER_MCP_URL`,
 `TS_CLUSTER_MCP_TOKEN`, and `TS_CLUSTER_MCP_TIMEOUT`. Endpoints and credentials
 are forbidden in calculation intents.
 
+`TS_CLUSTER_MCP_DISPLAY_TARGET` is an optional startup-only label for tunneled
+connections. It does not change MCP transport, authentication, or routing.
+
 All local authority for one attempt lives under:
 
 ```text
@@ -285,9 +288,9 @@ All isolated roles communicate through:
 
 Roles are `review`, `backend`, `render`, `report`, and `email`. Results cannot
 contain authoritative hypothesis, branch, acceptance, or strict pathway
-decision fields. Private role skills live under the owning
-`src/agents/<role>/private-skills/` directory and are loaded only into the
-selected fresh child session.
+decision fields. Compute and artifact agents each compose one shared operator
+policy with one selected backend or role policy under their owning `src/agents/`
+directory. These policy fragments are runtime prompt inputs, not Pi skills.
 
 The Pi host persists every child task under `nodes/<node>/agent-runs/<task>/`
 for one-node work or `operations/agent-runs/<task>/` for study-level work.

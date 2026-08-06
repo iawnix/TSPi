@@ -132,9 +132,9 @@ controls jobs, or injects an MCP report every turn.
 
 `ts_subagent_compute` creates a separate fresh session with only the
 typed tools needed for one operation. The Root Agent supplies the selected
-backend. The runtime loads exactly one matching private backend skill from
-`src/agents/compute/private-skills/`; no other private skill enters the child
-context.
+backend. The runtime composes `src/agents/compute/policy.md` with exactly one
+matching file under `src/agents/compute/backends/`; no other backend policy
+enters the child context. These files are prompt policies, not Pi skills.
 
 Available operations are `prepare`, `submit`, `inspect`, `collect`, `cancel`,
 and `parse`. The Root Agent can run submit and cancel directly in interactive or

@@ -146,11 +146,12 @@ write access.
 
 Use `ts_subagent_compute` for one bound `prepare`, `submit`,
 `inspect`, `collect`, `cancel`, or `parse` operation. Pass the backend selected
-by the Root Agent. The child gets only request-scoped typed tools and one
-private backend skill. It cannot select methods, change the intent, register
-evidence, or set a scientific status. For `submit` and `cancel`, the Root Agent
-directly creates a child with one operation bound to the current intent digest
-and target; no separate interactive approval is required.
+by the Root Agent. The child gets only request-scoped typed tools, the shared
+compute policy, and one selected backend policy. It cannot select methods,
+change the intent, register evidence, or set a scientific status. For `submit`
+and `cancel`, the Root Agent directly creates a child with one operation bound
+to the current intent digest and target; no separate interactive approval is
+required.
 
 Use `ts_mcp_inspect` for general cluster-status and resource-availability
 questions, preparing MCP-backed work, selecting a queue, or diagnosing a
@@ -167,9 +168,9 @@ arbitrary tool calls are not exposed by this diagnostic surface.
 Use `ts_subagent_render` for one node-owned local render,
 `ts_subagent_report` for one new validated report package, and
 `ts_subagent_email_draft` for one local email draft from a generated report
-summary. Each child gets one private role skill and one path-bound typed tool.
-The email subagent cannot send, access a network, select a sender, infer
-addresses, or read credentials.
+summary. Each child gets the shared artifact policy, one selected role policy,
+and one path-bound typed tool. The email subagent cannot send, access a network,
+select a sender, infer addresses, or read credentials.
 
 All isolated roles use `ts-agent-task/1` and `ts-agent-result/1`. Review,
 backend, render, report, and email results are non-authoritative. Results that

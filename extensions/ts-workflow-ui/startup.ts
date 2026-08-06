@@ -43,8 +43,8 @@ const PI_MASK = Object.freeze([
   " P   P ",
   " P   P ",
   " P   P ",
-  " P  PP ",
-  "P    PP",
+  " P   P ",
+  "PP   PP",
 ]);
 const TSPI_MASK = Object.freeze(T_MASK.map((line, index) => `${line}  ${S_MASK[index]}  ${PI_MASK[index]}`));
 const TSPI_LOGO_WIDTH = TSPI_MASK[0]!.length * visibleWidth(PIXEL);
@@ -63,6 +63,7 @@ interface StartupPalette {
 export interface TspiStartupDetails {
   compact?: boolean;
   frame?: number;
+  mcpDisplayTarget?: string;
   mcpEndpoint?: string;
   modelLabel?: string;
   thinkingLabel?: string;
@@ -105,6 +106,7 @@ export function createTspiStartupHeader(
       return renderStartup(workspaceRoot, width, themePalette(theme), {
         compact: tui.terminal.rows > 0 && tui.terminal.rows < 25,
         frame,
+        mcpDisplayTarget: process.env.TS_CLUSTER_MCP_DISPLAY_TARGET,
         mcpEndpoint: process.env.TS_CLUSTER_MCP_URL,
         modelLabel: formatModelLabel(ctx.model),
         thinkingLabel: formatThinkingLabel(pi.getThinkingLevel()),
@@ -168,11 +170,11 @@ function renderStartup(
     palette.accent(palette.bold("Workspace")),
     palette.muted(formatCwd(workspaceRoot)),
     palette.accent(palette.bold(details.mcpEndpoint ? "MCP configured" : "MCP")),
-    palette.muted(mcpLabel(details.mcpEndpoint)),
+    palette.muted(mcpLabel(details.mcpEndpoint, details.mcpDisplayTarget)),
     divider,
     palette.accent(palette.bold("Package")),
     palette.muted(packageSummary),
-    palette.muted(profile.theme.name),
+    palette.muted("1 theme"),
     divider,
     palette.accent(palette.bold("Commands")),
     ...profile.commands.map((command) => palette.muted(command)),
@@ -216,8 +218,10 @@ function paintLogoCell(cell: string, frame: number, palette: StartupPalette): st
   return palette.link(PIXEL);
 }
 
-function mcpLabel(endpoint?: string): string {
+function mcpLabel(endpoint?: string, displayTarget?: string): string {
   if (!endpoint) return "not configured";
+  const configuredTarget = displayTarget?.trim();
+  if (configuredTarget) return configuredTarget;
   try {
     const url = new URL(endpoint);
     return url.host;

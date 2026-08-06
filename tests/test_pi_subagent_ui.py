@@ -141,10 +141,18 @@ def test_tspi_startup_render_is_compact_and_width_safe() -> None:
 import {{ createTspiStartupHeader, renderTspiStartupLines }} from {json.dumps(STARTUP.as_uri())};
 import {{ visibleWidth }} from "@earendil-works/pi-tui";
 const widths = [18, 40, 47, 60, 80, 100, 140];
-const details = {{ mcpEndpoint: "http://127.0.0.1:18766/mcp", modelLabel: "openai/gpt-5", thinkingLabel: "high thinking" }};
+const details = {{
+  mcpDisplayTarget: "58.198.180.52 via SSH",
+  mcpEndpoint: "http://127.0.0.1:18766/mcp",
+  modelLabel: "openai/gpt-5",
+  thinkingLabel: "high thinking",
+}};
 const rendered = widths.map((width) => {{
   const lines = renderTspiStartupLines("/home/iaw/TS-pi-agent", width, details);
   return {{ width, lines, lineWidths: lines.map(visibleWidth) }};
+}});
+const fallback = renderTspiStartupLines("/home/iaw/TS-pi-agent", 140, {{
+  mcpEndpoint: "http://127.0.0.1:18766/mcp",
 }});
 const blockColors = [];
 const theme = {{
@@ -155,12 +163,15 @@ const pi = {{ getThinkingLevel: () => "high" }};
 const ctx = {{ ui: {{ theme }}, cwd: "/home/iaw/TS-pi-agent", model: {{ provider: "openai", id: "gpt-5" }} }};
 let renderRequests = 0;
 const tui = {{ terminal: {{ rows: 30 }}, requestRender: () => renderRequests++ }};
+process.env.TS_CLUSTER_MCP_URL = "http://127.0.0.1:18766/mcp";
+process.env.TS_CLUSTER_MCP_DISPLAY_TARGET = "58.198.180.52 via SSH";
 const header = createTspiStartupHeader(pi, ctx, tui, "/home/iaw/TS-pi-agent");
 const initial = header.render(100).join("\\n").split("█").length;
 await new Promise((resolve) => setTimeout(resolve, 120));
 const next = header.render(100).join("\\n").split("█").length;
 header.dispose();
-process.stdout.write(JSON.stringify({{ rendered, blockColors, initial, next, renderRequests }}));
+const liveHeader = header.render(140);
+process.stdout.write(JSON.stringify({{ rendered, fallback, blockColors, initial, next, liveHeader, renderRequests }}));
 """
     result = _node_json(script)
     rendered = result["rendered"]
@@ -184,20 +195,29 @@ process.stdout.write(JSON.stringify({{ rendered, blockColors, initial, next, ren
     assert len([line for line in single_column if "█" in line]) == 7
     assert not any("Workspace" in line for line in single_column)
 
+    standard = next(view["lines"] for view in rendered if view["width"] == 80)
+    assert any("1 skill · 5 extensions" in line for line in standard)
+    assert any("1 theme" in line for line in standard)
+    assert not any("…" in line for line in standard if "skill" in line or "theme" in line)
+
     wide = rendered[-1]["lines"]
     pixel_lines = [line for line in wide if "█" in line]
     assert len(pixel_lines) == 7
     assert all("■" not in line for line in pixel_lines)
     assert any("██████████    ██████████    ██████████████" in line for line in pixel_lines)
-    assert any("██        ████" in line for line in pixel_lines)
+    assert pixel_lines[-1].split("│")[1].strip() == "██        ██████████    ████      ████"
     assert sum("TSPi" in line for line in wide) == 1
     assert any("Evidence-driven transition-state workflow." in line for line in wide)
     assert any("openai/gpt-5 · high thinking" in line for line in wide)
     assert any("Workspace" in line for line in wide)
     assert any("MCP configured" in line for line in wide)
-    assert any("127.0.0.1:18766" in line for line in wide)
+    assert any("58.198.180.52 via SSH" in line for line in wide)
+    assert not any("127.0.0.1:18766" in line for line in wide)
+    assert any("127.0.0.1:18766" in line for line in result["fallback"])
+    assert any("58.198.180.52 via SSH" in line for line in result["liveHeader"])
     assert any("1 skill · 5 extensions" in line for line in wide)
-    assert any("ts-theme" in line for line in wide)
+    assert any("1 theme" in line for line in wide)
+    assert not any("ts-theme" in line for line in wide)
     for command in ("/ts-context", "/ts-validate", "/ts-mcp"):
         assert any(command in line for line in wide)
     assert "mdLink" in result["blockColors"]

@@ -55,7 +55,7 @@ export function fitColumns(left: string, right: string, width: number): string {
 export function headerColumnWidths(
   innerWidth: number,
   minLeftWidth = 32,
-  minRightWidth = 19,
+  minRightWidth = 23,
   maxRightWidth = 30,
 ): { leftWidth: number; rightWidth: number; useRightColumn: boolean } {
   if (innerWidth <= 0) return { leftWidth: 0, rightWidth: 0, useRightColumn: false };

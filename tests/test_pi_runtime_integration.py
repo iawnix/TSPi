@@ -158,11 +158,15 @@ def test_real_pi_render_child_session_uses_only_bound_tool(tmp_path: Path) -> No
     assert result["metadata"]["action_names"] == ["ts_workspace_render_execute"]
     assert len(requests) == 2
     assert [tool["function"]["name"] for tool in requests[0]["tools"]] == ["ts_workspace_render_execute"]
+    render_messages = json.dumps(requests[0]["messages"])
+    assert "Artifact Operator Policy" in render_messages
+    assert "Render Role Policy" in render_messages
+    assert "Email Role Policy" not in render_messages
     assert "Execute this bounded render operation" in requests[0]["messages"][-1]["content"][0]["text"]
     assert any(message.get("role") == "tool" for message in requests[1]["messages"])
 
 
-def test_real_pi_report_child_loads_private_report_skill_and_bound_tool(tmp_path: Path) -> None:
+def test_real_pi_report_child_loads_shared_and_selected_policy_with_bound_tool(tmp_path: Path) -> None:
     pi = _pi_binary()
     if pi is None:
         pytest.skip("Pi executable is not installed")
@@ -204,7 +208,10 @@ def test_real_pi_report_child_loads_private_report_skill_and_bound_tool(tmp_path
     assert result["metadata"]["action_names"] == ["ts_workspace_report_build"]
     assert len(requests) == 2
     assert [tool["function"]["name"] for tool in requests[0]["tools"]] == ["ts_workspace_report_build"]
-    assert "Research Report Operator" in json.dumps(requests[0]["messages"])
+    report_messages = json.dumps(requests[0]["messages"])
+    assert "Artifact Operator Policy" in report_messages
+    assert "Report Role Policy" in report_messages
+    assert "Render Role Policy" not in report_messages
 
 
 def test_real_pi_review_child_session_has_no_tools(tmp_path: Path) -> None:
@@ -293,6 +300,10 @@ def test_real_pi_compute_child_session_uses_only_bound_prepare_tool(tmp_path: Pa
     assert result["metadata"]["action_names"] == ["ts_workspace_compute_prepare"]
     assert len(requests) == 2
     assert [tool["function"]["name"] for tool in requests[0]["tools"]] == ["ts_workspace_compute_prepare"]
+    compute_messages = json.dumps(requests[0]["messages"])
+    assert "Compute Operator Policy" in compute_messages
+    assert "Gaussian Backend Policy" in compute_messages
+    assert "xTB Backend Policy" not in compute_messages
     assert "Execute this bounded compute operation" in requests[0]["messages"][-1]["content"][0]["text"]
     assert any(message.get("role") == "tool" for message in requests[1]["messages"])
 

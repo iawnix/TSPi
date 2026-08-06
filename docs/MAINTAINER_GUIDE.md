@@ -26,8 +26,8 @@ templates, and chemistry evidence.
 ## Package Boundary
 
 - `package.json.pi.skills` registers only
-  `skills/transition-state-workflow/`. Private child skills are implementation
-  inputs, not Root Agent inventory.
+  `skills/transition-state-workflow/`. Child policy fragments under `src/agents/`
+  are implementation inputs, not Pi skills or Root Agent inventory.
 - `package.json.pi.extensions` is the public Pi adapter surface. Keep public
   tool names and schemas stable unless the package contract is intentionally
   versioned.
@@ -93,26 +93,27 @@ Keep state ownership narrow.
 - `extensions/ts-workflow-review` delegates bounded review requests to
   `src/agents/review/`. The child remains tool-free and advisory; it never becomes
   a second control plane.
-- `extensions/ts-workflow-compute` creates a fresh backend session with one
-  selected private backend skill and request-scoped typed tools. Submit/cancel
-  must bind and preflight the exact request before child creation; the child
-  receives no raw transport access.
-- `src/agents/compute/` owns the backend fresh-session runtime, private-skill
-  loading, and compute-specific action/result binding.
+- `extensions/ts-workflow-compute` creates a fresh backend session with the
+  shared compute policy, one selected backend policy, and request-scoped typed
+  tools. Submit/cancel must bind and preflight the exact request before child
+  creation; the child receives no raw transport access.
+- `src/agents/compute/` owns the backend fresh-session runtime, policy
+  composition, and compute-specific action/result binding.
 - `extensions/ts-workflow-artifacts` creates fresh render, report, and
-  email-draft sessions. Each receives one private role skill and one path-bound
-  typed tool; email sending is not implemented.
+  email-draft sessions. Each receives the shared artifact policy, one selected
+  role policy, and one path-bound typed tool; email sending is not implemented.
 - `src/agents/artifacts/` owns artifact request paths, fresh-session runtime,
-  private-skill loading, and role-specific action/result binding.
+  policy composition, and role-specific action/result binding.
 - `src/agents/review/` owns scientific-review task packets, prompts, fresh-session
   runtime, and review-specific result validation.
 - `src/agent-core/agent-protocol.cjs` and `contracts/agent_*.schema.json` own the
   cross-agent task/result protocol and authority-field rejection.
 - `src/agent-core/run-journal.cjs` is the host-only write boundary for durable
   child task, action, result, and failure records.
-- `src/agents/compute/private-skills/` and
-  `src/agents/artifacts/private-skills/` contain private child skills. They
-  must not be added to `package.json.pi.skills` or loaded into the Root Agent.
+- `src/agents/compute/policy.md` and `src/agents/artifacts/policy.md` own common
+  operator constraints. Their `backends/` and `roles/` directories contain only
+  selected deltas. None of these policy files may be renamed to `SKILL.md`,
+  added to `package.json.pi.skills`, or loaded into the Root Agent.
 
 ## Control-Plane Invariants
 

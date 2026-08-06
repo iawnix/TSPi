@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const { parseAndValidateOperatorReport } = require("./output-schema.cjs");
-const { loadBackendSkill } = require("./skill-loader.cjs");
+const { loadComputePolicy } = require("./policy-loader.cjs");
 const { promptWithDeadline, withDisposableSession } = require("../../agent-core/session-lifecycle.cjs");
 const COMPUTE_AGENT_DIR = dirname(fileURLToPath(import.meta.url));
 const SYSTEM_PROMPT = readFileSync(resolve(COMPUTE_AGENT_DIR, "prompt.md"), "utf8").trim();
@@ -65,7 +65,7 @@ export async function runComputeOperator(options: ComputeRunOptions) {
       throw new Error(`Compute ModelRuntime has no configured auth for provider: ${model.provider}`);
     }
     const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } });
-    const systemPrompt = `${SYSTEM_PROMPT}\n\nSelected private backend skill:\n${loadBackendSkill(options.backend)}`;
+    const systemPrompt = `${SYSTEM_PROMPT}\n\nCompute operator policy:\n${loadComputePolicy(options.backend)}`;
     const resourceLoader = isolatedResourceLoader(systemPrompt);
     return await withDisposableSession(
       () => createAgentSession({

@@ -17,7 +17,7 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const { parseAndValidateArtifactReport } = require("./output-schema.cjs");
-const { loadArtifactSkill } = require("./skill-loader.cjs");
+const { loadArtifactPolicy } = require("./policy-loader.cjs");
 const { promptWithDeadline, withDisposableSession } = require("../../agent-core/session-lifecycle.cjs");
 const AGENT_DIR = dirname(fileURLToPath(import.meta.url));
 const SYSTEM_PROMPT = readFileSync(resolve(AGENT_DIR, "prompt.md"), "utf8").trim();
@@ -66,7 +66,7 @@ export async function runArtifactOperator(options: ArtifactRunOptions) {
       throw new Error(`Artifact ModelRuntime has no configured auth for provider: ${model.provider}`);
     }
     const settingsManager = SettingsManager.inMemory({ compaction: { enabled: false }, retry: { enabled: false } });
-    const systemPrompt = `${SYSTEM_PROMPT}\n\nSelected private artifact skill:\n${loadArtifactSkill(options.role)}`;
+    const systemPrompt = `${SYSTEM_PROMPT}\n\nArtifact operator policy:\n${loadArtifactPolicy(options.role)}`;
     const resourceLoader = isolatedResourceLoader(systemPrompt);
     return await withDisposableSession(
       () => createAgentSession({

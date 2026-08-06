@@ -133,8 +133,8 @@ def test_compute_operator_runtime_is_fresh_isolated_and_tool_scoped() -> None:
     assert "not a durable scientific fact" in prompt
     assert "For `submit` or `cancel`" in prompt
     assert "Root Agent has already preflighted and bound the exact operation" in prompt
-    assert "loadBackendSkill(options.backend)" in runtime
-    assert "Selected private backend skill" in runtime
+    assert "loadComputePolicy(options.backend)" in runtime
+    assert "Compute operator policy" in runtime
 
 
 def test_compute_action_failure_replaces_started_record_and_redacts_diagnostics() -> None:
@@ -203,11 +203,13 @@ def test_compute_control_has_no_interactive_authorization_gate() -> None:
     assert "Root Agent has already preflighted and bound the exact operation" in prompt
 
 
-def test_compute_private_skills_are_registered() -> None:
+def test_compute_backend_policies_are_packaged_but_not_registered_as_skills() -> None:
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     assert package["pi"]["skills"] == ["./skills/transition-state-workflow"]
-    private_skills = {path.parent.name for path in (COMPUTE_AGENT / "private-skills").glob("*/SKILL.md")}
-    assert {"backend-gaussian", "backend-ase", "backend-rdkit", "backend-xtb"} <= private_skills
+    policies = {path.stem for path in (COMPUTE_AGENT / "backends").glob("*.md")}
+    assert policies == {"gaussian", "ase", "qbics", "rdkit", "xtb"}
+    assert "src/agents/compute/backends/*.md" in package["files"]
+    assert not list(COMPUTE_AGENT.rglob("SKILL.md"))
 
 
 def test_compute_operator_output_is_bound_to_actual_tool_result(tmp_path: Path) -> None:

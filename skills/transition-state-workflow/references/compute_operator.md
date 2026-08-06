@@ -125,15 +125,16 @@ scientific verdict from its source.
 
 ## Supported Backends
 
-| Backend | Task types | Input roles | Private skill |
+| Backend | Task types | Input roles | Backend policy |
 |---|---|---|---|
-| `gaussian` | `sp`, `opt`, `freq`, `opt_freq`, `irc` | `gjf` | `backend-gaussian` |
-| `xtb` | `opt` | `xyz` | `backend-xtb` |
-| `ase_neb` | `neb` | `reactant`, `product` | `backend-ase` |
-| `qbics_dmecp` | `dmecp` | `config` | `backend-qbics` |
+| `gaussian` | `sp`, `opt`, `freq`, `opt_freq`, `irc` | `gjf` | `backends/gaussian.md` |
+| `xtb` | `opt` | `xyz` | `backends/xtb.md` |
+| `ase_neb` | `neb` | `reactant`, `product` | `backends/ase.md` |
+| `qbics_dmecp` | `dmecp` | `config` | `backends/qbics.md` |
 
-`backend-rdkit` is a private skill contract but is not exposed by the compute
-operator until a typed RDKit adapter is implemented and tested.
+`backends/rdkit.md` is an internal policy but is not exposed by the compute
+operator until a typed RDKit adapter is implemented and tested. Every selected
+backend policy is composed with `src/agents/compute/policy.md`.
 
 An intent cannot supply a shell command. Gaussian preparation verifies that
 the existing route contains flags required by the declared task type; it does
