@@ -10,6 +10,7 @@ import threading
 import time
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -32,6 +33,7 @@ from ts_remote.mcp import (
     MCPConnectionSettings,
     TSClusterMCPClient,
     SDKToolCaller,
+    _structured_result,
     build_ts_job_request,
 )
 
@@ -541,6 +543,78 @@ def test_mcp_connection_settings_require_tls_and_strong_token() -> None:
         MCPConnectionSettings("http://cluster.example/mcp").validated()
     with pytest.raises(MCPClientError, match="at least 32"):
         MCPConnectionSettings("https://cluster.example/mcp", token="short").validated()
+
+
+def test_mcp_error_result_preserves_safe_server_detail() -> None:
+    result = SimpleNamespace(
+        is_error=True,
+        structured_content=None,
+        content=[SimpleNamespace(text="Unknown TS submission: tsjob_missing Bearer top-secret")],
+    )
+
+    with pytest.raises(MCPClientError, match="Unknown TS submission") as raised:
+        _structured_result(result)
+
+    assert "top-secret" not in str(raised.value)
+    assert "Bearer [REDACTED]" in str(raised.value)
+
+
+def test_authenticated_sdk_client_applies_configured_http_timeout(monkeypatch) -> None:
+    httpx2 = pytest.importorskip("httpx2")
+    mcp = pytest.importorskip("mcp")
+    from mcp.client import streamable_http
+
+    observed: dict[str, object] = {}
+
+    class FakeHTTPClient:
+        def __init__(self, **kwargs) -> None:
+            observed["http"] = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, _error_type, _error, _traceback) -> None:
+            return None
+
+    class FakeMCPClient:
+        def __init__(self, target, **kwargs) -> None:
+            observed["target"] = target
+            observed["mcp"] = kwargs
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, _error_type, _error, _traceback) -> None:
+            return None
+
+        async def call_tool(self, name, arguments):
+            observed["tool"] = (name, arguments)
+            return SimpleNamespace(
+                is_error=False,
+                structured_content={"result": {"ok": True}},
+            )
+
+    monkeypatch.setattr(httpx2, "AsyncClient", FakeHTTPClient)
+    monkeypatch.setattr(mcp, "Client", FakeMCPClient)
+    monkeypatch.setattr(
+        streamable_http,
+        "streamable_http_client",
+        lambda endpoint, *, http_client: (endpoint, http_client),
+    )
+    caller = SDKToolCaller(
+        MCPConnectionSettings(
+            "http://127.0.0.1:8765/mcp",
+            token="x" * 32,
+            timeout_seconds=73,
+        )
+    )
+
+    assert caller.call_tool("probe", {}) == {"ok": True}
+    assert observed["http"] == {
+        "headers": {"Authorization": "Bearer " + "x" * 32},
+        "timeout": 73,
+    }
+    assert observed["mcp"]["read_timeout_seconds"] == 73
 
 
 def test_cluster_mcp_script_resolves_bundled_package_outside_checkout(tmp_path: Path) -> None:

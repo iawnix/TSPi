@@ -60,6 +60,15 @@ BACKENDS: dict[str, tuple[set[str], set[str], Callable[[BackendTask], PreparedTa
 OPERATIONS = {"prepare", "submit", "inspect", "collect", "cancel", "parse"}
 
 
+class _MCPStagingError(RuntimeError):
+    """An MCP failure that occurred before the scheduler submission call."""
+
+    def __init__(self, phase: str, cause: Exception) -> None:
+        self.phase = phase
+        self.cause = cause
+        super().__init__(f"MCP {phase} failed before scheduler submission: {cause}")
+
+
 def preflight_calculation(
     root: str | Path,
     operation: str,
@@ -121,6 +130,15 @@ def preflight_calculation(
         if control is not None and control.get("state") == "unknown":
             raise ComputeContractError(
                 f"{operation} refuses automatic replay from durable state unknown"
+            )
+        if operation == "submit" and control is not None and control.get("state") != "submitted":
+            provenance = control.get("provenance")
+            if isinstance(provenance, dict) and provenance.get("submission_attempted") is False:
+                raise ComputeContractError(
+                    "submit did not reach scheduler submission; create a technical retry intent"
+                )
+            raise ComputeContractError(
+                f"submit refuses automatic replay from durable state {control.get('state', 'unknown')}"
             )
         if control is None and _read_control_guard(workspace, intent, operation) is not None:
             raise ComputeContractError(
@@ -248,16 +266,25 @@ def submit_calculation(
         else:
             receipt = _submit_mcp(workspace, intent, prepared, policy)
     except Exception as exc:
+        staging_failure = transport == "mcp" and isinstance(exc, _MCPStagingError)
         result = _result(
             intent,
-            state="unknown",
+            state="failed" if staging_failure else "unknown",
             program_status="not_run",
-            error_class="submission_ambiguous",
+            error_class="mcp_staging_failed" if staging_failure else "submission_ambiguous",
             provenance={
                 "transport": transport,
                 "remote_dir": policy["remote_dir"],
                 "observed_at": now_iso(),
-                "failure_type": type(exc).__name__,
+                "failure_type": type(exc.cause).__name__ if staging_failure else type(exc).__name__,
+                "failure_message": (
+                    str(exc.cause if staging_failure else exc)[:2000]
+                    if transport == "mcp"
+                    else None
+                ),
+                "submission_phase": exc.phase if staging_failure else "scheduler_submit",
+                "submission_attempted": not staging_failure,
+                "retry_safe": staging_failure,
             },
         )
         _write_control_result(workspace, intent, "submit", result)
@@ -877,51 +904,57 @@ def _submit_mcp(
     prepared: dict[str, Any],
     policy: dict[str, Any],
 ):
-    prepared_task = prepared["prepared_task"]
-    command = _rewritten_remote_command(prepared_task)
-    expected_names = _expected_remote_names(prepared)
-    stdout_name = _remote_stdout_name(prepared)
-    base_ref, _, _ = _runtime_refs(
-        str(intent["node_id"]),
-        str(intent["intent_id"]),
-        str(intent["schema_version"]),
-    )
-    script_ref = f"{base_ref}/run_mcp_job.sh"
-    script_path = workspace / script_ref
-    script_text = _mcp_runner_script(prepared_task, command, stdout_name)
-    _write_text_once(script_path, script_text, "MCP runner script")
+    phase = "prepare_staging"
+    try:
+        prepared_task = prepared["prepared_task"]
+        command = _rewritten_remote_command(prepared_task)
+        expected_names = _expected_remote_names(prepared)
+        stdout_name = _remote_stdout_name(prepared)
+        base_ref, _, _ = _runtime_refs(
+            str(intent["node_id"]),
+            str(intent["intent_id"]),
+            str(intent["schema_version"]),
+        )
+        script_ref = f"{base_ref}/run_mcp_job.sh"
+        script_path = workspace / script_ref
+        script_text = _mcp_runner_script(prepared_task, command, stdout_name)
+        _write_text_once(script_path, script_text, "MCP runner script")
 
-    remote_dir = str(policy["remote_dir"])
-    script_remote = f"{remote_dir}/run_mcp_job.sh"
-    input_files: dict[str, Path] = {script_remote: script_path}
-    seen_names = {"run_mcp_job.sh"}
-    for ref in prepared_task["input_paths"]:
-        source = workspace / _workspace_ref(workspace, str(ref), read=True)
-        if source.name in seen_names:
-            raise ComputeContractError(f"MCP input basename collision: {source.name}")
-        seen_names.add(source.name)
-        input_files[f"{remote_dir}/{source.name}"] = source
+        remote_dir = str(policy["remote_dir"])
+        script_remote = f"{remote_dir}/run_mcp_job.sh"
+        input_files: dict[str, Path] = {script_remote: script_path}
+        seen_names = {"run_mcp_job.sh"}
+        for ref in prepared_task["input_paths"]:
+            source = workspace / _workspace_ref(workspace, str(ref), read=True)
+            if source.name in seen_names:
+                raise ComputeContractError(f"MCP input basename collision: {source.name}")
+            seen_names.add(source.name)
+            input_files[f"{remote_dir}/{source.name}"] = source
 
-    overlap = seen_names.intersection(expected_names)
-    if overlap:
-        raise ComputeContractError(f"MCP expected artifacts overlap staged inputs: {sorted(overlap)}")
-    execution = _merged_mcp_execution(policy, prepared_task)
-    request = build_ts_job_request(
-        submission_id=_prepared_mcp_submission_id(intent, policy),
-        intent_id=str(intent["intent_id"]),
-        intent_digest=sha256_json(intent),
-        node_id=str(intent["node_id"]),
-        backend=str(intent["backend"]),
-        workdir=remote_dir,
-        script_path=script_remote,
-        input_files=input_files,
-        expected_artifacts=[f"{remote_dir}/{name}" for name in expected_names],
-        execution=execution,
-    )
-    client = _mcp_client()
-    client.ensure_directory(remote_dir)
-    for remote_path, source in sorted(input_files.items()):
-        client.upload_file(source, remote_path)
+        overlap = seen_names.intersection(expected_names)
+        if overlap:
+            raise ComputeContractError(f"MCP expected artifacts overlap staged inputs: {sorted(overlap)}")
+        execution = _merged_mcp_execution(policy, prepared_task)
+        request = build_ts_job_request(
+            submission_id=_prepared_mcp_submission_id(intent, policy),
+            intent_id=str(intent["intent_id"]),
+            intent_digest=sha256_json(intent),
+            node_id=str(intent["node_id"]),
+            backend=str(intent["backend"]),
+            workdir=remote_dir,
+            script_path=script_remote,
+            input_files=input_files,
+            expected_artifacts=[f"{remote_dir}/{name}" for name in expected_names],
+            execution=execution,
+        )
+        client = _mcp_client()
+        phase = "ensure_directory"
+        client.ensure_directory(remote_dir)
+        for remote_path, source in sorted(input_files.items()):
+            phase = "upload"
+            client.upload_file(source, remote_path)
+    except Exception as exc:
+        raise _MCPStagingError(phase, exc) from exc
     return client.submit(request)
 
 

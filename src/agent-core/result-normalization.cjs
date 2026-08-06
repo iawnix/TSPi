@@ -15,6 +15,7 @@ function normalizeAgentResultInput(value, options = {}) {
     if (!isPlainObject(fact)) return fact;
     const normalizedFact = { ...fact };
     normalizedFact.kind = normalizeFactKind(normalizedFact.kind);
+    if (normalizedFact.status === "unknown") normalizedFact.status = "uncertain";
     if (
       Object.prototype.hasOwnProperty.call(normalizedFact, "artifact_ref")
       && !Object.prototype.hasOwnProperty.call(normalizedFact, "basis_refs")

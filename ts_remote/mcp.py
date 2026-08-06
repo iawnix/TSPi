@@ -131,7 +131,8 @@ class SDKToolCaller:
             except ImportError as exc:
                 raise MCPClientError("Authenticated MCP transport dependencies are unavailable") from exc
             async with httpx2.AsyncClient(
-                headers={"Authorization": f"Bearer {self.settings.token}"}
+                headers={"Authorization": f"Bearer {self.settings.token}"},
+                timeout=self.settings.timeout_seconds,
             ) as http_client:
                 target = streamable_http_client(self.settings.endpoint, http_client=http_client)
                 async with Client(
@@ -484,13 +485,40 @@ def build_ts_job_request(
 
 def _structured_result(result: Any) -> dict[str, Any]:
     if getattr(result, "is_error", False):
-        raise MCPClientError("MCP tool returned an error result")
+        detail = _tool_error_detail(result)
+        suffix = f": {detail}" if detail else ""
+        raise MCPClientError(f"MCP tool returned an error result{suffix}")
     value = getattr(result, "structured_content", None)
     if isinstance(value, dict) and set(value) == {"result"} and isinstance(value["result"], dict):
         value = value["result"]
     if not isinstance(value, dict):
         raise MCPClientError("MCP tool returned no structured object result")
     return value
+
+
+def _tool_error_detail(result: Any) -> str:
+    messages: list[str] = []
+    content = getattr(result, "content", None)
+    if isinstance(content, list):
+        for item in content:
+            text = item.get("text") if isinstance(item, dict) else getattr(item, "text", None)
+            if isinstance(text, str) and text.strip():
+                messages.append(text.strip())
+    if not messages:
+        structured = getattr(result, "structured_content", None)
+        if isinstance(structured, dict):
+            for key in ("message", "error", "detail"):
+                text = structured.get(key)
+                if isinstance(text, str) and text.strip():
+                    messages.append(text.strip())
+    detail = "; ".join(dict.fromkeys(messages))
+    detail = re.sub(r"(?i)(bearer\s+)[^\s,;]+", r"\1[REDACTED]", detail)
+    detail = re.sub(
+        r"(?i)((?:token|api[_-]?key|password|secret|authorization)\s*[:=]\s*)[^\s,;]+",
+        r"\1[REDACTED]",
+        detail,
+    )
+    return detail[:2000]
 
 
 def _sha256(path: Path) -> str:

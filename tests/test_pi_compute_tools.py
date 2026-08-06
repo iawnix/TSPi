@@ -268,6 +268,9 @@ def test_compute_operator_output_is_bound_to_actual_tool_result(tmp_path: Path) 
         }]
         completed = _validate_operator_output(tmp_path, packet, [action], report)
         assert json.loads(completed.stdout)["facts"][0]["kind"] == canonical
+    report["facts"][0]["status"] = "unknown"
+    completed = _validate_operator_output(tmp_path, packet, [action], report)
+    assert json.loads(completed.stdout)["facts"][0]["status"] == "uncertain"
     report["facts"] = []
 
     report["program"]["state"] = "completed"

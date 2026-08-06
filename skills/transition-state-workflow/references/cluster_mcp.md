@@ -255,6 +255,10 @@ export TS_CLUSTER_MCP_TOKEN='<same value as server CLUSTER_MCP_HTTP_TOKEN>'
 export TS_CLUSTER_MCP_TIMEOUT=60
 ```
 
+The timeout applies to both the MCP SDK receive loop and the authenticated
+HTTP transport. This prevents the HTTP client's shorter default timeout from
+ending a request while the server is still processing it.
+
 The tunnel authenticates the SSH connection; MCP still requires its bearer
 token and principal scopes. After exact intent binding and a read-only
 capability preflight, the Root Agent may submit or cancel through the scoped

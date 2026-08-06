@@ -49,6 +49,13 @@ disconnected before completion` is recorded under
 an MCP, scheduler, Gaussian, or canonical-workspace failure. It is replay-safe
 only when no bounded action ran before the interruption.
 
+MCP directory creation and upload are staging operations. A failure there is
+recorded as `state=failed`, `error_class=mcp_staging_failed`, and
+`provenance.submission_attempted=false`; it is not a scheduler submission
+ambiguity. Only a failure after the `ts_submit_job` call begins is recorded as
+`submission_ambiguous`. Immutable failed attempts require a new technical
+retry intent rather than overwriting the original control result.
+
 ## Calculation Intent V2
 
 The Root Agent selects purpose, method, scope, and execution target before

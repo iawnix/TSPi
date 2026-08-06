@@ -21,6 +21,7 @@ from ts_compute.contracts import validate_compute_contract
 from ts_compute.control import _validate_intent_node_scope
 from ts_remote.job_lifecycle import RemoteJobStatus
 from ts_remote.base import RemoteReceipt
+from ts_remote.mcp import MCPClientError
 from ts_workspace.operational import operational_snapshot
 
 
@@ -602,6 +603,79 @@ def test_mcp_control_preflight_requires_host_connection_settings(
     assert not (
         workspace / "nodes/n001/attempts/calc_n001_optfreq_v2_001/submit_guard.json"
     ).exists()
+
+
+def test_mcp_staging_failure_is_not_submission_ambiguous(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = _workspace(tmp_path)
+    _configure_mcp(monkeypatch)
+    intent_id = "calc_n001_optfreq_v2_001"
+    prepare_calculation(
+        workspace,
+        _intent_v2(workspace, target=_mcp_target(), dry_run=False),
+    )
+
+    class FailingStagingClient:
+        def ensure_directory(self, _path: str) -> None:
+            raise MCPClientError("MCP tool 'ts_ensure_directory' failed: ReadTimeout")
+
+    monkeypatch.setattr("ts_compute.control._mcp_client", lambda: FailingStagingClient())
+
+    result = submit_calculation(workspace, intent_id)
+
+    assert result["state"] == "failed"
+    assert result["error_class"] == "mcp_staging_failed"
+    assert result["provenance"]["failure_type"] == "MCPClientError"
+    assert result["provenance"]["submission_phase"] == "ensure_directory"
+    assert result["provenance"]["submission_attempted"] is False
+    assert result["provenance"]["retry_safe"] is True
+    assert "ReadTimeout" in result["provenance"]["failure_message"]
+    with pytest.raises(ComputeContractError, match="create a technical retry intent"):
+        preflight_calculation(
+            workspace,
+            "submit",
+            "n001",
+            "gaussian",
+            intent_id=intent_id,
+        )
+    with pytest.raises(ComputeContractError, match="refuses automatic replay"):
+        submit_calculation(workspace, intent_id)
+
+
+def test_mcp_scheduler_submit_failure_remains_ambiguous(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = _workspace(tmp_path)
+    _configure_mcp(monkeypatch)
+    intent_id = "calc_n001_optfreq_v2_001"
+    prepare_calculation(
+        workspace,
+        _intent_v2(workspace, target=_mcp_target(), dry_run=False),
+    )
+
+    class FailingSubmitClient:
+        def ensure_directory(self, _path: str) -> None:
+            return None
+
+        def upload_file(self, _source: Path, remote_path: str):
+            return {"path": remote_path}
+
+        def submit(self, _request):
+            raise MCPClientError("MCP tool 'ts_submit_job' failed: ReadTimeout")
+
+    monkeypatch.setattr("ts_compute.control._mcp_client", lambda: FailingSubmitClient())
+
+    result = submit_calculation(workspace, intent_id)
+
+    assert result["state"] == "unknown"
+    assert result["error_class"] == "submission_ambiguous"
+    assert result["provenance"]["submission_phase"] == "scheduler_submit"
+    assert result["provenance"]["submission_attempted"] is True
+    assert result["provenance"]["retry_safe"] is False
+
 
 def test_mcp_transport_submit_status_tail_collect_and_cancel(
     tmp_path: Path,
