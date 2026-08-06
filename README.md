@@ -333,3 +333,30 @@ provider. It verifies the ten-tool Root Agent inventory, a tool-free review
 child, a compute child with exactly one request-bound tool, and an artifact
 child with exactly one request-bound tool. Before release, also test one clean,
 branch- or tag-pinned GitHub installation from a network that can reach GitHub.
+
+### Development Subagent Tests
+
+The optional development extension lists and runs isolated package tests. It is
+not part of the default `pi.extensions` list and adds no Root Agent tools or
+scientific workspace protocol. Load it explicitly from a development checkout:
+
+```bash
+pi --extension /absolute/path/to/TSAgentSkill/extensions/ts-workflow-dev/index.ts
+```
+
+Then use:
+
+```text
+/ts-test list
+/ts-test run subagent-review
+/ts-test run subagent-compute
+/ts-test run subagent-all
+/ts-test run workspace-contracts
+/ts-test run mcp-contracts
+```
+
+These cases invoke the existing pytest and real-Pi recording-provider tests in
+temporary workspaces. They reuse `ts-agent-task/1`, `ts-agent-result/1`, typed
+actions, and the agent-run journal; the test runner adds only external
+assertions and pass/fail reporting. `npm run test:subagents` runs the same test
+surface non-interactively.
