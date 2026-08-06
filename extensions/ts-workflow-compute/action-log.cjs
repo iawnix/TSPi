@@ -9,7 +9,7 @@ function reserveAction(actions, toolName) {
   }
   const action = {
     tool: toolName,
-    result: { action_status: "started", state: "started", program_status: "not_run", artifact_refs: [] },
+    result: { action_status: "started", result: null },
   };
   actions.push(action);
   return action;
@@ -17,14 +17,16 @@ function reserveAction(actions, toolName) {
 
 function completeAction(action, raw, toolName) {
   if (!isPlainObject(raw)) throw new Error(`${toolName} returned a non-object result`);
-  action.result = raw;
+  action.result = {
+    action_status: actionStatusForResult(raw),
+    result: raw,
+  };
   return raw;
 }
 
 function failAction(action, error, context) {
   const diagnostic = sanitizeActionError(error);
   const result = {
-    action_status: "failed",
     state: "unknown",
     program_status: "not_run",
     error_class: "tool_execution_error",
@@ -38,8 +40,21 @@ function failAction(action, error, context) {
     },
     diagnostic,
   };
-  action.result = result;
+  action.result = { action_status: "failed", result };
   return result;
+}
+
+function actionStatusForResult(result) {
+  const control = isPlainObject(result.control) ? result.control : {};
+  if (control.effect_outcome === "unknown") return "unknown";
+  if (control.effect_outcome === "failed") return "failed";
+  if (control.effect_outcome === "succeeded") return "completed";
+  if (
+    result.state === "unknown"
+    && ["submission_ambiguous", "cancellation_ambiguous"].includes(result.error_class)
+  ) return "unknown";
+  if (result.state === "failed" && result.error_class === "mcp_staging_failed") return "failed";
+  return "completed";
 }
 
 function formatFailedActionError(toolName, result) {
@@ -78,6 +93,7 @@ function isPlainObject(value) {
 
 module.exports = {
   MAX_DIAGNOSTIC_LENGTH,
+  actionStatusForResult,
   completeAction,
   failAction,
   formatFailedActionError,

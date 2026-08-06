@@ -31,6 +31,16 @@ class MCPClientError(RuntimeError):
     """Raised when the MCP transport or TS cluster contract is invalid."""
 
 
+class MCPSubmissionAmbiguous(MCPClientError):
+    """Raised with the durable server record when scheduler submission is unresolved."""
+
+    def __init__(self, result: dict[str, Any]) -> None:
+        self.result = result
+        detail = result.get("error")
+        suffix = f": {detail}" if isinstance(detail, str) and detail else ""
+        super().__init__(f"MCP TS submission outcome is ambiguous{suffix}")
+
+
 class ToolCaller(Protocol):
     def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]: ...
 
@@ -182,6 +192,16 @@ class TSClusterMCPClient:
     def capabilities(self) -> dict[str, Any]:
         return self.caller.call_tool("cluster_capabilities", {})
 
+    def control_health(self) -> dict[str, Any]:
+        result = self.caller.call_tool("ts_control_health", {})
+        if (
+            result.get("schema_version") != "ts-cluster-control-health/1"
+            or not isinstance(result.get("components"), dict)
+            or not isinstance(result.get("ok"), bool)
+        ):
+            raise MCPClientError("MCP server returned an invalid TS control health result")
+        return result
+
     def list_queues(self) -> dict[str, Any]:
         result = self.caller.call_tool("list_queues", {})
         if not isinstance(result, dict):
@@ -268,13 +288,15 @@ class TSClusterMCPClient:
         result = self.caller.call_tool("ts_submit_job", {"request": normalized})
         if result.get("schema_version") != "ts-cluster-submission-result/1":
             raise MCPClientError("MCP server returned an invalid TS submission result")
-        if result.get("state") != "submitted":
-            raise MCPClientError("MCP server did not return a submitted TS job")
         for key in ("submission_id", "intent_id", "intent_digest", "node_id", "backend"):
             if result.get(key) != normalized.get(key):
                 raise MCPClientError(f"MCP submission result does not match request field: {key}")
         if result.get("expected_artifacts") != normalized["expected_artifacts"]:
             raise MCPClientError("MCP submission result changed the expected artifact manifest")
+        if result.get("state") == "ambiguous":
+            raise MCPSubmissionAmbiguous(result)
+        if result.get("state") != "submitted":
+            raise MCPClientError("MCP server did not return a submitted TS job")
         job_id = result.get("job_id")
         if not isinstance(job_id, str) or not job_id:
             raise MCPClientError("MCP submission result has no scheduler job_id")
@@ -305,6 +327,8 @@ class TSClusterMCPClient:
             raise MCPClientError("MCP server returned an invalid TS submission status")
         if result.get("submission_id") != submission_id:
             raise MCPClientError("MCP submission status does not match submission_id")
+        if "found" in result and not isinstance(result.get("found"), bool):
+            raise MCPClientError("MCP submission status has no found flag")
         return result
 
     def cancel(self, submission_id: str, job_id: str) -> dict[str, Any]:

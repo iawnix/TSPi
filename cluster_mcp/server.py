@@ -104,6 +104,11 @@ def create_server(
         return capabilities
 
     @mcp.tool(annotations=READ_ONLY)
+    def ts_control_health() -> dict[str, Any]:
+        """Check the TS submission registry, workspace storage, and Gaussian profile."""
+        return service.control_health()
+
+    @mcp.tool(annotations=READ_ONLY)
     def list_queues() -> dict[str, Any]:
         """List OpenPBS queues and mark which queues this server permits for submission."""
         return service.list_queues()

@@ -287,6 +287,12 @@ class TSSubmissionStore:
         )
 
     def get(self, submission_id: str) -> dict[str, Any]:
+        record = self.find(submission_id)
+        if record is None:
+            raise SecurityError(f"Unknown TS submission: {submission_id}")
+        return record
+
+    def find(self, submission_id: str) -> dict[str, Any] | None:
         with self._lock, self._connect() as connection:
             row = connection.execute(
                 "SELECT principal, request_digest, request_json, state, job_id, result_json, "
@@ -294,7 +300,7 @@ class TSSubmissionStore:
                 (submission_id,),
             ).fetchone()
         if row is None:
-            raise SecurityError(f"Unknown TS submission: {submission_id}")
+            return None
         request = _stored_object(row[2], "TS submission request")
         result = _stored_object(row[5], "TS submission result") if row[5] else None
         return {
@@ -310,6 +316,11 @@ class TSSubmissionStore:
             "created_at": row[7],
             "updated_at": row[8],
         }
+
+    def health(self) -> dict[str, Any]:
+        with self._lock, self._connect() as connection:
+            row = connection.execute("SELECT COUNT(*) FROM ts_submissions").fetchone()
+        return {"available": True, "submission_count": int(row[0]) if row else 0}
 
     def _transition(
         self,

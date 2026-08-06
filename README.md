@@ -258,7 +258,10 @@ For scheduler-backed execution, the bundled TS Cluster MCP binds one
 `submission_id` to the intent digest, complete input manifest, expected
 artifacts, and resource request. It persists known scheduler IDs across
 post-`qsub` failures and forbids automatic retry after ambiguous submission or
-cancellation outcomes. Raw MCP tools are a host-side boundary and are not in
+cancellation outcomes. Directory-creation or upload failures remain safe to
+retry with the same immutable submission binding and append-only local attempt
+records. Read-only reconciliation returns the durable submission record even
+when scheduler history is unavailable. Raw MCP tools are a host-side boundary and are not in
 the Root or child inventories; the public compute subagent creates one scoped
 wrapper after a read-only connection preflight and exact intent binding.
 Scheduler records are not

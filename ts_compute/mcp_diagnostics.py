@@ -49,6 +49,8 @@ def diagnose_mcp(mode: str = "status") -> dict[str, Any]:
             }
         elif mode == "cluster":
             result = _cluster_summary(client, connection)
+        elif mode == "doctor":
+            result = _doctor_summary(client, connection)
         else:
             result = {
                 "schema_version": SCHEMA_VERSION,
@@ -57,13 +59,6 @@ def diagnose_mcp(mode: str = "status") -> dict[str, Any]:
                 "connection": connection,
                 "capabilities": _capability_summary(client.capabilities()),
             }
-            if mode == "doctor":
-                result["checks"] = {
-                    "configuration": "pass",
-                    "connection": "pass",
-                    "authentication": "pass",
-                    "protocol": "pass",
-                }
     except Exception as exc:
         return _failure(mode, "probe", exc, connection=connection)
     return _sanitize(result)
@@ -135,9 +130,100 @@ def _cluster_summary(
         result["components"]["nodes"] = "fail"
         errors["nodes"] = _component_error(exc)
 
+    try:
+        health = client.control_health()
+        result["control_health"] = health
+        result["components"]["control_health"] = "pass" if health.get("ok") is True else "fail"
+        if health.get("ok") is not True:
+            errors["control_health"] = {
+                "class": "component_unavailable",
+                "message": "one or more TS control health components failed",
+            }
+    except Exception as exc:
+        result["components"]["control_health"] = "fail"
+        errors["control_health"] = _component_error(exc)
+
     passed = sum(value == "pass" for value in result["components"].values())
     result["ok"] = not errors
     result["partial"] = bool(errors) and passed > 0
+    if errors:
+        result["errors"] = errors
+    return result
+
+
+def _doctor_summary(
+    client: TSClusterMCPClient,
+    connection: dict[str, Any],
+) -> dict[str, Any]:
+    result: dict[str, Any] = {
+        "schema_version": SCHEMA_VERSION,
+        "mode": "doctor",
+        "connection": connection,
+        "components": {},
+    }
+    errors: dict[str, dict[str, str]] = {}
+
+    try:
+        result["capabilities"] = _capability_summary(client.capabilities())
+        result["components"]["transport_auth_protocol"] = "pass"
+    except Exception as exc:
+        result["components"]["transport_auth_protocol"] = "fail"
+        errors["transport_auth_protocol"] = _component_error(exc)
+
+    try:
+        queues = client.list_queues()["queues"]
+        result["scheduler_read"] = _queue_summary(queues)
+        result["components"]["scheduler_read"] = "pass"
+    except Exception as exc:
+        result["components"]["scheduler_read"] = "fail"
+        errors["scheduler_read"] = _component_error(exc)
+
+    try:
+        health = client.control_health()
+    except Exception as exc:
+        health = None
+        error = _component_error(exc)
+        for name in ("submission_registry", "workspace_storage", "gaussian_profile"):
+            result["components"][name] = "fail"
+            errors[name] = error
+    else:
+        result["control_health"] = health
+        health_components = health.get("components", {})
+        for name in ("submission_registry", "workspace_storage", "gaussian_profile"):
+            component = health_components.get(name) if isinstance(health_components, dict) else None
+            outcome = component.get("outcome") if isinstance(component, dict) else None
+            result["components"][name] = "pass" if outcome == "succeeded" else "fail"
+            if outcome != "succeeded":
+                errors[name] = {
+                    "class": str(component.get("error_class") or "component_unavailable")
+                    if isinstance(component, dict)
+                    else "component_unavailable",
+                    "message": str(component.get("message") or "component health check failed")
+                    if isinstance(component, dict)
+                    else "component health check returned no result",
+                }
+
+    passed = sum(value == "pass" for value in result["components"].values())
+    result["ok"] = not errors
+    result["partial"] = bool(errors) and passed > 0
+    transport_error = errors.get("transport_auth_protocol")
+    if transport_error is not None:
+        result["error"] = {**transport_error, "phase": "probe"}
+        base_checks = _doctor_checks(str(transport_error["class"]), "probe")
+    else:
+        base_checks = {
+            "configuration": "pass",
+            "connection": "pass",
+            "authentication": "pass",
+            "protocol": "pass",
+        }
+    result["checks"] = {
+        **base_checks,
+        "scheduler_read": result["components"].get("scheduler_read", "not_run"),
+        "submission_registry": result["components"].get("submission_registry", "not_run"),
+        "workspace_storage": result["components"].get("workspace_storage", "not_run"),
+        "gaussian_profile": result["components"].get("gaussian_profile", "not_run"),
+    }
     if errors:
         result["errors"] = errors
     return result

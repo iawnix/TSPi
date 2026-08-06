@@ -30,9 +30,11 @@ from ts_backends.gaussian import (
 from ts_backends.qbics_dmecp import prepare_qbics_dmecp
 from ts_backends.xtb import prepare_xtb_opt
 from ts_remote import job_lifecycle
+from ts_remote.base import RemoteReceipt
 from ts_remote.mcp import (
     MCPClientError,
     MCPConnectionSettings,
+    MCPSubmissionAmbiguous,
     SDKToolCaller,
     TSClusterMCPClient,
     build_ts_job_request,
@@ -132,14 +134,10 @@ def preflight_calculation(
                 f"{operation} refuses automatic replay from durable state unknown"
             )
         if operation == "submit" and control is not None and control.get("state") != "submitted":
-            provenance = control.get("provenance")
-            if isinstance(provenance, dict) and provenance.get("submission_attempted") is False:
+            if not _control_allows_same_submission_retry(control):
                 raise ComputeContractError(
-                    "submit did not reach scheduler submission; create a technical retry intent"
+                    f"submit refuses automatic replay from durable state {control.get('state', 'unknown')}"
                 )
-            raise ComputeContractError(
-                f"submit refuses automatic replay from durable state {control.get('state', 'unknown')}"
-            )
         if control is None and _read_control_guard(workspace, intent, operation) is not None:
             raise ComputeContractError(
                 f"{operation} has a durable in-progress guard without a final result; manual reconciliation is required"
@@ -249,9 +247,10 @@ def submit_calculation(
     if existing is not None:
         if existing.get("state") == "submitted":
             return existing
-        raise ComputeContractError(
-            f"submit refuses automatic replay from durable state {existing.get('state', 'unknown')}"
-        )
+        if not _control_allows_same_submission_retry(existing):
+            raise ComputeContractError(
+                f"submit refuses automatic replay from durable state {existing.get('state', 'unknown')}"
+            )
 
     transport = str(policy["transport"])
     ssh_config = None
@@ -259,7 +258,7 @@ def submit_calculation(
         _mcp_connection_settings()
     else:
         ssh_config = _remote_config(workspace, intent, prepared)
-    _claim_control(workspace, intent, "submit")
+    control_attempt = _claim_control(workspace, intent, "submit")
     try:
         if transport == "ssh":
             receipt = job_lifecycle.submit_async(ssh_config)
@@ -267,11 +266,30 @@ def submit_calculation(
             receipt = _submit_mcp(workspace, intent, prepared, policy)
     except Exception as exc:
         staging_failure = transport == "mcp" and isinstance(exc, _MCPStagingError)
+        ambiguous_result = exc.result if isinstance(exc, MCPSubmissionAmbiguous) else {}
+        ambiguous_job_id = (
+            str(ambiguous_result.get("job_id"))
+            if isinstance(ambiguous_result.get("job_id"), str)
+            else None
+        )
         result = _result(
             intent,
+            job_id=ambiguous_job_id,
             state="failed" if staging_failure else "unknown",
             program_status="not_run",
             error_class="mcp_staging_failed" if staging_failure else "submission_ambiguous",
+            control=_control_outcome(
+                operation="submit",
+                phase=exc.phase if staging_failure else "submit_request",
+                effect_outcome="failed" if staging_failure else "unknown",
+                effect_attempted=not staging_failure,
+                retry_disposition="retry_same_submission" if staging_failure else "reconcile_only",
+                reconciliation_required=not staging_failure,
+                submission_id=(
+                    _prepared_mcp_submission_id(intent, policy) if transport == "mcp" else None
+                ),
+                job_id=ambiguous_job_id,
+            ),
             provenance={
                 "transport": transport,
                 "remote_dir": policy["remote_dir"],
@@ -282,12 +300,13 @@ def submit_calculation(
                     if transport == "mcp"
                     else None
                 ),
+                "server_submission_state": ambiguous_result.get("state"),
                 "submission_phase": exc.phase if staging_failure else "scheduler_submit",
                 "submission_attempted": not staging_failure,
                 "retry_safe": staging_failure,
             },
         )
-        _write_control_result(workspace, intent, "submit", result)
+        _write_control_result(workspace, intent, "submit", result, control_attempt)
         _write_status(workspace, intent, result)
         return result
 
@@ -299,6 +318,20 @@ def submit_calculation(
         state="submitted",
         program_status="not_run",
         artifact_refs=[receipt_ref],
+        control=_control_outcome(
+            operation="submit",
+            phase="receipt_persist",
+            effect_outcome="succeeded",
+            effect_attempted=True,
+            retry_disposition="none",
+            reconciliation_required=False,
+            submission_id=(
+                str(receipt.metadata.get("submission_id"))
+                if receipt.metadata.get("submission_id") is not None
+                else None
+            ),
+            job_id=receipt.scheduler_id,
+        ),
         provenance={
             "transport": transport,
             "remote_dir": policy["remote_dir"],
@@ -307,7 +340,7 @@ def submit_calculation(
             "submission_id": receipt.metadata.get("submission_id"),
         },
     )
-    _write_control_result(workspace, intent, "submit", result)
+    _write_control_result(workspace, intent, "submit", result, control_attempt)
     _write_status(workspace, intent, result)
     return result
 
@@ -322,6 +355,7 @@ def calculation_status(
     _require_remote_execution(intent, policy, "inspect")
     if policy["transport"] == "mcp":
         observed = _status_mcp(intent, policy)
+        submission_record = observed.pop("_submission_record", None)
         state = str(observed["state"])
         program_status = str(observed["program_status"])
         error_class = observed.get("error_class")
@@ -329,7 +363,14 @@ def calculation_status(
         job_id = observed.get("job_id")
         provenance = dict(observed["provenance"])
         submitted = _read_control_result(workspace, intent, "submit")
-        if submitted is not None:
+        cancelled = _read_control_result(workspace, intent, "cancel")
+        if isinstance(submission_record, dict):
+            if submitted is None or submitted.get("state") != "submitted":
+                _reconcile_mcp_submit(workspace, intent, policy, submission_record)
+                submitted = _read_control_result(workspace, intent, "submit")
+            if cancelled is None or cancelled.get("state") != "stopped":
+                _reconcile_mcp_cancel(workspace, intent, policy, submission_record)
+        if submitted is not None and submitted.get("state") == "submitted":
             _require_matching_job_id(submitted, job_id, "MCP status")
     else:
         status = job_lifecycle.poll(_remote_config(workspace, intent, prepared))
@@ -496,7 +537,7 @@ def cancel_calculation(
         ssh_config = _remote_config(workspace, intent, prepared)
     if expected_job_id is not None and job_id != expected_job_id:
         raise ComputeContractError("cancel job_id changed after preflight binding")
-    _claim_control(workspace, intent, "cancel")
+    control_attempt = _claim_control(workspace, intent, "cancel")
     try:
         if transport == "mcp":
             if job_id is None:
@@ -525,6 +566,18 @@ def cancel_calculation(
             state="unknown",
             program_status="not_run",
             error_class="cancellation_ambiguous",
+            control=_control_outcome(
+                operation="cancel",
+                phase="cancel_request",
+                effect_outcome="unknown",
+                effect_attempted=True,
+                retry_disposition="reconcile_only",
+                reconciliation_required=True,
+                submission_id=(
+                    _prepared_mcp_submission_id(intent, policy) if transport == "mcp" else None
+                ),
+                job_id=job_id,
+            ),
             provenance={
                 "transport": transport,
                 "remote_dir": policy["remote_dir"],
@@ -532,7 +585,7 @@ def cancel_calculation(
                 "failure_type": type(exc).__name__,
             },
         )
-        _write_control_result(workspace, intent, "cancel", result)
+        _write_control_result(workspace, intent, "cancel", result, control_attempt)
         _write_status(workspace, intent, result)
         return result
 
@@ -542,9 +595,21 @@ def cancel_calculation(
         state="stopped",
         program_status="stopped",
         error_class="remote_job_cancelled",
+        control=_control_outcome(
+            operation="cancel",
+            phase="cancel_confirmed",
+            effect_outcome="succeeded",
+            effect_attempted=True,
+            retry_disposition="none",
+            reconciliation_required=False,
+            submission_id=(
+                _prepared_mcp_submission_id(intent, policy) if transport == "mcp" else None
+            ),
+            job_id=job_id,
+        ),
         provenance=provenance,
     )
-    _write_control_result(workspace, intent, "cancel", result)
+    _write_control_result(workspace, intent, "cancel", result, control_attempt)
     _write_status(workspace, intent, result)
     return result
 
@@ -1018,6 +1083,23 @@ def _status_mcp(intent: dict[str, Any], policy: dict[str, Any]) -> dict[str, Any
         record = _mcp_client().status(submission_id, include_history=True)
     except MCPClientError as exc:
         raise ComputeContractError(f"MCP status failed: {exc}") from exc
+    if record.get("found") is False:
+        return {
+            "state": "unknown",
+            "program_status": "not_run",
+            "error_class": "submission_not_found",
+            "exit_status": None,
+            "job_id": None,
+            "provenance": {
+                "observed_at": now_iso(),
+                "transport": "mcp",
+                "remote_dir": policy["remote_dir"],
+                "submission_id": submission_id,
+                "submission_state": "not_found",
+                "scheduler_state": None,
+                "scheduler_query": record.get("scheduler_query"),
+            },
+        }
     request = record.get("request")
     if not isinstance(request, dict) or any(
         request.get(key) != expected
@@ -1049,8 +1131,117 @@ def _status_mcp(intent: dict[str, Any], policy: dict[str, Any]) -> dict[str, Any
             "submission_id": submission_id,
             "submission_state": record.get("state"),
             "scheduler_state": scheduler.get("state"),
+            "scheduler_query": record.get("scheduler_query"),
         },
+        "_submission_record": record,
     }
+
+
+def _reconcile_mcp_submit(
+    workspace: Path,
+    intent: dict[str, Any],
+    policy: dict[str, Any],
+    record: dict[str, Any],
+) -> None:
+    server_state = record.get("state")
+    job_id = record.get("job_id")
+    if server_state not in {"submitted", "ambiguous"} or not isinstance(job_id, str) or not job_id:
+        return
+    request = record.get("request")
+    if not isinstance(request, dict):
+        raise ComputeContractError("MCP reconciliation record has no bound request")
+    submission_id = _prepared_mcp_submission_id(intent, policy)
+    expected_artifacts = request.get("expected_artifacts")
+    if not isinstance(expected_artifacts, list) or any(not isinstance(item, str) for item in expected_artifacts):
+        raise ComputeContractError("MCP reconciliation record has no expected artifact manifest")
+    receipt = RemoteReceipt(
+        node_id=str(intent["node_id"]),
+        host="cluster-mcp",
+        remote_dir=str(policy["remote_dir"]),
+        command=["mcp", "ts_submit_job", submission_id],
+        receipt_path=f"{str(policy['remote_dir']).rstrip('/')}/ts_submission.json",
+        scheduler_id=job_id,
+        metadata={
+            "schema_version": "ts-cluster-submission-result/1",
+            "submission_id": submission_id,
+            "intent_id": str(intent["intent_id"]),
+            "intent_digest": sha256_json(intent),
+            "backend": str(intent["backend"]),
+            "expected_artifacts": json.dumps(expected_artifacts),
+            "replayed": "false",
+        },
+    )
+    receipt_ref = _receipt_ref(intent, "mcp")
+    _write_bound_record(workspace / receipt_ref, asdict(receipt), "reconciled MCP receipt")
+    result = _result(
+        intent,
+        job_id=job_id,
+        state="submitted",
+        program_status="not_run",
+        artifact_refs=[receipt_ref],
+        control=_control_outcome(
+            operation="submit",
+            phase="reconciled",
+            effect_outcome="succeeded",
+            effect_attempted=True,
+            retry_disposition="none",
+            reconciliation_required=False,
+            submission_id=submission_id,
+            job_id=job_id,
+        ),
+        provenance={
+            "transport": "mcp",
+            "remote_dir": policy["remote_dir"],
+            "receipt_ref": receipt_ref,
+            "submission_id": submission_id,
+            "server_submission_state": server_state,
+            "server_updated_at": record.get("updated_at"),
+            "scheduler_query": record.get("scheduler_query"),
+            "reconciliation_source": "ts_get_submission",
+        },
+    )
+    _write_control_reconciliation(workspace, intent, "submit", result)
+
+
+def _reconcile_mcp_cancel(
+    workspace: Path,
+    intent: dict[str, Any],
+    policy: dict[str, Any],
+    record: dict[str, Any],
+) -> None:
+    if record.get("state") != "cancelled":
+        return
+    job_id = record.get("job_id")
+    if not isinstance(job_id, str) or not job_id:
+        raise ComputeContractError("MCP cancellation reconciliation has no scheduler job_id")
+    cancellation = record.get("result") if isinstance(record.get("result"), dict) else {}
+    result = _result(
+        intent,
+        job_id=job_id,
+        state="stopped",
+        program_status="stopped",
+        error_class="remote_job_cancelled",
+        control=_control_outcome(
+            operation="cancel",
+            phase="reconciled",
+            effect_outcome="succeeded",
+            effect_attempted=True,
+            retry_disposition="none",
+            reconciliation_required=False,
+            submission_id=_prepared_mcp_submission_id(intent, policy),
+            job_id=job_id,
+        ),
+        provenance={
+            "transport": "mcp",
+            "remote_dir": policy["remote_dir"],
+            "submission_id": record.get("submission_id"),
+            "scheduler": cancellation.get("scheduler"),
+            "server_updated_at": record.get("updated_at"),
+            "scheduler_query": record.get("scheduler_query"),
+            "reconciliation_source": "ts_get_submission",
+        },
+    )
+    _write_control_reconciliation(workspace, intent, "cancel", result)
 
 
 def _mcp_status_semantics(
@@ -1064,7 +1255,7 @@ def _mcp_status_semantics(
         exit_status = None
     if submission_state == "cancelled":
         return "stopped", "stopped", "remote_job_cancelled", exit_status
-    if submission_state in {"ambiguous", "cancelling", "cancellation_ambiguous"}:
+    if submission_state in {"cancelling", "cancellation_ambiguous"}:
         return "unknown", "not_run", submission_state, exit_status
     scheduler_state = str(scheduler.get("state", "")).upper()
     if scheduler_state in {"Q", "H", "W", "S"}:
@@ -1077,6 +1268,8 @@ def _mcp_status_semantics(
         if exit_status is None:
             return "completed", "not_run", None, exit_status
         return "failed", "failed", "remote_job_failed", exit_status
+    if submission_state == "ambiguous":
+        return "unknown", "not_run", "submission_ambiguous", exit_status
     if submission_state == "submitted":
         return "submitted", "not_run", None, exit_status
     return "unknown", "not_run", "unknown_remote_state", exit_status
@@ -1428,7 +1621,11 @@ def _runtime_refs(node_id: str, intent_id: str, schema_version: str) -> tuple[st
     return base, f"{base}/status.json", f"nodes/{node_id}/outputs/calculations/{intent_id}"
 
 
-def _control_result_ref(intent: dict[str, Any], operation: str) -> str:
+def _control_result_ref(
+    intent: dict[str, Any],
+    operation: str,
+    attempt: int = 1,
+) -> str:
     if operation not in {"submit", "cancel"}:
         raise ComputeContractError(f"unsupported durable control operation: {operation}")
     base, _, _ = _runtime_refs(
@@ -1436,10 +1633,15 @@ def _control_result_ref(intent: dict[str, Any], operation: str) -> str:
         str(intent["intent_id"]),
         str(intent["schema_version"]),
     )
-    return f"{base}/{operation}_result.json"
+    suffix = f"{operation}_result.json" if attempt == 1 else f"{operation}_attempt_{attempt:04d}_result.json"
+    return f"{base}/{suffix}"
 
 
-def _control_guard_ref(intent: dict[str, Any], operation: str) -> str:
+def _control_guard_ref(
+    intent: dict[str, Any],
+    operation: str,
+    attempt: int = 1,
+) -> str:
     if operation not in {"submit", "cancel"}:
         raise ComputeContractError(f"unsupported durable control operation: {operation}")
     base, _, _ = _runtime_refs(
@@ -1447,7 +1649,19 @@ def _control_guard_ref(intent: dict[str, Any], operation: str) -> str:
         str(intent["intent_id"]),
         str(intent["schema_version"]),
     )
-    return f"{base}/{operation}_guard.json"
+    suffix = f"{operation}_guard.json" if attempt == 1 else f"{operation}_attempt_{attempt:04d}_guard.json"
+    return f"{base}/{suffix}"
+
+
+def _control_reconciliation_ref(intent: dict[str, Any], operation: str) -> str:
+    if operation not in {"submit", "cancel"}:
+        raise ComputeContractError(f"unsupported durable control operation: {operation}")
+    base, _, _ = _runtime_refs(
+        str(intent["node_id"]),
+        str(intent["intent_id"]),
+        str(intent["schema_version"]),
+    )
+    return f"{base}/{operation}_reconciliation.json"
 
 
 def _write_once(path: Path, value: dict[str, Any], identity: str) -> None:
@@ -1508,7 +1722,17 @@ def _read_control_result(
     intent: dict[str, Any],
     operation: str,
 ) -> dict[str, Any] | None:
-    path = workspace / _control_result_ref(intent, operation)
+    reconciliation_path = workspace / _control_reconciliation_ref(intent, operation)
+    if reconciliation_path.is_symlink():
+        raise ComputeContractError(f"{operation} reconciliation cannot be a symbolic link")
+    if reconciliation_path.is_file():
+        result = _read_object(reconciliation_path, f"{operation} reconciliation")
+        _validate_bound_result(intent, result, f"{operation} reconciliation")
+        return result
+    attempt = _latest_completed_control_attempt(workspace, intent, operation)
+    if attempt is None:
+        return None
+    path = workspace / _control_result_ref(intent, operation, attempt)
     if path.is_symlink():
         raise ComputeContractError(f"{operation} control result cannot be a symbolic link")
     if not path.is_file():
@@ -1523,7 +1747,10 @@ def _read_control_guard(
     intent: dict[str, Any],
     operation: str,
 ) -> dict[str, Any] | None:
-    path = workspace / _control_guard_ref(intent, operation)
+    attempt = _latest_control_attempt(workspace, intent, operation)
+    if attempt is None:
+        return None
+    path = workspace / _control_guard_ref(intent, operation, attempt)
     if path.is_symlink():
         raise ComputeContractError(f"{operation} control guard cannot be a symbolic link")
     if not path.is_file():
@@ -1532,6 +1759,7 @@ def _read_control_guard(
     if (
         guard.get("schema_version") != "ts-compute-control-guard/1"
         or guard.get("operation") != operation
+        or guard.get("attempt", 1) != attempt
         or guard.get("intent_id") != intent.get("intent_id")
         or guard.get("node_id") != intent.get("node_id")
         or guard.get("intent_digest") != sha256_json(intent)
@@ -1540,12 +1768,22 @@ def _read_control_guard(
     return guard
 
 
-def _claim_control(workspace: Path, intent: dict[str, Any], operation: str) -> None:
-    path = workspace / _control_guard_ref(intent, operation)
+def _claim_control(workspace: Path, intent: dict[str, Any], operation: str) -> int:
+    latest = _latest_control_attempt(workspace, intent, operation)
+    if latest is not None:
+        pending = workspace / _control_guard_ref(intent, operation, latest)
+        completed = workspace / _control_result_ref(intent, operation, latest)
+        if pending.is_file() and not pending.is_symlink() and not completed.is_file():
+            raise ComputeContractError(
+                f"{operation} already has a valid durable control guard; automatic replay is forbidden"
+            )
+    attempt = 1 if latest is None else latest + 1
+    path = workspace / _control_guard_ref(intent, operation, attempt)
     path.parent.mkdir(parents=True, exist_ok=True)
     guard = {
         "schema_version": "ts-compute-control-guard/1",
         "operation": operation,
+        "attempt": attempt,
         "intent_id": intent["intent_id"],
         "node_id": intent["node_id"],
         "intent_digest": sha256_json(intent),
@@ -1575,6 +1813,7 @@ def _claim_control(workspace: Path, intent: dict[str, Any], operation: str) -> N
         os.fsync(directory_descriptor)
     finally:
         os.close(directory_descriptor)
+    return attempt
 
 
 def _write_control_result(
@@ -1582,12 +1821,80 @@ def _write_control_result(
     intent: dict[str, Any],
     operation: str,
     result: dict[str, Any],
+    attempt: int = 1,
 ) -> None:
     _validate_bound_result(intent, result, f"{operation} control result")
     _write_bound_record(
-        workspace / _control_result_ref(intent, operation),
+        workspace / _control_result_ref(intent, operation, attempt),
         result,
         f"{operation} control result",
+    )
+
+
+def _write_control_reconciliation(
+    workspace: Path,
+    intent: dict[str, Any],
+    operation: str,
+    result: dict[str, Any],
+) -> None:
+    _validate_bound_result(intent, result, f"{operation} reconciliation")
+    _write_bound_record(
+        workspace / _control_reconciliation_ref(intent, operation),
+        result,
+        f"{operation} reconciliation",
+    )
+
+
+def _latest_control_attempt(
+    workspace: Path,
+    intent: dict[str, Any],
+    operation: str,
+) -> int | None:
+    base, _, _ = _runtime_refs(
+        str(intent["node_id"]),
+        str(intent["intent_id"]),
+        str(intent["schema_version"]),
+    )
+    root = workspace / base
+    attempts: set[int] = set()
+    for kind in ("guard", "result"):
+        legacy = root / f"{operation}_{kind}.json"
+        if legacy.exists() or legacy.is_symlink():
+            attempts.add(1)
+        prefix = f"{operation}_attempt_"
+        suffix = f"_{kind}.json"
+        for path in root.glob(f"{prefix}*{suffix}"):
+            token = path.name.removeprefix(prefix).removesuffix(suffix)
+            if len(token) != 4 or not token.isdigit() or int(token) < 2:
+                raise ComputeContractError(f"invalid {operation} control attempt path: {path}")
+            attempts.add(int(token))
+    return max(attempts) if attempts else None
+
+
+def _latest_completed_control_attempt(
+    workspace: Path,
+    intent: dict[str, Any],
+    operation: str,
+) -> int | None:
+    latest = _latest_control_attempt(workspace, intent, operation)
+    if latest is None:
+        return None
+    for attempt in range(latest, 0, -1):
+        path = workspace / _control_result_ref(intent, operation, attempt)
+        if path.is_file() and not path.is_symlink():
+            return attempt
+    return None
+
+
+def _control_allows_same_submission_retry(result: dict[str, Any]) -> bool:
+    control = result.get("control")
+    return (
+        isinstance(control, dict)
+        and control.get("operation") == "submit"
+        and control.get("effect_outcome") == "failed"
+        and control.get("effect_attempted") is False
+        and control.get("retry_disposition") == "retry_same_submission"
+        and control.get("reconciliation_required") is False
     )
 
 
@@ -1619,6 +1926,7 @@ def _result(
     artifact_refs: list[str] | None = None,
     parser_facts: dict[str, Any] | None = None,
     error_class: str | None = None,
+    control: dict[str, Any] | None = None,
     provenance: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     result = {
@@ -1643,8 +1951,34 @@ def _result(
             **(provenance or {}),
         },
     }
+    if control is not None:
+        result["control"] = control
     validate_compute_contract(RESULT_SCHEMA, result)
     return result
+
+
+def _control_outcome(
+    *,
+    operation: str,
+    phase: str,
+    effect_outcome: str,
+    effect_attempted: bool,
+    retry_disposition: str,
+    reconciliation_required: bool,
+    submission_id: str | None,
+    job_id: str | None,
+) -> dict[str, Any]:
+    return {
+        "schema_version": "ts-control-outcome/1",
+        "operation": operation,
+        "phase": phase,
+        "effect_outcome": effect_outcome,
+        "effect_attempted": effect_attempted,
+        "retry_disposition": retry_disposition,
+        "reconciliation_required": reconciliation_required,
+        "submission_id": submission_id,
+        "job_id": job_id,
+    }
 
 
 def _status_semantics(remote_state: str) -> tuple[str, str, str | None]:

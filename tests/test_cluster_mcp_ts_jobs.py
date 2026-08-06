@@ -24,7 +24,7 @@ from cluster_mcp.config import (
     WorkspaceSettings,
     load_config,
 )
-from cluster_mcp.errors import ConfigurationError, SecurityError
+from cluster_mcp.errors import ConfigurationError, SchedulerError, SecurityError
 from cluster_mcp.service import ClusterService
 from cluster_mcp.ts_jobs import validate_ts_submission_request
 from ts_remote.mcp import (
@@ -78,6 +78,11 @@ class _FailingDeleteScheduler(_Scheduler):
     def delete(self, job_id: str):
         self.deleted.append(job_id)
         raise RuntimeError("qdel transport outcome is unknown")
+
+
+class _HistoryUnavailableScheduler(_Scheduler):
+    def get_job(self, job_id: str, *, include_history: bool = False):
+        raise SchedulerError(f"scheduler history unavailable for {job_id}")
 
 
 class _ServiceCaller:
@@ -333,8 +338,10 @@ def test_ambiguous_scheduler_result_blocks_automatic_resubmission(tmp_path: Path
     service = _service(tmp_path, _FailingScheduler)
     request = _request(service)
 
-    with pytest.raises(RuntimeError, match="outcome is unknown"):
-        service.submit_ts_job(request)
+    result = service.submit_ts_job(request)
+    assert result["state"] == "ambiguous"
+    assert result["job_id"] is None
+    assert "outcome is unknown" in result["error"]
     record = service.ts_submissions.get(str(request["submission_id"]))
     assert record["state"] == "ambiguous"
 
@@ -351,8 +358,10 @@ def test_known_job_id_survives_post_qsub_persistence_failure(tmp_path: Path) -> 
         raise RuntimeError("ownership persistence failed after qsub")
 
     service.ownership.record = fail_ownership
-    with pytest.raises(RuntimeError, match="ownership persistence failed"):
-        service.submit_ts_job(request)
+    result = service.submit_ts_job(request)
+    assert result["state"] == "ambiguous"
+    assert result["job_id"] == "42001.cluster"
+    assert "ownership persistence failed" in result["error"]
 
     record = service.get_ts_submission(str(request["submission_id"]))
     assert record["state"] == "ambiguous"
@@ -366,6 +375,42 @@ def test_known_job_id_survives_post_qsub_persistence_failure(tmp_path: Path) -> 
     )
     assert cancelled["state"] == "cancelled"
     assert service.scheduler.deleted == ["42001.cluster"]
+
+
+def test_ts_submission_status_returns_durable_record_when_scheduler_history_fails(tmp_path: Path) -> None:
+    service = _service(tmp_path, _HistoryUnavailableScheduler)
+    request = _request(service)
+    submitted = service.submit_ts_job(request)
+
+    record = service.get_ts_submission(str(request["submission_id"]), include_history=True)
+
+    assert record["found"] is True
+    assert record["state"] == "submitted"
+    assert record["job_id"] == submitted["job_id"]
+    assert record["scheduler"] is None
+    assert record["scheduler_query"]["outcome"] == "failed"
+    assert record["scheduler_query"]["error_class"] == "history_unavailable"
+    assert "scheduler history unavailable" in record["scheduler_query"]["message"]
+
+
+def test_ts_submission_status_returns_explicit_not_found_record(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+
+    record = service.get_ts_submission("tsjob_missing_000001", include_history=True)
+
+    assert record == {
+        "schema_version": "ts-cluster-submission/1",
+        "submission_id": "tsjob_missing_000001",
+        "found": False,
+        "state": "not_found",
+        "job_id": None,
+        "scheduler": None,
+        "scheduler_query": {
+            "outcome": "not_run",
+            "error_class": None,
+            "message": None,
+        },
+    }
 
 
 def test_ts_cancellation_requires_submission_and_job_binding(tmp_path: Path) -> None:

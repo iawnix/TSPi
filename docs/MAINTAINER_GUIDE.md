@@ -229,6 +229,17 @@ and have `ts_web` consume that result.
   MCP endpoint, token, and timeout in host environment variables only.
 - Persist submit/cancel outcomes separately from mutable status polling so an
   ambiguous outcome cannot become replayable after a later status refresh.
+- Classify control phases before retry policy. Directory creation and upload
+  failures may retry the same immutable submission with append-only attempt
+  records; once `ts_submit_job` starts, unknown outcomes are reconciliation-only.
+- Return a durable TS submission record even when scheduler history lookup
+  fails. Attach scheduler query failure metadata instead of discarding the
+  registry state.
+- Reconcile ambiguous MCP controls through normal read-only status calls. Write
+  `submit_reconciliation.json` or `cancel_reconciliation.json` only after the
+  durable request, submission ID, intent digest, remote directory, and job ID
+  match. Never overwrite the raw ambiguous result; rebuild a missing receipt
+  only from the bound durable expected-artifact manifest.
 - Keep collection independent of scheduler-history visibility. Revalidate the
   immutable submit result, receipt, job ID, remote directory, intent digest,
   and expected-artifact manifest before download; do not call status from the
@@ -240,7 +251,8 @@ and have `ts_web` consume that result.
   `model_stream` stage. Do not attribute them to a typed action, transport,
   scientific program, or canonical workspace mutation.
 - Include control guards, results, and receipts in `operational_revision`; a
-  guard without its result must surface through `pending_controls`.
+  latest guard without its result must surface through `pending_controls`, and
+  a latest retryable or ambiguous result through `unresolved_controls`.
 - Keep `files:write` no-overwrite for the Pi principal. Generic replacement
   requires the separate `files:overwrite` scope, which Pi must not receive.
 - Runtime setup must stay isolated from shared Conda `base`. Public scripts

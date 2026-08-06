@@ -135,6 +135,10 @@ def test_pi_context_summary_from_report_workspace(tmp_path: Path) -> None:
     assert payload["details"]["workspaceRoot"] == str(workspace)
     assert payload["details"]["workspaceId"] == report["workspace_id"]
     assert payload["details"]["operationalRevision"].startswith("sha256:")
+    assert payload["details"]["operationalSummary"]["controlUnresolvedCount"] == 0
+    assert payload["details"]["operationalSummary"]["ambiguousSubmissionCount"] == 0
+    assert "unresolved_controls=0" in payload["summary"]
+    assert "ambiguous_submissions=0" in payload["summary"]
     assert payload["details"]["focusHypothesisId"] == HYPOTHESIS_ID
     assert payload["details"]["valid"] is True
 

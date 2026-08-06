@@ -58,6 +58,7 @@ function buildContextDetails(report) {
   const operationalSummary = objectOrEmpty(report.operational_summary);
   const agentRuns = arrayOfObjects(report.agent_runs);
   const pendingControls = arrayOfObjects(report.pending_controls);
+  const unresolvedControls = arrayOfObjects(report.unresolved_controls);
 
   return {
     reportId: report.report_id || "",
@@ -92,11 +93,23 @@ function buildContextDetails(report) {
       agentRunFailedCount: numberOrZero(operationalSummary.agent_run_failed_count),
       agentRunPendingCount: numberOrZero(operationalSummary.agent_run_pending_count),
       controlPendingCount: numberOrZero(operationalSummary.control_pending_count),
+      controlUnresolvedCount: numberOrZero(operationalSummary.control_unresolved_count),
+      ambiguousSubmissionCount: numberOrZero(operationalSummary.ambiguous_submission_count),
+      ambiguousCancellationCount: numberOrZero(operationalSummary.ambiguous_cancellation_count),
+      controlRetryableCount: numberOrZero(operationalSummary.control_retryable_count),
     },
     pendingControls: pendingControls.map((control) => ({
       operation: control.operation || "",
       intentId: control.intent_id || "",
       guardRef: control.guard_ref || "",
+    })),
+    unresolvedControls: unresolvedControls.map((control) => ({
+      operation: control.operation || "",
+      intentId: control.intent_id || "",
+      state: control.state || "",
+      errorClass: control.error_class || "",
+      retryDisposition: control.retry_disposition || "",
+      resultRef: control.result_ref || "",
     })),
     latestAgentRuns: agentRuns.slice(-5).map((run) => ({
       taskId: run.task_id || "",
@@ -145,7 +158,7 @@ function buildContextSummary(report, options = {}) {
     "TS workspace context:",
     `- workspace: ${details.workspaceRoot || "(unknown)"}; compute_workspace_id: ${details.workspaceId || "(missing)"}`,
     `- report: ${details.reportId || "(none)"}; revision: ${details.workspaceRevision || "(none)"}; valid: ${details.valid}`,
-    `- operational_revision: ${details.operationalRevision || "(none)"}; calculations=${details.operationalSummary.calculationFileCount}; agent_runs=${details.operationalSummary.agentRunCount}; failed=${details.operationalSummary.agentRunFailedCount}; pending=${details.operationalSummary.agentRunPendingCount}; pending_controls=${details.operationalSummary.controlPendingCount}`,
+    `- operational_revision: ${details.operationalRevision || "(none)"}; calculations=${details.operationalSummary.calculationFileCount}; agent_runs=${details.operationalSummary.agentRunCount}; failed=${details.operationalSummary.agentRunFailedCount}; pending=${details.operationalSummary.agentRunPendingCount}; pending_controls=${details.operationalSummary.controlPendingCount}; unresolved_controls=${details.operationalSummary.controlUnresolvedCount}; ambiguous_submissions=${details.operationalSummary.ambiguousSubmissionCount}; ambiguous_cancellations=${details.operationalSummary.ambiguousCancellationCount}; retryable_controls=${details.operationalSummary.controlRetryableCount}`,
     `- current_node: ${details.currentNode || "(none)"}; focus_hypothesis: ${details.focusHypothesisId || "(none)"}`,
     `- focus_pathway: ${details.focusPathwayId || "(none)"}; accepted_ts_refs: ${formatList(details.acceptedTsRefs, maxItems)}`,
     `- open_nodes: ${details.openNodes.length ? details.openNodes.map(formatNode).join("; ") : "(none)"}`,
@@ -156,7 +169,10 @@ function buildContextSummary(report, options = {}) {
     lines.push(`- active_hypothesis: ${details.hypothesisSummary}`);
   }
   if (details.pendingControls.length) {
-    lines.push(`- unresolved_controls: ${details.pendingControls.map((item) => `${item.operation}:${item.intentId}`).join(", ")}`);
+    lines.push(`- pending_controls: ${details.pendingControls.map((item) => `${item.operation}:${item.intentId}`).join(", ")}`);
+  }
+  if (details.unresolvedControls.length) {
+    lines.push(`- unresolved_controls: ${details.unresolvedControls.map((item) => `${item.operation}:${item.intentId}:${item.errorClass || item.state || "unknown"}`).join(", ")}`);
   }
   lines.push(`- open_predictions: ${formatPredictionList(details.openPredictions, maxItems)}`);
   lines.push(`- supported_predictions: ${formatList(details.supportedPredictions, maxItems)}`);

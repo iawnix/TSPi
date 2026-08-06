@@ -319,8 +319,9 @@ export RUNTIME_PYTHON="$(
 
 With the SSH tunnel or HTTPS endpoint active and all `TS_CLUSTER_MCP_*`
 variables exported, run the packaged read-only diagnostic through the Pi
-workspace runtime. Its `status` and `doctor` modes call only
-`cluster_capabilities`:
+workspace runtime. `status` calls only `cluster_capabilities`. `doctor` checks
+transport/auth/protocol, scheduler reads, the durable TS submission registry,
+workspace storage, and the Gaussian software profile:
 
 ```bash
 PYTHONPATH="$TS_AGENT_SKILL_ROOT" "$RUNTIME_PYTHON" \
@@ -449,8 +450,12 @@ The TS-specific MCP tools are:
   file without overwrite.
 - `ts_submit_job`: submit one `ts-cluster-job/1` request exactly once per
   `submission_id`.
-- `ts_get_submission`: return the durable submission record and normalized
-  scheduler state.
+- `ts_get_submission`: always return the durable submission record when it
+  exists, even when scheduler history is unavailable; missing IDs return
+  `found=false` and scheduler query failures are attached under
+  `scheduler_query`.
+- `ts_control_health`: read-only health for the submission registry, workspace
+  storage, and Gaussian profile.
 - `download_chunk`: retrieve an artifact for local verification.
 - `ts_cancel_submission`: cancel only the job bound to the principal,
   `submission_id`, and exact `submission_id:job_id` confirmation.
@@ -459,6 +464,13 @@ The TS-specific MCP tools are:
 manifest, expected artifacts, scheduler resources, and execution environment.
 Credential-like variables and `TS_CLUSTER_MCP_*` are rejected from scheduler
 job environments.
+
+For an ambiguous local control result, call normal compute `inspect`. When the
+durable record matches the complete local binding and contains a scheduler job
+ID, the host writes an append-only `submit_reconciliation.json` (and a receipt
+if needed). A durable `cancelled` record similarly writes
+`cancel_reconciliation.json`. Reconciliation never overwrites the raw control
+attempt and never makes an unbound or job-ID-free submission replayable.
 
 For TSAgent clients using `ts-mcp-workspace/1`, the submitted `workdir` has the
 form `workspaces/<workspace_id>/<logical remote_dir>` and `submission_id` is

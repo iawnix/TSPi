@@ -329,9 +329,36 @@ async function requireHealthyMcpConnection(
   request: OperatorRequest,
   signal?: AbortSignal,
 ) {
-  const result = await runMcpDiagnosticJson(pi, "status", root, signal);
+  const diagnosticMode = request.operation === "submit" ? "doctor" : "status";
+  const result = await runMcpDiagnosticJson(pi, diagnosticMode, root, signal);
   if (!isPlainObject(result) || result.schema_version !== "ts-mcp-diagnostic/1") {
     throw new Error("MCP connection preflight returned an invalid diagnostic result");
+  }
+  const components = isPlainObject(result.components) ? result.components : null;
+  if (request.operation === "submit" && components) {
+    const requiredComponents = [
+      "transport_auth_protocol",
+      "scheduler_read",
+      "submission_registry",
+      "workspace_storage",
+      ...(request.backend === "gaussian" ? ["gaussian_profile"] : []),
+    ];
+    const failedComponents = requiredComponents.filter((name) => components[name] !== "pass");
+    if (failedComponents.length > 0) {
+      if (failedComponents[0] === "gaussian_profile") requireGaussianSubmitProfile(result, request);
+      const errors = isPlainObject(result.errors) ? result.errors : {};
+      const componentErrorValue = errors[failedComponents[0]];
+      const componentError = isPlainObject(componentErrorValue) ? componentErrorValue : {};
+      const errorClass = typeof componentError.class === "string"
+        ? componentError.class
+        : "component_unavailable";
+      const message = typeof componentError.message === "string"
+        ? componentError.message
+        : `required components failed: ${failedComponents.join(", ")}`;
+      throw new Error(`MCP submit preflight failed (${errorClass}): ${message}`);
+    }
+    if (request.backend === "gaussian") requireGaussianSubmitProfile(result, request);
+    return;
   }
   if (result.ok !== true) {
     const error = isPlainObject(result.error) ? result.error : {};
@@ -340,26 +367,30 @@ async function requireHealthyMcpConnection(
     throw new Error(`MCP ${request.operation} preflight failed (${errorClass}): ${message}`);
   }
   if (request.operation === "submit" && request.backend === "gaussian") {
-    const capabilities = isPlainObject(result.capabilities) ? result.capabilities : {};
-    const software = isPlainObject(capabilities.software) ? capabilities.software : {};
-    const profiles = Array.isArray(software.profiles) ? software.profiles : [];
-    const gaussian = profiles.find(
-      (profile) => isPlainObject(profile) && profile.name === "gaussian" && profile.kind === "profile",
-    );
-    if (!isPlainObject(gaussian)) {
-      throw new Error("MCP Gaussian submit preflight failed: server has no gaussian software profile");
-    }
-    if (gaussian.activation_script_exists !== true) {
-      throw new Error("MCP Gaussian submit preflight failed: gaussian activation script is unavailable");
-    }
-    const queue = isPlainObject(request.executionSummary) ? request.executionSummary.queue : undefined;
-    if (
-      typeof queue === "string"
-      && Array.isArray(gaussian.allowed_queues)
-      && !gaussian.allowed_queues.includes(queue)
-    ) {
-      throw new Error(`MCP Gaussian submit preflight failed: profile does not allow queue ${queue}`);
-    }
+    requireGaussianSubmitProfile(result, request);
+  }
+}
+
+function requireGaussianSubmitProfile(result: Record<string, unknown>, request: OperatorRequest) {
+  const capabilities = isPlainObject(result.capabilities) ? result.capabilities : {};
+  const software = isPlainObject(capabilities.software) ? capabilities.software : {};
+  const profiles = Array.isArray(software.profiles) ? software.profiles : [];
+  const gaussian = profiles.find(
+    (profile) => isPlainObject(profile) && profile.name === "gaussian" && profile.kind === "profile",
+  );
+  if (!isPlainObject(gaussian)) {
+    throw new Error("MCP Gaussian submit preflight failed: server has no gaussian software profile");
+  }
+  if (gaussian.activation_script_exists !== true) {
+    throw new Error("MCP Gaussian submit preflight failed: gaussian activation script is unavailable");
+  }
+  const queue = isPlainObject(request.executionSummary) ? request.executionSummary.queue : undefined;
+  if (
+    typeof queue === "string"
+    && Array.isArray(gaussian.allowed_queues)
+    && !gaussian.allowed_queues.includes(queue)
+  ) {
+    throw new Error(`MCP Gaussian submit preflight failed: profile does not allow queue ${queue}`);
   }
 }
 
@@ -559,16 +590,13 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 
 function compactCompletedActions(actions: ActionLog) {
   return actions.map((action) => {
-    const raw = action.result && typeof action.result.result === "object" && action.result.result
+    const envelope = action.result;
+    const raw = envelope && typeof envelope.result === "object" && envelope.result
       ? action.result.result as Record<string, unknown>
       : action.result;
     return {
       tool: action.tool,
-      action_status: raw.action_status === "failed"
-        ? "failed"
-        : raw.action_status === "started"
-          ? "started"
-          : "completed",
+      action_status: normalizeActionStatus(envelope, raw),
       intent_id: raw.intent_id || null,
       node_id: raw.node_id || null,
       state: raw.state || null,
@@ -584,6 +612,8 @@ function classifyOperatorFailure(error: unknown, actions: ReturnType<typeof comp
   const actionOutcome = actions.length === 0
     ? "not_executed"
     : actions.some((action) => action.action_status === "started")
+      ? "unknown"
+    : actions.some((action) => action.action_status === "unknown")
       ? "unknown"
     : actions.every((action) => action.action_status === "failed")
       ? "failed"
@@ -612,4 +642,23 @@ function classifyOperatorFailure(error: unknown, actions: ReturnType<typeof comp
     action_outcome: actionOutcome,
     retry_safe: actions.length === 0,
   };
+}
+
+function normalizeActionStatus(
+  envelope: Record<string, unknown>,
+  raw: Record<string, unknown>,
+): "started" | "completed" | "failed" | "unknown" {
+  if (["started", "completed", "failed", "unknown"].includes(String(envelope.action_status))) {
+    return envelope.action_status as "started" | "completed" | "failed" | "unknown";
+  }
+  const control = isPlainObject(raw.control) ? raw.control : {};
+  if (control.effect_outcome === "unknown") return "unknown";
+  if (control.effect_outcome === "failed") return "failed";
+  if (control.effect_outcome === "succeeded") return "completed";
+  if (
+    raw.state === "unknown"
+    && ["submission_ambiguous", "cancellation_ambiguous"].includes(String(raw.error_class))
+  ) return "unknown";
+  if (raw.state === "failed" && raw.error_class === "mcp_staging_failed") return "failed";
+  return "completed";
 }

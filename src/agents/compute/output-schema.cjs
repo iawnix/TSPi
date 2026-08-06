@@ -15,21 +15,23 @@ const REQUIRED_TOOLS = {
 };
 
 function parseAndValidateOperatorReport(text, packet, actions) {
-  if (typeof text !== "string" || !text.trim()) throw new Error("compute operator output is empty");
-  if (Buffer.byteLength(text, "utf8") > MAX_OUTPUT_BYTES) {
-    throw new Error(`compute operator output exceeds ${MAX_OUTPUT_BYTES} bytes`);
-  }
-  let value;
-  try {
-    value = JSON.parse(normalizeJsonText(text));
-  } catch (error) {
-    throw new Error(`compute operator output must be JSON only: ${error instanceof Error ? error.message : String(error)}`);
-  }
   const task = validateAgentTask(packet);
+  let value = {};
+  if (typeof text === "string" && text.trim() && Buffer.byteLength(text, "utf8") <= MAX_OUTPUT_BYTES) {
+    try {
+      value = JSON.parse(normalizeJsonText(text));
+    } catch (_error) {
+      value = {};
+    }
+  }
   const normalized = normalizeAgentResultInput(value, {
     resolveFactRef: (ref) => resolveComputeFactRef(ref, task, actions),
   });
-  return validateOperatorReport(normalized, task, actions);
+  if (!Array.isArray(actions) || actions.length === 0) {
+    return validateOperatorReport(normalized, task, actions);
+  }
+  requireCompletedActions(actions);
+  return validateOperatorReport(buildDeterministicReport(normalized, task, actions), task, actions);
 }
 
 function normalizeJsonText(text) {
@@ -45,12 +47,7 @@ function validateOperatorReport(value, packet, actions) {
   if (!Array.isArray(actions) || actions.length < 1 || actions.length > 2) {
     throw new Error("compute operator must execute one or two scoped actions");
   }
-  for (const action of actions) {
-    const actionResult = operationResult(action && action.result);
-    if (!isPlainObject(actionResult) || actionResult.action_status === "started") {
-      throw new Error("compute operator contains an incomplete typed action");
-    }
-  }
+  requireCompletedActions(actions);
   const requiredTool = REQUIRED_TOOLS[task.operation];
   const requiredActions = actions.filter((action) => isPlainObject(action) && action.tool === requiredTool);
   const requiredAction = requiredActions[0];
@@ -149,6 +146,15 @@ function operationResult(value) {
   return isPlainObject(value.result) ? value.result : value;
 }
 
+function requireCompletedActions(actions) {
+  for (const action of actions) {
+    const actionResult = operationResult(action && action.result);
+    if (!isPlainObject(actionResult) || actionStatus(action && action.result) === "started") {
+      throw new Error("compute operator contains an incomplete typed action");
+    }
+  }
+}
+
 function mapProgramOutcome(value) {
   if (value === "completed") return "success";
   if (value === "failed" || value === "stopped") return "failure";
@@ -157,9 +163,92 @@ function mapProgramOutcome(value) {
 }
 
 function expectedReportOutcome(actions) {
-  const failedCount = actions.filter((action) => operationResult(action && action.result)?.action_status === "failed").length;
+  const statuses = actions.map((action) => actionStatus(action && action.result));
+  if (statuses.includes("unknown")) return "partial";
+  const failedCount = statuses.filter((status) => status === "failed").length;
   if (!failedCount) return "success";
   return failedCount < actions.length ? "partial" : "failure";
+}
+
+function buildDeterministicReport(value, task, actions) {
+  const requiredTool = REQUIRED_TOOLS[task.operation];
+  const requiredAction = actions.find((action) => isPlainObject(action) && action.tool === requiredTool);
+  const canonical = operationResult(requiredAction && requiredAction.result) || {};
+  const actionRef = requiredAction ? actionResultRef(task, actions.indexOf(requiredAction)) : null;
+  const artifactRefs = [];
+  for (const action of actions) {
+    const result = operationResult(action && action.result);
+    for (const ref of result && Array.isArray(result.artifact_refs) ? result.artifact_refs : []) {
+      if (typeof ref === "string" && !artifactRefs.includes(ref)) artifactRefs.push(ref);
+    }
+  }
+  const status = requiredAction ? actionStatus(requiredAction.result) : "failed";
+  const state = stringOrNull(canonical.state);
+  const factKinds = {
+    prepare: "compute_preparation",
+    submit: "submission",
+    inspect: "inspection",
+    collect: "collection",
+    cancel: "cancellation",
+    parse: "parser",
+  };
+  const limitations = isPlainObject(value) && Array.isArray(value.limitations)
+    ? value.limitations
+      .filter((item) => typeof item === "string" && item.trim())
+      .slice(0, 24)
+      .map((item) => item.trim().slice(0, 2000))
+    : [];
+  const summary = isPlainObject(value) && typeof value.summary === "string" && value.summary.trim()
+    ? value.summary.trim().slice(0, 4000)
+    : `The typed ${task.operation} action returned state ${state || "unknown"}.`;
+  return {
+    schema_version: "ts-agent-result/1",
+    task_id: task.task_id,
+    role: task.role,
+    authority: task.authority,
+    operation: task.operation,
+    outcome: expectedReportOutcome(actions),
+    summary,
+    scope: task.scope,
+    facts: requiredAction ? [{
+      kind: factKinds[task.operation],
+      layer: null,
+      statement: `Typed ${task.operation} action returned state ${state || "unknown"}.`,
+      status: status === "unknown" ? "uncertain" : "observed",
+      basis_refs: actionRef ? [actionRef] : [],
+    }] : [],
+    artifact_refs: artifactRefs,
+    program: {
+      outcome: mapProgramOutcome(canonical.program_status),
+      state,
+      error_class: stringOrNull(canonical.error_class),
+      exit_status: Number.isInteger(canonical.exit_status) ? canonical.exit_status : null,
+    },
+    payload: {
+      intent_id: stringOrNull(canonical.intent_id),
+      node_id: stringOrNull(canonical.node_id),
+      backend: requireString(task.inputs.backend, "task inputs.backend", 64),
+    },
+    limitations,
+    provenance: {},
+  };
+}
+
+function actionStatus(value) {
+  if (!isPlainObject(value)) return null;
+  if (["started", "completed", "failed", "unknown"].includes(value.action_status)) {
+    return value.action_status;
+  }
+  const result = operationResult(value);
+  const control = isPlainObject(result && result.control) ? result.control : {};
+  if (control.effect_outcome === "unknown") return "unknown";
+  if (control.effect_outcome === "failed") return "failed";
+  if (control.effect_outcome === "succeeded") return "completed";
+  if (
+    result && result.state === "unknown"
+    && ["submission_ambiguous", "cancellation_ambiguous"].includes(result.error_class)
+  ) return "unknown";
+  return "completed";
 }
 
 function resolveComputeFactRef(ref, task, actions) {

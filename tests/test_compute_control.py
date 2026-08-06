@@ -23,6 +23,7 @@ from ts_remote.job_lifecycle import RemoteJobStatus
 from ts_remote.base import RemoteReceipt
 from ts_remote.mcp import MCPClientError
 from ts_workspace.operational import operational_snapshot
+from ts_workspace.readers.report import report_workspace
 
 
 def _workspace(tmp_path: Path) -> Path:
@@ -617,11 +618,31 @@ def test_mcp_staging_failure_is_not_submission_ambiguous(
         _intent_v2(workspace, target=_mcp_target(), dry_run=False),
     )
 
-    class FailingStagingClient:
-        def ensure_directory(self, _path: str) -> None:
-            raise MCPClientError("MCP tool 'ts_ensure_directory' failed: ReadTimeout")
+    class FlakyStagingClient:
+        def __init__(self) -> None:
+            self.ensure_calls = 0
 
-    monkeypatch.setattr("ts_compute.control._mcp_client", lambda: FailingStagingClient())
+        def ensure_directory(self, _path: str) -> None:
+            self.ensure_calls += 1
+            if self.ensure_calls == 1:
+                raise MCPClientError("MCP tool 'ts_ensure_directory' failed: ReadTimeout")
+
+        def upload_file(self, _source: Path, remote_path: str):
+            return {"path": remote_path}
+
+        def submit(self, request):
+            return RemoteReceipt(
+                node_id="n001",
+                host="cluster-mcp",
+                remote_dir=request["workdir"],
+                command=["mcp", "ts_submit_job", request["submission_id"]],
+                receipt_path=f"{request['workdir']}/ts_submission.json",
+                scheduler_id="42003.cluster",
+                metadata={"submission_id": request["submission_id"]},
+            )
+
+    client = FlakyStagingClient()
+    monkeypatch.setattr("ts_compute.control._mcp_client", lambda: client)
 
     result = submit_calculation(workspace, intent_id)
 
@@ -632,16 +653,42 @@ def test_mcp_staging_failure_is_not_submission_ambiguous(
     assert result["provenance"]["submission_attempted"] is False
     assert result["provenance"]["retry_safe"] is True
     assert "ReadTimeout" in result["provenance"]["failure_message"]
-    with pytest.raises(ComputeContractError, match="create a technical retry intent"):
-        preflight_calculation(
-            workspace,
-            "submit",
-            "n001",
-            "gaussian",
-            intent_id=intent_id,
-        )
-    with pytest.raises(ComputeContractError, match="refuses automatic replay"):
-        submit_calculation(workspace, intent_id)
+    assert result["control"] == {
+        "schema_version": "ts-control-outcome/1",
+        "operation": "submit",
+        "phase": "ensure_directory",
+        "effect_outcome": "failed",
+        "effect_attempted": False,
+        "retry_disposition": "retry_same_submission",
+        "reconciliation_required": False,
+        "submission_id": result["control"]["submission_id"],
+        "job_id": None,
+    }
+    preflight = preflight_calculation(
+        workspace,
+        "submit",
+        "n001",
+        "gaussian",
+        intent_id=intent_id,
+    )
+    assert preflight["intent_id"] == intent_id
+    before_retry = operational_snapshot(workspace)
+    assert before_retry["operational_summary"]["control_unresolved_count"] == 1
+    assert before_retry["operational_summary"]["control_retryable_count"] == 1
+    root_report = report_workspace(workspace)
+    assert root_report["retryable_controls"] == before_retry["retryable_controls"]
+    assert root_report["operational_summary"]["control_retryable_count"] == 1
+
+    submitted = submit_calculation(workspace, intent_id)
+    assert submitted["state"] == "submitted"
+    assert submitted["job_id"] == "42003.cluster"
+    base = workspace / f"nodes/n001/attempts/{intent_id}"
+    assert json.loads((base / "submit_result.json").read_text(encoding="utf-8"))["state"] == "failed"
+    assert (base / "submit_attempt_0002_guard.json").is_file()
+    assert json.loads((base / "submit_attempt_0002_result.json").read_text(encoding="utf-8"))["state"] == "submitted"
+    after_retry = operational_snapshot(workspace)
+    assert after_retry["unresolved_controls"] == []
+    assert after_retry["retryable_controls"] == []
 
 
 def test_mcp_scheduler_submit_failure_remains_ambiguous(
@@ -675,6 +722,165 @@ def test_mcp_scheduler_submit_failure_remains_ambiguous(
     assert result["provenance"]["submission_phase"] == "scheduler_submit"
     assert result["provenance"]["submission_attempted"] is True
     assert result["provenance"]["retry_safe"] is False
+
+
+def test_mcp_ambiguous_record_uses_bound_scheduler_state_when_available(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = _workspace(tmp_path)
+    _configure_mcp(monkeypatch)
+    intent_id = "calc_n001_optfreq_v2_001"
+    prepare_calculation(
+        workspace,
+        _intent_v2(workspace, target=_mcp_target(), dry_run=False),
+    )
+
+    class AmbiguousRecordClient:
+        def __init__(self) -> None:
+            self.request: dict[str, object] | None = None
+
+        def ensure_directory(self, _path: str) -> None:
+            return None
+
+        def upload_file(self, _source: Path, remote_path: str):
+            return {"path": remote_path}
+
+        def submit(self, request):
+            self.request = request
+            raise MCPClientError("MCP submit response was interrupted")
+
+        def status(self, submission_id: str, *, include_history: bool):
+            assert include_history is True
+            assert self.request is not None
+            return {
+                "schema_version": "ts-cluster-submission/1",
+                "submission_id": submission_id,
+                "found": True,
+                "state": "ambiguous",
+                "job_id": "42005.cluster",
+                "request": self.request,
+                "result": None,
+                "scheduler": {"state": "R"},
+                "scheduler_query": {"outcome": "succeeded", "error_class": None, "message": None},
+                "updated_at": "2026-08-06T04:00:00+00:00",
+            }
+
+    client = AmbiguousRecordClient()
+    monkeypatch.setattr("ts_compute.control._mcp_client", lambda: client)
+
+    assert submit_calculation(workspace, intent_id)["state"] == "unknown"
+    status = calculation_status(workspace, intent_id)
+
+    assert status["state"] == "running"
+    assert status["job_id"] == "42005.cluster"
+    base = workspace / f"nodes/n001/attempts/{intent_id}"
+    reconciliation = json.loads((base / "submit_reconciliation.json").read_text(encoding="utf-8"))
+    assert reconciliation["state"] == "submitted"
+    assert reconciliation["provenance"]["server_submission_state"] == "ambiguous"
+
+
+def test_mcp_status_reconciles_ambiguous_submit_and_unblocks_collection(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = _workspace(tmp_path)
+    _configure_mcp(monkeypatch)
+    intent_id = "calc_n001_optfreq_v2_001"
+    prepare_calculation(
+        workspace,
+        _intent_v2(workspace, target=_mcp_target(), dry_run=False),
+    )
+
+    class ReconciliationClient:
+        def __init__(self) -> None:
+            self.request: dict[str, object] | None = None
+            self.submit_calls = 0
+            self.cancel_calls = 0
+            self.server_state = "submitted"
+
+        def ensure_directory(self, _path: str) -> None:
+            return None
+
+        def upload_file(self, _source: Path, remote_path: str):
+            return {"path": remote_path}
+
+        def submit(self, request):
+            self.submit_calls += 1
+            self.request = request
+            raise MCPClientError("MCP tool 'ts_submit_job' failed: stream disconnected")
+
+        def status(self, submission_id: str, *, include_history: bool):
+            assert include_history is True
+            assert self.request is not None
+            return {
+                "schema_version": "ts-cluster-submission/1",
+                "submission_id": submission_id,
+                "found": True,
+                "state": self.server_state,
+                "job_id": "42004.cluster",
+                "request": self.request,
+                "result": {
+                    "schema_version": (
+                        "ts-cluster-cancellation-result/1"
+                        if self.server_state == "cancelled"
+                        else "ts-cluster-submission-result/1"
+                    ),
+                    "state": self.server_state,
+                    "job_id": "42004.cluster",
+                    "scheduler": {"action": "delete"} if self.server_state == "cancelled" else None,
+                },
+                "scheduler": {"state": "R"},
+                "scheduler_query": {"outcome": "succeeded", "error_class": None, "message": None},
+                "updated_at": "2026-08-06T04:00:00+00:00",
+            }
+
+        def cancel(self, _submission_id: str, _job_id: str):
+            self.cancel_calls += 1
+            self.server_state = "cancelled"
+            raise MCPClientError("MCP tool 'ts_cancel_submission' failed: stream disconnected")
+
+        def download_file(self, _remote_path: str, destination: Path):
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_text(_gaussian_log(), encoding="utf-8")
+            return {"path": str(destination), "size": destination.stat().st_size, "sha256": "3" * 64}
+
+    client = ReconciliationClient()
+    monkeypatch.setattr("ts_compute.control._mcp_client", lambda: client)
+
+    ambiguous = submit_calculation(workspace, intent_id)
+    assert ambiguous["state"] == "unknown"
+    before = operational_snapshot(workspace)
+    assert before["operational_summary"]["ambiguous_submission_count"] == 1
+
+    status = calculation_status(workspace, intent_id)
+    assert status["state"] == "running"
+    base = workspace / f"nodes/n001/attempts/{intent_id}"
+    reconciliation = json.loads((base / "submit_reconciliation.json").read_text(encoding="utf-8"))
+    assert reconciliation["state"] == "submitted"
+    assert reconciliation["job_id"] == "42004.cluster"
+    assert reconciliation["control"]["phase"] == "reconciled"
+    assert (base / "mcp_receipt.json").is_file()
+    after = operational_snapshot(workspace)
+    assert after["unresolved_controls"] == []
+    assert after["ambiguous_submissions"] == []
+
+    collected = collect_calculation(workspace, intent_id, ["candidate.log"])
+    assert collected["state"] == "collected"
+    assert submit_calculation(workspace, intent_id)["job_id"] == "42004.cluster"
+    assert client.submit_calls == 1
+
+    cancelled = cancel_calculation(workspace, intent_id, expected_job_id="42004.cluster")
+    assert cancelled["state"] == "unknown"
+    assert operational_snapshot(workspace)["operational_summary"]["ambiguous_cancellation_count"] == 1
+    stopped = calculation_status(workspace, intent_id)
+    assert stopped["state"] == "stopped"
+    cancel_reconciliation = json.loads((base / "cancel_reconciliation.json").read_text(encoding="utf-8"))
+    assert cancel_reconciliation["state"] == "stopped"
+    assert cancel_reconciliation["control"]["phase"] == "reconciled"
+    assert operational_snapshot(workspace)["ambiguous_cancellations"] == []
+    assert cancel_calculation(workspace, intent_id)["state"] == "stopped"
+    assert client.cancel_calls == 1
 
 
 def test_mcp_transport_submit_status_tail_collect_and_cancel(

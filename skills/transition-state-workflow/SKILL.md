@@ -210,8 +210,11 @@ When a configured scheduler service is used, follow
 `references/cluster_mcp.md`. Preserve its manifest and idempotency bindings;
 never retry an ambiguous submit or cancel with the same or a new identifier
 until the scheduler state has been reconciled by the host.
-An `unresolved_controls` context entry means a pre-side-effect guard has no
-final result; stop automatic control and reconcile the scheduler manually.
+Use `pending_controls` for a guard with no final result. Use
+`unresolved_controls` for a completed control attempt that still needs a safe
+retry or reconciliation. Retry the same submission ID only when the typed
+control outcome says `retry_disposition=retry_same_submission` and
+`effect_attempted=false`; never replay an ambiguous scheduler request.
 MCP Gaussian submission requires a server `software.gaussian` profile with an
 existing activation script and an allowed queue. Installation of `g16` alone is
 not registration. Do not bypass a failed profile preflight with a PATH override

@@ -39,6 +39,22 @@ def _settings() -> MCPConnectionSettings:
     return MCPConnectionSettings("http://127.0.0.1:8765/mcp", token=TOKEN, timeout_seconds=12)
 
 
+def _control_health() -> dict[str, object]:
+    return {
+        "schema_version": "ts-cluster-control-health/1",
+        "ok": True,
+        "components": {
+            "submission_registry": {"outcome": "succeeded", "available": True},
+            "workspace_storage": {"outcome": "succeeded", "error_class": None, "message": None},
+            "gaussian_profile": {
+                "outcome": "succeeded",
+                "configured": True,
+                "activation_script_exists": True,
+            },
+        },
+    }
+
+
 def test_mcp_status_returns_only_compact_safe_capabilities(monkeypatch) -> None:
     caller = _Caller(
         {
@@ -155,6 +171,7 @@ def test_mcp_cluster_probe_combines_only_read_only_scheduler_views(monkeypatch) 
             "cluster_capabilities": capabilities,
             "list_queues": {"queues": queues},
             "list_nodes": {"nodes": nodes},
+            "ts_control_health": _control_health(),
         }
     )
     monkeypatch.setattr(mcp_diagnostics, "_connection_settings", _settings)
@@ -187,6 +204,7 @@ def test_mcp_cluster_probe_combines_only_read_only_scheduler_views(monkeypatch) 
         ("cluster_capabilities", {}),
         ("list_queues", {}),
         ("list_nodes", {}),
+        ("ts_control_health", {}),
     ]
 
 
@@ -196,6 +214,7 @@ def test_mcp_cluster_probe_retains_partial_results(monkeypatch) -> None:
             "cluster_capabilities": {"server": "cluster-mcp", "scheduler": "torque"},
             "list_queues": MCPClientError("queue probe failed"),
             "list_nodes": {"nodes": [{"state": "free", "ncpus_free_total": "8/16"}]},
+            "ts_control_health": _control_health(),
         }
     )
     monkeypatch.setattr(mcp_diagnostics, "_connection_settings", _settings)
@@ -205,7 +224,12 @@ def test_mcp_cluster_probe_retains_partial_results(monkeypatch) -> None:
 
     assert result["ok"] is False
     assert result["partial"] is True
-    assert result["components"] == {"capabilities": "pass", "queues": "fail", "nodes": "pass"}
+    assert result["components"] == {
+        "capabilities": "pass",
+        "queues": "fail",
+        "nodes": "pass",
+        "control_health": "pass",
+    }
     assert result["errors"]["queues"]["class"] == "protocol_error"
     assert result["node_summary"]["cpu"]["free"] == 8
 
@@ -225,6 +249,7 @@ def test_mcp_cluster_probe_output_is_bounded_by_aggregation(monkeypatch) -> None
             "cluster_capabilities": {"server": "cluster-mcp", "scheduler": "torque"},
             "list_queues": {"queues": []},
             "list_nodes": {"nodes": nodes},
+            "ts_control_health": _control_health(),
         }
     )
     monkeypatch.setattr(mcp_diagnostics, "_connection_settings", _settings)
@@ -238,6 +263,40 @@ def test_mcp_cluster_probe_output_is_bounded_by_aggregation(monkeypatch) -> None
     assert len(serialized) < 3000
     assert "compute-499" not in serialized
     assert "job-499-19" not in serialized
+
+
+def test_mcp_doctor_reports_transport_scheduler_registry_storage_and_gaussian(monkeypatch) -> None:
+    caller = _Caller(
+        {
+            "cluster_capabilities": {"server": "cluster-mcp", "scheduler": "torque"},
+            "list_queues": {"queues": [{"name": "batch", "allowed_for_submission": True}]},
+            "ts_control_health": _control_health(),
+        }
+    )
+    monkeypatch.setattr(mcp_diagnostics, "_connection_settings", _settings)
+    monkeypatch.setattr(mcp_diagnostics, "_client", lambda _settings: TSClusterMCPClient(caller))
+
+    result = mcp_diagnostics.diagnose_mcp("doctor")
+
+    assert result["ok"] is True
+    assert result["partial"] is False
+    assert result["components"] == {
+        "transport_auth_protocol": "pass",
+        "scheduler_read": "pass",
+        "submission_registry": "pass",
+        "workspace_storage": "pass",
+        "gaussian_profile": "pass",
+    }
+    assert result["checks"] == {
+        "configuration": "pass",
+        "connection": "pass",
+        "authentication": "pass",
+        "protocol": "pass",
+        "scheduler_read": "pass",
+        "submission_registry": "pass",
+        "workspace_storage": "pass",
+        "gaussian_profile": "pass",
+    }
 
 
 def test_mcp_doctor_classifies_and_redacts_authentication_failure(monkeypatch) -> None:

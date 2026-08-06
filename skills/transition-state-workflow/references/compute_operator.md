@@ -27,14 +27,17 @@ with exactly one control tool. No interactive approval step is required. The
 child receives no raw MCP client, endpoint, credentials, or arbitrary command
 surface.
 
-The operator report uses `outcome=success|partial|failure|not_run`; this is the
-operator execution outcome, not the calculation's program outcome. A typed
-tool exception is journaled as `action_status=failed`, `state=unknown`, and
-`program_status=not_run` before the error returns to the child. For `inspect`,
-a failed status action plus a successful bounded tail is `outcome=partial`.
-The tail basename is not a local artifact. A program fact derived from it may
-cite only the persisted `actions.json#/actions/<index>/result` record, and it
-never implies a scientific verdict.
+The child supplies only an operational summary and limitations. The host
+deterministically builds the validated report from typed action results,
+including `outcome=success|partial|failure|not_run`, facts, artifact refs,
+program state, payload, and provenance. This operator execution outcome is not
+the calculation's program outcome. A typed tool exception is journaled as
+`action_status=failed`, `state=unknown`, and `program_status=not_run` before the
+error returns to the child. An ambiguous submit/cancel is instead
+`action_status=unknown` and produces `outcome=partial`. For `inspect`, a failed
+status action plus a successful bounded tail is `outcome=partial`. Remote tail
+text may be summarized as a limitation, but it does not become a scientific
+fact or local artifact ref.
 
 Facts use one shared vocabulary across typed actions and wrapper reports:
 `compute_preparation`, `submission`, `inspection`, `collection`,
@@ -50,11 +53,19 @@ an MCP, scheduler, Gaussian, or canonical-workspace failure. It is replay-safe
 only when no bounded action ran before the interruption.
 
 MCP directory creation and upload are staging operations. A failure there is
-recorded as `state=failed`, `error_class=mcp_staging_failed`, and
-`provenance.submission_attempted=false`; it is not a scheduler submission
-ambiguity. Only a failure after the `ts_submit_job` call begins is recorded as
-`submission_ambiguous`. Immutable failed attempts require a new technical
-retry intent rather than overwriting the original control result.
+recorded as `state=failed`, `error_class=mcp_staging_failed`,
+`control.effect_attempted=false`, and
+`control.retry_disposition=retry_same_submission`; it is not a scheduler
+submission ambiguity. The same immutable intent and submission ID may retry,
+with append-only `submit_attempt_NNNN_guard.json` and
+`submit_attempt_NNNN_result.json` records. Only a failure after the
+`ts_submit_job` call begins is recorded as `submission_ambiguous` and requires
+read-only reconciliation rather than replay. A normal `inspect` may persist an
+append-only `submit_reconciliation.json` or `cancel_reconciliation.json` after
+the durable server request and job binding match the local intent. These files
+become the effective control result without changing the original ambiguous
+attempt; a reconciled submit may also rebuild `mcp_receipt.json` from the bound
+expected-artifact manifest so collection can proceed without scheduler history.
 
 ## Calculation Intent V2
 

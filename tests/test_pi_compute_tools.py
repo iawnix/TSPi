@@ -78,6 +78,9 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     assert source.index("await requireHealthyMcpConnection") < source.index("const actions: ActionLog = []")
     assert 'request.transport === "mcp"' in source
     assert "MCP_PREFLIGHT_OPERATIONS" in source
+    assert 'request.operation === "submit" ? "doctor" : "status"' in source
+    assert '...(request.backend === "gaussian" ? ["gaussian_profile"] : [])' in source
+    assert "required components failed" in source
     assert "server has no gaussian software profile" in source
     assert "gaussian activation script is unavailable" in source
     assert "profile does not allow queue" in source
@@ -125,9 +128,9 @@ def test_compute_operator_runtime_is_fresh_isolated_and_tool_scoped() -> None:
     assert "parseAndValidateOperatorReport" in runtime
     assert "noTools: \"all\"" not in runtime
     assert "Program completion is not evidence" in prompt
-    assert "never use `completed`" in prompt
-    assert "never use singular `artifact_ref`" in prompt
-    assert "remote basename is not a durable local artifact ref" in prompt
+    assert "exactly `summary` and `limitations`" in prompt
+    assert "The host deterministically generates outcome" in prompt
+    assert "not a durable scientific fact" in prompt
     assert "For `submit` or `cancel`" in prompt
     assert "Root Agent has already preflighted and bound the exact operation" in prompt
     assert "loadBackendSkill(options.backend)" in runtime
@@ -155,6 +158,7 @@ def test_compute_action_failure_replaces_started_record_and_redacts_diagnostics(
     output = json.loads(completed.stdout)
 
     assert output["actions"][0]["result"]["action_status"] == "failed"
+    assert "action_status" not in output["actions"][0]["result"]["result"]
     assert output["result"]["program_status"] == "not_run"
     assert output["result"]["state"] == "unknown"
     assert output["result"]["error_class"] == "tool_execution_error"
@@ -163,6 +167,29 @@ def test_compute_action_failure_replaces_started_record_and_redacts_diagnostics(
     assert "topsecret" not in output["message"]
     assert "user:pass" not in output["message"]
     assert "[REDACTED]" in output["message"]
+
+
+def test_compute_action_log_marks_ambiguous_control_as_unknown() -> None:
+    script = (
+        f"const helper=require({json.dumps(str(ACTION_LOG))});"
+        "const actions=[];"
+        "const action=helper.reserveAction(actions,'ts_workspace_compute_submit');"
+        "helper.completeAction(action,{state:'unknown',program_status:'not_run',"
+        "error_class:'submission_ambiguous',artifact_refs:[],control:{effect_outcome:'unknown'}},action.tool);"
+        "process.stdout.write(JSON.stringify(actions[0]));"
+    )
+    completed = subprocess.run(
+        ["node", "-e", script],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    action = json.loads(completed.stdout)
+    assert action["result"]["action_status"] == "unknown"
+    assert action["result"]["result"]["state"] == "unknown"
 
 
 def test_compute_control_has_no_interactive_authorization_gate() -> None:
@@ -249,16 +276,16 @@ def test_compute_operator_output_is_bound_to_actual_tool_result(tmp_path: Path) 
     assert json.loads(completed.stdout)["program"]["state"] == "prepared"
 
     basis_ref = "nodes/n001/inputs/calculations/calc_test.json"
-    for alias, canonical in {
-        "preparation": "compute_preparation",
-        "compute_preparation": "compute_preparation",
-        "submission": "submission",
-        "artifact_collection": "collection",
-        "collection": "collection",
-        "program": "program_status",
-        "program_status": "program_status",
-        "parser": "parser",
-    }.items():
+    for alias in {
+        "preparation",
+        "compute_preparation",
+        "submission",
+        "artifact_collection",
+        "collection",
+        "program",
+        "program_status",
+        "parser",
+    }:
         report["facts"] = [{
             "kind": alias,
             "layer": None,
@@ -267,30 +294,93 @@ def test_compute_operator_output_is_bound_to_actual_tool_result(tmp_path: Path) 
             "basis_refs": [basis_ref],
         }]
         completed = _validate_operator_output(tmp_path, packet, [action], report)
-        assert json.loads(completed.stdout)["facts"][0]["kind"] == canonical
+        deterministic = json.loads(completed.stdout)
+        assert deterministic["facts"][0]["kind"] == "compute_preparation"
+        assert deterministic["facts"][0]["status"] == "observed"
     report["facts"][0]["status"] = "unknown"
     completed = _validate_operator_output(tmp_path, packet, [action], report)
-    assert json.loads(completed.stdout)["facts"][0]["status"] == "uncertain"
+    assert json.loads(completed.stdout)["facts"][0]["status"] == "observed"
     report["facts"] = []
 
     report["program"]["state"] = "completed"
-    completed = _validate_operator_output(tmp_path, packet, [action], report, check=False)
-    assert completed.returncode == 2
-    assert "program does not match" in completed.stderr
+    completed = _validate_operator_output(tmp_path, packet, [action], report)
+    assert json.loads(completed.stdout)["program"]["state"] == "prepared"
+
+    completed = _validate_operator_output(tmp_path, packet, [action], "not valid JSON")
+    deterministic = json.loads(completed.stdout)
+    assert deterministic["summary"] == "The typed prepare action returned state prepared."
+    assert deterministic["limitations"] == []
 
     report["program"]["state"] = "prepared"
     action["result"]["result"]["provenance"]["intent_digest"] = "sha256:changed"
     completed = _validate_operator_output(tmp_path, packet, [action], report, check=False)
     assert "intent digest does not match" in completed.stderr
 
-    action["result"] = {
-        "action_status": "started",
-        "state": "started",
-        "program_status": "not_run",
-        "artifact_refs": [],
-    }
+    action["result"] = {"action_status": "started", "result": None}
     completed = _validate_operator_output(tmp_path, packet, [action], report, check=False)
     assert "incomplete typed action" in completed.stderr
+
+
+def test_compute_operator_maps_ambiguous_submit_to_unknown_action_outcome(tmp_path: Path) -> None:
+    packet = {
+        "schema_version": "ts-agent-task/1",
+        "task_id": "agent_compute_ambiguous_001",
+        "role": "backend",
+        "authority": "operational",
+        "operation": "submit",
+        "objective": "Submit the bound Gaussian calculation.",
+        "workspace": {"root": "/tmp/ws", "report_id": "rep_001", "revision": "rev_001"},
+        "scope": {"report_id": "rep_001", "node_ids": ["n001"], "hypothesis_id": None, "pathway_id": None},
+        "inputs": {
+            "intent_id": "calc_test",
+            "intent_ref": "nodes/n001/attempts/calc_test/intent.json",
+            "intent_digest": "sha256:test",
+            "node_id": "n001",
+            "backend": "gaussian",
+            "basis_allowlist": [],
+        },
+        "capabilities": ["ts_workspace_compute_submit"],
+        "constraints": {
+            "canonical_workspace_mutation": False,
+            "scientific_decision": False,
+            "recursive_delegation": False,
+            "remote_authority": "execution_mirror",
+            "external_side_effects": True,
+        },
+        "output_contract": "ts-agent-result/1",
+    }
+    raw_result = {
+        "intent_id": "calc_test",
+        "node_id": "n001",
+        "state": "unknown",
+        "program_status": "not_run",
+        "error_class": "submission_ambiguous",
+        "artifact_refs": [],
+        "exit_status": None,
+        "control": {
+            "effect_outcome": "unknown",
+            "retry_disposition": "reconcile_only",
+        },
+        "provenance": {"backend": "gaussian", "intent_digest": "sha256:test"},
+    }
+    action = {
+        "tool": "ts_workspace_compute_submit",
+        "result": {"action_status": "unknown", "result": raw_result},
+    }
+
+    completed = _validate_operator_output(
+        tmp_path,
+        packet,
+        [action],
+        {"summary": "Submission requires reconciliation.", "limitations": []},
+    )
+    report = json.loads(completed.stdout)
+
+    assert report["outcome"] == "partial"
+    assert report["facts"][0]["kind"] == "submission"
+    assert report["facts"][0]["status"] == "uncertain"
+    assert report["program"]["state"] == "unknown"
+    assert report["program"]["error_class"] == "submission_ambiguous"
 
 
 def test_compute_operator_rejects_scientific_fields_and_missing_required_action(tmp_path: Path) -> None:
@@ -431,13 +521,12 @@ def test_compute_inspect_accepts_failed_status_plus_tail_as_partial_diagnostic(t
 
     completed = _validate_operator_output(tmp_path, packet, actions, report)
     result = json.loads(completed.stdout)
-    expected_ref = (
-        f"nodes/n002/agent-runs/{packet['task_id']}/actions.json#/actions/1/result"
-    )
+    expected_ref = f"nodes/n002/agent-runs/{packet['task_id']}/actions.json#/actions/0/result"
 
     assert result["outcome"] == "partial"
     assert result["facts"][0]["basis_refs"] == [expected_ref]
-    assert result["facts"][0]["kind"] == "program_status"
+    assert result["facts"][0]["kind"] == "inspection"
+    assert result["facts"][0]["status"] == "observed"
     assert "artifact_ref" not in result["facts"][0]
     assert result["program"]["outcome"] == "not_run"
     assert not ({"claim_verdict", "hypothesis_status", "accepted_ts"} & set(result))
@@ -447,7 +536,7 @@ def _validate_operator_output(
     tmp_path: Path,
     packet: dict[str, object],
     actions: list[dict[str, object]],
-    report: dict[str, object],
+    report: dict[str, object] | str,
     *,
     check: bool = True,
     fenced: bool = False,
@@ -458,7 +547,7 @@ def _validate_operator_output(
         "const fs=require('node:fs');"
         f"const helper=require({json.dumps(str(OUTPUT_SCHEMA))});"
         "const input=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
-        "const text=JSON.stringify(input.report);"
+        "const text=typeof input.report==='string' ? input.report : JSON.stringify(input.report);"
         f"const output={json.dumps(fenced)} ? '```json\\n'+text+'\\n```' : text;"
         "try { process.stdout.write(JSON.stringify(helper.parseAndValidateOperatorReport(output,input.packet,input.actions))); }"
         "catch(error){ process.stderr.write(String(error.message||error)); process.exitCode=2; }"

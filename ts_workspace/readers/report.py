@@ -84,6 +84,10 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
         "branch_events": branch_events,
         "agent_runs": operations["agent_runs"],
         "pending_controls": operations["pending_controls"],
+        "unresolved_controls": operations["unresolved_controls"],
+        "ambiguous_submissions": operations["ambiguous_submissions"],
+        "ambiguous_cancellations": operations["ambiguous_cancellations"],
+        "retryable_controls": operations["retryable_controls"],
         "operational_summary": operations["operational_summary"],
         "workspace_state_refs": {
             "workspace_identity": IDENTITY_REF,

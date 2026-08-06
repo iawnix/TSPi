@@ -16,7 +16,7 @@ from . import __version__
 from .audit import AuditLogger
 from .auth import AuthRegistry, Principal
 from .config import AppConfig, SoftwareProfile
-from .errors import ConfigurationError, SecurityError
+from .errors import ConfigurationError, SchedulerError, SecurityError
 from .models import (
     JobSubmission,
     ResourceRequest,
@@ -599,12 +599,27 @@ class ClusterService:
             )
         except Exception as exc:
             self.ts_submissions.mark_ambiguous(submission_id, exc)
+            record = self.ts_submissions.get(submission_id)
+            result = {
+                "schema_version": "ts-cluster-submission-result/1",
+                "submission_id": submission_id,
+                "intent_id": normalized["intent_id"],
+                "intent_digest": normalized["intent_digest"],
+                "node_id": normalized["node_id"],
+                "backend": normalized["backend"],
+                "job_id": record.get("job_id"),
+                "state": "ambiguous",
+                "expected_artifacts": normalized["expected_artifacts"],
+                "scheduler": None,
+                "error": record.get("error"),
+                "replayed": False,
+            }
             self.audit.write(
                 "ts_job.submit",
                 success=False,
                 details={"submission_id": submission_id, "intent_id": normalized["intent_id"]},
             )
-            raise
+            return result
         self.audit.write(
             "ts_job.submit",
             success=True,
@@ -619,16 +634,111 @@ class ClusterService:
     def get_ts_submission(self, submission_id: str, *, include_history: bool = False) -> dict[str, Any]:
         principal = self._require_any("ts:read")
         validated = validate_ts_submission_id(submission_id)
-        record = self.ts_submissions.get(validated)
+        record = self.ts_submissions.find(validated)
+        if record is None:
+            return {
+                "schema_version": "ts-cluster-submission/1",
+                "submission_id": validated,
+                "found": False,
+                "state": "not_found",
+                "job_id": None,
+                "scheduler": None,
+                "scheduler_query": {
+                    "outcome": "not_run",
+                    "error_class": None,
+                    "message": None,
+                },
+            }
         if record["principal"] != principal.name:
             raise SecurityError("Client may only query its own TS submissions")
         job_id = record.get("job_id")
         scheduler = None
+        scheduler_query = {
+            "outcome": "not_run",
+            "error_class": None,
+            "message": None,
+        }
         if isinstance(job_id, str) and job_id:
-            scheduler = self.scheduler.get_job(job_id, include_history=include_history)
+            try:
+                scheduler = self.scheduler.get_job(job_id, include_history=include_history)
+            except SchedulerError as exc:
+                scheduler_query = {
+                    "outcome": "failed",
+                    "error_class": "history_unavailable" if include_history else "scheduler_unavailable",
+                    "message": f"{type(exc).__name__}: {exc}"[:2000],
+                }
+            else:
+                scheduler_query = {
+                    "outcome": "succeeded",
+                    "error_class": None,
+                    "message": None,
+                }
+        if scheduler is not None:
             if scheduler.get("owner") != self.actor:
                 raise SecurityError("TS submission job is not owned by the server user")
-        return {**record, "scheduler": scheduler}
+        return {
+            **record,
+            "found": True,
+            "scheduler": scheduler,
+            "scheduler_query": scheduler_query,
+        }
+
+    def control_health(self) -> dict[str, Any]:
+        self._require_any("ts:read")
+        components: dict[str, dict[str, Any]] = {}
+        try:
+            registry = self.ts_submissions.health()
+        except Exception as exc:
+            components["submission_registry"] = {
+                "outcome": "failed",
+                "error_class": type(exc).__name__,
+                "message": str(exc)[:2000],
+            }
+        else:
+            components["submission_registry"] = {"outcome": "succeeded", **registry}
+
+        try:
+            metadata = self.policy.root.lstat()
+            with os.scandir(self.policy.root) as entries:
+                next(entries, None)
+            storage_ok = (
+                stat.S_ISDIR(metadata.st_mode)
+                and not stat.S_ISLNK(metadata.st_mode)
+                and os.access(self.policy.root, os.R_OK | os.W_OK | os.X_OK)
+            )
+        except OSError as exc:
+            components["workspace_storage"] = {
+                "outcome": "failed",
+                "error_class": type(exc).__name__,
+                "message": str(exc)[:2000],
+            }
+        else:
+            components["workspace_storage"] = {
+                "outcome": "succeeded" if storage_ok else "failed",
+                "error_class": None if storage_ok else "workspace_root_invalid",
+                "message": None,
+            }
+
+        gaussian = self.software.profiles.get("gaussian")
+        components["gaussian_profile"] = {
+            "outcome": (
+                "succeeded"
+                if gaussian is not None
+                and (gaussian.activation_script is None or gaussian.activation_script.is_file())
+                else "failed"
+            ),
+            "configured": gaussian is not None,
+            "activation_script_exists": (
+                gaussian.activation_script.is_file()
+                if gaussian is not None and gaussian.activation_script is not None
+                else gaussian is not None
+            ),
+        }
+        return {
+            "schema_version": "ts-cluster-control-health/1",
+            "ok": all(item.get("outcome") == "succeeded" for item in components.values()),
+            "components": components,
+        }
 
     def cancel_ts_submission(self, submission_id: str, *, confirmation: str) -> dict[str, Any]:
         principal = self._require_any("ts:control")
