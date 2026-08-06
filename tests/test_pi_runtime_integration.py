@@ -15,7 +15,7 @@ from pathlib import Path
 
 import pytest
 
-from strict_helpers import bootstrap_strict_workspace
+from strict_helpers import bootstrap_strict_workspace, start_research_node
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -306,6 +306,126 @@ def test_real_pi_compute_child_session_uses_only_bound_prepare_tool(tmp_path: Pa
     assert "xTB Backend Policy" not in compute_messages
     assert "Execute this bounded compute operation" in requests[0]["messages"][-1]["content"][0]["text"]
     assert any(message.get("role") == "tool" for message in requests[1]["messages"])
+
+
+def test_real_pi_public_compute_prepare_uses_canonical_cli_result(tmp_path: Path) -> None:
+    pi = _pi_binary()
+    if pi is None:
+        pytest.skip("Pi executable is not installed")
+    workspace = tmp_path / "workspace"
+    report_ref = bootstrap_strict_workspace(workspace)
+    start_research_node(
+        workspace,
+        report_ref,
+        node_id="n001",
+        node_type="validation",
+        scope="tsfreq",
+    )
+    input_ref = "nodes/n001/inputs/candidate.gjf"
+    input_path = workspace / input_ref
+    input_path.parent.mkdir(parents=True, exist_ok=True)
+    input_path.write_text(
+        "%chk=candidate.chk\n#P HF/STO-3G opt=(ts,calcfc) freq\n\nTest\n\n0 1\nH 0 0 0\n\n",
+        encoding="utf-8",
+    )
+    intent_id = "calc_n001_dev_prepare_001"
+    intent_ref = f"nodes/n001/scratch/{intent_id}.json"
+    intent = {
+        "schema_version": "ts-calculation-intent/2",
+        "intent_id": intent_id,
+        "node_id": "n001",
+        "purpose": "Exercise the public compute prepare boundary without running a program.",
+        "validation_scope": "tsfreq",
+        "attempt_kind": "primary",
+        "recalculation_ref": None,
+        "backend": "gaussian",
+        "task_type": "opt_freq",
+        "input_refs": {"gjf": input_ref},
+        "settings": {},
+        "expected_artifacts": [f"nodes/n001/attempts/{intent_id}/outputs/candidate.log"],
+        "execution_target": {"kind": "local"},
+        "dry_run": True,
+    }
+    (workspace / intent_ref).write_text(json.dumps(intent), encoding="utf-8")
+    agent_dir = tmp_path / "pi-agent"
+    agent_dir.mkdir()
+    env = {
+        **os.environ,
+        "PI_CODING_AGENT_DIR": str(agent_dir),
+        "PI_OFFLINE": "1",
+        "TS_AGENT_PYTHON": sys.executable,
+        "TS_WORKSPACE_ROOT": str(workspace),
+    }
+    requests: list[dict[str, object]] = []
+    responses = [
+        _tool_call_chunks(
+            "ts_subagent_compute",
+            {
+                "operation": "prepare",
+                "backend": "gaussian",
+                "nodeId": "n001",
+                "intentFile": intent_ref,
+            },
+        ),
+        _tool_call_chunks("ts_workspace_compute_prepare"),
+        _assistant_text_chunks('{"summary":"The typed prepare action completed.","limitations":[]}'),
+        _assistant_text_chunks("The compute preparation test finished."),
+    ]
+    with _recording_server(requests, responses) as base_url:
+        _write_recording_model(agent_dir, base_url)
+        installed = subprocess.run(
+            [pi, "install", "-l", str(ROOT), "--approve"],
+            cwd=workspace,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=45,
+            check=False,
+        )
+        assert installed.returncode == 0, installed.stderr
+        completed = _run_rpc_until(
+            [
+                pi,
+                "--mode",
+                "rpc",
+                "--offline",
+                "--no-session",
+                "--session-dir",
+                str(tmp_path / "pi-sessions"),
+                "--no-context-files",
+                "--no-builtin-tools",
+                "--approve",
+                "--model",
+                "ts-recording/recording-model",
+            ],
+            cwd=workspace,
+            env=env,
+            command={"id": "compute", "type": "prompt", "message": "Prepare the bound test calculation."},
+            notification_prefix='"type":"agent_end"',
+            timeout=60,
+        )
+
+    assert completed.returncode == 0, completed.stderr
+    assert len(requests) == 4
+    run_dirs = list((workspace / "nodes/n001/agent-runs").glob("agent_*"))
+    assert len(run_dirs) == 1
+    run = json.loads((run_dirs[0] / "run.json").read_text(encoding="utf-8"))
+    actions = json.loads((run_dirs[0] / "actions.json").read_text(encoding="utf-8"))["actions"]
+    report = json.loads((run_dirs[0] / "result.json").read_text(encoding="utf-8"))
+    canonical = actions[0]["result"]["result"]
+    assert run["status"] == "completed"
+    assert actions[0]["result"]["action_status"] == "completed"
+    assert canonical["schema_version"] == "ts-calculation-result/1"
+    assert canonical["state"] == "prepared"
+    assert canonical["program_status"] == "not_run"
+    assert "prepared" not in canonical
+    assert report["program"] == {
+        "outcome": "not_run",
+        "state": "prepared",
+        "error_class": None,
+        "exit_status": None,
+    }
 
 
 @pytest.mark.parametrize("outcome", ["success", "failure"])

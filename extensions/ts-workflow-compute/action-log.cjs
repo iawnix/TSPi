@@ -24,6 +24,17 @@ function completeAction(action, raw, toolName) {
   return raw;
 }
 
+function extractComputeToolResult(raw, toolName) {
+  if (!isPlainObject(raw)) throw new Error(`${toolName} returned a non-object result`);
+  if (["ts-calculation-result/1", "ts-calculation-tail/1"].includes(raw.schema_version)) {
+    return raw;
+  }
+  if (isPlainObject(raw.result) && raw.result.schema_version === "ts-calculation-result/1") {
+    return raw.result;
+  }
+  throw new Error(`${toolName} returned no canonical compute result`);
+}
+
 function failAction(action, error, context) {
   const diagnostic = sanitizeActionError(error);
   const result = {
@@ -95,6 +106,7 @@ module.exports = {
   MAX_DIAGNOSTIC_LENGTH,
   actionStatusForResult,
   completeAction,
+  extractComputeToolResult,
   failAction,
   formatFailedActionError,
   reserveAction,

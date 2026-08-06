@@ -21,6 +21,7 @@ const { beginAgentRun, completeAgentRun, failAgentRun } = require("../../src/age
 const { classifyUpstreamModelFailure } = require("../../src/agent-core/failure-taxonomy.cjs");
 const {
   completeAction,
+  extractComputeToolResult,
   failAction,
   formatFailedActionError,
   reserveAction,
@@ -464,7 +465,12 @@ function createScopedComputeTools(
       async execute(_toolCallId, _params, signal) {
         const action = reserveAction(actions, name);
         try {
-          const result = completeAction(action, await run(signal), name) as Record<string, unknown>;
+          const raw = await run(signal);
+          const result = completeAction(
+            action,
+            extractComputeToolResult(raw, name),
+            name,
+          ) as Record<string, unknown>;
           return toolText(JSON.stringify(result, null, 2), { result });
         } catch (error) {
           const failed = failAction(action, error, request) as Record<string, unknown>;

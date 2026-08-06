@@ -288,6 +288,30 @@ def test_compute_action_log_marks_ambiguous_control_as_unknown() -> None:
     assert action["result"]["result"]["state"] == "unknown"
 
 
+def test_compute_action_log_extracts_prepare_result_from_cli_envelope() -> None:
+    script = (
+        f"const helper=require({json.dumps(str(ACTION_LOG))});"
+        "const canonical={schema_version:'ts-calculation-result/1',state:'prepared',program_status:'not_run'};"
+        "const raw={intent:{intent_id:'calc_test'},prepared:{intent_id:'calc_test'},result:canonical};"
+        "process.stdout.write(JSON.stringify(helper.extractComputeToolResult(raw,'ts_workspace_compute_prepare')));"
+    )
+    completed = subprocess.run(
+        ["node", "-e", script],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+
+    result = json.loads(completed.stdout)
+    assert result == {
+        "schema_version": "ts-calculation-result/1",
+        "state": "prepared",
+        "program_status": "not_run",
+    }
+
+
 def test_compute_control_has_no_interactive_authorization_gate() -> None:
     source = (ROOT / "extensions" / "ts-workflow-compute" / "index.ts").read_text(encoding="utf-8")
     prompt = (COMPUTE_AGENT / "prompt.md").read_text(encoding="utf-8")
