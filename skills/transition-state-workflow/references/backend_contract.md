@@ -25,6 +25,12 @@ artifact. The parser records a digest for each consumed input. It must report
 execution completion, requested-task completion, convergence, and artifact
 completeness separately.
 
-xTB supports `sp`, `opt`, `freq`, `opt_freq`, and `md`. CREST is a separate
-`crest/conformer_search` backend because its command lifecycle and ensemble
-artifacts are not xTB task artifacts.
+xTB supports `sp`, `opt`, `freq`, `opt_freq`, `scan`, and `md`. A scan binds
+exactly one XYZ input and one control input. The control file is limited to
+numbered distance, angle, or dihedral constraints in `$constrain` and sequential
+or concerted directives in `$scan`; arbitrary xTB sections and command arguments
+remain forbidden. Scan parsing binds `xtb.out`, `xtbscan.log`, `xtbopt.xyz`, and
+the control input, and reports target coordinates, geometry-derived actual
+coordinates, and energies without embedding full structures in JSON. CREST is a
+separate `crest/conformer_search` backend because its command lifecycle and
+ensemble artifacts are not xTB task artifacts.

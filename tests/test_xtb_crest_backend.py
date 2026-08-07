@@ -8,7 +8,12 @@ import pytest
 from strict_helpers import bootstrap_strict_workspace, start_research_node
 from ts_backends.base import BackendTask
 from ts_backends.crest import prepare_crest
-from ts_backends.xtb import parse_vibrational_spectrum, parse_xtb_artifacts, prepare_xtb
+from ts_backends.xtb import (
+    parse_vibrational_spectrum,
+    parse_xtb_artifacts,
+    prepare_xtb,
+)
+from ts_backends.xtb_scan import parse_xtb_scan_control
 from ts_compute import ComputeContractError, parse_calculation, prepare_calculation
 from ts_workspace.io import sha256_json
 
@@ -19,12 +24,16 @@ def test_xtb_prepares_typed_task_matrix() -> None:
         "opt": (["--opt", "tight"], ["xtbopt.xyz", "xtb.out"]),
         "freq": (["--hess"], ["vibspectrum", "xtb.out"]),
         "opt_freq": (["--ohess", "tight"], ["xtbopt.xyz", "vibspectrum", "xtb.out"]),
+        "scan": (
+            ["--opt", "tight", "--input", "scan.inp"],
+            ["xtbscan.log", "xtbopt.xyz", "xtb.out"],
+        ),
         "md": (["--md", "--input", "md.inp"], ["xtb.trj", "xtb.out"]),
     }
     for task_type, (task_args, artifacts) in expected.items():
         inputs = {"xyz": "candidate.xyz"}
-        if task_type == "md":
-            inputs["control"] = "md.inp"
+        if task_type in {"scan", "md"}:
+            inputs["control"] = f"{task_type}.inp"
         settings = {
             "charge": "-1",
             "uhf": "1",
@@ -32,7 +41,7 @@ def test_xtb_prepares_typed_task_matrix() -> None:
             "solvent_model": "alpb",
             "solvent": "water",
         }
-        if task_type in {"opt", "opt_freq"}:
+        if task_type in {"opt", "opt_freq", "scan"}:
             settings["opt_level"] = "tight"
         prepared = prepare_xtb(
             BackendTask(
@@ -58,16 +67,90 @@ def test_xtb_prepares_typed_task_matrix() -> None:
         assert prepared.expected_artifacts == artifacts
 
 
-def test_xtb_md_requires_bound_control_input() -> None:
+@pytest.mark.parametrize("task_type", ["scan", "md"])
+def test_xtb_control_tasks_require_bound_control_input(task_type: str) -> None:
     with pytest.raises(ValueError, match="input roles"):
         prepare_xtb(
             BackendTask(
                 node_id="n001",
-                task_type="md",
+                task_type=task_type,
                 work_dir="nodes/n001",
                 inputs={"xyz": "candidate.xyz"},
             )
         )
+
+
+def test_xtb_scan_control_accepts_numbered_geometry_constraints(tmp_path: Path) -> None:
+    control = tmp_path / "scan.inp"
+    control.write_text(
+        "\n".join(
+            [
+                "$constrain",
+                "  force constant=1.0",
+                "  distance: 1, 2, auto",
+                "  angle: 1, 2, 3, 90.0",
+                "  dihedral: 1, 2, 3, 4, 180.0",
+                "$scan",
+                "  mode=concerted",
+                "  1: 0.9, 1.1, 3",
+                "  2: 85.0, 95.0, 3",
+                "  3: 170.0, 190.0, 3",
+                "$end",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    plan = parse_xtb_scan_control(control, atom_count=4)
+
+    assert plan.mode == "concerted"
+    assert plan.point_count == 3
+    assert [constraint.kind for constraint in plan.constraints] == [
+        "distance",
+        "angle",
+        "dihedral",
+    ]
+    assert [directive.constraint_index for directive in plan.directives] == [1, 2, 3]
+
+
+@pytest.mark.parametrize(
+    ("content", "message"),
+    [
+        ("$constrain\n distance: 1, 2, auto\n$end\n", "both.*sections"),
+        (
+            "$constrain\n distance: 1, 4, auto\n$scan\n 1: 1.0, 2.0, 3\n$end\n",
+            "atom index exceeds",
+        ),
+        (
+            "$constrain\n distance: 1, 2, auto\n$scan\n 2: 1.0, 2.0, 3\n$end\n",
+            "undefined constraint",
+        ),
+        (
+            "$constrain\n distance: 1, 2, auto\n$scan\n 1: -1.0, 2.0, 3\n$end\n",
+            "endpoints must be positive",
+        ),
+        (
+            "$constrain\n distance: 1, 2, auto\n$scan\n mode=concerted\n"
+            " 1: 1.0, 2.0, 3\n 1: 2.0, 1.0, 4\n$end\n",
+            "equal step counts",
+        ),
+        (
+            "$constrain\n distance: 1, 2, auto\n$metadyn\n save=10\n$scan\n"
+            " 1: 1.0, 2.0, 3\n$end\n",
+            "unsupported.*section",
+        ),
+    ],
+)
+def test_xtb_scan_control_rejects_unsafe_or_inconsistent_input(
+    tmp_path: Path,
+    content: str,
+    message: str,
+) -> None:
+    control = tmp_path / "scan.inp"
+    control.write_text(content, encoding="utf-8")
+
+    with pytest.raises(ValueError, match=message):
+        parse_xtb_scan_control(control, atom_count=3)
 
 
 def test_crest_prepares_distinct_conformer_search_backend() -> None:
@@ -257,6 +340,111 @@ def test_xtb_vibrational_parser_accepts_raman_columns(tmp_path: Path) -> None:
     assert parse_vibrational_spectrum(spectrum) == [-0.0, -125.5, 1539.11]
 
 
+def test_xtb_scan_parse_binds_control_points_coordinates_and_energies(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    intent_path = _intent(workspace, "xtb", "scan")
+    prepared = prepare_calculation(workspace, intent_path)["prepared"]
+    output_dir = _output_dir(workspace, prepared["intent_id"])
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "xtb.out").write_text(_xtb_scan_log(), encoding="utf-8")
+    (output_dir / "xtbscan.log").write_text(
+        _scan_xyz(-5.10, 0.90) + _scan_xyz(-5.20, 1.00) + _scan_xyz(-5.15, 1.10),
+        encoding="utf-8",
+    )
+    (output_dir / "xtbopt.xyz").write_text(_xyz(-5.15), encoding="utf-8")
+
+    result = parse_calculation(
+        workspace,
+        prepared["intent_id"],
+        (output_dir / "xtb.out").relative_to(workspace).as_posix(),
+    )
+
+    facts = result["parser_facts"]
+    assert result["program_status"] == "completed"
+    assert facts["scan_mode"] == "sequential"
+    assert facts["scan_expected_point_count"] == 3
+    assert facts["scan_point_count"] == 3
+    assert facts["scan_min_energy_hartree"] == pytest.approx(-5.20)
+    assert facts["scan_complete"] is True
+    assert len(result["provenance"]["parser_inputs"]) == 4
+    parsed = json.loads((output_dir / "parsed/scan_points.json").read_text(encoding="utf-8"))
+    assert parsed["schema_version"] == "xtb-scan-points/1"
+    assert [point["coordinates"][0]["target_value"] for point in parsed["points"]] == [
+        0.9,
+        1.0,
+        1.1,
+    ]
+    assert [point["coordinates"][0]["actual_value"] for point in parsed["points"]] == pytest.approx(
+        [0.9, 1.0, 1.1]
+    )
+    assert all("coordinates" not in constraint for constraint in parsed["constraints"])
+
+
+def test_xtb_concerted_scan_parser_handles_distance_angle_and_dihedral(tmp_path: Path) -> None:
+    control = tmp_path / "scan.inp"
+    control.write_text(
+        "\n".join(
+            [
+                "$constrain",
+                "  distance: 1, 2, auto",
+                "  angle: 1, 2, 3, auto",
+                "  dihedral: 1, 2, 3, 4, auto",
+                "$scan",
+                "  mode=concerted",
+                "  1: 1.0, 1.1, 2",
+                "  2: 90.0, 100.0, 2",
+                "  3: -90.0, 90.0, 2",
+                "$end",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "xtb.out"
+    output.write_text(_xtb_scan_log(), encoding="utf-8")
+    trajectory = tmp_path / "xtbscan.log"
+    trajectory.write_text(_four_atom_scan_xyz(-5.0) + _four_atom_scan_xyz(-4.9), encoding="utf-8")
+    optimized = tmp_path / "xtbopt.xyz"
+    optimized.write_text(_four_atom_scan_xyz(-4.9), encoding="utf-8")
+
+    parsed = parse_xtb_artifacts(
+        "scan",
+        {"xtb.out": output, "xtbscan.log": trajectory, "xtbopt.xyz": optimized},
+        control=control,
+    )
+
+    assert parsed["summary"]["task_completed"] is True
+    first = parsed["scan_points"]["points"][0]["coordinates"]
+    assert [coordinate["kind"] for coordinate in first] == ["distance", "angle", "dihedral"]
+    assert first[0]["actual_value"] == pytest.approx(1.0)
+    assert first[1]["actual_value"] == pytest.approx(90.0)
+    assert first[2]["actual_value"] == pytest.approx(90.0)
+
+
+def test_xtb_scan_parser_rejects_an_incomplete_point_series(tmp_path: Path) -> None:
+    control = tmp_path / "scan.inp"
+    control.write_text(
+        "$constrain\n  distance: 1, 2, auto\n$scan\n  1: 0.9, 1.1, 3\n$end\n",
+        encoding="utf-8",
+    )
+    output = tmp_path / "xtb.out"
+    output.write_text(_xtb_scan_log(), encoding="utf-8")
+    trajectory = tmp_path / "xtbscan.log"
+    trajectory.write_text(_scan_xyz(-5.10, 0.90) + _scan_xyz(-5.20, 1.00), encoding="utf-8")
+    optimized = tmp_path / "xtbopt.xyz"
+    optimized.write_text(_xyz(-5.20), encoding="utf-8")
+
+    parsed = parse_xtb_artifacts(
+        "scan",
+        {"xtb.out": output, "xtbscan.log": trajectory, "xtbopt.xyz": optimized},
+        control=control,
+    )
+
+    assert parsed["summary"]["scan_expected_point_count"] == 3
+    assert parsed["summary"]["scan_point_count"] == 2
+    assert parsed["summary"]["scan_complete"] is False
+    assert parsed["summary"]["task_completed"] is False
+
+
 def test_xtb_md_parse_reports_trajectory_without_embedding_coordinates(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     intent_path = _intent(workspace, "xtb", "md")
@@ -357,6 +545,18 @@ def test_xtb_prepare_requires_task_artifacts_in_intent(tmp_path: Path) -> None:
         prepare_calculation(workspace, intent_path)
 
 
+def test_xtb_scan_prepare_rejects_invalid_bound_control_before_execution(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    (workspace / "nodes/n001/inputs/scan.inp").write_text(
+        "$constrain\n  distance: 1, 2, auto\n$metadyn\n  save=10\n$end\n",
+        encoding="utf-8",
+    )
+    intent_path = _intent(workspace, "xtb", "scan")
+
+    with pytest.raises(ComputeContractError, match="invalid xTB scan control.*unsupported.*section"):
+        prepare_calculation(workspace, intent_path)
+
+
 def _workspace(tmp_path: Path) -> Path:
     workspace = tmp_path / "workspace"
     report_ref = bootstrap_strict_workspace(workspace)
@@ -374,6 +574,11 @@ def _workspace(tmp_path: Path) -> Path:
         "$md\n  time=0.1\n  step=1.0\n  temp=300\n  dump=10\n$end\n",
         encoding="utf-8",
     )
+    (inputs / "scan.inp").write_text(
+        "$constrain\n  force constant=1.0\n  distance: 1, 2, auto\n"
+        "$scan\n  1: 0.9, 1.1, 3\n$end\n",
+        encoding="utf-8",
+    )
     return workspace
 
 
@@ -384,6 +589,7 @@ def _intent(workspace: Path, backend: str, task_type: str) -> Path:
         ("xtb", "opt"): ["xtb.out", "xtbopt.xyz"],
         ("xtb", "freq"): ["xtb.out", "vibspectrum"],
         ("xtb", "opt_freq"): ["xtb.out", "xtbopt.xyz", "vibspectrum"],
+        ("xtb", "scan"): ["xtb.out", "xtbscan.log", "xtbopt.xyz"],
         ("xtb", "md"): ["xtb.out", "xtb.trj"],
         ("crest", "conformer_search"): [
             "crest.out",
@@ -404,7 +610,11 @@ def _intent(workspace: Path, backend: str, task_type: str) -> Path:
         "task_type": task_type,
         "input_refs": {
             "xyz": "nodes/n001/inputs/candidate.xyz",
-            **({"control": "nodes/n001/inputs/md.inp"} if task_type == "md" else {}),
+            **(
+                {"control": f"nodes/n001/inputs/{task_type}.inp"}
+                if task_type in {"scan", "md"}
+                else {}
+            ),
         },
         "settings": {},
         "expected_artifacts": [
@@ -439,6 +649,45 @@ def _crest_xyz(energy: float) -> str:
         "O 0.000000 0.000000 0.000000\n"
         "H 0.758602 0.000000 0.504284\n"
         "H -0.758602 0.000000 0.504284\n"
+    )
+
+
+def _scan_xyz(energy: float, distance: float) -> str:
+    return (
+        "3\n"
+        f"energy: {energy:.12f} xtb: 6.7.1\n"
+        "O 0.000000 0.000000 0.000000\n"
+        f"H {distance:.6f} 0.000000 0.000000\n"
+        "H 0.000000 0.900000 0.000000\n"
+    )
+
+
+def _four_atom_scan_xyz(energy: float) -> str:
+    return (
+        "4\n"
+        f"energy: {energy:.12f} xtb: 6.7.1\n"
+        "C 0.000000 0.000000 0.000000\n"
+        "C 1.000000 0.000000 0.000000\n"
+        "C 1.000000 1.000000 0.000000\n"
+        "C 1.000000 1.000000 1.000000\n"
+    )
+
+
+def _xtb_scan_log() -> str:
+    return "\n".join(
+        [
+            "* xtb version 6.7.1 (test)",
+            "program call               : xtb candidate.xyz --opt normal --input scan.inp",
+            "Hamiltonian                  GFN2-xTB",
+            "net charge                          0",
+            "unpaired electrons                  0",
+            "*** convergence criteria satisfied after 8 iterations ***",
+            "RELAXED SCAN",
+            "output written to xtbscan.log",
+            "| TOTAL ENERGY               -5.150000000000 Eh   |",
+            "* finished run on 2026/08/07 at 17:48:15.853",
+            "normal termination of xtb",
+        ]
     )
 
 

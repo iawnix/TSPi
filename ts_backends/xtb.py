@@ -8,15 +8,17 @@ from pathlib import Path
 from typing import Any
 
 from .base import Backend, BackendTask, PreparedTask
+from .xtb_scan import parse_xtb_scan_artifact
 from .xyz import xyz_frame_metadata
 
 
-XTB_TASK_TYPES = frozenset({"sp", "opt", "freq", "opt_freq", "md"})
+XTB_TASK_TYPES = frozenset({"sp", "opt", "freq", "opt_freq", "scan", "md"})
 XTB_ARTIFACTS = {
     "sp": ("xtb.out",),
     "opt": ("xtbopt.xyz", "xtb.out"),
     "freq": ("vibspectrum", "xtb.out"),
     "opt_freq": ("xtbopt.xyz", "vibspectrum", "xtb.out"),
+    "scan": ("xtbscan.log", "xtbopt.xyz", "xtb.out"),
     "md": ("xtb.trj", "xtb.out"),
 }
 XTB_REQUIRED_ARTIFACTS = {
@@ -38,14 +40,14 @@ _FLOAT = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[EeDd][-+]?\d+)?"
 def prepare_xtb(task: BackendTask) -> PreparedTask:
     if task.task_type not in XTB_TASK_TYPES:
         raise ValueError(f"unsupported xTB task_type: {task.task_type}")
-    required_inputs = {"xyz", "control"} if task.task_type == "md" else {"xyz"}
+    required_inputs = {"xyz", "control"} if task.task_type in {"scan", "md"} else {"xyz"}
     if set(task.inputs) != required_inputs:
         raise ValueError(
             f"xTB {task.task_type} input roles must be exactly {sorted(required_inputs)}"
         )
 
     allowed_settings = set(_COMMON_SETTINGS)
-    if task.task_type in {"opt", "opt_freq"}:
+    if task.task_type in {"opt", "opt_freq", "scan"}:
         allowed_settings.update({"max_cycles", "opt_level"})
     unknown = sorted(set(task.settings) - allowed_settings)
     if unknown:
@@ -61,6 +63,8 @@ def prepare_xtb(task: BackendTask) -> PreparedTask:
         command.append("--hess")
     elif task.task_type == "opt_freq":
         command.extend(["--ohess", _opt_level(task.settings)])
+    elif task.task_type == "scan":
+        command.extend(["--opt", _opt_level(task.settings), "--input", task.inputs["control"]])
     else:
         command.extend(["--md", "--input", task.inputs["control"]])
     command.extend(_common_xtb_args(task.settings))
@@ -75,7 +79,12 @@ def prepare_xtb(task: BackendTask) -> PreparedTask:
     )
 
 
-def parse_xtb_artifacts(task_type: str, artifacts: dict[str, Path]) -> dict[str, Any]:
+def parse_xtb_artifacts(
+    task_type: str,
+    artifacts: dict[str, Path],
+    *,
+    control: Path | None = None,
+) -> dict[str, Any]:
     if task_type not in XTB_TASK_TYPES:
         raise ValueError(f"unsupported xTB task_type: {task_type}")
     log = artifacts.get("xtb.out")
@@ -131,7 +140,7 @@ def parse_xtb_artifacts(task_type: str, artifacts: dict[str, Path]) -> dict[str,
     }
 
     details: dict[str, Any] = {}
-    if task_type in {"opt", "opt_freq"} and "xtbopt.xyz" in artifacts:
+    if task_type in {"opt", "opt_freq", "scan"} and "xtbopt.xyz" in artifacts:
         geometry = xyz_frame_metadata(artifacts["xtbopt.xyz"])
         summary["optimized_geometry_atom_count"] = geometry["atom_count"]
         summary["optimized_geometry_energy_hartree"] = geometry["frames"][0].get("energy_hartree")
@@ -148,6 +157,17 @@ def parse_xtb_artifacts(task_type: str, artifacts: dict[str, Path]) -> dict[str,
             }
         )
         details["frequencies_cm-1"] = frequencies
+    if task_type == "scan":
+        if control is None:
+            raise ValueError("xTB scan parsing requires the bound control input")
+        scan = parse_xtb_scan_artifact(control, artifacts.get("xtbscan.log"))
+        scan_detected = "RELAXED SCAN" in text
+        summary.update(scan["summary"])
+        summary["scan_detected"] = scan_detected
+        summary["scan_complete"] = bool(
+            scan_detected and summary.pop("scan_data_complete")
+        )
+        details["scan_points"] = scan["points"]
     if task_type == "md":
         summary.update(_parse_md_log(text))
         if "xtb.trj" in artifacts:
@@ -197,6 +217,8 @@ def write_xtb_parse_artifacts(parsed: dict[str, Any], output_dir: Path) -> list[
                 },
             )
         )
+    if "scan_points" in parsed:
+        written.append(_write_json(output_dir / "scan_points.json", parsed["scan_points"]))
     return written
 
 
@@ -283,6 +305,8 @@ def _xtb_task_completed(task_type: str, summary: dict[str, Any]) -> bool:
         return common and bool(summary.get("frequency_count"))
     if task_type == "opt_freq":
         return common and bool(summary["optimization_converged"] and summary.get("frequency_count"))
+    if task_type == "scan":
+        return common and bool(summary.get("scan_complete"))
     return common and bool(summary.get("md_completed")) and bool(summary.get("trajectory_frame_count"))
 
 

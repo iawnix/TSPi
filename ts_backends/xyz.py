@@ -11,6 +11,18 @@ _FLOAT = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[EeDd][-+]?\d+)?"
 
 
 def xyz_frame_metadata(path: Path) -> dict[str, Any]:
+    parsed = read_xyz_frames(path)
+    return {
+        "atom_count": parsed["atom_count"],
+        "frame_count": len(parsed["frames"]),
+        "frames": [
+            {key: value for key, value in frame.items() if key != "coordinates"}
+            for frame in parsed["frames"]
+        ],
+    }
+
+
+def read_xyz_frames(path: Path) -> dict[str, Any]:
     lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
     frames: list[dict[str, Any]] = []
     atom_count: int | None = None
@@ -29,29 +41,46 @@ def xyz_frame_metadata(path: Path) -> dict[str, Any]:
             atom_count = count
         elif count != atom_count:
             raise ValueError(f"inconsistent XYZ atom counts in {path}")
-        _validate_coordinate_lines(path, lines[index + 2 : index + count + 2], index + 3)
+        coordinates = _coordinate_values(
+            path,
+            lines[index + 2 : index + count + 2],
+            index + 3,
+        )
         title = lines[index + 1].strip()
         energy = _first_float(title, rf"(?:^|\s)energy:\s*({_FLOAT})")
         if energy is None and re.fullmatch(rf"\s*{_FLOAT}\s*", title):
             energy = _number(title)
-        frames.append({"index": len(frames), "title": title, "energy_hartree": energy})
+        frames.append(
+            {
+                "index": len(frames),
+                "title": title,
+                "energy_hartree": energy,
+                "coordinates": coordinates,
+            }
+        )
         index += count + 2
     if not frames or atom_count is None:
         raise ValueError(f"XYZ artifact contains no frames: {path}")
-    return {"atom_count": atom_count, "frame_count": len(frames), "frames": frames}
+    return {"atom_count": atom_count, "frames": frames}
 
 
-def _validate_coordinate_lines(path: Path, lines: list[str], first_line: int) -> None:
+def _coordinate_values(
+    path: Path,
+    lines: list[str],
+    first_line: int,
+) -> list[tuple[float, float, float]]:
+    coordinates: list[tuple[float, float, float]] = []
     for offset, line in enumerate(lines):
         fields = line.split()
         if len(fields) < 4:
             raise ValueError(f"invalid XYZ coordinate at line {first_line + offset}: {path}")
         try:
-            tuple(_number(value) for value in fields[1:4])
+            coordinates.append(tuple(_number(value) for value in fields[1:4]))
         except ValueError as exc:
             raise ValueError(
                 f"invalid XYZ coordinate at line {first_line + offset}: {path}"
             ) from exc
+    return coordinates
 
 
 def _first_float(text: str, pattern: str) -> float | None:

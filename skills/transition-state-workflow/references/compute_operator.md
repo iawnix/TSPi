@@ -128,7 +128,9 @@ scientific verdict from its source.
 | Backend | Task types | Input roles | Backend policy |
 |---|---|---|---|
 | `gaussian` | `sp`, `opt`, `freq`, `opt_freq`, `irc` | `gjf` | `backends/gaussian.md` |
-| `xtb` | `opt` | `xyz` | `backends/xtb.md` |
+| `xtb` | `sp`, `opt`, `freq`, `opt_freq` | `xyz` | `backends/xtb.md` |
+| `xtb` | `scan`, `md` | `xyz`, `control` | `backends/xtb.md` |
+| `crest` | `conformer_search` | `xyz` | `backends/crest.md` |
 | `ase_neb` | `neb` | `reactant`, `product` | `backends/ase.md` |
 | `qbics_dmecp` | `dmecp` | `config` | `backends/qbics.md` |
 

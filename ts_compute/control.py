@@ -40,6 +40,8 @@ from ts_backends.xtb import (
     prepare_xtb,
     write_xtb_parse_artifacts,
 )
+from ts_backends.xtb_scan import parse_xtb_scan_control
+from ts_backends.xyz import xyz_frame_metadata
 from ts_remote import job_lifecycle
 from ts_remote.base import RemoteReceipt
 from ts_remote.mcp import (
@@ -71,6 +73,7 @@ BACKENDS: dict[str, dict[str, tuple[set[str], Callable[[BackendTask], PreparedTa
         "opt": ({"xyz"}, prepare_xtb),
         "freq": ({"xyz"}, prepare_xtb),
         "opt_freq": ({"xyz"}, prepare_xtb),
+        "scan": ({"xyz", "control"}, prepare_xtb),
         "md": ({"xyz", "control"}, prepare_xtb),
     },
     "crest": {"conformer_search": ({"xyz"}, prepare_crest)},
@@ -661,6 +664,11 @@ def parse_calculation(
         {"ref": ref, "sha256": _sha256_file(path)}
         for _, (ref, path) in sorted(parse_inputs.items())
     ]
+    xtb_control: Path | None = None
+    if backend == "xtb" and intent.get("task_type") == "scan":
+        control_ref = _workspace_ref(workspace, str(intent["input_refs"]["control"]), read=True)
+        xtb_control = workspace / control_ref
+        parser_inputs.append({"ref": control_ref, "sha256": _sha256_file(xtb_control)})
 
     _, _, output_ref = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]))
     result_path = workspace / output_ref / "calculation_result.json"
@@ -689,6 +697,7 @@ def parse_calculation(
         parsed = parse_xtb_artifacts(
             str(intent["task_type"]),
             {name: path for name, (_, path) in parse_inputs.items()},
+            control=xtb_control,
         )
     else:
         parsed = parse_crest_artifacts(
@@ -798,6 +807,16 @@ def _validate_backend_request(intent: dict[str, Any], inputs: dict[str, str], wo
             f"{backend} input roles must be exactly {sorted(required_inputs)}; "
             f"missing={missing}; unexpected={unexpected}"
         )
+    if backend == "xtb" and task_type == "scan":
+        try:
+            geometry = xyz_frame_metadata(workspace / inputs["xyz"])
+            parse_xtb_scan_control(
+                workspace / inputs["control"],
+                atom_count=int(geometry["atom_count"]),
+            )
+        except (OSError, UnicodeError, ValueError) as exc:
+            raise ComputeContractError(f"invalid xTB scan control input: {exc}") from exc
+        return
     if backend != "gaussian":
         return
     gjf = workspace / inputs["gjf"]
