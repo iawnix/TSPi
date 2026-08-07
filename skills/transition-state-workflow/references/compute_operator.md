@@ -238,7 +238,14 @@ The MCP endpoint, bearer token, and timeout are never intent data:
 export TS_CLUSTER_MCP_URL=https://cluster.example/mcp
 export TS_CLUSTER_MCP_TOKEN='<at-least-32-random-ascii-characters>'
 export TS_CLUSTER_MCP_TIMEOUT=60
+export TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT=15
 ```
+
+`TS_CLUSTER_MCP_TIMEOUT` applies to calculation and control calls.
+`TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT` is a separate per-component bound for
+read-only readiness probes. A diagnostic timeout means readiness is unknown and
+does not imply that configuration, authentication, or the MCP protocol failed.
+No remote action has occurred at that point.
 
 Do not place tokens, passwords, API keys, authorization values, or
 `TS_CLUSTER_MCP_*` settings in `execution.environment`; validation rejects

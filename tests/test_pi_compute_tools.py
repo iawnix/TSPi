@@ -83,10 +83,11 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     assert 'request.transport === "mcp"' in source
     assert "MCP_PREFLIGHT_OPERATIONS" in source
     assert 'request.operation === "submit" ? "doctor" : "status"' in source
-    assert '...(request.backend === "gaussian" ? ["gaussian_profile"] : [])' in source
+    assert "MCP_DIAGNOSTIC_TIMEOUT" in source
+    assert 'new Set(["gaussian", "xtb", "crest"])' in source
     assert "required components failed" in source
-    assert "server has no gaussian software profile" in source
-    assert "gaussian activation script is unavailable" in source
+    assert "server has no matching software profile" in source
+    assert "activation script is unavailable" in source
     assert "profile does not allow queue" in source
 
 
@@ -167,10 +168,16 @@ process.stdout.write(JSON.stringify({{ completions, successCalls, failureCalls: 
         ["status", "ts-workspace-mcp-command", None],
         ["widget", "ts-workspace-mcp", None],
     ]
-    assert result["failureMessage"] == "diagnostic process stopped"
+    assert result["failureMessage"] == (
+        "MCP doctor diagnostic process failed before returning a result; "
+        "no remote action was attempted"
+    )
     assert [
         "notify",
-        "TS Cluster MCP doctor stopped before a result was returned",
+        (
+            "MCP doctor diagnostic process failed before returning a result; "
+            "no remote action was attempted"
+        ),
         "error",
     ] in result["failureCalls"]
     assert result["failureCalls"][-2:] == [
@@ -203,8 +210,93 @@ def test_compute_cli_is_package_relative_and_runtime_aware() -> None:
     assert "findRuntimeWorkspaceRoot(cwd)" in shared
     assert 'join(current, ".agents", "runtime", "transition-state-workflow", "env.json")' in shared
     assert "AbortSignal.timeout(timeoutMs)" in shared
+    assert "MCP_DIAGNOSTIC_TIMEOUT" in shared
+    assert "no remote action was attempted" in shared
     assert "seed_workspace_root_from_argv()" in script
     assert "ensure_runtime_python(ROOT)" in script
+
+
+def test_mcp_diagnostic_runner_preserves_timeout_cancel_and_invalid_output() -> None:
+    workspace_cli = (ROOT / "extensions" / "shared" / "workspace-cli.ts").as_uri()
+    script = f"""
+import {{ runMcpDiagnosticJson }} from {json.dumps(workspace_cli)};
+process.env.TS_AGENT_PYTHON = "/usr/bin/python3";
+const collect = async (label, run) => {{
+  try {{ await run(); }} catch (error) {{
+    return {{ label, code: error.code, errorClass: error.errorClass, message: error.message,
+      retrySafe: error.retrySafe, remoteActionAttempted: error.remoteActionAttempted }};
+  }}
+  throw new Error(`${{label}} unexpectedly succeeded`);
+}};
+const timeoutPi = {{ exec: async (_command, _args, options) => new Promise((resolve) => {{
+  const runningProcess = setTimeout(() => resolve({{ stdout: "", stderr: "" }}), 1000);
+  options.signal.addEventListener("abort", () => {{
+    clearTimeout(runningProcess);
+    resolve({{ stdout: "", stderr: "" }});
+  }}, {{ once: true }});
+}}) }};
+const cancelled = new AbortController();
+cancelled.abort();
+const immediatePi = {{ exec: async () => ({{ stdout: "", stderr: "" }}) }};
+const failedPi = {{ exec: async () => {{ throw new Error("private process detail"); }} }};
+const results = [];
+results.push(await collect("timeout", () => runMcpDiagnosticJson(timeoutPi, "status", "/tmp", undefined, 10)));
+results.push(await collect("cancelled", () => runMcpDiagnosticJson(immediatePi, "status", "/tmp", cancelled.signal, 1000)));
+results.push(await collect("invalid", () => runMcpDiagnosticJson(immediatePi, "status", "/tmp", undefined, 1000)));
+results.push(await collect("failed", () => runMcpDiagnosticJson(failedPi, "status", "/tmp", undefined, 1000)));
+process.stdout.write(JSON.stringify(results));
+"""
+    result = _node_json(script)
+
+    assert [item["code"] for item in result] == [
+        "MCP_DIAGNOSTIC_TIMEOUT",
+        "MCP_DIAGNOSTIC_CANCELLED",
+        "MCP_DIAGNOSTIC_INVALID_OUTPUT",
+        "MCP_DIAGNOSTIC_PROCESS_FAILED",
+    ]
+    assert result[0]["errorClass"] == "diagnostic_timeout"
+    assert all(item["retrySafe"] is True for item in result)
+    assert all(item["remoteActionAttempted"] is False for item in result)
+    assert all("no remote action was attempted" in item["message"] for item in result)
+    assert all("private process detail" not in item["message"] for item in result)
+
+
+def test_mcp_submit_preflight_retries_only_timeout_and_validates_xtb_profile() -> None:
+    extension = COMPUTE_EXTENSION.as_uri()
+    script = f"""
+import {{ requireBackendSubmitProfile, runMcpPreflightDiagnostic }} from {json.dumps(extension)};
+const timeout = Object.assign(new Error("late"), {{ code: "MCP_DIAGNOSTIC_TIMEOUT" }});
+let attempts = 0;
+const diagnostic = async () => {{
+  attempts += 1;
+  if (attempts === 1) throw timeout;
+  return {{ schema_version: "ts-mcp-diagnostic/1", ok: true }};
+}};
+const retried = await runMcpPreflightDiagnostic({{}}, "doctor", "/tmp", undefined, diagnostic);
+const result = {{ attempts, retried, missing: null, unavailable: null, gpu: null }};
+const request = {{ backend: "xtb", executionSummary: {{ queue: "batch", ngpus: 0 }} }};
+try {{ requireBackendSubmitProfile({{ capabilities: {{ software: {{ profiles: [] }} }} }}, request); }}
+catch (error) {{ result.missing = error.message; }}
+try {{ requireBackendSubmitProfile({{ capabilities: {{ software: {{ profiles: [{{
+  name: "xtb", kind: "profile", activation_script_exists: false, allowed_queues: ["batch"]
+}}] }} }} }}, request); }}
+catch (error) {{ result.unavailable = error.message; }}
+try {{ requireBackendSubmitProfile({{ capabilities: {{ software: {{ profiles: [{{
+  name: "xtb", kind: "profile", activation_script_exists: true, allowed_queues: ["batch"], requires_gpu: true
+}}] }} }} }}, request); }}
+catch (error) {{ result.gpu = error.message; }}
+requireBackendSubmitProfile({{ capabilities: {{ software: {{ profiles: [{{
+  name: "xtb", kind: "profile", activation_script_exists: true, allowed_queues: ["batch"], requires_gpu: false
+}}] }} }} }}, request);
+process.stdout.write(JSON.stringify(result));
+"""
+    result = _node_json(script)
+
+    assert result["attempts"] == 2
+    assert result["retried"]["ok"] is True
+    assert "no matching software profile" in result["missing"]
+    assert "activation script is unavailable" in result["unavailable"]
+    assert "profile requires a GPU" in result["gpu"]
 
 
 def test_compute_operator_runtime_is_fresh_isolated_and_tool_scoped() -> None:

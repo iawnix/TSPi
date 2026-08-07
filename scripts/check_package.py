@@ -25,6 +25,7 @@ EXTENSION_ENTRIES = [
     "./extensions/ts-workflow-artifacts/index.ts",
 ]
 PACKAGE_FILES = [
+    "TSPi",
     "README.md",
     "environment.yml",
     "cluster_mcp/*.py",
@@ -72,6 +73,7 @@ PACKAGE_FILES = [
 ]
 REQUIRED_TARBALL_FILES = {
     "package.json",
+    "TSPi",
     "environment.yml",
     "scripts/install_env.py",
     "skills/transition-state-workflow/SKILL.md",

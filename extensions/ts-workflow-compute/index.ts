@@ -32,6 +32,8 @@ const MCP_DIAGNOSTIC_MODES = ["status", "doctor", "queues", "nodes", "cluster"] 
 type McpDiagnosticMode = typeof MCP_DIAGNOSTIC_MODES[number];
 const MCP_DIAGNOSTIC_STATUS_KEY = "ts-workspace-mcp-command";
 const MCP_DIAGNOSTIC_WIDGET_KEY = "ts-workspace-mcp";
+const MCP_PREFLIGHT_TIMEOUT_RETRIES = 1;
+const PROFILE_REQUIRED_BACKENDS = new Set(["gaussian", "xtb", "crest"]);
 const MCP_DIAGNOSTIC_ACTIVITY = Object.freeze({
   status: {
     description: "Check the MCP connection and advertised capabilities",
@@ -149,6 +151,7 @@ export default function (pi: ExtensionAPI) {
       "Use mode=doctor after configuration, connection, timeout, authentication, or protocol failures.",
       "Use mode=queues or mode=nodes when only that scheduler view is relevant.",
       "Follow the calculation intent transport or the user's explicit target; never switch between MCP and SSH automatically after a failure.",
+      "A diagnostic timeout means readiness is unknown, not that configuration or protocol compatibility failed; no remote action has occurred.",
       "This tool is read-only and cannot upload files, submit jobs, cancel jobs, mutate workspace state, or authorize compute control.",
     ],
     executionMode: "sequential",
@@ -367,7 +370,10 @@ export default function (pi: ExtensionAPI) {
           result.ok === true ? "info" : "warning",
         );
       } catch (error) {
-        ctx.ui.notify(`TS Cluster MCP ${mode} stopped before a result was returned`, "error");
+        const message = error instanceof Error
+          ? error.message
+          : `TS Cluster MCP ${mode} stopped before a result was returned`;
+        ctx.ui.notify(message, "error");
         throw error;
       } finally {
         ctx.ui.setStatus(MCP_DIAGNOSTIC_STATUS_KEY, undefined);
@@ -384,7 +390,7 @@ async function requireHealthyMcpConnection(
   signal?: AbortSignal,
 ) {
   const diagnosticMode = request.operation === "submit" ? "doctor" : "status";
-  const result = await runMcpDiagnosticJson(pi, diagnosticMode, root, signal);
+  const result = await runMcpPreflightDiagnostic(pi, diagnosticMode, root, signal);
   if (!isPlainObject(result) || result.schema_version !== "ts-mcp-diagnostic/1") {
     throw new Error("MCP connection preflight returned an invalid diagnostic result");
   }
@@ -395,11 +401,9 @@ async function requireHealthyMcpConnection(
       "scheduler_read",
       "submission_registry",
       "workspace_storage",
-      ...(request.backend === "gaussian" ? ["gaussian_profile"] : []),
     ];
     const failedComponents = requiredComponents.filter((name) => components[name] !== "pass");
     if (failedComponents.length > 0) {
-      if (failedComponents[0] === "gaussian_profile") requireGaussianSubmitProfile(result, request);
       const errors = isPlainObject(result.errors) ? result.errors : {};
       const componentErrorValue = errors[failedComponents[0]];
       const componentError = isPlainObject(componentErrorValue) ? componentErrorValue : {};
@@ -411,7 +415,7 @@ async function requireHealthyMcpConnection(
         : `required components failed: ${failedComponents.join(", ")}`;
       throw new Error(`MCP submit preflight failed (${errorClass}): ${message}`);
     }
-    if (request.backend === "gaussian") requireGaussianSubmitProfile(result, request);
+    requireBackendSubmitProfile(result, request);
     return;
   }
   if (result.ok !== true) {
@@ -420,31 +424,55 @@ async function requireHealthyMcpConnection(
     const message = typeof error.message === "string" ? error.message : "MCP connection is unavailable";
     throw new Error(`MCP ${request.operation} preflight failed (${errorClass}): ${message}`);
   }
-  if (request.operation === "submit" && request.backend === "gaussian") {
-    requireGaussianSubmitProfile(result, request);
+  if (request.operation === "submit") {
+    requireBackendSubmitProfile(result, request);
   }
 }
 
-function requireGaussianSubmitProfile(result: Record<string, unknown>, request: OperatorRequest) {
+export async function runMcpPreflightDiagnostic(
+  pi: ExtensionAPI,
+  mode: "status" | "doctor",
+  root: string,
+  signal?: AbortSignal,
+  runDiagnostic = runMcpDiagnosticJson,
+) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await runDiagnostic(pi, mode, root, signal);
+    } catch (error) {
+      const code = isPlainObject(error) && typeof error.code === "string" ? error.code : null;
+      if (code !== "MCP_DIAGNOSTIC_TIMEOUT" || attempt >= MCP_PREFLIGHT_TIMEOUT_RETRIES || signal?.aborted) {
+        throw error;
+      }
+    }
+  }
+}
+
+export function requireBackendSubmitProfile(result: Record<string, unknown>, request: OperatorRequest) {
+  if (!PROFILE_REQUIRED_BACKENDS.has(request.backend)) return;
   const capabilities = isPlainObject(result.capabilities) ? result.capabilities : {};
   const software = isPlainObject(capabilities.software) ? capabilities.software : {};
   const profiles = Array.isArray(software.profiles) ? software.profiles : [];
-  const gaussian = profiles.find(
-    (profile) => isPlainObject(profile) && profile.name === "gaussian" && profile.kind === "profile",
+  const profile = profiles.find(
+    (candidate) => isPlainObject(candidate) && candidate.name === request.backend && candidate.kind === "profile",
   );
-  if (!isPlainObject(gaussian)) {
-    throw new Error("MCP Gaussian submit preflight failed: server has no gaussian software profile");
+  if (!isPlainObject(profile)) {
+    throw new Error(`MCP ${request.backend} submit preflight failed: server has no matching software profile`);
   }
-  if (gaussian.activation_script_exists !== true) {
-    throw new Error("MCP Gaussian submit preflight failed: gaussian activation script is unavailable");
+  if (profile.activation_script_exists === false) {
+    throw new Error(`MCP ${request.backend} submit preflight failed: activation script is unavailable`);
   }
   const queue = isPlainObject(request.executionSummary) ? request.executionSummary.queue : undefined;
   if (
     typeof queue === "string"
-    && Array.isArray(gaussian.allowed_queues)
-    && !gaussian.allowed_queues.includes(queue)
+    && Array.isArray(profile.allowed_queues)
+    && !profile.allowed_queues.includes(queue)
   ) {
-    throw new Error(`MCP Gaussian submit preflight failed: profile does not allow queue ${queue}`);
+    throw new Error(`MCP ${request.backend} submit preflight failed: profile does not allow queue ${queue}`);
+  }
+  const ngpus = isPlainObject(request.executionSummary) ? request.executionSummary.ngpus : undefined;
+  if (profile.requires_gpu === true && (typeof ngpus !== "number" || ngpus < 1)) {
+    throw new Error(`MCP ${request.backend} submit preflight failed: profile requires a GPU`);
   }
 }
 

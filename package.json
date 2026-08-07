@@ -22,6 +22,7 @@
     "typecheck": "tsc --noEmit"
   },
   "files": [
+    "TSPi",
     "README.md",
     "environment.yml",
     "cluster_mcp/*.py",

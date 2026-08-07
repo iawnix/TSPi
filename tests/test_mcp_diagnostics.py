@@ -265,10 +265,28 @@ def test_mcp_cluster_probe_output_is_bounded_by_aggregation(monkeypatch) -> None
     assert "job-499-19" not in serialized
 
 
-def test_mcp_doctor_reports_transport_scheduler_registry_storage_and_gaussian(monkeypatch) -> None:
+def test_mcp_doctor_reports_transport_scheduler_registry_storage_and_software(monkeypatch) -> None:
     caller = _Caller(
         {
-            "cluster_capabilities": {"server": "cluster-mcp", "scheduler": "torque"},
+            "cluster_capabilities": {
+                "server": "cluster-mcp",
+                "scheduler": "torque",
+                "software": {
+                    "software": [
+                        {
+                            "name": "gaussian",
+                            "kind": "profile",
+                            "activation_script_exists": True,
+                        },
+                        {
+                            "name": "xtb",
+                            "kind": "profile",
+                            "activation_script_exists": True,
+                        },
+                    ],
+                    "load_errors": {},
+                },
+            },
             "list_queues": {"queues": [{"name": "batch", "allowed_for_submission": True}]},
             "ts_control_health": _control_health(),
         }
@@ -285,7 +303,7 @@ def test_mcp_doctor_reports_transport_scheduler_registry_storage_and_gaussian(mo
         "scheduler_read": "pass",
         "submission_registry": "pass",
         "workspace_storage": "pass",
-        "gaussian_profile": "pass",
+        "software_profiles": "pass",
     }
     assert result["checks"] == {
         "configuration": "pass",
@@ -295,8 +313,65 @@ def test_mcp_doctor_reports_transport_scheduler_registry_storage_and_gaussian(mo
         "scheduler_read": "pass",
         "submission_registry": "pass",
         "workspace_storage": "pass",
-        "gaussian_profile": "pass",
+        "software_profiles": "pass",
     }
+
+
+def test_mcp_doctor_reports_unavailable_advertised_profile(monkeypatch) -> None:
+    caller = _Caller(
+        {
+            "cluster_capabilities": {
+                "server": "cluster-mcp",
+                "scheduler": "torque",
+                "software": {
+                    "software": [
+                        {
+                            "name": "xtb",
+                            "kind": "profile",
+                            "activation_script_exists": False,
+                        }
+                    ],
+                    "load_errors": {},
+                },
+            },
+            "list_queues": {"queues": [{"name": "batch", "allowed_for_submission": True}]},
+            "ts_control_health": _control_health(),
+        }
+    )
+    monkeypatch.setattr(mcp_diagnostics, "_connection_settings", _settings)
+    monkeypatch.setattr(mcp_diagnostics, "_client", lambda _settings: TSClusterMCPClient(caller))
+
+    result = mcp_diagnostics.diagnose_mcp("doctor")
+
+    assert result["ok"] is False
+    assert result["components"]["software_profiles"] == "fail"
+    assert result["errors"]["software_profiles"] == {
+        "class": "software_profile_unavailable",
+        "message": "software activation unavailable: xtb",
+    }
+
+
+def test_mcp_diagnostics_use_a_separate_bounded_component_timeout(monkeypatch) -> None:
+    monkeypatch.setenv("TS_CLUSTER_MCP_URL", "http://127.0.0.1:8765/mcp")
+    monkeypatch.setenv("TS_CLUSTER_MCP_TOKEN", TOKEN)
+    monkeypatch.setenv("TS_CLUSTER_MCP_TIMEOUT", "60")
+    monkeypatch.setenv("TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT", "7")
+
+    settings = mcp_diagnostics._connection_settings()
+
+    assert settings.timeout_seconds == 7
+
+
+def test_mcp_diagnostic_timeout_configuration_is_reported_as_json(monkeypatch) -> None:
+    monkeypatch.setenv("TS_CLUSTER_MCP_URL", "http://127.0.0.1:8765/mcp")
+    monkeypatch.setenv("TS_CLUSTER_MCP_TOKEN", TOKEN)
+    monkeypatch.setenv("TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT", "0")
+
+    result = mcp_diagnostics.diagnose_mcp("doctor")
+
+    assert result["ok"] is False
+    assert result["error"]["class"] == "timeout_configuration"
+    assert result["error"]["phase"] == "configuration"
 
 
 def test_mcp_doctor_classifies_and_redacts_authentication_failure(monkeypatch) -> None:

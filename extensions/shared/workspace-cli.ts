@@ -67,15 +67,34 @@ export async function runMcpDiagnosticJson(
   mode: "status" | "doctor" | "queues" | "nodes" | "cluster",
   cwd: string,
   signal?: AbortSignal,
-  timeoutMs = 75_000,
+  timeoutMs = 90_000,
 ) {
   const workspaceRoot = resolveWorkspaceRoot("", cwd) || findRuntimeWorkspaceRoot(cwd);
   const python = await resolvePythonExecutable(pi, workspaceRoot, signal);
-  const operationSignal = deadlineSignal(signal, timeoutMs);
-  const result = await pi.exec(python, [COMPUTE_CLI, "mcp-diagnostic", "--mode", mode], {
-    signal: operationSignal,
-  });
-  return parseJsonOutput(result);
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const operationSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+  let result: unknown;
+  try {
+    result = await pi.exec(python, [COMPUTE_CLI, "mcp-diagnostic", "--mode", mode], {
+      signal: operationSignal,
+    });
+  } catch (error) {
+    throw classifyMcpDiagnosticFailure(error, mode, signal, timeoutSignal, timeoutMs);
+  }
+  if (operationSignal.aborted) {
+    throw classifyMcpDiagnosticFailure(undefined, mode, signal, timeoutSignal, timeoutMs);
+  }
+  try {
+    return parseJsonOutput(result);
+  } catch (error) {
+    throw mcpDiagnosticError(
+      "MCP_DIAGNOSTIC_INVALID_OUTPUT",
+      "invalid_output",
+      `MCP ${mode} diagnostic returned invalid JSON; no remote action was attempted`,
+      mode,
+      error,
+    );
+  }
 }
 
 export async function runRenderJson(
@@ -198,4 +217,55 @@ async function runPackageJson(
 function deadlineSignal(parent: AbortSignal | undefined, timeoutMs: number): AbortSignal {
   const timeout = AbortSignal.timeout(timeoutMs);
   return parent ? AbortSignal.any([parent, timeout]) : timeout;
+}
+
+function classifyMcpDiagnosticFailure(
+  error: unknown,
+  mode: string,
+  parent: AbortSignal | undefined,
+  timeout: AbortSignal,
+  timeoutMs: number,
+): Error {
+  if (parent?.aborted) {
+    return mcpDiagnosticError(
+      "MCP_DIAGNOSTIC_CANCELLED",
+      "cancelled",
+      `MCP ${mode} diagnostic was cancelled; no remote action was attempted`,
+      mode,
+      error,
+    );
+  }
+  if (timeout.aborted) {
+    return mcpDiagnosticError(
+      "MCP_DIAGNOSTIC_TIMEOUT",
+      "diagnostic_timeout",
+      `MCP ${mode} diagnostic timed out after ${Math.ceil(timeoutMs / 1000)} seconds; no remote action was attempted`,
+      mode,
+      error,
+    );
+  }
+  return mcpDiagnosticError(
+    "MCP_DIAGNOSTIC_PROCESS_FAILED",
+    "process_failed",
+    `MCP ${mode} diagnostic process failed before returning a result; no remote action was attempted`,
+    mode,
+    error,
+  );
+}
+
+function mcpDiagnosticError(
+  code: string,
+  errorClass: string,
+  message: string,
+  mode: string,
+  cause?: unknown,
+): Error {
+  const error = new Error(message) as Error & Record<string, unknown>;
+  error.code = code;
+  error.errorClass = errorClass;
+  error.mode = mode;
+  error.retrySafe = true;
+  error.remoteActionAttempted = false;
+  if (cause !== undefined) error.cause = cause;
+  return error;
 }

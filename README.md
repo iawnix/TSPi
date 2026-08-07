@@ -113,6 +113,13 @@ pi install -l git:github.com/iawnix/TSAgentSkill@pi_ts_subagents --approve
 TS_WORKSPACE_ROOT=$PWD pi --approve --session-dir .pi/sessions
 ```
 
+For a workspace-local TSPi launcher, copy the package-owned `TSPi` file to the
+workspace root and keep it executable. `./TSPi` performs a real read-only MCP
+protocol probe before Pi starts; `./TSPi --check-mcp` performs only that check.
+It can restart an SSH tunnel only when the tunnel is owned by its dedicated
+workspace control socket. An unrelated process occupying the configured local
+port is never terminated.
+
 An unpinned GitHub URL resolves the repository default branch (`main`). Until
 this work is merged or tagged, it does not select `pi_ts_subagents`.
 
@@ -228,8 +235,10 @@ connectivity, conformer-selection, or mechanism verdict.
 Remote intents must select `transport=ssh|mcp` explicitly. SSH policy comes
 from `TS_COMPUTE_*`; MCP
 connection settings come only from `TS_CLUSTER_MCP_URL`,
-`TS_CLUSTER_MCP_TOKEN`, and `TS_CLUSTER_MCP_TIMEOUT`. Endpoints and credentials
-are forbidden in calculation intents.
+`TS_CLUSTER_MCP_TOKEN`, and `TS_CLUSTER_MCP_TIMEOUT`.
+`TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT` separately bounds each read-only diagnostic
+component and defaults to 15 seconds. Endpoints and credentials are forbidden
+in calculation intents.
 
 `TS_CLUSTER_MCP_DISPLAY_TARGET` is an optional startup-only label for tunneled
 connections. It does not change MCP transport, authentication, or routing.

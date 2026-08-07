@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+from dataclasses import replace
 from typing import Any
 
 from ts_remote.mcp import MCPClientError, MCPConnectionSettings, SDKToolCaller, TSClusterMCPClient
@@ -12,6 +13,9 @@ from ts_remote.mcp import MCPClientError, MCPConnectionSettings, SDKToolCaller, 
 
 MCP_DIAGNOSTIC_MODES = frozenset({"status", "doctor", "queues", "nodes", "cluster"})
 SCHEMA_VERSION = "ts-mcp-diagnostic/1"
+DEFAULT_COMPONENT_TIMEOUT_SECONDS = 15.0
+MAX_COMPONENT_TIMEOUT_SECONDS = 60.0
+CONTROL_HEALTH_COMPONENTS = ("submission_registry", "workspace_storage")
 
 
 def diagnose_mcp(mode: str = "status") -> dict[str, Any]:
@@ -65,7 +69,23 @@ def diagnose_mcp(mode: str = "status") -> dict[str, Any]:
 
 
 def _connection_settings() -> MCPConnectionSettings:
-    return MCPConnectionSettings.from_environment()
+    settings = MCPConnectionSettings.from_environment()
+    raw = os.environ.get(
+        "TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT",
+        str(DEFAULT_COMPONENT_TIMEOUT_SECONDS),
+    )
+    try:
+        component_timeout = float(raw)
+    except ValueError as exc:
+        raise MCPClientError("TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT must be numeric") from exc
+    if not 1 <= component_timeout <= MAX_COMPONENT_TIMEOUT_SECONDS:
+        raise MCPClientError(
+            "TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT must be between 1 and 60 seconds"
+        )
+    return replace(
+        settings,
+        timeout_seconds=min(settings.timeout_seconds, component_timeout),
+    ).validated()
 
 
 def _client(settings: MCPConnectionSettings) -> TSClusterMCPClient:
@@ -163,12 +183,14 @@ def _doctor_summary(
     }
     errors: dict[str, dict[str, str]] = {}
 
+    capability_error: dict[str, str] | None = None
     try:
         result["capabilities"] = _capability_summary(client.capabilities())
         result["components"]["transport_auth_protocol"] = "pass"
     except Exception as exc:
+        capability_error = _component_error(exc)
         result["components"]["transport_auth_protocol"] = "fail"
-        errors["transport_auth_protocol"] = _component_error(exc)
+        errors["transport_auth_protocol"] = capability_error
 
     try:
         queues = client.list_queues()["queues"]
@@ -183,13 +205,13 @@ def _doctor_summary(
     except Exception as exc:
         health = None
         error = _component_error(exc)
-        for name in ("submission_registry", "workspace_storage", "gaussian_profile"):
+        for name in CONTROL_HEALTH_COMPONENTS:
             result["components"][name] = "fail"
             errors[name] = error
     else:
         result["control_health"] = health
         health_components = health.get("components", {})
-        for name in ("submission_registry", "workspace_storage", "gaussian_profile"):
+        for name in CONTROL_HEALTH_COMPONENTS:
             component = health_components.get(name) if isinstance(health_components, dict) else None
             outcome = component.get("outcome") if isinstance(component, dict) else None
             result["components"][name] = "pass" if outcome == "succeeded" else "fail"
@@ -202,6 +224,15 @@ def _doctor_summary(
                     if isinstance(component, dict)
                     else "component health check returned no result",
                 }
+
+    if capability_error is not None:
+        result["components"]["software_profiles"] = "fail"
+        errors["software_profiles"] = capability_error
+    else:
+        profile_error = _software_profile_error(result.get("capabilities"))
+        result["components"]["software_profiles"] = "fail" if profile_error else "pass"
+        if profile_error:
+            errors["software_profiles"] = profile_error
 
     passed = sum(value == "pass" for value in result["components"].values())
     result["ok"] = not errors
@@ -222,11 +253,39 @@ def _doctor_summary(
         "scheduler_read": result["components"].get("scheduler_read", "not_run"),
         "submission_registry": result["components"].get("submission_registry", "not_run"),
         "workspace_storage": result["components"].get("workspace_storage", "not_run"),
-        "gaussian_profile": result["components"].get("gaussian_profile", "not_run"),
+        "software_profiles": result["components"].get("software_profiles", "not_run"),
     }
     if errors:
         result["errors"] = errors
     return result
+
+
+def _software_profile_error(capabilities: Any) -> dict[str, str] | None:
+    if not isinstance(capabilities, dict):
+        return {
+            "class": "component_unavailable",
+            "message": "MCP capabilities did not include software profile health",
+        }
+    software = capabilities.get("software")
+    profiles = software.get("profiles") if isinstance(software, dict) else None
+    if not isinstance(profiles, list):
+        return {
+            "class": "component_unavailable",
+            "message": "MCP capabilities did not include software profiles",
+        }
+    unavailable = sorted(
+        str(profile.get("name") or "unnamed")
+        for profile in profiles
+        if isinstance(profile, dict)
+        and profile.get("kind") == "profile"
+        and profile.get("activation_script_exists") is False
+    )
+    if unavailable:
+        return {
+            "class": "software_profile_unavailable",
+            "message": f"software activation unavailable: {', '.join(unavailable)}",
+        }
+    return None
 
 
 def _component_error(error: Exception) -> dict[str, str]:

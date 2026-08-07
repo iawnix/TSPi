@@ -9,7 +9,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
 AGENTS_ROOT = ROOT / "src" / "agents"
 THEME_PATH = ROOT / "themes" / "ts-theme.json"
+TSPI_LAUNCHER = ROOT / "TSPi"
 EXPECTED_FILES = [
+    "TSPi",
     "README.md",
     "environment.yml",
     "cluster_mcp/*.py",
@@ -157,6 +159,73 @@ def test_package_manifest_exposes_only_the_public_skill_and_allowlisted_runtime(
     assert "tests/" not in manifest["files"]
     assert "docs/" not in manifest["files"]
     assert all("src/agents" not in entry for entry in manifest["pi"]["skills"])
+
+
+def test_tspi_launcher_is_packaged_executable_and_shell_valid() -> None:
+    completed = subprocess.run(
+        ["bash", "-n", str(TSPI_LAUNCHER)],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert TSPI_LAUNCHER.stat().st_mode & 0o111
+    source = TSPI_LAUNCHER.read_text(encoding="utf-8")
+    assert "mcp_protocol_is_healthy" in source
+    assert "TS_MCP_CONTROL_SOCKET" in source
+    assert "refusing to terminate an unknown process" in source
+    assert "--check-mcp" in source
+
+
+def test_tspi_restarts_one_managed_unhealthy_tunnel() -> None:
+    script = r'''source "$1"
+probe_calls=0
+port_open=1
+control_open=1
+starts=0
+stops=0
+mcp_protocol_is_healthy() { ((probe_calls += 1)); [[ $probe_calls -ge 2 ]]; }
+mcp_tunnel_is_open() { [[ $port_open == 1 ]]; }
+mcp_control_is_open() { [[ $control_open == 1 ]]; }
+stop_managed_mcp_tunnel() { ((stops += 1)); port_open=0; control_open=0; }
+start_managed_mcp_tunnel() { ((starts += 1)); port_open=1; control_open=1; }
+ensure_mcp_connection
+printf '%s %s %s\n' "$probe_calls" "$starts" "$stops"
+'''
+    completed = subprocess.run(
+        ["bash", "-c", script, "bash", str(TSPI_LAUNCHER)],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "2 1 1"
+
+
+def test_tspi_refuses_to_kill_an_unmanaged_listener() -> None:
+    script = r'''source "$1"
+mcp_protocol_is_healthy() { return 1; }
+mcp_tunnel_is_open() { return 0; }
+mcp_control_is_open() { return 1; }
+ensure_mcp_connection
+'''
+    completed = subprocess.run(
+        ["bash", "-c", script, "bash", str(TSPI_LAUNCHER)],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 1
+    assert "refusing to terminate an unknown process" in completed.stderr
 
 
 def test_ts_theme_loads_with_pi_theme_loader() -> None:

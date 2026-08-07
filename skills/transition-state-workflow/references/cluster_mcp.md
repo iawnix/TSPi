@@ -253,11 +253,14 @@ launch Pi:
 export TS_CLUSTER_MCP_URL=http://127.0.0.1:8765/mcp
 export TS_CLUSTER_MCP_TOKEN='<same value as server CLUSTER_MCP_HTTP_TOKEN>'
 export TS_CLUSTER_MCP_TIMEOUT=60
+export TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT=15
 ```
 
-The timeout applies to both the MCP SDK receive loop and the authenticated
-HTTP transport. This prevents the HTTP client's shorter default timeout from
-ending a request while the server is still processing it.
+`TS_CLUSTER_MCP_TIMEOUT` applies to both the MCP SDK receive loop and the
+authenticated HTTP transport. `TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT` separately
+bounds each read-only diagnostic component so an aggregated doctor or cluster
+probe can return partial structured results instead of being killed before it
+emits JSON.
 
 The tunnel authenticates the SSH connection; MCP still requires its bearer
 token and principal scopes. After exact intent binding and a read-only
@@ -298,6 +301,7 @@ separate site deployment. On the Pi host use:
 export TS_CLUSTER_MCP_URL=https://cluster.example:8765/mcp
 export TS_CLUSTER_MCP_TOKEN='<same value as server CLUSTER_MCP_HTTP_TOKEN>'
 export TS_CLUSTER_MCP_TIMEOUT=60
+export TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT=15
 ```
 
 The Pi client rejects non-loopback plain HTTP endpoints.

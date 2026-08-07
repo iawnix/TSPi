@@ -35,6 +35,8 @@ the namespace marker or matching workspace binding are rejected. Remote targets
 without an explicit `transport` are also rejected. MCP
 connection URL, token, and timeout come only from
 `TS_CLUSTER_MCP_URL`, `TS_CLUSTER_MCP_TOKEN`, and `TS_CLUSTER_MCP_TIMEOUT`.
+Read-only probes may additionally use `TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT`; it
+does not change calculation or control-call timeouts.
 SSH cancellation requires a previously inspected PID and verifies that the
 remote PID file still matches before sending a signal.
 

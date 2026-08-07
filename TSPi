@@ -1,0 +1,226 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly LAUNCHER_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+if [[ -d "$LAUNCHER_DIR/.pi" ]]; then
+  readonly WORKSPACE_ROOT="$LAUNCHER_DIR"
+else
+  readonly WORKSPACE_ROOT="$(cd -- "${TS_WORKSPACE_ROOT:-$PWD}" && pwd -P)"
+fi
+readonly TS_PACKAGE_ROOT="$WORKSPACE_ROOT/.pi/git/github.com/iawnix/TSAgentSkill"
+readonly PI_BIN="${PI_BIN:-/home/iaw/.npm-global/bin/pi}"
+readonly TS_MCP_ENV_FILE="$WORKSPACE_ROOT/.pi/mcp.env"
+readonly TS_MCP_LOCAL_HOST="${TS_MCP_LOCAL_HOST:-127.0.0.1}"
+readonly TS_MCP_LOCAL_PORT="${TS_MCP_LOCAL_PORT:-18766}"
+readonly TS_MCP_SSH_TARGET="${TS_MCP_SSH_TARGET:-agent.1w}"
+readonly TS_MCP_SSH_CONFIG="${TS_MCP_SSH_CONFIG:-/home/iaw/.ssh/config}"
+readonly TS_MCP_URL_DEFAULT="http://$TS_MCP_LOCAL_HOST:$TS_MCP_LOCAL_PORT/mcp"
+readonly TS_MCP_TIMEOUT_DEFAULT="60"
+readonly TS_MCP_DIAGNOSTIC_TIMEOUT_DEFAULT="15"
+readonly TS_MCP_STARTUP_TIMEOUT="${TS_MCP_STARTUP_TIMEOUT:-25}"
+readonly TS_MCP_RUNTIME_DIR="$WORKSPACE_ROOT/.pi/runtime"
+readonly TS_MCP_CONTROL_SOCKET="$TS_MCP_RUNTIME_DIR/tspi-mcp.sock"
+
+mcp_tunnel_is_open() {
+  (exec 3<>"/dev/tcp/$TS_MCP_LOCAL_HOST/$TS_MCP_LOCAL_PORT") 2>/dev/null
+}
+
+mcp_control_is_open() {
+  [[ -S "$TS_MCP_CONTROL_SOCKET" ]] \
+    && ssh -F "$TS_MCP_SSH_CONFIG" -o BatchMode=yes \
+      -S "$TS_MCP_CONTROL_SOCKET" -O check "$TS_MCP_SSH_TARGET" >/dev/null 2>&1
+}
+
+stop_managed_mcp_tunnel() {
+  if mcp_control_is_open; then
+    ssh -F "$TS_MCP_SSH_CONFIG" -o BatchMode=yes \
+      -S "$TS_MCP_CONTROL_SOCKET" -O exit "$TS_MCP_SSH_TARGET" >/dev/null 2>&1 || true
+  fi
+  for _attempt in {1..20}; do
+    if ! mcp_tunnel_is_open; then
+      break
+    fi
+    sleep 0.1
+  done
+  if [[ -S "$TS_MCP_CONTROL_SOCKET" ]] && ! mcp_control_is_open; then
+    rm -f -- "$TS_MCP_CONTROL_SOCKET"
+  fi
+}
+
+start_managed_mcp_tunnel() {
+  mkdir -p -- "$TS_MCP_RUNTIME_DIR"
+  chmod 700 -- "$TS_MCP_RUNTIME_DIR"
+  if [[ -S "$TS_MCP_CONTROL_SOCKET" ]] && ! mcp_control_is_open; then
+    rm -f -- "$TS_MCP_CONTROL_SOCKET"
+  fi
+  ssh \
+    -M \
+    -S "$TS_MCP_CONTROL_SOCKET" \
+    -f \
+    -F "$TS_MCP_SSH_CONFIG" \
+    -o BatchMode=yes \
+    -o UpdateHostKeys=no \
+    -o ExitOnForwardFailure=yes \
+    -o ServerAliveInterval=30 \
+    -o ServerAliveCountMax=3 \
+    -N \
+    -L "$TS_MCP_LOCAL_HOST:$TS_MCP_LOCAL_PORT:$TS_MCP_LOCAL_HOST:$TS_MCP_LOCAL_PORT" \
+    "$TS_MCP_SSH_TARGET"
+}
+
+mcp_protocol_is_healthy() {
+  local output
+  if ! output="$(
+    timeout --signal=TERM "${TS_MCP_STARTUP_TIMEOUT}s" \
+      python3 "$TS_PACKAGE_ROOT/scripts/ts_compute.py" mcp-diagnostic --mode status \
+      2>/dev/null
+  )"; then
+    return 1
+  fi
+  python3 -c '
+import json, sys
+try:
+    payload = json.load(sys.stdin)
+except (TypeError, ValueError):
+    raise SystemExit(1)
+raise SystemExit(0 if payload.get("ok") is True else 1)
+' <<<"$output"
+}
+
+ensure_mcp_connection() {
+  if mcp_protocol_is_healthy; then
+    return
+  fi
+
+  if mcp_tunnel_is_open && ! mcp_control_is_open; then
+    printf 'TSPi: MCP protocol probe failed, but %s:%s is owned by an unmanaged process\n' \
+      "$TS_MCP_LOCAL_HOST" "$TS_MCP_LOCAL_PORT" >&2
+    printf 'TSPi: refusing to terminate an unknown process; repair that listener and retry\n' >&2
+    exit 1
+  fi
+
+  if mcp_control_is_open; then
+    stop_managed_mcp_tunnel
+  fi
+  if mcp_tunnel_is_open; then
+    printf 'TSPi: MCP port remained occupied after the managed tunnel stopped\n' >&2
+    exit 1
+  fi
+  if ! start_managed_mcp_tunnel || ! mcp_tunnel_is_open; then
+    printf 'TSPi: failed to start MCP tunnel via %s\n' "$TS_MCP_SSH_TARGET" >&2
+    exit 1
+  fi
+  if ! mcp_protocol_is_healthy; then
+    stop_managed_mcp_tunnel
+    printf 'TSPi: MCP protocol probe failed after one managed tunnel restart\n' >&2
+    exit 1
+  fi
+}
+
+mcp_ssh_display_target() {
+  local ssh_host
+  ssh_host="$(
+    ssh -G -F "$TS_MCP_SSH_CONFIG" "$TS_MCP_SSH_TARGET" 2>/dev/null \
+      | awk '$1 == "hostname" { print $2; exit }'
+  )" || ssh_host=""
+  printf '%s via SSH' "${ssh_host:-$TS_MCP_SSH_TARGET}"
+}
+
+main() {
+  local check_mcp_only=false
+  local -a dev_extension_args=()
+  local -a pi_args=()
+  local arg
+  for arg in "$@"; do
+    case "$arg" in
+      --dev)
+        dev_extension_args=(-e "$TS_PACKAGE_ROOT/extensions/ts-workflow-dev/index.ts")
+        ;;
+      --check-mcp)
+        check_mcp_only=true
+        ;;
+      *)
+        pi_args+=("$arg")
+        ;;
+    esac
+  done
+
+  if [[ ! "$TS_MCP_STARTUP_TIMEOUT" =~ ^[1-9][0-9]*$ ]]; then
+    printf 'TSPi: TS_MCP_STARTUP_TIMEOUT must be a positive integer\n' >&2
+    exit 1
+  fi
+  if [[ ! -x "$PI_BIN" ]] && [[ "$check_mcp_only" != true ]]; then
+    printf 'TSPi: Pi executable not found: %s\n' "$PI_BIN" >&2
+    exit 127
+  fi
+  if [[ ! -d "$TS_PACKAGE_ROOT" ]]; then
+    printf 'TSPi: TS package not found: %s\n' "$TS_PACKAGE_ROOT" >&2
+    exit 1
+  fi
+
+  if [[ -e "$TS_MCP_ENV_FILE" ]]; then
+    if [[ ! -f "$TS_MCP_ENV_FILE" || -L "$TS_MCP_ENV_FILE" || ! -r "$TS_MCP_ENV_FILE" ]]; then
+      printf 'TSPi: invalid MCP credential file: %s\n' "$TS_MCP_ENV_FILE" >&2
+      exit 1
+    fi
+    if [[ "$(stat -c '%a' -- "$TS_MCP_ENV_FILE")" != "600" ]]; then
+      printf 'TSPi: MCP credential file must have mode 0600: %s\n' "$TS_MCP_ENV_FILE" >&2
+      exit 1
+    fi
+
+    local -a mcp_env_lines
+    local mcp_token
+    mapfile -t mcp_env_lines < "$TS_MCP_ENV_FILE"
+    if [[ ${#mcp_env_lines[@]} -ne 1 || "${mcp_env_lines[0]}" != TS_CLUSTER_MCP_TOKEN=* ]]; then
+      printf 'TSPi: invalid MCP credential format: %s\n' "$TS_MCP_ENV_FILE" >&2
+      exit 1
+    fi
+    mcp_token="${mcp_env_lines[0]#TS_CLUSTER_MCP_TOKEN=}"
+    if [[ ${#mcp_token} -lt 32 || "$mcp_token" == *[[:space:]]* ]]; then
+      printf 'TSPi: invalid MCP credential value: %s\n' "$TS_MCP_ENV_FILE" >&2
+      exit 1
+    fi
+    export TS_CLUSTER_MCP_TOKEN="$mcp_token"
+    unset mcp_token mcp_env_lines
+  fi
+
+  cd -- "$WORKSPACE_ROOT"
+  export TS_WORKSPACE_ROOT="$WORKSPACE_ROOT"
+  export TS_CLUSTER_MCP_URL="${TS_CLUSTER_MCP_URL:-$TS_MCP_URL_DEFAULT}"
+  export TS_CLUSTER_MCP_TIMEOUT="${TS_CLUSTER_MCP_TIMEOUT:-$TS_MCP_TIMEOUT_DEFAULT}"
+  export TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT="${TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT:-$TS_MCP_DIAGNOSTIC_TIMEOUT_DEFAULT}"
+  if [[ "$TS_CLUSTER_MCP_URL" == "$TS_MCP_URL_DEFAULT" ]]; then
+    export TS_CLUSTER_MCP_DISPLAY_TARGET="${TS_CLUSTER_MCP_DISPLAY_TARGET:-$(mcp_ssh_display_target)}"
+    ensure_mcp_connection
+  elif ! mcp_protocol_is_healthy; then
+    printf 'TSPi: configured MCP endpoint failed the protocol probe: %s\n' "$TS_CLUSTER_MCP_URL" >&2
+    exit 1
+  fi
+
+  if [[ "$check_mcp_only" == true ]]; then
+    printf 'TSPi: MCP check passed (%s)\n' "${TS_CLUSTER_MCP_DISPLAY_TARGET:-$TS_CLUSTER_MCP_URL}"
+    exit 0
+  fi
+
+  exec "$PI_BIN" \
+    --no-extensions \
+    --no-skills \
+    --skill "$TS_PACKAGE_ROOT/skills/transition-state-workflow" \
+    --no-themes \
+    --theme "$TS_PACKAGE_ROOT/themes/ts-theme.json" \
+    --no-prompt-templates \
+    -e "$TS_PACKAGE_ROOT/extensions/ts-workflow-control/index.ts" \
+    -e "$TS_PACKAGE_ROOT/extensions/ts-workflow-ui/index.ts" \
+    -e "$TS_PACKAGE_ROOT/extensions/ts-workflow-review/index.ts" \
+    -e "$TS_PACKAGE_ROOT/extensions/ts-workflow-compute/index.ts" \
+    -e "$TS_PACKAGE_ROOT/extensions/ts-workflow-artifacts/index.ts" \
+    "${dev_extension_args[@]}" \
+    --approve \
+    --session-dir "$WORKSPACE_ROOT/.pi/sessions" \
+    "${pi_args[@]}"
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  main "$@"
+fi
