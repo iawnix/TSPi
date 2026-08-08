@@ -7,6 +7,7 @@ import json
 import sys
 from typing import Any
 
+from .artifacts import list_calculation_artifacts
 from .contracts import ComputeContractError
 from .control import (
     cancel_calculation,
@@ -34,6 +35,10 @@ def main(argv: list[str] | None = None) -> int:
     create_intent = sub.add_parser("create-intent")
     create_intent.add_argument("--root", required=True)
     create_intent.add_argument("--request-json", required=True)
+
+    list_artifacts = sub.add_parser("list-artifacts")
+    list_artifacts.add_argument("--root", required=True)
+    list_artifacts.add_argument("--node-id")
 
     preflight = sub.add_parser("preflight")
     preflight.add_argument("--root", required=True)
@@ -84,6 +89,8 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
         if not isinstance(request, dict):
             raise ComputeContractError("calculation request must be a JSON object")
         return create_calculation_intent(args.root, request)
+    if args.command == "list-artifacts":
+        return list_calculation_artifacts(args.root, node_id=args.node_id)
     if args.command == "preflight":
         return preflight_calculation(
             args.root,

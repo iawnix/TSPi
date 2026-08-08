@@ -14,7 +14,7 @@ from ts_backends.xtb import (
     prepare_xtb,
 )
 from ts_backends.xtb_scan import parse_xtb_scan_control
-from ts_compute import ComputeContractError, parse_calculation, prepare_calculation
+from ts_compute import ComputeContractError, list_calculation_artifacts, parse_calculation, prepare_calculation
 from ts_workspace.io import sha256_json
 
 
@@ -598,6 +598,27 @@ def _intent(workspace: Path, backend: str, task_type: str) -> Path:
             "crest.energies",
         ],
     }[(backend, task_type)]
+    input_refs = {
+        "xyz": "nodes/n001/inputs/candidate.xyz",
+        **(
+            {"control": f"nodes/n001/inputs/{task_type}.inp"}
+            if task_type in {"scan", "md"}
+            else {}
+        ),
+    }
+    catalog = list_calculation_artifacts(workspace)
+    by_path = {item["path"]: item for item in catalog["artifacts"]}
+    input_bindings = [
+        {
+            "input_role": role,
+            "artifact_id": by_path[ref]["artifact_id"],
+            "path": ref,
+            "sha256": by_path[ref]["sha256"],
+            "owner_node": by_path[ref]["owner_node"],
+            "source_intent_id": by_path[ref]["source_intent_id"],
+        }
+        for role, ref in sorted(input_refs.items())
+    ]
     value = {
         "schema_version": "ts-calculation-intent/2",
         "intent_id": intent_id,
@@ -608,14 +629,8 @@ def _intent(workspace: Path, backend: str, task_type: str) -> Path:
         "recalculation_ref": None,
         "backend": backend,
         "task_type": task_type,
-        "input_refs": {
-            "xyz": "nodes/n001/inputs/candidate.xyz",
-            **(
-                {"control": f"nodes/n001/inputs/{task_type}.inp"}
-                if task_type in {"scan", "md"}
-                else {}
-            ),
-        },
+        "input_refs": input_refs,
+        "input_bindings": input_bindings,
         "settings": {},
         "expected_artifacts": [
             f"nodes/n001/attempts/{intent_id}/outputs/{name}" for name in names

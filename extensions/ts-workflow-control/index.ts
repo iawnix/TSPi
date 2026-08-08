@@ -3,7 +3,7 @@ import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
-import { requireWorkspaceRoot, runWorkspaceDecisionJson, runWorkspaceJson } from "../shared/workspace-cli.ts";
+import { requireWorkspaceRoot, runComputeJson, runWorkspaceDecisionJson, runWorkspaceJson } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 
 const require = createRequire(import.meta.url);
@@ -17,7 +17,7 @@ const {
 
 type TsCommand = "start_node" | "update_workspace" | "end_node";
 const DECISION_ACTIONS = ["start_node", "update_workspace", "end_node"] as const;
-const CONTEXT_MODES = ["summary", "delta", "node", "branch", "audit"] as const;
+const CONTEXT_MODES = ["summary", "delta", "node", "branch", "audit", "artifacts"] as const;
 
 export default function (pi: ExtensionAPI) {
   pi.on("before_agent_start", async (event, ctx) => {
@@ -33,7 +33,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.workspaceContext,
     label: "TS Context",
-    description: "Read compact workspace, historical-node, or backtrack context from ts_workspace reports.",
+    description: "Read compact workspace, historical-node, backtrack, or calculation-artifact context.",
     promptSnippet: "Summarize the current transition-state workspace state from report_workspace",
     promptGuidelines: [
       `Use ${TS_PUBLIC_TOOL_NAMES.workspaceContext} before choosing or closing a transition-state workflow node.`,
@@ -41,6 +41,7 @@ export default function (pi: ExtensionAPI) {
       "Pass both fromNode and anchorNode to compare a failure trigger with a selected historical checkpoint before backtracking.",
       `Use ${TS_PUBLIC_TOOL_NAMES.workspaceContext} instead of reading every workspace state file when only current state is needed.`,
       "Use mode=delta with both known scientific and operational revisions; unchanged workspaces return no repeated summary.",
+      "Use mode=artifacts before calculation preparation to obtain artifactId and compatible inputRole values; pass nodeId to filter by owner node.",
     ],
     parameters: Type.Object({
       mode: Type.Optional(StringEnum(CONTEXT_MODES)),
@@ -54,6 +55,11 @@ export default function (pi: ExtensionAPI) {
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
       const mode = params.mode || (params.nodeId ? "node" : params.fromNode || params.anchorNode ? "branch" : "summary");
+      if (mode === "artifacts") {
+        const args = params.nodeId ? ["--node-id", String(params.nodeId)] : [];
+        const artifactCatalog = await runComputeJson(pi, "list-artifacts", root, args, signal);
+        return toolText(JSON.stringify(artifactCatalog, null, 2), { artifactCatalog });
+      }
       if (mode === "branch") {
         if (!params.fromNode || !params.anchorNode) {
           throw new Error("fromNode and anchorNode must be provided together");

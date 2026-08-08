@@ -221,15 +221,17 @@ Pi preparation accepts `ts-calculation-request/1` semantics:
 - scientific purpose and selected workspace node
 - `attempt_kind=primary|retry|recalculation`
 - `recalculation_ref`, required only for recalculation
-- one allowlisted backend, task type, input-role map, and settings
+- one allowlisted backend, task type, logical artifact-role bindings, and settings
 - a local or allowlisted remote execution target
 
 The deterministic host derives the node validation scope and creates the
 immutable `ts-calculation-intent/2`, intent ID, attempt directory, expected
 artifact names, execution-mirror authority, and remote directory. Pi callers do
-not create intent JSON files or fill generated path fields. A current-node
-input basename is accepted, and `inputRefs` may be omitted when every required
-role has exactly one unambiguous file in `nodes/<node>/inputs/`.
+not create intent JSON files or fill generated path fields. Before preparation,
+`ts_workspace_context mode=artifacts` lists eligible inputs with deterministic
+`artifactId` values and compatible `inputRole` values. The prepare request must
+bind every required role through `inputArtifacts`; the kernel resolves and
+freezes the path, owner, source attempt, and SHA-256 snapshot.
 This standardizes calculation mechanics; it does not prescribe a node sequence,
 research phase, branch order, method choice, or scientific acceptance decision.
 

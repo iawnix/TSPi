@@ -68,10 +68,10 @@ const OPERATOR_COMMON_PARAMETERS = {
   root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
 };
 const INTENT_ID_PARAMETER = Type.String({ minLength: 6, maxLength: 128 });
-const INPUT_REF_MAP_PARAMETER = Type.Record(
-  Type.String({ pattern: "^[A-Za-z][A-Za-z0-9_]*$" }),
-  Type.String({ minLength: 1, maxLength: 4096 }),
-);
+const INPUT_ARTIFACTS_PARAMETER = Type.Array(Type.Object({
+  inputRole: Type.String({ pattern: "^[A-Za-z][A-Za-z0-9_]*$", maxLength: 64 }),
+  artifactId: Type.String({ pattern: "^art_[0-9a-f]{24}$" }),
+}, { additionalProperties: false }), { minItems: 1, maxItems: 8 });
 const SETTINGS_MAP_PARAMETER = Type.Record(
   Type.String({ pattern: "^[A-Za-z][A-Za-z0-9_]*$" }),
   Type.String({ maxLength: 4096 }),
@@ -124,7 +124,7 @@ const COMPUTE_OPERATOR_PARAMETERS = Type.Union([
       changedSettings: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { minItems: 1, uniqueItems: true }),
       purpose: StringEnum(RECALCULATION_PURPOSES),
     }, { additionalProperties: false })),
-    inputRefs: Type.Optional(INPUT_REF_MAP_PARAMETER),
+    inputArtifacts: INPUT_ARTIFACTS_PARAMETER,
     settings: Type.Optional(SETTINGS_MAP_PARAMETER),
     executionTarget: EXECUTION_TARGET_PARAMETER,
     dryRun: Type.Boolean({ description: "Prepare only when true; false allows a later bound submit." }),
@@ -171,7 +171,7 @@ type OperatorRequest = {
   taskType?: string;
   attemptKind?: typeof ATTEMPT_KINDS[number];
   recalculationRef?: Record<string, unknown>;
-  inputRefs?: Record<string, string>;
+  inputArtifacts?: Array<{ inputRole: string; artifactId: string }>;
   settings?: Record<string, string>;
   executionTarget?: Record<string, unknown>;
   dryRun?: boolean;
@@ -240,8 +240,8 @@ export default function (pi: ExtensionAPI) {
     description: "Run one fresh Pi compute subagent with request-scoped prepare, submit, status/tail, collect, cancel, or parse tools.",
     promptSnippet: "Delegate one bounded transition-state calculation operation",
     promptGuidelines: [
-      "For prepare, select the node, backend task, purpose, inputs, settings, and execution target; the deterministic host creates the intent ID, paths, validation scope, expected artifacts, and remote directory.",
-      "Omit inputRefs when each required role has exactly one unambiguous file in the selected node's inputs directory; otherwise pass basenames for current-node inputs or explicit workspace artifact refs.",
+      "Before prepare, call ts_workspace_context mode=artifacts to discover logical calculation artifact IDs and compatible input roles.",
+      "For prepare, bind every backend input role with inputArtifacts; the deterministic host resolves and freezes paths and hashes, then creates the intent ID, expected artifacts, and remote directory.",
       "Treat subagent results as program and parser facts, not registered evidence, claim_verdict, accepted TS, or pathway acceptance.",
       "Use inspect for changed or terminal jobs instead of polling unchanged work every turn.",
       "Use submit or cancel only for the pre-bound current intent, and never retry an ambiguous control result.",
@@ -752,8 +752,14 @@ function validateOperatorRequest(request: OperatorRequest): OperatorRequest {
 }
 
 function buildCalculationRequest(request: OperatorRequest): Record<string, unknown> {
-  if (!request.purpose || !request.taskType || !request.executionTarget || request.dryRun === undefined) {
-    throw new Error("prepare requires purpose, taskType, executionTarget, and dryRun");
+  if (
+    !request.purpose
+    || !request.taskType
+    || !request.executionTarget
+    || !request.inputArtifacts?.length
+    || request.dryRun === undefined
+  ) {
+    throw new Error("prepare requires purpose, taskType, inputArtifacts, executionTarget, and dryRun");
   }
   const recalculation = request.recalculationRef;
   const target = request.executionTarget;
@@ -804,7 +810,10 @@ function buildCalculationRequest(request: OperatorRequest): Record<string, unkno
       : null,
     backend: request.backend,
     task_type: request.taskType,
-    input_refs: request.inputRefs || {},
+    input_artifacts: (request.inputArtifacts || []).map((item) => ({
+      input_role: item.inputRole,
+      artifact_id: item.artifactId,
+    })),
     settings: request.settings || {},
     execution_target: executionTarget,
     dry_run: request.dryRun,

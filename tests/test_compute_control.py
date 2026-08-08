@@ -14,6 +14,7 @@ from ts_compute import (
     calculation_tail,
     collect_calculation,
     create_calculation_intent,
+    list_calculation_artifacts,
     parse_calculation,
     preflight_calculation,
     prepare_calculation,
@@ -60,7 +61,21 @@ def _intent(
     )
 
 
-def _calculation_request(*, target: dict[str, object] | None = None) -> dict[str, object]:
+def _artifact_binding(workspace: Path, ref: str, role: str) -> dict[str, object]:
+    catalog = list_calculation_artifacts(workspace)
+    artifact = next(item for item in catalog["artifacts"] if item["path"] == ref)
+    return {
+        "input_role": role,
+        "artifact_id": artifact["artifact_id"],
+        "path": artifact["path"],
+        "sha256": artifact["sha256"],
+        "owner_node": artifact["owner_node"],
+        "source_intent_id": artifact["source_intent_id"],
+    }
+
+
+def _calculation_request(workspace: Path, *, target: dict[str, object] | None = None) -> dict[str, object]:
+    binding = _artifact_binding(workspace, "nodes/n001/inputs/candidate.gjf", "gjf")
     return {
         "schema_version": "ts-calculation-request/1",
         "node_id": "n001",
@@ -69,7 +84,9 @@ def _calculation_request(*, target: dict[str, object] | None = None) -> dict[str
         "recalculation_ref": None,
         "backend": "gaussian",
         "task_type": "opt_freq",
-        "input_refs": {},
+        "input_artifacts": [
+            {"input_role": "gjf", "artifact_id": binding["artifact_id"]}
+        ],
         "settings": {},
         "execution_target": target or {"kind": "local"},
         "dry_run": True,
@@ -79,8 +96,8 @@ def _calculation_request(*, target: dict[str, object] | None = None) -> dict[str
 def test_create_calculation_intent_derives_attempt_paths_and_templates(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
 
-    first = create_calculation_intent(workspace, _calculation_request())
-    second = create_calculation_intent(workspace, _calculation_request())
+    first = create_calculation_intent(workspace, _calculation_request(workspace))
+    second = create_calculation_intent(workspace, _calculation_request(workspace))
 
     assert first["schema_version"] == "ts-calculation-intent-created/1"
     assert first["intent_id"] == "calc_n001_gaussian_opt_freq_0001"
@@ -89,6 +106,9 @@ def test_create_calculation_intent_derives_attempt_paths_and_templates(tmp_path:
         "nodes/n001/attempts/calc_n001_gaussian_opt_freq_0001/intent.json"
     )
     assert first["input_refs"] == {"gjf": "nodes/n001/inputs/candidate.gjf"}
+    assert first["input_bindings"] == [
+        _artifact_binding(workspace, "nodes/n001/inputs/candidate.gjf", "gjf")
+    ]
     assert first["expected_artifacts"] == [
         "nodes/n001/attempts/calc_n001_gaussian_opt_freq_0001/outputs/gaussian.out"
     ]
@@ -106,7 +126,7 @@ def test_create_calculation_intent_reserves_unique_sequences_concurrently(tmp_pa
     with ThreadPoolExecutor(max_workers=8) as pool:
         created = list(
             pool.map(
-                lambda _: create_calculation_intent(workspace, _calculation_request()),
+                lambda _: create_calculation_intent(workspace, _calculation_request(workspace)),
                 range(12),
             )
         )
@@ -131,34 +151,37 @@ def test_create_calculation_intent_preserves_write_failure_and_cleans_reservatio
 
     monkeypatch.setattr("ts_compute.control.write_json", fail_write)
     with pytest.raises(OSError, match="simulated intent write failure"):
-        create_calculation_intent(workspace, _calculation_request())
+        create_calculation_intent(workspace, _calculation_request(workspace))
 
     attempt = workspace / "nodes/n001/attempts/calc_n001_gaussian_opt_freq_0001"
     assert not attempt.exists()
 
 
-def test_create_calculation_intent_accepts_current_node_input_basename(tmp_path: Path) -> None:
+def test_create_calculation_intent_accepts_logical_artifact_binding(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
-    request = _calculation_request()
-    request["input_refs"] = {"gjf": "candidate.gjf"}
+    request = _calculation_request(workspace)
 
     created = create_calculation_intent(workspace, request)
 
     assert created["input_refs"] == {"gjf": "nodes/n001/inputs/candidate.gjf"}
+    assert created["input_bindings"][0]["artifact_id"] == request["input_artifacts"][0]["artifact_id"]
 
 
-def test_create_calculation_intent_rejects_ambiguous_or_agent_named_outputs(tmp_path: Path) -> None:
+def test_create_calculation_intent_rejects_unknown_artifact_or_agent_named_outputs(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     (workspace / "nodes/n001/inputs/second.com").write_text(
         "#P HF/STO-3G opt freq\n\nSecond\n\n0 1\nH 0 0 0\n\n",
         encoding="utf-8",
     )
 
-    with pytest.raises(ComputeContractError, match="exactly one matching node input; found 2"):
-        create_calculation_intent(workspace, _calculation_request())
+    request = _calculation_request(workspace)
+    request["input_artifacts"] = [
+        {"input_role": "gjf", "artifact_id": "art_000000000000000000000000"}
+    ]
+    with pytest.raises(ComputeContractError, match="unknown calculation artifact_id"):
+        create_calculation_intent(workspace, request)
 
-    request = _calculation_request()
-    request["input_refs"] = {"gjf": "candidate.gjf"}
+    request = _calculation_request(workspace)
     request["settings"] = {"output": "chosen-by-agent.log"}
     with pytest.raises(ComputeContractError, match="settings.output is generated"):
         create_calculation_intent(workspace, request)
@@ -171,6 +194,7 @@ def test_create_calculation_intent_derives_ssh_remote_directory(
     workspace = _workspace(tmp_path)
     _allow_remote(monkeypatch)
     request = _calculation_request(
+        workspace,
         target={
             "kind": "remote",
             "transport": "ssh",
@@ -199,6 +223,7 @@ def test_create_calculation_intent_derives_mcp_workspace_relative_directory(
     workspace = _workspace(tmp_path)
     _configure_mcp(monkeypatch)
     request = _calculation_request(
+        workspace,
         target={
             "kind": "remote",
             "transport": "mcp",
@@ -239,6 +264,9 @@ def _intent_v2(
         "backend": "gaussian",
         "task_type": "opt_freq",
         "input_refs": {"gjf": "nodes/n001/inputs/candidate.gjf"},
+        "input_bindings": [
+            _artifact_binding(workspace, "nodes/n001/inputs/candidate.gjf", "gjf")
+        ],
         "settings": {},
         "expected_artifacts": [f"nodes/n001/attempts/{intent_id}/outputs/candidate.log"],
         "execution_target": target or {"kind": "local"},
@@ -529,11 +557,15 @@ def test_prepare_accepts_executable_intent_and_rejects_path_escape_and_wrong_rou
     intent["intent_id"] = "calc_n001_optfreq_unsafe"
     intent["dry_run"] = True
     intent["input_refs"]["gjf"] = "../../outside.gjf"
+    intent["input_bindings"][0]["path"] = "../../outside.gjf"
     intent_path.write_text(json.dumps(intent), encoding="utf-8")
     with pytest.raises(ComputeContractError, match="invalid workspace path"):
         prepare_calculation(workspace, intent_path)
 
     intent["input_refs"]["gjf"] = "nodes/n001/inputs/candidate.gjf"
+    intent["input_bindings"][0] = _artifact_binding(
+        workspace, "nodes/n001/inputs/candidate.gjf", "gjf"
+    )
     intent["expected_artifacts"] = ["nodes/n000/outputs/foreign.log"]
     intent_path.write_text(json.dumps(intent), encoding="utf-8")
     with pytest.raises(ComputeContractError, match="nodes/n001/attempts/calc_n001_optfreq_unsafe/outputs"):
@@ -543,6 +575,9 @@ def test_prepare_accepts_executable_intent_and_rejects_path_escape_and_wrong_rou
     (workspace / "nodes/n001/inputs/candidate.gjf").write_text(
         "#P B3LYP/6-31G(d) sp\n\nSP\n\n0 1\nH 0 0 0\n\n",
         encoding="utf-8",
+    )
+    intent["input_bindings"][0] = _artifact_binding(
+        workspace, "nodes/n001/inputs/candidate.gjf", "gjf"
     )
     intent_path.write_text(json.dumps(intent), encoding="utf-8")
     with pytest.raises(ComputeContractError, match="route does not match"):
@@ -608,6 +643,15 @@ def test_ssh_submit_and_cancel_are_bound_idempotent_operations(
 
     submitted = submit_calculation(workspace, "calc_n001_optfreq_001", binding["intent_digest"])
     assert submitted["state"] == "submitted"
+    (workspace / "nodes/n001/inputs/candidate.gjf").unlink()
+    replay_binding = preflight_calculation(
+        workspace,
+        "submit",
+        "n001",
+        "gaussian",
+        intent_id="calc_n001_optfreq_001",
+    )
+    assert replay_binding["state"] == "submitted"
     assert submit_calculation(workspace, "calc_n001_optfreq_001") == submitted
     assert calls["submit"] == 1
     inspected = calculation_status(workspace, "calc_n001_optfreq_001")
@@ -1331,6 +1375,11 @@ def test_prepare_rejects_canonical_state_as_backend_input(tmp_path: Path) -> Non
     intent["backend"] = "xtb"
     intent["task_type"] = "opt"
     intent["input_refs"] = {"xyz": "research_state.json"}
+    intent["input_bindings"] = [{
+        **intent["input_bindings"][0],
+        "input_role": "xyz",
+        "path": "research_state.json",
+    }]
     intent["expected_artifacts"] = ["nodes/n001/outputs/xtbopt.xyz"]
     intent_path.write_text(json.dumps(intent), encoding="utf-8")
 
@@ -1345,6 +1394,9 @@ def test_gaussian_prepare_reports_unexpected_input_roles(tmp_path: Path) -> None
     intent_path = _intent(workspace)
     intent = json.loads(intent_path.read_text(encoding="utf-8"))
     intent["input_refs"]["source_xyz"] = "nodes/n001/inputs/source.xyz"
+    intent["input_bindings"].append(
+        _artifact_binding(workspace, "nodes/n001/inputs/source.xyz", "source_xyz")
+    )
     intent_path.write_text(json.dumps(intent), encoding="utf-8")
 
     with pytest.raises(ComputeContractError, match=r"unexpected=\['source_xyz'\]"):
@@ -1427,6 +1479,7 @@ def test_status_tail_and_collect_use_prepared_remote_scope(
     )
 
     submit_calculation(workspace, "calc_n001_optfreq_001")
+    (workspace / "nodes/n001/inputs/candidate.gjf").unlink()
     status = calculation_status(workspace, "calc_n001_optfreq_001")
     tail = calculation_tail(workspace, "calc_n001_optfreq_001", "candidate.log", 40)
     collected = collect_calculation(workspace, "calc_n001_optfreq_001", ["candidate.log"])
@@ -1590,6 +1643,9 @@ def test_gaussian_irc_parse_writes_attempt_contract_artifacts(tmp_path: Path) ->
         "backend": "gaussian",
         "task_type": "irc",
         "input_refs": {"gjf": "nodes/n001/inputs/irc.gjf"},
+        "input_bindings": [
+            _artifact_binding(workspace, "nodes/n001/inputs/irc.gjf", "gjf")
+        ],
         "settings": {},
         "expected_artifacts": [f"nodes/n001/attempts/{intent_id}/outputs/irc.log"],
         "execution_target": {"kind": "local"},

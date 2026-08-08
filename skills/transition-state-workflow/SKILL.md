@@ -194,10 +194,11 @@ from the selected node and creates the `ts-calculation-intent/2` ID, attempt
 directory, canonical input refs, expected artifact paths, authority, and remote
 directory. Do not hand-write an intent file or choose generated filenames.
 
-Omit `inputRefs` when every required role has exactly one unambiguous file in
-the selected node's `inputs/` directory. Otherwise use a basename for a
-current-node input or an explicit workspace artifact ref for an upstream
-artifact. The Root Agent still selects methods, settings, resources, retry vs
+First call `ts_workspace_context mode=artifacts` and select the required
+`artifactId` plus `inputRole` bindings. Pass every required role through
+`inputArtifacts`; do not pass paths or filenames to compute preparation. The
+kernel resolves each logical ID and freezes its path and SHA-256 in the intent.
+The Root Agent still selects methods, settings, resources, retry vs
 recalculation, node and branch order, and all scientific interpretation. The
 generated layout is an operational storage contract, not a fixed research phase
 engine.

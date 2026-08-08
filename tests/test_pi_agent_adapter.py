@@ -47,6 +47,9 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
     assert "name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate" in extension_source
     assert "name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply" in extension_source
     assert 'name: "ts_workspace_decision"' not in extension_source
+    assert '"artifacts"' in extension_source
+    assert 'runComputeJson(pi, "list-artifacts"' in extension_source
+    assert "mode=artifacts" in extension_source
 
 
 def test_public_tool_catalog_separates_workspace_subagent_and_mcp_execution() -> None:

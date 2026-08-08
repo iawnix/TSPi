@@ -81,17 +81,24 @@ prepare call has this shape:
   "purpose": "Produce TS/Freq evidence for pred_mode_001.",
   "taskType": "opt_freq",
   "attemptKind": "primary",
-  "inputRefs": {"gjf": "candidate.gjf"},
+  "inputArtifacts": [
+    {"inputRole": "gjf", "artifactId": "art_7f2d10e681fc90c6e275af42"}
+  ],
   "settings": {},
   "executionTarget": {"kind": "local"},
   "dryRun": true
 }
 ```
 
-`inputRefs` may be omitted when every backend input role has exactly one
-unambiguous file in `nodes/<node>/inputs/`. A basename selects a current-node
-input. Cross-node or attempt outputs use an explicit workspace artifact ref.
-The kernel rejects ambiguity instead of guessing.
+Call `ts_workspace_context mode=artifacts` before preparation to obtain eligible
+logical IDs and compatible roles. Every backend input role must be bound in
+`inputArtifacts`. IDs are derived from the owner node and content digest, so a
+same-owner rename keeps the ID while a content change creates a new ID. If one
+ID matches multiple same-owner files, the kernel rejects it as ambiguous.
+The read-only catalog scans only regular, non-symlink `.gjf`, `.com`, `.xyz`,
+`.inp`, and `.json` files under `inputs/`, node `inputs/` or `outputs/`, and
+attempt `outputs/`. It is rebuilt on demand and is not another canonical state
+file or evidence registry.
 
 Before child creation, the host validates `ts-calculation-request/1` and
 materializes an immutable `ts-calculation-intent/2`. It derives:
@@ -116,6 +123,16 @@ For the call above, the generated record is equivalent to:
   "backend": "gaussian",
   "task_type": "opt_freq",
   "input_refs": {"gjf": "nodes/n012/inputs/candidate.gjf"},
+  "input_bindings": [
+    {
+      "input_role": "gjf",
+      "artifact_id": "art_7f2d10e681fc90c6e275af42",
+      "path": "nodes/n012/inputs/candidate.gjf",
+      "sha256": "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+      "owner_node": "n012",
+      "source_intent_id": null
+    }
+  ],
   "settings": {},
   "expected_artifacts": [
     "nodes/n012/attempts/calc_n012_gaussian_opt_freq_0001/outputs/gaussian.out"
@@ -165,7 +182,10 @@ scientific verdict from its source.
 operator until a typed RDKit adapter is implemented and tested. Every selected
 backend policy is composed with `src/agents/compute/policy.md`.
 
-An intent cannot supply a shell command. Gaussian preparation verifies that
+An intent cannot supply a shell command. `input_refs` and `input_bindings` are
+kernel-generated snapshots, not public Pi inputs. Bindings are rechecked during
+prepare and immediately before submit; inspect and collect do not require the
+original local input to remain present. Gaussian preparation verifies that
 the existing route contains flags required by the declared task type; it does
 not choose or rewrite the route. Backend input roles are exact: Gaussian
 accepts only `input_refs.gjf`; unexpected roles such as `source_xyz` are

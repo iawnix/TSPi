@@ -69,6 +69,8 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     assert 'operation: Type.Literal("prepare")' in source
     assert "purpose: Type.String" in source
     assert "taskType: Type.String" in source
+    assert "inputArtifacts: INPUT_ARTIFACTS_PARAMETER" in source
+    assert "inputRefs" not in source
     assert "executionTarget: EXECUTION_TARGET_PARAMETER" in source
     assert "intentFile: Type.String" not in source
     assert 'runComputeJson(pi, "create-intent"' in source
@@ -204,6 +206,9 @@ def test_compute_contracts_exclude_workspace_verdicts_and_arbitrary_commands() -
     assert request["additionalProperties"] is False
     assert result["additionalProperties"] is False
     assert not ({"intent_id", "validation_scope", "expected_artifacts"} & set(request["properties"]))
+    assert "input_artifacts" in request["properties"]
+    assert "input_refs" not in request["properties"]
+    assert "input_bindings" in intent["properties"]
     target_text = json.dumps(request["properties"]["execution_target"])
     assert "remote_root" in target_text
     assert "remote_dir" not in target_text

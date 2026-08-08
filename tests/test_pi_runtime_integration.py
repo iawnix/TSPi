@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from strict_helpers import bootstrap_strict_workspace, start_research_node
+from ts_compute import list_calculation_artifacts
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -352,6 +353,11 @@ def test_real_pi_public_compute_prepare_uses_canonical_cli_result(
         "%chk=candidate.chk\n#P HF/STO-3G opt=(ts,calcfc) freq\n\nTest\n\n0 1\nH 0 0 0\n\n",
         encoding="utf-8",
     )
+    input_artifact = next(
+        item
+        for item in list_calculation_artifacts(workspace)["artifacts"]
+        if item["path"] == input_ref
+    )
     agent_dir = tmp_path / "pi-agent"
     agent_dir.mkdir()
     env = {
@@ -373,6 +379,9 @@ def test_real_pi_public_compute_prepare_uses_canonical_cli_result(
                 "nodeId": "n001",
                 "purpose": "Exercise semantic calculation preparation without running a program.",
                 "taskType": "opt_freq",
+                "inputArtifacts": [
+                    {"inputRole": "gjf", "artifactId": input_artifact["artifact_id"]}
+                ],
                 "executionTarget": execution_target,
                 "dryRun": True,
             },
@@ -435,6 +444,7 @@ def test_real_pi_public_compute_prepare_uses_canonical_cli_result(
     generated_intent = json.loads(prepared_intents[0].read_text(encoding="utf-8"))
     assert generated_intent["validation_scope"] == "tsfreq"
     assert generated_intent["input_refs"] == {"gjf": input_ref}
+    assert generated_intent["input_bindings"][0]["artifact_id"] == input_artifact["artifact_id"]
     assert generated_intent["expected_artifacts"] == [
         f"nodes/n001/attempts/{generated_intent['intent_id']}/outputs/gaussian.out"
     ]
