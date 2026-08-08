@@ -66,6 +66,12 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     assert 'operation: Type.Literal("parse")' in source
     assert "intentId: INTENT_ID_PARAMETER" in source
     assert "artifactRef: Type.String" in source
+    assert 'operation: Type.Literal("prepare")' in source
+    assert "purpose: Type.String" in source
+    assert "taskType: Type.String" in source
+    assert "executionTarget: EXECUTION_TARGET_PARAMETER" in source
+    assert "intentFile: Type.String" not in source
+    assert 'runComputeJson(pi, "create-intent"' in source
     assert "report_serialization_failed_after_action" in source
     assert "retry_safe: false" in source
     assert 'pi.appendEntry("ts-workspace-compute-operator-failed"' in source
@@ -190,11 +196,18 @@ process.stdout.write(JSON.stringify({{ completions, successCalls, failureCalls: 
 
 
 def test_compute_contracts_exclude_workspace_verdicts_and_arbitrary_commands() -> None:
+    request = json.loads((ROOT / "ts_compute" / "contracts" / "calculation_request.schema.json").read_text(encoding="utf-8"))
     intent = json.loads((ROOT / "ts_compute" / "contracts" / "calculation_intent_v2.schema.json").read_text(encoding="utf-8"))
     result = json.loads((ROOT / "ts_compute" / "contracts" / "calculation_result.schema.json").read_text(encoding="utf-8"))
 
     assert intent["additionalProperties"] is False
+    assert request["additionalProperties"] is False
     assert result["additionalProperties"] is False
+    assert not ({"intent_id", "validation_scope", "expected_artifacts"} & set(request["properties"]))
+    target_text = json.dumps(request["properties"]["execution_target"])
+    assert "remote_root" in target_text
+    assert "remote_dir" not in target_text
+    assert "authority" not in target_text
     assert "command" not in intent["properties"]
     assert "claim_verdict" not in result["properties"]
     forbidden = result["properties"]["parser_facts"]["propertyNames"]["not"]["enum"]

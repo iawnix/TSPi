@@ -328,25 +328,6 @@ def test_real_pi_public_compute_prepare_uses_canonical_cli_result(tmp_path: Path
         "%chk=candidate.chk\n#P HF/STO-3G opt=(ts,calcfc) freq\n\nTest\n\n0 1\nH 0 0 0\n\n",
         encoding="utf-8",
     )
-    intent_id = "calc_n001_dev_prepare_001"
-    intent_ref = f"nodes/n001/scratch/{intent_id}.json"
-    intent = {
-        "schema_version": "ts-calculation-intent/2",
-        "intent_id": intent_id,
-        "node_id": "n001",
-        "purpose": "Exercise the public compute prepare boundary without running a program.",
-        "validation_scope": "tsfreq",
-        "attempt_kind": "primary",
-        "recalculation_ref": None,
-        "backend": "gaussian",
-        "task_type": "opt_freq",
-        "input_refs": {"gjf": input_ref},
-        "settings": {},
-        "expected_artifacts": [f"nodes/n001/attempts/{intent_id}/outputs/candidate.log"],
-        "execution_target": {"kind": "local"},
-        "dry_run": True,
-    }
-    (workspace / intent_ref).write_text(json.dumps(intent), encoding="utf-8")
     agent_dir = tmp_path / "pi-agent"
     agent_dir.mkdir()
     env = {
@@ -364,7 +345,10 @@ def test_real_pi_public_compute_prepare_uses_canonical_cli_result(tmp_path: Path
                 "operation": "prepare",
                 "backend": "gaussian",
                 "nodeId": "n001",
-                "intentFile": intent_ref,
+                "purpose": "Exercise semantic calculation preparation without running a program.",
+                "taskType": "opt_freq",
+                "executionTarget": {"kind": "local"},
+                "dryRun": True,
             },
         ),
         _tool_call_chunks("ts_workspace_compute_prepare"),
@@ -420,6 +404,14 @@ def test_real_pi_public_compute_prepare_uses_canonical_cli_result(tmp_path: Path
     assert canonical["state"] == "prepared"
     assert canonical["program_status"] == "not_run"
     assert "prepared" not in canonical
+    prepared_intents = list((workspace / "nodes/n001/attempts").glob("*/intent.json"))
+    assert len(prepared_intents) == 1
+    generated_intent = json.loads(prepared_intents[0].read_text(encoding="utf-8"))
+    assert generated_intent["validation_scope"] == "tsfreq"
+    assert generated_intent["input_refs"] == {"gjf": input_ref}
+    assert generated_intent["expected_artifacts"] == [
+        f"nodes/n001/attempts/{generated_intent['intent_id']}/outputs/gaussian.out"
+    ]
     assert report["program"] == {
         "outcome": "not_run",
         "state": "prepared",

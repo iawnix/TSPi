@@ -187,9 +187,20 @@ Read `references/pi_agent_adapter.md`, `references/compute_operator.md`, and
 
 ## Calculation Attempts
 
-Use `ts-calculation-intent/2` for every calculation. Declare `validation_scope`,
-`attempt_kind`, `recalculation_ref`, backend, task type, inputs, expected local
-artifacts, and execution target.
+For `ts_subagent_compute operation=prepare`, declare the scientific purpose,
+backend task, attempt kind, input roles, settings, execution target, and whether
+the request is dry-run only. The deterministic host derives `validation_scope`
+from the selected node and creates the `ts-calculation-intent/2` ID, attempt
+directory, canonical input refs, expected artifact paths, authority, and remote
+directory. Do not hand-write an intent file or choose generated filenames.
+
+Omit `inputRefs` when every required role has exactly one unambiguous file in
+the selected node's `inputs/` directory. Otherwise use a basename for a
+current-node input or an explicit workspace artifact ref for an upstream
+artifact. The Root Agent still selects methods, settings, resources, retry vs
+recalculation, node and branch order, and all scientific interpretation. The
+generated layout is an operational storage contract, not a fixed research phase
+engine.
 
 Attempt authority lives under:
 
@@ -197,8 +208,9 @@ Attempt authority lives under:
 nodes/<node>/attempts/<intent>/
 ```
 
-A remote target must declare `authority=execution_mirror` and explicitly select
-`transport=ssh|mcp`. MCP
+A remote request explicitly selects `transport=ssh|mcp`. For SSH it supplies an
+allowlisted `remoteRoot`; for MCP it supplies scheduler resources. The host
+generates `authority=execution_mirror` and the intent's remote directory. MCP
 connection URL, token, and timeout are host environment settings, never intent
 fields. Long jobs outlive child sessions; inspect only when state changes or a
 bounded failure diagnostic is needed. Do not poll unchanged jobs every turn.

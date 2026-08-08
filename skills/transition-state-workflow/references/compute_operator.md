@@ -67,15 +67,47 @@ become the effective control result without changing the original ambiguous
 attempt; a reconciled submit may also rebuild `mcp_receipt.json` from the bound
 expected-artifact manifest so collection can proceed without scheduler history.
 
-## Calculation Intent V2
+## Semantic Preparation And Generated Intent
 
-The Root Agent selects purpose, method, scope, and execution target before
-delegation.
+The Root Agent selects purpose, method, inputs, settings, attempt kind, and
+execution target. It does not create an intent file or generated paths. A Pi
+prepare call has this shape:
+
+```json
+{
+  "operation": "prepare",
+  "backend": "gaussian",
+  "nodeId": "n012",
+  "purpose": "Produce TS/Freq evidence for pred_mode_001.",
+  "taskType": "opt_freq",
+  "attemptKind": "primary",
+  "inputRefs": {"gjf": "candidate.gjf"},
+  "settings": {},
+  "executionTarget": {"kind": "local"},
+  "dryRun": true
+}
+```
+
+`inputRefs` may be omitted when every backend input role has exactly one
+unambiguous file in `nodes/<node>/inputs/`. A basename selects a current-node
+input. Cross-node or attempt outputs use an explicit workspace artifact ref.
+The kernel rejects ambiguity instead of guessing.
+
+Before child creation, the host validates `ts-calculation-request/1` and
+materializes an immutable `ts-calculation-intent/2`. It derives:
+
+- `intent_id` and `nodes/<node>/attempts/<intent>/`;
+- `validation_scope` from the selected node;
+- canonical workspace-relative input refs;
+- backend-declared expected artifact names under the attempt output directory;
+- `authority=execution_mirror` and transport-specific remote directories.
+
+For the call above, the generated record is equivalent to:
 
 ```json
 {
   "schema_version": "ts-calculation-intent/2",
-  "intent_id": "calc_n012_optfreq_001",
+  "intent_id": "calc_n012_gaussian_opt_freq_0001",
   "node_id": "n012",
   "purpose": "Produce TS/Freq evidence for pred_mode_001.",
   "validation_scope": "tsfreq",
@@ -83,20 +115,15 @@ delegation.
   "recalculation_ref": null,
   "backend": "gaussian",
   "task_type": "opt_freq",
-  "input_refs": {
-    "gjf": "nodes/n012/inputs/candidate.gjf"
-  },
+  "input_refs": {"gjf": "nodes/n012/inputs/candidate.gjf"},
   "settings": {},
   "expected_artifacts": [
-    "nodes/n012/attempts/calc_n012_optfreq_001/outputs/candidate.log"
+    "nodes/n012/attempts/calc_n012_gaussian_opt_freq_0001/outputs/gaussian.out"
   ],
   "execution_target": {"kind": "local"},
   "dry_run": true
 }
 ```
-
-`validation_scope` is null for candidate-search calculations and must match a
-validation node when the selected node is a validation node.
 
 `dry_run=true` supports preparation and inspection workflows but cannot be
 submitted or cancelled. Set `dry_run=false` only when the intent is intended
@@ -109,13 +136,13 @@ Attempt kinds:
 - `retry`: technical retry under the same node;
 - `recalculation`: method change with a non-null source reference.
 
-Example recalculation reference:
+Public recalculation reference:
 
 ```json
 {
-  "source_node": "n012",
-  "source_intent_id": "calc_n012_optfreq_001",
-  "changed_settings": ["functional", "basis_set"],
+  "sourceNode": "n012",
+  "sourceIntentId": "calc_n012_gaussian_opt_freq_0001",
+  "changedSettings": ["functional", "basis_set"],
   "purpose": "method_robustness"
 }
 ```
@@ -169,31 +196,29 @@ status.
 
 ## Remote Execution Mirror
 
-Remote targets must be allowlisted and explicitly non-authoritative:
+SSH preparation selects an allowlisted root; the kernel appends the node and
+generated intent ID and marks the resulting intent non-authoritative:
 
 ```json
 {
   "kind": "remote",
-  "authority": "execution_mirror",
   "transport": "ssh",
-  "login_host": "login-a",
-  "compute_host": "compute-a",
-  "remote_dir": "/remote/project/n012/calc_n012_optfreq_001"
+  "loginHost": "login-a",
+  "computeHost": "compute-a",
+  "remoteRoot": "/remote/project"
 }
 ```
 
 Remote intents without an explicit `transport` are rejected. SSH host and path
 policy remains environment-owned through `TS_COMPUTE_*`.
 
-MCP targets use a workspace-relative cluster directory and a complete resource
-shape:
+MCP preparation supplies only a complete resource shape. The host generates
+the workspace-relative cluster directory:
 
 ```json
 {
   "kind": "remote",
-  "authority": "execution_mirror",
   "transport": "mcp",
-  "remote_dir": "runs/n012/calc_n012_optfreq_001",
   "execution": {
     "queue": "workq",
     "nodes": 1,
@@ -211,8 +236,8 @@ shape:
 }
 ```
 
-The intent value above is a logical directory, not the final principal-relative
-path. During prepare, the compute kernel reads or creates the persistent
+During prepare, the compute kernel generates
+`runs/n012/calc_n012_gaussian_opt_freq_0001`, then reads or creates the persistent
 `.agents/workspace-identity.json` record and writes this immutable binding into
 the attempt's `prepared.json`:
 
@@ -220,8 +245,8 @@ the attempt's `prepared.json`:
 {
   "namespace_version": "ts-mcp-workspace/1",
   "workspace_id": "ws_<24 lowercase hex characters>",
-  "requested_remote_dir": "runs/n012/calc_n012_optfreq_001",
-  "remote_dir": "workspaces/ws_<24 lowercase hex characters>/runs/n012/calc_n012_optfreq_001",
+  "requested_remote_dir": "runs/n012/calc_n012_gaussian_opt_freq_0001",
+  "remote_dir": "workspaces/ws_<24 lowercase hex characters>/runs/n012/calc_n012_gaussian_opt_freq_0001",
   "submission_id": "tsjob_<workspace-bound value>"
 }
 ```

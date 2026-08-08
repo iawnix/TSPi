@@ -24,10 +24,12 @@ The Root compute operator may create one request-scoped submit or cancel wrapper
 after exact intent, digest, target, and job binding. No interactive confirmation
 is required.
 
-`execution_target.transport` selects `ssh` or `mcp`. SSH uses an absolute
-allowlisted `remote_dir`; an MCP intent uses a logical workspace-relative
-`remote_dir` and complete scheduler resources. New MCP preparations bind that
-logical path to `workspaces/<workspace_id>/<remote_dir>` using the persistent
+The public semantic request selects `execution_target.transport=ssh|mcp`. SSH
+provides an absolute allowlisted `remote_root`; MCP provides complete scheduler
+resources. The compute kernel appends the selected node and generated intent ID
+to create an SSH `remote_dir`, or creates `runs/<node>/<intent>` for MCP. New
+MCP preparations bind that logical path to
+`workspaces/<workspace_id>/<remote_dir>` using the persistent
 non-scientific identity in `.agents/workspace-identity.json`. The resolved path
 and workspace-bound submission ID are persisted in `prepared.json`; later
 operations do not derive them from the Pi process. Prepared MCP records without

@@ -4,7 +4,6 @@ import { Type } from "typebox";
 import { Text } from "@earendil-works/pi-tui";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
 import {
   requireWorkspaceRoot,
   runComputeJson,
@@ -57,17 +56,78 @@ const MCP_DIAGNOSTIC_ACTIVITY = Object.freeze({
   },
 } satisfies Record<McpDiagnosticMode, { description: string; detail: string }>);
 const MCP_PREFLIGHT_OPERATIONS = new Set(["submit", "inspect", "collect", "cancel"]);
+const ATTEMPT_KINDS = ["primary", "retry", "recalculation"] as const;
+const RECALCULATION_PURPOSES = ["repair", "refinement", "method_robustness"] as const;
 const OPERATOR_COMMON_PARAMETERS = {
   backend: StringEnum(BACKENDS),
-  nodeId: Type.String({ minLength: 1, maxLength: 128, description: "Workspace node that owns this calculation attempt." }),
+  nodeId: Type.String({
+    pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+    maxLength: 128,
+    description: "Workspace node that owns this calculation attempt.",
+  }),
   root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
 };
 const INTENT_ID_PARAMETER = Type.String({ minLength: 6, maxLength: 128 });
+const INPUT_REF_MAP_PARAMETER = Type.Record(
+  Type.String({ pattern: "^[A-Za-z][A-Za-z0-9_]*$" }),
+  Type.String({ minLength: 1, maxLength: 4096 }),
+);
+const SETTINGS_MAP_PARAMETER = Type.Record(
+  Type.String({ pattern: "^[A-Za-z][A-Za-z0-9_]*$" }),
+  Type.String({ maxLength: 4096 }),
+);
+const ENVIRONMENT_MAP_PARAMETER = Type.Record(
+  Type.String({ pattern: "^[A-Za-z_][A-Za-z0-9_]*$" }),
+  Type.String({ maxLength: 16384 }),
+);
+const MCP_EXECUTION_PARAMETER = Type.Object({
+  queue: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$" }),
+  nodes: Type.Integer({ minimum: 1 }),
+  ncpus: Type.Integer({ minimum: 1 }),
+  memory: Type.String({ pattern: "^[1-9][0-9]*(?:kb|mb|gb|tb)$" }),
+  walltime: Type.String({ pattern: "^[0-9]{1,4}:[0-5][0-9]:[0-5][0-9]$" }),
+  ngpus: Type.Integer({ minimum: 0 }),
+  mpiprocs: Type.Optional(Type.Integer({ minimum: 1 })),
+  ompthreads: Type.Optional(Type.Integer({ minimum: 1 })),
+  host: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+  place: Type.Optional(StringEnum(["free", "pack", "scatter", "excl", "shared"] as const)),
+  environment: Type.Optional(ENVIRONMENT_MAP_PARAMETER),
+  gpuDevices: Type.Optional(Type.Array(Type.Integer({ minimum: 0, maximum: 63 }), { uniqueItems: true })),
+}, { additionalProperties: false });
+const EXECUTION_TARGET_PARAMETER = Type.Union([
+  Type.Object({
+    kind: Type.Literal("local"),
+  }, { additionalProperties: false }),
+  Type.Object({
+    kind: Type.Literal("remote"),
+    transport: Type.Literal("ssh"),
+    loginHost: Type.String({ minLength: 1, maxLength: 255 }),
+    computeHost: Type.String({ minLength: 1, maxLength: 255 }),
+    remoteRoot: Type.String({ minLength: 1, maxLength: 4096 }),
+  }, { additionalProperties: false }),
+  Type.Object({
+    kind: Type.Literal("remote"),
+    transport: Type.Literal("mcp"),
+    execution: MCP_EXECUTION_PARAMETER,
+  }, { additionalProperties: false }),
+]);
 const COMPUTE_OPERATOR_PARAMETERS = Type.Union([
   Type.Object({
     ...OPERATOR_COMMON_PARAMETERS,
     operation: Type.Literal("prepare"),
-    intentFile: Type.String({ description: "JSON file conforming to ts-calculation-intent/2." }),
+    purpose: Type.String({ minLength: 1, maxLength: 2000 }),
+    taskType: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]*$", maxLength: 64 }),
+    attemptKind: Type.Optional(StringEnum(ATTEMPT_KINDS)),
+    recalculationRef: Type.Optional(Type.Object({
+      sourceNode: Type.String({ minLength: 1, maxLength: 128 }),
+      sourceIntentId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+      changedSettings: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { minItems: 1, uniqueItems: true }),
+      purpose: StringEnum(RECALCULATION_PURPOSES),
+    }, { additionalProperties: false })),
+    inputRefs: Type.Optional(INPUT_REF_MAP_PARAMETER),
+    settings: Type.Optional(SETTINGS_MAP_PARAMETER),
+    executionTarget: EXECUTION_TARGET_PARAMETER,
+    dryRun: Type.Boolean({ description: "Prepare only when true; false allows a later bound submit." }),
   }, { additionalProperties: false }),
   Type.Object({
     ...OPERATOR_COMMON_PARAMETERS,
@@ -105,7 +165,16 @@ type OperatorRequest = {
   backend: typeof BACKENDS[number];
   nodeId: string;
   intentFile?: string;
+  intentRequest?: Record<string, unknown>;
   intentId?: string;
+  purpose?: string;
+  taskType?: string;
+  attemptKind?: typeof ATTEMPT_KINDS[number];
+  recalculationRef?: Record<string, unknown>;
+  inputRefs?: Record<string, string>;
+  settings?: Record<string, string>;
+  executionTarget?: Record<string, unknown>;
+  dryRun?: boolean;
   tailArtifact?: string;
   tailLines?: number;
   artifacts?: string[];
@@ -171,7 +240,8 @@ export default function (pi: ExtensionAPI) {
     description: "Run one fresh Pi compute subagent with request-scoped prepare, submit, status/tail, collect, cancel, or parse tools.",
     promptSnippet: "Delegate one bounded transition-state calculation operation",
     promptGuidelines: [
-      "Create the calculation intent and select its node, method, purpose, validation scope, and target before calling the compute subagent.",
+      "For prepare, select the node, backend task, purpose, inputs, settings, and execution target; the deterministic host creates the intent ID, paths, validation scope, expected artifacts, and remote directory.",
+      "Omit inputRefs when each required role has exactly one unambiguous file in the selected node's inputs directory; otherwise pass basenames for current-node inputs or explicit workspace artifact refs.",
       "Treat subagent results as program and parser facts, not registered evidence, claim_verdict, accepted TS, or pathway acceptance.",
       "Use inspect for changed or terminal jobs instead of polling unchanged work every turn.",
       "Use submit or cancel only for the pre-bound current intent, and never retry an ambiguous control result.",
@@ -185,8 +255,8 @@ export default function (pi: ExtensionAPI) {
         task_id: taskId,
         role: "backend",
         operation: params.operation,
-        backend: params.backend,
-        node_id: params.nodeId,
+        backend: String(params.backend),
+        node_id: String(params.nodeId),
         intent_id: "intentId" in params ? params.intentId : undefined,
       }, onUpdate);
       reportStatus("preflight");
@@ -198,7 +268,7 @@ export default function (pi: ExtensionAPI) {
           operation: input.operation,
           backend: input.backend,
           nodeId: input.nodeId,
-          intentFile: input.intentFile ? resolve(ctx.cwd, String(input.intentFile).replace(/^@+/, "")) : undefined,
+          intentRequest: input.operation === "prepare" ? buildCalculationRequest(input) : undefined,
           intentId: input.intentId,
           tailArtifact: input.tailArtifact,
           tailLines: input.tailLines,
@@ -603,6 +673,19 @@ async function preflightOperatorRequest(
   request: OperatorRequest,
   signal?: AbortSignal,
 ) {
+  if (request.operation === "prepare") {
+    const created = await runComputeJson(pi, "create-intent", root, [
+      "--request-json", JSON.stringify(request.intentRequest),
+    ], signal, 60_000);
+    if (
+      !isPlainObject(created)
+      || created.schema_version !== "ts-calculation-intent-created/1"
+      || typeof created.intent_ref !== "string"
+    ) {
+      throw new Error("compute intent creation returned an invalid binding");
+    }
+    request.intentFile = created.intent_ref;
+  }
   const args = [
     "--operation", request.operation,
     "--node-id", request.nodeId,
@@ -645,13 +728,15 @@ function validateOperatorRequest(request: OperatorRequest): OperatorRequest {
   if (typeof request.nodeId !== "string" || !request.nodeId.trim()) throw new Error("compute operation requires nodeId");
   const supplied = (key: keyof OperatorRequest) => request[key] !== undefined;
   if (request.operation === "prepare") {
-    if (!request.intentFile) throw new Error("prepare requires intentFile");
+    if (!request.intentRequest) throw new Error("prepare requires a semantic intent request");
     for (const key of ["intentId", "tailArtifact", "tailLines", "artifacts", "artifactRef"] as const) {
       if (supplied(key)) throw new Error(`prepare does not accept ${key}`);
     }
   } else {
     if (!request.intentId) throw new Error(`${request.operation} requires intentId`);
-    if (supplied("intentFile")) throw new Error(`${request.operation} does not accept intentFile`);
+    if (supplied("intentFile") || supplied("intentRequest")) {
+      throw new Error(`${request.operation} does not accept an intent request`);
+    }
   }
   if (request.operation !== "inspect" && (supplied("tailArtifact") || supplied("tailLines"))) {
     throw new Error(`${request.operation} does not accept tail options`);
@@ -664,6 +749,66 @@ function validateOperatorRequest(request: OperatorRequest): OperatorRequest {
     throw new Error(`${request.operation} does not accept artifactRef`);
   }
   return request;
+}
+
+function buildCalculationRequest(request: OperatorRequest): Record<string, unknown> {
+  if (!request.purpose || !request.taskType || !request.executionTarget || request.dryRun === undefined) {
+    throw new Error("prepare requires purpose, taskType, executionTarget, and dryRun");
+  }
+  const recalculation = request.recalculationRef;
+  const target = request.executionTarget;
+  let executionTarget: Record<string, unknown>;
+  if (target.kind === "local") {
+    executionTarget = { kind: "local" };
+  } else if (target.transport === "ssh") {
+    executionTarget = {
+      kind: "remote",
+      transport: "ssh",
+      login_host: target.loginHost,
+      compute_host: target.computeHost,
+      remote_root: target.remoteRoot,
+    };
+  } else {
+    const execution = isPlainObject(target.execution) ? target.execution : {};
+    executionTarget = {
+      kind: "remote",
+      transport: "mcp",
+      execution: {
+        queue: execution.queue,
+        nodes: execution.nodes,
+        ncpus: execution.ncpus,
+        memory: execution.memory,
+        walltime: execution.walltime,
+        ngpus: execution.ngpus,
+        mpiprocs: execution.mpiprocs ?? null,
+        ompthreads: execution.ompthreads ?? null,
+        host: execution.host ?? null,
+        place: execution.place ?? null,
+        environment: execution.environment || {},
+        gpu_devices: execution.gpuDevices || [],
+      },
+    };
+  }
+  return {
+    schema_version: "ts-calculation-request/1",
+    node_id: request.nodeId,
+    purpose: request.purpose,
+    attempt_kind: request.attemptKind || "primary",
+    recalculation_ref: recalculation
+      ? {
+          source_node: recalculation.sourceNode,
+          source_intent_id: recalculation.sourceIntentId || null,
+          changed_settings: recalculation.changedSettings,
+          purpose: recalculation.purpose,
+        }
+      : null,
+    backend: request.backend,
+    task_type: request.taskType,
+    input_refs: request.inputRefs || {},
+    settings: request.settings || {},
+    execution_target: executionTarget,
+    dry_run: request.dryRun,
+  };
 }
 
 function requireBindingString(value: unknown, label: string): string {

@@ -13,6 +13,7 @@ from .control import (
     calculation_status,
     calculation_tail,
     collect_calculation,
+    create_calculation_intent,
     parse_calculation,
     preflight_calculation,
     prepare_calculation,
@@ -29,6 +30,10 @@ def main(argv: list[str] | None = None) -> int:
     prepare.add_argument("--root", required=True)
     prepare.add_argument("--intent-file", required=True)
     prepare.add_argument("--expected-intent-digest")
+
+    create_intent = sub.add_parser("create-intent")
+    create_intent.add_argument("--root", required=True)
+    create_intent.add_argument("--request-json", required=True)
 
     preflight = sub.add_parser("preflight")
     preflight.add_argument("--root", required=True)
@@ -74,6 +79,11 @@ def main(argv: list[str] | None = None) -> int:
 def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.command == "mcp-diagnostic":
         return diagnose_mcp(args.mode)
+    if args.command == "create-intent":
+        request = json.loads(args.request_json)
+        if not isinstance(request, dict):
+            raise ComputeContractError("calculation request must be a JSON object")
+        return create_calculation_intent(args.root, request)
     if args.command == "preflight":
         return preflight_calculation(
             args.root,

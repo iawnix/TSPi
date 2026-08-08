@@ -216,13 +216,22 @@ Candidate and validation nodes cannot set hypothesis status.
 
 ## Calculation Attempts
 
-Calculation intents use `ts-calculation-intent/2` and declare:
+Pi preparation accepts `ts-calculation-request/1` semantics:
 
-- `validation_scope`
+- scientific purpose and selected workspace node
 - `attempt_kind=primary|retry|recalculation`
 - `recalculation_ref`, required only for recalculation
-- one allowlisted backend and task type
+- one allowlisted backend, task type, input-role map, and settings
 - a local or allowlisted remote execution target
+
+The deterministic host derives the node validation scope and creates the
+immutable `ts-calculation-intent/2`, intent ID, attempt directory, expected
+artifact names, execution-mirror authority, and remote directory. Pi callers do
+not create intent JSON files or fill generated path fields. A current-node
+input basename is accepted, and `inputRefs` may be omitted when every required
+role has exactly one unambiguous file in `nodes/<node>/inputs/`.
+This standardizes calculation mechanics; it does not prescribe a node sequence,
+research phase, branch order, method choice, or scientific acceptance decision.
 
 The deterministic calculation matrix includes Gaussian
 `sp|opt|freq|opt_freq|irc`, xTB `sp|opt|freq|opt_freq|scan|md`, CREST
@@ -235,8 +244,9 @@ Parsed facts distinguish process completion, requested task completion,
 convergence, and artifact completeness; they never make a TS, connectivity,
 conformer-selection, or mechanism verdict.
 
-Remote intents must select `transport=ssh|mcp` explicitly. SSH policy comes
-from `TS_COMPUTE_*`; MCP
+Remote requests must select `transport=ssh|mcp` explicitly. SSH requests select
+an allowlisted root rather than an attempt directory; MCP requests provide the
+complete scheduler resource shape. SSH policy comes from `TS_COMPUTE_*`; MCP
 connection settings come only from `TS_CLUSTER_MCP_URL`,
 `TS_CLUSTER_MCP_TOKEN`, and `TS_CLUSTER_MCP_TIMEOUT`.
 `TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT` separately bounds each read-only diagnostic
@@ -275,8 +285,8 @@ not enter canonical scientific state or `workspace_revision`. Every MCP
 prepared record must contain `namespace_version=ts-mcp-workspace/1` and the
 matching workspace-bound path and submission ID; incomplete records are rejected.
 
-A remote directory must declare `authority=execution_mirror`. Results become
-usable only after collection and local verification. See
+Generated remote intents always declare `authority=execution_mirror`. Results
+become usable only after collection and local verification. See
 `skills/transition-state-workflow/references/compute_operator.md`.
 
 For scheduler-backed execution, the bundled TS Cluster MCP binds one

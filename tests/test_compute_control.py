@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,7 @@ from ts_compute import (
     calculation_status,
     calculation_tail,
     collect_calculation,
+    create_calculation_intent,
     parse_calculation,
     preflight_calculation,
     prepare_calculation,
@@ -56,6 +58,164 @@ def _intent(
         target=target,
         dry_run=dry_run,
     )
+
+
+def _calculation_request(*, target: dict[str, object] | None = None) -> dict[str, object]:
+    return {
+        "schema_version": "ts-calculation-request/1",
+        "node_id": "n001",
+        "purpose": "Evaluate the selected candidate without hand-authoring an intent file.",
+        "attempt_kind": "primary",
+        "recalculation_ref": None,
+        "backend": "gaussian",
+        "task_type": "opt_freq",
+        "input_refs": {},
+        "settings": {},
+        "execution_target": target or {"kind": "local"},
+        "dry_run": True,
+    }
+
+
+def test_create_calculation_intent_derives_attempt_paths_and_templates(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+
+    first = create_calculation_intent(workspace, _calculation_request())
+    second = create_calculation_intent(workspace, _calculation_request())
+
+    assert first["schema_version"] == "ts-calculation-intent-created/1"
+    assert first["intent_id"] == "calc_n001_gaussian_opt_freq_0001"
+    assert second["intent_id"] == "calc_n001_gaussian_opt_freq_0002"
+    assert first["intent_ref"] == (
+        "nodes/n001/attempts/calc_n001_gaussian_opt_freq_0001/intent.json"
+    )
+    assert first["input_refs"] == {"gjf": "nodes/n001/inputs/candidate.gjf"}
+    assert first["expected_artifacts"] == [
+        "nodes/n001/attempts/calc_n001_gaussian_opt_freq_0001/outputs/gaussian.out"
+    ]
+    assert first["intent"]["validation_scope"] == "tsfreq"
+    assert first["intent"]["execution_target"] == {"kind": "local"}
+    assert not list((workspace / "nodes/n001/scratch").glob("*.json"))
+
+    prepared = prepare_calculation(workspace, first["intent_ref"], first["intent_digest"])
+    assert prepared["result"]["state"] == "prepared"
+
+
+def test_create_calculation_intent_reserves_unique_sequences_concurrently(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        created = list(
+            pool.map(
+                lambda _: create_calculation_intent(workspace, _calculation_request()),
+                range(12),
+            )
+        )
+
+    intent_ids = sorted(item["intent_id"] for item in created)
+    assert intent_ids == [
+        f"calc_n001_gaussian_opt_freq_{sequence:04d}"
+        for sequence in range(1, 13)
+    ]
+    assert all((workspace / item["intent_ref"]).is_file() for item in created)
+
+
+def test_create_calculation_intent_preserves_write_failure_and_cleans_reservation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = _workspace(tmp_path)
+
+    def fail_write(path: Path, _data: object) -> None:
+        path.with_name(f"{path.name}.tmp").write_text("partial", encoding="utf-8")
+        raise OSError("simulated intent write failure")
+
+    monkeypatch.setattr("ts_compute.control.write_json", fail_write)
+    with pytest.raises(OSError, match="simulated intent write failure"):
+        create_calculation_intent(workspace, _calculation_request())
+
+    attempt = workspace / "nodes/n001/attempts/calc_n001_gaussian_opt_freq_0001"
+    assert not attempt.exists()
+
+
+def test_create_calculation_intent_accepts_current_node_input_basename(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    request = _calculation_request()
+    request["input_refs"] = {"gjf": "candidate.gjf"}
+
+    created = create_calculation_intent(workspace, request)
+
+    assert created["input_refs"] == {"gjf": "nodes/n001/inputs/candidate.gjf"}
+
+
+def test_create_calculation_intent_rejects_ambiguous_or_agent_named_outputs(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    (workspace / "nodes/n001/inputs/second.com").write_text(
+        "#P HF/STO-3G opt freq\n\nSecond\n\n0 1\nH 0 0 0\n\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ComputeContractError, match="exactly one matching node input; found 2"):
+        create_calculation_intent(workspace, _calculation_request())
+
+    request = _calculation_request()
+    request["input_refs"] = {"gjf": "candidate.gjf"}
+    request["settings"] = {"output": "chosen-by-agent.log"}
+    with pytest.raises(ComputeContractError, match="settings.output is generated"):
+        create_calculation_intent(workspace, request)
+
+
+def test_create_calculation_intent_derives_ssh_remote_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = _workspace(tmp_path)
+    _allow_remote(monkeypatch)
+    request = _calculation_request(
+        target={
+            "kind": "remote",
+            "transport": "ssh",
+            "login_host": "login.test",
+            "compute_host": "compute.test",
+            "remote_root": "/remote/ts",
+        }
+    )
+
+    created = create_calculation_intent(workspace, request)
+
+    assert created["execution_target"] == {
+        "kind": "remote",
+        "authority": "execution_mirror",
+        "transport": "ssh",
+        "login_host": "login.test",
+        "compute_host": "compute.test",
+        "remote_dir": "/remote/ts/n001/calc_n001_gaussian_opt_freq_0001",
+    }
+
+
+def test_create_calculation_intent_derives_mcp_workspace_relative_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = _workspace(tmp_path)
+    _configure_mcp(monkeypatch)
+    request = _calculation_request(
+        target={
+            "kind": "remote",
+            "transport": "mcp",
+            "execution": _mcp_target()["execution"],
+        }
+    )
+
+    created = create_calculation_intent(workspace, request)
+    prepared = prepare_calculation(workspace, created["intent_ref"], created["intent_digest"])
+
+    assert created["execution_target"]["authority"] == "execution_mirror"
+    assert created["execution_target"]["remote_dir"] == (
+        "runs/n001/calc_n001_gaussian_opt_freq_0001"
+    )
+    policy = prepared["prepared"]["execution_policy"]
+    assert policy["requested_remote_dir"] == created["execution_target"]["remote_dir"]
+    assert policy["remote_dir"].endswith(created["execution_target"]["remote_dir"])
 
 
 def _intent_v2(

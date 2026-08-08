@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TS semantic calculation request",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "node_id",
+    "purpose",
+    "attempt_kind",
+    "recalculation_ref",
+    "backend",
+    "task_type",
+    "input_refs",
+    "settings",
+    "execution_target",
+    "dry_run"
+  ],
+  "properties": {
+    "schema_version": {"const": "ts-calculation-request/1"},
+    "node_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+      "maxLength": 128
+    },
+    "purpose": {"type": "string", "minLength": 1, "maxLength": 2000},
+    "attempt_kind": {"enum": ["primary", "retry", "recalculation"]},
+    "recalculation_ref": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "required": ["source_node", "source_intent_id", "changed_settings", "purpose"],
+          "properties": {
+            "source_node": {"type": "string", "minLength": 1, "maxLength": 128},
+            "source_intent_id": {"type": ["string", "null"], "minLength": 1, "maxLength": 128},
+            "changed_settings": {
+              "type": "array",
+              "minItems": 1,
+              "uniqueItems": true,
+              "items": {"type": "string", "minLength": 1, "maxLength": 256}
+            },
+            "purpose": {"enum": ["repair", "refinement", "method_robustness"]}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "backend": {"enum": ["gaussian", "xtb", "crest", "ase_neb", "qbics_dmecp"]},
+    "task_type": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+      "maxLength": 64
+    },
+    "input_refs": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9_]*$"},
+      "additionalProperties": {"type": "string", "minLength": 1, "maxLength": 4096}
+    },
+    "settings": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9_]*$"},
+      "additionalProperties": {"type": "string", "maxLength": 4096}
+    },
+    "execution_target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {"kind": {"const": "local"}},
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "transport", "login_host", "compute_host", "remote_root"],
+          "properties": {
+            "kind": {"const": "remote"},
+            "transport": {"const": "ssh"},
+            "login_host": {"type": "string", "minLength": 1, "maxLength": 255},
+            "compute_host": {"type": "string", "minLength": 1, "maxLength": 255},
+            "remote_root": {"type": "string", "minLength": 1, "maxLength": 4096}
+          },
+          "additionalProperties": false
+        },
+        {
+          "type": "object",
+          "required": ["kind", "transport", "execution"],
+          "properties": {
+            "kind": {"const": "remote"},
+            "transport": {"const": "mcp"},
+            "execution": {"$ref": "calculation_intent_v2.schema.json#/$defs/mcp_execution"}
+          },
+          "additionalProperties": false
+        }
+      ]
+    },
+    "dry_run": {"type": "boolean"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"attempt_kind": {"const": "recalculation"}}},
+      "then": {"properties": {"recalculation_ref": {"type": "object"}}},
+      "else": {"properties": {"recalculation_ref": {"type": "null"}}}
+    }
+  ],
+  "additionalProperties": false
+}

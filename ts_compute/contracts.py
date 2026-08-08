@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from jsonschema import Draft202012Validator
+from referencing import Registry, Resource
 
 
 CONTRACT_DIR = Path(__file__).resolve().parent / "contracts"
@@ -35,9 +36,25 @@ def validate_compute_contract(schema_name: str, instance: Any) -> None:
 
 @lru_cache(maxsize=None)
 def _validator(schema_name: str) -> Draft202012Validator:
+    schema = _schema(schema_name)
+    Draft202012Validator.check_schema(schema)
+    return Draft202012Validator(schema, registry=_registry())
+
+
+@lru_cache(maxsize=None)
+def _schema(schema_name: str) -> dict[str, Any]:
     path = CONTRACT_DIR / schema_name
     if not path.exists():
         raise ComputeContractError(f"unknown compute contract: {schema_name}")
-    schema = json.loads(path.read_text(encoding="utf-8"))
-    Draft202012Validator.check_schema(schema)
-    return Draft202012Validator(schema)
+    value = json.loads(path.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ComputeContractError(f"compute contract must be an object: {schema_name}")
+    return value
+
+
+@lru_cache(maxsize=1)
+def _registry() -> Registry:
+    registry = Registry()
+    for path in sorted(CONTRACT_DIR.glob("*.schema.json")):
+        registry = registry.with_resource(path.name, Resource.from_contents(_schema(path.name)))
+    return registry
