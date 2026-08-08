@@ -308,7 +308,31 @@ def test_real_pi_compute_child_session_uses_only_bound_prepare_tool(tmp_path: Pa
     assert any(message.get("role") == "tool" for message in requests[1]["messages"])
 
 
-def test_real_pi_public_compute_prepare_uses_canonical_cli_result(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "execution_target",
+    [
+        pytest.param({"kind": "local"}, id="local"),
+        pytest.param(
+            {
+                "kind": "remote",
+                "transport": "mcp",
+                "execution": {
+                    "queue": "batch",
+                    "nodes": 1,
+                    "ncpus": 8,
+                    "memory": "16gb",
+                    "walltime": "04:00:00",
+                    "ngpus": 0,
+                },
+            },
+            id="mcp",
+        ),
+    ],
+)
+def test_real_pi_public_compute_prepare_uses_canonical_cli_result(
+    tmp_path: Path,
+    execution_target: dict[str, object],
+) -> None:
     pi = _pi_binary()
     if pi is None:
         pytest.skip("Pi executable is not installed")
@@ -336,6 +360,8 @@ def test_real_pi_public_compute_prepare_uses_canonical_cli_result(tmp_path: Path
         "PI_OFFLINE": "1",
         "TS_AGENT_PYTHON": sys.executable,
         "TS_WORKSPACE_ROOT": str(workspace),
+        "TS_CLUSTER_MCP_URL": "http://127.0.0.1:18766/mcp",
+        "TS_CLUSTER_MCP_TOKEN": "t" * 32,
     }
     requests: list[dict[str, object]] = []
     responses = [
@@ -347,7 +373,7 @@ def test_real_pi_public_compute_prepare_uses_canonical_cli_result(tmp_path: Path
                 "nodeId": "n001",
                 "purpose": "Exercise semantic calculation preparation without running a program.",
                 "taskType": "opt_freq",
-                "executionTarget": {"kind": "local"},
+                "executionTarget": execution_target,
                 "dryRun": True,
             },
         ),
@@ -412,6 +438,14 @@ def test_real_pi_public_compute_prepare_uses_canonical_cli_result(tmp_path: Path
     assert generated_intent["expected_artifacts"] == [
         f"nodes/n001/attempts/{generated_intent['intent_id']}/outputs/gaussian.out"
     ]
+    if execution_target["kind"] == "remote":
+        prepared = json.loads(
+            (prepared_intents[0].parent / "prepared.json").read_text(encoding="utf-8")
+        )
+        policy = prepared["execution_policy"]
+        assert generated_intent["execution_target"]["transport"] == "mcp"
+        assert policy["requested_remote_dir"] == f"runs/n001/{generated_intent['intent_id']}"
+        assert policy["remote_dir"].endswith(policy["requested_remote_dir"])
     assert report["program"] == {
         "outcome": "not_run",
         "state": "prepared",
