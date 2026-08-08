@@ -74,7 +74,7 @@ process.stdout.write(JSON.stringify({{commandNames:Object.keys(commands),entries
     assert result["entries"][0]["data"]["caseId"] == "subagent-review"
     call = result["execCalls"][0]
     assert call["command"] == "python3"
-    assert call["args"][1:5] == ["run", "-m", "pytest", "-q"]
+    assert call["args"][1:5] == ["run-isolated", "-m", "pytest", "-q"]
     assert call["args"][-1].endswith("test_real_pi_review_child_session_has_no_tools")
     assert any(item[0] == "status" and item[2] is None for item in result["uiCalls"])
 

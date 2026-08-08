@@ -8,10 +8,36 @@ import os
 import sys
 from pathlib import Path
 
-from .env import configured_python, default_env_prefix, default_runtime_home, runtime_manifest_path
+from .env import (
+    DISABLE_REEXEC,
+    ENV_OVERRIDE,
+    ENV_ROOT_OVERRIDE,
+    RUNTIME_HOME_OVERRIDE,
+    RUNTIME_MANIFEST_OVERRIDE,
+    WORKSPACE_ROOT_OVERRIDE,
+    configured_python,
+    default_env_prefix,
+    default_runtime_home,
+    runtime_manifest_path,
+)
 
 
-def run_in_runtime(package_root: str | Path, python_args: list[str]) -> int:
+RUNTIME_CONTEXT_ENV_VARS = (
+    WORKSPACE_ROOT_OVERRIDE,
+    ENV_OVERRIDE,
+    DISABLE_REEXEC,
+    ENV_ROOT_OVERRIDE,
+    RUNTIME_HOME_OVERRIDE,
+    RUNTIME_MANIFEST_OVERRIDE,
+)
+
+
+def run_in_runtime(
+    package_root: str | Path,
+    python_args: list[str],
+    *,
+    isolate_runtime_context: bool = False,
+) -> int:
     """Exec ``python_args`` with the configured skill runtime Python."""
 
     if not python_args:
@@ -19,6 +45,9 @@ def run_in_runtime(package_root: str | Path, python_args: list[str]) -> int:
     root = Path(package_root).resolve()
     python = configured_python(root) or Path(sys.executable).resolve()
     env = dict(os.environ)
+    if isolate_runtime_context:
+        for name in RUNTIME_CONTEXT_ENV_VARS:
+            env.pop(name, None)
     root_text = str(root)
     existing = [item for item in env.get("PYTHONPATH", "").split(os.pathsep) if item]
     if root_text not in existing:
@@ -31,18 +60,18 @@ def main(argv: list[str] | None = None, *, package_root: str | Path | None = Non
     root = Path(package_root).resolve() if package_root else Path(__file__).resolve().parents[1]
     args = list(sys.argv[1:] if argv is None else argv)
     if not args or args[0] in {"-h", "--help"}:
-        print("usage: ts_runtime run <python-args...> | resolve [--json]")
+        print("usage: ts_runtime run <python-args...> | run-isolated <python-args...> | resolve [--json]")
         return 0
     command, python_args = args[0], args[1:]
     if command == "resolve":
         return resolve_runtime(root, python_args)
-    if command != "run":
+    if command not in {"run", "run-isolated"}:
         print(f"unknown ts_runtime command: {command}", file=sys.stderr)
         return 2
     if not python_args:
-        print("usage: ts_runtime run <python-args...>", file=sys.stderr)
+        print(f"usage: ts_runtime {command} <python-args...>", file=sys.stderr)
         return 2
-    return run_in_runtime(root, python_args)
+    return run_in_runtime(root, python_args, isolate_runtime_context=command == "run-isolated")
 
 
 def resolve_runtime(package_root: Path, argv: list[str]) -> int:

@@ -296,6 +296,72 @@ def test_ts_runtime_run_injects_skill_root_into_pythonpath(monkeypatch) -> None:
     assert "/tmp/existing" in pythonpath
 
 
+def test_ts_runtime_isolated_run_strips_workspace_runtime_context(monkeypatch) -> None:
+    calls: dict[str, object] = {}
+    runtime_values = {
+        "TS_WORKSPACE_ROOT": "/tmp/live-workspace",
+        "TS_AGENT_PYTHON": "/tmp/override-python",
+        "TS_AGENT_DISABLE_RUNTIME_REEXEC": "1",
+        "TS_AGENT_ENV_ROOT": "/tmp/live-envs",
+        "TS_AGENT_RUNTIME_HOME": "/tmp/live-runtime",
+        "TS_AGENT_RUNTIME_MANIFEST": "/tmp/live-runtime/env.json",
+    }
+    for name, value in runtime_values.items():
+        monkeypatch.setenv(name, value)
+    monkeypatch.setattr(runtime_cli, "configured_python", lambda root: Path(sys.executable).resolve())
+
+    def fake_execve(path, argv, env):
+        calls["env"] = env
+        raise SystemExit(0)
+
+    monkeypatch.setattr(runtime_cli.os, "execve", fake_execve)
+
+    with pytest.raises(SystemExit):
+        runtime_cli.run_in_runtime(ROOT, ["-m", "pytest"], isolate_runtime_context=True)
+
+    child_env = calls["env"]
+    assert isinstance(child_env, dict)
+    assert all(name not in child_env for name in runtime_values)
+
+
+def test_ts_runtime_isolated_run_cannot_modify_workspace_manifest(tmp_path: Path) -> None:
+    workspace = tmp_path / "live-workspace"
+    workspace.mkdir()
+    manifest = write_manifest(
+        ROOT,
+        {
+            "schema_version": "ts-agent-runtime-v1",
+            "python_executable": sys.executable,
+            "spec_sha256": spec_sha256(ROOT),
+        },
+        workspace_root=workspace,
+    )
+    before = manifest.read_bytes()
+    env = dict(os.environ)
+    env["TS_WORKSPACE_ROOT"] = str(workspace)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "ts_runtime.py"),
+            "run-isolated",
+            "-m",
+            "pytest",
+            "-q",
+            "tests/test_runtime_env.py::test_configured_python_ignores_stale_runtime_manifest",
+        ],
+        cwd=ROOT,
+        env=env,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stdout + completed.stderr
+    assert manifest.read_bytes() == before
+
+
 def test_ts_runtime_script_passes_dash_m_arguments() -> None:
     completed = subprocess.run(
         [

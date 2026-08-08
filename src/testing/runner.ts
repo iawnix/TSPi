@@ -24,7 +24,7 @@ export async function runDevelopmentTest(
   const startedAt = Date.now();
   const completed = await pi.exec(
     "python3",
-    [RUNTIME_SCRIPT, "run", "-m", "pytest", "-q", ...testCase.selectors],
+    [RUNTIME_SCRIPT, "run-isolated", "-m", "pytest", "-q", ...testCase.selectors],
     { cwd: PACKAGE_ROOT, timeout: testCase.timeoutMs },
   );
   const output = boundedOutput([completed.stdout, completed.stderr].filter(Boolean).join("\n"));
