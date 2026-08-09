@@ -261,6 +261,18 @@ and have `ts_web` consume that result.
   known and fall back to the current interpreter for development checkouts.
   Legacy `package-root/.runtime/env.json` is compatibility input only when no
   explicit workspace root, runtime home, or manifest path is supplied.
+- The installed `TSPi` launcher separates installation state from research
+  state. Package checkout, MCP credential/tunnel/lock, email policy, runtime
+  manifest, and hashed Python environment are installation-owned. Sessions,
+  Root writer lock, workspace identity, nodes, inputs, and reports are owned by
+  `<installation>/workspaces/<name>/`.
+- Require `--workspace <safe-slug>` for an interactive TSPi launch. One Root
+  writer lock is held for the Pi process lifetime. Different workspaces may run
+  concurrently; two Root Agents must not write the same workspace.
+- Treat the managed SSH forwarding process as a shared installation resource.
+  Serialize its startup and transport repair with the installation MCP lock.
+  Application-level MCP timeouts or invalid tool responses must remain visible
+  and must not trigger a tunnel restart.
 - `ts_render` depends on `xyzrender` only. Do not add Blender, FFmpeg,
   OpenBabel, Mayavi, or PyVista probes unless the contract is intentionally
   revised.

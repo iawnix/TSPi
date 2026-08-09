@@ -18,17 +18,30 @@ The environment spec lives in the package:
 <package_root>/environment.yml
 ```
 
-With `--workspace-root` or `TS_WORKSPACE_ROOT`, the default runtime locations
-are workspace-owned:
+With `--workspace-root` or `TS_WORKSPACE_ROOT`, the resolver's default runtime
+locations are workspace-owned:
 
 ```text
 <workspace_root>/.agents/runtime/transition-state-workflow/env.json
 <workspace_root>/.agents/envs/transition-state-workflow/<environment-spec-hash>/
 ```
 
-This is the preferred Pi contract. It keeps runtime state out of Pi
-Git package checkouts, which may be reset or cleaned during package updates,
-and it keeps local Pi path installs from reusing a development-tree runtime.
+This keeps runtime state out of Pi Git package checkouts, which may be reset or
+cleaned during package updates, and it keeps local Pi path installs from
+reusing a development-tree runtime.
+
+The installation-level `TSPi` launcher deliberately supplies all three runtime
+overrides so concurrent research workspaces reuse one validated environment:
+
+```text
+<installation>/.agents/runtime/transition-state-workflow/env.json
+<installation>/.agents/envs/transition-state-workflow/<environment-spec-hash>/
+```
+
+`TS_WORKSPACE_ROOT` still points to the selected research directory. Runtime
+sharing does not merge sessions, canonical workspace files, workspace identity,
+compute control records, or reports. The installation manifest and environment
+are immutable dependencies from the research workspace's perspective.
 
 When no workspace root or runtime override is supplied, source checkouts fall
 back to package-parent stores:
@@ -44,8 +57,8 @@ They are compatibility input, not the target for new installs.
 
 Override points:
 
-- `TS_WORKSPACE_ROOT`: workspace root that owns `.agents/runtime` and
-  `.agents/envs`.
+- `TS_WORKSPACE_ROOT`: selected research workspace; it owns runtime files only
+  when the runtime-specific overrides below are absent.
 - `TS_AGENT_RUNTIME_HOME`: alternate directory for `env.json`.
 - `TS_AGENT_RUNTIME_MANIFEST`: exact manifest path.
 - `TS_AGENT_ENV_ROOT`: alternate hashed environment store.

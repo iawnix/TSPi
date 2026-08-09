@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -58,6 +60,16 @@ EXPECTED_FILES = [
     "ts_workspace/readers/*.py",
     "ts_workspace/validators/*.py",
 ]
+
+
+def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
+    install_root = tmp_path / "tspi-install"
+    launcher = install_root / "TSPi"
+    package_root = install_root / ".pi" / "git" / "github.com" / "iawnix" / "TSAgentSkill"
+    package_root.mkdir(parents=True)
+    shutil.copy2(TSPI_LAUNCHER, launcher)
+    launcher.chmod(0o755)
+    return install_root, launcher
 
 
 def test_public_skill_uses_nested_pi_skill_layout() -> None:
@@ -175,30 +187,36 @@ def test_tspi_launcher_is_packaged_executable_and_shell_valid() -> None:
     assert completed.returncode == 0, completed.stderr
     assert TSPI_LAUNCHER.stat().st_mode & 0o111
     source = TSPI_LAUNCHER.read_text(encoding="utf-8")
+    assert 'readonly INSTALL_ROOT="$LAUNCHER_DIR"' in source
+    assert 'readonly TS_WORKSPACES_ROOT="$INSTALL_ROOT/workspaces"' in source
     assert "mcp_protocol_is_healthy" in source
     assert "TS_MCP_CONTROL_SOCKET" in source
-    assert 'export TS_EMAIL_POLICY_ROOT="${TS_EMAIL_POLICY_ROOT:-$WORKSPACE_ROOT}"' in source
+    assert "TS_MCP_LOCK_FILE" in source
+    assert 'export TS_EMAIL_POLICY_ROOT="$INSTALL_ROOT"' in source
+    assert 'export TS_AGENT_RUNTIME_HOME="$TS_AGENT_INSTALL_RUNTIME_HOME"' in source
+    assert 'export TS_WORKSPACE_ROOT="$WORKSPACE_ROOT"' in source
+    assert "acquire_root_agent_lock" in source
     assert "refusing to terminate an unknown process" in source
+    assert "--workspace" in source
     assert "--check-mcp" in source
 
 
-def test_tspi_restarts_one_managed_unhealthy_tunnel() -> None:
+def test_tspi_reuses_a_healthy_shared_managed_tunnel(tmp_path: Path) -> None:
+    _, launcher = _copy_tspi_install(tmp_path)
     script = r'''source "$1"
 probe_calls=0
-port_open=1
-control_open=1
 starts=0
 stops=0
-mcp_protocol_is_healthy() { ((probe_calls += 1)); [[ $probe_calls -ge 2 ]]; }
-mcp_tunnel_is_open() { [[ $port_open == 1 ]]; }
-mcp_control_is_open() { [[ $control_open == 1 ]]; }
-stop_managed_mcp_tunnel() { ((stops += 1)); port_open=0; control_open=0; }
-start_managed_mcp_tunnel() { ((starts += 1)); port_open=1; control_open=1; }
+mcp_protocol_is_healthy() { ((probe_calls += 1)); return 0; }
+mcp_tunnel_is_open() { return 0; }
+mcp_control_is_open() { return 0; }
+stop_managed_mcp_tunnel() { ((stops += 1)); }
+start_managed_mcp_tunnel() { ((starts += 1)); }
 ensure_mcp_connection
 printf '%s %s %s\n' "$probe_calls" "$starts" "$stops"
 '''
     completed = subprocess.run(
-        ["bash", "-c", script, "bash", str(TSPI_LAUNCHER)],
+        ["bash", "-c", script, "bash", str(launcher)],
         cwd=ROOT,
         text=True,
         stdout=subprocess.PIPE,
@@ -207,18 +225,109 @@ printf '%s %s %s\n' "$probe_calls" "$starts" "$stops"
     )
 
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.strip() == "2 1 1"
+    assert completed.stdout.strip() == "1 0 0"
 
 
-def test_tspi_refuses_to_kill_an_unmanaged_listener() -> None:
+def test_tspi_does_not_restart_a_managed_tunnel_on_protocol_failure(tmp_path: Path) -> None:
+    _, launcher = _copy_tspi_install(tmp_path)
     script = r'''source "$1"
+starts=0
+stops=0
+mcp_protocol_is_healthy() { MCP_PROTOCOL_DIAGNOSTIC="application timeout"; return 1; }
+mcp_tunnel_is_open() { return 0; }
+mcp_control_is_open() { return 0; }
+stop_managed_mcp_tunnel() { ((stops += 1)); }
+start_managed_mcp_tunnel() { ((starts += 1)); }
+if ensure_mcp_connection; then status=0; else status=$?; fi
+printf '%s %s %s\n' "$status" "$starts" "$stops"
+'''
+    completed = subprocess.run(
+        ["bash", "-c", script, "bash", str(launcher)],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "1 0 0"
+    assert "application timeout" in completed.stderr
+    assert "managed SSH tunnel is healthy and was not restarted" in completed.stderr
+
+
+def test_tspi_starts_an_absent_shared_tunnel_once(tmp_path: Path) -> None:
+    _, launcher = _copy_tspi_install(tmp_path)
+    script = r'''source "$1"
+port_open=0
+control_open=0
+starts=0
+mcp_protocol_is_healthy() { return 0; }
+mcp_tunnel_is_open() { [[ $port_open == 1 ]]; }
+mcp_control_is_open() { [[ $control_open == 1 ]]; }
+stop_managed_mcp_tunnel() { port_open=0; control_open=0; }
+start_managed_mcp_tunnel() { ((starts += 1)); port_open=1; control_open=1; }
+ensure_mcp_connection
+ensure_mcp_connection
+printf '%s\n' "$starts"
+'''
+    completed = subprocess.run(
+        ["bash", "-c", script, "bash", str(launcher)],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "1"
+
+
+def test_tspi_protocol_diagnostic_preserves_context_and_redacts_token(tmp_path: Path) -> None:
+    install_root, launcher = _copy_tspi_install(tmp_path)
+    diagnostic_script = install_root / ".pi/git/github.com/iawnix/TSAgentSkill/scripts/ts_compute.py"
+    diagnostic_script.parent.mkdir(parents=True)
+    diagnostic_script.write_text(
+        """import sys
+sys.stderr.write("Authorization: Bearer test-secret-token-value\\n")
+print('{"ok": false, "token": "test-secret-token-value", "error": "registry unavailable"}')
+raise SystemExit(3)
+""",
+        encoding="utf-8",
+    )
+    script = r'''source "$1"
+if mcp_protocol_is_healthy; then status=0; else status=$?; fi
+printf '%s\n%s\n' "$status" "$MCP_PROTOCOL_DIAGNOSTIC"
+'''
+    completed = subprocess.run(
+        ["bash", "-c", script, "bash", str(launcher)],
+        cwd=ROOT,
+        env={**os.environ, "TS_CLUSTER_MCP_TOKEN": "test-secret-token-value"},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.splitlines()[0] == "1"
+    assert "registry unavailable" in completed.stdout
+    assert "[REDACTED]" in completed.stdout
+    assert "test-secret-token-value" not in completed.stdout
+
+
+def test_tspi_refuses_to_kill_an_unmanaged_listener(tmp_path: Path) -> None:
+    _, launcher = _copy_tspi_install(tmp_path)
+    script = r'''source "$1"
+MCP_PROTOCOL_DIAGNOSTIC="invalid response"
 mcp_protocol_is_healthy() { return 1; }
 mcp_tunnel_is_open() { return 0; }
 mcp_control_is_open() { return 1; }
 ensure_mcp_connection
 '''
     completed = subprocess.run(
-        ["bash", "-c", script, "bash", str(TSPI_LAUNCHER)],
+        ["bash", "-c", script, "bash", str(launcher)],
         cwd=ROOT,
         text=True,
         stdout=subprocess.PIPE,
@@ -228,6 +337,146 @@ ensure_mcp_connection
 
     assert completed.returncode == 1
     assert "refusing to terminate an unknown process" in completed.stderr
+
+
+def test_tspi_runs_pi_with_workspace_local_state_and_install_runtime(tmp_path: Path) -> None:
+    install_root, launcher = _copy_tspi_install(tmp_path)
+    fake_pi = tmp_path / "fake-pi.py"
+    fake_pi.write_text(
+        """#!/usr/bin/env python3
+import json
+import os
+import sys
+print(json.dumps({
+    "argv": sys.argv[1:],
+    "cwd": os.getcwd(),
+    "workspace": os.environ["TS_WORKSPACE_ROOT"],
+    "email_policy": os.environ["TS_EMAIL_POLICY_ROOT"],
+    "runtime_home": os.environ["TS_AGENT_RUNTIME_HOME"],
+    "runtime_manifest": os.environ["TS_AGENT_RUNTIME_MANIFEST"],
+    "env_root": os.environ["TS_AGENT_ENV_ROOT"],
+}))
+""",
+        encoding="utf-8",
+    )
+    fake_pi.chmod(0o755)
+    script = r'''source "$1"
+mcp_protocol_is_healthy() { return 0; }
+mcp_tunnel_is_open() { return 0; }
+mcp_control_is_open() { return 0; }
+mcp_ssh_display_target() { printf 'test.example via SSH'; }
+main "${@:2}"
+'''
+    completed = subprocess.run(
+        ["bash", "-c", script, "bash", str(launcher), "--workspace", "reaction-a", "--model", "test"],
+        cwd=ROOT,
+        env={
+            **os.environ,
+            "PI_BIN": str(fake_pi),
+            "TS_EMAIL_POLICY_ROOT": "/tmp/old-workspace",
+            "TS_AGENT_RUNTIME_HOME": "/tmp/old-runtime",
+            "TS_AGENT_RUNTIME_MANIFEST": "/tmp/old-runtime/env.json",
+            "TS_AGENT_ENV_ROOT": "/tmp/old-env",
+        },
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    workspace = install_root / "workspaces" / "reaction-a"
+    assert result["cwd"] == str(workspace)
+    assert result["workspace"] == str(workspace)
+    assert result["email_policy"] == str(install_root)
+    assert result["runtime_home"] == str(install_root / ".agents/runtime/transition-state-workflow")
+    assert result["runtime_manifest"] == str(install_root / ".agents/runtime/transition-state-workflow/env.json")
+    assert result["env_root"] == str(install_root / ".agents/envs/transition-state-workflow")
+    session_index = result["argv"].index("--session-dir")
+    assert result["argv"][session_index + 1] == str(workspace / ".pi/sessions")
+    assert (workspace / ".pi/root-agent.lock").is_file()
+
+
+def test_tspi_requires_a_safe_workspace_name(tmp_path: Path) -> None:
+    install_root, launcher = _copy_tspi_install(tmp_path)
+    no_workspace = subprocess.run(
+        ["bash", str(launcher)],
+        cwd=install_root,
+        env={**os.environ, "PI_BIN": "/bin/true"},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert no_workspace.returncode == 2
+    assert "a research workspace is required" in no_workspace.stderr
+
+    script = r'''source "$1"
+prepare_workspace "$2"
+'''
+    traversal = subprocess.run(
+        ["bash", "-c", script, "bash", str(launcher), "../escaped"],
+        cwd=install_root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert traversal.returncode == 1
+    assert "invalid workspace name" in traversal.stderr
+    assert not (install_root.parent / "escaped").exists()
+
+
+def test_tspi_root_lock_rejects_a_second_writer(tmp_path: Path) -> None:
+    install_root, launcher = _copy_tspi_install(tmp_path)
+    holder_script = r'''source "$1"
+prepare_workspace "$2"
+acquire_root_agent_lock
+printf 'ready\n'
+read -r _release
+'''
+    holder = subprocess.Popen(
+        ["bash", "-c", holder_script, "bash", str(launcher), "lock-test"],
+        cwd=ROOT,
+        text=True,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        assert holder.stdout is not None
+        assert holder.stdout.readline().strip() == "ready"
+        contender = subprocess.run(
+            ["bash", "-c", holder_script, "bash", str(launcher), "lock-test"],
+            cwd=ROOT,
+            input="release\n",
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        assert contender.returncode == 1
+        assert "another Root Agent already owns workspace" in contender.stderr
+        independent = subprocess.run(
+            ["bash", "-c", holder_script, "bash", str(launcher), "independent-test"],
+            cwd=ROOT,
+            input="release\n",
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        assert independent.returncode == 0, independent.stderr
+        assert independent.stdout.strip() == "ready"
+    finally:
+        assert holder.stdin is not None
+        holder.stdin.write("release\n")
+        holder.stdin.flush()
+        holder.communicate(timeout=5)
+
+    assert (install_root / "workspaces/lock-test/.pi/root-agent.lock").is_file()
+    assert (install_root / "workspaces/independent-test/.pi/root-agent.lock").is_file()
 
 
 def test_ts_theme_loads_with_pi_theme_loader() -> None:

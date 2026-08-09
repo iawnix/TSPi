@@ -115,12 +115,34 @@ pi install -l git:github.com/iawnix/TSAgentSkill@pi_ts_subagents --approve
 TS_WORKSPACE_ROOT=$PWD pi --approve --session-dir .pi/sessions
 ```
 
-For a workspace-local TSPi launcher, copy the package-owned `TSPi` file to the
-workspace root and keep it executable. `./TSPi` performs a real read-only MCP
-protocol probe before Pi starts; `./TSPi --check-mcp` performs only that check.
-It can restart an SSH tunnel only when the tunnel is owned by its dedicated
-workspace control socket. An unrelated process occupying the configured local
-port is never terminated.
+Install the package-owned `TSPi` launcher once at the installation root, next
+to its `.pi/` and `.agents/` directories. Select one isolated research
+workspace for every Pi process:
+
+```bash
+./TSPi --workspace reaction-a
+./TSPi --workspace reaction-b
+./TSPi --workspace reaction-c --dev
+```
+
+Names use 1-80 letters, digits, dots, underscores, or hyphens and resolve only
+under `<installation>/workspaces/<name>/`. Plain `./TSPi` is rejected so the
+installation root cannot accidentally become research state. Each workspace
+owns its `.pi/sessions`, `.pi/root-agent.lock`, `.agents/workspace-identity.json`
+after formal initialization, `nodes/`, `inputs/`, and `reports/`. A nonblocking
+writer lock permits only one Root Agent in one workspace; different workspace
+names can run concurrently.
+
+The package checkout, MCP credential, email policy, shared Python environment,
+runtime manifest, and managed SSH tunnel remain installation-owned. All TSPi
+processes serialize tunnel startup through one installation lock and reuse a
+healthy managed forwarding process. An MCP application timeout is reported
+with sanitized diagnostics and does not restart that tunnel. A restart is
+limited to a broken SSH control/forwarding pair. An unrelated process occupying
+the configured local port is never terminated.
+
+`./TSPi` performs a real read-only MCP protocol probe before Pi starts;
+`./TSPi --check-mcp` performs only that check and does not require a workspace.
 
 An unpinned GitHub URL resolves the repository default branch (`main`). Until
 this work is merged or tagged, it does not select `pi_ts_subagents`.
