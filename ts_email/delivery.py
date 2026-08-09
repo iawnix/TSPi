@@ -8,6 +8,7 @@ import os
 import secrets
 import subprocess
 import tempfile
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -37,6 +38,22 @@ POLICY_REF = f".pi/{POLICY_NAME}"
 AUTHORIZATION_REF = f".pi/{AUTHORIZATION_NAME}"
 DELIVERY_DIR_REF = "reports/email/deliveries"
 DEFAULT_CLAWEMAIL_ROOT = Path.home() / ".pi" / "agent" / "skills" / "clawemail"
+
+
+@dataclass(frozen=True)
+class _PolicyState:
+    root: Path
+    state: str
+    policy: dict[str, Any] | None
+    policy_digest: str | None
+    authorization: dict[str, Any] | None
+
+
+@dataclass(frozen=True)
+class _PolicyResolution:
+    effective: _PolicyState
+    local: _PolicyState
+    scope: str
 
 
 def create_delivery_policy(
@@ -143,47 +160,32 @@ def disable_delivery_policy(root: Path) -> dict[str, Any]:
 
 def delivery_policy_status(root: Path) -> dict[str, Any]:
     workspace = workspace_root(root)
-    policy_path = _private_state_path(workspace, POLICY_NAME)
-    authorization_path = _private_state_path(workspace, AUTHORIZATION_NAME)
-    if not policy_path.exists():
-        return {
-            "operation": "policy_status",
-            "state": "not_configured",
-            "policy_ref": POLICY_REF,
-            "authorization_ref": AUTHORIZATION_REF,
-            "external_side_effects": False,
-        }
-    policy = _load_private_json(policy_path, POLICY_SCHEMA, "delivery policy")
-    policy_digest = sha256_json(policy)
-    state = "pending_activation"
-    if authorization_path.exists():
-        authorization = _load_private_json(
-            authorization_path,
-            AUTHORIZATION_SCHEMA,
-            "delivery authorization",
-        )
-        if authorization.get("state") == "disabled":
-            state = "disabled"
-        elif authorization.get("state") != "active":
-            state = "inactive"
-        elif authorization.get("policy_id") != policy.get("policy_id"):
-            state = "policy_mismatch"
-        elif authorization.get("policy_digest") != policy_digest:
-            state = "policy_changed"
-        else:
-            state = "active"
-    return {
+    resolution = _resolve_delivery_policy(workspace)
+    effective = resolution.effective
+    result = {
         "operation": "policy_status",
-        "state": state,
+        "state": effective.state,
         "policy_ref": POLICY_REF,
         "authorization_ref": AUTHORIZATION_REF,
-        "policy_id": policy.get("policy_id"),
-        "policy_digest": policy_digest,
-        "recipients": policy.get("recipients"),
-        "template_id": policy.get("template_id"),
-        "attachment_names": policy.get("attachment_names"),
+        "policy_scope": resolution.scope,
+        "policy_source_root": str(effective.root),
+        "local_policy_state": resolution.local.state,
         "external_side_effects": False,
     }
+    if effective.policy is not None:
+        result.update(
+            {
+                "policy_id": effective.policy.get("policy_id"),
+                "policy_digest": effective.policy_digest,
+                "recipients": effective.policy.get("recipients"),
+                "template_id": effective.policy.get("template_id"),
+                "attachment_names": effective.policy.get("attachment_names"),
+            }
+        )
+    if resolution.local.policy is not None:
+        result["local_policy_id"] = resolution.local.policy.get("policy_id")
+        result["local_policy_digest"] = resolution.local.policy_digest
+    return result
 
 
 def send_draft(root: Path, draft_ref_value: str) -> dict[str, Any]:
@@ -194,17 +196,14 @@ def send_draft(root: Path, draft_ref_value: str) -> dict[str, Any]:
     draft = json.loads(draft_path.read_text(encoding="utf-8"))
     validate_draft_artifact(workspace, draft)
 
-    policy = _load_private_json(
-        _private_state_path(workspace, POLICY_NAME),
-        POLICY_SCHEMA,
-        "delivery policy",
-    )
-    authorization = _load_private_json(
-        _private_state_path(workspace, AUTHORIZATION_NAME),
-        AUTHORIZATION_SCHEMA,
-        "delivery authorization",
-    )
-    policy_digest = sha256_json(policy)
+    resolution = _resolve_delivery_policy(workspace)
+    if resolution.effective.state != "active":
+        _raise_inactive_policy(resolution)
+    policy = resolution.effective.policy
+    authorization = resolution.effective.authorization
+    policy_digest = resolution.effective.policy_digest
+    if policy is None or authorization is None or policy_digest is None:
+        raise ValueError("active delivery policy resolution is incomplete")
     _validate_active_authorization(policy, policy_digest, authorization)
     fixed_recipients = validate_recipients(draft.get("recipients"))
     if fixed_recipients != validate_recipients(policy.get("recipients")):
@@ -229,6 +228,8 @@ def send_draft(root: Path, draft_ref_value: str) -> dict[str, Any]:
         "draft_digest": draft_digest,
         "policy_id": policy["policy_id"],
         "policy_digest": policy_digest,
+        "policy_scope": resolution.scope,
+        "policy_source_root": str(resolution.effective.root),
         "recipients": fixed_recipients,
         "template_id": TEMPLATE_ID,
         "attachment_refs": attachment_refs,
@@ -271,6 +272,8 @@ def send_draft(root: Path, draft_ref_value: str) -> dict[str, Any]:
         "draft_digest": draft_digest,
         "policy_id": policy["policy_id"],
         "policy_digest": policy_digest,
+        "policy_scope": resolution.scope,
+        "policy_source_root": str(resolution.effective.root),
         "recipients": fixed_recipients,
         "template_id": TEMPLATE_ID,
         "attachment_refs": attachment_refs,
@@ -343,6 +346,8 @@ def _existing_delivery_result(
         "draft_digest": draft_digest,
         "policy_id": receipt.get("policy_id"),
         "policy_digest": receipt.get("policy_digest"),
+        "policy_scope": receipt.get("policy_scope", "local"),
+        "policy_source_root": receipt.get("policy_source_root"),
         "recipients": receipt.get("recipients"),
         "template_id": receipt.get("template_id"),
         "attachment_refs": receipt.get("attachment_refs"),
@@ -365,6 +370,127 @@ def _validate_active_authorization(
         raise ValueError("delivery policy changed after activation")
     if authorization.get("approval_method") != "exact_activation_token":
         raise ValueError("delivery authorization approval method is invalid")
+
+
+def _resolve_delivery_policy(workspace: Path) -> _PolicyResolution:
+    local = _delivery_policy_state(workspace)
+    if local.state not in {"not_configured", "pending_activation"}:
+        return _PolicyResolution(effective=local, local=local, scope="local")
+
+    policy_root = _configured_policy_root()
+    if policy_root is None or policy_root == workspace or not _is_descendant(workspace, policy_root):
+        return _PolicyResolution(effective=local, local=local, scope="local")
+
+    inherited = _delivery_policy_state(policy_root)
+    if inherited.state != "active":
+        return _PolicyResolution(effective=local, local=local, scope="local")
+    if local.policy is not None and not _same_policy_scope(local.policy, inherited.policy):
+        return _PolicyResolution(effective=local, local=local, scope="local")
+    return _PolicyResolution(effective=inherited, local=local, scope="inherited")
+
+
+def _delivery_policy_state(root: Path) -> _PolicyState:
+    policy_path = _private_state_path(root, POLICY_NAME, create_parent=False)
+    authorization_path = _private_state_path(root, AUTHORIZATION_NAME, create_parent=False)
+    policy_present = policy_path.exists() or policy_path.is_symlink()
+    authorization_present = authorization_path.exists() or authorization_path.is_symlink()
+    if not policy_present:
+        authorization = None
+        state = "not_configured"
+        if authorization_present:
+            authorization = _load_private_json(
+                authorization_path,
+                AUTHORIZATION_SCHEMA,
+                "delivery authorization",
+            )
+            state = "policy_mismatch"
+        return _PolicyState(root, state, None, None, authorization)
+
+    policy = _load_private_json(policy_path, POLICY_SCHEMA, "delivery policy")
+    policy_digest = sha256_json(policy)
+    if not authorization_present:
+        return _PolicyState(root, "pending_activation", policy, policy_digest, None)
+
+    authorization = _load_private_json(
+        authorization_path,
+        AUTHORIZATION_SCHEMA,
+        "delivery authorization",
+    )
+    if authorization.get("state") == "disabled":
+        state = "disabled"
+    elif authorization.get("state") != "active":
+        state = "inactive"
+    elif authorization.get("policy_id") != policy.get("policy_id"):
+        state = "policy_mismatch"
+    elif authorization.get("policy_digest") != policy_digest:
+        state = "policy_changed"
+    elif authorization.get("approval_method") != "exact_activation_token":
+        state = "authorization_invalid"
+    else:
+        state = "active"
+    return _PolicyState(root, state, policy, policy_digest, authorization)
+
+
+def _configured_policy_root() -> Path | None:
+    value = os.environ.get("TS_EMAIL_POLICY_ROOT") or os.environ.get("TS_WORKSPACE_ROOT")
+    if not value:
+        return None
+    lexical = Path(os.path.abspath(Path(value).expanduser()))
+    current = Path(lexical.anchor)
+    for part in lexical.parts[1:]:
+        current /= part
+        if current.is_symlink():
+            raise ValueError(f"configured email policy root must not contain symbolic links: {lexical}")
+    resolved = lexical.resolve(strict=True)
+    if not resolved.is_dir():
+        raise ValueError(f"configured email policy root must be a directory: {lexical}")
+    return resolved
+
+
+def _is_descendant(workspace: Path, policy_root: Path) -> bool:
+    try:
+        workspace.relative_to(policy_root)
+    except ValueError:
+        return False
+    return workspace != policy_root
+
+
+def _same_policy_scope(local: dict[str, Any], inherited: dict[str, Any] | None) -> bool:
+    if inherited is None:
+        return False
+    return _policy_scope(local) == _policy_scope(inherited)
+
+
+def _policy_scope(policy: dict[str, Any]) -> tuple[Any, ...]:
+    skill_root = Path(_transport_skill_root(policy)).expanduser().resolve(strict=True)
+    template_id = bounded_text(policy.get("template_id"), "delivery policy template_id", 128)
+    return (
+        "clawemail",
+        str(skill_root),
+        tuple(validate_recipients(policy.get("recipients"))),
+        template_id,
+        tuple(validate_attachment_names(policy.get("attachment_names"))),
+    )
+
+
+def _raise_inactive_policy(resolution: _PolicyResolution) -> None:
+    local = resolution.local
+    if local.policy is None:
+        _load_private_json(
+            _private_state_path(local.root, POLICY_NAME, create_parent=False),
+            POLICY_SCHEMA,
+            "delivery policy",
+        )
+    if local.authorization is None:
+        _load_private_json(
+            _private_state_path(local.root, AUTHORIZATION_NAME, create_parent=False),
+            AUTHORIZATION_SCHEMA,
+            "delivery authorization",
+        )
+    if local.policy_digest is None:
+        raise ValueError("delivery policy digest is unavailable")
+    _validate_active_authorization(local.policy, local.policy_digest, local.authorization)
+    raise ValueError("fixed delivery policy is not active")
 
 
 def _authorization_result(state: str, authorization: dict[str, Any]) -> dict[str, Any]:
@@ -411,11 +537,12 @@ def _validate_clawemail_install(skill_root: Path) -> Path:
     return manager
 
 
-def _private_state_path(workspace: Path, name: str) -> Path:
+def _private_state_path(workspace: Path, name: str, *, create_parent: bool = True) -> Path:
     state_dir = workspace / ".pi"
     if state_dir.is_symlink():
         raise ValueError("workspace .pi directory must not be a symbolic link")
-    state_dir.mkdir(parents=True, exist_ok=True)
+    if create_parent:
+        state_dir.mkdir(parents=True, exist_ok=True)
     return state_dir / name
 
 

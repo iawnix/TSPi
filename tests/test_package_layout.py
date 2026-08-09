@@ -177,6 +177,7 @@ def test_tspi_launcher_is_packaged_executable_and_shell_valid() -> None:
     source = TSPI_LAUNCHER.read_text(encoding="utf-8")
     assert "mcp_protocol_is_healthy" in source
     assert "TS_MCP_CONTROL_SOCKET" in source
+    assert 'export TS_EMAIL_POLICY_ROOT="${TS_EMAIL_POLICY_ROOT:-$WORKSPACE_ROOT}"' in source
     assert "refusing to terminate an unknown process" in source
     assert "--check-mcp" in source
 

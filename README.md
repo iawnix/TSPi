@@ -182,30 +182,40 @@ Pi also exposes:
   report-manifest digests, and fixed attachments match the active private
   delivery policy. Sent or ambiguous receipts prevent duplicate retries.
 
-The delivery policy is workspace-private state, not package source. Create it
-once, inspect the exact returned scope, and activate it with the returned
-exact token:
+The delivery policy is installation-private state, not package source. `TSPi`
+sets `TS_EMAIL_POLICY_ROOT` to its installation root; other launchers fall back
+to `TS_WORKSPACE_ROOT`. Create the fixed policy once at that root, inspect the
+exact returned scope, and activate it with the returned exact token:
 
 ```bash
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_email.py" policy-create \
-  --root "$TS_WORKSPACE_ROOT" \
+  --root "$TS_EMAIL_POLICY_ROOT" \
   --recipient researcher@example.org \
   --attachment final_report.md \
   --clawemail-root /home/iaw/.pi/agent/skills/clawemail \
   --json
 
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_email.py" policy-activate \
-  --root "$TS_WORKSPACE_ROOT" \
+  --root "$TS_EMAIL_POLICY_ROOT" \
   --token 'EXACT_TOKEN_FROM_POLICY_CREATE' \
   --json
 ```
 
-The mode-0600 policy and authorization files live under `<workspace>/.pi/`.
-They contain no mailbox credentials. Changing any policy field invalidates the
-activation. ClawEmail authentication remains owned by the installed ClawEmail
-skill. Use `policy-disable --root "$TS_WORKSPACE_ROOT" --json` to revoke
-automatic delivery without deleting policy history; the same exact token is
-required to reactivate it.
+The mode-0600 policy and authorization files live under
+`<installation>/.pi/`. They contain no mailbox credentials. A real descendant
+research workspace inherits the active installation policy when it has no
+local policy, or when its pending local policy has exactly the same transport,
+recipients, template, and attachment names. A local active, disabled, changed,
+or differently scoped policy remains authoritative. Delivery receipts always
+stay in the research workspace. `policy-status` reports `policy_scope`,
+`policy_source_root`, and `local_policy_state` so inheritance is explicit.
+
+Changing any policy field invalidates its activation. ClawEmail authentication
+remains owned by the installed ClawEmail skill. Use
+`policy-disable --root "$TS_EMAIL_POLICY_ROOT" --json` to revoke installation
+delivery without deleting policy history; the same exact token is required to
+reactivate it. Policy create, activate, and disable commands always modify only
+the explicit `--root`.
 
 Users can run the same MCP diagnostics with
 `/ts-mcp status|doctor|queues|nodes|cluster`. The command and Agent tool are on demand; they

@@ -58,13 +58,23 @@ credential, mailbox, or recipient-discovery capability.
 ## Fixed-Policy Delivery
 
 `ts_email_send` is a deterministic host tool, not a child-agent capability. It
-accepts only `operation=send` and an existing `draftRef`. A mode-0600 policy
-under `<workspace>/.pi/` fixes the recipients, `ts-report-summary/1` template,
-ClawEmail skill root, and exact package-relative attachment names. A separate
-mode-0600 authorization record binds the complete policy digest after the user
-enters the exact activation token returned by `policy-create`. `policy-disable`
+accepts only `operation=send` and an existing `draftRef`. A mode-0600 policy at
+`TS_EMAIL_POLICY_ROOT` (falling back to `TS_WORKSPACE_ROOT`) fixes the
+recipients, `ts-report-summary/1` template, ClawEmail skill root, and exact
+package-relative attachment names. A separate mode-0600 authorization record
+binds the complete policy digest after the user enters the exact activation
+token returned by `policy-create`.
+
+A research workspace may inherit an active installation policy only when its
+real path is below the configured policy root. A workspace with no local policy
+inherits directly; a local pending policy inherits only when its transport,
+recipients, template, and attachment names exactly match. Local active,
+disabled, changed, invalid, or differently scoped state takes precedence.
+`policy-status` exposes the effective scope, source root, and local state.
+Create, activate, and disable remain local to their explicit roots, while
+delivery receipts always remain in the research workspace. `policy-disable`
 revokes automatic delivery without deleting policy history; reactivation
-requires that token again.
+requires the same token again.
 
 Before delivery, the host rechecks the draft, report manifest, summary, context,
 attachments, policy digest, authorization, and ClawEmail private-state modes.

@@ -334,6 +334,203 @@ def test_fixed_email_policy_activates_and_sends_each_draft_once(tmp_path: Path) 
     assert reactivated["state"] == "active"
 
 
+def test_child_workspace_inherits_installation_email_policy_and_keeps_receipts_local(
+    tmp_path: Path,
+) -> None:
+    installation = tmp_path / "installation"
+    installation.mkdir()
+    workspace = _artifact_workspace_at(installation / "ts_0000")
+    draft_ref = _write_fixed_draft(workspace, tmp_path)
+    clawemail_root, env = _fake_clawemail_skill(tmp_path)
+    env.pop("TS_EMAIL_POLICY_ROOT", None)
+    env["TS_WORKSPACE_ROOT"] = str(installation)
+    parent = _activate_fixed_email_policy(installation, clawemail_root, env)
+
+    status = json.loads(_email_cli(workspace, "policy-status", env=env).stdout)
+    assert status["state"] == "active"
+    assert status["policy_scope"] == "inherited"
+    assert status["policy_source_root"] == str(installation)
+    assert status["local_policy_state"] == "not_configured"
+    assert status["policy_id"] == parent["policy_id"]
+
+    sent = json.loads(_email_cli(workspace, "send", "--draft-ref", draft_ref, env=env).stdout)
+    assert sent["state"] == "sent"
+    assert sent["policy_scope"] == "inherited"
+    assert sent["policy_source_root"] == str(installation)
+    assert (workspace / sent["receipt_ref"]).is_file()
+    assert not (installation / "reports").exists()
+
+    repeated = json.loads(_email_cli(workspace, "send", "--draft-ref", draft_ref, env=env).stdout)
+    assert repeated["state"] == "already_sent"
+    assert repeated["policy_scope"] == "inherited"
+    args = Path(env["TS_TEST_CLAWEMAIL_LOG"]).read_text(encoding="utf-8").splitlines()
+    assert args.count("send") == 1
+
+
+def test_matching_pending_child_email_policy_inherits_without_local_activation(
+    tmp_path: Path,
+) -> None:
+    installation = tmp_path / "installation"
+    installation.mkdir()
+    workspace = _artifact_workspace_at(installation / "ts_0000")
+    draft_ref = _write_fixed_draft(workspace, tmp_path)
+    clawemail_root, env = _fake_clawemail_skill(tmp_path)
+    env["TS_EMAIL_POLICY_ROOT"] = str(installation)
+    env.pop("TS_WORKSPACE_ROOT", None)
+    parent = _activate_fixed_email_policy(installation, clawemail_root, env)
+    child = json.loads(
+        _email_cli(
+            workspace,
+            "policy-create",
+            "--recipient",
+            "researcher@example.org",
+            "--attachment",
+            "final_report.md",
+            "--clawemail-root",
+            str(clawemail_root),
+            env=env,
+        ).stdout
+    )
+
+    status = json.loads(_email_cli(workspace, "policy-status", env=env).stdout)
+    assert status["state"] == "active"
+    assert status["policy_scope"] == "inherited"
+    assert status["local_policy_state"] == "pending_activation"
+    assert status["policy_id"] == parent["policy_id"]
+    assert status["local_policy_id"] == child["policy_id"]
+    assert not (workspace / ".pi" / "ts-email-delivery-authorization.json").exists()
+
+    sent = json.loads(_email_cli(workspace, "send", "--draft-ref", draft_ref, env=env).stdout)
+    assert sent["state"] == "sent"
+    assert sent["policy_id"] == parent["policy_id"]
+    assert not (workspace / ".pi" / "ts-email-delivery-authorization.json").exists()
+
+
+@pytest.mark.parametrize(
+    ("recipient", "attachment"),
+    [
+        ("other@example.org", "final_report.md"),
+        ("researcher@example.org", "report_context.json"),
+    ],
+)
+def test_different_pending_child_email_policy_does_not_inherit(
+    tmp_path: Path,
+    recipient: str,
+    attachment: str,
+) -> None:
+    installation = tmp_path / "installation"
+    installation.mkdir()
+    workspace = _artifact_workspace_at(installation / "ts_0000")
+    draft_ref = _write_fixed_draft(workspace, tmp_path)
+    clawemail_root, env = _fake_clawemail_skill(tmp_path)
+    env["TS_EMAIL_POLICY_ROOT"] = str(installation)
+    _activate_fixed_email_policy(installation, clawemail_root, env)
+    child = json.loads(
+        _email_cli(
+            workspace,
+            "policy-create",
+            "--recipient",
+            recipient,
+            "--attachment",
+            attachment,
+            "--clawemail-root",
+            str(clawemail_root),
+            env=env,
+        ).stdout
+    )
+
+    status = json.loads(_email_cli(workspace, "policy-status", env=env).stdout)
+    assert status["state"] == "pending_activation"
+    assert status["policy_scope"] == "local"
+    assert status["policy_id"] == child["policy_id"]
+    blocked = _email_cli(workspace, "send", "--draft-ref", draft_ref, env=env, check=False)
+    assert blocked.returncode == 2
+    assert "delivery authorization is missing" in blocked.stderr
+    assert not Path(env["TS_TEST_CLAWEMAIL_LOG"]).exists()
+
+
+def test_disabled_child_email_policy_blocks_installation_policy_inheritance(tmp_path: Path) -> None:
+    installation = tmp_path / "installation"
+    installation.mkdir()
+    workspace = _artifact_workspace_at(installation / "ts_0000")
+    draft_ref = _write_fixed_draft(workspace, tmp_path)
+    clawemail_root, env = _fake_clawemail_skill(tmp_path)
+    env["TS_EMAIL_POLICY_ROOT"] = str(installation)
+    _activate_fixed_email_policy(installation, clawemail_root, env)
+    _activate_fixed_email_policy(workspace, clawemail_root, env)
+    _email_cli(workspace, "policy-disable", env=env)
+
+    status = json.loads(_email_cli(workspace, "policy-status", env=env).stdout)
+    assert status["state"] == "disabled"
+    assert status["policy_scope"] == "local"
+    blocked = _email_cli(workspace, "send", "--draft-ref", draft_ref, env=env, check=False)
+    assert blocked.returncode == 2
+    assert "fixed delivery policy is not active" in blocked.stderr
+    assert not Path(env["TS_TEST_CLAWEMAIL_LOG"]).exists()
+
+
+def test_changed_child_email_policy_blocks_installation_policy_inheritance(tmp_path: Path) -> None:
+    installation = tmp_path / "installation"
+    installation.mkdir()
+    workspace = _artifact_workspace_at(installation / "ts_0000")
+    draft_ref = _write_fixed_draft(workspace, tmp_path)
+    clawemail_root, env = _fake_clawemail_skill(tmp_path)
+    env["TS_EMAIL_POLICY_ROOT"] = str(installation)
+    _activate_fixed_email_policy(installation, clawemail_root, env)
+    _activate_fixed_email_policy(workspace, clawemail_root, env)
+    policy_path = workspace / ".pi" / "ts-email-delivery-policy.json"
+    policy = json.loads(policy_path.read_text(encoding="utf-8"))
+    policy["attachment_names"] = ["report_context.json"]
+    policy_path.write_text(json.dumps(policy), encoding="utf-8")
+
+    status = json.loads(_email_cli(workspace, "policy-status", env=env).stdout)
+    assert status["state"] == "policy_changed"
+    assert status["policy_scope"] == "local"
+    blocked = _email_cli(workspace, "send", "--draft-ref", draft_ref, env=env, check=False)
+    assert blocked.returncode == 2
+    assert "delivery policy changed after activation" in blocked.stderr
+    assert not Path(env["TS_TEST_CLAWEMAIL_LOG"]).exists()
+
+
+def test_workspace_outside_installation_root_cannot_inherit_email_policy(tmp_path: Path) -> None:
+    installation = tmp_path / "installation"
+    installation.mkdir()
+    workspace = _artifact_workspace_at(tmp_path / "external-workspace")
+    draft_ref = _write_fixed_draft(workspace, tmp_path)
+    clawemail_root, env = _fake_clawemail_skill(tmp_path)
+    env["TS_EMAIL_POLICY_ROOT"] = str(installation)
+    _activate_fixed_email_policy(installation, clawemail_root, env)
+
+    status = json.loads(_email_cli(workspace, "policy-status", env=env).stdout)
+    assert status["state"] == "not_configured"
+    assert status["policy_scope"] == "local"
+    blocked = _email_cli(workspace, "send", "--draft-ref", draft_ref, env=env, check=False)
+    assert blocked.returncode == 2
+    assert "delivery policy is missing" in blocked.stderr
+
+
+def test_inherited_email_policy_rejects_symlinked_root_and_non_private_state(tmp_path: Path) -> None:
+    installation = tmp_path / "installation"
+    installation.mkdir()
+    workspace = _artifact_workspace_at(installation / "ts_0000")
+    clawemail_root, env = _fake_clawemail_skill(tmp_path)
+    _activate_fixed_email_policy(installation, clawemail_root, env)
+
+    policy_link = tmp_path / "policy-root-link"
+    policy_link.symlink_to(installation, target_is_directory=True)
+    symlink_env = {**env, "TS_EMAIL_POLICY_ROOT": str(policy_link)}
+    failed = _email_cli(workspace, "policy-status", env=symlink_env, check=False)
+    assert failed.returncode == 2
+    assert "must not contain symbolic links" in failed.stderr
+
+    policy_path = installation / ".pi" / "ts-email-delivery-policy.json"
+    policy_path.chmod(0o644)
+    unsafe_env = {**env, "TS_EMAIL_POLICY_ROOT": str(installation)}
+    failed = _email_cli(workspace, "policy-status", env=unsafe_env, check=False)
+    assert failed.returncode == 2
+    assert "delivery policy must have mode 0600" in failed.stderr
+
+
 def test_ambiguous_email_delivery_is_recorded_and_not_retried(tmp_path: Path) -> None:
     workspace = _artifact_workspace(tmp_path)
     draft_ref = _write_fixed_draft(workspace, tmp_path)
@@ -482,7 +679,10 @@ def test_artifact_output_rejects_started_or_failed_action(tmp_path: Path) -> Non
 
 
 def _artifact_workspace(tmp_path: Path) -> Path:
-    workspace = tmp_path / "workspace"
+    return _artifact_workspace_at(tmp_path / "workspace")
+
+
+def _artifact_workspace_at(workspace: Path) -> Path:
     for path in (
         workspace / "inputs",
         workspace / "nodes" / "n001" / "inputs",
@@ -757,6 +957,34 @@ def _email_cli(
         stderr=subprocess.PIPE,
         check=check,
     )
+
+
+def _activate_fixed_email_policy(
+    workspace: Path,
+    clawemail_root: Path,
+    env: dict[str, str],
+) -> dict[str, object]:
+    policy = json.loads(
+        _email_cli(
+            workspace,
+            "policy-create",
+            "--recipient",
+            "researcher@example.org",
+            "--attachment",
+            "final_report.md",
+            "--clawemail-root",
+            str(clawemail_root),
+            env=env,
+        ).stdout
+    )
+    _email_cli(
+        workspace,
+        "policy-activate",
+        "--token",
+        str(policy["activation_token"]),
+        env=env,
+    )
+    return policy
 
 
 def _fake_clawemail_skill(tmp_path: Path) -> tuple[Path, dict[str, str]]:
