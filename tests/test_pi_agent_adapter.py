@@ -65,6 +65,7 @@ def test_public_tool_catalog_separates_workspace_subagent_and_mcp_execution() ->
         "subagentRender": "ts_subagent_render",
         "subagentReport": "ts_subagent_report",
         "subagentEmailDraft": "ts_subagent_email_draft",
+        "emailSend": "ts_email_send",
     }
     for key, name in expected.items():
         assert f'{key}: "{name}"' in catalog
@@ -74,6 +75,7 @@ def test_public_tool_catalog_separates_workspace_subagent_and_mcp_execution() ->
     assert '[TS_PUBLIC_TOOL_NAMES.mcpInspect]: "deterministic_infrastructure"' in catalog
     for key in ("subagentReview", "subagentCompute", "subagentRender", "subagentReport", "subagentEmailDraft"):
         assert f'[TS_PUBLIC_TOOL_NAMES.{key}]: "child_agent"' in catalog
+    assert '[TS_PUBLIC_TOOL_NAMES.emailSend]: "deterministic_external"' in catalog
 
     for legacy in (
         "ts_workspace_decide",

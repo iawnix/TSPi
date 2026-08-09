@@ -55,6 +55,7 @@
     "ts_backends/*.py",
     "ts_compute/*.py",
     "ts_compute/contracts/*.json",
+    "ts_email/*.py",
     "ts_remote/*.py",
     "ts_render/*.py",
     "ts_report/*.py",

@@ -107,9 +107,10 @@ function validatePayload(role, value, canonical, task) {
     for (const key of keys.slice(1)) assertSame(payload[key], canonical[key], `report ${key}`);
     return payload;
   }
-  rejectUnknownKeys(value, ["operation", "summary_ref", "summary_digest", "manifest_ref", "manifest_digest", "source_workspace_revision", "draft_ref", "recipients", "subject"], "email payload");
+  rejectUnknownKeys(value, ["operation", "template_id", "summary_ref", "summary_digest", "manifest_ref", "manifest_digest", "source_workspace_revision", "draft_ref", "recipients", "subject"], "email payload");
   const payload = {
     operation: requireString(value.operation, "payload.operation", 64),
+    template_id: requireString(value.template_id, "payload.template_id", 128),
     summary_ref: requireString(value.summary_ref, "payload.summary_ref", 4096),
     summary_digest: requireString(value.summary_digest, "payload.summary_digest", 128),
     manifest_ref: requireString(value.manifest_ref, "payload.manifest_ref", 4096),
@@ -120,6 +121,7 @@ function validatePayload(role, value, canonical, task) {
     subject: requireString(value.subject, "payload.subject", 300),
   };
   assertSame(payload.operation, "draft", "email operation");
+  assertSame(payload.template_id, canonical.template_id, "email template_id");
   assertSame(payload.summary_ref, canonical.summary_ref, "email summary_ref");
   assertSame(payload.summary_digest, canonical.summary_digest, "email summary_digest");
   assertSame(payload.manifest_ref, canonical.manifest_ref, "email manifest_ref");

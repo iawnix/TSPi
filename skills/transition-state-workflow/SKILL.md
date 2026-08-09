@@ -24,7 +24,8 @@ operations; they do not choose chemistry.
 - Cluster submission or cancellation runs only through the pre-bound compute
   operator; never expose raw transport controls or retry ambiguous results.
 - `ts_web` is read-only.
-- Sending email requires explicit current-turn authorization.
+- Email delivery requires an explicitly activated fixed-scope policy; without
+  one, only a local draft may be created.
 
 ## Node Ontology
 
@@ -171,6 +172,13 @@ Use `ts_subagent_render` for one node-owned local render,
 summary. Each child gets the shared artifact policy, one selected role policy,
 and one path-bound typed tool. The email subagent cannot send, access a network,
 select a sender, infer addresses, or read credentials.
+
+After a fixed-template draft exists, use `ts_email_send` only when the user has
+previously activated the workspace-private delivery policy. The deterministic
+host verifies the exact recipients, `ts-report-summary/1` template, report
+manifest digests, configured attachment names, ClawEmail installation, and
+delivery receipt. It does not ask for per-call approval when the active policy
+matches. A missing, changed, or mismatched policy leaves the draft local.
 
 All isolated roles use `ts-agent-task/1` and `ts-agent-result/1`. Review,
 backend, render, report, and email results are non-authoritative. Results that

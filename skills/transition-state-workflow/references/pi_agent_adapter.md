@@ -159,6 +159,8 @@ Long-running jobs are external processes, not persistent LLM sessions. Invoke
   `reports/`.
 - `ts_subagent_email_draft`: one local draft JSON from a generated report
   summary and explicit recipients.
+- `ts_email_send`: deterministic delivery of one fixed-template draft through
+  an already activated workspace-private policy; no child session is created.
 
 Each creates a fresh session with exactly one private artifact skill and one
 typed tool. Request paths reject traversal, symlinks, and overwrite. Output
@@ -169,9 +171,10 @@ Report packages are published atomically with a `ts-report-package/1`
 all package files by SHA-256. Email draft preflight and execution both verify
 the manifest and selected summary digest.
 
-Email sending is absent. The draft subagent has no network, sender, mailbox,
-credential, address-discovery, or send capability. See
-`references/artifact_operators.md`.
+The draft subagent has no network, sender, mailbox, credential,
+address-discovery, or send capability. The separate deterministic
+`ts_email_send` boundary enforces the fixed policy and idempotent delivery
+receipt described in `references/artifact_operators.md`.
 
 ## Communication Protocol
 

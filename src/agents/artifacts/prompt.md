@@ -10,6 +10,6 @@ Use exactly these top-level fields: `schema_version`, `task_id`, `role`, `author
 
 - Render payload: `operation`, `node_id`, `output_ref`.
 - Report payload: `operation`, `package_ref`, `report_ref`, `context_ref`, `email_summary_ref`, `assets_ref`, `manifest_ref`, `manifest_digest`, `workspace_revision`.
-- Email draft payload: `operation`, `summary_ref`, `summary_digest`, `manifest_ref`, `manifest_digest`, `source_workspace_revision`, `draft_ref`, `recipients`, `subject`.
+- Email draft payload: `operation`, `template_id`, `summary_ref`, `summary_digest`, `manifest_ref`, `manifest_digest`, `source_workspace_revision`, `draft_ref`, `recipients`, `subject`.
 
 Facts are optional and must use the matching kind (`render`, `report`, or `email`). Cite only task allowlist refs or artifacts returned by the typed tool. Never include a body, credentials, authorization data, hypothesis status, branch context, accepted-TS/pathway fields, strict pathway decisions, study completion, or next-step decisions in the result.

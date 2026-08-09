@@ -2,12 +2,12 @@ import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-w
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { randomUUID } from "node:crypto";
-import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import {
   requireWorkspaceRoot,
   runEmailDraftJson,
+  runEmailSendJson,
   runRenderJson,
   runReportJson,
   runWorkspaceJson,
@@ -54,11 +54,6 @@ type EmailRequest = {
   draftPath: string;
   recipients: string[];
 };
-const EMAIL_DRAFT_PARAMETERS = Type.Object({
-  subject: Type.String({ minLength: 1, maxLength: 300 }),
-  body: Type.String({ minLength: 1, maxLength: 20_000 }),
-}, { additionalProperties: false });
-
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.subagentRender,
@@ -165,11 +160,11 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.subagentEmailDraft,
     label: "TS Email Draft Subagent",
-    description: "Run one fresh email subagent that writes a local draft artifact; sending and network access are unavailable.",
+    description: "Run one fresh email subagent that writes a deterministic local draft from a generated report summary.",
     promptSnippet: "Draft an email from a generated TS report summary",
     promptGuidelines: [
       "Use only explicit recipients and a generated report email_summary.md.",
-      "This subagent is draft-only. It cannot send, infer addresses, select a sender, or access credentials.",
+      "This subagent is draft-only. The deterministic writer owns the fixed subject/body template.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
@@ -196,7 +191,6 @@ export default function (pi: ExtensionAPI) {
         draftRef: params.draftRef,
         recipients: params.recipients,
       }) as EmailRequest;
-      const summaryText = readBoundedText(request.summaryPath, 16 * 1024);
       const actions: ActionLog = [];
       const tools = [createEmailDraftTool(pi, root, request, actions)];
       const packet = await buildPacket(
@@ -209,7 +203,6 @@ export default function (pi: ExtensionAPI) {
         {
           summary_ref: request.summaryRef,
           summary_digest: request.summaryDigest,
-          summary_text: summaryText,
           context_digest: request.contextDigest,
           manifest_ref: request.manifestRef,
           manifest_digest: request.manifestDigest,
@@ -223,6 +216,28 @@ export default function (pi: ExtensionAPI) {
         signal,
       );
       return executeChild(pi, ctx, root, "email", packet, tools, actions, 180_000, reportStatus, signal);
+    },
+  });
+
+  pi.registerTool({
+    name: TS_PUBLIC_TOOL_NAMES.emailSend,
+    label: "TS Email Send",
+    description: "Send one deterministic report draft only when it exactly matches an active fixed delivery policy.",
+    promptSnippet: "Deliver a fixed-policy TS report email",
+    promptGuidelines: [
+      "Call only for an existing ts-email-draft/1 artifact generated from a validated report package.",
+      "The deterministic sender enforces the pre-activated recipients, template, attachments, and idempotency receipt.",
+    ],
+    executionMode: "sequential",
+    parameters: Type.Object({
+      operation: Type.Literal("send"),
+      draftRef: Type.String({ minLength: 1, maxLength: 4096 }),
+      root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
+    }),
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const root = requireWorkspaceRoot(params.root, ctx.cwd);
+      const result = await runEmailSendJson(pi, root, params.draftRef, signal);
+      return toolText(JSON.stringify(result, null, 2), { result });
     },
   });
 }
@@ -332,13 +347,13 @@ function createEmailDraftTool(
   request: EmailRequest,
   actions: ActionLog,
 ): ToolDefinition {
-  const tool: ToolDefinition<typeof EMAIL_DRAFT_PARAMETERS> = {
+  const tool: ToolDefinition = {
     name: "ts_workspace_email_draft_write",
     label: "TS Email Draft Write",
-    description: "Write one local draft JSON for the pre-bound report summary and recipients. No sending is available.",
+    description: "Write one fixed-template local draft JSON for the pre-bound report summary and recipients.",
     executionMode: "sequential",
-    parameters: EMAIL_DRAFT_PARAMETERS,
-    async execute(_toolCallId, params, signal) {
+    parameters: Type.Object({}, { additionalProperties: false }),
+    async execute(_toolCallId, _params, signal) {
       const action = reserveAction(actions, tool.name, {
         operation: "draft",
         state: "started",
@@ -349,7 +364,6 @@ function createEmailDraftTool(
         source_workspace_revision: request.workspaceRevision,
         draft_ref: request.draftRef,
         recipients: request.recipients,
-        subject: params.subject,
         artifact_refs: [request.draftRef],
       });
       const raw = await runEmailDraftJson(pi, root, {
@@ -361,8 +375,6 @@ function createEmailDraftTool(
         source_workspace_revision: request.workspaceRevision,
         draft_ref: request.draftRef,
         recipients: request.recipients,
-        subject: params.subject,
-        body: params.body,
       }, signal);
       if (!raw || typeof raw !== "object" || raw.external_side_effects !== false) {
         throw new Error("email draft tool returned an invalid result");
@@ -535,12 +547,4 @@ function reserveAction(actions: ActionLog, toolName: string, pendingResult: Reco
   const action = { tool: toolName, result: pendingResult };
   actions.push(action);
   return action;
-}
-
-function readBoundedText(path: string, maximumBytes: number): string {
-  const text = readFileSync(path, "utf8");
-  if (Buffer.byteLength(text, "utf8") > maximumBytes) {
-    throw new Error(`report email summary exceeds ${maximumBytes} bytes`);
-  }
-  return text;
 }

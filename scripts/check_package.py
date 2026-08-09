@@ -58,6 +58,7 @@ PACKAGE_FILES = [
     "ts_backends/*.py",
     "ts_compute/*.py",
     "ts_compute/contracts/*.json",
+    "ts_email/*.py",
     "ts_remote/*.py",
     "ts_render/*.py",
     "ts_report/*.py",
@@ -98,6 +99,7 @@ REQUIRED_TARBALL_FILES = {
     "src/agents/artifacts/policy-loader.cjs",
     "src/agents/artifacts/policy.md",
     "src/agents/artifacts/roles/report.md",
+    "ts_email/delivery.py",
     "ts_workspace/evidence_lifecycle.py",
 }
 LEGACY_PREFIXES = (

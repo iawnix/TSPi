@@ -145,6 +145,22 @@ export async function runEmailDraftJson(
   }
 }
 
+export async function runEmailSendJson(
+  pi: ExtensionAPI,
+  root: string,
+  draftRef: string,
+  signal?: AbortSignal,
+) {
+  return runPackageJson(
+    pi,
+    root,
+    EMAIL_CLI,
+    ["send", "--root", root, "--draft-ref", draftRef, "--json"],
+    signal,
+    150_000,
+  );
+}
+
 export function requireWorkspaceRoot(inputRoot: string | undefined, cwd: string): string {
   const root = resolveWorkspaceRoot(inputRoot || "", cwd);
   if (!root) {

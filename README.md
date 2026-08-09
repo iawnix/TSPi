@@ -34,6 +34,8 @@ workspaces are rejected and must be recreated under the current ontology.
   transfer and OpenPBS/Torque execution without scientific authority.
 - `ts_render`: local molecular rendering through `xyzrender` only.
 - `ts_report`: report-package assembly from validated workspace evidence.
+- `ts_email`: deterministic fixed-template drafts, private delivery policy,
+  ClawEmail boundary, and idempotent send receipts.
 - `ts_web`: read-only workspace normalization and visualization.
 
 The Root Agent is the sole authority for hypothesis status, branch selection,
@@ -138,6 +140,8 @@ Public tool prefixes describe execution rather than subject matter:
 - `ts_subagent_*` creates one fresh, isolated child model session.
 - `ts_mcp_*` runs deterministic MCP or cluster diagnostics without a child
   model session.
+- `ts_email_*` performs deterministic external delivery subject to a private,
+  pre-activated fixed-scope policy; it never delegates sending to a child.
 
 The package-owned UI extension installs a MyPi-compatible animated TSPi header,
 mode-aware rounded editor, session footer, working state, and terminal title
@@ -172,7 +176,36 @@ Pi also exposes:
 - `ts_subagent_report`: validated report-package build under
   `reports/`.
 - `ts_subagent_email_draft`: local draft JSON from a generated report
-  summary and explicit recipients. Sending is unavailable.
+  summary and explicit recipients. Its subject and body come directly from the
+  deterministic `email_summary.md` template.
+- `ts_email_send`: sends one existing draft only when recipients, template,
+  report-manifest digests, and fixed attachments match the active private
+  delivery policy. Sent or ambiguous receipts prevent duplicate retries.
+
+The delivery policy is workspace-private state, not package source. Create it
+once, inspect the exact returned scope, and activate it with the returned
+exact token:
+
+```bash
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_email.py" policy-create \
+  --root "$TS_WORKSPACE_ROOT" \
+  --recipient researcher@example.org \
+  --attachment final_report.md \
+  --clawemail-root /home/iaw/.pi/agent/skills/clawemail \
+  --json
+
+python "$TS_AGENT_SKILL_ROOT/scripts/ts_email.py" policy-activate \
+  --root "$TS_WORKSPACE_ROOT" \
+  --token 'EXACT_TOKEN_FROM_POLICY_CREATE' \
+  --json
+```
+
+The mode-0600 policy and authorization files live under `<workspace>/.pi/`.
+They contain no mailbox credentials. Changing any policy field invalidates the
+activation. ClawEmail authentication remains owned by the installed ClawEmail
+skill. Use `policy-disable --root "$TS_WORKSPACE_ROOT" --json` to revoke
+automatic delivery without deleting policy history; the same exact token is
+required to reactivate it.
 
 Users can run the same MCP diagnostics with
 `/ts-mcp status|doctor|queues|nodes|cluster`. The command and Agent tool are on demand; they

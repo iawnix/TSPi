@@ -49,15 +49,29 @@ recipient addresses. The selected summary must have a sibling
 manifest, context, and selected summary digests. The deterministic draft writer
 repeats those checks so a post-preflight file change is rejected.
 
-The child writes one local `ts-email-draft/1` artifact. The body is passed to
-the deterministic script through a mode-0600 temporary request file and is not
-stored in Pi run metadata. This operator has no send, network, sender-selection,
+The child writes one local `ts-email-draft/1` artifact. The deterministic writer
+parses the `Subject:` line and body directly from the manifest-bound
+`email_summary.md`; the child cannot supply either field. The body is not stored
+in Pi run metadata. This operator has no send, network, sender-selection,
 credential, mailbox, or recipient-discovery capability.
 
-Sending is a separate future integration. It must use a host-issued,
-current-turn authorization capability bound to exact recipients and a fixed
-draft digest. A model-supplied boolean or free-form claim of authorization is
-not sufficient.
+## Fixed-Policy Delivery
+
+`ts_email_send` is a deterministic host tool, not a child-agent capability. It
+accepts only `operation=send` and an existing `draftRef`. A mode-0600 policy
+under `<workspace>/.pi/` fixes the recipients, `ts-report-summary/1` template,
+ClawEmail skill root, and exact package-relative attachment names. A separate
+mode-0600 authorization record binds the complete policy digest after the user
+enters the exact activation token returned by `policy-create`. `policy-disable`
+revokes automatic delivery without deleting policy history; reactivation
+requires that token again.
+
+Before delivery, the host rechecks the draft, report manifest, summary, context,
+attachments, policy digest, authorization, and ClawEmail private-state modes.
+It writes a digest-addressed delivery guard before invoking ClawEmail. A `sent`
+receipt makes repeated calls idempotent; `sending` or `unknown` blocks automatic
+retry because delivery may already have occurred. A model-supplied boolean or
+free-form authorization claim is never accepted.
 
 ## Result Binding
 
