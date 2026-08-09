@@ -60,6 +60,8 @@
             "prepare_staging",
             "ensure_directory",
             "upload",
+            "pre_submit_validation",
+            "pre_submit_preparation",
             "submit_request",
             "scheduler_accept",
             "receipt_persist",

@@ -25,12 +25,14 @@ from cluster_mcp.config import (
     load_config,
 )
 from cluster_mcp.errors import ConfigurationError, SchedulerError, SecurityError
+from cluster_mcp.schedulers.torque import TorqueBackend
 from cluster_mcp.service import ClusterService
 from cluster_mcp.ts_jobs import validate_ts_submission_request
 from ts_remote.mcp import (
     MCP_CLIENT_MODE,
     MCPClientError,
     MCPConnectionSettings,
+    MCPSubmissionRejected,
     TSClusterMCPClient,
     SDKToolCaller,
     _structured_result,
@@ -43,6 +45,9 @@ class _Scheduler:
         self.owner = owner
         self.submissions = []
         self.deleted: list[str] = []
+
+    def validate_submission(self, submission) -> None:
+        return None
 
     def submit(self, submission):
         self.submissions.append(submission)
@@ -313,6 +318,51 @@ def test_gaussian_ts_profile_checks_activation_and_queue_before_reservation(tmp_
     with pytest.raises(SecurityError, match="not allowed in queue"):
         service.submit_ts_job(request)
     assert service.scheduler.submissions == []
+
+
+def test_torque_place_rejection_is_retryable_and_never_reaches_qsub(tmp_path: Path) -> None:
+    service = _service(tmp_path)
+
+    class RejectUnexpectedCommand:
+        def __init__(self) -> None:
+            self.calls: list[list[str]] = []
+
+        def run(self, argv, **_kwargs):
+            self.calls.append(list(argv))
+            raise AssertionError("pre-submit validation must reject before a scheduler command")
+
+    runner = RejectUnexpectedCommand()
+    service.scheduler = TorqueBackend(
+        service.config.scheduler,
+        service.scheduler_policy,
+        runner,
+    )
+    request = _request(service, submission_id="tsjob_calc_torque_place_000001")
+    request["execution"]["place"] = "pack"
+
+    result = service.submit_ts_job(request)
+
+    assert result["state"] == "rejected"
+    assert result["error_class"] == "pre_submit_validation_failed"
+    assert result["failure_stage"] == "pre_submit_validation"
+    assert result["job_id"] is None
+    assert "place directives are not supported by Torque" in result["error"]
+    assert runner.calls == []
+    record = service.ts_submissions.get(str(request["submission_id"]))
+    assert record["state"] == "rejected"
+    assert record["job_id"] is None
+
+    client = TSClusterMCPClient(_ServiceCaller(service))
+    with pytest.raises(MCPSubmissionRejected) as rejected:
+        client.submit(request)
+    assert rejected.value.result["state"] == "rejected"
+    assert runner.calls == []
+
+    service.scheduler = _Scheduler(service.actor)
+    retried = service.submit_ts_job(request)
+    assert retried["state"] == "submitted"
+    assert retried["replayed"] is False
+    assert len(service.scheduler.submissions) == 1
 
 
 def test_ts_submission_rejects_rebinding_and_changed_inputs(tmp_path: Path) -> None:

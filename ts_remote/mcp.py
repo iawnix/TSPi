@@ -41,6 +41,16 @@ class MCPSubmissionAmbiguous(MCPClientError):
         super().__init__(f"MCP TS submission outcome is ambiguous{suffix}")
 
 
+class MCPSubmissionRejected(MCPClientError):
+    """Raised when the server rejected a request before scheduler submission."""
+
+    def __init__(self, result: dict[str, Any]) -> None:
+        self.result = result
+        detail = result.get("error")
+        suffix = f": {detail}" if isinstance(detail, str) and detail else ""
+        super().__init__(f"MCP TS submission was rejected before scheduler submission{suffix}")
+
+
 class ToolCaller(Protocol):
     def call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]: ...
 
@@ -295,6 +305,8 @@ class TSClusterMCPClient:
             raise MCPClientError("MCP submission result changed the expected artifact manifest")
         if result.get("state") == "ambiguous":
             raise MCPSubmissionAmbiguous(result)
+        if result.get("state") == "rejected":
+            raise MCPSubmissionRejected(result)
         if result.get("state") != "submitted":
             raise MCPClientError("MCP server did not return a submitted TS job")
         job_id = result.get("job_id")

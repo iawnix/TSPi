@@ -48,6 +48,7 @@ from ts_remote.mcp import (
     MCPClientError,
     MCPConnectionSettings,
     MCPSubmissionAmbiguous,
+    MCPSubmissionRejected,
     SDKToolCaller,
     TSClusterMCPClient,
     build_ts_job_request,
@@ -386,7 +387,32 @@ def submit_calculation(
             receipt = _submit_mcp(workspace, intent, prepared, policy)
     except Exception as exc:
         staging_failure = transport == "mcp" and isinstance(exc, _MCPStagingError)
+        rejected_failure = transport == "mcp" and isinstance(exc, MCPSubmissionRejected)
+        retryable_failure = staging_failure or rejected_failure
         ambiguous_result = exc.result if isinstance(exc, MCPSubmissionAmbiguous) else {}
+        rejected_result = exc.result if isinstance(exc, MCPSubmissionRejected) else {}
+        if staging_failure:
+            failure_phase = exc.phase
+            failure_type = type(exc.cause).__name__
+            failure_message = str(exc.cause)[:2000]
+            error_class = "mcp_staging_failed"
+        elif rejected_failure:
+            server_failure_stage = rejected_result.get("failure_stage")
+            failure_phase = (
+                str(server_failure_stage)
+                if server_failure_stage in {"pre_submit_validation", "pre_submit_preparation"}
+                else "pre_submit_validation"
+            )
+            failure_type = str(rejected_result.get("error_type", type(exc).__name__))
+            failure_message = str(rejected_result.get("error", exc))[:2000]
+            error_class = str(
+                rejected_result.get("error_class", "pre_submit_validation_failed")
+            )
+        else:
+            failure_phase = "submit_request"
+            failure_type = type(exc).__name__
+            failure_message = str(exc)[:2000] if transport == "mcp" else None
+            error_class = "submission_ambiguous"
         ambiguous_job_id = (
             str(ambiguous_result.get("job_id"))
             if isinstance(ambiguous_result.get("job_id"), str)
@@ -395,16 +421,18 @@ def submit_calculation(
         result = _result(
             intent,
             job_id=ambiguous_job_id,
-            state="failed" if staging_failure else "unknown",
+            state="failed" if retryable_failure else "unknown",
             program_status="not_run",
-            error_class="mcp_staging_failed" if staging_failure else "submission_ambiguous",
+            error_class=error_class,
             control=_control_outcome(
                 operation="submit",
-                phase=exc.phase if staging_failure else "submit_request",
-                effect_outcome="failed" if staging_failure else "unknown",
-                effect_attempted=not staging_failure,
-                retry_disposition="retry_same_submission" if staging_failure else "reconcile_only",
-                reconciliation_required=not staging_failure,
+                phase=failure_phase,
+                effect_outcome="failed" if retryable_failure else "unknown",
+                effect_attempted=not retryable_failure,
+                retry_disposition=(
+                    "retry_same_submission" if retryable_failure else "reconcile_only"
+                ),
+                reconciliation_required=not retryable_failure,
                 submission_id=(
                     _prepared_mcp_submission_id(intent, policy) if transport == "mcp" else None
                 ),
@@ -414,16 +442,18 @@ def submit_calculation(
                 "transport": transport,
                 "remote_dir": policy["remote_dir"],
                 "observed_at": now_iso(),
-                "failure_type": type(exc.cause).__name__ if staging_failure else type(exc).__name__,
-                "failure_message": (
-                    str(exc.cause if staging_failure else exc)[:2000]
-                    if transport == "mcp"
-                    else None
+                "failure_type": failure_type,
+                "failure_message": failure_message,
+                "server_submission_state": (
+                    rejected_result.get("state")
+                    if rejected_failure
+                    else ambiguous_result.get("state")
                 ),
-                "server_submission_state": ambiguous_result.get("state"),
-                "submission_phase": exc.phase if staging_failure else "scheduler_submit",
-                "submission_attempted": not staging_failure,
-                "retry_safe": staging_failure,
+                "submission_phase": (
+                    failure_phase if retryable_failure else "scheduler_submit"
+                ),
+                "submission_attempted": not retryable_failure,
+                "retry_safe": retryable_failure,
             },
         )
         _write_control_result(workspace, intent, "submit", result, control_attempt)

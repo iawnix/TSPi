@@ -203,14 +203,17 @@ class TorqueBackend(OpenPBSBackend):
         job_key, raw = next(iter(jobs.items()))
         return self._normalize_torque_job(job_key, raw)
 
-    def render_script(self, submission: JobSubmission) -> str:
-        self._validate_submission(submission)
+    def validate_submission(self, submission: JobSubmission) -> None:
+        super().validate_submission(submission)
         if submission.resources.host is not None:
             raise SecurityError("Host pinning is not enabled for the Torque backend")
         if submission.resources.place is not None:
             raise SecurityError("OpenPBS place directives are not supported by Torque")
         if submission.resources.ngpus:
             raise SecurityError("GPU resource syntax has not been validated on this Torque cluster")
+
+    def render_script(self, submission: JobSubmission) -> str:
+        self.validate_submission(submission)
         lines = [
             "#!/usr/bin/env bash",
             f"#PBS -N {submission.name}",

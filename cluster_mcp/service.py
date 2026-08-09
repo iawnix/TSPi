@@ -386,6 +386,7 @@ class ClusterService:
         expected_source_sha256: str | None = None,
         metadata: dict[str, Any] | None = None,
         script_prelude: tuple[str, ...] = (),
+        before_scheduler_submit: Callable[[], None] | None = None,
         scheduler_accept_callback: Callable[[dict[str, Any]], None] | None = None,
     ) -> dict[str, Any]:
         script = self.policy.require_file(script_path)
@@ -453,6 +454,9 @@ class ClusterService:
             place=place,
         )
         try:
+            self.scheduler.validate_submission(submission)
+            if before_scheduler_submit is not None:
+                before_scheduler_submit()
             result = self.scheduler.submit(submission)
             if scheduler_accept_callback is not None:
                 scheduler_accept_callback(result)
@@ -536,7 +540,6 @@ class ClusterService:
             "TS_CLUSTER_INTENT_DIGEST": str(normalized["intent_digest"]),
         }
         deterministic_name = "ts_" + hashlib.sha256(submission_id.encode("utf-8")).hexdigest()[:12]
-        self.ts_submissions.mark_submitting(submission_id)
 
         def record_scheduler_accept(raw: dict[str, Any]) -> None:
             job_id = validate_job_id(str(raw.get("job_id", "")))
@@ -577,6 +580,9 @@ class ClusterService:
                     if profile is not None and profile.activation_script is not None
                     else ()
                 ),
+                before_scheduler_submit=lambda: self.ts_submissions.mark_submitting(
+                    submission_id
+                ),
                 scheduler_accept_callback=record_scheduler_accept,
             )
             result = {
@@ -598,6 +604,46 @@ class ClusterService:
                 result=result,
             )
         except Exception as exc:
+            record = self.ts_submissions.get(submission_id)
+            if record["state"] == "reserved":
+                validation_failure = isinstance(exc, SecurityError)
+                failure_stage = (
+                    "pre_submit_validation"
+                    if validation_failure
+                    else "pre_submit_preparation"
+                )
+                result = {
+                    "schema_version": "ts-cluster-submission-result/1",
+                    "submission_id": submission_id,
+                    "intent_id": normalized["intent_id"],
+                    "intent_digest": normalized["intent_digest"],
+                    "node_id": normalized["node_id"],
+                    "backend": normalized["backend"],
+                    "job_id": None,
+                    "state": "rejected",
+                    "expected_artifacts": normalized["expected_artifacts"],
+                    "scheduler": None,
+                    "error_class": f"{failure_stage}_failed",
+                    "failure_stage": failure_stage,
+                    "error_type": type(exc).__name__,
+                    "error": f"{type(exc).__name__}: {exc}"[:2000],
+                    "replayed": False,
+                }
+                self.ts_submissions.mark_rejected(
+                    submission_id,
+                    result=result,
+                    error=exc,
+                )
+                self.audit.write(
+                    "ts_job.submit",
+                    success=False,
+                    details={
+                        "submission_id": submission_id,
+                        "intent_id": normalized["intent_id"],
+                        "failure_stage": failure_stage,
+                    },
+                )
+                return result
             self.ts_submissions.mark_ambiguous(submission_id, exc)
             record = self.ts_submissions.get(submission_id)
             result = {

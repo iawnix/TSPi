@@ -24,7 +24,7 @@ from ts_compute.contracts import validate_compute_contract
 from ts_compute.control import _validate_intent_node_scope
 from ts_remote.job_lifecycle import RemoteJobStatus
 from ts_remote.base import RemoteReceipt
-from ts_remote.mcp import MCPClientError
+from ts_remote.mcp import MCPClientError, MCPSubmissionRejected
 from ts_workspace.operational import operational_snapshot
 from ts_workspace.readers.report import report_workspace
 
@@ -895,6 +895,81 @@ def test_mcp_staging_failure_is_not_submission_ambiguous(
     after_retry = operational_snapshot(workspace)
     assert after_retry["unresolved_controls"] == []
     assert after_retry["retryable_controls"] == []
+
+
+def test_mcp_pre_submit_rejection_is_retryable_and_not_ambiguous(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = _workspace(tmp_path)
+    _configure_mcp(monkeypatch)
+    intent_id = "calc_n001_optfreq_v2_001"
+    target = _mcp_target()
+    target["execution"]["place"] = "pack"
+    prepare_calculation(
+        workspace,
+        _intent_v2(workspace, target=target, dry_run=False),
+    )
+
+    class RejectThenSubmitClient:
+        def __init__(self) -> None:
+            self.submit_calls = 0
+
+        def ensure_directory(self, _path: str) -> None:
+            return None
+
+        def upload_file(self, _source: Path, remote_path: str):
+            return {"path": remote_path}
+
+        def submit(self, request):
+            self.submit_calls += 1
+            if self.submit_calls == 1:
+                raise MCPSubmissionRejected(
+                    {
+                        "schema_version": "ts-cluster-submission-result/1",
+                        "submission_id": request["submission_id"],
+                        "intent_id": request["intent_id"],
+                        "intent_digest": request["intent_digest"],
+                        "node_id": request["node_id"],
+                        "backend": request["backend"],
+                        "job_id": None,
+                        "state": "rejected",
+                        "expected_artifacts": request["expected_artifacts"],
+                        "scheduler": None,
+                        "error_class": "pre_submit_validation_failed",
+                        "failure_stage": "pre_submit_validation",
+                        "error": "SecurityError: OpenPBS place directives are not supported by Torque",
+                        "replayed": False,
+                    }
+                )
+            return RemoteReceipt(
+                node_id="n001",
+                host="cluster-mcp",
+                remote_dir=request["workdir"],
+                command=["mcp", "ts_submit_job", request["submission_id"]],
+                receipt_path=f"{request['workdir']}/ts_submission.json",
+                scheduler_id="42004.cluster",
+                metadata={"submission_id": request["submission_id"]},
+            )
+
+    client = RejectThenSubmitClient()
+    monkeypatch.setattr("ts_compute.control._mcp_client", lambda: client)
+
+    result = submit_calculation(workspace, intent_id)
+
+    assert result["state"] == "failed"
+    assert result["error_class"] == "pre_submit_validation_failed"
+    assert result["control"]["phase"] == "pre_submit_validation"
+    assert result["control"]["effect_attempted"] is False
+    assert result["control"]["retry_disposition"] == "retry_same_submission"
+    assert result["control"]["reconciliation_required"] is False
+    assert result["provenance"]["server_submission_state"] == "rejected"
+    assert result["provenance"]["submission_attempted"] is False
+    assert result["provenance"]["retry_safe"] is True
+
+    submitted = submit_calculation(workspace, intent_id)
+    assert submitted["state"] == "submitted"
+    assert submitted["job_id"] == "42004.cluster"
 
 
 def test_mcp_scheduler_submit_failure_remains_ambiguous(

@@ -175,6 +175,17 @@ class TSSubmissionStore:
                 raise SecurityError("submission_id is already bound to a different request")
             if state in _REPLAYABLE_STATES and result_json:
                 return _stored_object(result_json, "TS submission result")
+            if state == "rejected":
+                cursor = connection.execute(
+                    "UPDATE ts_submissions SET state = 'reserved', result_json = NULL, "
+                    "error_text = NULL, updated_at = ? WHERE submission_id = ? AND state = 'rejected'",
+                    (timestamp, submission_id),
+                )
+                if cursor.rowcount != 1:
+                    raise ConfigurationError(
+                        f"TS submission retry reservation failed: {submission_id} rejected->reserved"
+                    )
+                return None
             raise SecurityError(
                 f"submission_id is in state {state}; automatic resubmission is forbidden"
             )
@@ -195,12 +206,29 @@ class TSSubmissionStore:
             raise SecurityError("submission_id is already bound to a different request")
         if state in _REPLAYABLE_STATES and result_json:
             return _stored_object(result_json, "TS submission result")
+        if state == "rejected":
+            return None
         raise SecurityError(
             f"submission_id is in state {state}; automatic resubmission is forbidden"
         )
 
     def mark_submitting(self, submission_id: str) -> None:
         self._transition(submission_id, from_state="reserved", to_state="submitting")
+
+    def mark_rejected(
+        self,
+        submission_id: str,
+        *,
+        result: dict[str, Any],
+        error: BaseException,
+    ) -> None:
+        self._transition(
+            submission_id,
+            from_state="reserved",
+            to_state="rejected",
+            result=result,
+            error_text=f"{type(error).__name__}: {error}"[:2000],
+        )
 
     def mark_scheduler_accepted(self, submission_id: str, *, job_id: str) -> None:
         self._transition(

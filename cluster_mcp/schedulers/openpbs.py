@@ -155,7 +155,9 @@ class OpenPBSBackend:
             raise SchedulerError("OpenPBS returned invalid job data")
         return self._normalize_job(job_key, raw)
 
-    def _validate_submission(self, submission: JobSubmission) -> None:
+    def validate_submission(self, submission: JobSubmission) -> None:
+        if not self.settings.allow_submission:
+            raise SecurityError("Job submission is disabled by server configuration")
         validate_job_name(submission.name)
         if not _QUEUE_NAME.fullmatch(submission.queue):
             raise SecurityError("Queue name contains unsupported characters")
@@ -193,7 +195,7 @@ class OpenPBSBackend:
             raise SecurityError("Job body may not be empty")
 
     def render_script(self, submission: JobSubmission) -> str:
-        self._validate_submission(submission)
+        self.validate_submission(submission)
         lines = [
             "#!/usr/bin/env bash",
             f"#PBS -N {submission.name}",
@@ -226,8 +228,6 @@ class OpenPBSBackend:
         return "\n".join(lines)
 
     def submit(self, submission: JobSubmission) -> dict[str, Any]:
-        if not self.settings.allow_submission:
-            raise SecurityError("Job submission is disabled by server configuration")
         script = self.render_script(submission)
         digest = hashlib.sha256(script.encode("utf-8")).hexdigest()
         generated_path = self.generated_root / f"{uuid.uuid4().hex}.pbs"
