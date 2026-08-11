@@ -8,7 +8,13 @@ import re
 from dataclasses import replace
 from typing import Any
 
-from ts_remote.mcp import MCPClientError, MCPConnectionSettings, SDKToolCaller, TSClusterMCPClient
+from ts_remote.mcp import (
+    MCPClientError,
+    MCPCompatibilityError,
+    MCPConnectionSettings,
+    SDKToolCaller,
+    TSClusterMCPClient,
+)
 
 
 MCP_DIAGNOSTIC_MODES = frozenset({"status", "doctor", "queues", "nodes", "cluster"})
@@ -381,6 +387,8 @@ def _classify_error(error: Exception, phase: str) -> str:
         if "endpoint" in message or "http" in message or "https" in message or "url" in message:
             return "endpoint_configuration"
         return "configuration_invalid"
+    if isinstance(error, MCPCompatibilityError):
+        return error.error_class
     if isinstance(error, (TimeoutError, asyncio.TimeoutError)) or "timeout" in message or "timed out" in message:
         return "timeout"
     if any(

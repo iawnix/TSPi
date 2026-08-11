@@ -7,7 +7,13 @@ import sys
 from pathlib import Path
 
 from ts_compute import mcp_diagnostics
-from ts_remote.mcp import MCPClientError, MCPConnectionSettings, SDKToolCaller, TSClusterMCPClient
+from ts_remote.mcp import (
+    EXPECTED_CLUSTER_MCP_VERSION,
+    MCPClientError,
+    MCPConnectionSettings,
+    SDKToolCaller,
+    TSClusterMCPClient,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,7 +22,18 @@ TOKEN = "diagnostic-secret-token-value-1234567890"
 
 class _Caller:
     def __init__(self, responses: dict[str, dict[str, object] | Exception]) -> None:
-        self.responses = responses
+        self.responses = dict(responses)
+        capabilities = self.responses.get("cluster_capabilities")
+        if capabilities is None:
+            self.responses["cluster_capabilities"] = {
+                "server": "cluster-mcp",
+                "version": EXPECTED_CLUSTER_MCP_VERSION,
+            }
+        elif isinstance(capabilities, dict):
+            capabilities = dict(capabilities)
+            capabilities.setdefault("server", "cluster-mcp")
+            capabilities.setdefault("version", EXPECTED_CLUSTER_MCP_VERSION)
+            self.responses["cluster_capabilities"] = capabilities
         self.calls: list[tuple[str, dict[str, object]]] = []
 
     def call_tool(self, name: str, arguments: dict[str, object]) -> dict[str, object]:
@@ -60,7 +77,7 @@ def test_mcp_status_returns_only_compact_safe_capabilities(monkeypatch) -> None:
         {
             "cluster_capabilities": {
                 "server": "cluster-mcp",
-                "version": "2.0.0",
+                "version": EXPECTED_CLUSTER_MCP_VERSION,
                 "scheduler": "openpbs",
                 "workspace": "/cluster/principals/pi-ts",
                 "authentication": {
@@ -115,7 +132,7 @@ def test_mcp_status_returns_only_compact_safe_capabilities(monkeypatch) -> None:
     assert caller.calls == [("cluster_capabilities", {})]
 
 
-def test_mcp_queue_probe_calls_only_list_queues(monkeypatch) -> None:
+def test_mcp_queue_probe_checks_compatibility_before_list_queues(monkeypatch) -> None:
     queues = [{"name": "batch", "allowed_for_submission": True, "total_jobs": 3}]
     caller = _Caller({"list_queues": {"queues": queues}})
     monkeypatch.setattr(mcp_diagnostics, "_connection_settings", _settings)
@@ -125,10 +142,10 @@ def test_mcp_queue_probe_calls_only_list_queues(monkeypatch) -> None:
 
     assert result["ok"] is True
     assert result["queues"] == queues
-    assert caller.calls == [("list_queues", {})]
+    assert caller.calls == [("cluster_capabilities", {}), ("list_queues", {})]
 
 
-def test_mcp_node_probe_calls_only_list_nodes(monkeypatch) -> None:
+def test_mcp_node_probe_checks_compatibility_before_list_nodes(monkeypatch) -> None:
     nodes = [{"name": "compute-0-1", "state": "free", "ncpus_free_total": "24/24"}]
     caller = _Caller({"list_nodes": {"nodes": nodes}})
     monkeypatch.setattr(mcp_diagnostics, "_connection_settings", _settings)
@@ -138,7 +155,7 @@ def test_mcp_node_probe_calls_only_list_nodes(monkeypatch) -> None:
 
     assert result["ok"] is True
     assert result["nodes"] == nodes
-    assert caller.calls == [("list_nodes", {})]
+    assert caller.calls == [("cluster_capabilities", {}), ("list_nodes", {})]
 
 
 def test_mcp_cluster_probe_combines_only_read_only_scheduler_views(monkeypatch) -> None:
@@ -349,6 +366,46 @@ def test_mcp_doctor_reports_unavailable_advertised_profile(monkeypatch) -> None:
         "class": "software_profile_unavailable",
         "message": "software activation unavailable: xtb",
     }
+
+
+def test_mcp_status_classifies_server_identity_mismatch(monkeypatch) -> None:
+    caller = _Caller(
+        {
+            "cluster_capabilities": {
+                "server": "different-mcp",
+                "version": EXPECTED_CLUSTER_MCP_VERSION,
+            }
+        }
+    )
+    monkeypatch.setattr(mcp_diagnostics, "_connection_settings", _settings)
+    monkeypatch.setattr(mcp_diagnostics, "_client", lambda _settings: TSClusterMCPClient(caller))
+
+    result = mcp_diagnostics.diagnose_mcp("status")
+
+    assert result["ok"] is False
+    assert result["error"]["class"] == "server_identity_mismatch"
+    assert result["error"]["phase"] == "probe"
+    assert caller.calls == [("cluster_capabilities", {})]
+
+
+def test_mcp_doctor_classifies_client_server_version_mismatch(monkeypatch) -> None:
+    caller = _Caller(
+        {
+            "cluster_capabilities": {
+                "server": "cluster-mcp",
+                "version": "0.5.0",
+            }
+        }
+    )
+    monkeypatch.setattr(mcp_diagnostics, "_connection_settings", _settings)
+    monkeypatch.setattr(mcp_diagnostics, "_client", lambda _settings: TSClusterMCPClient(caller))
+
+    result = mcp_diagnostics.diagnose_mcp("doctor")
+
+    assert result["ok"] is False
+    assert result["error"]["class"] == "version_mismatch"
+    assert result["checks"]["protocol"] == "fail"
+    assert all(name == "cluster_capabilities" for name, _arguments in caller.calls)
 
 
 def test_mcp_diagnostics_use_a_separate_bounded_component_timeout(monkeypatch) -> None:

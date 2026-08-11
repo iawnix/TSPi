@@ -1,6 +1,6 @@
 {
   "name": "@iawnix/ts-agent",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "private": true,
   "type": "module",
   "description": "Native Pi package for evidence-driven transition-state research with isolated operators.",

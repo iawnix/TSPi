@@ -17,6 +17,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from urllib.parse import urlsplit
 
+from cluster_mcp import __version__ as CLUSTER_MCP_VERSION
 from cluster_mcp.ts_jobs import validate_ts_submission_request
 
 from .base import RemoteReceipt
@@ -25,10 +26,20 @@ from .base import RemoteReceipt
 # The cluster contract uses the stable initialize handshake; avoid an extra
 # server/discover probe on every short-lived HTTP tool call.
 MCP_CLIENT_MODE = "legacy"
+EXPECTED_MCP_SERVER = "cluster-mcp"
+EXPECTED_CLUSTER_MCP_VERSION = CLUSTER_MCP_VERSION
 
 
 class MCPClientError(RuntimeError):
     """Raised when the MCP transport or TS cluster contract is invalid."""
+
+
+class MCPCompatibilityError(MCPClientError):
+    """Raised before any cluster operation when the peer contract is incompatible."""
+
+    def __init__(self, error_class: str, message: str) -> None:
+        self.error_class = error_class
+        super().__init__(message)
 
 
 class MCPSubmissionAmbiguous(MCPClientError):
@@ -198,12 +209,41 @@ def _exception_detail(error: Exception) -> str:
 class TSClusterMCPClient:
     def __init__(self, caller: ToolCaller) -> None:
         self.caller = caller
+        self._compatible_capabilities: dict[str, Any] | None = None
 
     def capabilities(self) -> dict[str, Any]:
-        return self.caller.call_tool("cluster_capabilities", {})
+        return self._ensure_compatible()
+
+    def _ensure_compatible(self) -> dict[str, Any]:
+        if self._compatible_capabilities is not None:
+            return self._compatible_capabilities
+        result = self.caller.call_tool("cluster_capabilities", {})
+        if not isinstance(result, dict):
+            raise MCPClientError("MCP server returned invalid cluster capabilities")
+        server = result.get("server")
+        if server != EXPECTED_MCP_SERVER:
+            actual = repr(server) if server is not None else "<missing>"
+            raise MCPCompatibilityError(
+                "server_identity_mismatch",
+                f"MCP server identity mismatch: expected {EXPECTED_MCP_SERVER!r}, got {actual}",
+            )
+        version = result.get("version")
+        if version != EXPECTED_CLUSTER_MCP_VERSION:
+            actual = repr(version) if version is not None else "<missing>"
+            raise MCPCompatibilityError(
+                "version_mismatch",
+                "MCP client/server version mismatch: "
+                f"expected {EXPECTED_MCP_SERVER} {EXPECTED_CLUSTER_MCP_VERSION!r}, got {actual}",
+            )
+        self._compatible_capabilities = result
+        return result
+
+    def _call_tool(self, name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        self._ensure_compatible()
+        return self.caller.call_tool(name, arguments)
 
     def control_health(self) -> dict[str, Any]:
-        result = self.caller.call_tool("ts_control_health", {})
+        result = self._call_tool("ts_control_health", {})
         if (
             result.get("schema_version") != "ts-cluster-control-health/1"
             or not isinstance(result.get("components"), dict)
@@ -213,7 +253,7 @@ class TSClusterMCPClient:
         return result
 
     def list_queues(self) -> dict[str, Any]:
-        result = self.caller.call_tool("list_queues", {})
+        result = self._call_tool("list_queues", {})
         if not isinstance(result, dict):
             raise MCPClientError("MCP server returned an invalid queue list")
         queues = result.get("queues")
@@ -222,7 +262,7 @@ class TSClusterMCPClient:
         return result
 
     def list_nodes(self) -> dict[str, Any]:
-        result = self.caller.call_tool("list_nodes", {})
+        result = self._call_tool("list_nodes", {})
         if not isinstance(result, dict):
             raise MCPClientError("MCP server returned an invalid node list")
         nodes = result.get("nodes")
@@ -231,7 +271,7 @@ class TSClusterMCPClient:
         return result
 
     def ensure_directory(self, path: str) -> None:
-        result = self.caller.call_tool("ts_ensure_directory", {"path": path})
+        result = self._call_tool("ts_ensure_directory", {"path": path})
         if result.get("path") != path or not isinstance(result.get("created"), bool):
             raise MCPClientError(f"MCP server did not ensure the requested directory: {path}")
 
@@ -241,7 +281,7 @@ class TSClusterMCPClient:
             raise MCPClientError(f"Upload source must be a regular non-symlink file: {source}")
         size = source.stat().st_size
         digest = _sha256(source)
-        started = self.caller.call_tool(
+        started = self._call_tool(
             "ts_prepare_upload",
             {"path": remote_path, "size": size, "sha256": digest},
         )
@@ -264,7 +304,7 @@ class TSClusterMCPClient:
         try:
             with source.open("rb") as handle:
                 while payload := handle.read(selected_chunk):
-                    response = self.caller.call_tool(
+                    response = self._call_tool(
                         "upload_chunk",
                         {
                             "upload_id": upload_id,
@@ -275,10 +315,10 @@ class TSClusterMCPClient:
                     offset += len(payload)
                     if response.get("received") != offset:
                         raise MCPClientError("MCP upload offset acknowledgement is inconsistent")
-            finished = self.caller.call_tool("finish_upload", {"upload_id": upload_id})
+            finished = self._call_tool("finish_upload", {"upload_id": upload_id})
         except Exception:
             try:
-                self.caller.call_tool("abort_upload", {"upload_id": upload_id})
+                self._call_tool("abort_upload", {"upload_id": upload_id})
             except Exception:
                 pass
             raise
@@ -295,7 +335,7 @@ class TSClusterMCPClient:
             normalized = validate_ts_submission_request(request)
         except Exception as exc:
             raise MCPClientError(f"Invalid TS cluster job request: {exc}") from exc
-        result = self.caller.call_tool("ts_submit_job", {"request": normalized})
+        result = self._call_tool("ts_submit_job", {"request": normalized})
         if result.get("schema_version") != "ts-cluster-submission-result/1":
             raise MCPClientError("MCP server returned an invalid TS submission result")
         for key in ("submission_id", "intent_id", "intent_digest", "node_id", "backend"):
@@ -331,7 +371,7 @@ class TSClusterMCPClient:
         )
 
     def status(self, submission_id: str, *, include_history: bool = False) -> dict[str, Any]:
-        result = self.caller.call_tool(
+        result = self._call_tool(
             "ts_get_submission",
             {"submission_id": submission_id, "include_history": include_history},
         )
@@ -344,7 +384,7 @@ class TSClusterMCPClient:
         return result
 
     def cancel(self, submission_id: str, job_id: str) -> dict[str, Any]:
-        result = self.caller.call_tool(
+        result = self._call_tool(
             "ts_cancel_submission",
             {"submission_id": submission_id, "confirmation": f"{submission_id}:{job_id}"},
         )
@@ -360,7 +400,7 @@ class TSClusterMCPClient:
     def read_tail(self, remote_path: str, *, max_bytes: int = 32 * 1024) -> dict[str, Any]:
         if isinstance(max_bytes, bool) or not 1 <= max_bytes <= 1024 * 1024:
             raise MCPClientError("MCP tail max_bytes must be between 1 and 1048576")
-        before = self.caller.call_tool(
+        before = self._call_tool(
             "file_info",
             {"path": remote_path, "include_sha256": True},
         )
@@ -371,7 +411,7 @@ class TSClusterMCPClient:
             raise MCPClientError("MCP tail source has an invalid size")
         digest = _validated_sha256(before.get("sha256"), "MCP tail source")
         offset = max(0, size - max_bytes)
-        chunk = self.caller.call_tool(
+        chunk = self._call_tool(
             "download_chunk",
             {"path": remote_path, "offset": offset, "max_bytes": max_bytes},
         )
@@ -392,7 +432,7 @@ class TSClusterMCPClient:
             or offset + len(payload) != size
         ):
             raise MCPClientError("MCP tail next_offset is inconsistent")
-        after = self.caller.call_tool(
+        after = self._call_tool(
             "file_info",
             {"path": remote_path, "include_sha256": True},
         )
@@ -421,7 +461,7 @@ class TSClusterMCPClient:
         destination = destination.expanduser().resolve()
         if destination.exists() or destination.is_symlink():
             raise MCPClientError(f"Download destination already exists: {destination}")
-        descriptor = self.caller.call_tool(
+        descriptor = self._call_tool(
             "file_info",
             {"path": remote_path, "include_sha256": True},
         )
@@ -444,7 +484,7 @@ class TSClusterMCPClient:
         try:
             with temporary.open("wb") as handle:
                 while True:
-                    chunk = self.caller.call_tool(
+                    chunk = self._call_tool(
                         "download_chunk",
                         {"path": remote_path, "offset": offset},
                     )

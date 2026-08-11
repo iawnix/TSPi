@@ -273,6 +273,14 @@ and have `ts_web` consume that result.
   Serialize its startup and transport repair with the installation MCP lock.
   Application-level MCP timeouts or invalid tool responses must remain visible
   and must not trigger a tunnel restart.
+- Keep MCP startup availability separate from compute authorization. Normal
+  workspace launches may continue with `TS_CLUSTER_MCP_STARTUP_STATUS` set to
+  `unavailable`, but `--check-mcp` and every typed remote compute preflight must
+  fail closed until the endpoint is healthy.
+- Keep MCP compatibility enforcement in `ts_remote.mcp.TSClusterMCPClient`.
+  Every tool call must validate the `cluster-mcp` identity and exact bundled
+  `cluster_mcp` version before scheduler, workspace, or control operations.
+  Do not duplicate this version policy in TypeScript extensions.
 - `ts_render` depends on `xyzrender` only. Do not add Blender, FFmpeg,
   OpenBabel, Mayavi, or PyVista probes unless the contract is intentionally
   revised.

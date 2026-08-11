@@ -355,6 +355,7 @@ print(json.dumps({
     "runtime_home": os.environ["TS_AGENT_RUNTIME_HOME"],
     "runtime_manifest": os.environ["TS_AGENT_RUNTIME_MANIFEST"],
     "env_root": os.environ["TS_AGENT_ENV_ROOT"],
+    "mcp_startup_status": os.environ["TS_CLUSTER_MCP_STARTUP_STATUS"],
 }))
 """,
         encoding="utf-8",
@@ -393,9 +394,67 @@ main "${@:2}"
     assert result["runtime_home"] == str(install_root / ".agents/runtime/transition-state-workflow")
     assert result["runtime_manifest"] == str(install_root / ".agents/runtime/transition-state-workflow/env.json")
     assert result["env_root"] == str(install_root / ".agents/envs/transition-state-workflow")
+    assert result["mcp_startup_status"] == "ready"
     session_index = result["argv"].index("--session-dir")
     assert result["argv"][session_index + 1] == str(workspace / ".pi/sessions")
     assert (workspace / ".pi/root-agent.lock").is_file()
+
+
+def test_tspi_workspace_launch_continues_when_mcp_is_unavailable(tmp_path: Path) -> None:
+    install_root, launcher = _copy_tspi_install(tmp_path)
+    fake_pi = tmp_path / "fake-pi.py"
+    fake_pi.write_text(
+        """#!/usr/bin/env python3
+import json
+import os
+print(json.dumps({
+    "cwd": os.getcwd(),
+    "mcp_startup_status": os.environ["TS_CLUSTER_MCP_STARTUP_STATUS"],
+}))
+""",
+        encoding="utf-8",
+    )
+    fake_pi.chmod(0o755)
+    script = r'''source "$1"
+ensure_mcp_connection() { return 1; }
+mcp_ssh_display_target() { printf 'test.example via SSH'; }
+main "${@:2}"
+'''
+    completed = subprocess.run(
+        ["bash", "-c", script, "bash", str(launcher), "--workspace", "offline-research"],
+        cwd=ROOT,
+        env={**os.environ, "PI_BIN": str(fake_pi)},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    assert result["cwd"] == str(install_root / "workspaces/offline-research")
+    assert result["mcp_startup_status"] == "unavailable"
+    assert "continuing with remote compute unavailable" in completed.stderr
+
+
+def test_tspi_check_mcp_remains_strict_when_mcp_is_unavailable(tmp_path: Path) -> None:
+    _, launcher = _copy_tspi_install(tmp_path)
+    script = r'''source "$1"
+ensure_mcp_connection() { return 1; }
+mcp_ssh_display_target() { printf 'test.example via SSH'; }
+main --check-mcp
+'''
+    completed = subprocess.run(
+        ["bash", "-c", script, "bash", str(launcher)],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 1
+    assert "MCP check passed" not in completed.stdout
 
 
 def test_tspi_requires_a_safe_workspace_name(tmp_path: Path) -> None:

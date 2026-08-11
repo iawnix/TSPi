@@ -144,7 +144,10 @@ class AuthRegistry:
                 scopes=scopes,
                 workspace_prefix=prefix,
             )
-            prefixes.append((name, (self.workspace_root / prefix).resolve(strict=False)))
+            # Prefixes are already restricted to safe relative components. Keep
+            # authorization reloads independent of workspace storage so a hard
+            # NFS outage cannot block read-only protocol and scheduler probes.
+            prefixes.append((name, self.workspace_root / prefix))
 
         for index, (name, prefix) in enumerate(prefixes):
             for other_name, other_prefix in prefixes[index + 1 :]:
@@ -164,13 +167,6 @@ class AuthRegistry:
             raise ConfigurationError(f"Principal {principal!r} workspace_prefix is unsafe")
         if prefix.parts and prefix.parts[0] == ".cluster_mcp":
             raise ConfigurationError(f"Principal {principal!r} workspace_prefix is reserved")
-        resolved = (self.workspace_root / prefix).resolve(strict=False)
-        try:
-            resolved.relative_to(self.workspace_root)
-        except ValueError as exc:
-            raise ConfigurationError(
-                f"Principal {principal!r} workspace_prefix leaves the workspace"
-            ) from exc
         return prefix
 
     def authenticate(

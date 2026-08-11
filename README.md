@@ -141,8 +141,17 @@ with sanitized diagnostics and does not restart that tunnel. A restart is
 limited to a broken SSH control/forwarding pair. An unrelated process occupying
 the configured local port is never terminated.
 
-`./TSPi` performs a real read-only MCP protocol probe before Pi starts;
-`./TSPi --check-mcp` performs only that check and does not require a workspace.
+`./TSPi` performs a real read-only MCP protocol probe before Pi starts. A
+failed probe is reported, marks `TS_CLUSTER_MCP_STARTUP_STATUS=unavailable`,
+and allows the Root Agent to start for local research work; typed remote
+compute operations retain their own strict preflight and cannot submit through
+an unhealthy MCP endpoint. `./TSPi --check-mcp` performs only the strict check,
+returns nonzero on failure, and does not require a workspace.
+
+The bundled MCP client requires the server identity `cluster-mcp` and an exact
+match with the bundled `cluster_mcp` version. A mismatched client/server pair
+fails closed before scheduler reads, file transfer, submission, status,
+cancellation, or artifact collection.
 
 An unpinned GitHub URL resolves the repository default branch (`main`). Until
 this work is merged or tagged, it does not select `pi_ts_subagents`.

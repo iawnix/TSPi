@@ -29,6 +29,7 @@ from cluster_mcp.schedulers.torque import TorqueBackend
 from cluster_mcp.service import ClusterService
 from cluster_mcp.ts_jobs import validate_ts_submission_request
 from ts_remote.mcp import (
+    EXPECTED_CLUSTER_MCP_VERSION,
     MCP_CLIENT_MODE,
     MCPClientError,
     MCPConnectionSettings,
@@ -143,6 +144,18 @@ class _ServiceCaller:
         raise AssertionError(name)
 
 
+class _IncompatibleCaller:
+    def __init__(self, capabilities: dict[str, object]) -> None:
+        self.capabilities = capabilities
+        self.calls: list[str] = []
+
+    def call_tool(self, name: str, arguments: dict[str, object]) -> dict[str, object]:
+        self.calls.append(name)
+        if name != "cluster_capabilities":
+            raise AssertionError(f"incompatible client called remote tool: {name}")
+        return self.capabilities
+
+
 def _service(
     tmp_path: Path,
     scheduler_type=_Scheduler,
@@ -236,6 +249,26 @@ def _request(service: ClusterService, *, submission_id: str = "tsjob_calc_000001
             "gpu_devices": [],
         },
     }
+
+
+def test_capabilities_authorization_does_not_touch_workspace_storage(
+    tmp_path: Path, monkeypatch
+) -> None:
+    service = _service(tmp_path)
+    workspace_root = service.scheduler_policy.root
+    original_resolve = Path.resolve
+
+    def reject_workspace_resolve(path: Path, strict: bool = False) -> Path:
+        if path == workspace_root or workspace_root in path.parents:
+            raise AssertionError("authorization touched workspace storage")
+        return original_resolve(path, strict=strict)
+
+    monkeypatch.setattr(Path, "resolve", reject_workspace_resolve)
+
+    capabilities = service.capabilities()
+
+    assert capabilities["server"] == "cluster-mcp"
+    assert capabilities["authentication"]["principal"] == "pi-ts"
 
 
 def test_ts_submission_is_manifest_bound_and_idempotent(tmp_path: Path) -> None:
@@ -630,6 +663,36 @@ def test_ts_mcp_client_upload_submit_status_and_download(tmp_path: Path) -> None
     with pytest.raises(MCPClientError, match="source SHA-256"):
         client.download_file(source_remote, refused, expected_sha256="0" * 64)
     assert not refused.exists()
+    assert caller.calls.count("cluster_capabilities") == 1
+
+
+def test_mcp_client_rejects_wrong_server_before_read_or_write_tools() -> None:
+    caller = _IncompatibleCaller(
+        {"server": "unrelated-mcp", "version": EXPECTED_CLUSTER_MCP_VERSION}
+    )
+    client = TSClusterMCPClient(caller)
+
+    with pytest.raises(MCPClientError, match="server identity mismatch"):
+        client.list_queues()
+
+    assert caller.calls == ["cluster_capabilities"]
+
+
+def test_mcp_client_rejects_version_mismatch_before_upload_or_submit(tmp_path: Path) -> None:
+    capabilities = {"server": "cluster-mcp", "version": "0.5.0"}
+    source = tmp_path / "candidate.gjf"
+    source.write_text("#p hf/3-21g sp\n", encoding="utf-8")
+
+    upload_caller = _IncompatibleCaller(capabilities)
+    with pytest.raises(MCPClientError, match="client/server version mismatch"):
+        TSClusterMCPClient(upload_caller).upload_file(source, "runs/test/candidate.gjf")
+    assert upload_caller.calls == ["cluster_capabilities"]
+
+    service = _service(tmp_path / "submit")
+    submit_caller = _IncompatibleCaller(capabilities)
+    with pytest.raises(MCPClientError, match="client/server version mismatch"):
+        TSClusterMCPClient(submit_caller).submit(_request(service))
+    assert submit_caller.calls == ["cluster_capabilities"]
 
 
 def test_mcp_connection_settings_require_tls_and_strong_token() -> None:

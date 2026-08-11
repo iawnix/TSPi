@@ -19,7 +19,7 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
 
     assert "pi-package" in manifest["keywords"]
     assert manifest["name"] == "@iawnix/ts-agent"
-    assert manifest["version"] == "0.3.0"
+    assert manifest["version"] == "0.3.1"
     assert manifest["private"] is True
     assert manifest["pi"]["skills"] == ["./skills/transition-state-workflow"]
     assert manifest["pi"]["extensions"] == [

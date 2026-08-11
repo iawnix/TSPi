@@ -296,6 +296,7 @@ mcp_ssh_display_target() {
 
 main() {
   local check_mcp_only=false
+  local mcp_ready=false
   local show_help=false
   local workspace_name=""
   local -a dev_extension_args=()
@@ -397,15 +398,30 @@ main() {
   export TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT="${TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT:-$TS_MCP_DIAGNOSTIC_TIMEOUT_DEFAULT}"
   if [[ "$TS_CLUSTER_MCP_URL" == "$TS_MCP_URL_DEFAULT" ]]; then
     export TS_CLUSTER_MCP_DISPLAY_TARGET="${TS_CLUSTER_MCP_DISPLAY_TARGET:-$(mcp_ssh_display_target)}"
-    ensure_mcp_connection
-  elif ! mcp_protocol_is_healthy; then
+    if ensure_mcp_connection; then
+      mcp_ready=true
+    fi
+  elif mcp_protocol_is_healthy; then
+    mcp_ready=true
+  else
     printf 'TSPi: configured MCP endpoint failed the protocol probe: %s\n' "$TS_CLUSTER_MCP_URL" >&2
-    exit 1
+  fi
+  if [[ "$mcp_ready" == true ]]; then
+    export TS_CLUSTER_MCP_STARTUP_STATUS="ready"
+  else
+    export TS_CLUSTER_MCP_STARTUP_STATUS="unavailable"
   fi
 
   if [[ "$check_mcp_only" == true ]]; then
+    if [[ "$mcp_ready" != true ]]; then
+      return 1
+    fi
     printf 'TSPi: MCP check passed (%s)\n' "${TS_CLUSTER_MCP_DISPLAY_TARGET:-$TS_CLUSTER_MCP_URL}"
-    exit 0
+    return 0
+  fi
+
+  if [[ "$mcp_ready" != true ]]; then
+    printf 'TSPi: continuing with remote compute unavailable; retry /ts-mcp status before submission\n' >&2
   fi
 
   cd -- "$WORKSPACE_ROOT"
