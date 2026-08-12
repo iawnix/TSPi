@@ -191,7 +191,7 @@ The workspace control surface is exactly:
 
 Pi also exposes:
 
-- `ts_subagent_review`: fresh, tool-free advisory scientific review.
+- `ts_subagent_review`: fresh, read-only advisory scientific review with one schema-bound result tool.
 - `ts_remote_inspect`: read-only `status`, `doctor`, `queues`, or `nodes`
   probe for the configured remote profile. It has no
   upload, submit, cancel, or workspace mutation capability.

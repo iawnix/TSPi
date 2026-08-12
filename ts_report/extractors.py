@@ -40,8 +40,8 @@ def reaction_center(active: dict[str, Any]) -> dict[str, Any]:
     claim = active.get("structured_claim") if isinstance(active.get("structured_claim"), dict) else {}
     center = claim.get("reaction_center") if isinstance(claim.get("reaction_center"), dict) else {}
     return {
-        "forming_bonds": [item for item in center.get("forming_bonds", []) if isinstance(item, dict)],
-        "breaking_bonds": [item for item in center.get("breaking_bonds", []) if isinstance(item, dict)],
+        "forming_bonds": _bond_specs(center.get("forming_bonds", [])),
+        "breaking_bonds": _bond_specs(center.get("breaking_bonds", [])),
         "transferred_atoms": [item for item in center.get("transferred_atoms", []) if isinstance(item, dict)],
         "spectator_regions": [item for item in center.get("spectator_regions", []) if isinstance(item, dict)],
     }
@@ -59,11 +59,15 @@ def collect_structures(
         "product": _structure_ref(root, derived.get("product_ref"), "Product endpoint"),
     }
 
-    tsfreq_record = _latest_record(records, {"tsfreq_gate"})
+    tsfreq_records = [record for record in records if record.get("role") == "tsfreq_gate"]
+    tsfreq_record = tsfreq_records[-1] if tsfreq_records else {}
     tsfreq_artifact = artifacts.get(str(tsfreq_record.get("evidence_id", ""))) if tsfreq_record else None
-    ts_path = _ts_structure_from_artifact(root, tsfreq_record, tsfreq_artifact)
-    if ts_path is not None:
-        structures["ts"] = _structure_ref(root, ts_path, "Accepted or selected TS")
+    for candidate in reversed(tsfreq_records):
+        candidate_artifact = artifacts.get(str(candidate.get("evidence_id", "")))
+        ts_path = _ts_structure_from_artifact(root, candidate, candidate_artifact)
+        if ts_path is not None:
+            structures["ts"] = _structure_ref(root, ts_path, "Accepted or selected TS")
+            break
 
     mode_minus, mode_plus = _mode_structures_from_tsfreq(root, tsfreq_record, tsfreq_artifact)
     if mode_minus is not None:
@@ -75,6 +79,9 @@ def collect_structures(
     conn_artifact = artifacts.get(str(conn_record.get("evidence_id", ""))) if conn_record else None
     for key, ref in _irc_structures_from_connectivity(root, conn_artifact).items():
         structures[key] = ref
+    for key, ref in _assigned_endpoint_structures(root, records).items():
+        if not structures.get(key, {}).get("exists"):
+            structures[key] = ref
 
     return {key: value for key, value in structures.items() if value.get("path")}
 
@@ -90,7 +97,7 @@ def collect_tsfreq(
     artifact = artifacts.get(str(selected.get("evidence_id", "")), {})
     mode_record = mode_records[-1] if mode_records else {}
     mode_artifact = artifacts.get(str(mode_record.get("evidence_id", "")), artifact)
-    mode_assignment = _first_dict(mode_artifact, "mode_assignment") or _merged_quality_facts(mode_record)
+    mode_assignment = _normalized_mode_assignment(gate_records, mode_record, artifacts, mode_artifact)
     electronic_gate = _first_dict(artifact, "electronic_structure_gate")
     return {
         "records": gate_records,
@@ -454,6 +461,11 @@ def _ts_structure_from_artifact(root: Path, record: dict[str, Any], artifact: di
     for key in ["ts_structure", "ts_xyz", "final_geometry", "structure", "xyz"]:
         if artifact.get(key):
             return Path(str(artifact[key]))
+    for source in record.get("source_files", []) if isinstance(record.get("source_files"), list) else []:
+        path = Path(str(source))
+        full = path if path.is_absolute() else root / path
+        if full.suffix.lower() == ".xyz" and full.is_file():
+            return path
     selected_job = None
     mode_assignment = _first_dict(artifact, "mode_assignment") or {}
     if mode_assignment.get("selected_job"):
@@ -508,6 +520,70 @@ def _irc_structures_from_connectivity(root: Path, artifact: dict[str, Any] | Non
             key = "irc_forward" if "forward" in label.lower() else "irc_reverse"
             out[key] = _structure_ref(root, direction["final_geometry"], f"IRC {label}")
     return out
+
+
+def _assigned_endpoint_structures(root: Path, records: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+    out: dict[str, dict[str, Any]] = {}
+    for record in reversed(records):
+        if record.get("role") != "irc_endpoint_assignment":
+            continue
+        quality = _merged_quality_facts(record)
+        provenance = record.get("provenance") if isinstance(record.get("provenance"), dict) else {}
+        sources = [str(item) for item in record.get("source_files", []) if isinstance(item, str)]
+        for direction in ("forward", "reverse"):
+            assignment = str(quality.get(f"{direction}_assignment") or "").lower()
+            if assignment not in {"reactant", "product"} or assignment in out:
+                continue
+            intent_id = str(provenance.get(f"{direction}_intent_id") or "")
+            source = next((item for item in sources if intent_id and intent_id in item), None)
+            if source:
+                ref = _structure_ref(root, source, f"Assigned {assignment} IRC endpoint")
+                if ref.get("exists"):
+                    out[assignment] = ref
+        if {"reactant", "product"} <= set(out):
+            break
+    return out
+
+
+def _normalized_mode_assignment(
+    gate_records: list[dict[str, Any]],
+    mode_record: dict[str, Any],
+    artifacts: dict[str, dict[str, Any]],
+    mode_artifact: dict[str, Any],
+) -> dict[str, Any]:
+    mode: dict[str, Any] = {}
+    mode.update(_merged_quality_facts(mode_record))
+    if isinstance(mode_artifact, dict):
+        mode.update(mode_artifact)
+    nested = _first_dict(mode_artifact, "mode_assignment")
+    if nested:
+        mode.update(nested)
+    for record in gate_records:
+        mode.update(_merged_quality_facts(record))
+        artifact = artifacts.get(str(record.get("evidence_id", "")), {})
+        checks = artifact.get("checks") if isinstance(artifact.get("checks"), dict) else {}
+        mode.update(checks)
+        frequencies = artifact.get("imaginary_frequencies_cm-1")
+        if isinstance(frequencies, list) and frequencies:
+            mode["imaginary_frequency_cm-1"] = frequencies[0]
+    if "imaginary_frequency_cm-1" not in mode and mode.get("selected_frequency_cm-1") is not None:
+        mode["imaginary_frequency_cm-1"] = mode["selected_frequency_cm-1"]
+    if not mode.get("mode_verdict"):
+        mode["mode_verdict"] = mode.get("assignment") or mode.get("verdict_against_prediction")
+    return mode
+
+
+def _bond_specs(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        return []
+    result: list[dict[str, Any]] = []
+    for item in value:
+        if isinstance(item, dict):
+            result.append(item)
+        elif isinstance(item, (list, tuple)) and len(item) == 2 and all(str(atom).strip() for atom in item):
+            atoms = [str(atom) for atom in item]
+            result.append({"atoms": atoms, "label": "-".join(atoms)})
+    return result
 
 
 def _energy_from_tsfreq(root: Path, record: dict[str, Any], artifact: dict[str, Any]) -> dict[str, Any]:

@@ -1,6 +1,7 @@
 "use strict";
 
-const { existsSync, lstatSync, realpathSync, statSync } = require("node:fs");
+const { createHash } = require("node:crypto");
+const { existsSync, lstatSync, readFileSync, readdirSync, realpathSync, statSync } = require("node:fs");
 const { extname, isAbsolute, relative, resolve, sep } = require("node:path");
 
 const RENDER_OPERATIONS = Object.freeze(["render", "compare", "animate", "mechanism"]);
@@ -10,6 +11,14 @@ const RENDER_EXTENSIONS = Object.freeze({
   animate: new Set([".gif"]),
   mechanism: new Set([".png", ".jpg", ".jpeg"]),
 });
+const REPORT_MANIFEST_SCHEMA = "ts-report-package/1";
+const REPORT_MANIFEST_MAX_BYTES = 2 * 1024 * 1024;
+const REPORT_MANIFEST_MAX_FILES = 512;
+const REQUIRED_REPORT_FILES = Object.freeze([
+  "final_report.md",
+  "report_context.json",
+  "email_summary.md",
+]);
 
 function validateRenderRequest(root, value) {
   const workspaceRoot = requireWorkspaceRoot(root);
@@ -70,6 +79,146 @@ function validateTaskNodeScope(workspaceReport, nodeIds) {
     }
   }
   return [...nodeIds];
+}
+
+function validateCreatedRenderOutput(root, outputRef) {
+  const workspaceRoot = requireWorkspaceRoot(root);
+  const ref = normalizeRef(outputRef);
+  requirePrefix(ref, ["nodes/"]);
+  const path = resolve(workspaceRoot, ref);
+  assertWithin(workspaceRoot, path);
+  assertNoSymlinkComponents(workspaceRoot, ref);
+  if (!existsSync(path) || !statSync(path).isFile() || statSync(path).size < 1) {
+    throw new Error("render backend reported success but the bound output is missing or empty");
+  }
+  return ref;
+}
+
+function validateCreatedReportPackage(root, packageRef, manifestDigest, workspaceRevision) {
+  const workspaceRoot = requireWorkspaceRoot(root);
+  const ref = normalizeRef(packageRef);
+  requirePrefix(ref, ["reports/"]);
+  const packagePath = resolve(workspaceRoot, ref);
+  assertWithin(workspaceRoot, packagePath);
+  assertNoSymlinkComponents(workspaceRoot, ref);
+  if (!existsSync(packagePath) || !statSync(packagePath).isDirectory()) {
+    throw new Error("report builder reported success but the bound package directory is missing");
+  }
+
+  const manifestRef = `${ref}/package_manifest.json`;
+  const manifestPath = resolve(workspaceRoot, manifestRef);
+  assertNoSymlinkComponents(workspaceRoot, manifestRef);
+  if (!existsSync(manifestPath) || !statSync(manifestPath).isFile()) {
+    throw new Error("report package manifest is missing");
+  }
+  const manifestStat = statSync(manifestPath);
+  if (manifestStat.size < 1 || manifestStat.size > REPORT_MANIFEST_MAX_BYTES) {
+    throw new Error("report package manifest has an invalid size");
+  }
+  const manifestBytes = readFileSync(manifestPath);
+  const actualManifestDigest = sha256Bytes(manifestBytes);
+  if (actualManifestDigest !== requireDigest(manifestDigest, "manifest digest")) {
+    throw new Error("report package manifest digest does not match the generated file");
+  }
+
+  let manifest;
+  try {
+    manifest = JSON.parse(manifestBytes.toString("utf8"));
+  } catch (error) {
+    throw new Error(`report package manifest is not valid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!isPlainObject(manifest)) throw new Error("report package manifest must be an object");
+  rejectUnknownKeys(manifest, ["schema_version", "workspace_revision", "files"], "report package manifest");
+  if (manifest.schema_version !== REPORT_MANIFEST_SCHEMA) {
+    throw new Error(`report package manifest schema_version must be ${REPORT_MANIFEST_SCHEMA}`);
+  }
+  const expectedRevision = requireDigest(workspaceRevision, "workspace revision");
+  if (manifest.workspace_revision !== expectedRevision) {
+    throw new Error("report package workspace revision does not match the builder result");
+  }
+  if (!Array.isArray(manifest.files) || manifest.files.length > REPORT_MANIFEST_MAX_FILES) {
+    throw new Error(`report package manifest files must be an array with at most ${REPORT_MANIFEST_MAX_FILES} entries`);
+  }
+
+  const listedRefs = new Set();
+  for (const [index, entry] of manifest.files.entries()) {
+    if (!isPlainObject(entry)) throw new Error(`report package manifest files[${index}] must be an object`);
+    rejectUnknownKeys(entry, ["ref", "sha256", "size_bytes"], `report package manifest files[${index}]`);
+    const fileRef = normalizeRef(entry.ref);
+    if (fileRef === "package_manifest.json") {
+      throw new Error("report package manifest must not list itself");
+    }
+    if (listedRefs.has(fileRef)) throw new Error(`report package manifest contains duplicate ref: ${fileRef}`);
+    listedRefs.add(fileRef);
+    const expectedDigest = requireDigest(entry.sha256, `manifest files[${index}].sha256`);
+    if (!Number.isSafeInteger(entry.size_bytes) || entry.size_bytes < 0) {
+      throw new Error(`manifest files[${index}].size_bytes must be a non-negative safe integer`);
+    }
+    const workspaceFileRef = `${ref}/${fileRef}`;
+    const filePath = resolve(workspaceRoot, workspaceFileRef);
+    assertWithin(packagePath, filePath);
+    assertNoSymlinkComponents(workspaceRoot, workspaceFileRef);
+    if (!existsSync(filePath) || !statSync(filePath).isFile()) {
+      throw new Error(`report package file is missing or not regular: ${fileRef}`);
+    }
+    const fileBytes = readFileSync(filePath);
+    if (fileBytes.length !== entry.size_bytes) {
+      throw new Error(`report package file size does not match the manifest: ${fileRef}`);
+    }
+    if (sha256Bytes(fileBytes) !== expectedDigest) {
+      throw new Error(`report package file digest does not match the manifest: ${fileRef}`);
+    }
+  }
+
+  for (const requiredRef of REQUIRED_REPORT_FILES) {
+    if (!listedRefs.has(requiredRef)) throw new Error(`report package manifest is missing required file: ${requiredRef}`);
+    if (statSync(resolve(packagePath, requiredRef)).size < 1) {
+      throw new Error(`report package required file is empty: ${requiredRef}`);
+    }
+  }
+  const assetsPath = resolve(packagePath, "assets");
+  if (!existsSync(assetsPath) || !statSync(assetsPath).isDirectory() || lstatSync(assetsPath).isSymbolicLink()) {
+    throw new Error("report package assets directory is missing or invalid");
+  }
+
+  const actualRefs = collectRegularFileRefs(packagePath);
+  actualRefs.delete("package_manifest.json");
+  if (actualRefs.size !== listedRefs.size || [...actualRefs].some((item) => !listedRefs.has(item))) {
+    throw new Error("report package contents do not match the manifest file list");
+  }
+  return {
+    package_ref: ref,
+    manifest_ref: manifestRef,
+    manifest_digest: actualManifestDigest,
+    workspace_revision: expectedRevision,
+    file_count: listedRefs.size,
+  };
+}
+
+function collectRegularFileRefs(root) {
+  const refs = new Set();
+  const visit = (directory, prefix) => {
+    for (const entry of readdirSync(directory, { withFileTypes: true })) {
+      const itemRef = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const itemPath = resolve(directory, entry.name);
+      if (entry.isSymbolicLink()) throw new Error(`report package contains a symbolic link: ${itemRef}`);
+      if (entry.isDirectory()) visit(itemPath, itemRef);
+      else if (entry.isFile()) refs.add(itemRef);
+      else throw new Error(`report package contains a non-regular entry: ${itemRef}`);
+    }
+  };
+  visit(root, "");
+  return refs;
+}
+
+function sha256Bytes(value) {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function requireDigest(value, label) {
+  const digest = requireString(value, label, 71);
+  if (!/^sha256:[0-9a-f]{64}$/.test(digest)) throw new Error(`${label} must be a sha256 digest`);
+  return digest;
 }
 
 function requireWorkspaceRoot(root) {
@@ -175,6 +324,8 @@ function isPlainObject(value) {
 
 module.exports = {
   RENDER_OPERATIONS,
+  validateCreatedRenderOutput,
+  validateCreatedReportPackage,
   validateRenderRequest,
   validateReportRequest,
   validateTaskNodeScope,

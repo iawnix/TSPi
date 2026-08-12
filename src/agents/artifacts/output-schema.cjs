@@ -13,17 +13,19 @@ const REQUIRED_STATES = Object.freeze({
 });
 
 function parseAndValidateArtifactReport(text, packet, actions) {
-  if (typeof text !== "string" || !text.trim()) throw new Error("artifact operator output is empty");
-  if (Buffer.byteLength(text, "utf8") > MAX_OUTPUT_BYTES) {
-    throw new Error(`artifact operator output exceeds ${MAX_OUTPUT_BYTES} bytes`);
+  const task = validateAgentTask(packet);
+  let value = {};
+  if (typeof text === "string" && text.trim() && Buffer.byteLength(text, "utf8") <= MAX_OUTPUT_BYTES) {
+    try {
+      value = JSON.parse(normalizeJsonText(text));
+    } catch (_error) {
+      value = {};
+    }
   }
-  let value;
-  try {
-    value = JSON.parse(normalizeJsonText(text));
-  } catch (error) {
-    throw new Error(`artifact operator output must be JSON only: ${error instanceof Error ? error.message : String(error)}`);
+  if (!Array.isArray(actions) || actions.length === 0) {
+    return validateArtifactReport(value, task, actions);
   }
-  return validateArtifactReport(value, packet, actions);
+  return validateArtifactReport(buildDeterministicReport(value, task, actions), task, actions);
 }
 
 function normalizeJsonText(text) {
@@ -80,6 +82,56 @@ function validateArtifactReport(value, packet, actions) {
   };
 }
 
+function buildDeterministicReport(_value, task, actions) {
+  const requiredTool = REQUIRED_TOOLS[task.role];
+  const action = actions.find((item) => isPlainObject(item) && item.tool === requiredTool);
+  const canonical = operationResult(action && action.result) || {};
+  const artifacts = Array.isArray(canonical.artifact_refs)
+    ? canonical.artifact_refs.filter((item) => typeof item === "string")
+    : [];
+  const summary = task.role === "render"
+    ? `The typed ${task.operation} action created ${String(canonical.output_ref || "the bound visualization")}.`
+    : `The typed report action built ${String(canonical.package_ref || "the bound report package")}.`;
+  const limitations = Array.isArray(canonical.diagnostics)
+    ? canonical.diagnostics
+      .filter((item) => typeof item === "string" && item.trim())
+      .slice(0, 24)
+      .map((item) => item.trim().slice(0, 2000))
+    : [];
+  return {
+    schema_version: "ts-agent-result/1",
+    task_id: task.task_id,
+    role: task.role,
+    authority: task.authority,
+    operation: task.operation,
+    outcome: "success",
+    summary,
+    scope: task.scope,
+    facts: [],
+    artifact_refs: artifacts,
+    program: null,
+    payload: task.role === "render"
+      ? {
+        operation: canonical.operation,
+        node_id: canonical.node_id,
+        output_ref: canonical.output_ref,
+      }
+      : {
+        operation: canonical.operation,
+        package_ref: canonical.package_ref,
+        report_ref: canonical.report_ref,
+        context_ref: canonical.context_ref,
+        email_summary_ref: canonical.email_summary_ref,
+        assets_ref: canonical.assets_ref,
+        manifest_ref: canonical.manifest_ref,
+        manifest_digest: canonical.manifest_digest,
+        workspace_revision: canonical.workspace_revision,
+      },
+    limitations,
+    provenance: {},
+  };
+}
+
 function validatePayload(role, value, canonical, task) {
   if (!isPlainObject(value)) throw new Error(`${role} payload must be an object`);
   if (role === "render") {
@@ -103,6 +155,7 @@ function validatePayload(role, value, canonical, task) {
     const payload = Object.fromEntries(keys.map((key) => [key, requireString(value[key], `payload.${key}`, 4096)]));
     assertSame(payload.operation, "build", "report operation");
     for (const key of keys.slice(1)) assertSame(payload[key], canonical[key], `report ${key}`);
+    assertSame(payload.workspace_revision, task.workspace.revision, "report workspace_revision");
     return payload;
   }
   throw new Error(`unsupported artifact role: ${role}`);

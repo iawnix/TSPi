@@ -95,7 +95,7 @@ export async function runArtifactOperator(options: ArtifactRunOptions) {
         }
         await promptWithDeadline(
           session,
-          `Execute this bounded ${options.role} operation and return the required JSON object.\n\n${JSON.stringify(options.packet)}`,
+          `Execute this bounded ${options.role} operation by calling the single available typed tool exactly once.\n\n${JSON.stringify(options.packet)}`,
           { timeoutMs: options.timeoutMs, signal: options.signal, onLifecycle: options.onLifecycle },
         );
         let report;
@@ -103,7 +103,11 @@ export async function runArtifactOperator(options: ArtifactRunOptions) {
           report = parseAndValidateArtifactReport(session.getLastAssistantText() || "", options.packet, options.actions);
         } catch (error) {
           const message = error instanceof Error ? error.message : String(error);
-          throw new Error(`artifact operator report validation failed: ${message}`);
+          const wrapped = new Error(`artifact operator result validation failed: ${message}`) as Error & { code?: string };
+          if (options.actions.some((action) => action.result?.state !== "started")) {
+            wrapped.code = "ARTIFACT_RESULT_VALIDATION_FAILED_AFTER_ACTION";
+          }
+          throw wrapped;
         }
         const stats = session.getSessionStats();
         const actions = options.actions.map((action) => ({ tool: action.tool, result: action.result }));

@@ -239,6 +239,8 @@ def _conclusion_sentence(context: dict[str, Any]) -> str:
 def _reaction_overview_lines(context: dict[str, Any]) -> list[str]:
     active = context.get("active_hypothesis", {}) if isinstance(context.get("active_hypothesis"), dict) else {}
     derived = active.get("derived_from") if isinstance(active.get("derived_from"), dict) else {}
+    claim = active.get("structured_claim") if isinstance(active.get("structured_claim"), dict) else {}
+    electronic = claim.get("electronic_model") if isinstance(claim.get("electronic_model"), dict) else {}
     center = context.get("reaction_center", {}) if isinstance(context.get("reaction_center"), dict) else {}
     forming = ", ".join(item.get("label", str(item.get("atoms", ""))) for item in center.get("forming_bonds", []))
     breaking = ", ".join(item.get("label", str(item.get("atoms", ""))) for item in center.get("breaking_bonds", []))
@@ -248,9 +250,9 @@ def _reaction_overview_lines(context: dict[str, Any]) -> list[str]:
         "| --- | --- |",
         f"| Hypothesis | `{active.get('hypothesis_id', '')}` |",
         f"| Summary | {_escape_table(str(active.get('summary', '')))} |",
-        f"| Reactant | `{derived.get('reactant_ref', '')}` |",
-        f"| Product | `{derived.get('product_ref', '')}` |",
-        f"| Charge / multiplicity | `{derived.get('charge', '')} / {derived.get('multiplicity', '')}` |",
+        f"| Reactant | `{derived.get('reactant_ref') or derived.get('reactants', '')}` |",
+        f"| Product | `{derived.get('product_ref') or derived.get('product', '')}` |",
+        f"| Charge / multiplicity | `{derived.get('charge', electronic.get('charge', ''))} / {derived.get('multiplicity', electronic.get('multiplicity', ''))}` |",
         f"| Forming bonds | {forming or 'not declared'} |",
         f"| Breaking bonds | {breaking or 'not declared'} |",
         f"| Transferred atoms | {transferred or 'not declared'} |",
@@ -311,7 +313,7 @@ def _connectivity_lines(context: dict[str, Any]) -> list[str]:
     lines = [
         "| Field | Value |",
         "| --- | --- |",
-        f"| Connectivity verdict | {_escape_table(str(verdict.get('verdict', verdict.get('r_to_p_connected_via_ts', ''))))} |",
+        f"| Connectivity verdict | {_escape_table(str(verdict.get('verdict', verdict.get('r_to_p_connected_via_ts', verdict.get('verdict_against_prediction', '')))))} |",
         f"| Forward assignment | `{verdict.get('forward_assignment', '')}` |",
         f"| Reverse assignment | `{verdict.get('reverse_assignment', '')}` |",
         f"| Strict IRC without program failure | `{verdict.get('strict_irc_complete_without_program_failure', verdict.get('strict_irc_complete', ''))}` |",

@@ -36,10 +36,11 @@ first validates the workspace and writes:
 
 The builder publishes the directory atomically and refuses overwrite. The
 `ts-report-package/1` manifest binds the source scientific
-`workspace_revision` and each generated file by SHA-256. The child may
-summarize generated artifacts but cannot add hypotheses, acceptance decisions,
-or unsupported causal claims. `email_summary.md` remains part of the report
-package; notification delivery does not require an intermediate draft JSON.
+`workspace_revision` and each generated file by SHA-256. The host generates the
+complete child result from the typed action; the model does not restate artifact
+refs, facts, payloads, or provenance. `email_summary.md` remains part of the
+report package; notification delivery does not require an intermediate draft
+JSON.
 
 ## Notify User
 
@@ -81,11 +82,14 @@ workspace state, changes evidence, or blocks scientific progress.
 
 ## Result Binding
 
-Render and report roles return `ts-agent-result/1`. The host requires exactly
-one typed action and rejects:
+Render and report roles return host-generated `ts-agent-result/1` records. The
+host requires exactly one typed action, accepts success only from the canonical
+`rendered` or `built` state, and rejects:
 
 - invented or omitted artifact refs;
 - payload paths or node IDs that differ from the typed action result;
-- facts outside the task basis allowlist;
+- a reported render success without a nonempty bound output file;
+- a report package whose manifest digest, source workspace revision, required
+  files, file sizes, or file SHA-256 values do not match the generated output;
 - hypothesis, branch, accepted-TS/pathway, strict pathway, study-completion, or
   next-decision fields anywhere in the result.

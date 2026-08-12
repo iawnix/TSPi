@@ -9,6 +9,10 @@ const {
   buildNodeContextSummary,
 } = require("../../../extensions/ts-workflow-control/summary.cjs");
 const { validateAgentTask } = require("../../agent-core/agent-protocol.cjs");
+const {
+  artifactLayerForRef,
+  validateEvidenceCeiling,
+} = require("./input-policy.cjs");
 
 const REVIEW_CEILINGS = Object.freeze({
   mechanism: ["mechanism"],
@@ -66,16 +70,28 @@ function buildTaskPacket({ runId, workspaceRoot, request, workspaceReport, nodeC
 
   validateSelectedContexts(normalized, nodeContext, branchContext);
   const contexts = uniqueNodeContexts(nodeContext, branchContext);
+  const nodeById = new Map(contexts
+    .filter((context) => isPlainObject(context.node) && typeof context.node.node_id === "string")
+    .map((context) => [context.node.node_id, context.node]));
   const evidenceMap = collectEvidence(contexts);
-  const selectedEvidenceIds = normalized.evidenceRefs.length
+  const allowedLayers = new Set(REVIEW_CEILINGS[normalized.reviewType]);
+  const evidenceCandidates = normalized.evidenceRefs.length
     ? normalized.evidenceRefs
-    : Array.from(evidenceMap.keys()).slice(0, LIMITS.maxEvidenceRefs);
-  for (const evidenceId of selectedEvidenceIds) {
-    if (!evidenceMap.has(evidenceId)) throw new Error(`evidence ref is outside selected context: ${evidenceId}`);
-  }
+    : Array.from(evidenceMap.keys());
+  const selectedEvidenceIds = validateEvidenceCeiling(
+    evidenceCandidates,
+    evidenceMap,
+    allowedLayers,
+    { explicit: normalized.evidenceRefs.length > 0, nodeById },
+  ).slice(0, LIMITS.maxEvidenceRefs);
 
   const artifactPolicy = collectArtifactPolicy(contexts);
-  const artifactExcerpts = normalized.artifactRefs.map((ref) => readArtifactExcerpt(root, ref, artifactPolicy));
+  const artifactExcerpts = normalized.artifactRefs.map((inputRef) => {
+    const ref = normalizeRelativeRef(inputRef);
+    const layer = artifactLayerForRef(ref, evidenceMap, contexts, normalizeRelativeRef);
+    if (!allowedLayers.has(layer)) throw new Error(`artifact ref exceeds review ceiling: ${ref} (${layer})`);
+    return { ...readArtifactExcerpt(root, ref, artifactPolicy), layer };
+  });
   const totalArtifactBytes = artifactExcerpts.reduce((total, item) => total + Buffer.byteLength(item.text, "utf8"), 0);
   if (totalArtifactBytes > LIMITS.maxArtifactTotalBytes) {
     throw new Error(`artifact excerpts exceed ${LIMITS.maxArtifactTotalBytes} bytes`);
@@ -177,6 +193,9 @@ function collectEvidence(contexts) {
         summary: typeof item.summary === "string" ? item.summary : "",
         quality: isPlainObject(item.quality) ? item.quality : {},
         path: typeof item.path === "string" ? item.path : null,
+        source_files: Array.isArray(item.source_files)
+          ? item.source_files.filter((value) => typeof value === "string" && value)
+          : [],
       });
     }
   }

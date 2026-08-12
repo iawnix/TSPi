@@ -119,6 +119,81 @@ def test_artifact_request_contract_rejects_symlink_and_overwrite(tmp_path: Path)
     assert "already exists" in failed.stderr
 
 
+def test_render_success_requires_a_nonempty_bound_output(tmp_path: Path) -> None:
+    workspace = _artifact_workspace(tmp_path)
+    output = workspace / "nodes" / "n001" / "outputs" / "render.png"
+
+    missing = _created_render_output(workspace, "nodes/n001/outputs/render.png", check=False)
+    assert missing.returncode == 2
+    assert "missing or empty" in missing.stderr
+
+    output.touch()
+    empty = _created_render_output(workspace, "nodes/n001/outputs/render.png", check=False)
+    assert empty.returncode == 2
+    assert "missing or empty" in empty.stderr
+
+    output.write_bytes(b"png")
+    assert _created_render_output(workspace, "nodes/n001/outputs/render.png") == "nodes/n001/outputs/render.png"
+
+
+def test_report_success_requires_a_complete_digest_bound_package(tmp_path: Path) -> None:
+    workspace = tmp_path / "report-workspace"
+    bootstrap_strict_workspace(workspace)
+    package_ref = "reports/operator-package"
+    result = build_report_package(workspace, workspace / package_ref)
+
+    verified = _created_report_package(
+        workspace,
+        package_ref,
+        result["manifest_digest"],
+        result["workspace_revision"],
+    )
+    assert verified["package_ref"] == package_ref
+    assert verified["file_count"] >= 3
+
+
+@pytest.mark.parametrize("tamper", ["manifest_digest", "workspace_revision", "file", "required_file", "unlisted_file"])
+def test_report_package_verification_rejects_inconsistent_output(tmp_path: Path, tamper: str) -> None:
+    workspace = tmp_path / f"report-{tamper}"
+    bootstrap_strict_workspace(workspace)
+    package_ref = "reports/operator-package"
+    result = build_report_package(workspace, workspace / package_ref)
+    manifest_digest = result["manifest_digest"]
+    workspace_revision = result["workspace_revision"]
+
+    if tamper == "manifest_digest":
+        manifest_digest = "sha256:" + "0" * 64
+    elif tamper == "workspace_revision":
+        workspace_revision = "sha256:" + "0" * 64
+    elif tamper == "file":
+        (workspace / package_ref / "final_report.md").write_text("tampered\n", encoding="utf-8")
+    elif tamper == "required_file":
+        manifest_path = workspace / package_ref / "package_manifest.json"
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest["files"] = [entry for entry in manifest["files"] if entry["ref"] != "email_summary.md"]
+        manifest_path.write_text(json.dumps(manifest) + "\n", encoding="utf-8")
+        manifest_digest = _sha256(manifest_path)
+    else:
+        (workspace / package_ref / "unlisted.txt").write_text("unexpected\n", encoding="utf-8")
+
+    failed = _created_report_package(
+        workspace,
+        package_ref,
+        manifest_digest,
+        workspace_revision,
+        check=False,
+    )
+    assert failed.returncode == 2
+    expected = {
+        "manifest_digest": "manifest digest does not match",
+        "workspace_revision": "workspace revision does not match",
+        "file": "file size does not match",
+        "required_file": "missing required file",
+        "unlisted_file": "contents do not match",
+    }[tamper]
+    assert expected in failed.stderr
+
+
 def test_artifact_node_scope_must_match_workspace_report(tmp_path: Path) -> None:
     report = {"node_index": [{"node_id": "n001"}]}
     assert _node_scope_contract(report, ["n001"]) == ["n001"]
@@ -437,6 +512,34 @@ def test_artifact_output_rejects_started_action(tmp_path: Path) -> None:
     assert "report state does not match" in failed.stderr
 
 
+def test_report_output_revision_must_match_task_snapshot(tmp_path: Path) -> None:
+    packet, action, report = _artifact_protocol_fixture("report")
+    packet["workspace"]["revision"] = "sha256:" + "9" * 64
+    failed = _validate_artifact_output(tmp_path, packet, [action], report, check=False)
+    assert failed.returncode == 2
+    assert "workspace_revision" in failed.stderr
+
+
+@pytest.mark.parametrize("role", ["render", "report"])
+def test_artifact_output_ignores_malformed_model_receipt_after_successful_action(tmp_path: Path, role: str) -> None:
+    packet, action, _report = _artifact_protocol_fixture(role)
+    malformed = {"facts": [{"state": "built"}]} if role == "report" else {"provenance": None}
+    malformed["summary"] = "Model-authored summary must not become the canonical receipt."
+    malformed["limitations"] = ["Model-authored limitation must be ignored."]
+    completed = _parse_artifact_output(tmp_path, packet, [action], malformed)
+    report = json.loads(completed.stdout)
+
+    assert report["outcome"] == "success"
+    assert report["facts"] == []
+    assert report["provenance"] == {
+        "source": "typed_artifact_tool",
+        "action_name": action["tool"],
+    }
+    assert report["artifact_refs"] == action["result"]["artifact_refs"]
+    assert "Model-authored" not in report["summary"]
+    assert report["limitations"] == []
+
+
 def _artifact_workspace(tmp_path: Path) -> Path:
     workspace = tmp_path / "workspace"
     for path in (
@@ -493,6 +596,53 @@ def _node_scope_contract(report: dict[str, object], node_ids: list[str], *, chec
     return json.loads(completed.stdout) if check else completed
 
 
+def _created_render_output(workspace: Path, output_ref: str, *, check: bool = True):
+    script = (
+        f"const helper=require({json.dumps(str(REQUEST_CONTRACT))});"
+        "try { process.stdout.write(JSON.stringify(helper.validateCreatedRenderOutput(process.argv[1],process.argv[2]))); }"
+        "catch(error){ process.stderr.write(String(error.message||error)); process.exitCode=2; }"
+    )
+    completed = subprocess.run(
+        ["node", "-e", script, str(workspace), output_ref],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=check,
+    )
+    return json.loads(completed.stdout) if check else completed
+
+
+def _created_report_package(
+    workspace: Path,
+    package_ref: str,
+    manifest_digest: str,
+    workspace_revision: str,
+    *,
+    check: bool = True,
+):
+    script = (
+        f"const helper=require({json.dumps(str(REQUEST_CONTRACT))});"
+        "try { process.stdout.write(JSON.stringify(helper.validateCreatedReportPackage(...process.argv.slice(1)))); }"
+        "catch(error){ process.stderr.write(String(error.message||error)); process.exitCode=2; }"
+    )
+    completed = subprocess.run(
+        ["node", "-e", script, str(workspace), package_ref, manifest_digest, workspace_revision],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=check,
+    )
+    return json.loads(completed.stdout) if check else completed
+
+
+def _sha256(path: Path) -> str:
+    import hashlib
+
+    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def _artifact_protocol_fixture(role: str):
     operation = {"render": "render", "report": "build"}[role]
     node_ids = ["n001"] if role == "render" else []
@@ -503,7 +653,11 @@ def _artifact_protocol_fixture(role: str):
         "authority": "operational",
         "operation": operation,
         "objective": f"Execute bounded {role} operation.",
-        "workspace": {"root": "/tmp/ws", "report_id": "rep_001", "revision": "rev_001"},
+        "workspace": {
+            "root": "/tmp/ws",
+            "report_id": "rep_001",
+            "revision": "sha256:" + "1" * 64,
+        },
         "scope": {"report_id": "rep_001", "node_ids": node_ids, "hypothesis_id": None, "pathway_id": None},
         "inputs": {"basis_allowlist": ["inputs/reactant.xyz"]},
         "capabilities": [{"render": "ts_workspace_render_execute", "report": "ts_workspace_report_build"}[role]],
@@ -573,6 +727,26 @@ def _validate_artifact_output(tmp_path: Path, packet, actions, report, *, check:
         f"const helper=require({json.dumps(str(OUTPUT_SCHEMA))});"
         "const input=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
         "try { process.stdout.write(JSON.stringify(helper.validateArtifactReport(input.report,input.packet,input.actions))); }"
+        "catch(error){ process.stderr.write(String(error.message||error)); process.exitCode=2; }"
+    )
+    return subprocess.run(
+        ["node", "-e", script, str(input_path)],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=check,
+    )
+
+
+def _parse_artifact_output(tmp_path: Path, packet, actions, report, *, check: bool = True):
+    input_path = tmp_path / "artifact-parse-output.json"
+    input_path.write_text(json.dumps({"packet": packet, "actions": actions, "report": report}), encoding="utf-8")
+    script = (
+        "const fs=require('node:fs');"
+        f"const helper=require({json.dumps(str(OUTPUT_SCHEMA))});"
+        "const input=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
+        "try { process.stdout.write(JSON.stringify(helper.parseAndValidateArtifactReport(JSON.stringify(input.report),input.packet,input.actions))); }"
         "catch(error){ process.stderr.write(String(error.message||error)); process.exitCode=2; }"
     )
     return subprocess.run(

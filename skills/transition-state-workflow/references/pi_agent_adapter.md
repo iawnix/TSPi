@@ -94,7 +94,8 @@ from the validated decision; there is no model-supplied shell command.
 
 ## Review Subagent
 
-`ts_subagent_review` creates a fresh in-memory, tool-free Pi session for one
+`ts_subagent_review` creates a fresh in-memory Pi session with only the private
+`ts_review_result` result tool enabled for one
 bounded review. It receives:
 
 - one `ts-agent-task/1` packet;
@@ -156,7 +157,8 @@ Long-running jobs are external processes, not persistent LLM sessions. Invoke
 
 Each creates a fresh session with exactly one private artifact policy and one
 typed tool. Request paths reject traversal, symlinks, and overwrite. Output
-validators bind artifacts and role payloads to the actual typed action.
+validators bind artifacts and role payloads to the actual typed action, and the
+host generates the result without a model-authored receipt.
 
 Report packages are published atomically with a `ts-report-package/1`
 `package_manifest.json`. The manifest binds the source scientific revision and

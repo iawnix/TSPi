@@ -8,6 +8,7 @@ import pytest
 
 from strict_helpers import bootstrap_strict_workspace
 from ts_workspace import report_node, report_workspace
+from ts_workspace.artifact_policy import ROLE_NODE_OWNER
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -15,6 +16,8 @@ AGENT_CORE = ROOT / "src" / "agent-core"
 REVIEW_AGENT = ROOT / "src" / "agents" / "review"
 TASK_PACKET = REVIEW_AGENT / "task-packet.cjs"
 OUTPUT_SCHEMA = REVIEW_AGENT / "output-schema.cjs"
+INPUT_POLICY = REVIEW_AGENT / "input-policy.cjs"
+RESULT_TOOL = REVIEW_AGENT / "result-tool.ts"
 SESSION_LIFECYCLE = AGENT_CORE / "session-lifecycle.cjs"
 
 
@@ -135,6 +138,7 @@ def test_task_packet_is_report_derived_bounded_and_advisory(tmp_path: Path) -> N
     assert packet["inputs"]["evidence"][0]["evidence_id"] == "ev_endpoint_0001"
     assert packet["inputs"]["artifact_excerpts"][0]["ref"] == "nodes/n000/outputs/endpoint-summary.json"
     assert packet["inputs"]["artifact_excerpts"][0]["text"] == '{"endpoint":"supported"}\n'
+    assert packet["inputs"]["artifact_excerpts"][0]["layer"] == "mechanism"
     assert packet["inputs"]["basis_allowlist"] == [
         "ev_endpoint_0001",
         "nodes/n000/outputs/endpoint-summary.json",
@@ -152,6 +156,70 @@ def test_task_packet_is_report_derived_bounded_and_advisory(tmp_path: Path) -> N
 def test_task_packet_rejects_unscoped_artifacts(tmp_path: Path, artifact_ref: str) -> None:
     with pytest.raises(subprocess.CalledProcessError):
         _packet(tmp_path, artifact_ref=artifact_ref)
+
+
+def test_task_packet_rejects_explicit_cross_ceiling_evidence(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    bootstrap_strict_workspace(workspace)
+    payload = {
+        "runId": "sub_test_cross_layer",
+        "workspaceRoot": str(workspace),
+        "request": {
+            "reviewType": "mechanism",
+            "question": "Review mechanism evidence only.",
+            "nodeId": "n000",
+            "evidenceRefs": ["ev_tsfreq_001"],
+        },
+        "workspaceReport": report_workspace(workspace),
+        "nodeContext": report_node(workspace, "n000"),
+        "branchContext": None,
+    }
+    payload["nodeContext"]["evidence"].append({
+        "evidence_id": "ev_tsfreq_001",
+        "node_id": "n000",
+        "kind": "gate",
+        "role": "tsfreq_gate",
+        "evidence_tier": "parsed_output",
+        "summary": "TS/Freq gate.",
+        "quality": {},
+        "path": None,
+        "source_files": [],
+    })
+    input_file = tmp_path / "cross-layer.json"
+    input_file.write_text(json.dumps(payload), encoding="utf-8")
+    script = (
+        "const fs=require('node:fs');"
+        f"const helper=require({json.dumps(str(TASK_PACKET))});"
+        "const input=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
+        "try{helper.buildTaskPacket(input);}catch(error){process.stderr.write(error.message);process.exitCode=2;}"
+    )
+    completed = _node_json(script, str(input_file), check=False)
+    assert completed.returncode == 2
+    assert "ev_tsfreq_001 (tsfreq)" in completed.stderr
+
+
+def test_task_packet_rejects_unknown_evidence_role(tmp_path: Path) -> None:
+    packet_input = {
+        "evidence_id": "ev_unknown",
+        "role": "unregistered_gate",
+    }
+    script = (
+        f"const helper=require({json.dumps(str(INPUT_POLICY))});"
+        "try{helper.reviewLayerForEvidence(JSON.parse(process.argv[1]));}"
+        "catch(error){process.stderr.write(error.message);process.exitCode=2;}"
+    )
+    completed = _node_json(script, json.dumps(packet_input), check=False)
+    assert completed.returncode == 2
+    assert "unknown role/layer" in completed.stderr
+
+
+def test_review_layer_policy_covers_workspace_evidence_ontology() -> None:
+    script = (
+        f"const helper=require({json.dumps(str(INPUT_POLICY))});"
+        "process.stdout.write(JSON.stringify(Object.keys(helper.EVIDENCE_ROLE_LAYERS).sort()));"
+    )
+    mapped = set(json.loads(_node_json(script).stdout))
+    assert set(ROLE_NODE_OWNER) <= mapped
 
 
 def test_advice_validation_accepts_bounded_evidence_referenced_output(tmp_path: Path) -> None:
@@ -186,6 +254,76 @@ def test_advice_validation_rejects_cross_layer_claim(tmp_path: Path) -> None:
 
     assert completed.returncode == 2
     assert "evidence ceiling" in completed.stderr
+
+
+def test_advice_validation_rejects_string_risks_and_packet_mismatch(tmp_path: Path) -> None:
+    packet = _packet(tmp_path)
+    advice = _valid_result(packet)
+    advice["payload"]["options"][0]["risks"] = "Method dependence."
+    completed = _validate_result(tmp_path, packet, advice, check=False)
+    assert completed.returncode == 2
+    assert "risks must be an array" in completed.stderr
+
+    advice = _valid_result(packet)
+    advice["operation"] = "connectivity"
+    completed = _validate_result(tmp_path, packet, advice, check=False)
+    assert completed.returncode == 2
+    assert "operation does not match" in completed.stderr
+
+
+def test_artifact_excerpt_cross_layer_is_rejected_before_read(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    bootstrap_strict_workspace(workspace)
+    artifact = workspace / "nodes" / "n006" / "outputs" / "connectivity.json"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text('{"connected":true}\n', encoding="utf-8")
+    workspace_report = report_workspace(workspace)
+    anchor = report_node(workspace, "n000")
+    from_context = {
+        **anchor,
+        "node": {
+            **anchor["node"],
+            "node_id": "n006",
+            "node_type": "validation",
+            "validation_scope": "connectivity",
+        },
+        "evidence": [],
+        "artifact_refs": {
+            "node_artifacts": {"outputs": "nodes/n006/outputs"},
+            "evidence_paths": [],
+            "source_files": [],
+        },
+    }
+    payload = {
+        "runId": "sub_test_artifact_ceiling",
+        "workspaceRoot": str(workspace),
+        "request": {
+            "reviewType": "mechanism",
+            "question": "Review mechanism evidence only.",
+            "fromNode": "n006",
+            "anchorNode": "n000",
+            "evidenceRefs": ["ev_endpoint_0001"],
+            "artifactRefs": ["nodes/n006/outputs/connectivity.json"],
+        },
+        "workspaceReport": workspace_report,
+        "nodeContext": None,
+        "branchContext": {
+            "from_node": from_context,
+            "anchor_node": anchor,
+            "path_delta": [],
+        },
+    }
+    input_file = tmp_path / "artifact-ceiling.json"
+    input_file.write_text(json.dumps(payload), encoding="utf-8")
+    script = (
+        "const fs=require('node:fs');"
+        f"const helper=require({json.dumps(str(TASK_PACKET))});"
+        "const input=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
+        "try{helper.buildTaskPacket(input);}catch(error){process.stderr.write(error.message);process.exitCode=2;}"
+    )
+    completed = _node_json(script, str(input_file), check=False)
+    assert completed.returncode == 2
+    assert "artifact ref exceeds review ceiling" in completed.stderr
 
 
 def test_advice_validation_rejects_unknown_basis_and_authoritative_fields(tmp_path: Path) -> None:
@@ -231,7 +369,7 @@ def test_prompt_modules_are_private_and_define_all_review_modes() -> None:
     }
     assert not list(REVIEW_AGENT.rglob("SKILL.md"))
     core = (prompt_dir / "core.md").read_text(encoding="utf-8")
-    assert "Return exactly one JSON object" in core
+    assert "Submit exactly one result through the `ts_review_result` tool" in core
     assert "no authority to mutate" in core
     assert "payload.missing_evidence" in core
     assert "Every fact must cite at least one allowlisted basis" in core
@@ -255,7 +393,9 @@ def test_agent_directories_separate_shared_core_from_review_implementation() -> 
     }
     assert {path.name for path in review_dir.iterdir()} == {
         "output-schema.cjs",
+        "input-policy.cjs",
         "prompts",
+        "result-tool.ts",
         "runtime.ts",
         "task-packet.cjs",
     }
@@ -322,7 +462,9 @@ def test_pi_subagent_runtime_and_extension_enforce_isolation() -> None:
     runtime = (REVIEW_AGENT / "runtime.ts").read_text(encoding="utf-8")
     extension = (ROOT / "extensions" / "ts-workflow-review" / "index.ts").read_text(encoding="utf-8")
 
-    assert 'noTools: "all"' in runtime
+    assert 'noTools: "builtin"' in runtime
+    assert "REVIEW_RESULT_TOOL_NAME" in runtime
+    assert 'strict: "prefer"' in RESULT_TOOL.read_text(encoding="utf-8")
     assert "SessionManager.inMemory(options.workspaceRoot)" in runtime
     assert "SettingsManager.inMemory" in runtime
     assert "getAgentsFiles: () => ({ agentsFiles: [] })" in runtime
@@ -330,7 +472,7 @@ def test_pi_subagent_runtime_and_extension_enforce_isolation() -> None:
     assert "getAppendSystemPromptSources: () => []" in runtime
     assert "const extensionsResult = { extensions: [], errors: [], runtime: createExtensionRuntime() }" in runtime
     assert "withDisposableSession" in runtime
-    assert "parseAndValidateReviewResult" in runtime
+    assert "createReviewResultTool" in runtime
     assert "setRuntimeApiKey" in runtime
     assert "name: TS_PUBLIC_TOOL_NAMES.subagentReview" in extension
     assert 'executionMode: "sequential"' in extension

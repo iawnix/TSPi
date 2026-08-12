@@ -17,7 +17,12 @@ import { runScientificReview } from "../../src/agents/review/runtime.ts";
 const require = createRequire(import.meta.url);
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
 const { buildTaskPacket, validateSubagentRequest } = require(resolve(EXTENSION_DIR, "..", "..", "src", "agents", "review", "task-packet.cjs"));
-const { beginAgentRun, completeAgentRun, failAgentRun } = require(resolve(EXTENSION_DIR, "..", "..", "src", "agent-core", "run-journal.cjs"));
+const {
+  beginAgentRun,
+  completeAgentRun,
+  failAgentRun,
+  writeInvalidReviewOutput,
+} = require(resolve(EXTENSION_DIR, "..", "..", "src", "agent-core", "run-journal.cjs"));
 const { classifyUpstreamModelFailure } = require(resolve(EXTENSION_DIR, "..", "..", "src", "agent-core", "failure-taxonomy.cjs"));
 const { toolText } = require("../ts-workflow-control/summary.cjs");
 
@@ -106,6 +111,7 @@ export default function (pi: ExtensionAPI) {
           signal,
           onLifecycle: reportStatus,
         });
+        if (result.invalidOutputs.length) writeInvalidReviewOutput(journal, result.invalidOutputs);
         const runRef = completeAgentRun(journal, {
           actions: [],
           result: result.result,
@@ -119,6 +125,11 @@ export default function (pi: ExtensionAPI) {
           run: metadata,
         });
       } catch (error) {
+        const invalidOutputs = error && typeof error === "object"
+          && Array.isArray((error as { invalidReviewOutputs?: unknown[] }).invalidReviewOutputs)
+          ? (error as { invalidReviewOutputs: unknown[] }).invalidReviewOutputs
+          : [];
+        if (invalidOutputs.length) writeInvalidReviewOutput(journal, invalidOutputs);
         const failure = classifyUpstreamModelFailure(error, { replaySafe: true }) || {
           failure_class: "review_operator_failed",
           failure_stage: "operator",

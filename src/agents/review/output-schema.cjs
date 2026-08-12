@@ -20,6 +20,15 @@ function parseAndValidateReviewResult(text, packet) {
 }
 
 function validateReviewResult(value, packet) {
+  let serialized;
+  try {
+    serialized = JSON.stringify(value);
+  } catch (error) {
+    throw new Error(`review agent output must be JSON serializable: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (Buffer.byteLength(serialized, "utf8") > MAX_OUTPUT_BYTES) {
+    throw new Error(`review agent output exceeds ${MAX_OUTPUT_BYTES} bytes`);
+  }
   const task = validateAgentTask(packet);
   if (task.role !== "review") throw new Error("review output requires role=review task");
   const result = validateAgentResult(value, task);

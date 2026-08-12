@@ -5,7 +5,9 @@ from pathlib import Path
 
 from strict_helpers import gate_artifact_metadata, make_accepted_workspace
 from ts_report import build_final_report, build_report_package
+from ts_report.builder import _mode_lines, _reaction_overview_lines
 from ts_report.context import collect_report_context
+from ts_report.extractors import collect_structures, collect_tsfreq, reaction_center
 from ts_workspace import report_workspace, update_workspace
 
 
@@ -131,6 +133,95 @@ def test_energy_profile_uses_reactant_product_zpe_corrections(tmp_path: Path) ->
     assert rows["TS"]["relative_zpe_corrected_energy_kcal_mol"] == 34.513
     assert rows["P"]["relative_zpe_corrected_energy_kcal_mol"] == -11.923
     assert "34.513" in build_final_report(workspace)
+
+
+def test_report_extracts_current_v2_hypothesis_and_reaudit_shapes(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    ts_xyz = root / "nodes/n003/outputs/gaussian_final.xyz"
+    forward_xyz = root / "nodes/n004/outputs/forward_endpoint.xyz"
+    reverse_xyz = root / "nodes/n004/outputs/reverse_endpoint.xyz"
+    for path in (ts_xyz, forward_xyz, reverse_xyz):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _write_xyz(path, [("C", 0, 0, 0), ("C", 1.4, 0, 0)])
+
+    active = {
+        "hypothesis_id": "hyp_0001",
+        "summary": "Concerted cycloaddition.",
+        "derived_from": {"reactants": "diene plus alkene", "product": "cycloadduct"},
+        "structured_claim": {
+            "reaction_center": {
+                "forming_bonds": [["C1", "C5"], ["C4", "C6"]],
+                "breaking_bonds": [],
+                "transferred_atoms": [],
+                "spectator_regions": [],
+            },
+            "electronic_model": {"charge": 0, "multiplicity": 1},
+        },
+    }
+    records = [
+        {
+            "evidence_id": "ev_tsfreq_source",
+            "role": "tsfreq_gate",
+            "path": "nodes/n003/outputs/validation_summary.json",
+            "source_files": ["nodes/n003/outputs/gaussian_final.xyz"],
+            "quality": {"imaginary_frequency_cm-1": -504.1854, "imaginary_frequency_count": 1},
+        },
+        {
+            "evidence_id": "ev_mode",
+            "role": "mode_assignment",
+            "path": "nodes/n003/outputs/imaginary_mode_assignment.json",
+            "quality": {"mode_matches_reaction_coordinate": True},
+        },
+        {
+            "evidence_id": "ev_tsfreq_reaudit",
+            "role": "tsfreq_gate",
+            "path": "nodes/n007/outputs/tsfreq_gate_verification.json",
+            "source_files": [
+                "nodes/n007/outputs/tsfreq_gate_verification.json",
+                "nodes/n003/outputs/validation_summary.json",
+            ],
+            "quality": {"mode_verdict": "mode_matches_reaction_center", "verdict_against_prediction": "supported"},
+        },
+        {
+            "evidence_id": "ev_endpoints",
+            "role": "irc_endpoint_assignment",
+            "source_files": [
+                "nodes/n004/outputs/forward_endpoint.xyz",
+                "nodes/n004/outputs/reverse_endpoint.xyz",
+            ],
+            "quality": {"forward_assignment": "product", "reverse_assignment": "reactant"},
+            "provenance": {"forward_intent_id": "forward", "reverse_intent_id": "reverse"},
+        },
+    ]
+    artifacts = {
+        "ev_tsfreq_source": {"imaginary_frequencies_cm-1": [-504.1854]},
+        "ev_mode": {
+            "selected_frequency_cm-1": -504.1854,
+            "assignment": "coupled_C1-C5_and_C4-C6_bond_formation",
+        },
+        "ev_tsfreq_reaudit": {
+            "checks": {"imaginary_frequency_cm-1": -504.1854},
+            "verdict_against_prediction": "supported",
+        },
+    }
+
+    center = reaction_center(active)
+    tsfreq = collect_tsfreq(root, records, artifacts)
+    structures = collect_structures(root, active, records, artifacts)
+    overview = "\n".join(_reaction_overview_lines({"active_hypothesis": active, "reaction_center": center}))
+    mode_table = "\n".join(_mode_lines({"tsfreq": tsfreq, "assets": {}}))
+
+    assert [item["label"] for item in center["forming_bonds"]] == ["C1-C5", "C4-C6"]
+    assert "diene plus alkene" in overview
+    assert "cycloadduct" in overview
+    assert "`0 / 1`" in overview
+    assert "C1-C5, C4-C6" in overview
+    assert "-504.1854" in mode_table
+    assert "mode_matches_reaction_center" in mode_table
+    assert tsfreq["mode_assignment"]["assignment"] == "coupled_C1-C5_and_C4-C6_bond_formation"
+    assert structures["ts"]["path"] == "nodes/n003/outputs/gaussian_final.xyz"
+    assert structures["product"]["path"] == "nodes/n004/outputs/forward_endpoint.xyz"
+    assert structures["reactant"]["path"] == "nodes/n004/outputs/reverse_endpoint.xyz"
 
 
 def _write_xyz(path: Path, atoms: list[tuple[str, float, float, float]]) -> None:

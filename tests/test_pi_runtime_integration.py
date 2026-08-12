@@ -17,6 +17,7 @@ import pytest
 
 from strict_helpers import bootstrap_strict_workspace, start_research_node
 from ts_compute import list_calculation_artifacts
+from ts_workspace import report_workspace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -215,7 +216,7 @@ def test_real_pi_report_child_loads_shared_and_selected_policy_with_bound_tool(t
     assert "Render Role Policy" not in report_messages
 
 
-def test_real_pi_review_child_session_has_no_tools(tmp_path: Path) -> None:
+def test_real_pi_review_child_session_uses_only_result_tool(tmp_path: Path) -> None:
     pi = _pi_binary()
     if pi is None:
         pytest.skip("Pi executable is not installed")
@@ -255,8 +256,132 @@ def test_real_pi_review_child_session_has_no_tools(tmp_path: Path) -> None:
     assert result["result"]["role"] == "review"
     assert result["metadata"]["review_type"] == "mechanism"
     assert len(requests) == 1
-    assert not requests[0].get("tools")
+    assert [tool["function"]["name"] for tool in requests[0]["tools"]] == ["ts_review_result"]
+    assert requests[0]["tools"][0]["function"]["strict"] is True
     assert "Review this bounded TS workspace task packet" in requests[0]["messages"][-1]["content"][0]["text"]
+
+
+def test_real_pi_review_repairs_invalid_tool_shape_in_same_session(tmp_path: Path) -> None:
+    pi = _pi_binary()
+    if pi is None:
+        pytest.skip("Pi executable is not installed")
+    workspace = tmp_path / "workspace"
+    bootstrap_strict_workspace(workspace)
+    agent_dir = tmp_path / "pi-agent"
+    agent_dir.mkdir()
+
+    invalid = _review_result_object()
+    invalid["payload"]["options"][0]["risks"] = "Must be an array."
+    requests: list[dict[str, object]] = []
+    responses = [
+        _tool_call_chunks("ts_review_result", invalid),
+        _tool_call_chunks("ts_review_result", _review_result_object()),
+    ]
+    with _recording_server(requests, responses) as base_url:
+        _write_recording_model(agent_dir, base_url)
+        completed = _run_child_probe(
+            pi=pi,
+            workspace=workspace,
+            agent_dir=agent_dir,
+            session_dir=tmp_path / "pi-sessions",
+            extension=ROOT / "tests" / "pi_review_probe.ts",
+            command="/ts-test-review-child",
+            notification_prefix="TS_TEST_REVIEW:",
+        )
+
+    assert completed.returncode == 0, completed.stderr
+    rows = [json.loads(line) for line in completed.stdout.splitlines() if line.strip().startswith("{")]
+    errors = [row for row in rows if str(row.get("message", "")).startswith("TS_TEST_REVIEW_ERROR:")]
+    assert not errors, errors
+    notification = next(
+        row for row in rows
+        if row.get("type") == "extension_ui_request"
+        and str(row.get("message", "")).startswith("TS_TEST_REVIEW:")
+    )
+    result = json.loads(notification["message"].split(":", 1)[1])
+    assert result["metadata"]["result_attempts"] == 2
+    assert result["invalidOutputs"][0]["validation_stage"] == "tool_schema"
+    assert len(requests) == 2
+    second_messages = requests[1]["messages"]
+    assert any(message.get("role") == "tool" and message.get("content") for message in second_messages)
+
+
+@pytest.mark.parametrize("mode", ["twice_invalid", "text_only"])
+def test_real_pi_review_stops_after_two_invalid_attempts(tmp_path: Path, mode: str) -> None:
+    pi = _pi_binary()
+    if pi is None:
+        pytest.skip("Pi executable is not installed")
+    workspace = tmp_path / "workspace"
+    bootstrap_strict_workspace(workspace)
+    agent_dir = tmp_path / "pi-agent"
+    agent_dir.mkdir()
+
+    invalid = _review_result_object()
+    invalid["payload"]["options"][0]["risks"] = "Still invalid."
+    responses = (
+        [_tool_call_chunks("ts_review_result", invalid), _tool_call_chunks("ts_review_result", invalid)]
+        if mode == "twice_invalid"
+        else [_assistant_text_chunks("Review text only."), _assistant_text_chunks("Still text only.")]
+    )
+    requests: list[dict[str, object]] = []
+    with _recording_server(requests, responses) as base_url:
+        _write_recording_model(agent_dir, base_url)
+        completed = _run_child_probe(
+            pi=pi,
+            workspace=workspace,
+            agent_dir=agent_dir,
+            session_dir=tmp_path / "pi-sessions",
+            extension=ROOT / "tests" / "pi_review_probe.ts",
+            command="/ts-test-review-child",
+            notification_prefix="TS_TEST_REVIEW_ERROR:",
+        )
+
+    assert completed.returncode == 0, completed.stderr
+    rows = [json.loads(line) for line in completed.stdout.splitlines() if line.strip().startswith("{")]
+    error = next(
+        row for row in rows
+        if row.get("type") == "extension_ui_request"
+        and str(row.get("message", "")).startswith("TS_TEST_REVIEW_ERROR:")
+    )
+    assert (
+        "valid ts_review_result" in error["message"]
+        or "review schema" in error["message"]
+        or "without calling ts_review_result" in error["message"]
+    )
+    assert len(requests) == 2
+
+
+def test_real_pi_review_rejects_two_result_calls_in_one_response(tmp_path: Path) -> None:
+    pi = _pi_binary()
+    if pi is None:
+        pytest.skip("Pi executable is not installed")
+    workspace = tmp_path / "workspace"
+    bootstrap_strict_workspace(workspace)
+    agent_dir = tmp_path / "pi-agent"
+    agent_dir.mkdir()
+
+    requests: list[dict[str, object]] = []
+    with _recording_server(requests, [_two_tool_call_chunks("ts_review_result", _review_result_object())]) as base_url:
+        _write_recording_model(agent_dir, base_url)
+        completed = _run_child_probe(
+            pi=pi,
+            workspace=workspace,
+            agent_dir=agent_dir,
+            session_dir=tmp_path / "pi-sessions",
+            extension=ROOT / "tests" / "pi_review_probe.ts",
+            command="/ts-test-review-child",
+            notification_prefix="TS_TEST_REVIEW_ERROR:",
+        )
+
+    assert completed.returncode == 0, completed.stderr
+    rows = [json.loads(line) for line in completed.stdout.splitlines() if line.strip().startswith("{")]
+    error = next(
+        row for row in rows
+        if row.get("type") == "extension_ui_request"
+        and str(row.get("message", "")).startswith("TS_TEST_REVIEW_ERROR:")
+    )
+    assert "exactly one valid call" in error["message"]
+    assert len(requests) == 1
 
 
 def test_real_pi_compute_child_session_uses_only_bound_prepare_tool(tmp_path: Path) -> None:
@@ -507,6 +632,7 @@ def test_real_pi_public_subagent_emits_ui_lifecycle_updates(tmp_path: Path, outc
             {"reviewType": "mechanism", "question": "Review the bounded mechanism evidence.", "nodeId": "n000"},
         ),
         child_response,
+        *([child_response] if outcome == "failure" else []),
         _assistant_text_chunks("The bounded review call finished."),
     ]
     with _recording_server(requests, responses) as base_url:
@@ -562,7 +688,10 @@ def test_real_pi_public_subagent_emits_ui_lifecycle_updates(tmp_path: Path, outc
         and isinstance(row.get("partialResult"), dict)
         and isinstance(row["partialResult"].get("details"), dict)
     ]
-    expected = ["queued", "starting", "running", "waiting", "validating", "partial" if outcome == "success" else "failed"]
+    expected = ["queued", "starting", "running", "waiting", "validating"]
+    if outcome == "failure":
+        expected.extend(["waiting", "validating"])
+    expected.append("partial" if outcome == "success" else "failed")
     assert [status["state"] for status in lifecycle] == expected, {
         "stdout": completed.stdout,
         "stderr": completed.stderr,
@@ -575,7 +704,17 @@ def test_real_pi_public_subagent_emits_ui_lifecycle_updates(tmp_path: Path, outc
     assert lifecycle[-1]["run_ref"].startswith("nodes/n000/agent-runs/")
     assert status_texts[0] == "π 1 agent"
     assert status_texts[-1] == "π 1 attention"
-    assert len(requests) == 3
+    assert len(requests) == (3 if outcome == "success" else 4)
+    run_dir = workspace / lifecycle[-1]["run_ref"]
+    invalid_output = run_dir / "invalid-review-output.json"
+    if outcome == "failure":
+        assert invalid_output.is_file()
+        invalid = json.loads(invalid_output.read_text(encoding="utf-8"))
+        assert invalid["invalid"] is True
+        assert len(invalid["attempts"]) == 2
+        assert "invalid-review-output" not in json.dumps(report_workspace(workspace))
+    else:
+        assert not invalid_output.exists()
 
 
 def _pi_binary() -> str | None:
@@ -798,6 +937,34 @@ def _tool_call_chunks(tool_name: str, arguments: dict[str, object] | None = None
     ]
 
 
+def _two_tool_call_chunks(tool_name: str, arguments: dict[str, object]) -> list[dict[str, object]]:
+    calls = [
+        {
+            "index": index,
+            "id": f"call_recording_{index}",
+            "type": "function",
+            "function": {"name": tool_name, "arguments": json.dumps(arguments)},
+        }
+        for index in range(2)
+    ]
+    return [
+        {
+            "id": "chatcmpl-two-tools",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "recording-model",
+            "choices": [{"index": 0, "delta": {"role": "assistant", "tool_calls": calls}, "finish_reason": None}],
+        },
+        {
+            "id": "chatcmpl-two-tools",
+            "object": "chat.completion.chunk",
+            "created": 0,
+            "model": "recording-model",
+            "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}],
+        },
+    ]
+
+
 def _render_result_chunks() -> list[dict[str, object]]:
     scope = {
         "report_id": "rep_recording_001",
@@ -882,7 +1049,22 @@ def _review_result_chunks(
         "hypothesis_id": None,
         "pathway_id": None,
     }
-    report = {
+    report = _review_result_object(task_id=task_id, scope=scope)
+    return _tool_call_chunks("ts_review_result", report)
+
+
+def _review_result_object(
+    *,
+    task_id: str = "agent_review_001",
+    scope: dict[str, object] | None = None,
+) -> dict[str, object]:
+    scope = scope or {
+        "report_id": "rep_review_001",
+        "node_ids": ["n000"],
+        "hypothesis_id": None,
+        "pathway_id": None,
+    }
+    return {
         "schema_version": "ts-agent-result/1",
         "task_id": task_id,
         "role": "review",
@@ -908,7 +1090,6 @@ def _review_result_chunks(
         "limitations": ["Recording-provider integration test."],
         "provenance": {},
     }
-    return _assistant_result_chunks(report)
 
 
 def _review_result_for_request(request: dict[str, object]) -> list[dict[str, object]]:

@@ -26,6 +26,8 @@ const { beginAgentRun, completeAgentRun, failAgentRun } = require("../../src/age
 const { classifyUpstreamModelFailure } = require("../../src/agent-core/failure-taxonomy.cjs");
 const {
   RENDER_OPERATIONS,
+  validateCreatedRenderOutput,
+  validateCreatedReportPackage,
   validateRenderRequest,
   validateReportRequest,
   validateTaskNodeScope,
@@ -214,6 +216,7 @@ function createRenderTool(
         signal,
       );
       if (!raw || typeof raw !== "object" || raw.ok !== true) throw new Error("render backend did not create the bound output");
+      validateCreatedRenderOutput(root, request.outputRef);
       return {
         operation: request.operation,
         state: "rendered",
@@ -275,6 +278,12 @@ function createReportTool(
       if (typeof raw.workspace_revision !== "string" || !/^sha256:[0-9a-f]{64}$/.test(raw.workspace_revision)) {
         throw new Error("report builder returned no source workspace revision");
       }
+      validateCreatedReportPackage(
+        root,
+        request.packageRef,
+        raw.manifest_digest,
+        raw.workspace_revision,
+      );
       return {
         operation: "build",
         state: "built",
@@ -303,9 +312,19 @@ function noArgumentTool(
     parameters: Type.Object({}, { additionalProperties: false }),
     async execute(_toolCallId, _params, signal) {
       const action = reserveAction(actions, name, pendingResult);
-      const result = await run(signal);
-      action.result = result;
-      return toolText(JSON.stringify(result, null, 2), { result });
+      try {
+        const result = await run(signal);
+        action.result = result;
+        return { ...toolText(JSON.stringify(result, null, 2), { result }), terminate: true };
+      } catch (error) {
+        action.result = {
+          ...pendingResult,
+          state: "failed",
+          artifact_refs: [],
+          error_class: "tool_execution_error",
+        };
+        throw error;
+      }
     },
   };
   return tool;
@@ -397,13 +416,24 @@ async function executeChild(
       state: typeof action.result.state === "string" ? action.result.state : null,
       artifact_refs: Array.isArray(action.result.artifact_refs) ? action.result.artifact_refs : [],
     }));
-    const failure = classifyUpstreamModelFailure(error, { replaySafe: actions.length === 0 }) || {
-      failure_class: actions.length ? "artifact_operator_failed_after_action" : "artifact_operator_failed_before_action",
-      failure_stage: actions.length ? "operator" : "pre_action",
-      failure_domain: "artifact_operator",
-      upstream_status: null,
-      retry_safe: actions.length === 0,
-    };
+    const actionOutcome = actions.length === 0
+      ? "not_executed"
+      : actions.every((action) => action.result.state === "rendered" || action.result.state === "built")
+        ? "succeeded"
+        : actions.some((action) => action.result.state === "started")
+          ? "unknown"
+          : "failed";
+    const upstreamFailure = classifyUpstreamModelFailure(error, { replaySafe: actions.length === 0 });
+    const failure = upstreamFailure
+      ? { ...upstreamFailure, action_outcome: actionOutcome }
+      : {
+        failure_class: actions.length ? "artifact_operator_failed_after_action" : "artifact_operator_failed_before_action",
+        failure_stage: actions.length ? "operator" : "pre_action",
+        failure_domain: "artifact_operator",
+        upstream_status: null,
+        retry_safe: actions.length === 0,
+        action_outcome: actionOutcome,
+      };
     const runRef = failAgentRun(journal, {
       actions,
       error,
@@ -421,7 +451,7 @@ async function executeChild(
     reportStatus(terminal.state, { failure_kind: terminal.failure_kind, run_ref: runRef });
     if (actions.length) {
       const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`${message}; a bounded artifact action was attempted and may have created local output`);
+      throw new Error(`${message}; typed artifact action outcome=${actionOutcome}`);
     }
     throw error;
   }

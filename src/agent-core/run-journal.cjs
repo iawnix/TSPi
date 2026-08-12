@@ -11,9 +11,11 @@ const {
   statSync,
   writeFileSync,
 } = require("node:fs");
+const { createHash } = require("node:crypto");
 const { isAbsolute, relative, resolve, sep } = require("node:path");
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const MAX_INVALID_REVIEW_RAW_BYTES = 16 * 1024;
 
 function beginAgentRun(workspaceRoot, packet) {
   const root = requireWorkspaceRoot(workspaceRoot);
@@ -67,6 +69,59 @@ function failAgentRun(handle, { actions = [], error, metadata = {} }) {
   );
   handle.finalized = true;
   return handle.runRef;
+}
+
+function writeInvalidReviewOutput(handle, attempts) {
+  requireOpenHandle(handle);
+  if (!Array.isArray(attempts) || attempts.length < 1 || attempts.length > 2) {
+    throw new Error("invalid review output journal requires one or two attempts");
+  }
+  const sources = attempts.map((attempt, index) => {
+    if (!isPlainObject(attempt)) throw new Error(`invalid review output attempt ${index + 1} must be an object`);
+    const fullRaw = serializeRaw(attempt.raw);
+    const bytes = Buffer.from(fullRaw, "utf8");
+    return {
+      attempt: index + 1,
+      validation_stage: requireEnum(
+        attempt.validation_stage,
+        "validation_stage",
+        ["tool_schema", "semantic_validation", "missing_tool_call", "duplicate_tool_call"],
+      ),
+      reason: boundedString(attempt.reason, "reason", 1000),
+      source: requireEnum(attempt.source, "source", ["tool_arguments", "assistant_text"]),
+      sha256: `sha256:${createHash("sha256").update(bytes).digest("hex")}`,
+      bytes,
+    };
+  });
+  const buildDocument = (rawBudget) => {
+    let remaining = rawBudget;
+    return {
+      schema_version: "ts-invalid-review-output/1",
+      invalid: true,
+      attempts: sources.map((source) => {
+        const stored = source.bytes.subarray(0, remaining);
+        remaining -= stored.length;
+        return {
+          attempt: source.attempt,
+          validation_stage: source.validation_stage,
+          reason: source.reason,
+          source: source.source,
+          truncated: stored.length < source.bytes.length,
+          sha256: source.sha256,
+          raw: stored.toString("utf8"),
+        };
+      }),
+    };
+  };
+  let low = 0;
+  let high = MAX_INVALID_REVIEW_RAW_BYTES;
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2);
+    const size = Buffer.byteLength(`${JSON.stringify(buildDocument(mid), null, 2)}\n`, "utf8");
+    if (size <= MAX_INVALID_REVIEW_RAW_BYTES) low = mid;
+    else high = mid - 1;
+  }
+  writeJsonExclusive(resolve(handle.runDir, "invalid-review-output.json"), buildDocument(low));
 }
 
 function actionDocument(taskId, actions) {
@@ -159,4 +214,23 @@ function isPlainObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-module.exports = { beginAgentRun, completeAgentRun, failAgentRun };
+function serializeRaw(value) {
+  if (typeof value === "string") return value;
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function boundedString(value, label, maxLength) {
+  if (typeof value !== "string" || !value.trim()) throw new Error(`${label} must be a non-empty string`);
+  return value.slice(0, maxLength);
+}
+
+function requireEnum(value, label, allowed) {
+  if (!allowed.includes(value)) throw new Error(`invalid ${label}: ${value}`);
+  return value;
+}
+
+module.exports = { beginAgentRun, completeAgentRun, failAgentRun, writeInvalidReviewOutput };
