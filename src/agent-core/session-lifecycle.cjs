@@ -56,7 +56,10 @@ async function promptWithDeadline(session, prompt, options = {}) {
     }
 
     Promise.resolve()
-      .then(() => session.prompt(prompt, { expandPromptTemplates: false }))
+      .then(() => {
+        emitLifecycle(options.onLifecycle, "waiting", { wait_reason: "model_response" });
+        return session.prompt(prompt, { expandPromptTemplates: false });
+      })
       .then(
         (value) => {
           if (!interrupted) {
@@ -100,10 +103,10 @@ async function withDisposableSession(createSession, useSession, options = {}) {
   }
 }
 
-function emitLifecycle(callback, phase) {
+function emitLifecycle(callback, phase, update) {
   if (typeof callback !== "function") return;
   try {
-    callback(phase);
+    callback(phase, update);
   } catch {
     // Observability must never change the child-agent execution outcome.
   }

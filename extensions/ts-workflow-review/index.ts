@@ -7,7 +7,11 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { requireWorkspaceRoot, runWorkspaceJson } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
-import { createSubagentStatusReporter, terminalStatusForError } from "../shared/subagent-status.ts";
+import {
+  createSubagentStatusReporter,
+  terminalStateForReport,
+  terminalStatusForError,
+} from "../shared/subagent-status.ts";
 import { runScientificReview } from "../../src/agents/review/runtime.ts";
 
 const require = createRequire(import.meta.url);
@@ -51,7 +55,7 @@ export default function (pi: ExtensionAPI) {
         operation: params.reviewType,
         node_id: params.nodeId || params.fromNode,
       }, onUpdate);
-      reportStatus("preflight");
+      reportStatus("queued");
       if (!ctx.model) {
         throw new Error("No parent model is selected for TS subagent delegation");
       }
@@ -109,7 +113,7 @@ export default function (pi: ExtensionAPI) {
         });
         const metadata = { ...result.metadata, run_ref: runRef };
         pi.appendEntry("ts-workspace-subagent-run", metadata);
-        reportStatus("completed");
+        reportStatus(terminalStateForReport(result.result), { run_ref: runRef });
         return toolText(JSON.stringify(result.result, null, 2), {
           result: result.result,
           run: metadata,
@@ -130,7 +134,7 @@ export default function (pi: ExtensionAPI) {
           run_ref: runRef,
         });
         const terminal = terminalStatusForError(error);
-        reportStatus(terminal.phase, { failure_kind: terminal.failure_kind });
+        reportStatus(terminal.state, { failure_kind: terminal.failure_kind, run_ref: runRef });
         throw error;
       }
     },

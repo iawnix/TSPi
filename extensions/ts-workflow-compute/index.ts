@@ -11,7 +11,11 @@ import {
   runWorkspaceJson,
 } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
-import { createSubagentStatusReporter, terminalStatusForError } from "../shared/subagent-status.ts";
+import {
+  createSubagentStatusReporter,
+  terminalStateForReport,
+  terminalStatusForError,
+} from "../shared/subagent-status.ts";
 import { runComputeOperator } from "../../src/agents/compute/runtime.ts";
 
 const require = createRequire(import.meta.url);
@@ -242,7 +246,7 @@ export default function (pi: ExtensionAPI) {
         node_id: String(params.nodeId),
         intent_id: "intentId" in params ? params.intentId : undefined,
       }, onUpdate);
-      reportStatus("preflight");
+      reportStatus("queued");
       if (!ctx.model) throw new Error("No parent model is selected for TS compute delegation");
       const input = params as unknown as OperatorRequest & { root?: string };
       const root = requireWorkspaceRoot(input.root, ctx.cwd);
@@ -356,7 +360,7 @@ export default function (pi: ExtensionAPI) {
           run_ref: runRef,
         });
         const terminal = terminalStatusForError(error);
-        reportStatus(terminal.phase, { failure_kind: terminal.failure_kind });
+        reportStatus(terminal.state, { failure_kind: terminal.failure_kind, run_ref: runRef });
         if (completedActions.length) {
           const message = error instanceof Error ? error.message : String(error);
           throw new Error(
@@ -373,7 +377,7 @@ export default function (pi: ExtensionAPI) {
       });
       const metadata = { ...result.metadata, run_ref: runRef };
       pi.appendEntry("ts-workspace-compute-operator-run", metadata);
-      reportStatus("completed", { intent_id: request.intentId });
+      reportStatus(terminalStateForReport(result.report), { intent_id: request.intentId, run_ref: runRef });
       return toolText(JSON.stringify({ report: result.report, actions: result.actions }, null, 2), {
         report: result.report,
         actions: result.actions,

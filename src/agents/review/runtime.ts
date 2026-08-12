@@ -43,7 +43,10 @@ interface ReviewRunOptions {
   thinkingLevel: ThinkingLevel;
   timeoutMs?: number;
   signal?: AbortSignal;
-  onLifecycle?: (phase: "starting" | "running" | "validating") => void;
+  onLifecycle?: (
+    state: "starting" | "running" | "waiting" | "validating",
+    update?: { wait_reason?: "model_response" },
+  ) => void;
 }
 
 export interface ReviewRunResult {

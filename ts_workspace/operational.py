@@ -81,6 +81,7 @@ def agent_run_index(root: str | Path) -> list[dict[str, Any]]:
                 "started_at": run.get("started_at"),
                 "finished_at": run.get("finished_at"),
                 "summary": result.get("summary"),
+                "result_outcome": result.get("outcome"),
                 "error_code": error.get("code"),
                 "error_message": error.get("message"),
             }

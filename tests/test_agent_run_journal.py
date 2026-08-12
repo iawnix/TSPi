@@ -40,6 +40,7 @@ def test_node_agent_run_changes_only_operational_revision(tmp_path: Path) -> Non
     assert after["evidence_count"] == before["evidence_count"]
     assert after["operational_summary"]["agent_run_count"] == 1
     assert after["agent_runs"][0]["summary"] == "Independent mechanism review completed."
+    assert after["agent_runs"][0]["result_outcome"] is None
 
     graph = explorer_graph_payload_from_view(normalize_workspace(workspace))
     node = next(row for row in graph["nodes"] if row["id"] == "n000")

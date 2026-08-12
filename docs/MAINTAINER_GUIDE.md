@@ -79,7 +79,10 @@ Keep state ownership narrow.
   versioned child-lifecycle status contract.
 - `extensions/ts-workflow-ui` observes `ts_subagent_*` execution updates and
   owns the TSPi startup header, rounded input editor, session footer, terminal
-  title request, and status/widget/history views. It must remain
+  title request, bounded multi-agent panel, `/ts-agents` read-only journal
+  inspector, and history views. Live state reduction/rendering belongs in
+  `agent-panel.ts`; bounded durable reads/details belong in `agent-details.ts`.
+  It must remain
   presentation-only and must not own tools, workspace writes, model calls, remote
   probes, approvals, or scientific decisions. Launchers that load this UI must
   disable other extensions that compete for Pi header/footer/editor ownership.

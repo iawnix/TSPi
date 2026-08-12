@@ -38,7 +38,10 @@ interface ComputeRunOptions {
   thinkingLevel: ThinkingLevel;
   timeoutMs: number;
   signal?: AbortSignal;
-  onLifecycle?: (phase: "starting" | "running" | "validating") => void;
+  onLifecycle?: (
+    state: "starting" | "running" | "waiting" | "validating",
+    update?: { wait_reason?: "model_response" },
+  ) => void;
 }
 
 export async function runComputeOperator(options: ComputeRunOptions) {

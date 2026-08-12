@@ -13,7 +13,12 @@ import {
   runWorkspaceJson,
 } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
-import { createSubagentStatusReporter, terminalStatusForError } from "../shared/subagent-status.ts";
+import {
+  createSubagentStatusReporter,
+  terminalStateForReport,
+  terminalStatusForError,
+  type TsSubagentStatusReporter,
+} from "../shared/subagent-status.ts";
 import { runArtifactOperator } from "../../src/agents/artifacts/runtime.ts";
 
 const require = createRequire(import.meta.url);
@@ -29,7 +34,6 @@ const {
 } = require("../../src/agents/artifacts/request-contract.cjs");
 
 type ArtifactRole = "render" | "report" | "email";
-type StatusReporter = ReturnType<typeof createSubagentStatusReporter>;
 type ActionLog = { tool: string; result: Record<string, unknown> }[];
 type RenderRequest = {
   operation: "render" | "compare" | "animate" | "mechanism";
@@ -81,7 +85,7 @@ export default function (pi: ExtensionAPI) {
         operation: params.operation,
         node_id: params.nodeId,
       }, onUpdate);
-      reportStatus("preflight");
+      reportStatus("queued");
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
       const request = validateRenderRequest(root, {
         operation: params.operation,
@@ -136,7 +140,7 @@ export default function (pi: ExtensionAPI) {
         operation: "build",
         target_ref: params.packageRef,
       }, onUpdate);
-      reportStatus("preflight");
+      reportStatus("queued");
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
       const request = validateReportRequest(root, { operation: params.operation, packageRef: params.packageRef }) as ReportRequest;
       const actions: ActionLog = [];
@@ -183,7 +187,7 @@ export default function (pi: ExtensionAPI) {
         operation: "draft",
         target_ref: params.summaryRef.replace(/\/email_summary\.md$/, ""),
       }, onUpdate);
-      reportStatus("preflight");
+      reportStatus("queued");
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
       const request = validateEmailRequest(root, {
         operation: params.operation,
@@ -468,7 +472,7 @@ async function executeChild(
   tools: ToolDefinition[],
   actions: ActionLog,
   timeoutMs: number,
-  reportStatus: StatusReporter,
+  reportStatus: TsSubagentStatusReporter,
   signal?: AbortSignal,
 ) {
   if (!ctx.model) throw new Error(`No parent model is selected for TS ${role} delegation`);
@@ -518,7 +522,7 @@ async function executeChild(
       run_ref: runRef,
     });
     const terminal = terminalStatusForError(error);
-    reportStatus(terminal.phase, { failure_kind: terminal.failure_kind });
+    reportStatus(terminal.state, { failure_kind: terminal.failure_kind, run_ref: runRef });
     if (actions.length) {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`${message}; a bounded artifact action was attempted and may have created local output`);
@@ -532,7 +536,7 @@ async function executeChild(
   });
   const metadata = { ...result.metadata, run_ref: runRef };
   pi.appendEntry("ts-workspace-artifact-operator-run", metadata);
-  reportStatus("completed");
+  reportStatus(terminalStateForReport(result.report), { run_ref: runRef });
   return toolText(JSON.stringify({ report: result.report, actions: result.actions }, null, 2), {
     report: result.report,
     actions: result.actions,

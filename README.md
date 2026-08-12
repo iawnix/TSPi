@@ -165,8 +165,13 @@ Public tool prefixes describe execution rather than subject matter:
 The package-owned UI extension installs a MyPi-compatible animated TSPi header,
 mode-aware rounded editor, session footer, working state, and terminal title
 request.
-It adds the configured workspace/remote profile and observes `ts_subagent_*`
-lifecycle updates through a two-line active-child panel and history entries.
+It adds the configured workspace/remote profile and observes concurrent
+`ts_subagent_*` lifecycle updates through a bounded `TS Agents` panel and
+history entries. The panel shows role, node, bounded operation context, elapsed
+time, explicit wait reason, and terminal state without exposing model reasoning
+or full child transcripts. Successful rows remain for 15 seconds; partial,
+failed, cancelled, and unknown rows remain visible for attention. The footer
+shows aggregate counts rather than duplicating one child row.
 Pi's native `Ctrl+O` action globally toggles every expandable history and tool
 result; TS-specific entries label it as "expand all details" or "collapse all
 details" rather than implying that it affects only the adjacent result.
@@ -250,6 +255,14 @@ opens a read-only diagnostic selector before any SSH request is made.
 extra arguments instead of interpreting them as paths. Their compact results
 are retained in session history; Pi's global `Ctrl+O` action expands or
 collapses the full context or validation details.
+
+`/ts-agents` opens a read-only selector for active and durable child runs. Its
+detail view reads only the bounded `task.json`, `actions.json`, `result.json`,
+and `run.json` journal files, and shows summary, typed actions, artifact refs,
+and failure details. It does not reopen a child, cancel work, or change the
+workspace. A completed compute child describes the bounded adapter call only;
+remote scheduler and chemistry-program lifecycles remain separate and must be
+inspected through their typed compute status.
 
 `before_agent_start` injects only a short control-plane reminder. It does not
 inject a full workspace report every turn. Use `mode=delta` with the last

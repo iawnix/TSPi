@@ -555,10 +555,27 @@ def test_real_pi_public_subagent_emits_ui_lifecycle_updates(tmp_path: Path, outc
         and row.get("statusKey") == "ts-subagent"
         and row.get("statusText")
     ]
-    phases = [next(phase for phase in ("preflight", "starting", "running", "validating", "completed", "failed", "cancelled") if phase in text) for text in status_texts]
-    deduplicated = [phase for index, phase in enumerate(phases) if index == 0 or phase != phases[index - 1]]
-    expected = ["preflight", "starting", "running", "validating", "completed" if outcome == "success" else "failed"]
-    assert deduplicated == expected, {"stdout": completed.stdout, "stderr": completed.stderr, "requests": requests}
+    lifecycle = [
+        row["partialResult"]["details"]
+        for row in rows
+        if row.get("type") == "tool_execution_update"
+        and row.get("toolName") == "ts_subagent_review"
+        and isinstance(row.get("partialResult"), dict)
+        and isinstance(row["partialResult"].get("details"), dict)
+    ]
+    expected = ["queued", "starting", "running", "waiting", "validating", "partial" if outcome == "success" else "failed"]
+    assert [status["state"] for status in lifecycle] == expected, {
+        "stdout": completed.stdout,
+        "stderr": completed.stderr,
+        "requests": requests,
+    }
+    assert all(status["schema_version"] == "ts-subagent-status/2" for status in lifecycle)
+    assert [status["seq"] for status in lifecycle] == list(range(1, len(lifecycle) + 1))
+    assert len({status["started_at"] for status in lifecycle}) == 1
+    assert lifecycle[3]["wait_reason"] == "model_response"
+    assert lifecycle[-1]["run_ref"].startswith("nodes/n000/agent-runs/")
+    assert status_texts[0] == "π 1 agent"
+    assert status_texts[-1] == "π 1 attention"
     assert len(requests) == 3
 
 
