@@ -31,7 +31,7 @@ from .torque import (
 from .transfer import download_verified, ensure_directory, upload_verified
 
 
-_RECEIPT_VALUE = re.compile(r"^[A-Za-z0-9_.:+ -]*$")
+_RECEIPT_VALUE = re.compile(r"^[A-Za-z0-9_./:+ \[\]-]*$")
 
 
 def submit(config: RemoteJobConfig, *, client: SSHClient | None = None) -> RemoteReceipt:
@@ -392,7 +392,7 @@ def _parse_record(text: str) -> dict[str, Any]:
         if not line or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        if not re.fullmatch(r"[a-z_]+", key) or "\x00" in value or any(
+        if not re.fullmatch(r"[a-z_][a-z0-9_]*", key) or "\x00" in value or any(
             ord(character) < 32 and character not in "\t" for character in value
         ):
             raise RemoteError("remote control record contains invalid data")

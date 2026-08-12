@@ -346,6 +346,31 @@ def test_control_records_reject_duplicate_fields() -> None:
         _parse_record("state=started\nstate=accepted\n")
 
 
+def test_control_records_reject_invalid_field_names() -> None:
+    with pytest.raises(Exception, match="invalid data"):
+        _parse_record("State=started\n")
+
+
+def test_control_records_accept_versioned_submission_receipt() -> None:
+    record = _parse_record(
+        "\n".join(
+            [
+                "schema_version=ts-remote-submission/1",
+                "submission_id=tsjob_ws_0123456789abcdef01234567_calc_test_0123456789abcdef",
+                "state=accepted",
+                f"script_sha256={'a' * 64}",
+                "qsub_exit=0",
+                "job_id=207217[3].cluster.hpc",
+                "updated_at=2026-08-12T11:23:53Z",
+            ]
+        )
+    )
+
+    assert record["schema_version"] == "ts-remote-submission/1"
+    assert record["state"] == "accepted"
+    assert record["job_id"] == "207217[3].cluster.hpc"
+
+
 def test_upload_publishes_without_overwriting_remote_target(tmp_path: Path) -> None:
     source = tmp_path / "input.xyz"
     source.write_bytes(b"1\ninput\nH 0 0 0\n")
