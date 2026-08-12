@@ -7,34 +7,23 @@ readonly INSTALL_ROOT="$LAUNCHER_DIR"
 readonly TS_WORKSPACES_ROOT="$INSTALL_ROOT/workspaces"
 readonly TS_PACKAGE_ROOT="$INSTALL_ROOT/.pi/git/github.com/iawnix/TSAgentSkill"
 readonly PI_BIN="${PI_BIN:-/home/iaw/.npm-global/bin/pi}"
-readonly TS_MCP_ENV_FILE="$INSTALL_ROOT/.pi/mcp.env"
-readonly TS_MCP_LOCAL_HOST="${TS_MCP_LOCAL_HOST:-127.0.0.1}"
-readonly TS_MCP_LOCAL_PORT="${TS_MCP_LOCAL_PORT:-18766}"
-readonly TS_MCP_SSH_TARGET="${TS_MCP_SSH_TARGET:-agent.1w}"
-readonly TS_MCP_SSH_CONFIG="${TS_MCP_SSH_CONFIG:-/home/iaw/.ssh/config}"
-readonly TS_MCP_URL_DEFAULT="http://$TS_MCP_LOCAL_HOST:$TS_MCP_LOCAL_PORT/mcp"
-readonly TS_MCP_TIMEOUT_DEFAULT="60"
-readonly TS_MCP_DIAGNOSTIC_TIMEOUT_DEFAULT="15"
-readonly TS_MCP_STARTUP_TIMEOUT="${TS_MCP_STARTUP_TIMEOUT:-25}"
-readonly TS_MCP_RUNTIME_DIR="$INSTALL_ROOT/.pi/runtime"
-readonly TS_MCP_CONTROL_SOCKET="$TS_MCP_RUNTIME_DIR/tspi-mcp.sock"
-readonly TS_MCP_LOCK_FILE="$TS_MCP_RUNTIME_DIR/tspi-mcp.lock"
+readonly TS_REMOTE_CONFIG_DEFAULT="$INSTALL_ROOT/.pi/remote.toml"
 readonly TS_AGENT_INSTALL_RUNTIME_HOME="$INSTALL_ROOT/.agents/runtime/transition-state-workflow"
 readonly TS_AGENT_INSTALL_RUNTIME_MANIFEST="$TS_AGENT_INSTALL_RUNTIME_HOME/env.json"
 readonly TS_AGENT_INSTALL_ENV_ROOT="$INSTALL_ROOT/.agents/envs/transition-state-workflow"
 
 WORKSPACE_ROOT=""
-MCP_PROTOCOL_DIAGNOSTIC=""
 ROOT_AGENT_LOCK_FD=""
 
 usage() {
   cat <<'EOF'
 Usage:
   ./TSPi --workspace <name> [--dev] [Pi arguments...]
-  ./TSPi --check-mcp
+  ./TSPi --check-remote
 
 Each workspace name creates or reuses an isolated research directory under
 ./workspaces/. Only one Root Agent may write one workspace at a time.
+Remote computation uses the installation-owned .pi/remote.toml profile.
 EOF
 }
 
@@ -95,219 +84,74 @@ acquire_root_agent_lock() {
   printf 'pid=%s\nstarted_at=%(%Y-%m-%dT%H:%M:%S%z)T\n' "$$" -1 > "$lock_file"
 }
 
-mcp_tunnel_is_open() {
-  (exec 3<>"/dev/tcp/$TS_MCP_LOCAL_HOST/$TS_MCP_LOCAL_PORT") 2>/dev/null
-}
-
-mcp_control_is_open() {
-  [[ -S "$TS_MCP_CONTROL_SOCKET" ]] \
-    && ssh -F "$TS_MCP_SSH_CONFIG" -o BatchMode=yes \
-      -S "$TS_MCP_CONTROL_SOCKET" -O check "$TS_MCP_SSH_TARGET" >/dev/null 2>&1
-}
-
-stop_managed_mcp_tunnel() {
-  if mcp_control_is_open; then
-    ssh -F "$TS_MCP_SSH_CONFIG" -o BatchMode=yes \
-      -S "$TS_MCP_CONTROL_SOCKET" -O exit "$TS_MCP_SSH_TARGET" >/dev/null 2>&1 || true
+configure_remote() {
+  if [[ -z "${TS_REMOTE_CONFIG:-}" && -f "$TS_REMOTE_CONFIG_DEFAULT" ]]; then
+    export TS_REMOTE_CONFIG="$TS_REMOTE_CONFIG_DEFAULT"
   fi
-  for _attempt in {1..20}; do
-    if ! mcp_tunnel_is_open; then
-      break
-    fi
-    sleep 0.1
-  done
-  if [[ -S "$TS_MCP_CONTROL_SOCKET" ]] && ! mcp_control_is_open; then
-    rm -f -- "$TS_MCP_CONTROL_SOCKET"
+  if [[ -z "${TS_REMOTE_CONFIG:-}" ]]; then
+    export TS_REMOTE_DISPLAY_TARGET="not configured"
+    return 0
   fi
+  if [[ "$TS_REMOTE_CONFIG" != /* || ! -f "$TS_REMOTE_CONFIG" || -L "$TS_REMOTE_CONFIG" || ! -r "$TS_REMOTE_CONFIG" ]]; then
+    printf 'TSPi: invalid TS_REMOTE_CONFIG: %s\n' "$TS_REMOTE_CONFIG" >&2
+    return 1
+  fi
+  export TS_REMOTE_DISPLAY_TARGET="$(python3 - "$TS_REMOTE_CONFIG" <<'PY'
+import sys
+import tomllib
+
+with open(sys.argv[1], "rb") as handle:
+    config = tomllib.load(handle)
+name = config.get("default_profile")
+profile = config.get("profiles", {}).get(name, {})
+host = profile.get("ssh_host", name or "configured")
+scheduler = str(profile.get("scheduler", "torque")).title()
+print(f"{host} · {scheduler}")
+PY
+)"
 }
 
-start_managed_mcp_tunnel() {
-  mkdir -p -- "$TS_MCP_RUNTIME_DIR"
-  chmod 700 -- "$TS_MCP_RUNTIME_DIR"
-  if [[ -S "$TS_MCP_CONTROL_SOCKET" ]] && ! mcp_control_is_open; then
-    rm -f -- "$TS_MCP_CONTROL_SOCKET"
+check_remote() {
+  local output
+  local status=0
+  if [[ -z "${TS_REMOTE_CONFIG:-}" ]]; then
+    printf 'TSPi: remote configuration is missing: %s\n' "$TS_REMOTE_CONFIG_DEFAULT" >&2
+    return 1
   fi
-  ssh \
-    -M \
-    -S "$TS_MCP_CONTROL_SOCKET" \
-    -f \
-    -F "$TS_MCP_SSH_CONFIG" \
-    -o BatchMode=yes \
-    -o UpdateHostKeys=no \
-    -o ExitOnForwardFailure=yes \
-    -o ServerAliveInterval=30 \
-    -o ServerAliveCountMax=3 \
-    -N \
-    -L "$TS_MCP_LOCAL_HOST:$TS_MCP_LOCAL_PORT:$TS_MCP_LOCAL_HOST:$TS_MCP_LOCAL_PORT" \
-    "$TS_MCP_SSH_TARGET"
-}
-
-mcp_protocol_is_healthy() {
-  local output=""
-  local error_output=""
-  local error_file
-  local probe_status=0
-  local raw_diagnostic=""
-
-  mkdir -p -- "$TS_MCP_RUNTIME_DIR"
-  chmod 700 -- "$TS_MCP_RUNTIME_DIR"
-  error_file="$(mktemp "$TS_MCP_RUNTIME_DIR/tspi-mcp-probe.XXXXXX")"
-  if output="$(
-    timeout --signal=TERM "${TS_MCP_STARTUP_TIMEOUT}s" \
-      python3 "$TS_PACKAGE_ROOT/scripts/ts_compute.py" mcp-diagnostic --mode status \
-      2>"$error_file"
-  )"; then
-    probe_status=0
+  if output="$(python3 "$TS_PACKAGE_ROOT/scripts/ts_compute.py" remote-diagnostic --mode status)"; then
+    status=0
   else
-    probe_status=$?
+    status=$?
   fi
-  error_output="$(<"$error_file")"
-  rm -f -- "$error_file"
-
-  if [[ $probe_status -eq 0 ]] && python3 -c '
+  if [[ $status -eq 0 ]] && python3 -c '
 import json, sys
-try:
-    payload = json.load(sys.stdin)
-except (TypeError, ValueError):
-    raise SystemExit(1)
+payload = json.load(sys.stdin)
 raise SystemExit(0 if payload.get("ok") is True else 1)
 ' <<<"$output"; then
-    MCP_PROTOCOL_DIAGNOSTIC=""
+    printf 'TSPi: remote check passed (%s)\n' "$TS_REMOTE_DISPLAY_TARGET"
     return 0
   fi
-
-  if [[ $probe_status -eq 124 ]]; then
-    raw_diagnostic="probe timed out after ${TS_MCP_STARTUP_TIMEOUT}s"
-  elif [[ $probe_status -ne 0 ]]; then
-    raw_diagnostic="probe exited with status $probe_status"
-  else
-    raw_diagnostic="probe returned an unhealthy or invalid response"
-  fi
-  if [[ -n "$error_output" ]]; then
-    raw_diagnostic+=$'\nstderr: '
-    raw_diagnostic+="$error_output"
-  fi
+  printf 'TSPi: remote check failed (%s)\n' "$TS_REMOTE_DISPLAY_TARGET" >&2
   if [[ -n "$output" ]]; then
-    raw_diagnostic+=$'\nresponse: '
-    raw_diagnostic+="$output"
-  fi
-  MCP_PROTOCOL_DIAGNOSTIC="$(python3 -c '
-import os
-import re
-import sys
-
-text = sys.stdin.read()
-token = os.environ.get("TS_CLUSTER_MCP_TOKEN", "")
-if token:
-    text = text.replace(token, "[REDACTED]")
-text = re.sub(
-    r"(?i)((?:authorization|token)[\" ]*[=:][ ]*(?:bearer[ ]+)?)\"?[^\",\s]+",
-    r"\1[REDACTED]",
-    text,
-)
-sys.stdout.write(text[:2000])
-' <<<"$raw_diagnostic")"
-  return 1
-}
-
-print_mcp_protocol_failure() {
-  printf 'TSPi: MCP transport is reachable, but the protocol probe failed\n' >&2
-  if [[ -n "$MCP_PROTOCOL_DIAGNOSTIC" ]]; then
-    while IFS= read -r line; do
-      printf '  %s\n' "$line" >&2
-    done <<<"$MCP_PROTOCOL_DIAGNOSTIC"
-  fi
-}
-
-close_mcp_lock() {
-  local lock_fd="$1"
-
-  flock --unlock "$lock_fd" || true
-  exec {lock_fd}>&-
-}
-
-ensure_mcp_connection() {
-  local mcp_lock_fd
-  local tunnel_was_started=false
-  local tunnel_is_managed=false
-
-  mkdir -p -- "$TS_MCP_RUNTIME_DIR"
-  chmod 700 -- "$TS_MCP_RUNTIME_DIR"
-  exec {mcp_lock_fd}>"$TS_MCP_LOCK_FILE"
-  if ! flock --wait "$TS_MCP_STARTUP_TIMEOUT" "$mcp_lock_fd"; then
-    printf 'TSPi: timed out waiting for the shared MCP tunnel lock\n' >&2
-    exec {mcp_lock_fd}>&-
-    return 1
-  fi
-
-  if mcp_tunnel_is_open; then
-    if mcp_control_is_open; then
-      tunnel_is_managed=true
-    fi
-  else
-    # A live control master without its forwarded listener is a transport failure.
-    if mcp_control_is_open; then
-      stop_managed_mcp_tunnel
-    fi
-    if mcp_tunnel_is_open; then
-      printf 'TSPi: MCP port remained occupied after the managed tunnel stopped\n' >&2
-      close_mcp_lock "$mcp_lock_fd"
-      return 1
-    fi
-    if ! start_managed_mcp_tunnel || ! mcp_tunnel_is_open; then
-      printf 'TSPi: failed to start MCP tunnel via %s\n' "$TS_MCP_SSH_TARGET" >&2
-      close_mcp_lock "$mcp_lock_fd"
-      return 1
-    fi
-    tunnel_is_managed=true
-    tunnel_was_started=true
-  fi
-  close_mcp_lock "$mcp_lock_fd"
-
-  if mcp_protocol_is_healthy; then
-    return 0
-  fi
-
-  if [[ "$tunnel_is_managed" != true ]]; then
-    printf 'TSPi: MCP protocol probe failed, but %s:%s is owned by an unmanaged process\n' \
-      "$TS_MCP_LOCAL_HOST" "$TS_MCP_LOCAL_PORT" >&2
-    printf 'TSPi: refusing to terminate an unknown process; repair that listener and retry\n' >&2
-    print_mcp_protocol_failure
-    return 1
-  fi
-
-  print_mcp_protocol_failure
-  if [[ "$tunnel_was_started" == true ]]; then
-    printf 'TSPi: the new SSH tunnel is reachable and was left running for diagnosis\n' >&2
-  else
-    printf 'TSPi: the managed SSH tunnel is healthy and was not restarted\n' >&2
+    printf '%s\n' "$output" >&2
   fi
   return 1
-}
-
-mcp_ssh_display_target() {
-  local ssh_host
-  ssh_host="$(
-    ssh -G -F "$TS_MCP_SSH_CONFIG" "$TS_MCP_SSH_TARGET" 2>/dev/null \
-      | awk '$1 == "hostname" { print $2; exit }'
-  )" || ssh_host=""
-  printf '%s via SSH' "${ssh_host:-$TS_MCP_SSH_TARGET}"
 }
 
 main() {
-  local check_mcp_only=false
-  local mcp_ready=false
+  local check_remote_only=false
   local show_help=false
   local workspace_name=""
   local -a dev_extension_args=()
   local -a pi_args=()
+
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --dev)
         dev_extension_args=(-e "$TS_PACKAGE_ROOT/extensions/ts-workflow-dev/index.ts")
         ;;
-      --check-mcp)
-        check_mcp_only=true
+      --check-remote)
+        check_remote_only=true
         ;;
       --workspace)
         shift
@@ -318,20 +162,14 @@ main() {
         fi
         workspace_name="$1"
         ;;
-      --workspace=*)
-        workspace_name="${1#--workspace=}"
-        ;;
-      -h|--help)
-        show_help=true
-        ;;
+      --workspace=*) workspace_name="${1#--workspace=}" ;;
+      -h|--help) show_help=true ;;
       --)
         shift
         pi_args+=("$@")
         break
         ;;
-      *)
-        pi_args+=("$1")
-        ;;
+      *) pi_args+=("$1") ;;
     esac
     shift
   done
@@ -340,93 +178,33 @@ main() {
     usage
     return 0
   fi
-
-  if [[ ! "$TS_MCP_STARTUP_TIMEOUT" =~ ^[1-9][0-9]*$ ]]; then
-    printf 'TSPi: TS_MCP_STARTUP_TIMEOUT must be a positive integer\n' >&2
-    exit 1
-  fi
-  if [[ ! -x "$PI_BIN" ]] && [[ "$check_mcp_only" != true ]]; then
-    printf 'TSPi: Pi executable not found: %s\n' "$PI_BIN" >&2
-    exit 127
-  fi
   if [[ ! -d "$TS_PACKAGE_ROOT" ]]; then
     printf 'TSPi: TS package not found: %s\n' "$TS_PACKAGE_ROOT" >&2
-    exit 1
+    return 1
+  fi
+  configure_remote
+  if [[ "$check_remote_only" == true ]]; then
+    check_remote
+    return
+  fi
+  if [[ ! -x "$PI_BIN" ]]; then
+    printf 'TSPi: Pi executable not found: %s\n' "$PI_BIN" >&2
+    return 127
+  fi
+  if [[ -z "$workspace_name" ]]; then
+    printf 'TSPi: a research workspace is required\n' >&2
+    usage >&2
+    return 2
   fi
 
-  if [[ "$check_mcp_only" != true ]]; then
-    if [[ -z "$workspace_name" ]]; then
-      printf 'TSPi: a research workspace is required\n' >&2
-      usage >&2
-      return 2
-    fi
-    prepare_workspace "$workspace_name"
-  fi
-
-  if [[ -e "$TS_MCP_ENV_FILE" ]]; then
-    if [[ ! -f "$TS_MCP_ENV_FILE" || -L "$TS_MCP_ENV_FILE" || ! -r "$TS_MCP_ENV_FILE" ]]; then
-      printf 'TSPi: invalid MCP credential file: %s\n' "$TS_MCP_ENV_FILE" >&2
-      exit 1
-    fi
-    if [[ "$(stat -c '%a' -- "$TS_MCP_ENV_FILE")" != "600" ]]; then
-      printf 'TSPi: MCP credential file must have mode 0600: %s\n' "$TS_MCP_ENV_FILE" >&2
-      exit 1
-    fi
-
-    local -a mcp_env_lines
-    local mcp_token
-    mapfile -t mcp_env_lines < "$TS_MCP_ENV_FILE"
-    if [[ ${#mcp_env_lines[@]} -ne 1 || "${mcp_env_lines[0]}" != TS_CLUSTER_MCP_TOKEN=* ]]; then
-      printf 'TSPi: invalid MCP credential format: %s\n' "$TS_MCP_ENV_FILE" >&2
-      exit 1
-    fi
-    mcp_token="${mcp_env_lines[0]#TS_CLUSTER_MCP_TOKEN=}"
-    if [[ ${#mcp_token} -lt 32 || "$mcp_token" == *[[:space:]]* ]]; then
-      printf 'TSPi: invalid MCP credential value: %s\n' "$TS_MCP_ENV_FILE" >&2
-      exit 1
-    fi
-    export TS_CLUSTER_MCP_TOKEN="$mcp_token"
-    unset mcp_token mcp_env_lines
-  fi
-
+  prepare_workspace "$workspace_name"
   export TS_EMAIL_POLICY_ROOT="$INSTALL_ROOT"
   export TS_AGENT_RUNTIME_HOME="$TS_AGENT_INSTALL_RUNTIME_HOME"
   export TS_AGENT_RUNTIME_MANIFEST="$TS_AGENT_INSTALL_RUNTIME_MANIFEST"
   export TS_AGENT_ENV_ROOT="$TS_AGENT_INSTALL_ENV_ROOT"
-  export TS_CLUSTER_MCP_URL="${TS_CLUSTER_MCP_URL:-$TS_MCP_URL_DEFAULT}"
-  export TS_CLUSTER_MCP_TIMEOUT="${TS_CLUSTER_MCP_TIMEOUT:-$TS_MCP_TIMEOUT_DEFAULT}"
-  export TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT="${TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT:-$TS_MCP_DIAGNOSTIC_TIMEOUT_DEFAULT}"
-  if [[ "$TS_CLUSTER_MCP_URL" == "$TS_MCP_URL_DEFAULT" ]]; then
-    export TS_CLUSTER_MCP_DISPLAY_TARGET="${TS_CLUSTER_MCP_DISPLAY_TARGET:-$(mcp_ssh_display_target)}"
-    if ensure_mcp_connection; then
-      mcp_ready=true
-    fi
-  elif mcp_protocol_is_healthy; then
-    mcp_ready=true
-  else
-    printf 'TSPi: configured MCP endpoint failed the protocol probe: %s\n' "$TS_CLUSTER_MCP_URL" >&2
-  fi
-  if [[ "$mcp_ready" == true ]]; then
-    export TS_CLUSTER_MCP_STARTUP_STATUS="ready"
-  else
-    export TS_CLUSTER_MCP_STARTUP_STATUS="unavailable"
-  fi
-
-  if [[ "$check_mcp_only" == true ]]; then
-    if [[ "$mcp_ready" != true ]]; then
-      return 1
-    fi
-    printf 'TSPi: MCP check passed (%s)\n' "${TS_CLUSTER_MCP_DISPLAY_TARGET:-$TS_CLUSTER_MCP_URL}"
-    return 0
-  fi
-
-  if [[ "$mcp_ready" != true ]]; then
-    printf 'TSPi: continuing with remote compute unavailable; retry /ts-mcp status before submission\n' >&2
-  fi
-
-  cd -- "$WORKSPACE_ROOT"
   export TS_WORKSPACE_ROOT="$WORKSPACE_ROOT"
   acquire_root_agent_lock
+  cd -- "$WORKSPACE_ROOT"
 
   exec "$PI_BIN" \
     --no-extensions \

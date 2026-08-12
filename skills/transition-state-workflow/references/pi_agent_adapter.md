@@ -120,15 +120,12 @@ rejected.
 
 ## Compute Subagent
 
-`ts_mcp_inspect` gives the Root Agent an on-demand read-only MCP
+`ts_remote_inspect` gives the Root Agent an on-demand read-only SSH/Torque
 surface with `status`, `doctor`, `queues`, `nodes`, and combined `cluster`
-modes. Use `cluster` for a bounded aggregate view of the configured MCP target;
-use `queues` or `nodes` for detailed scheduler views. Follow the calculation
-intent's transport or the user's explicit target and never switch between MCP
-and SSH automatically after a failure. Reports comparing transports must
-distinguish MCP-derived from SSH-derived facts. The equivalent user command is
-`/ts-mcp status|doctor|queues|nodes|cluster`. Neither surface uploads files,
-controls jobs, or injects an MCP report every turn.
+modes. Use `cluster` for a bounded aggregate view of the configured profile;
+use `queues` or `nodes` for detailed scheduler views. The equivalent user
+command is `/ts-remote status|doctor|queues|nodes|cluster`. Neither surface
+uploads files, controls jobs, or injects a remote report every turn.
 
 `ts_subagent_compute` creates a separate fresh session with only the
 typed tools needed for one operation. The Root Agent supplies the selected
@@ -138,10 +135,10 @@ enters the child context. These files are prompt policies, not Pi skills.
 
 Available operations are `prepare`, `submit`, `inspect`, `collect`, `cancel`,
 and `parse`. The Root Agent can run submit and cancel directly in interactive or
-headless Pi after exact intent binding. MCP-backed control, inspection, and
-collection run a read-only connection preflight before child creation. The
-output validator binds IDs, state, program outcome, error class, and artifact
-refs to actual typed-tool results.
+headless Pi after exact intent binding. The deterministic compute preflight
+validates the configured profile, workspace path, resources, and control
+binding before child creation. The output validator binds IDs, state, program
+outcome, error class, and artifact refs to actual typed-tool results.
 
 Model output is passed directly to the versioned JSON contract. Top-level
 `outcome=completed`, singular fact `artifact_ref`, non-canonical fact kinds,

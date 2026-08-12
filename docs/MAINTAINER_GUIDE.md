@@ -33,12 +33,12 @@ templates, and chemistry evidence.
   versioned.
 - Public tool prefixes are an execution contract: `ts_workspace_*` is a direct
   deterministic workspace call, `ts_subagent_*` creates a child model session,
-  and `ts_mcp_*` is a direct deterministic infrastructure diagnostic. Do not
+  and `ts_remote_*` is a direct deterministic infrastructure diagnostic. Do not
   register compatibility aliases that blur these categories.
 - Pi SDK packages are peer dependencies and exact development dependencies.
   `typebox` is a direct runtime dependency because extensions import it.
-- `src/` owns TypeScript/CJS agent implementation. The Python packages and
-  `cluster_mcp` remain separate runtime kernels in this phase.
+- `src/` owns TypeScript/CJS agent implementation. The Python packages remain
+  separate runtime kernels.
 - Keep `package.json.files` explicit. `npm run test:package` must reject tests,
   caches, credentials, legacy root layouts, omitted runtime files, and files
   outside the allowlist.
@@ -65,9 +65,6 @@ Keep state ownership narrow.
   workspace verdicts, accepted TS facts, or branch decisions.
 - `ts_remote` stages, submits, polls, fetches, and kills remote jobs. It must
   not interpret chemistry.
-- `cluster_mcp` owns authenticated cluster file transfer, scheduler execution,
-  durable submission state, and MCP transport. It must not mutate the local TS
-  workspace or expose raw scheduler/MCP tools to Pi agent inventories.
 - `ts_structures` analyzes structures and returns evidence-shaped diagnostics.
   It must not mutate workspace state.
 - `ts_render` writes visualization artifacts only. It must not mutate root
@@ -83,7 +80,7 @@ Keep state ownership narrow.
 - `extensions/ts-workflow-ui` observes `ts_subagent_*` execution updates and
   owns the TSPi startup header, rounded input editor, session footer, terminal
   title request, and status/widget/history views. It must remain
-  presentation-only and must not own tools, workspace writes, model calls, MCP
+  presentation-only and must not own tools, workspace writes, model calls, remote
   probes, approvals, or scientific decisions. Launchers that load this UI must
   disable other extensions that compete for Pi header/footer/editor ownership.
 - `extensions/ts-workflow-control` exposes the four-tool control plane;
@@ -212,31 +209,33 @@ and have `ts_web` consume that result.
   closure, accepted facts, pathway acceptance, or branch decisions.
 - Remote helpers should return receipts, statuses, fetched files, or errors.
   They should not infer mechanism identity.
-- TS Cluster MCP requests must bind intent identity, complete input hashes,
-  expected artifacts, and execution resources. Preserve known scheduler job
-  IDs after post-submit failures, and make ambiguous submit/cancel outcomes
-  fail closed against automatic replay.
-- Keep the MCP workspace namespace in `.agents/workspace-identity.json`, not in
-  canonical research files. New prepared records must persist the identity,
-  logical requested directory, resolved `workspaces/<workspace_id>/...` path,
-  namespace version, and workspace-bound submission ID as one immutable
-  execution policy. Existing prepared records without that namespace marker
-  must remain readable with their original path and submission ID.
+- `ts_remote` is the only remote subsystem. It owns OpenSSH/SCP, Torque
+  commands, verified transfer, durable scheduler control records, and
+  diagnostics. Do not add an alternate protocol, nested compute-host runner,
+  tunnel manager, or compatibility alias.
+- Remote requests bind intent identity, complete input hashes, expected
+  artifacts, one configured profile, and execution resources. Preserve known
+  scheduler job IDs after post-submit SSH failures, and make ambiguous
+  submit/cancel outcomes fail closed against automatic replay.
+- Keep workspace identity in `.agents/workspace-identity.json`, not canonical
+  research files. Prepared records persist the profile, identity, resolved
+  `<remote_root>/workspaces/<workspace_id>/runs/<node>/<intent>` path, resource
+  request, and workspace-bound submission ID as one immutable policy.
 - Treat one persisted workspace identity as one operational collision domain.
   Multiple agents in that workspace share its per-intent guards; independently
   initialized workspaces must have different identities even when intent IDs
   are identical. Identity creation must not change `workspace_revision`.
-- Keep SSH and MCP transport selection in `execution_target.transport`; keep
-  MCP endpoint, token, and timeout in host environment variables only.
+- Keep SSH hosts, SSH config, remote roots, scheduler commands, software
+  profiles, queue policy, and environment in the installation TOML. Agent
+  requests may select only profile name and bounded resources.
 - Persist submit/cancel outcomes separately from mutable status polling so an
   ambiguous outcome cannot become replayable after a later status refresh.
 - Classify control phases before retry policy. Directory creation and upload
   failures may retry the same immutable submission with append-only attempt
-  records; once `ts_submit_job` starts, unknown outcomes are reconciliation-only.
-- Return a durable TS submission record even when scheduler history lookup
-  fails. Attach scheduler query failure metadata instead of discarding the
-  registry state.
-- Reconcile ambiguous MCP controls through normal read-only status calls. Write
+  records; once the remote submission script starts, unknown outcomes are
+  reconciliation-only. Immediately read the durable record after an SSH
+  disconnect before classifying the outcome as ambiguous.
+- Reconcile ambiguous controls through normal read-only status calls. Write
   `submit_reconciliation.json` or `cancel_reconciliation.json` only after the
   durable request, submission ID, intent digest, remote directory, and job ID
   match. Never overwrite the raw ambiguous result; rebuild a missing receipt
@@ -254,33 +253,22 @@ and have `ts_web` consume that result.
 - Include control guards, results, and receipts in `operational_revision`; a
   latest guard without its result must surface through `pending_controls`, and
   a latest retryable or ambiguous result through `unresolved_controls`.
-- Keep `files:write` no-overwrite for the Pi principal. Generic replacement
-  requires the separate `files:overwrite` scope, which Pi must not receive.
 - Runtime setup must stay isolated from shared Conda `base`. Public scripts
   should resolve the workspace-owned runtime manifest when a workspace root is
   known and fall back to the current interpreter for development checkouts.
   Legacy `package-root/.runtime/env.json` is compatibility input only when no
   explicit workspace root, runtime home, or manifest path is supplied.
 - The installed `TSPi` launcher separates installation state from research
-  state. Package checkout, MCP credential/tunnel/lock, email policy, runtime
+  state. Package checkout, remote profile, email policy, runtime
   manifest, and hashed Python environment are installation-owned. Sessions,
   Root writer lock, workspace identity, nodes, inputs, and reports are owned by
   `<installation>/workspaces/<name>/`.
 - Require `--workspace <safe-slug>` for an interactive TSPi launch. One Root
   writer lock is held for the Pi process lifetime. Different workspaces may run
   concurrently; two Root Agents must not write the same workspace.
-- Treat the managed SSH forwarding process as a shared installation resource.
-  Serialize its startup and transport repair with the installation MCP lock.
-  Application-level MCP timeouts or invalid tool responses must remain visible
-  and must not trigger a tunnel restart.
-- Keep MCP startup availability separate from compute authorization. Normal
-  workspace launches may continue with `TS_CLUSTER_MCP_STARTUP_STATUS` set to
-  `unavailable`, but `--check-mcp` and every typed remote compute preflight must
-  fail closed until the endpoint is healthy.
-- Keep MCP compatibility enforcement in `ts_remote.mcp.TSClusterMCPClient`.
-  Every tool call must validate the `cluster-mcp` identity and exact bundled
-  `cluster_mcp` version before scheduler, workspace, or control operations.
-  Do not duplicate this version policy in TypeScript extensions.
+- Ordinary TSPi startup must not contact the remote cluster. Keep
+  `--check-remote` strict and keep typed remote compute preflight fail closed
+  when the configured SSH/Torque path is unavailable.
 - `ts_render` depends on `xyzrender` only. Do not add Blender, FFmpeg,
   OpenBabel, Mayavi, or PyVista probes unless the contract is intentionally
   revised.
@@ -326,8 +314,7 @@ Runtime, render, remote, and Pi adapter:
 PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q \
   tests/test_runtime_env.py \
   tests/test_ts_render.py \
-  tests/test_remote_job_lifecycle.py \
-  tests/test_cluster_mcp_ts_jobs.py \
+  tests/test_ts_remote.py \
   tests/test_compute_control.py \
   tests/test_pi_agent_adapter.py \
   tests/test_pi_subagent_contract.py \

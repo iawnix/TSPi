@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 import {
   requireWorkspaceRoot,
   runComputeJson,
-  runMcpDiagnosticJson,
+  runRemoteDiagnosticJson,
   runWorkspaceJson,
 } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
@@ -27,19 +27,17 @@ const {
 } = require("./action-log.cjs");
 const OPERATIONS = ["prepare", "submit", "inspect", "collect", "cancel", "parse"] as const;
 const BACKENDS = ["gaussian", "ase_neb", "xtb", "crest", "qbics_dmecp"] as const;
-const MCP_DIAGNOSTIC_MODES = ["status", "doctor", "queues", "nodes", "cluster"] as const;
-type McpDiagnosticMode = typeof MCP_DIAGNOSTIC_MODES[number];
-const MCP_DIAGNOSTIC_STATUS_KEY = "ts-workspace-mcp-command";
-const MCP_DIAGNOSTIC_WIDGET_KEY = "ts-workspace-mcp";
-const MCP_PREFLIGHT_TIMEOUT_RETRIES = 1;
-const PROFILE_REQUIRED_BACKENDS = new Set(["gaussian", "xtb", "crest"]);
-const MCP_DIAGNOSTIC_ACTIVITY = Object.freeze({
+const REMOTE_DIAGNOSTIC_MODES = ["status", "doctor", "queues", "nodes", "cluster"] as const;
+type RemoteDiagnosticMode = typeof REMOTE_DIAGNOSTIC_MODES[number];
+const REMOTE_DIAGNOSTIC_STATUS_KEY = "ts-workspace-remote-command";
+const REMOTE_DIAGNOSTIC_WIDGET_KEY = "ts-workspace-remote";
+const REMOTE_DIAGNOSTIC_ACTIVITY = Object.freeze({
   status: {
-    description: "Check the MCP connection and advertised capabilities",
-    detail: "Read-only · connection and capabilities",
+    description: "Check the configured SSH remote profile",
+    detail: "Read-only · SSH connectivity",
   },
   doctor: {
-    description: "Check transport, scheduler, storage, registry, and software health",
+    description: "Check SSH, scheduler, storage, and registered software",
     detail: "Read-only · full control-path health",
   },
   queues: {
@@ -54,8 +52,7 @@ const MCP_DIAGNOSTIC_ACTIVITY = Object.freeze({
     description: "Read capabilities, queues, nodes, and control health",
     detail: "Read-only · cluster summary",
   },
-} satisfies Record<McpDiagnosticMode, { description: string; detail: string }>);
-const MCP_PREFLIGHT_OPERATIONS = new Set(["submit", "inspect", "collect", "cancel"]);
+} satisfies Record<RemoteDiagnosticMode, { description: string; detail: string }>);
 const ATTEMPT_KINDS = ["primary", "retry", "recalculation"] as const;
 const RECALCULATION_PURPOSES = ["repair", "refinement", "method_robustness"] as const;
 const OPERATOR_COMMON_PARAMETERS = {
@@ -76,11 +73,7 @@ const SETTINGS_MAP_PARAMETER = Type.Record(
   Type.String({ pattern: "^[A-Za-z][A-Za-z0-9_]*$" }),
   Type.String({ maxLength: 4096 }),
 );
-const ENVIRONMENT_MAP_PARAMETER = Type.Record(
-  Type.String({ pattern: "^[A-Za-z_][A-Za-z0-9_]*$" }),
-  Type.String({ maxLength: 16384 }),
-);
-const MCP_EXECUTION_PARAMETER = Type.Object({
+const REMOTE_RESOURCES_PARAMETER = Type.Object({
   queue: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$" }),
   nodes: Type.Integer({ minimum: 1 }),
   ncpus: Type.Integer({ minimum: 1 }),
@@ -89,10 +82,6 @@ const MCP_EXECUTION_PARAMETER = Type.Object({
   ngpus: Type.Integer({ minimum: 0 }),
   mpiprocs: Type.Optional(Type.Integer({ minimum: 1 })),
   ompthreads: Type.Optional(Type.Integer({ minimum: 1 })),
-  host: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
-  place: Type.Optional(StringEnum(["free", "pack", "scatter", "excl", "shared"] as const)),
-  environment: Type.Optional(ENVIRONMENT_MAP_PARAMETER),
-  gpuDevices: Type.Optional(Type.Array(Type.Integer({ minimum: 0, maximum: 63 }), { uniqueItems: true })),
 }, { additionalProperties: false });
 const EXECUTION_TARGET_PARAMETER = Type.Union([
   Type.Object({
@@ -100,15 +89,8 @@ const EXECUTION_TARGET_PARAMETER = Type.Union([
   }, { additionalProperties: false }),
   Type.Object({
     kind: Type.Literal("remote"),
-    transport: Type.Literal("ssh"),
-    loginHost: Type.String({ minLength: 1, maxLength: 255 }),
-    computeHost: Type.String({ minLength: 1, maxLength: 255 }),
-    remoteRoot: Type.String({ minLength: 1, maxLength: 4096 }),
-  }, { additionalProperties: false }),
-  Type.Object({
-    kind: Type.Literal("remote"),
-    transport: Type.Literal("mcp"),
-    execution: MCP_EXECUTION_PARAMETER,
+    profile: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$" }),
+    resources: REMOTE_RESOURCES_PARAMETER,
   }, { additionalProperties: false }),
 ]);
 const COMPUTE_OPERATOR_PARAMETERS = Type.Union([
@@ -181,26 +163,27 @@ type OperatorRequest = {
   artifactRef?: string;
   intentDigest?: string;
   intentRef?: string;
-  transport?: string;
+  executionKind?: string;
+  profile?: string;
   remoteDir?: string;
   jobId?: string;
   executionSummary?: Record<string, unknown>;
 };
 
 type ActionLog = { tool: string; result: Record<string, unknown> }[];
-type McpDiagnosticEntryData = {
-  mode: McpDiagnosticMode;
+type RemoteDiagnosticEntryData = {
+  mode: RemoteDiagnosticMode;
   result: Record<string, unknown>;
 };
 
 export default function (pi: ExtensionAPI) {
-  pi.registerEntryRenderer<McpDiagnosticEntryData>("ts-workspace-mcp-diagnostic", (entry, { expanded }, theme) => {
+  pi.registerEntryRenderer<RemoteDiagnosticEntryData>("ts-workspace-remote-diagnostic", (entry, { expanded }, theme) => {
     const data = entry.data;
     const result = data?.result || {};
     const mode = data?.mode || "status";
     const ok = result.ok === true;
     const label = theme.fg(ok ? "success" : "error", ok ? "passed" : "failed");
-    let text = `${theme.fg("accent", `TS Cluster MCP ${mode}`)}: ${label}`;
+    let text = `${theme.fg("accent", `TS Remote ${mode}`)}: ${label}`;
     if (expanded) {
       text += `\n${theme.fg("dim", JSON.stringify(result, null, 2))}`;
     } else {
@@ -210,26 +193,25 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: TS_PUBLIC_TOOL_NAMES.mcpInspect,
-    label: "TS MCP Inspect",
-    description: "Run a read-only TS Cluster MCP connection, queue, node, or aggregated cluster-status probe. Use for cluster-status questions, MCP calculation preparation, queue selection, or connection diagnosis; do not call every turn or poll unchanged status.",
-    promptSnippet: "Query the configured TS Cluster MCP without changing jobs or files",
+    name: TS_PUBLIC_TOOL_NAMES.remoteInspect,
+    label: "TS Remote Inspect",
+    description: "Run a read-only SSH/Torque connection, queue, node, or aggregated cluster-status probe for a configured ts_remote profile.",
+    promptSnippet: "Query the configured TS remote cluster without changing jobs or files",
     promptGuidelines: [
-      "For a general status or resource-availability question about the configured MCP target, use mode=cluster.",
-      "Use mode=status before preparing an MCP calculation when connection health is unknown.",
-      "Use mode=doctor after configuration, connection, timeout, authentication, or protocol failures.",
+      "For a general status or resource-availability question about the configured remote profile, use mode=cluster.",
+      "Use mode=status when SSH connectivity is unknown.",
+      "Use mode=doctor after configuration, SSH, scheduler, storage, or software failures.",
       "Use mode=queues or mode=nodes when only that scheduler view is relevant.",
-      "Follow the calculation intent transport or the user's explicit target; never switch between MCP and SSH automatically after a failure.",
-      "A diagnostic timeout means readiness is unknown, not that configuration or protocol compatibility failed; no remote action has occurred.",
+      "A diagnostic timeout means readiness is unknown; no remote action has occurred.",
       "This tool is read-only and cannot upload files, submit jobs, cancel jobs, mutate workspace state, or authorize compute control.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
-      mode: Type.Optional(StringEnum(MCP_DIAGNOSTIC_MODES)),
+      mode: Type.Optional(StringEnum(REMOTE_DIAGNOSTIC_MODES)),
     }, { additionalProperties: false }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const mode = params.mode || "status";
-      const result = await runMcpDiagnosticJson(pi, mode, ctx.cwd, signal);
+      const result = await runRemoteDiagnosticJson(pi, mode, ctx.cwd, signal);
       return toolText(JSON.stringify(result, null, 2), { result });
     },
   });
@@ -282,13 +264,11 @@ export default function (pi: ExtensionAPI) {
       request.intentDigest = binding.intentDigest;
       request.intentRef = binding.intentRef;
       request.artifactRef = binding.artifactRef;
-      request.transport = binding.transport;
+      request.executionKind = binding.executionKind;
+      request.profile = binding.profile;
       request.remoteDir = binding.remoteDir;
       request.jobId = binding.jobId;
       request.executionSummary = binding.executionSummary;
-      if (request.transport === "mcp" && MCP_PREFLIGHT_OPERATIONS.has(request.operation)) {
-        await requireHealthyMcpConnection(pi, root, request, signal);
-      }
       const actions: ActionLog = [];
       const tools = createScopedComputeTools(pi, root, request, actions);
       const workspaceReport = await runWorkspaceJson(pi, "report_workspace", root, [], signal);
@@ -401,149 +381,56 @@ export default function (pi: ExtensionAPI) {
     },
   });
 
-  pi.registerCommand("ts-mcp", {
-    description: "Show read-only TS Cluster MCP connection, queue, node, or aggregated cluster status.",
+  pi.registerCommand("ts-remote", {
+    description: "Show read-only ts_remote SSH, Torque queue, node, or aggregate cluster status.",
     getArgumentCompletions: (prefix) => {
       const candidate = prefix.trim().toLowerCase();
-      const matches = MCP_DIAGNOSTIC_MODES
+      const matches = REMOTE_DIAGNOSTIC_MODES
         .filter((mode) => mode.startsWith(candidate))
         .map((mode) => ({
           value: mode,
           label: mode,
-          description: MCP_DIAGNOSTIC_ACTIVITY[mode].description,
+          description: REMOTE_DIAGNOSTIC_ACTIVITY[mode].description,
         }));
       return matches.length > 0 ? matches : null;
     },
     handler: async (args, ctx) => {
-      ctx.ui.setStatus(MCP_DIAGNOSTIC_STATUS_KEY, undefined);
-      ctx.ui.setWidget(MCP_DIAGNOSTIC_WIDGET_KEY, undefined);
+      ctx.ui.setStatus(REMOTE_DIAGNOSTIC_STATUS_KEY, undefined);
+      ctx.ui.setWidget(REMOTE_DIAGNOSTIC_WIDGET_KEY, undefined);
       const candidate = String(args || "").trim();
-      if (!MCP_DIAGNOSTIC_MODES.includes(candidate as McpDiagnosticMode)) {
-        const usage = "Usage: /ts-mcp status|doctor|queues|nodes|cluster";
+      if (!REMOTE_DIAGNOSTIC_MODES.includes(candidate as RemoteDiagnosticMode)) {
+        const usage = "Usage: /ts-remote status|doctor|queues|nodes|cluster";
         ctx.ui.notify(usage, "warning");
         return;
       }
-      const mode = candidate as McpDiagnosticMode;
-      const activity = MCP_DIAGNOSTIC_ACTIVITY[mode];
-      ctx.ui.setStatus(MCP_DIAGNOSTIC_STATUS_KEY, `TS MCP · ${mode} · checking`);
+      const mode = candidate as RemoteDiagnosticMode;
+      const activity = REMOTE_DIAGNOSTIC_ACTIVITY[mode];
+      ctx.ui.setStatus(REMOTE_DIAGNOSTIC_STATUS_KEY, `TS Remote · ${mode} · checking`);
       ctx.ui.setWidget(
-        MCP_DIAGNOSTIC_WIDGET_KEY,
-        [`◌ TS MCP · ${mode} · running`, activity.detail],
+        REMOTE_DIAGNOSTIC_WIDGET_KEY,
+        [`◌ TS Remote · ${mode} · running`, activity.detail],
         { placement: "aboveEditor" },
       );
       ctx.ui.notify(`${activity.description}. This check is read-only.`, "info");
       try {
-        const result = await runMcpDiagnosticJson(pi, mode, ctx.cwd, ctx.signal);
-        pi.appendEntry<McpDiagnosticEntryData>("ts-workspace-mcp-diagnostic", { mode, result });
+        const result = await runRemoteDiagnosticJson(pi, mode, ctx.cwd, ctx.signal);
+        pi.appendEntry<RemoteDiagnosticEntryData>("ts-workspace-remote-diagnostic", { mode, result });
         ctx.ui.notify(
-          result.ok === true ? `TS Cluster MCP ${mode} passed` : `TS Cluster MCP ${mode} failed`,
+          result.ok === true ? `TS Remote ${mode} passed` : `TS Remote ${mode} failed`,
           result.ok === true ? "info" : "warning",
         );
       } catch (error) {
         const message = error instanceof Error
           ? error.message
-          : `TS Cluster MCP ${mode} stopped before a result was returned`;
+          : `TS Remote ${mode} stopped before a result was returned`;
         ctx.ui.notify(message, "error");
         throw error;
       } finally {
-        ctx.ui.setStatus(MCP_DIAGNOSTIC_STATUS_KEY, undefined);
-        ctx.ui.setWidget(MCP_DIAGNOSTIC_WIDGET_KEY, undefined);
+        ctx.ui.setStatus(REMOTE_DIAGNOSTIC_STATUS_KEY, undefined);
+        ctx.ui.setWidget(REMOTE_DIAGNOSTIC_WIDGET_KEY, undefined);
       }
     },
   });
-}
-
-async function requireHealthyMcpConnection(
-  pi: ExtensionAPI,
-  root: string,
-  request: OperatorRequest,
-  signal?: AbortSignal,
-) {
-  const diagnosticMode = request.operation === "submit" ? "doctor" : "status";
-  const result = await runMcpPreflightDiagnostic(pi, diagnosticMode, root, signal);
-  if (!isPlainObject(result) || result.schema_version !== "ts-mcp-diagnostic/1") {
-    throw new Error("MCP connection preflight returned an invalid diagnostic result");
-  }
-  const components = isPlainObject(result.components) ? result.components : null;
-  if (request.operation === "submit" && components) {
-    const requiredComponents = [
-      "transport_auth_protocol",
-      "scheduler_read",
-      "submission_registry",
-      "workspace_storage",
-    ];
-    const failedComponents = requiredComponents.filter((name) => components[name] !== "pass");
-    if (failedComponents.length > 0) {
-      const errors = isPlainObject(result.errors) ? result.errors : {};
-      const componentErrorValue = errors[failedComponents[0]];
-      const componentError = isPlainObject(componentErrorValue) ? componentErrorValue : {};
-      const errorClass = typeof componentError.class === "string"
-        ? componentError.class
-        : "component_unavailable";
-      const message = typeof componentError.message === "string"
-        ? componentError.message
-        : `required components failed: ${failedComponents.join(", ")}`;
-      throw new Error(`MCP submit preflight failed (${errorClass}): ${message}`);
-    }
-    requireBackendSubmitProfile(result, request);
-    return;
-  }
-  if (result.ok !== true) {
-    const error = isPlainObject(result.error) ? result.error : {};
-    const errorClass = typeof error.class === "string" ? error.class : "unknown_error";
-    const message = typeof error.message === "string" ? error.message : "MCP connection is unavailable";
-    throw new Error(`MCP ${request.operation} preflight failed (${errorClass}): ${message}`);
-  }
-  if (request.operation === "submit") {
-    requireBackendSubmitProfile(result, request);
-  }
-}
-
-export async function runMcpPreflightDiagnostic(
-  pi: ExtensionAPI,
-  mode: "status" | "doctor",
-  root: string,
-  signal?: AbortSignal,
-  runDiagnostic = runMcpDiagnosticJson,
-) {
-  for (let attempt = 0; ; attempt += 1) {
-    try {
-      return await runDiagnostic(pi, mode, root, signal);
-    } catch (error) {
-      const code = isPlainObject(error) && typeof error.code === "string" ? error.code : null;
-      if (code !== "MCP_DIAGNOSTIC_TIMEOUT" || attempt >= MCP_PREFLIGHT_TIMEOUT_RETRIES || signal?.aborted) {
-        throw error;
-      }
-    }
-  }
-}
-
-export function requireBackendSubmitProfile(result: Record<string, unknown>, request: OperatorRequest) {
-  if (!PROFILE_REQUIRED_BACKENDS.has(request.backend)) return;
-  const capabilities = isPlainObject(result.capabilities) ? result.capabilities : {};
-  const software = isPlainObject(capabilities.software) ? capabilities.software : {};
-  const profiles = Array.isArray(software.profiles) ? software.profiles : [];
-  const profile = profiles.find(
-    (candidate) => isPlainObject(candidate) && candidate.name === request.backend && candidate.kind === "profile",
-  );
-  if (!isPlainObject(profile)) {
-    throw new Error(`MCP ${request.backend} submit preflight failed: server has no matching software profile`);
-  }
-  if (profile.activation_script_exists === false) {
-    throw new Error(`MCP ${request.backend} submit preflight failed: activation script is unavailable`);
-  }
-  const queue = isPlainObject(request.executionSummary) ? request.executionSummary.queue : undefined;
-  if (
-    typeof queue === "string"
-    && Array.isArray(profile.allowed_queues)
-    && !profile.allowed_queues.includes(queue)
-  ) {
-    throw new Error(`MCP ${request.backend} submit preflight failed: profile does not allow queue ${queue}`);
-  }
-  const ngpus = isPlainObject(request.executionSummary) ? request.executionSummary.ngpus : undefined;
-  if (profile.requires_gpu === true && (typeof ngpus !== "number" || ngpus < 1)) {
-    throw new Error(`MCP ${request.backend} submit preflight failed: profile requires a GPU`);
-  }
 }
 
 function createScopedComputeTools(
@@ -715,7 +602,8 @@ async function preflightOperatorRequest(
     intentRef: raw.intent_ref as string,
     intentDigest: raw.intent_digest as string,
     artifactRef: typeof raw.artifact_ref === "string" ? raw.artifact_ref : undefined,
-    transport: requireBindingString(raw.transport, "transport"),
+    executionKind: requireBindingString(raw.execution_kind, "execution_kind"),
+    profile: typeof raw.profile === "string" ? raw.profile : undefined,
     remoteDir: typeof raw.remote_dir === "string" ? raw.remote_dir : undefined,
     jobId: typeof raw.job_id === "string" ? raw.job_id : undefined,
     executionSummary: isPlainObject(raw.execution_summary) ? raw.execution_summary : {},
@@ -766,32 +654,20 @@ function buildCalculationRequest(request: OperatorRequest): Record<string, unkno
   let executionTarget: Record<string, unknown>;
   if (target.kind === "local") {
     executionTarget = { kind: "local" };
-  } else if (target.transport === "ssh") {
-    executionTarget = {
-      kind: "remote",
-      transport: "ssh",
-      login_host: target.loginHost,
-      compute_host: target.computeHost,
-      remote_root: target.remoteRoot,
-    };
   } else {
-    const execution = isPlainObject(target.execution) ? target.execution : {};
+    const resources = isPlainObject(target.resources) ? target.resources : {};
     executionTarget = {
       kind: "remote",
-      transport: "mcp",
-      execution: {
-        queue: execution.queue,
-        nodes: execution.nodes,
-        ncpus: execution.ncpus,
-        memory: execution.memory,
-        walltime: execution.walltime,
-        ngpus: execution.ngpus,
-        mpiprocs: execution.mpiprocs ?? null,
-        ompthreads: execution.ompthreads ?? null,
-        host: execution.host ?? null,
-        place: execution.place ?? null,
-        environment: execution.environment || {},
-        gpu_devices: execution.gpuDevices || [],
+      profile: target.profile,
+      resources: {
+        queue: resources.queue,
+        nodes: resources.nodes,
+        ncpus: resources.ncpus,
+        memory: resources.memory,
+        walltime: resources.walltime,
+        ngpus: resources.ngpus,
+        mpiprocs: resources.mpiprocs ?? null,
+        ompthreads: resources.ompthreads ?? null,
       },
     };
   }
@@ -900,6 +776,6 @@ function normalizeActionStatus(
     raw.state === "unknown"
     && ["submission_ambiguous", "cancellation_ambiguous"].includes(String(raw.error_class))
   ) return "unknown";
-  if (raw.state === "failed" && raw.error_class === "mcp_staging_failed") return "failed";
+  if (raw.state === "failed" && raw.error_class === "remote_staging_failed") return "failed";
   return "completed";
 }

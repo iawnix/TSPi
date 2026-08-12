@@ -14,7 +14,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_NAME = "@iawnix/ts-agent"
-PACKAGE_VERSION = "0.3.1"
+PACKAGE_VERSION = "0.4.0"
 SKILL_ENTRY = "./skills/transition-state-workflow"
 THEME_ENTRIES = ["./themes/ts-theme.json"]
 EXTENSION_ENTRIES = [
@@ -28,9 +28,6 @@ PACKAGE_FILES = [
     "TSPi",
     "README.md",
     "environment.yml",
-    "cluster_mcp/*.py",
-    "cluster_mcp/schedulers/*.py",
-    "cluster_mcp/*.example.toml",
     "contracts/*.json",
     "extensions/shared/*.ts",
     "extensions/ts-workflow-artifacts/*.ts",
@@ -60,6 +57,7 @@ PACKAGE_FILES = [
     "ts_compute/contracts/*.json",
     "ts_email/*.py",
     "ts_remote/*.py",
+    "ts_remote/*.toml",
     "ts_render/*.py",
     "ts_report/*.py",
     "ts_runtime/*.py",

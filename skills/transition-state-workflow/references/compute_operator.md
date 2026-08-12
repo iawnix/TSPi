@@ -24,7 +24,7 @@ scientific review, or recursive delegation. It receives only the selected
 private backend skill and request-scoped typed tools. For submit/cancel, the
 Root Agent validates the exact preflight binding before creating a fresh child
 with exactly one control tool. No interactive approval step is required. The
-child receives no raw MCP client, endpoint, credentials, or arbitrary command
+child receives no raw SSH client, scheduler command, host, or arbitrary command
 surface.
 
 The child supplies only an operational summary and limitations. The host
@@ -49,22 +49,22 @@ serialization failed, the journal records
 remote program failure. An upstream API/SSE interruption such as `408 stream
 disconnected before completion` is recorded under
 `failure_domain=upstream_model_api` and `failure_stage=model_stream`, never as
-an MCP, scheduler, Gaussian, or canonical-workspace failure. It is replay-safe
+a remote scheduler, Gaussian, or canonical-workspace failure. It is replay-safe
 only when no bounded action ran before the interruption.
 
-MCP directory creation and upload are staging operations. A failure there is
-recorded as `state=failed`, `error_class=mcp_staging_failed`,
+Remote directory creation and upload are staging operations. A failure there is
+recorded as `state=failed`, `error_class=remote_staging_failed`,
 `control.effect_attempted=false`, and
 `control.retry_disposition=retry_same_submission`; it is not a scheduler
 submission ambiguity. The same immutable intent and submission ID may retry,
 with append-only `submit_attempt_NNNN_guard.json` and
 `submit_attempt_NNNN_result.json` records. Only a failure after the
-`ts_submit_job` call begins is recorded as `submission_ambiguous` and requires
+the remote submission script begins is recorded as `submission_ambiguous` and requires
 read-only reconciliation rather than replay. A normal `inspect` may persist an
 append-only `submit_reconciliation.json` or `cancel_reconciliation.json` after
 the durable server request and job binding match the local intent. These files
 become the effective control result without changing the original ambiguous
-attempt; a reconciled submit may also rebuild `mcp_receipt.json` from the bound
+attempt; a reconciled submit may also rebuild `remote_receipt.json` from the bound
 expected-artifact manifest so collection can proceed without scheduler history.
 
 ## Semantic Preparation And Generated Intent
@@ -216,129 +216,78 @@ status.
 
 ## Remote Execution Mirror
 
-SSH preparation selects an allowlisted root; the kernel appends the node and
-generated intent ID and marks the resulting intent non-authoritative:
+Remote preparation selects one installation-owned profile and a complete
+bounded Torque resource request:
 
 ```json
 {
   "kind": "remote",
-  "transport": "ssh",
-  "loginHost": "login-a",
-  "computeHost": "compute-a",
-  "remoteRoot": "/remote/project"
-}
-```
-
-Remote intents without an explicit `transport` are rejected. SSH host and path
-policy remains environment-owned through `TS_COMPUTE_*`.
-
-MCP preparation supplies only a complete resource shape. The host generates
-the workspace-relative cluster directory:
-
-```json
-{
-  "kind": "remote",
-  "transport": "mcp",
-  "execution": {
-    "queue": "workq",
+  "profile": "cluster_1w",
+  "resources": {
+    "queue": "batch",
     "nodes": 1,
     "ncpus": 8,
     "memory": "16gb",
     "walltime": "04:00:00",
     "ngpus": 0,
     "mpiprocs": null,
-    "ompthreads": 8,
-    "host": null,
-    "place": null,
-    "environment": {},
-    "gpu_devices": []
+    "ompthreads": 8
   }
 }
 ```
 
-During prepare, the compute kernel generates
-`runs/n012/calc_n012_gaussian_opt_freq_0001`, then reads or creates the persistent
-`.agents/workspace-identity.json` record and writes this immutable binding into
-the attempt's `prepared.json`:
+Hosts, SSH configuration, remote roots, scheduler command paths, software
+activation, queue policy, and environment belong to the installation TOML
+selected by `TS_REMOTE_CONFIG`. The Agent cannot override them. Old requests
+containing a transport selector, host, or remote-root field fail schema
+validation.
+
+During prepare, the kernel reads or creates `.agents/workspace-identity.json`
+and writes an immutable execution policy into `prepared.json`:
 
 ```json
 {
-  "namespace_version": "ts-mcp-workspace/1",
+  "kind": "remote",
+  "authority": "execution_mirror",
+  "profile": "cluster_1w",
   "workspace_id": "ws_<24 lowercase hex characters>",
-  "requested_remote_dir": "runs/n012/calc_n012_gaussian_opt_freq_0001",
-  "remote_dir": "workspaces/ws_<24 lowercase hex characters>/runs/n012/calc_n012_gaussian_opt_freq_0001",
-  "submission_id": "tsjob_<workspace-bound value>"
+  "remote_dir": "/configured/root/workspaces/ws_<24 lowercase hex characters>/runs/n012/calc_n012_gaussian_opt_freq_0001",
+  "resources": {"queue": "batch", "nodes": 1, "ncpus": 8}
 }
 ```
 
-All later MCP operations use the prepared binding rather than reconstructing a
-path from the current process or Pi session. Independently initialized
-workspaces therefore cannot collide when they use the same principal and
-intent ID. Multiple agents intentionally operating on one workspace share the
-same identity and the same per-intent atomic control guards. Prepared records
-without `ts-mcp-workspace/1`, a workspace identity, the workspace-bound
-directory, or the matching submission ID are rejected.
+All later operations revalidate this binding. Independently initialized
+workspaces cannot collide even when node and intent IDs match. Multiple agents
+operating on one workspace share its identity and per-intent control guards.
 
-The MCP endpoint, bearer token, and timeout are never intent data:
+Configure the profile with one absolute file path:
 
 ```bash
-export TS_CLUSTER_MCP_URL=https://cluster.example/mcp
-export TS_CLUSTER_MCP_TOKEN='<at-least-32-random-ascii-characters>'
-export TS_CLUSTER_MCP_TIMEOUT=60
-export TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT=15
+export TS_REMOTE_CONFIG=/absolute/path/to/remote.toml
 ```
-
-`TS_CLUSTER_MCP_TIMEOUT` applies to calculation and control calls.
-`TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT` is a separate per-component bound for
-read-only readiness probes. A diagnostic timeout means readiness is unknown and
-does not imply that configuration, authentication, or the MCP protocol failed.
-No remote action has occurred at that point.
-
-Do not place tokens, passwords, API keys, authorization values, or
-`TS_CLUSTER_MCP_*` settings in `execution.environment`; validation rejects
-those keys. Cluster software setup belongs in server policy or non-secret
-execution variables.
 
 Every submit/cancel call runs preflight first and binds the operation, node,
-backend, intent ID and digest, transport, target, resources, and scheduler job
-ID when available. The Root Agent then creates the request-scoped child without
-an interactive approval step. Ambiguous submission or cancellation is written
-to an immutable control result and cannot be automatically replayed. An
-exclusive control guard is written before the first remote side effect; a guard
-without a final result means the host was interrupted and requires manual
-reconciliation.
-For MCP `submit`, `inspect`, `collect`, and `cancel`, intent binding is followed
-by a read-only `cluster_capabilities` probe before child creation. A failed
-probe stops the operation with a classified, redacted error.
-Use `ts_mcp_inspect` or `/ts-mcp doctor` for connection details,
-`/ts-mcp queues` or `/ts-mcp nodes` for one scheduler view, and `/ts-mcp
-cluster` for combined cluster status. Use these read-only diagnostics only for
-an intent whose selected transport is MCP. Do not change from MCP to SSH or from
-SSH to MCP automatically after a failure; report the failure and require an
-explicit transport decision. Label the source when comparing transports. These
-diagnostics never expose raw MCP mutation tools.
-For `backend=gaussian`, submit additionally requires a same-name server
-software profile with an existing activation script and an allowlisted target
-queue. The server sources that profile before executing the manifest-bound
-runner. The runner owns a private random `GAUSS_SCRDIR`, refuses output
-overwrite, and removes scratch on exit. Missing or inconsistent registration
-fails before child creation and is checked again before scheduler access.
-MCP submission returns its scheduler ID immediately. SSH cancellation requires
-one prior `inspect` so the preflight binding and remote kill are both bound to
-the observed PID; a changed PID is rejected remotely before signaling a process.
+backend, intent ID and digest, profile, remote directory, resources, and
+scheduler job ID when available. The Root Agent then creates the request-scoped
+child without an interactive approval step. Ambiguous submission or
+cancellation is written to an immutable control result and cannot be replayed
+automatically. Once the remote submission script is handed to SSH, a transport
+failure is ambiguous unless the durable submission record resolves it.
 
-Host policy:
+Use `ts_remote_inspect` or `/ts-remote doctor` for connection details,
+`/ts-remote queues` or `/ts-remote nodes` for one scheduler view, and
+`/ts-remote cluster` for combined status. These diagnostics do not expose
+remote mutation tools.
 
-```bash
-export TS_COMPUTE_LOGIN_HOSTS=login-a,login-b
-export TS_COMPUTE_COMPUTE_HOSTS=compute-a,compute-b
-export TS_COMPUTE_REMOTE_ROOTS=/remote/project-a,/remote/project-b
-export TS_COMPUTE_SSH_CONFIG=/absolute/path/to/ssh_config
-```
+Each backend requires a matching software profile with an allowlisted queue.
+The generated Torque script sources the configured activation script, owns the
+declared environment, executes only the prepared backend command, and writes a
+durable program-status record. Missing or inconsistent registration fails
+before scheduler submission.
 
 No remote artifact becomes authoritative before collection and local hash or
 parser verification. Collection refuses to overwrite existing local files.
-The transport captures Gaussian stdout into the single declared `.log`/`.out`
+Remote execution captures Gaussian stdout into the single declared `.log`/`.out`
 artifact and xTB stdout into `xtb.out`; other backend stdout/stderr remain
 bounded operational logs for inspection.
 

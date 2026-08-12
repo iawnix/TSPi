@@ -6,8 +6,7 @@ from ts_structures import compare_structures
 from ts_render import MolVisualizer
 from ts_backends.base import Backend, BackendTask
 from ts_backends.gaussian import GaussianBackend, prepare_gaussian
-from ts_remote.base import Runner
-from ts_remote.ssh import SshRunner
+import ts_remote
 from ts_web import normalize_workspace, register_workspace
 from strict_helpers import make_accepted_workspace
 
@@ -26,12 +25,13 @@ def test_backend_prepares_command_without_workspace_write() -> None:
     assert isinstance(GaussianBackend(), Backend)
 
 
-def test_remote_runner_returns_node_scoped_receipt() -> None:
-    runner = SshRunner()
-    receipt = runner.submit(node_id="n001", host="compute-0-30", remote_dir="/remote/n001", command=["g16", "ts.gjf"])
-    assert isinstance(runner, Runner)
-    assert receipt.node_id == "n001"
-    assert receipt.receipt_path == "/remote/n001/remote_receipt.json"
+def test_remote_boundary_exposes_scheduler_lifecycle_without_raw_runner() -> None:
+    assert callable(ts_remote.submit)
+    assert callable(ts_remote.status)
+    assert callable(ts_remote.collect)
+    assert callable(ts_remote.cancel)
+    assert not hasattr(ts_remote, "Runner")
+    assert not hasattr(ts_remote, "SshRunner")
 
 
 def test_ts_structures_returns_evidence_shaped_result(tmp_path: Path) -> None:

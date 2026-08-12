@@ -1,0 +1,33 @@
+default_profile = "cluster_1w"
+
+[profiles.cluster_1w]
+ssh_host = "agent.1w"
+ssh_config = "/home/iaw/.ssh/config"
+scheduler = "torque"
+remote_root = "/home/agent/1w-data2/ts-remote-workspaces"
+allowed_queues = ["batch", "fat", "fata"]
+max_nodes = 1
+connect_timeout_seconds = 15
+command_timeout_seconds = 60
+
+[profiles.cluster_1w.commands]
+qsub = "/opt/torque/bin/qsub"
+qstat = "/opt/torque/bin/qstat"
+qdel = "/opt/torque/bin/qdel"
+pbsnodes = "/opt/torque/bin/pbsnodes"
+
+[profiles.cluster_1w.software.gaussian]
+command = ["g16"]
+activation_script = "/home/agent/soft/gaussian/activate_gaussian16.sh"
+allowed_queues = ["batch", "fat", "fata"]
+requires_gpu = false
+
+[profiles.cluster_1w.software.xtb]
+command = ["/home/agent/soft/xtb/current/bin/xtb"]
+allowed_queues = ["batch", "fat", "fata"]
+requires_gpu = false
+
+[profiles.cluster_1w.software.crest]
+command = ["crest"]
+allowed_queues = ["batch", "fat", "fata"]
+requires_gpu = false

@@ -62,7 +62,7 @@ export async function runComputeJson(
   return parseJsonOutput(result);
 }
 
-export async function runMcpDiagnosticJson(
+export async function runRemoteDiagnosticJson(
   pi: ExtensionAPI,
   mode: "status" | "doctor" | "queues" | "nodes" | "cluster",
   cwd: string,
@@ -75,22 +75,22 @@ export async function runMcpDiagnosticJson(
   const operationSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
   let result: unknown;
   try {
-    result = await pi.exec(python, [COMPUTE_CLI, "mcp-diagnostic", "--mode", mode], {
+    result = await pi.exec(python, [COMPUTE_CLI, "remote-diagnostic", "--mode", mode], {
       signal: operationSignal,
     });
   } catch (error) {
-    throw classifyMcpDiagnosticFailure(error, mode, signal, timeoutSignal, timeoutMs);
+    throw classifyRemoteDiagnosticFailure(error, mode, signal, timeoutSignal, timeoutMs);
   }
   if (operationSignal.aborted) {
-    throw classifyMcpDiagnosticFailure(undefined, mode, signal, timeoutSignal, timeoutMs);
+    throw classifyRemoteDiagnosticFailure(undefined, mode, signal, timeoutSignal, timeoutMs);
   }
   try {
     return parseJsonOutput(result);
   } catch (error) {
-    throw mcpDiagnosticError(
-      "MCP_DIAGNOSTIC_INVALID_OUTPUT",
+    throw remoteDiagnosticError(
+      "REMOTE_DIAGNOSTIC_INVALID_OUTPUT",
       "invalid_output",
-      `MCP ${mode} diagnostic returned invalid JSON; no remote action was attempted`,
+      `ts_remote ${mode} diagnostic returned invalid JSON; no remote action was attempted`,
       mode,
       error,
     );
@@ -235,7 +235,7 @@ function deadlineSignal(parent: AbortSignal | undefined, timeoutMs: number): Abo
   return parent ? AbortSignal.any([parent, timeout]) : timeout;
 }
 
-function classifyMcpDiagnosticFailure(
+function classifyRemoteDiagnosticFailure(
   error: unknown,
   mode: string,
   parent: AbortSignal | undefined,
@@ -243,33 +243,33 @@ function classifyMcpDiagnosticFailure(
   timeoutMs: number,
 ): Error {
   if (parent?.aborted) {
-    return mcpDiagnosticError(
-      "MCP_DIAGNOSTIC_CANCELLED",
+    return remoteDiagnosticError(
+      "REMOTE_DIAGNOSTIC_CANCELLED",
       "cancelled",
-      `MCP ${mode} diagnostic was cancelled; no remote action was attempted`,
+      `ts_remote ${mode} diagnostic was cancelled; no remote action was attempted`,
       mode,
       error,
     );
   }
   if (timeout.aborted) {
-    return mcpDiagnosticError(
-      "MCP_DIAGNOSTIC_TIMEOUT",
+    return remoteDiagnosticError(
+      "REMOTE_DIAGNOSTIC_TIMEOUT",
       "diagnostic_timeout",
-      `MCP ${mode} diagnostic timed out after ${Math.ceil(timeoutMs / 1000)} seconds; no remote action was attempted`,
+      `ts_remote ${mode} diagnostic timed out after ${Math.ceil(timeoutMs / 1000)} seconds; no remote action was attempted`,
       mode,
       error,
     );
   }
-  return mcpDiagnosticError(
-    "MCP_DIAGNOSTIC_PROCESS_FAILED",
+  return remoteDiagnosticError(
+    "REMOTE_DIAGNOSTIC_PROCESS_FAILED",
     "process_failed",
-    `MCP ${mode} diagnostic process failed before returning a result; no remote action was attempted`,
+    `ts_remote ${mode} diagnostic process failed before returning a result; no remote action was attempted`,
     mode,
     error,
   );
 }
 
-function mcpDiagnosticError(
+function remoteDiagnosticError(
   code: string,
   errorClass: string,
   message: string,

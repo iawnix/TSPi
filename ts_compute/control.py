@@ -10,7 +10,6 @@ import hashlib
 import json
 import os
 import posixpath
-import shlex
 import tempfile
 from dataclasses import asdict, replace
 from pathlib import Path, PurePosixPath
@@ -42,21 +41,18 @@ from ts_backends.xtb import (
 )
 from ts_backends.xtb_scan import parse_xtb_scan_control
 from ts_backends.xyz import xyz_frame_metadata
-from ts_remote import job_lifecycle
-from ts_remote.base import RemoteReceipt
-from ts_remote.mcp import (
-    MCPClientError,
-    MCPConnectionSettings,
-    MCPSubmissionAmbiguous,
-    MCPSubmissionRejected,
-    SDKToolCaller,
-    TSClusterMCPClient,
-    build_ts_job_request,
+from ts_remote import lifecycle as remote_lifecycle
+from ts_remote.config import load_config as load_remote_config
+from ts_remote.errors import (
+    RemoteCancellationAmbiguous,
+    RemoteConfigurationError,
+    RemotePreSubmitError,
+    RemoteSubmissionAmbiguous,
+    RemoteSubmissionRejected,
 )
+from ts_remote.models import RemoteJobConfig, RemoteResources
 from ts_workspace.io import now_iso, read_json, sha256_json, write_json
 from ts_workspace.identity import WorkspaceIdentityError, workspace_id
-
-from cluster_mcp.ts_jobs import validate_ts_execution
 
 from .artifacts import resolve_input_artifacts, verify_input_bindings
 from .contracts import ComputeContractError, validate_compute_contract
@@ -84,13 +80,6 @@ BACKENDS: dict[str, dict[str, tuple[set[str], Callable[[BackendTask], PreparedTa
     "qbics_dmecp": {"dmecp": ({"config"}, prepare_qbics_dmecp)},
 }
 OPERATIONS = {"prepare", "submit", "inspect", "collect", "cancel", "parse"}
-class _MCPStagingError(RuntimeError):
-    """An MCP failure that occurred before the scheduler submission call."""
-
-    def __init__(self, phase: str, cause: Exception) -> None:
-        self.phase = phase
-        self.cause = cause
-        super().__init__(f"MCP {phase} failed before scheduler submission: {cause}")
 
 
 def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
@@ -138,6 +127,7 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
             "settings": request["settings"],
             "expected_artifacts": [],
             "execution_target": _materialize_execution_target(
+                workspace,
                 request["execution_target"],
                 node_id,
                 intent_id,
@@ -152,8 +142,6 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
         if execution_policy["kind"] == "remote":
             _require_unique_remote_basenames(prepared.expected_artifacts)
             _remote_stdout_name(asdict(prepared))
-        if execution_policy.get("transport") == "mcp":
-            _merged_mcp_execution(execution_policy, asdict(prepared))
 
         intent_ref, _ = _record_refs(node_id, intent_id)
         attempt_dir = workspace / "nodes" / node_id / "attempts" / intent_id
@@ -220,8 +208,6 @@ def preflight_calculation(
         if execution_policy["kind"] == "remote":
             _require_unique_remote_basenames(prepared.expected_artifacts)
             _remote_stdout_name(asdict(prepared))
-        if execution_policy.get("transport") == "mcp":
-            _merged_mcp_execution(execution_policy, asdict(prepared))
     else:
         if intent_id is None or intent_file is not None:
             raise ComputeContractError(f"{operation} preflight requires intent_id and forbids intent_file")
@@ -239,9 +225,6 @@ def preflight_calculation(
             normalized_artifact = _workspace_ref(workspace, artifact_ref, read=True)
             _require_calculation_output_ref(intent, normalized_artifact)
             artifact_ref = normalized_artifact
-    connection_summary = None
-    if execution_policy.get("transport") == "mcp" and operation != "prepare":
-        connection_summary = _mcp_connection_summary()
     status = _read_local_status(workspace, intent)
     if operation == "collect":
         _collection_program_status(workspace, intent, prepared_record, execution_policy)
@@ -277,11 +260,12 @@ def preflight_calculation(
         "intent_ref": intent_ref,
         "intent_digest": sha256_json(intent),
         "artifact_ref": artifact_ref,
-        "transport": execution_policy.get("transport", "local"),
+        "execution_kind": execution_policy["kind"],
+        "profile": execution_policy.get("profile"),
         "remote_dir": execution_policy.get("remote_dir"),
         "job_id": status.get("job_id") if status else None,
         "state": status.get("state") if status else None,
-        "execution_summary": _execution_summary(execution_policy, connection_summary),
+        "execution_summary": _execution_summary(execution_policy),
     }
 
 
@@ -306,8 +290,6 @@ def prepare_calculation(
     if execution_policy["kind"] == "remote":
         _require_unique_remote_basenames(prepared.expected_artifacts)
         _remote_stdout_name(asdict(prepared))
-    if execution_policy.get("transport") == "mcp":
-        _merged_mcp_execution(execution_policy, asdict(prepared))
 
     intent_ref, prepared_ref = _record_refs(node_id, str(intent["intent_id"]))
     intent_path = workspace / intent_ref
@@ -373,45 +355,31 @@ def submit_calculation(
             )
     verify_input_bindings(workspace, intent)
 
-    transport = str(policy["transport"])
-    ssh_config = None
-    if transport == "mcp":
-        _mcp_connection_settings()
-    else:
-        ssh_config = _remote_config(workspace, intent, prepared, require_inputs=True)
+    remote_config = _remote_job_config(workspace, intent, prepared, require_inputs=True)
     control_attempt = _claim_control(workspace, intent, "submit")
     try:
-        if transport == "ssh":
-            receipt = job_lifecycle.submit_async(ssh_config)
-        else:
-            receipt = _submit_mcp(workspace, intent, prepared, policy)
+        receipt = remote_lifecycle.submit(remote_config)
     except Exception as exc:
-        staging_failure = transport == "mcp" and isinstance(exc, _MCPStagingError)
-        rejected_failure = transport == "mcp" and isinstance(exc, MCPSubmissionRejected)
-        retryable_failure = staging_failure or rejected_failure
-        ambiguous_result = exc.result if isinstance(exc, MCPSubmissionAmbiguous) else {}
-        rejected_result = exc.result if isinstance(exc, MCPSubmissionRejected) else {}
+        staging_failure = isinstance(exc, RemotePreSubmitError)
+        rejected_failure = isinstance(exc, RemoteSubmissionRejected)
+        known_failure = staging_failure or rejected_failure
+        effect_attempted = not staging_failure
+        ambiguous_result = exc.record if isinstance(exc, RemoteSubmissionAmbiguous) else {}
+        rejected_result = exc.record if isinstance(exc, RemoteSubmissionRejected) else {}
         if staging_failure:
             failure_phase = exc.phase
             failure_type = type(exc.cause).__name__
             failure_message = str(exc.cause)[:2000]
-            error_class = "mcp_staging_failed"
+            error_class = "remote_staging_failed"
         elif rejected_failure:
-            server_failure_stage = rejected_result.get("failure_stage")
-            failure_phase = (
-                str(server_failure_stage)
-                if server_failure_stage in {"pre_submit_validation", "pre_submit_preparation"}
-                else "pre_submit_validation"
-            )
-            failure_type = str(rejected_result.get("error_type", type(exc).__name__))
-            failure_message = str(rejected_result.get("error", exc))[:2000]
-            error_class = str(
-                rejected_result.get("error_class", "pre_submit_validation_failed")
-            )
-        else:
-            failure_phase = "submit_request"
+            failure_phase = "scheduler_accept"
             failure_type = type(exc).__name__
-            failure_message = str(exc)[:2000] if transport == "mcp" else None
+            failure_message = str(rejected_result.get("error", exc))[:2000]
+            error_class = "scheduler_submission_rejected"
+        else:
+            failure_phase = str(ambiguous_result.get("phase") or "submit_request")
+            failure_type = type(exc).__name__
+            failure_message = str(exc)[:2000]
             error_class = "submission_ambiguous"
         ambiguous_job_id = (
             str(ambiguous_result.get("job_id"))
@@ -421,25 +389,30 @@ def submit_calculation(
         result = _result(
             intent,
             job_id=ambiguous_job_id,
-            state="failed" if retryable_failure else "unknown",
+            state="failed" if known_failure else "unknown",
             program_status="not_run",
             error_class=error_class,
             control=_control_outcome(
                 operation="submit",
                 phase=failure_phase,
-                effect_outcome="failed" if retryable_failure else "unknown",
-                effect_attempted=not retryable_failure,
+                effect_outcome="failed" if known_failure else "unknown",
+                effect_attempted=effect_attempted,
                 retry_disposition=(
-                    "retry_same_submission" if retryable_failure else "reconcile_only"
+                    "retry_same_submission"
+                    if staging_failure
+                    else "new_intent"
+                    if rejected_failure
+                    else "reconcile_only"
                 ),
-                reconciliation_required=not retryable_failure,
+                reconciliation_required=not known_failure,
                 submission_id=(
-                    _prepared_mcp_submission_id(intent, policy) if transport == "mcp" else None
+                    remote_config.submission_id
                 ),
                 job_id=ambiguous_job_id,
             ),
             provenance={
-                "transport": transport,
+                "profile": policy["profile"],
+                "scheduler": "torque",
                 "remote_dir": policy["remote_dir"],
                 "observed_at": now_iso(),
                 "failure_type": failure_type,
@@ -449,19 +422,21 @@ def submit_calculation(
                     if rejected_failure
                     else ambiguous_result.get("state")
                 ),
-                "submission_phase": (
-                    failure_phase if retryable_failure else "scheduler_submit"
-                ),
-                "submission_attempted": not retryable_failure,
-                "retry_safe": retryable_failure,
+                "submission_phase": failure_phase,
+                "submission_attempted": effect_attempted,
+                "retry_safe": staging_failure,
             },
         )
         _write_control_result(workspace, intent, "submit", result, control_attempt)
         _write_status(workspace, intent, result)
         return result
 
-    receipt_ref = _receipt_ref(intent, transport)
-    _write_bound_record(workspace / receipt_ref, asdict(receipt), "remote receipt")
+    receipt_ref = _receipt_ref(intent)
+    _write_bound_record(
+        workspace / receipt_ref,
+        remote_lifecycle.receipt_dict(receipt),
+        "remote receipt",
+    )
     result = _result(
         intent,
         job_id=receipt.scheduler_id,
@@ -475,19 +450,16 @@ def submit_calculation(
             effect_attempted=True,
             retry_disposition="none",
             reconciliation_required=False,
-            submission_id=(
-                str(receipt.metadata.get("submission_id"))
-                if receipt.metadata.get("submission_id") is not None
-                else None
-            ),
+            submission_id=receipt.submission_id,
             job_id=receipt.scheduler_id,
         ),
         provenance={
-            "transport": transport,
+            "profile": policy["profile"],
+            "scheduler": receipt.scheduler,
             "remote_dir": policy["remote_dir"],
-            "submitted_at": now_iso(),
+            "submitted_at": receipt.submitted_at,
             "receipt_ref": receipt_ref,
-            "submission_id": receipt.metadata.get("submission_id"),
+            "submission_id": receipt.submission_id,
         },
     )
     _write_control_result(workspace, intent, "submit", result, control_attempt)
@@ -503,39 +475,37 @@ def calculation_status(
     workspace, intent, prepared = _load_prepared(root, intent_id, expected_intent_digest)
     policy = _prepared_execution_policy(prepared)
     _require_remote_execution(policy, "inspect")
-    if policy["transport"] == "mcp":
-        observed = _status_mcp(intent, policy)
-        submission_record = observed.pop("_submission_record", None)
-        state = str(observed["state"])
-        program_status = str(observed["program_status"])
-        error_class = observed.get("error_class")
-        exit_status = observed.get("exit_status")
-        job_id = observed.get("job_id")
-        provenance = dict(observed["provenance"])
-        submitted = _read_control_result(workspace, intent, "submit")
-        cancelled = _read_control_result(workspace, intent, "cancel")
-        if isinstance(submission_record, dict):
-            if submitted is None or submitted.get("state") != "submitted":
-                _reconcile_mcp_submit(workspace, intent, policy, submission_record)
-                submitted = _read_control_result(workspace, intent, "submit")
-            if cancelled is None or cancelled.get("state") != "stopped":
-                _reconcile_mcp_cancel(workspace, intent, policy, submission_record)
-        if submitted is not None and submitted.get("state") == "submitted":
-            _require_matching_job_id(submitted, job_id, "MCP status")
-    else:
-        status = job_lifecycle.poll(_remote_config(workspace, intent, prepared))
-        state, program_status, error_class = _status_semantics(status.state)
-        exit_status = status.exit_status
-        job_id = status.pid
-        provenance = {
-            "observed_at": now_iso(),
-            "transport": "ssh",
-            "host": status.host,
-            "remote_dir": status.remote_dir,
-            "pid": status.pid,
-            "remote_state": status.state,
-            "files": status.files,
-        }
+    config = _remote_job_config(workspace, intent, prepared)
+    submitted = _read_control_result(workspace, intent, "submit")
+    if submitted is None or submitted.get("state") != "submitted":
+        try:
+            record = remote_lifecycle.read_submission_record(config)
+        except Exception:
+            record = None
+        if isinstance(record, dict) and record.get("state") == "accepted":
+            _reconcile_remote_submit(workspace, intent, config, record)
+            submitted = _read_control_result(workspace, intent, "submit")
+    if submitted is None or submitted.get("state") != "submitted":
+        raise ComputeContractError("inspect requires a durable or reconciled scheduler submission")
+    job_id = submitted.get("job_id")
+    if not isinstance(job_id, str) or not job_id:
+        raise ComputeContractError("inspect requires a bound scheduler job_id")
+    observed = remote_lifecycle.status(config, job_id)
+    _require_matching_job_id(submitted, observed.job_id, "remote status")
+    state = observed.state
+    program_status = observed.program_status
+    error_class = observed.error_class
+    exit_status = observed.exit_status
+    provenance = {
+        "observed_at": now_iso(),
+        "profile": policy["profile"],
+        "scheduler": "torque",
+        "remote_dir": policy["remote_dir"],
+        "submission_id": config.submission_id,
+        "scheduler_state": observed.scheduler_state,
+        "scheduler_query_error": observed.scheduler_query_error,
+        "program_record": observed.program_record,
+    }
     result = _result(
         intent,
         job_id=job_id,
@@ -561,21 +531,17 @@ def calculation_tail(
         raise ComputeContractError("tail lines must be between 1 and 500")
     policy = _prepared_execution_policy(prepared)
     _require_remote_execution(policy, "inspect")
-    if policy["transport"] == "mcp":
-        expected = _expected_remote_names(prepared)
-        stdout_name = _remote_stdout_name(prepared)
-        allowed = {*expected, stdout_name, "remote_job.stderr"}
-        target = artifact or stdout_name
-        if target not in allowed:
-            raise ComputeContractError(f"remote artifact is not allowlisted for this intent: {target}")
-        text = _tail_mcp(policy, target, int(lines))
-    else:
-        config = _remote_config(workspace, intent, prepared)
-        target = artifact or config.stdout_name
-        allowed = _remote_artifact_names(config)
-        if target not in allowed:
-            raise ComputeContractError(f"remote artifact is not allowlisted for this intent: {target}")
-        text = job_lifecycle.tail(config, artifact=target, lines=int(lines))
+    config = _remote_job_config(workspace, intent, prepared)
+    target = artifact or config.stdout_name
+    allowed = {
+        *config.expected_artifacts,
+        config.stdout_name,
+        config.stderr_name,
+        config.program_status_name,
+    }
+    if target not in allowed:
+        raise ComputeContractError(f"remote artifact is not allowlisted for this intent: {target}")
+    text = remote_lifecycle.tail(config, target, int(lines))
     encoded = text.encode("utf-8")
     truncated = len(encoded) > MAX_TAIL_BYTES
     if truncated:
@@ -614,12 +580,8 @@ def collect_calculation(
     output_dir.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".collect-", dir=output_dir.parent) as temporary:
         staging = Path(temporary)
-        if policy["transport"] == "mcp":
-            downloaded, transfer_manifest = _collect_mcp(policy, staging, selected)
-        else:
-            config = replace(_remote_config(workspace, intent, prepared), output_dir=staging)
-            downloaded = job_lifecycle.fetch(config, artifacts=selected, tolerate_missing=False)
-            transfer_manifest = []
+        config = _remote_job_config(workspace, intent, prepared)
+        downloaded, transfer_manifest = remote_lifecycle.collect(config, selected, staging)
         output_dir.mkdir(parents=True, exist_ok=True)
         for name in downloaded:
             source = staging / Path(name).name
@@ -637,7 +599,8 @@ def collect_calculation(
         artifact_refs=artifact_refs,
         provenance={
             "collected_at": now_iso(),
-            "transport": policy["transport"],
+            "profile": policy["profile"],
+            "scheduler": "torque",
             "remote_dir": policy["remote_dir"],
             "requested_artifacts": selected,
             "transfer_manifest": transfer_manifest,
@@ -672,43 +635,26 @@ def cancel_calculation(
         return current
     _require_cancellable_status(current)
 
-    transport = str(policy["transport"])
     job_id = current.get("job_id") if isinstance(current.get("job_id"), str) else None
     if job_id is None:
         raise ComputeContractError("cancel requires a prior inspect with a bound remote job_id")
-    ssh_config = None
-    if transport == "mcp":
-        submitted = _read_control_result(workspace, intent, "submit")
-        if submitted is None:
-            raise ComputeContractError("MCP cancellation requires a durable local submit result")
-        _require_matching_job_id(submitted, job_id, "MCP cancellation")
-        _mcp_connection_settings()
-    else:
-        ssh_config = _remote_config(workspace, intent, prepared)
+    submitted = _read_control_result(workspace, intent, "submit")
+    if submitted is None:
+        raise ComputeContractError("remote cancellation requires a durable local submit result")
+    _require_matching_job_id(submitted, job_id, "remote cancellation")
+    remote_config = _remote_job_config(workspace, intent, prepared)
     if expected_job_id is not None and job_id != expected_job_id:
         raise ComputeContractError("cancel job_id changed after preflight binding")
     control_attempt = _claim_control(workspace, intent, "cancel")
     try:
-        if transport == "mcp":
-            if job_id is None:
-                raise ComputeContractError("MCP cancellation requires a known scheduler job_id")
-            cancellation = _mcp_client().cancel(_prepared_mcp_submission_id(intent, policy), job_id)
-            provenance = {
-                "transport": "mcp",
-                "remote_dir": policy["remote_dir"],
-                "cancelled_at": now_iso(),
-                "submission_id": cancellation.get("submission_id"),
-                "scheduler": cancellation.get("scheduler"),
-            }
-        else:
-            status = job_lifecycle.kill(ssh_config, expected_pid=job_id)
-            provenance = {
-                "transport": "ssh",
-                "remote_dir": status.remote_dir,
-                "host": status.host,
-                "pid": status.pid,
-                "cancelled_at": now_iso(),
-            }
+        cancellation = remote_lifecycle.cancel(remote_config, job_id)
+        provenance = {
+            "profile": policy["profile"],
+            "scheduler": "torque",
+            "remote_dir": policy["remote_dir"],
+            "cancelled_at": cancellation.get("updated_at", now_iso()),
+            "submission_id": remote_config.submission_id,
+        }
     except Exception as exc:
         result = _result(
             intent,
@@ -724,12 +670,13 @@ def cancel_calculation(
                 retry_disposition="reconcile_only",
                 reconciliation_required=True,
                 submission_id=(
-                    _prepared_mcp_submission_id(intent, policy) if transport == "mcp" else None
+                    remote_config.submission_id
                 ),
                 job_id=job_id,
             ),
             provenance={
-                "transport": transport,
+                "profile": policy["profile"],
+                "scheduler": "torque",
                 "remote_dir": policy["remote_dir"],
                 "observed_at": now_iso(),
                 "failure_type": type(exc).__name__,
@@ -752,9 +699,7 @@ def cancel_calculation(
             effect_attempted=True,
             retry_disposition="none",
             reconciliation_required=False,
-            submission_id=(
-                _prepared_mcp_submission_id(intent, policy) if transport == "mcp" else None
-            ),
+            submission_id=remote_config.submission_id,
             job_id=job_id,
         ),
         provenance=provenance,
@@ -994,28 +939,36 @@ def _next_intent_sequence(attempts_dir: Path, prefix: str) -> int:
 
 
 def _materialize_execution_target(
+    workspace: Path,
     request_target: dict[str, Any],
     node_id: str,
     intent_id: str,
 ) -> dict[str, Any]:
     if request_target["kind"] == "local":
         return {"kind": "local"}
-    if request_target["transport"] == "mcp":
-        return {
-            "kind": "remote",
-            "authority": "execution_mirror",
-            "transport": "mcp",
-            "remote_dir": f"runs/{node_id}/{intent_id}",
-            "execution": request_target["execution"],
-        }
-    remote_root = _normalize_remote_dir(str(request_target["remote_root"]))
+    try:
+        remote_config = load_remote_config()
+        profile = remote_config.profile(str(request_target["profile"]))
+        resources = RemoteResources.from_mapping(request_target["resources"])
+        identity = workspace_id(workspace, create=True)
+    except (RemoteConfigurationError, WorkspaceIdentityError) as exc:
+        raise ComputeContractError(f"cannot materialize ts_remote target: {exc}") from exc
+    _validate_profile_resources(profile, resources)
+    remote_dir = str(
+        PurePosixPath(profile.remote_root)
+        / "workspaces"
+        / identity
+        / "runs"
+        / node_id
+        / intent_id
+    )
     return {
         "kind": "remote",
         "authority": "execution_mirror",
-        "transport": "ssh",
-        "login_host": request_target["login_host"],
-        "compute_host": request_target["compute_host"],
-        "remote_dir": posixpath.join(remote_root, node_id, intent_id),
+        "profile": profile.name,
+        "workspace_id": identity,
+        "remote_dir": remote_dir,
+        "resources": asdict(resources),
     }
 
 
@@ -1125,40 +1078,20 @@ def _normalize_prepared_task(
 def _validate_execution_target(target: dict[str, Any]) -> dict[str, Any]:
     if target["kind"] == "local":
         return {"kind": "local"}
-    transport = target.get("transport")
-    if not isinstance(transport, str):
-        raise ComputeContractError("remote execution target requires explicit transport")
-    if transport == "mcp":
-        try:
-            execution = validate_ts_execution(target.get("execution"))
-        except Exception as exc:
-            raise ComputeContractError(f"invalid MCP execution resources: {exc}") from exc
-        return {
-            "kind": "remote",
-            "authority": "execution_mirror",
-            "transport": "mcp",
-            "remote_dir": _normalize_mcp_dir(str(target["remote_dir"])),
-            "execution": execution,
-        }
-    if transport != "ssh":
-        raise ComputeContractError(f"unsupported remote transport: {transport}")
-    login_host = str(target["login_host"])
-    compute_host = str(target["compute_host"])
-    remote_dir = _normalize_remote_dir(str(target["remote_dir"]))
-    _require_allowlisted("login host", login_host, "TS_COMPUTE_LOGIN_HOSTS")
-    _require_allowlisted("compute host", compute_host, "TS_COMPUTE_COMPUTE_HOSTS")
-    roots = _csv_env("TS_COMPUTE_REMOTE_ROOTS")
-    if not roots:
-        raise ComputeContractError("remote targets are disabled; TS_COMPUTE_REMOTE_ROOTS is empty")
-    if not any(_remote_descendant(remote_dir, _normalize_remote_dir(root)) for root in roots):
-        raise ComputeContractError(f"remote_dir is outside TS_COMPUTE_REMOTE_ROOTS: {remote_dir}")
+    try:
+        configured = load_remote_config()
+        profile = configured.profile(str(target["profile"]))
+        resources = RemoteResources.from_mapping(target["resources"])
+    except (KeyError, RemoteConfigurationError) as exc:
+        raise ComputeContractError(f"invalid ts_remote target: {exc}") from exc
+    _validate_profile_resources(profile, resources)
     return {
         "kind": "remote",
         "authority": "execution_mirror",
-        "transport": "ssh",
-        "login_host": login_host,
-        "compute_host": compute_host,
-        "remote_dir": remote_dir,
+        "profile": profile.name,
+        "workspace_id": str(target["workspace_id"]),
+        "remote_dir": str(target["remote_dir"]),
+        "resources": asdict(resources),
     }
 
 
@@ -1169,48 +1102,47 @@ def _execution_policy_for_prepare(
     create_identity: bool = True,
 ) -> dict[str, Any]:
     policy = _validate_execution_target(intent["execution_target"])
-    if policy.get("transport") != "mcp":
+    if policy["kind"] == "local":
         return policy
     try:
         identity = workspace_id(workspace, create=create_identity)
     except WorkspaceIdentityError as exc:
-        raise ComputeContractError(f"cannot bind MCP calculation to workspace identity: {exc}") from exc
-    logical_remote_dir = str(policy["remote_dir"])
-    submission_id = _mcp_submission_id(identity, str(intent["intent_id"]))
-    return {
-        **policy,
-        "namespace_version": "ts-mcp-workspace/1",
-        "workspace_id": identity,
-        "requested_remote_dir": logical_remote_dir,
-        "remote_dir": f"workspaces/{identity}/{logical_remote_dir}",
-        "submission_id": submission_id,
-    }
+        raise ComputeContractError(f"cannot bind remote calculation to workspace identity: {exc}") from exc
+    configured = load_remote_config()
+    profile = configured.profile(str(policy["profile"]))
+    expected_dir = str(
+        PurePosixPath(profile.remote_root)
+        / "workspaces"
+        / identity
+        / "runs"
+        / str(intent["node_id"])
+        / str(intent["intent_id"])
+    )
+    if policy["workspace_id"] != identity or policy["remote_dir"] != expected_dir:
+        raise ComputeContractError("remote execution target does not match the workspace-scoped path")
+    return policy
 
 
 def _expected_prepared_execution_policy(
     workspace: Path,
     intent: dict[str, Any],
 ) -> dict[str, Any]:
-    raw_policy = _validate_execution_target(intent["execution_target"])
-    if raw_policy.get("transport") != "mcp":
-        return raw_policy
     return _execution_policy_for_prepare(workspace, intent, create_identity=False)
 
 
-def _remote_config(
+def _remote_job_config(
     workspace: Path,
     intent: dict[str, Any],
     prepared: dict[str, Any],
     *,
     require_inputs: bool = False,
-) -> job_lifecycle.RemoteJobConfig:
+) -> RemoteJobConfig:
     target = prepared.get("execution_policy")
     if (
         not isinstance(target, dict)
         or target.get("kind") != "remote"
-        or target.get("transport") != "ssh"
     ):
-        raise ComputeContractError("this operation requires an allowlisted SSH execution target")
+        raise ComputeContractError("this operation requires a prepared ts_remote target")
     prepared_task = prepared.get("prepared_task")
     if not isinstance(prepared_task, dict):
         raise ComputeContractError("prepared calculation is missing prepared_task")
@@ -1222,24 +1154,27 @@ def _remote_config(
     if len(expected) != len(set(expected)):
         raise ComputeContractError("expected remote artifacts have colliding basenames")
     _, _, output_ref = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]))
-    ssh_config = os.environ.get("TS_COMPUTE_SSH_CONFIG")
-    ssh_path = Path(ssh_config).expanduser().resolve() if ssh_config else None
-    if ssh_path is not None and (not ssh_path.is_file() or not ssh_path.is_absolute()):
-        raise ComputeContractError(f"TS_COMPUTE_SSH_CONFIG is not a readable file: {ssh_path}")
-    command = [str(part) for part in prepared_task["command"]]
-    rewrites = {ref: Path(ref).name for ref in prepared_task["input_paths"]}
-    command = [rewrites.get(part, part) for part in command]
-    return job_lifecycle.RemoteJobConfig(
+    try:
+        profile = load_remote_config().profile(str(target["profile"]))
+        resources = RemoteResources.from_mapping(target["resources"])
+    except RemoteConfigurationError as exc:
+        raise ComputeContractError(f"invalid prepared ts_remote target: {exc}") from exc
+    _validate_profile_resources(profile, resources)
+    command = tuple(_rewritten_remote_command(prepared_task))
+    return RemoteJobConfig(
+        submission_id=_remote_submission_id(str(target["workspace_id"]), str(intent["intent_id"])),
+        intent_id=str(intent["intent_id"]),
+        intent_digest=sha256_json(intent),
         node_id=str(intent["node_id"]),
-        login_host=str(target["login_host"]),
-        compute_host=str(target["compute_host"]),
+        backend=str(intent["backend"]),
+        profile=profile,
         remote_dir=str(target["remote_dir"]),
+        resources=resources,
         command=command,
         input_paths=input_paths,
         output_dir=workspace / output_ref / "collected",
         expected_artifacts=expected,
-        ssh_config=ssh_path,
-        dry_run=False,
+        environment={str(key): str(value) for key, value in prepared_task.get("environment", {}).items()},
         stdout_name=_remote_stdout_name(prepared),
     )
 
@@ -1252,427 +1187,29 @@ def _prepared_execution_policy(prepared: dict[str, Any]) -> dict[str, Any]:
 
 
 def _require_remote_execution(policy: dict[str, Any], operation: str) -> None:
-    if policy.get("kind") != "remote" or policy.get("transport") not in {"ssh", "mcp"}:
-        raise ComputeContractError(f"{operation} requires a prepared SSH or MCP remote target")
+    if policy.get("kind") != "remote" or not isinstance(policy.get("profile"), str):
+        raise ComputeContractError(f"{operation} requires a prepared ts_remote target")
 
 
 def _execution_summary(
     policy: dict[str, Any],
-    connection_summary: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     if policy.get("kind") != "remote":
-        return {"kind": "local", "transport": "local"}
-    summary = {
+        return {"kind": "local"}
+    resources = policy["resources"]
+    return {
         "kind": "remote",
-        "transport": policy["transport"],
+        "profile": policy["profile"],
+        "scheduler": "torque",
+        "workspace_id": policy["workspace_id"],
         "remote_dir": policy["remote_dir"],
+        "queue": resources["queue"],
+        "nodes": resources["nodes"],
+        "ncpus": resources["ncpus"],
+        "memory": resources["memory"],
+        "walltime": resources["walltime"],
+        "ngpus": resources["ngpus"],
     }
-    if policy["transport"] == "ssh":
-        summary.update(
-            {
-                "login_host": policy["login_host"],
-                "compute_host": policy["compute_host"],
-            }
-        )
-    else:
-        execution = policy["execution"]
-        summary.update(
-            {
-                "workspace_id": policy.get("workspace_id"),
-                "requested_remote_dir": policy.get("requested_remote_dir"),
-                "submission_id": policy.get("submission_id"),
-                "queue": execution["queue"],
-                "nodes": execution["nodes"],
-                "ncpus": execution["ncpus"],
-                "memory": execution["memory"],
-                "walltime": execution["walltime"],
-                "ngpus": execution["ngpus"],
-            }
-        )
-        if connection_summary is not None:
-            summary["mcp_connection"] = connection_summary
-    return summary
-
-
-def _normalize_mcp_dir(value: str) -> str:
-    candidate = PurePosixPath(value)
-    if (
-        not value
-        or candidate.is_absolute()
-        or any(part in {"", ".", ".."} for part in candidate.parts)
-        or candidate.parts[0] == ".cluster_mcp"
-    ):
-        raise ComputeContractError("MCP remote_dir must be a normalized workspace-relative path")
-    return candidate.as_posix()
-
-
-def _mcp_client() -> TSClusterMCPClient:
-    return TSClusterMCPClient(SDKToolCaller(_mcp_connection_settings()))
-
-
-def _mcp_connection_settings() -> MCPConnectionSettings:
-    try:
-        return MCPConnectionSettings.from_environment()
-    except MCPClientError as exc:
-        raise ComputeContractError(f"invalid MCP connection settings: {exc}") from exc
-
-
-def _mcp_connection_summary() -> dict[str, Any]:
-    settings = _mcp_connection_settings()
-    return {
-        "endpoint": settings.endpoint,
-        "authenticated": settings.token is not None,
-        "timeout_seconds": settings.timeout_seconds,
-    }
-
-
-def _submit_mcp(
-    workspace: Path,
-    intent: dict[str, Any],
-    prepared: dict[str, Any],
-    policy: dict[str, Any],
-):
-    phase = "prepare_staging"
-    try:
-        prepared_task = prepared["prepared_task"]
-        command = _rewritten_remote_command(prepared_task)
-        expected_names = _expected_remote_names(prepared)
-        stdout_name = _remote_stdout_name(prepared)
-        base_ref, _, _ = _runtime_refs(
-            str(intent["node_id"]),
-            str(intent["intent_id"]),
-        )
-        script_ref = f"{base_ref}/run_mcp_job.sh"
-        script_path = workspace / script_ref
-        script_text = _mcp_runner_script(prepared_task, command, stdout_name)
-        _write_text_once(script_path, script_text, "MCP runner script")
-
-        remote_dir = str(policy["remote_dir"])
-        script_remote = f"{remote_dir}/run_mcp_job.sh"
-        input_files: dict[str, Path] = {script_remote: script_path}
-        seen_names = {"run_mcp_job.sh"}
-        for ref in prepared_task["input_paths"]:
-            source = workspace / _workspace_ref(workspace, str(ref), read=True)
-            if source.name in seen_names:
-                raise ComputeContractError(f"MCP input basename collision: {source.name}")
-            seen_names.add(source.name)
-            input_files[f"{remote_dir}/{source.name}"] = source
-
-        overlap = seen_names.intersection(expected_names)
-        if overlap:
-            raise ComputeContractError(f"MCP expected artifacts overlap staged inputs: {sorted(overlap)}")
-        execution = _merged_mcp_execution(policy, prepared_task)
-        request = build_ts_job_request(
-            submission_id=_prepared_mcp_submission_id(intent, policy),
-            intent_id=str(intent["intent_id"]),
-            intent_digest=sha256_json(intent),
-            node_id=str(intent["node_id"]),
-            backend=str(intent["backend"]),
-            workdir=remote_dir,
-            script_path=script_remote,
-            input_files=input_files,
-            expected_artifacts=[f"{remote_dir}/{name}" for name in expected_names],
-            execution=execution,
-        )
-        client = _mcp_client()
-        phase = "ensure_directory"
-        client.ensure_directory(remote_dir)
-        for remote_path, source in sorted(input_files.items()):
-            phase = "upload"
-            client.upload_file(source, remote_path)
-    except Exception as exc:
-        raise _MCPStagingError(phase, exc) from exc
-    return client.submit(request)
-
-
-def _mcp_runner_script(
-    prepared_task: dict[str, Any],
-    command: list[str],
-    stdout_name: str,
-) -> str:
-    if prepared_task.get("backend") != "gaussian":
-        redirect = f" > {shlex.quote(stdout_name)} 2> remote_job.stderr"
-        return (
-            "#!/usr/bin/env bash\n"
-            "set -Eeuo pipefail\n"
-            "umask 077\n"
-            f"exec {shlex.join(command)}{redirect}\n"
-        )
-    if len(command) != 2 or Path(command[0]).name != "g16":
-        raise ComputeContractError("Gaussian MCP execution requires one g16 input")
-    input_name = command[1]
-    return (
-        "#!/usr/bin/env bash\n"
-        "set -Eeuo pipefail\n"
-        "umask 077\n"
-        "scratch_base=${TMPDIR:-/tmp}\n"
-        'scratch_root=$(mktemp -d "${scratch_base%/}/ts-gaussian.XXXXXX")\n'
-        "export GAUSS_SCRDIR=\"$scratch_root\"\n"
-        "cleanup() {\n"
-        "  local rc=$?\n"
-        "  trap - EXIT INT TERM\n"
-        "  case \"$scratch_root\" in\n"
-        '    "${scratch_base%/}"/ts-gaussian.*)\n'
-        "      if [[ -d \"$scratch_root\" && ! -L \"$scratch_root\" ]]; then\n"
-        "        rm -rf -- \"$scratch_root\"\n"
-        "      elif [[ -e \"$scratch_root\" || -L \"$scratch_root\" ]]; then\n"
-        '        echo "ERROR: unsafe Gaussian scratch path; kept $scratch_root" >&2\n'
-        "        rc=1\n"
-        "      fi\n"
-        "      ;;\n"
-        "    *)\n"
-        '      echo "ERROR: unsafe Gaussian scratch path; kept $scratch_root" >&2\n'
-        "      rc=1\n"
-        "      ;;\n"
-        "  esac\n"
-        "  exit \"$rc\"\n"
-        "}\n"
-        "trap cleanup EXIT\n"
-        "trap 'exit 130' INT\n"
-        "trap 'exit 143' TERM\n"
-        f"if [[ -e {shlex.quote(stdout_name)} || -L {shlex.quote(stdout_name)} ]]; then\n"
-        f"  echo {shlex.quote(f'Refusing to overwrite Gaussian output: {stdout_name}')} >&2\n"
-        "  exit 2\n"
-        "fi\n"
-        "set -o noclobber\n"
-        f"g16 < {shlex.quote(input_name)} > {shlex.quote(stdout_name)} 2> remote_job.stderr\n"
-    )
-
-
-def _status_mcp(intent: dict[str, Any], policy: dict[str, Any]) -> dict[str, Any]:
-    submission_id = _prepared_mcp_submission_id(intent, policy)
-    try:
-        record = _mcp_client().status(submission_id, include_history=True)
-    except MCPClientError as exc:
-        raise ComputeContractError(f"MCP status failed: {exc}") from exc
-    if record.get("found") is False:
-        return {
-            "state": "unknown",
-            "program_status": "not_run",
-            "error_class": "submission_not_found",
-            "exit_status": None,
-            "job_id": None,
-            "provenance": {
-                "observed_at": now_iso(),
-                "transport": "mcp",
-                "remote_dir": policy["remote_dir"],
-                "submission_id": submission_id,
-                "submission_state": "not_found",
-                "scheduler_state": None,
-                "scheduler_query": record.get("scheduler_query"),
-            },
-        }
-    request = record.get("request")
-    if not isinstance(request, dict) or any(
-        request.get(key) != expected
-        for key, expected in {
-            "submission_id": submission_id,
-            "intent_id": intent["intent_id"],
-            "intent_digest": sha256_json(intent),
-            "node_id": intent["node_id"],
-            "backend": intent["backend"],
-            "workdir": policy["remote_dir"],
-        }.items()
-    ):
-        raise ComputeContractError("MCP submission record does not match the prepared intent")
-    scheduler = record.get("scheduler") if isinstance(record.get("scheduler"), dict) else {}
-    state, program_status, error_class, exit_status = _mcp_status_semantics(
-        str(record.get("state", "unknown")),
-        scheduler,
-    )
-    return {
-        "state": state,
-        "program_status": program_status,
-        "error_class": error_class,
-        "exit_status": exit_status,
-        "job_id": record.get("job_id") if isinstance(record.get("job_id"), str) else None,
-        "provenance": {
-            "observed_at": now_iso(),
-            "transport": "mcp",
-            "remote_dir": policy["remote_dir"],
-            "submission_id": submission_id,
-            "submission_state": record.get("state"),
-            "scheduler_state": scheduler.get("state"),
-            "scheduler_query": record.get("scheduler_query"),
-        },
-        "_submission_record": record,
-    }
-
-
-def _reconcile_mcp_submit(
-    workspace: Path,
-    intent: dict[str, Any],
-    policy: dict[str, Any],
-    record: dict[str, Any],
-) -> None:
-    server_state = record.get("state")
-    job_id = record.get("job_id")
-    if server_state not in {"submitted", "ambiguous"} or not isinstance(job_id, str) or not job_id:
-        return
-    request = record.get("request")
-    if not isinstance(request, dict):
-        raise ComputeContractError("MCP reconciliation record has no bound request")
-    submission_id = _prepared_mcp_submission_id(intent, policy)
-    expected_artifacts = request.get("expected_artifacts")
-    if not isinstance(expected_artifacts, list) or any(not isinstance(item, str) for item in expected_artifacts):
-        raise ComputeContractError("MCP reconciliation record has no expected artifact manifest")
-    receipt = RemoteReceipt(
-        node_id=str(intent["node_id"]),
-        host="cluster-mcp",
-        remote_dir=str(policy["remote_dir"]),
-        command=["mcp", "ts_submit_job", submission_id],
-        receipt_path=f"{str(policy['remote_dir']).rstrip('/')}/ts_submission.json",
-        scheduler_id=job_id,
-        metadata={
-            "schema_version": "ts-cluster-submission-result/1",
-            "submission_id": submission_id,
-            "intent_id": str(intent["intent_id"]),
-            "intent_digest": sha256_json(intent),
-            "backend": str(intent["backend"]),
-            "expected_artifacts": json.dumps(expected_artifacts),
-            "replayed": "false",
-        },
-    )
-    receipt_ref = _receipt_ref(intent, "mcp")
-    _write_bound_record(workspace / receipt_ref, asdict(receipt), "reconciled MCP receipt")
-    result = _result(
-        intent,
-        job_id=job_id,
-        state="submitted",
-        program_status="not_run",
-        artifact_refs=[receipt_ref],
-        control=_control_outcome(
-            operation="submit",
-            phase="reconciled",
-            effect_outcome="succeeded",
-            effect_attempted=True,
-            retry_disposition="none",
-            reconciliation_required=False,
-            submission_id=submission_id,
-            job_id=job_id,
-        ),
-        provenance={
-            "transport": "mcp",
-            "remote_dir": policy["remote_dir"],
-            "receipt_ref": receipt_ref,
-            "submission_id": submission_id,
-            "server_submission_state": server_state,
-            "server_updated_at": record.get("updated_at"),
-            "scheduler_query": record.get("scheduler_query"),
-            "reconciliation_source": "ts_get_submission",
-        },
-    )
-    _write_control_reconciliation(workspace, intent, "submit", result)
-
-
-def _reconcile_mcp_cancel(
-    workspace: Path,
-    intent: dict[str, Any],
-    policy: dict[str, Any],
-    record: dict[str, Any],
-) -> None:
-    if record.get("state") != "cancelled":
-        return
-    job_id = record.get("job_id")
-    if not isinstance(job_id, str) or not job_id:
-        raise ComputeContractError("MCP cancellation reconciliation has no scheduler job_id")
-    cancellation = record.get("result") if isinstance(record.get("result"), dict) else {}
-    result = _result(
-        intent,
-        job_id=job_id,
-        state="stopped",
-        program_status="stopped",
-        error_class="remote_job_cancelled",
-        control=_control_outcome(
-            operation="cancel",
-            phase="reconciled",
-            effect_outcome="succeeded",
-            effect_attempted=True,
-            retry_disposition="none",
-            reconciliation_required=False,
-            submission_id=_prepared_mcp_submission_id(intent, policy),
-            job_id=job_id,
-        ),
-        provenance={
-            "transport": "mcp",
-            "remote_dir": policy["remote_dir"],
-            "submission_id": record.get("submission_id"),
-            "scheduler": cancellation.get("scheduler"),
-            "server_updated_at": record.get("updated_at"),
-            "scheduler_query": record.get("scheduler_query"),
-            "reconciliation_source": "ts_get_submission",
-        },
-    )
-    _write_control_reconciliation(workspace, intent, "cancel", result)
-
-
-def _mcp_status_semantics(
-    submission_state: str,
-    scheduler: dict[str, Any],
-) -> tuple[str, str, str | None, int | None]:
-    raw_exit = scheduler.get("exit_status")
-    try:
-        exit_status = int(raw_exit) if raw_exit is not None else None
-    except (TypeError, ValueError):
-        exit_status = None
-    if submission_state == "cancelled":
-        return "stopped", "stopped", "remote_job_cancelled", exit_status
-    if submission_state in {"cancelling", "cancellation_ambiguous"}:
-        return "unknown", "not_run", submission_state, exit_status
-    scheduler_state = str(scheduler.get("state", "")).upper()
-    if scheduler_state in {"Q", "H", "W", "S"}:
-        return "queued", "not_run", None, exit_status
-    if scheduler_state in {"R", "E", "B"}:
-        return "running", "not_run", None, exit_status
-    if scheduler_state in {"F", "C"}:
-        if exit_status == 0:
-            return "completed", "completed", None, exit_status
-        if exit_status is None:
-            return "completed", "not_run", None, exit_status
-        return "failed", "failed", "remote_job_failed", exit_status
-    if submission_state == "ambiguous":
-        return "unknown", "not_run", "submission_ambiguous", exit_status
-    if submission_state == "submitted":
-        return "submitted", "not_run", None, exit_status
-    return "unknown", "not_run", "unknown_remote_state", exit_status
-
-
-def _tail_mcp(policy: dict[str, Any], artifact: str, lines: int) -> str:
-    remote_path = f"{policy['remote_dir']}/{artifact}"
-    try:
-        result = _mcp_client().read_tail(remote_path, max_bytes=MAX_TAIL_BYTES)
-    except MCPClientError as exc:
-        raise ComputeContractError(f"MCP tail failed: {exc}") from exc
-    text = bytes(result["data"]).decode("utf-8", errors="replace")
-    return "\n".join(text.splitlines()[-lines:])
-
-
-def _collect_mcp(
-    policy: dict[str, Any],
-    output_dir: Path,
-    artifacts: list[str],
-) -> tuple[list[str], list[dict[str, Any]]]:
-    try:
-        client = _mcp_client()
-    except MCPClientError as exc:
-        raise ComputeContractError(f"MCP collection failed: {exc}") from exc
-    downloaded: list[str] = []
-    manifest: list[dict[str, Any]] = []
-    for name in artifacts:
-        remote_path = f"{policy['remote_dir']}/{name}"
-        try:
-            transfer = client.download_file(remote_path, output_dir / Path(name).name)
-        except MCPClientError as exc:
-            raise ComputeContractError(f"MCP collection failed for {name}: {exc}") from exc
-        downloaded.append(name)
-        manifest.append(
-            {
-                "remote_path": remote_path,
-                "size": transfer["size"],
-                "sha256": transfer["sha256"],
-            }
-        )
-    return downloaded, manifest
 
 
 def _rewritten_remote_command(prepared_task: dict[str, Any]) -> list[str]:
@@ -1697,18 +1234,6 @@ def _remote_stdout_name(prepared: dict[str, Any]) -> str:
     return "remote_job.stdout"
 
 
-def _merged_mcp_execution(policy: dict[str, Any], prepared_task: dict[str, Any]) -> dict[str, Any]:
-    execution = dict(policy["execution"])
-    execution["environment"] = {
-        **execution["environment"],
-        **dict(prepared_task.get("environment", {})),
-    }
-    try:
-        return validate_ts_execution(execution)
-    except Exception as exc:
-        raise ComputeContractError(f"invalid merged MCP execution resources: {exc}") from exc
-
-
 def _expected_remote_names(prepared: dict[str, Any]) -> list[str]:
     names = [Path(str(ref)).name for ref in prepared["prepared_task"]["expected_artifacts"]]
     if not names or len(names) != len(set(names)):
@@ -1724,31 +1249,75 @@ def _collected_output_dir(workspace: Path, intent: dict[str, Any]) -> Path:
     return workspace / output_ref / "collected"
 
 
-def _mcp_submission_id(workspace_identity: str, intent_id: str) -> str:
+def _remote_submission_id(workspace_identity: str, intent_id: str) -> str:
     bound = f"{workspace_identity}\0{intent_id}"
     digest = hashlib.sha256(bound.encode("utf-8")).hexdigest()[:16]
     return f"tsjob_{workspace_identity}_{intent_id[:60]}_{digest}"
 
 
-def _prepared_mcp_submission_id(intent: dict[str, Any], policy: dict[str, Any]) -> str:
-    if policy.get("namespace_version") != "ts-mcp-workspace/1":
-        raise ComputeContractError("prepared MCP calculation requires ts-mcp-workspace/1 namespace")
-    submission_id = policy.get("submission_id")
-    workspace_identity = policy.get("workspace_id")
-    if not isinstance(workspace_identity, str) or not isinstance(submission_id, str):
-        raise ComputeContractError("prepared MCP workspace binding is incomplete")
-    expected = _mcp_submission_id(workspace_identity, str(intent["intent_id"]))
-    if submission_id != expected:
-        raise ComputeContractError("prepared MCP submission_id does not match workspace identity")
-    return submission_id
-
-
-def _receipt_ref(intent: dict[str, Any], transport: str) -> str:
+def _receipt_ref(intent: dict[str, Any]) -> str:
     base, _, _ = _runtime_refs(
         str(intent["node_id"]),
         str(intent["intent_id"]),
     )
-    return f"{base}/{transport}_receipt.json"
+    return f"{base}/remote_receipt.json"
+
+
+def _validate_profile_resources(profile: Any, resources: RemoteResources) -> None:
+    if resources.queue not in profile.allowed_queues:
+        raise ComputeContractError(
+            f"queue {resources.queue!r} is not allowed by ts_remote profile {profile.name}"
+        )
+    if resources.nodes > profile.max_nodes:
+        raise ComputeContractError(
+            f"requested nodes={resources.nodes} exceeds profile max_nodes={profile.max_nodes}"
+        )
+
+
+def _reconcile_remote_submit(
+    workspace: Path,
+    intent: dict[str, Any],
+    config: RemoteJobConfig,
+    record: dict[str, Any],
+) -> None:
+    if record.get("state") != "accepted":
+        return
+    try:
+        receipt_value = remote_lifecycle.receipt_from_submission_record(config, record)
+    except Exception as exc:
+        raise ComputeContractError(
+            "remote reconciliation record does not match the prepared intent"
+        ) from exc
+    job_id = receipt_value.scheduler_id
+    receipt_ref = _receipt_ref(intent)
+    receipt = remote_lifecycle.receipt_dict(receipt_value)
+    _write_bound_record(workspace / receipt_ref, receipt, "reconciled remote receipt")
+    result = _result(
+        intent,
+        job_id=job_id,
+        state="submitted",
+        program_status="not_run",
+        artifact_refs=[receipt_ref],
+        control=_control_outcome(
+            operation="submit",
+            phase="reconciled",
+            effect_outcome="succeeded",
+            effect_attempted=True,
+            retry_disposition="none",
+            reconciliation_required=False,
+            submission_id=config.submission_id,
+            job_id=job_id,
+        ),
+        provenance={
+            "profile": config.profile.name,
+            "scheduler": config.profile.scheduler,
+            "remote_dir": config.remote_dir,
+            "receipt_ref": receipt_ref,
+            "submission_id": config.submission_id,
+            "reconciliation_source": "remote_submission_record",
+        },
+    )
+    _write_control_reconciliation(workspace, intent, "submit", result)
 
 
 def _load_prepared(
@@ -1786,8 +1355,6 @@ def _load_prepared(
     if expected_policy["kind"] == "remote":
         _require_unique_remote_basenames(expected_task["expected_artifacts"])
         _remote_stdout_name(expected_task)
-    if expected_policy.get("transport") == "mcp":
-        _merged_mcp_execution(expected_policy, expected_task)
     return workspace, intent, prepared
 
 
@@ -2307,18 +1874,6 @@ def _control_outcome(
     }
 
 
-def _status_semantics(remote_state: str) -> tuple[str, str, str | None]:
-    if remote_state == "completed":
-        return "completed", "completed", None
-    if remote_state in {"failed", "killed"}:
-        return ("stopped", "stopped", "remote_job_killed") if remote_state == "killed" else ("failed", "failed", "remote_job_failed")
-    if remote_state in {"running", "queued", "submitted"}:
-        return remote_state, "not_run", None
-    if remote_state == "missing_remote_dir":
-        return "missing", "not_run", "missing_remote_dir"
-    return "unknown", "not_run", "unknown_remote_state"
-
-
 def _require_cancellable_status(status: dict[str, Any]) -> None:
     state = status.get("state")
     if state not in {"submitted", "queued", "running", "unknown"}:
@@ -2348,65 +1903,53 @@ def _collection_program_status(
     submitted = _read_control_result(workspace, intent, "submit")
     if submitted is None or submitted.get("state") != "submitted":
         raise ComputeContractError("collect requires a durable successful submit result")
-    transport = str(policy["transport"])
     remote_dir = str(policy["remote_dir"])
     provenance = submitted.get("provenance")
     if not isinstance(provenance, dict) or any(
         provenance.get(key) != expected
-        for key, expected in {"transport": transport, "remote_dir": remote_dir}.items()
+        for key, expected in {
+            "profile": policy["profile"],
+            "scheduler": "torque",
+            "remote_dir": remote_dir,
+        }.items()
     ):
         raise ComputeContractError("collect submit result does not match the prepared remote target")
 
-    receipt_ref = _receipt_ref(intent, transport)
+    receipt_ref = _receipt_ref(intent)
     if provenance.get("receipt_ref") != receipt_ref or receipt_ref not in submitted.get("artifact_refs", []):
         raise ComputeContractError("collect submit result is not bound to its durable receipt")
     receipt_path = workspace / receipt_ref
     if receipt_path.is_symlink():
         raise ComputeContractError("collect receipt cannot be a symbolic link")
     receipt = _read_object(receipt_path, "remote receipt")
+    remote_config = _remote_job_config(workspace, intent, prepared)
     if any(
         receipt.get(key) != expected
         for key, expected in {
+            "schema_version": "ts-remote-receipt/1",
             "node_id": intent["node_id"],
+            "intent_id": intent["intent_id"],
+            "intent_digest": sha256_json(intent),
+            "profile": policy["profile"],
+            "scheduler": "torque",
             "remote_dir": remote_dir,
             "scheduler_id": submitted.get("job_id"),
+            "submission_id": _remote_submission_id(
+                str(policy["workspace_id"]),
+                str(intent["intent_id"]),
+            ),
+            "script_sha256": remote_lifecycle.submission_script_digest(remote_config),
         }.items()
     ):
         raise ComputeContractError("collect receipt does not match the durable submit result")
-    receipt_path_remote = receipt.get("receipt_path")
-    if not isinstance(receipt_path_remote, str) or str(PurePosixPath(receipt_path_remote).parent) != remote_dir:
-        raise ComputeContractError("collect receipt path is outside the prepared remote directory")
-
-    metadata = receipt.get("metadata")
-    if not isinstance(metadata, dict):
-        raise ComputeContractError("collect receipt has no artifact manifest metadata")
-    try:
-        manifest = json.loads(str(metadata.get("expected_artifacts", "")))
-    except json.JSONDecodeError as exc:
-        raise ComputeContractError("collect receipt artifact manifest is invalid JSON") from exc
+    manifest = receipt.get("expected_artifacts")
     expected_names = _expected_remote_names(prepared)
     if not isinstance(manifest, list) or any(not isinstance(item, str) for item in manifest):
         raise ComputeContractError("collect receipt artifact manifest must be a string array")
-    allowed_manifest = {
-        name: {name, f"{remote_dir.rstrip('/')}/{name}"}
-        for name in expected_names
-    }
-    if len(manifest) != len(expected_names) or any(
-        item not in allowed_manifest.get(Path(item).name, set()) for item in manifest
-    ) or [Path(item).name for item in manifest] != expected_names:
+    if manifest != expected_names:
         raise ComputeContractError("collect receipt artifact manifest does not match prepared artifacts")
-
-    if transport == "mcp":
-        expected_metadata = {
-            "submission_id": _prepared_mcp_submission_id(intent, policy),
-            "intent_id": intent["intent_id"],
-            "intent_digest": sha256_json(intent),
-            "backend": intent["backend"],
-        }
-        if any(metadata.get(key) != expected for key, expected in expected_metadata.items()):
-            raise ComputeContractError("collect MCP receipt is not bound to the prepared intent")
-        if provenance.get("submission_id") != expected_metadata["submission_id"]:
-            raise ComputeContractError("collect submit result has a mismatched MCP submission_id")
+    if provenance.get("submission_id") != receipt["submission_id"]:
+        raise ComputeContractError("collect submit result has a mismatched submission_id")
 
     status = _read_local_status(workspace, intent)
     if status is None:
@@ -2415,45 +1958,10 @@ def _collection_program_status(
     return value if value in {"completed", "failed", "stopped"} else "not_run"
 
 
-def _remote_artifact_names(config: job_lifecycle.RemoteJobConfig) -> set[str]:
-    return {
-        config.status_name,
-        config.stdout_name,
-        config.stderr_name,
-        config.runner_stdout_name,
-        config.runner_stderr_name,
-        config.receipt_name,
-        *config.expected_artifacts,
-    }
-
-
 def _require_unique_remote_basenames(refs: list[str]) -> None:
     names = [Path(ref).name for ref in refs]
     if len(names) != len(set(names)):
         raise ComputeContractError("expected remote artifacts have colliding basenames")
-
-
-def _normalize_remote_dir(value: str) -> str:
-    path = PurePosixPath(value)
-    if not path.is_absolute() or ".." in path.parts or str(path) == "/":
-        raise ComputeContractError(f"remote_dir must be a non-root absolute POSIX path: {value}")
-    return str(path)
-
-
-def _remote_descendant(path: str, root: str) -> bool:
-    candidate = PurePosixPath(path)
-    parent = PurePosixPath(root)
-    return candidate == parent or parent in candidate.parents
-
-
-def _require_allowlisted(label: str, value: str, env_name: str) -> None:
-    allowed = _csv_env(env_name)
-    if not allowed or value not in allowed:
-        raise ComputeContractError(f"{label} is not allowlisted by {env_name}: {value}")
-
-
-def _csv_env(name: str) -> list[str]:
-    return [item.strip() for item in os.environ.get(name, "").split(",") if item.strip()]
 
 
 def _read_object(path: Path, label: str) -> dict[str, Any]:

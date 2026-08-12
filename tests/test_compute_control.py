@@ -22,11 +22,12 @@ from ts_compute import (
 )
 from ts_compute.contracts import validate_compute_contract
 from ts_compute.control import _validate_intent_node_scope
-from ts_remote.job_lifecycle import RemoteJobStatus
-from ts_remote.base import RemoteReceipt
-from ts_remote.mcp import MCPClientError, MCPSubmissionRejected
+from ts_remote import lifecycle as remote_lifecycle
+from ts_remote.models import RemoteJobStatus, RemoteReceipt
+from ts_remote.errors import RemotePreSubmitError, RemoteSubmissionAmbiguous, RemoteSubmissionRejected
 from ts_workspace.operational import operational_snapshot
 from ts_workspace.readers.report import report_workspace
+from ts_workspace.identity import workspace_id
 
 
 def _workspace(tmp_path: Path) -> Path:
@@ -187,60 +188,28 @@ def test_create_calculation_intent_rejects_unknown_artifact_or_agent_named_outpu
         create_calculation_intent(workspace, request)
 
 
-def test_create_calculation_intent_derives_ssh_remote_directory(
+def test_create_calculation_intent_derives_workspace_scoped_remote_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace = _workspace(tmp_path)
-    _allow_remote(monkeypatch)
-    request = _calculation_request(
-        workspace,
-        target={
-            "kind": "remote",
-            "transport": "ssh",
-            "login_host": "login.test",
-            "compute_host": "compute.test",
-            "remote_root": "/remote/ts",
-        }
-    )
+    _configure_remote(tmp_path, monkeypatch)
+    request = _calculation_request(workspace, target=_remote_request_target())
 
     created = create_calculation_intent(workspace, request)
+    identity = workspace_id(workspace, create=False)
 
     assert created["execution_target"] == {
         "kind": "remote",
         "authority": "execution_mirror",
-        "transport": "ssh",
-        "login_host": "login.test",
-        "compute_host": "compute.test",
-        "remote_dir": "/remote/ts/n001/calc_n001_gaussian_opt_freq_0001",
+        "profile": "test_cluster",
+        "workspace_id": identity,
+        "remote_dir": (
+            f"/remote/ts/workspaces/{identity}/runs/n001/"
+            "calc_n001_gaussian_opt_freq_0001"
+        ),
+        "resources": _remote_resources(),
     }
-
-
-def test_create_calculation_intent_derives_mcp_workspace_relative_directory(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workspace = _workspace(tmp_path)
-    _configure_mcp(monkeypatch)
-    request = _calculation_request(
-        workspace,
-        target={
-            "kind": "remote",
-            "transport": "mcp",
-            "execution": _mcp_target()["execution"],
-        }
-    )
-
-    created = create_calculation_intent(workspace, request)
-    prepared = prepare_calculation(workspace, created["intent_ref"], created["intent_digest"])
-
-    assert created["execution_target"]["authority"] == "execution_mirror"
-    assert created["execution_target"]["remote_dir"] == (
-        "runs/n001/calc_n001_gaussian_opt_freq_0001"
-    )
-    policy = prepared["prepared"]["execution_policy"]
-    assert policy["requested_remote_dir"] == created["execution_target"]["remote_dir"]
-    assert policy["remote_dir"].endswith(created["execution_target"]["remote_dir"])
 
 
 def _intent_v2(
@@ -277,49 +246,66 @@ def _intent_v2(
     return path
 
 
-def _remote_target() -> dict[str, str]:
+def _remote_resources() -> dict[str, object]:
     return {
-        "kind": "remote",
-        "authority": "execution_mirror",
-        "transport": "ssh",
-        "login_host": "login.test",
-        "compute_host": "compute.test",
-        "remote_dir": "/remote/ts/n001/calc_n001_optfreq_001",
+        "queue": "workq",
+        "nodes": 1,
+        "ncpus": 4,
+        "memory": "8gb",
+        "walltime": "01:00:00",
+        "ngpus": 0,
+        "mpiprocs": None,
+        "ompthreads": 4,
     }
 
 
-def _mcp_target() -> dict[str, object]:
+def _remote_request_target() -> dict[str, object]:
     return {
         "kind": "remote",
-        "authority": "execution_mirror",
-        "transport": "mcp",
-        "remote_dir": "runs/n001/calc_n001_optfreq_v2_001",
-        "execution": {
-            "queue": "workq",
-            "nodes": 1,
-            "ncpus": 4,
-            "memory": "8gb",
-            "walltime": "01:00:00",
-            "ngpus": 0,
-            "mpiprocs": None,
-            "ompthreads": 4,
-            "host": None,
-            "place": None,
-            "environment": {},
-            "gpu_devices": [],
-        },
+        "profile": "test_cluster",
+        "resources": _remote_resources(),
     }
 
 
-def _allow_remote(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("TS_COMPUTE_LOGIN_HOSTS", "login.test")
-    monkeypatch.setenv("TS_COMPUTE_COMPUTE_HOSTS", "compute.test")
-    monkeypatch.setenv("TS_COMPUTE_REMOTE_ROOTS", "/remote/ts")
+def _remote_target(
+    workspace: Path,
+    intent_id: str = "calc_n001_optfreq_001",
+) -> dict[str, object]:
+    identity = workspace_id(workspace, create=True)
+    return {
+        "kind": "remote",
+        "authority": "execution_mirror",
+        "profile": "test_cluster",
+        "workspace_id": identity,
+        "remote_dir": f"/remote/ts/workspaces/{identity}/runs/n001/{intent_id}",
+        "resources": _remote_resources(),
+    }
 
 
-def _configure_mcp(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("TS_CLUSTER_MCP_URL", "http://127.0.0.1:8765/mcp")
-    monkeypatch.setenv("TS_CLUSTER_MCP_TOKEN", "x" * 32)
+def _configure_remote(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    ssh_config = tmp_path / "ssh_config"
+    ssh_config.write_text("Host test-login\\n  HostName login.test\\n", encoding="utf-8")
+    config = tmp_path / "remote.toml"
+    config.write_text(
+        f'''default_profile = "test_cluster"
+
+[profiles.test_cluster]
+ssh_host = "test-login"
+ssh_config = "{ssh_config}"
+scheduler = "torque"
+remote_root = "/remote/ts"
+allowed_queues = ["workq"]
+max_nodes = 1
+
+[profiles.test_cluster.software.gaussian]
+command = ["g16"]
+allowed_queues = ["workq"]
+requires_gpu = false
+''',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TS_REMOTE_CONFIG", str(config))
+    return config
 
 
 def _gaussian_log() -> str:
@@ -528,8 +514,8 @@ def test_v2_recalculation_requires_local_source_attempt_and_remote_mirror_label(
     with pytest.raises(ComputeContractError, match="one local source attempt"):
         prepare_calculation(workspace, missing_source)
 
-    _allow_remote(monkeypatch)
-    remote = _remote_target()
+    _configure_remote(tmp_path, monkeypatch)
+    remote = _remote_target(workspace, "calc_n001_remote_v2")
     remote_intent = _intent_v2(workspace, intent_id="calc_n001_remote_v2", target=remote)
     remote_result = prepare_calculation(workspace, remote_intent)
     assert remote_result["prepared"]["execution_policy"]["authority"] == "execution_mirror"
@@ -583,864 +569,260 @@ def test_prepare_accepts_executable_intent_and_rejects_path_escape_and_wrong_rou
     with pytest.raises(ComputeContractError, match="route does not match"):
         prepare_calculation(workspace, intent_path)
 
+def _receipt_for(config) -> RemoteReceipt:
+    return RemoteReceipt(
+        schema_version="ts-remote-receipt/1",
+        submission_id=config.submission_id,
+        intent_id=config.intent_id,
+        intent_digest=config.intent_digest,
+        node_id=config.node_id,
+        profile=config.profile.name,
+        scheduler="torque",
+        scheduler_id="123.cluster",
+        remote_dir=config.remote_dir,
+        script_sha256=remote_lifecycle.submission_script_digest(config),
+        submitted_at="2026-08-12T00:00:00Z",
+        expected_artifacts=config.expected_artifacts,
+    )
 
-def test_ssh_submit_and_cancel_are_bound_idempotent_operations(
+
+def test_remote_submit_status_tail_collect_and_cancel_are_bound(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace = _workspace(tmp_path)
-    _allow_remote(monkeypatch)
-    prepare_calculation(
-        workspace,
-        _intent(workspace, target=_remote_target(), dry_run=False),
-    )
-    calls = {"submit": 0, "cancel": 0}
+    _configure_remote(tmp_path, monkeypatch)
+    target = _remote_target(workspace)
+    prepare_calculation(workspace, _intent(workspace, target=target, dry_run=False))
+    calls: dict[str, int] = {"submit": 0, "status": 0, "collect": 0, "cancel": 0}
 
     def fake_submit(config):
         calls["submit"] += 1
-        return RemoteReceipt(
-            node_id=config.node_id,
-            host=config.compute_host,
-            remote_dir=config.remote_dir,
-            command=config.command,
-            receipt_path=f"{config.remote_dir}/remote_receipt.json",
-            metadata={"transport": "ssh"},
-        )
+        assert config.profile.name == "test_cluster"
+        assert config.command == ("g16", "candidate.gjf")
+        assert config.remote_dir == target["remote_dir"]
+        return _receipt_for(config)
 
-    def fake_poll(config):
+    def fake_status(config, job_id):
+        calls["status"] += 1
+        assert job_id == "123.cluster"
         return RemoteJobStatus(
-            node_id=config.node_id,
-            host=config.compute_host,
-            remote_dir=config.remote_dir,
             state="running",
-            pid="123",
+            program_status="not_run",
+            job_id=job_id,
+            scheduler_state="R",
         )
 
-    def fake_kill(config, *, expected_pid):
+    def fake_collect(config, artifacts, output_dir):
+        calls["collect"] += 1
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "candidate.log").write_text(_gaussian_log(), encoding="utf-8")
+        return list(artifacts), [{
+            "remote_path": f"{config.remote_dir}/candidate.log",
+            "size": (output_dir / "candidate.log").stat().st_size,
+            "sha256": "sha256:" + "b" * 64,
+        }]
+
+    def fake_cancel(config, job_id):
         calls["cancel"] += 1
-        assert expected_pid == "123"
-        return RemoteJobStatus(
-            node_id=config.node_id,
-            host=config.compute_host,
-            remote_dir=config.remote_dir,
-            state="killed",
-            pid="123",
-        )
+        assert job_id == "123.cluster"
+        return {"state": "accepted", "updated_at": "2026-08-12T00:01:00Z"}
 
-    monkeypatch.setattr("ts_compute.control.job_lifecycle.submit_async", fake_submit)
-    monkeypatch.setattr("ts_compute.control.job_lifecycle.poll", fake_poll)
-    monkeypatch.setattr("ts_compute.control.job_lifecycle.kill", fake_kill)
+    monkeypatch.setattr("ts_compute.control.remote_lifecycle.submit", fake_submit)
+    monkeypatch.setattr("ts_compute.control.remote_lifecycle.status", fake_status)
+    monkeypatch.setattr("ts_compute.control.remote_lifecycle.tail", lambda _config, _artifact, _lines: "running\\n")
+    monkeypatch.setattr("ts_compute.control.remote_lifecycle.collect", fake_collect)
+    monkeypatch.setattr("ts_compute.control.remote_lifecycle.cancel", fake_cancel)
 
-    binding = preflight_calculation(
-        workspace,
-        "submit",
-        "n001",
-        "gaussian",
-        intent_id="calc_n001_optfreq_001",
-    )
-    assert binding["transport"] == "ssh"
-    assert binding["execution_summary"]["login_host"] == "login.test"
-
-    submitted = submit_calculation(workspace, "calc_n001_optfreq_001", binding["intent_digest"])
-    assert submitted["state"] == "submitted"
-    (workspace / "nodes/n001/inputs/candidate.gjf").unlink()
-    replay_binding = preflight_calculation(
-        workspace,
-        "submit",
-        "n001",
-        "gaussian",
-        intent_id="calc_n001_optfreq_001",
-    )
-    assert replay_binding["state"] == "submitted"
+    submitted = submit_calculation(workspace, "calc_n001_optfreq_001")
     assert submit_calculation(workspace, "calc_n001_optfreq_001") == submitted
-    assert calls["submit"] == 1
-    inspected = calculation_status(workspace, "calc_n001_optfreq_001")
-    assert inspected["job_id"] == "123"
-
-    cancel_binding = preflight_calculation(
-        workspace,
-        "cancel",
-        "n001",
-        "gaussian",
-        intent_id="calc_n001_optfreq_001",
-    )
-    assert cancel_binding["state"] == "running"
-    cancelled = cancel_calculation(
-        workspace,
-        "calc_n001_optfreq_001",
-        cancel_binding["intent_digest"],
-        cancel_binding["job_id"],
-    )
-    assert cancelled["state"] == "stopped"
-    assert cancelled["program_status"] == "stopped"
-    assert cancel_calculation(workspace, "calc_n001_optfreq_001") == cancelled
-    assert calls["cancel"] == 1
-
-
-@pytest.mark.parametrize(
-    ("operation", "failure_text", "error_class"),
-    [
-        ("submit", "qsub result unknown", "submission_ambiguous"),
-        ("cancel", "qdel result unknown", "cancellation_ambiguous"),
-    ],
-)
-def test_ssh_ambiguous_control_outcome_refuses_replay(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    operation: str,
-    failure_text: str,
-    error_class: str,
-) -> None:
-    workspace = _workspace(tmp_path)
-    _allow_remote(monkeypatch)
-    prepare_calculation(workspace, _intent(workspace, target=_remote_target(), dry_run=False))
-
-    def receipt(config):
-        return RemoteReceipt(
-            node_id=config.node_id,
-            host=config.compute_host,
-            remote_dir=config.remote_dir,
-            command=config.command,
-            receipt_path=f"{config.remote_dir}/remote_receipt.json",
-        )
-
-    monkeypatch.setattr("ts_compute.control.job_lifecycle.submit_async", receipt)
-    if operation == "cancel":
-        submit_calculation(workspace, "calc_n001_optfreq_001")
-        monkeypatch.setattr(
-            "ts_compute.control.job_lifecycle.poll",
-            lambda config: RemoteJobStatus(
-                node_id=config.node_id,
-                host=config.compute_host,
-                remote_dir=config.remote_dir,
-                state="running",
-                pid="123",
-            ),
-        )
-        calculation_status(workspace, "calc_n001_optfreq_001")
-        monkeypatch.setattr(
-            "ts_compute.control.job_lifecycle.kill",
-            lambda _config, *, expected_pid: (_ for _ in ()).throw(RuntimeError(failure_text)),
-        )
-        result = cancel_calculation(workspace, "calc_n001_optfreq_001")
-        invoke = lambda: cancel_calculation(workspace, "calc_n001_optfreq_001")
-    else:
-        monkeypatch.setattr(
-            "ts_compute.control.job_lifecycle.submit_async",
-            lambda _config: (_ for _ in ()).throw(RuntimeError(failure_text)),
-        )
-        result = submit_calculation(workspace, "calc_n001_optfreq_001")
-        invoke = lambda: submit_calculation(workspace, "calc_n001_optfreq_001")
-
-    assert result["state"] == "unknown"
-    assert result["error_class"] == error_class
-    with pytest.raises(ComputeContractError, match="refuses automatic replay"):
-        invoke()
-    with pytest.raises(ComputeContractError, match="refuses automatic replay"):
-        preflight_calculation(
-            workspace,
-            operation,
-            "n001",
-            "gaussian",
-            intent_id="calc_n001_optfreq_001",
-        )
-
-
-def test_control_guard_survives_host_process_interruption(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workspace = _workspace(tmp_path)
-    _allow_remote(monkeypatch)
-    prepare_calculation(workspace, _intent(workspace, target=_remote_target(), dry_run=False))
-    monkeypatch.setattr(
-        "ts_compute.control.job_lifecycle.submit_async",
-        lambda _config: (_ for _ in ()).throw(KeyboardInterrupt()),
-    )
-
-    with pytest.raises(KeyboardInterrupt):
-        submit_calculation(workspace, "calc_n001_optfreq_001")
-
-    base = workspace / "nodes/n001/attempts/calc_n001_optfreq_001"
-    assert (base / "submit_guard.json").is_file()
-    assert not (base / "submit_result.json").exists()
-    operations = operational_snapshot(workspace)
-    assert operations["operational_summary"]["control_pending_count"] == 1
-    assert operations["pending_controls"] == [
-        {
-            "operation": "submit",
-            "intent_id": "calc_n001_optfreq_001",
-            "guard_ref": "nodes/n001/attempts/calc_n001_optfreq_001/submit_guard.json",
-        }
-    ]
-    with pytest.raises(ComputeContractError, match="durable control guard"):
-        submit_calculation(workspace, "calc_n001_optfreq_001")
-    with pytest.raises(ComputeContractError, match="manual reconciliation"):
-        preflight_calculation(
-            workspace,
-            "submit",
-            "n001",
-            "gaussian",
-            intent_id="calc_n001_optfreq_001",
-        )
-
-
-def test_mcp_control_preflight_requires_host_connection_settings(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workspace = _workspace(tmp_path)
-    prepare_calculation(
-        workspace,
-        _intent_v2(workspace, target=_mcp_target(), dry_run=False),
-    )
-    monkeypatch.delenv("TS_CLUSTER_MCP_URL", raising=False)
-    monkeypatch.delenv("TS_CLUSTER_MCP_TOKEN", raising=False)
-
-    with pytest.raises(ComputeContractError, match="TS_CLUSTER_MCP_URL is not configured"):
-        preflight_calculation(
-            workspace,
-            "submit",
-            "n001",
-            "gaussian",
-            intent_id="calc_n001_optfreq_v2_001",
-        )
-    with pytest.raises(ComputeContractError, match="TS_CLUSTER_MCP_URL is not configured"):
-        submit_calculation(workspace, "calc_n001_optfreq_v2_001")
-    assert not (
-        workspace / "nodes/n001/attempts/calc_n001_optfreq_v2_001/submit_guard.json"
-    ).exists()
-
-
-def test_mcp_staging_failure_is_not_submission_ambiguous(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workspace = _workspace(tmp_path)
-    _configure_mcp(monkeypatch)
-    intent_id = "calc_n001_optfreq_v2_001"
-    prepare_calculation(
-        workspace,
-        _intent_v2(workspace, target=_mcp_target(), dry_run=False),
-    )
-
-    class FlakyStagingClient:
-        def __init__(self) -> None:
-            self.ensure_calls = 0
-
-        def ensure_directory(self, _path: str) -> None:
-            self.ensure_calls += 1
-            if self.ensure_calls == 1:
-                raise MCPClientError("MCP tool 'ts_ensure_directory' failed: ReadTimeout")
-
-        def upload_file(self, _source: Path, remote_path: str):
-            return {"path": remote_path}
-
-        def submit(self, request):
-            return RemoteReceipt(
-                node_id="n001",
-                host="cluster-mcp",
-                remote_dir=request["workdir"],
-                command=["mcp", "ts_submit_job", request["submission_id"]],
-                receipt_path=f"{request['workdir']}/ts_submission.json",
-                scheduler_id="42003.cluster",
-                metadata={"submission_id": request["submission_id"]},
-            )
-
-    client = FlakyStagingClient()
-    monkeypatch.setattr("ts_compute.control._mcp_client", lambda: client)
-
-    result = submit_calculation(workspace, intent_id)
-
-    assert result["state"] == "failed"
-    assert result["error_class"] == "mcp_staging_failed"
-    assert result["provenance"]["failure_type"] == "MCPClientError"
-    assert result["provenance"]["submission_phase"] == "ensure_directory"
-    assert result["provenance"]["submission_attempted"] is False
-    assert result["provenance"]["retry_safe"] is True
-    assert "ReadTimeout" in result["provenance"]["failure_message"]
-    assert result["control"] == {
-        "schema_version": "ts-control-outcome/1",
-        "operation": "submit",
-        "phase": "ensure_directory",
-        "effect_outcome": "failed",
-        "effect_attempted": False,
-        "retry_disposition": "retry_same_submission",
-        "reconciliation_required": False,
-        "submission_id": result["control"]["submission_id"],
-        "job_id": None,
-    }
-    preflight = preflight_calculation(
-        workspace,
-        "submit",
-        "n001",
-        "gaussian",
-        intent_id=intent_id,
-    )
-    assert preflight["intent_id"] == intent_id
-    before_retry = operational_snapshot(workspace)
-    assert before_retry["operational_summary"]["control_unresolved_count"] == 1
-    assert before_retry["operational_summary"]["control_retryable_count"] == 1
-    root_report = report_workspace(workspace)
-    assert root_report["retryable_controls"] == before_retry["retryable_controls"]
-    assert root_report["operational_summary"]["control_retryable_count"] == 1
-
-    submitted = submit_calculation(workspace, intent_id)
     assert submitted["state"] == "submitted"
-    assert submitted["job_id"] == "42003.cluster"
-    base = workspace / f"nodes/n001/attempts/{intent_id}"
-    assert json.loads((base / "submit_result.json").read_text(encoding="utf-8"))["state"] == "failed"
-    assert (base / "submit_attempt_0002_guard.json").is_file()
-    assert json.loads((base / "submit_attempt_0002_result.json").read_text(encoding="utf-8"))["state"] == "submitted"
-    after_retry = operational_snapshot(workspace)
-    assert after_retry["unresolved_controls"] == []
-    assert after_retry["retryable_controls"] == []
+    assert submitted["job_id"] == "123.cluster"
+    assert submitted["provenance"]["profile"] == "test_cluster"
+    assert "transport" not in submitted["provenance"]
 
-
-def test_mcp_pre_submit_rejection_is_retryable_and_not_ambiguous(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workspace = _workspace(tmp_path)
-    _configure_mcp(monkeypatch)
-    intent_id = "calc_n001_optfreq_v2_001"
-    target = _mcp_target()
-    target["execution"]["place"] = "pack"
-    prepare_calculation(
-        workspace,
-        _intent_v2(workspace, target=target, dry_run=False),
-    )
-
-    class RejectThenSubmitClient:
-        def __init__(self) -> None:
-            self.submit_calls = 0
-
-        def ensure_directory(self, _path: str) -> None:
-            return None
-
-        def upload_file(self, _source: Path, remote_path: str):
-            return {"path": remote_path}
-
-        def submit(self, request):
-            self.submit_calls += 1
-            if self.submit_calls == 1:
-                raise MCPSubmissionRejected(
-                    {
-                        "schema_version": "ts-cluster-submission-result/1",
-                        "submission_id": request["submission_id"],
-                        "intent_id": request["intent_id"],
-                        "intent_digest": request["intent_digest"],
-                        "node_id": request["node_id"],
-                        "backend": request["backend"],
-                        "job_id": None,
-                        "state": "rejected",
-                        "expected_artifacts": request["expected_artifacts"],
-                        "scheduler": None,
-                        "error_class": "pre_submit_validation_failed",
-                        "failure_stage": "pre_submit_validation",
-                        "error": "SecurityError: OpenPBS place directives are not supported by Torque",
-                        "replayed": False,
-                    }
-                )
-            return RemoteReceipt(
-                node_id="n001",
-                host="cluster-mcp",
-                remote_dir=request["workdir"],
-                command=["mcp", "ts_submit_job", request["submission_id"]],
-                receipt_path=f"{request['workdir']}/ts_submission.json",
-                scheduler_id="42004.cluster",
-                metadata={"submission_id": request["submission_id"]},
-            )
-
-    client = RejectThenSubmitClient()
-    monkeypatch.setattr("ts_compute.control._mcp_client", lambda: client)
-
-    result = submit_calculation(workspace, intent_id)
-
-    assert result["state"] == "failed"
-    assert result["error_class"] == "pre_submit_validation_failed"
-    assert result["control"]["phase"] == "pre_submit_validation"
-    assert result["control"]["effect_attempted"] is False
-    assert result["control"]["retry_disposition"] == "retry_same_submission"
-    assert result["control"]["reconciliation_required"] is False
-    assert result["provenance"]["server_submission_state"] == "rejected"
-    assert result["provenance"]["submission_attempted"] is False
-    assert result["provenance"]["retry_safe"] is True
-
-    submitted = submit_calculation(workspace, intent_id)
-    assert submitted["state"] == "submitted"
-    assert submitted["job_id"] == "42004.cluster"
-
-
-def test_mcp_scheduler_submit_failure_remains_ambiguous(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workspace = _workspace(tmp_path)
-    _configure_mcp(monkeypatch)
-    intent_id = "calc_n001_optfreq_v2_001"
-    prepare_calculation(
-        workspace,
-        _intent_v2(workspace, target=_mcp_target(), dry_run=False),
-    )
-
-    class FailingSubmitClient:
-        def ensure_directory(self, _path: str) -> None:
-            return None
-
-        def upload_file(self, _source: Path, remote_path: str):
-            return {"path": remote_path}
-
-        def submit(self, _request):
-            raise MCPClientError("MCP tool 'ts_submit_job' failed: ReadTimeout")
-
-    monkeypatch.setattr("ts_compute.control._mcp_client", lambda: FailingSubmitClient())
-
-    result = submit_calculation(workspace, intent_id)
-
-    assert result["state"] == "unknown"
-    assert result["error_class"] == "submission_ambiguous"
-    assert result["provenance"]["submission_phase"] == "scheduler_submit"
-    assert result["provenance"]["submission_attempted"] is True
-    assert result["provenance"]["retry_safe"] is False
-
-
-def test_mcp_ambiguous_record_uses_bound_scheduler_state_when_available(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workspace = _workspace(tmp_path)
-    _configure_mcp(monkeypatch)
-    intent_id = "calc_n001_optfreq_v2_001"
-    prepare_calculation(
-        workspace,
-        _intent_v2(workspace, target=_mcp_target(), dry_run=False),
-    )
-
-    class AmbiguousRecordClient:
-        def __init__(self) -> None:
-            self.request: dict[str, object] | None = None
-
-        def ensure_directory(self, _path: str) -> None:
-            return None
-
-        def upload_file(self, _source: Path, remote_path: str):
-            return {"path": remote_path}
-
-        def submit(self, request):
-            self.request = request
-            raise MCPClientError("MCP submit response was interrupted")
-
-        def status(self, submission_id: str, *, include_history: bool):
-            assert include_history is True
-            assert self.request is not None
-            return {
-                "schema_version": "ts-cluster-submission/1",
-                "submission_id": submission_id,
-                "found": True,
-                "state": "ambiguous",
-                "job_id": "42005.cluster",
-                "request": self.request,
-                "result": None,
-                "scheduler": {"state": "R"},
-                "scheduler_query": {"outcome": "succeeded", "error_class": None, "message": None},
-                "updated_at": "2026-08-06T04:00:00+00:00",
-            }
-
-    client = AmbiguousRecordClient()
-    monkeypatch.setattr("ts_compute.control._mcp_client", lambda: client)
-
-    assert submit_calculation(workspace, intent_id)["state"] == "unknown"
-    status = calculation_status(workspace, intent_id)
-
-    assert status["state"] == "running"
-    assert status["job_id"] == "42005.cluster"
-    base = workspace / f"nodes/n001/attempts/{intent_id}"
-    reconciliation = json.loads((base / "submit_reconciliation.json").read_text(encoding="utf-8"))
-    assert reconciliation["state"] == "submitted"
-    assert reconciliation["provenance"]["server_submission_state"] == "ambiguous"
-
-
-def test_mcp_status_reconciles_ambiguous_submit_and_unblocks_collection(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workspace = _workspace(tmp_path)
-    _configure_mcp(monkeypatch)
-    intent_id = "calc_n001_optfreq_v2_001"
-    prepare_calculation(
-        workspace,
-        _intent_v2(workspace, target=_mcp_target(), dry_run=False),
-    )
-
-    class ReconciliationClient:
-        def __init__(self) -> None:
-            self.request: dict[str, object] | None = None
-            self.submit_calls = 0
-            self.cancel_calls = 0
-            self.server_state = "submitted"
-
-        def ensure_directory(self, _path: str) -> None:
-            return None
-
-        def upload_file(self, _source: Path, remote_path: str):
-            return {"path": remote_path}
-
-        def submit(self, request):
-            self.submit_calls += 1
-            self.request = request
-            raise MCPClientError("MCP tool 'ts_submit_job' failed: stream disconnected")
-
-        def status(self, submission_id: str, *, include_history: bool):
-            assert include_history is True
-            assert self.request is not None
-            return {
-                "schema_version": "ts-cluster-submission/1",
-                "submission_id": submission_id,
-                "found": True,
-                "state": self.server_state,
-                "job_id": "42004.cluster",
-                "request": self.request,
-                "result": {
-                    "schema_version": (
-                        "ts-cluster-cancellation-result/1"
-                        if self.server_state == "cancelled"
-                        else "ts-cluster-submission-result/1"
-                    ),
-                    "state": self.server_state,
-                    "job_id": "42004.cluster",
-                    "scheduler": {"action": "delete"} if self.server_state == "cancelled" else None,
-                },
-                "scheduler": {"state": "R"},
-                "scheduler_query": {"outcome": "succeeded", "error_class": None, "message": None},
-                "updated_at": "2026-08-06T04:00:00+00:00",
-            }
-
-        def cancel(self, _submission_id: str, _job_id: str):
-            self.cancel_calls += 1
-            self.server_state = "cancelled"
-            raise MCPClientError("MCP tool 'ts_cancel_submission' failed: stream disconnected")
-
-        def download_file(self, _remote_path: str, destination: Path):
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(_gaussian_log(), encoding="utf-8")
-            return {"path": str(destination), "size": destination.stat().st_size, "sha256": "3" * 64}
-
-    client = ReconciliationClient()
-    monkeypatch.setattr("ts_compute.control._mcp_client", lambda: client)
-
-    ambiguous = submit_calculation(workspace, intent_id)
-    assert ambiguous["state"] == "unknown"
-    before = operational_snapshot(workspace)
-    assert before["operational_summary"]["ambiguous_submission_count"] == 1
-
-    status = calculation_status(workspace, intent_id)
-    assert status["state"] == "running"
-    base = workspace / f"nodes/n001/attempts/{intent_id}"
-    reconciliation = json.loads((base / "submit_reconciliation.json").read_text(encoding="utf-8"))
-    assert reconciliation["state"] == "submitted"
-    assert reconciliation["job_id"] == "42004.cluster"
-    assert reconciliation["control"]["phase"] == "reconciled"
-    assert (base / "mcp_receipt.json").is_file()
-    after = operational_snapshot(workspace)
-    assert after["unresolved_controls"] == []
-    assert after["ambiguous_submissions"] == []
-
-    collected = collect_calculation(workspace, intent_id, ["candidate.log"])
+    observed = calculation_status(workspace, "calc_n001_optfreq_001")
+    assert observed["state"] == "running"
+    assert observed["provenance"]["scheduler_state"] == "R"
+    tail = calculation_tail(workspace, "calc_n001_optfreq_001", "candidate.log", 40)
+    assert tail["text"] == "running\\n"
+    collected = collect_calculation(workspace, "calc_n001_optfreq_001", ["candidate.log"])
     assert collected["state"] == "collected"
-    assert submit_calculation(workspace, intent_id)["job_id"] == "42004.cluster"
-    assert client.submit_calls == 1
-
-    cancelled = cancel_calculation(workspace, intent_id, expected_job_id="42004.cluster")
-    assert cancelled["state"] == "unknown"
-    assert operational_snapshot(workspace)["operational_summary"]["ambiguous_cancellation_count"] == 1
-    stopped = calculation_status(workspace, intent_id)
-    assert stopped["state"] == "stopped"
-    cancel_reconciliation = json.loads((base / "cancel_reconciliation.json").read_text(encoding="utf-8"))
-    assert cancel_reconciliation["state"] == "stopped"
-    assert cancel_reconciliation["control"]["phase"] == "reconciled"
-    assert operational_snapshot(workspace)["ambiguous_cancellations"] == []
-    assert cancel_calculation(workspace, intent_id)["state"] == "stopped"
-    assert client.cancel_calls == 1
-
-
-def test_mcp_transport_submit_status_tail_collect_and_cancel(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workspace = _workspace(tmp_path)
-    _configure_mcp(monkeypatch)
-    intent_id = "calc_n001_optfreq_v2_001"
-    prepared = prepare_calculation(
-        workspace,
-        _intent_v2(workspace, target=_mcp_target(), dry_run=False),
-    )
-    policy = prepared["prepared"]["execution_policy"]
-    workspace_id = policy["workspace_id"]
-    remote_dir = f"workspaces/{workspace_id}/runs/n001/calc_n001_optfreq_v2_001"
-    assert policy["namespace_version"] == "ts-mcp-workspace/1"
-    assert policy["requested_remote_dir"] == "runs/n001/calc_n001_optfreq_v2_001"
-    assert policy["remote_dir"] == remote_dir
-    assert policy["submission_id"].startswith(f"tsjob_{workspace_id}_{intent_id}_")
-
-    class FakeMCPClient:
-        def __init__(self) -> None:
-            self.request: dict[str, object] | None = None
-            self.uploads: list[tuple[str, str]] = []
-            self.cancels: list[tuple[str, str]] = []
-            self.scheduler_state = "R"
-
-        def ensure_directory(self, path: str) -> None:
-            assert path == remote_dir
-
-        def upload_file(self, source: Path, remote_path: str):
-            self.uploads.append((source.name, remote_path))
-            return {"path": remote_path}
-
-        def submit(self, request):
-            self.request = request
-            return RemoteReceipt(
-                node_id="n001",
-                host="cluster-mcp",
-                remote_dir=request["workdir"],
-                command=["mcp", "ts_submit_job", request["submission_id"]],
-                receipt_path=f"{request['workdir']}/ts_submission.json",
-                scheduler_id="42001.cluster",
-                metadata={
-                    "submission_id": request["submission_id"],
-                    "intent_id": request["intent_id"],
-                    "intent_digest": request["intent_digest"],
-                    "backend": request["backend"],
-                    "expected_artifacts": json.dumps(request["expected_artifacts"]),
-                },
-            )
-
-        def status(self, submission_id: str, *, include_history: bool):
-            assert include_history is True
-            assert self.request is not None
-            scheduler = {"state": self.scheduler_state}
-            if self.scheduler_state == "F":
-                scheduler["exit_status"] = 0
-            return {
-                "schema_version": "ts-cluster-submission/1",
-                "submission_id": submission_id,
-                "state": "submitted",
-                "job_id": "42001.cluster",
-                "request": self.request,
-                "scheduler": scheduler,
-            }
-
-        def read_tail(self, remote_path: str, *, max_bytes: int):
-            assert remote_path.endswith("/candidate.log")
-            return {"data": b"line 1\nNormal termination\n", "size": 26, "sha256": "1" * 64}
-
-        def download_file(self, remote_path: str, destination: Path):
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_text(_gaussian_log(), encoding="utf-8")
-            return {"path": str(destination), "size": destination.stat().st_size, "sha256": "2" * 64}
-
-        def cancel(self, submission_id: str, job_id: str):
-            self.cancels.append((submission_id, job_id))
-            return {
-                "schema_version": "ts-cluster-cancellation-result/1",
-                "submission_id": submission_id,
-                "job_id": job_id,
-                "state": "cancelled",
-                "scheduler": {"action": "delete"},
-            }
-
-    client = FakeMCPClient()
-    monkeypatch.setattr("ts_compute.control._mcp_client", lambda: client)
-
-    binding = preflight_calculation(
-        workspace,
-        "submit",
-        "n001",
-        "gaussian",
-        intent_id=intent_id,
-    )
-    assert binding["transport"] == "mcp"
-    assert binding["execution_summary"]["queue"] == "workq"
-    submitted = submit_calculation(workspace, intent_id, binding["intent_digest"])
-    assert submitted["job_id"] == "42001.cluster"
-    assert client.request is not None
-    assert client.request["intent_digest"] == binding["intent_digest"]
-    assert client.request["workdir"] == remote_dir
-    assert client.request["submission_id"] == policy["submission_id"]
-    assert str(client.request["intent_digest"]).count("sha256:") == 1
-    assert {name for name, _remote in client.uploads} == {"candidate.gjf", "run_mcp_job.sh"}
-    runner = workspace / f"nodes/n001/attempts/{intent_id}/run_mcp_job.sh"
-    runner_text = runner.read_text(encoding="utf-8")
-    assert 'scratch_root=$(mktemp -d "${scratch_base%/}/ts-gaussian.XXXXXX")' in runner_text
-    assert 'export GAUSS_SCRDIR="$scratch_root"' in runner_text
-    assert "trap cleanup EXIT" in runner_text
-    assert "g16 < candidate.gjf > candidate.log 2> remote_job.stderr" in runner_text
-    assert 'rm -rf -- "$scratch_root"' in runner_text
-
-    status = calculation_status(workspace, intent_id)
-    assert status["state"] == "running"
-    assert status["program_status"] == "not_run"
-    assert status["job_id"] == "42001.cluster"
-    status_path = workspace / f"nodes/n001/attempts/{intent_id}/status.json"
-    bound_status = status_path.read_bytes()
-    original_status = client.status
-
-    def changed_job_status(submission_id: str, *, include_history: bool):
-        changed = original_status(submission_id, include_history=include_history)
-        changed["job_id"] = "99999.cluster"
-        return changed
-
-    client.status = changed_job_status
-    with pytest.raises(ComputeContractError, match="durable submit result"):
-        calculation_status(workspace, intent_id)
-    assert status_path.read_bytes() == bound_status
-    client.status = original_status
-    tail = calculation_tail(workspace, intent_id, "candidate.log", 1)
-    assert tail["text"] == "Normal termination"
-    client.scheduler_state = "C"
-    status = calculation_status(workspace, intent_id)
-    assert status["state"] == "completed"
-    assert status["program_status"] == "not_run"
-    assert status["error_class"] is None
-    client.scheduler_state = "F"
-    status = calculation_status(workspace, intent_id)
-    assert status["program_status"] == "completed"
-    collected = collect_calculation(workspace, intent_id, ["candidate.log"])
-    assert collected["program_status"] == "completed"
     assert collected["artifact_refs"] == [
-        "nodes/n001/attempts/calc_n001_optfreq_v2_001/outputs/collected/candidate.log"
+        "nodes/n001/attempts/calc_n001_optfreq_001/outputs/collected/candidate.log"
     ]
-
-    with pytest.raises(ComputeContractError, match="active or unresolved"):
-        cancel_calculation(workspace, intent_id, expected_job_id="42001.cluster")
-
-
-def test_mcp_namespace_separates_identical_intents_in_two_workspaces(tmp_path: Path) -> None:
-    first_workspace = _workspace(tmp_path / "first")
-    second_workspace = _workspace(tmp_path / "second")
-
-    first = prepare_calculation(
-        first_workspace,
-        _intent_v2(first_workspace, target=_mcp_target(), dry_run=False),
-    )["prepared"]["execution_policy"]
-    second = prepare_calculation(
-        second_workspace,
-        _intent_v2(second_workspace, target=_mcp_target(), dry_run=False),
-    )["prepared"]["execution_policy"]
-
-    assert first["workspace_id"] != second["workspace_id"]
-    assert first["requested_remote_dir"] == second["requested_remote_dir"]
-    assert first["remote_dir"] != second["remote_dir"]
-    assert first["submission_id"] != second["submission_id"]
-    assert first["remote_dir"].startswith(f"workspaces/{first['workspace_id']}/")
-    assert second["remote_dir"].startswith(f"workspaces/{second['workspace_id']}/")
+    cancelled = cancel_calculation(workspace, "calc_n001_optfreq_001", expected_job_id="123.cluster")
+    assert cancelled["state"] == "stopped"
+    assert calls == {"submit": 1, "status": 1, "collect": 1, "cancel": 1}
 
 
-def test_mcp_prepared_record_without_workspace_namespace_is_rejected(
+def test_remote_pre_submit_failure_is_retryable(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace = _workspace(tmp_path)
-    _configure_mcp(monkeypatch)
-    intent_id = "calc_n001_optfreq_v2_001"
-    prepared_result = prepare_calculation(
-        workspace,
-        _intent_v2(workspace, target=_mcp_target(), dry_run=False),
-    )
-    prepared = prepared_result["prepared"]
-    prepared["execution_policy"] = prepared_result["intent"]["execution_target"]
-    prepared_path = workspace / f"nodes/n001/attempts/{intent_id}/prepared.json"
-    prepared_path.write_text(json.dumps(prepared), encoding="utf-8")
-
-    with pytest.raises(ComputeContractError, match="execution policy does not match"):
-        submit_calculation(workspace, intent_id)
-
-
-def test_mcp_cancel_is_bound_to_preflight_job_id(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workspace = _workspace(tmp_path)
-    _configure_mcp(monkeypatch)
-    intent_id = "calc_n001_optfreq_v2_001"
+    _configure_remote(tmp_path, monkeypatch)
     prepare_calculation(
         workspace,
-        _intent_v2(workspace, target=_mcp_target(), dry_run=False),
+        _intent(workspace, target=_remote_target(workspace), dry_run=False),
     )
+    attempts = 0
 
-    class FakeMCPClient:
-        request: dict[str, object] | None = None
-        cancels: list[tuple[str, str]] = []
+    def fake_submit(config):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RemotePreSubmitError("upload", OSError("network unavailable"))
+        return _receipt_for(config)
 
-        def ensure_directory(self, _path: str) -> None:
-            return None
+    monkeypatch.setattr("ts_compute.control.remote_lifecycle.submit", fake_submit)
+    failed = submit_calculation(workspace, "calc_n001_optfreq_001")
+    assert failed["state"] == "failed"
+    assert failed["error_class"] == "remote_staging_failed"
+    assert failed["control"]["effect_attempted"] is False
+    assert failed["control"]["retry_disposition"] == "retry_same_submission"
 
-        def upload_file(self, _source: Path, remote_path: str):
-            return {"path": remote_path}
-
-        def submit(self, request):
-            self.request = request
-            return RemoteReceipt(
-                node_id="n001",
-                host="cluster-mcp",
-                remote_dir=request["workdir"],
-                command=["mcp", "ts_submit_job", request["submission_id"]],
-                receipt_path=f"{request['workdir']}/ts_submission.json",
-                scheduler_id="42001.cluster",
-                metadata={"submission_id": request["submission_id"]},
-            )
-
-        def cancel(self, submission_id: str, job_id: str):
-            self.cancels.append((submission_id, job_id))
-            return {
-                "schema_version": "ts-cluster-cancellation-result/1",
-                "submission_id": submission_id,
-                "job_id": job_id,
-                "state": "cancelled",
-                "scheduler": {"action": "delete"},
-            }
-
-    client = FakeMCPClient()
-    monkeypatch.setattr("ts_compute.control._mcp_client", lambda: client)
-    submit_calculation(workspace, intent_id)
-    binding = preflight_calculation(
-        workspace,
-        "cancel",
-        "n001",
-        "gaussian",
-        intent_id=intent_id,
-    )
-    assert binding["job_id"] == "42001.cluster"
-
-    with pytest.raises(ComputeContractError, match="changed after preflight binding"):
-        cancel_calculation(workspace, intent_id, expected_job_id="other.cluster")
-    cancelled = cancel_calculation(workspace, intent_id, expected_job_id=binding["job_id"])
-    assert cancelled["state"] == "stopped"
-    assert client.request is not None
-    assert client.cancels == [(client.request["submission_id"], "42001.cluster")]
+    submitted = submit_calculation(workspace, "calc_n001_optfreq_001")
+    assert submitted["state"] == "submitted"
+    assert attempts == 2
 
 
-def test_mcp_target_rejects_embedded_connection_or_incomplete_resources(tmp_path: Path) -> None:
+def test_scheduler_rejection_is_known_and_requires_a_new_intent(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     workspace = _workspace(tmp_path)
-    intent_path = _intent_v2(workspace, target=_mcp_target())
-    intent = json.loads(intent_path.read_text(encoding="utf-8"))
-    intent["execution_target"]["endpoint"] = "https://cluster.example/mcp"
-    intent_path.write_text(json.dumps(intent), encoding="utf-8")
-    with pytest.raises(ComputeContractError, match="calculation_intent_v2.schema.json validation failed"):
-        prepare_calculation(workspace, intent_path)
+    _configure_remote(tmp_path, monkeypatch)
+    prepare_calculation(
+        workspace,
+        _intent(workspace, target=_remote_target(workspace), dry_run=False),
+    )
+    attempts = 0
 
-    del intent["execution_target"]["endpoint"]
-    intent["execution_target"]["execution"]["walltime"] = "01:00:00"
-    intent["execution_target"]["execution"]["environment"] = {"API_TOKEN": "secret"}
-    intent_path.write_text(json.dumps(intent), encoding="utf-8")
-    with pytest.raises(ComputeContractError, match="credential fields"):
-        prepare_calculation(workspace, intent_path)
+    def fake_submit(config):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RemoteSubmissionRejected({"state": "rejected", "error": "queue disabled"})
+        return _receipt_for(config)
 
-    intent["execution_target"]["execution"]["environment"] = {}
-    del intent["execution_target"]["execution"]["walltime"]
-    intent_path.write_text(json.dumps(intent), encoding="utf-8")
-    with pytest.raises(ComputeContractError, match="calculation_intent_v2.schema.json validation failed"):
-        prepare_calculation(workspace, intent_path)
+    monkeypatch.setattr("ts_compute.control.remote_lifecycle.submit", fake_submit)
+    rejected = submit_calculation(workspace, "calc_n001_optfreq_001")
+
+    assert rejected["state"] == "failed"
+    assert rejected["error_class"] == "scheduler_submission_rejected"
+    assert rejected["control"]["effect_attempted"] is True
+    assert rejected["control"]["retry_disposition"] == "new_intent"
+    assert rejected["provenance"]["submission_attempted"] is True
+    assert rejected["provenance"]["retry_safe"] is False
+    with pytest.raises(ComputeContractError, match="refuses automatic replay"):
+        submit_calculation(workspace, "calc_n001_optfreq_001")
+
+
+def test_ambiguous_remote_submit_refuses_replay_and_reconciles_from_remote_record(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = _workspace(tmp_path)
+    _configure_remote(tmp_path, monkeypatch)
+    prepare_calculation(
+        workspace,
+        _intent(workspace, target=_remote_target(workspace), dry_run=False),
+    )
+    monkeypatch.setattr(
+        "ts_compute.control.remote_lifecycle.submit",
+        lambda _config: (_ for _ in ()).throw(
+            RemoteSubmissionAmbiguous(
+                {"state": "unknown", "phase": "submit_request_started"}
+            )
+        ),
+    )
+
+    ambiguous = submit_calculation(workspace, "calc_n001_optfreq_001")
+    assert ambiguous["state"] == "unknown"
+    assert ambiguous["error_class"] == "submission_ambiguous"
+    assert ambiguous["control"]["phase"] == "submit_request_started"
+    with pytest.raises(ComputeContractError, match="refuses automatic replay"):
+        submit_calculation(workspace, "calc_n001_optfreq_001")
+
+    def remote_record(config, *, correct_digest=True):
+        return {
+            "schema_version": "ts-remote-submission/1",
+            "submission_id": config.submission_id,
+            "state": "accepted",
+            "script_sha256": (
+                remote_lifecycle.submission_script_digest(config)
+                if correct_digest
+                else "c" * 64
+            ),
+            "job_id": "123.cluster",
+            "updated_at": "2026-08-12T00:00:00Z",
+        }
+
+    monkeypatch.setattr(
+        "ts_compute.control.remote_lifecycle.read_submission_record",
+        lambda config: remote_record(config, correct_digest=False),
+    )
+    monkeypatch.setattr(
+        "ts_compute.control.remote_lifecycle.status",
+        lambda _config, job_id: RemoteJobStatus(
+            state="queued",
+            program_status="not_run",
+            job_id=job_id,
+            scheduler_state="Q",
+        ),
+    )
+    with pytest.raises(ComputeContractError, match="reconciliation record does not match"):
+        calculation_status(workspace, "calc_n001_optfreq_001")
+
+    monkeypatch.setattr(
+        "ts_compute.control.remote_lifecycle.read_submission_record",
+        lambda config: remote_record(config),
+    )
+    reconciled = calculation_status(workspace, "calc_n001_optfreq_001")
+    assert reconciled["state"] == "queued"
+    assert submit_calculation(workspace, "calc_n001_optfreq_001")["job_id"] == "123.cluster"
+
+
+def test_collect_uses_receipt_without_scheduler_refresh(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = _workspace(tmp_path)
+    _configure_remote(tmp_path, monkeypatch)
+    prepare_calculation(
+        workspace,
+        _intent(workspace, target=_remote_target(workspace), dry_run=False),
+    )
+    monkeypatch.setattr("ts_compute.control.remote_lifecycle.submit", _receipt_for)
+    monkeypatch.setattr(
+        "ts_compute.control.remote_lifecycle.status",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("collect must not query scheduler")),
+    )
+
+    def fake_collect(_config, artifacts, output_dir):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        (output_dir / "candidate.log").write_text(_gaussian_log(), encoding="utf-8")
+        return list(artifacts), []
+
+    monkeypatch.setattr("ts_compute.control.remote_lifecycle.collect", fake_collect)
+    submit_calculation(workspace, "calc_n001_optfreq_001")
+    result = collect_calculation(workspace, "calc_n001_optfreq_001", ["candidate.log"])
+    assert result["state"] == "collected"
+    assert result["program_status"] == "not_run"
+
+
+def test_remote_target_rejects_legacy_transport_fields(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = _workspace(tmp_path)
+    _configure_remote(tmp_path, monkeypatch)
+    request = _calculation_request(workspace, target=_remote_request_target())
+    request["execution_target"]["transport"] = "mcp"
+    with pytest.raises(ComputeContractError, match="calculation_request.schema.json validation failed"):
+        create_calculation_intent(workspace, request)
+
 
 
 def test_prepare_rejects_canonical_state_as_backend_input(tmp_path: Path) -> None:
@@ -1478,175 +860,13 @@ def test_gaussian_prepare_reports_unexpected_input_roles(tmp_path: Path) -> None
         prepare_calculation(workspace, intent_path)
 
 
-def test_remote_target_requires_host_and_directory_allowlists(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    workspace = _workspace(tmp_path)
-    intent_path = _intent(workspace, target=_remote_target())
-
-    with pytest.raises(ComputeContractError, match="TS_COMPUTE_LOGIN_HOSTS"):
-        prepare_calculation(workspace, intent_path)
-
-    _allow_remote(monkeypatch)
-    intent = json.loads(intent_path.read_text(encoding="utf-8"))
-    intent["execution_target"]["remote_dir"] = "/other/n001"
-    intent_path.write_text(json.dumps(intent), encoding="utf-8")
-    with pytest.raises(ComputeContractError, match="outside TS_COMPUTE_REMOTE_ROOTS"):
-        prepare_calculation(workspace, intent_path)
-
-
-def test_remote_target_requires_explicit_transport(tmp_path: Path) -> None:
-    workspace = _workspace(tmp_path)
-    target = _remote_target()
-    del target["transport"]
-    intent_path = _intent(workspace, target=target)
-
-    with pytest.raises(ComputeContractError, match="calculation_intent_v2.schema.json validation failed"):
-        prepare_calculation(workspace, intent_path)
-
-
-def test_status_tail_and_collect_use_prepared_remote_scope(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workspace = _workspace(tmp_path)
-    _allow_remote(monkeypatch)
-    prepare_calculation(workspace, _intent(workspace, target=_remote_target(), dry_run=False))
-    seen: dict[str, object] = {}
-
-    poll_states = iter(["running"])
-
-    def fake_poll(config):
-        seen.setdefault("poll", []).append(config)
-        state = next(poll_states)
-        return RemoteJobStatus(
-            node_id="n001",
-            host="compute.test",
-            remote_dir="/remote/ts/n001/calc_n001_optfreq_001",
-            state=state,
-            pid="123",
-            exit_status=0 if state == "completed" else None,
-            files=["candidate.log"],
-        )
-
-    def fake_tail(config, *, artifact, lines):
-        seen["tail"] = (artifact, lines)
-        return "normal termination\n"
-
-    def fake_fetch(config, *, artifacts, tolerate_missing):
-        seen["fetch"] = (list(artifacts), tolerate_missing)
-        config.output_dir.mkdir(parents=True, exist_ok=True)
-        (config.output_dir / "candidate.log").write_text(_gaussian_log(), encoding="utf-8")
-        return list(artifacts)
-
-    monkeypatch.setattr("ts_compute.control.job_lifecycle.poll", fake_poll)
-    monkeypatch.setattr("ts_compute.control.job_lifecycle.tail", fake_tail)
-    monkeypatch.setattr("ts_compute.control.job_lifecycle.fetch", fake_fetch)
-    monkeypatch.setattr(
-        "ts_compute.control.job_lifecycle.submit_async",
-        lambda config: RemoteReceipt(
-            node_id=config.node_id,
-            host=config.compute_host,
-            remote_dir=config.remote_dir,
-            command=config.command,
-            receipt_path=f"{config.remote_dir}/remote_receipt.json",
-            scheduler_id="123",
-            metadata={"expected_artifacts": json.dumps(list(config.expected_artifacts))},
-        ),
-    )
-
-    submit_calculation(workspace, "calc_n001_optfreq_001")
-    (workspace / "nodes/n001/inputs/candidate.gjf").unlink()
-    status = calculation_status(workspace, "calc_n001_optfreq_001")
-    tail = calculation_tail(workspace, "calc_n001_optfreq_001", "candidate.log", 40)
-    collected = collect_calculation(workspace, "calc_n001_optfreq_001", ["candidate.log"])
-
-    assert status["state"] == "running"
-    assert status["program_status"] == "not_run"
-    assert tail["text"] == "normal termination\n"
-    assert seen["tail"] == ("candidate.log", 40)
-    assert seen["fetch"] == (["candidate.log"], False)
-    assert collected["program_status"] == "not_run"
-    assert collected["artifact_refs"] == [
-        "nodes/n001/attempts/calc_n001_optfreq_001/outputs/collected/candidate.log"
-    ]
-    assert len(seen["poll"]) == 1
-    config = seen["poll"][-1]
-    assert config.login_host == "login.test"
-    assert config.compute_host == "compute.test"
-    assert config.command == ["g16", "candidate.gjf"]
-    assert config.stdout_name == "candidate.log"
-
-    with pytest.raises(ComputeContractError, match="not allowlisted"):
-        calculation_tail(workspace, "calc_n001_optfreq_001", "arbitrary.log", 40)
-    with pytest.raises(ComputeContractError, match="unique subset"):
-        collect_calculation(workspace, "calc_n001_optfreq_001", ["arbitrary.log"])
-    with pytest.raises(ComputeContractError, match="overwrite"):
-        collect_calculation(workspace, "calc_n001_optfreq_001", ["candidate.log"])
-
-
-def test_collect_requires_durable_submit_binding(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    workspace = _workspace(tmp_path)
-    _allow_remote(monkeypatch)
-    prepare_calculation(workspace, _intent(workspace, target=_remote_target()))
-
-    with pytest.raises(ComputeContractError, match="durable successful submit result"):
-        collect_calculation(workspace, "calc_n001_optfreq_001", ["candidate.log"])
-
-
-def test_collect_does_not_refresh_active_scheduler_status(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    workspace = _workspace(tmp_path)
-    _allow_remote(monkeypatch)
-    prepare_calculation(workspace, _intent(workspace, target=_remote_target(), dry_run=False))
-    polls = 0
-
-    def fake_poll(_config):
-        nonlocal polls
-        polls += 1
-        return RemoteJobStatus(
-            node_id="n001",
-            host="compute.test",
-            remote_dir="/remote/ts/n001/calc_n001_optfreq_001",
-            state="running",
-            pid="123",
-        )
-
-    def fake_fetch(config, *, artifacts, tolerate_missing):
-        config.output_dir.mkdir(parents=True, exist_ok=True)
-        (config.output_dir / "candidate.log").write_text(_gaussian_log(), encoding="utf-8")
-        return list(artifacts)
-
-    monkeypatch.setattr("ts_compute.control.job_lifecycle.poll", fake_poll)
-    monkeypatch.setattr("ts_compute.control.job_lifecycle.fetch", fake_fetch)
-    monkeypatch.setattr(
-        "ts_compute.control.job_lifecycle.submit_async",
-        lambda config: RemoteReceipt(
-            node_id=config.node_id,
-            host=config.compute_host,
-            remote_dir=config.remote_dir,
-            command=config.command,
-            receipt_path=f"{config.remote_dir}/remote_receipt.json",
-            scheduler_id="123",
-            metadata={"expected_artifacts": json.dumps(list(config.expected_artifacts))},
-        ),
-    )
-
-    submit_calculation(workspace, "calc_n001_optfreq_001")
-    calculation_status(workspace, "calc_n001_optfreq_001")
-    collected = collect_calculation(workspace, "calc_n001_optfreq_001", ["candidate.log"])
-
-    assert collected["program_status"] == "not_run"
-    assert polls == 1
-
-
 def test_prepared_backend_metadata_is_revalidated_before_remote_access(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace = _workspace(tmp_path)
-    _allow_remote(monkeypatch)
-    prepare_calculation(workspace, _intent(workspace, target=_remote_target()))
+    _configure_remote(tmp_path, monkeypatch)
+    prepare_calculation(workspace, _intent(workspace, target=_remote_target(workspace)))
     prepared_path = workspace / "nodes/n001/attempts/calc_n001_optfreq_001/prepared.json"
     prepared = json.loads(prepared_path.read_text(encoding="utf-8"))
     prepared["prepared_task"]["command"] = ["arbitrary-command"]

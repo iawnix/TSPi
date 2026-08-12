@@ -25,7 +25,7 @@ def test_development_cases_are_bounded_pytest_selectors() -> None:
         "subagent-all",
         "package-inventory",
         "workspace-contracts",
-        "mcp-contracts",
+        "remote-contracts",
     }
     assert all(case["selectors"] for case in cases)
     assert all(selector.startswith("tests/") for case in cases for selector in case["selectors"])

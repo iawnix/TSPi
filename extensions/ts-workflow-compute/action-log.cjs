@@ -64,7 +64,7 @@ function actionStatusForResult(result) {
     result.state === "unknown"
     && ["submission_ambiguous", "cancellation_ambiguous"].includes(result.error_class)
   ) return "unknown";
-  if (result.state === "failed" && result.error_class === "mcp_staging_failed") return "failed";
+  if (result.state === "failed" && result.error_class === "remote_staging_failed") return "failed";
   return "completed";
 }
 

@@ -138,7 +138,7 @@ exploration to choose an anchor or branch relation.
 
 Every `ts_subagent_*` tool creates a fresh child model session. In contrast,
 `ts_workspace_*` tools call the deterministic workspace control plane directly,
-and `ts_mcp_*` tools run deterministic infrastructure diagnostics.
+and `ts_remote_*` tools run deterministic infrastructure diagnostics.
 
 Use `ts_subagent_review` only at high-value ambiguity, failure-analysis,
 backtrack, or audit boundaries. Each call creates a fresh tool-free session
@@ -154,17 +154,14 @@ and `cancel`, the Root Agent directly creates a child with one operation bound
 to the current intent digest and target; no separate interactive approval is
 required.
 
-Use `ts_mcp_inspect` for general cluster-status and resource-availability
-questions, preparing MCP-backed work, selecting a queue, or diagnosing a
-connection failure. For a general question about the configured MCP target, use
-`mode=cluster`; use `status`, `doctor`, `queues`, or `nodes` for narrower checks.
-Follow the active calculation intent's `transport` or the user's explicit target.
-Never switch between MCP and SSH automatically after a failure; report the
-failure and require an explicit transport decision. Label MCP-derived and
-SSH-derived facts separately when comparing them. Do not call the diagnostic
-every turn or poll an unchanged connection. Users may run the same checks with
-`/ts-mcp status|doctor|queues|nodes|cluster`. MCP submit, cancel, upload, and
-arbitrary tool calls are not exposed by this diagnostic surface.
+Use `ts_remote_inspect` for cluster status, resource availability, remote
+preparation, queue selection, or connection diagnosis. Use `mode=cluster` for
+an aggregate view and `status`, `doctor`, `queues`, or `nodes` for narrower
+checks. The profile comes from the active calculation intent or the configured
+default. Do not call the diagnostic every turn or poll an unchanged
+connection. Users may run the same checks with
+`/ts-remote status|doctor|queues|nodes|cluster`. Submit, cancel, upload, and
+arbitrary remote commands are not exposed by this diagnostic surface.
 
 Use `ts_subagent_render` for one node-owned local render,
 `ts_subagent_report` for one new validated report package, and
@@ -217,19 +214,14 @@ Attempt authority lives under:
 nodes/<node>/attempts/<intent>/
 ```
 
-A remote request explicitly selects `transport=ssh|mcp`. For SSH it supplies an
-allowlisted `remoteRoot`; for MCP it supplies scheduler resources. The host
-generates `authority=execution_mirror` and the intent's remote directory. MCP
-connection URL, token, and timeout are host environment settings, never intent
-fields. Long jobs outlive child sessions; inspect only when state changes or a
-bounded failure diagnostic is needed. Do not poll unchanged jobs every turn.
-For MCP `submit`, `inspect`, `collect`, and `cancel`, the host automatically
-runs a read-only capability probe after intent binding and before child
-creation.
-Before SSH cancellation, inspect once to bind the current remote PID.
+A remote request selects one installation-owned profile and complete scheduler
+resources. The host generates `authority=execution_mirror`, workspace identity,
+and the remote directory. SSH hosts, remote roots, scheduler commands, software
+activation, and environment are profile settings, never intent fields. Long
+jobs outlive child sessions; inspect only when state changes or a bounded
+failure diagnostic is needed. Do not poll unchanged jobs every turn.
 
-When a configured scheduler service is used, follow
-`references/cluster_mcp.md`. Preserve its manifest and idempotency bindings;
+Follow `references/remote_contract.md`. Preserve its manifest and idempotency bindings;
 never retry an ambiguous submit or cancel with the same or a new identifier
 until the scheduler state has been reconciled by the host.
 Use `pending_controls` for a guard with no final result. Use
@@ -237,10 +229,9 @@ Use `pending_controls` for a guard with no final result. Use
 retry or reconciliation. Retry the same submission ID only when the typed
 control outcome says `retry_disposition=retry_same_submission` and
 `effect_attempted=false`; never replay an ambiguous scheduler request.
-MCP Gaussian submission requires a server `software.gaussian` profile with an
+Gaussian submission requires a configured `software.gaussian` profile with an
 existing activation script and an allowed queue. Installation of `g16` alone is
-not registration. Do not bypass a failed profile preflight with a PATH override
-or an automatic SSH fallback.
+not registration. Do not bypass a failed profile preflight with a PATH override.
 
 ## Evidence And Audits
 
@@ -290,7 +281,6 @@ Load only what the current act needs:
 - Runtime and Pi: `references/runtime_environment.md`,
   `references/pi_agent_adapter.md`
 - Backend delegation: `references/compute_operator.md`,
-  `references/backend_contract.md`, `references/remote_contract.md`,
-  `references/cluster_mcp.md`
+  `references/backend_contract.md`, `references/remote_contract.md`
 - Rendering and reporting: `references/render_contract.md`,
   `references/report_template.md`, `references/artifact_operators.md`

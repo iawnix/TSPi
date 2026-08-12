@@ -63,6 +63,8 @@
             "pre_submit_validation",
             "pre_submit_preparation",
             "submit_request",
+            "submit_request_started",
+            "scheduler_result_unknown",
             "scheduler_accept",
             "receipt_persist",
             "reconciled",

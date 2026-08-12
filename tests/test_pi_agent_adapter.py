@@ -19,7 +19,7 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
 
     assert "pi-package" in manifest["keywords"]
     assert manifest["name"] == "@iawnix/ts-agent"
-    assert manifest["version"] == "0.3.1"
+    assert manifest["version"] == "0.4.0"
     assert manifest["private"] is True
     assert manifest["pi"]["skills"] == ["./skills/transition-state-workflow"]
     assert manifest["pi"]["extensions"] == [
@@ -52,14 +52,14 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
     assert "mode=artifacts" in extension_source
 
 
-def test_public_tool_catalog_separates_workspace_subagent_and_mcp_execution() -> None:
+def test_public_tool_catalog_separates_workspace_subagent_and_remote_execution() -> None:
     catalog = TOOL_CATALOG.read_text(encoding="utf-8")
     expected = {
         "workspaceContext": "ts_workspace_context",
         "workspaceDecisionDraft": "ts_workspace_decision_draft",
         "workspaceDecisionValidate": "ts_workspace_decision_validate",
         "workspaceDecisionApply": "ts_workspace_decision_apply",
-        "mcpInspect": "ts_mcp_inspect",
+        "remoteInspect": "ts_remote_inspect",
         "subagentReview": "ts_subagent_review",
         "subagentCompute": "ts_subagent_compute",
         "subagentRender": "ts_subagent_render",
@@ -72,7 +72,7 @@ def test_public_tool_catalog_separates_workspace_subagent_and_mcp_execution() ->
 
     for key in ("workspaceContext", "workspaceDecisionDraft", "workspaceDecisionValidate", "workspaceDecisionApply"):
         assert f'[TS_PUBLIC_TOOL_NAMES.{key}]: "deterministic_workspace"' in catalog
-    assert '[TS_PUBLIC_TOOL_NAMES.mcpInspect]: "deterministic_infrastructure"' in catalog
+    assert '[TS_PUBLIC_TOOL_NAMES.remoteInspect]: "deterministic_infrastructure"' in catalog
     for key in ("subagentReview", "subagentCompute", "subagentRender", "subagentReport", "subagentEmailDraft"):
         assert f'[TS_PUBLIC_TOOL_NAMES.{key}]: "child_agent"' in catalog
     assert '[TS_PUBLIC_TOOL_NAMES.emailSend]: "deterministic_external"' in catalog

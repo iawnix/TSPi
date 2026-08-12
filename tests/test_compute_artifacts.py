@@ -175,9 +175,26 @@ def test_prepare_and_submit_reject_stale_input_binding(
         list_calculation_artifacts(workspace),
         "nodes/n001/inputs/source.gjf",
     )["artifact_id"]
-    monkeypatch.setenv("TS_COMPUTE_LOGIN_HOSTS", "login.test")
-    monkeypatch.setenv("TS_COMPUTE_COMPUTE_HOSTS", "compute.test")
-    monkeypatch.setenv("TS_COMPUTE_REMOTE_ROOTS", "/remote/ts")
+    ssh_config = tmp_path / "ssh_config"
+    ssh_config.write_text("Host login.test\n  HostName login.test\n", encoding="utf-8")
+    remote_config = tmp_path / "remote.toml"
+    remote_config.write_text(
+        f'''default_profile = "cluster"
+[profiles.cluster]
+ssh_host = "login.test"
+ssh_config = "{ssh_config}"
+scheduler = "torque"
+remote_root = "/remote/ts"
+allowed_queues = ["batch"]
+max_nodes = 1
+
+[profiles.cluster.software.gaussian]
+command = ["g16"]
+allowed_queues = ["batch"]
+''',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("TS_REMOTE_CONFIG", str(remote_config))
     stale_before_submit = create_calculation_intent(
         workspace,
         _request(
@@ -185,10 +202,17 @@ def test_prepare_and_submit_reject_stale_input_binding(
             dry_run=False,
             execution_target={
                 "kind": "remote",
-                "transport": "ssh",
-                "login_host": "login.test",
-                "compute_host": "compute.test",
-                "remote_root": "/remote/ts",
+                "profile": "cluster",
+                "resources": {
+                    "queue": "batch",
+                    "nodes": 1,
+                    "ncpus": 8,
+                    "memory": "16gb",
+                    "walltime": "04:00:00",
+                        "ngpus": 0,
+                        "mpiprocs": None,
+                        "ompthreads": 8,
+                },
             },
         ),
     )

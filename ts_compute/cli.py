@@ -20,7 +20,7 @@ from .control import (
     prepare_calculation,
     submit_calculation,
 )
-from .mcp_diagnostics import MCP_DIAGNOSTIC_MODES, diagnose_mcp
+from ts_remote.diagnostics import MODES as REMOTE_DIAGNOSTIC_MODES, diagnose as diagnose_remote
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -53,8 +53,9 @@ def main(argv: list[str] | None = None) -> int:
     preflight.add_argument("--intent-id")
     preflight.add_argument("--artifact-ref")
 
-    mcp_diagnostic = sub.add_parser("mcp-diagnostic")
-    mcp_diagnostic.add_argument("--mode", choices=sorted(MCP_DIAGNOSTIC_MODES), default="status")
+    remote_diagnostic = sub.add_parser("remote-diagnostic")
+    remote_diagnostic.add_argument("--mode", choices=sorted(REMOTE_DIAGNOSTIC_MODES), default="status")
+    remote_diagnostic.add_argument("--profile")
 
     for command in ("submit", "status", "tail", "collect", "cancel", "parse"):
         item = sub.add_parser(command)
@@ -82,8 +83,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
-    if args.command == "mcp-diagnostic":
-        return diagnose_mcp(args.mode)
+    if args.command == "remote-diagnostic":
+        return diagnose_remote(args.mode, profile_name=args.profile)
     if args.command == "create-intent":
         request = json.loads(args.request_json)
         if not isinstance(request, dict):

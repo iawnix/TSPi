@@ -16,9 +16,6 @@ EXPECTED_FILES = [
     "TSPi",
     "README.md",
     "environment.yml",
-    "cluster_mcp/*.py",
-    "cluster_mcp/schedulers/*.py",
-    "cluster_mcp/*.example.toml",
     "contracts/*.json",
     "extensions/shared/*.ts",
     "extensions/ts-workflow-artifacts/*.ts",
@@ -48,6 +45,7 @@ EXPECTED_FILES = [
     "ts_compute/contracts/*.json",
     "ts_email/*.py",
     "ts_remote/*.py",
+    "ts_remote/*.toml",
     "ts_render/*.py",
     "ts_report/*.py",
     "ts_runtime/*.py",
@@ -189,34 +187,43 @@ def test_tspi_launcher_is_packaged_executable_and_shell_valid() -> None:
     source = TSPI_LAUNCHER.read_text(encoding="utf-8")
     assert 'readonly INSTALL_ROOT="$LAUNCHER_DIR"' in source
     assert 'readonly TS_WORKSPACES_ROOT="$INSTALL_ROOT/workspaces"' in source
-    assert "mcp_protocol_is_healthy" in source
-    assert "TS_MCP_CONTROL_SOCKET" in source
-    assert "TS_MCP_LOCK_FILE" in source
+    assert 'readonly TS_REMOTE_CONFIG_DEFAULT="$INSTALL_ROOT/.pi/remote.toml"' in source
+    assert "configure_remote" in source
+    assert "check_remote" in source
     assert 'export TS_EMAIL_POLICY_ROOT="$INSTALL_ROOT"' in source
     assert 'export TS_AGENT_RUNTIME_HOME="$TS_AGENT_INSTALL_RUNTIME_HOME"' in source
     assert 'export TS_WORKSPACE_ROOT="$WORKSPACE_ROOT"' in source
     assert "acquire_root_agent_lock" in source
-    assert "refusing to terminate an unknown process" in source
     assert "--workspace" in source
-    assert "--check-mcp" in source
+    assert "--check-remote" in source
+    assert "mcp" not in source.lower()
+    assert "tunnel" not in source.lower()
 
 
-def test_tspi_reuses_a_healthy_shared_managed_tunnel(tmp_path: Path) -> None:
-    _, launcher = _copy_tspi_install(tmp_path)
+def test_tspi_loads_installation_owned_remote_profile(tmp_path: Path) -> None:
+    install_root, launcher = _copy_tspi_install(tmp_path)
+    ssh_config = install_root / ".pi/ssh_config"
+    ssh_config.parent.mkdir(parents=True, exist_ok=True)
+    ssh_config.write_text("Host cluster-login\n  HostName cluster.test\n", encoding="utf-8")
+    remote_config = install_root / ".pi/remote.toml"
+    remote_config.write_text(
+        f'''default_profile = "cluster_1w"
+[profiles.cluster_1w]
+ssh_host = "cluster-login"
+ssh_config = "{ssh_config}"
+scheduler = "torque"
+remote_root = "/remote/ts"
+allowed_queues = ["batch"]
+max_nodes = 1
+''',
+        encoding="utf-8",
+    )
     script = r'''source "$1"
-probe_calls=0
-starts=0
-stops=0
-mcp_protocol_is_healthy() { ((probe_calls += 1)); return 0; }
-mcp_tunnel_is_open() { return 0; }
-mcp_control_is_open() { return 0; }
-stop_managed_mcp_tunnel() { ((stops += 1)); }
-start_managed_mcp_tunnel() { ((starts += 1)); }
-ensure_mcp_connection
-printf '%s %s %s\n' "$probe_calls" "$starts" "$stops"
+configure_remote
+printf '%s\n%s\n' "$TS_REMOTE_CONFIG" "$TS_REMOTE_DISPLAY_TARGET"
 '''
     completed = subprocess.run(
-        ["bash", "-c", script, "bash", str(launcher)],
+        ["bash", "-c", script, "bash", str(launcher), "--workspace", "no-probe"],
         cwd=ROOT,
         text=True,
         stdout=subprocess.PIPE,
@@ -225,25 +232,24 @@ printf '%s %s %s\n' "$probe_calls" "$starts" "$stops"
     )
 
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.strip() == "1 0 0"
+    assert completed.stdout.splitlines() == [str(remote_config), "cluster-login · Torque"]
 
 
-def test_tspi_does_not_restart_a_managed_tunnel_on_protocol_failure(tmp_path: Path) -> None:
-    _, launcher = _copy_tspi_install(tmp_path)
+def test_tspi_ordinary_startup_does_not_probe_remote(tmp_path: Path) -> None:
+    install_root, launcher = _copy_tspi_install(tmp_path)
+    fake_pi = tmp_path / "fake-pi"
+    fake_pi.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_pi.chmod(0o755)
+    diagnostic = install_root / ".pi/git/github.com/iawnix/TSAgentSkill/scripts/ts_compute.py"
+    diagnostic.parent.mkdir(parents=True)
+    diagnostic.write_text("raise SystemExit('remote probe must not run')\n", encoding="utf-8")
     script = r'''source "$1"
-starts=0
-stops=0
-mcp_protocol_is_healthy() { MCP_PROTOCOL_DIAGNOSTIC="application timeout"; return 1; }
-mcp_tunnel_is_open() { return 0; }
-mcp_control_is_open() { return 0; }
-stop_managed_mcp_tunnel() { ((stops += 1)); }
-start_managed_mcp_tunnel() { ((starts += 1)); }
-if ensure_mcp_connection; then status=0; else status=$?; fi
-printf '%s %s %s\n' "$status" "$starts" "$stops"
+main "${@:2}"
 '''
     completed = subprocess.run(
-        ["bash", "-c", script, "bash", str(launcher)],
-        cwd=ROOT,
+        ["bash", "-c", script, "bash", str(launcher), "--workspace", "no-probe"],
+        cwd=install_root,
+        env={**os.environ, "PI_BIN": str(fake_pi)},
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -251,29 +257,27 @@ printf '%s %s %s\n' "$status" "$starts" "$stops"
     )
 
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.strip() == "1 0 0"
-    assert "application timeout" in completed.stderr
-    assert "managed SSH tunnel is healthy and was not restarted" in completed.stderr
+    assert "remote probe must not run" not in completed.stderr
 
 
-def test_tspi_starts_an_absent_shared_tunnel_once(tmp_path: Path) -> None:
-    _, launcher = _copy_tspi_install(tmp_path)
-    script = r'''source "$1"
-port_open=0
-control_open=0
-starts=0
-mcp_protocol_is_healthy() { return 0; }
-mcp_tunnel_is_open() { [[ $port_open == 1 ]]; }
-mcp_control_is_open() { [[ $control_open == 1 ]]; }
-stop_managed_mcp_tunnel() { port_open=0; control_open=0; }
-start_managed_mcp_tunnel() { ((starts += 1)); port_open=1; control_open=1; }
-ensure_mcp_connection
-ensure_mcp_connection
-printf '%s\n' "$starts"
-'''
+def test_tspi_check_remote_runs_one_strict_diagnostic(tmp_path: Path) -> None:
+    install_root, launcher = _copy_tspi_install(tmp_path)
+    remote_config = install_root / ".pi/remote.toml"
+    remote_config.parent.mkdir(parents=True, exist_ok=True)
+    remote_config.write_text(
+        '''default_profile = "cluster"
+[profiles.cluster]
+ssh_host = "cluster-login"
+scheduler = "torque"
+''',
+        encoding="utf-8",
+    )
+    diagnostic = install_root / ".pi/git/github.com/iawnix/TSAgentSkill/scripts/ts_compute.py"
+    diagnostic.parent.mkdir(parents=True)
+    diagnostic.write_text("print('{\"ok\": true}')\n", encoding="utf-8")
     completed = subprocess.run(
-        ["bash", "-c", script, "bash", str(launcher)],
-        cwd=ROOT,
+        ["bash", str(launcher), "--check-remote"],
+        cwd=install_root,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -281,50 +285,45 @@ printf '%s\n' "$starts"
     )
 
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.strip() == "1"
+    assert "remote check passed (cluster-login · Torque)" in completed.stdout
 
 
-def test_tspi_protocol_diagnostic_preserves_context_and_redacts_token(tmp_path: Path) -> None:
+def test_tspi_remote_diagnostic_preserves_structured_failure(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
     diagnostic_script = install_root / ".pi/git/github.com/iawnix/TSAgentSkill/scripts/ts_compute.py"
     diagnostic_script.parent.mkdir(parents=True)
     diagnostic_script.write_text(
-        """import sys
-sys.stderr.write("Authorization: Bearer test-secret-token-value\\n")
-print('{"ok": false, "token": "test-secret-token-value", "error": "registry unavailable"}')
-raise SystemExit(3)
-""",
+        "print('{\"ok\": false, \"error\": {\"class\": \"ssh_unreachable\"}}')\nraise SystemExit(3)\n",
         encoding="utf-8",
     )
-    script = r'''source "$1"
-if mcp_protocol_is_healthy; then status=0; else status=$?; fi
-printf '%s\n%s\n' "$status" "$MCP_PROTOCOL_DIAGNOSTIC"
-'''
+    remote_config = install_root / ".pi/remote.toml"
+    remote_config.parent.mkdir(parents=True, exist_ok=True)
+    remote_config.write_text(
+        'default_profile = "cluster"\n[profiles.cluster]\nssh_host = "cluster-login"\nscheduler = "torque"\n',
+        encoding="utf-8",
+    )
     completed = subprocess.run(
-        ["bash", "-c", script, "bash", str(launcher)],
-        cwd=ROOT,
-        env={**os.environ, "TS_CLUSTER_MCP_TOKEN": "test-secret-token-value"},
+        ["bash", str(launcher), "--check-remote"],
+        cwd=install_root,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
     )
 
-    assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.splitlines()[0] == "1"
-    assert "registry unavailable" in completed.stdout
-    assert "[REDACTED]" in completed.stdout
-    assert "test-secret-token-value" not in completed.stdout
+    assert completed.returncode == 1
+    assert "ssh_unreachable" in completed.stderr
 
 
-def test_tspi_refuses_to_kill_an_unmanaged_listener(tmp_path: Path) -> None:
-    _, launcher = _copy_tspi_install(tmp_path)
+def test_tspi_rejects_a_symlinked_remote_config(tmp_path: Path) -> None:
+    install_root, launcher = _copy_tspi_install(tmp_path)
+    target = tmp_path / "remote.toml"
+    target.write_text("default_profile = 'cluster'\n", encoding="utf-8")
+    remote_config = install_root / ".pi/remote.toml"
+    remote_config.parent.mkdir(parents=True, exist_ok=True)
+    remote_config.symlink_to(target)
     script = r'''source "$1"
-MCP_PROTOCOL_DIAGNOSTIC="invalid response"
-mcp_protocol_is_healthy() { return 1; }
-mcp_tunnel_is_open() { return 0; }
-mcp_control_is_open() { return 1; }
-ensure_mcp_connection
+configure_remote
 '''
     completed = subprocess.run(
         ["bash", "-c", script, "bash", str(launcher)],
@@ -336,7 +335,7 @@ ensure_mcp_connection
     )
 
     assert completed.returncode == 1
-    assert "refusing to terminate an unknown process" in completed.stderr
+    assert "invalid TS_REMOTE_CONFIG" in completed.stderr
 
 
 def test_tspi_runs_pi_with_workspace_local_state_and_install_runtime(tmp_path: Path) -> None:
@@ -355,17 +354,14 @@ print(json.dumps({
     "runtime_home": os.environ["TS_AGENT_RUNTIME_HOME"],
     "runtime_manifest": os.environ["TS_AGENT_RUNTIME_MANIFEST"],
     "env_root": os.environ["TS_AGENT_ENV_ROOT"],
-    "mcp_startup_status": os.environ["TS_CLUSTER_MCP_STARTUP_STATUS"],
+    "remote_config": os.environ.get("TS_REMOTE_CONFIG"),
+    "remote_display": os.environ["TS_REMOTE_DISPLAY_TARGET"],
 }))
 """,
         encoding="utf-8",
     )
     fake_pi.chmod(0o755)
     script = r'''source "$1"
-mcp_protocol_is_healthy() { return 0; }
-mcp_tunnel_is_open() { return 0; }
-mcp_control_is_open() { return 0; }
-mcp_ssh_display_target() { printf 'test.example via SSH'; }
 main "${@:2}"
 '''
     completed = subprocess.run(
@@ -394,13 +390,14 @@ main "${@:2}"
     assert result["runtime_home"] == str(install_root / ".agents/runtime/transition-state-workflow")
     assert result["runtime_manifest"] == str(install_root / ".agents/runtime/transition-state-workflow/env.json")
     assert result["env_root"] == str(install_root / ".agents/envs/transition-state-workflow")
-    assert result["mcp_startup_status"] == "ready"
+    assert result["remote_config"] is None
+    assert result["remote_display"] == "not configured"
     session_index = result["argv"].index("--session-dir")
     assert result["argv"][session_index + 1] == str(workspace / ".pi/sessions")
     assert (workspace / ".pi/root-agent.lock").is_file()
 
 
-def test_tspi_workspace_launch_continues_when_mcp_is_unavailable(tmp_path: Path) -> None:
+def test_tspi_workspace_launch_does_not_require_remote_configuration(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
     fake_pi = tmp_path / "fake-pi.py"
     fake_pi.write_text(
@@ -409,15 +406,13 @@ import json
 import os
 print(json.dumps({
     "cwd": os.getcwd(),
-    "mcp_startup_status": os.environ["TS_CLUSTER_MCP_STARTUP_STATUS"],
+    "remote_display": os.environ["TS_REMOTE_DISPLAY_TARGET"],
 }))
 """,
         encoding="utf-8",
     )
     fake_pi.chmod(0o755)
     script = r'''source "$1"
-ensure_mcp_connection() { return 1; }
-mcp_ssh_display_target() { printf 'test.example via SSH'; }
 main "${@:2}"
 '''
     completed = subprocess.run(
@@ -433,16 +428,14 @@ main "${@:2}"
     assert completed.returncode == 0, completed.stderr
     result = json.loads(completed.stdout)
     assert result["cwd"] == str(install_root / "workspaces/offline-research")
-    assert result["mcp_startup_status"] == "unavailable"
-    assert "continuing with remote compute unavailable" in completed.stderr
+    assert result["remote_display"] == "not configured"
+    assert completed.stderr == ""
 
 
-def test_tspi_check_mcp_remains_strict_when_mcp_is_unavailable(tmp_path: Path) -> None:
+def test_tspi_check_remote_is_strict_when_configuration_is_missing(tmp_path: Path) -> None:
     _, launcher = _copy_tspi_install(tmp_path)
     script = r'''source "$1"
-ensure_mcp_connection() { return 1; }
-mcp_ssh_display_target() { printf 'test.example via SSH'; }
-main --check-mcp
+main --check-remote
 '''
     completed = subprocess.run(
         ["bash", "-c", script, "bash", str(launcher)],
@@ -454,7 +447,8 @@ main --check-mcp
     )
 
     assert completed.returncode == 1
-    assert "MCP check passed" not in completed.stdout
+    assert "remote configuration is missing" in completed.stderr
+    assert "remote check passed" not in completed.stdout
 
 
 def test_tspi_requires_a_safe_workspace_name(tmp_path: Path) -> None:

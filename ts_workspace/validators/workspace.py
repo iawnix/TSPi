@@ -90,7 +90,7 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
             findings,
             "warning",
             "missing_workspace_identity",
-            "missing workspace identity (auto-created before the next MCP preparation)",
+            "missing workspace identity (auto-created before the next remote preparation)",
             IDENTITY_REF,
         )
     else:

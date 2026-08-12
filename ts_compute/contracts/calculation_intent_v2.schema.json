@@ -55,26 +55,14 @@
         {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "local"}}, "additionalProperties": false},
         {
           "type": "object",
-          "required": ["kind", "authority", "transport", "login_host", "compute_host", "remote_dir"],
+          "required": ["kind", "authority", "profile", "workspace_id", "remote_dir", "resources"],
           "properties": {
             "kind": {"const": "remote"},
             "authority": {"const": "execution_mirror"},
-            "transport": {"const": "ssh"},
-            "login_host": {"type": "string", "minLength": 1, "maxLength": 255},
-            "compute_host": {"type": "string", "minLength": 1, "maxLength": 255},
-            "remote_dir": {"type": "string", "minLength": 1, "maxLength": 4096}
-          },
-          "additionalProperties": false
-        },
-        {
-          "type": "object",
-          "required": ["kind", "authority", "transport", "remote_dir", "execution"],
-          "properties": {
-            "kind": {"const": "remote"},
-            "authority": {"const": "execution_mirror"},
-            "transport": {"const": "mcp"},
+            "profile": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
+            "workspace_id": {"type": "string", "pattern": "^ws_[0-9a-f]{24}$"},
             "remote_dir": {"type": "string", "minLength": 1, "maxLength": 4096},
-            "execution": {"$ref": "#/$defs/mcp_execution"}
+            "resources": {"$ref": "#/$defs/remote_resources"}
           },
           "additionalProperties": false
         }
@@ -90,9 +78,9 @@
     }
   ],
   "$defs": {
-    "mcp_execution": {
+    "remote_resources": {
       "type": "object",
-      "required": ["queue", "nodes", "ncpus", "memory", "walltime", "ngpus", "mpiprocs", "ompthreads", "host", "place", "environment", "gpu_devices"],
+      "required": ["queue", "nodes", "ncpus", "memory", "walltime", "ngpus", "mpiprocs", "ompthreads"],
       "properties": {
         "queue": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$"},
         "nodes": {"type": "integer", "minimum": 1},
@@ -101,19 +89,7 @@
         "walltime": {"type": "string", "pattern": "^[0-9]{1,4}:[0-5][0-9]:[0-5][0-9]$"},
         "ngpus": {"type": "integer", "minimum": 0},
         "mpiprocs": {"type": ["integer", "null"], "minimum": 1},
-        "ompthreads": {"type": ["integer", "null"], "minimum": 1},
-        "host": {"type": ["string", "null"], "minLength": 1, "maxLength": 128},
-        "place": {"type": ["string", "null"], "enum": [null, "free", "pack", "scatter", "excl", "shared"]},
-        "environment": {
-          "type": "object",
-          "propertyNames": {"pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
-          "additionalProperties": {"type": "string", "maxLength": 16384}
-        },
-        "gpu_devices": {
-          "type": "array",
-          "uniqueItems": true,
-          "items": {"type": "integer", "minimum": 0, "maximum": 63}
-        }
+        "ompthreads": {"type": ["integer", "null"], "minimum": 1}
       },
       "additionalProperties": false
     }

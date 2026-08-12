@@ -75,12 +75,11 @@ export const DEVELOPMENT_TEST_CASES: readonly DevelopmentTestCase[] = [
     timeoutMs: 180_000,
   },
   {
-    id: "mcp-contracts",
-    description: "Validate MCP diagnostics, TS job service, and remote lifecycle contracts locally.",
+    id: "remote-contracts",
+    description: "Validate SSH, Torque, transfer, and remote lifecycle contracts locally.",
     selectors: [
-      "tests/test_mcp_diagnostics.py",
-      "tests/test_cluster_mcp_ts_jobs.py",
-      "tests/test_remote_job_lifecycle.py",
+      "tests/test_ts_remote.py",
+      "tests/test_compute_control.py",
     ],
     timeoutMs: 240_000,
   },

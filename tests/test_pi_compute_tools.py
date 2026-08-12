@@ -48,18 +48,17 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     }.items():
         assert f'{operation}: "{name}"' in output_schema
     assert "name: TS_PUBLIC_TOOL_NAMES.subagentCompute" in source
-    assert "name: TS_PUBLIC_TOOL_NAMES.mcpInspect" in source
-    assert 'pi.registerCommand("ts-mcp"' in source
-    assert 'pi.registerEntryRenderer<McpDiagnosticEntryData>("ts-workspace-mcp-diagnostic"' in source
-    assert 'pi.appendEntry<McpDiagnosticEntryData>("ts-workspace-mcp-diagnostic"' in source
+    assert "name: TS_PUBLIC_TOOL_NAMES.remoteInspect" in source
+    assert 'pi.registerCommand("ts-remote"' in source
+    assert 'pi.registerEntryRenderer<RemoteDiagnosticEntryData>("ts-workspace-remote-diagnostic"' in source
+    assert 'pi.appendEntry<RemoteDiagnosticEntryData>("ts-workspace-remote-diagnostic"' in source
     assert 'keyHint("app.tools.expand", "to expand")' in source
-    assert "MCP_DIAGNOSTIC_WIDGET_KEY" in source
-    assert 'ctx.ui.setWidget("ts-workspace-mcp", JSON.stringify' not in source
-    assert "Usage: /ts-mcp status|doctor|queues|nodes|cluster" in source
+    assert "REMOTE_DIAGNOSTIC_WIDGET_KEY" in source
+    assert 'ctx.ui.setWidget("ts-workspace-remote", JSON.stringify' not in source
+    assert "Usage: /ts-remote status|doctor|queues|nodes|cluster" in source
     assert "getArgumentCompletions" in source
     assert "This check is read-only" in source
-    assert "about the configured MCP target, use mode=cluster" in source
-    assert "never switch between MCP and SSH automatically" in source
+    assert "about the configured remote profile, use mode=cluster" in source
     assert "createScopedComputeTools" in source
     assert "runComputeOperator" in source
     assert "completed compute actions" in source
@@ -85,21 +84,15 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     assert "additionalProperties: false" in source
     assert "executionMode: \"sequential\"" in source
     assert "runComputeJson" in source
-    assert "runMcpDiagnosticJson" in source
+    assert "runRemoteDiagnosticJson" in source
     assert "nodeId: Type.String" in source
-    assert source.index("await requireHealthyMcpConnection") < source.index("const actions: ActionLog = []")
-    assert 'request.transport === "mcp"' in source
-    assert "MCP_PREFLIGHT_OPERATIONS" in source
-    assert 'request.operation === "submit" ? "doctor" : "status"' in source
-    assert "MCP_DIAGNOSTIC_TIMEOUT" in source
-    assert 'new Set(["gaussian", "xtb", "crest"])' in source
-    assert "required components failed" in source
-    assert "server has no matching software profile" in source
-    assert "activation script is unavailable" in source
-    assert "profile does not allow queue" in source
+    assert "preflightOperatorRequest" in source
+    assert 'runComputeJson(pi, "preflight"' in source
+    assert "transport" not in source
+    assert "MCP" not in source
 
 
-def test_ts_mcp_command_previews_modes_and_shows_progress_until_result() -> None:
+def test_ts_remote_command_previews_modes_and_shows_progress_until_result() -> None:
     script = f"""
 import installCompute from {json.dumps(COMPUTE_EXTENSION.as_uri())};
 process.env.TS_AGENT_PYTHON = "/usr/bin/python3";
@@ -115,10 +108,10 @@ const pi = {{
     execCalls.push([command, args]);
     if (failNext) throw new Error("diagnostic process stopped");
     return {{ stdout: JSON.stringify({{
-      schema_version: "ts-mcp-diagnostic/1",
+      schema_version: "ts-remote-diagnostic/1",
       mode: "status",
       ok: true,
-      connection: {{ endpoint: "http://127.0.0.1:18766/mcp", authenticated: true }},
+      connection: {{ profile: "cluster", ssh_host: "cluster-login" }},
       capabilities: {{}},
     }}) }};
   }},
@@ -135,13 +128,13 @@ const ctx = {{
     notify: (...args) => uiCalls.push(["notify", ...args]),
   }},
 }};
-const completions = await commands["ts-mcp"].getArgumentCompletions("");
-await commands["ts-mcp"].handler("status", ctx);
+const completions = await commands["ts-remote"].getArgumentCompletions("");
+await commands["ts-remote"].handler("status", ctx);
 const successCalls = uiCalls.splice(0);
 failNext = true;
 let failureMessage;
 try {{
-  await commands["ts-mcp"].handler("doctor", ctx);
+  await commands["ts-remote"].handler("doctor", ctx);
 }} catch (error) {{
   failureMessage = error.message;
 }}
@@ -158,41 +151,41 @@ process.stdout.write(JSON.stringify({{ completions, successCalls, failureCalls: 
         "cluster",
     ]
     assert all(item["description"] for item in result["completions"])
-    assert ["status", "ts-workspace-mcp-command", "TS MCP · status · checking"] in success_calls
+    assert ["status", "ts-workspace-remote-command", "TS Remote · status · checking"] in success_calls
     assert any(
         call[0] == "widget"
-        and call[1] == "ts-workspace-mcp"
+        and call[1] == "ts-workspace-remote"
         and isinstance(call[2], list)
-        and call[2][0] == "◌ TS MCP · status · running"
-        and call[2][1] == "Read-only · connection and capabilities"
+        and call[2][0] == "◌ TS Remote · status · running"
+        and call[2][1] == "Read-only · SSH connectivity"
         for call in success_calls
     )
     assert any(
         call[0] == "notify"
-        and call[1] == "Check the MCP connection and advertised capabilities. This check is read-only."
+        and call[1] == "Check the configured SSH remote profile. This check is read-only."
         for call in success_calls
     )
     assert success_calls[-2:] == [
-        ["status", "ts-workspace-mcp-command", None],
-        ["widget", "ts-workspace-mcp", None],
+        ["status", "ts-workspace-remote-command", None],
+        ["widget", "ts-workspace-remote", None],
     ]
     assert result["failureMessage"] == (
-        "MCP doctor diagnostic process failed before returning a result; "
+        "ts_remote doctor diagnostic process failed before returning a result; "
         "no remote action was attempted"
     )
     assert [
         "notify",
         (
-            "MCP doctor diagnostic process failed before returning a result; "
+            "ts_remote doctor diagnostic process failed before returning a result; "
             "no remote action was attempted"
         ),
         "error",
     ] in result["failureCalls"]
     assert result["failureCalls"][-2:] == [
-        ["status", "ts-workspace-mcp-command", None],
-        ["widget", "ts-workspace-mcp", None],
+        ["status", "ts-workspace-remote-command", None],
+        ["widget", "ts-workspace-remote", None],
     ]
-    assert result["entries"][0][0] == "ts-workspace-mcp-diagnostic"
+    assert result["entries"][0][0] == "ts-workspace-remote-diagnostic"
     assert result["entries"][0][1]["result"]["ok"] is True
     assert result["execCalls"][0][1][-2:] == ["--mode", "status"]
 
@@ -210,7 +203,10 @@ def test_compute_contracts_exclude_workspace_verdicts_and_arbitrary_commands() -
     assert "input_refs" not in request["properties"]
     assert "input_bindings" in intent["properties"]
     target_text = json.dumps(request["properties"]["execution_target"])
-    assert "remote_root" in target_text
+    assert "profile" in target_text
+    assert "resources" in target_text
+    assert "transport" not in target_text
+    assert "remote_root" not in target_text
     assert "remote_dir" not in target_text
     assert "authority" not in target_text
     assert "command" not in intent["properties"]
@@ -228,16 +224,16 @@ def test_compute_cli_is_package_relative_and_runtime_aware() -> None:
     assert "findRuntimeWorkspaceRoot(cwd)" in shared
     assert 'join(current, ".agents", "runtime", "transition-state-workflow", "env.json")' in shared
     assert "AbortSignal.timeout(timeoutMs)" in shared
-    assert "MCP_DIAGNOSTIC_TIMEOUT" in shared
+    assert "REMOTE_DIAGNOSTIC_TIMEOUT" in shared
     assert "no remote action was attempted" in shared
     assert "seed_workspace_root_from_argv()" in script
     assert "ensure_runtime_python(ROOT)" in script
 
 
-def test_mcp_diagnostic_runner_preserves_timeout_cancel_and_invalid_output() -> None:
+def test_remote_diagnostic_runner_preserves_timeout_cancel_and_invalid_output() -> None:
     workspace_cli = (ROOT / "extensions" / "shared" / "workspace-cli.ts").as_uri()
     script = f"""
-import {{ runMcpDiagnosticJson }} from {json.dumps(workspace_cli)};
+import {{ runRemoteDiagnosticJson }} from {json.dumps(workspace_cli)};
 process.env.TS_AGENT_PYTHON = "/usr/bin/python3";
 const collect = async (label, run) => {{
   try {{ await run(); }} catch (error) {{
@@ -258,19 +254,19 @@ cancelled.abort();
 const immediatePi = {{ exec: async () => ({{ stdout: "", stderr: "" }}) }};
 const failedPi = {{ exec: async () => {{ throw new Error("private process detail"); }} }};
 const results = [];
-results.push(await collect("timeout", () => runMcpDiagnosticJson(timeoutPi, "status", "/tmp", undefined, 10)));
-results.push(await collect("cancelled", () => runMcpDiagnosticJson(immediatePi, "status", "/tmp", cancelled.signal, 1000)));
-results.push(await collect("invalid", () => runMcpDiagnosticJson(immediatePi, "status", "/tmp", undefined, 1000)));
-results.push(await collect("failed", () => runMcpDiagnosticJson(failedPi, "status", "/tmp", undefined, 1000)));
+results.push(await collect("timeout", () => runRemoteDiagnosticJson(timeoutPi, "status", "/tmp", undefined, 10)));
+results.push(await collect("cancelled", () => runRemoteDiagnosticJson(immediatePi, "status", "/tmp", cancelled.signal, 1000)));
+results.push(await collect("invalid", () => runRemoteDiagnosticJson(immediatePi, "status", "/tmp", undefined, 1000)));
+results.push(await collect("failed", () => runRemoteDiagnosticJson(failedPi, "status", "/tmp", undefined, 1000)));
 process.stdout.write(JSON.stringify(results));
 """
     result = _node_json(script)
 
     assert [item["code"] for item in result] == [
-        "MCP_DIAGNOSTIC_TIMEOUT",
-        "MCP_DIAGNOSTIC_CANCELLED",
-        "MCP_DIAGNOSTIC_INVALID_OUTPUT",
-        "MCP_DIAGNOSTIC_PROCESS_FAILED",
+        "REMOTE_DIAGNOSTIC_TIMEOUT",
+        "REMOTE_DIAGNOSTIC_CANCELLED",
+        "REMOTE_DIAGNOSTIC_INVALID_OUTPUT",
+        "REMOTE_DIAGNOSTIC_PROCESS_FAILED",
     ]
     assert result[0]["errorClass"] == "diagnostic_timeout"
     assert all(item["retrySafe"] is True for item in result)
@@ -279,42 +275,14 @@ process.stdout.write(JSON.stringify(results));
     assert all("private process detail" not in item["message"] for item in result)
 
 
-def test_mcp_submit_preflight_retries_only_timeout_and_validates_xtb_profile() -> None:
-    extension = COMPUTE_EXTENSION.as_uri()
-    script = f"""
-import {{ requireBackendSubmitProfile, runMcpPreflightDiagnostic }} from {json.dumps(extension)};
-const timeout = Object.assign(new Error("late"), {{ code: "MCP_DIAGNOSTIC_TIMEOUT" }});
-let attempts = 0;
-const diagnostic = async () => {{
-  attempts += 1;
-  if (attempts === 1) throw timeout;
-  return {{ schema_version: "ts-mcp-diagnostic/1", ok: true }};
-}};
-const retried = await runMcpPreflightDiagnostic({{}}, "doctor", "/tmp", undefined, diagnostic);
-const result = {{ attempts, retried, missing: null, unavailable: null, gpu: null }};
-const request = {{ backend: "xtb", executionSummary: {{ queue: "batch", ngpus: 0 }} }};
-try {{ requireBackendSubmitProfile({{ capabilities: {{ software: {{ profiles: [] }} }} }}, request); }}
-catch (error) {{ result.missing = error.message; }}
-try {{ requireBackendSubmitProfile({{ capabilities: {{ software: {{ profiles: [{{
-  name: "xtb", kind: "profile", activation_script_exists: false, allowed_queues: ["batch"]
-}}] }} }} }}, request); }}
-catch (error) {{ result.unavailable = error.message; }}
-try {{ requireBackendSubmitProfile({{ capabilities: {{ software: {{ profiles: [{{
-  name: "xtb", kind: "profile", activation_script_exists: true, allowed_queues: ["batch"], requires_gpu: true
-}}] }} }} }}, request); }}
-catch (error) {{ result.gpu = error.message; }}
-requireBackendSubmitProfile({{ capabilities: {{ software: {{ profiles: [{{
-  name: "xtb", kind: "profile", activation_script_exists: true, allowed_queues: ["batch"], requires_gpu: false
-}}] }} }} }}, request);
-process.stdout.write(JSON.stringify(result));
-"""
-    result = _node_json(script)
+def test_remote_preflight_has_one_deterministic_owner() -> None:
+    source = COMPUTE_EXTENSION.read_text(encoding="utf-8")
 
-    assert result["attempts"] == 2
-    assert result["retried"]["ok"] is True
-    assert "no matching software profile" in result["missing"]
-    assert "activation script is unavailable" in result["unavailable"]
-    assert "profile requires a GPU" in result["gpu"]
+    assert "preflightOperatorRequest" in source
+    assert 'runComputeJson(pi, "preflight"' in source
+    assert "requireBackendSubmitProfile" not in source
+    assert "runMcpPreflightDiagnostic" not in source
+    assert "MCP_DIAGNOSTIC" not in source
 
 
 def test_compute_operator_runtime_is_fresh_isolated_and_tool_scoped() -> None:

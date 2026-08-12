@@ -17,7 +17,7 @@ DECISION_CONTRACT = REFERENCES / "decision_contract.md"
 PATHWAY_MODEL = REFERENCES / "pathway_model.md"
 REPORT_TEMPLATE = REFERENCES / "report_template.md"
 WORKSPACE_CONTRACT = REFERENCES / "workspace_contract.md"
-CLUSTER_MCP = REFERENCES / "cluster_mcp.md"
+REMOTE_CONTRACT = REFERENCES / "remote_contract.md"
 TEMPLATE_README = TEMPLATES / "decision" / "README.md"
 UPDATE_EVIDENCE = TEMPLATES / "decision" / "update_evidence.json"
 FINAL_REPORT = TEMPLATES / "ts_final_report.md"
@@ -34,7 +34,7 @@ def test_readme_documents_install_and_agent_entrypoints() -> None:
         "--workspace-root \"$TS_WORKSPACE_ROOT\"",
         "TS_WORKSPACE_ROOT=/path/to/ts-workspace npm run install-env",
         "Pi Agent Usage",
-        "ten-tool Root Agent inventory",
+        "eleven-tool Root Agent inventory",
         "skills/transition-state-workflow/assets/templates/ts_final_report.md",
     ]:
         assert phrase in text
@@ -71,26 +71,26 @@ def test_readme_keeps_render_dependency_boundary_explicit() -> None:
     assert "does not require or probe Blender, FFmpeg, OpenBabel, Mayavi, or" in text
 
 
-def test_cluster_mcp_documentation_covers_secure_installation_and_pi_smoke() -> None:
+def test_remote_documentation_covers_profile_lifecycle_and_diagnostics() -> None:
     readme_text = README.read_text(encoding="utf-8")
-    mcp_text = CLUSTER_MCP.read_text(encoding="utf-8")
+    remote_text = REMOTE_CONTRACT.read_text(encoding="utf-8")
+    normalized_remote = " ".join(remote_text.split())
 
-    assert "Complete server installation, `cluster-mcp check`, token" in readme_text
+    assert "`ts_remote` binds one `submission_id`" in readme_text
     for phrase in [
-        "## Install the Server Environment",
-        "scripts/ts_cluster_mcp.py\" check",
-        "It does not call `qsub` or `qdel`.",
-        "ssh -N -L 127.0.0.1:8765:127.0.0.1:8765 cluster-login",
-        "TS_CLUSTER_MCP_TOKEN` | the same bearer secret",
-        "## Use Direct HTTPS",
-        "cluster_capabilities",
-        "## Register Gaussian For TS Jobs",
-        "software.gaussian",
-        "real Gaussian submission as a registration probe.",
-        "## Run Under systemd",
-        "Do not run the service as `root`.",
+        "`ts_remote` is the only remote-compute subsystem",
+        "## Request Shape",
+        "## Installation Configuration",
+        "TS_REMOTE_CONFIG",
+        "<remote_root>/workspaces/<workspace_id>/runs/<node_id>/<intent_id>",
+        "## Lifecycle",
+        ".ts-remote/submission.env",
+        "Collect verifies the prepared manifest",
+        "submission_ambiguous",
+        "/ts-remote doctor",
+        "Ordinary TSPi startup does not probe the cluster",
     ]:
-        assert phrase in mcp_text
+        assert phrase in normalized_remote
 
 
 def test_candidate_generation_does_not_default_to_qst_from_endpoints() -> None:

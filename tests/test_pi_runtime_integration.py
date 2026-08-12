@@ -27,7 +27,7 @@ EXPECTED_TOOLS = {
     "ts_workspace_decision_apply",
     "ts_subagent_review",
     "ts_subagent_compute",
-    "ts_mcp_inspect",
+    "ts_remote_inspect",
     "ts_subagent_render",
     "ts_subagent_report",
     "ts_subagent_email_draft",
@@ -317,8 +317,8 @@ def test_real_pi_compute_child_session_uses_only_bound_prepare_tool(tmp_path: Pa
         pytest.param(
             {
                 "kind": "remote",
-                "transport": "mcp",
-                "execution": {
+                "profile": "cluster",
+                "resources": {
                     "queue": "batch",
                     "nodes": 1,
                     "ncpus": 8,
@@ -327,7 +327,7 @@ def test_real_pi_compute_child_session_uses_only_bound_prepare_tool(tmp_path: Pa
                     "ngpus": 0,
                 },
             },
-            id="mcp",
+            id="remote",
         ),
     ],
 )
@@ -361,14 +361,32 @@ def test_real_pi_public_compute_prepare_uses_canonical_cli_result(
     )
     agent_dir = tmp_path / "pi-agent"
     agent_dir.mkdir()
+    ssh_config = tmp_path / "ssh_config"
+    ssh_config.write_text("Host cluster-login\n  HostName cluster.test\n", encoding="utf-8")
+    remote_config = tmp_path / "remote.toml"
+    remote_config.write_text(
+        f'''default_profile = "cluster"
+[profiles.cluster]
+ssh_host = "cluster-login"
+ssh_config = "{ssh_config}"
+scheduler = "torque"
+remote_root = "/remote/ts"
+allowed_queues = ["batch"]
+max_nodes = 1
+
+[profiles.cluster.software.gaussian]
+command = ["g16"]
+allowed_queues = ["batch"]
+''',
+        encoding="utf-8",
+    )
     env = {
         **os.environ,
         "PI_CODING_AGENT_DIR": str(agent_dir),
         "PI_OFFLINE": "1",
         "TS_AGENT_PYTHON": sys.executable,
         "TS_WORKSPACE_ROOT": str(workspace),
-        "TS_CLUSTER_MCP_URL": "http://127.0.0.1:18766/mcp",
-        "TS_CLUSTER_MCP_TOKEN": "t" * 32,
+        "TS_REMOTE_CONFIG": str(remote_config),
     }
     requests: list[dict[str, object]] = []
     responses = [
@@ -454,9 +472,10 @@ def test_real_pi_public_compute_prepare_uses_canonical_cli_result(
             (prepared_intents[0].parent / "prepared.json").read_text(encoding="utf-8")
         )
         policy = prepared["execution_policy"]
-        assert generated_intent["execution_target"]["transport"] == "mcp"
-        assert policy["requested_remote_dir"] == f"runs/n001/{generated_intent['intent_id']}"
-        assert policy["remote_dir"].endswith(policy["requested_remote_dir"])
+        assert generated_intent["execution_target"]["profile"] == "cluster"
+        assert generated_intent["execution_target"]["resources"]["queue"] == "batch"
+        assert policy["remote_dir"].endswith(f"/runs/n001/{generated_intent['intent_id']}")
+        assert policy["authority"] == "execution_mirror"
     assert report["program"] == {
         "outcome": "not_run",
         "state": "prepared",

@@ -1,63 +1,165 @@
-# Remote Contract
+# Remote Execution Contract
 
-`ts_remote` manages generic remote job lifecycle through
-`ts_remote.job_lifecycle`:
+`ts_remote` is the only remote-compute subsystem. It connects to one
+installation-owned OpenSSH profile and controls Torque through bounded
+`qsub`, `qstat`, `qdel`, and `pbsnodes` commands. There is no alternate remote
+transport, nested compute-host login, HTTP service, tunnel manager, or
+compatibility adapter.
 
-- stage files;
-- submit commands asynchronously;
-- poll scheduler or process state;
-- tail logs;
-- fetch artifacts;
-- kill jobs when requested;
-- record receipts.
+The ownership boundary is:
 
-Remote helpers do not parse chemistry and do not write workspace verdicts.
-Receipts and status records stay under the calculation attempt as operational
-provenance. They are never evidence by themselves.
+```text
+typed compute action
+  -> ts_compute
+  -> ts_remote
+  -> OpenSSH/SCP
+  -> Torque
+```
 
-For scheduler-backed execution, `ts_remote.mcp` talks to the bundled
-`cluster_mcp` service through `ts-cluster-job/1`. Use it for manifest-bound
-transfer, submission, status, collection, and explicit cancellation. Read
-`cluster_mcp.md` before configuring scopes or transport. Raw MCP tools remain a
-host implementation boundary and are not registered into Pi agent sessions.
-The Root compute operator may create one request-scoped submit or cancel wrapper
-after exact intent, digest, target, and job binding. No interactive confirmation
-is required.
+`ts_compute` owns calculation intent and local attempt state. `ts_remote` owns
+remote path construction, transfer verification, scheduler control, and
+diagnostics. Backend adapters own program commands and parsing. None of these
+layers may decide a mechanism, register evidence, or accept a transition state.
 
-The public semantic request selects `execution_target.transport=ssh|mcp`. SSH
-provides an absolute allowlisted `remote_root`; MCP provides complete scheduler
-resources. The compute kernel appends the selected node and generated intent ID
-to create an SSH `remote_dir`, or creates `runs/<node>/<intent>` for MCP. New
-MCP preparations bind that logical path to
-`workspaces/<workspace_id>/<remote_dir>` using the persistent
-non-scientific identity in `.agents/workspace-identity.json`. The resolved path
-and workspace-bound submission ID are persisted in `prepared.json`; later
-operations do not derive them from the Pi process. Prepared MCP records without
-the namespace marker or matching workspace binding are rejected. Remote targets
-without an explicit `transport` are also rejected. MCP
-connection URL, token, and timeout come only from
-`TS_CLUSTER_MCP_URL`, `TS_CLUSTER_MCP_TOKEN`, and `TS_CLUSTER_MCP_TIMEOUT`.
-Read-only probes may additionally use `TS_CLUSTER_MCP_DIAGNOSTIC_TIMEOUT`; it
-does not change calculation or control-call timeouts.
-SSH cancellation requires a previously inspected PID and verifies that the
-remote PID file still matches before sending a signal.
+## Request Shape
 
-Backends expose calculation intent as `PreparedTask` data: command, input paths,
-environment, and expected artifacts. xTB, ASE-NEB, and other local adapters feed
-that data into `ts_remote.job_lifecycle.config_from_prepared_task()` when the
-same calculation needs to run remotely. Backend modules should not duplicate
-SSH staging, asynchronous launch, polling, fetch, or kill logic.
+The Agent may choose only the execution kind, configured profile name, and
+bounded scheduler resources:
 
-Gaussian remote execution is implemented by the internal adapter
-`ts_remote.gaussian`. It converts `RemoteGaussianConfig` into the same generic
-`RemoteJobConfig`, stages `.gjf` plus extra files such as `%oldchk`/checkpoint
-inputs, and uses `ts_remote.job_lifecycle.submit_async()` for asynchronous
-submission. Do not expose a standalone Gaussian remote-runner script as part of
-the public workflow surface. The generated compute-side runner must source
-Gaussian profiles with unset-variable protection because cluster profiles may
-read variables such as `LD_LIBRARY64_PATH` before defining them.
-Asynchronous launch should also protect each remote run directory against
-duplicate submission: reject a second launch when the recorded PID is still
-active, record a per-run identifier in remote status/metadata, and use a
-scratch subdirectory unique to that run rather than a process-shared Gaussian
-scratch root.
+```json
+{
+  "kind": "remote",
+  "profile": "cluster_1w",
+  "resources": {
+    "queue": "batch",
+    "nodes": 1,
+    "ncpus": 8,
+    "memory": "16gb",
+    "walltime": "04:00:00",
+    "ngpus": 0,
+    "mpiprocs": null,
+    "ompthreads": 8
+  }
+}
+```
+
+The request cannot supply SSH hosts, scheduler commands, remote roots, program
+commands, activation scripts, arbitrary environment variables, or destination
+paths. Old requests with a transport selector or host/path fields fail schema
+validation and are not converted.
+
+## Installation Configuration
+
+Set `TS_REMOTE_CONFIG` to an absolute, regular TOML file. `TSPi` uses
+`<installation>/.pi/remote.toml` when present. Start from
+`ts_remote/config.example.toml`:
+
+```toml
+default_profile = "cluster_1w"
+
+[profiles.cluster_1w]
+ssh_host = "cluster-login"
+ssh_config = "/absolute/path/to/ssh_config"
+scheduler = "torque"
+remote_root = "/data2/agent/ts-remote-workspaces"
+allowed_queues = ["batch"]
+max_nodes = 1
+
+[profiles.cluster_1w.software.gaussian]
+command = ["/opt/gaussian/g16/g16"]
+activation_script = "/opt/gaussian/g16/activate.sh"
+allowed_queues = ["batch"]
+requires_gpu = false
+```
+
+SSH authentication stays in OpenSSH configuration and the user's agent or key
+files. Secrets are not calculation-intent data. Software profiles are the only
+source of executable paths, activation scripts, allowed queues, GPU policy,
+and server-owned environment values.
+
+## Workspace Isolation
+
+Every initialized research workspace owns a stable non-scientific identity in
+`.agents/workspace-identity.json`. The kernel derives the remote directory:
+
+```text
+<remote_root>/workspaces/<workspace_id>/runs/<node_id>/<intent_id>
+```
+
+The prepared execution policy binds the profile, workspace ID, complete remote
+directory, and resource request. Later operations revalidate that binding.
+Two independently initialized workspaces therefore cannot collide even when
+their node and intent IDs match.
+
+## Lifecycle
+
+Prepare writes the immutable intent and `prepared.json`. It performs no remote
+action.
+
+Submit verifies input bindings, uploads the generated Torque script and all
+declared inputs, and verifies each remote SHA-256. It then invokes one remote
+submission script that acquires an atomic lock and persists:
+
+```text
+.ts-remote/submission.env
+.ts-remote/qsub.stdout
+.ts-remote/qsub.stderr
+```
+
+The submission record binds the submission ID and script digest. A successful
+record also binds the Torque job ID. If SSH disconnects after the submission
+script starts, the client immediately reads this record. An accepted or
+rejected record resolves the outcome; a missing or incomplete record remains
+ambiguous and cannot be resubmitted automatically.
+
+Inspect reads the program-owned `program_status.json` and queries `qstat -f`.
+Scheduler state and program state remain separate. Torque `C` is terminal but
+does not by itself mean the scientific program failed. When scheduler history
+has expired, a complete program-status record remains authoritative and the
+scheduler error is returned as diagnostic metadata.
+
+Collect verifies the prepared manifest, downloads only declared artifact
+basenames, and verifies remote and local SHA-256 values. It never calls
+`qstat`, so collection remains possible after scheduler history expires.
+
+Cancel uses only the job ID from the bound remote receipt. Its remote atomic
+record binds submission ID and job ID. An interrupted cancellation is
+ambiguous and must be reconciled before another cancellation attempt.
+
+## Failure Classes
+
+- Directory creation or upload failure before the submission script starts:
+  `remote_staging_failed`; retry is safe after fixing the cause.
+- Durable nonzero `qsub` result: `scheduler_submission_rejected`; no job was
+  accepted, but the immutable failed intent is not replayed. Correct the cause
+  in a new intent.
+- Submission script started but no authoritative record can be read:
+  `submission_ambiguous`; do not retry submission.
+- Program status says failed or Torque supplies a nonzero terminal exit:
+  `remote_program_failed`.
+- Scheduler history unavailable without a program record:
+  `scheduler_history_unavailable`; state remains unknown.
+- Cancellation started without a bound final record:
+  `cancellation_ambiguous`; do not retry cancellation.
+
+Control guards, raw results, reconciliations, and `remote_receipt.json` are
+append-only operational facts. They are not scientific evidence.
+
+## Diagnostics
+
+Use `ts_remote_inspect` or:
+
+```text
+/ts-remote status
+/ts-remote doctor
+/ts-remote queues
+/ts-remote nodes
+/ts-remote cluster
+```
+
+These diagnostics are read-only. `status` checks OpenSSH connectivity;
+`doctor` checks SSH, scheduler commands, storage, and registered software;
+the remaining modes show bounded scheduler views. `./TSPi --check-remote`
+runs the strict status check without creating a research workspace. Ordinary
+TSPi startup does not probe the cluster and local research remains available
+when the remote system is offline.

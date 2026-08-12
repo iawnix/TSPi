@@ -142,8 +142,8 @@ import {{ createTspiStartupHeader, renderTspiStartupLines }} from {json.dumps(ST
 import {{ visibleWidth }} from "@earendil-works/pi-tui";
 const widths = [18, 40, 47, 60, 80, 100, 140];
 const details = {{
-  mcpDisplayTarget: "58.198.180.52 via SSH",
-  mcpEndpoint: "http://127.0.0.1:18766/mcp",
+  remoteDisplayTarget: "cluster-login · Torque",
+  remoteConfigured: true,
   modelLabel: "openai/gpt-5",
   thinkingLabel: "high thinking",
 }};
@@ -151,9 +151,7 @@ const rendered = widths.map((width) => {{
   const lines = renderTspiStartupLines("/home/iaw/TS-pi-agent", width, details);
   return {{ width, lines, lineWidths: lines.map(visibleWidth) }};
 }});
-const fallback = renderTspiStartupLines("/home/iaw/TS-pi-agent", 140, {{
-  mcpEndpoint: "http://127.0.0.1:18766/mcp",
-}});
+const fallback = renderTspiStartupLines("/home/iaw/TS-pi-agent", 140);
 const blockColors = [];
 const theme = {{
   fg: (color, text) => {{ if (text.includes("█")) blockColors.push(color); return text; }},
@@ -163,8 +161,8 @@ const pi = {{ getThinkingLevel: () => "high" }};
 const ctx = {{ ui: {{ theme }}, cwd: "/home/iaw/TS-pi-agent", model: {{ provider: "openai", id: "gpt-5" }} }};
 let renderRequests = 0;
 const tui = {{ terminal: {{ rows: 30 }}, requestRender: () => renderRequests++ }};
-process.env.TS_CLUSTER_MCP_URL = "http://127.0.0.1:18766/mcp";
-process.env.TS_CLUSTER_MCP_DISPLAY_TARGET = "58.198.180.52 via SSH";
+process.env.TS_REMOTE_CONFIG = "/tmp/remote.toml";
+process.env.TS_REMOTE_DISPLAY_TARGET = "cluster-login · Torque";
 const header = createTspiStartupHeader(pi, ctx, tui, "/home/iaw/TS-pi-agent");
 const initial = header.render(100).join("\\n").split("█").length;
 await new Promise((resolve) => setTimeout(resolve, 120));
@@ -210,15 +208,14 @@ process.stdout.write(JSON.stringify({{ rendered, fallback, blockColors, initial,
     assert any("Evidence-driven transition-state workflow." in line for line in wide)
     assert any("openai/gpt-5 · high thinking" in line for line in wide)
     assert any("Workspace" in line for line in wide)
-    assert any("MCP configured" in line for line in wide)
-    assert any("58.198.180.52 via SSH" in line for line in wide)
-    assert not any("127.0.0.1:18766" in line for line in wide)
-    assert any("127.0.0.1:18766" in line for line in result["fallback"])
-    assert any("58.198.180.52 via SSH" in line for line in result["liveHeader"])
+    assert any("Remote configured" in line for line in wide)
+    assert any("cluster-login · Torque" in line for line in wide)
+    assert any("not configured" in line for line in result["fallback"])
+    assert any("cluster-login · Torque" in line for line in result["liveHeader"])
     assert any("1 skill · 5 extensions" in line for line in wide)
     assert any("1 theme" in line for line in wide)
     assert not any("ts-theme" in line for line in wide)
-    for command in ("/ts-context", "/ts-validate", "/ts-mcp"):
+    for command in ("/ts-context", "/ts-validate", "/ts-remote"):
         assert any(command in line for line in wide)
     assert "mdLink" in result["blockColors"]
     assert result["next"] > result["initial"]

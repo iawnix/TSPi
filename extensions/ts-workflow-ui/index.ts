@@ -373,7 +373,7 @@ function compactToolLabel(toolName: string): string {
     [TS_PUBLIC_TOOL_NAMES.workspaceDecisionDraft]: "TS draft",
     [TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate]: "TS validate",
     [TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply]: "TS apply",
-    [TS_PUBLIC_TOOL_NAMES.mcpInspect]: "TS MCP",
+    [TS_PUBLIC_TOOL_NAMES.remoteInspect]: "TS Remote",
     [TS_PUBLIC_TOOL_NAMES.subagentReview]: "TS review",
     [TS_PUBLIC_TOOL_NAMES.subagentCompute]: "TS compute",
     [TS_PUBLIC_TOOL_NAMES.subagentRender]: "TS render",

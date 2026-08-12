@@ -10,5 +10,3 @@ dependencies:
   - numpy
   - scipy
   - ase
-  - pip:
-      - mcp==2.0.0
