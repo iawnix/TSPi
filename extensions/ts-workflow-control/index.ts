@@ -1,5 +1,6 @@
-import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { keyText, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
+import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
@@ -18,8 +19,48 @@ const {
 type TsCommand = "start_node" | "update_workspace" | "end_node";
 const DECISION_ACTIONS = ["start_node", "update_workspace", "end_node"] as const;
 const CONTEXT_MODES = ["summary", "delta", "node", "branch", "audit", "artifacts"] as const;
+const CONTEXT_ENTRY_TYPE = "ts-workspace-context-result";
+const VALIDATION_ENTRY_TYPE = "ts-workspace-validation-result";
+
+type WorkspaceContextEntryData = {
+  summary: string;
+  valid: boolean;
+  currentNode: string | null;
+};
+
+type WorkspaceValidationEntryData = {
+  validation: Record<string, unknown>;
+};
 
 export default function (pi: ExtensionAPI) {
+  pi.registerEntryRenderer<WorkspaceContextEntryData>(CONTEXT_ENTRY_TYPE, (entry, { expanded }, theme) => {
+    const data = entry.data;
+    const status = data?.valid === true ? "valid" : "invalid";
+    const node = data?.currentNode || "no current node";
+    let text = `${theme.fg("accent", "TS Context")}: ${theme.fg(data?.valid === true ? "success" : "warning", status)}`;
+    text += theme.fg("muted", ` · ${node}`);
+    if (expanded) {
+      text += `\n${theme.fg("dim", data?.summary || "Workspace context is unavailable")}`;
+    }
+    text += expandHint(theme, expanded);
+    return new Text(text, 1, 0);
+  });
+
+  pi.registerEntryRenderer<WorkspaceValidationEntryData>(VALIDATION_ENTRY_TYPE, (entry, { expanded }, theme) => {
+    const validation = entry.data?.validation || {};
+    const valid = validation.valid === true;
+    const findings = Array.isArray(validation.findings) ? validation.findings : [];
+    const errors = findings.filter((item) => isFindingWithSeverity(item, "error")).length;
+    const warnings = findings.filter((item) => isFindingWithSeverity(item, "warning")).length;
+    let text = `${theme.fg("accent", "TS Validation")}: ${theme.fg(valid ? "success" : "error", valid ? "valid" : "invalid")}`;
+    text += theme.fg("muted", ` · ${errors} errors · ${warnings} warnings`);
+    if (expanded) {
+      text += `\n${theme.fg("dim", JSON.stringify(validation, null, 2))}`;
+    }
+    text += expandHint(theme, expanded);
+    return new Text(text, 1, 0);
+  });
+
   pi.on("before_agent_start", async (event, ctx) => {
     const root = resolveWorkspaceRoot("", ctx.cwd);
     if (!root) {
@@ -201,24 +242,47 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("ts-context", {
-    description: "Show a compact transition-state workspace context summary.",
+    description: "Show active TS workspace context · read-only · local.",
     handler: async (args, ctx) => {
-      const root = requireWorkspaceRoot(args || "", ctx.cwd);
+      if (args.trim()) {
+        ctx.ui.notify("/ts-context takes no arguments; it uses the active TSPi workspace", "warning");
+        return;
+      }
+      const root = requireWorkspaceRoot(undefined, ctx.cwd);
       const report = await runWorkspaceJson(pi, "report_workspace", root, [], ctx.signal);
       const summary = buildContextSummary(report);
-      ctx.ui.setWidget("ts-workspace-context", summary.split("\n"));
-      ctx.ui.notify("TS workspace context refreshed", "info");
+      const focus = report.focus && typeof report.focus === "object"
+        ? report.focus as Record<string, unknown>
+        : {};
+      pi.appendEntry<WorkspaceContextEntryData>(CONTEXT_ENTRY_TYPE, {
+        summary,
+        valid: report.valid === true,
+        currentNode: typeof focus.current_node === "string" ? focus.current_node : null,
+      });
     },
   });
 
   pi.registerCommand("ts-validate", {
-    description: "Validate a transition-state workspace.",
+    description: "Validate active TS workspace · read-only · local.",
     handler: async (args, ctx) => {
-      const root = requireWorkspaceRoot(args || "", ctx.cwd);
+      if (args.trim()) {
+        ctx.ui.notify("/ts-validate takes no arguments; it uses the active TSPi workspace", "warning");
+        return;
+      }
+      const root = requireWorkspaceRoot(undefined, ctx.cwd);
       const validation = await runWorkspaceJson(pi, "validate_workspace", root, [], ctx.signal);
-      const status = validation.valid ? "valid" : "invalid";
-      ctx.ui.notify(`TS workspace ${status}`, validation.valid ? "info" : "warning");
-      ctx.ui.setWidget("ts-workspace-validation", JSON.stringify(validation, null, 2).split("\n"));
+      pi.appendEntry<WorkspaceValidationEntryData>(VALIDATION_ENTRY_TYPE, { validation });
     },
   });
+}
+
+function expandHint(theme: { fg: (color: "dim" | "muted", text: string) => string }, expanded: boolean): string {
+  const expandKey = theme.fg("dim", keyText("app.tools.expand"));
+  const action = expanded ? "collapse all details" : "expand all details";
+  const prefix = expanded ? "\n" : " ";
+  return `${prefix}${theme.fg("muted", "(")}${expandKey}${theme.fg("muted", ` ${action})`)}`;
+}
+
+function isFindingWithSeverity(value: unknown, severity: string): boolean {
+  return Boolean(value && typeof value === "object" && (value as { severity?: unknown }).severity === severity);
 }

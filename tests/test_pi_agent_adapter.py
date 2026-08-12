@@ -10,8 +10,11 @@ from strict_helpers import HYPOTHESIS_ID, bootstrap_strict_workspace, end_resear
 
 ROOT = Path(__file__).resolve().parents[1]
 SUMMARY = ROOT / "extensions" / "ts-workflow-control" / "summary.cjs"
+CONTROL_EXTENSION = ROOT / "extensions" / "ts-workflow-control" / "index.ts"
 TOOL_CATALOG = ROOT / "extensions" / "shared" / "tool-catalog.ts"
 SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
+TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
+PI_PACKAGE = ROOT / "node_modules" / "@earendil-works" / "pi-coding-agent" / "package.json"
 
 
 def test_pi_package_manifest_exposes_skill_and_extension() -> None:
@@ -148,6 +151,105 @@ def test_pi_context_summary_from_report_workspace(tmp_path: Path) -> None:
     assert payload["details"]["valid"] is True
 
 
+def test_workspace_commands_use_active_root_and_append_expandable_history(tmp_path: Path) -> None:
+    workspace = tmp_path / "active-ts-workspace"
+    bootstrap_strict_workspace(workspace)
+    script = f"""
+import installControl from {json.dumps(CONTROL_EXTENSION.as_uri())};
+import {{ createRequire }} from "node:module";
+import {{ pathToFileURL }} from "node:url";
+const requireFromPi = createRequire({json.dumps(str(PI_PACKAGE))});
+const {{ KeybindingsManager, setKeybindings, TUI_KEYBINDINGS }} = await import(
+  pathToFileURL(requireFromPi.resolve("@earendil-works/pi-tui")).href
+);
+setKeybindings(new KeybindingsManager({{
+  ...TUI_KEYBINDINGS,
+  "app.tools.expand": {{ defaultKeys: "ctrl+o", description: "Toggle tool output" }},
+}}));
+process.env.TS_AGENT_PYTHON = "/usr/bin/python3";
+process.env.TS_WORKSPACE_ROOT = {json.dumps(str(workspace))};
+const commands = {{}};
+const renderers = {{}};
+const entries = [];
+const execCalls = [];
+const pi = {{
+  on: () => {{}},
+  registerTool: () => {{}},
+  registerCommand: (name, command) => {{ commands[name] = command; }},
+  registerEntryRenderer: (name, renderer) => {{ renderers[name] = renderer; }},
+  appendEntry: (type, data) => entries.push([type, data]),
+  exec: async (command, args) => {{
+    execCalls.push([command, args]);
+    if (args[1] === "report_workspace") return {{ stdout: JSON.stringify({{
+      valid: true,
+      workspace_root: {json.dumps(str(workspace))},
+      workspace_id: "ws_test",
+      workspace_revision: "sha256:revision",
+      operational_revision: "sha256:operational",
+      operational_summary: {{}},
+      focus: {{ current_node: "n003" }},
+      open_nodes: [],
+      validation_findings: [],
+    }}) }};
+    if (args[1] === "validate_workspace") return {{ stdout: JSON.stringify({{
+      valid: false,
+      findings: [
+        {{ severity: "error", code: "broken" }},
+        {{ severity: "warning", code: "review" }},
+      ],
+    }}) }};
+    throw new Error(`unexpected workspace command: ${{args[1]}}`);
+  }},
+}};
+installControl(pi);
+const notifications = [];
+const ctx = {{
+  cwd: {json.dumps(str(workspace))},
+  signal: new AbortController().signal,
+  ui: {{ notify: (...args) => notifications.push(args) }},
+}};
+await commands["ts-context"].handler("", ctx);
+await commands["ts-validate"].handler("", ctx);
+const executed = execCalls.length;
+await commands["ts-context"].handler("../other", ctx);
+await commands["ts-validate"].handler("--root elsewhere", ctx);
+const theme = {{ fg: (_color, text) => text }};
+const rendered = entries.map(([type, data]) => ({{
+  type,
+  collapsed: renderers[type]({{ data }}, {{ expanded: false }}, theme).render(200).join("\\n"),
+  expanded: renderers[type]({{ data }}, {{ expanded: true }}, theme).render(200).join("\\n"),
+}}));
+process.stdout.write(JSON.stringify({{
+  commandDescriptions: Object.fromEntries(Object.entries(commands).map(([name, value]) => [name, value.description])),
+  rendered,
+  notifications,
+  execCalls,
+  executed,
+}}));
+"""
+    result = _node_json(script)
+
+    assert result["commandDescriptions"] == {
+        "ts-context": "Show active TS workspace context · read-only · local.",
+        "ts-validate": "Validate active TS workspace · read-only · local.",
+    }
+    assert result["executed"] == 2
+    assert len(result["execCalls"]) == 2
+    assert all(str(workspace) in call[1] for call in result["execCalls"])
+    assert [item["type"] for item in result["rendered"]] == [
+        "ts-workspace-context-result",
+        "ts-workspace-validation-result",
+    ]
+    assert "TS Context: valid · n003" in result["rendered"][0]["collapsed"]
+    assert "TS workspace context:" in result["rendered"][0]["expanded"]
+    assert "TS Validation: invalid · 1 errors · 1 warnings" in result["rendered"][1]["collapsed"]
+    assert '"code": "broken"' in result["rendered"][1]["expanded"]
+    assert all("ctrl+o expand all details" in item["collapsed"].lower() for item in result["rendered"])
+    assert all("ctrl+o collapse all details" in item["expanded"].lower() for item in result["rendered"])
+    assert any("/ts-context takes no arguments" in item[0] for item in result["notifications"])
+    assert any("/ts-validate takes no arguments" in item[0] for item in result["notifications"])
+
+
 def test_pi_context_helper_finds_workspace_from_ancestor(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     nested = workspace / "nodes" / "scratch"
@@ -262,3 +364,16 @@ def test_historical_node_and_backtrack_context_are_compact_and_explicit(tmp_path
     assert "outputs=nodes/n001/outputs" in node_completed.stdout
     assert "evidence_paths: (none)" in node_completed.stdout
     assert "source_files: (none)" in node_completed.stdout
+
+
+def _node_json(script: str):
+    completed = subprocess.run(
+        ["node", "--experimental-loader", str(TS_LOADER), "--input-type=module", "--eval", script],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return json.loads(completed.stdout)

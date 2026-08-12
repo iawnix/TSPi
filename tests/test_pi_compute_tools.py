@@ -58,7 +58,8 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     assert '" collapse all details)"' in source
     assert "REMOTE_DIAGNOSTIC_WIDGET_KEY" in source
     assert 'ctx.ui.setWidget("ts-workspace-remote", JSON.stringify' not in source
-    assert "Usage: /ts-remote status|doctor|queues|nodes" in source
+    assert 'ctx.ui.select("TS Remote · read-only SSH diagnostics"' in source
+    assert "Unknown TS Remote mode; choose status, doctor, queues, or nodes" in source
     assert "getArgumentCompletions" in source
     assert "This check is read-only" in source
     assert "registered-software check" in source
@@ -137,10 +138,13 @@ const diagnosticEntry = {{ data: {{ mode: "doctor", result: {{ ok: true, checks:
 const collapsed = renderers["ts-workspace-remote-diagnostic"](diagnosticEntry, {{ expanded: false }}, theme).render(200).join("\\n");
 const expanded = renderers["ts-workspace-remote-diagnostic"](diagnosticEntry, {{ expanded: true }}, theme).render(200).join("\\n");
 const uiCalls = [];
+const selectCalls = [];
+let nextSelection = "nodes · compute-node resources";
 const ctx = {{
   cwd: "/tmp/tspi-workspace",
   signal: new AbortController().signal,
   ui: {{
+    select: async (...args) => {{ selectCalls.push(args); const selected = nextSelection; nextSelection = undefined; return selected; }},
     setStatus: (...args) => uiCalls.push(["status", ...args]),
     setWidget: (...args) => uiCalls.push(["widget", ...args]),
     notify: (...args) => uiCalls.push(["notify", ...args]),
@@ -148,6 +152,9 @@ const ctx = {{
 }};
 const completions = await commands["ts-remote"].getArgumentCompletions("");
 await commands["ts-remote"].handler("status", ctx);
+await commands["ts-remote"].handler("", ctx);
+const callsBeforeCancelledSelection = execCalls.length;
+await commands["ts-remote"].handler("", ctx);
 const successCalls = uiCalls.splice(0);
 failNext = true;
 let failureMessage;
@@ -156,7 +163,7 @@ try {{
 }} catch (error) {{
   failureMessage = error.message;
 }}
-process.stdout.write(JSON.stringify({{ collapsed, expanded, completions, successCalls, failureCalls: uiCalls, failureMessage, entries, execCalls }}));
+process.stdout.write(JSON.stringify({{ collapsed, expanded, completions, successCalls, failureCalls: uiCalls, failureMessage, entries, execCalls, selectCalls, callsBeforeCancelledSelection }}));
 """
     result = _node_json(script)
     success_calls = result["successCalls"]
@@ -208,6 +215,17 @@ process.stdout.write(JSON.stringify({{ collapsed, expanded, completions, success
     assert result["entries"][0][0] == "ts-workspace-remote-diagnostic"
     assert result["entries"][0][1]["result"]["ok"] is True
     assert result["execCalls"][0][1][-2:] == ["--mode", "status"]
+    assert result["execCalls"][1][1][-2:] == ["--mode", "nodes"]
+    assert result["callsBeforeCancelledSelection"] == 2
+    assert len(result["execCalls"]) == 3  # final doctor failure still invokes the diagnostic process
+    assert len(result["selectCalls"]) == 2
+    assert result["selectCalls"][0][0] == "TS Remote · read-only SSH diagnostics"
+    assert result["selectCalls"][0][1] == [
+        "status · SSH connectivity only",
+        "doctor · SSH, scheduler, storage, and software",
+        "queues · scheduler queue state",
+        "nodes · compute-node resources",
+    ]
 
 
 def test_compute_contracts_exclude_workspace_verdicts_and_arbitrary_commands() -> None:

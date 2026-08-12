@@ -35,20 +35,24 @@ const REMOTE_DIAGNOSTIC_ACTIVITY = Object.freeze({
   status: {
     description: "Check the configured SSH remote profile",
     detail: "Read-only · SSH connectivity",
+    selector: "status · SSH connectivity only",
   },
   doctor: {
     description: "Check SSH, scheduler, storage, and registered software",
     detail: "Read-only · full control-path health",
+    selector: "doctor · SSH, scheduler, storage, and software",
   },
   queues: {
     description: "Read the scheduler queue state",
     detail: "Read-only · scheduler queue state",
+    selector: "queues · scheduler queue state",
   },
   nodes: {
     description: "Read compute-node state and available resources",
     detail: "Read-only · compute-node resources",
+    selector: "nodes · compute-node resources",
   },
-} satisfies Record<RemoteDiagnosticMode, { description: string; detail: string }>);
+} satisfies Record<RemoteDiagnosticMode, { description: string; detail: string; selector: string }>);
 const ATTEMPT_KINDS = ["primary", "retry", "recalculation"] as const;
 const RECALCULATION_PURPOSES = ["repair", "refinement", "method_robustness"] as const;
 const OPERATOR_COMMON_PARAMETERS = {
@@ -379,7 +383,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("ts-remote", {
-    description: "Show read-only ts_remote SSH, Torque queue, node, or environment health.",
+    description: "Inspect TS remote compute environment · read-only · SSH.",
     getArgumentCompletions: (prefix) => {
       const candidate = prefix.trim().toLowerCase();
       const matches = REMOTE_DIAGNOSTIC_MODES
@@ -394,10 +398,17 @@ export default function (pi: ExtensionAPI) {
     handler: async (args, ctx) => {
       ctx.ui.setStatus(REMOTE_DIAGNOSTIC_STATUS_KEY, undefined);
       ctx.ui.setWidget(REMOTE_DIAGNOSTIC_WIDGET_KEY, undefined);
-      const candidate = String(args || "").trim();
+      let candidate = String(args || "").trim();
+      if (!candidate) {
+        const options = REMOTE_DIAGNOSTIC_MODES.map((mode) => REMOTE_DIAGNOSTIC_ACTIVITY[mode].selector);
+        const selected = await ctx.ui.select("TS Remote · read-only SSH diagnostics", options);
+        if (!selected) return;
+        candidate = REMOTE_DIAGNOSTIC_MODES.find(
+          (mode) => REMOTE_DIAGNOSTIC_ACTIVITY[mode].selector === selected,
+        ) || "";
+      }
       if (!REMOTE_DIAGNOSTIC_MODES.includes(candidate as RemoteDiagnosticMode)) {
-        const usage = "Usage: /ts-remote status|doctor|queues|nodes";
-        ctx.ui.notify(usage, "warning");
+        ctx.ui.notify("Unknown TS Remote mode; choose status, doctor, queues, or nodes", "warning");
         return;
       }
       const mode = candidate as RemoteDiagnosticMode;

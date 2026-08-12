@@ -243,7 +243,13 @@ Users can run the same remote diagnostics with
 `/ts-remote status|doctor|queues|nodes`. The command and Agent tool are on demand; they
 do not add remote output to every turn's context. Command completion explains each
 read-only mode, and an above-editor activity panel remains visible until the
-diagnostic returns or stops with an error.
+diagnostic returns or stops with an error. Running `/ts-remote` without a mode
+opens a read-only diagnostic selector before any SSH request is made.
+
+`/ts-context` and `/ts-validate` always use the active TSPi workspace and reject
+extra arguments instead of interpreting them as paths. Their compact results
+are retained in session history; Pi's global `Ctrl+O` action expands or
+collapses the full context or validation details.
 
 `before_agent_start` injects only a short control-plane reminder. It does not
 inject a full workspace report every turn. Use `mode=delta` with the last
