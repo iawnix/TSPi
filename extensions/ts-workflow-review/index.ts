@@ -12,6 +12,10 @@ import {
   terminalStateForReport,
   terminalStatusForError,
 } from "../shared/subagent-status.ts";
+import {
+  renderTsSubagentCall,
+  renderTsSubagentResult,
+} from "../shared/subagent-tool-presentation.ts";
 import { runScientificReview } from "../../src/agents/review/runtime.ts";
 
 const require = createRequire(import.meta.url);
@@ -39,6 +43,15 @@ export default function (pi: ExtensionAPI) {
       "Treat its output as advisory analysis, not registered evidence or an accepted/pathway verdict; reconcile it against primary artifacts before mutating the workspace.",
       "Select nodeId or fromNode+anchorNode and explicit evidenceRefs/artifactRefs to keep the review scoped.",
     ],
+    renderShell: "self",
+    renderCall: (args, theme) => renderTsSubagentCall("review", args as Record<string, unknown>, theme),
+    renderResult: (result, options, theme, context) => renderTsSubagentResult(
+      "review",
+      result,
+      options,
+      theme,
+      context.isError,
+    ),
     executionMode: "sequential",
     parameters: Type.Object({
       reviewType: StringEnum(REVIEW_TYPES),

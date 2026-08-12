@@ -672,13 +672,11 @@ def test_real_pi_public_subagent_emits_ui_lifecycle_updates(tmp_path: Path, outc
 
     assert completed.returncode == 0, completed.stderr
     rows = [json.loads(line) for line in completed.stdout.splitlines() if line.strip().startswith("{")]
-    status_texts = [
-        str(row["statusText"])
+    status_requests = [
+        row
         for row in rows
         if row.get("type") == "extension_ui_request"
         and row.get("method") == "setStatus"
-        and row.get("statusKey") == "ts-subagent"
-        and row.get("statusText")
     ]
     lifecycle = [
         row["partialResult"]["details"]
@@ -702,8 +700,7 @@ def test_real_pi_public_subagent_emits_ui_lifecycle_updates(tmp_path: Path, outc
     assert len({status["started_at"] for status in lifecycle}) == 1
     assert lifecycle[3]["wait_reason"] == "model_response"
     assert lifecycle[-1]["run_ref"].startswith("nodes/n000/agent-runs/")
-    assert status_texts[0] == "π 1 agent"
-    assert status_texts[-1] == "π 1 attention"
+    assert status_requests == []
     assert len(requests) == (3 if outcome == "success" else 4)
     run_dir = workspace / lifecycle[-1]["run_ref"]
     invalid_output = run_dir / "invalid-review-output.json"

@@ -60,7 +60,7 @@ PY
 usage() {
   cat <<'EOF'
 Usage:
-  ./TSPi --workspace <name> [--dev] [Pi arguments...]
+  ./TSPi --workspace <name> [Pi arguments...]
   ./TSPi --check-remote
 
 Each workspace name creates or reuses an isolated research directory under
@@ -199,14 +199,10 @@ main() {
   local check_remote_only=false
   local show_help=false
   local workspace_name=""
-  local -a dev_extension_args=()
   local -a pi_args=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --dev)
-        dev_extension_args=(-e "$TS_PACKAGE_ROOT/extensions/ts-workflow-dev/index.ts")
-        ;;
       --check-remote)
         check_remote_only=true
         ;;
@@ -275,7 +271,6 @@ main() {
     -e "$TS_PACKAGE_ROOT/extensions/ts-workflow-review/index.ts" \
     -e "$TS_PACKAGE_ROOT/extensions/ts-workflow-compute/index.ts" \
     -e "$TS_PACKAGE_ROOT/extensions/ts-workflow-artifacts/index.ts" \
-    "${dev_extension_args[@]}" \
     --approve \
     --session-dir "$WORKSPACE_ROOT/.pi/sessions" \
     "${pi_args[@]}"

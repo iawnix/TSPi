@@ -5,10 +5,12 @@ import type { TsSubagentState } from "../shared/subagent-status.ts";
 import {
   formatElapsed,
   roleLabel,
-  sortedTsSubagentRuns,
   stateSymbol,
-  type TsSubagentUiState,
-} from "./agent-panel.ts";
+} from "./activity-panel.ts";
+import {
+  sortedTsSubagentActivities,
+  type TsActivityStore,
+} from "./activity-store.ts";
 
 const SAFE_RUN_REF = /^(?:nodes\/[A-Za-z0-9][A-Za-z0-9._-]*\/agent-runs|operations\/agent-runs)\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MAX_DETAIL_FILE_BYTES = 1024 * 1024;
@@ -41,7 +43,7 @@ export interface TsAgentRunDocuments {
 }
 
 export function collectTsAgentRecords(
-  state: TsSubagentUiState,
+  state: TsActivityStore,
   report: Record<string, unknown> | undefined,
 ): TsAgentRecord[] {
   const byTask = new Map<string, TsAgentRecord>();
@@ -66,8 +68,8 @@ export function collectTsAgentRecords(
       live: false,
     });
   }
-  for (const view of sortedTsSubagentRuns(state)) {
-    const status = view.status;
+  for (const activity of sortedTsSubagentActivities(state)) {
+    const status = activity.status;
     const previous = byTask.get(status.task_id);
     byTask.set(status.task_id, {
       ...previous,

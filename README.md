@@ -122,7 +122,7 @@ workspace for every Pi process:
 ```bash
 ./TSPi --workspace reaction-a
 ./TSPi --workspace reaction-b
-./TSPi --workspace reaction-c --dev
+./TSPi --workspace reaction-c
 ```
 
 Names use 1-80 letters, digits, dots, underscores, or hyphens and resolve only
@@ -163,15 +163,16 @@ Public tool prefixes describe execution rather than subject matter:
   installation-owned addressing; it never delegates sending to a child.
 
 The package-owned UI extension installs a MyPi-compatible animated TSPi header,
-mode-aware rounded editor, session footer, working state, and terminal title
-request.
-It adds the configured workspace/remote profile and observes concurrent
-`ts_subagent_*` lifecycle updates through a bounded `TS Agents` panel and
-history entries. The panel shows role, node, bounded operation context, elapsed
-time, explicit wait reason, and terminal state without exposing model reasoning
-or full child transcripts. Successful rows remain for 15 seconds; partial,
-failed, cancelled, and unknown rows remain visible for attention. The footer
-shows aggregate counts rather than duplicating one child row.
+mode-aware rounded editor, stable session footer, working state, and terminal
+title request. A single `TS Activity` panel observes concurrent `ts_subagent_*`
+lifecycles and `/ts-remote` diagnostics. The panel shows role, node, bounded
+operation context, elapsed time, explicit wait reason, and terminal state
+without exposing model reasoning or full child transcripts. Successful rows
+remain for 15 seconds; partial, failed, cancelled, and unknown rows remain
+visible for attention. Root foreground work stays in Pi's working indicator;
+the footer contains only stable session, branch, workspace, context, thinking,
+and model information. Set `TSPI_ICON_STYLE=unicode` when the terminal does not
+use a Nerd Font; the default is `nerd`.
 Pi's native `Ctrl+O` action globally toggles every expandable history and tool
 result; TS-specific entries label it as "expand all details" or "collapse all
 details" rather than implying that it affects only the adjacent result.
@@ -228,9 +229,9 @@ automatically. Notification failure does not mutate or block scientific state.
 Users can run the same remote diagnostics with
 `/ts-remote status|doctor|queues|nodes`. The command and Agent tool are on demand; they
 do not add remote output to every turn's context. Command completion explains each
-read-only mode, and an above-editor activity panel remains visible until the
-diagnostic returns or stops with an error. Running `/ts-remote` without a mode
-opens a read-only diagnostic selector before any SSH request is made.
+read-only mode. The shared `TS Activity` panel shows its lifecycle; the command
+does not write a separate footer status or widget. Running `/ts-remote` without
+a mode opens a read-only diagnostic selector before any SSH request is made.
 
 `/ts-context` and `/ts-validate` always use the active TSPi workspace and reject
 extra arguments instead of interpreting them as paths. Their compact results
@@ -418,29 +419,6 @@ child, a compute child with exactly one request-bound tool, and an artifact
 child with exactly one request-bound tool. Before release, also test one clean,
 branch- or tag-pinned GitHub installation from a network that can reach GitHub.
 
-### Development Subagent Tests
-
-The optional development extension lists and runs isolated package tests. It is
-not part of the default `pi.extensions` list and adds no Root Agent tools or
-scientific workspace protocol. Load it explicitly from a development checkout:
-
-```bash
-pi --extension /absolute/path/to/TSAgentSkill/extensions/ts-workflow-dev/index.ts
-```
-
-Then use:
-
-```text
-/ts-test list
-/ts-test run subagent-review
-/ts-test run subagent-compute
-/ts-test run subagent-all
-/ts-test run workspace-contracts
-/ts-test run remote-contracts
-```
-
-These cases invoke the existing pytest and real-Pi recording-provider tests in
-temporary workspaces. They reuse `ts-agent-task/1`, `ts-agent-result/1`, typed
-actions, and the agent-run journal; the test runner adds only external
-assertions and pass/fail reporting. `npm run test:subagents` runs the same test
-surface non-interactively.
+`npm run test:subagents` runs the subagent contract and real-Pi
+recording-provider test surface non-interactively. Development tests are not
+exposed as a runtime TSPi command.

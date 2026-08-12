@@ -12,10 +12,18 @@ import {
 } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 import {
+  publishTsActivity,
+  type TsRemoteActivity,
+} from "../shared/activity-events.ts";
+import {
   createSubagentStatusReporter,
   terminalStateForReport,
   terminalStatusForError,
 } from "../shared/subagent-status.ts";
+import {
+  renderTsSubagentCall,
+  renderTsSubagentResult,
+} from "../shared/subagent-tool-presentation.ts";
 import { runComputeOperator } from "../../src/agents/compute/runtime.ts";
 
 const require = createRequire(import.meta.url);
@@ -33,8 +41,6 @@ const OPERATIONS = ["prepare", "submit", "inspect", "collect", "cancel", "parse"
 const BACKENDS = ["gaussian", "ase_neb", "xtb", "crest", "qbics_dmecp"] as const;
 const REMOTE_DIAGNOSTIC_MODES = ["status", "doctor", "queues", "nodes"] as const;
 type RemoteDiagnosticMode = typeof REMOTE_DIAGNOSTIC_MODES[number];
-const REMOTE_DIAGNOSTIC_STATUS_KEY = "ts-workspace-remote-command";
-const REMOTE_DIAGNOSTIC_WIDGET_KEY = "ts-workspace-remote";
 const REMOTE_DIAGNOSTIC_ACTIVITY = Object.freeze({
   status: {
     description: "Check the configured SSH remote profile",
@@ -233,6 +239,15 @@ export default function (pi: ExtensionAPI) {
       "Use inspect for changed or terminal jobs instead of polling unchanged work every turn.",
       "Use submit or cancel only for the pre-bound current intent, and never retry an ambiguous control result.",
     ],
+    renderShell: "self",
+    renderCall: (args, theme) => renderTsSubagentCall("compute", args as Record<string, unknown>, theme),
+    renderResult: (result, options, theme, context) => renderTsSubagentResult(
+      "compute",
+      result,
+      options,
+      theme,
+      context.isError,
+    ),
     executionMode: "sequential",
     parameters: COMPUTE_OPERATOR_PARAMETERS,
     async execute(toolCallId, params, signal, onUpdate, ctx) {
@@ -400,8 +415,6 @@ export default function (pi: ExtensionAPI) {
       return matches.length > 0 ? matches : null;
     },
     handler: async (args, ctx) => {
-      ctx.ui.setStatus(REMOTE_DIAGNOSTIC_STATUS_KEY, undefined);
-      ctx.ui.setWidget(REMOTE_DIAGNOSTIC_WIDGET_KEY, undefined);
       let candidate = String(args || "").trim();
       if (!candidate) {
         const options = REMOTE_DIAGNOSTIC_MODES.map((mode) => REMOTE_DIAGNOSTIC_ACTIVITY[mode].selector);
@@ -417,15 +430,29 @@ export default function (pi: ExtensionAPI) {
       }
       const mode = candidate as RemoteDiagnosticMode;
       const activity = REMOTE_DIAGNOSTIC_ACTIVITY[mode];
-      ctx.ui.setStatus(REMOTE_DIAGNOSTIC_STATUS_KEY, `TS Remote · ${mode} · checking`);
-      ctx.ui.setWidget(
-        REMOTE_DIAGNOSTIC_WIDGET_KEY,
-        [`◌ TS Remote · ${mode} · running`, activity.detail],
-        { placement: "aboveEditor" },
-      );
-      ctx.ui.notify(`${activity.description}. This check is read-only.`, "info");
+      const activityId = `remote:${randomUUID()}`;
+      const startedAt = Date.now();
+      publishRemoteActivity(pi, {
+        id: activityId,
+        mode,
+        state: "running",
+        detail: activity.detail,
+        startedAt,
+        updatedAt: startedAt,
+      });
       try {
         const result = await runRemoteDiagnosticJson(pi, mode, ctx.cwd, ctx.signal);
+        const terminalAt = Date.now();
+        publishRemoteActivity(pi, {
+          id: activityId,
+          mode,
+          state: result.ok === true ? "completed" : "failed",
+          detail: activity.detail,
+          startedAt,
+          updatedAt: terminalAt,
+          terminalAt,
+          error: result.ok === true ? undefined : remoteDiagnosticError(result),
+        });
         pi.appendEntry<RemoteDiagnosticEntryData>("ts-workspace-remote-diagnostic", { mode, result });
         ctx.ui.notify(
           result.ok === true ? `TS Remote ${mode} passed` : `TS Remote ${mode} failed`,
@@ -435,14 +462,33 @@ export default function (pi: ExtensionAPI) {
         const message = error instanceof Error
           ? error.message
           : `TS Remote ${mode} stopped before a result was returned`;
+        const terminalAt = Date.now();
+        publishRemoteActivity(pi, {
+          id: activityId,
+          mode,
+          state: "failed",
+          detail: activity.detail,
+          startedAt,
+          updatedAt: terminalAt,
+          terminalAt,
+          error: message,
+        });
         ctx.ui.notify(message, "error");
         throw error;
-      } finally {
-        ctx.ui.setStatus(REMOTE_DIAGNOSTIC_STATUS_KEY, undefined);
-        ctx.ui.setWidget(REMOTE_DIAGNOSTIC_WIDGET_KEY, undefined);
       }
     },
   });
+}
+
+function publishRemoteActivity(pi: ExtensionAPI, activity: Omit<TsRemoteActivity, "kind">): void {
+  publishTsActivity(pi.events, { type: "upsert", activity: { kind: "remote", ...activity } });
+}
+
+function remoteDiagnosticError(result: Record<string, unknown>): string | undefined {
+  const error = result.error;
+  if (!error || typeof error !== "object" || Array.isArray(error)) return undefined;
+  const message = (error as Record<string, unknown>).message;
+  return typeof message === "string" && message ? message : undefined;
 }
 
 function createScopedComputeTools(

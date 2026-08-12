@@ -18,6 +18,10 @@ import {
   terminalStatusForError,
   type TsSubagentStatusReporter,
 } from "../shared/subagent-status.ts";
+import {
+  renderTsSubagentCall,
+  renderTsSubagentResult,
+} from "../shared/subagent-tool-presentation.ts";
 import { runArtifactOperator } from "../../src/agents/artifacts/runtime.ts";
 
 const require = createRequire(import.meta.url);
@@ -61,6 +65,15 @@ export default function (pi: ExtensionAPI) {
       "Select the owning node and exact workspace-relative input/output refs before calling the render subagent.",
       "Treat rendered images as visualization artifacts, never as scientific support or acceptance evidence.",
     ],
+    renderShell: "self",
+    renderCall: (args, theme) => renderTsSubagentCall("render", args as Record<string, unknown>, theme),
+    renderResult: (result, options, theme, context) => renderTsSubagentResult(
+      "render",
+      result,
+      options,
+      theme,
+      context.isError,
+    ),
     executionMode: "sequential",
     parameters: Type.Object({
       operation: StringEnum(RENDER_OPERATIONS),
@@ -118,6 +131,15 @@ export default function (pi: ExtensionAPI) {
       "Build reports only from the validated workspace read model.",
       "Preserve negative results, ambiguity, evidence ceilings, and missing-data disclosures.",
     ],
+    renderShell: "self",
+    renderCall: (args, theme) => renderTsSubagentCall("report", args as Record<string, unknown>, theme),
+    renderResult: (result, options, theme, context) => renderTsSubagentResult(
+      "report",
+      result,
+      options,
+      theme,
+      context.isError,
+    ),
     executionMode: "sequential",
     parameters: Type.Object({
       operation: Type.Literal("build"),

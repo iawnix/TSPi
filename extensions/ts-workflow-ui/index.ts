@@ -1,7 +1,6 @@
 import type {
   ExtensionAPI,
   ExtensionContext,
-  Theme,
 } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, Text, truncateToWidth, type TUI } from "@earendil-works/pi-tui";
 import { TspiEditor } from "./editor.ts";
@@ -9,15 +8,26 @@ import { createTspiStartupHeader } from "./startup.ts";
 import { fitColumns, formatCwd } from "./render-utils.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 import {
-  createTsSubagentUiState,
+  subscribeTsActivity,
+} from "../shared/activity-events.ts";
+import {
+  tspiIconLabel,
+} from "../shared/icons.ts";
+import {
   formatElapsed,
-  formatPanelFooter,
-  pruneTsSubagentUiState,
-  reduceTsSubagentUiState,
-  renderTsAgentPanel,
+  renderTsActivityPanel,
   roleLabel,
-  summarizeTsSubagentRuns,
-} from "./agent-panel.ts";
+} from "./activity-panel.ts";
+import {
+  clearTsActivityStore,
+  createTsActivityStore,
+  hasActiveSubagents,
+  isSubagentTool,
+  pruneTsActivities,
+  reducePublishedTsActivity,
+  reduceTsSubagentActivity,
+  summarizeTsActivities,
+} from "./activity-store.ts";
 import {
   agentSelectionLabel,
   collectTsAgentRecords,
@@ -26,23 +36,8 @@ import {
 } from "./agent-details.ts";
 import { requireWorkspaceRoot, runWorkspaceJson } from "../shared/workspace-cli.ts";
 
-const STATUS_KEY = "ts-subagent";
-const WIDGET_KEY = "ts-subagent-status";
-type AgentState = "idle" | "thinking" | "tool" | "compacting" | "error";
-
-const ICONS = Object.freeze({
-  session: "◆",
-  git: "⑂",
-  cwd: "▣",
-  ephemeral: "○",
-  model: "◇",
-  context: "◔",
-  thinking: "◌",
-  idle: "●",
-  tool: "⚒",
-  compacting: "↻",
-  error: "✕",
-});
+const WIDGET_KEY = "ts-activity";
+type ForegroundState = "idle" | "thinking" | "compacting" | "error";
 export function formatTsSubagentHistory(
   entryType: string,
   data: Record<string, unknown>,
@@ -65,8 +60,8 @@ export function formatTsSubagentHistory(
 }
 
 export default function (pi: ExtensionAPI) {
-  const subagentState = createTsSubagentUiState();
-  let agentState: AgentState = "idle";
+  const activityStore = createTsActivityStore();
+  let foregroundState: ForegroundState = "idle";
   const activeTools = new Map<string, string>();
   let timer: ReturnType<typeof setInterval> | undefined;
   let latestContext: ExtensionContext | undefined;
@@ -75,9 +70,35 @@ export default function (pi: ExtensionAPI) {
 
   const requestRender = () => activeTui?.requestRender();
 
-  const setAgentState = (next: AgentState) => {
-    agentState = next;
+  const setForegroundState = (next: ForegroundState) => {
+    foregroundState = next;
     requestRender();
+  };
+
+  const updateWorkingMessage = (ctx: ExtensionContext) => {
+    if (foregroundState === "idle") {
+      ctx.ui.setWorkingMessage();
+      return;
+    }
+    if (foregroundState === "compacting") {
+      ctx.ui.setWorkingMessage(`${tspiIconLabel("compacting")} TSPi · compacting context`);
+      return;
+    }
+    const tools = [...activeTools.values()];
+    if (tools.length > 0) {
+      const label = tools.length === 1 ? foregroundToolLabel(tools[0] || "tool") : `running ${tools.length} tools`;
+      ctx.ui.setWorkingMessage(`${tspiIconLabel("tool")} TSPi · ${label}`);
+      return;
+    }
+    if (hasActiveSubagents(activityStore)) {
+      ctx.ui.setWorkingMessage(`${tspiIconLabel("coordinating")} TSPi · coordinating agents`);
+      return;
+    }
+    if (foregroundState === "error") {
+      ctx.ui.setWorkingMessage(`${tspiIconLabel("failed")} TSPi · handling tool error`);
+      return;
+    }
+    ctx.ui.setWorkingMessage(`${tspiIconLabel("thinking")} TSPi · thinking`);
   };
 
   const disposeHeader = () => {
@@ -107,32 +128,19 @@ export default function (pi: ExtensionAPI) {
           const sessionIdentity = sessionName || `#${sessionId}`;
           const persisted = Boolean(ctx.sessionManager.getSessionFile());
           const leftParts = [
-            iconLabel("session", sessionIdentity),
-            branch ? iconLabel("git", branch) : undefined,
-            width >= 100 ? iconLabel("cwd", formatCwd(ctx.cwd)) : undefined,
-            !persisted ? iconLabel("ephemeral") : undefined,
+            tspiIconLabel("session", sessionIdentity),
+            branch ? tspiIconLabel("git", branch) : undefined,
+            width >= 100 ? tspiIconLabel("cwd", formatCwd(ctx.cwd)) : undefined,
+            !persisted ? tspiIconLabel("ephemeral") : undefined,
           ].filter((value): value is string => Boolean(value));
           const left = theme.fg("muted", leftParts.join(" · "));
 
-          const activeTool = activeTools.size === 1
-            ? compactToolLabel([...activeTools.values()][0] || "tool")
-            : activeTools.size > 1 ? `${activeTools.size} tools` : undefined;
-          const agentSummary = summarizeTsSubagentRuns(subagentState);
           const rightParts = [
-            agentStateLabel(agentState, activeTool),
-            formatPanelFooter(agentSummary),
-            iconLabel("context", contextText(ctx)),
-            width >= 72 ? iconLabel("thinking", pi.getThinkingLevel()) : undefined,
-            iconLabel("model", ctx.model?.id || "Default model"),
+            tspiIconLabel("context", contextText(ctx)),
+            width >= 72 ? tspiIconLabel("thinking", pi.getThinkingLevel()) : undefined,
+            tspiIconLabel("model", ctx.model?.id || "Default model"),
           ].filter((value): value is string => Boolean(value));
-          let right = stateColor(theme, agentState, rightParts.join(" · "));
-
-          if (width >= 120) {
-            const statuses = [...footerData.getExtensionStatuses().entries()]
-              .filter(([key]) => key !== STATUS_KEY)
-              .map(([, value]) => value);
-            if (statuses.length > 0) right = `${right} · ${statuses.join(" · ")}`;
-          }
+          const right = theme.fg("muted", rightParts.join(" · "));
           if (width < 58) return [truncateToWidth(right, width, "")];
           return [fitColumns(left, right, width)];
         },
@@ -149,22 +157,21 @@ export default function (pi: ExtensionAPI) {
 
   const updateUi = (ctx: ExtensionContext, now = Date.now()) => {
     latestContext = ctx;
-    pruneTsSubagentUiState(subagentState, now);
-    const summary = summarizeTsSubagentRuns(subagentState);
+    pruneTsActivities(activityStore, now);
+    const summary = summarizeTsActivities(activityStore);
     if (summary.total === 0) {
-      ctx.ui.setStatus(STATUS_KEY, undefined);
       ctx.ui.setWidget(WIDGET_KEY, undefined);
       if (timer) clearInterval(timer);
       timer = undefined;
       requestRender();
+      updateWorkingMessage(ctx);
       return;
     }
-    ctx.ui.setStatus(STATUS_KEY, formatPanelFooter(summary));
     ctx.ui.setWidget(
       WIDGET_KEY,
       (_tui, theme) => ({
         render: (width) => {
-          return renderTsAgentPanel(subagentState, width, Date.now()).map((line) => theme.fg(line.tone, line.text));
+          return renderTsActivityPanel(activityStore, width, Date.now()).map((line) => theme.fg(line.tone, line.text));
         },
         invalidate: () => {},
       }),
@@ -181,57 +188,69 @@ export default function (pi: ExtensionAPI) {
       timer = undefined;
     }
     requestRender();
+    updateWorkingMessage(ctx);
   };
+
+  const unsubscribeActivity = subscribeTsActivity(pi.events, (event) => {
+    if (!reducePublishedTsActivity(activityStore, event) || !latestContext) return;
+    updateUi(latestContext);
+  });
 
   pi.on("session_start", (_event, ctx) => {
     latestContext = ctx;
     if (timer) clearInterval(timer);
     timer = undefined;
-    subagentState.runs.clear();
+    clearTsActivityStore(activityStore);
     activeTools.clear();
-    ctx.ui.setStatus(STATUS_KEY, undefined);
     ctx.ui.setWidget(WIDGET_KEY, undefined);
-    setAgentState("idle");
+    setForegroundState("idle");
     installUi(ctx);
   });
 
   pi.on("tool_execution_start", (event, ctx) => {
-    activeTools.set(event.toolCallId, event.toolName);
-    setAgentState("tool");
-    if (reduceTsSubagentUiState(subagentState, event, Date.now())) updateUi(ctx);
+    if (!isSubagentTool(event.toolName)) activeTools.set(event.toolCallId, event.toolName);
+    if (reduceTsSubagentActivity(activityStore, event, Date.now())) updateUi(ctx);
+    updateWorkingMessage(ctx);
   });
   pi.on("tool_execution_update", (event, ctx) => {
-    if (reduceTsSubagentUiState(subagentState, event, Date.now())) updateUi(ctx);
+    if (reduceTsSubagentActivity(activityStore, event, Date.now())) updateUi(ctx);
   });
   pi.on("tool_execution_end", (event, ctx) => {
-    if (reduceTsSubagentUiState(subagentState, event, Date.now())) updateUi(ctx);
+    if (reduceTsSubagentActivity(activityStore, event, Date.now())) updateUi(ctx);
     activeTools.delete(event.toolCallId);
-    setAgentState(event.isError ? "error" : activeTools.size > 0 ? "tool" : "thinking");
+    setForegroundState(event.isError ? "error" : "thinking");
+    updateWorkingMessage(ctx);
   });
 
   pi.on("agent_start", (_event, ctx) => {
     latestContext = ctx;
-    setAgentState("thinking");
-    ctx.ui.setWorkingMessage("[o_o] TSPi is thinking");
+    setForegroundState("thinking");
+    updateWorkingMessage(ctx);
   });
   pi.on("agent_settled", (_event, ctx) => {
     activeTools.clear();
-    setAgentState("idle");
-    ctx.ui.setWorkingMessage();
+    setForegroundState("idle");
+    updateWorkingMessage(ctx);
   });
-  pi.on("session_before_compact", () => setAgentState("compacting"));
-  pi.on("session_compact", () => setAgentState("thinking"));
+  pi.on("session_before_compact", (_event, ctx) => {
+    setForegroundState("compacting");
+    updateWorkingMessage(ctx);
+  });
+  pi.on("session_compact", (_event, ctx) => {
+    setForegroundState("thinking");
+    updateWorkingMessage(ctx);
+  });
   pi.on("model_select", requestRender);
   pi.on("thinking_level_select", requestRender);
   pi.on("session_info_changed", requestRender);
 
   pi.on("session_shutdown", (_event, ctx) => {
+    unsubscribeActivity();
     disposeHeader();
     if (timer) clearInterval(timer);
     timer = undefined;
-    subagentState.runs.clear();
+    clearTsActivityStore(activityStore);
     activeTools.clear();
-    ctx.ui.setStatus(STATUS_KEY, undefined);
     ctx.ui.setWidget(WIDGET_KEY, undefined);
     if (ctx.mode === "tui") {
       ctx.ui.setHeader(undefined);
@@ -256,12 +275,12 @@ export default function (pi: ExtensionAPI) {
         root = requireWorkspaceRoot(undefined, ctx.cwd);
         report = await runWorkspaceJson(pi, "report_workspace", root, [], ctx.signal);
       } catch (error) {
-        if (subagentState.runs.size === 0) {
+        if (activityStore.activities.size === 0) {
           ctx.ui.notify(error instanceof Error ? error.message : String(error), "warning");
           return;
         }
       }
-      const records = collectTsAgentRecords(subagentState, report);
+      const records = collectTsAgentRecords(activityStore, report);
       if (records.length === 0) {
         ctx.ui.notify("No TS agent runs are available in this workspace", "info");
         return;
@@ -314,36 +333,16 @@ function contextText(ctx: ExtensionContext): string {
   return `${Math.round(usage.percent)}%`;
 }
 
-function iconLabel(name: keyof typeof ICONS, value?: string): string {
-  return value ? `${ICONS[name]} ${value}` : ICONS[name];
-}
-
-function agentStateLabel(state: AgentState, toolName?: string): string {
-  if (state === "tool") return iconLabel("tool", toolName);
-  return iconLabel(state);
-}
-
-function stateColor(theme: Theme, state: AgentState, text: string): string {
-  if (state === "error") return theme.fg("error", text);
-  if (state === "idle") return theme.fg("muted", text);
-  if (state === "compacting") return theme.fg("warning", text);
-  return theme.fg("accent", text);
-}
-
-function compactToolLabel(toolName: string): string {
+function foregroundToolLabel(toolName: string): string {
   const labels: Record<string, string> = {
-    [TS_PUBLIC_TOOL_NAMES.workspaceContext]: "TS context",
-    [TS_PUBLIC_TOOL_NAMES.workspaceDecisionDraft]: "TS draft",
-    [TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate]: "TS validate",
-    [TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply]: "TS apply",
-    [TS_PUBLIC_TOOL_NAMES.remoteInspect]: "TS Remote",
-    [TS_PUBLIC_TOOL_NAMES.subagentReview]: "TS review",
-    [TS_PUBLIC_TOOL_NAMES.subagentCompute]: "TS compute",
-    [TS_PUBLIC_TOOL_NAMES.subagentRender]: "TS render",
-    [TS_PUBLIC_TOOL_NAMES.subagentReport]: "TS report",
-    [TS_PUBLIC_TOOL_NAMES.notifyUser]: "TS notify",
+    [TS_PUBLIC_TOOL_NAMES.workspaceContext]: "reading workspace context",
+    [TS_PUBLIC_TOOL_NAMES.workspaceDecisionDraft]: "drafting decision",
+    [TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate]: "validating workspace",
+    [TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply]: "applying decision",
+    [TS_PUBLIC_TOOL_NAMES.remoteInspect]: "checking remote compute",
+    [TS_PUBLIC_TOOL_NAMES.notifyUser]: "sending research update",
   };
-  return labels[toolName] || toolName;
+  return labels[toolName] || `running ${toolName}`;
 }
 
 function historyRole(entryType: string, data: Record<string, unknown>): "review" | "backend" | "render" | "report" {

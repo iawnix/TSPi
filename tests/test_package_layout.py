@@ -198,6 +198,8 @@ def test_tspi_launcher_is_packaged_executable_and_shell_valid() -> None:
     assert "acquire_root_agent_lock" in source
     assert "--workspace" in source
     assert "--check-remote" in source
+    assert "--dev" not in source
+    assert "ts-workflow-dev" not in source
     assert "mcp" not in source.lower()
     assert "tunnel" not in source.lower()
 

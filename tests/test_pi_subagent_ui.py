@@ -7,13 +7,17 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 STATUS = ROOT / "extensions" / "shared" / "subagent-status.ts"
+ICONS = ROOT / "extensions" / "shared" / "icons.ts"
+TOOL_PRESENTATION = ROOT / "extensions" / "shared" / "subagent-tool-presentation.ts"
 PROFILE = ROOT / "extensions" / "shared" / "package-profile.ts"
 UI = ROOT / "extensions" / "ts-workflow-ui" / "index.ts"
-PANEL = ROOT / "extensions" / "ts-workflow-ui" / "agent-panel.ts"
+ACTIVITY_STORE = ROOT / "extensions" / "ts-workflow-ui" / "activity-store.ts"
+ACTIVITY_PANEL = ROOT / "extensions" / "ts-workflow-ui" / "activity-panel.ts"
 DETAILS = ROOT / "extensions" / "ts-workflow-ui" / "agent-details.ts"
 EDITOR = ROOT / "extensions" / "ts-workflow-ui" / "editor.ts"
 RENDER_UTILS = ROOT / "extensions" / "ts-workflow-ui" / "render-utils.ts"
 STARTUP = ROOT / "extensions" / "ts-workflow-ui" / "startup.ts"
+COMPUTE = ROOT / "extensions" / "ts-workflow-compute" / "index.ts"
 THEME = ROOT / "themes" / "ts-theme.json"
 SESSION_LIFECYCLE = ROOT / "src" / "agent-core" / "session-lifecycle.cjs"
 TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
@@ -112,22 +116,69 @@ process.stdout.write(JSON.stringify(states));
     ]
 
 
-def test_ui_reducer_tracks_multiple_agents_without_state_regression() -> None:
+def test_icon_styles_and_subagent_tool_presentation_are_compact_and_auditable() -> None:
+    script = f"""
+import {{ visibleWidth }} from "@earendil-works/pi-tui";
+import {{ tspiIcon, tspiIconLabel, tspiIconStyle }} from {json.dumps(ICONS.as_uri())};
+import {{ renderTsSubagentCall, renderTsSubagentResult }} from {json.dumps(TOOL_PRESENTATION.as_uri())};
+const theme = {{ fg: (_color, text) => text }};
+const args = {{ backend: "gaussian", operation: "submit", nodeId: "n003", intentId: "calc_n003" }};
+const call = renderTsSubagentCall("compute", args, theme).render(100);
+const result = {{
+  content: [{{ type: "text", text: '{{"outcome":"partial","summary":"receipt unknown"}}' }}],
+  details: {{ report: {{ outcome: "partial" }}, run: {{ run_ref: "nodes/n003/agent-runs/agent_1" }} }},
+}};
+const collapsed = renderTsSubagentResult("compute", result, {{ expanded: false, isPartial: false }}, theme, false).render(100);
+const expanded = renderTsSubagentResult("compute", result, {{ expanded: true, isPartial: false }}, theme, false).render(100);
+const failed = renderTsSubagentResult("review", {{
+  content: [{{ type: "text", text: '{{"outcome":"failure"}}' }}],
+  details: {{ result: {{ outcome: "failure" }} }},
+}}, {{ expanded: false, isPartial: false }}, theme, false).render(100);
+const notRun = renderTsSubagentResult("report", {{
+  content: [{{ type: "text", text: '{{"outcome":"not_run"}}' }}],
+  details: {{ report: {{ outcome: "not_run" }} }},
+}}, {{ expanded: false, isPartial: false }}, theme, false).render(100);
+process.env.TSPI_ICON_STYLE = "unicode";
+process.stdout.write(JSON.stringify({{
+  defaults: [tspiIcon("running", "nerd"), tspiIcon("roleCompute", "nerd")],
+  unicode: [tspiIcon("running"), tspiIcon("roleCompute")],
+  unicodeStyle: tspiIconStyle(),
+  label: tspiIconLabel("cwd", "~/workspace"),
+  widths: [tspiIcon("running", "nerd"), tspiIcon("roleCompute", "nerd")].map(visibleWidth),
+  call, collapsed, expanded, failed, notRun,
+}}));
+"""
+    result = _node_json(script)
+    assert result["unicodeStyle"] == "unicode"
+    assert result["unicode"] == ["●", "◆"]
+    assert result["label"] == "▣ ~/workspace"
+    assert result["widths"] == [1, 1]
+    assert "Compute" in "\n".join(result["call"])
+    assert "n003" in "\n".join(result["call"])
+    assert "partial" in "\n".join(result["collapsed"])
+    assert "receipt unknown" not in "\n".join(result["collapsed"])
+    assert "receipt unknown" in "\n".join(result["expanded"])
+    assert "failed" in "\n".join(result["failed"])
+    assert result["failed"][0].lstrip().startswith("")
+    assert result["notRun"][0].lstrip().startswith("")
+
+
+def test_activity_store_tracks_subagents_and_remote_without_state_regression() -> None:
     script = f"""
 import {{ visibleWidth }} from "@earendil-works/pi-tui";
 import {{
-  createTsSubagentUiState,
-  formatPanelFooter,
-  pruneTsSubagentUiState,
-  reduceTsSubagentUiState,
-  renderTsAgentPanel,
-  sortedTsSubagentRuns,
-  summarizeTsSubagentRuns,
-}} from {json.dumps(PANEL.as_uri())};
-const state = createTsSubagentUiState();
+  createTsActivityStore,
+  pruneTsActivities,
+  reducePublishedTsActivity,
+  reduceTsSubagentActivity,
+  sortedTsActivities,
+  summarizeTsActivities,
+}} from {json.dumps(ACTIVITY_STORE.as_uri())};
+import {{ renderTsActivityPanel }} from {json.dumps(ACTIVITY_PANEL.as_uri())};
+const store = createTsActivityStore();
 const iso = (value) => new Date(value).toISOString();
-const start = (call, toolName, args, now) => reduceTsSubagentUiState(state, {{ type: "tool_execution_start", toolCallId: call, toolName, args }}, now);
-const update = (call, toolName, status, now) => reduceTsSubagentUiState(state, {{ type: "tool_execution_update", toolCallId: call, toolName, args: {{}}, partialResult: {{ details: status }} }}, now);
+const start = (call, toolName, args, now) => reduceTsSubagentActivity(store, {{ type: "tool_execution_start", toolCallId: call, toolName, args }}, now);
+const update = (call, toolName, status, now) => reduceTsSubagentActivity(store, {{ type: "tool_execution_update", toolCallId: call, toolName, args: {{}}, partialResult: {{ details: status }} }}, now);
 const status = (call, task, role, operation, stateName, seq, now, extra = {{}}) => ({{
   schema_version: "ts-subagent-status/2", seq, tool_call_id: call, task_id: task, role, operation,
   state: stateName, started_at: iso(now - 1000), updated_at: iso(now), ...extra,
@@ -147,30 +198,35 @@ update("render", "ts_subagent_render", status("render", "agent-render", "render"
 
 const terminalAccepted = update("compute", "ts_subagent_compute", status("compute", "agent-compute", "backend", "submit", "partial", 2, 6000, {{ backend: "gaussian", node_id: "n003" }}), 6000);
 const terminalRegressionIgnored = !update("compute", "ts_subagent_compute", status("compute", "agent-compute", "backend", "submit", "running", 3, 7000, {{ backend: "gaussian", node_id: "n003" }}), 7000);
+reducePublishedTsActivity(store, {{ type: "upsert", activity: {{
+  kind: "remote", id: "remote:doctor", mode: "doctor", state: "running",
+  detail: "Read-only · full control-path health", startedAt: 7000, updatedAt: 7000,
+}} }});
 const panels = [32, 40, 60, 100, 140].map((width) => {{
-  const lines = renderTsAgentPanel(state, width, 8000, 3);
+  const lines = renderTsActivityPanel(store, width, 8000, 4, "unicode");
   return {{ width, lines, widths: lines.map((line) => visibleWidth(line.text)) }};
 }});
-const ordered = sortedTsSubagentRuns(state).map((run) => [run.status.task_id, run.status.state]);
-const summary = summarizeTsSubagentRuns(state);
-const footer = formatPanelFooter(summary);
-const prunedEarly = pruneTsSubagentUiState(state, 18999);
-const prunedLate = pruneTsSubagentUiState(state, 19000);
+const ordered = sortedTsActivities(store).map((activity) => [
+  activity.kind === "subagent" ? activity.status.task_id : activity.mode,
+  activity.kind === "subagent" ? activity.status.state : activity.state,
+]);
+const summary = summarizeTsActivities(store);
+const prunedEarly = pruneTsActivities(store, 18999);
+const prunedLate = pruneTsActivities(store, 19000);
 process.stdout.write(JSON.stringify({{
-  panels, ordered, summary, footer, staleIgnored, duplicateStartIgnored, terminalAccepted,
-  terminalRegressionIgnored, terminalState: state.runs.get("compute").status.state,
-  prunedEarly, prunedLate, remaining: [...state.runs.values()].map((run) => run.status.state),
+  panels, ordered, summary, staleIgnored, duplicateStartIgnored, terminalAccepted,
+  terminalRegressionIgnored, terminalState: store.activities.get("subagent:compute").status.state,
+  prunedEarly, prunedLate, remaining: [...store.activities.values()].map((activity) => activity.kind === "subagent" ? activity.status.state : activity.state),
 }}));
 """
     result = _node_json(script)
     for panel in result["panels"]:
         assert all(width <= panel["width"] for width in panel["widths"]), panel
-        assert panel["lines"][0]["text"].startswith("TS Agents")
-        assert panel["lines"][-1]["text"].strip() == "+1 more agents"
-    assert result["panels"][-1]["lines"][0]["text"].endswith("1 active · 2 attention · 1 done")
+        assert "TS Activity" in panel["lines"][0]["text"]
+        assert panel["lines"][-1]["text"].strip() == "+1 more activities"
+    assert result["panels"][-1]["lines"][0]["text"].endswith("2 active · 2 attention · 1 done")
     assert result["ordered"][:2] == [["agent-compute", "partial"], ["agent-render", "failed"]]
-    assert result["summary"] == {"active": 1, "attention": 2, "done": 1, "total": 4}
-    assert result["footer"] == "π 1 active · 2 attention"
+    assert result["summary"] == {"active": 2, "attention": 2, "done": 1, "total": 5}
     assert result["staleIgnored"] is True
     assert result["duplicateStartIgnored"] is True
     assert result["terminalAccepted"] is True
@@ -178,7 +234,7 @@ process.stdout.write(JSON.stringify({{
     assert result["terminalState"] == "partial"
     assert result["prunedEarly"] is False
     assert result["prunedLate"] is True
-    assert sorted(result["remaining"]) == ["failed", "partial", "waiting"]
+    assert sorted(result["remaining"]) == ["failed", "partial", "running", "waiting"]
 
 
 def test_agent_details_merge_live_and_durable_bounded_records(tmp_path: Path) -> None:
@@ -246,15 +302,15 @@ def test_agent_details_merge_live_and_durable_bounded_records(tmp_path: Path) ->
     }
     script = f"""
 import {{ visibleWidth }} from "@earendil-works/pi-tui";
-import {{ createTsSubagentUiState, reduceTsSubagentUiState }} from {json.dumps(PANEL.as_uri())};
+import {{ createTsActivityStore, reduceTsSubagentActivity }} from {json.dumps(ACTIVITY_STORE.as_uri())};
 import {{
   agentSelectionLabel,
   collectTsAgentRecords,
   readTsAgentRunDocuments,
   renderTsAgentDetails,
 }} from {json.dumps(DETAILS.as_uri())};
-const state = createTsSubagentUiState();
-reduceTsSubagentUiState(state, {{
+const state = createTsActivityStore();
+reduceTsSubagentActivity(state, {{
   type: "tool_execution_start", toolCallId: "live-call", toolName: "ts_subagent_review",
   args: {{ reviewType: "mechanism", nodeId: "n003" }},
 }}, 1000);
@@ -263,7 +319,7 @@ const live = {{
   role: "review", operation: "mechanism", state: "running", node_id: "n003",
   started_at: "2026-08-12T00:00:01Z", updated_at: "2026-08-12T00:00:02Z",
 }};
-reduceTsSubagentUiState(state, {{
+reduceTsSubagentActivity(state, {{
   type: "tool_execution_update", toolCallId: "live-call", toolName: "ts_subagent_review", args: {{}},
   partialResult: {{ details: live }},
 }}, 2000);
@@ -499,12 +555,22 @@ const handlers = {{}};
 const renderers = [];
 const commands = {{}};
 let registeredTools = 0;
+const eventListeners = new Map();
 const pi = {{
   on: (name, handler) => {{ handlers[name] = handler; }},
   registerEntryRenderer: (name) => renderers.push(name),
   registerCommand: (name, command) => {{ commands[name] = command; }},
   registerTool: () => registeredTools++,
   getThinkingLevel: () => "high",
+  events: {{
+    emit: (channel, data) => eventListeners.get(channel)?.forEach((listener) => listener(data)),
+    on: (channel, listener) => {{
+      const listeners = eventListeners.get(channel) || new Set();
+      listeners.add(listener);
+      eventListeners.set(channel, listeners);
+      return () => listeners.delete(listener);
+    }},
+  }},
 }};
 installUi(pi);
 const calls = [];
@@ -541,16 +607,18 @@ let renderRequests = 0;
 const tui = {{ requestRender: () => renderRequests++, terminal: {{ rows: 30 }} }};
 const footerData = {{
   getGitBranch: () => "pi_ts_subagents",
-  getExtensionStatuses: () => new Map([["ts-subagent", "duplicate"], ["cluster", "queue: batch"]]),
+  getExtensionStatuses: () => new Map([["third-party", "external: ready"]]),
   onBranchChange: () => () => {{}},
 }};
 const args = {{ operation: "compare", nodeId: "n009" }};
 await handlers.session_start({{ type: "session_start", reason: "startup" }}, ctx);
 const footer = footerFactory(tui, theme, footerData);
+const initialFooter = footer.render(100)[0];
 await handlers.agent_start({{ type: "agent_start" }}, ctx);
 await handlers.tool_execution_start({{ type: "tool_execution_start", toolCallId: "call", toolName: "ts_subagent_render", args }}, ctx);
 await handlers.tool_execution_update({{ type: "tool_execution_update", toolCallId: "call", toolName: "ts_subagent_render", args, partialResult: {{ details: {{ schema_version: "ts-subagent-status/2", seq: 1, tool_call_id: "call", task_id: "agent", role: "render", operation: "compare", state: "running", started_at: "2026-08-12T00:00:00Z", updated_at: "2026-08-12T00:00:01Z", node_id: "n009" }} }} }}, ctx);
 const activeFooter = [50, 100, 140].map((width) => footer.render(width)[0]);
+const activeWorking = calls.filter((item) => item[0] === "working").at(-1)?.[1];
 await handlers.tool_execution_end({{ type: "tool_execution_end", toolCallId: "call", toolName: "ts_subagent_render", result: {{}}, isError: false }}, ctx);
 await handlers.agent_settled({{ type: "agent_settled" }}, ctx);
 const idleFooter = footer.render(100)[0];
@@ -570,6 +638,8 @@ process.stdout.write(JSON.stringify({{
   editors: calls.filter((item) => item[0] === "editor").length,
   titles: calls.filter((item) => item[0] === "title").map((item) => item[1]),
   working: calls.filter((item) => item[0] === "working").map((item) => item[1]),
+  activeWorking,
+  initialFooter,
   activeFooter,
   idleFooter,
   switchedFooter,
@@ -604,23 +674,81 @@ process.stdout.write(JSON.stringify({{
             "ts-workspace-artifact-operator-failed",
         ]
     )
-    assert "π 1 agent" in result["statuses"]
-    assert "π 1 done" in result["statuses"]
-    assert result["statuses"][-1] is None
+    assert result["statuses"] == []
     assert result["widgets"] >= 4
     assert result["headers"] == 3
     assert result["footers"] == 3
     assert result["editors"] == 3
     assert len(result["titles"]) == 2 and all(title.startswith("TSPi · ") for title in result["titles"])
-    assert result["working"][0] == "[o_o] TSPi is thinking"
+    assert "TSPi · thinking" in result["working"][0]
+    assert "TSPi · coordinating agents" in result["activeWorking"]
     assert result["working"][-1] is None
-    assert all("π 1 agent" in line for line in result["activeFooter"])
-    assert "queue: batch" in result["activeFooter"][-1]
-    assert "duplicate" not in result["activeFooter"][-1]
-    assert "π 1 done" in result["idleFooter"]
-    assert "π 1 done" not in result["switchedFooter"]
-    assert any(lines[0].startswith("TS Agents") and any("Render" in line for line in lines) for lines in result["widgetLines"])
+    assert result["activeFooter"][1] == result["initialFooter"]
+    assert all("external: ready" not in line for line in result["activeFooter"])
+    assert all(" active" not in line.lower() and " tools" not in line.lower() for line in result["activeFooter"])
+    assert result["idleFooter"] == result["initialFooter"]
+    assert "Render" not in result["switchedFooter"]
+    assert any("TS Activity" in lines[0] and any("Render" in line for line in lines) for lines in result["widgetLines"])
     assert result["renderRequests"] >= 4
+
+
+def test_real_pi_loader_shares_remote_activity_between_compute_and_ui_extensions() -> None:
+    script = f"""
+import {{ createEventBus }} from "@earendil-works/pi-coding-agent";
+import {{ pathToFileURL }} from "node:url";
+const loader = await import(pathToFileURL({json.dumps(str(ROOT / "node_modules" / "@earendil-works" / "pi-coding-agent" / "dist" / "core" / "extensions" / "loader.js"))}).href);
+const loaded = await loader.loadExtensions([
+  {json.dumps(str(UI))},
+  {json.dumps(str(COMPUTE))},
+], {json.dumps(str(ROOT))}, createEventBus());
+if (loaded.errors.length) throw new Error(JSON.stringify(loaded.errors));
+const uiExtension = loaded.extensions.find((extension) => extension.resolvedPath.endsWith("/ts-workflow-ui/index.ts"));
+const computeExtension = loaded.extensions.find((extension) => extension.resolvedPath.endsWith("/ts-workflow-compute/index.ts"));
+const widgets = [];
+const working = [];
+const ctx = {{
+  mode: "tui",
+  cwd: "/tmp/tspi-loader-smoke",
+  model: {{ id: "gpt-5" }},
+  signal: new AbortController().signal,
+  getContextUsage: () => ({{ percent: 10 }}),
+  sessionManager: {{
+    getSessionName: () => "loader-smoke",
+    getSessionId: () => "1234567890abcdef",
+    getSessionFile: () => "/tmp/loader-smoke.jsonl",
+  }},
+  ui: {{
+    theme: {{ fg: (_color, text) => text }},
+    select: async () => undefined,
+    notify: () => {{}},
+    setWidget: (key, content) => {{
+      if (typeof content === "function") widgets.push(content(null, {{ fg: (_color, text) => text }}).render(100));
+    }},
+    setHeader: () => {{}},
+    setFooter: () => {{}},
+    setEditorComponent: () => {{}},
+    setWorkingIndicator: () => {{}},
+    setWorkingMessage: (message) => working.push(message),
+    setTitle: () => {{}},
+  }},
+}};
+await uiExtension.handlers.get("session_start")[0]({{ type: "session_start", reason: "startup" }}, ctx);
+process.env.TS_AGENT_PYTHON = "/definitely/not/an/executable";
+let failure;
+try {{
+  await computeExtension.commands.get("ts-remote").handler("status", ctx);
+}} catch (error) {{
+  failure = error.message;
+}}
+await uiExtension.handlers.get("session_shutdown")[0]({{ type: "session_shutdown", reason: "quit" }}, ctx);
+process.stdout.write(JSON.stringify({{ widgets, working, failure }}));
+"""
+    result = _node_json(script)
+    activity_panels = [lines for lines in result["widgets"] if lines and "TS Activity" in lines[0]]
+    assert len(activity_panels) == 2
+    assert "Remote" in "\n".join(activity_panels[0])
+    assert "failed" in "\n".join(activity_panels[1])
+    assert "TS_AGENT_PYTHON is not executable" in result["failure"]
 
 
 def test_all_four_public_subagent_tools_emit_status_updates() -> None:
@@ -637,6 +765,9 @@ def test_all_four_public_subagent_tools_emit_status_updates() -> None:
         assert "onLifecycle: reportStatus" in source
         assert "terminalStateForReport" in source
         assert "terminalStatusForError(error)" in source
+        assert 'renderShell: "self"' in source
+        assert "renderTsSubagentCall" in source
+        assert "renderTsSubagentResult" in source
     assert "setHeader" in ui
     assert "setFooter" in ui
     assert "setEditorComponent" in ui
@@ -644,6 +775,8 @@ def test_all_four_public_subagent_tools_emit_status_updates() -> None:
     assert "setWorkingMessage" in ui
     assert 'registerCommand("ts-agents"' in ui
     assert "registerTool" not in ui
+    for extension in (ROOT / "extensions").glob("ts-workflow-*/index.ts"):
+        assert "setStatus(" not in extension.read_text(encoding="utf-8")
 
 
 def _node_json(script: str):

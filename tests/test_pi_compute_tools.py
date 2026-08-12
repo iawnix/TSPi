@@ -56,12 +56,12 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     assert 'keyText("app.tools.expand")' in source
     assert '" expand all details)"' in source
     assert '" collapse all details)"' in source
-    assert "REMOTE_DIAGNOSTIC_WIDGET_KEY" in source
-    assert 'ctx.ui.setWidget("ts-workspace-remote", JSON.stringify' not in source
+    assert "publishTsActivity(pi.events" in source
+    assert "setStatus(" not in source
+    assert "setWidget(" not in source
     assert 'ctx.ui.select("TS Remote · read-only SSH diagnostics"' in source
     assert "Unknown TS Remote mode; choose status, doctor, queues, or nodes" in source
     assert "getArgumentCompletions" in source
-    assert "This check is read-only" in source
     assert "registered-software check" in source
     assert "createScopedComputeTools" in source
     assert "runComputeOperator" in source
@@ -96,6 +96,33 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     assert "MCP" not in source
 
 
+def test_compute_subagent_owns_compact_renderer_but_remote_inspect_does_not() -> None:
+    script = f"""
+import installCompute from {json.dumps(COMPUTE_EXTENSION.as_uri())};
+const tools = {{}};
+installCompute({{
+  registerEntryRenderer: () => {{}},
+  registerTool: (tool) => tools[tool.name] = tool,
+  registerCommand: () => {{}},
+}});
+process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(tools).map(([name, tool]) => [name, {{
+  renderShell: tool.renderShell,
+  hasCall: typeof tool.renderCall === "function",
+  hasResult: typeof tool.renderResult === "function",
+}}]))));
+"""
+    result = _node_json(script)
+    assert result["ts_subagent_compute"] == {
+        "renderShell": "self",
+        "hasCall": True,
+        "hasResult": True,
+    }
+    assert result["ts_remote_inspect"] == {
+        "hasCall": False,
+        "hasResult": False,
+    }
+
+
 def test_ts_remote_command_previews_modes_and_shows_progress_until_result() -> None:
     script = f"""
 import installCompute from {json.dumps(COMPUTE_EXTENSION.as_uri())};
@@ -114,6 +141,18 @@ const commands = {{}};
 const entries = [];
 const execCalls = [];
 const renderers = {{}};
+const activityEvents = [];
+const activityListeners = new Map();
+const events = {{
+  emit: (channel, data) => activityListeners.get(channel)?.forEach((listener) => listener(data)),
+  on: (channel, listener) => {{
+    const listeners = activityListeners.get(channel) || new Set();
+    listeners.add(listener);
+    activityListeners.set(channel, listeners);
+    return () => listeners.delete(listener);
+  }},
+}};
+events.on("ts-workflow:activity/1", (event) => activityEvents.push(event));
 let failNext = false;
 const pi = {{
   registerEntryRenderer: (name, renderer) => {{ renderers[name] = renderer; }},
@@ -131,6 +170,7 @@ const pi = {{
     }}) }};
   }},
   appendEntry: (type, data) => entries.push([type, data]),
+  events,
 }};
 installCompute(pi);
 const theme = {{ fg: (_color, text) => text }};
@@ -145,8 +185,6 @@ const ctx = {{
   signal: new AbortController().signal,
   ui: {{
     select: async (...args) => {{ selectCalls.push(args); const selected = nextSelection; nextSelection = undefined; return selected; }},
-    setStatus: (...args) => uiCalls.push(["status", ...args]),
-    setWidget: (...args) => uiCalls.push(["widget", ...args]),
     notify: (...args) => uiCalls.push(["notify", ...args]),
   }},
 }};
@@ -163,7 +201,7 @@ try {{
 }} catch (error) {{
   failureMessage = error.message;
 }}
-process.stdout.write(JSON.stringify({{ collapsed, expanded, completions, successCalls, failureCalls: uiCalls, failureMessage, entries, execCalls, selectCalls, callsBeforeCancelledSelection }}));
+process.stdout.write(JSON.stringify({{ collapsed, expanded, completions, successCalls, failureCalls: uiCalls, failureMessage, entries, execCalls, selectCalls, callsBeforeCancelledSelection, activityEvents }}));
 """
     result = _node_json(script)
     success_calls = result["successCalls"]
@@ -178,23 +216,10 @@ process.stdout.write(JSON.stringify({{ collapsed, expanded, completions, success
     assert "ctrl+o expand all details" in result["collapsed"].lower()
     assert "ctrl+o collapse all details" in result["expanded"].lower()
     assert '"checks"' in result["expanded"]
-    assert ["status", "ts-workspace-remote-command", "TS Remote · status · checking"] in success_calls
-    assert any(
-        call[0] == "widget"
-        and call[1] == "ts-workspace-remote"
-        and isinstance(call[2], list)
-        and call[2][0] == "◌ TS Remote · status · running"
-        and call[2][1] == "Read-only · SSH connectivity"
-        for call in success_calls
-    )
-    assert any(
-        call[0] == "notify"
-        and call[1] == "Check the configured SSH remote profile. This check is read-only."
-        for call in success_calls
-    )
-    assert success_calls[-2:] == [
-        ["status", "ts-workspace-remote-command", None],
-        ["widget", "ts-workspace-remote", None],
+    assert all(call[0] == "notify" for call in success_calls)
+    assert [call[1] for call in success_calls] == [
+        "TS Remote status passed",
+        "TS Remote nodes passed",
     ]
     assert result["failureMessage"] == (
         "ts_remote doctor diagnostic process failed before returning a result; "
@@ -208,10 +233,7 @@ process.stdout.write(JSON.stringify({{ collapsed, expanded, completions, success
         ),
         "error",
     ] in result["failureCalls"]
-    assert result["failureCalls"][-2:] == [
-        ["status", "ts-workspace-remote-command", None],
-        ["widget", "ts-workspace-remote", None],
-    ]
+    assert all(call[0] == "notify" for call in result["failureCalls"])
     assert result["entries"][0][0] == "ts-workspace-remote-diagnostic"
     assert result["entries"][0][1]["result"]["ok"] is True
     assert result["execCalls"][0][1][-2:] == ["--mode", "status"]
@@ -226,6 +248,17 @@ process.stdout.write(JSON.stringify({{ collapsed, expanded, completions, success
         "queues · scheduler queue state",
         "nodes · compute-node resources",
     ]
+    activities = [event["activity"] for event in result["activityEvents"]]
+    assert [(item["mode"], item["state"]) for item in activities] == [
+        ("status", "running"),
+        ("status", "completed"),
+        ("nodes", "running"),
+        ("nodes", "completed"),
+        ("doctor", "running"),
+        ("doctor", "failed"),
+    ]
+    assert all(item["kind"] == "remote" for item in activities)
+    assert activities[-1]["error"] == result["failureMessage"]
 
 
 def test_compute_contracts_exclude_workspace_verdicts_and_arbitrary_commands() -> None:

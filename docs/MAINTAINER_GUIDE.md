@@ -78,10 +78,13 @@ Keep state ownership narrow.
   adapters, plus the canonical public tool-name, execution-class catalog, and
   versioned child-lifecycle status contract.
 - `extensions/ts-workflow-ui` observes `ts_subagent_*` execution updates and
-  owns the TSPi startup header, rounded input editor, session footer, terminal
-  title request, bounded multi-agent panel, `/ts-agents` read-only journal
-  inspector, and history views. Live state reduction/rendering belongs in
-  `agent-panel.ts`; bounded durable reads/details belong in `agent-details.ts`.
+  package activity events, and exclusively owns the TSPi startup header,
+  rounded input editor, stable session footer, working indicator, terminal
+  title request, bounded `TS Activity` panel, `/ts-agents` read-only journal
+  inspector, and history views. Live state reduction belongs in
+  `activity-store.ts`; rendering belongs in `activity-panel.ts`; bounded durable
+  reads/details belong in `agent-details.ts`. Other TS extensions publish
+  structured activity and must not call `setStatus` or `setWidget`.
   It must remain
   presentation-only and must not own tools, workspace writes, model calls, remote
   probes, approvals, or scientific decisions. Launchers that load this UI must
