@@ -105,6 +105,37 @@ max_nodes = 1
         load_config(invalid)
 
 
+def test_scheduler_commands_default_to_remote_path_lookup(tmp_path: Path) -> None:
+    ssh_config = tmp_path / "ssh_config"
+    ssh_config.write_text("Host test-login\n  HostName login.test\n", encoding="utf-8")
+    config = tmp_path / "remote.toml"
+    config.write_text(
+        f'''default_profile = "cluster"
+
+[profiles.cluster]
+ssh_host = "test-login"
+ssh_config = "{ssh_config}"
+scheduler = "torque"
+remote_root = "/remote/ts"
+allowed_queues = ["batch"]
+max_nodes = 1
+
+[profiles.cluster.software.xtb]
+command = ["xtb"]
+allowed_queues = ["batch"]
+requires_gpu = false
+''',
+        encoding="utf-8",
+    )
+
+    commands = load_config(config).profile("cluster").commands
+
+    assert commands.qsub == "qsub"
+    assert commands.qstat == "qstat"
+    assert commands.qdel == "qdel"
+    assert commands.pbsnodes == "pbsnodes"
+
+
 def test_torque_script_owns_resources_activation_and_program_status(tmp_path: Path) -> None:
     script = render_job_script(_job(tmp_path))
 

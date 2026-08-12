@@ -19,10 +19,10 @@ _REMOTE_PATH_PART = re.compile(r"^[A-Za-z0-9_.-]+$")
 
 @dataclass(frozen=True)
 class SchedulerCommands:
-    qsub: str = "/opt/torque/bin/qsub"
-    qstat: str = "/opt/torque/bin/qstat"
-    qdel: str = "/opt/torque/bin/qdel"
-    pbsnodes: str = "/opt/torque/bin/pbsnodes"
+    qsub: str = "qsub"
+    qstat: str = "qstat"
+    qdel: str = "qdel"
+    pbsnodes: str = "pbsnodes"
 
 
 @dataclass(frozen=True)

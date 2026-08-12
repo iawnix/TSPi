@@ -11,10 +11,10 @@ connect_timeout_seconds = 15
 command_timeout_seconds = 60
 
 [profiles.cluster_1w.commands]
-qsub = "/opt/torque/bin/qsub"
-qstat = "/opt/torque/bin/qstat"
-qdel = "/opt/torque/bin/qdel"
-pbsnodes = "/opt/torque/bin/pbsnodes"
+qsub = "qsub"
+qstat = "qstat"
+qdel = "qdel"
+pbsnodes = "pbsnodes"
 
 [profiles.cluster_1w.software.gaussian]
 command = ["g16"]
@@ -24,10 +24,5 @@ requires_gpu = false
 
 [profiles.cluster_1w.software.xtb]
 command = ["/home/agent/soft/xtb/current/bin/xtb"]
-allowed_queues = ["batch", "fat", "fata"]
-requires_gpu = false
-
-[profiles.cluster_1w.software.crest]
-command = ["crest"]
 allowed_queues = ["batch", "fat", "fata"]
 requires_gpu = false
