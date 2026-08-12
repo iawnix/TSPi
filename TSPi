@@ -15,6 +15,47 @@ readonly TS_AGENT_INSTALL_ENV_ROOT="$INSTALL_ROOT/.agents/envs/transition-state-
 WORKSPACE_ROOT=""
 ROOT_AGENT_LOCK_FD=""
 
+configure_workspace_pi_settings() {
+  local settings_path="$WORKSPACE_ROOT/.pi/settings.json"
+
+  if [[ -L "$settings_path" ]]; then
+    printf 'TSPi: workspace Pi settings cannot be a symbolic link: %s\n' "$settings_path" >&2
+    return 1
+  fi
+  python3 - "$settings_path" <<'PY'
+import json
+import os
+from pathlib import Path
+import sys
+import tempfile
+
+path = Path(sys.argv[1])
+try:
+    settings = json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+except (OSError, json.JSONDecodeError) as exc:
+    raise SystemExit(f"TSPi: invalid workspace Pi settings: {path}: {exc}")
+if not isinstance(settings, dict):
+    raise SystemExit(f"TSPi: workspace Pi settings must contain a JSON object: {path}")
+if settings.get("quietStartup") is True:
+    raise SystemExit(0)
+
+settings["quietStartup"] = True
+temporary = None
+try:
+    descriptor, temporary = tempfile.mkstemp(prefix=".settings.", suffix=".tmp", dir=path.parent)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        json.dump(settings, handle, indent=2, sort_keys=True)
+        handle.write("\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    os.replace(temporary, path)
+    temporary = None
+finally:
+    if temporary is not None:
+        Path(temporary).unlink(missing_ok=True)
+PY
+}
+
 usage() {
   cat <<'EOF'
 Usage:
@@ -66,6 +107,7 @@ prepare_workspace() {
   fi
   mkdir -p -- "$WORKSPACE_ROOT/.pi/sessions"
   chmod 700 -- "$WORKSPACE_ROOT/.pi"
+  configure_workspace_pi_settings
 }
 
 acquire_root_agent_lock() {

@@ -167,8 +167,6 @@ function renderStartup(
   const packageSummary = `1 skill · ${profile.extensions.length} extensions`;
   const rightLines = [
     "",
-    palette.accent(palette.bold("Workspace")),
-    palette.muted(formatCwd(workspaceRoot)),
     palette.accent(palette.bold(details.remoteConfigured ? "Remote configured" : "Remote")),
     palette.muted(remoteLabel(details.remoteDisplayTarget)),
     divider,

@@ -395,6 +395,62 @@ main "${@:2}"
     session_index = result["argv"].index("--session-dir")
     assert result["argv"][session_index + 1] == str(workspace / ".pi/sessions")
     assert (workspace / ".pi/root-agent.lock").is_file()
+    settings = json.loads((workspace / ".pi/settings.json").read_text(encoding="utf-8"))
+    assert settings == {"quietStartup": True}
+
+
+def test_tspi_workspace_preserves_pi_settings_while_silencing_resource_inventory(tmp_path: Path) -> None:
+    install_root, launcher = _copy_tspi_install(tmp_path)
+    workspace = install_root / "workspaces/existing"
+    settings_path = workspace / ".pi/settings.json"
+    settings_path.parent.mkdir(parents=True)
+    settings_path.write_text(
+        json.dumps({"quietStartup": False, "theme": "custom", "warnings": {"deprecated": False}}),
+        encoding="utf-8",
+    )
+    script = r'''source "$1"
+prepare_workspace "$2"
+'''
+    completed = subprocess.run(
+        ["bash", "-c", script, "bash", str(launcher), "existing"],
+        cwd=install_root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(settings_path.read_text(encoding="utf-8")) == {
+        "quietStartup": True,
+        "theme": "custom",
+        "warnings": {"deprecated": False},
+    }
+
+
+def test_tspi_rejects_symlinked_workspace_pi_settings(tmp_path: Path) -> None:
+    install_root, launcher = _copy_tspi_install(tmp_path)
+    workspace = install_root / "workspaces/symlink-settings"
+    settings_path = workspace / ".pi/settings.json"
+    settings_path.parent.mkdir(parents=True)
+    target = tmp_path / "settings.json"
+    target.write_text("{}\n", encoding="utf-8")
+    settings_path.symlink_to(target)
+    script = r'''source "$1"
+prepare_workspace "$2"
+'''
+    completed = subprocess.run(
+        ["bash", "-c", script, "bash", str(launcher), "symlink-settings"],
+        cwd=install_root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 1
+    assert "workspace Pi settings cannot be a symbolic link" in completed.stderr
+    assert target.read_text(encoding="utf-8") == "{}\n"
 
 
 def test_tspi_workspace_launch_does_not_require_remote_configuration(tmp_path: Path) -> None:

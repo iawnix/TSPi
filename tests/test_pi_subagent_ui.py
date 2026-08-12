@@ -207,7 +207,7 @@ process.stdout.write(JSON.stringify({{ rendered, fallback, blockColors, initial,
     assert sum("TSPi" in line for line in wide) == 1
     assert any("Evidence-driven transition-state workflow." in line for line in wide)
     assert any("openai/gpt-5 · high thinking" in line for line in wide)
-    assert any("Workspace" in line for line in wide)
+    assert not any("Workspace" in line for line in wide)
     assert any("Remote configured" in line for line in wide)
     assert any("cluster-login · Torque" in line for line in wide)
     assert any("not configured" in line for line in result["fallback"])
