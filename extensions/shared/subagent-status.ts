@@ -23,7 +23,7 @@ export const TS_SUBAGENT_WAIT_REASONS = [
 ] as const;
 
 export type TsSubagentState = typeof TS_SUBAGENT_STATES[number];
-export type TsSubagentRole = "review" | "backend" | "render" | "report" | "email";
+export type TsSubagentRole = "review" | "backend" | "render" | "report";
 export type TsSubagentFailureKind = "timeout" | "aborted" | "error";
 export type TsSubagentWaitReason = typeof TS_SUBAGENT_WAIT_REASONS[number];
 
@@ -125,7 +125,7 @@ export function isTsSubagentStatus(value: unknown): value is TsSubagentStatus {
   if (!Number.isInteger(status.seq) || Number(status.seq) < 0) return false;
   if (!requiredString(status.tool_call_id) || !requiredString(status.task_id)) return false;
   if (!requiredString(status.operation)) return false;
-  if (!["review", "backend", "render", "report", "email"].includes(String(status.role))) return false;
+  if (!["review", "backend", "render", "report"].includes(String(status.role))) return false;
   if (!TS_SUBAGENT_STATES.includes(status.state as TsSubagentState)) return false;
   if (!validTimestamp(status.started_at) || !validTimestamp(status.updated_at)) return false;
   for (const key of ["backend", "node_id", "intent_id", "target_ref", "run_ref"] as const) {

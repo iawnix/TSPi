@@ -56,7 +56,7 @@ status must match that decision.
 
 ## Authority Boundary
 
-Backend, render, report, email, and review subagents return bounded JSON
+Backend, render, report, and review subagents return bounded JSON
 results. They do not update hypothesis status, choose branches, or apply
 workspace decisions. The Root Agent owns hypothesis falsification and the next
 decision.

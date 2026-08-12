@@ -22,7 +22,7 @@ const { promptWithDeadline, withDisposableSession } = require("../../agent-core/
 const AGENT_DIR = dirname(fileURLToPath(import.meta.url));
 const SYSTEM_PROMPT = readFileSync(resolve(AGENT_DIR, "prompt.md"), "utf8").trim();
 
-type ArtifactRole = "render" | "report" | "email";
+type ArtifactRole = "render" | "report";
 type ThinkingLevel = "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 type ActionLog = { tool: string; result: Record<string, unknown> }[];
 

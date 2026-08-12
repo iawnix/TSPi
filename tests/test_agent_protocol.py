@@ -61,7 +61,7 @@ def test_agent_protocol_json_schemas_are_valid_and_closed() -> None:
     Draft202012Validator.check_schema(result_schema)
     assert task_schema["additionalProperties"] is False
     assert result_schema["additionalProperties"] is False
-    assert set(task_schema["properties"]["role"]["enum"]) == {"review", "backend", "render", "report", "email"}
+    assert set(task_schema["properties"]["role"]["enum"]) == {"review", "backend", "render", "report"}
 
 
 def test_agent_protocol_binds_result_to_task_and_rejects_nested_authority(tmp_path: Path) -> None:

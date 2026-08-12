@@ -341,16 +341,16 @@ function compactToolLabel(toolName: string): string {
     [TS_PUBLIC_TOOL_NAMES.subagentCompute]: "TS compute",
     [TS_PUBLIC_TOOL_NAMES.subagentRender]: "TS render",
     [TS_PUBLIC_TOOL_NAMES.subagentReport]: "TS report",
-    [TS_PUBLIC_TOOL_NAMES.subagentEmailDraft]: "TS email",
+    [TS_PUBLIC_TOOL_NAMES.notifyUser]: "TS notify",
   };
   return labels[toolName] || toolName;
 }
 
-function historyRole(entryType: string, data: Record<string, unknown>): "review" | "backend" | "render" | "report" | "email" {
+function historyRole(entryType: string, data: Record<string, unknown>): "review" | "backend" | "render" | "report" {
   if (entryType.includes("compute")) return "backend";
   if (entryType.includes("subagent")) return "review";
   const role = stringValue(data.role);
-  return role === "render" || role === "report" || role === "email" ? role : "render";
+  return role === "render" || role === "report" ? role : "render";
 }
 
 function compact(values: Array<string | undefined>): string {

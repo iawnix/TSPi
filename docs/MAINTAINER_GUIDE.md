@@ -99,9 +99,10 @@ Keep state ownership narrow.
   creation; the child receives no raw transport access.
 - `src/agents/compute/` owns the backend fresh-session runtime, policy
   composition, and compute-specific action/result binding.
-- `extensions/ts-workflow-artifacts` creates fresh render, report, and
-  email-draft sessions. Each receives the shared artifact policy, one selected
-  role policy, and one path-bound typed tool; email sending is not implemented.
+- `extensions/ts-workflow-artifacts` creates fresh render and report sessions.
+  Each receives the shared artifact policy, one selected role policy, and one
+  path-bound typed tool. It also exposes deterministic `ts_notify_user` without
+  creating a child session.
 - `src/agents/artifacts/` owns artifact request paths, fresh-session runtime,
   policy composition, and role-specific action/result binding.
 - `src/agents/review/` owns scientific-review task packets, prompts, fresh-session
@@ -262,7 +263,7 @@ and have `ts_web` consume that result.
   Legacy `package-root/.runtime/env.json` is compatibility input only when no
   explicit workspace root, runtime home, or manifest path is supplied.
 - The installed `TSPi` launcher separates installation state from research
-  state. Package checkout, remote profile, email policy, runtime
+  state. Package checkout, remote profile, notification config, runtime
   manifest, and hashed Python environment are installation-owned. Sessions,
   Root writer lock, workspace identity, nodes, inputs, and reports are owned by
   `<installation>/workspaces/<name>/`.

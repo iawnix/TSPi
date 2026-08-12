@@ -144,7 +144,6 @@ start("report", "ts_subagent_report", {{ operation: "build", packageRef: "report
 update("report", "ts_subagent_report", status("report", "agent-report", "report", "build", "completed", 1, 4000, {{ target_ref: "reports/n002" }}), 4000);
 start("render", "ts_subagent_render", {{ operation: "compare", nodeId: "n009" }}, 4000);
 update("render", "ts_subagent_render", status("render", "agent-render", "render", "compare", "failed", 1, 5000, {{ node_id: "n009", failure_kind: "error" }}), 5000);
-start("email", "ts_subagent_email_draft", {{ operation: "draft", summaryRef: "reports/n010/email_summary.md" }}, 5000);
 
 const terminalAccepted = update("compute", "ts_subagent_compute", status("compute", "agent-compute", "backend", "submit", "partial", 2, 6000, {{ backend: "gaussian", node_id: "n003" }}), 6000);
 const terminalRegressionIgnored = !update("compute", "ts_subagent_compute", status("compute", "agent-compute", "backend", "submit", "running", 3, 7000, {{ backend: "gaussian", node_id: "n003" }}), 7000);
@@ -167,11 +166,11 @@ process.stdout.write(JSON.stringify({{
     for panel in result["panels"]:
         assert all(width <= panel["width"] for width in panel["widths"]), panel
         assert panel["lines"][0]["text"].startswith("TS Agents")
-        assert panel["lines"][-1]["text"].strip() == "+2 more agents"
-    assert result["panels"][-1]["lines"][0]["text"].endswith("2 active · 2 attention · 1 done")
+        assert panel["lines"][-1]["text"].strip() == "+1 more agents"
+    assert result["panels"][-1]["lines"][0]["text"].endswith("1 active · 2 attention · 1 done")
     assert result["ordered"][:2] == [["agent-compute", "partial"], ["agent-render", "failed"]]
-    assert result["summary"] == {"active": 2, "attention": 2, "done": 1, "total": 5}
-    assert result["footer"] == "π 2 active · 2 attention"
+    assert result["summary"] == {"active": 1, "attention": 2, "done": 1, "total": 4}
+    assert result["footer"] == "π 1 active · 2 attention"
     assert result["staleIgnored"] is True
     assert result["duplicateStartIgnored"] is True
     assert result["terminalAccepted"] is True
@@ -179,7 +178,7 @@ process.stdout.write(JSON.stringify({{
     assert result["terminalState"] == "partial"
     assert result["prunedEarly"] is False
     assert result["prunedLate"] is True
-    assert sorted(result["remaining"]) == ["failed", "partial", "queued", "waiting"]
+    assert sorted(result["remaining"]) == ["failed", "partial", "waiting"]
 
 
 def test_agent_details_merge_live_and_durable_bounded_records(tmp_path: Path) -> None:
@@ -624,7 +623,7 @@ process.stdout.write(JSON.stringify({{
     assert result["renderRequests"] >= 4
 
 
-def test_all_five_public_subagent_tools_emit_status_updates() -> None:
+def test_all_four_public_subagent_tools_emit_status_updates() -> None:
     review = (ROOT / "extensions" / "ts-workflow-review" / "index.ts").read_text(encoding="utf-8")
     compute = (ROOT / "extensions" / "ts-workflow-compute" / "index.ts").read_text(encoding="utf-8")
     artifacts = (ROOT / "extensions" / "ts-workflow-artifacts" / "index.ts").read_text(encoding="utf-8")
@@ -632,7 +631,7 @@ def test_all_five_public_subagent_tools_emit_status_updates() -> None:
 
     assert review.count("createSubagentStatusReporter({") == 1
     assert compute.count("createSubagentStatusReporter({") == 1
-    assert artifacts.count("createSubagentStatusReporter({") == 3
+    assert artifacts.count("createSubagentStatusReporter({") == 2
     for source in (review, compute, artifacts):
         assert "reportStatus(\"queued\")" in source
         assert "onLifecycle: reportStatus" in source

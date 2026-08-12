@@ -24,8 +24,8 @@ operations; they do not choose chemistry.
 - Cluster submission or cancellation runs only through the pre-bound compute
   operator; never expose raw transport controls or retry ambiguous results.
 - `ts_web` is read-only.
-- Email delivery requires an explicitly activated fixed-scope policy; without
-  one, only a local draft may be created.
+- `ts_notify_user` may send research notifications under installation
+  configuration; notification failure never changes scientific state.
 
 ## Node Ontology
 
@@ -164,21 +164,20 @@ connection. Users may run the same checks with
 arbitrary remote commands are not exposed by this diagnostic surface.
 
 Use `ts_subagent_render` for one node-owned local render,
-`ts_subagent_report` for one new validated report package, and
-`ts_subagent_email_draft` for one local email draft from a generated report
-summary. Each child gets the shared artifact policy, one selected role policy,
-and one path-bound typed tool. The email subagent cannot send, access a network,
-select a sender, infer addresses, or read credentials.
+and `ts_subagent_report` for one new validated report package. Each child gets
+the shared artifact policy, one selected role policy, and one path-bound typed
+tool.
 
-After a fixed-template draft exists, use `ts_email_send` only when the user has
-previously activated the workspace-private delivery policy. The deterministic
-host verifies the exact recipients, `ts-report-summary/1` template, report
-manifest digests, configured attachment names, ClawEmail installation, and
-delivery receipt. It does not ask for per-call approval when the active policy
-matches. A missing, changed, or mismatched policy leaves the draft local.
+Use `ts_notify_user` when a material progress, node completion, calculation
+failure/ambiguity, or study completion event should be reported. Supply only
+the event, subject, bounded research summary, and optional existing files under
+`reports/`. The deterministic host reads the installation recipient and
+ClawEmail location from `TS_NOTIFICATION_CONFIG`, validates report paths, and
+writes an idempotency receipt before sending. Do not ask for an activation token
+or per-message approval, and do not retry an ambiguous delivery automatically.
 
 All isolated roles use `ts-agent-task/1` and `ts-agent-result/1`. Review,
-backend, render, report, and email results are non-authoritative. Results that
+backend, render, and report results are non-authoritative. Results that
 contain hypothesis status, branch context, acceptance, or strict pathway
 decision fields are rejected.
 

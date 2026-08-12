@@ -265,9 +265,9 @@ function findString(value: unknown, key: string): string | undefined {
   return undefined;
 }
 
-function normalizeRole(value: string): "review" | "backend" | "render" | "report" | "email" {
-  return ["review", "backend", "render", "report", "email"].includes(value)
-    ? value as "review" | "backend" | "render" | "report" | "email"
+function normalizeRole(value: string): "review" | "backend" | "render" | "report" {
+  return ["review", "backend", "render", "report"].includes(value)
+    ? value as "review" | "backend" | "render" | "report"
     : "review";
 }
 

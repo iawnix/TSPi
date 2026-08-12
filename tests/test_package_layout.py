@@ -105,7 +105,7 @@ def test_operator_policies_are_owned_by_their_only_consuming_agent() -> None:
     compute = {path.stem for path in (AGENTS_ROOT / "compute" / "backends").glob("*.md")}
     artifacts = {path.stem for path in (AGENTS_ROOT / "artifacts" / "roles").glob("*.md")}
     assert compute == {"ase", "crest", "gaussian", "qbics", "rdkit", "xtb"}
-    assert artifacts == {"email", "render", "report"}
+    assert artifacts == {"render", "report"}
     assert compute.isdisjoint(artifacts)
     assert not list(AGENTS_ROOT.rglob("SKILL.md"))
     assert not (AGENTS_ROOT / "compute" / "private-skills").exists()
@@ -124,7 +124,7 @@ try {{ compute.loadComputePolicy("missing"); }} catch (error) {{ computeError = 
 try {{ artifacts.loadArtifactPolicy("missing"); }} catch (error) {{ artifactError = error.message; }}
 process.stdout.write(JSON.stringify({{
   compute: compute.loadComputePolicy("gaussian"),
-  artifact: artifacts.loadArtifactPolicy("email"),
+  artifact: artifacts.loadArtifactPolicy("report"),
   computeFiles: compute.BACKEND_POLICY_FILES,
   roleFiles: artifacts.ROLE_POLICY_FILES,
   computeError,
@@ -145,7 +145,7 @@ process.stdout.write(JSON.stringify({{
     assert "# Gaussian Backend Policy" in result["compute"]
     assert "# xTB Backend Policy" not in result["compute"]
     assert "# Artifact Operator Policy" in result["artifact"]
-    assert "# Email Role Policy" in result["artifact"]
+    assert "# Report Role Policy" in result["artifact"]
     assert "# Render Role Policy" not in result["artifact"]
     assert "---" not in result["compute"] + result["artifact"]
     assert set(result["computeFiles"]) == {
@@ -156,7 +156,7 @@ process.stdout.write(JSON.stringify({{
         "xtb",
         "qbics_dmecp",
     }
-    assert set(result["roleFiles"]) == {"render", "report", "email"}
+    assert set(result["roleFiles"]) == {"render", "report"}
     assert result["computeError"] == "No compute backend policy is registered for: missing"
     assert result["artifactError"] == "No artifact role policy is registered for: missing"
 
@@ -188,9 +188,11 @@ def test_tspi_launcher_is_packaged_executable_and_shell_valid() -> None:
     assert 'readonly INSTALL_ROOT="$LAUNCHER_DIR"' in source
     assert 'readonly TS_WORKSPACES_ROOT="$INSTALL_ROOT/workspaces"' in source
     assert 'readonly TS_REMOTE_CONFIG_DEFAULT="$INSTALL_ROOT/.pi/remote.toml"' in source
+    assert 'readonly TS_NOTIFICATION_CONFIG_DEFAULT="$INSTALL_ROOT/.pi/notifications.toml"' in source
     assert "configure_remote" in source
+    assert "configure_notifications" in source
     assert "check_remote" in source
-    assert 'export TS_EMAIL_POLICY_ROOT="$INSTALL_ROOT"' in source
+    assert "TS_EMAIL_POLICY_ROOT" not in source
     assert 'export TS_AGENT_RUNTIME_HOME="$TS_AGENT_INSTALL_RUNTIME_HOME"' in source
     assert 'export TS_WORKSPACE_ROOT="$WORKSPACE_ROOT"' in source
     assert "acquire_root_agent_lock" in source
@@ -233,6 +235,33 @@ printf '%s\n%s\n' "$TS_REMOTE_CONFIG" "$TS_REMOTE_DISPLAY_TARGET"
 
     assert completed.returncode == 0, completed.stderr
     assert completed.stdout.splitlines() == [str(remote_config), "cluster-login · Torque"]
+
+
+def test_tspi_loads_installation_owned_notification_config(tmp_path: Path) -> None:
+    install_root, launcher = _copy_tspi_install(tmp_path)
+    notification_config = install_root / ".pi/notifications.toml"
+    notification_config.parent.mkdir(parents=True, exist_ok=True)
+    notification_config.write_text(
+        "[notifications.email]\nenabled = false\n"
+        'recipient = "researcher@example.org"\n'
+        'clawemail_root = "/tmp/clawemail"\n',
+        encoding="utf-8",
+    )
+    notification_config.chmod(0o600)
+    script = r'''source "$1"
+configure_notifications
+printf '%s\n' "$TS_NOTIFICATION_CONFIG"
+'''
+    completed = subprocess.run(
+        ["bash", "-c", script, "bash", str(launcher)],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == str(notification_config)
 
 
 def test_tspi_ordinary_startup_does_not_probe_remote(tmp_path: Path) -> None:
@@ -350,7 +379,7 @@ print(json.dumps({
     "argv": sys.argv[1:],
     "cwd": os.getcwd(),
     "workspace": os.environ["TS_WORKSPACE_ROOT"],
-    "email_policy": os.environ["TS_EMAIL_POLICY_ROOT"],
+    "notification_config": os.environ.get("TS_NOTIFICATION_CONFIG"),
     "runtime_home": os.environ["TS_AGENT_RUNTIME_HOME"],
     "runtime_manifest": os.environ["TS_AGENT_RUNTIME_MANIFEST"],
     "env_root": os.environ["TS_AGENT_ENV_ROOT"],
@@ -370,7 +399,7 @@ main "${@:2}"
         env={
             **os.environ,
             "PI_BIN": str(fake_pi),
-            "TS_EMAIL_POLICY_ROOT": "/tmp/old-workspace",
+            "TS_NOTIFICATION_CONFIG": "",
             "TS_AGENT_RUNTIME_HOME": "/tmp/old-runtime",
             "TS_AGENT_RUNTIME_MANIFEST": "/tmp/old-runtime/env.json",
             "TS_AGENT_ENV_ROOT": "/tmp/old-env",
@@ -386,7 +415,7 @@ main "${@:2}"
     workspace = install_root / "workspaces" / "reaction-a"
     assert result["cwd"] == str(workspace)
     assert result["workspace"] == str(workspace)
-    assert result["email_policy"] == str(install_root)
+    assert result["notification_config"] is None
     assert result["runtime_home"] == str(install_root / ".agents/runtime/transition-state-workflow")
     assert result["runtime_manifest"] == str(install_root / ".agents/runtime/transition-state-workflow/env.json")
     assert result["env_root"] == str(install_root / ".agents/envs/transition-state-workflow")

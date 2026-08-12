@@ -30,8 +30,7 @@ EXPECTED_TOOLS = {
     "ts_remote_inspect",
     "ts_subagent_render",
     "ts_subagent_report",
-    "ts_subagent_email_draft",
-    "ts_email_send",
+    "ts_notify_user",
 }
 
 

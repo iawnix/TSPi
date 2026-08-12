@@ -34,7 +34,7 @@ def test_readme_documents_install_and_agent_entrypoints() -> None:
         "--workspace-root \"$TS_WORKSPACE_ROOT\"",
         "TS_WORKSPACE_ROOT=/path/to/ts-workspace npm run install-env",
         "Pi Agent Usage",
-        "eleven-tool Root Agent inventory",
+        "ten-tool Root Agent inventory",
         "`/ts-agents` opens a read-only selector",
         "skills/transition-state-workflow/assets/templates/ts_final_report.md",
     ]:

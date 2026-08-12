@@ -2,13 +2,12 @@
 
 const { FACT_KINDS } = require("./fact-kinds.cjs");
 
-const ROLES = Object.freeze(["review", "backend", "render", "report", "email"]);
+const ROLES = Object.freeze(["review", "backend", "render", "report"]);
 const AUTHORITIES = Object.freeze({
   review: "advisory",
   backend: "operational",
   render: "operational",
   report: "operational",
-  email: "operational",
 });
 const OUTCOMES = Object.freeze(["success", "partial", "failure", "not_run"]);
 const PROGRAM_OUTCOMES = Object.freeze(["success", "failure", "not_run"]);

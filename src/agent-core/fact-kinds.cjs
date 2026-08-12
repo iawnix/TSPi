@@ -15,7 +15,6 @@ const FACT_KINDS = Object.freeze([
   ...COMPUTE_FACT_KINDS,
   "render",
   "report",
-  "email",
 ]);
 
 module.exports = { COMPUTE_FACT_KINDS, FACT_KINDS };

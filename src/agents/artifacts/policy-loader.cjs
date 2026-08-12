@@ -8,7 +8,6 @@ const ROLE_POLICIES_ROOT = resolve(__dirname, "roles");
 const ROLE_POLICY_FILES = Object.freeze({
   render: "render.md",
   report: "report.md",
-  email: "email.md",
 });
 
 function loadArtifactPolicy(role) {

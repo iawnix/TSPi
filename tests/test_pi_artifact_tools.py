@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import subprocess
@@ -11,6 +10,7 @@ import pytest
 
 from tests.strict_helpers import bootstrap_strict_workspace
 from ts_report import build_report_package
+from ts_email import delivery as notification_delivery
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,45 +19,36 @@ REQUEST_CONTRACT = ARTIFACT_AGENT / "request-contract.cjs"
 OUTPUT_SCHEMA = ARTIFACT_AGENT / "output-schema.cjs"
 
 
-def test_pi_package_registers_artifact_extension_and_root_tools() -> None:
+def test_pi_package_registers_artifact_and_notification_tools() -> None:
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     assert "./extensions/ts-workflow-artifacts/index.ts" in package["pi"]["extensions"]
-    assert "tests/test_pi_artifact_tools.py" in package["scripts"]["test:pi-adapter"]
-
     source = (ROOT / "extensions" / "ts-workflow-artifacts" / "index.ts").read_text(encoding="utf-8")
-    for key in ("subagentRender", "subagentReport", "subagentEmailDraft", "emailSend"):
+    for key in ("subagentRender", "subagentReport", "notifyUser"):
         assert f"name: TS_PUBLIC_TOOL_NAMES.{key}" in source
-    for name in (
-        "ts_workspace_render_execute",
-        "ts_workspace_report_build",
-        "ts_workspace_email_draft_write",
-    ):
+    for name in ("ts_workspace_render_execute", "ts_workspace_report_build"):
         assert f'"{name}"' in source
-    assert "runArtifactOperator" in source
-    assert "createEmailDraftTool" in source
-    assert "external_side_effects: false" in source
-    assert 'name: TS_PUBLIC_TOOL_NAMES.emailSend' in source
-    assert '"ts_email_send"' in (ROOT / "extensions" / "shared" / "tool-catalog.ts").read_text(encoding="utf-8")
-    assert "ts_workspace_email_send" not in source
+    for retired in ("subagentEmailDraft", "emailSend", "createEmailDraftTool", "ts_workspace_email_draft_write"):
+        assert retired not in source
+    catalog = (ROOT / "extensions" / "shared" / "tool-catalog.ts").read_text(encoding="utf-8")
+    assert 'notifyUser: "ts_notify_user"' in catalog
+    assert '[TS_PUBLIC_TOOL_NAMES.notifyUser]: "deterministic_external"' in catalog
 
 
 def test_artifact_runtime_is_fresh_policy_scoped_and_without_builtin_tools() -> None:
     runtime = (ARTIFACT_AGENT / "runtime.ts").read_text(encoding="utf-8")
     prompt = (ARTIFACT_AGENT / "prompt.md").read_text(encoding="utf-8")
+    assert 'type ArtifactRole = "render" | "report"' in runtime
     assert 'noTools: "builtin"' in runtime
     assert "customTools: options.tools" in runtime
     assert "SessionManager.inMemory(options.workspaceRoot)" in runtime
     assert "SettingsManager.inMemory" in runtime
     assert "getAgentsFiles: () => ({ agentsFiles: [] })" in runtime
-    assert "getSystemPromptSource: () => undefined" in runtime
-    assert "getAppendSystemPromptSources: () => []" in runtime
     assert "getSkills: () => ({ skills: [], diagnostics: [] })" in runtime
     assert "withDisposableSession" in runtime
     assert "loadArtifactPolicy(options.role)" in runtime
-    assert "Artifact operator policy" in runtime
-    assert "external_side_effects: false as const" in runtime
     assert "no general shell" in prompt
-    assert "email-send" in prompt
+    assert "notification" in prompt
+    assert not (ARTIFACT_AGENT / "roles" / "email.md").exists()
 
 
 def test_artifact_request_contract_binds_paths_and_rejects_escapes(tmp_path: Path) -> None:
@@ -74,25 +65,12 @@ def test_artifact_request_contract_binds_paths_and_rejects_escapes(tmp_path: Pat
     )
     assert render["outputRef"] == "nodes/n001/outputs/compare.png"
     assert len(render["inputPaths"]) == 2
-
     report = _request_contract(
         "validateReportRequest",
         workspace,
         {"operation": "build", "packageRef": "reports/run-002"},
     )
     assert report["packageRef"] == "reports/run-002"
-
-    email = _request_contract(
-        "validateEmailRequest",
-        workspace,
-        {
-            "operation": "draft",
-            "summaryRef": "reports/run-001/email_summary.md",
-            "draftRef": "reports/email/draft-001.json",
-            "recipients": ["researcher@example.org"],
-        },
-    )
-    assert email["contextRef"] == "reports/run-001/report_context.json"
 
     failed = _request_contract(
         "validateRenderRequest",
@@ -106,19 +84,6 @@ def test_artifact_request_contract_binds_paths_and_rejects_escapes(tmp_path: Pat
         check=False,
     )
     assert "parent segment" in failed.stderr
-
-    failed = _request_contract(
-        "validateEmailRequest",
-        workspace,
-        {
-            "operation": "send",
-            "summaryRef": "reports/run-001/email_summary.md",
-            "draftRef": "reports/email/draft-001.json",
-            "recipients": ["researcher@example.org"],
-        },
-        check=False,
-    )
-    assert "sending is unavailable" in failed.stderr
 
 
 def test_artifact_request_contract_rejects_symlink_and_overwrite(tmp_path: Path) -> None:
@@ -156,424 +121,260 @@ def test_artifact_request_contract_rejects_symlink_and_overwrite(tmp_path: Path)
 
 def test_artifact_node_scope_must_match_workspace_report(tmp_path: Path) -> None:
     report = {"node_index": [{"node_id": "n001"}]}
-    accepted = _node_scope_contract(report, ["n001"])
-    assert accepted == ["n001"]
-
+    assert _node_scope_contract(report, ["n001"]) == ["n001"]
     failed = _node_scope_contract(report, ["n999"], check=False)
     assert failed.returncode == 2
     assert "absent from workspace report" in failed.stderr
 
 
-def test_email_cli_creates_fixed_template_local_draft(tmp_path: Path) -> None:
-    workspace = _artifact_workspace(tmp_path)
-    binding = _package_binding(workspace)
-    request = {
-        "schema_version": "ts-email-draft/1",
-        "summary_ref": "reports/run-001/email_summary.md",
-        "summary_digest": binding["summary_digest"],
-        "manifest_ref": "reports/run-001/package_manifest.json",
-        "manifest_digest": binding["manifest_digest"],
-        "source_workspace_revision": binding["workspace_revision"],
-        "draft_ref": "reports/email/draft-001.json",
-        "recipients": ["researcher@example.org"],
-    }
-    request_file = tmp_path / "request.json"
-    request_file.write_text(json.dumps(request), encoding="utf-8")
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "scripts" / "ts_email.py"),
-            "draft",
-            "--root",
-            str(workspace),
-            "--request-file",
-            str(request_file),
-            "--json",
-        ],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=True,
-    )
-    result = json.loads(completed.stdout)
-    assert result["external_side_effects"] is False
-    assert result["artifact_refs"] == ["reports/email/draft-001.json"]
-    draft = json.loads((workspace / "reports" / "email" / "draft-001.json").read_text(encoding="utf-8"))
-    assert draft["delivery"] == {
-        "requires_active_policy": True,
-        "send_available": True,
-        "status": "not_sent",
-    }
-    assert draft["template_id"] == "ts-report-summary/1"
-    assert draft["subject"] == "TS report"
-    assert draft["body"] == "Ready.\n"
-    assert draft["recipients"] == ["researcher@example.org"]
-    assert draft["package_manifest_digest"] == binding["manifest_digest"]
-    assert (workspace / "reports" / "email" / "draft-001.json").stat().st_mode & 0o777 == 0o600
-
-    source = (ROOT / "scripts" / "ts_email.py").read_text(encoding="utf-8")
-    assert "smtplib" not in source
-    assert "requests" not in source
-
-
-def test_email_cli_rechecks_summary_digest_at_write_time(tmp_path: Path) -> None:
-    workspace = _artifact_workspace(tmp_path)
-    binding = _package_binding(workspace)
-    (workspace / "reports" / "run-001" / "email_summary.md").write_text("changed\n", encoding="utf-8")
-    request = {
-        "schema_version": "ts-email-draft/1",
-        "summary_ref": "reports/run-001/email_summary.md",
-        "summary_digest": binding["summary_digest"],
-        "manifest_ref": "reports/run-001/package_manifest.json",
-        "manifest_digest": binding["manifest_digest"],
-        "source_workspace_revision": binding["workspace_revision"],
-        "draft_ref": "reports/email/draft-changed.json",
-        "recipients": ["researcher@example.org"],
-    }
-    request_file = tmp_path / "changed-request.json"
-    request_file.write_text(json.dumps(request), encoding="utf-8")
-
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "scripts" / "ts_email.py"),
-            "draft",
-            "--root",
-            str(workspace),
-            "--request-file",
-            str(request_file),
-            "--json",
-        ],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-
-    assert completed.returncode == 2
-    assert "summary digest changed" in completed.stderr
-    assert not (workspace / "reports" / "email" / "draft-changed.json").exists()
-
-
-def test_fixed_email_policy_activates_and_sends_each_draft_once(tmp_path: Path) -> None:
-    workspace = _artifact_workspace(tmp_path)
-    draft_ref = _write_fixed_draft(workspace, tmp_path)
+def test_notification_uses_installation_recipient_and_is_idempotent(tmp_path: Path) -> None:
+    workspace = _notification_workspace(tmp_path)
     clawemail_root, env = _fake_clawemail_skill(tmp_path)
+    config = _write_notification_config(tmp_path, clawemail_root)
+    env["TS_NOTIFICATION_CONFIG"] = str(config)
+    request = _notification_request(tmp_path, report_refs=["reports/node-n000/final_report.md"])
 
-    created = _email_cli(
-        workspace,
-        "policy-create",
-        "--recipient",
-        "researcher@example.org",
-        "--attachment",
-        "final_report.md",
-        "--clawemail-root",
-        str(clawemail_root),
-        env=env,
-    )
-    policy = json.loads(created.stdout)
-    assert policy["state"] == "pending_activation"
-    assert policy["template_id"] == "ts-report-summary/1"
-    assert policy["attachment_names"] == ["final_report.md"]
-    assert (workspace / ".pi" / "ts-email-delivery-policy.json").stat().st_mode & 0o777 == 0o600
+    first = _email_cli(workspace, request, env=env)
+    second = _email_cli(workspace, request, env=env)
+    first_result = json.loads(first.stdout)
+    second_result = json.loads(second.stdout)
+    assert first_result["state"] == "sent"
+    assert first_result["external_side_effects"] is True
+    assert second_result["state"] == "already_sent"
+    assert second_result["external_side_effects"] is False
+    assert first_result["attachment_refs"] == ["reports/node-n000/final_report.md"]
 
-    blocked = _email_cli(workspace, "send", "--draft-ref", draft_ref, env=env, check=False)
-    assert blocked.returncode == 2
-    assert "delivery authorization is missing" in blocked.stderr
-    assert not Path(env["TS_TEST_CLAWEMAIL_LOG"]).exists()
-
-    activated = _email_cli(
-        workspace,
-        "policy-activate",
-        "--token",
-        policy["activation_token"],
-        env=env,
-    )
-    assert json.loads(activated.stdout)["state"] == "active"
-    authorization = workspace / ".pi" / "ts-email-delivery-authorization.json"
-    assert authorization.stat().st_mode & 0o777 == 0o600
-    status = json.loads(_email_cli(workspace, "policy-status", env=env).stdout)
-    assert status["state"] == "active"
-
-    sent = json.loads(
-        _email_cli(workspace, "send", "--draft-ref", draft_ref, env=env).stdout
-    )
-    assert sent["state"] == "sent"
-    assert sent["recipients"] == ["researcher@example.org"]
-    assert sent["attachment_refs"] == ["reports/run-001/final_report.md"]
-    receipt = workspace / sent["receipt_ref"]
-    assert receipt.stat().st_mode & 0o777 == 0o600
-
-    repeated = json.loads(
-        _email_cli(workspace, "send", "--draft-ref", draft_ref, env=env).stdout
-    )
-    assert repeated["state"] == "already_sent"
+    receipt = json.loads((workspace / first_result["receipt_ref"]).read_text(encoding="utf-8"))
+    for public_value in (first.stdout, second.stdout, json.dumps(receipt)):
+        assert "researcher@example.org" not in public_value
+        assert str(clawemail_root) not in public_value
     args = Path(env["TS_TEST_CLAWEMAIL_LOG"]).read_text(encoding="utf-8").splitlines()
     assert args.count("send") == 1
     assert "researcher@example.org" in args
-    assert str(workspace / "reports" / "run-001" / "final_report.md") in args
-    assert Path(env["TS_TEST_CLAWEMAIL_BODY"]).read_text(encoding="utf-8") == "Ready.\n"
-
-    disabled = json.loads(_email_cli(workspace, "policy-disable", env=env).stdout)
-    assert disabled["state"] == "disabled"
-    assert json.loads(_email_cli(workspace, "policy-status", env=env).stdout)["state"] == "disabled"
-    blocked = _email_cli(workspace, "send", "--draft-ref", draft_ref, env=env, check=False)
-    assert blocked.returncode == 2
-    assert "fixed delivery policy is not active" in blocked.stderr
-    reactivated = json.loads(
-        _email_cli(
-            workspace,
-            "policy-activate",
-            "--token",
-            policy["activation_token"],
-            env=env,
-        ).stdout
-    )
-    assert reactivated["state"] == "active"
+    assert "reports/node-n000/final_report.md" not in "\n".join(args)
+    assert Path(env["TS_TEST_CLAWEMAIL_BODY"]).read_text(encoding="utf-8") == "n000 intake is ready.\n"
+    assert Path(env["TS_TEST_CLAWEMAIL_ATTACHMENT"]).read_text(encoding="utf-8") == "# n000\n\nIntake ready.\n"
 
 
-def test_child_workspace_inherits_installation_email_policy_and_keeps_receipts_local(
-    tmp_path: Path,
-) -> None:
-    installation = tmp_path / "installation"
-    installation.mkdir()
-    workspace = _artifact_workspace_at(installation / "ts_0000")
-    draft_ref = _write_fixed_draft(workspace, tmp_path)
+def test_concurrent_identical_notifications_send_once(tmp_path: Path) -> None:
+    workspace = _notification_workspace(tmp_path)
     clawemail_root, env = _fake_clawemail_skill(tmp_path)
-    env.pop("TS_EMAIL_POLICY_ROOT", None)
-    env["TS_WORKSPACE_ROOT"] = str(installation)
-    parent = _activate_fixed_email_policy(installation, clawemail_root, env)
-
-    status = json.loads(_email_cli(workspace, "policy-status", env=env).stdout)
-    assert status["state"] == "active"
-    assert status["policy_scope"] == "inherited"
-    assert status["policy_source_root"] == str(installation)
-    assert status["local_policy_state"] == "not_configured"
-    assert status["policy_id"] == parent["policy_id"]
-
-    sent = json.loads(_email_cli(workspace, "send", "--draft-ref", draft_ref, env=env).stdout)
-    assert sent["state"] == "sent"
-    assert sent["policy_scope"] == "inherited"
-    assert sent["policy_source_root"] == str(installation)
-    assert (workspace / sent["receipt_ref"]).is_file()
-    assert not (installation / "reports").exists()
-
-    repeated = json.loads(_email_cli(workspace, "send", "--draft-ref", draft_ref, env=env).stdout)
-    assert repeated["state"] == "already_sent"
-    assert repeated["policy_scope"] == "inherited"
+    env["TS_NOTIFICATION_CONFIG"] = str(_write_notification_config(tmp_path, clawemail_root))
+    env["TS_TEST_CLAWEMAIL_SLEEP"] = "1"
+    request = _notification_request(tmp_path)
+    command = [
+        sys.executable,
+        str(ROOT / "scripts" / "ts_email.py"),
+        "notify",
+        "--root",
+        str(workspace),
+        "--request-file",
+        str(request),
+        "--json",
+    ]
+    processes = [
+        subprocess.Popen(
+            command,
+            cwd=ROOT,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        for _index in range(2)
+    ]
+    completed = [process.communicate(timeout=15) for process in processes]
+    assert [process.returncode for process in processes] == [0, 0], completed
+    states = {json.loads(stdout)["state"] for stdout, _stderr in completed}
+    assert states == {"sent", "already_sent"}
     args = Path(env["TS_TEST_CLAWEMAIL_LOG"]).read_text(encoding="utf-8").splitlines()
     assert args.count("send") == 1
 
 
-def test_matching_pending_child_email_policy_inherits_without_local_activation(
-    tmp_path: Path,
-) -> None:
-    installation = tmp_path / "installation"
-    installation.mkdir()
-    workspace = _artifact_workspace_at(installation / "ts_0000")
-    draft_ref = _write_fixed_draft(workspace, tmp_path)
+def test_notification_rejects_agent_addressing_and_missing_or_disabled_config(tmp_path: Path) -> None:
+    workspace = _notification_workspace(tmp_path)
     clawemail_root, env = _fake_clawemail_skill(tmp_path)
-    env["TS_EMAIL_POLICY_ROOT"] = str(installation)
-    env.pop("TS_WORKSPACE_ROOT", None)
-    parent = _activate_fixed_email_policy(installation, clawemail_root, env)
-    child = json.loads(
-        _email_cli(
-            workspace,
-            "policy-create",
-            "--recipient",
-            "researcher@example.org",
-            "--attachment",
-            "final_report.md",
-            "--clawemail-root",
-            str(clawemail_root),
-            env=env,
-        ).stdout
-    )
+    request = _notification_request(tmp_path)
+    value = json.loads(request.read_text(encoding="utf-8"))
+    value["recipient"] = "other@example.org"
+    request.write_text(json.dumps(value), encoding="utf-8")
+    config = _write_notification_config(tmp_path, clawemail_root)
+    env["TS_NOTIFICATION_CONFIG"] = str(config)
+    failed = _email_cli(workspace, request, env=env, check=False)
+    assert failed.returncode == 2
+    assert "unknown fields: recipient" in failed.stderr
+    assert not Path(env["TS_TEST_CLAWEMAIL_LOG"]).exists()
 
-    status = json.loads(_email_cli(workspace, "policy-status", env=env).stdout)
-    assert status["state"] == "active"
-    assert status["policy_scope"] == "inherited"
-    assert status["local_policy_state"] == "pending_activation"
-    assert status["policy_id"] == parent["policy_id"]
-    assert status["local_policy_id"] == child["policy_id"]
-    assert not (workspace / ".pi" / "ts-email-delivery-authorization.json").exists()
+    env.pop("TS_NOTIFICATION_CONFIG")
+    missing = _email_cli(workspace, _notification_request(tmp_path, name="missing.json"), env=env, check=False)
+    assert missing.returncode == 2
+    assert "TS_NOTIFICATION_CONFIG is not configured" in missing.stderr
 
-    sent = json.loads(_email_cli(workspace, "send", "--draft-ref", draft_ref, env=env).stdout)
-    assert sent["state"] == "sent"
-    assert sent["policy_id"] == parent["policy_id"]
-    assert not (workspace / ".pi" / "ts-email-delivery-authorization.json").exists()
+    disabled = _write_notification_config(tmp_path, clawemail_root, enabled=False, name="disabled.toml")
+    env["TS_NOTIFICATION_CONFIG"] = str(disabled)
+    blocked = _email_cli(workspace, _notification_request(tmp_path, name="disabled.json"), env=env, check=False)
+    assert blocked.returncode == 2
+    assert "notifications are disabled" in blocked.stderr
 
 
 @pytest.mark.parametrize(
-    ("recipient", "attachment"),
+    ("report_ref", "message"),
     [
-        ("other@example.org", "final_report.md"),
-        ("researcher@example.org", "report_context.json"),
+        ("../outside.md", "safe reports/"),
+        ("inputs/reactant.xyz", "safe reports/"),
+        ("reports/missing.md", "does not exist"),
     ],
 )
-def test_different_pending_child_email_policy_does_not_inherit(
-    tmp_path: Path,
-    recipient: str,
-    attachment: str,
-) -> None:
-    installation = tmp_path / "installation"
-    installation.mkdir()
-    workspace = _artifact_workspace_at(installation / "ts_0000")
-    draft_ref = _write_fixed_draft(workspace, tmp_path)
+def test_notification_rejects_unsafe_report_refs(tmp_path: Path, report_ref: str, message: str) -> None:
+    workspace = _notification_workspace(tmp_path)
     clawemail_root, env = _fake_clawemail_skill(tmp_path)
-    env["TS_EMAIL_POLICY_ROOT"] = str(installation)
-    _activate_fixed_email_policy(installation, clawemail_root, env)
-    child = json.loads(
-        _email_cli(
-            workspace,
-            "policy-create",
-            "--recipient",
-            recipient,
-            "--attachment",
-            attachment,
-            "--clawemail-root",
-            str(clawemail_root),
-            env=env,
-        ).stdout
-    )
-
-    status = json.loads(_email_cli(workspace, "policy-status", env=env).stdout)
-    assert status["state"] == "pending_activation"
-    assert status["policy_scope"] == "local"
-    assert status["policy_id"] == child["policy_id"]
-    blocked = _email_cli(workspace, "send", "--draft-ref", draft_ref, env=env, check=False)
-    assert blocked.returncode == 2
-    assert "delivery authorization is missing" in blocked.stderr
-    assert not Path(env["TS_TEST_CLAWEMAIL_LOG"]).exists()
-
-
-def test_disabled_child_email_policy_blocks_installation_policy_inheritance(tmp_path: Path) -> None:
-    installation = tmp_path / "installation"
-    installation.mkdir()
-    workspace = _artifact_workspace_at(installation / "ts_0000")
-    draft_ref = _write_fixed_draft(workspace, tmp_path)
-    clawemail_root, env = _fake_clawemail_skill(tmp_path)
-    env["TS_EMAIL_POLICY_ROOT"] = str(installation)
-    _activate_fixed_email_policy(installation, clawemail_root, env)
-    _activate_fixed_email_policy(workspace, clawemail_root, env)
-    _email_cli(workspace, "policy-disable", env=env)
-
-    status = json.loads(_email_cli(workspace, "policy-status", env=env).stdout)
-    assert status["state"] == "disabled"
-    assert status["policy_scope"] == "local"
-    blocked = _email_cli(workspace, "send", "--draft-ref", draft_ref, env=env, check=False)
-    assert blocked.returncode == 2
-    assert "fixed delivery policy is not active" in blocked.stderr
-    assert not Path(env["TS_TEST_CLAWEMAIL_LOG"]).exists()
-
-
-def test_changed_child_email_policy_blocks_installation_policy_inheritance(tmp_path: Path) -> None:
-    installation = tmp_path / "installation"
-    installation.mkdir()
-    workspace = _artifact_workspace_at(installation / "ts_0000")
-    draft_ref = _write_fixed_draft(workspace, tmp_path)
-    clawemail_root, env = _fake_clawemail_skill(tmp_path)
-    env["TS_EMAIL_POLICY_ROOT"] = str(installation)
-    _activate_fixed_email_policy(installation, clawemail_root, env)
-    _activate_fixed_email_policy(workspace, clawemail_root, env)
-    policy_path = workspace / ".pi" / "ts-email-delivery-policy.json"
-    policy = json.loads(policy_path.read_text(encoding="utf-8"))
-    policy["attachment_names"] = ["report_context.json"]
-    policy_path.write_text(json.dumps(policy), encoding="utf-8")
-
-    status = json.loads(_email_cli(workspace, "policy-status", env=env).stdout)
-    assert status["state"] == "policy_changed"
-    assert status["policy_scope"] == "local"
-    blocked = _email_cli(workspace, "send", "--draft-ref", draft_ref, env=env, check=False)
-    assert blocked.returncode == 2
-    assert "delivery policy changed after activation" in blocked.stderr
-    assert not Path(env["TS_TEST_CLAWEMAIL_LOG"]).exists()
-
-
-def test_workspace_outside_installation_root_cannot_inherit_email_policy(tmp_path: Path) -> None:
-    installation = tmp_path / "installation"
-    installation.mkdir()
-    workspace = _artifact_workspace_at(tmp_path / "external-workspace")
-    draft_ref = _write_fixed_draft(workspace, tmp_path)
-    clawemail_root, env = _fake_clawemail_skill(tmp_path)
-    env["TS_EMAIL_POLICY_ROOT"] = str(installation)
-    _activate_fixed_email_policy(installation, clawemail_root, env)
-
-    status = json.loads(_email_cli(workspace, "policy-status", env=env).stdout)
-    assert status["state"] == "not_configured"
-    assert status["policy_scope"] == "local"
-    blocked = _email_cli(workspace, "send", "--draft-ref", draft_ref, env=env, check=False)
-    assert blocked.returncode == 2
-    assert "delivery policy is missing" in blocked.stderr
-
-
-def test_inherited_email_policy_rejects_symlinked_root_and_non_private_state(tmp_path: Path) -> None:
-    installation = tmp_path / "installation"
-    installation.mkdir()
-    workspace = _artifact_workspace_at(installation / "ts_0000")
-    clawemail_root, env = _fake_clawemail_skill(tmp_path)
-    _activate_fixed_email_policy(installation, clawemail_root, env)
-
-    policy_link = tmp_path / "policy-root-link"
-    policy_link.symlink_to(installation, target_is_directory=True)
-    symlink_env = {**env, "TS_EMAIL_POLICY_ROOT": str(policy_link)}
-    failed = _email_cli(workspace, "policy-status", env=symlink_env, check=False)
+    env["TS_NOTIFICATION_CONFIG"] = str(_write_notification_config(tmp_path, clawemail_root))
+    request = _notification_request(tmp_path, report_refs=[report_ref])
+    failed = _email_cli(workspace, request, env=env, check=False)
     assert failed.returncode == 2
-    assert "must not contain symbolic links" in failed.stderr
-
-    policy_path = installation / ".pi" / "ts-email-delivery-policy.json"
-    policy_path.chmod(0o644)
-    unsafe_env = {**env, "TS_EMAIL_POLICY_ROOT": str(installation)}
-    failed = _email_cli(workspace, "policy-status", env=unsafe_env, check=False)
-    assert failed.returncode == 2
-    assert "delivery policy must have mode 0600" in failed.stderr
+    assert message in failed.stderr
+    assert not Path(env["TS_TEST_CLAWEMAIL_LOG"]).exists()
 
 
-def test_ambiguous_email_delivery_is_recorded_and_not_retried(tmp_path: Path) -> None:
-    workspace = _artifact_workspace(tmp_path)
-    draft_ref = _write_fixed_draft(workspace, tmp_path)
+def test_notification_rejects_symlinked_report_and_private_config_violation(tmp_path: Path) -> None:
+    workspace = _notification_workspace(tmp_path)
+    outside = tmp_path / "outside.md"
+    outside.write_text("outside\n", encoding="utf-8")
+    (workspace / "reports" / "linked.md").symlink_to(outside)
     clawemail_root, env = _fake_clawemail_skill(tmp_path)
-    policy = json.loads(
-        _email_cli(
-            workspace,
-            "policy-create",
-            "--recipient",
-            "researcher@example.org",
-            "--clawemail-root",
-            str(clawemail_root),
-            env=env,
-        ).stdout
-    )
-    _email_cli(
-        workspace,
-        "policy-activate",
-        "--token",
-        policy["activation_token"],
-        env=env,
-    )
-
-    failing_env = {**env, "TS_TEST_CLAWEMAIL_FAIL": "1"}
+    config = _write_notification_config(tmp_path, clawemail_root)
+    env["TS_NOTIFICATION_CONFIG"] = str(config)
     failed = _email_cli(
         workspace,
-        "send",
-        "--draft-ref",
-        draft_ref,
-        env=failing_env,
+        _notification_request(tmp_path, report_refs=["reports/linked.md"]),
+        env=env,
         check=False,
     )
+    assert "symbolic link" in failed.stderr
+
+    config.chmod(0o644)
+    failed = _email_cli(workspace, _notification_request(tmp_path, name="mode.json"), env=env, check=False)
+    assert "must have mode 0600" in failed.stderr
+
+
+def test_notification_does_not_expose_missing_clawemail_path(tmp_path: Path) -> None:
+    workspace = _notification_workspace(tmp_path)
+    missing_root = tmp_path / "private" / "missing-clawemail"
+    config = _write_notification_config(tmp_path, missing_root)
+    env = {**os.environ, "TS_NOTIFICATION_CONFIG": str(config)}
+
+    failed = _email_cli(workspace, _notification_request(tmp_path), env=env, check=False)
     assert failed.returncode == 2
-    assert "delivery result is ambiguous" in failed.stderr
+    assert "configured ClawEmail installation is unavailable" in failed.stderr
+    assert str(missing_root) not in failed.stderr
+
+
+def test_ambiguous_notification_is_recorded_and_not_retried(tmp_path: Path) -> None:
+    workspace = _notification_workspace(tmp_path)
+    clawemail_root, env = _fake_clawemail_skill(tmp_path)
+    env["TS_NOTIFICATION_CONFIG"] = str(_write_notification_config(tmp_path, clawemail_root))
+    request = _notification_request(tmp_path)
+    failing_env = {**env, "TS_TEST_CLAWEMAIL_FAIL": "1"}
+    failed = _email_cli(workspace, request, env=failing_env, check=False)
+    assert failed.returncode == 2
+    assert "result is ambiguous" in failed.stderr
     receipt_paths = list((workspace / "reports" / "email" / "deliveries").glob("*.json"))
     assert len(receipt_paths) == 1
     assert json.loads(receipt_paths[0].read_text(encoding="utf-8"))["state"] == "unknown"
 
-    retry = _email_cli(workspace, "send", "--draft-ref", draft_ref, env=env, check=False)
+    retry = _email_cli(workspace, request, env=env, check=False)
     assert retry.returncode == 2
-    assert "delivery remains unknown" in retry.stderr
+    assert "remains unknown" in retry.stderr
     args = Path(env["TS_TEST_CLAWEMAIL_LOG"]).read_text(encoding="utf-8").splitlines()
     assert args.count("send") == 1
+
+
+def test_notification_failure_before_provider_start_can_be_retried(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = _notification_workspace(tmp_path)
+    clawemail_root, _env = _fake_clawemail_skill(tmp_path)
+    config = _write_notification_config(tmp_path, clawemail_root)
+    monkeypatch.setenv("TS_NOTIFICATION_CONFIG", str(config))
+    request = _notification_request(tmp_path)
+    attempts = 0
+
+    def run_provider(*_args, **_kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise notification_delivery._DeliveryNotStarted("provider executable unavailable")
+        return '{"sent":true}\n'
+
+    monkeypatch.setattr(notification_delivery, "_run_clawemail", run_provider)
+    with pytest.raises(ValueError, match="was not started"):
+        notification_delivery.notify_user(workspace, request)
+
+    receipt_paths = list((workspace / "reports/email/deliveries").glob("*.json"))
+    assert len(receipt_paths) == 1
+    failed = json.loads(receipt_paths[0].read_text(encoding="utf-8"))
+    assert failed["state"] == "failed"
+    assert failed["error_class"] == "delivery_not_started"
+
+    result = notification_delivery.notify_user(workspace, request)
+    assert result["state"] == "sent"
+    assert attempts == 2
+
+
+def test_notification_detects_tampered_receipt(tmp_path: Path) -> None:
+    workspace = _notification_workspace(tmp_path)
+    clawemail_root, env = _fake_clawemail_skill(tmp_path)
+    env["TS_NOTIFICATION_CONFIG"] = str(_write_notification_config(tmp_path, clawemail_root))
+    request = _notification_request(tmp_path)
+    result = json.loads(_email_cli(workspace, request, env=env).stdout)
+    receipt_path = workspace / result["receipt_ref"]
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    receipt["notification_digest"] = "sha256:" + "0" * 64
+    receipt_path.write_text(json.dumps(receipt), encoding="utf-8")
+    failed = _email_cli(workspace, request, env=env, check=False)
+    assert failed.returncode == 2
+    assert "does not match the request" in failed.stderr
+
+
+@pytest.mark.parametrize("tamper_target", ["attachment", "config"])
+def test_notification_rechecks_inputs_after_guard(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    tamper_target: str,
+) -> None:
+    workspace = _notification_workspace(tmp_path)
+    clawemail_root, env = _fake_clawemail_skill(tmp_path)
+    config = _write_notification_config(tmp_path, clawemail_root)
+    monkeypatch.setenv("TS_NOTIFICATION_CONFIG", str(config))
+    request = _notification_request(tmp_path, report_refs=["reports/node-n000/final_report.md"])
+    original_write = notification_delivery._write_private_json
+    tampered = False
+
+    def write_and_tamper(path, value, *, exclusive):
+        nonlocal tampered
+        original_write(path, value, exclusive=exclusive)
+        if value.get("state") == "sending" and not tampered:
+            tampered = True
+            if tamper_target == "attachment":
+                (workspace / "reports/node-n000/final_report.md").write_text("changed\n", encoding="utf-8")
+            else:
+                config.write_text(
+                    "[notifications.email]\n"
+                    "enabled = false\n"
+                    'recipient = "researcher@example.org"\n'
+                    f'clawemail_root = "{clawemail_root}"\n',
+                    encoding="utf-8",
+                )
+                config.chmod(0o600)
+
+    monkeypatch.setattr(notification_delivery, "_write_private_json", write_and_tamper)
+    with pytest.raises(ValueError, match="changed after"):
+        notification_delivery.notify_user(workspace, request)
+    assert not Path(env["TS_TEST_CLAWEMAIL_LOG"]).exists()
+    receipts = list((workspace / "reports/email/deliveries").glob("*.json"))
+    assert len(receipts) == 1
+    assert json.loads(receipts[0].read_text(encoding="utf-8"))["state"] == "failed"
 
 
 def test_report_cli_returns_structured_package_refs(tmp_path: Path) -> None:
@@ -601,77 +402,35 @@ def test_report_cli_returns_structured_package_refs(tmp_path: Path) -> None:
     assert result["report"] == str(package_dir / "final_report.md")
     assert result["context"] == str(package_dir / "report_context.json")
     assert result["email_summary"] == str(package_dir / "email_summary.md")
-    assert result["assets_dir"] == str(package_dir / "assets")
-    assert result["manifest"] == str(package_dir / "package_manifest.json")
     assert result["manifest_digest"].startswith("sha256:")
-    manifest = json.loads(Path(result["manifest"]).read_text(encoding="utf-8"))
-    assert manifest["schema_version"] == "ts-report-package/1"
-    assert manifest["workspace_revision"] == result["workspace_revision"]
-    assert {row["ref"] for row in manifest["files"]} >= {
-        "final_report.md",
-        "report_context.json",
-        "email_summary.md",
-    }
 
 
-def test_report_package_validates_before_creating_output(tmp_path: Path) -> None:
-    workspace = tmp_path / "invalid-workspace"
-    workspace.mkdir()
-    package_dir = workspace / "reports" / "operator-package"
+def test_report_package_validates_and_refuses_overwrite(tmp_path: Path) -> None:
+    invalid = tmp_path / "invalid-workspace"
+    invalid.mkdir()
     with pytest.raises(ValueError, match="workspace is invalid"):
-        build_report_package(workspace, package_dir)
-    assert not package_dir.exists()
+        build_report_package(invalid, invalid / "reports" / "package")
 
-
-def test_report_package_is_no_overwrite_and_email_rejects_tampering(tmp_path: Path) -> None:
     workspace = tmp_path / "report-workspace"
     bootstrap_strict_workspace(workspace)
     package_dir = workspace / "reports" / "operator-package"
     build_report_package(workspace, package_dir)
     with pytest.raises(ValueError, match="already exists"):
         build_report_package(workspace, package_dir)
-    assert not list(package_dir.parent.glob(f".{package_dir.name}.tmp-*"))
-
-    (package_dir / "email_summary.md").write_text("tampered\n", encoding="utf-8")
-    failed = _request_contract(
-        "validateEmailRequest",
-        workspace,
-        {
-            "operation": "draft",
-            "summaryRef": "reports/operator-package/email_summary.md",
-            "draftRef": "reports/email/tampered.json",
-            "recipients": ["researcher@example.org"],
-        },
-        check=False,
-    )
-    assert "digest mismatch" in failed.stderr
 
 
-@pytest.mark.parametrize("role", ["render", "report", "email"])
+@pytest.mark.parametrize("role", ["render", "report"])
 def test_artifact_output_is_bound_to_one_typed_action(tmp_path: Path, role: str) -> None:
     packet, action, report = _artifact_protocol_fixture(role)
     completed = _validate_artifact_output(tmp_path, packet, [action], report)
     assert json.loads(completed.stdout)["role"] == role
-
     report["artifact_refs"] = ["reports/invented.txt"]
     failed = _validate_artifact_output(tmp_path, packet, [action], report, check=False)
     assert failed.returncode == 2
     assert "do not match" in failed.stderr
 
 
-def test_email_output_cannot_change_recipients_or_include_body(tmp_path: Path) -> None:
-    packet, action, report = _artifact_protocol_fixture("email")
-    report["payload"]["recipients"] = ["other@example.org"]
-    failed = _validate_artifact_output(tmp_path, packet, [action], report, check=False)
-    assert "recipients do not match" in failed.stderr
-
-    report["payload"]["recipients"] = ["researcher@example.org"]
-    report["payload"]["body"] = "Injected body"
-    failed = _validate_artifact_output(tmp_path, packet, [action], report, check=False)
-    assert "unknown fields" in failed.stderr
-
-
-def test_artifact_output_rejects_started_or_failed_action(tmp_path: Path) -> None:
+def test_artifact_output_rejects_started_action(tmp_path: Path) -> None:
     packet, action, report = _artifact_protocol_fixture("report")
     action["result"]["state"] = "started"
     failed = _validate_artifact_output(tmp_path, packet, [action], report, check=False)
@@ -679,69 +438,30 @@ def test_artifact_output_rejects_started_or_failed_action(tmp_path: Path) -> Non
 
 
 def _artifact_workspace(tmp_path: Path) -> Path:
-    return _artifact_workspace_at(tmp_path / "workspace")
-
-
-def _artifact_workspace_at(workspace: Path) -> Path:
+    workspace = tmp_path / "workspace"
     for path in (
         workspace / "inputs",
         workspace / "nodes" / "n001" / "inputs",
         workspace / "nodes" / "n001" / "outputs",
-        workspace / "reports" / "run-001",
+        workspace / "reports",
     ):
         path.mkdir(parents=True, exist_ok=True)
     (workspace / "inputs" / "reactant.xyz").write_text("1\nR\nH 0 0 0\n", encoding="utf-8")
     (workspace / "nodes" / "n001" / "inputs" / "product.xyz").write_text("1\nP\nH 0 0 1\n", encoding="utf-8")
     (workspace / "nodes" / "n001" / "node.json").write_text("{}\n", encoding="utf-8")
-    (workspace / "reports" / "run-001" / "email_summary.md").write_text("Subject: TS report\n\nReady.\n", encoding="utf-8")
-    (workspace / "reports" / "run-001" / "report_context.json").write_text("{}\n", encoding="utf-8")
-    (workspace / "reports" / "run-001" / "final_report.md").write_text("# Final report\n", encoding="utf-8")
-    _write_package_manifest(workspace / "reports" / "run-001")
     return workspace
 
 
-def _write_package_manifest(package_dir: Path) -> None:
-    files = []
-    for name in ("email_summary.md", "report_context.json", "final_report.md"):
-        path = package_dir / name
-        files.append({"ref": name, "sha256": _sha256(path), "size_bytes": path.stat().st_size})
-    (package_dir / "package_manifest.json").write_text(
-        json.dumps(
-            {
-                "schema_version": "ts-report-package/1",
-                "workspace_revision": "sha256:" + "1" * 64,
-                "files": files,
-            },
-            indent=2,
-            sort_keys=True,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+def _notification_workspace(tmp_path: Path) -> Path:
+    workspace = tmp_path / "notification-workspace"
+    bootstrap_strict_workspace(workspace)
+    package = workspace / "reports" / "node-n000"
+    package.mkdir(parents=True)
+    (package / "final_report.md").write_text("# n000\n\nIntake ready.\n", encoding="utf-8")
+    return workspace
 
 
-def _package_binding(workspace: Path) -> dict[str, str]:
-    package_dir = workspace / "reports" / "run-001"
-    manifest = json.loads((package_dir / "package_manifest.json").read_text(encoding="utf-8"))
-    summary = next(row for row in manifest["files"] if row["ref"] == "email_summary.md")
-    return {
-        "summary_digest": summary["sha256"],
-        "manifest_digest": _sha256(package_dir / "package_manifest.json"),
-        "workspace_revision": manifest["workspace_revision"],
-    }
-
-
-def _sha256(path: Path) -> str:
-    return "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
-
-
-def _request_contract(
-    function_name: str,
-    workspace: Path,
-    request: dict[str, object],
-    *,
-    check: bool = True,
-) -> dict[str, object] | subprocess.CompletedProcess[str]:
+def _request_contract(function_name: str, workspace: Path, request: dict[str, object], *, check: bool = True):
     script = (
         f"const helper=require({json.dumps(str(REQUEST_CONTRACT))});"
         f"const input={json.dumps(request)};"
@@ -759,12 +479,7 @@ def _request_contract(
     return json.loads(completed.stdout) if check else completed
 
 
-def _node_scope_contract(
-    report: dict[str, object],
-    node_ids: list[str],
-    *,
-    check: bool = True,
-) -> list[str] | subprocess.CompletedProcess[str]:
+def _node_scope_contract(report: dict[str, object], node_ids: list[str], *, check: bool = True):
     script = (
         f"const helper=require({json.dumps(str(REQUEST_CONTRACT))});"
         f"const report={json.dumps(report)};"
@@ -773,18 +488,13 @@ def _node_scope_contract(
         "catch(error){ process.stderr.write(String(error.message||error)); process.exitCode=2; }"
     )
     completed = subprocess.run(
-        ["node", "-e", script],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=check,
+        ["node", "-e", script], cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=check
     )
     return json.loads(completed.stdout) if check else completed
 
 
-def _artifact_protocol_fixture(role: str) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
-    operation = {"render": "render", "report": "build", "email": "draft"}[role]
+def _artifact_protocol_fixture(role: str):
+    operation = {"render": "render", "report": "build"}[role]
     node_ids = ["n001"] if role == "render" else []
     packet = {
         "schema_version": "ts-agent-task/1",
@@ -796,7 +506,7 @@ def _artifact_protocol_fixture(role: str) -> tuple[dict[str, object], dict[str, 
         "workspace": {"root": "/tmp/ws", "report_id": "rep_001", "revision": "rev_001"},
         "scope": {"report_id": "rep_001", "node_ids": node_ids, "hypothesis_id": None, "pathway_id": None},
         "inputs": {"basis_allowlist": ["inputs/reactant.xyz"]},
-        "capabilities": [{"render": "ts_workspace_render_execute", "report": "ts_workspace_report_build", "email": "ts_workspace_email_draft_write"}[role]],
+        "capabilities": [{"render": "ts_workspace_render_execute", "report": "ts_workspace_report_build"}[role]],
         "constraints": {
             "canonical_workspace_mutation": False,
             "scientific_decision": False,
@@ -833,24 +543,9 @@ def _artifact_protocol_fixture(role: str) -> tuple[dict[str, object], dict[str, 
                 "reports/run-001/package_manifest.json",
             ],
         },
-        "email": {
-            "operation": "draft",
-            "state": "drafted",
-            "template_id": "ts-report-summary/1",
-            "summary_ref": "reports/run-001/email_summary.md",
-            "summary_digest": "sha256:" + "3" * 64,
-            "manifest_ref": "reports/run-001/package_manifest.json",
-            "manifest_digest": "sha256:" + "2" * 64,
-            "source_workspace_revision": "sha256:" + "1" * 64,
-            "draft_ref": "reports/email/draft-001.json",
-            "recipients": ["researcher@example.org"],
-            "subject": "TS study update",
-            "artifact_refs": ["reports/email/draft-001.json"],
-        },
     }[role]
-    tool = {"render": "ts_workspace_render_execute", "report": "ts_workspace_report_build", "email": "ts_workspace_email_draft_write"}[role]
+    tool = {"render": "ts_workspace_render_execute", "report": "ts_workspace_report_build"}[role]
     action = {"tool": tool, "result": canonical}
-    payload = {key: value for key, value in canonical.items() if key not in {"artifact_refs", "state"}}
     report = {
         "schema_version": "ts-agent-result/1",
         "task_id": packet["task_id"],
@@ -863,21 +558,14 @@ def _artifact_protocol_fixture(role: str) -> tuple[dict[str, object], dict[str, 
         "facts": [],
         "artifact_refs": canonical["artifact_refs"],
         "program": None,
-        "payload": payload,
+        "payload": {key: value for key, value in canonical.items() if key not in {"artifact_refs", "state"}},
         "limitations": [],
         "provenance": {},
     }
     return packet, action, report
 
 
-def _validate_artifact_output(
-    tmp_path: Path,
-    packet: dict[str, object],
-    actions: list[dict[str, object]],
-    report: dict[str, object],
-    *,
-    check: bool = True,
-) -> subprocess.CompletedProcess[str]:
+def _validate_artifact_output(tmp_path: Path, packet, actions, report, *, check: bool = True):
     input_path = tmp_path / "artifact-output.json"
     input_path.write_text(json.dumps({"packet": packet, "actions": actions, "report": report}), encoding="utf-8")
     script = (
@@ -897,57 +585,52 @@ def _validate_artifact_output(
     )
 
 
-def _write_fixed_draft(workspace: Path, tmp_path: Path) -> str:
-    binding = _package_binding(workspace)
-    draft_ref = "reports/email/draft-policy.json"
-    request = {
-        "schema_version": "ts-email-draft/1",
-        "summary_ref": "reports/run-001/email_summary.md",
-        "summary_digest": binding["summary_digest"],
-        "manifest_ref": "reports/run-001/package_manifest.json",
-        "manifest_digest": binding["manifest_digest"],
-        "source_workspace_revision": binding["workspace_revision"],
-        "draft_ref": draft_ref,
-        "recipients": ["researcher@example.org"],
-    }
-    request_file = tmp_path / "fixed-draft-request.json"
-    request_file.write_text(json.dumps(request), encoding="utf-8")
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "scripts" / "ts_email.py"),
-            "draft",
-            "--root",
-            str(workspace),
-            "--request-file",
-            str(request_file),
-            "--json",
-        ],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=True,
+def _notification_request(tmp_path: Path, *, report_refs: list[str] | None = None, name: str = "notify.json") -> Path:
+    request = tmp_path / name
+    request.write_text(
+        json.dumps(
+            {
+                "schema_version": "ts-user-notification/1",
+                "event": "node_completed",
+                "subject": "n000 intake completed",
+                "summary": "n000 intake is ready.",
+                "report_refs": report_refs or [],
+            }
+        ),
+        encoding="utf-8",
     )
-    assert json.loads(completed.stdout)["draft_ref"] == draft_ref
-    return draft_ref
+    return request
 
 
-def _email_cli(
-    workspace: Path,
-    command: str,
-    *args: str,
-    env: dict[str, str] | None = None,
-    check: bool = True,
-) -> subprocess.CompletedProcess[str]:
+def _write_notification_config(
+    tmp_path: Path,
+    clawemail_root: Path,
+    *,
+    enabled: bool = True,
+    name: str = "notifications.toml",
+) -> Path:
+    config = tmp_path / name
+    config.write_text(
+        "[notifications.email]\n"
+        f"enabled = {'true' if enabled else 'false'}\n"
+        'recipient = "researcher@example.org"\n'
+        f'clawemail_root = "{clawemail_root}"\n',
+        encoding="utf-8",
+    )
+    config.chmod(0o600)
+    return config
+
+
+def _email_cli(workspace: Path, request: Path, *, env: dict[str, str], check: bool = True):
     return subprocess.run(
         [
             sys.executable,
             str(ROOT / "scripts" / "ts_email.py"),
-            command,
+            "notify",
             "--root",
             str(workspace),
-            *args,
+            "--request-file",
+            str(request),
             "--json",
         ],
         cwd=ROOT,
@@ -957,34 +640,6 @@ def _email_cli(
         stderr=subprocess.PIPE,
         check=check,
     )
-
-
-def _activate_fixed_email_policy(
-    workspace: Path,
-    clawemail_root: Path,
-    env: dict[str, str],
-) -> dict[str, object]:
-    policy = json.loads(
-        _email_cli(
-            workspace,
-            "policy-create",
-            "--recipient",
-            "researcher@example.org",
-            "--attachment",
-            "final_report.md",
-            "--clawemail-root",
-            str(clawemail_root),
-            env=env,
-        ).stdout
-    )
-    _email_cli(
-        workspace,
-        "policy-activate",
-        "--token",
-        str(policy["activation_token"]),
-        env=env,
-    )
-    return policy
 
 
 def _fake_clawemail_skill(tmp_path: Path) -> tuple[Path, dict[str, str]]:
@@ -1008,10 +663,16 @@ for ((i = 0; i < ${#args[@]}; i++)); do
   if [[ "${args[$i]}" == "--body-file" ]]; then
     cp -- "${args[$((i + 1))]}" "$TS_TEST_CLAWEMAIL_BODY"
   fi
+  if [[ "${args[$i]}" == "--attach" ]]; then
+    cp -- "${args[$((i + 1))]}" "$TS_TEST_CLAWEMAIL_ATTACHMENT"
+  fi
 done
 if [[ "${TS_TEST_CLAWEMAIL_FAIL:-0}" == "1" ]]; then
   printf 'simulated provider failure\\n' >&2
   exit 9
+fi
+if [[ -n "${TS_TEST_CLAWEMAIL_SLEEP:-}" ]]; then
+  sleep "$TS_TEST_CLAWEMAIL_SLEEP"
 fi
 printf '{"sent":true}\\n'
 """,
@@ -1022,4 +683,5 @@ printf '{"sent":true}\\n'
         **os.environ,
         "TS_TEST_CLAWEMAIL_LOG": str(tmp_path / "clawemail-args.log"),
         "TS_TEST_CLAWEMAIL_BODY": str(tmp_path / "clawemail-body.txt"),
+        "TS_TEST_CLAWEMAIL_ATTACHMENT": str(tmp_path / "clawemail-attachment.md"),
     }

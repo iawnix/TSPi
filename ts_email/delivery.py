@@ -1,589 +1,496 @@
-"""Private fixed-scope policy and idempotent ClawEmail delivery."""
+"""Installation-configured, idempotent ClawEmail notifications."""
 
 from __future__ import annotations
 
-import hmac
+import fcntl
 import json
 import os
-import secrets
+import shutil
+import stat
 import subprocess
 import tempfile
+import tomllib
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from .artifacts import (
-    TEMPLATE_ID,
-    attachment_names as validate_attachment_names,
-    bounded_content,
-    bounded_text,
-    recipients as validate_recipients,
-    required_digest,
-    resolve_attachments,
-    sha256_json,
-    sha256_path,
-    sha256_text,
-    validate_draft_artifact,
-    workspace_path,
-    workspace_root,
+from ts_workspace import report_workspace
+
+from .artifacts import bounded_content, bounded_text, sha256_json, sha256_path, workspace_path, workspace_root
+
+CONFIG_ENV = "TS_NOTIFICATION_CONFIG"
+CONFIG_SCHEMA = "ts-notification-config/1"
+REQUEST_SCHEMA = "ts-user-notification/1"
+RECEIPT_SCHEMA = "ts-user-notification-receipt/1"
+DELIVERY_DIR_REF = "reports/email/deliveries"
+EVENTS = frozenset(
+    {
+        "progress",
+        "node_completed",
+        "calculation_failed",
+        "calculation_ambiguous",
+        "study_completed",
+    }
 )
 
-POLICY_SCHEMA = "ts-email-delivery-policy/1"
-AUTHORIZATION_SCHEMA = "ts-email-delivery-authorization/1"
-RECEIPT_SCHEMA = "ts-email-delivery-receipt/1"
-POLICY_NAME = "ts-email-delivery-policy.json"
-AUTHORIZATION_NAME = "ts-email-delivery-authorization.json"
-POLICY_REF = f".pi/{POLICY_NAME}"
-AUTHORIZATION_REF = f".pi/{AUTHORIZATION_NAME}"
-DELIVERY_DIR_REF = "reports/email/deliveries"
-DEFAULT_CLAWEMAIL_ROOT = Path.home() / ".pi" / "agent" / "skills" / "clawemail"
-
 
 @dataclass(frozen=True)
-class _PolicyState:
-    root: Path
-    state: str
-    policy: dict[str, Any] | None
-    policy_digest: str | None
-    authorization: dict[str, Any] | None
+class EmailNotificationConfig:
+    source: Path
+    enabled: bool
+    recipient: str
+    clawemail_root: Path
+    digest: str
 
 
-@dataclass(frozen=True)
-class _PolicyResolution:
-    effective: _PolicyState
-    local: _PolicyState
-    scope: str
+class _DeliveryNotStarted(RuntimeError):
+    """The provider process was not started, so no message was sent."""
 
 
-def create_delivery_policy(
-    root: Path,
-    *,
-    recipients: list[str],
-    attachment_names: list[str],
-    clawemail_root: Path,
-) -> dict[str, Any]:
+class _DeliveryAmbiguous(RuntimeError):
+    """The provider process started, so delivery cannot be retried safely."""
+
+
+def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
+    """Send one bounded research notification using installation-owned addressing."""
+
     workspace = workspace_root(root)
-    policy_path = _private_state_path(workspace, POLICY_NAME)
-    authorization_path = _private_state_path(workspace, AUTHORIZATION_NAME)
-    _refuse_existing_private_state(policy_path, authorization_path)
-    fixed_recipients = validate_recipients(recipients)
-    fixed_attachments = validate_attachment_names(attachment_names)
-    skill_root = clawemail_root.expanduser().resolve(strict=True)
-    _validate_clawemail_install(skill_root)
-    token = f"APPROVE-TS-EMAIL-{secrets.token_hex(8).upper()}"
-    policy = {
-        "schema_version": POLICY_SCHEMA,
-        "policy_id": f"email_policy_{secrets.token_hex(12)}",
-        "created_at": _now(),
-        "transport": {
-            "kind": "clawemail",
-            "skill_root": str(skill_root),
-        },
-        "recipients": fixed_recipients,
-        "template_id": TEMPLATE_ID,
-        "attachment_names": fixed_attachments,
-        "activation_token_digest": sha256_text(token),
-    }
-    _write_private_json(policy_path, policy, exclusive=True)
-    return {
-        "operation": "policy_create",
-        "state": "pending_activation",
-        "policy_ref": POLICY_REF,
-        "authorization_ref": AUTHORIZATION_REF,
-        "policy_id": policy["policy_id"],
-        "policy_digest": sha256_json(policy),
-        "recipients": fixed_recipients,
-        "template_id": TEMPLATE_ID,
-        "attachment_names": fixed_attachments,
-        "activation_token": token,
-        "external_side_effects": False,
-    }
-
-
-def activate_delivery_policy(root: Path, token: str) -> dict[str, Any]:
-    workspace = workspace_root(root)
-    policy = _load_private_json(
-        _private_state_path(workspace, POLICY_NAME),
-        POLICY_SCHEMA,
-        "delivery policy",
+    config = load_notification_config()
+    if not config.enabled:
+        raise ValueError("email notifications are disabled by the installation configuration")
+    manager = _validate_clawemail_install(config.clawemail_root)
+    request = _load_request(request_file)
+    event = _event(request.get("event"))
+    subject = bounded_text(request.get("subject"), "notification subject", 300)
+    summary = bounded_content(request.get("summary"), "notification summary", 20_000)
+    attachment_refs, attachment_paths, attachment_records = _resolve_report_refs(
+        workspace,
+        request.get("report_refs", []),
     )
-    expected = required_digest(policy.get("activation_token_digest"), "activation_token_digest")
-    if not hmac.compare_digest(sha256_text(bounded_text(token, "activation token", 128)), expected):
-        raise ValueError("delivery policy activation token does not match")
-    authorization_path = _private_state_path(workspace, AUTHORIZATION_NAME)
-    policy_digest = sha256_json(policy)
-    if authorization_path.exists():
-        existing = _load_private_json(
-            authorization_path,
-            AUTHORIZATION_SCHEMA,
-            "delivery authorization",
-        )
-        if existing.get("policy_id") != policy.get("policy_id") or existing.get("policy_digest") != policy_digest:
-            raise ValueError("existing delivery authorization belongs to a different policy")
-        if existing.get("state") == "active":
-            return _authorization_result("already_active", existing)
-        if existing.get("state") != "disabled":
-            raise ValueError("existing delivery authorization cannot be reactivated")
-    authorization = {
-        "schema_version": AUTHORIZATION_SCHEMA,
-        "state": "active",
-        "policy_id": bounded_text(policy.get("policy_id"), "policy_id", 128),
-        "policy_digest": policy_digest,
-        "activated_at": _now(),
-        "approval_method": "exact_activation_token",
-    }
-    _write_private_json(authorization_path, authorization, exclusive=not authorization_path.exists())
-    return _authorization_result("active", authorization)
-
-
-def disable_delivery_policy(root: Path) -> dict[str, Any]:
-    workspace = workspace_root(root)
-    authorization_path = _private_state_path(workspace, AUTHORIZATION_NAME)
-    authorization = _load_private_json(
-        authorization_path,
-        AUTHORIZATION_SCHEMA,
-        "delivery authorization",
+    workspace_report = report_workspace(workspace)
+    workspace_id = bounded_text(workspace_report.get("workspace_id"), "workspace_id", 128)
+    workspace_revision = bounded_text(
+        workspace_report.get("workspace_revision"),
+        "workspace_revision",
+        128,
     )
-    if authorization.get("state") == "disabled":
-        return _authorization_result("already_disabled", authorization)
-    if authorization.get("state") != "active":
-        raise ValueError("delivery authorization is not active")
-    disabled = {
-        **authorization,
-        "state": "disabled",
-        "disabled_at": _now(),
+    notification = {
+        "schema_version": REQUEST_SCHEMA,
+        "event": event,
+        "subject": subject,
+        "summary": summary,
+        "workspace_id": workspace_id,
+        "workspace_revision": workspace_revision,
+        "report_artifacts": attachment_records,
+        "notification_config_digest": config.digest,
     }
-    _write_private_json(authorization_path, disabled, exclusive=False)
-    return _authorization_result("disabled", disabled)
-
-
-def delivery_policy_status(root: Path) -> dict[str, Any]:
-    workspace = workspace_root(root)
-    resolution = _resolve_delivery_policy(workspace)
-    effective = resolution.effective
-    result = {
-        "operation": "policy_status",
-        "state": effective.state,
-        "policy_ref": POLICY_REF,
-        "authorization_ref": AUTHORIZATION_REF,
-        "policy_scope": resolution.scope,
-        "policy_source_root": str(effective.root),
-        "local_policy_state": resolution.local.state,
-        "external_side_effects": False,
-    }
-    if effective.policy is not None:
-        result.update(
-            {
-                "policy_id": effective.policy.get("policy_id"),
-                "policy_digest": effective.policy_digest,
-                "recipients": effective.policy.get("recipients"),
-                "template_id": effective.policy.get("template_id"),
-                "attachment_names": effective.policy.get("attachment_names"),
-            }
-        )
-    if resolution.local.policy is not None:
-        result["local_policy_id"] = resolution.local.policy.get("policy_id")
-        result["local_policy_digest"] = resolution.local.policy_digest
-    return result
-
-
-def send_draft(root: Path, draft_ref_value: str) -> dict[str, Any]:
-    workspace = workspace_root(root)
-    draft_ref, draft_path = workspace_path(workspace, draft_ref_value, must_exist=True)
-    if draft_path.suffix.lower() != ".json":
-        raise ValueError("draft_ref must select a JSON artifact")
-    draft = json.loads(draft_path.read_text(encoding="utf-8"))
-    validate_draft_artifact(workspace, draft)
-
-    resolution = _resolve_delivery_policy(workspace)
-    if resolution.effective.state != "active":
-        _raise_inactive_policy(resolution)
-    policy = resolution.effective.policy
-    authorization = resolution.effective.authorization
-    policy_digest = resolution.effective.policy_digest
-    if policy is None or authorization is None or policy_digest is None:
-        raise ValueError("active delivery policy resolution is incomplete")
-    _validate_active_authorization(policy, policy_digest, authorization)
-    fixed_recipients = validate_recipients(draft.get("recipients"))
-    if fixed_recipients != validate_recipients(policy.get("recipients")):
-        raise ValueError("draft recipients do not match the active fixed delivery policy")
-    if draft.get("template_id") != policy.get("template_id") or draft.get("template_id") != TEMPLATE_ID:
-        raise ValueError("draft template does not match the active fixed delivery policy")
-
-    fixed_attachments = validate_attachment_names(policy.get("attachment_names"))
-    attachment_refs, attachment_paths = resolve_attachments(workspace, draft, fixed_attachments)
-    manager = _validate_clawemail_install(Path(_transport_skill_root(policy)))
-    draft_digest = sha256_path(draft_path)
-    receipt_ref = f"{DELIVERY_DIR_REF}/{draft_digest.removeprefix('sha256:')}.json"
+    notification_digest = sha256_json(notification)
+    receipt_ref = f"{DELIVERY_DIR_REF}/{notification_digest.removeprefix('sha256:')}.json"
     _, receipt_path = workspace_path(workspace, receipt_ref, must_exist=False, allow_existing=True)
-    if receipt_path.exists():
-        return _existing_delivery_result(receipt_ref, receipt_path, draft_ref, draft_digest)
-
-    guard = {
-        "schema_version": RECEIPT_SCHEMA,
-        "state": "sending",
-        "created_at": _now(),
-        "draft_ref": draft_ref,
-        "draft_digest": draft_digest,
-        "policy_id": policy["policy_id"],
-        "policy_digest": policy_digest,
-        "policy_scope": resolution.scope,
-        "policy_source_root": str(resolution.effective.root),
-        "recipients": fixed_recipients,
-        "template_id": TEMPLATE_ID,
-        "attachment_refs": attachment_refs,
-    }
     receipt_path.parent.mkdir(parents=True, exist_ok=True)
-    _write_private_json(receipt_path, guard, exclusive=True)
+    with _delivery_lock(receipt_path):
+        if receipt_path.stat().st_size:
+            existing = _existing_delivery_result(receipt_ref, receipt_path, notification_digest)
+            if existing is not None:
+                return existing
 
-    try:
-        provider_output = _run_clawemail(
-            manager,
-            recipients=fixed_recipients,
-            subject=bounded_text(draft.get("subject"), "draft subject", 300),
-            body=bounded_content(draft.get("body"), "draft body", 20_000),
-            attachments=attachment_paths,
-        )
-    except (OSError, subprocess.SubprocessError, ValueError) as exc:
-        unknown = {
-            **guard,
-            "state": "unknown",
-            "updated_at": _now(),
-            "error_class": "delivery_ambiguous",
-            "error": _bounded_error(exc),
+        guard = {
+            "schema_version": RECEIPT_SCHEMA,
+            "state": "sending",
+            "created_at": _now(),
+            "event": event,
+            "subject": subject,
+            "workspace_id": workspace_id,
+            "workspace_revision": workspace_revision,
+            "notification_digest": notification_digest,
+            "notification_config_digest": config.digest,
+            "report_artifacts": attachment_records,
         }
-        _write_private_json(receipt_path, unknown, exclusive=False)
-        raise ValueError(
-            f"email delivery result is ambiguous; do not retry automatically; receipt={receipt_ref}"
-        ) from exc
+        _write_private_json(receipt_path, guard, exclusive=False)
 
-    receipt = {
-        **guard,
-        "state": "sent",
-        "sent_at": _now(),
-        "provider_result_digest": sha256_text(provider_output),
+        try:
+            _revalidate_notification_inputs(
+                workspace,
+                config,
+                workspace_revision,
+                attachment_records,
+            )
+            provider_output = _run_clawemail(
+                manager,
+                recipient=config.recipient,
+                subject=subject,
+                body=summary,
+                attachments=list(zip(attachment_paths, attachment_records, strict=True)),
+            )
+        except (OSError, ValueError, _DeliveryNotStarted) as exc:
+            failed = {
+                **guard,
+                "state": "failed",
+                "updated_at": _now(),
+                "error_class": "delivery_not_started",
+                "error": _safe_error(exc),
+            }
+            _write_private_json(receipt_path, failed, exclusive=False)
+            raise ValueError(
+                f"email notification was not started: {_safe_error(exc)}; receipt={receipt_ref}"
+            ) from exc
+        except _DeliveryAmbiguous as exc:
+            unknown = {
+                **guard,
+                "state": "unknown",
+                "updated_at": _now(),
+                "error_class": "delivery_ambiguous",
+                "error": _safe_error(exc),
+            }
+            _write_private_json(receipt_path, unknown, exclusive=False)
+            raise ValueError(
+                f"email notification result is ambiguous; do not retry automatically; receipt={receipt_ref}"
+            ) from exc
+
+        receipt = {
+            **guard,
+            "state": "sent",
+            "sent_at": _now(),
+            "provider_result_digest": sha256_json({"stdout": provider_output}),
+        }
+        _write_private_json(receipt_path, receipt, exclusive=False)
+        return _delivery_result(
+            state="sent",
+            event=event,
+            subject=subject,
+            workspace_id=workspace_id,
+            workspace_revision=workspace_revision,
+            notification_digest=notification_digest,
+            attachment_refs=attachment_refs,
+            receipt_ref=receipt_ref,
+            external_side_effects=True,
+        )
+
+
+def load_notification_config(path: str | Path | None = None) -> EmailNotificationConfig:
+    source = _configured_path(path)
+    try:
+        with source.open("rb") as handle:
+            raw = tomllib.load(handle)
+    except tomllib.TOMLDecodeError as exc:
+        raise ValueError(f"invalid notification configuration: {source}: {exc}") from exc
+    if set(raw) != {"notifications"}:
+        raise ValueError("notification configuration must contain only [notifications]")
+    notifications = _mapping(raw.get("notifications"), "notifications")
+    if set(notifications) != {"email"}:
+        raise ValueError("notification configuration must contain only [notifications.email]")
+    email = _mapping(notifications.get("email"), "notifications.email")
+    expected = {"enabled", "recipient", "clawemail_root"}
+    unknown = sorted(set(email) - expected)
+    missing = sorted(expected - set(email))
+    if unknown or missing:
+        details = []
+        if unknown:
+            details.append(f"unknown fields: {', '.join(unknown)}")
+        if missing:
+            details.append(f"missing fields: {', '.join(missing)}")
+        raise ValueError(f"invalid notifications.email configuration ({'; '.join(details)})")
+    enabled = email.get("enabled")
+    if not isinstance(enabled, bool):
+        raise ValueError("notifications.email.enabled must be true or false")
+    recipient = _email_address(email.get("recipient"))
+    clawemail_raw = bounded_text(email.get("clawemail_root"), "notifications.email.clawemail_root", 4096)
+    clawemail_root = Path(clawemail_raw).expanduser()
+    if not clawemail_root.is_absolute() or clawemail_root.is_symlink():
+        raise ValueError("notifications.email.clawemail_root must be an absolute non-symbolic-link path")
+    try:
+        clawemail_root = clawemail_root.resolve(strict=True)
+    except OSError as exc:
+        raise ValueError("configured ClawEmail installation is unavailable") from exc
+    canonical = {
+        "schema_version": CONFIG_SCHEMA,
+        "email": {
+            "enabled": enabled,
+            "recipient": recipient,
+            "clawemail_root": str(clawemail_root),
+        },
     }
-    _write_private_json(receipt_path, receipt, exclusive=False)
-    return {
-        "operation": "send",
-        "state": "sent",
-        "draft_ref": draft_ref,
-        "draft_digest": draft_digest,
-        "policy_id": policy["policy_id"],
-        "policy_digest": policy_digest,
-        "policy_scope": resolution.scope,
-        "policy_source_root": str(resolution.effective.root),
-        "recipients": fixed_recipients,
-        "template_id": TEMPLATE_ID,
-        "attachment_refs": attachment_refs,
-        "receipt_ref": receipt_ref,
-        "artifact_refs": [draft_ref, receipt_ref],
-        "external_side_effects": True,
-    }
+    return EmailNotificationConfig(source, enabled, recipient, clawemail_root, sha256_json(canonical))
+
+
+def _configured_path(path: str | Path | None) -> Path:
+    raw = str(path) if path is not None else os.environ.get(CONFIG_ENV, "").strip()
+    if not raw:
+        raise ValueError(f"{CONFIG_ENV} is not configured")
+    source = Path(raw).expanduser()
+    if not source.is_absolute():
+        raise ValueError(f"{CONFIG_ENV} must be an absolute path")
+    if source.is_symlink() or not source.is_file():
+        raise ValueError(f"{CONFIG_ENV} is not a regular file: {source}")
+    if source.stat().st_mode & 0o077:
+        raise ValueError(f"{CONFIG_ENV} must have mode 0600: {source}")
+    return source.resolve(strict=True)
+
+
+def _load_request(request_file: Path) -> dict[str, Any]:
+    value = json.loads(request_file.read_text(encoding="utf-8"))
+    if not isinstance(value, dict):
+        raise ValueError("notification request must be an object")
+    allowed = {"schema_version", "event", "subject", "summary", "report_refs"}
+    unknown = sorted(set(value) - allowed)
+    if unknown:
+        raise ValueError(f"notification request contains unknown fields: {', '.join(unknown)}")
+    if value.get("schema_version") != REQUEST_SCHEMA:
+        raise ValueError(f"notification request schema_version must be {REQUEST_SCHEMA}")
+    return value
+
+
+def _resolve_report_refs(
+    workspace: Path,
+    value: Any,
+) -> tuple[list[str], list[Path], list[dict[str, Any]]]:
+    if not isinstance(value, list) or len(value) > 8:
+        raise ValueError("report_refs must be an array with at most 8 entries")
+    refs: list[str] = []
+    paths: list[Path] = []
+    records: list[dict[str, Any]] = []
+    for index, item in enumerate(value):
+        ref, path = workspace_path(workspace, item, must_exist=True)
+        if ref in refs:
+            raise ValueError("report_refs contains duplicates")
+        if not path.is_file() or path.is_symlink():
+            raise ValueError(f"report_refs[{index}] must select a regular file")
+        refs.append(ref)
+        paths.append(path)
+        records.append({"ref": ref, "sha256": sha256_path(path), "size_bytes": path.stat().st_size})
+    return refs, paths, records
 
 
 def _run_clawemail(
     manager: Path,
     *,
-    recipients: list[str],
+    recipient: str,
     subject: str,
     body: str,
-    attachments: list[Path],
+    attachments: list[tuple[Path, dict[str, Any]]],
 ) -> str:
-    with tempfile.TemporaryDirectory(prefix="ts-email-send-") as temp_dir:
-        body_path = Path(temp_dir) / "body.txt"
-        body_path.write_text(body, encoding="utf-8")
-        body_path.chmod(0o600)
-        command = [
-            str(manager),
-            "--json",
-            "send",
-            "--to",
-            ",".join(recipients),
-            "--subject",
-            subject,
-            "--body-file",
-            str(body_path),
-        ]
-        for path in attachments:
-            command.extend(["--attach", str(path)])
-        command.append("--yes")
-        completed = subprocess.run(
-            command,
-            text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            timeout=120,
-            check=False,
-            env={**os.environ, "NO_COLOR": "1"},
-        )
+    try:
+        with tempfile.TemporaryDirectory(prefix="ts-notify-user-") as temp_dir:
+            body_path = Path(temp_dir) / "body.txt"
+            body_path.write_text(body, encoding="utf-8")
+            body_path.chmod(0o600)
+            attachment_dir = Path(temp_dir) / "attachments"
+            attachment_dir.mkdir(mode=0o700)
+            staged_attachments: list[Path] = []
+            for index, (source, record) in enumerate(attachments):
+                staged = attachment_dir / f"{index:02d}-{source.name}"
+                shutil.copyfile(source, staged)
+                staged.chmod(0o600)
+                if sha256_path(staged) != record.get("sha256") or staged.stat().st_size != record.get("size_bytes"):
+                    raise _DeliveryNotStarted("notification attachment changed while staging")
+                staged_attachments.append(staged)
+            command = [
+                str(manager),
+                "--json",
+                "send",
+                "--to",
+                recipient,
+                "--subject",
+                subject,
+                "--body-file",
+                str(body_path),
+            ]
+            for attachment in staged_attachments:
+                command.extend(["--attach", str(attachment)])
+            command.append("--yes")
+            try:
+                completed = subprocess.run(
+                    command,
+                    text=True,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    timeout=120,
+                    check=False,
+                    env={**os.environ, "NO_COLOR": "1"},
+                )
+            except OSError as exc:
+                raise _DeliveryNotStarted(str(exc)) from exc
+            except subprocess.TimeoutExpired as exc:
+                raise _DeliveryAmbiguous("ClawEmail timed out after the provider process started") from exc
+    except _DeliveryNotStarted:
+        raise
+    except _DeliveryAmbiguous:
+        raise
+    except OSError as exc:
+        raise _DeliveryNotStarted(str(exc)) from exc
     if completed.returncode != 0:
-        detail = (completed.stderr or completed.stdout).strip()
-        diagnostic = bounded_text(detail or "no diagnostic", "ClawEmail diagnostic", 2000)
-        raise ValueError(f"ClawEmail send failed with exit {completed.returncode}: {diagnostic}")
+        raise _DeliveryAmbiguous(f"ClawEmail exited with {completed.returncode}")
     return completed.stdout
+
+
+def _revalidate_notification_inputs(
+    workspace: Path,
+    config: EmailNotificationConfig,
+    workspace_revision: str,
+    attachment_records: list[dict[str, Any]],
+) -> None:
+    current_config = load_notification_config(config.source)
+    if current_config.digest != config.digest:
+        raise ValueError("notification configuration changed after preflight")
+    current_report = report_workspace(workspace)
+    if current_report.get("workspace_revision") != workspace_revision:
+        raise ValueError("workspace revision changed after notification preflight")
+    for record in attachment_records:
+        ref, path = workspace_path(workspace, record.get("ref"), must_exist=True)
+        if sha256_path(path) != record.get("sha256") or path.stat().st_size != record.get("size_bytes"):
+            raise ValueError(f"notification report artifact changed after preflight: {ref}")
 
 
 def _existing_delivery_result(
     receipt_ref: str,
     receipt_path: Path,
-    draft_ref: str,
-    draft_digest: str,
-) -> dict[str, Any]:
+    notification_digest: str,
+) -> dict[str, Any] | None:
     receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
     if not isinstance(receipt, dict) or receipt.get("schema_version") != RECEIPT_SCHEMA:
-        raise ValueError("existing email delivery receipt is invalid")
-    if receipt.get("draft_ref") != draft_ref or receipt.get("draft_digest") != draft_digest:
-        raise ValueError("existing email delivery receipt does not match the draft")
+        raise ValueError("existing email notification receipt is invalid")
+    if receipt.get("notification_digest") != notification_digest:
+        raise ValueError("existing email notification receipt does not match the request")
     state = receipt.get("state")
+    if state == "failed" and receipt.get("error_class") == "delivery_not_started":
+        return None
     if state != "sent":
-        raise ValueError(f"email delivery remains {state}; do not retry automatically; receipt={receipt_ref}")
+        raise ValueError(
+            f"email notification remains {state}; do not retry automatically; receipt={receipt_ref}"
+        )
+    return _delivery_result(
+        state="already_sent",
+        event=str(receipt.get("event")),
+        subject=str(receipt.get("subject")),
+        workspace_id=str(receipt.get("workspace_id")),
+        workspace_revision=str(receipt.get("workspace_revision")),
+        notification_digest=notification_digest,
+        attachment_refs=[
+            str(record.get("ref"))
+            for record in receipt.get("report_artifacts", [])
+            if isinstance(record, dict) and isinstance(record.get("ref"), str)
+        ],
+        receipt_ref=receipt_ref,
+        external_side_effects=False,
+    )
+
+
+def _delivery_result(
+    *,
+    state: str,
+    event: str,
+    subject: str,
+    workspace_id: str,
+    workspace_revision: str,
+    notification_digest: str,
+    attachment_refs: list[str],
+    receipt_ref: str,
+    external_side_effects: bool,
+) -> dict[str, Any]:
     return {
         "operation": "send",
-        "state": "already_sent",
-        "draft_ref": draft_ref,
-        "draft_digest": draft_digest,
-        "policy_id": receipt.get("policy_id"),
-        "policy_digest": receipt.get("policy_digest"),
-        "policy_scope": receipt.get("policy_scope", "local"),
-        "policy_source_root": receipt.get("policy_source_root"),
-        "recipients": receipt.get("recipients"),
-        "template_id": receipt.get("template_id"),
-        "attachment_refs": receipt.get("attachment_refs"),
-        "receipt_ref": receipt_ref,
-        "artifact_refs": [draft_ref, receipt_ref],
-        "external_side_effects": False,
-    }
-
-
-def _validate_active_authorization(
-    policy: dict[str, Any],
-    policy_digest: str,
-    authorization: dict[str, Any],
-) -> None:
-    if authorization.get("state") != "active":
-        raise ValueError("fixed delivery policy is not active")
-    if authorization.get("policy_id") != policy.get("policy_id"):
-        raise ValueError("delivery authorization policy_id does not match")
-    if authorization.get("policy_digest") != policy_digest:
-        raise ValueError("delivery policy changed after activation")
-    if authorization.get("approval_method") != "exact_activation_token":
-        raise ValueError("delivery authorization approval method is invalid")
-
-
-def _resolve_delivery_policy(workspace: Path) -> _PolicyResolution:
-    local = _delivery_policy_state(workspace)
-    if local.state not in {"not_configured", "pending_activation"}:
-        return _PolicyResolution(effective=local, local=local, scope="local")
-
-    policy_root = _configured_policy_root()
-    if policy_root is None or policy_root == workspace or not _is_descendant(workspace, policy_root):
-        return _PolicyResolution(effective=local, local=local, scope="local")
-
-    inherited = _delivery_policy_state(policy_root)
-    if inherited.state != "active":
-        return _PolicyResolution(effective=local, local=local, scope="local")
-    if local.policy is not None and not _same_policy_scope(local.policy, inherited.policy):
-        return _PolicyResolution(effective=local, local=local, scope="local")
-    return _PolicyResolution(effective=inherited, local=local, scope="inherited")
-
-
-def _delivery_policy_state(root: Path) -> _PolicyState:
-    policy_path = _private_state_path(root, POLICY_NAME, create_parent=False)
-    authorization_path = _private_state_path(root, AUTHORIZATION_NAME, create_parent=False)
-    policy_present = policy_path.exists() or policy_path.is_symlink()
-    authorization_present = authorization_path.exists() or authorization_path.is_symlink()
-    if not policy_present:
-        authorization = None
-        state = "not_configured"
-        if authorization_present:
-            authorization = _load_private_json(
-                authorization_path,
-                AUTHORIZATION_SCHEMA,
-                "delivery authorization",
-            )
-            state = "policy_mismatch"
-        return _PolicyState(root, state, None, None, authorization)
-
-    policy = _load_private_json(policy_path, POLICY_SCHEMA, "delivery policy")
-    policy_digest = sha256_json(policy)
-    if not authorization_present:
-        return _PolicyState(root, "pending_activation", policy, policy_digest, None)
-
-    authorization = _load_private_json(
-        authorization_path,
-        AUTHORIZATION_SCHEMA,
-        "delivery authorization",
-    )
-    if authorization.get("state") == "disabled":
-        state = "disabled"
-    elif authorization.get("state") != "active":
-        state = "inactive"
-    elif authorization.get("policy_id") != policy.get("policy_id"):
-        state = "policy_mismatch"
-    elif authorization.get("policy_digest") != policy_digest:
-        state = "policy_changed"
-    elif authorization.get("approval_method") != "exact_activation_token":
-        state = "authorization_invalid"
-    else:
-        state = "active"
-    return _PolicyState(root, state, policy, policy_digest, authorization)
-
-
-def _configured_policy_root() -> Path | None:
-    value = os.environ.get("TS_EMAIL_POLICY_ROOT") or os.environ.get("TS_WORKSPACE_ROOT")
-    if not value:
-        return None
-    lexical = Path(os.path.abspath(Path(value).expanduser()))
-    current = Path(lexical.anchor)
-    for part in lexical.parts[1:]:
-        current /= part
-        if current.is_symlink():
-            raise ValueError(f"configured email policy root must not contain symbolic links: {lexical}")
-    resolved = lexical.resolve(strict=True)
-    if not resolved.is_dir():
-        raise ValueError(f"configured email policy root must be a directory: {lexical}")
-    return resolved
-
-
-def _is_descendant(workspace: Path, policy_root: Path) -> bool:
-    try:
-        workspace.relative_to(policy_root)
-    except ValueError:
-        return False
-    return workspace != policy_root
-
-
-def _same_policy_scope(local: dict[str, Any], inherited: dict[str, Any] | None) -> bool:
-    if inherited is None:
-        return False
-    return _policy_scope(local) == _policy_scope(inherited)
-
-
-def _policy_scope(policy: dict[str, Any]) -> tuple[Any, ...]:
-    skill_root = Path(_transport_skill_root(policy)).expanduser().resolve(strict=True)
-    template_id = bounded_text(policy.get("template_id"), "delivery policy template_id", 128)
-    return (
-        "clawemail",
-        str(skill_root),
-        tuple(validate_recipients(policy.get("recipients"))),
-        template_id,
-        tuple(validate_attachment_names(policy.get("attachment_names"))),
-    )
-
-
-def _raise_inactive_policy(resolution: _PolicyResolution) -> None:
-    local = resolution.local
-    if local.policy is None:
-        _load_private_json(
-            _private_state_path(local.root, POLICY_NAME, create_parent=False),
-            POLICY_SCHEMA,
-            "delivery policy",
-        )
-    if local.authorization is None:
-        _load_private_json(
-            _private_state_path(local.root, AUTHORIZATION_NAME, create_parent=False),
-            AUTHORIZATION_SCHEMA,
-            "delivery authorization",
-        )
-    if local.policy_digest is None:
-        raise ValueError("delivery policy digest is unavailable")
-    _validate_active_authorization(local.policy, local.policy_digest, local.authorization)
-    raise ValueError("fixed delivery policy is not active")
-
-
-def _authorization_result(state: str, authorization: dict[str, Any]) -> dict[str, Any]:
-    return {
-        "operation": "policy_authorization",
         "state": state,
-        "policy_ref": POLICY_REF,
-        "authorization_ref": AUTHORIZATION_REF,
-        "policy_id": authorization["policy_id"],
-        "policy_digest": authorization["policy_digest"],
-        "external_side_effects": False,
+        "event": event,
+        "subject": subject,
+        "workspace_id": workspace_id,
+        "workspace_revision": workspace_revision,
+        "notification_digest": notification_digest,
+        "attachment_refs": attachment_refs,
+        "receipt_ref": receipt_ref,
+        "artifact_refs": [*attachment_refs, receipt_ref],
+        "external_side_effects": external_side_effects,
     }
-
-
-def _transport_skill_root(policy: dict[str, Any]) -> str:
-    transport = policy.get("transport")
-    if not isinstance(transport, dict) or set(transport) != {"kind", "skill_root"}:
-        raise ValueError("delivery policy transport must contain kind and skill_root")
-    if transport.get("kind") != "clawemail":
-        raise ValueError("delivery policy transport must be clawemail")
-    return bounded_text(transport.get("skill_root"), "ClawEmail skill_root", 4096)
 
 
 def _validate_clawemail_install(skill_root: Path) -> Path:
-    resolved = skill_root.expanduser().resolve(strict=True)
-    if not resolved.is_dir():
-        raise ValueError("ClawEmail skill_root must be a directory")
-    skill_file = resolved / "SKILL.md"
-    manager = resolved / "bin" / "clawemail-manager"
-    state_dir = resolved / ".clawemail"
-    settings = state_dir / "skill.json"
-    auth = state_dir / "mail-cli.json"
-    if not skill_file.is_file() or "name: clawemail" not in skill_file.read_text(encoding="utf-8")[:2048]:
-        raise ValueError("configured ClawEmail skill_root is not a clawemail skill")
-    if not manager.is_file() or manager.is_symlink() or not os.access(manager, os.X_OK):
-        raise ValueError("configured ClawEmail manager is missing or unsafe")
-    if state_dir.is_symlink():
-        raise ValueError("ClawEmail private state directory must not be a symbolic link")
-    for path, label in ((settings, "settings"), (auth, "authentication")):
-        if not path.is_file() or path.is_symlink():
-            raise ValueError(f"ClawEmail {label} file is missing or unsafe")
-        if path.stat().st_mode & 0o077:
-            raise ValueError(f"ClawEmail {label} file must have mode 0600")
+    try:
+        resolved = skill_root.expanduser().resolve(strict=True)
+        if not resolved.is_dir():
+            raise ValueError("configured ClawEmail installation is not a directory")
+        skill_file = resolved / "SKILL.md"
+        manager = resolved / "bin" / "clawemail-manager"
+        state_dir = resolved / ".clawemail"
+        settings = state_dir / "skill.json"
+        auth = state_dir / "mail-cli.json"
+        if not skill_file.is_file() or "name: clawemail" not in skill_file.read_text(encoding="utf-8")[:2048]:
+            raise ValueError("configured ClawEmail installation is invalid")
+        if not manager.is_file() or manager.is_symlink() or not os.access(manager, os.X_OK):
+            raise ValueError("configured ClawEmail manager is missing or unsafe")
+        if state_dir.is_symlink():
+            raise ValueError("ClawEmail private state directory must not be a symbolic link")
+        for path, label in ((settings, "settings"), (auth, "authentication")):
+            if not path.is_file() or path.is_symlink():
+                raise ValueError(f"ClawEmail {label} file is missing or unsafe")
+            if path.stat().st_mode & 0o077:
+                raise ValueError(f"ClawEmail {label} file must have mode 0600")
+    except OSError as exc:
+        raise ValueError("configured ClawEmail installation is unavailable") from exc
     return manager
 
 
-def _private_state_path(workspace: Path, name: str, *, create_parent: bool = True) -> Path:
-    state_dir = workspace / ".pi"
-    if state_dir.is_symlink():
-        raise ValueError("workspace .pi directory must not be a symbolic link")
-    if create_parent:
-        state_dir.mkdir(parents=True, exist_ok=True)
-    return state_dir / name
-
-
-def _refuse_existing_private_state(*paths: Path) -> None:
-    existing = [str(path) for path in paths if path.exists()]
-    if existing:
-        raise ValueError(f"email delivery policy state already exists: {', '.join(existing)}")
-
-
-def _load_private_json(path: Path, schema: str, label: str) -> dict[str, Any]:
-    if not path.is_file() or path.is_symlink():
-        raise ValueError(f"{label} is missing or unsafe: {path}")
-    if path.stat().st_mode & 0o077:
-        raise ValueError(f"{label} must have mode 0600: {path}")
-    value = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict) or value.get("schema_version") != schema:
-        raise ValueError(f"{label} must use {schema}")
+def _mapping(value: Any, label: str) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be a TOML table")
     return value
 
 
-def _write_private_json(path: Path, value: dict[str, Any], *, exclusive: bool) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if path.parent.is_symlink() or path.is_symlink():
-        raise ValueError(f"private email state path is unsafe: {path}")
-    flags = os.O_WRONLY | os.O_CREAT | (os.O_EXCL if exclusive else os.O_TRUNC)
-    flags |= getattr(os, "O_NOFOLLOW", 0)
+def _email_address(value: Any) -> str:
+    address = bounded_text(value, "notifications.email.recipient", 320)
+    if address.count("@") != 1 or any(character.isspace() for character in address):
+        raise ValueError("notifications.email.recipient must be one email address")
+    local, domain = address.split("@")
+    if not local or "." not in domain or domain.startswith(".") or domain.endswith("."):
+        raise ValueError("notifications.email.recipient must be one email address")
+    return address
+
+
+def _event(value: Any) -> str:
+    event = bounded_text(value, "notification event", 64)
+    if event not in EVENTS:
+        raise ValueError(f"unsupported notification event: {event}")
+    return event
+
+
+@contextmanager
+def _delivery_lock(path: Path):
+    flags = os.O_RDWR | os.O_CREAT
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
     descriptor = os.open(path, flags, 0o600)
     try:
-        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
-            json.dump(value, handle, indent=2, sort_keys=True)
-            handle.write("\n")
-    except Exception:
-        if exclusive:
-            path.unlink(missing_ok=True)
-        raise
+        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
+            raise ValueError("email notification receipt must be a regular file")
+        os.fchmod(descriptor, 0o600)
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
 
 
-def _bounded_error(error: Exception) -> str:
-    text = str(error).replace("\x00", "").strip()
-    return text[:2000] or type(error).__name__
+def _write_private_json(path: Path, value: dict[str, Any], *, exclusive: bool) -> None:
+    payload = (json.dumps(value, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    flags = os.O_WRONLY | os.O_CREAT | (os.O_EXCL if exclusive else os.O_TRUNC)
+    descriptor = os.open(path, flags, 0o600)
+    try:
+        view = memoryview(payload)
+        while view:
+            view = view[os.write(descriptor, view):]
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    os.chmod(path, 0o600)
+
+
+def _safe_error(exc: BaseException) -> str:
+    if isinstance(exc, _DeliveryAmbiguous):
+        return "ClawEmail provider result was not confirmed"
+    if isinstance(exc, _DeliveryNotStarted):
+        return "ClawEmail provider process did not start"
+    return bounded_text(str(exc) or exc.__class__.__name__, "delivery error", 2000)
 
 
 def _now() -> str:
-    return datetime.now(UTC).isoformat().replace("+00:00", "Z")
+    return datetime.now(UTC).astimezone().isoformat(timespec="seconds")

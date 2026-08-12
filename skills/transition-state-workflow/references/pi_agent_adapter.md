@@ -153,28 +153,24 @@ Long-running jobs are external processes, not persistent LLM sessions. Invoke
   inputs and one new output path.
 - `ts_subagent_report`: one validated report package under
   `reports/`.
-- `ts_subagent_email_draft`: one local draft JSON from a generated report
-  summary and explicit recipients.
-- `ts_email_send`: deterministic delivery of one fixed-template draft through
-  an already activated workspace-private policy; no child session is created.
 
-Each creates a fresh session with exactly one private artifact skill and one
+Each creates a fresh session with exactly one private artifact policy and one
 typed tool. Request paths reject traversal, symlinks, and overwrite. Output
 validators bind artifacts and role payloads to the actual typed action.
 
 Report packages are published atomically with a `ts-report-package/1`
 `package_manifest.json`. The manifest binds the source scientific revision and
-all package files by SHA-256. Email draft preflight and execution both verify
-the manifest and selected summary digest.
+all package files by SHA-256.
 
-The draft subagent has no network, sender, mailbox, credential,
-address-discovery, or send capability. The separate deterministic
-`ts_email_send` boundary enforces the fixed policy and idempotent delivery
-receipt described in `references/artifact_operators.md`.
+`ts_notify_user` is a separate deterministic Root Agent tool. It accepts a
+research event, subject, summary, and optional `reports/` refs, while recipient
+and ClawEmail configuration remain installation-owned. It creates no child
+session and uses digest-addressed delivery receipts as described in
+`references/artifact_operators.md`.
 
 ## Communication Protocol
 
-All review, backend, render, report, and email-draft delegation uses:
+All review, backend, render, and report delegation uses:
 
 - `ts-agent-task/1`
 - `ts-agent-result/1`

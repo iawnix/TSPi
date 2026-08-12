@@ -6,7 +6,7 @@
   "properties": {
     "schema_version": {"const": "ts-agent-task/1"},
     "task_id": {"type": "string", "minLength": 1, "maxLength": 128},
-    "role": {"enum": ["review", "backend", "render", "report", "email"]},
+    "role": {"enum": ["review", "backend", "render", "report"]},
     "authority": {"enum": ["advisory", "operational"]},
     "operation": {"type": "string", "minLength": 1, "maxLength": 128},
     "objective": {"type": "string", "minLength": 1, "maxLength": 4000},
@@ -39,7 +39,7 @@
   },
   "allOf": [
     {"if": {"properties": {"role": {"const": "review"}}}, "then": {"properties": {"authority": {"const": "advisory"}}}},
-    {"if": {"properties": {"role": {"enum": ["backend", "render", "report", "email"]}}}, "then": {"properties": {"authority": {"const": "operational"}}}}
+    {"if": {"properties": {"role": {"enum": ["backend", "render", "report"]}}}, "then": {"properties": {"authority": {"const": "operational"}}}}
   ],
   "additionalProperties": false,
   "$defs": {

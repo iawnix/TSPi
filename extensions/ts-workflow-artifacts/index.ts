@@ -6,8 +6,7 @@ import { createRequire } from "node:module";
 import { resolve } from "node:path";
 import {
   requireWorkspaceRoot,
-  runEmailDraftJson,
-  runEmailSendJson,
+  runNotifyUserJson,
   runRenderJson,
   runReportJson,
   runWorkspaceJson,
@@ -27,13 +26,12 @@ const { beginAgentRun, completeAgentRun, failAgentRun } = require("../../src/age
 const { classifyUpstreamModelFailure } = require("../../src/agent-core/failure-taxonomy.cjs");
 const {
   RENDER_OPERATIONS,
-  validateEmailRequest,
   validateRenderRequest,
   validateReportRequest,
   validateTaskNodeScope,
 } = require("../../src/agents/artifacts/request-contract.cjs");
 
-type ArtifactRole = "render" | "report" | "email";
+type ArtifactRole = "render" | "report";
 type ActionLog = { tool: string; result: Record<string, unknown> }[];
 type RenderRequest = {
   operation: "render" | "compare" | "animate" | "mechanism";
@@ -44,20 +42,13 @@ type RenderRequest = {
   outputPath: string;
 };
 type ReportRequest = { operation: "build"; packageRef: string; packagePath: string };
-type EmailRequest = {
-  operation: "draft";
-  summaryRef: string;
-  summaryPath: string;
-  contextRef: string;
-  manifestRef: string;
-  manifestDigest: string;
-  summaryDigest: string;
-  contextDigest: string;
-  workspaceRevision: string;
-  draftRef: string;
-  draftPath: string;
-  recipients: string[];
-};
+const NOTIFICATION_EVENTS = [
+  "progress",
+  "node_completed",
+  "calculation_failed",
+  "calculation_ambiguous",
+  "study_completed",
+] as const;
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.subagentRender,
@@ -162,85 +153,36 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: TS_PUBLIC_TOOL_NAMES.subagentEmailDraft,
-    label: "TS Email Draft Subagent",
-    description: "Run one fresh email subagent that writes a deterministic local draft from a generated report summary.",
-    promptSnippet: "Draft an email from a generated TS report summary",
+    name: TS_PUBLIC_TOOL_NAMES.notifyUser,
+    label: "TS Notify User",
+    description: "Send one research progress notification to the installation-configured TSPi user.",
+    promptSnippet: "Notify the TSPi user about a material research event",
     promptGuidelines: [
-      "Use only explicit recipients and a generated report email_summary.md.",
-      "This subagent is draft-only. The deterministic writer owns the fixed subject/body template.",
-    ],
-    executionMode: "sequential",
-    parameters: Type.Object({
-      operation: Type.Literal("draft"),
-      summaryRef: Type.String({ minLength: 1, maxLength: 4096 }),
-      draftRef: Type.String({ minLength: 1, maxLength: 4096, description: "New workspace-relative JSON artifact under reports/." }),
-      recipients: Type.Array(Type.String({ minLength: 3, maxLength: 320 }), { minItems: 1, maxItems: 20 }),
-      root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
-    }),
-    async execute(toolCallId, params, signal, onUpdate, ctx) {
-      const taskId = `agent_${randomUUID()}`;
-      const reportStatus = createSubagentStatusReporter({
-        tool_call_id: toolCallId,
-        task_id: taskId,
-        role: "email",
-        operation: "draft",
-        target_ref: params.summaryRef.replace(/\/email_summary\.md$/, ""),
-      }, onUpdate);
-      reportStatus("queued");
-      const root = requireWorkspaceRoot(params.root, ctx.cwd);
-      const request = validateEmailRequest(root, {
-        operation: params.operation,
-        summaryRef: params.summaryRef,
-        draftRef: params.draftRef,
-        recipients: params.recipients,
-      }) as EmailRequest;
-      const actions: ActionLog = [];
-      const tools = [createEmailDraftTool(pi, root, request, actions)];
-      const packet = await buildPacket(
-        pi,
-        root,
-        "email",
-        "draft",
-        "Draft a concise email from the pre-bound generated report summary and explicit recipients.",
-        [],
-        {
-          summary_ref: request.summaryRef,
-          summary_digest: request.summaryDigest,
-          context_digest: request.contextDigest,
-          manifest_ref: request.manifestRef,
-          manifest_digest: request.manifestDigest,
-          source_workspace_revision: request.workspaceRevision,
-          draft_ref: request.draftRef,
-          recipients: request.recipients,
-          basis_allowlist: [request.summaryRef, request.contextRef, request.manifestRef],
-        },
-        tools,
-        taskId,
-        signal,
-      );
-      return executeChild(pi, ctx, root, "email", packet, tools, actions, 180_000, reportStatus, signal);
-    },
-  });
-
-  pi.registerTool({
-    name: TS_PUBLIC_TOOL_NAMES.emailSend,
-    label: "TS Email Send",
-    description: "Send one deterministic report draft only when it exactly matches an active fixed delivery policy.",
-    promptSnippet: "Deliver a fixed-policy TS report email",
-    promptGuidelines: [
-      "Call only for an existing ts-email-draft/1 artifact generated from a validated report package.",
-      "The deterministic sender enforces the pre-activated recipients, template, attachments, and idempotency receipt.",
+      "Use for material progress, node completion, calculation failure or ambiguity, and final study completion.",
+      "Supply only the event, subject, research summary, and optional report files; installation configuration owns addressing and credentials.",
+      "A notification failure never changes scientific or workspace state. Do not retry an ambiguous delivery automatically.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
       operation: Type.Literal("send"),
-      draftRef: Type.String({ minLength: 1, maxLength: 4096 }),
+      event: StringEnum(NOTIFICATION_EVENTS),
+      subject: Type.String({ minLength: 1, maxLength: 300 }),
+      summary: Type.String({ minLength: 1, maxLength: 20_000 }),
+      reportRefs: Type.Optional(Type.Array(
+        Type.String({ minLength: 1, maxLength: 4096 }),
+        { maxItems: 8, uniqueItems: true, description: "Existing workspace-relative regular files under reports/." },
+      )),
       root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
-      const result = await runEmailSendJson(pi, root, params.draftRef, signal);
+      const result = await runNotifyUserJson(pi, root, {
+        schema_version: "ts-user-notification/1",
+        event: params.event,
+        subject: params.subject,
+        summary: params.summary,
+        report_refs: params.reportRefs || [],
+      }, signal);
       return toolText(JSON.stringify(result, null, 2), { result });
     },
   });
@@ -343,52 +285,6 @@ function createReportTool(
       };
     },
   );
-}
-
-function createEmailDraftTool(
-  pi: ExtensionAPI,
-  root: string,
-  request: EmailRequest,
-  actions: ActionLog,
-): ToolDefinition {
-  const tool: ToolDefinition = {
-    name: "ts_workspace_email_draft_write",
-    label: "TS Email Draft Write",
-    description: "Write one fixed-template local draft JSON for the pre-bound report summary and recipients.",
-    executionMode: "sequential",
-    parameters: Type.Object({}, { additionalProperties: false }),
-    async execute(_toolCallId, _params, signal) {
-      const action = reserveAction(actions, tool.name, {
-        operation: "draft",
-        state: "started",
-        summary_ref: request.summaryRef,
-        summary_digest: request.summaryDigest,
-        manifest_ref: request.manifestRef,
-        manifest_digest: request.manifestDigest,
-        source_workspace_revision: request.workspaceRevision,
-        draft_ref: request.draftRef,
-        recipients: request.recipients,
-        artifact_refs: [request.draftRef],
-      });
-      const raw = await runEmailDraftJson(pi, root, {
-        schema_version: "ts-email-draft/1",
-        summary_ref: request.summaryRef,
-        summary_digest: request.summaryDigest,
-        manifest_ref: request.manifestRef,
-        manifest_digest: request.manifestDigest,
-        source_workspace_revision: request.workspaceRevision,
-        draft_ref: request.draftRef,
-        recipients: request.recipients,
-      }, signal);
-      if (!raw || typeof raw !== "object" || raw.external_side_effects !== false) {
-        throw new Error("email draft tool returned an invalid result");
-      }
-      const result = raw as Record<string, unknown>;
-      action.result = result;
-      return toolText(JSON.stringify(result, null, 2), { result });
-    },
-  };
-  return tool;
 }
 
 function noArgumentTool(

@@ -24,7 +24,7 @@ workspaces are rejected and must be recreated under the current ontology.
   bounded task packets and review-specific result validation.
 - `src/agents/compute/`: fresh backend sessions, compute-specific result
   binding, and private backend skills.
-- `src/agents/artifacts/`: fresh render, report, and email-draft sessions,
+- `src/agents/artifacts/`: fresh render and report sessions,
   request contracts, and private artifact skills.
 - `ts_workspace`: the only canonical research-state control plane.
 - `ts_compute` and `ts_backends`: typed calculation intents, preparation,
@@ -34,8 +34,8 @@ workspaces are rejected and must be recreated under the current ontology.
   durable control records, and read-only diagnostics without scientific authority.
 - `ts_render`: local molecular rendering through `xyzrender` only.
 - `ts_report`: report-package assembly from validated workspace evidence.
-- `ts_email`: deterministic fixed-template drafts, private delivery policy,
-  ClawEmail boundary, and idempotent send receipts.
+- `ts_email`: installation-configured ClawEmail notifications with bounded
+  workspace report attachments and idempotent send receipts.
 - `ts_web`: read-only workspace normalization and visualization.
 
 The Root Agent is the sole authority for hypothesis status, branch selection,
@@ -133,7 +133,7 @@ after formal initialization, `nodes/`, `inputs/`, and `reports/`. A nonblocking
 writer lock permits only one Root Agent in one workspace; different workspace
 names can run concurrently.
 
-The package checkout, remote profile, email policy, shared Python environment,
+The package checkout, remote profile, notification config, shared Python environment,
 and runtime manifest remain installation-owned. Remote configuration lives at
 `<installation>/.pi/remote.toml` or the absolute path in `TS_REMOTE_CONFIG`.
 Ordinary `./TSPi --workspace <name>` startup does not contact the cluster, so a
@@ -159,8 +159,8 @@ Public tool prefixes describe execution rather than subject matter:
 - `ts_subagent_*` creates one fresh, isolated child model session.
 - `ts_remote_*` runs deterministic SSH/Torque diagnostics without a child
   model session.
-- `ts_email_*` performs deterministic external delivery subject to a private,
-  pre-activated fixed-scope policy; it never delegates sending to a child.
+- `ts_notify_user` performs deterministic external delivery using
+  installation-owned addressing; it never delegates sending to a child.
 
 The package-owned UI extension installs a MyPi-compatible animated TSPi header,
 mode-aware rounded editor, session footer, working state, and terminal title
@@ -202,47 +202,28 @@ Pi also exposes:
 - `ts_subagent_render`: node-scoped local render with bound paths.
 - `ts_subagent_report`: validated report-package build under
   `reports/`.
-- `ts_subagent_email_draft`: local draft JSON from a generated report
-  summary and explicit recipients. Its subject and body come directly from the
-  deterministic `email_summary.md` template.
-- `ts_email_send`: sends one existing draft only when recipients, template,
-  report-manifest digests, and fixed attachments match the active private
-  delivery policy. Sent or ambiguous receipts prevent duplicate retries.
+- `ts_notify_user`: deterministic research notification to the
+  installation-configured TSPi user. The Root Agent supplies only the event,
+  subject, summary, and optional existing files under `reports/`.
 
-The delivery policy is installation-private state, not package source. `TSPi`
-sets `TS_EMAIL_POLICY_ROOT` to its installation root; other launchers fall back
-to `TS_WORKSPACE_ROOT`. Create the fixed policy once at that root, inspect the
-exact returned scope, and activate it with the returned exact token:
+Notification configuration is installation-private state, not package source.
+Create `<installation>/.pi/notifications.toml` with mode `0600`:
 
-```bash
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_email.py" policy-create \
-  --root "$TS_EMAIL_POLICY_ROOT" \
-  --recipient researcher@example.org \
-  --attachment final_report.md \
-  --clawemail-root /home/iaw/.pi/agent/skills/clawemail \
-  --json
-
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_email.py" policy-activate \
-  --root "$TS_EMAIL_POLICY_ROOT" \
-  --token 'EXACT_TOKEN_FROM_POLICY_CREATE' \
-  --json
+```toml
+[notifications.email]
+enabled = true
+recipient = "researcher@example.org"
+clawemail_root = "/home/iaw/.pi/agent/skills/clawemail"
 ```
 
-The mode-0600 policy and authorization files live under
-`<installation>/.pi/`. They contain no mailbox credentials. A real descendant
-research workspace inherits the active installation policy when it has no
-local policy, or when its pending local policy has exactly the same transport,
-recipients, template, and attachment names. A local active, disabled, changed,
-or differently scoped policy remains authoritative. Delivery receipts always
-stay in the research workspace. `policy-status` reports `policy_scope`,
-`policy_source_root`, and `local_policy_state` so inheritance is explicit.
-
-Changing any policy field invalidates its activation. ClawEmail authentication
-remains owned by the installed ClawEmail skill. Use
-`policy-disable --root "$TS_EMAIL_POLICY_ROOT" --json` to revoke installation
-delivery without deleting policy history; the same exact token is required to
-reactivate it. Policy create, activate, and disable commands always modify only
-the explicit `--root`.
+`TSPi` exports that file as `TS_NOTIFICATION_CONFIG`; another launcher may set
+the same variable to an absolute, non-symlink mode-0600 file. This configuration
+is the persistent authorization to notify its one recipient, so no per-message
+approval, activation token, recipient input, or recipient allowlist exists.
+ClawEmail credentials remain private to its installed skill. A digest-addressed
+guard is written to `reports/email/deliveries/` before network activity. Sent
+notifications are idempotent; ambiguous delivery is never retried
+automatically. Notification failure does not mutate or block scientific state.
 
 Users can run the same remote diagnostics with
 `/ts-remote status|doctor|queues|nodes`. The command and Agent tool are on demand; they
@@ -391,7 +372,7 @@ All isolated roles communicate through:
 - `contracts/agent_task.schema.json` (`ts-agent-task/1`)
 - `contracts/agent_result.schema.json` (`ts-agent-result/1`)
 
-Roles are `review`, `backend`, `render`, `report`, and `email`. Results cannot
+Roles are `review`, `backend`, `render`, and `report`. Results cannot
 contain authoritative hypothesis, branch, acceptance, or strict pathway
 decision fields. Compute and artifact agents each compose one shared operator
 policy with one selected backend or role policy under their owning `src/agents/`
@@ -414,8 +395,8 @@ python "$TS_AGENT_SKILL_ROOT/scripts/ts_report.py" \
 
 Package creation is no-overwrite and atomic. `package_manifest.json` uses
 `ts-report-package/1` and binds the source `workspace_revision`, report,
-context, email summary, and assets by SHA-256. Email drafting rejects a changed
-manifest or summary.
+context, email summary, and assets by SHA-256. The email summary remains a
+report artifact and is not a required notification draft.
 
 Use `skills/transition-state-workflow/assets/templates/ts_final_report.md`.
 Keep electronic, E+ZPE, and available free energy values distinct; report
@@ -432,7 +413,7 @@ npm run test:package
 ```
 
 The Pi integration suite runs the real Pi executable with a local recording
-provider. It verifies the eleven-tool Root Agent inventory, a tool-free review
+provider. It verifies the ten-tool Root Agent inventory, a tool-free review
 child, a compute child with exactly one request-bound tool, and an artifact
 child with exactly one request-bound tool. Before release, also test one clean,
 branch- or tag-pinned GitHub installation from a network that can reach GitHub.

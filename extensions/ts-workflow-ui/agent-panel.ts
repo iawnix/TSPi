@@ -22,7 +22,6 @@ const SUBAGENT_TOOLS = new Set<string>([
   TS_PUBLIC_TOOL_NAMES.subagentCompute,
   TS_PUBLIC_TOOL_NAMES.subagentRender,
   TS_PUBLIC_TOOL_NAMES.subagentReport,
-  TS_PUBLIC_TOOL_NAMES.subagentEmailDraft,
 ]);
 
 export type TsAgentPanelTone = "muted" | "accent" | "warning" | "success" | "error";
@@ -176,7 +175,6 @@ export function roleLabel(role: TsSubagentRole): string {
     backend: "Compute",
     render: "Render",
     report: "Report",
-    email: "Email draft",
   }[role];
 }
 
@@ -204,7 +202,6 @@ export function detailLabel(status: TsSubagentStatus): string {
   if (status.role === "backend") {
     return compact([backendLabel(status.backend), status.operation, status.intent_id]);
   }
-  if (status.role === "email") return compact(["Email draft", status.target_ref]);
   return compact([status.operation, status.target_ref]);
 }
 
@@ -298,20 +295,17 @@ function roleForTool(toolName: string): TsSubagentRole {
   if (toolName === TS_PUBLIC_TOOL_NAMES.subagentCompute) return "backend";
   if (toolName === TS_PUBLIC_TOOL_NAMES.subagentRender) return "render";
   if (toolName === TS_PUBLIC_TOOL_NAMES.subagentReport) return "report";
-  if (toolName === TS_PUBLIC_TOOL_NAMES.subagentEmailDraft) return "email";
   return "review";
 }
 
 function defaultOperation(role: TsSubagentRole): string {
   if (role === "report") return "build";
-  if (role === "email") return "draft";
   return role;
 }
 
 function targetRef(role: TsSubagentRole, args: Record<string, unknown>): string | undefined {
   if (role === "render") return stringValue(args.outputRef);
   if (role === "report") return stringValue(args.packageRef);
-  if (role === "email") return stringValue(args.summaryRef)?.replace(/\/email_summary\.md$/, "");
   return undefined;
 }
 

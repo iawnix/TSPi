@@ -67,8 +67,7 @@ def test_public_tool_catalog_separates_workspace_subagent_and_remote_execution()
         "subagentCompute": "ts_subagent_compute",
         "subagentRender": "ts_subagent_render",
         "subagentReport": "ts_subagent_report",
-        "subagentEmailDraft": "ts_subagent_email_draft",
-        "emailSend": "ts_email_send",
+        "notifyUser": "ts_notify_user",
     }
     for key, name in expected.items():
         assert f'{key}: "{name}"' in catalog
@@ -76,9 +75,9 @@ def test_public_tool_catalog_separates_workspace_subagent_and_remote_execution()
     for key in ("workspaceContext", "workspaceDecisionDraft", "workspaceDecisionValidate", "workspaceDecisionApply"):
         assert f'[TS_PUBLIC_TOOL_NAMES.{key}]: "deterministic_workspace"' in catalog
     assert '[TS_PUBLIC_TOOL_NAMES.remoteInspect]: "deterministic_infrastructure"' in catalog
-    for key in ("subagentReview", "subagentCompute", "subagentRender", "subagentReport", "subagentEmailDraft"):
+    for key in ("subagentReview", "subagentCompute", "subagentRender", "subagentReport"):
         assert f'[TS_PUBLIC_TOOL_NAMES.{key}]: "child_agent"' in catalog
-    assert '[TS_PUBLIC_TOOL_NAMES.emailSend]: "deterministic_external"' in catalog
+    assert '[TS_PUBLIC_TOOL_NAMES.notifyUser]: "deterministic_external"' in catalog
 
     for legacy in (
         "ts_workspace_decide",

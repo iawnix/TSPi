@@ -1,8 +1,7 @@
 "use strict";
 
-const { existsSync, lstatSync, readFileSync, realpathSync, statSync } = require("node:fs");
-const { createHash } = require("node:crypto");
-const { dirname, extname, isAbsolute, relative, resolve, sep } = require("node:path");
+const { existsSync, lstatSync, realpathSync, statSync } = require("node:fs");
+const { extname, isAbsolute, relative, resolve, sep } = require("node:path");
 
 const RENDER_OPERATIONS = Object.freeze(["render", "compare", "animate", "mechanism"]);
 const RENDER_EXTENSIONS = Object.freeze({
@@ -52,98 +51,6 @@ function validateReportRequest(root, value) {
     packageRef,
     packagePath: resolve(workspaceRoot, packageRef),
   };
-}
-
-function validateEmailRequest(root, value) {
-  const workspaceRoot = requireWorkspaceRoot(root);
-  if (!isPlainObject(value)) throw new Error("email request must be an object");
-  rejectUnknownKeys(value, ["operation", "summaryRef", "draftRef", "recipients"], "email request");
-  if (value.operation !== "draft") throw new Error("email operation must be draft; sending is unavailable");
-  const summaryRef = validateExistingRef(workspaceRoot, value.summaryRef, ["reports/"]);
-  if (!summaryRef.endsWith("/email_summary.md")) {
-    throw new Error("email summaryRef must select a generated email_summary.md");
-  }
-  const contextRef = `${dirname(summaryRef).replaceAll("\\", "/")}/report_context.json`;
-  validateExistingRef(workspaceRoot, contextRef, ["reports/"]);
-  const packageBinding = validateReportPackage(workspaceRoot, summaryRef, contextRef);
-  const draftRef = validateNewRef(workspaceRoot, value.draftRef, ["reports/"]);
-  if (extname(draftRef).toLowerCase() !== ".json") throw new Error("email draftRef must end in .json");
-  const recipients = uniqueStringArray(value.recipients, "recipients", 20, 320);
-  if (!recipients.length) throw new Error("email draft requires at least one explicit recipient");
-  for (const recipient of recipients) {
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
-      throw new Error(`invalid explicit email recipient: ${recipient}`);
-    }
-  }
-  return {
-    operation: "draft",
-    summaryRef,
-    summaryPath: resolve(workspaceRoot, summaryRef),
-    contextRef,
-    ...packageBinding,
-    draftRef,
-    draftPath: resolve(workspaceRoot, draftRef),
-    recipients,
-  };
-}
-
-function validateReportPackage(workspaceRoot, summaryRef, contextRef) {
-  const packageRef = dirname(summaryRef).replaceAll("\\", "/");
-  const manifestRef = validateExistingRef(
-    workspaceRoot,
-    `${packageRef}/package_manifest.json`,
-    ["reports/"],
-  );
-  const manifestPath = resolve(workspaceRoot, manifestRef);
-  let manifest;
-  try {
-    manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-  } catch (error) {
-    throw new Error(`invalid report package manifest: ${error instanceof Error ? error.message : String(error)}`);
-  }
-  if (!isPlainObject(manifest) || manifest.schema_version !== "ts-report-package/1") {
-    throw new Error("report package manifest must use ts-report-package/1");
-  }
-  const workspaceRevision = requireDigest(manifest.workspace_revision, "manifest workspace_revision");
-  if (!Array.isArray(manifest.files)) throw new Error("report package manifest files must be an array");
-  const records = new Map();
-  for (const [index, record] of manifest.files.entries()) {
-    if (!isPlainObject(record)) throw new Error(`report package manifest files[${index}] must be an object`);
-    const ref = normalizeRef(record.ref);
-    if (records.has(ref)) throw new Error(`report package manifest contains duplicate ref: ${ref}`);
-    records.set(ref, requireDigest(record.sha256, `manifest digest for ${ref}`));
-  }
-  const summaryName = summaryRef.slice(packageRef.length + 1);
-  const contextName = contextRef.slice(packageRef.length + 1);
-  const summaryDigest = verifyManifestFile(workspaceRoot, packageRef, summaryName, records);
-  const contextDigest = verifyManifestFile(workspaceRoot, packageRef, contextName, records);
-  return {
-    manifestRef,
-    manifestPath,
-    manifestDigest: sha256Path(manifestPath),
-    summaryDigest,
-    contextDigest,
-    workspaceRevision,
-  };
-}
-
-function verifyManifestFile(workspaceRoot, packageRef, ref, records) {
-  if (!records.has(ref)) throw new Error(`report package manifest does not bind ${ref}`);
-  const fullRef = validateExistingRef(workspaceRoot, `${packageRef}/${ref}`, ["reports/"]);
-  const actual = sha256Path(resolve(workspaceRoot, fullRef));
-  if (actual !== records.get(ref)) throw new Error(`report package digest mismatch for ${ref}`);
-  return actual;
-}
-
-function sha256Path(path) {
-  return `sha256:${createHash("sha256").update(readFileSync(path)).digest("hex")}`;
-}
-
-function requireDigest(value, label) {
-  if (typeof value !== "string" || !/^sha256:[0-9a-f]{64}$/.test(value)) {
-    throw new Error(`${label} must be a sha256 digest`);
-  }
-  return value;
 }
 
 function validateTaskNodeScope(workspaceReport, nodeIds) {
@@ -268,7 +175,6 @@ function isPlainObject(value) {
 
 module.exports = {
   RENDER_OPERATIONS,
-  validateEmailRequest,
   validateRenderRequest,
   validateReportRequest,
   validateTaskNodeScope,

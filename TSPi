@@ -8,6 +8,7 @@ readonly TS_WORKSPACES_ROOT="$INSTALL_ROOT/workspaces"
 readonly TS_PACKAGE_ROOT="$INSTALL_ROOT/.pi/git/github.com/iawnix/TSAgentSkill"
 readonly PI_BIN="${PI_BIN:-/home/iaw/.npm-global/bin/pi}"
 readonly TS_REMOTE_CONFIG_DEFAULT="$INSTALL_ROOT/.pi/remote.toml"
+readonly TS_NOTIFICATION_CONFIG_DEFAULT="$INSTALL_ROOT/.pi/notifications.toml"
 readonly TS_AGENT_INSTALL_RUNTIME_HOME="$INSTALL_ROOT/.agents/runtime/transition-state-workflow"
 readonly TS_AGENT_INSTALL_RUNTIME_MANIFEST="$TS_AGENT_INSTALL_RUNTIME_HOME/env.json"
 readonly TS_AGENT_INSTALL_ENV_ROOT="$INSTALL_ROOT/.agents/envs/transition-state-workflow"
@@ -153,6 +154,20 @@ PY
 )"
 }
 
+configure_notifications() {
+  if [[ -z "${TS_NOTIFICATION_CONFIG:-}" && -f "$TS_NOTIFICATION_CONFIG_DEFAULT" ]]; then
+    export TS_NOTIFICATION_CONFIG="$TS_NOTIFICATION_CONFIG_DEFAULT"
+  fi
+  if [[ -z "${TS_NOTIFICATION_CONFIG:-}" ]]; then
+    unset TS_NOTIFICATION_CONFIG
+    return 0
+  fi
+  if [[ "$TS_NOTIFICATION_CONFIG" != /* || ! -f "$TS_NOTIFICATION_CONFIG" || -L "$TS_NOTIFICATION_CONFIG" || ! -r "$TS_NOTIFICATION_CONFIG" ]]; then
+    printf 'TSPi: invalid TS_NOTIFICATION_CONFIG: %s\n' "$TS_NOTIFICATION_CONFIG" >&2
+    return 1
+  fi
+}
+
 check_remote() {
   local output
   local status=0
@@ -225,6 +240,7 @@ main() {
     return 1
   fi
   configure_remote
+  configure_notifications
   if [[ "$check_remote_only" == true ]]; then
     check_remote
     return
@@ -240,7 +256,6 @@ main() {
   fi
 
   prepare_workspace "$workspace_name"
-  export TS_EMAIL_POLICY_ROOT="$INSTALL_ROOT"
   export TS_AGENT_RUNTIME_HOME="$TS_AGENT_INSTALL_RUNTIME_HOME"
   export TS_AGENT_RUNTIME_MANIFEST="$TS_AGENT_INSTALL_RUNTIME_MANIFEST"
   export TS_AGENT_ENV_ROOT="$TS_AGENT_INSTALL_ENV_ROOT"

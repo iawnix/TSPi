@@ -6,7 +6,7 @@
   "properties": {
     "schema_version": {"const": "ts-agent-result/1"},
     "task_id": {"type": "string", "minLength": 1, "maxLength": 128},
-    "role": {"enum": ["review", "backend", "render", "report", "email"]},
+    "role": {"enum": ["review", "backend", "render", "report"]},
     "authority": {"enum": ["advisory", "operational"]},
     "operation": {"type": "string", "minLength": 1, "maxLength": 128},
     "outcome": {"enum": ["success", "partial", "failure", "not_run"]},
@@ -19,7 +19,7 @@
         "type": "object",
         "required": ["kind", "layer", "statement", "status", "basis_refs"],
         "properties": {
-          "kind": {"enum": ["review", "program", "parser", "render", "report", "email"]},
+          "kind": {"enum": ["review", "program", "parser", "render", "report"]},
           "layer": {"type": ["string", "null"]},
           "statement": {"type": "string", "minLength": 1, "maxLength": 2000},
           "status": {"enum": ["observed", "supported", "contradicted", "uncertain"]},

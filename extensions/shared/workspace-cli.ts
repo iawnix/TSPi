@@ -122,13 +122,13 @@ export async function runReportJson(
   );
 }
 
-export async function runEmailDraftJson(
+export async function runNotifyUserJson(
   pi: ExtensionAPI,
   root: string,
   request: unknown,
   signal?: AbortSignal,
 ) {
-  const tempRoot = mkdtempSync(join(tmpdir(), "ts-email-draft-"));
+  const tempRoot = mkdtempSync(join(tmpdir(), "ts-notify-user-"));
   const requestFile = join(tempRoot, "request.json");
   try {
     writeFileSync(requestFile, `${JSON.stringify(request, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
@@ -136,29 +136,13 @@ export async function runEmailDraftJson(
       pi,
       root,
       EMAIL_CLI,
-      ["draft", "--root", root, "--request-file", requestFile, "--json"],
+      ["notify", "--root", root, "--request-file", requestFile, "--json"],
       signal,
-      60_000,
+      150_000,
     );
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
-}
-
-export async function runEmailSendJson(
-  pi: ExtensionAPI,
-  root: string,
-  draftRef: string,
-  signal?: AbortSignal,
-) {
-  return runPackageJson(
-    pi,
-    root,
-    EMAIL_CLI,
-    ["send", "--root", root, "--draft-ref", draftRef, "--json"],
-    signal,
-    150_000,
-  );
 }
 
 export function requireWorkspaceRoot(inputRoot: string | undefined, cwd: string): string {
