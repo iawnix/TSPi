@@ -167,6 +167,9 @@ mode-aware rounded editor, session footer, working state, and terminal title
 request.
 It adds the configured workspace/remote profile and observes `ts_subagent_*`
 lifecycle updates through a two-line active-child panel and history entries.
+Pi's native `Ctrl+O` action globally toggles every expandable history and tool
+result; TS-specific entries label it as "expand all details" or "collapse all
+details" rather than implying that it affects only the adjacent result.
 The UI reads presentation state only: it does not probe the cluster, write workspace
 state, request authorization, call a model, or make scientific decisions.
 
@@ -184,8 +187,8 @@ The workspace control surface is exactly:
 Pi also exposes:
 
 - `ts_subagent_review`: fresh, tool-free advisory scientific review.
-- `ts_remote_inspect`: read-only `status`, `doctor`, `queues`, `nodes`,
-  or aggregated `cluster` probe for the configured remote profile. It has no
+- `ts_remote_inspect`: read-only `status`, `doctor`, `queues`, or `nodes`
+  probe for the configured remote profile. It has no
   upload, submit, cancel, or workspace mutation capability.
 - `ts_subagent_compute`: fresh backend subagent with only the typed
   tools bound to one `prepare`, `submit`, `inspect`, `collect`, `cancel`, or
@@ -237,7 +240,7 @@ reactivate it. Policy create, activate, and disable commands always modify only
 the explicit `--root`.
 
 Users can run the same remote diagnostics with
-`/ts-remote status|doctor|queues|nodes|cluster`. The command and Agent tool are on demand; they
+`/ts-remote status|doctor|queues|nodes`. The command and Agent tool are on demand; they
 do not add remote output to every turn's context. Command completion explains each
 read-only mode, and an above-editor activity panel remains visible until the
 diagnostic returns or stops with an error.

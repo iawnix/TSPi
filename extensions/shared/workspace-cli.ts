@@ -64,7 +64,7 @@ export async function runComputeJson(
 
 export async function runRemoteDiagnosticJson(
   pi: ExtensionAPI,
-  mode: "status" | "doctor" | "queues" | "nodes" | "cluster",
+  mode: "status" | "doctor" | "queues" | "nodes",
   cwd: string,
   signal?: AbortSignal,
   timeoutMs = 90_000,

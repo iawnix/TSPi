@@ -154,7 +154,6 @@ Use `ts_remote_inspect` or:
 /ts-remote doctor
 /ts-remote queues
 /ts-remote nodes
-/ts-remote cluster
 ```
 
 These diagnostics are read-only. `status` checks OpenSSH connectivity;

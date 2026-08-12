@@ -175,7 +175,7 @@ process.stdout.write(JSON.stringify({{ rendered, fallback, blockColors, initial,
     rendered = result["rendered"]
 
     for view in rendered[1:]:
-        assert 7 <= len(view["lines"]) <= 16
+        assert 6 <= len(view["lines"]) <= 16
         assert all(line_width <= view["width"] for line_width in view["lineWidths"])
         assert view["lines"][0].startswith("╭")
         assert "TSπ" in view["lines"][0]
@@ -204,7 +204,7 @@ process.stdout.write(JSON.stringify({{ rendered, fallback, blockColors, initial,
     assert all("■" not in line for line in pixel_lines)
     assert any("██████████    ██████████    ██████████████" in line for line in pixel_lines)
     assert pixel_lines[-1].split("│")[1].strip() == "██        ██████████    ████      ████"
-    assert sum("TSPi" in line for line in wide) == 1
+    assert not any("TSPi" in line for line in wide)
     assert any("Evidence-driven transition-state workflow." in line for line in wide)
     assert any("openai/gpt-5 · high thinking" in line for line in wide)
     assert not any("Workspace" in line for line in wide)

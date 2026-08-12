@@ -155,12 +155,12 @@ to the current intent digest and target; no separate interactive approval is
 required.
 
 Use `ts_remote_inspect` for cluster status, resource availability, remote
-preparation, queue selection, or connection diagnosis. Use `mode=cluster` for
-an aggregate view and `status`, `doctor`, `queues`, or `nodes` for narrower
-checks. The profile comes from the active calculation intent or the configured
+preparation, queue selection, or connection diagnosis. Use `doctor` for a
+complete environment check and `status`, `queues`, or `nodes` for narrower
+views. The profile comes from the active calculation intent or the configured
 default. Do not call the diagnostic every turn or poll an unchanged
 connection. Users may run the same checks with
-`/ts-remote status|doctor|queues|nodes|cluster`. Submit, cancel, upload, and
+`/ts-remote status|doctor|queues|nodes`. Submit, cancel, upload, and
 arbitrary remote commands are not exposed by this diagnostic surface.
 
 Use `ts_subagent_render` for one node-owned local render,

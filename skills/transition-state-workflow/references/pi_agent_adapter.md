@@ -121,10 +121,9 @@ rejected.
 ## Compute Subagent
 
 `ts_remote_inspect` gives the Root Agent an on-demand read-only SSH/Torque
-surface with `status`, `doctor`, `queues`, `nodes`, and combined `cluster`
-modes. Use `cluster` for a bounded aggregate view of the configured profile;
-use `queues` or `nodes` for detailed scheduler views. The equivalent user
-command is `/ts-remote status|doctor|queues|nodes|cluster`. Neither surface
+surface with `status`, `doctor`, `queues`, and `nodes` modes. Use `doctor` for
+the complete environment check and `queues` or `nodes` for focused scheduler
+views. The equivalent user command is `/ts-remote status|doctor|queues|nodes`. Neither surface
 uploads files, controls jobs, or injects a remote report every turn.
 
 `ts_subagent_compute` creates a separate fresh session with only the

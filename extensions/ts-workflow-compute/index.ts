@@ -1,4 +1,4 @@
-import { keyHint, type ExtensionAPI, type ToolDefinition } from "@earendil-works/pi-coding-agent";
+import { keyText, type ExtensionAPI, type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { Text } from "@earendil-works/pi-tui";
@@ -27,7 +27,7 @@ const {
 } = require("./action-log.cjs");
 const OPERATIONS = ["prepare", "submit", "inspect", "collect", "cancel", "parse"] as const;
 const BACKENDS = ["gaussian", "ase_neb", "xtb", "crest", "qbics_dmecp"] as const;
-const REMOTE_DIAGNOSTIC_MODES = ["status", "doctor", "queues", "nodes", "cluster"] as const;
+const REMOTE_DIAGNOSTIC_MODES = ["status", "doctor", "queues", "nodes"] as const;
 type RemoteDiagnosticMode = typeof REMOTE_DIAGNOSTIC_MODES[number];
 const REMOTE_DIAGNOSTIC_STATUS_KEY = "ts-workspace-remote-command";
 const REMOTE_DIAGNOSTIC_WIDGET_KEY = "ts-workspace-remote";
@@ -47,10 +47,6 @@ const REMOTE_DIAGNOSTIC_ACTIVITY = Object.freeze({
   nodes: {
     description: "Read compute-node state and available resources",
     detail: "Read-only · compute-node resources",
-  },
-  cluster: {
-    description: "Read capabilities, queues, nodes, and control health",
-    detail: "Read-only · cluster summary",
   },
 } satisfies Record<RemoteDiagnosticMode, { description: string; detail: string }>);
 const ATTEMPT_KINDS = ["primary", "retry", "recalculation"] as const;
@@ -184,10 +180,12 @@ export default function (pi: ExtensionAPI) {
     const ok = result.ok === true;
     const label = theme.fg(ok ? "success" : "error", ok ? "passed" : "failed");
     let text = `${theme.fg("accent", `TS Remote ${mode}`)}: ${label}`;
+    const expandKey = theme.fg("dim", keyText("app.tools.expand"));
     if (expanded) {
       text += `\n${theme.fg("dim", JSON.stringify(result, null, 2))}`;
+      text += `\n${theme.fg("muted", "(")}${expandKey}${theme.fg("muted", " collapse all details)")}`;
     } else {
-      text += ` ${theme.fg("muted", `(${keyHint("app.tools.expand", "to expand")})`)}`;
+      text += ` ${theme.fg("muted", "(")}${expandKey}${theme.fg("muted", " expand all details)")}`;
     }
     return new Text(text, 1, 0);
   });
@@ -195,12 +193,11 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.remoteInspect,
     label: "TS Remote Inspect",
-    description: "Run a read-only SSH/Torque connection, queue, node, or aggregated cluster-status probe for a configured ts_remote profile.",
+    description: "Run a read-only SSH/Torque connection, queue, node, or environment-health probe for a configured ts_remote profile.",
     promptSnippet: "Query the configured TS remote cluster without changing jobs or files",
     promptGuidelines: [
-      "For a general status or resource-availability question about the configured remote profile, use mode=cluster.",
       "Use mode=status when SSH connectivity is unknown.",
-      "Use mode=doctor after configuration, SSH, scheduler, storage, or software failures.",
+      "Use mode=doctor for a complete SSH, scheduler, storage, and registered-software check.",
       "Use mode=queues or mode=nodes when only that scheduler view is relevant.",
       "A diagnostic timeout means readiness is unknown; no remote action has occurred.",
       "This tool is read-only and cannot upload files, submit jobs, cancel jobs, mutate workspace state, or authorize compute control.",
@@ -382,7 +379,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("ts-remote", {
-    description: "Show read-only ts_remote SSH, Torque queue, node, or aggregate cluster status.",
+    description: "Show read-only ts_remote SSH, Torque queue, node, or environment health.",
     getArgumentCompletions: (prefix) => {
       const candidate = prefix.trim().toLowerCase();
       const matches = REMOTE_DIAGNOSTIC_MODES
@@ -399,7 +396,7 @@ export default function (pi: ExtensionAPI) {
       ctx.ui.setWidget(REMOTE_DIAGNOSTIC_WIDGET_KEY, undefined);
       const candidate = String(args || "").trim();
       if (!REMOTE_DIAGNOSTIC_MODES.includes(candidate as RemoteDiagnosticMode)) {
-        const usage = "Usage: /ts-remote status|doctor|queues|nodes|cluster";
+        const usage = "Usage: /ts-remote status|doctor|queues|nodes";
         ctx.ui.notify(usage, "warning");
         return;
       }

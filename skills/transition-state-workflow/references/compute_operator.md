@@ -275,8 +275,8 @@ automatically. Once the remote submission script is handed to SSH, a transport
 failure is ambiguous unless the durable submission record resolves it.
 
 Use `ts_remote_inspect` or `/ts-remote doctor` for connection details,
-`/ts-remote queues` or `/ts-remote nodes` for one scheduler view, and
-`/ts-remote cluster` for combined status. These diagnostics do not expose
+storage, software, and scheduler health, and use `/ts-remote queues` or
+`/ts-remote nodes` for one scheduler view. These diagnostics do not expose
 remote mutation tools.
 
 Each backend requires a matching software profile with an allowlisted queue.

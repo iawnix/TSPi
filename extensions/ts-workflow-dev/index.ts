@@ -1,4 +1,4 @@
-import { keyHint, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { keyText, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import {
   DEVELOPMENT_TEST_CASES,
@@ -20,10 +20,12 @@ export default function (pi: ExtensionAPI) {
     const color = result.outcome === "passed" ? "success" : result.outcome === "failed" ? "error" : "warning";
     let text = `${theme.fg("accent", "TS development test")} ${theme.fg(color, result.outcome)}`;
     text += ` ${theme.fg("muted", result.caseId)}`;
+    const expandKey = theme.fg("dim", keyText("app.tools.expand"));
     if (expanded && result.output) {
       text += `\n${theme.fg("dim", result.output)}`;
+      text += `\n${theme.fg("muted", "(")}${expandKey}${theme.fg("muted", " collapse all details)")}`;
     } else if (result.output) {
-      text += ` ${theme.fg("muted", `(${keyHint("app.tools.expand", "to expand")})`)}`;
+      text += ` ${theme.fg("muted", "(")}${expandKey}${theme.fg("muted", " expand all details)")}`;
     }
     return new Text(text, 1, 0);
   });

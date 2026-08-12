@@ -11,6 +11,7 @@ OUTPUT_SCHEMA = COMPUTE_AGENT / "output-schema.cjs"
 ACTION_LOG = ROOT / "extensions" / "ts-workflow-compute" / "action-log.cjs"
 COMPUTE_EXTENSION = ROOT / "extensions" / "ts-workflow-compute" / "index.ts"
 TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
+PI_PACKAGE = ROOT / "node_modules" / "@earendil-works" / "pi-coding-agent" / "package.json"
 
 
 def test_pi_package_registers_one_compute_operator_extension() -> None:
@@ -52,13 +53,15 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
     assert 'pi.registerCommand("ts-remote"' in source
     assert 'pi.registerEntryRenderer<RemoteDiagnosticEntryData>("ts-workspace-remote-diagnostic"' in source
     assert 'pi.appendEntry<RemoteDiagnosticEntryData>("ts-workspace-remote-diagnostic"' in source
-    assert 'keyHint("app.tools.expand", "to expand")' in source
+    assert 'keyText("app.tools.expand")' in source
+    assert '" expand all details)"' in source
+    assert '" collapse all details)"' in source
     assert "REMOTE_DIAGNOSTIC_WIDGET_KEY" in source
     assert 'ctx.ui.setWidget("ts-workspace-remote", JSON.stringify' not in source
-    assert "Usage: /ts-remote status|doctor|queues|nodes|cluster" in source
+    assert "Usage: /ts-remote status|doctor|queues|nodes" in source
     assert "getArgumentCompletions" in source
     assert "This check is read-only" in source
-    assert "about the configured remote profile, use mode=cluster" in source
+    assert "registered-software check" in source
     assert "createScopedComputeTools" in source
     assert "runComputeOperator" in source
     assert "completed compute actions" in source
@@ -95,13 +98,24 @@ def test_compute_extension_exposes_one_root_operator_and_private_typed_tools() -
 def test_ts_remote_command_previews_modes_and_shows_progress_until_result() -> None:
     script = f"""
 import installCompute from {json.dumps(COMPUTE_EXTENSION.as_uri())};
+import {{ createRequire }} from "node:module";
+import {{ pathToFileURL }} from "node:url";
 process.env.TS_AGENT_PYTHON = "/usr/bin/python3";
+const requireFromPi = createRequire({json.dumps(str(PI_PACKAGE))});
+const {{ KeybindingsManager, setKeybindings, TUI_KEYBINDINGS }} = await import(
+  pathToFileURL(requireFromPi.resolve("@earendil-works/pi-tui")).href
+);
+setKeybindings(new KeybindingsManager({{
+  ...TUI_KEYBINDINGS,
+  "app.tools.expand": {{ defaultKeys: "ctrl+o", description: "Toggle tool output" }},
+}}));
 const commands = {{}};
 const entries = [];
 const execCalls = [];
+const renderers = {{}};
 let failNext = false;
 const pi = {{
-  registerEntryRenderer: () => {{}},
+  registerEntryRenderer: (name, renderer) => {{ renderers[name] = renderer; }},
   registerTool: () => {{}},
   registerCommand: (name, command) => {{ commands[name] = command; }},
   exec: async (command, args) => {{
@@ -118,6 +132,10 @@ const pi = {{
   appendEntry: (type, data) => entries.push([type, data]),
 }};
 installCompute(pi);
+const theme = {{ fg: (_color, text) => text }};
+const diagnosticEntry = {{ data: {{ mode: "doctor", result: {{ ok: true, checks: {{ ok: true }} }} }} }};
+const collapsed = renderers["ts-workspace-remote-diagnostic"](diagnosticEntry, {{ expanded: false }}, theme).render(200).join("\\n");
+const expanded = renderers["ts-workspace-remote-diagnostic"](diagnosticEntry, {{ expanded: true }}, theme).render(200).join("\\n");
 const uiCalls = [];
 const ctx = {{
   cwd: "/tmp/tspi-workspace",
@@ -138,7 +156,7 @@ try {{
 }} catch (error) {{
   failureMessage = error.message;
 }}
-process.stdout.write(JSON.stringify({{ completions, successCalls, failureCalls: uiCalls, failureMessage, entries, execCalls }}));
+process.stdout.write(JSON.stringify({{ collapsed, expanded, completions, successCalls, failureCalls: uiCalls, failureMessage, entries, execCalls }}));
 """
     result = _node_json(script)
     success_calls = result["successCalls"]
@@ -148,9 +166,11 @@ process.stdout.write(JSON.stringify({{ completions, successCalls, failureCalls: 
         "doctor",
         "queues",
         "nodes",
-        "cluster",
     ]
     assert all(item["description"] for item in result["completions"])
+    assert "ctrl+o expand all details" in result["collapsed"].lower()
+    assert "ctrl+o collapse all details" in result["expanded"].lower()
+    assert '"checks"' in result["expanded"]
     assert ["status", "ts-workspace-remote-command", "TS Remote · status · checking"] in success_calls
     assert any(
         call[0] == "widget"
@@ -220,7 +240,8 @@ def test_compute_cli_is_package_relative_and_runtime_aware() -> None:
     script = (ROOT / "scripts" / "ts_compute.py").read_text(encoding="utf-8")
 
     assert 'resolve(PACKAGE_ROOT, "scripts", "ts_compute.py")' in shared
-    assert '"nodes" | "cluster"' in shared
+    assert '"doctor" | "queues" | "nodes"' in shared
+    assert '"nodes" | "cluster"' not in shared
     assert "findRuntimeWorkspaceRoot(cwd)" in shared
     assert 'join(current, ".agents", "runtime", "transition-state-workflow", "env.json")' in shared
     assert "AbortSignal.timeout(timeoutMs)" in shared

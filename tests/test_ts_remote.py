@@ -9,7 +9,7 @@ import pytest
 
 from ts_remote.client import CommandResult
 from ts_remote.config import load_config
-from ts_remote.diagnostics import _doctor
+from ts_remote.diagnostics import MODES, _doctor, diagnose
 from ts_remote.errors import (
     RemoteConfigurationError,
     RemoteError,
@@ -20,6 +20,12 @@ from ts_remote.lifecycle import _parse_record, _submit_script, collect, status, 
 from ts_remote.models import RemoteJobConfig, RemoteResources, TransferRecord
 from ts_remote.torque import parse_records, render_job_script, scheduler_semantics
 from ts_remote.transfer import upload_verified
+
+
+def test_remote_diagnostic_modes_exclude_redundant_cluster_alias() -> None:
+    assert MODES == {"status", "doctor", "queues", "nodes"}
+    with pytest.raises(RemoteError, match="unsupported ts_remote diagnostic mode: cluster"):
+        diagnose("cluster")
 
 
 def _profile(tmp_path: Path):

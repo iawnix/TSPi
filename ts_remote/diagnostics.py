@@ -11,7 +11,7 @@ from .models import RemoteProfile
 from .torque import parse_nodes, parse_records
 
 
-MODES = frozenset({"status", "doctor", "queues", "nodes", "cluster"})
+MODES = frozenset({"status", "doctor", "queues", "nodes"})
 
 
 def diagnose(mode: str, *, profile_name: str | None = None) -> dict[str, Any]:
@@ -31,11 +31,11 @@ def diagnose(mode: str, *, profile_name: str | None = None) -> dict[str, Any]:
         if mode == "status":
             result["ok"] = True
             return result
-        if mode in {"queues", "cluster", "doctor"}:
+        if mode in {"queues", "doctor"}:
             result["queues"] = _queues(client, profile)
-        if mode in {"nodes", "cluster", "doctor"}:
+        if mode in {"nodes", "doctor"}:
             result["nodes"] = _nodes(client, profile)
-        if mode in {"doctor", "cluster"}:
+        if mode == "doctor":
             result["checks"] = _doctor(client, profile)
         result["ok"] = result.get("checks", {}).get("ok", True)
         return result
