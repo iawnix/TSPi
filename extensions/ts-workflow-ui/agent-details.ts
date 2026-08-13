@@ -130,7 +130,7 @@ export function renderTsAgentDetails(
   now = Date.now(),
 ): string[] {
   const safeWidth = Math.max(16, Math.floor(width));
-  const lines = [truncateToWidth(`TS Agent · ${roleLabel(normalizeRole(record.role))}`, safeWidth, "")];
+  const lines = [truncateToWidth(`Subagent Run Details · ${roleLabel(normalizeRole(record.role))}`, safeWidth, "")];
   lines.push("");
   addField(lines, "Status", record.state, safeWidth);
   addField(lines, "Task", record.task_id, safeWidth);
@@ -185,7 +185,6 @@ export function renderTsAgentDetails(
     .filter(([, value]) => value)
     .map(([name]) => fileNames[name as keyof TsAgentRunDocuments]);
   if (files.length > 0) addField(lines, "Files", files.join(", "), safeWidth);
-  lines.push("", truncateToWidth("Esc or Enter to close", safeWidth, ""));
   return lines;
 }
 

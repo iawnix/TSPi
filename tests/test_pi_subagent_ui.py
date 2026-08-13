@@ -14,6 +14,7 @@ UI = ROOT / "extensions" / "ts-workflow-ui" / "index.ts"
 ACTIVITY_STORE = ROOT / "extensions" / "ts-workflow-ui" / "activity-store.ts"
 ACTIVITY_PANEL = ROOT / "extensions" / "ts-workflow-ui" / "activity-panel.ts"
 DETAILS = ROOT / "extensions" / "ts-workflow-ui" / "agent-details.ts"
+SUBAGENT_HISTORY = ROOT / "extensions" / "ts-workflow-ui" / "subagent-history.ts"
 EDITOR = ROOT / "extensions" / "ts-workflow-ui" / "editor.ts"
 RENDER_UTILS = ROOT / "extensions" / "ts-workflow-ui" / "render-utils.ts"
 STARTUP = ROOT / "extensions" / "ts-workflow-ui" / "startup.ts"
@@ -354,7 +355,7 @@ process.stdout.write(JSON.stringify({{
     assert max(result["widths"]) <= 52
     rendered = "\n".join(result["details"])
     for expected in (
-        "TS Agent · Compute",
+        "Subagent Run Details · Compute",
         "Parser returned bounded output",
         "ts_workspace_compute_parse · completed",
         "nodes/n000/outputs/calculation_result.json",
@@ -366,6 +367,102 @@ process.stdout.write(JSON.stringify({{
     assert len(result["failures"]) == 2
     assert "invalid TS agent run reference" in result["failures"][0]
     assert "invalid TS agent run directory" in result["failures"][1]
+
+
+def test_subagent_history_browser_pages_records_and_details_by_identity() -> None:
+    script = f"""
+import {{ KeybindingsManager, TUI_KEYBINDINGS, visibleWidth }} from "@earendil-works/pi-tui";
+import {{ SubagentHistoryBrowser }} from {json.dumps(SUBAGENT_HISTORY.as_uri())};
+const records = Array.from({{ length: 17 }}, (_, index) => ({{
+  task_id: `agent_${{String(index).padStart(2, "0")}}_sharedxx`,
+  role: "review",
+  operation: "connectivity",
+  state: "completed",
+  node_ids: ["n006"],
+  run_ref: `nodes/n006/agent-runs/agent_${{String(index).padStart(2, "0")}}`,
+  live: false,
+}}));
+const theme = {{
+  fg: (_color, text) => text,
+  bg: (_color, text) => text,
+  bold: (text) => text,
+}};
+let renderRequests = 0;
+let closed = 0;
+const reads = [];
+const warnings = [];
+const browser = new SubagentHistoryBrowser({{
+  records,
+  workspaceRoot: "/tmp/workspace",
+  tui: {{ requestRender: () => renderRequests++ }},
+  theme,
+  keybindings: new KeybindingsManager(TUI_KEYBINDINGS),
+  done: () => closed++,
+  notifyWarning: (message) => warnings.push(message),
+  readDocuments: (_root, runRef) => {{
+    reads.push(runRef);
+    if (runRef.endsWith("agent_16")) throw new Error("journal unavailable");
+    return {{
+      result: {{
+        summary: Array.from({{ length: 24 }}, (_, value) => `Review detail ${{value}}`).join("\\n"),
+      }},
+    }};
+  }},
+}});
+const views = [];
+const capture = (name, width = 52) => {{
+  const lines = browser.render(width);
+  views.push({{ name, lines, widths: lines.map(visibleWidth), snapshot: browser.getSnapshot() }});
+}};
+capture("initial");
+browser.handleInput("\\u001b[B");
+browser.handleInput("\\u001b[A");
+browser.handleInput("\\u001b[6~");
+capture("page2");
+browser.handleInput("\\u001b[6~");
+capture("page3");
+browser.handleInput("\\u001b[5~");
+browser.handleInput("\\u001b[H");
+browser.handleInput("\\r");
+capture("detail1");
+browser.handleInput("\\u001b[6~");
+capture("detail2");
+browser.handleInput("\\u001b");
+browser.handleInput("\\u001b[F");
+browser.handleInput("\\r");
+capture("missingJournal");
+browser.handleInput("\\u001b");
+browser.handleInput("\\u001b");
+process.stdout.write(JSON.stringify({{ views, reads, warnings, renderRequests, closed }}));
+"""
+    result = _node_json(script)
+    views = {view["name"]: view for view in result["views"]}
+
+    assert views["initial"]["snapshot"]["listPageCount"] == 3
+    assert views["initial"]["snapshot"]["selectedTaskId"] == "agent_00_sharedxx"
+    assert views["page2"]["snapshot"]["selectedIndex"] == 8
+    assert views["page2"]["snapshot"]["listPage"] == 1
+    assert "Page 2/3" in "\n".join(views["page2"]["lines"])
+    assert views["page3"]["snapshot"]["selectedIndex"] == 16
+    assert views["page3"]["snapshot"]["listPage"] == 2
+    assert len(views["page3"]["lines"]) == len(views["initial"]["lines"])
+
+    assert views["detail1"]["snapshot"]["mode"] == "details"
+    assert views["detail1"]["snapshot"]["selectedTaskId"] == "agent_00_sharedxx"
+    assert views["detail1"]["snapshot"]["detailPageCount"] >= 2
+    assert views["detail2"]["snapshot"]["detailPage"] == 1
+    assert "Subagent Run Details" in views["detail1"]["lines"][0]
+
+    assert result["reads"] == [
+        "nodes/n006/agent-runs/agent_00",
+        "nodes/n006/agent-runs/agent_16",
+    ]
+    assert result["warnings"] == ["journal unavailable"]
+    assert views["missingJournal"]["snapshot"]["selectedTaskId"] == "agent_16_sharedxx"
+    assert "agent_16_sharedxx" in "\n".join(views["missingJournal"]["lines"])
+    assert max(width for view in result["views"] for width in view["widths"]) <= 52
+    assert result["renderRequests"] >= 12
+    assert result["closed"] == 1
 
 
 def test_tspi_startup_profile_matches_package_manifest() -> None:
@@ -461,7 +558,7 @@ process.stdout.write(JSON.stringify({{ rendered, fallback, blockColors, initial,
     assert any("1 skill · 5 extensions" in line for line in wide)
     assert any("1 theme" in line for line in wide)
     assert not any("ts-theme" in line for line in wide)
-    for command in ("/ts-context", "/ts-validate", "/ts-remote", "/ts-agents"):
+    for command in ("/ts-context", "/ts-validate", "/ts-remote", "/ts-subagent-history"):
         assert any(command in line for line in wide)
     assert "mdLink" in result["blockColors"]
     assert result["next"] > result["initial"]
@@ -660,7 +757,7 @@ process.stdout.write(JSON.stringify({{
 """
     result = _node_json(script)
     assert result["registeredTools"] == 0
-    assert result["commands"] == ["ts-agents"]
+    assert result["commands"] == ["ts-subagent-history"]
     assert result["handlerNames"] == [
         "agent_settled",
         "agent_start",
@@ -784,7 +881,8 @@ def test_all_four_public_subagent_tools_emit_status_updates() -> None:
     assert "setEditorComponent" in ui
     assert "setTitle" in ui
     assert "setWorkingMessage" in ui
-    assert 'registerCommand("ts-agents"' in ui
+    assert 'registerCommand("ts-subagent-history"' in ui
+    assert 'registerCommand("ts-agents"' not in ui
     assert "registerTool" not in ui
     for extension in (ROOT / "extensions").glob("ts-workflow-*/index.ts"):
         assert "setStatus(" not in extension.read_text(encoding="utf-8")

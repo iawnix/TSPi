@@ -15,5 +15,5 @@ export const TS_PACKAGE_PROFILE = Object.freeze({
     Object.freeze({ name: "artifacts", path: "./extensions/ts-workflow-artifacts/index.ts" }),
   ]),
   theme: Object.freeze({ name: "ts-theme", path: "./themes/ts-theme.json" }),
-  commands: Object.freeze(["/ts-context", "/ts-validate", "/ts-remote", "/ts-agents"]),
+  commands: Object.freeze(["/ts-context", "/ts-validate", "/ts-remote", "/ts-subagent-history"]),
 });

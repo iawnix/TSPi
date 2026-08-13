@@ -2,7 +2,7 @@ import type {
   ExtensionAPI,
   ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, Text, truncateToWidth, type TUI } from "@earendil-works/pi-tui";
+import { Text, truncateToWidth, type TUI } from "@earendil-works/pi-tui";
 import { TspiEditor } from "./editor.ts";
 import { createTspiStartupHeader } from "./startup.ts";
 import { fitColumns, formatCwd } from "./render-utils.ts";
@@ -29,11 +29,9 @@ import {
   summarizeTsActivities,
 } from "./activity-store.ts";
 import {
-  agentSelectionLabel,
   collectTsAgentRecords,
-  readTsAgentRunDocuments,
-  renderTsAgentDetails,
 } from "./agent-details.ts";
+import { SubagentHistoryBrowser } from "./subagent-history.ts";
 import { requireWorkspaceRoot, runWorkspaceJson } from "../shared/workspace-cli.ts";
 
 const WIDGET_KEY = "ts-activity";
@@ -262,11 +260,11 @@ export default function (pi: ExtensionAPI) {
     latestContext = undefined;
   });
 
-  pi.registerCommand("ts-agents", {
-    description: "Inspect active and recorded TS subagents · read-only · local.",
+  pi.registerCommand("ts-subagent-history", {
+    description: "Browse active and recorded TS subagent runs · read-only · local.",
     handler: async (args, ctx) => {
       if (String(args || "").trim()) {
-        ctx.ui.notify("/ts-agents does not accept arguments", "warning");
+        ctx.ui.notify("/ts-subagent-history does not accept arguments", "warning");
         return;
       }
       let root = process.env.TS_WORKSPACE_ROOT || ctx.cwd;
@@ -282,30 +280,17 @@ export default function (pi: ExtensionAPI) {
       }
       const records = collectTsAgentRecords(activityStore, report);
       if (records.length === 0) {
-        ctx.ui.notify("No TS agent runs are available in this workspace", "info");
+        ctx.ui.notify("No TS subagent runs are available in this workspace", "info");
         return;
       }
-      const labels = records.map(agentSelectionLabel);
-      const selected = await ctx.ui.select("TS Agents · active and recorded", labels);
-      if (!selected) return;
-      const record = records[labels.indexOf(selected)];
-      if (!record) return;
-      let documents = {};
-      try {
-        documents = readTsAgentRunDocuments(root, record.run_ref);
-      } catch (error) {
-        ctx.ui.notify(error instanceof Error ? error.message : String(error), "warning");
-      }
-      await ctx.ui.custom<void>((_tui, theme, _keybindings, done) => ({
-        render: (width) => renderTsAgentDetails(record, documents, width).map((line, index) => {
-          if (index === 0) return theme.fg("accent", line);
-          if (line === "Error") return theme.fg("error", line);
-          return index > 0 && !line ? line : theme.fg("text", line);
-        }),
-        invalidate: () => {},
-        handleInput: (data) => {
-          if (matchesKey(data, Key.escape) || matchesKey(data, Key.enter) || data === "q") done();
-        },
+      await ctx.ui.custom<void>((tui, theme, keybindings, done) => new SubagentHistoryBrowser({
+        records,
+        workspaceRoot: root,
+        tui,
+        theme,
+        keybindings,
+        done,
+        notifyWarning: (message) => ctx.ui.notify(message, "warning"),
       }));
     },
   });

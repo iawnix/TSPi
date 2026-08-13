@@ -238,8 +238,9 @@ extra arguments instead of interpreting them as paths. Their compact results
 are retained in session history; Pi's global `Ctrl+O` action expands or
 collapses the full context or validation details.
 
-`/ts-agents` opens a read-only selector for active and durable child runs. Its
-detail view reads only bounded run-journal JSON. Every role has `task.json`,
+`/ts-subagent-history` opens a read-only, paginated browser for active and
+durable child runs. The list shows eight runs per page; its paginated detail
+view reads only bounded run-journal JSON. Every role has `task.json`,
 `actions.json`, `result.json`, and `run.json`; Review also has the digest-bound
 `evidence-snapshot.json` and `provider-input.json`. The view shows summary,
 typed actions, artifact refs, and failure details. It does not reopen a child,
