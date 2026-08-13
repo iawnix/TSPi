@@ -558,7 +558,7 @@ def test_pi_subagent_runtime_and_extension_enforce_isolation() -> None:
 
     assert 'noTools: "builtin"' in runtime
     assert "REVIEW_RESULT_TOOL_NAME" in runtime
-    assert 'strict: "prefer"' in RESULT_TOOL.read_text(encoding="utf-8")
+    assert "constrainedSampling" not in RESULT_TOOL.read_text(encoding="utf-8")
     assert "SessionManager.inMemory(options.workspaceRoot)" in runtime
     assert "SettingsManager.inMemory" in runtime
     assert "new DefaultResourceLoader" in runtime

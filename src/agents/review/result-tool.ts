@@ -32,7 +32,6 @@ export function createReviewResultTool(
     label: "TS Review Result",
     description: "Submit the one bounded advisory TS review result. This is the only accepted result channel.",
     parameters,
-    constrainedSampling: { type: "json_schema", strict: "prefer" },
     executionMode: "sequential",
     prepareArguments(args) {
       if (!strictValidator.Check(args)) {

@@ -262,7 +262,7 @@ def test_real_pi_review_child_session_uses_only_result_tool(tmp_path: Path) -> N
     assert result["metadata"]["review_type"] == "mechanism"
     assert len(requests) == 1
     assert [tool["function"]["name"] for tool in requests[0]["tools"]] == ["ts_review_result"]
-    assert requests[0]["tools"][0]["function"]["strict"] is True
+    assert requests[0]["tools"][0]["function"]["strict"] is False
     assert requests[0]["tool_choice"] == {
         "type": "function",
         "function": {"name": "ts_review_result"},
