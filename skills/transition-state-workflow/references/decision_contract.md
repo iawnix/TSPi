@@ -13,6 +13,10 @@ Required mutation provenance:
 
 Pi constructs this envelope with `ts_workspace_decision_draft`, validates it with
 `ts_workspace_decision_validate`, and applies it with `ts_workspace_decision_apply`.
+The report ID is derived from the current workspace revision. Apply verifies both
+the resolved workspace root and that derived ID, then repeats the complete dry
+run under the workspace lock. Validate is a preview and cannot be reused as an
+authorization or validation token.
 
 ## Start Intake
 
@@ -205,13 +209,15 @@ A technical retry does not create a recalculation node. Record a new
 
 - `continue_parent`: continue the same scientific object.
 - `new_solution_branch`: replace candidate or search strategy under the same
-  hypothesis.
+  hypothesis. The start payload must include a new `solution_ref.solution_id`;
+  optional `summary`, `strategy`, and `parent_solution_id` describe its lineage.
 - `new_hypothesis_branch`: propose an alternative hypothesis.
-- `new_pathway_branch`: change pathway topology or elementary-step model.
+- `new_pathway_branch`: change pathway topology or elementary-step model. Bind a
+  workspace-new `pathway_ref.pathway_id` and retain the source hypothesis.
 - `recalculation_of`: refine or challenge a prior result with changed method.
 
-The Root Agent selects the relation. Validators check references and topology
-only.
+The Root Agent selects the relation. Validators check references, solution
+identity, and topology only.
 
 ## Apply Sequence
 
@@ -220,6 +226,28 @@ ts_workspace_context -> ts_workspace_decision_draft -> ts_workspace_decision_val
 ```
 
 Any mutation built from a stale `base_revision` is rejected.
+
+## Historical Lineage Repair
+
+Use `update_workspace.payload.repair_solution_ref` only for a closed historical
+`new_solution_branch` created without its required solution identity:
+
+```json
+{
+  "repair_solution_ref": {
+    "node_id": "n004",
+    "solution_ref": {
+      "solution_id": "sol_n004_recovery",
+      "strategy": "fresh_execution_namespace"
+    },
+    "reason_code": "missing_solution_ref_from_prior_engine"
+  }
+}
+```
+
+The solution ID must be new for that hypothesis. The mutation synchronizes the
+node, tree index, and branch event and records an immutable lineage-repair audit.
+It is not a general node-edit operation.
 
 Only `ts-decision/2` is accepted. A mechanism hypothesis is created by a
 `start_node` decision with `node_type=mechanism`,

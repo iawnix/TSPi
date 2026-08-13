@@ -99,6 +99,21 @@ Every post-`n000` node records one relation:
 by the Root Agent. Backtracking creates a new child from the anchor; it never
 rewrites historical nodes.
 
+A `new_solution_branch` start also binds `solution_ref.solution_id`. The same
+reference is persisted in the node index and branch event so solution lineage
+can be reconstructed without reading conversational history. Solution IDs are
+unique per hypothesis; `parent_solution_id`, when required, identifies the
+source solution rather than merely the parent node.
+
+A `new_pathway_branch` binds a workspace-new `pathway_ref.pathway_id` while
+retaining the same hypothesis. Its target pathway reference is also copied into
+the branch event. Reusing a pathway ID represents continuation, not a new
+pathway branch, and is rejected under this relation.
+
+Historical missing solution identity is repaired through the auditable
+`repair_solution_ref` mutation. The engine does not permit direct edits or
+overwriting an existing solution identity.
+
 Use `report_node` and `report_branch_context` to load only the relevant history
 before selecting an anchor.
 

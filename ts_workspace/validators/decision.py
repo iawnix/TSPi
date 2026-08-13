@@ -113,6 +113,11 @@ def _validate_start_payload_v2(payload: dict[str, Any]) -> None:
     branch_context = payload.get("branch_context")
     if branch_context is not None:
         _validate_branch_context_v2(branch_context)
+    solution_ref = payload.get("solution_ref")
+    if solution_ref is not None:
+        _validate_solution_ref_v2(solution_ref)
+    if isinstance(branch_context, dict) and branch_context.get("relation") == "new_solution_branch":
+        _require(isinstance(solution_ref, dict), "new_solution_branch requires payload.solution_ref")
     pathway_ref = payload.get("pathway_ref")
     if pathway_ref is not None:
         _validate_pathway_ref_v2(pathway_ref)
@@ -210,6 +215,14 @@ def _validate_pathway_ref_v2(value: Any) -> None:
     _require(step_id is None or _clean(step_id), "payload.pathway_ref.step_id cannot be empty")
 
 
+def _validate_solution_ref_v2(value: Any) -> None:
+    _require(isinstance(value, dict), "payload.solution_ref must be an object")
+    _require(_clean(value.get("solution_id")), "payload.solution_ref.solution_id is required")
+    for field in ("summary", "strategy", "parent_solution_id"):
+        field_value = value.get(field)
+        _require(field_value is None or _clean(field_value), f"payload.solution_ref.{field} cannot be empty")
+
+
 def _validate_recalculation_ref(value: Any) -> None:
     _require(isinstance(value, dict), "payload.recalculation_ref is required")
     _require(_clean(value.get("source_node")), "payload.recalculation_ref.source_node is required")
@@ -242,7 +255,7 @@ def _validate_mechanism_hypothesis_v2(value: Any) -> None:
 
 
 def _validate_update_payload(payload: dict[str, Any]) -> None:
-    allowed = {"append_evidence", "append_provenance", "repair_branch_anchor"}
+    allowed = {"append_evidence", "append_provenance", "repair_branch_anchor", "repair_solution_ref"}
     _require(any(key in payload for key in allowed), "update_workspace needs a supported operation")
     forbidden = {"lifecycle", "closure", "claim_verdict", "accepted_ts", "current_accepted_ts"}
     touched = forbidden.intersection(payload)
@@ -275,6 +288,28 @@ def _validate_update_payload(payload: dict[str, Any]) -> None:
                     item.get("lifecycle_status") is None,
                     "lifecycle_status is reserved for evidence lifecycle events",
                 )
+
+    provenance = payload.get("append_provenance")
+    if provenance is not None:
+        entries = provenance if isinstance(provenance, list) else [provenance]
+        _require(all(isinstance(item, dict) for item in entries), "append_provenance entries must be objects")
+
+    anchor_repairs = payload.get("repair_branch_anchor")
+    if anchor_repairs is not None:
+        entries = anchor_repairs if isinstance(anchor_repairs, list) else [anchor_repairs]
+        for item in entries:
+            _require(isinstance(item, dict), "repair_branch_anchor entries must be objects")
+            for field in ("node_id", "new_anchor_node", "reason_code"):
+                _require(_clean(item.get(field)), f"repair_branch_anchor.{field} is required")
+
+    solution_repairs = payload.get("repair_solution_ref")
+    if solution_repairs is not None:
+        entries = solution_repairs if isinstance(solution_repairs, list) else [solution_repairs]
+        for item in entries:
+            _require(isinstance(item, dict), "repair_solution_ref entries must be objects")
+            _require(_clean(item.get("node_id")), "repair_solution_ref.node_id is required")
+            _require(_clean(item.get("reason_code")), "repair_solution_ref.reason_code is required")
+            _validate_solution_ref_v2(item.get("solution_ref"))
 
 def _validate_hypothesis_ref(value: Any, path: str) -> None:
     _require(isinstance(value, dict), f"{path} is required")

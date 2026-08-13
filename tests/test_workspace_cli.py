@@ -134,6 +134,39 @@ def test_workspace_cli_preflight_rejects_missing_branch_context(tmp_path: Path) 
     assert not (workspace / "nodes" / "n001").exists()
 
 
+def test_workspace_cli_preflight_rejects_missing_solution_ref(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    bootstrap_strict_workspace(workspace)
+    report = _run("report_workspace", "--root", str(workspace))
+    decision = _decision(
+        report,
+        "start_node",
+        {
+            "node_id": "n001",
+            "parent_node": "n000",
+            "node_type": "candidate_search",
+            "candidate_kind": "transition_state",
+            "objective": "Try a replacement candidate without an identity.",
+            "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": []},
+            "branch_context": {
+                "relation": "new_solution_branch",
+                "from_node": "n_hypothesis",
+                "anchor_node": "n000",
+            },
+        },
+    )
+    path = _write(tmp_path / "missing_solution.json", decision)
+
+    preflight = _run_raw("validate_decision", "--root", str(workspace), "--decision-file", str(path))
+    mutation = _run_raw("start_node", "--root", str(workspace), "--decision-file", str(path))
+
+    assert preflight.returncode == 2
+    assert mutation.returncode == 2
+    assert "solution_ref" in preflight.stderr
+    assert "solution_ref" in mutation.stderr
+    assert not (workspace / "nodes" / "n001").exists()
+
+
 def _run(*args: str) -> dict:
     completed = _run_raw(*args)
     completed.check_returncode()

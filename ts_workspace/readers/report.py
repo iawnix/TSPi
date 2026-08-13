@@ -7,8 +7,9 @@ from typing import Any
 
 from ..evidence_lifecycle import EvidenceLifecycleError, evidence_lifecycle_view
 from ..identity import IDENTITY_REF, WorkspaceIdentityError, read_workspace_identity
-from ..io import compact_id_time, read_json, sha256_json, write_json
+from ..io import read_json, write_json
 from ..operational import agent_run_index, operational_snapshot
+from ..revision import report_id_for_revision, workspace_revision_from_documents
 from ..state import EVIDENCE_FILE, HYPOTHESES_FILE, RESEARCH_STATE_FILE
 from ..validators.workspace import validate_workspace
 
@@ -17,9 +18,8 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
 
     Use `snapshot_report(root)` when a persisted audit snapshot is needed.
     """
-    root_path = Path(root)
+    root_path = Path(root).resolve()
     validation = validate_workspace(root_path)
-    report_id = f"rep_{compact_id_time()}"
 
     research_state = _read_or_empty(root_path / RESEARCH_STATE_FILE)
     hypotheses = _read_or_empty(root_path / HYPOTHESES_FILE)
@@ -45,9 +45,8 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
     open_nodes = [item for item in nodes if item.get("lifecycle") == "running"]
     closed_nodes = [item for item in nodes if item.get("lifecycle") in {"closed", "stopped"}]
     hypothesis_context = _build_hypothesis_context(mechanism, active_evidence, manifest)
-    workspace_revision = sha256_json(
-        {"research_state": research_state, "hypotheses": hypotheses, "evidence": evidence}
-    )
+    workspace_revision = workspace_revision_from_documents(research_state, hypotheses, evidence)
+    report_id = report_id_for_revision(workspace_revision)
     operations = operational_snapshot(root_path)
     try:
         identity = read_workspace_identity(root_path)

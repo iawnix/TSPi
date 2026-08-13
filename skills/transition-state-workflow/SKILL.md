@@ -99,7 +99,10 @@ Use these four tools in order when mutating:
 
 Only `ts_workspace_decision_apply` mutates canonical state. Do not hand-edit decision or
 state files between decide, validate, and apply. A stale `base_revision` is
-rejected.
+rejected. Apply always repeats the complete workspace-aware dry run while holding
+the workspace lock; validate is an explicit preview, not a reusable safety token.
+`report_id` is deterministically derived from the current scientific revision, so
+the same revision has the same report identity.
 
 Pi injects only a short control-plane reminder at turn start, not the full
 workspace report. Use `mode=delta` with the last scientific and operational
@@ -124,6 +127,12 @@ operating instructions.
 - The Root Agent selects `continue_parent`, `new_solution_branch`,
   `new_hypothesis_branch`, `new_pathway_branch`, or `recalculation_of` after
   inspecting evidence and relevant history.
+- A `new_solution_branch` start also carries a new `solution_ref.solution_id`;
+  use its optional strategy and parent identity fields to preserve candidate
+  lineage across backtracking.
+- A `new_pathway_branch` start carries a workspace-new `pathway_ref.pathway_id`
+  under the same hypothesis. Solution and pathway identities are persisted in
+  the node, node index, and branch event.
 - Backtracking selects a historical anchor, loads its context, and creates a
   new child branch. It does not rewrite the old node.
 - For `node_type=audit, audit_scope=pathway`, `payload.pathway_ref` is mandatory.

@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import os
 import shutil
 import tempfile
+from contextlib import contextmanager
+from fcntl import LOCK_EX, LOCK_UN, flock
 from pathlib import Path
 from typing import Any
 
 from .finalizers import compute_v2_close_changes, validate_v2_audit_gates
 from .evidence_lifecycle import evidence_lifecycle_view
 from .identity import IDENTITY_REF, ensure_workspace_identity
-from .io import append_jsonl, apply_change, now_iso, read_json, sha256_json, write_json
+from .io import append_jsonl, now_iso, read_json, sha256_json, write_json, write_text_atomic
 from .ontology import NODE_SCHEMA
 from .readers import (
     report_branch_context as build_branch_context,
@@ -25,6 +29,8 @@ from .validators.decision_context import validate_decision_for_workspace
 from .validators.workspace import REQUIRED_DIRS, REQUIRED_FILES, SOFT_DIRS, validate_workspace as validate_workspace_dict
 
 
+TRANSACTION_DIR = ".ts-transactions"
+WORKSPACE_LOCK = ".ts-workspace.lock"
 DRY_RUN_EXCLUDED_DIRS = frozenset({
     ".agents",
     ".git",
@@ -34,6 +40,8 @@ DRY_RUN_EXCLUDED_DIRS = frozenset({
     ".venv",
     "__pycache__",
     "node_modules",
+    TRANSACTION_DIR,
+    WORKSPACE_LOCK,
 })
 
 
@@ -85,9 +93,12 @@ def init_workspace(
 
 
 def update_workspace(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
+    return _apply_mutation(root, decision, "update_workspace", _update_workspace_once)
+
+
+def _update_workspace_once(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
     root_path = Path(root)
     _require_decision_action(decision, "update_workspace")
-    validate_decision_for_workspace(root_path, decision)
     _require_initialized(root_path)
     payload = decision["payload"]
     appended: dict[str, int] = {"evidence": 0, "provenance": 0}
@@ -120,22 +131,34 @@ def update_workspace(root: str | Path, decision: dict[str, Any]) -> dict[str, An
         appended["provenance"] += len(items)
 
     repair = payload.get("repair_branch_anchor")
-    repairs = 0
+    anchor_repairs = 0
     if repair is not None:
         items = repair if isinstance(repair, list) else [repair]
         for item in items:
             _apply_repair_branch_anchor(root_path, item, _decision_id(decision), changes)
-            repairs += 1
+            anchor_repairs += 1
 
-    result = {"mutation_applied": True, "appended": appended, "repairs": {"branch_anchor": repairs}}
+    solution_repair = payload.get("repair_solution_ref")
+    solution_repairs = 0
+    if solution_repair is not None:
+        items = solution_repair if isinstance(solution_repair, list) else [solution_repair]
+        for item in items:
+            _apply_repair_solution_ref(root_path, item, _decision_id(decision), changes)
+            solution_repairs += 1
+
+    repairs = {"branch_anchor": anchor_repairs, "solution_ref": solution_repairs}
+    result = {"appended": appended, "repairs": repairs}
     _commit_transaction(root_path, decision, changes, result)
-    return {"appended": appended, "repairs": {"branch_anchor": repairs}}
+    return result
 
 
 def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
+    return _apply_mutation(root, decision, "start_node", _start_node_once)
+
+
+def _start_node_once(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
     root_path = Path(root)
     _require_decision_action(decision, "start_node")
-    validate_decision_for_workspace(root_path, decision)
     _require_initialized(root_path)
     payload = decision["payload"]
     research_state = read_json(root_path / RESEARCH_STATE_FILE)
@@ -143,8 +166,13 @@ def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
     node_dir = root_path / "nodes" / node_id
     if (node_dir / "node.json").exists():
         raise ContractError(f"node already exists: {node_id}")
-    for dirname in ("inputs", "outputs", "scratch", "remote", "attempts"):
-        (node_dir / dirname).mkdir(parents=True, exist_ok=True)
+    node_directories = [
+        path
+        for path in [node_dir] + [
+            node_dir / dirname for dirname in ("inputs", "outputs", "scratch", "remote", "attempts")
+        ]
+        if not path.exists()
+    ]
 
     node = {
         "schema_version": NODE_SCHEMA,
@@ -163,6 +191,7 @@ def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
         "evidence_refs": decision.get("evidence_refs", []),
         "hypothesis_ref": payload.get("hypothesis_ref"),
         "proposed_hypothesis": payload.get("proposed_hypothesis"),
+        "solution_ref": payload.get("solution_ref"),
         "pathway_ref": payload.get("pathway_ref"),
         "branch_context": payload.get("branch_context"),
         "created_by_decision": _decision_id(decision),
@@ -194,6 +223,7 @@ def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
             "attempt_kind",
             "recalculation_ref",
             "hypothesis_ref",
+            "solution_ref",
             "pathway_ref",
             "branch_context",
         )
@@ -213,15 +243,18 @@ def start_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
         root_path / RESEARCH_STATE_FILE: research_state,
     }
     changes.update(_hypotheses_changes_for_node_start(root_path, node))
-    result = {"mutation_applied": True, "node_id": node_id, "node_type": node["node_type"]}
-    _commit_transaction(root_path, decision, changes, result)
-    return {"node_id": node_id, "node_type": node["node_type"], "lifecycle": node["lifecycle"]}
+    result = {"node_id": node_id, "node_type": node["node_type"], "lifecycle": node["lifecycle"]}
+    _commit_transaction(root_path, decision, changes, result, directories=node_directories)
+    return result
 
 
 def end_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
+    return _apply_mutation(root, decision, "end_node", _end_node_once)
+
+
+def _end_node_once(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
     root_path = Path(root)
     _require_decision_action(decision, "end_node")
-    validate_decision_for_workspace(root_path, decision)
     _require_initialized(root_path)
     node_id = decision["payload"]["node_id"]
     node_path = root_path / "nodes" / node_id / "node.json"
@@ -259,9 +292,9 @@ def end_node(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
     }
     changes.update(compute_v2_close_changes(root_path, node, research_state))
     changes.update(_v2_hypothesis_close_changes(root_path, node, closure))
-    result = {"mutation_applied": True, "node_id": node_id, "lifecycle": "closed"}
+    result = {"node_id": node_id, "node_type": node["node_type"], "lifecycle": "closed", "closure": closure}
     _commit_transaction(root_path, decision, changes, result)
-    return {"node_id": node_id, "node_type": node["node_type"], "lifecycle": "closed", "closure": closure}
+    return result
 
 
 def _v2_closure_evidence_refs(
@@ -433,11 +466,76 @@ def _branch_event_v2(node: dict[str, Any], decision: dict[str, Any]) -> dict[str
         "rationale": decision["rationale"],
         "evidence_refs": context.get("evidence_refs", []),
         "target_hypothesis_ref": node.get("hypothesis_ref"),
-        "target_solution_ref": None,
+        "target_solution_ref": node.get("solution_ref"),
+        "target_pathway_ref": node.get("pathway_ref"),
         "created_by_decision": _decision_id(decision),
         **({"reason_code": context["reason_code"]} if context.get("reason_code") else {}),
         **({"changed_variable": context["changed_variable"]} if context.get("changed_variable") else {}),
     }
+
+
+def _apply_mutation(
+    root: str | Path,
+    decision: dict[str, Any],
+    expected_action: str,
+    mutation: Any,
+) -> dict[str, Any]:
+    root_path = Path(root).resolve()
+    _require_decision_action(decision, expected_action)
+    _require_initialized(root_path)
+    with _workspace_lock(root_path):
+        _recover_incomplete_transactions(root_path)
+        replay = _committed_decision_result(root_path, decision)
+        if replay is not None:
+            return replay
+        validate_decision_dry_run(root_path, decision)
+        return mutation(root_path, decision)
+
+
+@contextmanager
+def _workspace_lock(root: Path):
+    lock_path = root / WORKSPACE_LOCK
+    lock_path.touch(mode=0o600, exist_ok=True)
+    with lock_path.open("r+", encoding="utf-8") as handle:
+        flock(handle.fileno(), LOCK_EX)
+        try:
+            yield
+        finally:
+            flock(handle.fileno(), LOCK_UN)
+
+
+def _committed_decision_result(root: Path, decision: dict[str, Any]) -> dict[str, Any] | None:
+    decision_id = _decision_id(decision)
+    snapshot_path = root / "decisions" / f"{decision_id}.json"
+    status = _transaction_status(root, decision_id)
+    if not snapshot_path.exists() and not status:
+        return None
+    if not snapshot_path.exists():
+        raise ContractError(f"decision_id already has {status} transaction without decision snapshot: {decision_id}")
+    existing = read_json(snapshot_path)
+    if sha256_json(existing) != sha256_json(decision):
+        raise ContractError(f"decision_id already exists with different content: {decision_id}")
+    if status != "committed":
+        raise ContractError(f"decision_id already exists without committed transaction: {decision_id}")
+    result = _decision_log_result(root, decision_id)
+    if result is None:
+        raise ContractError(f"committed decision is missing its decision_log result: {decision_id}")
+    return result
+
+
+def _decision_log_result(root: Path, decision_id: str) -> dict[str, Any] | None:
+    path = root / "decision_log.jsonl"
+    if not path.exists():
+        return None
+    result = None
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if row.get("decision_id") == decision_id and isinstance(row.get("result"), dict):
+            result = row["result"]
+    return result
 
 
 def _commit_transaction(
@@ -445,8 +543,10 @@ def _commit_transaction(
     decision: dict[str, Any],
     changes: dict[Path, Any],
     result: dict[str, Any],
+    *,
+    directories: list[Path] | None = None,
 ) -> None:
-    """Apply proposed writes atomically: prepare marker → state files → decision snapshot → decision_log row → committed marker."""
+    """Stage all writes, replace targets, and roll back on any local failure."""
     decision_id = _decision_id(decision)
     snapshot_ref = f"decisions/{decision_id}.json"
     snapshot_path = root / snapshot_ref
@@ -463,46 +563,299 @@ def _commit_transaction(
     if snapshot_path not in changes:
         changes = {snapshot_path: decision, **changes}
 
+    directories = directories or []
     tx_path = root / "transaction_log.jsonl"
+    decision_log_path = root / "decision_log.jsonl"
+    decision_log_row = {
+        "decision_id": decision_id,
+        "created_at": now_iso(),
+        "report_ref": decision.get("report_ref"),
+        "action": decision["action"],
+        "payload_hash": sha256_json(decision.get("payload", {})),
+        "evidence_refs": decision.get("evidence_refs", []),
+        "snapshot_ref": snapshot_ref,
+        "result": result,
+    }
+    changes[decision_log_path] = _jsonl_with_row(decision_log_path, decision_log_row)
     relative_paths = sorted(str(path.relative_to(root)) for path in changes)
-    append_jsonl(
-        tx_path,
-        {
-            "decision_id": decision_id,
-            "stage": "prepare",
-            "created_at": now_iso(),
-            "action": decision.get("action"),
-            "paths": relative_paths,
-        },
-    )
+    relative_directories = sorted(str(path.relative_to(root)) for path in directories)
+    transaction_root = root / TRANSACTION_DIR / decision_id
+    staged_root = transaction_root / "staged"
+    backup_root = transaction_root / "backup"
+    if transaction_root.exists():
+        raise ContractError(f"transaction staging already exists: {decision_id}")
+    staged_hashes: dict[str, str] = {}
+    original_hashes: dict[str, str | None] = {}
     for path, value in changes.items():
-        apply_change(path, value)
-    append_jsonl(
-        root / "decision_log.jsonl",
-        {
-            "decision_id": decision_id,
-            "created_at": now_iso(),
-            "report_ref": decision.get("report_ref"),
-            "action": decision["action"],
-            "payload_hash": sha256_json(decision.get("payload", {})),
-            "evidence_refs": decision.get("evidence_refs", []),
-            "snapshot_ref": snapshot_ref,
-            "result": result,
-        },
-    )
+        relative = path.relative_to(root)
+        staged = staged_root / relative
+        _write_change(staged, value)
+        staged_hashes[str(relative)] = _sha256_file(staged)
+        original_hashes[str(relative)] = _sha256_file(path) if path.exists() else None
+
+    prepare_row = {
+        "decision_id": decision_id,
+        "stage": "prepare",
+        "created_at": now_iso(),
+        "action": decision.get("action"),
+        "paths": relative_paths,
+        "directories": relative_directories,
+        "staged_sha256": staged_hashes,
+        "original_sha256": original_hashes,
+    }
     append_jsonl(
         tx_path,
-        {
-            "decision_id": decision_id,
-            "stage": "committed",
-            "created_at": now_iso(),
-            "action": decision.get("action"),
-            "paths": relative_paths,
-        },
+        prepare_row,
     )
+    transaction_resolved = False
+    try:
+        for directory in directories:
+            directory.mkdir(parents=True, exist_ok=False)
+        for target in changes:
+            relative = target.relative_to(root)
+            staged = staged_root / relative
+            backup = backup_root / relative
+            if target.exists():
+                backup.parent.mkdir(parents=True, exist_ok=True)
+                os.replace(target, backup)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(staged, target)
+        append_jsonl(
+            tx_path,
+            {
+                "decision_id": decision_id,
+                "stage": "committed",
+                "created_at": now_iso(),
+                "action": decision.get("action"),
+                "paths": relative_paths,
+            },
+        )
+        transaction_resolved = True
+    except Exception as mutation_error:
+        try:
+            _rollback_transaction(root, prepare_row)
+            append_jsonl(
+                tx_path,
+                {
+                    "decision_id": decision_id,
+                    "stage": "aborted",
+                    "created_at": now_iso(),
+                    "action": decision.get("action"),
+                    "paths": relative_paths,
+                },
+            )
+            transaction_resolved = True
+        except Exception as rollback_error:
+            raise ContractError(
+                f"transaction {decision_id} failed and automatic rollback was incomplete; "
+                f"recovery data is preserved under {TRANSACTION_DIR}/{decision_id}: {rollback_error}"
+            ) from mutation_error
+        raise
+    finally:
+        if transaction_resolved:
+            shutil.rmtree(transaction_root, ignore_errors=True)
+
+
+def _write_change(path: Path, value: Any) -> None:
+    if isinstance(value, str):
+        write_text_atomic(path, value)
+    else:
+        write_json(path, value)
+
+
+def _jsonl_with_row(path: Path, row: dict[str, Any]) -> str:
+    existing = path.read_text(encoding="utf-8") if path.exists() else ""
+    return existing + json.dumps(row, sort_keys=True) + "\n"
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return "sha256:" + digest.hexdigest()
+
+
+def _rollback_transaction(root: Path, prepare: dict[str, Any]) -> None:
+    decision_id = str(prepare["decision_id"])
+    transaction_root = root / TRANSACTION_DIR / decision_id
+    backup_root = transaction_root / "backup"
+    staged_root = transaction_root / "staged"
+    paths, staged_hashes, original_hashes = _validated_recovery_metadata(root, prepare)
+    for relative in paths:
+        _validate_rollback_target(
+            decision_id,
+            relative,
+            root / relative,
+            backup_root / relative,
+            staged_hashes[str(relative)],
+            original_hashes[str(relative)],
+        )
+    for relative in reversed(paths):
+        target = root / relative
+        backup = backup_root / relative
+        original_hash = original_hashes.get(str(relative))
+        if backup.exists():
+            if target.exists():
+                target.unlink()
+            target.parent.mkdir(parents=True, exist_ok=True)
+            os.replace(backup, target)
+        elif original_hash is None and target.exists():
+            target.unlink()
+        staged = staged_root / relative
+        if staged.exists():
+            staged.unlink()
+    for relative_value in reversed(prepare.get("directories", [])):
+        directory = root / str(relative_value)
+        try:
+            directory.rmdir()
+        except OSError:
+            pass
+
+
+def _validate_rollback_target(
+    decision_id: str,
+    relative: Path,
+    target: Path,
+    backup: Path,
+    staged_hash: str,
+    original_hash: str | None,
+) -> None:
+    if backup.exists():
+        if original_hash is None or _sha256_file(backup) != original_hash:
+            raise ContractError(f"transaction {decision_id} backup does not match its recorded original: {relative}")
+        if target.exists() and _sha256_file(target) != staged_hash:
+            raise ContractError(f"transaction {decision_id} target changed after prepare: {relative}")
+        return
+    if original_hash is not None:
+        if not target.exists() or _sha256_file(target) != original_hash:
+            raise ContractError(f"transaction {decision_id} is missing its recorded backup: {relative}")
+        return
+    if target.exists() and _sha256_file(target) != staged_hash:
+        raise ContractError(f"transaction {decision_id} created target changed after prepare: {relative}")
+
+
+def _validated_recovery_metadata(
+    root: Path,
+    prepare: dict[str, Any],
+) -> tuple[list[Path], dict[str, str], dict[str, str | None]]:
+    decision_id = str(prepare.get("decision_id") or "unknown")
+    if not _is_safe_identifier(decision_id):
+        raise ContractError(f"transaction has an unsafe decision_id: {decision_id!r}")
+    raw_paths = prepare.get("paths")
+    staged_hashes = prepare.get("staged_sha256")
+    original_hashes = prepare.get("original_sha256")
+    if not isinstance(raw_paths, list) or not raw_paths:
+        raise ContractError(f"transaction {decision_id} lacks recovery paths; manual reconciliation is required")
+    if not isinstance(staged_hashes, dict) or not isinstance(original_hashes, dict):
+        raise ContractError(
+            f"transaction {decision_id} predates recoverable transaction metadata; manual reconciliation is required"
+        )
+
+    paths: list[Path] = []
+    path_keys: list[str] = []
+    for value in raw_paths:
+        key = str(value)
+        relative = _validated_workspace_relative_path(root, key, decision_id, "path")
+        paths.append(relative)
+        path_keys.append(key)
+
+    raw_directories = prepare.get("directories", [])
+    if not isinstance(raw_directories, list):
+        raise ContractError(f"transaction {decision_id} has invalid recovery directories")
+    for value in raw_directories:
+        _validated_workspace_relative_path(root, str(value), decision_id, "directory")
+
+    if set(staged_hashes) != set(path_keys) or set(original_hashes) != set(path_keys):
+        raise ContractError(f"transaction {decision_id} recovery metadata does not cover every target path")
+    for key in path_keys:
+        if not _is_sha256(staged_hashes.get(key)):
+            raise ContractError(f"transaction {decision_id} has an invalid staged hash for {key}")
+        original_hash = original_hashes.get(key)
+        if original_hash is not None and not _is_sha256(original_hash):
+            raise ContractError(f"transaction {decision_id} has an invalid original hash for {key}")
+    return paths, staged_hashes, original_hashes
+
+
+def _validated_workspace_relative_path(root: Path, key: str, decision_id: str, kind: str) -> Path:
+    relative = Path(key)
+    if relative.is_absolute() or not relative.parts or ".." in relative.parts:
+        raise ContractError(f"transaction {decision_id} contains an unsafe recovery {kind}: {key}")
+    target = (root / relative).resolve()
+    if target == root or root not in target.parents:
+        raise ContractError(f"transaction {decision_id} recovery {kind} escapes the workspace: {key}")
+    return relative
+
+
+def _is_sha256(value: Any) -> bool:
+    if not isinstance(value, str) or not value.startswith("sha256:"):
+        return False
+    digest = value.split(":", 1)[1]
+    return len(digest) == 64 and all(character in "0123456789abcdef" for character in digest)
+
+
+def _is_safe_identifier(value: str) -> bool:
+    return (
+        1 <= len(value) <= 128
+        and value[0].isalnum()
+        and all(character.isalnum() or character in "._-" for character in value)
+    )
+
+
+def _recover_incomplete_transactions(root: Path) -> None:
+    prepared = _pending_transaction_rows(root)
+    for decision_id, row in prepared.items():
+        _rollback_transaction(root, row)
+        append_jsonl(
+            root / "transaction_log.jsonl",
+            {
+                "decision_id": decision_id,
+                "stage": "aborted",
+                "created_at": now_iso(),
+                "action": row.get("action"),
+                "paths": row.get("paths", []),
+                "recovered": True,
+            },
+        )
+        shutil.rmtree(root / TRANSACTION_DIR / decision_id, ignore_errors=True)
+    transaction_root = root / TRANSACTION_DIR
+    if transaction_root.exists():
+        for path in transaction_root.iterdir():
+            if path.is_dir() and _transaction_latest_stage(root, path.name) in {"committed", "aborted"}:
+                shutil.rmtree(path, ignore_errors=True)
+            elif path.is_dir():
+                raise ContractError(
+                    f"transaction staging has no recoverable prepare record: {path.name}; manual reconciliation is required"
+                )
+
+
+def _pending_transaction_rows(root: Path) -> dict[str, dict[str, Any]]:
+    path = root / "transaction_log.jsonl"
+    if not path.exists():
+        return {}
+    pending: dict[str, dict[str, Any]] = {}
+    for line in path.read_text(encoding="utf-8").splitlines():
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        decision_id = row.get("decision_id")
+        stage = row.get("stage")
+        if not isinstance(decision_id, str):
+            continue
+        if stage == "prepare":
+            pending[decision_id] = row
+        elif stage in {"committed", "aborted"}:
+            pending.pop(decision_id, None)
+    return pending
 
 
 def _transaction_status(root: Path, decision_id: str) -> str:
+    status = _transaction_latest_stage(root, decision_id)
+    return "" if status == "aborted" else status
+
+
+def _transaction_latest_stage(root: Path, decision_id: str) -> str:
     tx_path = root / "transaction_log.jsonl"
     if not tx_path.exists():
         return ""
@@ -522,6 +875,8 @@ def _transaction_status(root: Path, decision_id: str) -> str:
             status = "prepare"
         elif stage == "committed":
             status = "committed"
+        elif stage == "aborted":
+            status = "aborted"
     return status
 
 
@@ -539,6 +894,12 @@ def _clear_workspace_owned_state(root: Path) -> None:
                 shutil.rmtree(path)
             else:
                 path.unlink()
+    transaction_root = root / TRANSACTION_DIR
+    if transaction_root.exists():
+        shutil.rmtree(transaction_root)
+    lock_path = root / WORKSPACE_LOCK
+    if lock_path.exists():
+        lock_path.unlink()
     if identity_path.exists() or identity_path.is_symlink():
         identity_path.unlink()
 
@@ -581,9 +942,9 @@ def validate_decision_dry_run(root: str | Path, decision: dict[str, Any]) -> dic
     validate_decision_for_workspace(root_path, decision)
     action = str(decision.get("action"))
     mutation = {
-        "start_node": start_node,
-        "update_workspace": update_workspace,
-        "end_node": end_node,
+        "start_node": _start_node_once,
+        "update_workspace": _update_workspace_once,
+        "end_node": _end_node_once,
     }.get(action)
     if mutation is None:
         return {"executed": False, "action": action, "reason": "non_mutation_decision"}
@@ -598,7 +959,15 @@ def validate_decision_dry_run(root: str | Path, decision: dict[str, Any]) -> dic
             ignore=_ignore_dry_run_entries,
         )
         result = mutation(snapshot, decision)
-    return {"executed": True, "action": action, "result": result}
+        validation = validate_workspace_dict(snapshot)
+        errors = [item for item in validation.get("findings", []) if item.get("severity") == "error"]
+        if errors:
+            summary = "; ".join(
+                f"{item.get('path', '?')}: {item.get('message', item.get('code', 'validation error'))}"
+                for item in errors[:8]
+            )
+            raise ContractError(f"decision dry run produced an invalid workspace: {summary}")
+    return {"executed": True, "action": action, "result": result, "workspace_validation": validation}
 
 
 def _ignore_dry_run_entries(_directory: str, names: list[str]) -> set[str]:
@@ -622,7 +991,10 @@ def _next_node_id(tree: dict[str, Any]) -> str:
 
 def _decision_id(decision: dict[str, Any]) -> str:
     if isinstance(decision.get("decision_id"), str) and decision["decision_id"].strip():
-        return decision["decision_id"].strip()
+        decision_id = decision["decision_id"].strip()
+        if not _is_safe_identifier(decision_id):
+            raise ContractError(f"decision_id is not a path-safe identifier: {decision_id!r}")
+        return decision_id
     return "dec_" + sha256_json(decision).split(":", 1)[1][:12]
 
 
@@ -722,4 +1094,41 @@ def _apply_repair_branch_anchor(
             }
         )
         break
+    changes[research_path] = research_state
+
+
+def _apply_repair_solution_ref(
+    root: Path,
+    repair: dict[str, Any],
+    decision_id: str,
+    changes: dict[Path, Any],
+) -> None:
+    node_id = str(repair["node_id"])
+    solution_ref = dict(repair["solution_ref"])
+    reason_code = str(repair["reason_code"])
+    repaired_at = now_iso()
+    record = {
+        "decision_id": decision_id,
+        "repaired_at": repaired_at,
+        "reason_code": reason_code,
+        "new_solution_ref": solution_ref,
+    }
+
+    node_path = root / "nodes" / node_id / "node.json"
+    node = read_json(node_path) if node_path not in changes else changes[node_path]
+    node["solution_ref"] = solution_ref
+    node.setdefault("lineage_repairs", []).append(record)
+    changes[node_path] = node
+
+    research_path = root / RESEARCH_STATE_FILE
+    research_state = read_json(research_path) if research_path not in changes else changes[research_path]
+    tree_entry = next((item for item in research_state.get("nodes", []) if item.get("node_id") == node_id), None)
+    if tree_entry is None:
+        raise ContractError(f"repair_solution_ref missing research state node: {node_id}")
+    tree_entry["solution_ref"] = solution_ref
+    event = next((item for item in research_state.get("branch_events", []) if item.get("new_node") == node_id), None)
+    if event is None:
+        raise ContractError(f"repair_solution_ref missing branch event: {node_id}")
+    event["target_solution_ref"] = solution_ref
+    event.setdefault("lineage_repairs", []).append(record)
     changes[research_path] = research_state

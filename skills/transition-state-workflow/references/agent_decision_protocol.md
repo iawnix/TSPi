@@ -88,7 +88,9 @@ node's parent is `from_node`.
 
 Use when the hypothesis is retained but the candidate or search strategy
 changes. Select an ancestor checkpoint after loading it. The new parent is the
-anchor; the failed trigger remains `from_node`.
+anchor; the failed trigger remains `from_node`. Bind the replacement candidate
+or strategy with a new `solution_ref.solution_id`; use `parent_solution_id` when
+the source solution already has an explicit identity.
 
 ### `new_hypothesis_branch`
 
@@ -98,7 +100,9 @@ parent hypothesis. The proposal itself is a `mechanism/propose` node.
 ### `new_pathway_branch`
 
 Use when elementary-step decomposition, intermediate topology, or pathway
-assignment changes.
+assignment changes. Bind a pathway ID not already declared by the workspace and
+retain the source hypothesis. The node, tree index, and branch event must expose
+the same target pathway reference.
 
 ### `recalculation_of`
 
@@ -118,6 +122,12 @@ Backtracking means:
 
 The validator checks ancestry and references. It cannot decide which anchor is
 scientifically useful.
+
+If an older closed `new_solution_branch` lacks its required solution identity,
+do not edit canonical JSON. Submit one `repair_solution_ref` decision after
+selecting a new solution ID and explaining the historical defect. This is a
+metadata repair only; it neither reopens the node nor changes its scientific
+closure.
 
 ## Subagent Use
 

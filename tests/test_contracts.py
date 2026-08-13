@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
+import os
 from pathlib import Path
 
 import pytest
@@ -141,6 +143,20 @@ def test_mutation_rejects_mismatched_action(tmp_path: Path) -> None:
         start_node(workspace, decision)
 
 
+def test_decision_id_cannot_escape_workspace_paths(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    init_workspace(workspace)
+    decision = _decision(
+        workspace,
+        "update_workspace",
+        {"append_provenance": {"source": "unsafe-id"}},
+        decision_id="../escape",
+    )
+
+    with pytest.raises(ContractError, match="decision_id"):
+        update_workspace(workspace, decision)
+
+
 def test_decision_id_cannot_be_rebound(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     init_workspace(workspace)
@@ -184,5 +200,273 @@ def test_update_workspace_cannot_write_closure() -> None:
         "base_revision": "revision",
         "payload": {"closure": {"summary": "invalid"}},
     }
-    with pytest.raises(ContractError, match="supported operation"):
+    with pytest.raises(ContractError, match="Additional properties are not allowed"):
         validate_decision(decision)
+
+
+def test_mutation_apply_enforces_full_post_mutation_validation(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    bootstrap_strict_workspace(workspace)
+    before = read_json(workspace / "evidence_registry.json")
+    decision = _decision(
+        workspace,
+        "update_workspace",
+        {
+            "append_evidence": {
+                "evidence_id": "ev_unknown_hypothesis",
+                "kind": "manual_observation",
+                "role": "endpoint_provenance",
+                "evidence_tier": "manual_observation",
+                "node_id": "n000",
+                "summary": "This deliberately references an unknown hypothesis.",
+                "quality": {"hypothesis_id": "hyp_missing"},
+            }
+        },
+        decision_id="dec_invalid_apply",
+    )
+
+    with pytest.raises(ContractError, match="decision dry run produced an invalid workspace"):
+        update_workspace(workspace, decision)
+
+    assert read_json(workspace / "evidence_registry.json") == before
+    assert not (workspace / "decisions" / "dec_invalid_apply.json").exists()
+    assert validate_workspace(workspace)["valid"] is True
+
+
+def test_mutation_rejects_forged_report_ref(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    init_workspace(workspace)
+    decision = _decision(
+        workspace,
+        "update_workspace",
+        {"append_provenance": {"source": "forged"}},
+        decision_id="dec_forged_report",
+    )
+    decision["report_ref"] = {"report_id": "rep_forged", "workspace_root": "/wrong/workspace"}
+
+    with pytest.raises(ContractError, match="workspace_root does not match"):
+        update_workspace(workspace, decision)
+
+
+def test_mutation_rejects_forged_report_id_for_active_workspace(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    init_workspace(workspace)
+    decision = _decision(
+        workspace,
+        "update_workspace",
+        {"append_provenance": {"source": "forged-id"}},
+        decision_id="dec_forged_report_id",
+    )
+    decision["report_ref"]["report_id"] = "rep_forged"
+
+    with pytest.raises(ContractError, match="report_id does not match"):
+        update_workspace(workspace, decision)
+
+
+def test_report_id_is_stable_for_revision_and_changes_after_mutation(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    init_workspace(workspace)
+    first = report_workspace(workspace)
+    repeated = report_workspace(workspace)
+
+    assert repeated["report_id"] == first["report_id"]
+    assert repeated["workspace_revision"] == first["workspace_revision"]
+
+    update_workspace(
+        workspace,
+        _decision(
+            workspace,
+            "update_workspace",
+            {"append_provenance": {"source": "revision-change"}},
+            decision_id="dec_revision_change",
+        ),
+    )
+    changed = report_workspace(workspace)
+    assert changed["workspace_revision"] != first["workspace_revision"]
+    assert changed["report_id"] != first["report_id"]
+
+
+def test_identical_committed_decision_replays_original_result(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    init_workspace(workspace)
+    decision = _decision(
+        workspace,
+        "update_workspace",
+        {"append_provenance": {"source": "idempotent"}},
+        decision_id="dec_idempotent",
+    )
+
+    first = update_workspace(workspace, decision)
+    second = update_workspace(workspace, decision)
+
+    assert second == first
+    assert read_json(workspace / "research_state.json")["provenance"] == [{"source": "idempotent"}]
+    rows = [json.loads(line) for line in (workspace / "decision_log.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [row["decision_id"] for row in rows].count("dec_idempotent") == 1
+
+
+def test_transaction_failure_rolls_back_state_snapshot_and_log(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "ws"
+    init_workspace(workspace)
+    before_state = read_json(workspace / "research_state.json")
+    before_log = (workspace / "decision_log.jsonl").read_text(encoding="utf-8")
+    decision = _decision(
+        workspace,
+        "update_workspace",
+        {"append_provenance": {"source": "must-roll-back"}},
+        decision_id="dec_rollback",
+    )
+    real_replace = os.replace
+
+    def fail_on_research_state(source: str | Path, target: str | Path) -> None:
+        if (
+            Path(target).name == "research_state.json"
+            and Path(source).name == "research_state.json"
+            and "staged" in Path(source).parts
+            and Path(target).parent == workspace
+        ):
+            raise OSError("injected replace failure")
+        real_replace(source, target)
+
+    monkeypatch.setattr("ts_workspace.engine.os.replace", fail_on_research_state)
+
+    with pytest.raises(OSError, match="injected replace failure"):
+        update_workspace(workspace, decision)
+
+    assert read_json(workspace / "research_state.json") == before_state
+    assert (workspace / "decision_log.jsonl").read_text(encoding="utf-8") == before_log
+    assert not (workspace / "decisions" / "dec_rollback.json").exists()
+    events = [json.loads(line) for line in (workspace / "transaction_log.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert [event["stage"] for event in events[-2:]] == ["prepare", "aborted"]
+
+
+def test_pending_transaction_with_recovery_metadata_is_rolled_back_before_mutation(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    init_workspace(workspace)
+    decision_log = workspace / "decision_log.jsonl"
+    original = decision_log.read_bytes()
+    staged = b'{"partial":true}\n'
+    transaction_root = workspace / ".ts-transactions" / "dec_interrupted"
+    backup = transaction_root / "backup" / "decision_log.jsonl"
+    backup.parent.mkdir(parents=True)
+    backup.write_bytes(original)
+    decision_log.write_bytes(staged)
+
+    def digest(payload: bytes) -> str:
+        return "sha256:" + hashlib.sha256(payload).hexdigest()
+
+    (workspace / "transaction_log.jsonl").write_text(
+        json.dumps(
+            {
+                "decision_id": "dec_interrupted",
+                "stage": "prepare",
+                "action": "update_workspace",
+                "paths": ["decision_log.jsonl"],
+                "directories": [],
+                "staged_sha256": {"decision_log.jsonl": digest(staged)},
+                "original_sha256": {"decision_log.jsonl": digest(original)},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    validation = validate_workspace(workspace)
+    assert validation["valid"] is False
+    assert any(item["code"] == "pending_transaction" and item["severity"] == "error" for item in validation["findings"])
+
+    result = update_workspace(
+        workspace,
+        _decision(
+            workspace,
+            "update_workspace",
+            {"append_provenance": {"source": "after-recovery"}},
+            decision_id="dec_after_recovery",
+        ),
+    )
+
+    assert result["appended"]["provenance"] == 1
+    assert not transaction_root.exists()
+    rows = [json.loads(line) for line in (workspace / "transaction_log.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert any(row.get("decision_id") == "dec_interrupted" and row.get("stage") == "aborted" for row in rows)
+    assert validate_workspace(workspace)["valid"] is True
+
+
+def test_legacy_pending_transaction_refuses_automatic_recovery(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    init_workspace(workspace)
+    (workspace / "transaction_log.jsonl").write_text(
+        json.dumps(
+            {
+                "decision_id": "dec_legacy_pending",
+                "stage": "prepare",
+                "action": "update_workspace",
+                "paths": ["research_state.json"],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    decision = _decision(
+        workspace,
+        "update_workspace",
+        {"append_provenance": {"source": "must-not-run"}},
+        decision_id="dec_after_legacy",
+    )
+
+    with pytest.raises(ContractError, match="predates recoverable transaction metadata"):
+        update_workspace(workspace, decision)
+
+    assert not (workspace / "decisions" / "dec_after_legacy.json").exists()
+    assert validate_workspace(workspace)["valid"] is False
+
+
+def test_recovery_validates_all_targets_before_restoring_any(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    init_workspace(workspace)
+    first = workspace / "reports" / "a.txt"
+    second = workspace / "reports" / "z.txt"
+    first.write_text("externally changed", encoding="utf-8")
+    second.write_text("staged second", encoding="utf-8")
+    transaction_root = workspace / ".ts-transactions" / "dec_partial_recovery"
+    first_backup = transaction_root / "backup" / "reports" / "a.txt"
+    second_backup = transaction_root / "backup" / "reports" / "z.txt"
+    first_backup.parent.mkdir(parents=True)
+    first_backup.write_text("original first", encoding="utf-8")
+    second_backup.write_text("original second", encoding="utf-8")
+
+    def digest(text: str) -> str:
+        return "sha256:" + hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    prepare = {
+        "decision_id": "dec_partial_recovery",
+        "stage": "prepare",
+        "action": "update_workspace",
+        "paths": ["reports/a.txt", "reports/z.txt"],
+        "directories": [],
+        "staged_sha256": {
+            "reports/a.txt": digest("staged first"),
+            "reports/z.txt": digest("staged second"),
+        },
+        "original_sha256": {
+            "reports/a.txt": digest("original first"),
+            "reports/z.txt": digest("original second"),
+        },
+    }
+    (workspace / "transaction_log.jsonl").write_text(json.dumps(prepare) + "\n", encoding="utf-8")
+    decision = _decision(
+        workspace,
+        "update_workspace",
+        {"append_provenance": {"source": "must-not-run"}},
+        decision_id="dec_after_partial_recovery",
+    )
+
+    with pytest.raises(ContractError, match="target changed after prepare"):
+        update_workspace(workspace, decision)
+
+    assert first.read_text(encoding="utf-8") == "externally changed"
+    assert second.read_text(encoding="utf-8") == "staged second"
+    assert first_backup.read_text(encoding="utf-8") == "original first"
+    assert second_backup.read_text(encoding="utf-8") == "original second"

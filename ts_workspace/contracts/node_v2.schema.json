@@ -18,6 +18,22 @@
     "recalculation_ref": {"type": ["object", "null"]},
     "hypothesis_ref": {"type": ["object", "null"]},
     "proposed_hypothesis": {"type": ["object", "null"]},
+    "solution_ref": {
+      "anyOf": [
+        {
+          "type": "object",
+          "required": ["solution_id"],
+          "properties": {
+            "solution_id": {"type": "string", "minLength": 1},
+            "summary": {"type": ["string", "null"]},
+            "strategy": {"type": ["string", "null"]},
+            "parent_solution_id": {"type": ["string", "null"]}
+          },
+          "additionalProperties": false
+        },
+        {"type": "null"}
+      ]
+    },
     "pathway_ref": {"type": ["object", "null"]},
     "branch_context": {"type": ["object", "null"]},
     "expected_evidence": {"type": "array", "items": {"type": "string", "minLength": 1}},

@@ -47,17 +47,30 @@ canonical state file.
 Every applied decision is copied to `decisions/<decision_id>.json`. Reusing an
 ID is a no-op only when content is identical and the transaction is already
 committed. Different content or an incomplete prior transaction is rejected.
+`decision_id` is a bounded path-safe identifier. `report_id` is
+`rep_<workspace_revision prefix>`, so repeated reports of unchanged scientific
+state have one stable identity.
 
 Mutation order:
 
-1. append `transaction_log.jsonl` `prepare` with intended paths;
-2. write the full decision snapshot;
-3. atomically write proposed state files;
-4. append the decision log row;
-5. append transaction `committed`.
+1. stage the full decision snapshot, proposed state, and next decision log;
+2. record intended paths plus staged and pre-mutation SHA-256 values in a
+   `transaction_log.jsonl` `prepare` row;
+3. move existing targets to transaction-local backups and replace each target
+   from staging;
+4. append transaction `committed`;
+5. remove staging and backups only after commit is recorded.
 
-An unmatched prepare row is reported as `pending_transaction`. Inspect the
-snapshot and listed paths; do not blindly replay append-style writes.
+If replacement fails, the engine verifies hashes, restores every backup, removes
+new staged targets, and appends `aborted`. A later mutation performs the same
+recovery for an interrupted `prepare` before evaluating a new decision. Legacy
+prepare rows without complete recovery metadata, unsafe paths, missing backups,
+or externally changed targets are not guessed: mutation stops and preserves
+`.ts-transactions/<decision_id>/` for manual reconciliation.
+
+An unmatched prepare row or malformed transaction log is a workspace validation
+error. This mechanism provides a recoverable consistent multi-file commit; it
+does not claim that the filesystem replaces all files in one atomic operation.
 
 `init_workspace --force` is destructive and requires an explicit auditable
 decision. Old workspace layouts are not migrated by this package.
@@ -76,6 +89,18 @@ decision. Old workspace layouts are not migrated by this package.
 - Audit closures cannot create a hypothesis verdict.
 
 Every node must conform to `ts-node/2`.
+
+For `new_solution_branch`, `solution_ref.solution_id` is unique within its
+hypothesis across the workspace. If the source has a solution identity,
+`parent_solution_id` must cite it. For `new_pathway_branch`, `pathway_id` must be
+new across declared pathways and prior branch nodes, and the hypothesis cannot
+change. Node, tree entry, and branch-event target refs must agree.
+
+Historical closed `new_solution_branch` nodes created by the prior engine without
+this identity may be corrected only through `update_workspace.repair_solution_ref`.
+The repair refuses running nodes, overwrites, and duplicate identities; it updates
+the node, tree entry, and branch event together and appends `lineage_repairs`
+audit metadata.
 
 ## Evidence
 
@@ -142,7 +167,9 @@ Workspace validation checks:
 Warnings expose suspicious but recoverable state. Validators do not choose the
 next branch, retry, hypothesis, or stop decision.
 
-`validate_decision` runs the same mutation and finalizer path as apply against
-an isolated temporary workspace copy. Therefore a successful preflight must
-cover finalizer-only evidence gates as well as schema and context checks while
-leaving the source workspace unchanged.
+`validate_decision` explicitly previews the same mutation and finalizer path as
+apply against an isolated temporary workspace copy. Apply does not trust an old
+preview: while holding the workspace lock it checks revision/report identity and
+runs the complete dry run again before writing. A successful preflight therefore
+covers finalizer-only evidence gates while leaving the source workspace
+unchanged, but only apply decides whether the live mutation can proceed.

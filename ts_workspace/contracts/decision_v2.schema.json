@@ -5,7 +5,7 @@
   "required": ["schema_version", "action", "rationale", "payload"],
   "properties": {
     "schema_version": {"const": "ts-decision/2"},
-    "decision_id": {"type": "string", "minLength": 1},
+    "decision_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"},
     "action": {"enum": ["init_workspace", "start_node", "end_node", "update_workspace", "ask_user", "stop"]},
     "rationale": {"type": "string", "minLength": 1},
     "evidence_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
@@ -25,6 +25,10 @@
     {
       "if": {"properties": {"action": {"const": "end_node"}}},
       "then": {"properties": {"payload": {"$ref": "#/$defs/end_payload"}}}
+    },
+    {
+      "if": {"properties": {"action": {"const": "update_workspace"}}},
+      "then": {"properties": {"payload": {"$ref": "#/$defs/update_payload"}}}
     }
   ],
   "additionalProperties": false,
@@ -56,6 +60,17 @@
       },
       "additionalProperties": false
     },
+    "solution_ref": {
+      "type": "object",
+      "required": ["solution_id"],
+      "properties": {
+        "solution_id": {"type": "string", "minLength": 1},
+        "summary": {"type": ["string", "null"]},
+        "strategy": {"type": ["string", "null"]},
+        "parent_solution_id": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
     "branch_context": {
       "type": "object",
       "required": ["relation", "from_node", "anchor_node"],
@@ -80,6 +95,26 @@
       },
       "additionalProperties": false
     },
+    "repair_branch_anchor": {
+      "type": "object",
+      "required": ["node_id", "new_anchor_node", "reason_code"],
+      "properties": {
+        "node_id": {"type": "string", "minLength": 1},
+        "new_anchor_node": {"type": "string", "minLength": 1},
+        "reason_code": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
+    "repair_solution_ref": {
+      "type": "object",
+      "required": ["node_id", "solution_ref", "reason_code"],
+      "properties": {
+        "node_id": {"type": "string", "minLength": 1},
+        "solution_ref": {"$ref": "#/$defs/solution_ref"},
+        "reason_code": {"type": "string", "minLength": 1}
+      },
+      "additionalProperties": false
+    },
     "start_payload": {
       "type": "object",
       "required": ["node_type", "objective"],
@@ -96,11 +131,27 @@
         "recalculation_ref": {"$ref": "#/$defs/recalculation_ref"},
         "hypothesis_ref": {"$ref": "#/$defs/hypothesis_ref"},
         "proposed_hypothesis": {"type": "object"},
+        "solution_ref": {"$ref": "#/$defs/solution_ref"},
         "pathway_ref": {"$ref": "#/$defs/pathway_ref"},
         "branch_context": {"$ref": "#/$defs/branch_context"},
         "expected_evidence": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
       },
-      "additionalProperties": false
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "branch_context": {
+                "type": "object",
+                "properties": {"relation": {"const": "new_solution_branch"}},
+                "required": ["relation"]
+              }
+            },
+            "required": ["branch_context"]
+          },
+          "then": {"required": ["solution_ref"]}
+        }
+      ]
     },
     "section": {
       "type": "object",
@@ -145,6 +196,37 @@
           "additionalProperties": false
         }
       },
+      "additionalProperties": false
+    },
+    "update_payload": {
+      "type": "object",
+      "properties": {
+        "append_evidence": {
+          "oneOf": [
+            {"$ref": "evidence.schema.json"},
+            {"type": "array", "minItems": 1, "items": {"$ref": "evidence.schema.json"}}
+          ]
+        },
+        "append_provenance": {
+          "oneOf": [
+            {"type": "object"},
+            {"type": "array", "minItems": 1, "items": {"type": "object"}}
+          ]
+        },
+        "repair_branch_anchor": {
+          "oneOf": [
+            {"$ref": "#/$defs/repair_branch_anchor"},
+            {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/repair_branch_anchor"}}
+          ]
+        },
+        "repair_solution_ref": {
+          "oneOf": [
+            {"$ref": "#/$defs/repair_solution_ref"},
+            {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/repair_solution_ref"}}
+          ]
+        }
+      },
+      "minProperties": 1,
       "additionalProperties": false
     }
   }

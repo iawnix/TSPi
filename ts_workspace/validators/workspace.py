@@ -159,6 +159,7 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
         _validate_branch_contexts(node_details, findings)
         _validate_branch_events(tree, node_ids, findings)
         _validate_branch_lineage(tree, node_details, findings)
+        _validate_branch_identity_uniqueness(tree, node_details, findings)
         _validate_unresolved_terminal_state(
             tree,
             _as_dict(loaded.get(RESEARCH_STATE_FILE)),
@@ -258,20 +259,20 @@ def _validate_pending_transactions(root: Path, findings: list[dict[str, str]]) -
 
             row = _json.loads(line)
         except Exception:  # noqa: BLE001
-            _finding(findings, "warning", "transaction_log_unreadable", "malformed transaction_log row", "transaction_log.jsonl")
+            _finding(findings, "error", "transaction_log_unreadable", "malformed transaction_log row", "transaction_log.jsonl")
             continue
         decision_id = row.get("decision_id")
         stage = row.get("stage")
-        if not decision_id or stage not in {"prepare", "committed"}:
+        if not decision_id or stage not in {"prepare", "committed", "aborted"}:
             continue
         if stage == "prepare":
             prepared[decision_id] = row
-        elif stage == "committed":
+        elif stage in {"committed", "aborted"}:
             prepared.pop(decision_id, None)
     for decision_id, row in prepared.items():
         _finding(
             findings,
-            "warning",
+            "error",
             "pending_transaction",
             f"decision {decision_id} recorded prepare without committed",
             "transaction_log.jsonl",
@@ -673,12 +674,36 @@ def _validate_branch_lineage(
                 "branch target_hypothesis_ref must match the new node hypothesis",
                 path,
             )
-        if "target_solution_ref" in event and event.get("target_solution_ref") != new_node.get("solution_ref"):
+        if event.get("relation") == "new_solution_branch" and "target_solution_ref" not in event:
+            _finding(
+                findings,
+                "error",
+                "branch_target_solution_missing",
+                "new_solution_branch requires target_solution_ref in its branch event",
+                path,
+            )
+        elif "target_solution_ref" in event and event.get("target_solution_ref") != new_node.get("solution_ref"):
             _finding(
                 findings,
                 "error",
                 "branch_target_solution_mismatch",
                 "branch target_solution_ref must match the new node solution_ref",
+                path,
+            )
+        if event.get("relation") == "new_pathway_branch" and "target_pathway_ref" not in event:
+            _finding(
+                findings,
+                "error",
+                "branch_target_pathway_missing",
+                "new_pathway_branch requires target_pathway_ref in its branch event",
+                path,
+            )
+        elif "target_pathway_ref" in event and event.get("target_pathway_ref") != new_node.get("pathway_ref"):
+            _finding(
+                findings,
+                "error",
+                "branch_target_pathway_mismatch",
+                "branch target_pathway_ref must match the new node pathway_ref",
                 path,
             )
         if event.get("relation") != "new_solution_branch":
@@ -703,6 +728,83 @@ def _validate_branch_lineage(
                 "new_solution_branch must keep the same hypothesis_id",
                 path,
             )
+
+
+def _validate_branch_identity_uniqueness(
+    tree: dict[str, Any],
+    node_details: dict[str, dict[str, Any]],
+    findings: list[dict[str, str]],
+) -> None:
+    introduced_solutions: dict[tuple[str | None, str], str] = {}
+    introduced_pathways: dict[str, str] = {}
+    for index, event in enumerate(_branch_events(tree)):
+        source = f"{RESEARCH_STATE_FILE}.branch_events[{index}]"
+        new_node = node_details.get(str(event.get("new_node")))
+        from_node = node_details.get(str(event.get("from_node")))
+        if new_node is None:
+            continue
+        relation = event.get("relation")
+        if relation == "new_solution_branch":
+            solution_ref = new_node.get("solution_ref") if isinstance(new_node.get("solution_ref"), dict) else {}
+            solution_id = solution_ref.get("solution_id")
+            if not isinstance(solution_id, str) or not solution_id:
+                continue
+            key = (_node_hypothesis_id(new_node), solution_id)
+            previous = introduced_solutions.get(key)
+            if previous is not None:
+                _finding(
+                    findings,
+                    "error",
+                    "duplicate_solution_branch_identity",
+                    f"solution_id {solution_id} was already introduced by {previous}",
+                    source,
+                )
+            else:
+                introduced_solutions[key] = str(event.get("new_node"))
+            from_solution = from_node.get("solution_ref") if isinstance(from_node, dict) and isinstance(from_node.get("solution_ref"), dict) else {}
+            source_solution_id = from_solution.get("solution_id")
+            parent_solution_id = solution_ref.get("parent_solution_id")
+            if source_solution_id and parent_solution_id != source_solution_id:
+                _finding(
+                    findings,
+                    "error",
+                    "solution_parent_identity_mismatch",
+                    "solution_ref.parent_solution_id must match the source node solution_id",
+                    source,
+                )
+            elif not source_solution_id and parent_solution_id is not None:
+                _finding(
+                    findings,
+                    "error",
+                    "solution_parent_identity_mismatch",
+                    "solution_ref.parent_solution_id requires an identified source solution",
+                    source,
+                )
+        elif relation == "new_pathway_branch":
+            pathway_ref = new_node.get("pathway_ref") if isinstance(new_node.get("pathway_ref"), dict) else {}
+            pathway_id = pathway_ref.get("pathway_id")
+            if not isinstance(pathway_id, str) or not pathway_id:
+                continue
+            previous = introduced_pathways.get(pathway_id)
+            if previous is not None:
+                _finding(
+                    findings,
+                    "error",
+                    "duplicate_pathway_branch_identity",
+                    f"pathway_id {pathway_id} was already introduced by {previous}",
+                    source,
+                )
+            else:
+                introduced_pathways[pathway_id] = str(event.get("new_node"))
+            from_pathway = from_node.get("pathway_ref") if isinstance(from_node, dict) and isinstance(from_node.get("pathway_ref"), dict) else {}
+            if from_pathway.get("pathway_id") == pathway_id:
+                _finding(
+                    findings,
+                    "error",
+                    "pathway_branch_reused_source_identity",
+                    "new_pathway_branch must not reuse the source node pathway_id",
+                    source,
+                )
 
 
 def _validate_initial_node_sequence(

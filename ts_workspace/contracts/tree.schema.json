@@ -41,6 +41,7 @@
               {"type": "null"}
             ]
           },
+          "pathway_ref": {"anyOf": [{"$ref": "#/$defs/pathway_ref"}, {"type": "null"}]},
           "branch_context": {
             "anyOf": [{"$ref": "#/$defs/branch_context"}, {"type": "null"}]
           },
@@ -104,6 +105,7 @@
               {"type": "null"}
             ]
           },
+          "target_pathway_ref": {"anyOf": [{"$ref": "#/$defs/pathway_ref"}, {"type": "null"}]},
           "rationale": {"type": "string"},
           "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}},
           "created_by_decision": {"type": "string"}
@@ -128,6 +130,15 @@
         "evidence_refs": {"type": "array", "items": {"type": "string", "minLength": 1}}
       },
       "additionalProperties": true
+    },
+    "pathway_ref": {
+      "type": "object",
+      "required": ["pathway_id"],
+      "properties": {
+        "pathway_id": {"type": "string", "minLength": 1},
+        "step_id": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
     }
   }
 }

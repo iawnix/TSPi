@@ -65,7 +65,7 @@ def test_evidence_lifecycle_rejects_multiple_terminal_events() -> None:
 
 def test_invalidated_alias_is_preserved_but_removed_from_current_findings(tmp_path) -> None:
     workspace = tmp_path / "workspace"
-    report_ref = bootstrap_strict_workspace(workspace)
+    bootstrap_strict_workspace(workspace)
     before = report_workspace(workspace)
     registry_path = workspace / "evidence_registry.json"
     registry = read_json(registry_path)
@@ -83,6 +83,7 @@ def test_invalidated_alias_is_preserved_but_removed_from_current_findings(tmp_pa
     assert "evidence_role_node_mismatch" in {
         finding["code"] for finding in validate_workspace(workspace)["findings"]
     }
+    current = report_workspace(workspace)
 
     update_workspace(
         workspace,
@@ -91,8 +92,8 @@ def test_invalidated_alias_is_preserved_but_removed_from_current_findings(tmp_pa
             "action": "update_workspace",
             "rationale": "Invalidate the incorrectly owned legacy alias without deleting history.",
             "evidence_refs": [],
-            "report_ref": report_ref,
-            "base_revision": report_workspace(workspace)["workspace_revision"],
+            "report_ref": {"report_id": current["report_id"], "workspace_root": str(workspace)},
+            "base_revision": current["workspace_revision"],
             "payload": {
                 "append_evidence": {
                     "evidence_id": "ev_bad_alias_invalidation",
