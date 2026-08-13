@@ -1,7 +1,7 @@
 import type { Model } from "@earendil-works/pi-ai";
 import {
   createAgentSession,
-  createExtensionRuntime,
+  DefaultResourceLoader,
   getAgentDir,
   ModelRuntime,
   type ResourceLoader,
@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const { promptWithDeadline, withDisposableSession } = require("../../agent-core/session-lifecycle.cjs");
+const { validateReviewTaskBundle } = require("./task-packet.cjs");
 import {
   createReviewResultCapture,
   createReviewResultTool,
@@ -44,6 +45,8 @@ let activeRun = false;
 interface ReviewRunOptions {
   workspaceRoot: string;
   packet: Record<string, unknown>;
+  evidenceSnapshot: Record<string, unknown>;
+  providerInput: Record<string, unknown>;
   parentModel: Model<any>;
   parentApiKey?: string;
   thinkingLevel: ThinkingLevel;
@@ -87,6 +90,11 @@ export interface InvalidReviewOutput {
   raw: unknown;
 }
 
+interface ProviderResponseObservation {
+  status?: number;
+  contentType?: string;
+}
+
 export async function runScientificReview(options: ReviewRunOptions): Promise<ReviewRunResult> {
   if (activeRun) {
     throw new Error("A TS workspace subagent review is already running");
@@ -97,6 +105,13 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
 
   try {
     const timeoutMs = normalizeTimeout(options.timeoutMs);
+    const bundle = validateReviewTaskBundle(options.packet, {
+      evidence_snapshot: options.evidenceSnapshot,
+      provider_input: options.providerInput,
+    });
+    options.packet = bundle.task;
+    options.evidenceSnapshot = bundle.documents.evidence_snapshot;
+    options.providerInput = bundle.documents.provider_input;
     const systemPrompt = loadSystemPrompt(String(options.packet.operation || ""));
     const agentDir = getAgentDir();
     const modelRuntime = await ModelRuntime.create({
@@ -121,8 +136,15 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
       retry: { enabled: false },
     });
     const capture = createReviewResultCapture();
-    const resultTool = createReviewResultTool(options.packet, capture);
-    const resourceLoader = createIsolatedResourceLoader(systemPrompt);
+    const resultTool = createReviewResultTool(options.packet, options.evidenceSnapshot, capture);
+    const providerResponse: ProviderResponseObservation = {};
+    const resourceLoader = await createIsolatedResourceLoader(
+      systemPrompt,
+      options.workspaceRoot,
+      agentDir,
+      settingsManager,
+      providerResponse,
+    );
     return await withDisposableSession(
       () => createAgentSession({
         cwd: options.workspaceRoot,
@@ -165,12 +187,28 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
           }
         });
         try {
-          await promptWithDeadline(session, buildTaskPrompt(options.packet), {
+          await promptWithDeadline(session, buildTaskPrompt(options.providerInput), {
             timeoutMs,
             signal: options.signal,
             onLifecycle: options.onLifecycle,
           });
-          await repairMissingToolCall(session, options, timeoutMs, startedAt, capture, invalidOutputs, attempts);
+          assertProviderTurnSucceeded(
+            session,
+            model,
+            providerResponse,
+            capture.attemptCount > 0 || invalidOutputs.length > 0,
+          );
+          await repairMissingToolCall(
+            session,
+            model,
+            providerResponse,
+            options,
+            timeoutMs,
+            startedAt,
+            capture,
+            invalidOutputs,
+            attempts,
+          );
         } finally {
           unsubscribe();
         }
@@ -214,20 +252,53 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
   }
 }
 
-function createIsolatedResourceLoader(systemPrompt: string): ResourceLoader {
-  const extensionsResult = { extensions: [], errors: [], runtime: createExtensionRuntime() };
+async function createIsolatedResourceLoader(
+  systemPrompt: string,
+  cwd: string,
+  agentDir: string,
+  settingsManager: SettingsManager,
+  providerResponse: ProviderResponseObservation,
+): Promise<ResourceLoader> {
+  const loader = new DefaultResourceLoader({
+    cwd,
+    agentDir,
+    settingsManager,
+    noExtensions: true,
+    noSkills: true,
+    noPromptTemplates: true,
+    noThemes: true,
+    noContextFiles: true,
+    systemPrompt,
+    extensionFactories: [
+      {
+        name: "ts-review-required-result-tool",
+        hidden: true,
+        factory: (pi) => {
+          pi.on("before_provider_request", (event) => {
+            delete providerResponse.status;
+            delete providerResponse.contentType;
+            return forceReviewResultToolChoice(event.payload);
+          });
+          pi.on("after_provider_response", (event) => {
+            providerResponse.status = event.status;
+            providerResponse.contentType = headerValue(event.headers, "content-type");
+          });
+        },
+      },
+    ],
+  });
+  await loader.reload();
+  return loader;
+}
+
+export function forceReviewResultToolChoice(payload: unknown): unknown {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
   return {
-    getExtensions: () => extensionsResult,
-    getSkills: () => ({ skills: [], diagnostics: [] }),
-    getPrompts: () => ({ prompts: [], diagnostics: [] }),
-    getThemes: () => ({ themes: [], diagnostics: [] }),
-    getAgentsFiles: () => ({ agentsFiles: [] }),
-    getSystemPrompt: () => systemPrompt,
-    getSystemPromptSource: () => undefined,
-    getAppendSystemPrompt: () => [],
-    getAppendSystemPromptSources: () => [],
-    extendResources: () => {},
-    reload: async () => {},
+    ...payload,
+    tool_choice: {
+      type: "function",
+      function: { name: REVIEW_RESULT_TOOL_NAME },
+    },
   };
 }
 
@@ -241,12 +312,14 @@ function loadSystemPrompt(reviewType: string): string {
   return `${core}\n\nReview mode instructions:\n${role}`;
 }
 
-function buildTaskPrompt(packet: Record<string, unknown>): string {
-  return `Review this bounded TS workspace task packet. Submit the result exactly once through ${REVIEW_RESULT_TOOL_NAME}; free text is not a result.\n\n${JSON.stringify(packet)}`;
+function buildTaskPrompt(providerInput: Record<string, unknown>): string {
+  return `Review this bounded TS workspace task packet. Submit the result exactly once through ${REVIEW_RESULT_TOOL_NAME}; free text is not a result.\n\n${JSON.stringify(providerInput)}`;
 }
 
 async function repairMissingToolCall(
   session: Awaited<ReturnType<typeof createAgentSession>>["session"],
+  model: Model<any>,
+  providerResponse: ProviderResponseObservation,
   options: ReviewRunOptions,
   timeoutMs: number,
   startedAt: number,
@@ -269,6 +342,12 @@ async function repairMissingToolCall(
     `Format repair only. Keep the same analysis and call ${REVIEW_RESULT_TOOL_NAME} exactly once with a schema-valid result. Do not return free text.`,
     { timeoutMs: remainingMs, signal: options.signal, onLifecycle: options.onLifecycle },
   );
+  assertProviderTurnSucceeded(
+    session,
+    model,
+    providerResponse,
+    capture.attemptCount > 0 || invalidOutputs.length > 0,
+  );
   if (!capture.accepted && capture.attemptCount === 0 && attempts.size === 0) {
     invalidOutputs.push({
       validation_stage: "missing_tool_call",
@@ -277,6 +356,80 @@ async function repairMissingToolCall(
       raw: session.getLastAssistantText() || "",
     });
   }
+}
+
+function assertProviderTurnSucceeded(
+  session: Awaited<ReturnType<typeof createAgentSession>>["session"],
+  model: Model<any>,
+  response: ProviderResponseObservation,
+  hostAbortExpected = false,
+): void {
+  const message = session.messages
+    .slice()
+    .reverse()
+    .find((candidate) => candidate.role === "assistant") as Record<string, unknown> | undefined;
+  if (!message || message.stopReason !== "error") return;
+
+  const providerMessage = typeof message.errorMessage === "string" && message.errorMessage.trim()
+    ? message.errorMessage.trim()
+    : "provider returned an error before completing the assistant response";
+  if (hostAbortExpected && /^This operation was aborted\.?$/i.test(providerMessage)) return;
+  const status = response.status ?? numericHttpStatus(providerMessage);
+  const details = parseProviderErrorDetails(providerMessage);
+  const error = new Error(`TS Review provider request failed: ${providerMessage}`) as Error & {
+    code?: string;
+    status?: number;
+    provider?: string;
+    model?: string;
+    upstreamErrorType?: string;
+    upstreamErrorCode?: string;
+    responseContentType?: string | null;
+    responseBlockTypes?: string[];
+  };
+  error.name = "ReviewProviderError";
+  error.code = "TS_SUBAGENT_PROVIDER_ERROR";
+  if (status !== undefined) error.status = status;
+  error.provider = model.provider;
+  error.model = model.id;
+  error.responseBlockTypes = Array.isArray(message.content)
+    ? message.content
+      .map((block) => block && typeof block === "object" ? String((block as Record<string, unknown>).type || "") : "")
+      .filter(Boolean)
+    : [];
+  if (details.type) error.upstreamErrorType = details.type;
+  if (details.code) error.upstreamErrorCode = details.code;
+  error.responseContentType = response.contentType ?? null;
+  throw error;
+}
+
+function numericHttpStatus(message: string): number | undefined {
+  const match = message.match(/(?:^|\s)([1-5][0-9]{2})(?=\s|:|$)/);
+  return match ? Number(match[1]) : undefined;
+}
+
+function parseProviderErrorDetails(message: string): { type?: string; code?: string } {
+  const start = message.indexOf("{");
+  if (start < 0) return {};
+  try {
+    const parsed = JSON.parse(message.slice(start));
+    const value = parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed as Record<string, unknown>
+      : {};
+    const nested = value.error && typeof value.error === "object" && !Array.isArray(value.error)
+      ? value.error as Record<string, unknown>
+      : value;
+    return {
+      type: typeof nested.type === "string" ? nested.type : undefined,
+      code: typeof nested.code === "string" ? nested.code : undefined,
+    };
+  } catch {
+    return {};
+  }
+}
+
+function headerValue(headers: Record<string, string>, expected: string): string | undefined {
+  const match = Object.entries(headers).find(([name]) => name.toLowerCase() === expected);
+  return match?.[1];
 }
 
 function requireCapturedResult(

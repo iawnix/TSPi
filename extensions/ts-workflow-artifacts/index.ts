@@ -370,7 +370,7 @@ async function buildPacket(
     ? workspaceReport.focus as Record<string, unknown>
     : {};
   return {
-    schema_version: "ts-agent-task/1",
+    schema_version: "ts-agent-task/2",
     task_id: taskId,
     role,
     authority: "operational",

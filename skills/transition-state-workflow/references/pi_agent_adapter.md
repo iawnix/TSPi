@@ -95,14 +95,13 @@ from the validated decision; there is no model-supplied shell command.
 ## Review Subagent
 
 `ts_subagent_review` creates a fresh in-memory Pi session with only the private
-`ts_review_result` result tool enabled for one
-bounded review. It receives:
+`ts_review_result` result tool enabled for one bounded review. The host creates:
 
-- one `ts-agent-task/1` packet;
-- compact report/node/branch context selected by the Root Agent;
-- allowlisted evidence summaries;
-- at most four bounded text excerpts;
-- one review-mode prompt.
+- one small `ts-agent-task/2` contract;
+- one complete immutable `evidence-snapshot.json` used for host validation;
+- one digest-bound `provider-input.json` with compact context, allowlisted
+  evidence summaries, and at most four bounded text excerpts;
+- one review-mode prompt around that provider input.
 
 It receives no parent conversation, context files, root skills, extensions,
 workspace tools, decision files, or preflight output. Its `ts-agent-result/1`
@@ -110,9 +109,11 @@ is advisory and must cite the packet allowlist.
 
 Run metadata remains available through Pi `appendEntry`, and the host also
 persists an immutable workspace journal under `nodes/<node>/agent-runs/` or
-`operations/agent-runs/`. The journal records task, actions, result, status,
-model metadata, duration, and bounded failures. It is noncanonical operational
-state, never scientific evidence.
+`operations/agent-runs/`. Review journals bind `task.json`,
+`evidence-snapshot.json`, and `provider-input.json` by schema, SHA-256, and byte
+count before the provider is called. The journal also records actions, result,
+status, model metadata, duration, and bounded failures. It is noncanonical
+operational state, never scientific evidence.
 
 The child recreates the selected model. A temporary
 non-OAuth API key may be copied into the child runtime in memory; it is never
@@ -174,9 +175,9 @@ session and uses digest-addressed delivery receipts as described in
 
 All review, backend, render, and report delegation uses:
 
-- `ts-agent-task/1`
+- `ts-agent-task/2`
 - `ts-agent-result/1`
-- `ts-subagent-status/1` for transient UI-only lifecycle updates
+- `ts-subagent-status/2` for transient UI-only lifecycle updates
 
 The result validator recursively rejects fields owned by the Root Agent,
 including hypothesis status, branch context, claim verdict, accepted TS,

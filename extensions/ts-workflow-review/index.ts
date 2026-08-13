@@ -20,11 +20,12 @@ import { runScientificReview } from "../../src/agents/review/runtime.ts";
 
 const require = createRequire(import.meta.url);
 const EXTENSION_DIR = dirname(fileURLToPath(import.meta.url));
-const { buildTaskPacket, validateSubagentRequest } = require(resolve(EXTENSION_DIR, "..", "..", "src", "agents", "review", "task-packet.cjs"));
+const { buildReviewTaskBundle, validateSubagentRequest } = require(resolve(EXTENSION_DIR, "..", "..", "src", "agents", "review", "task-packet.cjs"));
 const {
   beginAgentRun,
   completeAgentRun,
   failAgentRun,
+  readAgentRunInputs,
   writeInvalidReviewOutput,
 } = require(resolve(EXTENSION_DIR, "..", "..", "src", "agent-core", "run-journal.cjs"));
 const { classifyUpstreamModelFailure } = require(resolve(EXTENSION_DIR, "..", "..", "src", "agent-core", "failure-taxonomy.cjs"));
@@ -101,7 +102,7 @@ export default function (pi: ExtensionAPI) {
             signal,
           )
         : null;
-      const packet = buildTaskPacket({
+      const bundle = buildReviewTaskBundle({
         runId: taskId,
         workspaceRoot: root,
         request,
@@ -109,14 +110,18 @@ export default function (pi: ExtensionAPI) {
         nodeContext,
         branchContext,
       });
-      const journal = beginAgentRun(root, packet);
+      const packet = bundle.task;
+      const journal = beginAgentRun(root, packet, { documents: bundle.documents });
+      const persisted = readAgentRunInputs(journal);
       try {
         const parentAuth = ctx.modelRegistry.isUsingOAuth(ctx.model)
           ? undefined
           : await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
         const result = await runScientificReview({
           workspaceRoot: root,
-          packet,
+          packet: persisted.task,
+          evidenceSnapshot: persisted.documents.evidence_snapshot,
+          providerInput: persisted.documents.provider_input,
           parentModel: ctx.model,
           parentApiKey: parentAuth?.ok ? parentAuth.apiKey : undefined,
           thinkingLevel: pi.getThinkingLevel(),

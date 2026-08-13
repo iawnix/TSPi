@@ -37,6 +37,8 @@ export interface TsAgentRecord {
 
 export interface TsAgentRunDocuments {
   task?: Record<string, unknown>;
+  evidenceSnapshot?: Record<string, unknown>;
+  providerInput?: Record<string, unknown>;
   actions?: Record<string, unknown>;
   result?: Record<string, unknown>;
   run?: Record<string, unknown>;
@@ -113,6 +115,8 @@ export function readTsAgentRunDocuments(root: string, runRef?: string): TsAgentR
   }
   return {
     task: readBoundJson(runDir, "task.json"),
+    evidenceSnapshot: readBoundJson(runDir, "evidence-snapshot.json"),
+    providerInput: readBoundJson(runDir, "provider-input.json"),
     actions: readBoundJson(runDir, "actions.json"),
     result: readBoundJson(runDir, "result.json"),
     run: readBoundJson(runDir, "run.json"),
@@ -169,7 +173,17 @@ export function renderTsAgentDetails(
     const code = stringValue(error.code) || record.error_code;
     addSection(lines, "Error", code ? `${code}: ${errorText}` : errorText, safeWidth);
   }
-  const files = Object.entries(documents).filter(([, value]) => value).map(([name]) => `${name}.json`);
+  const fileNames: Record<keyof TsAgentRunDocuments, string> = {
+    task: "task.json",
+    evidenceSnapshot: "evidence-snapshot.json",
+    providerInput: "provider-input.json",
+    actions: "actions.json",
+    result: "result.json",
+    run: "run.json",
+  };
+  const files = Object.entries(documents)
+    .filter(([, value]) => value)
+    .map(([name]) => fileNames[name as keyof TsAgentRunDocuments]);
   if (files.length > 0) addField(lines, "Files", files.join(", "), safeWidth);
   lines.push("", truncateToWidth("Esc or Enter to close", safeWidth, ""));
   return lines;

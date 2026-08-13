@@ -21,6 +21,15 @@ RESULT_TOOL = REVIEW_AGENT / "result-tool.ts"
 SESSION_LIFECYCLE = AGENT_CORE / "session-lifecycle.cjs"
 
 
+class ReviewTaskFixture(dict[str, object]):
+    def __init__(self, bundle: dict[str, object]) -> None:
+        task = bundle["task"]
+        documents = bundle["documents"]
+        assert isinstance(task, dict) and isinstance(documents, dict)
+        super().__init__(task)
+        self.documents = documents
+
+
 def _node_json(script: str, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["node", "-e", script, *args],
@@ -32,7 +41,7 @@ def _node_json(script: str, *args: str, check: bool = True) -> subprocess.Comple
     )
 
 
-def _packet(tmp_path: Path, *, artifact_ref: str | None = None) -> dict[str, object]:
+def _packet(tmp_path: Path, *, artifact_ref: str | None = None) -> ReviewTaskFixture:
     workspace = tmp_path / "ws"
     bootstrap_strict_workspace(workspace)
     artifact = workspace / "nodes" / "n000" / "outputs" / "endpoint-summary.json"
@@ -58,29 +67,32 @@ def _packet(tmp_path: Path, *, artifact_ref: str | None = None) -> dict[str, obj
         "const fs=require('node:fs');"
         f"const helper=require({json.dumps(str(TASK_PACKET))});"
         "const input=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
-        "process.stdout.write(JSON.stringify(helper.buildTaskPacket(input)));"
+        "process.stdout.write(JSON.stringify(helper.buildReviewTaskBundle(input)));"
     )
     completed = _node_json(script, str(payload_file))
-    return json.loads(completed.stdout)
+    return ReviewTaskFixture(json.loads(completed.stdout))
 
 
-def _validate_result(tmp_path: Path, packet: dict[str, object], result: dict[str, object], *, check: bool = True):
+def _validate_result(tmp_path: Path, packet: ReviewTaskFixture, result: dict[str, object], *, check: bool = True):
     packet_file = tmp_path / "packet.json"
+    snapshot_file = tmp_path / "evidence-snapshot.json"
     advice_file = tmp_path / "advice.json"
     packet_file.write_text(json.dumps(packet), encoding="utf-8")
+    snapshot_file.write_text(json.dumps(packet.documents["evidence_snapshot"]), encoding="utf-8")
     advice_file.write_text(json.dumps(result), encoding="utf-8")
     script = (
         "const fs=require('node:fs');"
         f"const helper=require({json.dumps(str(OUTPUT_SCHEMA))});"
         "const packet=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
         "const advice=fs.readFileSync(process.argv[2],'utf8');"
-        "try { process.stdout.write(JSON.stringify(helper.parseAndValidateReviewResult(advice,packet))); }"
+        "const snapshot=JSON.parse(fs.readFileSync(process.argv[3],'utf8'));"
+        "try { process.stdout.write(JSON.stringify(helper.parseAndValidateReviewResult(advice,packet,snapshot))); }"
         "catch (error) { process.stderr.write(String(error.message||error)); process.exitCode=2; }"
     )
-    return _node_json(script, str(packet_file), str(advice_file), check=check)
+    return _node_json(script, str(packet_file), str(advice_file), str(snapshot_file), check=check)
 
 
-def _valid_result(packet: dict[str, object]) -> dict[str, object]:
+def _valid_result(packet: ReviewTaskFixture) -> dict[str, object]:
     scope = packet["scope"]
     assert isinstance(scope, dict)
     return {
@@ -127,26 +139,45 @@ def _valid_result(packet: dict[str, object]) -> dict[str, object]:
 def test_task_packet_is_report_derived_bounded_and_advisory(tmp_path: Path) -> None:
     packet = _packet(tmp_path)
 
-    assert packet["schema_version"] == "ts-agent-task/1"
+    assert packet["schema_version"] == "ts-agent-task/2"
     assert packet["role"] == "review"
     assert packet["authority"] == "advisory"
     assert packet["operation"] == "mechanism"
-    assert packet["inputs"]["evidence_ceiling"] == ["mechanism"]
+    snapshot = packet.documents["evidence_snapshot"]
+    provider_input = packet.documents["provider_input"]
+    assert isinstance(snapshot, dict) and isinstance(provider_input, dict)
+    assert packet["inputs"]["evidence_snapshot"]["ref"] == "evidence-snapshot.json"
+    assert packet["inputs"]["provider_input"]["ref"] == "provider-input.json"
     assert packet["workspace"]["root"] == str(tmp_path / "ws")
     assert "workspace_root" not in packet["scope"]
     assert packet["scope"]["node_ids"] == ["n000"]
-    assert packet["inputs"]["evidence"][0]["evidence_id"] == "ev_endpoint_0001"
-    assert packet["inputs"]["artifact_excerpts"][0]["ref"] == "nodes/n000/outputs/endpoint-summary.json"
-    assert packet["inputs"]["artifact_excerpts"][0]["text"] == '{"endpoint":"supported"}\n'
-    assert packet["inputs"]["artifact_excerpts"][0]["layer"] == "mechanism"
-    assert packet["inputs"]["basis_allowlist"] == [
+    assert snapshot["evidence"][0]["evidence_id"] == "ev_endpoint_0001"
+    assert snapshot["evidence"][0]["layer"] == "mechanism"
+    assert snapshot["artifact_excerpts"][0]["ref"] == "nodes/n000/outputs/endpoint-summary.json"
+    assert snapshot["artifact_excerpts"][0]["text"] == '{"endpoint":"supported"}\n'
+    assert snapshot["artifact_excerpts"][0]["layer"] == "mechanism"
+    assert snapshot["basis_allowlist"] == [
         "ev_endpoint_0001",
         "nodes/n000/outputs/endpoint-summary.json",
     ]
-    assert "TS workspace context:" in packet["inputs"]["context"]["workspace"]
-    assert "TS historical node context:" in packet["inputs"]["context"]["node"]
+    assert "TS workspace context:" in snapshot["context"]["workspace"]
+    assert "TS historical node context:" in snapshot["context"]["node"]
+    assert provider_input["schema_version"] == "ts-review-provider-input/1"
     assert packet["constraints"]["scientific_decision"] is False
     assert packet["constraints"]["remote_authority"] == "execution_mirror"
+
+
+def test_provider_task_packet_removes_operational_duplication_and_has_hard_budget(tmp_path: Path) -> None:
+    packet = _packet(tmp_path)
+    compact = packet.documents["provider_input"]
+    assert len(json.dumps(compact, separators=(",", ":")).encode()) <= 21 * 1024
+    assert "workspace" not in compact
+    assert "constraints" not in compact
+    assert "capabilities" not in compact
+    assert compact["evidence"][0]["evidence_id"] == "ev_endpoint_0001"
+    assert "source_files" not in compact["evidence"][0]
+    assert "kind" not in compact["evidence"][0]
+    assert "contract:" not in compact["context"]["workspace"]
 
 
 @pytest.mark.parametrize(
@@ -191,7 +222,7 @@ def test_task_packet_rejects_explicit_cross_ceiling_evidence(tmp_path: Path) -> 
         "const fs=require('node:fs');"
         f"const helper=require({json.dumps(str(TASK_PACKET))});"
         "const input=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
-        "try{helper.buildTaskPacket(input);}catch(error){process.stderr.write(error.message);process.exitCode=2;}"
+        "try{helper.buildReviewTaskBundle(input);}catch(error){process.stderr.write(error.message);process.exitCode=2;}"
     )
     completed = _node_json(script, str(input_file), check=False)
     assert completed.returncode == 2
@@ -319,7 +350,7 @@ def test_artifact_excerpt_cross_layer_is_rejected_before_read(tmp_path: Path) ->
         "const fs=require('node:fs');"
         f"const helper=require({json.dumps(str(TASK_PACKET))});"
         "const input=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
-        "try{helper.buildTaskPacket(input);}catch(error){process.stderr.write(error.message);process.exitCode=2;}"
+        "try{helper.buildReviewTaskBundle(input);}catch(error){process.stderr.write(error.message);process.exitCode=2;}"
     )
     completed = _node_json(script, str(input_file), check=False)
     assert completed.returncode == 2
@@ -371,10 +402,10 @@ def test_prompt_modules_are_private_and_define_all_review_modes() -> None:
     core = (prompt_dir / "core.md").read_text(encoding="utf-8")
     assert "Submit exactly one result through the `ts_review_result` tool" in core
     assert "no authority to mutate" in core
-    assert "payload.missing_evidence" in core
+    assert "Put uncited information gaps in `missing_evidence`" in core
     assert "Every fact must cite at least one allowlisted basis" in core
     assert "never use `completed`" in core
-    assert "never use singular `artifact_ref`" in core
+    assert "host adds `kind=review`" in core
 
 
 def test_agent_directories_separate_shared_core_from_review_implementation() -> None:
@@ -467,10 +498,17 @@ def test_pi_subagent_runtime_and_extension_enforce_isolation() -> None:
     assert 'strict: "prefer"' in RESULT_TOOL.read_text(encoding="utf-8")
     assert "SessionManager.inMemory(options.workspaceRoot)" in runtime
     assert "SettingsManager.inMemory" in runtime
-    assert "getAgentsFiles: () => ({ agentsFiles: [] })" in runtime
-    assert "getSystemPromptSource: () => undefined" in runtime
-    assert "getAppendSystemPromptSources: () => []" in runtime
-    assert "const extensionsResult = { extensions: [], errors: [], runtime: createExtensionRuntime() }" in runtime
+    assert "new DefaultResourceLoader" in runtime
+    assert "noExtensions: true" in runtime
+    assert "noSkills: true" in runtime
+    assert "noPromptTemplates: true" in runtime
+    assert "noThemes: true" in runtime
+    assert "noContextFiles: true" in runtime
+    assert 'name: "ts-review-required-result-tool"' in runtime
+    assert 'pi.on("before_provider_request"' in runtime
+    assert 'pi.on("after_provider_response"' in runtime
+    assert "forceReviewResultToolChoice" in runtime
+    assert "assertProviderTurnSucceeded" in runtime
     assert "withDisposableSession" in runtime
     assert "createReviewResultTool" in runtime
     assert "setRuntimeApiKey" in runtime

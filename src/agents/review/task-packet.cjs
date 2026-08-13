@@ -8,9 +8,10 @@ const {
   buildContextSummary,
   buildNodeContextSummary,
 } = require("../../../extensions/ts-workflow-control/summary.cjs");
-const { validateAgentTask } = require("../../agent-core/agent-protocol.cjs");
+const { bindAgentDocument, validateAgentTask } = require("../../agent-core/agent-protocol.cjs");
 const {
   artifactLayerForRef,
+  reviewLayerForEvidence,
   validateEvidenceCeiling,
 } = require("./input-policy.cjs");
 
@@ -30,6 +31,9 @@ const LIMITS = Object.freeze({
   maxArtifactBytes: 16 * 1024,
   maxArtifactTotalBytes: 64 * 1024,
   maxPacketBytes: 96 * 1024,
+  maxProviderArtifactBytes: 2 * 1024,
+  maxProviderArtifactTotalBytes: 8 * 1024,
+  maxProviderPacketBytes: 21 * 1024,
 });
 
 const TEXT_EXTENSIONS = new Set([
@@ -60,7 +64,7 @@ function validateSubagentRequest(request) {
   return { reviewType, question, root, nodeId, fromNode, anchorNode, evidenceRefs, artifactRefs };
 }
 
-function buildTaskPacket({ runId, workspaceRoot, request, workspaceReport, nodeContext, branchContext }) {
+function buildReviewTaskBundle({ runId, workspaceRoot, request, workspaceReport, nodeContext, branchContext }) {
   const normalized = validateSubagentRequest(request);
   const root = path.resolve(requireString(workspaceRoot, "workspaceRoot", 4096));
   if (!isPlainObject(workspaceReport)) throw new Error("workspaceReport must be an object");
@@ -105,9 +109,36 @@ function buildTaskPacket({ runId, workspaceRoot, request, workspaceReport, nodeC
     hypothesis_id: stringOrNull(focus.focus_hypothesis_id),
     pathway_id: stringOrNull(focus.focus_pathway_id),
   };
+  const taskId = requireString(runId, "runId", 128);
+  const evidenceSnapshot = {
+    schema_version: "ts-review-evidence-snapshot/1",
+    task_id: taskId,
+    operation: normalized.reviewType,
+    scope,
+    context: {
+      workspace: buildContextSummary(workspaceReport),
+      node: nodeContext ? buildNodeContextSummary(nodeContext) : null,
+      backtrack: branchContext ? buildBranchContextSummary(branchContext) : null,
+    },
+    evidence: selectedEvidenceIds.map((id) => {
+      const item = evidenceMap.get(id);
+      return { ...item, layer: reviewLayerForEvidence(item, nodeById) };
+    }),
+    artifact_excerpts: artifactExcerpts,
+    basis_allowlist: [...selectedEvidenceIds, ...artifactExcerpts.map((item) => item.ref)],
+    evidence_ceiling: [...REVIEW_CEILINGS[normalized.reviewType]],
+  };
+  const providerInput = buildProviderTaskPacket({
+    task_id: taskId,
+    operation: normalized.reviewType,
+    objective: normalized.question,
+    scope,
+    workspace_revision: stringOrNull(workspaceReport.workspace_revision),
+    evidence_snapshot: evidenceSnapshot,
+  });
   const packet = {
-    schema_version: "ts-agent-task/1",
-    task_id: requireString(runId, "runId", 128),
+    schema_version: "ts-agent-task/2",
+    task_id: taskId,
     role: "review",
     authority: "advisory",
     operation: normalized.reviewType,
@@ -119,15 +150,16 @@ function buildTaskPacket({ runId, workspaceRoot, request, workspaceReport, nodeC
     },
     scope,
     inputs: {
-      context: {
-        workspace: buildContextSummary(workspaceReport),
-        node: nodeContext ? buildNodeContextSummary(nodeContext) : null,
-        backtrack: branchContext ? buildBranchContextSummary(branchContext) : null,
-      },
-      evidence: selectedEvidenceIds.map((id) => evidenceMap.get(id)),
-      artifact_excerpts: artifactExcerpts,
-      basis_allowlist: [...selectedEvidenceIds, ...artifactExcerpts.map((item) => item.ref)],
-      evidence_ceiling: [...REVIEW_CEILINGS[normalized.reviewType]],
+      evidence_snapshot: bindAgentDocument(
+        "evidence-snapshot.json",
+        "ts-review-evidence-snapshot/1",
+        evidenceSnapshot,
+      ),
+      provider_input: bindAgentDocument(
+        "provider-input.json",
+        "ts-review-provider-input/1",
+        providerInput,
+      ),
     },
     capabilities: [],
     constraints: {
@@ -140,9 +172,237 @@ function buildTaskPacket({ runId, workspaceRoot, request, workspaceReport, nodeC
     output_contract: "ts-agent-result/1",
   };
 
-  const packetBytes = Buffer.byteLength(JSON.stringify(packet), "utf8");
-  if (packetBytes > LIMITS.maxPacketBytes) throw new Error(`task packet exceeds ${LIMITS.maxPacketBytes} bytes`);
-  return validateAgentTask(packet);
+  const snapshotBytes = Buffer.byteLength(JSON.stringify(evidenceSnapshot), "utf8");
+  if (snapshotBytes > LIMITS.maxPacketBytes) {
+    throw new Error(`review evidence snapshot exceeds ${LIMITS.maxPacketBytes} bytes`);
+  }
+  const task = validateAgentTask(packet);
+  validateEvidenceSnapshot(evidenceSnapshot, task);
+  validateProviderTaskPacket(providerInput, task, evidenceSnapshot);
+  return {
+    task,
+    documents: {
+      evidence_snapshot: evidenceSnapshot,
+      provider_input: providerInput,
+    },
+  };
+}
+
+function buildProviderTaskPacket(value) {
+  if (!isPlainObject(value)) throw new Error("provider review input source must be an object");
+  const snapshot = value.evidence_snapshot;
+  if (!isPlainObject(snapshot)) throw new Error("provider review input requires an evidence snapshot");
+  const context = isPlainObject(snapshot.context) ? snapshot.context : {};
+  const compact = {
+    schema_version: "ts-review-provider-input/1",
+    task_id: requireString(value.task_id, "task_id", 128),
+    operation: requireString(value.operation, "operation", 128),
+    objective: requireString(value.objective, "objective", LIMITS.maxQuestionChars),
+    scope: value.scope,
+    workspace_revision: stringOrNull(value.workspace_revision),
+    context: {
+      workspace: compactContextText(context.workspace),
+      node: compactContextText(context.node),
+      backtrack: compactContextText(context.backtrack),
+    },
+    evidence: Array.isArray(snapshot.evidence) ? snapshot.evidence.map(compactEvidence) : [],
+    artifact_excerpts: compactArtifactExcerpts(snapshot.artifact_excerpts),
+    basis_allowlist: Array.isArray(snapshot.basis_allowlist) ? snapshot.basis_allowlist : [],
+    evidence_ceiling: Array.isArray(snapshot.evidence_ceiling) ? snapshot.evidence_ceiling : [],
+  };
+  const bytes = Buffer.byteLength(JSON.stringify(compact), "utf8");
+  if (bytes > LIMITS.maxProviderPacketBytes) {
+    throw new Error(`provider task packet exceeds ${LIMITS.maxProviderPacketBytes} bytes`);
+  }
+  return compact;
+}
+
+function validateEvidenceSnapshot(value, task) {
+  if (!isPlainObject(value)) throw new Error("review evidence snapshot must be an object");
+  rejectUnknownKeys(value, [
+    "schema_version", "task_id", "operation", "scope", "context", "evidence", "artifact_excerpts",
+    "basis_allowlist", "evidence_ceiling",
+  ], "review evidence snapshot");
+  if (value.schema_version !== "ts-review-evidence-snapshot/1") {
+    throw new Error("invalid review evidence snapshot schema_version");
+  }
+  assertTaskIdentity(value, task, "review evidence snapshot");
+  if (!isPlainObject(value.context)) throw new Error("review evidence snapshot context must be an object");
+  for (const key of ["evidence", "artifact_excerpts", "basis_allowlist", "evidence_ceiling"]) {
+    if (!Array.isArray(value[key])) throw new Error(`review evidence snapshot ${key} must be an array`);
+  }
+  const expectedCeiling = REVIEW_CEILINGS[task.operation];
+  if (!expectedCeiling || JSON.stringify(value.evidence_ceiling) !== JSON.stringify(expectedCeiling)) {
+    throw new Error("review evidence snapshot ceiling does not match task operation");
+  }
+  if (value.evidence.length > LIMITS.maxEvidenceRefs || value.artifact_excerpts.length > LIMITS.maxArtifactRefs) {
+    throw new Error("review evidence snapshot exceeds selected input limits");
+  }
+  const evidenceIds = value.evidence.map((item, index) => {
+    if (!isPlainObject(item)) throw new Error(`review evidence snapshot evidence[${index}] must be an object`);
+    return requireString(item.evidence_id, `evidence[${index}].evidence_id`, 256);
+  });
+  const artifactRefs = value.artifact_excerpts.map((item, index) => {
+    if (!isPlainObject(item)) throw new Error(`review evidence snapshot artifact_excerpts[${index}] must be an object`);
+    return requireString(item.ref, `artifact_excerpts[${index}].ref`, 4096);
+  });
+  const expectedAllowlist = [...evidenceIds, ...artifactRefs];
+  if (new Set(expectedAllowlist).size !== expectedAllowlist.length
+      || JSON.stringify(value.basis_allowlist) !== JSON.stringify(expectedAllowlist)) {
+    throw new Error("review evidence snapshot basis allowlist does not match selected inputs");
+  }
+  const allowedLayers = new Set(expectedCeiling);
+  for (const [index, item] of value.evidence.entries()) {
+    const layer = requireString(item.layer, `evidence[${index}].layer`, 64);
+    if (!allowedLayers.has(layer)) throw new Error(`review evidence exceeds snapshot ceiling: ${item.evidence_id} (${layer})`);
+    if (item.role !== "endpoint_minimum_gate" && reviewLayerForEvidence(item) !== layer) {
+      throw new Error(`review evidence layer does not match ontology: ${item.evidence_id}`);
+    }
+  }
+  for (const [index, item] of value.artifact_excerpts.entries()) {
+    const layer = requireString(item.layer, `artifact_excerpts[${index}].layer`, 64);
+    if (!allowedLayers.has(layer)) throw new Error(`review artifact exceeds snapshot ceiling: ${item.ref} (${layer})`);
+  }
+  return value;
+}
+
+function validateProviderTaskPacket(value, task, evidenceSnapshot) {
+  if (!isPlainObject(value)) throw new Error("review provider input must be an object");
+  rejectUnknownKeys(value, [
+    "schema_version", "task_id", "operation", "objective", "scope", "workspace_revision", "context",
+    "evidence", "artifact_excerpts", "basis_allowlist", "evidence_ceiling",
+  ], "review provider input");
+  if (value.schema_version !== "ts-review-provider-input/1") {
+    throw new Error("invalid review provider input schema_version");
+  }
+  assertTaskIdentity(value, task, "review provider input");
+  if (value.objective !== task.objective || value.workspace_revision !== task.workspace.revision) {
+    throw new Error("review provider input does not match task objective or workspace revision");
+  }
+  const expected = buildProviderTaskPacket({
+    task_id: task.task_id,
+    operation: task.operation,
+    objective: task.objective,
+    scope: task.scope,
+    workspace_revision: task.workspace.revision,
+    evidence_snapshot: evidenceSnapshot,
+  });
+  if (JSON.stringify(value) !== JSON.stringify(expected)) {
+    throw new Error("review provider input does not match the deterministic snapshot projection");
+  }
+  const bytes = Buffer.byteLength(JSON.stringify(value), "utf8");
+  if (bytes > LIMITS.maxProviderPacketBytes) {
+    throw new Error(`provider task packet exceeds ${LIMITS.maxProviderPacketBytes} bytes`);
+  }
+  return value;
+}
+
+function validateReviewTaskBundle(taskValue, documents) {
+  const task = validateAgentTask(taskValue);
+  if (task.role !== "review") throw new Error("review task bundle requires role=review");
+  if (!isPlainObject(documents)) throw new Error("review task bundle documents must be an object");
+  rejectUnknownKeys(documents, ["evidence_snapshot", "provider_input"], "review task bundle documents");
+  const evidenceSnapshot = validateEvidenceSnapshot(documents.evidence_snapshot, task);
+  const providerInput = validateProviderTaskPacket(documents.provider_input, task, evidenceSnapshot);
+  for (const [name, document] of Object.entries({ evidence_snapshot: evidenceSnapshot, provider_input: providerInput })) {
+    const binding = task.inputs[name];
+    const actual = bindAgentDocument(binding.ref, binding.schema_version, document);
+    if (actual.sha256 !== binding.sha256 || actual.bytes !== binding.bytes) {
+      throw new Error(`review task bundle ${name} does not match task binding`);
+    }
+  }
+  return { task, documents: { evidence_snapshot: evidenceSnapshot, provider_input: providerInput } };
+}
+
+function assertTaskIdentity(value, task, label) {
+  if (task.role !== "review") throw new Error(`${label} requires role=review`);
+  if (value.task_id !== task.task_id || value.operation !== task.operation) {
+    throw new Error(`${label} identity does not match task`);
+  }
+  if (JSON.stringify(value.scope) !== JSON.stringify(task.scope)) {
+    throw new Error(`${label} scope does not match task`);
+  }
+}
+
+function compactEvidence(value) {
+  if (!isPlainObject(value)) return value;
+  return {
+    evidence_id: value.evidence_id,
+    node_id: value.node_id,
+    role: value.role,
+    layer: typeof value.layer === "string" ? value.layer : reviewLayerForEvidence(value),
+    evidence_tier: value.evidence_tier,
+    summary: value.summary,
+    quality: value.quality,
+    path: value.path,
+  };
+}
+
+function compactArtifactExcerpts(value) {
+  if (!Array.isArray(value)) return [];
+  const excerpts = value.map(compactArtifactExcerpt);
+  const total = excerpts.reduce((sum, excerpt) => sum + Buffer.byteLength(String(excerpt.text || ""), "utf8"), 0);
+  if (total > LIMITS.maxProviderArtifactTotalBytes) {
+    throw new Error(`provider artifact excerpts exceed ${LIMITS.maxProviderArtifactTotalBytes} bytes`);
+  }
+  return excerpts;
+}
+
+function compactArtifactExcerpt(value) {
+  if (!isPlainObject(value)) return value;
+  const text = compactArtifactText(value);
+  const bytes = Buffer.from(text, "utf8");
+  const length = Math.min(bytes.length, LIMITS.maxProviderArtifactBytes);
+  const tail = value.selection === "tail";
+  const start = tail ? Math.max(0, bytes.length - length) : 0;
+  return {
+    ref: value.ref,
+    layer: value.layer,
+    selection: value.selection,
+    truncated: Boolean(value.truncated) || bytes.length > length,
+    original_bytes: value.original_bytes,
+    text: truncateUtf8(bytes.subarray(start, start + length), tail),
+  };
+}
+
+function compactArtifactText(value) {
+  const text = typeof value.text === "string" ? value.text : "";
+  if (value.truncated || typeof value.ref !== "string" || path.extname(value.ref).toLowerCase() !== ".json") {
+    return text;
+  }
+  try {
+    return JSON.stringify(JSON.parse(text));
+  } catch {
+    return text;
+  }
+}
+
+function truncateUtf8(buffer, fromTail) {
+  let text = buffer.toString("utf8");
+  if (text.includes("\uFFFD")) {
+    text = fromTail ? text.replace(/^\uFFFD+/, "") : text.replace(/\uFFFD+$/, "");
+  }
+  return text;
+}
+
+function compactContextText(value) {
+  if (typeof value !== "string" || !value.trim()) return null;
+  const redundantPrefixes = [
+    "- operational_revision:",
+    "- counts:",
+    "- latest_agent_runs:",
+    "- evidence:",
+    "- artifact_paths:",
+    "- evidence_paths:",
+    "- source_files:",
+    "- agent_runs:",
+    "- decisions:",
+  ];
+  return value
+    .split("\n")
+    .filter((line) => !line.startsWith("- contract:") && !redundantPrefixes.some((prefix) => line.startsWith(prefix)))
+    .join("\n")
+    .trim() || null;
 }
 
 function validateSelectedContexts(request, nodeContext, branchContext) {
@@ -325,7 +585,11 @@ function stringOrNull(value) {
 module.exports = {
   LIMITS,
   REVIEW_CEILINGS,
-  buildTaskPacket,
+  buildProviderTaskPacket,
+  buildReviewTaskBundle,
   normalizeRelativeRef,
+  validateEvidenceSnapshot,
+  validateProviderTaskPacket,
+  validateReviewTaskBundle,
   validateSubagentRequest,
 };

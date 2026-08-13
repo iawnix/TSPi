@@ -244,10 +244,18 @@ def test_agent_details_merge_live_and_durable_bounded_records(tmp_path: Path) ->
     run_dir.mkdir(parents=True)
     documents = {
         "task.json": {
-            "schema_version": "ts-agent-task/1",
+            "schema_version": "ts-agent-task/2",
             "task_id": "agent_partial",
             "role": "backend",
             "operation": "parse",
+        },
+        "evidence-snapshot.json": {
+            "schema_version": "ts-review-evidence-snapshot/1",
+            "task_id": "agent_partial",
+        },
+        "provider-input.json": {
+            "schema_version": "ts-review-provider-input/1",
+            "task_id": "agent_partial",
         },
         "actions.json": {
             "schema_version": "ts-agent-actions/1",
@@ -340,7 +348,9 @@ process.stdout.write(JSON.stringify({{
     assert [record["state"] for record in result["records"]] == ["partial", "unknown", "running"]
     assert [record["live"] for record in result["records"]] == [False, False, True]
     assert all(label.split(" · ")[-2] in {"partial", "running", "unknown"} for label in result["labels"])
-    assert result["documentNames"] == ["task", "actions", "result", "run"]
+    assert result["documentNames"] == [
+        "task", "evidenceSnapshot", "providerInput", "actions", "result", "run"
+    ]
     assert max(result["widths"]) <= 52
     rendered = "\n".join(result["details"])
     for expected in (
@@ -348,7 +358,8 @@ process.stdout.write(JSON.stringify({{
         "Parser returned bounded output",
         "ts_workspace_compute_parse · completed",
         "nodes/n000/outputs/calculation_result.json",
-        "task.json, actions.json, result.json,",
+        "task.json, evidence-snapshot.json,",
+        "provider-input.json, actions.json,",
         "run.json",
     ):
         assert expected in rendered

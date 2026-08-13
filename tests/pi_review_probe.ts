@@ -1,5 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { createRequire } from "node:module";
 import { runScientificReview } from "../src/agents/review/runtime.ts";
+
+const require = createRequire(import.meta.url);
+const { bindAgentDocument } = require("../src/agent-core/agent-protocol.cjs");
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("ts-test-review-child", {
@@ -11,8 +15,32 @@ export default function (pi: ExtensionAPI) {
         hypothesis_id: null,
         pathway_id: null,
       };
+      const evidenceSnapshot = {
+        schema_version: "ts-review-evidence-snapshot/1",
+        task_id: "agent_review_001",
+        operation: "mechanism",
+        scope,
+        context: { workspace: "Recording-provider workspace", node: null, backtrack: null },
+        evidence: [],
+        artifact_excerpts: [],
+        basis_allowlist: [],
+        evidence_ceiling: ["mechanism"],
+      };
+      const providerInput = {
+        schema_version: "ts-review-provider-input/1",
+        task_id: "agent_review_001",
+        operation: "mechanism",
+        objective: "Review the bounded mechanism context without making a decision.",
+        scope,
+        workspace_revision: "sha256:" + "2".repeat(64),
+        context: evidenceSnapshot.context,
+        evidence: [],
+        artifact_excerpts: [],
+        basis_allowlist: [],
+        evidence_ceiling: ["mechanism"],
+      };
       const packet = {
-        schema_version: "ts-agent-task/1",
+        schema_version: "ts-agent-task/2",
         task_id: "agent_review_001",
         role: "review",
         authority: "advisory",
@@ -25,11 +53,12 @@ export default function (pi: ExtensionAPI) {
         },
         scope,
         inputs: {
-          context: { workspace: "Recording-provider workspace", node: null, backtrack: null },
-          evidence: [],
-          artifact_excerpts: [],
-          basis_allowlist: [],
-          evidence_ceiling: ["mechanism"],
+          evidence_snapshot: bindAgentDocument(
+            "evidence-snapshot.json", "ts-review-evidence-snapshot/1", evidenceSnapshot,
+          ),
+          provider_input: bindAgentDocument(
+            "provider-input.json", "ts-review-provider-input/1", providerInput,
+          ),
         },
         capabilities: [],
         constraints: {
@@ -45,6 +74,8 @@ export default function (pi: ExtensionAPI) {
         const result = await runScientificReview({
           workspaceRoot: ctx.cwd,
           packet,
+          evidenceSnapshot,
+          providerInput,
           parentModel: { provider: "ts-recording", id: "recording-model" } as never,
           parentApiKey: "recording-key",
           thinkingLevel: "off",

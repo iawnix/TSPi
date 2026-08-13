@@ -1,11 +1,10 @@
 "use strict";
 
 const { validateAgentResult, validateAgentTask } = require("../../agent-core/agent-protocol.cjs");
-const { REVIEW_CEILINGS } = require("./task-packet.cjs");
 
 const MAX_OUTPUT_BYTES = 16 * 1024;
 
-function parseAndValidateReviewResult(text, packet) {
+function parseAndValidateReviewResult(text, packet, evidenceSnapshot) {
   if (typeof text !== "string" || !text.trim()) throw new Error("review agent output is empty");
   if (Buffer.byteLength(text, "utf8") > MAX_OUTPUT_BYTES) {
     throw new Error(`review agent output exceeds ${MAX_OUTPUT_BYTES} bytes`);
@@ -16,10 +15,10 @@ function parseAndValidateReviewResult(text, packet) {
   } catch (error) {
     throw new Error(`review agent output must be JSON only: ${error instanceof Error ? error.message : String(error)}`);
   }
-  return validateReviewResult(value, packet);
+  return validateReviewResult(value, packet, evidenceSnapshot);
 }
 
-function validateReviewResult(value, packet) {
+function validateReviewResult(value, packet, evidenceSnapshot) {
   let serialized;
   try {
     serialized = JSON.stringify(value);
@@ -35,9 +34,18 @@ function validateReviewResult(value, packet) {
   if (result.program !== null) throw new Error("review result cannot contain program state");
   if (result.artifact_refs.length) throw new Error("review result cannot create artifacts");
 
-  const inputs = task.inputs;
-  const allowedLayers = new Set(Array.isArray(inputs.evidence_ceiling) ? inputs.evidence_ceiling : []);
-  const basisAllowlist = new Set(Array.isArray(inputs.basis_allowlist) ? inputs.basis_allowlist : []);
+  if (!isPlainObject(evidenceSnapshot) || evidenceSnapshot.schema_version !== "ts-review-evidence-snapshot/1") {
+    throw new Error("review result validation requires the bound evidence snapshot");
+  }
+  if (evidenceSnapshot.task_id !== task.task_id || evidenceSnapshot.operation !== task.operation) {
+    throw new Error("review evidence snapshot does not match task");
+  }
+  const allowedLayers = new Set(
+    Array.isArray(evidenceSnapshot.evidence_ceiling) ? evidenceSnapshot.evidence_ceiling : [],
+  );
+  const basisAllowlist = new Set(
+    Array.isArray(evidenceSnapshot.basis_allowlist) ? evidenceSnapshot.basis_allowlist : [],
+  );
   for (const [index, fact] of result.facts.entries()) {
     if (fact.kind !== "review") throw new Error(`facts[${index}].kind must be review`);
     if (!fact.layer || !allowedLayers.has(fact.layer)) {

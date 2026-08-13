@@ -185,7 +185,7 @@ ClawEmail location from `TS_NOTIFICATION_CONFIG`, validates report paths, and
 writes an idempotency receipt before sending. Do not ask for an activation token
 or per-message approval, and do not retry an ambiguous delivery automatically.
 
-All isolated roles use `ts-agent-task/1` and `ts-agent-result/1`. Review,
+All isolated roles use `ts-agent-task/2` and `ts-agent-result/1`. Review,
 backend, render, and report results are non-authoritative. Results that
 contain hypothesis status, branch context, acceptance, or strict pathway
 decision fields are rejected.
@@ -194,6 +194,11 @@ The Pi host journals each run under the owning node's `agent-runs/` directory,
 or under `operations/agent-runs/` for study-level work. These records drive
 `operational_revision`; they are not evidence and never change the scientific
 `workspace_revision`.
+
+For Review, `ts-agent-task/2` binds an immutable full
+`evidence-snapshot.json` for host-side citation/ceiling validation and a compact
+`provider-input.json` containing the structured payload sent to the model. Do
+not treat either operational journal document as registered scientific evidence.
 
 Read `references/pi_agent_adapter.md`, `references/compute_operator.md`, and
 `references/artifact_operators.md` when changing or debugging delegation.

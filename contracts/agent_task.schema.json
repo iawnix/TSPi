@@ -4,7 +4,7 @@
   "type": "object",
   "required": ["schema_version", "task_id", "role", "authority", "operation", "objective", "workspace", "scope", "inputs", "capabilities", "constraints", "output_contract"],
   "properties": {
-    "schema_version": {"const": "ts-agent-task/1"},
+    "schema_version": {"const": "ts-agent-task/2"},
     "task_id": {"type": "string", "minLength": 1, "maxLength": 128},
     "role": {"enum": ["review", "backend", "render", "report"]},
     "authority": {"enum": ["advisory", "operational"]},
@@ -38,11 +38,50 @@
     "output_contract": {"const": "ts-agent-result/1"}
   },
   "allOf": [
-    {"if": {"properties": {"role": {"const": "review"}}}, "then": {"properties": {"authority": {"const": "advisory"}}}},
+    {
+      "if": {"properties": {"role": {"const": "review"}}},
+      "then": {
+        "properties": {
+          "authority": {"const": "advisory"},
+          "inputs": {
+            "type": "object",
+            "required": ["evidence_snapshot", "provider_input"],
+            "properties": {
+              "evidence_snapshot": {"$ref": "#/$defs/evidenceSnapshotBinding"},
+              "provider_input": {"$ref": "#/$defs/providerInputBinding"}
+            },
+            "additionalProperties": false
+          }
+        }
+      }
+    },
     {"if": {"properties": {"role": {"enum": ["backend", "render", "report"]}}}, "then": {"properties": {"authority": {"const": "operational"}}}}
   ],
   "additionalProperties": false,
   "$defs": {
+    "documentBinding": {
+      "type": "object",
+      "required": ["ref", "schema_version", "sha256", "bytes"],
+      "properties": {
+        "ref": {"type": "string", "minLength": 1, "maxLength": 128},
+        "schema_version": {"type": "string", "minLength": 1, "maxLength": 128},
+        "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+        "bytes": {"type": "integer", "minimum": 1, "maximum": 1048576}
+      },
+      "additionalProperties": false
+    },
+    "evidenceSnapshotBinding": {
+      "allOf": [
+        {"$ref": "#/$defs/documentBinding"},
+        {"properties": {"ref": {"const": "evidence-snapshot.json"}, "schema_version": {"const": "ts-review-evidence-snapshot/1"}}}
+      ]
+    },
+    "providerInputBinding": {
+      "allOf": [
+        {"$ref": "#/$defs/documentBinding"},
+        {"properties": {"ref": {"const": "provider-input.json"}, "schema_version": {"const": "ts-review-provider-input/1"}}}
+      ]
+    },
     "scope": {
       "type": "object",
       "required": ["report_id", "node_ids", "hypothesis_id", "pathway_id"],

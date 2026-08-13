@@ -34,7 +34,7 @@ export default function (pi: ExtensionAPI) {
         pathway_id: null,
       };
       const packet = {
-        schema_version: "ts-agent-task/1",
+        schema_version: "ts-agent-task/2",
         task_id: "agent_recording_001",
         role: "render",
         authority: "operational",

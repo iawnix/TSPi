@@ -13,7 +13,7 @@ PROTOCOL = ROOT / "src" / "agent-core" / "agent-protocol.cjs"
 
 def _task() -> dict[str, object]:
     return {
-        "schema_version": "ts-agent-task/1",
+        "schema_version": "ts-agent-task/2",
         "task_id": "agent_protocol_001",
         "role": "report",
         "authority": "operational",
@@ -56,11 +56,21 @@ def _result(task: dict[str, object]) -> dict[str, object]:
 def test_agent_protocol_json_schemas_are_valid_and_closed() -> None:
     task_schema = json.loads((ROOT / "contracts" / "agent_task.schema.json").read_text(encoding="utf-8"))
     result_schema = json.loads((ROOT / "contracts" / "agent_result.schema.json").read_text(encoding="utf-8"))
+    evidence_schema = json.loads(
+        (ROOT / "contracts" / "review_evidence_snapshot.schema.json").read_text(encoding="utf-8")
+    )
+    provider_schema = json.loads(
+        (ROOT / "contracts" / "review_provider_input.schema.json").read_text(encoding="utf-8")
+    )
 
     Draft202012Validator.check_schema(task_schema)
     Draft202012Validator.check_schema(result_schema)
+    Draft202012Validator.check_schema(evidence_schema)
+    Draft202012Validator.check_schema(provider_schema)
     assert task_schema["additionalProperties"] is False
     assert result_schema["additionalProperties"] is False
+    assert evidence_schema["additionalProperties"] is False
+    assert provider_schema["additionalProperties"] is False
     assert set(task_schema["properties"]["role"]["enum"]) == {"review", "backend", "render", "report"}
 
 
@@ -101,3 +111,28 @@ def test_agent_protocol_rejects_role_authority_mismatch(tmp_path: Path) -> None:
     rejected = subprocess.run(["node", "-e", script, str(payload)], cwd=ROOT, text=True, capture_output=True)
     assert rejected.returncode == 2
     assert "authority does not match role" in rejected.stderr
+
+
+def test_agent_protocol_rejects_v1_and_requires_bound_review_documents(tmp_path: Path) -> None:
+    task = _task()
+    task["schema_version"] = "ts-agent-task/1"
+    payload = tmp_path / "task.json"
+    payload.write_text(json.dumps(task), encoding="utf-8")
+    script = (
+        "const fs=require('node:fs');"
+        f"const p=require({json.dumps(str(PROTOCOL))});"
+        "try{p.validateAgentTask(JSON.parse(fs.readFileSync(process.argv[1],'utf8')));}"
+        "catch(error){process.stderr.write(String(error.message||error));process.exitCode=2;}"
+    )
+    rejected = subprocess.run(["node", "-e", script, str(payload)], cwd=ROOT, text=True, capture_output=True)
+    assert rejected.returncode == 2
+    assert "schema_version" in rejected.stderr
+
+    task = _task()
+    task["role"] = "review"
+    task["authority"] = "advisory"
+    task["inputs"] = {"evidence": [], "basis_allowlist": []}
+    payload.write_text(json.dumps(task), encoding="utf-8")
+    rejected = subprocess.run(["node", "-e", script, str(payload)], cwd=ROOT, text=True, capture_output=True)
+    assert rejected.returncode == 2
+    assert "review inputs contains unknown fields" in rejected.stderr

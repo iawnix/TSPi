@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import os
 import re
 import select
 import shutil
+import stat
 import subprocess
 import sys
 import threading
@@ -254,11 +256,25 @@ def test_real_pi_review_child_session_uses_only_result_tool(tmp_path: Path) -> N
     assert notification is not None, {"stdout": completed.stdout, "stderr": completed.stderr, "requests": requests}
     result = json.loads(notification["message"].split(":", 1)[1])
     assert result["result"]["role"] == "review"
+    assert result["result"]["task_id"] == "agent_review_001"
+    assert result["result"]["scope"]["node_ids"] == ["n000"]
+    assert result["result"]["provenance"] == {"source": "bounded_task_packet"}
     assert result["metadata"]["review_type"] == "mechanism"
     assert len(requests) == 1
     assert [tool["function"]["name"] for tool in requests[0]["tools"]] == ["ts_review_result"]
     assert requests[0]["tools"][0]["function"]["strict"] is True
-    assert "Review this bounded TS workspace task packet" in requests[0]["messages"][-1]["content"][0]["text"]
+    assert requests[0]["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "ts_review_result"},
+    }
+    properties = requests[0]["tools"][0]["function"]["parameters"]["properties"]
+    assert set(properties) == {
+        "outcome", "summary", "facts", "missing_evidence", "conflicts", "options", "limitations"
+    }
+    review_prompt = requests[0]["messages"][-1]["content"][0]["text"]
+    assert "Review this bounded TS workspace task packet" in review_prompt
+    assert len(json.dumps(requests[0]["tools"][0]["function"]["parameters"]).encode()) < 12 * 1024
+    assert len(review_prompt.encode()) < 21 * 1024
 
 
 def test_real_pi_review_repairs_invalid_tool_shape_in_same_session(tmp_path: Path) -> None:
@@ -271,7 +287,7 @@ def test_real_pi_review_repairs_invalid_tool_shape_in_same_session(tmp_path: Pat
     agent_dir.mkdir()
 
     invalid = _review_result_object()
-    invalid["payload"]["options"][0]["risks"] = "Must be an array."
+    invalid["options"][0]["risks"] = "Must be an array."
     requests: list[dict[str, object]] = []
     responses = [
         _tool_call_chunks("ts_review_result", invalid),
@@ -302,8 +318,49 @@ def test_real_pi_review_repairs_invalid_tool_shape_in_same_session(tmp_path: Pat
     assert result["metadata"]["result_attempts"] == 2
     assert result["invalidOutputs"][0]["validation_stage"] == "tool_schema"
     assert len(requests) == 2
+    assert all(request["tool_choice"]["function"]["name"] == "ts_review_result" for request in requests)
     second_messages = requests[1]["messages"]
     assert any(message.get("role") == "tool" and message.get("content") for message in second_messages)
+
+
+def test_real_pi_review_surfaces_provider_http_failure_without_format_retry(tmp_path: Path) -> None:
+    pi = _pi_binary()
+    if pi is None:
+        pytest.skip("Pi executable is not installed")
+    workspace = tmp_path / "workspace"
+    bootstrap_strict_workspace(workspace)
+    agent_dir = tmp_path / "pi-agent"
+    agent_dir.mkdir()
+
+    requests: list[dict[str, object]] = []
+    provider_error = _HttpErrorResponse(
+        status=502,
+        body={"error": {"type": "server_error", "code": "internal_server_error", "message": "Bad gateway"}},
+    )
+    with _recording_server(requests, [provider_error]) as base_url:
+        _write_recording_model(agent_dir, base_url)
+        completed = _run_child_probe(
+            pi=pi,
+            workspace=workspace,
+            agent_dir=agent_dir,
+            session_dir=tmp_path / "pi-sessions",
+            extension=ROOT / "tests" / "pi_review_probe.ts",
+            command="/ts-test-review-child",
+            notification_prefix="TS_TEST_REVIEW_ERROR:",
+        )
+
+    assert completed.returncode == 0, completed.stderr
+    rows = [json.loads(line) for line in completed.stdout.splitlines() if line.strip().startswith("{")]
+    error = next(
+        row for row in rows
+        if row.get("type") == "extension_ui_request"
+        and str(row.get("message", "")).startswith("TS_TEST_REVIEW_ERROR:")
+    )
+    assert "provider request failed" in error["message"]
+    assert "502" in error["message"]
+    assert "internal_server_error" in error["message"]
+    assert "without calling ts_review_result" not in error["message"]
+    assert len(requests) == 1
 
 
 @pytest.mark.parametrize("mode", ["twice_invalid", "text_only"])
@@ -317,7 +374,7 @@ def test_real_pi_review_stops_after_two_invalid_attempts(tmp_path: Path, mode: s
     agent_dir.mkdir()
 
     invalid = _review_result_object()
-    invalid["payload"]["options"][0]["risks"] = "Still invalid."
+    invalid["options"][0]["risks"] = "Still invalid."
     responses = (
         [_tool_call_chunks("ts_review_result", invalid), _tool_call_chunks("ts_review_result", invalid)]
         if mode == "twice_invalid"
@@ -703,6 +760,22 @@ def test_real_pi_public_subagent_emits_ui_lifecycle_updates(tmp_path: Path, outc
     assert status_requests == []
     assert len(requests) == (3 if outcome == "success" else 4)
     run_dir = workspace / lifecycle[-1]["run_ref"]
+    task = json.loads((run_dir / "task.json").read_text(encoding="utf-8"))
+    assert task["schema_version"] == "ts-agent-task/2"
+    for binding_name, filename in (
+        ("evidence_snapshot", "evidence-snapshot.json"),
+        ("provider_input", "provider-input.json"),
+    ):
+        path = run_dir / filename
+        payload = path.read_bytes()
+        binding = task["inputs"][binding_name]
+        assert binding["bytes"] == len(payload)
+        assert binding["sha256"] == "sha256:" + hashlib.sha256(payload).hexdigest()
+        assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert stat.S_IMODE((run_dir / "task.json").stat().st_mode) == 0o600
+    provider_input = json.loads((run_dir / "provider-input.json").read_text(encoding="utf-8"))
+    child_prompt = requests[1]["messages"][-1]["content"][0]["text"]
+    assert json.loads(child_prompt.split("\n\n", 1)[1]) == provider_input
     invalid_output = run_dir / "invalid-review-output.json"
     if outcome == "failure":
         assert invalid_output.is_file()
@@ -712,6 +785,91 @@ def test_real_pi_public_subagent_emits_ui_lifecycle_updates(tmp_path: Path, outc
         assert "invalid-review-output" not in json.dumps(report_workspace(workspace))
     else:
         assert not invalid_output.exists()
+
+
+def test_real_pi_public_review_journals_provider_failure_without_invalid_output(tmp_path: Path) -> None:
+    pi = _pi_binary()
+    if pi is None:
+        pytest.skip("Pi executable is not installed")
+    workspace = tmp_path / "workspace"
+    bootstrap_strict_workspace(workspace)
+    agent_dir = tmp_path / "pi-agent"
+    agent_dir.mkdir()
+    env = {
+        **os.environ,
+        "PI_CODING_AGENT_DIR": str(agent_dir),
+        "PI_OFFLINE": "1",
+        "TS_AGENT_PYTHON": sys.executable,
+        "TS_WORKSPACE_ROOT": str(workspace),
+    }
+    requests: list[dict[str, object]] = []
+    responses = [
+        _tool_call_chunks(
+            "ts_subagent_review",
+            {"reviewType": "mechanism", "question": "Review the bounded mechanism evidence.", "nodeId": "n000"},
+        ),
+        _HttpErrorResponse(
+            status=502,
+            body={"error": {"type": "server_error", "code": "internal_server_error", "message": "Bad gateway"}},
+        ),
+        _assistant_text_chunks("The review provider failed before producing a result."),
+    ]
+    with _recording_server(requests, responses) as base_url:
+        _write_recording_model(agent_dir, base_url)
+        installed = subprocess.run(
+            [pi, "install", "-l", str(ROOT), "--approve"],
+            cwd=workspace,
+            env=env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            timeout=45,
+            check=False,
+        )
+        assert installed.returncode == 0, installed.stderr
+        completed = _run_rpc_until(
+            [
+                pi,
+                "--mode",
+                "rpc",
+                "--offline",
+                "--no-session",
+                "--session-dir",
+                str(tmp_path / "pi-sessions"),
+                "--no-context-files",
+                "--no-builtin-tools",
+                "--approve",
+                "--model",
+                "ts-recording/recording-model",
+            ],
+            cwd=workspace,
+            env=env,
+            command={"id": "provider-failure", "type": "prompt", "message": "Run the bounded mechanism review now."},
+            notification_prefix='"type":"agent_end"',
+            timeout=45,
+        )
+
+    assert completed.returncode == 0, completed.stderr
+    assert len(requests) == 3
+    run_dirs = list((workspace / "nodes/n000/agent-runs").glob("sub_*"))
+    assert len(run_dirs) == 1
+    run = json.loads((run_dirs[0] / "run.json").read_text(encoding="utf-8"))
+    assert run["status"] == "failed"
+    assert run["error"]["name"] == "ReviewProviderError"
+    assert run["error"]["code"] == "TS_SUBAGENT_PROVIDER_ERROR"
+    assert "502" in run["error"]["message"]
+    assert run["metadata"] == {
+        "failure_class": "model_provider_failed",
+        "failure_stage": "provider_request",
+        "failure_domain": "upstream_model_api",
+        "upstream_status": 502,
+        "retry_safe": True,
+        "upstream_error_type": "server_error",
+        "upstream_error_code": "internal_server_error",
+        "response_content_type": None,
+        "response_block_types": [],
+    }
+    assert not (run_dirs[0] / "invalid-review-output.json").exists()
 
 
 def _pi_binary() -> str | None:
@@ -860,6 +1018,14 @@ class _RecordingHandler(BaseHTTPRequestHandler):
             return
         configured = self.responses[response_index]
         response = configured(body) if callable(configured) else configured
+        if isinstance(response, _HttpErrorResponse):
+            payload = json.dumps(response.body).encode("utf-8")
+            self.send_response(response.status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+            return
         payload = "".join(f"data: {json.dumps(chunk)}\n\n" for chunk in response) + "data: [DONE]\n\n"
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -890,6 +1056,12 @@ class _RecordingServer:
         self.server.shutdown()
         self.thread.join(timeout=5)
         self.server.server_close()
+
+
+class _HttpErrorResponse:
+    def __init__(self, *, status: int, body: dict[str, object]) -> None:
+        self.status = status
+        self.body = body
 
 
 def _recording_server(
@@ -1035,70 +1207,30 @@ def _report_result_chunks() -> list[dict[str, object]]:
     return _assistant_result_chunks(report)
 
 
-def _review_result_chunks(
-    *,
-    task_id: str = "agent_review_001",
-    scope: dict[str, object] | None = None,
-) -> list[dict[str, object]]:
-    scope = scope or {
-        "report_id": "rep_review_001",
-        "node_ids": ["n000"],
-        "hypothesis_id": None,
-        "pathway_id": None,
-    }
-    report = _review_result_object(task_id=task_id, scope=scope)
-    return _tool_call_chunks("ts_review_result", report)
+def _review_result_chunks() -> list[dict[str, object]]:
+    return _tool_call_chunks("ts_review_result", _review_result_object())
 
 
-def _review_result_object(
-    *,
-    task_id: str = "agent_review_001",
-    scope: dict[str, object] | None = None,
-) -> dict[str, object]:
-    scope = scope or {
-        "report_id": "rep_review_001",
-        "node_ids": ["n000"],
-        "hypothesis_id": None,
-        "pathway_id": None,
-    }
+def _review_result_object() -> dict[str, object]:
     return {
-        "schema_version": "ts-agent-result/1",
-        "task_id": task_id,
-        "role": "review",
-        "authority": "advisory",
-        "operation": "mechanism",
         "outcome": "partial",
         "summary": "The bounded context is insufficient for a mechanism conclusion.",
-        "scope": scope,
         "facts": [],
-        "artifact_refs": [],
-        "program": None,
-        "payload": {
-            "missing_evidence": ["Primary mechanism evidence was not included."],
-            "conflicts": [],
-            "options": [
-                {
-                    "action": "Request one discriminating primary artifact.",
-                    "discriminator": "The artifact should distinguish the competing mechanism predictions.",
-                    "risks": ["No scientific status can be assigned from this review."],
-                }
-            ],
-        },
+        "missing_evidence": ["Primary mechanism evidence was not included."],
+        "conflicts": [],
+        "options": [
+            {
+                "action": "Request one discriminating primary artifact.",
+                "discriminator": "The artifact should distinguish the competing mechanism predictions.",
+                "risks": ["No scientific status can be assigned from this review."],
+            }
+        ],
         "limitations": ["Recording-provider integration test."],
-        "provenance": {},
     }
 
 
-def _review_result_for_request(request: dict[str, object]) -> list[dict[str, object]]:
-    messages = request.get("messages")
-    assert isinstance(messages, list) and messages
-    content = messages[-1].get("content")
-    if isinstance(content, list):
-        prompt = "".join(str(part.get("text", "")) for part in content if isinstance(part, dict))
-    else:
-        prompt = str(content or "")
-    packet = json.loads(prompt.split("\n\n", 1)[1])
-    return _review_result_chunks(task_id=packet["task_id"], scope=packet["scope"])
+def _review_result_for_request(_request: dict[str, object]) -> list[dict[str, object]]:
+    return _review_result_chunks()
 
 
 def _invalid_review_result(_request: dict[str, object]) -> list[dict[str, object]]:

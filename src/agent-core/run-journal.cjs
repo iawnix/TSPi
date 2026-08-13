@@ -7,21 +7,30 @@ const {
   lstatSync,
   mkdirSync,
   openSync,
+  readFileSync,
   realpathSync,
+  renameSync,
+  rmSync,
   statSync,
+  unlinkSync,
   writeFileSync,
 } = require("node:fs");
-const { createHash } = require("node:crypto");
+const { createHash, randomBytes } = require("node:crypto");
 const { isAbsolute, relative, resolve, sep } = require("node:path");
+const {
+  REVIEW_INPUT_DOCUMENTS,
+  serializeAgentDocument,
+  validateAgentTask,
+} = require("./agent-protocol.cjs");
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MAX_INVALID_REVIEW_RAW_BYTES = 16 * 1024;
 
-function beginAgentRun(workspaceRoot, packet) {
+function beginAgentRun(workspaceRoot, packet, { documents = {} } = {}) {
   const root = requireWorkspaceRoot(workspaceRoot);
-  if (!isPlainObject(packet)) throw new Error("agent task packet must be an object");
-  const taskId = requireSafeId(packet.task_id, "task_id");
-  const scope = isPlainObject(packet.scope) ? packet.scope : {};
+  const task = validateAgentTask(packet);
+  const taskId = requireSafeId(task.task_id, "task_id");
+  const scope = task.scope;
   const nodeIds = Array.isArray(scope.node_ids) ? scope.node_ids.map((value) => requireSafeId(value, "node_id")) : [];
   const ownerRef = nodeIds.length === 1
     ? `nodes/${nodeIds[0]}/agent-runs`
@@ -41,10 +50,67 @@ function beginAgentRun(workspaceRoot, packet) {
 
   const runRef = `${ownerRef}/${taskId}`;
   const runDir = resolve(root, ...runRef.split("/"));
-  mkdirSync(runDir, { mode: 0o700 });
+  if (existsSync(runDir)) throw new Error(`agent run already exists: ${taskId}`);
+  const reservationPath = resolve(parent, `.${taskId}.lock`);
+  let reservation;
+  try {
+    reservation = openSync(reservationPath, "wx", 0o600);
+  } catch (error) {
+    if (error && typeof error === "object" && error.code === "EEXIST") {
+      throw new Error(`agent run is already being created: ${taskId}`);
+    }
+    throw error;
+  }
+  const stageDir = resolve(parent, `.${taskId}.tmp-${randomBytes(8).toString("hex")}`);
+  assertWithin(root, stageDir);
   const startedAt = new Date().toISOString();
-  writeJsonExclusive(resolve(runDir, "task.json"), packet);
+  try {
+    mkdirSync(stageDir, { mode: 0o700 });
+    writeBoundDocuments(stageDir, task, documents);
+    writeJsonExclusive(resolve(stageDir, "task.json"), task);
+    if (existsSync(runDir)) throw new Error(`agent run already exists: ${taskId}`);
+    renameSync(stageDir, runDir);
+  } catch (error) {
+    rmSync(stageDir, { recursive: true, force: true });
+    throw error;
+  } finally {
+    releaseReservation(reservation, reservationPath);
+  }
   return { root, runDir, runRef, taskId, startedAt, finalized: false };
+}
+
+function releaseReservation(descriptor, path) {
+  try {
+    closeSync(descriptor);
+  } catch (_error) {}
+  try {
+    unlinkSync(path);
+  } catch (_error) {}
+}
+
+function writeBoundDocuments(runDir, task, documents) {
+  if (!isPlainObject(documents)) throw new Error("agent-run documents must be an object");
+  const expected = task.role === "review" ? REVIEW_INPUT_DOCUMENTS : {};
+  const expectedNames = Object.keys(expected);
+  const actualNames = Object.keys(documents);
+  const unexpected = actualNames.filter((name) => !expectedNames.includes(name));
+  const missing = expectedNames.filter((name) => !actualNames.includes(name));
+  if (unexpected.length) throw new Error(`agent-run contains unbound documents: ${unexpected.join(", ")}`);
+  if (missing.length) throw new Error(`agent-run is missing bound documents: ${missing.join(", ")}`);
+  for (const name of expectedNames) {
+    const binding = task.inputs[name];
+    const document = documents[name];
+    if (!isPlainObject(document)) throw new Error(`agent-run document ${name} must be an object`);
+    const payload = serializeAgentDocument(document);
+    const digest = `sha256:${createHash("sha256").update(payload).digest("hex")}`;
+    if (document.schema_version !== binding.schema_version) {
+      throw new Error(`agent-run document ${name} schema does not match task binding`);
+    }
+    if (Buffer.byteLength(payload, "utf8") !== binding.bytes || digest !== binding.sha256) {
+      throw new Error(`agent-run document ${name} does not match task binding`);
+    }
+    writeTextExclusive(resolve(runDir, binding.ref), payload);
+  }
 }
 
 function completeAgentRun(handle, { actions = [], result, metadata = {} }) {
@@ -58,6 +124,33 @@ function completeAgentRun(handle, { actions = [], result, metadata = {} }) {
   );
   handle.finalized = true;
   return handle.runRef;
+}
+
+function readAgentRunInputs(handle) {
+  requireOpenHandle(handle);
+  const task = readBoundJson(handle.runDir, "task.json");
+  const normalized = validateAgentTask(task);
+  if (normalized.task_id !== handle.taskId) throw new Error("agent-run task does not match journal handle");
+  const documents = {};
+  if (normalized.role !== "review") return { task: normalized, documents };
+  for (const name of Object.keys(REVIEW_INPUT_DOCUMENTS)) {
+    const binding = normalized.inputs[name];
+    const path = resolve(handle.runDir, binding.ref);
+    assertWithin(handle.runDir, path);
+    const stat = lstatSync(path);
+    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`invalid agent-run document: ${binding.ref}`);
+    const payload = readFileSync(path, "utf8");
+    const digest = `sha256:${createHash("sha256").update(payload).digest("hex")}`;
+    if (Buffer.byteLength(payload, "utf8") !== binding.bytes || digest !== binding.sha256) {
+      throw new Error(`agent-run document ${name} does not match task binding`);
+    }
+    const value = JSON.parse(payload);
+    if (!isPlainObject(value) || value.schema_version !== binding.schema_version) {
+      throw new Error(`invalid agent-run document content: ${binding.ref}`);
+    }
+    documents[name] = value;
+  }
+  return { task: normalized, documents };
 }
 
 function failAgentRun(handle, { actions = [], error, metadata = {} }) {
@@ -168,7 +261,10 @@ function requireOpenHandle(handle) {
 }
 
 function writeJsonExclusive(path, value) {
-  const payload = `${JSON.stringify(value, null, 2)}\n`;
+  writeTextExclusive(path, serializeAgentDocument(value));
+}
+
+function writeTextExclusive(path, payload) {
   const descriptor = openSync(path, "wx", 0o600);
   try {
     writeFileSync(descriptor, payload, "utf8");
@@ -176,6 +272,18 @@ function writeJsonExclusive(path, value) {
   } finally {
     closeSync(descriptor);
   }
+}
+
+function readBoundJson(runDir, name) {
+  const path = resolve(runDir, name);
+  assertWithin(runDir, path);
+  const stat = lstatSync(path);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 1024 * 1024) {
+    throw new Error(`invalid agent-run JSON file: ${name}`);
+  }
+  const value = JSON.parse(readFileSync(path, "utf8"));
+  if (!isPlainObject(value)) throw new Error(`invalid agent-run JSON content: ${name}`);
+  return value;
 }
 
 function requireWorkspaceRoot(value) {
@@ -233,4 +341,10 @@ function requireEnum(value, label, allowed) {
   return value;
 }
 
-module.exports = { beginAgentRun, completeAgentRun, failAgentRun, writeInvalidReviewOutput };
+module.exports = {
+  beginAgentRun,
+  completeAgentRun,
+  failAgentRun,
+  readAgentRunInputs,
+  writeInvalidReviewOutput,
+};

@@ -22,9 +22,10 @@ export function createReviewResultCapture(): ReviewResultCapture {
 
 export function createReviewResultTool(
   packet: Record<string, unknown>,
+  evidenceSnapshot: Record<string, unknown>,
   capture: ReviewResultCapture,
 ): ToolDefinition {
-  const parameters = createReviewResultSchema(packet);
+  const parameters = createReviewResultSchema(evidenceSnapshot);
   const strictValidator = Compile(parameters);
   return {
     name: REVIEW_RESULT_TOOL_NAME,
@@ -47,7 +48,11 @@ export function createReviewResultTool(
       if (capture.attemptCount > 2 || capture.accepted) {
         throw new Error("ts_review_result accepts exactly one valid call");
       }
-      const validated = validateReviewResult(params, packet) as ReviewResult;
+      const validated = validateReviewResult(
+        buildReviewResult(params, packet),
+        packet,
+        evidenceSnapshot,
+      ) as ReviewResult;
       capture.accepted = validated;
       return {
         content: [{ type: "text", text: "Review result accepted." }],
@@ -58,18 +63,11 @@ export function createReviewResultTool(
   };
 }
 
-export function createReviewResultSchema(packet: Record<string, unknown>) {
-  const taskId = requiredString(packet.task_id, "task_id");
-  const operation = requiredString(packet.operation, "operation");
-  const scope = requiredObject(packet.scope, "scope");
-  const inputs = requiredObject(packet.inputs, "inputs");
-  const allowedLayers = stringList(inputs.evidence_ceiling, "inputs.evidence_ceiling");
-  const allowedBasisRefs = stringList(inputs.basis_allowlist, "inputs.basis_allowlist");
+export function createReviewResultSchema(evidenceSnapshot: Record<string, unknown>) {
+  const allowedLayers = stringList(evidenceSnapshot.evidence_ceiling, "evidence_snapshot.evidence_ceiling");
+  const allowedBasisRefs = stringList(evidenceSnapshot.basis_allowlist, "evidence_snapshot.basis_allowlist");
   if (!allowedLayers.length) throw new Error("review task requires a non-empty evidence ceiling");
 
-  const NullableBoundString = (value: unknown, label: string, maxLength: number) => value === null
-    ? Type.Null()
-    : Type.Literal(requiredString(value, label, maxLength));
   const StrictObject = (properties: Record<string, any>) =>
     Type.Object(properties, { additionalProperties: false });
   const StringList = (maxItems: number, maxLength: number) => Type.Array(
@@ -78,21 +76,9 @@ export function createReviewResultSchema(packet: Record<string, unknown>) {
   );
 
   return StrictObject({
-    schema_version: Type.Literal("ts-agent-result/1"),
-    task_id: Type.Literal(taskId),
-    role: Type.Literal("review"),
-    authority: Type.Literal("advisory"),
-    operation: Type.Literal(operation),
     outcome: StringEnum(["success", "partial", "failure", "not_run"] as const),
     summary: Type.String({ minLength: 1, maxLength: 4000 }),
-    scope: StrictObject({
-      report_id: NullableBoundString(scope.report_id, "scope.report_id", 256),
-      node_ids: Type.Tuple(stringList(scope.node_ids, "scope.node_ids").map((value) => Type.Literal(value))),
-      hypothesis_id: NullableBoundString(scope.hypothesis_id, "scope.hypothesis_id", 256),
-      pathway_id: NullableBoundString(scope.pathway_id, "scope.pathway_id", 256),
-    }),
     facts: Type.Array(StrictObject({
-      kind: Type.Literal("review"),
       layer: StringEnum(allowedLayers as [string, ...string[]]),
       statement: Type.String({ minLength: 1, maxLength: 2000 }),
       status: StringEnum(["observed", "supported", "contradicted", "uncertain"] as const),
@@ -104,22 +90,42 @@ export function createReviewResultSchema(packet: Record<string, unknown>) {
         })
         : Type.Array(Type.Never(), { maxItems: 0 }),
     }), { maxItems: 32 }),
-    artifact_refs: Type.Array(Type.Never(), { maxItems: 0 }),
-    program: Type.Null(),
-    payload: StrictObject({
-      missing_evidence: StringList(24, 2000),
-      conflicts: StringList(24, 2000),
-      options: Type.Array(StrictObject({
-        action: Type.String({ minLength: 1, maxLength: 2000 }),
-        discriminator: Type.String({ minLength: 1, maxLength: 2000 }),
-        risks: StringList(12, 1000),
-      }), { maxItems: 12 }),
-    }),
+    missing_evidence: StringList(24, 2000),
+    conflicts: StringList(24, 2000),
+    options: Type.Array(StrictObject({
+      action: Type.String({ minLength: 1, maxLength: 2000 }),
+      discriminator: Type.String({ minLength: 1, maxLength: 2000 }),
+      risks: StringList(12, 1000),
+    }), { maxItems: 12 }),
     limitations: StringList(24, 2000),
-    provenance: StrictObject({
-      source: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
-    }),
   });
+}
+
+function buildReviewResult(params: unknown, packet: Record<string, unknown>): ReviewResult {
+  const submission = requiredObject(params, "review submission");
+  const scope = requiredObject(packet.scope, "scope");
+  return {
+    schema_version: "ts-agent-result/1",
+    task_id: requiredString(packet.task_id, "task_id"),
+    role: "review",
+    authority: "advisory",
+    operation: requiredString(packet.operation, "operation"),
+    outcome: submission.outcome,
+    summary: submission.summary,
+    scope: JSON.parse(JSON.stringify(scope)),
+    facts: Array.isArray(submission.facts)
+      ? submission.facts.map((fact) => ({ kind: "review", ...requiredObject(fact, "review fact") }))
+      : submission.facts,
+    artifact_refs: [],
+    program: null,
+    payload: {
+      missing_evidence: submission.missing_evidence,
+      conflicts: submission.conflicts,
+      options: submission.options,
+    },
+    limitations: submission.limitations,
+    provenance: { source: "bounded_task_packet" },
+  };
 }
 
 function requiredObject(value: unknown, label: string): Record<string, unknown> {

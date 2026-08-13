@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TS review provider input",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "task_id",
+    "operation",
+    "objective",
+    "scope",
+    "workspace_revision",
+    "context",
+    "evidence",
+    "artifact_excerpts",
+    "basis_allowlist",
+    "evidence_ceiling"
+  ],
+  "properties": {
+    "schema_version": {"const": "ts-review-provider-input/1"},
+    "task_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "operation": {"type": "string", "minLength": 1, "maxLength": 128},
+    "objective": {"type": "string", "minLength": 1, "maxLength": 4000},
+    "scope": {"$ref": "review_evidence_snapshot.schema.json#/$defs/scope"},
+    "workspace_revision": {"type": ["string", "null"]},
+    "context": {
+      "type": "object",
+      "required": ["workspace", "node", "backtrack"],
+      "properties": {
+        "workspace": {"type": ["string", "null"]},
+        "node": {"type": ["string", "null"]},
+        "backtrack": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "evidence": {
+      "type": "array",
+      "maxItems": 16,
+      "items": {"type": "object"}
+    },
+    "artifact_excerpts": {
+      "type": "array",
+      "maxItems": 4,
+      "items": {"$ref": "review_evidence_snapshot.schema.json#/$defs/artifactExcerpt"}
+    },
+    "basis_allowlist": {
+      "type": "array",
+      "uniqueItems": true,
+      "maxItems": 20,
+      "items": {"type": "string", "minLength": 1, "maxLength": 4096}
+    },
+    "evidence_ceiling": {
+      "type": "array",
+      "uniqueItems": true,
+      "minItems": 1,
+      "items": {"enum": ["mechanism", "candidate", "tsfreq", "connectivity", "accepted_audit", "pathway_audit", "program"]}
+    }
+  },
+  "additionalProperties": false
+}

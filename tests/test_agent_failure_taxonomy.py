@@ -29,6 +29,25 @@ def test_stream_disconnect_after_action_is_not_replay_safe() -> None:
     assert result["retry_safe"] is False
 
 
+def test_provider_http_failure_keeps_upstream_domain_and_status() -> None:
+    result = _classify(
+        'TS Review provider request failed: 502: {"error":{"type":"server_error","code":"internal_server_error"}}',
+        replay_safe=True,
+    )
+
+    assert result == {
+        "failure_class": "model_provider_failed",
+        "failure_stage": "provider_request",
+        "failure_domain": "upstream_model_api",
+        "upstream_status": 502,
+        "retry_safe": True,
+        "upstream_error_type": None,
+        "upstream_error_code": None,
+        "response_content_type": None,
+        "response_block_types": [],
+    }
+
+
 def test_non_stream_error_is_not_claimed_by_upstream_taxonomy() -> None:
     assert _classify("Normal termination missing from Gaussian log", replay_safe=True) is None
 

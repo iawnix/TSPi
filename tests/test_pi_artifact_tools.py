@@ -647,7 +647,7 @@ def _artifact_protocol_fixture(role: str):
     operation = {"render": "render", "report": "build"}[role]
     node_ids = ["n001"] if role == "render" else []
     packet = {
-        "schema_version": "ts-agent-task/1",
+        "schema_version": "ts-agent-task/2",
         "task_id": f"agent_{role}_001",
         "role": role,
         "authority": "operational",

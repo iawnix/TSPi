@@ -484,7 +484,7 @@ def test_compute_backend_policies_are_packaged_but_not_registered_as_skills() ->
 
 def test_compute_operator_output_is_bound_to_actual_tool_result(tmp_path: Path) -> None:
     packet = {
-        "schema_version": "ts-agent-task/1",
+        "schema_version": "ts-agent-task/2",
         "task_id": "agent_compute_001",
         "role": "backend",
         "authority": "operational",
@@ -581,7 +581,7 @@ def test_compute_operator_output_is_bound_to_actual_tool_result(tmp_path: Path) 
 
 def test_compute_operator_maps_ambiguous_submit_to_unknown_action_outcome(tmp_path: Path) -> None:
     packet = {
-        "schema_version": "ts-agent-task/1",
+        "schema_version": "ts-agent-task/2",
         "task_id": "agent_compute_ambiguous_001",
         "role": "backend",
         "authority": "operational",
@@ -643,7 +643,7 @@ def test_compute_operator_maps_ambiguous_submit_to_unknown_action_outcome(tmp_pa
 
 def test_compute_operator_rejects_scientific_fields_and_missing_required_action(tmp_path: Path) -> None:
     packet = {
-        "schema_version": "ts-agent-task/1",
+        "schema_version": "ts-agent-task/2",
         "task_id": "agent_compute_002",
         "role": "backend",
         "authority": "operational",
@@ -698,7 +698,7 @@ def test_compute_operator_rejects_scientific_fields_and_missing_required_action(
 
 def test_compute_inspect_accepts_failed_status_plus_tail_as_partial_diagnostic(tmp_path: Path) -> None:
     packet = {
-        "schema_version": "ts-agent-task/1",
+        "schema_version": "ts-agent-task/2",
         "task_id": "agent_fe328914-a6da-4d2c-8dcc-5048afded0d5",
         "role": "backend",
         "authority": "operational",

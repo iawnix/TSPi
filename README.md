@@ -18,7 +18,7 @@ workspaces are rejected and must be recreated under the current ontology.
 - `skills/transition-state-workflow/`: the only public Pi Skill, including its
   on-demand references and reusable report/decision assets.
 - `extensions/`: the public Pi tool and command adapters.
-- `src/agent-core/`: shared `ts-agent-task/1` / `ts-agent-result/1` protocol,
+- `src/agent-core/`: shared `ts-agent-task/2` / `ts-agent-result/1` protocol,
   result normalization, disposable-session lifecycle, and durable run journal.
 - `src/agents/review/`: fresh, tool-free Pi scientific-review sessions with
   bounded task packets and review-specific result validation.
@@ -239,9 +239,11 @@ are retained in session history; Pi's global `Ctrl+O` action expands or
 collapses the full context or validation details.
 
 `/ts-agents` opens a read-only selector for active and durable child runs. Its
-detail view reads only the bounded `task.json`, `actions.json`, `result.json`,
-and `run.json` journal files, and shows summary, typed actions, artifact refs,
-and failure details. It does not reopen a child, cancel work, or change the
+detail view reads only bounded run-journal JSON. Every role has `task.json`,
+`actions.json`, `result.json`, and `run.json`; Review also has the digest-bound
+`evidence-snapshot.json` and `provider-input.json`. The view shows summary,
+typed actions, artifact refs, and failure details. It does not reopen a child,
+cancel work, or change the
 workspace. A completed compute child describes the bounded adapter call only;
 remote scheduler and chemistry-program lifecycles remain separate and must be
 inspected through their typed compute status.
@@ -370,7 +372,7 @@ insufficient.
 
 All isolated roles communicate through:
 
-- `contracts/agent_task.schema.json` (`ts-agent-task/1`)
+- `contracts/agent_task.schema.json` (`ts-agent-task/2`)
 - `contracts/agent_result.schema.json` (`ts-agent-result/1`)
 
 Roles are `review`, `backend`, `render`, and `report`. Results cannot
@@ -383,6 +385,13 @@ The Pi host persists every child task under `nodes/<node>/agent-runs/<task>/`
 for one-node work or `operations/agent-runs/<task>/` for study-level work.
 These immutable operational records are never evidence and do not change the
 scientific `workspace_revision`.
+
+In `ts-agent-task/2`, Review `task.json` contains only the role, operation,
+authority, scope, constraints, output contract, and SHA-256/byte bindings for
+two companion documents. `evidence-snapshot.json` retains the complete selected
+audit context used by host validation. `provider-input.json` records the exact
+bounded structured packet supplied to the model. Compute, render, and report
+keep their already-small operational inputs inline in `task.json`.
 
 ## Reporting
 

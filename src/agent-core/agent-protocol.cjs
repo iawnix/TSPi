@@ -1,5 +1,7 @@
 "use strict";
 
+const { createHash } = require("node:crypto");
+
 const { FACT_KINDS } = require("./fact-kinds.cjs");
 
 const ROLES = Object.freeze(["review", "backend", "render", "report"]);
@@ -30,6 +32,17 @@ const TASK_KEYS = [
   "schema_version", "task_id", "role", "authority", "operation", "objective", "workspace",
   "scope", "inputs", "capabilities", "constraints", "output_contract",
 ];
+const DOCUMENT_BINDING_KEYS = ["ref", "schema_version", "sha256", "bytes"];
+const REVIEW_INPUT_DOCUMENTS = Object.freeze({
+  evidence_snapshot: Object.freeze({
+    ref: "evidence-snapshot.json",
+    schema_version: "ts-review-evidence-snapshot/1",
+  }),
+  provider_input: Object.freeze({
+    ref: "provider-input.json",
+    schema_version: "ts-review-provider-input/1",
+  }),
+});
 const RESULT_KEYS = [
   "schema_version", "task_id", "role", "authority", "operation", "outcome", "summary",
   "scope", "facts", "artifact_refs", "program", "payload", "limitations", "provenance",
@@ -38,7 +51,7 @@ const RESULT_KEYS = [
 function validateAgentTask(value) {
   if (!isPlainObject(value)) throw new Error("agent task must be an object");
   rejectUnknownKeys(value, TASK_KEYS, "agent task");
-  if (value.schema_version !== "ts-agent-task/1") throw new Error("invalid agent task schema_version");
+  if (value.schema_version !== "ts-agent-task/2") throw new Error("invalid agent task schema_version");
   const taskId = requireString(value.task_id, "task_id", 128);
   const role = requireEnum(value.role, "role", ROLES);
   const authority = requireEnum(value.authority, "authority", ["advisory", "operational"]);
@@ -47,12 +60,12 @@ function validateAgentTask(value) {
   const objective = requireString(value.objective, "objective", 4000);
   const workspace = validateWorkspace(value.workspace);
   const scope = validateScope(value.scope);
-  if (!isPlainObject(value.inputs)) throw new Error("inputs must be an object");
+  const inputs = validateTaskInputs(value.inputs, role);
   const capabilities = uniqueStringArray(value.capabilities, "capabilities", 32, 128);
   const constraints = validateConstraints(value.constraints);
   if (value.output_contract !== "ts-agent-result/1") throw new Error("output_contract must be ts-agent-result/1");
   return {
-    schema_version: "ts-agent-task/1",
+    schema_version: "ts-agent-task/2",
     task_id: taskId,
     role,
     authority,
@@ -60,11 +73,58 @@ function validateAgentTask(value) {
     objective,
     workspace,
     scope,
-    inputs: value.inputs,
+    inputs,
     capabilities,
     constraints,
     output_contract: "ts-agent-result/1",
   };
+}
+
+function validateTaskInputs(value, role) {
+  if (!isPlainObject(value)) throw new Error("inputs must be an object");
+  if (role !== "review") return JSON.parse(JSON.stringify(value));
+  rejectUnknownKeys(value, Object.keys(REVIEW_INPUT_DOCUMENTS), "review inputs");
+  const result = {};
+  for (const [name, expected] of Object.entries(REVIEW_INPUT_DOCUMENTS)) {
+    result[name] = validateDocumentBinding(value[name], `inputs.${name}`, expected);
+  }
+  return result;
+}
+
+function validateDocumentBinding(value, label, expected) {
+  if (!isPlainObject(value)) throw new Error(`${label} must be a document binding`);
+  rejectUnknownKeys(value, DOCUMENT_BINDING_KEYS, label);
+  const ref = requireString(value.ref, `${label}.ref`, 128);
+  const schemaVersion = requireString(value.schema_version, `${label}.schema_version`, 128);
+  if (ref !== expected.ref) throw new Error(`${label}.ref must be ${expected.ref}`);
+  if (schemaVersion !== expected.schema_version) {
+    throw new Error(`${label}.schema_version must be ${expected.schema_version}`);
+  }
+  if (typeof value.sha256 !== "string" || !/^sha256:[0-9a-f]{64}$/.test(value.sha256)) {
+    throw new Error(`${label}.sha256 must be a SHA-256 digest`);
+  }
+  if (!Number.isInteger(value.bytes) || value.bytes < 1 || value.bytes > 1024 * 1024) {
+    throw new Error(`${label}.bytes must be an integer from 1 to 1048576`);
+  }
+  return { ref, schema_version: schemaVersion, sha256: value.sha256, bytes: value.bytes };
+}
+
+function bindAgentDocument(ref, schemaVersion, value) {
+  if (!isPlainObject(value)) throw new Error("bound agent document must be an object");
+  if (value.schema_version !== schemaVersion) {
+    throw new Error(`bound agent document schema_version must be ${schemaVersion}`);
+  }
+  const payload = serializeAgentDocument(value);
+  return {
+    ref,
+    schema_version: schemaVersion,
+    sha256: `sha256:${createHash("sha256").update(payload).digest("hex")}`,
+    bytes: Buffer.byteLength(payload, "utf8"),
+  };
+}
+
+function serializeAgentDocument(value) {
+  return `${JSON.stringify(value, null, 2)}\n`;
 }
 
 function validateAgentResult(value, task) {
@@ -249,6 +309,9 @@ module.exports = {
   FORBIDDEN_RESULT_KEYS,
   PROGRAM_OUTCOMES,
   ROLES,
+  REVIEW_INPUT_DOCUMENTS,
+  bindAgentDocument,
+  serializeAgentDocument,
   validateAgentResult,
   validateAgentTask,
 };
