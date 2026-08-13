@@ -244,6 +244,69 @@ def test_task_packet_rejects_unknown_evidence_role(tmp_path: Path) -> None:
     assert "unknown role/layer" in completed.stderr
 
 
+def test_previous_attempt_summary_maps_to_program_layer() -> None:
+    evidence = {
+        "evidence_id": "ev_previous_attempt",
+        "role": "previous_attempt_summary",
+    }
+    script = (
+        f"const helper=require({json.dumps(str(INPUT_POLICY))});"
+        "process.stdout.write(helper.reviewLayerForEvidence(JSON.parse(process.argv[1])));"
+    )
+
+    assert _node_json(script, json.dumps(evidence)).stdout == "program"
+
+
+def test_program_failure_review_implicitly_selects_previous_attempt_and_artifact(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    bootstrap_strict_workspace(workspace)
+    artifact_ref = "nodes/n000/attempts/calc_failed/outputs/parsed/validation_summary.json"
+    artifact = workspace / artifact_ref
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text('{"program_outcome":"failure"}\n', encoding="utf-8")
+    node_context = report_node(workspace, "n000")
+    node_context["evidence"].append({
+        "evidence_id": "ev_previous_attempt",
+        "node_id": "n000",
+        "kind": "gaussian_program_failure",
+        "role": "previous_attempt_summary",
+        "evidence_tier": "local_parse",
+        "summary": "Gaussian failed before producing a stationary point.",
+        "quality": {"program_outcome": "failure"},
+        "path": artifact_ref,
+        "source_files": [artifact_ref],
+    })
+    payload = {
+        "runId": "sub_test_program_failure",
+        "workspaceRoot": str(workspace),
+        "request": {
+            "reviewType": "program_failure",
+            "question": "Review the failed program attempt without making a mechanism claim.",
+            "nodeId": "n000",
+            "artifactRefs": [artifact_ref],
+        },
+        "workspaceReport": report_workspace(workspace),
+        "nodeContext": node_context,
+        "branchContext": None,
+    }
+    input_file = tmp_path / "program-failure.json"
+    input_file.write_text(json.dumps(payload), encoding="utf-8")
+    script = (
+        "const fs=require('node:fs');"
+        f"const helper=require({json.dumps(str(TASK_PACKET))});"
+        "const input=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
+        "process.stdout.write(JSON.stringify(helper.buildReviewTaskBundle(input)));"
+    )
+
+    bundle = json.loads(_node_json(script, str(input_file)).stdout)
+    snapshot = bundle["documents"]["evidence_snapshot"]
+    assert [item["evidence_id"] for item in snapshot["evidence"]] == ["ev_previous_attempt"]
+    assert snapshot["evidence"][0]["layer"] == "program"
+    assert snapshot["artifact_excerpts"][0]["ref"] == artifact_ref
+    assert snapshot["artifact_excerpts"][0]["layer"] == "program"
+    assert snapshot["basis_allowlist"] == ["ev_previous_attempt", artifact_ref]
+
+
 def test_review_layer_policy_covers_workspace_evidence_ontology() -> None:
     script = (
         f"const helper=require({json.dumps(str(INPUT_POLICY))});"

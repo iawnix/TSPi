@@ -26,6 +26,7 @@ const EVIDENCE_ROLE_LAYERS = Object.freeze({
   pathway_audit_summary: "pathway_audit",
   program_diagnostics: "program",
   program_status: "program",
+  previous_attempt_summary: "program",
 });
 
 function reviewLayerForEvidence(item, nodeById = new Map()) {
