@@ -55,6 +55,7 @@ def _make_workspace(root: Path, *, child: bool = True) -> None:
     init_workspace(root)
     _start(root, "n000", None, [])
     artifact = root / "nodes" / "n000" / "outputs" / "tsfreq.json"
+    artifact.parent.mkdir()
     artifact.write_text("{}\n", encoding="utf-8")
     update_workspace(
         root,

@@ -302,7 +302,6 @@ def _migrate_nodes(
                 "outputs": f"nodes/{node_id}/outputs",
                 "attempts": f"nodes/{node_id}/attempts",
                 "scratch": f"nodes/{node_id}/scratch",
-                "remote": f"nodes/{node_id}/remote",
             },
             "result": result,
         }
@@ -332,9 +331,6 @@ def _copy_noncanonical_content(source: Path, target: Path, node_ids: set[str]) -
                 shutil.copytree(path, destination, dirs_exist_ok=True)
             elif path.is_file():
                 shutil.copy2(path, destination)
-    for node_id in sorted(node_ids):
-        for name in ("inputs", "outputs", "attempts", "scratch", "remote"):
-            (target / "nodes" / node_id / name).mkdir(parents=True, exist_ok=True)
 
 
 def _copy_directory_contents(source: Path, target: Path) -> None:

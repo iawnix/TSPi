@@ -73,6 +73,7 @@ def _end(root: Path, node_id: str, *, claim_updates: list[dict] | None = None, a
 
 def _evidence(root: Path, node_id: str, evidence_id: str, facts: dict) -> dict:
     artifact = root / "nodes" / node_id / "outputs" / f"{evidence_id}.json"
+    artifact.parent.mkdir(exist_ok=True)
     artifact.write_text("{}\n", encoding="utf-8")
     return {
         "schema_version": "ts-evidence/2",
@@ -111,6 +112,9 @@ def test_v3_engine_applies_the_same_path_that_dry_run_validates(tmp_path: Path) 
     assert node["tags"] == ["intake", "manual"]
     assert "node_type" not in node
     assert "lifecycle" not in node
+    assert "remote" not in node["artifacts"]
+    assert set(path.name for path in (root / "nodes/n000").iterdir()) == {"decision.md", "node.json"}
+    assert not (root / ".ts-transactions").exists()
     assert validate_workspace(root)["valid"] is True
 
 
@@ -417,6 +421,7 @@ def test_mutation_rejects_stale_revision_and_symlinked_owner_ref(tmp_path: Path)
     external = tmp_path / "outside.json"
     external.write_text("{}\n", encoding="utf-8")
     linked = root / "nodes" / "n000" / "outputs" / "outside.json"
+    linked.parent.mkdir()
     linked.symlink_to(external)
     evidence = {
         "schema_version": "ts-evidence/2",

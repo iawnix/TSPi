@@ -103,7 +103,9 @@ paths.
 
 `ts_notify_user` is deterministic. The installation owns recipient and
 credentials; the Root Agent supplies a bounded research event and existing
-report attachments. Delivery journals are operational and idempotent.
+report attachments. TSPi exposes the fixed target to the UI and tool metadata
+for a pre-send mismatch check, but neither the Agent nor message text can
+override it. Delivery journals are operational and idempotent.
 
 ## UI Lifecycle
 

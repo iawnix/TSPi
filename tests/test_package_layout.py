@@ -18,6 +18,7 @@ EXPECTED_FILES = [
     "environment.yml",
     "contracts/*.json",
     "extensions/shared/*.ts",
+    "extensions/ts-phone-policy/*.ts",
     "extensions/ts-workflow-artifacts/*.ts",
     "extensions/ts-workflow-compute/*.ts",
     "extensions/ts-workflow-compute/*.cjs",
@@ -253,7 +254,7 @@ def test_tspi_loads_installation_owned_notification_config(tmp_path: Path) -> No
     notification_config.chmod(0o600)
     script = r'''source "$1"
 configure_notifications
-printf '%s\n' "$TS_NOTIFICATION_CONFIG"
+printf '%s\n%s\n' "$TS_NOTIFICATION_CONFIG" "$TS_NOTIFICATION_DISPLAY_TARGET"
 '''
     completed = subprocess.run(
         ["bash", "-c", script, "bash", str(launcher)],
@@ -264,7 +265,62 @@ printf '%s\n' "$TS_NOTIFICATION_CONFIG"
         check=False,
     )
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.strip() == str(notification_config)
+    assert completed.stdout.splitlines() == [str(notification_config), "disabled"]
+
+
+def test_tspi_exposes_enabled_notification_recipient_for_display_only(tmp_path: Path) -> None:
+    _, launcher = _copy_tspi_install(tmp_path)
+    notification_config = launcher.parent / ".pi/notifications.toml"
+    notification_config.parent.mkdir(parents=True, exist_ok=True)
+    notification_config.write_text(
+        "[notifications.email]\nenabled = true\n"
+        'recipient = "researcher@example.org"\n'
+        'clawemail_root = "/tmp/clawemail"\n',
+        encoding="utf-8",
+    )
+    notification_config.chmod(0o600)
+    script = r'''source "$1"
+configure_notifications
+printf '%s\n' "$TS_NOTIFICATION_DISPLAY_TARGET"
+'''
+    completed = subprocess.run(
+        ["bash", "-c", script, "bash", str(launcher)],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "researcher@example.org"
+
+
+def test_tspi_rejects_non_private_notification_config(tmp_path: Path) -> None:
+    _, launcher = _copy_tspi_install(tmp_path)
+    notification_config = launcher.parent / ".pi/notifications.toml"
+    notification_config.parent.mkdir(parents=True, exist_ok=True)
+    notification_config.write_text(
+        "[notifications.email]\nenabled = true\n"
+        'recipient = "researcher@example.org"\n'
+        'clawemail_root = "/tmp/clawemail"\n',
+        encoding="utf-8",
+    )
+    notification_config.chmod(0o644)
+    script = r'''source "$1"
+configure_notifications
+'''
+    completed = subprocess.run(
+        ["bash", "-c", script, "bash", str(launcher)],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 1
+    assert "must not be accessible by group or others" in completed.stderr
 
 
 def test_tspi_ordinary_startup_does_not_probe_remote(tmp_path: Path) -> None:
@@ -383,9 +439,12 @@ print(json.dumps({
     "cwd": os.getcwd(),
     "workspace": os.environ["TS_WORKSPACE_ROOT"],
     "notification_config": os.environ.get("TS_NOTIFICATION_CONFIG"),
+    "notification_display": os.environ["TS_NOTIFICATION_DISPLAY_TARGET"],
     "runtime_home": os.environ["TS_AGENT_RUNTIME_HOME"],
     "runtime_manifest": os.environ["TS_AGENT_RUNTIME_MANIFEST"],
     "env_root": os.environ["TS_AGENT_ENV_ROOT"],
+    "python_cache": os.environ["PYTHONPYCACHEPREFIX"],
+    "pytest_options": os.environ["PYTEST_ADDOPTS"],
     "remote_config": os.environ.get("TS_REMOTE_CONFIG"),
     "remote_display": os.environ["TS_REMOTE_DISPLAY_TARGET"],
 }))
@@ -419,9 +478,14 @@ main "${@:2}"
     assert result["cwd"] == str(workspace)
     assert result["workspace"] == str(workspace)
     assert result["notification_config"] is None
+    assert result["notification_display"] == "not configured"
     assert result["runtime_home"] == str(install_root / ".agents/runtime/transition-state-workflow")
     assert result["runtime_manifest"] == str(install_root / ".agents/runtime/transition-state-workflow/env.json")
     assert result["env_root"] == str(install_root / ".agents/envs/transition-state-workflow")
+    assert result["python_cache"] == str(install_root / ".pi/runtime-cache/python/reaction-a")
+    assert result["pytest_options"].endswith(
+        f"--cache-dir={install_root / '.pi/runtime-cache/pytest/reaction-a'}"
+    )
     assert result["remote_config"] is None
     assert result["remote_display"] == "not configured"
     session_index = result["argv"].index("--session-dir")

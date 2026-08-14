@@ -162,6 +162,7 @@ def commit_transaction(
     finally:
         if resolved:
             shutil.rmtree(transaction_root, ignore_errors=True)
+            _remove_empty_transaction_container(root)
 
 
 def recover_incomplete_transactions(root: Path) -> None:
@@ -193,6 +194,7 @@ def recover_incomplete_transactions(root: Path) -> None:
             },
         )
         shutil.rmtree(directory)
+    _remove_empty_transaction_container(root)
 
 
 def transaction_status(root: Path, decision_id: str) -> str:
@@ -208,6 +210,13 @@ def transaction_status(root: Path, decision_id: str) -> str:
         if row.get("decision_id") == decision_id and row.get("stage") in {"prepare", "committed", "aborted"}:
             status = str(row["stage"])
     return status
+
+
+def _remove_empty_transaction_container(root: Path) -> None:
+    try:
+        (root / TRANSACTION_DIR).rmdir()
+    except OSError:
+        pass
 
 
 def decision_log_result(root: Path, decision_id: str) -> dict[str, Any] | None:

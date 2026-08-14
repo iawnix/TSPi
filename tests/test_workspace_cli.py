@@ -57,6 +57,7 @@ def test_workspace_cli_v3_roundtrip(tmp_path: Path) -> None:
     }
 
     artifact_ref = "nodes/n000/outputs/endpoint.json"
+    (workspace / artifact_ref).parent.mkdir()
     (workspace / artifact_ref).write_text('{"endpoints_declared":true}\n', encoding="utf-8")
     report = _run("report_workspace", "--root", str(workspace))
     update = _decision(

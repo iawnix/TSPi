@@ -12,6 +12,7 @@ readonly TS_NOTIFICATION_CONFIG_DEFAULT="$INSTALL_ROOT/.pi/notifications.toml"
 readonly TS_AGENT_INSTALL_RUNTIME_HOME="$INSTALL_ROOT/.agents/runtime/transition-state-workflow"
 readonly TS_AGENT_INSTALL_RUNTIME_MANIFEST="$TS_AGENT_INSTALL_RUNTIME_HOME/env.json"
 readonly TS_AGENT_INSTALL_ENV_ROOT="$INSTALL_ROOT/.agents/envs/transition-state-workflow"
+readonly TSPI_PROCESS_CACHE_ROOT="$INSTALL_ROOT/.pi/runtime-cache"
 
 WORKSPACE_ROOT=""
 ROOT_AGENT_LOCK_FD=""
@@ -61,11 +62,13 @@ usage() {
   cat <<'EOF'
 Usage:
   ./TSPi --workspace <name> [Pi arguments...]
+  ./TSPi --workspace <name> --phone
   ./TSPi --check-remote
 
 Each workspace name creates or reuses an isolated research directory under
 ./workspaces/. Only one Root Agent may write one workspace at a time.
 Remote computation uses the installation-owned .pi/remote.toml profile.
+Phone mode asks the local TS Phone service to open the selected workspace.
 EOF
 }
 
@@ -155,17 +158,64 @@ PY
 }
 
 configure_notifications() {
+  local config_mode
+  local notification_display
+
   if [[ -z "${TS_NOTIFICATION_CONFIG:-}" && -f "$TS_NOTIFICATION_CONFIG_DEFAULT" ]]; then
     export TS_NOTIFICATION_CONFIG="$TS_NOTIFICATION_CONFIG_DEFAULT"
   fi
   if [[ -z "${TS_NOTIFICATION_CONFIG:-}" ]]; then
     unset TS_NOTIFICATION_CONFIG
+    export TS_NOTIFICATION_DISPLAY_TARGET="not configured"
     return 0
   fi
   if [[ "$TS_NOTIFICATION_CONFIG" != /* || ! -f "$TS_NOTIFICATION_CONFIG" || -L "$TS_NOTIFICATION_CONFIG" || ! -r "$TS_NOTIFICATION_CONFIG" ]]; then
     printf 'TSPi: invalid TS_NOTIFICATION_CONFIG: %s\n' "$TS_NOTIFICATION_CONFIG" >&2
     return 1
   fi
+  config_mode="$(stat -c '%a' -- "$TS_NOTIFICATION_CONFIG")"
+  if (( (8#$config_mode & 8#077) != 0 )); then
+    printf 'TSPi: TS_NOTIFICATION_CONFIG must not be accessible by group or others: %s\n' "$TS_NOTIFICATION_CONFIG" >&2
+    return 1
+  fi
+  if ! notification_display="$(python3 - "$TS_NOTIFICATION_CONFIG" <<'PY'
+import re
+import sys
+import tomllib
+
+source = sys.argv[1]
+try:
+    with open(source, "rb") as handle:
+        config = tomllib.load(handle)
+    if set(config) != {"notifications"}:
+        raise ValueError("expected only [notifications]")
+    notifications = config["notifications"]
+    if not isinstance(notifications, dict) or set(notifications) != {"email"}:
+        raise ValueError("expected only [notifications.email]")
+    email = notifications["email"]
+    expected = {"enabled", "recipient", "clawemail_root"}
+    if not isinstance(email, dict) or set(email) != expected:
+        raise ValueError("notifications.email fields must be enabled, recipient, and clawemail_root")
+    if not isinstance(email["enabled"], bool):
+        raise ValueError("notifications.email.enabled must be true or false")
+    recipient = email["recipient"]
+    if (
+        not isinstance(recipient, str)
+        or len(recipient) > 320
+        or not re.fullmatch(r"[^@\s]+@[^@\s]+", recipient)
+    ):
+        raise ValueError("notifications.email.recipient must be one email address")
+    if not isinstance(email["clawemail_root"], str) or not email["clawemail_root"].startswith("/"):
+        raise ValueError("notifications.email.clawemail_root must be an absolute path")
+except (OSError, KeyError, TypeError, ValueError, tomllib.TOMLDecodeError) as exc:
+    raise SystemExit(f"TSPi: invalid notification configuration: {source}: {exc}") from exc
+
+print(recipient if email["enabled"] else "disabled")
+PY
+)"; then
+    return 1
+  fi
+  export TS_NOTIFICATION_DISPLAY_TARGET="$notification_display"
 }
 
 check_remote() {
@@ -195,10 +245,27 @@ raise SystemExit(0 if payload.get("ok") is True else 1)
   return 1
 }
 
+open_phone_workspace() {
+  local workspace_name="$1"
+  local phone_ctl="${TS_PHONE_CTL:-}"
+
+  if [[ -z "$phone_ctl" ]]; then
+    phone_ctl="$(command -v ts-phone-ctl || true)"
+  fi
+  if [[ -z "$phone_ctl" || ! -x "$phone_ctl" ]]; then
+    printf 'TSPi: ts-phone-ctl is unavailable; deploy TS Phone or set TS_PHONE_CTL to its executable\n' >&2
+    return 127
+  fi
+  "$phone_ctl" open "$workspace_name"
+}
+
 main() {
   local check_remote_only=false
+  local phone_mode=false
+  local phone_worker=false
   local show_help=false
   local workspace_name=""
+  local -a phone_extension=()
   local -a pi_args=()
 
   while [[ $# -gt 0 ]]; do
@@ -206,6 +273,8 @@ main() {
       --check-remote)
         check_remote_only=true
         ;;
+      --phone) phone_mode=true ;;
+      --phone-worker) phone_worker=true ;;
       --workspace)
         shift
         if [[ $# -eq 0 || -z "$1" ]]; then
@@ -235,15 +304,18 @@ main() {
     printf 'TSPi: TS package not found: %s\n' "$TS_PACKAGE_ROOT" >&2
     return 1
   fi
-  configure_remote
-  configure_notifications
+  if [[ "$phone_mode" == true && "$phone_worker" == true ]]; then
+    printf 'TSPi: --phone and --phone-worker cannot be combined\n' >&2
+    return 2
+  fi
+  if [[ "$check_remote_only" == true && ( "$phone_mode" == true || "$phone_worker" == true ) ]]; then
+    printf 'TSPi: --check-remote cannot be combined with phone mode\n' >&2
+    return 2
+  fi
   if [[ "$check_remote_only" == true ]]; then
+    configure_remote
     check_remote
     return
-  fi
-  if [[ ! -x "$PI_BIN" ]]; then
-    printf 'TSPi: Pi executable not found: %s\n' "$PI_BIN" >&2
-    return 127
   fi
   if [[ -z "$workspace_name" ]]; then
     printf 'TSPi: a research workspace is required\n' >&2
@@ -252,10 +324,41 @@ main() {
   fi
 
   prepare_workspace "$workspace_name"
+  if [[ "$phone_mode" == true ]]; then
+    if [[ ${#pi_args[@]} -ne 0 ]]; then
+      printf 'TSPi: --phone does not accept Pi arguments\n' >&2
+      return 2
+    fi
+    open_phone_workspace "$workspace_name"
+    return
+  fi
+  if [[ "$phone_worker" == true ]]; then
+    if [[ "${TS_PHONE_MODE:-}" != "research" ]]; then
+      printf 'TSPi: --phone-worker is reserved for the TS Phone service\n' >&2
+      return 2
+    fi
+    if [[ ${#pi_args[@]} -ne 0 ]]; then
+      printf 'TSPi: --phone-worker does not accept Pi arguments\n' >&2
+      return 2
+    fi
+    phone_extension=(-e "$TS_PACKAGE_ROOT/extensions/ts-phone-policy/index.ts")
+    pi_args=(--mode rpc --continue)
+  fi
+  configure_remote
+  configure_notifications
+  if [[ ! -x "$PI_BIN" ]]; then
+    printf 'TSPi: Pi executable not found: %s\n' "$PI_BIN" >&2
+    return 127
+  fi
   export TS_AGENT_RUNTIME_HOME="$TS_AGENT_INSTALL_RUNTIME_HOME"
   export TS_AGENT_RUNTIME_MANIFEST="$TS_AGENT_INSTALL_RUNTIME_MANIFEST"
   export TS_AGENT_ENV_ROOT="$TS_AGENT_INSTALL_ENV_ROOT"
   export TS_WORKSPACE_ROOT="$WORKSPACE_ROOT"
+  mkdir -p -- "$TSPI_PROCESS_CACHE_ROOT/python/$workspace_name" "$TSPI_PROCESS_CACHE_ROOT/pytest/$workspace_name"
+  chmod 700 -- "$TSPI_PROCESS_CACHE_ROOT" "$TSPI_PROCESS_CACHE_ROOT/python" "$TSPI_PROCESS_CACHE_ROOT/pytest" \
+    "$TSPI_PROCESS_CACHE_ROOT/python/$workspace_name" "$TSPI_PROCESS_CACHE_ROOT/pytest/$workspace_name"
+  export PYTHONPYCACHEPREFIX="$TSPI_PROCESS_CACHE_ROOT/python/$workspace_name"
+  export PYTEST_ADDOPTS="${PYTEST_ADDOPTS:+$PYTEST_ADDOPTS }--cache-dir=$TSPI_PROCESS_CACHE_ROOT/pytest/$workspace_name"
   acquire_root_agent_lock
   cd -- "$WORKSPACE_ROOT"
 
@@ -271,6 +374,7 @@ main() {
     -e "$TS_PACKAGE_ROOT/extensions/ts-workflow-review/index.ts" \
     -e "$TS_PACKAGE_ROOT/extensions/ts-workflow-compute/index.ts" \
     -e "$TS_PACKAGE_ROOT/extensions/ts-workflow-artifacts/index.ts" \
+    "${phone_extension[@]}" \
     --approve \
     --session-dir "$WORKSPACE_ROOT/.pi/sessions" \
     "${pi_args[@]}"

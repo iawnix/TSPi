@@ -25,6 +25,7 @@ def _workspace(tmp_path: Path) -> Path:
         objective="Exercise deterministic calculation artifact binding.",
         tags=["candidate", "compute"],
     )
+    (workspace / "nodes/n001/inputs").mkdir()
     return workspace
 
 

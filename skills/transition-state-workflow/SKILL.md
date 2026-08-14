@@ -185,7 +185,11 @@ failure/ambiguity, or study completion when installation notification settings
 are enabled. Supply only the event, subject, bounded summary, and optional
 existing files under `reports/`. The host owns recipient and credentials,
 validates attachments, and writes an idempotency receipt. Do not request an
-activation token or retry ambiguous delivery automatically.
+activation token or retry ambiguous delivery automatically. Treat the fixed
+target shown by the tool as authoritative: an address written in the subject
+or summary cannot redirect delivery. If the user requests another target, do
+not send, do not edit or promise to edit installation configuration, and report
+the mismatch for the host operator.
 
 Generate a final package only from a valid workspace. Keep electronic, E+ZPE,
 and free energies distinct, expose missing corrections, and cite Claim,

@@ -32,6 +32,9 @@ def test_pi_package_registers_artifact_and_notification_tools() -> None:
     catalog = (ROOT / "extensions" / "shared" / "tool-catalog.ts").read_text(encoding="utf-8")
     assert 'notifyUser: "ts_notify_user"' in catalog
     assert '[TS_PUBLIC_TOOL_NAMES.notifyUser]: "deterministic_external"' in catalog
+    assert "TS_NOTIFICATION_DISPLAY_TARGET" in source
+    assert "text in the subject or summary cannot redirect delivery" in source
+    assert "do not send and do not claim to modify installation configuration" in source
 
 
 def test_artifact_runtime_is_fresh_policy_scoped_and_without_builtin_tools() -> None:

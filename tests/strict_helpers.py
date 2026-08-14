@@ -60,6 +60,7 @@ def bootstrap_strict_workspace(
             rationale="Open the first bounded research act.",
         ),
     )
+    (workspace / "inputs").mkdir()
     (workspace / "inputs" / "reactant.xyz").write_text(
         "2\nreactant\nH 0 0 0\nH 0 0 0.74\n",
         encoding="utf-8",
@@ -70,6 +71,7 @@ def bootstrap_strict_workspace(
     )
     endpoint_ref = "nodes/n000/outputs/endpoint-summary.json"
     endpoint_path = workspace / endpoint_ref
+    endpoint_path.parent.mkdir()
     endpoint_path.write_text(
         json.dumps({"reactant": "inputs/reactant.xyz", "product": "inputs/product.xyz"}) + "\n",
         encoding="utf-8",
@@ -273,6 +275,7 @@ def make_accepted_workspace(
         gate_specs.append(("gr_identity_001", "intermediate_identity", "ev_identity_001"))
 
     evidence_records = []
+    (workspace / "nodes/n001/outputs").mkdir()
     for evidence_id, kind, facts in evidence_specs:
         artifact_ref = f"nodes/n001/outputs/{evidence_id}.json"
         (workspace / artifact_ref).write_text(json.dumps(facts, sort_keys=True) + "\n", encoding="utf-8")

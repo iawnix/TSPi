@@ -41,6 +41,7 @@ def _workspace(tmp_path: Path) -> Path:
         tags=["gaussian", "validation"],
     )
     gjf = workspace / "nodes" / "n001" / "inputs" / "candidate.gjf"
+    gjf.parent.mkdir()
     gjf.write_text(
         "%chk=candidate.chk\n#P B3LYP/6-31G(d) opt=(ts,calcfc) freq\n\nTS\n\n0 1\nH 0 0 0\n\n",
         encoding="utf-8",
@@ -156,6 +157,7 @@ def test_create_calculation_intent_preserves_write_failure_and_cleans_reservatio
 
     attempt = workspace / "nodes/n001/attempts/calc_n001_gaussian_opt_freq_0001"
     assert not attempt.exists()
+    assert not attempt.parent.exists()
 
 
 def test_create_calculation_intent_accepts_logical_artifact_binding(tmp_path: Path) -> None:
@@ -240,6 +242,7 @@ def _intent_v2(
         "dry_run": dry_run,
     }
     path = workspace / "nodes" / "n001" / "scratch" / f"{intent_id}.json"
+    path.parent.mkdir(exist_ok=True)
     path.write_text(json.dumps(value), encoding="utf-8")
     return path
 
@@ -639,7 +642,7 @@ def test_remote_submit_status_tail_collect_and_cancel_are_bound(
     collected = collect_calculation(workspace, "calc_n001_optfreq_001", ["candidate.log"])
     assert collected["state"] == "collected"
     assert collected["artifact_refs"] == [
-        "nodes/n001/attempts/calc_n001_optfreq_001/outputs/collected/candidate.log"
+        "nodes/n001/attempts/calc_n001_optfreq_001/outputs/remote/candidate.log"
     ]
     cancelled = cancel_calculation(workspace, "calc_n001_optfreq_001", expected_job_id="123.cluster")
     assert cancelled["state"] == "stopped"
@@ -802,6 +805,34 @@ def test_collect_uses_receipt_without_scheduler_refresh(
     assert result["program_status"] == "not_run"
 
 
+def test_collect_failure_leaves_no_output_directory(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = _workspace(tmp_path)
+    _configure_remote(tmp_path, monkeypatch)
+    prepare_calculation(
+        workspace,
+        _intent(workspace, target=_remote_target(workspace), dry_run=False),
+    )
+    monkeypatch.setattr("ts_compute.control.remote_lifecycle.submit", _receipt_for)
+
+    def fail_collect(_config, _artifacts, staging):
+        staging.mkdir(parents=True, exist_ok=True)
+        (staging / "candidate.log").write_text("partial\n", encoding="utf-8")
+        raise OSError("simulated transfer failure")
+
+    monkeypatch.setattr("ts_compute.control.remote_lifecycle.collect", fail_collect)
+    submit_calculation(workspace, "calc_n001_optfreq_001")
+
+    with pytest.raises(OSError, match="simulated transfer failure"):
+        collect_calculation(workspace, "calc_n001_optfreq_001", ["candidate.log"])
+
+    attempt = workspace / "nodes/n001/attempts/calc_n001_optfreq_001"
+    assert not (attempt / "outputs").exists()
+    assert not list(attempt.glob(".collect-*"))
+
+
 def test_remote_target_rejects_legacy_transport_fields(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -936,6 +967,7 @@ def test_gaussian_irc_parse_writes_attempt_contract_artifacts(tmp_path: Path) ->
         "dry_run": True,
     }
     intent_path = workspace / "nodes/n001/scratch/irc-intent.json"
+    intent_path.parent.mkdir(exist_ok=True)
     intent_path.write_text(json.dumps(intent), encoding="utf-8")
     prepare_calculation(workspace, intent_path)
     source = workspace / f"nodes/n001/attempts/{intent_id}/outputs/irc.log"

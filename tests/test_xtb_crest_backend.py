@@ -637,6 +637,7 @@ def _intent(workspace: Path, backend: str, task_type: str) -> Path:
         "dry_run": True,
     }
     path = workspace / f"nodes/n001/scratch/{intent_id}.json"
+    path.parent.mkdir(exist_ok=True)
     path.write_text(json.dumps(value), encoding="utf-8")
     return path
 

@@ -16,8 +16,8 @@ REQUIRED_FILES = frozenset({
     "decision_log.jsonl",
     "transaction_log.jsonl",
 })
-REQUIRED_DIRS = frozenset({"nodes", "decisions", "accepted", "inputs", "reports"})
-SOFT_DIRS = frozenset({"scratch"})
+REQUIRED_DIRS = frozenset({"nodes", "decisions"})
+OPTIONAL_DIRS = frozenset({"accepted", "inputs", "reports", "scratch"})
 
 
 def initial_research_state() -> dict:

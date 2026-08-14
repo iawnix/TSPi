@@ -485,6 +485,7 @@ import {{ createTspiStartupHeader, renderTspiStartupLines }} from {json.dumps(ST
 import {{ visibleWidth }} from "@earendil-works/pi-tui";
 const widths = [18, 40, 47, 60, 80, 100, 140];
 const details = {{
+  notificationDisplayTarget: "researcher@example.org",
   remoteDisplayTarget: "cluster-login · Torque",
   remoteConfigured: true,
   modelLabel: "openai/gpt-5",
@@ -506,6 +507,7 @@ let renderRequests = 0;
 const tui = {{ terminal: {{ rows: 30 }}, requestRender: () => renderRequests++ }};
 process.env.TS_REMOTE_CONFIG = "/tmp/remote.toml";
 process.env.TS_REMOTE_DISPLAY_TARGET = "cluster-login · Torque";
+process.env.TS_NOTIFICATION_DISPLAY_TARGET = "researcher@example.org";
 const header = createTspiStartupHeader(pi, ctx, tui, "/home/iaw/TS-pi-agent");
 const initial = header.render(100).join("\\n").split("█").length;
 await new Promise((resolve) => setTimeout(resolve, 120));
@@ -553,6 +555,8 @@ process.stdout.write(JSON.stringify({{ rendered, fallback, blockColors, initial,
     assert not any("Workspace" in line for line in wide)
     assert any("Remote configured" in line for line in wide)
     assert any("cluster-login · Torque" in line for line in wide)
+    assert any("Email · researcher@example.org" in line for line in wide)
+    assert any("researcher@example.org" in line for line in wide)
     assert any("not configured" in line for line in result["fallback"])
     assert any("cluster-login · Torque" in line for line in result["liveHeader"])
     assert any("1 skill · 5 extensions" in line for line in wide)

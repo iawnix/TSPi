@@ -17,6 +17,7 @@ from .state_v3 import (
     CLAIMS_FILE,
     EVIDENCE_FILE,
     GATE_RESULTS_FILE,
+    OPTIONAL_DIRS,
     REQUIRED_DIRS,
     REQUIRED_FILES,
     RESEARCH_STATE_FILE,
@@ -30,8 +31,19 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
         if not (root_path / name).is_file():
             _finding(findings, "error", "missing_required_file", f"missing required file: {name}", name)
     for name in sorted(REQUIRED_DIRS):
-        if not (root_path / name).is_dir():
+        path = root_path / name
+        if path.is_symlink() or not path.is_dir():
             _finding(findings, "error", "missing_required_directory", f"missing required directory: {name}", name)
+    for name in sorted(OPTIONAL_DIRS):
+        path = root_path / name
+        if path.is_symlink() or (path.exists() and not path.is_dir()):
+            _finding(
+                findings,
+                "error",
+                "invalid_optional_directory",
+                f"optional workspace path is not a physical directory: {name}",
+                name,
+            )
 
     identity_path = root_path / IDENTITY_REF
     if not identity_path.exists() and not identity_path.is_symlink():

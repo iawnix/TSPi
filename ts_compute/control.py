@@ -103,8 +103,6 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
         required_inputs,
     )
     attempts_dir = workspace / "nodes" / node_id / "attempts"
-    if not attempts_dir.is_dir():
-        raise ComputeContractError(f"calculation node has no attempts directory: {node_id}")
     prefix = _intent_id_prefix(node_id, backend, task_type)
     sequence = _next_intent_sequence(attempts_dir, prefix)
 
@@ -143,7 +141,7 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
         intent_ref, _ = _record_refs(node_id, intent_id)
         attempt_dir = workspace / "nodes" / node_id / "attempts" / intent_id
         try:
-            attempt_dir.mkdir()
+            attempt_dir.mkdir(parents=True)
         except FileExistsError:
             sequence += 1
             continue
@@ -154,6 +152,10 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
             intent_path.with_name(f"{intent_path.name}.tmp").unlink(missing_ok=True)
             try:
                 attempt_dir.rmdir()
+            except OSError:
+                pass
+            try:
+                attempts_dir.rmdir()
             except OSError:
                 pass
             raise
@@ -569,21 +571,48 @@ def collect_calculation(
     if len(selected) != len(set(selected)) or any(name not in expected_names for name in selected):
         raise ComputeContractError("collect artifacts must be a unique subset of the prepared expected artifacts")
     program_status = _collection_program_status(workspace, intent, prepared, policy)
-    output_dir = _collected_output_dir(workspace, intent)
+    output_dir = _remote_output_dir(workspace, intent)
+    for path in (output_dir.parent, output_dir):
+        if path.is_symlink() or (path.exists() and not path.is_dir()):
+            raise ComputeContractError(f"calculation output path is not a physical directory: {path}")
     existing = [name for name in selected if (output_dir / Path(name).name).exists()]
     if existing:
         raise ComputeContractError(f"collect refuses to overwrite existing artifacts: {existing}")
-    output_dir.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix=".collect-", dir=output_dir.parent) as temporary:
+    attempt_dir = output_dir.parent.parent
+    with tempfile.TemporaryDirectory(prefix=".collect-", dir=attempt_dir) as temporary:
         staging = Path(temporary)
         config = _remote_job_config(workspace, intent, prepared)
         downloaded, transfer_manifest = remote_lifecycle.collect(config, selected, staging)
-        output_dir.mkdir(parents=True, exist_ok=True)
-        for name in downloaded:
-            source = staging / Path(name).name
+        if downloaded != selected:
+            raise ComputeContractError("remote collect returned artifacts that differ from the request")
+        staged_files = [(name, staging / Path(name).name) for name in downloaded]
+        for name, source in staged_files:
             if not source.is_file() or source.is_symlink():
                 raise ComputeContractError(f"collected artifact is not a regular file: {name}")
-            source.replace(output_dir / source.name)
+        output_parent_created = not output_dir.parent.exists()
+        output_dir_created = not output_dir.exists()
+        output_dir.mkdir(parents=True, exist_ok=True)
+        moved: list[tuple[Path, Path]] = []
+        try:
+            for _, source in staged_files:
+                destination = output_dir / source.name
+                source.replace(destination)
+                moved.append((source, destination))
+        except Exception:
+            for source, destination in reversed(moved):
+                if destination.exists() and not source.exists():
+                    destination.replace(source)
+            if output_dir_created:
+                try:
+                    output_dir.rmdir()
+                except OSError:
+                    pass
+            if output_parent_created:
+                try:
+                    output_dir.parent.rmdir()
+                except OSError:
+                    pass
+            raise
     artifact_refs = [
         (output_dir / Path(name).name).resolve().relative_to(workspace).as_posix()
         for name in downloaded
@@ -925,6 +954,8 @@ def _intent_id_prefix(node_id: str, backend: str, task_type: str) -> str:
 def _next_intent_sequence(attempts_dir: Path, prefix: str) -> int:
     sequences = []
     marker = f"{prefix}_"
+    if not attempts_dir.is_dir():
+        return 1
     for path in attempts_dir.iterdir():
         if not path.is_dir() or not path.name.startswith(marker):
             continue
@@ -1168,7 +1199,7 @@ def _remote_job_config(
         resources=resources,
         command=command,
         input_paths=input_paths,
-        output_dir=workspace / output_ref / "collected",
+        output_dir=workspace / output_ref / "remote",
         expected_artifacts=expected,
         environment={str(key): str(value) for key, value in prepared_task.get("environment", {}).items()},
         stdout_name=_remote_stdout_name(prepared),
@@ -1237,12 +1268,12 @@ def _expected_remote_names(prepared: dict[str, Any]) -> list[str]:
     return names
 
 
-def _collected_output_dir(workspace: Path, intent: dict[str, Any]) -> Path:
+def _remote_output_dir(workspace: Path, intent: dict[str, Any]) -> Path:
     _, _, output_ref = _runtime_refs(
         str(intent["node_id"]),
         str(intent["intent_id"]),
     )
-    return workspace / output_ref / "collected"
+    return workspace / output_ref / "remote"
 
 
 def _remote_submission_id(workspace_identity: str, intent_id: str) -> str:

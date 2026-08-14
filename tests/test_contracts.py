@@ -73,6 +73,9 @@ def test_init_workspace_uses_v3_canonical_root_state_files(tmp_path: Path) -> No
         "evidence_registry.json",
         "gate_results.json",
     }
+    assert {
+        path.name for path in workspace.iterdir() if path.is_dir() and not path.name.startswith(".")
+    } == {"decisions", "nodes"}
 
 
 def test_v2_decision_and_node_contracts_are_rejected(tmp_path: Path) -> None:

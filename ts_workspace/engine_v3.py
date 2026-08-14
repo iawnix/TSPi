@@ -17,10 +17,10 @@ from .state_v3 import (
     CLAIMS_FILE,
     EVIDENCE_FILE,
     GATE_RESULTS_FILE,
+    OPTIONAL_DIRS,
     REQUIRED_DIRS,
     REQUIRED_FILES,
     RESEARCH_STATE_FILE,
-    SOFT_DIRS,
     initial_claim_registry,
     initial_evidence_registry,
     initial_gate_registry,
@@ -72,7 +72,7 @@ def init_workspace(
         _clear_workspace_state(root_path)
 
     root_path.mkdir(parents=True, exist_ok=True)
-    for dirname in REQUIRED_DIRS | SOFT_DIRS:
+    for dirname in REQUIRED_DIRS:
         (root_path / dirname).mkdir(parents=True, exist_ok=True)
     write_json(root_path / RESEARCH_STATE_FILE, initial_research_state())
     write_json(root_path / CLAIMS_FILE, initial_claim_registry())
@@ -138,7 +138,6 @@ def _start_node_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
             "outputs": f"nodes/{node_id}/outputs",
             "attempts": f"nodes/{node_id}/attempts",
             "scratch": f"nodes/{node_id}/scratch",
-            "remote": f"nodes/{node_id}/remote",
         },
         "result": None,
     }
@@ -161,14 +160,7 @@ def _start_node_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
             "created_at": timestamp,
         }
     )
-    directories = [
-        node_dir,
-        node_dir / "inputs",
-        node_dir / "outputs",
-        node_dir / "scratch",
-        node_dir / "remote",
-        node_dir / "attempts",
-    ]
+    directories = [node_dir]
     changes = {
         node_dir / "node.json": node,
         node_dir / "decision.md": decision["rationale"].strip() + "\n",
@@ -472,7 +464,7 @@ def _ignore_dry_run_entries(_directory: str, names: list[str]) -> set[str]:
 def _clear_workspace_state(root: Path) -> None:
     for name in REQUIRED_FILES | {"transaction_log.jsonl"}:
         (root / name).unlink(missing_ok=True)
-    for name in REQUIRED_DIRS | SOFT_DIRS | {TRANSACTION_DIR}:
+    for name in REQUIRED_DIRS | OPTIONAL_DIRS | {TRANSACTION_DIR}:
         path = root / name
         if path.is_dir() and not path.is_symlink():
             shutil.rmtree(path)

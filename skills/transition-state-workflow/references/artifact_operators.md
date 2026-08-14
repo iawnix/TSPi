@@ -68,6 +68,13 @@ there is no activation token, per-message confirmation, or recipient
 allowlist. Setting `enabled=false` disables delivery. ClawEmail authentication
 remains private to the configured ClawEmail installation.
 
+TSPi exposes the configured recipient as display-only session metadata in the
+startup UI and `ts_notify_user` description. This lets the Root Agent detect a
+user-requested target mismatch before calling the tool. Message text cannot
+override the target. The Root Agent must not edit or promise to edit this
+installation-owned configuration; a mismatch is reported for the host operator
+and the notification is not sent.
+
 Before network activity, the host binds the event, subject, summary, workspace
 identity/revision, configuration digest, and attachment digests into a
 notification digest and writes a receipt guard under

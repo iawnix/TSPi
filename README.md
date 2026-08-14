@@ -117,6 +117,34 @@ Ordinary startup does not contact the cluster. `--check-remote` performs a
 strict read-only SSH diagnostic and returns nonzero when the configured remote
 profile is unhealthy.
 
+### TS Phone
+
+TS Phone is an optional mobile control surface for this TSPi installation. It
+does not replace the TSPi launcher or own research state. To create or reuse a
+workspace and make it available to the already-running local TS Phone service:
+
+```bash
+./TSPi --workspace reaction-a --phone
+```
+
+The command invokes `ts-phone-ctl open reaction-a`; set `TS_PHONE_CTL` when the
+control executable is not on `PATH`. It does not start another TS Phone server.
+The service later starts the workspace through the internal
+`--phone-worker` entrypoint, which adds Pi RPC mode, session continuation, and
+the package-owned phone permission policy. Direct use of `--phone-worker` is
+rejected.
+
+Phone sessions preserve the normal one-Root-Agent-per-workspace lock. Read-only
+workspace, remote inspection, validation, and Review tools can run directly.
+Shell/file writes, scientific-state application, compute, rendering, report
+generation, and notification require a one-time confirmation on the phone.
+Unknown tools fail closed. Confirmation previews redact common secret fields;
+they are a decision aid, not a substitute for reviewing the requested action.
+
+The TS Phone server, HTTPS/FRP deployment, Bearer token, and mobile app are
+maintained separately. TSPi never exposes a generic remote shell, filesystem
+path, environment override, or raw Pi RPC endpoint.
+
 The UI provides the TSPi startup header, rounded editor, stable footer, working
 indicator, and a bounded `TS Activity` panel. `/ts-subagent-history` opens a
 read-only paginated view of active and durable child runs. Pi's native `Ctrl+O`
@@ -242,6 +270,9 @@ Root Agent supplies the event, subject, bounded summary, and optional existing
 files under `reports/`; it cannot alter credentials or the recipient. Delivery
 uses digest-addressed idempotency receipts. Ambiguous delivery is never retried
 automatically, and notification failure does not mutate scientific state.
+TSPi shows the fixed target at startup and in the notification tool metadata.
+If it differs from the address requested by the user, the Root Agent reports
+the mismatch without sending or editing installation configuration.
 
 ## Reports
 

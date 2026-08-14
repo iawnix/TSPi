@@ -30,6 +30,7 @@ import {
 } from "./activity-store.ts";
 import {
   collectTsAgentRecords,
+  type TsAgentRecord,
 } from "./agent-details.ts";
 import { SubagentHistoryBrowser } from "./subagent-history.ts";
 import { requireWorkspaceRoot, runWorkspaceJson } from "../shared/workspace-cli.ts";
@@ -165,16 +166,24 @@ export default function (pi: ExtensionAPI) {
       updateWorkingMessage(ctx);
       return;
     }
-    ctx.ui.setWidget(
-      WIDGET_KEY,
-      (_tui, theme) => ({
-        render: (width) => {
-          return renderTsActivityPanel(activityStore, width, Date.now()).map((line) => theme.fg(line.tone, line.text));
-        },
-        invalidate: () => {},
-      }),
-      { placement: "aboveEditor" },
-    );
+    if (ctx.mode === "rpc") {
+      ctx.ui.setWidget(
+        WIDGET_KEY,
+        renderTsActivityPanel(activityStore, 88, Date.now(), 4, "unicode").map((line) => line.text),
+        { placement: "aboveEditor" },
+      );
+    } else {
+      ctx.ui.setWidget(
+        WIDGET_KEY,
+        (_tui, theme) => ({
+          render: (width) => {
+            return renderTsActivityPanel(activityStore, width, Date.now()).map((line) => theme.fg(line.tone, line.text));
+          },
+          invalidate: () => {},
+        }),
+        { placement: "aboveEditor" },
+      );
+    }
     const needsRefresh = summary.active > 0 || summary.done > 0;
     if (needsRefresh && !timer) {
       timer = setInterval(() => {
@@ -283,6 +292,14 @@ export default function (pi: ExtensionAPI) {
         ctx.ui.notify("No TS subagent runs are available in this workspace", "info");
         return;
       }
+      if (ctx.mode === "rpc") {
+        pi.sendMessage({
+          customType: "ts-subagent-history-markdown",
+          content: formatTsSubagentHistoryMarkdown(records),
+          display: true,
+        }, { triggerTurn: false });
+        return;
+      }
       await ctx.ui.custom<void>((tui, theme, keybindings, done) => new SubagentHistoryBrowser({
         records,
         workspaceRoot: root,
@@ -310,6 +327,31 @@ export default function (pi: ExtensionAPI) {
       return new Text(`${theme.fg(color, lines[0])}${lines.slice(1).map((line) => `\n${theme.fg("dim", line)}`).join("")}`, 1, 0);
     });
   }
+}
+
+export function formatTsSubagentHistoryMarkdown(records: TsAgentRecord[]): string {
+  const visible = records.slice(0, 100);
+  const lines = ["# TS Subagent History", "", `${records.length} recorded run${records.length === 1 ? "" : "s"}.`];
+  for (const record of visible) {
+    lines.push(
+      "",
+      `## ${markdownText(subagentRoleLabel(record.role))} · ${markdownText(record.operation)}`,
+      "",
+      `- Status: \`${inlineCode(record.state)}\``,
+      `- Task: \`${inlineCode(record.task_id)}\``,
+      `- Node: ${record.node_ids.length > 0 ? record.node_ids.map((value) => `\`${inlineCode(value)}\``).join(", ") : "workspace"}`,
+    );
+    if (record.backend) lines.push(`- Backend: \`${inlineCode(record.backend)}\``);
+    if (record.run_ref) lines.push(`- Run: \`${inlineCode(record.run_ref)}\``);
+    if (record.updated_at || record.finished_at) {
+      lines.push(`- Updated: ${markdownText(record.finished_at || record.updated_at || "")}`);
+    }
+    if (record.summary) {
+      lines.push("", ...record.summary.slice(0, 2_000).split("\n").map((line) => `> ${markdownText(line)}`));
+    }
+  }
+  if (records.length > visible.length) lines.push("", `_${records.length - visible.length} older runs omitted._`);
+  return lines.join("\n");
 }
 
 function contextText(ctx: ExtensionContext): string {
@@ -348,4 +390,21 @@ function firstString(...values: unknown[]): string | undefined {
 
 function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value ? value : undefined;
+}
+
+function markdownText(value: string): string {
+  return value.replace(/[\\`*_[\]<>]/g, "\\$&");
+}
+
+function subagentRoleLabel(value: string): string {
+  return {
+    review: "Review",
+    backend: "Compute",
+    render: "Render",
+    report: "Report",
+  }[value] || value;
+}
+
+function inlineCode(value: string): string {
+  return value.replace(/`/g, "'").replace(/[\r\n]/g, " ");
 }

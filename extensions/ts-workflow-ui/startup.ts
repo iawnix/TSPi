@@ -63,6 +63,7 @@ interface StartupPalette {
 export interface TspiStartupDetails {
   compact?: boolean;
   frame?: number;
+  notificationDisplayTarget?: string;
   remoteDisplayTarget?: string;
   remoteConfigured?: boolean;
   modelLabel?: string;
@@ -106,6 +107,7 @@ export function createTspiStartupHeader(
       return renderStartup(workspaceRoot, width, themePalette(theme), {
         compact: tui.terminal.rows > 0 && tui.terminal.rows < 25,
         frame,
+        notificationDisplayTarget: process.env.TS_NOTIFICATION_DISPLAY_TARGET,
         remoteDisplayTarget: process.env.TS_REMOTE_DISPLAY_TARGET,
         remoteConfigured: Boolean(process.env.TS_REMOTE_CONFIG),
         modelLabel: formatModelLabel(ctx.model),
@@ -168,6 +170,7 @@ function renderStartup(
     "",
     palette.accent(palette.bold(details.remoteConfigured ? "Remote configured" : "Remote")),
     palette.muted(remoteLabel(details.remoteDisplayTarget)),
+    palette.muted(`Email · ${notificationLabel(details.notificationDisplayTarget)}`),
     divider,
     palette.accent(palette.bold("Package")),
     palette.muted(packageSummary),
@@ -216,6 +219,10 @@ function paintLogoCell(cell: string, frame: number, palette: StartupPalette): st
 }
 
 function remoteLabel(displayTarget?: string): string {
+  return displayTarget?.trim() || "not configured";
+}
+
+function notificationLabel(displayTarget?: string): string {
   return displayTarget?.trim() || "not configured";
 }
 
