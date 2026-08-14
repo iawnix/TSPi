@@ -200,6 +200,13 @@ For Review, `ts-agent-task/2` binds an immutable full
 `provider-input.json` containing the structured payload sent to the model. Do
 not treat either operational journal document as registered scientific evidence.
 
+After every successful `ts_subagent_review`, immediately call
+`ts_review_disposition` with the returned `task_id` and `review_run_ref`.
+Choose `accepted`, `partially_accepted`, `rejected`, or `deferred`, give a
+concise Root assessment, and optionally name the next steps. This response is
+write-once operational state. Review remains advisory, but a pending Root
+response blocks the next scientific workspace mutation.
+
 Read `references/pi_agent_adapter.md`, `references/compute_operator.md`, and
 `references/artifact_operators.md` when changing or debugging delegation.
 

@@ -193,6 +193,9 @@ The workspace control surface is exactly:
 Pi also exposes:
 
 - `ts_subagent_review`: fresh, read-only advisory scientific review with one schema-bound result tool.
+- `ts_review_disposition`: write-once Root Agent response to a successfully
+  completed Review. The response is operational journal state, not scientific
+  evidence. A pending response blocks later scientific workspace mutations.
 - `ts_remote_inspect`: read-only `status`, `doctor`, `queues`, or `nodes`
   probe for the configured remote profile. It has no
   upload, submit, cancel, or workspace mutation capability.
@@ -424,7 +427,7 @@ npm run test:package
 ```
 
 The Pi integration suite runs the real Pi executable with a local recording
-provider. It verifies the ten-tool Root Agent inventory, a tool-free review
+provider. It verifies the eleven-tool Root Agent inventory, a tool-free review
 child, a compute child with exactly one request-bound tool, and an artifact
 child with exactly one request-bound tool. Before release, also test one clean,
 branch- or tag-pinned GitHub installation from a network that can reach GitHub.

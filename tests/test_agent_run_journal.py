@@ -6,9 +6,11 @@ import stat
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from strict_helpers import bootstrap_strict_workspace
 from ts_web.normalize import explorer_graph_payload_from_view, normalize_workspace
-from ts_workspace import report_workspace
+from ts_workspace import ContractError, report_workspace, update_workspace, validate_decision_dry_run
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -46,6 +48,8 @@ def test_node_agent_run_changes_only_operational_revision(tmp_path: Path) -> Non
     assert after["operational_revision"] != before["operational_revision"]
     assert after["evidence_count"] == before["evidence_count"]
     assert after["operational_summary"]["agent_run_count"] == 1
+    assert after["operational_summary"]["review_disposition_pending_count"] == 1
+    assert after["pending_review_dispositions"][0]["task_id"] == "sub_journal_001"
     assert after["agent_runs"][0]["summary"] == "Independent mechanism review completed."
     assert after["agent_runs"][0]["result_outcome"] is None
 
@@ -54,6 +58,145 @@ def test_node_agent_run_changes_only_operational_revision(tmp_path: Path) -> Non
     assert node["agent_run_count"] == 1
     assert node["agent_run_status"] == "completed"
     assert graph["evidence_summary"]["count"] == before["evidence_count"]
+
+
+@pytest.mark.parametrize("disposition", ["accepted", "partially_accepted", "rejected", "deferred"])
+def test_review_root_disposition_is_write_once_operational_state(tmp_path: Path, disposition: str) -> None:
+    workspace = tmp_path / "workspace"
+    bootstrap_strict_workspace(workspace)
+    packet, documents = _task_packet(workspace, f"sub_disposition_{disposition}", ["n000"])
+    _run_journal(
+        workspace,
+        packet,
+        documents,
+        "complete",
+        {"result": {"summary": "Bounded advisory Review completed."}},
+    )
+    before = report_workspace(workspace)
+    run_ref = f"nodes/n000/agent-runs/{packet['task_id']}"
+
+    completed = _write_disposition(
+        workspace,
+        {
+            "task_id": packet["task_id"],
+            "review_run_ref": run_ref,
+            "disposition": disposition,
+            "response": "Root assessed the advisory result against the primary artifacts.",
+            "next_steps": ["Proceed using only the supported portion of the advice."],
+        },
+    )
+    document = json.loads(completed.stdout)
+
+    disposition_path = workspace / run_ref / "root-disposition.json"
+    assert document["schema_version"] == "ts-review-root-disposition/1"
+    assert stat.S_IMODE(disposition_path.stat().st_mode) == 0o600
+    after = report_workspace(workspace)
+    assert after["workspace_revision"] == before["workspace_revision"]
+    assert after["operational_revision"] != before["operational_revision"]
+    assert after["evidence_count"] == before["evidence_count"]
+    assert after["review_disposition_count"] == 1
+    assert after["pending_review_dispositions"] == []
+    assert after["operational_summary"]["review_disposition_pending_count"] == 0
+    assert after["agent_runs"][0]["root_disposition"] == disposition
+    assert after["agent_runs"][0]["root_disposition_ref"] == f"{run_ref}/root-disposition.json"
+
+    repeated = _write_disposition(workspace, document, check=False)
+    assert repeated.returncode == 2
+    assert "EEXIST" in repeated.stderr or "file already exists" in repeated.stderr
+
+
+def test_pending_review_disposition_blocks_validate_and_apply(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    bootstrap_strict_workspace(workspace)
+    packet, documents = _task_packet(workspace, "sub_mutation_gate_001", ["n000"])
+    _run_journal(
+        workspace,
+        packet,
+        documents,
+        "complete",
+        {"result": {"summary": "Review before a workspace mutation."}},
+    )
+    report = report_workspace(workspace)
+    decision = {
+        "schema_version": "ts-decision/2",
+        "decision_id": "dec_after_review_001",
+        "action": "update_workspace",
+        "rationale": "Exercise the pending Review response gate.",
+        "evidence_refs": [],
+        "report_ref": {"report_id": report["report_id"], "workspace_root": str(workspace)},
+        "base_revision": report["workspace_revision"],
+        "payload": {"append_provenance": {"source": "review-disposition-test"}},
+    }
+
+    with pytest.raises(ContractError, match="call ts_review_disposition first"):
+        validate_decision_dry_run(workspace, decision)
+    with pytest.raises(ContractError, match="call ts_review_disposition first"):
+        update_workspace(workspace, decision)
+    assert not (workspace / "decisions" / "dec_after_review_001.json").exists()
+
+    _write_disposition(
+        workspace,
+        {
+            "task_id": packet["task_id"],
+            "review_run_ref": f"nodes/n000/agent-runs/{packet['task_id']}",
+            "disposition": "partially_accepted",
+            "response": "The supported advice is adopted; unsupported claims remain excluded.",
+            "next_steps": [],
+        },
+    )
+    result = update_workspace(workspace, decision)
+    assert result["appended"]["provenance"] == 1
+
+
+def test_failed_review_and_non_review_run_cannot_create_response_obligations(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    bootstrap_strict_workspace(workspace)
+    failed_packet, failed_documents = _task_packet(workspace, "sub_failed_review_001", ["n000"])
+    _run_journal(
+        workspace,
+        failed_packet,
+        failed_documents,
+        "fail",
+        {"error": {"name": "Error", "message": "provider failed"}},
+    )
+    report_packet, report_documents = _task_packet(workspace, "agent_report_no_response_001", [])
+    _run_journal(
+        workspace,
+        report_packet,
+        report_documents,
+        "complete",
+        {"result": {"summary": "Report completed."}},
+    )
+
+    report = report_workspace(workspace)
+    assert report["pending_review_dispositions"] == []
+    failed_response = _write_disposition(
+        workspace,
+        {
+            "task_id": failed_packet["task_id"],
+            "review_run_ref": f"nodes/n000/agent-runs/{failed_packet['task_id']}",
+            "disposition": "deferred",
+            "response": "No valid Review was produced.",
+            "next_steps": [],
+        },
+        check=False,
+    )
+    assert failed_response.returncode == 2
+    assert "complete successfully" in failed_response.stderr
+
+    non_review_response = _write_disposition(
+        workspace,
+        {
+            "task_id": report_packet["task_id"],
+            "review_run_ref": f"operations/agent-runs/{report_packet['task_id']}",
+            "disposition": "accepted",
+            "response": "This must not be accepted as a Review response.",
+            "next_steps": [],
+        },
+        check=False,
+    )
+    assert non_review_response.returncode == 2
+    assert "not an advisory Review" in non_review_response.stderr
 
 
 def test_global_failed_agent_run_is_durable_and_write_once(tmp_path: Path) -> None:
@@ -301,3 +444,25 @@ def _run_journal(
         check=True,
     )
     return json.loads(completed.stdout)
+
+
+def _write_disposition(
+    workspace: Path,
+    payload: dict[str, object],
+    *,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    script = (
+        f"const journal=require({json.dumps(str(JOURNAL))});"
+        "try{const result=journal.writeReviewRootDisposition(process.argv[1],JSON.parse(process.argv[2]));"
+        "process.stdout.write(JSON.stringify(result));}"
+        "catch(error){process.stderr.write(error.code || error.message);process.exitCode=2;}"
+    )
+    return subprocess.run(
+        ["node", "-e", script, str(workspace), json.dumps(payload)],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=check,
+    )

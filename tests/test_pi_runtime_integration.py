@@ -29,6 +29,7 @@ EXPECTED_TOOLS = {
     "ts_workspace_decision_validate",
     "ts_workspace_decision_apply",
     "ts_subagent_review",
+    "ts_review_disposition",
     "ts_subagent_compute",
     "ts_remote_inspect",
     "ts_subagent_render",

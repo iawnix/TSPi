@@ -13,6 +13,8 @@ def operational_snapshot(root: str | Path) -> dict[str, Any]:
     root_path = Path(root)
     files = _operational_files(root_path)
     agent_runs = agent_run_index(root_path)
+    pending_review_dispositions = review_disposition_obligations(agent_runs)
+    review_disposition_count = sum(1 for row in agent_runs if row.get("root_disposition"))
     pending_controls = _pending_controls(root_path, files)
     unresolved_controls = _unresolved_controls(root_path, files)
     ambiguous_submissions = [
@@ -34,6 +36,8 @@ def operational_snapshot(root: str | Path) -> dict[str, Any]:
             }
         ),
         "agent_runs": agent_runs,
+        "pending_review_dispositions": pending_review_dispositions,
+        "review_disposition_count": review_disposition_count,
         "pending_controls": pending_controls,
         "unresolved_controls": unresolved_controls,
         "ambiguous_submissions": ambiguous_submissions,
@@ -45,6 +49,8 @@ def operational_snapshot(root: str | Path) -> dict[str, Any]:
             "agent_run_count": len(agent_runs),
             "agent_run_failed_count": sum(1 for row in agent_runs if row.get("status") == "failed"),
             "agent_run_pending_count": sum(1 for row in agent_runs if row.get("status") == "pending"),
+            "review_disposition_count": review_disposition_count,
+            "review_disposition_pending_count": len(pending_review_dispositions),
             "control_pending_count": len(pending_controls),
             "control_unresolved_count": len(unresolved_controls),
             "ambiguous_submission_count": len(ambiguous_submissions),
@@ -67,26 +73,79 @@ def agent_run_index(root: str | Path) -> list[dict[str, Any]]:
         task = _read_or_empty(run_dir / "task.json")
         run = _read_or_empty(run_dir / "run.json")
         result = _read_or_empty(run_dir / "result.json")
+        disposition = _read_or_empty(run_dir / "root-disposition.json")
         error = run.get("error") if isinstance(run.get("error"), dict) else {}
         scope = task.get("scope") if isinstance(task.get("scope"), dict) else {}
-        rows.append(
+        run_ref = run_dir.relative_to(root_path).as_posix()
+        row = {
+            "task_id": task.get("task_id") or run_dir.name,
+            "role": task.get("role"),
+            "authority": task.get("authority"),
+            "operation": task.get("operation"),
+            "status": run.get("status") or "pending",
+            "node_ids": scope.get("node_ids", []),
+            "run_ref": run_ref,
+            "started_at": run.get("started_at"),
+            "finished_at": run.get("finished_at"),
+            "summary": result.get("summary"),
+            "result_outcome": result.get("outcome"),
+            "error_code": error.get("code"),
+            "error_message": error.get("message"),
+        }
+        disposition_valid = _valid_review_disposition(disposition, row)
+        row.update(
             {
-                "task_id": task.get("task_id") or run_dir.name,
-                "role": task.get("role"),
-                "authority": task.get("authority"),
-                "operation": task.get("operation"),
-                "status": run.get("status") or "pending",
-                "node_ids": scope.get("node_ids", []),
-                "run_ref": run_dir.relative_to(root_path).as_posix(),
-                "started_at": run.get("started_at"),
-                "finished_at": run.get("finished_at"),
-                "summary": result.get("summary"),
-                "result_outcome": result.get("outcome"),
-                "error_code": error.get("code"),
-                "error_message": error.get("message"),
+                "root_disposition": disposition.get("disposition") if disposition_valid else None,
+                "root_response": disposition.get("response") if disposition_valid else None,
+                "root_next_steps": disposition.get("next_steps", []) if disposition_valid else [],
+                "root_disposition_ref": f"{run_ref}/root-disposition.json" if disposition_valid else None,
+                "root_disposition_invalid": bool(disposition) and not disposition_valid,
             }
         )
+        rows.append(row)
     return rows
+
+
+def review_disposition_obligations(agent_runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Return completed advisory Reviews that still require a Root response."""
+
+    return [
+        {
+            "task_id": row.get("task_id"),
+            "operation": row.get("operation"),
+            "node_ids": row.get("node_ids", []),
+            "run_ref": row.get("run_ref"),
+            "invalid_disposition": bool(row.get("root_disposition_invalid")),
+        }
+        for row in agent_runs
+        if row.get("role") == "review"
+        and row.get("authority") == "advisory"
+        and row.get("status") == "completed"
+        and not row.get("root_disposition")
+    ]
+
+
+def _valid_review_disposition(disposition: dict[str, Any], run: dict[str, Any]) -> bool:
+    return (
+        run.get("role") == "review"
+        and run.get("authority") == "advisory"
+        and run.get("status") == "completed"
+        and disposition.get("schema_version") == "ts-review-root-disposition/1"
+        and disposition.get("task_id") == run.get("task_id")
+        and disposition.get("review_run_ref") == run.get("run_ref")
+        and disposition.get("disposition") in {"accepted", "partially_accepted", "rejected", "deferred"}
+        and isinstance(disposition.get("response"), str)
+        and bool(disposition["response"].strip())
+        and len(disposition["response"]) <= 4000
+        and isinstance(disposition.get("next_steps"), list)
+        and len(disposition["next_steps"]) <= 8
+        and all(
+            isinstance(item, str) and bool(item.strip()) and len(item) <= 1000
+            for item in disposition["next_steps"]
+        )
+        and isinstance(disposition.get("created_at"), str)
+        and bool(disposition["created_at"].strip())
+    )
 
 
 def _operational_files(root: Path) -> list[Path]:

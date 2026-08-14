@@ -25,6 +25,7 @@ const {
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MAX_INVALID_REVIEW_RAW_BYTES = 16 * 1024;
+const REVIEW_DISPOSITIONS = ["accepted", "partially_accepted", "rejected", "deferred"];
 
 function beginAgentRun(workspaceRoot, packet, { documents = {} } = {}) {
   const root = requireWorkspaceRoot(workspaceRoot);
@@ -217,6 +218,47 @@ function writeInvalidReviewOutput(handle, attempts) {
   writeJsonExclusive(resolve(handle.runDir, "invalid-review-output.json"), buildDocument(low));
 }
 
+function writeReviewRootDisposition(workspaceRoot, input) {
+  const root = requireWorkspaceRoot(workspaceRoot);
+  if (!isPlainObject(input)) throw new Error("review Root disposition must be an object");
+  const taskId = requireSafeId(input.task_id, "task_id");
+  const runRef = requireReviewRunRef(input.review_run_ref, taskId);
+  assertNoSymlinkComponents(root, runRef);
+  const runDir = resolve(root, ...runRef.split("/"));
+  assertWithin(root, runDir);
+  const runStat = lstatSync(runDir);
+  if (!runStat.isDirectory() || runStat.isSymbolicLink()) {
+    throw new Error(`invalid review run directory: ${runRef}`);
+  }
+  const task = readBoundJson(runDir, "task.json");
+  const run = readBoundJson(runDir, "run.json");
+  if (task.task_id !== taskId || run.task_id !== taskId) {
+    throw new Error("review Root disposition task_id does not match the journaled run");
+  }
+  if (task.role !== "review" || task.authority !== "advisory") {
+    throw new Error(`agent run is not an advisory Review: ${runRef}`);
+  }
+  if (run.status !== "completed") {
+    throw new Error(`Review must complete successfully before Root disposition: ${runRef}`);
+  }
+  readBoundJson(runDir, "result.json");
+  const nextSteps = input.next_steps === undefined ? [] : input.next_steps;
+  if (!Array.isArray(nextSteps) || nextSteps.length > 8) {
+    throw new Error("next_steps must be an array with at most 8 items");
+  }
+  const document = {
+    schema_version: "ts-review-root-disposition/1",
+    task_id: taskId,
+    review_run_ref: runRef,
+    disposition: requireEnum(input.disposition, "disposition", REVIEW_DISPOSITIONS),
+    response: boundedString(input.response, "response", 4000),
+    next_steps: nextSteps.map((value, index) => boundedString(value, `next_steps[${index}]`, 1000)),
+    created_at: new Date().toISOString(),
+  };
+  writeJsonExclusive(resolve(runDir, "root-disposition.json"), document);
+  return document;
+}
+
 function actionDocument(taskId, actions) {
   if (!Array.isArray(actions)) throw new Error("agent-run actions must be an array");
   return {
@@ -300,6 +342,22 @@ function requireSafeId(value, label) {
   return value;
 }
 
+function requireReviewRunRef(value, taskId) {
+  if (typeof value !== "string") throw new Error("review_run_ref must be a string");
+  const parts = value.split("/");
+  const nodeScoped = parts.length === 4
+    && parts[0] === "nodes"
+    && SAFE_ID.test(parts[1] || "")
+    && parts[2] === "agent-runs";
+  const workspaceScoped = parts.length === 3
+    && parts[0] === "operations"
+    && parts[1] === "agent-runs";
+  if ((!nodeScoped && !workspaceScoped) || parts.at(-1) !== taskId) {
+    throw new Error("review_run_ref must identify the matching node or workspace agent run");
+  }
+  return value;
+}
+
 function assertWithin(root, path) {
   const rel = relative(root, path);
   if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) {
@@ -347,4 +405,5 @@ module.exports = {
   failAgentRun,
   readAgentRunInputs,
   writeInvalidReviewOutput,
+  writeReviewRootDisposition,
 };

@@ -64,6 +64,7 @@ def test_public_tool_catalog_separates_workspace_subagent_and_remote_execution()
         "workspaceDecisionApply": "ts_workspace_decision_apply",
         "remoteInspect": "ts_remote_inspect",
         "subagentReview": "ts_subagent_review",
+        "reviewDisposition": "ts_review_disposition",
         "subagentCompute": "ts_subagent_compute",
         "subagentRender": "ts_subagent_render",
         "subagentReport": "ts_subagent_report",
@@ -75,6 +76,7 @@ def test_public_tool_catalog_separates_workspace_subagent_and_remote_execution()
     for key in ("workspaceContext", "workspaceDecisionDraft", "workspaceDecisionValidate", "workspaceDecisionApply"):
         assert f'[TS_PUBLIC_TOOL_NAMES.{key}]: "deterministic_workspace"' in catalog
     assert '[TS_PUBLIC_TOOL_NAMES.remoteInspect]: "deterministic_infrastructure"' in catalog
+    assert '[TS_PUBLIC_TOOL_NAMES.reviewDisposition]: "deterministic_operational"' in catalog
     for key in ("subagentReview", "subagentCompute", "subagentRender", "subagentReport"):
         assert f'[TS_PUBLIC_TOOL_NAMES.{key}]: "child_agent"' in catalog
     assert '[TS_PUBLIC_TOOL_NAMES.notifyUser]: "deterministic_external"' in catalog
@@ -105,6 +107,7 @@ def test_pi_documentation_matches_loaded_extensions_and_tool_boundary() -> None:
     assert "`ts_workspace_decision_validate`" in readme
     assert "`ts_workspace_decision_apply`" in readme
     assert "`ts_subagent_review`" in readme
+    assert "`ts_review_disposition`" in readme
     assert "run `validate_decision`, `start_node`" not in readme
     assert adapter.count("-e \"$TS_AGENT_SKILL_ROOT/extensions/") == 5
     assert 'pi --skill "$TS_AGENT_SKILL_ROOT/skills/transition-state-workflow"' in adapter
@@ -144,8 +147,11 @@ def test_pi_context_summary_from_report_workspace(tmp_path: Path) -> None:
     assert payload["details"]["operationalRevision"].startswith("sha256:")
     assert payload["details"]["operationalSummary"]["controlUnresolvedCount"] == 0
     assert payload["details"]["operationalSummary"]["ambiguousSubmissionCount"] == 0
+    assert payload["details"]["operationalSummary"]["reviewDispositionCount"] == 0
+    assert payload["details"]["operationalSummary"]["reviewDispositionPendingCount"] == 0
     assert "unresolved_controls=0" in payload["summary"]
     assert "ambiguous_submissions=0" in payload["summary"]
+    assert "pending_review_responses=0" in payload["summary"]
     assert payload["details"]["focusHypothesisId"] == HYPOTHESIS_ID
     assert payload["details"]["valid"] is True
 

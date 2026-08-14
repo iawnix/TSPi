@@ -576,6 +576,8 @@ def test_pi_subagent_runtime_and_extension_enforce_isolation() -> None:
     assert "createReviewResultTool" in runtime
     assert "setRuntimeApiKey" in runtime
     assert "name: TS_PUBLIC_TOOL_NAMES.subagentReview" in extension
+    assert "name: TS_PUBLIC_TOOL_NAMES.reviewDisposition" in extension
+    assert "writeReviewRootDisposition" in extension
     assert 'executionMode: "sequential"' in extension
     assert 'pi.appendEntry("ts-workspace-subagent-run"' in extension
     assert "getApiKeyAndHeaders" in extension

@@ -27,11 +27,13 @@ const {
   failAgentRun,
   readAgentRunInputs,
   writeInvalidReviewOutput,
+  writeReviewRootDisposition,
 } = require(resolve(EXTENSION_DIR, "..", "..", "src", "agent-core", "run-journal.cjs"));
 const { classifyUpstreamModelFailure } = require(resolve(EXTENSION_DIR, "..", "..", "src", "agent-core", "failure-taxonomy.cjs"));
 const { toolText } = require("../ts-workflow-control/summary.cjs");
 
 const REVIEW_TYPES = ["mechanism", "candidate", "tsfreq", "connectivity", "final_audit", "program_failure"] as const;
+const ROOT_DISPOSITIONS = ["accepted", "partially_accepted", "rejected", "deferred"] as const;
 
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
@@ -42,6 +44,7 @@ export default function (pi: ExtensionAPI) {
     promptGuidelines: [
       `Use ${TS_PUBLIC_TOOL_NAMES.subagentReview} only at an ambiguity, failure-analysis, branch-selection, or final-audit boundary where an independent review can change the next decision.`,
       "Treat its output as advisory analysis, not registered evidence or an accepted/pathway verdict; reconcile it against primary artifacts before mutating the workspace.",
+      `After every successful Review, immediately call ${TS_PUBLIC_TOOL_NAMES.reviewDisposition} with its task_id and review_run_ref. Record a concise accepted, partially_accepted, rejected, or deferred response before any further workspace mutation.`,
       "Select nodeId or fromNode+anchorNode and explicit evidenceRefs/artifactRefs to keep the review scoped.",
     ],
     renderShell: "self",
@@ -138,10 +141,21 @@ export default function (pi: ExtensionAPI) {
         const metadata = { ...result.metadata, run_ref: runRef };
         pi.appendEntry("ts-workspace-subagent-run", metadata);
         reportStatus(terminalStateForReport(result.result), { run_ref: runRef });
-        return toolText(JSON.stringify(result.result, null, 2), {
-          result: result.result,
-          run: metadata,
-        });
+        const obligation = {
+          required: true,
+          task_id: packet.task_id,
+          review_run_ref: runRef,
+          tool: TS_PUBLIC_TOOL_NAMES.reviewDisposition,
+          allowed_dispositions: ROOT_DISPOSITIONS,
+        };
+        return toolText(
+          `${JSON.stringify(result.result, null, 2)}\n\nRoot response required before further workspace mutation:\n${JSON.stringify(obligation, null, 2)}`,
+          {
+            result: result.result,
+            run: metadata,
+            root_disposition: obligation,
+          },
+        );
       } catch (error) {
         const invalidOutputs = error && typeof error === "object"
           && Array.isArray((error as { invalidReviewOutputs?: unknown[] }).invalidReviewOutputs)
@@ -166,6 +180,39 @@ export default function (pi: ExtensionAPI) {
         reportStatus(terminal.state, { failure_kind: terminal.failure_kind, run_ref: runRef });
         throw error;
       }
+    },
+  });
+
+  pi.registerTool({
+    name: TS_PUBLIC_TOOL_NAMES.reviewDisposition,
+    label: "TS Review Response",
+    description: "Record the Root Agent's concise, write-once response to one successfully completed advisory Review.",
+    promptSnippet: "Record the Root Agent disposition for a completed TS Review",
+    promptGuidelines: [
+      `Call ${TS_PUBLIC_TOOL_NAMES.reviewDisposition} immediately after every successful ${TS_PUBLIC_TOOL_NAMES.subagentReview} result.`,
+      "Respond briefly and independently: accepted means the advice is adopted, partially_accepted names the adopted portion, rejected gives the reason, and deferred names the missing basis or later decision point.",
+      "This operational response is not scientific evidence and does not change the Review's advisory authority.",
+    ],
+    executionMode: "sequential",
+    parameters: Type.Object({
+      taskId: Type.String({ minLength: 1, maxLength: 160, description: "Exact task_id returned by ts_subagent_review." }),
+      reviewRunRef: Type.String({ minLength: 1, maxLength: 512, description: "Exact review_run_ref returned by ts_subagent_review." }),
+      disposition: StringEnum(ROOT_DISPOSITIONS),
+      response: Type.String({ minLength: 1, maxLength: 4000, description: "Concise Root assessment of the advisory Review." }),
+      nextSteps: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { maxItems: 8 })),
+      root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
+    }),
+    async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
+      const root = requireWorkspaceRoot(params.root, ctx.cwd);
+      const disposition = writeReviewRootDisposition(root, {
+        task_id: params.taskId,
+        review_run_ref: params.reviewRunRef,
+        disposition: params.disposition,
+        response: params.response,
+        next_steps: params.nextSteps,
+      });
+      pi.appendEntry("ts-review-root-disposition", disposition);
+      return toolText(JSON.stringify(disposition, null, 2), { disposition });
     },
   });
 }

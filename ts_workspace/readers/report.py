@@ -79,6 +79,8 @@ def report_workspace(root: str | Path) -> dict[str, Any]:
         "evidence_lifecycle": lifecycle_counts,
         "branch_events": branch_events,
         "agent_runs": operations["agent_runs"],
+        "pending_review_dispositions": operations["pending_review_dispositions"],
+        "review_disposition_count": operations["review_disposition_count"],
         "pending_controls": operations["pending_controls"],
         "unresolved_controls": operations["unresolved_controls"],
         "ambiguous_submissions": operations["ambiguous_submissions"],

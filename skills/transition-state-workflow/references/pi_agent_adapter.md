@@ -89,8 +89,10 @@ ancestor containing canonical state files.
 - `ts_workspace_decision_apply`: invoke the matching mutation command transactionally,
   then return refreshed compact context.
 
-`ts_workspace_decision_apply` is the only mutating Pi workspace tool. The action is read
-from the validated decision; there is no model-supplied shell command.
+`ts_workspace_decision_apply` is the only Pi tool that mutates canonical
+scientific workspace state. `ts_review_disposition` writes only operational
+journal state. The decision action is read from the validated decision; there
+is no model-supplied shell command.
 
 ## Review Subagent
 
@@ -107,8 +109,15 @@ It receives no parent conversation, context files, root skills, extensions,
 workspace tools, decision files, or preflight output. Its `ts-agent-result/1`
 is advisory and must cite the packet allowlist.
 
+On success the public tool returns both `task_id` and `review_run_ref`. The
+Root Agent must immediately call `ts_review_disposition` with one concise
+`accepted`, `partially_accepted`, `rejected`, or `deferred` response. The host
+writes `root-disposition.json` beside the run journal with mode `0600`; it is
+write-once operational state and is never registered as evidence. Until this
+response exists, decision validation rejects canonical workspace mutations.
+
 Run metadata remains available through Pi `appendEntry`, and the host also
-persists an immutable workspace journal under `nodes/<node>/agent-runs/` or
+persists a write-once document journal under `nodes/<node>/agent-runs/` or
 `operations/agent-runs/`. Review journals bind `task.json`,
 `evidence-snapshot.json`, and `provider-input.json` by schema, SHA-256, and byte
 count before the provider is called. The journal also records actions, result,

@@ -11,6 +11,7 @@ from ..artifact_policy import node_owner_from_artifact_path, role_matches_node
 from ..evidence_lifecycle import evidence_lifecycle_view
 from ..evidence_gates import gate_artifact_metadata_diagnostic
 from ..io import read_json
+from ..operational import agent_run_index, review_disposition_obligations
 from ..revision import report_id_for_revision, workspace_revision
 from ..state import HYPOTHESES_FILE, RESEARCH_STATE_FILE
 from .decision import (
@@ -34,6 +35,15 @@ def validate_decision_for_workspace(root: str | Path, decision: dict[str, Any]) 
 def _validate_decision_for_workspace_v2(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
     action = decision.get("action")
     if action in {"start_node", "end_node", "update_workspace"}:
+        pending_reviews = review_disposition_obligations(agent_run_index(root))
+        if pending_reviews:
+            refs = ", ".join(
+                f"{row.get('task_id')} ({row.get('run_ref')})" for row in pending_reviews[:8]
+            )
+            raise ContractError(
+                "workspace mutation requires a Root disposition for completed Review runs: "
+                f"{refs}; call ts_review_disposition first"
+            )
         expected_revision = workspace_revision(root)
         if decision.get("base_revision") != expected_revision:
             raise ContractError(

@@ -135,6 +135,10 @@ Use independent review only when it may change a decision: competing
 hypotheses, ambiguous validation, conflicting evidence, failure diagnosis,
 backtrack selection, or audit readiness. The result is advisory and cannot be
 registered as primary evidence without independent local artifact support.
+After a successful Review, the Root Agent must record a concise disposition
+with `ts_review_disposition` before the next workspace mutation. `accepted`,
+`partially_accepted`, `rejected`, and `deferred` all satisfy the response
+obligation; none changes the Review's advisory authority.
 
 ## Decision Templates
 
