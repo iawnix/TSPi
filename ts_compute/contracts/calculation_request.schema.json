@@ -85,7 +85,7 @@
           "properties": {
             "kind": {"const": "remote"},
             "profile": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
-            "resources": {"$ref": "calculation_intent_v2.schema.json#/$defs/remote_resources"}
+            "resources": {"$ref": "calculation_intent_v3.schema.json#/$defs/remote_resources"}
           },
           "additionalProperties": false
         }

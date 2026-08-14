@@ -22,8 +22,8 @@ def _workspace(tmp_path: Path) -> Path:
         workspace,
         report_ref,
         node_id="n001",
-        node_type="candidate_search",
-        scope="endpoint_conformer",
+        objective="Exercise deterministic calculation artifact binding.",
+        tags=["candidate", "compute"],
     )
     return workspace
 
@@ -133,6 +133,20 @@ def test_binding_rejects_missing_ambiguous_and_role_incompatible_artifacts(tmp_p
     with pytest.raises(ComputeContractError, match="artifact_id is ambiguous"):
         create_calculation_intent(workspace, _request(gjf_artifact["artifact_id"]))
 
+
+def test_open_node_can_run_any_supported_root_selected_calculation(tmp_path: Path) -> None:
+    workspace = _workspace(tmp_path)
+    source = workspace / "nodes/n001/inputs/source.gjf"
+    source.write_text("# HF/STO-3G opt\n\nOpt\n\n0 1\nH 0 0 0\n\n", encoding="utf-8")
+    artifact = _artifact(list_calculation_artifacts(workspace), "nodes/n001/inputs/source.gjf")
+    request = _request(artifact["artifact_id"])
+    request["task_type"] = "opt"
+
+    created = create_calculation_intent(workspace, request)
+    assert created["intent"]["backend"] == "gaussian"
+    assert created["intent"]["task_type"] == "opt"
+    node = (workspace / "nodes" / "n001" / "node.json").read_text(encoding="utf-8")
+    assert "candidate_plan" not in node
 
 def test_list_artifacts_cli_returns_catalog_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     workspace = _workspace(tmp_path)

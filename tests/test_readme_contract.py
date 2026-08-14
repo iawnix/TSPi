@@ -5,151 +5,142 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 README = ROOT / "README.md"
+MAINTAINER = ROOT / "docs" / "MAINTAINER_GUIDE.md"
 SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
+SKILL = SKILL_ROOT / "SKILL.md"
 REFERENCES = SKILL_ROOT / "references"
 TEMPLATES = SKILL_ROOT / "assets" / "templates"
-SKILL = SKILL_ROOT / "SKILL.md"
-CANDIDATE_GENERATION = REFERENCES / "candidate_generation.md"
-GAUSSIAN_VALIDATION = REFERENCES / "gaussian_validation.md"
-MECHANISM_REFLECTION = REFERENCES / "mechanism_reflection.md"
-AGENT_DECISION_PROTOCOL = REFERENCES / "agent_decision_protocol.md"
-DECISION_CONTRACT = REFERENCES / "decision_contract.md"
-PATHWAY_MODEL = REFERENCES / "pathway_model.md"
-REPORT_TEMPLATE = REFERENCES / "report_template.md"
-WORKSPACE_CONTRACT = REFERENCES / "workspace_contract.md"
-REMOTE_CONTRACT = REFERENCES / "remote_contract.md"
-TEMPLATE_README = TEMPLATES / "decision" / "README.md"
-UPDATE_EVIDENCE = TEMPLATES / "decision" / "update_evidence.json"
 FINAL_REPORT = TEMPLATES / "ts_final_report.md"
 
 
-def test_readme_documents_install_and_agent_entrypoints() -> None:
+def test_readme_documents_pi_install_runtime_and_public_tools() -> None:
     text = README.read_text(encoding="utf-8")
 
     for phrase in [
-        "TSAgentSkill",
         "This branch supports Pi Agent only.",
         "pi install -l git:github.com/iawnix/TSAgentSkill@pi_ts_subagents --approve",
         "$PWD/.pi/git/github.com/iawnix/TSAgentSkill",
-        "--workspace-root \"$TS_WORKSPACE_ROOT\"",
-        "TS_WORKSPACE_ROOT=/path/to/ts-workspace npm run install-env",
-        "Pi Agent Usage",
-        "eleven-tool Root Agent inventory",
-        "`/ts-subagent-history` opens a read-only, paginated browser",
-        "skills/transition-state-workflow/assets/templates/ts_final_report.md",
+        "./TSPi --workspace reaction-a",
+        "/ts-subagent-history",
+        "ts_workspace_decision_apply",
+        "ts_subagent_review",
+        "ts_subagent_compute",
+        "ts_notify_user",
+        "eleven tools",
     ]:
         assert phrase in text
 
-    assert "Codex Usage" not in text
+
+def test_public_docs_state_the_v3_authority_boundary() -> None:
+    texts = {
+        "readme": README.read_text(encoding="utf-8"),
+        "skill": SKILL.read_text(encoding="utf-8"),
+        "maintainer": MAINTAINER.read_text(encoding="utf-8"),
+        "state": (REFERENCES / "state_model.md").read_text(encoding="utf-8"),
+    }
+
+    assert "Root Agent chooses the research path" in texts["readme"]
+    assert "Tags are for display and search only" in texts["readme"]
+    assert "Treat Node tags as display/search metadata only" in texts["skill"].replace("`", "")
+    assert "Node tags must never select an allowed action" in texts["maintainer"]
+    assert "Evidence has no workflow role or layer" in " ".join(texts["state"].split())
 
 
-def test_public_agent_contract_is_pi_only() -> None:
+def test_normal_runtime_docs_use_v3_contracts_only() -> None:
     paths = [
         README,
         SKILL,
-        REFERENCES / "runtime_environment.md",
-        REFERENCES / "pi_agent_adapter.md",
-        REFERENCES / "decision_contract.md",
+        MAINTAINER,
+        *(REFERENCES / name for name in [
+            "state_model.md",
+            "workspace_contract.md",
+            "decision_contract.md",
+            "agent_decision_protocol.md",
+            "candidate_generation.md",
+            "backend_selection.md",
+            "compute_operator.md",
+            "mechanism_reflection.md",
+            "pathway_model.md",
+            "pi_agent_adapter.md",
+            "report_template.md",
+        ]),
     ]
-
+    forbidden = [
+        "ts-decision/2",
+        "ts-node/2",
+        "candidate_plan",
+        "validation_scope",
+        "audit_scope",
+        "mechanism_action",
+        "solution_ref",
+        "pathway_ref",
+    ]
     for path in paths:
-        assert "Codex" not in path.read_text(encoding="utf-8"), path
+        text = path.read_text(encoding="utf-8")
+        for term in forbidden:
+            assert term not in text, (path, term)
 
 
-def test_final_report_template_uses_v2_node_vocabulary() -> None:
+def test_skill_routes_details_through_focused_references() -> None:
+    text = SKILL.read_text(encoding="utf-8")
+
+    assert len(text.splitlines()) < 260
+    for ref in [
+        "references/state_model.md",
+        "references/workspace_contract.md",
+        "references/decision_contract.md",
+        "references/candidate_generation.md",
+        "references/compute_operator.md",
+        "references/remote_contract.md",
+        "references/report_template.md",
+    ]:
+        assert ref in text
+
+
+def test_candidate_strategy_remains_root_selected() -> None:
+    skill = SKILL.read_text(encoding="utf-8")
+    candidate = (REFERENCES / "candidate_generation.md").read_text(encoding="utf-8")
+    backend = (REFERENCES / "backend_selection.md").read_text(encoding="utf-8")
+
+    assert "Do not impose a universal" in skill
+    assert "Gaussian is a first-class candidate-generation backend" in candidate
+    assert "Do not default to QST2/QST3" in candidate
+    assert "The catalog is not a priority list" in backend
+
+
+def test_final_report_template_projects_v3_scientific_objects() -> None:
     text = FINAL_REPORT.read_text(encoding="utf-8")
 
-    assert "| Node | Node type / scope |" in text
-    assert "{{node_type}} / {{scope}}" in text
-    for legacy_term in ("{{phase}}", "Claim verdict", "Program status"):
-        assert legacy_term not in text
-
-
-def test_readme_keeps_render_dependency_boundary_explicit() -> None:
-    text = README.read_text(encoding="utf-8")
-
-    assert "`ts_render` uses `xyzrender` only" in text
-    assert "does not require or probe Blender, FFmpeg, OpenBabel, Mayavi, or" in text
-
-
-def test_remote_documentation_covers_profile_lifecycle_and_diagnostics() -> None:
-    readme_text = README.read_text(encoding="utf-8")
-    remote_text = REMOTE_CONTRACT.read_text(encoding="utf-8")
-    normalized_remote = " ".join(remote_text.split())
-
-    assert "`ts_remote` binds one `submission_id`" in readme_text
     for phrase in [
-        "`ts_remote` is the only remote-compute subsystem",
-        "## Request Shape",
-        "## Installation Configuration",
-        "TS_REMOTE_CONFIG",
-        "<remote_root>/workspaces/<workspace_id>/runs/<node_id>/<intent_id>",
-        "## Lifecycle",
-        ".ts-remote/submission.env",
-        "Collect verifies the prepared manifest",
-        "submission_ambiguous",
-        "/ts-remote doctor",
-        "Ordinary TSPi startup does not probe the cluster",
+        "Scientific Claims",
+        "Deterministic Gate Results",
+        "Research Nodes",
+        "Accepted Artifacts",
+        "Evidence Appendix",
+        "Operational Follow-Up",
+        "{{claim_id}}",
+        "{{gate_result_id}}",
+        "{{evidence_id}}",
     ]:
-        assert phrase in normalized_remote
+        assert phrase in text
+    for legacy in ("{{node_type}}", "{{hypothesis_id}}", "{{evidence_role}}"):
+        assert legacy not in text
 
 
-def test_candidate_generation_does_not_default_to_qst_from_endpoints() -> None:
-    skill_text = SKILL.read_text(encoding="utf-8")
-    reference_text = CANDIDATE_GENERATION.read_text(encoding="utf-8")
+def test_decision_assets_are_generic_v3_examples() -> None:
+    decision_dir = TEMPLATES / "decision"
+    readme = (decision_dir / "README.md").read_text(encoding="utf-8")
+    files = {path.name for path in decision_dir.glob("*.json")}
 
-    assert "Do not default to QST2/QST3 merely because R/P endpoints" in skill_text
-    assert "are available; justify QST use" in skill_text
-    assert "default to QST2/QST3 merely because reactant and product structures are" in reference_text
-    assert "available. Prefer QST2/QST3 only when the endpoints are optimized" in reference_text
-    assert "Reactant/product endpoints define the target connectivity basins" in reference_text
-
-
-def test_mechanism_reflection_requires_geometry_and_electronic_checks() -> None:
-    mechanism_text = MECHANISM_REFLECTION.read_text(encoding="utf-8")
-    candidate_text = CANDIDATE_GENERATION.read_text(encoding="utf-8")
-    normalized_candidate = " ".join(candidate_text.split())
-    gaussian_text = GAUSSIAN_VALIDATION.read_text(encoding="utf-8")
-    normalized_gaussian = " ".join(gaussian_text.split())
-    evidence_template = UPDATE_EVIDENCE.read_text(encoding="utf-8")
-
-    assert "local geometry and electronic structure" in mechanism_text
-    assert "Every candidate-generation and TS/Freq reflection" in mechanism_text
-    assert "A candidate that only satisfies target bond distances is not automatically" in normalized_candidate
-    assert '"node_id": "${NODE_ID}"' in evidence_template
-    assert '"evidence_tier": "manual_observation"' in evidence_template
-    assert "the final local geometry and available electronic diagnostics must not contradict" in normalized_gaussian
-    assert "Do not start IRC from a TS/Freq result whose mechanism-consistency review is refuted" in normalized_gaussian
-
-
-def test_skill_links_agent_decision_protocol_for_failed_exploration() -> None:
-    skill_text = SKILL.read_text(encoding="utf-8")
-    protocol_text = AGENT_DECISION_PROTOCOL.read_text(encoding="utf-8")
-
-    assert "references/agent_decision_protocol.md" in skill_text
-    assert "previous failed exploration" in protocol_text
-    assert "report_workspace.node_index" in protocol_text
-    assert "nodes/<failed_node>/node.json" in protocol_text
-    assert "Across independent repeated studies" in protocol_text
-
-
-def test_pathway_audit_contract_is_explicit_for_agents() -> None:
-    texts = {
-        "skill": SKILL.read_text(encoding="utf-8"),
-        "protocol": AGENT_DECISION_PROTOCOL.read_text(encoding="utf-8"),
-        "decision": DECISION_CONTRACT.read_text(encoding="utf-8"),
-        "pathway": PATHWAY_MODEL.read_text(encoding="utf-8"),
-        "report": REPORT_TEMPLATE.read_text(encoding="utf-8"),
-        "workspace": WORKSPACE_CONTRACT.read_text(encoding="utf-8"),
-        "templates": TEMPLATE_README.read_text(encoding="utf-8"),
+    assert "not a prescribed research sequence" in readme
+    assert files == {
+        "append_claim.json",
+        "append_evidence.json",
+        "end_audit.json",
+        "end_node.json",
+        "evaluate_gate.json",
+        "link_operation.json",
+        "start_node.json",
     }
-
-    assert "For `node_type=audit, audit_scope=pathway`, `payload.pathway_ref` is mandatory" in texts["skill"]
-    assert "running node must already have `node.pathway_ref`" in texts["protocol"]
-    assert "quality.strict_pathway_decision=pathway_not_accepted" in texts["protocol"]
-    assert "For `node_type=audit, audit_scope=pathway`, `payload.pathway_ref` is mandatory" in texts["decision"]
-    assert "Every pathway audit start decision" in texts["pathway"]
-    assert "must include `payload.pathway_ref`" in texts["pathway"]
-    assert "do not infer it from" in texts["report"]
-    assert "quality.strict_pathway_decision" in texts["workspace"]
-    assert "Every post-`n000` start carries explicit `branch_context`" in texts["templates"]
+    for path in decision_dir.glob("*.json"):
+        assert '"schema_version": "ts-decision/3"' in path.read_text(encoding="utf-8")

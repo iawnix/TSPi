@@ -191,12 +191,12 @@ function fallbackStatus(event: ToolExecutionStartEvent, now: number): TsSubagent
     tool_call_id: event.toolCallId,
     task_id: event.toolCallId,
     role,
-    operation: firstString(args.operation, args.reviewType) || defaultOperation(role),
+    operation: stringValue(args.operation) || defaultOperation(role),
     state: "queued",
     started_at: timestampValue,
     updated_at: timestampValue,
     backend: stringValue(args.backend),
-    node_id: firstString(args.nodeId, args.fromNode),
+    node_id: firstString(args.nodeId, Array.isArray(args.nodeIds) ? args.nodeIds[0] : undefined),
     intent_id: stringValue(args.intentId),
     target_ref: targetRef(role, args),
   };
@@ -210,10 +210,13 @@ function roleForTool(toolName: string): TsSubagentRole {
 }
 
 function defaultOperation(role: TsSubagentRole): string {
-  return role === "report" ? "build" : role;
+  if (role === "report") return "build";
+  if (role === "review") return "claim_review";
+  return role;
 }
 
 function targetRef(role: TsSubagentRole, args: Record<string, unknown>): string | undefined {
+  if (role === "review") return stringValue(args.targetClaimRef);
   if (role === "render") return stringValue(args.outputRef);
   if (role === "report") return stringValue(args.packageRef);
   return undefined;

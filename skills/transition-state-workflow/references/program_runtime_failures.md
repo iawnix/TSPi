@@ -122,16 +122,13 @@ runtime on similar seeds.
 
 ## Decision Guidance
 
-- Same research node and scientific protocol, only a technical recovery changed:
-  use `ts-calculation-intent/2 attempt_kind=retry` under that node.
-- A method/basis/model change that can alter the conclusion opens a new node of
-  the same scientific type with `attempt_kind=recalculation` and
-  `branch_context.relation=recalculation_of`.
-- Same hypothesis but a different candidate-generation strategy or replacement
-  TS candidate: use `new_solution_branch`.
-- Different mechanism, electronic state, charge/multiplicity interpretation, or
-  pathway topology: use a hypothesis/pathway branch rather than hiding the
-  change inside a retry.
+- Same Node objective and scientific protocol, only a technical recovery
+  changed: use `ts-calculation-intent/3 attempt_kind=retry` under that Node.
+- A method, basis, model, coordinate strategy, or scientific question change
+  is a Root decision. Record it as a recalculation operation or open a new child
+  Node with an explicit objective and Claim refs.
+- A replacement candidate or alternative explanation should remain visible as
+  a new operation, Node, or Claim rather than being hidden inside a retry.
 - Environment, parser, artifact-fetch, or remote lifecycle repair:
   use administrative/provenance evidence where appropriate and avoid chemistry
   verdicts.
@@ -140,7 +137,7 @@ runtime on similar seeds.
 
 A useful `previous_attempt_summary` should include:
 
-- node id, node type/scope, calculation intent, program, host, input path,
+- Node ID, objective/tags, calculation intent, program, host, input path,
   output path, and exit state;
 - the first hard failure signal, not only the last line of stderr;
 - route intent versus route readback when Gaussian output exists;

@@ -1,14 +1,23 @@
 # Backend Selection
 
-Choose strategy from the chemistry hypothesis first, then choose a backend.
+The Root Agent selects a backend and task. The Kernel only verifies that the
+typed adapter can express the request and that its inputs satisfy the contract.
 
-Common strategy layers:
+Use `ts_workspace_context mode=capabilities` to inspect static support. A
+capability entry reports backend, task, required input roles, settings, and
+expected artifacts. It does not prove that an executable, license, remote
+profile, filesystem, queue, or scheduler is healthy.
 
-- conformer or pose generation for plausible endpoints;
-- relaxed scan or string/NEB for reaction-coordinate discovery;
-- TS optimization and frequency validation for saddle-point evidence;
-- displacement, endpoint optimization, or IRC for connectivity evidence;
-- higher-level refinement when lower-level evidence is promising.
+Choose on scientific grounds:
 
-Backend selection should be documented in the node rationale. Backend failure is
-an execution fact, not a chemistry verdict.
+- Gaussian can generate candidates and perform SP, optimization, frequency,
+  combined optimization/frequency, and IRC work.
+- xTB supports SP, optimization, frequency, combined optimization/frequency,
+  scan, and MD within its typed contract.
+- CREST supports conformer search.
+- ASE supports NEB when its configured calculator contract is available.
+- QBICS supports dMECP work through its typed adapter.
+
+The catalog is not a priority list. Record the selected method and rationale in
+the Root decision or Claim context, then let preparation generate operational
+paths and manifests.

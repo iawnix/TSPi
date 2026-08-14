@@ -190,8 +190,8 @@ update("compute", "ts_subagent_compute", status("compute", "agent-compute", "bac
 const staleIgnored = !update("compute", "ts_subagent_compute", status("compute", "agent-compute", "backend", "submit", "waiting", 1, 2500, {{ wait_reason: "model_response" }}), 2500);
 const duplicateStartIgnored = !start("compute", "ts_subagent_compute", {{}}, 2600);
 
-start("review", "ts_subagent_review", {{ reviewType: "connectivity", nodeId: "n006" }}, 2000);
-update("review", "ts_subagent_review", status("review", "agent-review", "review", "connectivity", "waiting", 1, 3000, {{ node_id: "n006", wait_reason: "model_response" }}), 3000);
+start("review", "ts_subagent_review", {{ targetClaimRef: "claim_path_001", nodeIds: ["n006"] }}, 2000);
+update("review", "ts_subagent_review", status("review", "agent-review", "review", "claim_review", "waiting", 1, 3000, {{ node_id: "n006", target_ref: "claim_path_001", wait_reason: "model_response" }}), 3000);
 start("report", "ts_subagent_report", {{ operation: "build", packageRef: "reports/n002" }}, 3000);
 update("report", "ts_subagent_report", status("report", "agent-report", "report", "build", "completed", 1, 4000, {{ target_ref: "reports/n002" }}), 4000);
 start("render", "ts_subagent_render", {{ operation: "compare", nodeId: "n009" }}, 4000);
@@ -251,11 +251,11 @@ def test_agent_details_merge_live_and_durable_bounded_records(tmp_path: Path) ->
             "operation": "parse",
         },
         "evidence-snapshot.json": {
-            "schema_version": "ts-review-evidence-snapshot/1",
+            "schema_version": "ts-review-evidence-snapshot/2",
             "task_id": "agent_partial",
         },
         "provider-input.json": {
-            "schema_version": "ts-review-provider-input/1",
+            "schema_version": "ts-review-provider-input/2",
             "task_id": "agent_partial",
         },
         "actions.json": {
@@ -302,7 +302,7 @@ def test_agent_details_merge_live_and_durable_bounded_records(tmp_path: Path) ->
             {
                 "task_id": "agent_pending",
                 "role": "review",
-                "operation": "connectivity",
+                "operation": "claim_review",
                 "status": "pending",
                 "node_ids": ["n006"],
                 "run_ref": "nodes/n006/agent-runs/agent_pending",
@@ -321,11 +321,11 @@ import {{
 const state = createTsActivityStore();
 reduceTsSubagentActivity(state, {{
   type: "tool_execution_start", toolCallId: "live-call", toolName: "ts_subagent_review",
-  args: {{ reviewType: "mechanism", nodeId: "n003" }},
+  args: {{ targetClaimRef: "claim_path_001", nodeIds: ["n003"] }},
 }}, 1000);
 const live = {{
   schema_version: "ts-subagent-status/2", seq: 1, tool_call_id: "live-call", task_id: "agent_live",
-  role: "review", operation: "mechanism", state: "running", node_id: "n003",
+  role: "review", operation: "claim_review", state: "running", node_id: "n003", target_ref: "claim_path_001",
   started_at: "2026-08-12T00:00:01Z", updated_at: "2026-08-12T00:00:02Z",
 }};
 reduceTsSubagentActivity(state, {{

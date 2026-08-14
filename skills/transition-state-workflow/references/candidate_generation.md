@@ -1,57 +1,41 @@
-# Candidate Search
+# Candidate Generation
 
-`node_type=candidate_search` generates structures under a known mechanism
-hypothesis. It does not establish TS/Freq validity or connectivity.
+Candidate generation proposes geometries for later scientific testing. It does
+not establish transition-state acceptance.
 
-Required context:
+## Root Choice
 
-- `hypothesis_ref` and relevant prediction IDs;
-- `candidate_kind=transition_state|endpoint_conformer|intermediate|crossing_point`;
-- reaction-center forming and breaking bonds;
-- charge, multiplicity, atom mapping, and state assumptions;
-- allowed and forbidden local contacts, key angles, valence/coordination, and
-  spectator constraints;
-- explicit output and ranking criteria.
+Choose methods from the reaction class, mapping, conformational uncertainty,
+known endpoints, dimensionality, spin/electronic concerns, cost, and available
+software. The adapter capability catalog describes expressible operations only;
+live readiness requires separate environment or remote diagnostics.
 
-Reactant/product endpoints define the target connectivity basins for later
-validation. They do not determine the search method. Do not default to QST2/QST3 merely because reactant and product structures are
-available. Prefer QST2/QST3 only when the endpoints are optimized, atom mapping
-is reliable, conformations are compatible, and the model is one elementary
-step. Otherwise compare scans, NEB/string, dimer/eigenvector following,
-conformer/intermediate search, or a justified crossing-point method.
+Gaussian is a first-class candidate-generation backend for relaxed scans,
+QST2/QST3, and direct TS optimization when chemically justified. xTB scans,
+CREST conformers, ASE NEB images, and other supported methods may be equally
+appropriate. Do not impose a universal low-cost-first or Gaussian-first order.
 
-Common candidate strategies:
+Do not default to QST2/QST3 merely because reactant and product structures are
+available. Prefer QST only when endpoints are optimized, atom mapping and
+stoichiometry match, conformers represent the same elementary step, and the
+interpolation is chemically meaningful.
 
-- constrained or relaxed scans for simple reaction coordinates;
-- NEB or string methods for coupled changes;
-- conformer/pose generation for uncertain endpoint geometry;
-- intermediate search for stepwise hypotheses;
-- QST-like or dimer searches for compatible endpoint-based guesses;
-- crossing-point searches only for a declared multi-surface hypothesis.
+## Candidate Record
 
-## Endpoint Conformers
+Store seeds and generated files as artifacts, link the operation to its Node,
+and register only verified facts such as geometry, energy, convergence,
+coordinate values, or provenance. Use a free versioned Evidence `kind` that
+states what was observed.
 
-Endpoint conformer work is `candidate_kind=endpoint_conformer`. Preserve graph,
-atom mapping, charge, multiplicity, and stereochemistry. Register ensemble,
-selection, identity, and minimum evidence separately.
+A candidate that only satisfies target bond distances is not automatically a
+saddle point or the intended reaction path. Inspect the complete local geometry
+and available electronic diagnostics for contradictions. Later TS/Freq,
+mode-assignment, connectivity, and any reaction-specific Gates remain separate.
 
-Selected endpoint conformers define usable basin representatives only. They are
-not TS candidates, TS/Freq evidence, or connectivity proof.
+## Recalculation
 
-## Ranking
-
-A candidate that only satisfies target bond distances is not automatically
-chemically plausible. Record:
-
-- local geometry consistency: neighbors, unintended short contacts, angles,
-  valence/coordination, folding, and spectator drift;
-- available electronic consistency: charges, spin populations, occupations,
-  state character, or hypothesis-specific diagnostics;
-- explicit contradiction reasons when another local motif, proton transfer,
-  state, or reaction center is found.
-
-Contradictory candidates may remain as rejected artifacts. Do not promote them
-to TS/Freq work as plausible seeds.
-
-Close candidate search with program facts and evidence refs only. The Root Agent
-selects candidates and opens a separate `validation/tsfreq` node.
+A technical retry may reuse the same scientific objective and immutable
+submission identity only when the typed control result permits it. A changed
+method, model chemistry, coordinate strategy, or scientific question should be
+recorded as a new operation or Node chosen by the Root Agent. No special Node
+category is required.

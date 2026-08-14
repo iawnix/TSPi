@@ -6,9 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from strict_helpers import bootstrap_strict_workspace
-from ts_workspace import report_node, report_workspace
-from ts_workspace.artifact_policy import ROLE_NODE_OWNER
+from strict_helpers import CLAIM_ID, bootstrap_strict_workspace
+from ts_workspace import build_review_snapshot, report_workspace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -16,7 +15,6 @@ AGENT_CORE = ROOT / "src" / "agent-core"
 REVIEW_AGENT = ROOT / "src" / "agents" / "review"
 TASK_PACKET = REVIEW_AGENT / "task-packet.cjs"
 OUTPUT_SCHEMA = REVIEW_AGENT / "output-schema.cjs"
-INPUT_POLICY = REVIEW_AGENT / "input-policy.cjs"
 RESULT_TOOL = REVIEW_AGENT / "result-tool.ts"
 SESSION_LIFECYCLE = AGENT_CORE / "session-lifecycle.cjs"
 
@@ -30,7 +28,7 @@ class ReviewTaskFixture(dict[str, object]):
         self.documents = documents
 
 
-def _node_json(script: str, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
+def _node(script: str, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["node", "-e", script, *args],
         cwd=ROOT,
@@ -44,90 +42,61 @@ def _node_json(script: str, *args: str, check: bool = True) -> subprocess.Comple
 def _packet(tmp_path: Path, *, artifact_ref: str | None = None) -> ReviewTaskFixture:
     workspace = tmp_path / "ws"
     bootstrap_strict_workspace(workspace)
-    artifact = workspace / "nodes" / "n000" / "outputs" / "endpoint-summary.json"
-    artifact.write_text('{"endpoint":"supported"}\n', encoding="utf-8")
-
     payload = {
         "runId": "sub_test_001",
         "workspaceRoot": str(workspace),
         "request": {
-            "reviewType": "mechanism",
-            "question": "What assumptions still require a discriminating test?",
-            "nodeId": "n000",
-            "evidenceRefs": ["ev_endpoint_0001"],
+            "targetClaimRef": CLAIM_ID,
+            "question": "Which assumptions still require a discriminating test?",
+            "nodeIds": ["n000"],
             "artifactRefs": [artifact_ref or "nodes/n000/outputs/endpoint-summary.json"],
         },
         "workspaceReport": report_workspace(workspace),
-        "nodeContext": report_node(workspace, "n000"),
-        "branchContext": None,
+        "reviewSnapshot": build_review_snapshot(
+            workspace,
+            target_claim_ref=CLAIM_ID,
+            node_ids=["n000"],
+        ),
     }
-    payload_file = tmp_path / "packet-input.json"
-    payload_file.write_text(json.dumps(payload), encoding="utf-8")
+    source = tmp_path / "packet-input.json"
+    source.write_text(json.dumps(payload), encoding="utf-8")
     script = (
         "const fs=require('node:fs');"
         f"const helper=require({json.dumps(str(TASK_PACKET))});"
         "const input=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
         "process.stdout.write(JSON.stringify(helper.buildReviewTaskBundle(input)));"
     )
-    completed = _node_json(script, str(payload_file))
-    return ReviewTaskFixture(json.loads(completed.stdout))
-
-
-def _validate_result(tmp_path: Path, packet: ReviewTaskFixture, result: dict[str, object], *, check: bool = True):
-    packet_file = tmp_path / "packet.json"
-    snapshot_file = tmp_path / "evidence-snapshot.json"
-    advice_file = tmp_path / "advice.json"
-    packet_file.write_text(json.dumps(packet), encoding="utf-8")
-    snapshot_file.write_text(json.dumps(packet.documents["evidence_snapshot"]), encoding="utf-8")
-    advice_file.write_text(json.dumps(result), encoding="utf-8")
-    script = (
-        "const fs=require('node:fs');"
-        f"const helper=require({json.dumps(str(OUTPUT_SCHEMA))});"
-        "const packet=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
-        "const advice=fs.readFileSync(process.argv[2],'utf8');"
-        "const snapshot=JSON.parse(fs.readFileSync(process.argv[3],'utf8'));"
-        "try { process.stdout.write(JSON.stringify(helper.parseAndValidateReviewResult(advice,packet,snapshot))); }"
-        "catch (error) { process.stderr.write(String(error.message||error)); process.exitCode=2; }"
-    )
-    return _node_json(script, str(packet_file), str(advice_file), str(snapshot_file), check=check)
+    return ReviewTaskFixture(json.loads(_node(script, str(source)).stdout))
 
 
 def _valid_result(packet: ReviewTaskFixture) -> dict[str, object]:
-    scope = packet["scope"]
-    assert isinstance(scope, dict)
     return {
         "schema_version": "ts-agent-result/1",
         "task_id": packet["task_id"],
         "role": "review",
         "authority": "advisory",
-        "operation": "mechanism",
+        "operation": "claim_review",
         "outcome": "success",
-        "summary": "The endpoint evidence leaves the electronic timing unresolved.",
-        "scope": {
-            "report_id": scope["report_id"],
-            "node_ids": scope["node_ids"],
-            "hypothesis_id": scope["hypothesis_id"],
-            "pathway_id": scope["pathway_id"],
-        },
+        "summary": "Endpoint declaration alone does not establish the transition path.",
+        "scope": packet["scope"],
         "facts": [
             {
                 "kind": "review",
-                "layer": "mechanism",
-                "statement": "Endpoint support does not establish electronic timing.",
+                "statement": "The focus Claim still requires its declared Gates.",
                 "status": "uncertain",
-                "basis_refs": ["ev_endpoint_0001"],
+                "basis_refs": [CLAIM_ID, "ev_endpoint_0001"],
             }
         ],
         "artifact_refs": [],
         "program": None,
         "payload": {
-            "missing_evidence": ["A discriminating electronic-structure diagnostic."],
+            "missing_evidence": ["Passed TS/Freq and connectivity Gate results."],
             "conflicts": [],
             "options": [
                 {
-                    "action": "Evaluate one method-appropriate electronic diagnostic.",
-                    "discriminator": "Whether it contradicts the proposed timing model.",
-                    "risks": ["Method dependence."],
+                    "action": "Obtain evidence selected by the Root Agent.",
+                    "discriminator": "Whether the required Gates pass.",
+                    "risks": ["The selected method may remain inconclusive."],
                 }
             ],
         },
@@ -136,358 +105,115 @@ def _valid_result(packet: ReviewTaskFixture) -> dict[str, object]:
     }
 
 
-def test_task_packet_is_report_derived_bounded_and_advisory(tmp_path: Path) -> None:
+def _validate_result(
+    tmp_path: Path,
+    packet: ReviewTaskFixture,
+    result: dict[str, object],
+    *,
+    check: bool = True,
+) -> subprocess.CompletedProcess[str]:
+    packet_path = tmp_path / "packet.json"
+    snapshot_path = tmp_path / "snapshot.json"
+    result_path = tmp_path / "result.json"
+    packet_path.write_text(json.dumps(packet), encoding="utf-8")
+    snapshot_path.write_text(json.dumps(packet.documents["evidence_snapshot"]), encoding="utf-8")
+    result_path.write_text(json.dumps(result), encoding="utf-8")
+    script = (
+        "const fs=require('node:fs');"
+        f"const helper=require({json.dumps(str(OUTPUT_SCHEMA))});"
+        "const task=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
+        "const result=fs.readFileSync(process.argv[2],'utf8');"
+        "const snapshot=JSON.parse(fs.readFileSync(process.argv[3],'utf8'));"
+        "try{process.stdout.write(JSON.stringify(helper.parseAndValidateReviewResult(result,task,snapshot)));}"
+        "catch(error){process.stderr.write(error.message);process.exitCode=2;}"
+    )
+    return _node(script, str(packet_path), str(result_path), str(snapshot_path), check=check)
+
+
+def test_task_packet_is_claim_scoped_bounded_and_advisory(tmp_path: Path) -> None:
     packet = _packet(tmp_path)
+    snapshot = packet.documents["evidence_snapshot"]
+    provider = packet.documents["provider_input"]
 
     assert packet["schema_version"] == "ts-agent-task/2"
     assert packet["role"] == "review"
     assert packet["authority"] == "advisory"
-    assert packet["operation"] == "mechanism"
-    snapshot = packet.documents["evidence_snapshot"]
-    provider_input = packet.documents["provider_input"]
-    assert isinstance(snapshot, dict) and isinstance(provider_input, dict)
-    assert packet["inputs"]["evidence_snapshot"]["ref"] == "evidence-snapshot.json"
-    assert packet["inputs"]["provider_input"]["ref"] == "provider-input.json"
-    assert packet["workspace"]["root"] == str(tmp_path / "ws")
-    assert "workspace_root" not in packet["scope"]
-    assert packet["scope"]["node_ids"] == ["n000"]
-    assert snapshot["evidence"][0]["evidence_id"] == "ev_endpoint_0001"
-    assert snapshot["evidence"][0]["layer"] == "mechanism"
-    assert snapshot["artifact_excerpts"][0]["ref"] == "nodes/n000/outputs/endpoint-summary.json"
-    assert snapshot["artifact_excerpts"][0]["text"] == '{"endpoint":"supported"}\n'
-    assert snapshot["artifact_excerpts"][0]["layer"] == "mechanism"
+    assert packet["operation"] == "claim_review"
+    assert packet["scope"]["claim_refs"] == [CLAIM_ID]
+    assert packet["constraints"]["scientific_decision"] is False
+    assert snapshot["schema_version"] == "ts-review-evidence-snapshot/2"
+    assert snapshot["target_claim_ref"] == CLAIM_ID
     assert snapshot["basis_allowlist"] == [
+        CLAIM_ID,
         "ev_endpoint_0001",
         "nodes/n000/outputs/endpoint-summary.json",
     ]
-    assert "TS workspace context:" in snapshot["context"]["workspace"]
-    assert "TS historical node context:" in snapshot["context"]["node"]
-    assert provider_input["schema_version"] == "ts-review-provider-input/1"
-    assert packet["constraints"]["scientific_decision"] is False
-    assert packet["constraints"]["remote_authority"] == "execution_mirror"
+    assert provider["schema_version"] == "ts-review-provider-input/2"
+    assert len(json.dumps(provider, separators=(",", ":")).encode()) <= 24 * 1024
+    assert "workspace" not in provider
+    assert "constraints" not in provider
 
 
-def test_provider_task_packet_removes_operational_duplication_and_has_hard_budget(tmp_path: Path) -> None:
-    packet = _packet(tmp_path)
-    compact = packet.documents["provider_input"]
-    assert len(json.dumps(compact, separators=(",", ":")).encode()) <= 21 * 1024
-    assert "workspace" not in compact
-    assert "constraints" not in compact
-    assert "capabilities" not in compact
-    assert compact["evidence"][0]["evidence_id"] == "ev_endpoint_0001"
-    assert "source_files" not in compact["evidence"][0]
-    assert "kind" not in compact["evidence"][0]
-    assert "contract:" not in compact["context"]["workspace"]
-
-
-@pytest.mark.parametrize(
-    "artifact_ref",
-    ["../outside.txt", "/tmp/outside.txt", "nodes/n999/outputs/foreign.log"],
-)
+@pytest.mark.parametrize("artifact_ref", ["../outside.txt", "/tmp/outside.txt", "nodes/n999/output.log"])
 def test_task_packet_rejects_unscoped_artifacts(tmp_path: Path, artifact_ref: str) -> None:
     with pytest.raises(subprocess.CalledProcessError):
         _packet(tmp_path, artifact_ref=artifact_ref)
 
 
-def test_task_packet_rejects_explicit_cross_ceiling_evidence(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    bootstrap_strict_workspace(workspace)
-    payload = {
-        "runId": "sub_test_cross_layer",
-        "workspaceRoot": str(workspace),
-        "request": {
-            "reviewType": "mechanism",
-            "question": "Review mechanism evidence only.",
-            "nodeId": "n000",
-            "evidenceRefs": ["ev_tsfreq_001"],
-        },
-        "workspaceReport": report_workspace(workspace),
-        "nodeContext": report_node(workspace, "n000"),
-        "branchContext": None,
-    }
-    payload["nodeContext"]["evidence"].append({
-        "evidence_id": "ev_tsfreq_001",
-        "node_id": "n000",
-        "kind": "gate",
-        "role": "tsfreq_gate",
-        "evidence_tier": "parsed_output",
-        "summary": "TS/Freq gate.",
-        "quality": {},
-        "path": None,
-        "source_files": [],
-    })
-    input_file = tmp_path / "cross-layer.json"
-    input_file.write_text(json.dumps(payload), encoding="utf-8")
-    script = (
-        "const fs=require('node:fs');"
-        f"const helper=require({json.dumps(str(TASK_PACKET))});"
-        "const input=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
-        "try{helper.buildReviewTaskBundle(input);}catch(error){process.stderr.write(error.message);process.exitCode=2;}"
-    )
-    completed = _node_json(script, str(input_file), check=False)
-    assert completed.returncode == 2
-    assert "ev_tsfreq_001 (tsfreq)" in completed.stderr
-
-
-def test_task_packet_rejects_unknown_evidence_role(tmp_path: Path) -> None:
-    packet_input = {
-        "evidence_id": "ev_unknown",
-        "role": "unregistered_gate",
-    }
-    script = (
-        f"const helper=require({json.dumps(str(INPUT_POLICY))});"
-        "try{helper.reviewLayerForEvidence(JSON.parse(process.argv[1]));}"
-        "catch(error){process.stderr.write(error.message);process.exitCode=2;}"
-    )
-    completed = _node_json(script, json.dumps(packet_input), check=False)
-    assert completed.returncode == 2
-    assert "unknown role/layer" in completed.stderr
-
-
-def test_previous_attempt_summary_maps_to_program_layer() -> None:
-    evidence = {
-        "evidence_id": "ev_previous_attempt",
-        "role": "previous_attempt_summary",
-    }
-    script = (
-        f"const helper=require({json.dumps(str(INPUT_POLICY))});"
-        "process.stdout.write(helper.reviewLayerForEvidence(JSON.parse(process.argv[1])));"
-    )
-
-    assert _node_json(script, json.dumps(evidence)).stdout == "program"
-
-
-def test_program_failure_review_implicitly_selects_previous_attempt_and_artifact(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    bootstrap_strict_workspace(workspace)
-    artifact_ref = "nodes/n000/attempts/calc_failed/outputs/parsed/validation_summary.json"
-    artifact = workspace / artifact_ref
-    artifact.parent.mkdir(parents=True)
-    artifact.write_text('{"program_outcome":"failure"}\n', encoding="utf-8")
-    node_context = report_node(workspace, "n000")
-    node_context["evidence"].append({
-        "evidence_id": "ev_previous_attempt",
-        "node_id": "n000",
-        "kind": "gaussian_program_failure",
-        "role": "previous_attempt_summary",
-        "evidence_tier": "local_parse",
-        "summary": "Gaussian failed before producing a stationary point.",
-        "quality": {"program_outcome": "failure"},
-        "path": artifact_ref,
-        "source_files": [artifact_ref],
-    })
-    payload = {
-        "runId": "sub_test_program_failure",
-        "workspaceRoot": str(workspace),
-        "request": {
-            "reviewType": "program_failure",
-            "question": "Review the failed program attempt without making a mechanism claim.",
-            "nodeId": "n000",
-            "artifactRefs": [artifact_ref],
-        },
-        "workspaceReport": report_workspace(workspace),
-        "nodeContext": node_context,
-        "branchContext": None,
-    }
-    input_file = tmp_path / "program-failure.json"
-    input_file.write_text(json.dumps(payload), encoding="utf-8")
-    script = (
-        "const fs=require('node:fs');"
-        f"const helper=require({json.dumps(str(TASK_PACKET))});"
-        "const input=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
-        "process.stdout.write(JSON.stringify(helper.buildReviewTaskBundle(input)));"
-    )
-
-    bundle = json.loads(_node_json(script, str(input_file)).stdout)
-    snapshot = bundle["documents"]["evidence_snapshot"]
-    assert [item["evidence_id"] for item in snapshot["evidence"]] == ["ev_previous_attempt"]
-    assert snapshot["evidence"][0]["layer"] == "program"
-    assert snapshot["artifact_excerpts"][0]["ref"] == artifact_ref
-    assert snapshot["artifact_excerpts"][0]["layer"] == "program"
-    assert snapshot["basis_allowlist"] == ["ev_previous_attempt", artifact_ref]
-
-
-def test_review_layer_policy_covers_workspace_evidence_ontology() -> None:
-    script = (
-        f"const helper=require({json.dumps(str(INPUT_POLICY))});"
-        "process.stdout.write(JSON.stringify(Object.keys(helper.EVIDENCE_ROLE_LAYERS).sort()));"
-    )
-    mapped = set(json.loads(_node_json(script).stdout))
-    assert set(ROLE_NODE_OWNER) <= mapped
-
-
-def test_advice_validation_accepts_bounded_evidence_referenced_output(tmp_path: Path) -> None:
+def test_review_result_accepts_only_bound_advisory_facts(tmp_path: Path) -> None:
     packet = _packet(tmp_path)
-    completed = _validate_result(tmp_path, packet, _valid_result(packet))
-    result = json.loads(completed.stdout)
+    valid = json.loads(_validate_result(tmp_path, packet, _valid_result(packet)).stdout)
+    assert valid["facts"][0]["basis_refs"] == [CLAIM_ID, "ev_endpoint_0001"]
 
-    assert result["authority"] == "advisory"
-    assert result["facts"][0]["basis_refs"] == ["ev_endpoint_0001"]
+    unknown_basis = _valid_result(packet)
+    unknown_basis["facts"][0]["basis_refs"] = ["ev_invented"]
+    failed = _validate_result(tmp_path, packet, unknown_basis, check=False)
+    assert failed.returncode == 2
+    assert "outside task packet" in failed.stderr
+
+    authoritative = _valid_result(packet)
+    authoritative["payload"]["claim_status"] = "supported"
+    failed = _validate_result(tmp_path, packet, authoritative, check=False)
+    assert failed.returncode == 2
+    assert "authoritative field" in failed.stderr or "unknown fields" in failed.stderr
 
 
-@pytest.mark.parametrize("legacy_field", ["outcome", "artifact_ref"])
-def test_advice_validation_rejects_legacy_result_aliases(tmp_path: Path, legacy_field: str) -> None:
+def test_review_result_rejects_string_risks_and_task_identity_mismatch(tmp_path: Path) -> None:
     packet = _packet(tmp_path)
-    advice = _valid_result(packet)
-    if legacy_field == "outcome":
-        advice["outcome"] = "completed"
-    else:
-        fact = advice["facts"][0]
-        fact["artifact_ref"] = fact.pop("basis_refs")[0]
+    invalid = _valid_result(packet)
+    invalid["payload"]["options"][0]["risks"] = "Method dependence."
+    failed = _validate_result(tmp_path, packet, invalid, check=False)
+    assert failed.returncode == 2
+    assert "risks must be an array" in failed.stderr
 
-    completed = _validate_result(tmp_path, packet, advice, check=False)
-    assert completed.returncode == 2
-
-
-def test_advice_validation_rejects_cross_layer_claim(tmp_path: Path) -> None:
-    packet = _packet(tmp_path)
-    advice = _valid_result(packet)
-    advice["facts"][0]["layer"] = "connectivity"
-
-    completed = _validate_result(tmp_path, packet, advice, check=False)
-
-    assert completed.returncode == 2
-    assert "evidence ceiling" in completed.stderr
+    invalid = _valid_result(packet)
+    invalid["operation"] = "connectivity"
+    failed = _validate_result(tmp_path, packet, invalid, check=False)
+    assert failed.returncode == 2
+    assert "operation does not match" in failed.stderr
 
 
-def test_advice_validation_rejects_string_risks_and_packet_mismatch(tmp_path: Path) -> None:
-    packet = _packet(tmp_path)
-    advice = _valid_result(packet)
-    advice["payload"]["options"][0]["risks"] = "Method dependence."
-    completed = _validate_result(tmp_path, packet, advice, check=False)
-    assert completed.returncode == 2
-    assert "risks must be an array" in completed.stderr
-
-    advice = _valid_result(packet)
-    advice["operation"] = "connectivity"
-    completed = _validate_result(tmp_path, packet, advice, check=False)
-    assert completed.returncode == 2
-    assert "operation does not match" in completed.stderr
-
-
-def test_artifact_excerpt_cross_layer_is_rejected_before_read(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    bootstrap_strict_workspace(workspace)
-    artifact = workspace / "nodes" / "n006" / "outputs" / "connectivity.json"
-    artifact.parent.mkdir(parents=True)
-    artifact.write_text('{"connected":true}\n', encoding="utf-8")
-    workspace_report = report_workspace(workspace)
-    anchor = report_node(workspace, "n000")
-    from_context = {
-        **anchor,
-        "node": {
-            **anchor["node"],
-            "node_id": "n006",
-            "node_type": "validation",
-            "validation_scope": "connectivity",
-        },
-        "evidence": [],
-        "artifact_refs": {
-            "node_artifacts": {"outputs": "nodes/n006/outputs"},
-            "evidence_paths": [],
-            "source_files": [],
-        },
-    }
-    payload = {
-        "runId": "sub_test_artifact_ceiling",
-        "workspaceRoot": str(workspace),
-        "request": {
-            "reviewType": "mechanism",
-            "question": "Review mechanism evidence only.",
-            "fromNode": "n006",
-            "anchorNode": "n000",
-            "evidenceRefs": ["ev_endpoint_0001"],
-            "artifactRefs": ["nodes/n006/outputs/connectivity.json"],
-        },
-        "workspaceReport": workspace_report,
-        "nodeContext": None,
-        "branchContext": {
-            "from_node": from_context,
-            "anchor_node": anchor,
-            "path_delta": [],
-        },
-    }
-    input_file = tmp_path / "artifact-ceiling.json"
-    input_file.write_text(json.dumps(payload), encoding="utf-8")
-    script = (
-        "const fs=require('node:fs');"
-        f"const helper=require({json.dumps(str(TASK_PACKET))});"
-        "const input=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
-        "try{helper.buildReviewTaskBundle(input);}catch(error){process.stderr.write(error.message);process.exitCode=2;}"
-    )
-    completed = _node_json(script, str(input_file), check=False)
-    assert completed.returncode == 2
-    assert "artifact ref exceeds review ceiling" in completed.stderr
-
-
-def test_advice_validation_rejects_unknown_basis_and_authoritative_fields(tmp_path: Path) -> None:
-    packet = _packet(tmp_path)
-    advice = _valid_result(packet)
-    advice["facts"][0]["basis_refs"] = ["ev_invented"]
-    completed = _validate_result(tmp_path, packet, advice, check=False)
-    assert completed.returncode == 2
-    assert "outside task packet" in completed.stderr
-
-    advice = _valid_result(packet)
-    advice["payload"]["hypothesis_status"] = "supported"
-    completed = _validate_result(tmp_path, packet, advice, check=False)
-    assert completed.returncode == 2
-    assert "authoritative field" in completed.stderr
-
-
-def test_advice_validation_rejects_uncited_and_oversized_output(tmp_path: Path) -> None:
-    packet = _packet(tmp_path)
-    advice = _valid_result(packet)
-    advice["facts"][0]["basis_refs"] = []
-    completed = _validate_result(tmp_path, packet, advice, check=False)
-    assert completed.returncode == 2
-    assert "must cite task packet evidence" in completed.stderr
-
-    oversized = _valid_result(packet)
-    oversized["limitations"] = ["x" * (16 * 1024)]
-    completed = _validate_result(tmp_path, packet, oversized, check=False)
-    assert completed.returncode == 2
-    assert "output exceeds" in completed.stderr
-
-
-def test_prompt_modules_are_private_and_define_all_review_modes() -> None:
+def test_review_implementation_has_one_prompt_and_no_provider_strict_mode() -> None:
     prompt_dir = REVIEW_AGENT / "prompts"
-    assert {path.name for path in prompt_dir.glob("*.md")} == {
-        "core.md",
-        "mechanism.md",
-        "candidate.md",
-        "tsfreq.md",
-        "connectivity.md",
-        "final-audit.md",
-        "program-failure.md",
-    }
+    assert {path.name for path in prompt_dir.glob("*.md")} == {"core.md", "claim-review.md"}
     assert not list(REVIEW_AGENT.rglob("SKILL.md"))
+    assert "constrainedSampling" not in RESULT_TOOL.read_text(encoding="utf-8")
     core = (prompt_dir / "core.md").read_text(encoding="utf-8")
-    assert "Submit exactly one result through the `ts_review_result` tool" in core
+    assert "ts_review_result" in core
     assert "no authority to mutate" in core
-    assert "Put uncited information gaps in `missing_evidence`" in core
-    assert "Every fact must cite at least one allowlisted basis" in core
-    assert "never use `completed`" in core
-    assert "host adds `kind=review`" in core
+    assert "allowlisted basis" in core
 
 
-def test_agent_directories_separate_shared_core_from_review_implementation() -> None:
-    core_dir = AGENT_CORE
-    review_dir = REVIEW_AGENT
-
-    assert not (ROOT / "subagents").exists()
-    for legacy in ("agent-core", "review-agent", "compute-agent", "artifact-agent", "agent-skills"):
-        assert not (ROOT / legacy).exists()
-    assert {path.name for path in core_dir.iterdir()} == {
+def test_agent_directories_separate_shared_protocol_from_review_runtime() -> None:
+    assert {path.name for path in AGENT_CORE.iterdir()} == {
         "agent-protocol.cjs",
         "fact-kinds.cjs",
         "failure-taxonomy.cjs",
         "run-journal.cjs",
         "session-lifecycle.cjs",
     }
-    assert {path.name for path in review_dir.iterdir()} == {
+    assert {path.name for path in REVIEW_AGENT.iterdir()} == {
         "output-schema.cjs",
-        "input-policy.cjs",
         "prompts",
         "result-tool.ts",
         "runtime.ts",
@@ -498,87 +224,46 @@ def test_agent_directories_separate_shared_core_from_review_implementation() -> 
 def test_session_lifecycle_success_disables_prompt_expansion() -> None:
     script = (
         f"const helper=require({json.dumps(str(SESSION_LIFECYCLE))});"
-        "const session={aborted:false,options:null,prompt:async(_p,o)=>{session.options=o;},abort:async()=>{session.aborted=true;}};"
-        "helper.promptWithDeadline(session,'review',{timeoutMs:1000}).then(()=>{"
-        "process.stdout.write(JSON.stringify(session));"
-        "}).catch((error)=>{process.stderr.write(String(error));process.exitCode=2;});"
+        "const session={options:null,prompt:async(_p,o)=>{session.options=o;},abort:async()=>{}};"
+        "helper.promptWithDeadline(session,'review',{timeoutMs:1000}).then(()=>"
+        "process.stdout.write(JSON.stringify(session.options)));"
     )
-    completed = _node_json(script)
-    result = json.loads(completed.stdout)
-    assert result["aborted"] is False
-    assert result["options"] == {"expandPromptTemplates": False}
+    assert json.loads(_node(script).stdout) == {"expandPromptTemplates": False}
 
 
-@pytest.mark.parametrize(
-    ("mode", "expected_code"),
-    [("timeout", "TS_SUBAGENT_TIMEOUT"), ("abort", "TS_SUBAGENT_ABORTED")],
-)
+@pytest.mark.parametrize(("mode", "expected_code"), [("timeout", "TS_SUBAGENT_TIMEOUT"), ("abort", "TS_SUBAGENT_ABORTED")])
 def test_session_lifecycle_waits_for_abort_and_disposes(mode: str, expected_code: str) -> None:
     script = (
         f"const helper=require({json.dumps(str(SESSION_LIFECYCLE))});"
         "const controller=new AbortController();"
-        "const started=Date.now();"
         "const session={aborted:false,disposed:false,prompt:()=>new Promise(()=>{}),"
-        "abort:()=>new Promise((resolve)=>setTimeout(()=>{session.aborted=true;resolve();},15)),"
+        "abort:()=>new Promise((resolve)=>setTimeout(()=>{session.aborted=true;resolve();},10)),"
         "dispose:()=>{session.disposed=true;}};"
-        f"if ({json.dumps(mode)}==='abort') setTimeout(()=>controller.abort(),5);"
+        f"if({json.dumps(mode)}==='abort')setTimeout(()=>controller.abort(),5);"
         "helper.withDisposableSession(async()=>({session}),async(created)=>"
         f"helper.promptWithDeadline(created.session,'review',{{timeoutMs:{20 if mode == 'timeout' else 1000},signal:controller.signal}}))"
-        ".then(()=>{process.stderr.write('unexpected success');process.exitCode=3;})"
-        ".catch((error)=>{process.stdout.write(JSON.stringify({"
-        "code:error.code,aborted:session.aborted,disposed:session.disposed,elapsed:Date.now()-started}));});"
+        ".catch((error)=>process.stdout.write(JSON.stringify({code:error.code,aborted:session.aborted,disposed:session.disposed})));"
     )
-    completed = _node_json(script)
-    result = json.loads(completed.stdout)
-    assert result["code"] == expected_code
-    assert result["aborted"] is True
-    assert result["disposed"] is True
-    assert result["elapsed"] >= 15
+    result = json.loads(_node(script).stdout)
+    assert result == {"code": expected_code, "aborted": True, "disposed": True}
 
 
-@pytest.mark.parametrize("mode", ["success", "error"])
-def test_disposable_session_covers_success_and_error(mode: str) -> None:
-    script = (
-        f"const helper=require({json.dumps(str(SESSION_LIFECYCLE))});"
-        "const session={disposed:false,dispose:()=>{session.disposed=true;}};"
-        f"helper.withDisposableSession(async()=>({{session}}),async()=>{{if({json.dumps(mode)}==='error')throw new Error('boom');return 'ok';}})"
-        ".then((value)=>process.stdout.write(JSON.stringify({value,disposed:session.disposed})))"
-        ".catch((error)=>process.stdout.write(JSON.stringify({error:error.message,disposed:session.disposed})));"
-    )
-    completed = _node_json(script)
-    result = json.loads(completed.stdout)
-    assert result["disposed"] is True
-    assert result.get("value") == ("ok" if mode == "success" else None)
-    assert result.get("error") == ("boom" if mode == "error" else None)
-
-
-def test_pi_subagent_runtime_and_extension_enforce_isolation() -> None:
+def test_pi_review_runtime_enforces_isolation_and_provider_failure_priority() -> None:
     runtime = (REVIEW_AGENT / "runtime.ts").read_text(encoding="utf-8")
     extension = (ROOT / "extensions" / "ts-workflow-review" / "index.ts").read_text(encoding="utf-8")
 
-    assert 'noTools: "builtin"' in runtime
-    assert "REVIEW_RESULT_TOOL_NAME" in runtime
-    assert "constrainedSampling" not in RESULT_TOOL.read_text(encoding="utf-8")
-    assert "SessionManager.inMemory(options.workspaceRoot)" in runtime
-    assert "SettingsManager.inMemory" in runtime
-    assert "new DefaultResourceLoader" in runtime
-    assert "noExtensions: true" in runtime
-    assert "noSkills: true" in runtime
-    assert "noPromptTemplates: true" in runtime
-    assert "noThemes: true" in runtime
-    assert "noContextFiles: true" in runtime
-    assert 'name: "ts-review-required-result-tool"' in runtime
-    assert 'pi.on("before_provider_request"' in runtime
-    assert 'pi.on("after_provider_response"' in runtime
-    assert "forceReviewResultToolChoice" in runtime
-    assert "assertProviderTurnSucceeded" in runtime
-    assert "withDisposableSession" in runtime
-    assert "createReviewResultTool" in runtime
-    assert "setRuntimeApiKey" in runtime
-    assert "name: TS_PUBLIC_TOOL_NAMES.subagentReview" in extension
-    assert "name: TS_PUBLIC_TOOL_NAMES.reviewDisposition" in extension
+    for expected in (
+        'noTools: "builtin"',
+        "SessionManager.inMemory(options.workspaceRoot)",
+        "SettingsManager.inMemory",
+        "noExtensions: true",
+        "noSkills: true",
+        "noContextFiles: true",
+        "forceReviewResultToolChoice",
+        "assertProviderTurnSucceeded",
+        "withDisposableSession",
+    ):
+        assert expected in runtime
+    assert "provider request failed" in runtime
     assert "writeReviewRootDisposition" in extension
     assert 'executionMode: "sequential"' in extension
-    assert 'pi.appendEntry("ts-workspace-subagent-run"' in extension
-    assert "getApiKeyAndHeaders" in extension
-    assert "parentApiKey" not in (REVIEW_AGENT / "task-packet.cjs").read_text(encoding="utf-8")

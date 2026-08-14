@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TS scientific claim",
+  "type": "object",
+  "required": [
+    "claim_id",
+    "created_in_node",
+    "kind",
+    "statement",
+    "status",
+    "required_gates",
+    "evidence_refs",
+    "gate_result_refs",
+    "details",
+    "created_by_decision",
+    "created_at",
+    "history"
+  ],
+  "properties": {
+    "claim_id": {"type": "string", "pattern": "^claim_[A-Za-z0-9_.-]+$", "maxLength": 256},
+    "created_in_node": {"type": "string", "minLength": 1, "maxLength": 128},
+    "parent_claim_id": {"type": ["string", "null"], "pattern": "^claim_[A-Za-z0-9_.-]+$", "maxLength": 256},
+    "kind": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[0-9]+$", "maxLength": 256},
+    "statement": {"type": "string", "minLength": 1, "maxLength": 8000},
+    "status": {"enum": ["proposed", "supported", "contradicted", "inconclusive"]},
+    "required_gates": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 128}
+    },
+    "evidence_refs": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^ev_[A-Za-z0-9_.-]+$"}
+    },
+    "gate_result_refs": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^gr_[A-Za-z0-9_.-]+$"}
+    },
+    "details": {"type": "object"},
+    "created_by_decision": {"type": "string", "minLength": 1, "maxLength": 256},
+    "created_at": {"type": "string", "format": "date-time"},
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["node_id", "verdict", "summary", "evidence_refs", "gate_result_refs", "decision_id", "created_at"],
+        "properties": {
+          "node_id": {"type": "string", "minLength": 1},
+          "verdict": {"enum": ["supported", "contradicted", "inconclusive"]},
+          "summary": {"type": "string", "minLength": 1},
+          "evidence_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+          "gate_result_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+          "decision_id": {"type": "string", "minLength": 1},
+          "created_at": {"type": "string", "format": "date-time"}
+        },
+        "additionalProperties": false
+      }
+    }
+  },
+  "additionalProperties": false
+}

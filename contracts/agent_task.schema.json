@@ -73,23 +73,22 @@
     "evidenceSnapshotBinding": {
       "allOf": [
         {"$ref": "#/$defs/documentBinding"},
-        {"properties": {"ref": {"const": "evidence-snapshot.json"}, "schema_version": {"const": "ts-review-evidence-snapshot/1"}}}
+        {"properties": {"ref": {"const": "evidence-snapshot.json"}, "schema_version": {"const": "ts-review-evidence-snapshot/2"}}}
       ]
     },
     "providerInputBinding": {
       "allOf": [
         {"$ref": "#/$defs/documentBinding"},
-        {"properties": {"ref": {"const": "provider-input.json"}, "schema_version": {"const": "ts-review-provider-input/1"}}}
+        {"properties": {"ref": {"const": "provider-input.json"}, "schema_version": {"const": "ts-review-provider-input/2"}}}
       ]
     },
     "scope": {
       "type": "object",
-      "required": ["report_id", "node_ids", "hypothesis_id", "pathway_id"],
+      "required": ["report_id", "node_ids", "claim_refs"],
       "properties": {
         "report_id": {"type": ["string", "null"]},
         "node_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-        "hypothesis_id": {"type": ["string", "null"]},
-        "pathway_id": {"type": ["string", "null"]}
+        "claim_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
       },
       "additionalProperties": false
     }

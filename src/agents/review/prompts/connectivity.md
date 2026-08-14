@@ -1,1 +1,0 @@
-Review displacement endpoints, basin assignment, IRC evidence, structural matching, and declared stereochemical gates. Do not emit accepted-TS or pathway-success verdicts; identify the separate audit prerequisites instead.

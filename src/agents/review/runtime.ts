@@ -27,12 +27,7 @@ import {
 const SUBAGENT_DIR = dirname(fileURLToPath(import.meta.url));
 const PROMPT_DIR = resolve(SUBAGENT_DIR, "prompts");
 const REVIEW_PROMPTS = Object.freeze({
-  mechanism: "mechanism.md",
-  candidate: "candidate.md",
-  tsfreq: "tsfreq.md",
-  connectivity: "connectivity.md",
-  final_audit: "final-audit.md",
-  program_failure: "program-failure.md",
+  claim_review: "claim-review.md",
 });
 const DEFAULT_TIMEOUT_MS = 90_000;
 const MAX_TIMEOUT_MS = 180_000;
@@ -62,7 +57,7 @@ export interface ReviewRunResult {
   result: Record<string, unknown>;
   metadata: {
     run_id: string;
-    review_type: string;
+    operation: "claim_review";
     report_id: string;
     node_ids: string[];
     output_digest: string;
@@ -219,7 +214,7 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
           result,
           metadata: {
             run_id: String(options.packet.task_id),
-            review_type: String(options.packet.operation),
+            operation: "claim_review",
             report_id: String(scope.report_id || ""),
             node_ids: Array.isArray(scope.node_ids) ? scope.node_ids.map(String) : [],
             output_digest: createHash("sha256").update(JSON.stringify(result)).digest("hex"),
@@ -302,10 +297,10 @@ export function forceReviewResultToolChoice(payload: unknown): unknown {
   };
 }
 
-function loadSystemPrompt(reviewType: string): string {
-  const roleFile = REVIEW_PROMPTS[reviewType as keyof typeof REVIEW_PROMPTS];
+function loadSystemPrompt(operation: string): string {
+  const roleFile = REVIEW_PROMPTS[operation as keyof typeof REVIEW_PROMPTS];
   if (!roleFile) {
-    throw new Error(`Unsupported TS subagent review type: ${reviewType}`);
+    throw new Error(`Unsupported TS Review operation: ${operation}`);
   }
   const core = readFileSync(resolve(PROMPT_DIR, "core.md"), "utf8").trim();
   const role = readFileSync(resolve(PROMPT_DIR, roleFile), "utf8").trim();

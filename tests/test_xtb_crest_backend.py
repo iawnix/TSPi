@@ -227,8 +227,7 @@ def test_xtb_opt_freq_parse_consumes_bound_artifact_set_and_advances_collected_r
         "provenance": {
             "backend": "xtb",
             "intent_digest": sha256_json(intent),
-            "intent_schema": "ts-calculation-intent/2",
-            "validation_scope": None,
+            "intent_schema": "ts-calculation-intent/3",
             "attempt_kind": "primary",
             "recalculation_ref": None,
         },
@@ -564,8 +563,8 @@ def _workspace(tmp_path: Path) -> Path:
         workspace,
         report_ref,
         node_id="n001",
-        node_type="candidate_search",
-        scope="endpoint_conformer",
+        objective="Exercise the typed xTB and CREST adapter task matrix.",
+        tags=["candidate", "adapter-matrix"],
     )
     inputs = workspace / "nodes/n001/inputs"
     inputs.mkdir(parents=True, exist_ok=True)
@@ -620,11 +619,10 @@ def _intent(workspace: Path, backend: str, task_type: str) -> Path:
         for role, ref in sorted(input_refs.items())
     ]
     value = {
-        "schema_version": "ts-calculation-intent/2",
+        "schema_version": "ts-calculation-intent/3",
         "intent_id": intent_id,
         "node_id": "n001",
         "purpose": f"Exercise deterministic {backend} {task_type} parsing.",
-        "validation_scope": None,
         "attempt_kind": "primary",
         "recalculation_ref": None,
         "backend": backend,

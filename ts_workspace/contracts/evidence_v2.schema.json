@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TS evidence record v2",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "evidence_id",
+    "node_id",
+    "kind",
+    "evidence_tier",
+    "summary",
+    "facts",
+    "artifact_refs",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {"const": "ts-evidence/2"},
+    "evidence_id": {"type": "string", "pattern": "^ev_[A-Za-z0-9_.-]+$", "maxLength": 256},
+    "node_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "kind": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[0-9]+$", "maxLength": 256},
+    "evidence_tier": {
+      "enum": ["local_compute", "local_parse", "manual_observation", "literature", "user_provided", "hypothesis"]
+    },
+    "summary": {"type": "string", "minLength": 1, "maxLength": 8000},
+    "facts": {"type": "object"},
+    "artifact_refs": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1, "maxLength": 4096}
+    },
+    "provenance": {
+      "type": "object",
+      "required": ["producer"],
+      "properties": {
+        "producer": {"type": "string", "minLength": 1, "maxLength": 256},
+        "producer_version": {"type": ["string", "null"], "maxLength": 128},
+        "source_sha256": {"type": ["string", "null"], "pattern": "^sha256:[0-9a-f]{64}$"}
+      },
+      "additionalProperties": true
+    },
+    "supersedes_evidence_id": {"type": "string", "pattern": "^ev_[A-Za-z0-9_.-]+$", "maxLength": 256},
+    "created_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": false
+}

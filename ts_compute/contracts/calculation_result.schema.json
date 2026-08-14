@@ -34,7 +34,7 @@
       "type": "object",
       "propertyNames": {
         "not": {
-          "enum": ["claim_verdict", "accepted_ts", "accepted_ts_ref", "pathway_accepted", "strict_pathway_decision"]
+          "enum": ["acceptance_id", "accepted_ref", "audit", "claim_status", "claim_update", "claim_updates", "focus_claim_refs", "gate_verdict", "study_complete"]
         }
       }
     },

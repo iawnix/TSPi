@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TS Hypothesis Explorer</title>
+  <title>TS Research Explorer</title>
   <style>
     /* =========================================================
        Design Tokens — Linear / Vercel inspired
@@ -1142,32 +1142,32 @@
         </div>
         <div class="kv" id="jobKv"></div>
       </div>
-      <div class="section" id="mechSection">
+      <div class="section" id="researchSection">
         <div class="section-head">
-          <span class="section-title"><span class="dot" style="background:var(--purple)"></span>Mechanism</span>
+          <span class="section-title"><span class="dot" style="background:var(--purple)"></span>Research State</span>
         </div>
-        <div class="kv" id="mechKv"></div>
+        <div class="kv" id="researchKv"></div>
       </div>
       <div class="section">
         <div class="section-head">
-          <span class="section-title"><span class="dot" style="background:var(--cyan)"></span>Mechanism Analysis</span>
-          <span class="section-count" id="analysisCount">0</span>
+          <span class="section-title"><span class="dot" style="background:var(--cyan)"></span>Focus Claims</span>
+          <span class="section-count" id="claimsCount">0</span>
         </div>
-        <ul class="factlist" id="mechanismAnalysis"></ul>
+        <ul class="factlist" id="claimsList"></ul>
       </div>
       <div class="section">
         <div class="section-head">
-          <span class="section-title"><span class="dot" style="background:var(--green)"></span>Validated Facts</span>
-          <span class="section-count" id="factsCount">0</span>
+          <span class="section-title"><span class="dot" style="background:var(--green)"></span>Gate Results</span>
+          <span class="section-count" id="gatesCount">0</span>
         </div>
-        <ul class="factlist ok" id="facts"></ul>
+        <ul class="factlist ok" id="gatesList"></ul>
       </div>
       <div class="section">
         <div class="section-head">
-          <span class="section-title"><span class="dot" style="background:var(--red)"></span>Refuted</span>
-          <span class="section-count" id="refutedCount">0</span>
+          <span class="section-title"><span class="dot" style="background:var(--red)"></span>Evidence</span>
+          <span class="section-count" id="evidenceCount">0</span>
         </div>
-        <ul class="factlist err" id="refuted"></ul>
+        <ul class="factlist" id="evidenceList"></ul>
       </div>
       <div class="section">
         <div class="section-head">
@@ -1203,7 +1203,7 @@
       </div>
     </div>
     <div class="graph-wrap" id="graphWrap" tabindex="0">
-      <svg class="canvas" id="graphSvg" role="img" aria-label="TS hypothesis graph">
+      <svg class="canvas" id="graphSvg" role="img" aria-label="TS research graph">
         <!-- edges use circular endpoints (see .edge-dot) instead of arrow markers -->
         <defs></defs>
         <g id="viewport"></g>
@@ -1274,13 +1274,6 @@ const NODE_W = 240, NODE_H = 84;
 const X_GAP = 72, Y_GAP = 26;
 
 /* Node labels come from the backend. This map only selects icons. */
-const NODE_TYPE_ICONS = {
-  intake: "endpoint",
-  mechanism: "mechanism_reflection",
-  candidate_search: "candidate_generation",
-  validation: "gaussian_tsfreq_validation",
-  audit: "accepted_audit"
-};
 const STAGE_ICON_PATHS = {
   endpoint:                   '<circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15 14"/>',
   candidate_generation:       '<path d="M12 2.5l2.7 6.7 7.3 0.6-5.5 4.8 1.7 7.1L12 17.9 5.8 21.7l1.7-7.1L2 9.8l7.3-0.6z"/>',
@@ -1292,13 +1285,10 @@ const STAGE_ICON_PATHS = {
   accepted_audit:             '<path d="M9 12l2 2 4-5"/><circle cx="12" cy="12" r="9"/>',
   pathway_audit:              '<path d="M4 18l5-5 3 3 8-9"/><circle cx="4" cy="18" r="1"/><circle cx="20" cy="7" r="1"/>'
 };
-function stageInfo(nodeType, canonicalLabel, scope) {
-  if (!nodeType) return { label: "—", icon: null };
-  const fallback = nodeType.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-  let icon = NODE_TYPE_ICONS[nodeType] || null;
-  if (nodeType === "validation" && scope === "connectivity") icon = "connectivity_check";
-  if (nodeType === "audit" && scope === "pathway") icon = "pathway_audit";
-  return { label: canonicalLabel || fallback, icon };
+function stageInfo(tag, canonicalLabel) {
+  if (!tag) return { label: "Research", icon: "endpoint" };
+  const fallback = tag.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
+  return { label: canonicalLabel || fallback, icon: "endpoint" };
 }
 
 const state = {
@@ -1553,39 +1543,34 @@ function closeWsPop() {
    Left panel
    ============================================================ */
 function renderSidebars() {
-  const manifest = state.job.manifest || {};
-  const mechanism = state.job.mechanism || {};
+  const research = state.job.research || {};
   const graph = state.job.graph || {};
   const workspace = state.job.workspace || {};
-  const acceptedTs = workspace.accepted_ts || graph.accepted_ts || "";
-  const claimState = workspace.claim_state || "searching";
+  const acceptedRefs = Array.isArray(workspace.accepted_refs) ? workspace.accepted_refs.join(", ") : "";
+  const claimState = workspace.claim_state || "unfocused";
 
   renderWorkspaceChip();
   renderWorkspacePanel();
 
   const frontierNodes = Array.isArray(graph.frontier_nodes) ? graph.frontier_nodes.join(", ") : "";
   renderKv("jobKv", {
-    system:       workspace.system || manifest.system,
-    charge:       workspace.charge ?? manifest.charge,
-    multiplicity: workspace.multiplicity ?? manifest.multiplicity,
-    // Send the raw claim_state key so formatV can render it via the
-    // server-supplied workspace_state presentation (one source of truth).
+    system:       workspace.system,
     claim_state:  claimState,
-    accepted_ts:  acceptedTs,
+    accepted:     acceptedRefs,
     frontier:     frontierNodes,
     agent_runs:   graph.operational_summary?.agent_run_count ?? 0,
     agent_failures: graph.operational_summary?.agent_run_failed_count ?? 0
   });
-  renderKv("mechKv", {
-    class:      mechanism.reaction_class,
-    confidence: mechanism.reaction_class_confidence,
-    atoms:      Array.isArray(mechanism.key_atoms) ? mechanism.key_atoms.join(", ") : mechanism.key_atoms,
-    evidence:   state.job.evidence_summary?.count ?? 0
+  renderKv("researchKv", {
+    claims: Object.values(research.claim_counts || {}).reduce((a, b) => a + b, 0),
+    gates: Object.values(research.gate_counts || {}).reduce((a, b) => a + b, 0),
+    active_evidence: research.active_evidence_count ?? 0,
+    accepted: Array.isArray(research.accepted_refs) ? research.accepted_refs.length : 0
   });
-  renderList("facts", mechanism.validated_facts || [], "factsCount");
-  renderList("refuted", mechanism.refuted_hypotheses || [], "refutedCount");
-  renderList("questions", mechanism.open_questions || [], "questionsCount");
-  renderList("mechanismAnalysis", mechanism.latest_analysis || [], "analysisCount");
+  renderList("claimsList", research.focus_claims || [], "claimsCount");
+  renderList("gatesList", research.gate_lines || [], "gatesCount");
+  renderList("evidenceList", research.evidence_lines || [], "evidenceCount");
+  renderList("questions", research.open_questions || [], "questionsCount");
 }
 
 function renderKv(id, obj) {
@@ -2129,10 +2114,10 @@ function renderNode() {
   const head = document.getElementById("nodeHead");
   const statusLine = node.card_line || node.state_line || node.state_label || node.node_state || "Unknown";
   const statusColor = node.card_color || node.color || presColor("node_state", node.node_state);
-  const stageLabel = node.stage_label || stageInfo(node.stage, null, node.scope).label || node.stage;
+  const stageLabel = node.stage_label || stageInfo(node.stage, null).label || node.stage;
   head.innerHTML = node.node_id || payload.node_id ? `
     <span class="id">${escapeHtml(payload.node_id || node.node_id || "")}</span>
-    <span class="chip" data-color="${escapeHtml(statusColor)}" title="${escapeHtml(node.reason_code || node.program_outcome || "")}">${escapeHtml(statusLine)}</span>
+    <span class="chip" data-color="${escapeHtml(statusColor)}" title="${escapeHtml(node.outcome || "")}">${escapeHtml(statusLine)}</span>
     ${node.stage ? `<span class="chip no-dot" title="${escapeHtml(node.stage)}">${escapeHtml(stageLabel)}</span>` : ""}
   ` : `<span class="muted">No node selected.</span>`;
 
@@ -2206,12 +2191,11 @@ function renderNode() {
 }
 
 function renderSummary(payload, node) {
-  const hypothesis = node.objective || node.hypothesis || "";
-  const action = node.decision || "";
+  const objective = node.objective || "";
   return `<div class="summary-stack">
     <div class="summary-card primary">
       <div class="summary-title">Objective</div>
-      <div class="summary-text${hypothesis ? "" : " muted"}">${hypothesis ? escapeHtml(hypothesis) : "No node objective recorded."}</div>
+      <div class="summary-text${objective ? "" : " muted"}">${objective ? escapeHtml(objective) : "No node objective recorded."}</div>
     </div>
     <div class="summary-card">
       <div class="summary-title">Status</div>
@@ -2220,35 +2204,22 @@ function renderSummary(payload, node) {
         ${summaryRow("card_status", node.card_line || node.card_label)}
         ${summaryRow("state", node.node_state, "chip", "node_state")}
         ${summaryRow("state_line", node.state_line)}
-        ${summaryRow("stage", node.stage)}
-        ${summaryRow("node_type", node.node_type, "mono")}
-        ${summaryRow("scope", node.scope, "mono")}
-        ${summaryRow("lifecycle", node.lifecycle, "mono")}
-        ${summaryRow("program_outcome", node.program_outcome, "mono")}
-        ${summaryRow("hypothesis_status", node.hypothesis_status, "mono")}
-        ${summaryRow("audit_status", node.audit_status, "mono")}
-        ${summaryRow("attempt_kind", node.attempt_kind, "mono")}
-        ${node.recalculation_ref ? summaryRow("recalculation_ref", JSON.stringify(node.recalculation_ref), "mono") : ""}
+        ${summaryRow("tags", Array.isArray(node.tags) ? node.tags.join(", ") : "", "mono")}
+        ${summaryRow("outcome", node.outcome, "mono")}
+        ${summaryRow("claim_refs", Array.isArray(node.claim_refs) ? node.claim_refs.join(", ") : "", "mono")}
+        ${summaryRow("gate_result_refs", Array.isArray(node.gate_result_refs) ? node.gate_result_refs.join(", ") : "", "mono")}
+        ${summaryRow("evidence_refs", Array.isArray(node.evidence_refs) ? node.evidence_refs.join(", ") : "", "mono")}
         ${node.calculation_count ? summaryRow("calculation_count", node.calculation_count, "mono") : ""}
         ${node.calculation_state ? summaryRow("calculation_state", node.calculation_state, "mono") : ""}
         ${node.calculation_program_status ? summaryRow("calculation_program_status", node.calculation_program_status, "mono") : ""}
         ${node.agent_run_count ? summaryRow("agent_run_count", node.agent_run_count, "mono") : ""}
         ${node.agent_run_status ? summaryRow("agent_run_status", node.agent_run_status, "mono") : ""}
         ${node.agent_run_role ? summaryRow("agent_run_role", node.agent_run_role, "mono") : ""}
-        ${summaryRow("reason_code", node.reason_code, "mono")}
         ${summaryRow("parent", node.parent_id, "mono")}
-        ${Array.isArray(node.input_refs) && node.input_refs.length ? summaryRow("input_refs", node.input_refs.join(", "), "mono") : ""}
-        ${Array.isArray(node.branch_event_ids) && node.branch_event_ids.length ? summaryRow("branch_events", node.branch_event_ids.join(", "), "mono") : ""}
-        ${Array.isArray(node.generated_from_branch_event_ids) && node.generated_from_branch_event_ids.length ? summaryRow("generated_from_branch", node.generated_from_branch_event_ids.join(", "), "mono") : ""}
       </div>
     </div>
     ${renderCalculations(node.calculations)}
     ${renderAgentRuns(node.agent_runs)}
-    ${renderBranchOrigin(node)}
-    <div class="summary-card">
-      <div class="summary-title">Latest Action</div>
-      <div class="summary-text${action ? " action-token" : " muted"}">${action ? escapeHtml(action) : "No latest action recorded."}</div>
-    </div>
   </div>`;
 }
 
@@ -2260,12 +2231,8 @@ function renderCalculations(calculations) {
       ${summaryRow("intent", calc.intent_id, "mono")}
       ${summaryRow("backend", calc.backend, "mono")}
       ${summaryRow("task_type", calc.task_type, "mono")}
-      ${summaryRow("evidence_layer", calc.evidence_layer, "mono")}
-      ${summaryRow("validation_scope", calc.validation_scope, "mono")}
-      ${summaryRow("attempt_kind", calc.attempt_kind, "mono")}
       ${summaryRow("storage", calc.storage, "mono")}
       ${summaryRow("remote_authority", calc.remote_authority, "mono")}
-      ${calc.recalculation_ref ? summaryRow("recalculation_ref", JSON.stringify(calc.recalculation_ref), "mono") : ""}
       ${summaryRow("state", calc.state, "mono")}
       ${summaryRow("program_status", calc.program_status, "mono")}
       ${summaryRow("error_class", calc.error_class, "mono")}
@@ -2313,26 +2280,11 @@ function renderBranchOrigin(node) {
 }
 
 function renderRationale(payload) {
-  const hypothesis = payload.markdown?.hypothesis || "";
-  const decision = payload.markdown?.decision_card || "";
-  if (!hypothesis && !decision) {
-    return emptyBlock("No rationale.", "This node has no hypothesis or decision card markdown.");
+  const decision = payload.markdown?.decision || "";
+  if (!decision) {
+    return emptyBlock("No rationale.", "This node has no decision markdown.");
   }
-  const parts = [];
-  const lint = payload.rationale_lint || {};
-  if (lint.status && lint.status !== "complete" && lint.status !== "imported") {
-    parts.push(`<div class="summary-card">
-      <div class="summary-title">Rationale Status</div>
-      <div class="summary-text">${escapeHtml(lint.summary || "Pre-execution rationale is incomplete.")}</div>
-    </div>`);
-  }
-  if (hypothesis) {
-    parts.push(`<section class="md"><h2>Hypothesis Detail</h2>${renderMarkdown(hypothesis)}</section>`);
-  }
-  if (decision) {
-    parts.push(`<section class="md"><h2>Decision Card</h2>${renderMarkdown(decision)}</section>`);
-  }
-  return `<div class="summary-stack">${parts.join("")}</div>`;
+  return `<div class="summary-stack"><section class="md"><h2>Decision Rationale</h2>${renderMarkdown(decision)}</section></div>`;
 }
 
 function chipFor(group, value) {
@@ -2380,14 +2332,14 @@ function renderNoWorkspace() {
   state.selected = null;
   state.nodePayload = null;
   document.getElementById("jobKv").innerHTML = "";
-  document.getElementById("mechKv").innerHTML = "";
-  document.getElementById("mechanismAnalysis").innerHTML = "";
-  document.getElementById("facts").innerHTML = "";
-  document.getElementById("refuted").innerHTML = "";
+  document.getElementById("researchKv").innerHTML = "";
+  document.getElementById("claimsList").innerHTML = "";
+  document.getElementById("gatesList").innerHTML = "";
+  document.getElementById("evidenceList").innerHTML = "";
   document.getElementById("questions").innerHTML = "";
-  document.getElementById("analysisCount").textContent = "0";
-  document.getElementById("factsCount").textContent = "0";
-  document.getElementById("refutedCount").textContent = "0";
+  document.getElementById("claimsCount").textContent = "0";
+  document.getElementById("gatesCount").textContent = "0";
+  document.getElementById("evidenceCount").textContent = "0";
   document.getElementById("questionsCount").textContent = "0";
   document.getElementById("graphStats").textContent = "No workspace";
   document.getElementById("graphLegend").innerHTML = "";

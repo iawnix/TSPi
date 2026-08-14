@@ -63,9 +63,7 @@ export function createReviewResultTool(
 }
 
 export function createReviewResultSchema(evidenceSnapshot: Record<string, unknown>) {
-  const allowedLayers = stringList(evidenceSnapshot.evidence_ceiling, "evidence_snapshot.evidence_ceiling");
   const allowedBasisRefs = stringList(evidenceSnapshot.basis_allowlist, "evidence_snapshot.basis_allowlist");
-  if (!allowedLayers.length) throw new Error("review task requires a non-empty evidence ceiling");
 
   const StrictObject = (properties: Record<string, any>) =>
     Type.Object(properties, { additionalProperties: false });
@@ -78,7 +76,6 @@ export function createReviewResultSchema(evidenceSnapshot: Record<string, unknow
     outcome: StringEnum(["success", "partial", "failure", "not_run"] as const),
     summary: Type.String({ minLength: 1, maxLength: 4000 }),
     facts: Type.Array(StrictObject({
-      layer: StringEnum(allowedLayers as [string, ...string[]]),
       statement: Type.String({ minLength: 1, maxLength: 2000 }),
       status: StringEnum(["observed", "supported", "contradicted", "uncertain"] as const),
       basis_refs: allowedBasisRefs.length

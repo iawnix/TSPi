@@ -208,7 +208,6 @@ function buildDeterministicReport(value, task, actions) {
     scope: task.scope,
     facts: requiredAction ? [{
       kind: factKinds[task.operation],
-      layer: null,
       statement: `Typed ${task.operation} action returned state ${state || "unknown"}.`,
       status: status === "unknown" ? "uncertain" : "observed",
       basis_refs: actionRef ? [actionRef] : [],

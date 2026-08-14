@@ -260,7 +260,7 @@ def test_real_pi_review_child_session_uses_only_result_tool(tmp_path: Path) -> N
     assert result["result"]["task_id"] == "agent_review_001"
     assert result["result"]["scope"]["node_ids"] == ["n000"]
     assert result["result"]["provenance"] == {"source": "bounded_task_packet"}
-    assert result["metadata"]["review_type"] == "mechanism"
+    assert result["metadata"]["operation"] == "claim_review"
     assert len(requests) == 1
     assert [tool["function"]["name"] for tool in requests[0]["tools"]] == ["ts_review_result"]
     assert requests[0]["tools"][0]["function"]["strict"] is False
@@ -526,8 +526,8 @@ def test_real_pi_public_compute_prepare_uses_canonical_cli_result(
         workspace,
         report_ref,
         node_id="n001",
-        node_type="validation",
-        scope="tsfreq",
+        objective="Prepare the Root-selected Gaussian TS/Freq calculation.",
+        tags=["gaussian", "validation"],
     )
     input_ref = "nodes/n001/inputs/candidate.gjf"
     input_path = workspace / input_ref
@@ -643,7 +643,7 @@ allowed_queues = ["batch"]
     prepared_intents = list((workspace / "nodes/n001/attempts").glob("*/intent.json"))
     assert len(prepared_intents) == 1
     generated_intent = json.loads(prepared_intents[0].read_text(encoding="utf-8"))
-    assert generated_intent["validation_scope"] == "tsfreq"
+    assert "validation_scope" not in generated_intent
     assert generated_intent["input_refs"] == {"gjf": input_ref}
     assert generated_intent["input_bindings"][0]["artifact_id"] == input_artifact["artifact_id"]
     assert generated_intent["expected_artifacts"] == [
@@ -687,7 +687,11 @@ def test_real_pi_public_subagent_emits_ui_lifecycle_updates(tmp_path: Path, outc
     responses = [
         _tool_call_chunks(
             "ts_subagent_review",
-            {"reviewType": "mechanism", "question": "Review the bounded mechanism evidence.", "nodeId": "n000"},
+            {
+                "targetClaimRef": "claim_reaction_0001",
+                "question": "Review the bounded claim evidence.",
+                "nodeIds": ["n000"],
+            },
         ),
         child_response,
         *([child_response] if outcome == "failure" else []),
@@ -723,7 +727,7 @@ def test_real_pi_public_subagent_emits_ui_lifecycle_updates(tmp_path: Path, outc
             ],
             cwd=workspace,
             env=env,
-            command={"id": "lifecycle", "type": "prompt", "message": "Run the bounded mechanism review now."},
+            command={"id": "lifecycle", "type": "prompt", "message": "Run the bounded claim review now."},
             notification_prefix='"type":"agent_end"',
             timeout=45,
         )
@@ -807,7 +811,11 @@ def test_real_pi_public_review_journals_provider_failure_without_invalid_output(
     responses = [
         _tool_call_chunks(
             "ts_subagent_review",
-            {"reviewType": "mechanism", "question": "Review the bounded mechanism evidence.", "nodeId": "n000"},
+            {
+                "targetClaimRef": "claim_reaction_0001",
+                "question": "Review the bounded claim evidence.",
+                "nodeIds": ["n000"],
+            },
         ),
         _HttpErrorResponse(
             status=502,
@@ -845,7 +853,7 @@ def test_real_pi_public_review_journals_provider_failure_without_invalid_output(
             ],
             cwd=workspace,
             env=env,
-            command={"id": "provider-failure", "type": "prompt", "message": "Run the bounded mechanism review now."},
+            command={"id": "provider-failure", "type": "prompt", "message": "Run the bounded claim review now."},
             notification_prefix='"type":"agent_end"',
             timeout=45,
         )
@@ -1139,8 +1147,7 @@ def _render_result_chunks() -> list[dict[str, object]]:
     scope = {
         "report_id": "rep_recording_001",
         "node_ids": ["n000"],
-        "hypothesis_id": None,
-        "pathway_id": None,
+        "claim_refs": [],
     }
     report = {
         "schema_version": "ts-agent-result/1",
@@ -1170,8 +1177,7 @@ def _report_result_chunks() -> list[dict[str, object]]:
     scope = {
         "report_id": "rep_report_001",
         "node_ids": [],
-        "hypothesis_id": None,
-        "pathway_id": None,
+        "claim_refs": [],
     }
     report = {
         "schema_version": "ts-agent-result/1",
@@ -1263,8 +1269,7 @@ def _compute_result_chunks() -> list[dict[str, object]]:
     scope = {
         "report_id": "rep_compute_001",
         "node_ids": ["n000"],
-        "hypothesis_id": None,
-        "pathway_id": None,
+        "claim_refs": [],
     }
     report = {
         "schema_version": "ts-agent-result/1",
@@ -1278,7 +1283,6 @@ def _compute_result_chunks() -> list[dict[str, object]]:
         "facts": [
             {
                 "kind": "compute_preparation",
-                "layer": None,
                 "statement": "The calculation intent was prepared but not executed.",
                 "status": "observed",
                 "basis_refs": [artifact_ref],

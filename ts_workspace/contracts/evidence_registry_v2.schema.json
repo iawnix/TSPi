@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TS evidence registry v2",
+  "type": "object",
+  "required": ["schema_version", "evidence", "events"],
+  "properties": {
+    "schema_version": {"const": "ts-evidence-registry/2"},
+    "evidence": {"type": "array", "items": {"$ref": "evidence_v2.schema.json"}},
+    "events": {"type": "array", "items": {"$ref": "evidence_event.schema.json"}}
+  },
+  "additionalProperties": false
+}

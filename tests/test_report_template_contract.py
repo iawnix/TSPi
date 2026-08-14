@@ -9,29 +9,27 @@ TEMPLATE = SKILL_ROOT / "assets" / "templates" / "ts_final_report.md"
 CONTRACT = SKILL_ROOT / "references" / "report_template.md"
 
 
-def test_report_template_contains_required_evidence_layers() -> None:
+def test_report_template_contains_required_v3_sections() -> None:
     text = TEMPLATE.read_text(encoding="utf-8")
     for phrase in [
-        "Executive Verdict",
-        "Reaction And Hypothesis Scope",
+        "Executive Status",
+        "Scientific Claims",
         "Computational Protocol",
-        "Search Tree Summary",
-        "Candidate Generation Evidence",
-        "TS/Freq Validation",
-        "Connectivity / IRC Validation",
-        "Accepted-TS Audit",
-        "Pathway Audit",
-        "Energy Profile",
-        "Artifact And Evidence Appendix",
+        "Deterministic Gate Results",
+        "Connectivity And Endpoints",
+        "Research Nodes",
+        "Accepted Artifacts",
+        "Evidence Appendix",
+        "Operational Follow-Up",
     ]:
         assert phrase in text
 
 
 def test_report_template_contract_keeps_acceptance_gates_explicit() -> None:
     text = CONTRACT.read_text(encoding="utf-8")
-    assert "Minimum Acceptance Gates" in text
-    assert "tsfreq_gate" in text
-    assert "connectivity_gate" in text
-    assert "audit/transition_state" in text
-    assert "accepted artifact" in text
-    assert "pathway_not_accepted" in text
+    assert "accepted-ts/2" in text
+    assert "TS/Freq" in text
+    assert "connectivity Gate results" in text
+    assert "accepted-pathway/1" in text
+    assert "Node tag" in text
+    assert "advisory Review" in text

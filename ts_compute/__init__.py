@@ -2,6 +2,7 @@
 
 from .contracts import ComputeContractError
 from .artifacts import list_calculation_artifacts
+from .capabilities import calculation_capabilities
 from .control import (
     cancel_calculation,
     calculation_status,
@@ -19,6 +20,7 @@ __all__ = [
     "cancel_calculation",
     "calculation_status",
     "calculation_tail",
+    "calculation_capabilities",
     "collect_calculation",
     "create_calculation_intent",
     "list_calculation_artifacts",

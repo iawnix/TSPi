@@ -80,9 +80,12 @@ def _make_handler(state_dir: Path):
                 elif path == "/api/tree":
                     row = _workspace_row(state_dir, None)
                     self._send_json(explorer_graph_payload(row["source_root"], label=row.get("label")))
-                elif path == "/api/mechanism":
+                elif path == "/api/claims":
                     row = _workspace_row(state_dir, None)
-                    self._send_json(_read_json(row, "hypotheses.json"))
+                    self._send_json(_read_json(row, "claims.json"))
+                elif path == "/api/gates":
+                    row = _workspace_row(state_dir, None)
+                    self._send_json(_read_json(row, "gate_results.json"))
                 elif path == "/api/evidence":
                     row = _workspace_row(state_dir, None)
                     self._send_json(_read_json(row, "evidence_registry.json"))
@@ -181,8 +184,10 @@ def _workspace_route(row: dict[str, Any], rest: str, query: dict[str, list[str]]
         return explorer_job_payload(source_root, label=label, workspace=row)
     if rest == "tree":
         return explorer_graph_payload(source_root, label=label)
-    if rest == "mechanism":
-        return _read_json(row, "hypotheses.json")
+    if rest == "claims":
+        return _read_json(row, "claims.json")
+    if rest == "gates":
+        return _read_json(row, "gate_results.json")
     if rest == "evidence":
         return _read_json(row, "evidence_registry.json")
     if rest == "file":

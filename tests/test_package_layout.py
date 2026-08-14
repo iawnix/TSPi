@@ -54,9 +54,6 @@ EXPECTED_FILES = [
     "ts_web/static/*.html",
     "ts_workspace/*.py",
     "ts_workspace/contracts/*.json",
-    "ts_workspace/finalizers/*.py",
-    "ts_workspace/readers/*.py",
-    "ts_workspace/validators/*.py",
 ]
 
 
@@ -73,7 +70,8 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
 def test_public_skill_uses_nested_pi_skill_layout() -> None:
     assert (SKILL_ROOT / "SKILL.md").is_file()
     assert (SKILL_ROOT / "agents" / "openai.yaml").is_file()
-    assert (SKILL_ROOT / "references" / "research_node_ontology.md").is_file()
+    assert (SKILL_ROOT / "references" / "state_model.md").is_file()
+    assert not (SKILL_ROOT / "references" / "research_node_ontology.md").exists()
     assert (SKILL_ROOT / "assets" / "templates" / "ts_final_report.md").is_file()
     assert not (ROOT / "SKILL.md").exists()
     assert not (ROOT / "references").exists()
@@ -96,7 +94,10 @@ def test_agent_sources_have_explicit_ownership_boundaries() -> None:
     assert (AGENTS_ROOT / "artifacts" / "policy-loader.cjs").is_file()
     assert (AGENTS_ROOT / "artifacts" / "policy.md").is_file()
     assert (AGENTS_ROOT / "artifacts" / "roles" / "report.md").is_file()
-    assert (ROOT / "ts_workspace" / "evidence_lifecycle.py").is_file()
+    assert (ROOT / "ts_workspace" / "engine_v3.py").is_file()
+    assert (ROOT / "ts_workspace" / "migrate_v2.py").is_file()
+    assert not (ROOT / "ts_workspace" / "engine.py").exists()
+    assert not list((ROOT / "ts_workspace" / "validators").glob("*.py"))
     for legacy in ("agent-core", "review-agent", "compute-agent", "artifact-agent", "agent-skills"):
         assert not (ROOT / legacy).exists()
 

@@ -8,6 +8,7 @@ import sys
 from typing import Any
 
 from .artifacts import list_calculation_artifacts
+from .capabilities import calculation_capabilities
 from .contracts import ComputeContractError
 from .control import (
     cancel_calculation,
@@ -39,6 +40,9 @@ def main(argv: list[str] | None = None) -> int:
     list_artifacts = sub.add_parser("list-artifacts")
     list_artifacts.add_argument("--root", required=True)
     list_artifacts.add_argument("--node-id")
+
+    capabilities = sub.add_parser("capabilities")
+    capabilities.add_argument("--root")
 
     preflight = sub.add_parser("preflight")
     preflight.add_argument("--root", required=True)
@@ -83,6 +87,8 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
+    if args.command == "capabilities":
+        return calculation_capabilities()
     if args.command == "remote-diagnostic":
         return diagnose_remote(args.mode, profile_name=args.profile)
     if args.command == "create-intent":

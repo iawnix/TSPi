@@ -235,7 +235,7 @@ export default function (pi: ExtensionAPI) {
     promptGuidelines: [
       "Before prepare, call ts_workspace_context mode=artifacts to discover logical calculation artifact IDs and compatible input roles.",
       "For prepare, bind every backend input role with inputArtifacts; the deterministic host resolves and freezes paths and hashes, then creates the intent ID, expected artifacts, and remote directory.",
-      "Treat subagent results as program and parser facts, not registered evidence, claim_verdict, accepted TS, or pathway acceptance.",
+      "Treat subagent results as program and parser facts, not registered Evidence, Claim status, Gate verdict, or acceptance.",
       "Use inspect for changed or terminal jobs instead of polling unchanged work every turn.",
       "Use submit or cancel only for the pre-bound current intent, and never retry an ambiguous control result.",
     ],
@@ -312,8 +312,7 @@ export default function (pi: ExtensionAPI) {
         scope: {
           report_id: typeof workspaceReport.report_id === "string" ? workspaceReport.report_id : null,
           node_ids: [request.nodeId],
-          hypothesis_id: typeof focus.focus_hypothesis_id === "string" ? focus.focus_hypothesis_id : null,
-          pathway_id: typeof focus.focus_pathway_id === "string" ? focus.focus_pathway_id : null,
+          claim_refs: Array.isArray(focus.focus_claim_refs) ? focus.focus_claim_refs : [],
         },
         inputs: {
           intent_id: request.intentId || null,

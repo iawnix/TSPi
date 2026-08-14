@@ -57,7 +57,7 @@ def test_node_agent_run_changes_only_operational_revision(tmp_path: Path) -> Non
     node = next(row for row in graph["nodes"] if row["id"] == "n000")
     assert node["agent_run_count"] == 1
     assert node["agent_run_status"] == "completed"
-    assert graph["evidence_summary"]["count"] == before["evidence_count"]
+    assert graph["evidence_summary"]["total"] == before["evidence_count"]
 
 
 @pytest.mark.parametrize("disposition", ["accepted", "partially_accepted", "rejected", "deferred"])
@@ -118,11 +118,11 @@ def test_pending_review_disposition_blocks_validate_and_apply(tmp_path: Path) ->
     )
     report = report_workspace(workspace)
     decision = {
-        "schema_version": "ts-decision/2",
+        "schema_version": "ts-decision/3",
         "decision_id": "dec_after_review_001",
         "action": "update_workspace",
         "rationale": "Exercise the pending Review response gate.",
-        "evidence_refs": [],
+        "basis_refs": [],
         "report_ref": {"report_id": report["report_id"], "workspace_root": str(workspace)},
         "base_revision": report["workspace_revision"],
         "payload": {"append_provenance": {"source": "review-disposition-test"}},
@@ -347,41 +347,46 @@ def _task_packet(
     node_ids: list[str],
 ) -> tuple[dict[str, object], dict[str, object]]:
     role = "review" if node_ids else "report"
-    scope = {"report_id": "rep_001", "node_ids": node_ids, "hypothesis_id": None, "pathway_id": None}
+    scope = {"report_id": "rep_001", "node_ids": node_ids, "claim_refs": ["claim_journal_001"] if node_ids else []}
     documents: dict[str, object] = {}
     inputs: dict[str, object] = {"basis_allowlist": []}
     if role == "review":
         evidence_snapshot = {
-            "schema_version": "ts-review-evidence-snapshot/1",
+            "schema_version": "ts-review-evidence-snapshot/2",
             "task_id": task_id,
-            "operation": "mechanism",
+            "operation": "claim_review",
             "scope": scope,
-            "context": {"workspace": "bounded", "node": "bounded", "backtrack": None},
+            "target_claim_ref": "claim_journal_001",
+            "workspace_revision": "sha256:" + "1" * 64,
+            "claims": [{"claim_id": "claim_journal_001"}],
+            "gate_results": [],
             "evidence": [],
+            "nodes": [],
             "artifact_excerpts": [],
-            "basis_allowlist": [],
-            "evidence_ceiling": ["mechanism"],
+            "basis_allowlist": ["claim_journal_001"],
         }
         provider_input = {
-            "schema_version": "ts-review-provider-input/1",
+            "schema_version": "ts-review-provider-input/2",
             "task_id": task_id,
-            "operation": "mechanism",
-            "objective": "Review the bounded mechanism evidence.",
+            "operation": "claim_review",
+            "objective": "Review the bounded Claim evidence.",
             "scope": scope,
             "workspace_revision": "sha256:" + "1" * 64,
-            "context": evidence_snapshot["context"],
+            "target_claim_ref": "claim_journal_001",
+            "claims": [{"claim_id": "claim_journal_001"}],
+            "gate_results": [],
             "evidence": [],
+            "nodes": [],
             "artifact_excerpts": [],
-            "basis_allowlist": [],
-            "evidence_ceiling": ["mechanism"],
+            "basis_allowlist": ["claim_journal_001"],
         }
         documents = {"evidence_snapshot": evidence_snapshot, "provider_input": provider_input}
         inputs = {
             "evidence_snapshot": _document_binding(
-                "evidence-snapshot.json", "ts-review-evidence-snapshot/1", evidence_snapshot
+                "evidence-snapshot.json", "ts-review-evidence-snapshot/2", evidence_snapshot
             ),
             "provider_input": _document_binding(
-                "provider-input.json", "ts-review-provider-input/1", provider_input
+                "provider-input.json", "ts-review-provider-input/2", provider_input
             ),
         }
     task = {
@@ -389,8 +394,8 @@ def _task_packet(
         "task_id": task_id,
         "role": role,
         "authority": "advisory" if role == "review" else "operational",
-        "operation": "mechanism" if role == "review" else "build",
-        "objective": "Review the bounded mechanism evidence." if role == "review" else "Build the bounded report.",
+        "operation": "claim_review" if role == "review" else "build",
+        "objective": "Review the bounded Claim evidence." if role == "review" else "Build the bounded report.",
         "workspace": {"root": str(workspace), "report_id": "rep_001", "revision": "sha256:" + "1" * 64},
         "scope": scope,
         "inputs": inputs,

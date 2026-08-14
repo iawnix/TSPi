@@ -1,9 +1,10 @@
 """Writable control plane for transition-state workspaces."""
 
-from .engine import (
+from .engine_v3 import (
+    build_review_snapshot,
     end_node,
     init_workspace,
-    report_branch_context,
+    report_lineage_context,
     report_node,
     report_workspace,
     snapshot_report,
@@ -13,14 +14,15 @@ from .engine import (
     validate_workspace,
 )
 from .identity import ensure_workspace_identity, read_workspace_identity, workspace_id
-from .validators.decision import ContractError, validate_decision
+from .decision_validator_v3 import ContractError, validate_decision
 
 __all__ = [
     "ContractError",
+    "build_review_snapshot",
     "end_node",
     "ensure_workspace_identity",
     "init_workspace",
-    "report_branch_context",
+    "report_lineage_context",
     "report_node",
     "report_workspace",
     "read_workspace_identity",

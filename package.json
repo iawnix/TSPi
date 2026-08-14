@@ -1,6 +1,6 @@
 {
   "name": "@iawnix/ts-agent",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "Native Pi package for evidence-driven transition-state research with isolated operators.",
@@ -62,10 +62,7 @@
     "ts_web/*.py",
     "ts_web/static/*.html",
     "ts_workspace/*.py",
-    "ts_workspace/contracts/*.json",
-    "ts_workspace/finalizers/*.py",
-    "ts_workspace/readers/*.py",
-    "ts_workspace/validators/*.py"
+    "ts_workspace/contracts/*.json"
   ],
   "engines": {
     "node": ">=22.19.0"

@@ -14,7 +14,7 @@ from ts_workspace import (
     validate_workspace,
 )
 from ts_workspace.identity import IDENTITY_REF, WorkspaceIdentityError
-from ts_workspace.validators.decision import ContractError
+from ts_workspace import ContractError
 
 
 def test_initialized_workspace_has_stable_reported_identity(tmp_path: Path) -> None:
@@ -59,7 +59,7 @@ def test_identity_creation_does_not_change_scientific_or_operational_revision(tm
     assert after["operational_revision"] == before["operational_revision"]
 
 
-def test_missing_identity_is_legacy_warning(tmp_path: Path) -> None:
+def test_missing_identity_is_a_non_scientific_warning(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     bootstrap_strict_workspace(workspace)
     (workspace / IDENTITY_REF).unlink()
@@ -115,11 +115,13 @@ def test_force_reinitialize_refuses_symlinked_identity_directory_before_clearing
     external.mkdir()
     identity_dir.symlink_to(external, target_is_directory=True)
     decision = {
-        "schema_version": "ts-decision/2",
+        "schema_version": "ts-decision/3",
         "decision_id": "dec_force_symlink_guard",
         "action": "init_workspace",
         "rationale": "A force reinitialize must not follow an external identity directory.",
-        "evidence_refs": [],
+        "basis_refs": [],
+        "report_ref": None,
+        "base_revision": None,
         "payload": {},
     }
 

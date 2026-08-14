@@ -1,0 +1,18 @@
+{
+  "schema_version": "ts-decision/3",
+  "decision_id": "${DECISION_ID}",
+  "action": "update_workspace",
+  "rationale": "Bind an immutable operation record to its owning node.",
+  "basis_refs": ["${OPERATION_REF}"],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
+  "base_revision": "${BASE_REVISION}",
+  "payload": {
+    "link_operation": {
+      "node_id": "${NODE_ID}",
+      "operation_ref": "${OPERATION_REF}"
+    }
+  }
+}

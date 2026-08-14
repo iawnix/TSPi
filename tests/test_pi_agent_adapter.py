@@ -4,8 +4,8 @@ import json
 import subprocess
 from pathlib import Path
 
-from ts_workspace import report_branch_context, report_node, report_workspace
-from strict_helpers import HYPOTHESIS_ID, bootstrap_strict_workspace, end_research_node, start_research_node
+from ts_workspace import report_lineage_context, report_node, report_workspace
+from strict_helpers import CLAIM_ID, bootstrap_strict_workspace, end_research_node, start_research_node
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,7 +22,7 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
 
     assert "pi-package" in manifest["keywords"]
     assert manifest["name"] == "@iawnix/ts-agent"
-    assert manifest["version"] == "0.4.0"
+    assert manifest["version"] == "0.5.0"
     assert manifest["private"] is True
     assert manifest["pi"]["skills"] == ["./skills/transition-state-workflow"]
     assert manifest["pi"]["extensions"] == [
@@ -53,6 +53,8 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
     assert '"artifacts"' in extension_source
     assert 'runComputeJson(pi, "list-artifacts"' in extension_source
     assert "mode=artifacts" in extension_source
+    assert 'runComputeJson(pi, "capabilities"' in extension_source
+    assert "mode=capabilities" in extension_source
 
 
 def test_public_tool_catalog_separates_workspace_subagent_and_remote_execution() -> None:
@@ -101,17 +103,15 @@ def test_pi_documentation_matches_loaded_extensions_and_tool_boundary() -> None:
     maintainer = (ROOT / "docs" / "MAINTAINER_GUIDE.md").read_text(encoding="utf-8")
 
     assert "Pi `>=0.81.1 <1.0.0`" in readme
-    assert "extensions/ts-workflow-review" in readme
-    assert "extensions/ts-workflow-artifacts" in readme
     assert "`ts_workspace_decision_draft`" in readme
     assert "`ts_workspace_decision_validate`" in readme
     assert "`ts_workspace_decision_apply`" in readme
     assert "`ts_subagent_review`" in readme
     assert "`ts_review_disposition`" in readme
     assert "run `validate_decision`, `start_node`" not in readme
-    assert adapter.count("-e \"$TS_AGENT_SKILL_ROOT/extensions/") == 5
-    assert 'pi --skill "$TS_AGENT_SKILL_ROOT/skills/transition-state-workflow"' in adapter
-    assert "temporary\nnon-OAuth API key" in adapter
+    assert "one Root Skill and five extensions" in adapter
+    assert "fresh child session with exactly one" in adapter
+    assert "Provider failure takes precedence over output-contract failure" in readme
     assert "extensions/ts-workflow-review" in maintainer
     assert "extensions/ts-workflow-artifacts" in maintainer
 
@@ -134,13 +134,11 @@ def test_pi_context_summary_from_report_workspace(tmp_path: Path) -> None:
     payload = json.loads(completed.stdout)
 
     assert "TS workspace context:" in payload["summary"]
-    assert f"focus_hypothesis: {HYPOTHESIS_ID}" in payload["summary"]
-    assert "required_next_evidence:" in payload["summary"]
+    assert f"focus_claims: {CLAIM_ID}/inconclusive" in payload["summary"]
     assert "operational_revision:" in payload["summary"]
     assert f"compute_workspace_id: {report['workspace_id']}" in payload["summary"]
-    assert "do not edit workspace state files by hand" in payload["summary"]
+    assert "do not edit canonical state files by hand" in payload["summary"]
     assert "scripts/ts_workspace.py" not in payload["summary"]
-    assert "explicit TSAgentSkill root" in payload["summary"]
     assert "ts_workspace_context/ts_workspace_decision_draft/ts_workspace_decision_validate/ts_workspace_decision_apply" in payload["summary"]
     assert payload["details"]["workspaceRoot"] == str(workspace)
     assert payload["details"]["workspaceId"] == report["workspace_id"]
@@ -152,7 +150,7 @@ def test_pi_context_summary_from_report_workspace(tmp_path: Path) -> None:
     assert "unresolved_controls=0" in payload["summary"]
     assert "ambiguous_submissions=0" in payload["summary"]
     assert "pending_review_responses=0" in payload["summary"]
-    assert payload["details"]["focusHypothesisId"] == HYPOTHESIS_ID
+    assert payload["details"]["focusClaimRefs"] == [CLAIM_ID]
     assert payload["details"]["valid"] is True
 
 
@@ -303,8 +301,8 @@ def test_historical_node_and_backtrack_context_are_compact_and_explicit(tmp_path
         workspace,
         report_ref,
         node_id="n001",
-        node_type="candidate_search",
-        scope="transition_state",
+        objective="Generate and inspect one candidate.",
+        tags=["candidate"],
     )
     end_research_node(workspace, report_ref, node_id="n001")
     start_research_node(
@@ -312,29 +310,28 @@ def test_historical_node_and_backtrack_context_are_compact_and_explicit(tmp_path
         report_ref,
         node_id="n002",
         parent_node="n001",
-        node_type="validation",
-        scope="connectivity",
-        prediction_ids=["pred_conn_001"],
+        objective="Test connectivity for the current Claim.",
+        tags=["connectivity"],
     )
     end_research_node(workspace, report_ref, node_id="n002", program_outcome="failure")
 
     node_context = report_node(workspace, "n001")
-    branch_context = report_branch_context(workspace, "n002", "n001")
+    lineage_context = report_lineage_context(workspace, "n002", "n001")
 
     assert node_context["node"]["node_id"] == "n001"
-    assert node_context["lineage"] == ["n000", "n_hypothesis", "n001"]
+    assert node_context["lineage"] == ["n000", "n001"]
     assert node_context["agent_runs"] == []
     assert "closure" not in node_context["node"]
-    assert branch_context["anchor_node"]["node"]["node_id"] == "n001"
-    assert [item["node_id"] for item in branch_context["path_delta"]] == ["n002"]
+    assert lineage_context["anchor_node"]["node"]["node_id"] == "n001"
+    assert [item["node_id"] for item in lineage_context["path_delta"]] == ["n002"]
 
-    context_file = tmp_path / "branch_context.json"
-    context_file.write_text(json.dumps(branch_context), encoding="utf-8")
+    context_file = tmp_path / "lineage_context.json"
+    context_file.write_text(json.dumps(lineage_context), encoding="utf-8")
     script = (
         "const fs=require('node:fs');"
         "const helper=require('./extensions/ts-workflow-control/summary.cjs');"
         "const value=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
-        "process.stdout.write(helper.buildBranchContextSummary(value));"
+        "process.stdout.write(helper.buildLineageContextSummary(value));"
     )
     completed = subprocess.run(
         ["node", "-e", script, str(context_file)],
@@ -344,10 +341,10 @@ def test_historical_node_and_backtrack_context_are_compact_and_explicit(tmp_path
         stderr=subprocess.PIPE,
         check=True,
     )
-    assert "TS backtrack context:" in completed.stdout
-    assert "trigger: n002" in completed.stdout
-    assert "selected_checkpoint: n001" in completed.stdout
-    assert "tooling only validates the resulting topology" in completed.stdout
+    assert "TS lineage context:" in completed.stdout
+    assert "trigger: n002[connectivity]/closed/completed" in completed.stdout
+    assert "selected_checkpoint: n001[candidate]/closed/completed" in completed.stdout
+    assert "kernel only validates parent-node topology" in completed.stdout
 
     node_context_file = tmp_path / "node_context.json"
     node_context_file.write_text(json.dumps(node_context), encoding="utf-8")
@@ -367,8 +364,8 @@ def test_historical_node_and_backtrack_context_are_compact_and_explicit(tmp_path
     )
     assert "artifact_paths: inputs=nodes/n001/inputs" in node_completed.stdout
     assert "outputs=nodes/n001/outputs" in node_completed.stdout
-    assert "evidence_paths: (none)" in node_completed.stdout
-    assert "source_files: (none)" in node_completed.stdout
+    assert "claim_refs: claim_reaction_0001" in node_completed.stdout
+    assert "evidence: (none)" in node_completed.stdout
 
 
 def _node_json(script: str):

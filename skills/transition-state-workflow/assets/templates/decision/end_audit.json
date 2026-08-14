@@ -1,17 +1,36 @@
 {
-  "schema_version": "ts-decision/2",
+  "schema_version": "ts-decision/3",
   "decision_id": "${DECISION_ID}",
   "action": "end_node",
-  "rationale": "Close the audit with an explicit evidence-backed status.",
-  "evidence_refs": ["${EVIDENCE_ID}"],
+  "rationale": "Record the Root Agent's acceptance decision after deterministic Gates pass.",
+  "basis_refs": ["${CLAIM_ID}", "${GATE_RESULT_ID}", "${SECOND_GATE_RESULT_ID}"],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
   "base_revision": "${BASE_REVISION}",
-  "report_ref": {"report_id": "${REPORT_ID}", "workspace_root": "${WORKSPACE_ROOT}"},
   "payload": {
     "node_id": "${NODE_ID}",
-    "closure": {
-      "summary": "The declared evidence gates were audited.",
-      "program": {"outcome": "not_run", "summary": "The audit reused registered evidence.", "evidence_refs": ["${EVIDENCE_ID}"]},
-      "audit": {"status": "ambiguous", "study_complete": false, "summary": "The evidence does not yet support acceptance.", "evidence_refs": ["${EVIDENCE_ID}"]},
+    "result": {
+      "outcome": "completed",
+      "summary": "${RESULT_SUMMARY}",
+      "claim_updates": [
+        {
+          "claim_ref": "${CLAIM_ID}",
+          "verdict": "supported",
+          "summary": "${CLAIM_UPDATE_SUMMARY}",
+          "evidence_refs": ["${EVIDENCE_ID}"],
+          "gate_result_refs": ["${GATE_RESULT_ID}", "${SECOND_GATE_RESULT_ID}"]
+        }
+      ],
+      "audit": {
+        "policy": "accepted-ts/2",
+        "verdict": "accepted",
+        "target_ref": "${CLAIM_ID}",
+        "gate_result_refs": ["${GATE_RESULT_ID}", "${SECOND_GATE_RESULT_ID}"],
+        "study_complete": true,
+        "summary": "${AUDIT_SUMMARY}"
+      },
       "open_questions": []
     }
   }

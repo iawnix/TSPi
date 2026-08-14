@@ -8,10 +8,11 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .engine import (
+from .engine_v3 import (
+    build_review_snapshot,
     end_node,
     init_workspace,
-    report_branch_context,
+    report_lineage_context,
     report_node,
     report_workspace,
     snapshot_report,
@@ -20,8 +21,7 @@ from .engine import (
     validate_decision_dry_run,
     validate_workspace,
 )
-from .validators.decision import ContractError, validate_decision
-from .validators.decision_context import detect_decision_warnings, validate_decision_for_workspace
+from .decision_validator_v3 import ContractError, validate_decision
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -44,13 +44,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--root", required=True)
     p.add_argument("--node-id", required=True)
 
-    p = sub.add_parser("report_branch_context")
+    p = sub.add_parser("report_lineage_context")
     p.add_argument("--root", required=True)
     p.add_argument("--from-node", required=True)
     p.add_argument("--anchor-node", required=True)
 
     p = sub.add_parser("snapshot_report")
     p.add_argument("--root", required=True)
+
+    p = sub.add_parser("build_review_snapshot")
+    p.add_argument("--root", required=True)
+    p.add_argument("--target-claim-ref", required=True)
+    p.add_argument("--node-id", action="append", default=[])
 
     p = sub.add_parser("validate_workspace")
     p.add_argument("--root", required=True)
@@ -82,10 +87,16 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return report_workspace(args.root)
     if command == "report_node":
         return report_node(args.root, args.node_id)
-    if command == "report_branch_context":
-        return report_branch_context(args.root, args.from_node, args.anchor_node)
+    if command == "report_lineage_context":
+        return report_lineage_context(args.root, args.from_node, args.anchor_node)
     if command == "snapshot_report":
         return snapshot_report(args.root)
+    if command == "build_review_snapshot":
+        return build_review_snapshot(
+            args.root,
+            target_claim_ref=args.target_claim_ref,
+            node_ids=args.node_id or None,
+        )
     if command == "validate_workspace":
         return validate_workspace(args.root)
 
@@ -96,14 +107,9 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
             "valid": True,
             "action": decision["action"],
             "dry_run": dry_run,
-            "warnings": detect_decision_warnings(args.root, decision),
         }
     if command == "start_node":
-        warnings = detect_decision_warnings(args.root, decision)
-        result = start_node(args.root, decision)
-        if warnings:
-            result = {**result, "warnings": warnings}
-        return result
+        return start_node(args.root, decision)
     if command == "update_workspace":
         return update_workspace(args.root, decision)
     if command == "end_node":

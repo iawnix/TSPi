@@ -34,23 +34,17 @@ function validateReviewResult(value, packet, evidenceSnapshot) {
   if (result.program !== null) throw new Error("review result cannot contain program state");
   if (result.artifact_refs.length) throw new Error("review result cannot create artifacts");
 
-  if (!isPlainObject(evidenceSnapshot) || evidenceSnapshot.schema_version !== "ts-review-evidence-snapshot/1") {
+  if (!isPlainObject(evidenceSnapshot) || evidenceSnapshot.schema_version !== "ts-review-evidence-snapshot/2") {
     throw new Error("review result validation requires the bound evidence snapshot");
   }
   if (evidenceSnapshot.task_id !== task.task_id || evidenceSnapshot.operation !== task.operation) {
     throw new Error("review evidence snapshot does not match task");
   }
-  const allowedLayers = new Set(
-    Array.isArray(evidenceSnapshot.evidence_ceiling) ? evidenceSnapshot.evidence_ceiling : [],
-  );
   const basisAllowlist = new Set(
     Array.isArray(evidenceSnapshot.basis_allowlist) ? evidenceSnapshot.basis_allowlist : [],
   );
   for (const [index, fact] of result.facts.entries()) {
     if (fact.kind !== "review") throw new Error(`facts[${index}].kind must be review`);
-    if (!fact.layer || !allowedLayers.has(fact.layer)) {
-      throw new Error(`fact layer exceeds ${task.operation} evidence ceiling: ${fact.layer}`);
-    }
     if (!fact.basis_refs.length) throw new Error(`facts[${index}].basis_refs must cite task packet evidence`);
     for (const ref of fact.basis_refs) {
       if (!basisAllowlist.has(ref)) throw new Error(`fact basis ref is outside task packet: ${ref}`);

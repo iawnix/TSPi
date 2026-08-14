@@ -42,7 +42,7 @@ export function formatTsSubagentHistory(
   expanded = false,
 ): string[] {
   const role = historyRole(entryType, data);
-  const operation = stringValue(data.operation) || stringValue(data.review_type) || "operation";
+  const operation = stringValue(data.operation) || "operation";
   const failed = entryType.endsWith("-failed");
   const outcome = failed ? "failed" : "completed";
   const duration = typeof data.duration_ms === "number" ? ` · ${formatElapsed(data.duration_ms)}` : "";

@@ -32,20 +32,19 @@ const {
 const { classifyUpstreamModelFailure } = require(resolve(EXTENSION_DIR, "..", "..", "src", "agent-core", "failure-taxonomy.cjs"));
 const { toolText } = require("../ts-workflow-control/summary.cjs");
 
-const REVIEW_TYPES = ["mechanism", "candidate", "tsfreq", "connectivity", "final_audit", "program_failure"] as const;
 const ROOT_DISPOSITIONS = ["accepted", "partially_accepted", "rejected", "deferred"] as const;
 
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.subagentReview,
     label: "TS Review Subagent",
-    description: "Run one fresh, tool-free Pi subagent for bounded advisory review of selected TS workspace evidence.",
-    promptSnippet: "Delegate a bounded independent review of selected transition-state workspace evidence",
+    description: "Run one fresh, tool-free Pi subagent against a deterministic target-claim dependency snapshot.",
+    promptSnippet: "Delegate an independent review of one transition-state scientific claim",
     promptGuidelines: [
       `Use ${TS_PUBLIC_TOOL_NAMES.subagentReview} only at an ambiguity, failure-analysis, branch-selection, or final-audit boundary where an independent review can change the next decision.`,
       "Treat its output as advisory analysis, not registered evidence or an accepted/pathway verdict; reconcile it against primary artifacts before mutating the workspace.",
       `After every successful Review, immediately call ${TS_PUBLIC_TOOL_NAMES.reviewDisposition} with its task_id and review_run_ref. Record a concise accepted, partially_accepted, rejected, or deferred response before any further workspace mutation.`,
-      "Select nodeId or fromNode+anchorNode and explicit evidenceRefs/artifactRefs to keep the review scoped.",
+      "Select targetClaimRef. The workspace kernel derives claims, gates, evidence, and owner nodes; nodeIds may add explicit operational context.",
     ],
     renderShell: "self",
     renderCall: (args, theme) => renderTsSubagentCall("review", args as Record<string, unknown>, theme),
@@ -58,13 +57,10 @@ export default function (pi: ExtensionAPI) {
     ),
     executionMode: "sequential",
     parameters: Type.Object({
-      reviewType: StringEnum(REVIEW_TYPES),
+      targetClaimRef: Type.String({ minLength: 1, maxLength: 256, description: "Scientific claim that the Review must assess." }),
       question: Type.String({ minLength: 1, maxLength: 4000, description: "Focused scientific or technical review question." }),
       root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
-      nodeId: Type.Optional(Type.String({ description: "Node whose compact report and evidence may be reviewed." })),
-      fromNode: Type.Optional(Type.String({ description: "Current failure or branch trigger node for a backtrack comparison." })),
-      anchorNode: Type.Optional(Type.String({ description: "Historical checkpoint paired with fromNode." })),
-      evidenceRefs: Type.Optional(Type.Array(Type.String(), { maxItems: 16 })),
+      nodeIds: Type.Optional(Type.Array(Type.String(), { maxItems: 16, description: "Optional additional owner nodes for operational context." })),
       artifactRefs: Type.Optional(Type.Array(Type.String(), { maxItems: 4 })),
       timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 180, description: "Host timeout in seconds. Defaults to 90." })),
     }),
@@ -74,44 +70,31 @@ export default function (pi: ExtensionAPI) {
         tool_call_id: toolCallId,
         task_id: taskId,
         role: "review",
-        operation: params.reviewType,
-        node_id: params.nodeId || params.fromNode,
+        operation: "claim_review",
+        node_id: params.nodeIds?.[0],
       }, onUpdate);
       reportStatus("queued");
       if (!ctx.model) {
         throw new Error("No parent model is selected for TS subagent delegation");
       }
       const request = validateSubagentRequest({
-        reviewType: params.reviewType,
+        targetClaimRef: params.targetClaimRef,
         question: params.question,
         root: params.root,
-        nodeId: params.nodeId,
-        fromNode: params.fromNode,
-        anchorNode: params.anchorNode,
-        evidenceRefs: params.evidenceRefs,
+        nodeIds: params.nodeIds,
         artifactRefs: params.artifactRefs,
       });
       const root = requireWorkspaceRoot(request.root, ctx.cwd);
       const workspaceReport = await runWorkspaceJson(pi, "report_workspace", root, [], signal);
-      const nodeContext = request.nodeId
-        ? await runWorkspaceJson(pi, "report_node", root, ["--node-id", request.nodeId], signal)
-        : null;
-      const branchContext = request.fromNode
-        ? await runWorkspaceJson(
-            pi,
-            "report_branch_context",
-            root,
-            ["--from-node", request.fromNode, "--anchor-node", request.anchorNode as string],
-            signal,
-          )
-        : null;
+      const snapshotArgs = ["--target-claim-ref", request.targetClaimRef];
+      for (const nodeId of request.nodeIds) snapshotArgs.push("--node-id", nodeId);
+      const reviewSnapshot = await runWorkspaceJson(pi, "build_review_snapshot", root, snapshotArgs, signal);
       const bundle = buildReviewTaskBundle({
         runId: taskId,
         workspaceRoot: root,
         request,
         workspaceReport,
-        nodeContext,
-        branchContext,
+        reviewSnapshot,
       });
       const packet = bundle.task;
       const journal = beginAgentRun(root, packet, { documents: bundle.documents });
@@ -172,7 +155,7 @@ export default function (pi: ExtensionAPI) {
         const runRef = failAgentRun(journal, { actions: [], error, metadata: failure });
         pi.appendEntry("ts-workspace-subagent-failed", {
           task_id: packet.task_id,
-          review_type: packet.operation,
+          operation: packet.operation,
           ...failure,
           run_ref: runRef,
         });

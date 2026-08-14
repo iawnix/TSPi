@@ -26,7 +26,7 @@ from ts_remote import lifecycle as remote_lifecycle
 from ts_remote.models import RemoteJobStatus, RemoteReceipt
 from ts_remote.errors import RemotePreSubmitError, RemoteSubmissionAmbiguous, RemoteSubmissionRejected
 from ts_workspace.operational import operational_snapshot
-from ts_workspace.readers.report import report_workspace
+from ts_workspace import report_workspace
 from ts_workspace.identity import workspace_id
 
 
@@ -37,8 +37,8 @@ def _workspace(tmp_path: Path) -> Path:
         workspace,
         report_ref,
         node_id="n001",
-        node_type="validation",
-        scope="tsfreq",
+        objective="Run the Root-selected Gaussian validation calculation.",
+        tags=["gaussian", "validation"],
     )
     gjf = workspace / "nodes" / "n001" / "inputs" / "candidate.gjf"
     gjf.write_text(
@@ -113,7 +113,7 @@ def test_create_calculation_intent_derives_attempt_paths_and_templates(tmp_path:
     assert first["expected_artifacts"] == [
         "nodes/n001/attempts/calc_n001_gaussian_opt_freq_0001/outputs/gaussian.out"
     ]
-    assert first["intent"]["validation_scope"] == "tsfreq"
+    assert "validation_scope" not in first["intent"]
     assert first["intent"]["execution_target"] == {"kind": "local"}
     assert not list((workspace / "nodes/n001/scratch").glob("*.json"))
 
@@ -218,16 +218,14 @@ def _intent_v2(
     intent_id: str = "calc_n001_optfreq_v2_001",
     attempt_kind: str = "primary",
     recalculation_ref: dict[str, object] | None = None,
-    validation_scope: str | None = "tsfreq",
     target: dict[str, object] | None = None,
     dry_run: bool = True,
 ) -> Path:
     value = {
-        "schema_version": "ts-calculation-intent/2",
+        "schema_version": "ts-calculation-intent/3",
         "intent_id": intent_id,
         "node_id": "n001",
         "purpose": "Evaluate the selected candidate with an attempt-scoped calculation.",
-        "validation_scope": validation_scope,
         "attempt_kind": attempt_kind,
         "recalculation_ref": recalculation_ref,
         "backend": "gaussian",
@@ -422,7 +420,7 @@ def test_prepare_rejects_legacy_intent_schema(tmp_path: Path) -> None:
 def test_prepare_is_node_scoped_idempotent_and_preserves_research_state(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     intent_path = _intent(workspace)
-    state_files = ["research_state.json", "hypotheses.json", "evidence_registry.json"]
+    state_files = ["research_state.json", "claims.json", "evidence_registry.json", "gate_results.json"]
     before = {name: (workspace / name).read_bytes() for name in state_files}
 
     first = prepare_calculation(workspace, intent_path)
@@ -431,7 +429,7 @@ def test_prepare_is_node_scoped_idempotent_and_preserves_research_state(tmp_path
     assert first == second
     assert first["result"]["state"] == "prepared"
     assert first["result"]["program_status"] == "not_run"
-    assert "claim_verdict" not in json.dumps(first)
+    assert "claim_status" not in json.dumps(first)
     assert first["prepared"]["prepared_task"]["command"] == [
         "g16",
         "nodes/n001/inputs/candidate.gjf",
@@ -447,7 +445,7 @@ def test_prepare_is_node_scoped_idempotent_and_preserves_research_state(tmp_path
         prepare_calculation(workspace, intent_path)
 
 
-def test_v2_prepare_uses_local_attempt_directory_and_explicit_scope(tmp_path: Path) -> None:
+def test_v3_prepare_uses_local_attempt_directory_without_node_routing_scope(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
     intent_path = _intent_v2(workspace)
 
@@ -457,30 +455,22 @@ def test_v2_prepare_uses_local_attempt_directory_and_explicit_scope(tmp_path: Pa
     assert (attempt / "intent.json").is_file()
     assert (attempt / "prepared.json").is_file()
     assert not (workspace / "nodes/n001/remote/calculations/calc_n001_optfreq_v2_001").exists()
-    assert prepared["result"]["provenance"]["validation_scope"] == "tsfreq"
+    assert "validation_scope" not in prepared["result"]["provenance"]
     assert prepared["result"]["provenance"]["attempt_kind"] == "primary"
     assert prepared["prepared"]["prepared_task"]["expected_artifacts"] == [
         "nodes/n001/attempts/calc_n001_optfreq_v2_001/outputs/candidate.log"
     ]
 
     value = json.loads(intent_path.read_text(encoding="utf-8"))
-    value["validation_scope"] = "connectivity"
-    value["intent_id"] = "calc_n001_wrong_scope"
-    value["expected_artifacts"] = ["nodes/n001/attempts/calc_n001_wrong_scope/outputs/candidate.log"]
-    intent_path.write_text(json.dumps(value), encoding="utf-8")
-    with pytest.raises(ComputeContractError, match="must match the validation node"):
-        prepare_calculation(workspace, intent_path)
-
-    value["validation_scope"] = "tsfreq"
-    with pytest.raises(ComputeContractError, match="allowed only for candidate_search or validation"):
+    with pytest.raises(ComputeContractError, match="ts-node/3"):
         _validate_intent_node_scope(
             workspace,
             value,
-            {"schema_version": "ts-node/2", "node_type": "mechanism", "mechanism_action": "evaluate"},
+            {"schema_version": "ts-node/2", "state": "open"},
         )
 
 
-def test_v2_recalculation_requires_local_source_attempt_and_remote_mirror_label(
+def test_v3_recalculation_requires_local_source_attempt_and_remote_mirror_label(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -526,7 +516,7 @@ def test_v2_recalculation_requires_local_source_attempt_and_remote_mirror_label(
     invalid["expected_artifacts"] = ["nodes/n001/attempts/calc_n001_remote_unlabelled/outputs/candidate.log"]
     del invalid["execution_target"]["authority"]
     remote_intent.write_text(json.dumps(invalid), encoding="utf-8")
-    with pytest.raises(ComputeContractError, match="calculation_intent_v2.schema.json validation failed"):
+    with pytest.raises(ComputeContractError, match="calculation_intent_v3.schema.json validation failed"):
         prepare_calculation(workspace, remote_intent)
 
 
@@ -894,8 +884,8 @@ def test_gaussian_parse_returns_program_facts_without_workspace_verdict(tmp_path
     assert result["program_status"] == "completed"
     assert result["parser_facts"]["normal_termination"] is True
     assert result["parser_facts"]["imaginary_frequency_count"] == 1
-    assert "claim_verdict" not in result
-    assert "accepted_ts" not in result
+    assert "claim_status" not in result
+    assert "claim_status" not in result
     assert (workspace / "research_state.json").read_bytes() == state_before
     assert (workspace / "nodes/n001/attempts/calc_n001_optfreq_001/outputs/calculation_result.json").is_file()
     assert (workspace / "nodes/n001/attempts/calc_n001_optfreq_001/outputs/parsed/validation_summary.json").is_file()
@@ -928,11 +918,10 @@ def test_gaussian_irc_parse_writes_attempt_contract_artifacts(tmp_path: Path) ->
         encoding="utf-8",
     )
     intent = {
-        "schema_version": "ts-calculation-intent/2",
+        "schema_version": "ts-calculation-intent/3",
         "intent_id": intent_id,
         "node_id": "n001",
         "purpose": "Parse one forward IRC path without making a connectivity verdict.",
-        "validation_scope": "tsfreq",
         "attempt_kind": "primary",
         "recalculation_ref": None,
         "backend": "gaussian",
@@ -980,12 +969,12 @@ def test_compute_result_contract_rejects_scientific_verdict_fields() -> None:
         "parser_facts": {},
         "error_class": None,
         "provenance": {},
-        "claim_verdict": "supported",
+        "claim_status": "supported",
     }
     with pytest.raises(ComputeContractError, match="Additional properties"):
         validate_compute_contract("calculation_result.schema.json", result)
 
-    del result["claim_verdict"]
-    result["parser_facts"] = {"accepted_ts": True}
-    with pytest.raises(ComputeContractError, match="accepted_ts"):
+    del result["claim_status"]
+    result["parser_facts"] = {"claim_status": "supported"}
+    with pytest.raises(ComputeContractError, match="claim_status"):
         validate_compute_contract("calculation_result.schema.json", result)

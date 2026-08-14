@@ -1,147 +1,56 @@
-# Agent Decision Protocol
+# Root Decision Protocol
 
-The Root Agent chooses research direction. `ts_workspace` validates state,
-evidence references, authority, and topology; it does not select the next node.
+## Normal Loop
 
-## Decision Loop
+1. Read the compact workspace report and its scientific and operational
+   revisions.
+2. Identify the exact unresolved Claim or missing fact.
+3. Inspect only the relevant Node, artifact, or lineage delta.
+4. Choose one bounded next act from scientific judgment.
+5. Draft `ts-decision/3`, validate it, and apply it unchanged.
+6. Run bounded operators, verify local artifacts, and register factual Evidence.
+7. Evaluate declared Gates when their required facts are available.
+8. Close the Node with explicit Claim updates or an inconclusive/blocked result.
+9. Re-read state before selecting any continuation.
 
-1. Read `report_workspace` or `ts_workspace_context`.
-2. Name the active hypothesis and prediction.
-3. State the highest evidence layer actually supported.
-4. Identify the discriminator that could change the hypothesis status.
-5. Load only relevant historical node or branch context.
-6. Choose one research act and one branch relation.
-7. Construct and validate `ts-decision/2` against the current revision.
-8. Apply one mutation.
-
-Program success, parser output, subagent advice, and visual inspection are inputs
-to this decision, not decisions themselves.
-
-## Choosing A Node Type
-
-- New user inputs or missing constraints: `intake` (`n000` only for a new
-  workspace; ask the user rather than reopening intake later).
-- Propose, compare, revise, or evaluate a hypothesis: `mechanism`.
-- Generate structures without testing TS validity: `candidate_search`.
-- Produce a declared test: `validation` with the matching scope.
-- Decide acceptance or completion from registered evidence: `audit`.
-
-Wavefunction, population, orbital, spin, or state analysis is a validation act,
-normally `electronic_structure` or `state_character`. It does not directly set
-hypothesis status. Open a later mechanism evaluation node.
-
-## Evidence Before Status
-
-- `program.outcome=success` means the operation completed.
-- `hypothesis.status=unsupported` requires a contradicted prediction or
-  explicit decision boundary.
-- Missing or conflicting evidence is `ambiguous`.
-- `audit.status=accepted` means the audited object passed its declared gates.
-- A pathway audit can be `not_accepted` while the overall study remains open.
-
-For a pathway audit, the running node must already have `node.pathway_ref`.
-Before closure, register a pathway audit record with
-`quality.strict_pathway_decision=accepted` or
-`quality.strict_pathway_decision=pathway_not_accepted` and cite it in the close
-decision.
+The Kernel may reject invalid references, stale revisions, inconsistent facts,
+or a failed acceptance policy. It must not recommend a method or manufacture a
+continuation.
 
 ## Previous Failed Exploration
 
-A previous failed exploration affects the next decision only after its scope is
-checked.
+When earlier work failed, read the failed Node and relevant attempt record. Use
+`report_lineage_context(from_node, anchor_node)` only to compare an ancestor and
+the Nodes attempted after it. Then independently decide whether to:
 
-Read:
+- retry the same immutable execution binding after a pre-effect failure;
+- create a new calculation under the same scientific objective;
+- open a child Node for a changed method or new question;
+- append an alternative or revised Claim;
+- ask for missing user constraints;
+- stop.
 
-- `report_workspace.node_index` for candidate checkpoints;
-- `nodes/<failed_node>/node.json` through `report_node`, not direct prompt
-  injection;
-- `report_branch_context(from_node, anchor_node)` for the trigger, selected
-  checkpoint, and attempts between them;
-- registered evidence and local attempt artifacts for the failure cause.
+Never rewrite or delete the failed Node to make the graph look successful.
+Across independent repeated studies, preserve enough facts to distinguish a
+reproduced scientific failure from a repeated infrastructure failure.
 
-Classify the failure:
+## Review
 
-- program failure: scheduler, executable, SCF, optimizer, parser, scratch,
-  transfer, or timeout;
-- candidate failure: structure does not provide a useful TS seed;
-- validation contradiction: evidence conflicts with a prediction;
-- audit blocker: required evidence is missing or inconsistent;
-- scope mismatch: the old result tests another hypothesis, pathway, charge,
-  multiplicity, state, or method boundary.
+Review is advisory. Target one Claim; let the deterministic snapshot builder
+collect its Claim ancestry, cited Evidence, Gate results, owner Nodes, and
+allowlisted artifacts. After a successful result, record a concise Root
+response with `ts_review_disposition`. Adopted advice still requires normal
+workspace decisions and primary Evidence.
 
-Do not reopen or rewrite the failed node. Decide whether to retry an attempt,
-recalculate, continue, branch from a historical anchor, revise the hypothesis,
-ask the user, or stop.
+## Acceptance
 
-Across independent repeated studies, a historical failure is a prior, not a
-workspace fact, until its structures, method, scope, and artifacts are verified
-for the current study.
+Before accepted language:
 
-## Branch Relations
+1. identify the target Claim;
+2. identify the named acceptance policy;
+3. verify every cited Gate result is current, passing, and target-compatible;
+4. state remaining limitations;
+5. decide explicitly whether the complete study is finished.
 
-### `continue_parent`
-
-Use when the same scientific object proceeds to another evidence act. The new
-node's parent is `from_node`.
-
-### `new_solution_branch`
-
-Use when the hypothesis is retained but the candidate or search strategy
-changes. Select an ancestor checkpoint after loading it. The new parent is the
-anchor; the failed trigger remains `from_node`. Bind the replacement candidate
-or strategy with a new `solution_ref.solution_id`; use `parent_solution_id` when
-the source solution already has an explicit identity.
-
-### `new_hypothesis_branch`
-
-Use for an alternative mechanism proposal with a new hypothesis ID and a known
-parent hypothesis. The proposal itself is a `mechanism/propose` node.
-
-### `new_pathway_branch`
-
-Use when elementary-step decomposition, intermediate topology, or pathway
-assignment changes. Bind a pathway ID not already declared by the workspace and
-retain the source hypothesis. The node, tree index, and branch event must expose
-the same target pathway reference.
-
-### `recalculation_of`
-
-Use only for a scientifically meaningful method change that receives a new
-research node. A technical retry stays under the existing node as
-`ts-calculation-intent/2 attempt_kind=retry`.
-
-## Backtracking
-
-Backtracking means:
-
-1. select `from_node` as the current trigger;
-2. select an ancestor `anchor_node` whose scientific state remains usable;
-3. inspect `report_branch_context`;
-4. create a new node parented to the anchor with the chosen relation;
-5. preserve all failed descendants as history.
-
-The validator checks ancestry and references. It cannot decide which anchor is
-scientifically useful.
-
-If an older closed `new_solution_branch` lacks its required solution identity,
-do not edit canonical JSON. Submit one `repair_solution_ref` decision after
-selecting a new solution ID and explaining the historical defect. This is a
-metadata repair only; it neither reopens the node nor changes its scientific
-closure.
-
-## Subagent Use
-
-Use independent review only when it may change a decision: competing
-hypotheses, ambiguous validation, conflicting evidence, failure diagnosis,
-backtrack selection, or audit readiness. The result is advisory and cannot be
-registered as primary evidence without independent local artifact support.
-After a successful Review, the Root Agent must record a concise disposition
-with `ts_review_disposition` before the next workspace mutation. `accepted`,
-`partially_accepted`, `rejected`, and `deferred` all satisfy the response
-obligation; none changes the Review's advisory authority.
-
-## Decision Templates
-
-`assets/templates/decision/` contains minimal `ts-decision/2` examples. Build
-workspace-specific decisions from `references/decision_contract.md` or the Pi
-four-tool control plane, then validate before applying.
+A negative or inconclusive Gate result is a fact boundary, not an automatic
+instruction to abandon or continue the research.

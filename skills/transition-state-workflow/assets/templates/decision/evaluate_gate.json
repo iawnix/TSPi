@@ -1,0 +1,21 @@
+{
+  "schema_version": "ts-decision/3",
+  "decision_id": "${DECISION_ID}",
+  "action": "update_workspace",
+  "rationale": "Evaluate a declared scientific Gate from active evidence facts.",
+  "basis_refs": ["${EVIDENCE_ID}"],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
+  "base_revision": "${BASE_REVISION}",
+  "payload": {
+    "evaluate_gate": {
+      "gate_result_id": "${GATE_RESULT_ID}",
+      "node_id": "${NODE_ID}",
+      "gate": "${GATE_TYPE}",
+      "evidence_refs": ["${EVIDENCE_ID}"],
+      "target_ref": "${CLAIM_ID}"
+    }
+  }
+}

@@ -384,8 +384,7 @@ async function buildPacket(
     scope: {
       report_id: typeof workspaceReport.report_id === "string" ? workspaceReport.report_id : null,
       node_ids: nodeIds,
-      hypothesis_id: typeof focus.focus_hypothesis_id === "string" ? focus.focus_hypothesis_id : null,
-      pathway_id: typeof focus.focus_pathway_id === "string" ? focus.focus_pathway_id : null,
+      claim_refs: Array.isArray(focus.focus_claim_refs) ? focus.focus_claim_refs : [],
     },
     inputs,
     capabilities: tools.map((tool) => tool.name),

@@ -1,0 +1,22 @@
+{
+  "schema_version": "ts-decision/3",
+  "decision_id": "${DECISION_ID}",
+  "action": "end_node",
+  "rationale": "Close one bounded research act without accepting a study claim.",
+  "basis_refs": ["${BASIS_REF}"],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
+  "base_revision": "${BASE_REVISION}",
+  "payload": {
+    "node_id": "${NODE_ID}",
+    "result": {
+      "outcome": "completed",
+      "summary": "${RESULT_SUMMARY}",
+      "claim_updates": [],
+      "audit": null,
+      "open_questions": []
+    }
+  }
+}

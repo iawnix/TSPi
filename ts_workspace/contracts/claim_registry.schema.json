@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TS claim registry",
+  "type": "object",
+  "required": ["schema_version", "focus_claim_refs", "claims"],
+  "properties": {
+    "schema_version": {"const": "ts-claim-registry/1"},
+    "focus_claim_refs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^claim_[A-Za-z0-9_.-]+$"}
+    },
+    "claims": {"type": "array", "items": {"$ref": "claim.schema.json"}}
+  },
+  "additionalProperties": false
+}

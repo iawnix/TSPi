@@ -1,0 +1,23 @@
+{
+  "schema_version": "ts-decision/3",
+  "decision_id": "${DECISION_ID}",
+  "action": "update_workspace",
+  "rationale": "Register one explicit scientific claim selected by the Root Agent.",
+  "basis_refs": ["${BASIS_REF}"],
+  "report_ref": {
+    "report_id": "${REPORT_ID}",
+    "workspace_root": "${WORKSPACE_ROOT}"
+  },
+  "base_revision": "${BASE_REVISION}",
+  "payload": {
+    "append_claim": {
+      "claim_id": "${CLAIM_ID}",
+      "node_id": "${NODE_ID}",
+      "parent_claim_id": null,
+      "kind": "${CLAIM_KIND}",
+      "statement": "${CLAIM_STATEMENT}",
+      "required_gates": ["${GATE_TYPE}"],
+      "details": {}
+    }
+  }
+}

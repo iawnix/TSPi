@@ -28,8 +28,8 @@ Render dependency boundary:
 
 Forbidden behavior:
 
-- edit `research_state.json`, `hypotheses.json`, `evidence_registry.json`, or
-  `decision_log.jsonl`;
+- edit `research_state.json`, `claims.json`, `evidence.json`,
+  `gate_results.json`, or `decision_log.jsonl`;
 - close nodes or set scientific verdicts;
 - claim candidate, TS/Freq, connectivity, accepted-TS, or pathway success;
 - infer mechanism validity from a rendered image.
@@ -40,9 +40,14 @@ Use evidence fields such as:
 
 ```json
 {
-  "kind": "render_artifact",
-  "role": "visualization",
+  "schema_version": "ts-evidence/2",
+  "evidence_id": "ev_n001_render_001",
+  "node_id": "n001",
+  "kind": "render_artifact/1",
   "evidence_tier": "local_compute",
-  "path": "nodes/n001/outputs/render.png"
+  "summary": "Rendered local structure view.",
+  "facts": {"render_completed": true},
+  "artifact_refs": ["nodes/n001/outputs/render.png"],
+  "provenance": {"producer": "ts_render", "producer_version": null, "source_sha256": null}
 }
 ```

@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TS deterministic gate result",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "gate_result_id",
+    "node_id",
+    "gate",
+    "policy",
+    "verdict",
+    "evidence_refs",
+    "evaluator",
+    "diagnostics",
+    "evaluated_at"
+  ],
+  "properties": {
+    "schema_version": {"const": "ts-gate-result/1"},
+    "gate_result_id": {"type": "string", "pattern": "^gr_[A-Za-z0-9_.-]+$", "maxLength": 256},
+    "node_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "gate": {
+      "enum": [
+        "tsfreq",
+        "mode_assignment",
+        "connectivity",
+        "stereochemistry",
+        "endpoint_identity",
+        "intermediate_identity",
+        "electronic_structure",
+        "state_character",
+        "shared_basin_consistency",
+        "method_robustness",
+        "thermochemistry",
+        "pathway_audit"
+      ]
+    },
+    "policy": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[0-9]+$", "maxLength": 128},
+    "verdict": {"enum": ["pass", "fail", "inconclusive"]},
+    "target_ref": {"type": ["string", "null"], "maxLength": 256},
+    "evidence_refs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": {"type": "string", "pattern": "^ev_[A-Za-z0-9_.-]+$"}
+    },
+    "evaluator": {"type": "string", "pattern": "^[A-Za-z0-9_.-]+/[0-9]+$", "maxLength": 128},
+    "diagnostics": {"type": "array", "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 2000}},
+    "evaluated_at": {"type": "string", "format": "date-time"}
+  },
+  "additionalProperties": false
+}

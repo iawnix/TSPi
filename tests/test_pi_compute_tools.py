@@ -263,7 +263,7 @@ process.stdout.write(JSON.stringify({{ collapsed, expanded, completions, success
 
 def test_compute_contracts_exclude_workspace_verdicts_and_arbitrary_commands() -> None:
     request = json.loads((ROOT / "ts_compute" / "contracts" / "calculation_request.schema.json").read_text(encoding="utf-8"))
-    intent = json.loads((ROOT / "ts_compute" / "contracts" / "calculation_intent_v2.schema.json").read_text(encoding="utf-8"))
+    intent = json.loads((ROOT / "ts_compute" / "contracts" / "calculation_intent_v3.schema.json").read_text(encoding="utf-8"))
     result = json.loads((ROOT / "ts_compute" / "contracts" / "calculation_result.schema.json").read_text(encoding="utf-8"))
 
     assert intent["additionalProperties"] is False
@@ -281,9 +281,9 @@ def test_compute_contracts_exclude_workspace_verdicts_and_arbitrary_commands() -
     assert "remote_dir" not in target_text
     assert "authority" not in target_text
     assert "command" not in intent["properties"]
-    assert "claim_verdict" not in result["properties"]
+    assert "claim_status" not in result["properties"]
     forbidden = result["properties"]["parser_facts"]["propertyNames"]["not"]["enum"]
-    assert {"claim_verdict", "accepted_ts", "pathway_accepted"} <= set(forbidden)
+    assert {"claim_status", "accepted_ref", "gate_verdict"} <= set(forbidden)
 
 
 def test_compute_cli_is_package_relative_and_runtime_aware() -> None:
@@ -491,7 +491,7 @@ def test_compute_operator_output_is_bound_to_actual_tool_result(tmp_path: Path) 
         "operation": "prepare",
         "objective": "Prepare the bound Gaussian calculation.",
         "workspace": {"root": "/tmp/ws", "report_id": "rep_001", "revision": "rev_001"},
-        "scope": {"report_id": "rep_001", "node_ids": ["n001"], "hypothesis_id": None, "pathway_id": None},
+        "scope": {"report_id": "rep_001", "node_ids": ["n001"], "claim_refs": []},
         "inputs": {
             "intent_id": None,
             "intent_ref": "nodes/n001/scratch/intent.json",
@@ -549,7 +549,6 @@ def test_compute_operator_output_is_bound_to_actual_tool_result(tmp_path: Path) 
 
     report["facts"] = [{
         "kind": "compute_preparation",
-        "layer": None,
         "statement": "Typed compute fact.",
         "status": "observed",
         "basis_refs": ["nodes/n001/attempts/calc_test/intent.json"],
@@ -588,7 +587,7 @@ def test_compute_operator_maps_ambiguous_submit_to_unknown_action_outcome(tmp_pa
         "operation": "submit",
         "objective": "Submit the bound Gaussian calculation.",
         "workspace": {"root": "/tmp/ws", "report_id": "rep_001", "revision": "rev_001"},
-        "scope": {"report_id": "rep_001", "node_ids": ["n001"], "hypothesis_id": None, "pathway_id": None},
+        "scope": {"report_id": "rep_001", "node_ids": ["n001"], "claim_refs": []},
         "inputs": {
             "intent_id": "calc_test",
             "intent_ref": "nodes/n001/attempts/calc_test/intent.json",
@@ -650,7 +649,7 @@ def test_compute_operator_rejects_scientific_fields_and_missing_required_action(
         "operation": "inspect",
         "objective": "Inspect the bound Gaussian calculation.",
         "workspace": {"root": "/tmp/ws", "report_id": "rep_001", "revision": "rev_001"},
-        "scope": {"report_id": "rep_001", "node_ids": ["n001"], "hypothesis_id": None, "pathway_id": None},
+        "scope": {"report_id": "rep_001", "node_ids": ["n001"], "claim_refs": []},
         "inputs": {
             "intent_id": "calc_test",
             "intent_ref": "nodes/n001/attempts/calc_test/intent.json",
@@ -685,12 +684,12 @@ def test_compute_operator_rejects_scientific_fields_and_missing_required_action(
         "limitations": [],
         "provenance": {},
     }
-    report["payload"]["claim_verdict"] = "supported"
+    report["payload"]["claim_status"] = "supported"
     completed = _validate_operator_output(tmp_path, packet, [], report, check=False)
     assert completed.returncode == 2
     assert "authoritative field" in completed.stderr
 
-    del report["payload"]["claim_verdict"]
+    del report["payload"]["claim_status"]
     completed = _validate_operator_output(tmp_path, packet, [], report, check=False)
     assert completed.returncode == 2
     assert "execute one or two" in completed.stderr
@@ -705,7 +704,7 @@ def test_compute_inspect_accepts_failed_status_plus_tail_as_partial_diagnostic(t
         "operation": "inspect",
         "objective": "Inspect the bound Gaussian calculation.",
         "workspace": {"root": "/tmp/ws", "report_id": "rep_001", "revision": "rev_001"},
-        "scope": {"report_id": "rep_001", "node_ids": ["n002"], "hypothesis_id": None, "pathway_id": None},
+        "scope": {"report_id": "rep_001", "node_ids": ["n002"], "claim_refs": []},
         "inputs": {
             "intent_id": "calc_n002_ma_optfreq_001",
             "intent_ref": "nodes/n002/attempts/calc_n002_ma_optfreq_001/intent.json",
@@ -764,7 +763,6 @@ def test_compute_inspect_accepts_failed_status_plus_tail_as_partial_diagnostic(t
         "facts": [
             {
                 "kind": "inspection",
-                "layer": "program",
                 "statement": "The remote launcher reported that g16 was not found.",
                 "status": "observed",
                 "basis_refs": [f"nodes/n002/agent-runs/{packet['task_id']}/actions.json#/actions/0/result"],
@@ -787,7 +785,7 @@ def test_compute_inspect_accepts_failed_status_plus_tail_as_partial_diagnostic(t
     assert result["facts"][0]["status"] == "observed"
     assert "artifact_ref" not in result["facts"][0]
     assert result["program"]["outcome"] == "not_run"
-    assert not ({"claim_verdict", "hypothesis_status", "accepted_ts"} & set(result))
+    assert not ({"claim_status", "gate_verdict", "accepted_ref"} & set(result))
 
 
 def _validate_operator_output(

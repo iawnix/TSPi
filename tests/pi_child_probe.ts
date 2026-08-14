@@ -30,8 +30,7 @@ export default function (pi: ExtensionAPI) {
       const scope = {
         report_id: "rep_recording_001",
         node_ids: ["n000"],
-        hypothesis_id: null,
-        pathway_id: null,
+        claim_refs: [],
       };
       const packet = {
         schema_version: "ts-agent-task/2",

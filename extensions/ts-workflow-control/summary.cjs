@@ -5,16 +5,14 @@ const path = require("node:path");
 
 const WORKSPACE_MARKERS = [
   "research_state.json",
+  "claims.json",
   "evidence_registry.json",
-  "hypotheses.json",
+  "gate_results.json",
 ];
 
 function normalizePath(value, cwd = process.cwd()) {
-  if (typeof value !== "string" || !value.trim()) {
-    return null;
-  }
-  const stripped = value.trim().replace(/^@+/, "");
-  return path.resolve(cwd, stripped);
+  if (typeof value !== "string" || !value.trim()) return null;
+  return path.resolve(cwd, value.trim().replace(/^@+/, ""));
 }
 
 function isWorkspaceRoot(root) {
@@ -23,136 +21,73 @@ function isWorkspaceRoot(root) {
 
 function findWorkspaceRoot(start = process.cwd(), env = process.env) {
   const explicit = normalizePath(env.TS_WORKSPACE_ROOT || "", start);
-  if (explicit && isWorkspaceRoot(explicit)) {
-    return explicit;
-  }
-
+  if (explicit && isWorkspaceRoot(explicit)) return explicit;
   let current = path.resolve(start);
   while (true) {
-    if (isWorkspaceRoot(current)) {
-      return current;
-    }
+    if (isWorkspaceRoot(current)) return current;
     const parent = path.dirname(current);
-    if (parent === current) {
-      return null;
-    }
+    if (parent === current) return null;
     current = parent;
   }
 }
 
 function resolveWorkspaceRoot(inputRoot, cwd = process.cwd(), env = process.env) {
-  const explicit = normalizePath(inputRoot || "", cwd);
-  if (explicit) {
-    return explicit;
-  }
-  return findWorkspaceRoot(cwd, env);
+  return normalizePath(inputRoot || "", cwd) || findWorkspaceRoot(cwd, env);
 }
 
 function buildContextDetails(report) {
   const focus = objectOrEmpty(report.focus);
-  const hypothesisContext = objectOrEmpty(report.hypothesis_context);
-  const activeHypothesis = objectOrEmpty(hypothesisContext.active_hypothesis);
-  const openNodes = arrayOfObjects(report.open_nodes);
-  const branchEvents = arrayOfObjects(report.branch_events);
-  const branchFrontiers = arrayOfObjects(report.branch_frontiers);
-  const operationalSummary = objectOrEmpty(report.operational_summary);
-  const agentRuns = arrayOfObjects(report.agent_runs);
-  const pendingControls = arrayOfObjects(report.pending_controls);
-  const unresolvedControls = arrayOfObjects(report.unresolved_controls);
-  const pendingReviewDispositions = arrayOfObjects(report.pending_review_dispositions);
-
+  const operational = objectOrEmpty(report.operational_summary);
   return {
     reportId: report.report_id || "",
     workspaceId: report.workspace_id || "",
     workspaceRevision: report.workspace_revision || "",
     operationalRevision: report.operational_revision || "",
     workspaceRoot: report.workspace_root || "",
-    valid: Boolean(report.valid),
-    validationFindings: arrayOfObjects(report.validation_findings).map((item) => ({
-      severity: item.severity || "",
-      code: item.code || "",
-      message: item.message || "",
-      path: item.path || "",
-    })),
+    valid: report.valid === true,
+    validationFindings: arrayOfObjects(report.validation_findings),
     currentNode: focus.current_node || null,
-    focusPathwayId: focus.focus_pathway_id || null,
-    focusHypothesisId: focus.focus_hypothesis_id || hypothesisContext.focus_hypothesis_id || null,
-    acceptedTsRefs: arrayOfStrings(focus.accepted_ts_refs),
-    openNodes: openNodes.map((node) => ({
+    openNodeRefs: arrayOfStrings(focus.open_node_refs),
+    focusClaimRefs: arrayOfStrings(focus.focus_claim_refs),
+    acceptedRefs: arrayOfStrings(focus.accepted_refs),
+    focusClaims: arrayOfObjects(report.focus_claims).map((claim) => ({
+      claimId: claim.claim_id || "",
+      kind: claim.kind || "",
+      statement: claim.statement || "",
+      status: claim.status || "",
+      requiredGates: arrayOfStrings(claim.required_gates),
+    })),
+    openNodes: arrayOfObjects(report.open_nodes).map((node) => ({
       nodeId: node.node_id || "",
-      nodeType: node.node_type || "",
-      scope: node.validation_scope || node.audit_scope || node.candidate_kind || node.mechanism_action || "",
-      lifecycle: node.lifecycle || "",
-      objective: node.objective || node.hypothesis || "",
+      state: node.state || "",
+      tags: arrayOfStrings(node.tags),
+      objective: node.objective || "",
     })),
     closedNodeCount: numberOrZero(report.closed_node_count),
+    claimCount: numberOrZero(report.claim_count),
     evidenceCount: numberOrZero(report.evidence_count),
+    gateResultCount: numberOrZero(report.gate_result_count),
+    claimStatusCounts: objectOrEmpty(report.claim_status_counts),
+    gateVerdictCounts: objectOrEmpty(report.gate_verdict_counts),
     operationalSummary: {
-      trackedFileCount: numberOrZero(operationalSummary.tracked_file_count),
-      calculationFileCount: numberOrZero(operationalSummary.calculation_file_count),
-      agentRunCount: numberOrZero(operationalSummary.agent_run_count),
-      agentRunFailedCount: numberOrZero(operationalSummary.agent_run_failed_count),
-      agentRunPendingCount: numberOrZero(operationalSummary.agent_run_pending_count),
-      controlPendingCount: numberOrZero(operationalSummary.control_pending_count),
-      controlUnresolvedCount: numberOrZero(operationalSummary.control_unresolved_count),
-      ambiguousSubmissionCount: numberOrZero(operationalSummary.ambiguous_submission_count),
-      ambiguousCancellationCount: numberOrZero(operationalSummary.ambiguous_cancellation_count),
-      controlRetryableCount: numberOrZero(operationalSummary.control_retryable_count),
-      reviewDispositionCount: numberOrZero(operationalSummary.review_disposition_count),
-      reviewDispositionPendingCount: numberOrZero(operationalSummary.review_disposition_pending_count),
+      trackedFileCount: numberOrZero(operational.tracked_file_count),
+      calculationFileCount: numberOrZero(operational.calculation_file_count),
+      agentRunCount: numberOrZero(operational.agent_run_count),
+      agentRunFailedCount: numberOrZero(operational.agent_run_failed_count),
+      agentRunPendingCount: numberOrZero(operational.agent_run_pending_count),
+      controlPendingCount: numberOrZero(operational.control_pending_count),
+      controlUnresolvedCount: numberOrZero(operational.control_unresolved_count),
+      ambiguousSubmissionCount: numberOrZero(operational.ambiguous_submission_count),
+      ambiguousCancellationCount: numberOrZero(operational.ambiguous_cancellation_count),
+      controlRetryableCount: numberOrZero(operational.control_retryable_count),
+      reviewDispositionCount: numberOrZero(operational.review_disposition_count),
+      reviewDispositionPendingCount: numberOrZero(operational.review_disposition_pending_count),
     },
-    pendingControls: pendingControls.map((control) => ({
-      operation: control.operation || "",
-      intentId: control.intent_id || "",
-      guardRef: control.guard_ref || "",
-    })),
-    unresolvedControls: unresolvedControls.map((control) => ({
-      operation: control.operation || "",
-      intentId: control.intent_id || "",
-      state: control.state || "",
-      errorClass: control.error_class || "",
-      retryDisposition: control.retry_disposition || "",
-      resultRef: control.result_ref || "",
-    })),
-    pendingReviewDispositions: pendingReviewDispositions.map((item) => ({
-      taskId: item.task_id || "",
-      operation: item.operation || "",
-      runRef: item.run_ref || "",
-    })),
-    latestAgentRuns: agentRuns.slice(-5).map((run) => ({
-      taskId: run.task_id || "",
-      role: run.role || "",
-      operation: run.operation || "",
-      status: run.status || "",
-      runRef: run.run_ref || "",
-    })),
-    hypothesisSummary: activeHypothesis.summary || "",
-    openPredictions: arrayOfObjects(hypothesisContext.open_predictions).map((prediction) => ({
-      predictionId: prediction.prediction_id || "",
-      scope: prediction.validation_scope || "",
-      expectation: prediction.expectation || "",
-    })),
-    supportedPredictions: arrayOfStrings(hypothesisContext.supported_predictions),
-    refutedPredictions: arrayOfStrings(hypothesisContext.refuted_predictions),
-    requiredNextEvidence: arrayOfStrings(hypothesisContext.required_next_evidence),
-    branchEvents: branchEvents.map((event) => ({
-      relation: event.relation || "",
-      fromNode: event.from_node || "",
-      anchorNode: event.anchor_node || "",
-      newNode: event.new_node || "",
-      changedVariable: event.changed_variable || "",
-      reasonCode: event.reason_code || "",
-    })),
-    branchFrontiers: branchFrontiers.map((node) => ({
-      nodeId: node.node_id || "",
-      nodeType: node.node_type || "",
-      scope: node.scope || "",
-      lifecycle: node.lifecycle || "",
-      hypothesisStatus: node.hypothesis_status || "",
-      programOutcome: node.program_outcome || "",
-      auditStatus: node.audit_status || "",
-      hasOutgoingBranch: Boolean(node.has_outgoing_branch),
-    })),
+    pendingControls: arrayOfObjects(report.pending_controls),
+    unresolvedControls: arrayOfObjects(report.unresolved_controls),
+    pendingReviewDispositions: arrayOfObjects(report.pending_review_dispositions),
+    latestAgentRuns: arrayOfObjects(report.agent_runs).slice(-5),
+    branchEvents: arrayOfObjects(report.branch_events),
     allowedDecisionActions: arrayOfStrings(report.allowed_decision_actions),
   };
 }
@@ -160,132 +95,89 @@ function buildContextDetails(report) {
 function buildContextSummary(report, options = {}) {
   const details = buildContextDetails(report);
   const maxItems = Number.isInteger(options.maxItems) ? options.maxItems : 5;
+  const op = details.operationalSummary;
   const lines = [
     "TS workspace context:",
     `- workspace: ${details.workspaceRoot || "(unknown)"}; compute_workspace_id: ${details.workspaceId || "(missing)"}`,
     `- report: ${details.reportId || "(none)"}; revision: ${details.workspaceRevision || "(none)"}; valid: ${details.valid}`,
-    `- operational_revision: ${details.operationalRevision || "(none)"}; calculations=${details.operationalSummary.calculationFileCount}; agent_runs=${details.operationalSummary.agentRunCount}; failed=${details.operationalSummary.agentRunFailedCount}; pending=${details.operationalSummary.agentRunPendingCount}; review_responses=${details.operationalSummary.reviewDispositionCount}; pending_review_responses=${details.operationalSummary.reviewDispositionPendingCount}; pending_controls=${details.operationalSummary.controlPendingCount}; unresolved_controls=${details.operationalSummary.controlUnresolvedCount}; ambiguous_submissions=${details.operationalSummary.ambiguousSubmissionCount}; ambiguous_cancellations=${details.operationalSummary.ambiguousCancellationCount}; retryable_controls=${details.operationalSummary.controlRetryableCount}`,
-    `- current_node: ${details.currentNode || "(none)"}; focus_hypothesis: ${details.focusHypothesisId || "(none)"}`,
-    `- focus_pathway: ${details.focusPathwayId || "(none)"}; accepted_ts_refs: ${formatList(details.acceptedTsRefs, maxItems)}`,
-    `- open_nodes: ${details.openNodes.length ? details.openNodes.map(formatNode).join("; ") : "(none)"}`,
-    `- counts: closed_nodes=${details.closedNodeCount}; evidence=${details.evidenceCount}`,
+    `- operational_revision: ${details.operationalRevision || "(none)"}; calculations=${op.calculationFileCount}; agent_runs=${op.agentRunCount}; failed=${op.agentRunFailedCount}; pending=${op.agentRunPendingCount}; pending_review_responses=${op.reviewDispositionPendingCount}; unresolved_controls=${op.controlUnresolvedCount}; ambiguous_submissions=${op.ambiguousSubmissionCount}`,
+    `- current_node: ${details.currentNode || "(none)"}; open_nodes: ${details.openNodes.length ? details.openNodes.map(formatNode).join("; ") : "(none)"}`,
+    `- focus_claims: ${details.focusClaims.length ? details.focusClaims.map(formatClaim).join("; ") : "(none)"}`,
+    `- accepted_refs: ${formatList(details.acceptedRefs, maxItems)}`,
+    `- counts: closed_nodes=${details.closedNodeCount}; claims=${details.claimCount}; evidence=${details.evidenceCount}; gate_results=${details.gateResultCount}`,
+    `- claim_status: ${formatCounts(details.claimStatusCounts)}`,
+    `- gate_verdicts: ${formatCounts(details.gateVerdictCounts)}`,
   ];
-
-  if (details.hypothesisSummary) {
-    lines.push(`- active_hypothesis: ${details.hypothesisSummary}`);
-  }
   if (details.pendingControls.length) {
-    lines.push(`- pending_controls: ${details.pendingControls.map((item) => `${item.operation}:${item.intentId}`).join(", ")}`);
+    lines.push(`- pending_controls: ${details.pendingControls.map(formatControl).join(", ")}`);
   }
   if (details.unresolvedControls.length) {
-    lines.push(`- unresolved_controls: ${details.unresolvedControls.map((item) => `${item.operation}:${item.intentId}:${item.errorClass || item.state || "unknown"}`).join(", ")}`);
+    lines.push(`- unresolved_controls: ${details.unresolvedControls.map(formatControl).join(", ")}`);
   }
   if (details.pendingReviewDispositions.length) {
-    lines.push(`- pending_review_dispositions: ${details.pendingReviewDispositions.map((item) => `${item.taskId}:${item.operation}:${item.runRef}`).join(", ")}`);
+    lines.push(`- pending_review_dispositions: ${details.pendingReviewDispositions.map((item) => `${item.task_id || "?"}:${item.operation || "?"}`).join(", ")}`);
   }
-  lines.push(`- open_predictions: ${formatPredictionList(details.openPredictions, maxItems)}`);
-  lines.push(`- supported_predictions: ${formatList(details.supportedPredictions, maxItems)}`);
-  lines.push(`- refuted_predictions: ${formatList(details.refutedPredictions, maxItems)}`);
-  lines.push(`- required_next_evidence: ${formatList(details.requiredNextEvidence, maxItems)}`);
   lines.push(`- branch_events: ${formatBranchList(details.branchEvents, maxItems)}`);
-  lines.push(`- history_checkpoints: ${formatCheckpointList(details.branchFrontiers, maxItems)}`);
   lines.push(`- allowed_decision_actions: ${formatList(details.allowedDecisionActions, maxItems)}`);
   if (details.latestAgentRuns.length) {
-    lines.push(`- latest_agent_runs: ${details.latestAgentRuns.map(formatAgentRun).join(", ")}`);
+    lines.push(`- latest_agent_runs: ${details.latestAgentRuns.map((run) => `${run.task_id || "?"}:${run.role || "?"}/${run.operation || "?"}/${run.status || "?"}`).join(", ")}`);
   }
-
   if (details.validationFindings.length) {
-    lines.push(
-      `- validation_findings: ${details.validationFindings
-        .slice(0, maxItems)
-        .map((finding) => `${finding.code || "finding"}:${finding.message || finding.path || ""}`)
-        .join("; ")}`
-    );
+    lines.push(`- validation_findings: ${details.validationFindings.slice(0, maxItems).map((item) => `${item.code || "finding"}:${item.message || ""}`).join("; ")}`);
   }
-
-  lines.push(
-    "- contract: use ts_workspace_context/ts_workspace_decision_draft/ts_workspace_decision_validate/ts_workspace_decision_apply; do not edit workspace state files by hand; shell fallbacks must use an explicit TSAgentSkill root, not cwd-relative scripts."
-  );
-  lines.push("- contract: n000 is intake; only mechanism nodes set hypothesis status; candidate and validation nodes return program facts and evidence only.");
+  lines.push("- authority: the Root Agent selects research actions and parent nodes; tags are display metadata only.");
+  lines.push("- contract: use ts_workspace_context/ts_workspace_decision_draft/ts_workspace_decision_validate/ts_workspace_decision_apply; do not edit canonical state files by hand.");
   return lines.join("\n");
 }
 
 function buildNodeContextSummary(context, options = {}) {
   const maxItems = Number.isInteger(options.maxItems) ? options.maxItems : 8;
   const node = objectOrEmpty(context.node);
-  const hypothesis = objectOrEmpty(context.hypothesis);
-  const pathway = objectOrEmpty(context.pathway);
-  const artifactRefs = objectOrEmpty(context.artifact_refs);
-  const nodeArtifacts = objectOrEmpty(artifactRefs.node_artifacts);
-  const evidence = arrayOfObjects(context.evidence);
-  const events = arrayOfObjects(context.branch_events);
-  const decisions = arrayOfObjects(context.decisions);
-  const agentRuns = arrayOfObjects(context.agent_runs);
-  const lines = [
+  const result = objectOrEmpty(node.result);
+  const artifacts = objectOrEmpty(context.artifact_paths || node.artifacts);
+  return [
     "TS historical node context:",
-    `- node: ${node.node_id || "?"}; type=${node.node_type || "?"}; scope=${node.validation_scope || node.audit_scope || node.candidate_kind || node.mechanism_action || "(none)"}; lifecycle=${node.lifecycle || "?"}`,
+    `- node: ${node.node_id || "?"}; state=${node.state || "?"}; tags=${formatList(arrayOfStrings(node.tags), maxItems)}`,
     `- parent: ${node.parent_node || "(none)"}; lineage: ${formatList(arrayOfStrings(context.lineage), maxItems)}`,
-    `- program: ${node.program_outcome || "(none)"}; hypothesis_status: ${node.hypothesis_status || "(none)"}; audit_status: ${node.audit_status || "(none)"}`,
-    `- objective: ${node.objective || node.hypothesis || "(none)"}`,
-    `- program_summary: ${node.program_summary || "(none)"}`,
-    `- program_facts: ${formatAnyList(node.program_facts, maxItems)}`,
-    `- mechanism_summary: ${node.mechanism_summary || "(none)"}`,
-    `- mechanism_facts: ${formatAnyList(node.mechanism_facts, maxItems)}`,
-    `- implication: ${node.implication || "(none)"}`,
-    `- open_questions: ${formatAnyList(node.open_questions, maxItems)}`,
-    `- active_hypothesis_record: ${hypothesis.hypothesis_id || "(none)"}/${hypothesis.status || "(none)"}; ${hypothesis.summary || ""}`,
-    `- pathway_record: ${pathway.pathway_id || "(none)"}/${pathway.status || "(none)"}; ${pathway.pattern || ""}`,
-    `- evidence: ${formatEvidenceList(evidence, maxItems)}`,
-    `- artifact_paths: ${formatArtifactPaths(nodeArtifacts)}`,
-    `- evidence_paths: ${formatList(arrayOfStrings(artifactRefs.evidence_paths), maxItems)}`,
-    `- source_files: ${formatList(arrayOfStrings(artifactRefs.source_files), maxItems)}`,
-    `- branch_events: ${formatBranchList(events.map(normalizeBranchEvent), maxItems)}`,
-    `- decisions: ${decisions.slice(0, maxItems).map((item) => `${item.decision_id || "?"}:${item.action || "?"}:${item.rationale || ""}`).join("; ") || "(none)"}`,
-    `- agent_runs: ${agentRuns.slice(-maxItems).map((item) => `${item.task_id || "?"}:${item.role || "?"}/${item.operation || "?"}/${item.status || "?"}`).join("; ") || "(none)"}`,
-    "- contract: this node is immutable historical evidence; inspecting it does not select a branch or mutate the workspace.",
-  ];
-  return lines.join("\n");
+    `- objective: ${node.objective || "(none)"}`,
+    `- outcome: ${result.outcome || "(none)"}; summary: ${result.summary || "(none)"}`,
+    `- claim_refs: ${formatList(arrayOfStrings(node.claim_refs), maxItems)}`,
+    `- operation_refs: ${formatList(arrayOfStrings(context.operation_refs || node.operation_refs), maxItems)}`,
+    `- evidence: ${formatEvidenceList(arrayOfObjects(context.evidence), maxItems)}`,
+    `- gate_results: ${arrayOfObjects(context.gate_results).slice(0, maxItems).map((item) => `${item.gate_result_id || "?"}/${item.gate || "?"}/${item.verdict || "?"}`).join("; ") || "(none)"}`,
+    `- artifact_paths: ${formatArtifactPaths(artifacts)}`,
+    `- agent_runs: ${arrayOfObjects(context.agent_runs).slice(-maxItems).map((item) => `${item.task_id || "?"}:${item.role || "?"}/${item.operation || "?"}/${item.status || "?"}`).join("; ") || "(none)"}`,
+    "- contract: this report is read-only; node tags do not authorize or select later actions.",
+  ].join("\n");
 }
 
-function buildBranchContextSummary(context, options = {}) {
+function buildLineageContextSummary(context, options = {}) {
   const maxItems = Number.isInteger(options.maxItems) ? options.maxItems : 8;
-  const fromContext = objectOrEmpty(context.from_node);
-  const anchorContext = objectOrEmpty(context.anchor_node);
-  const fromNode = objectOrEmpty(fromContext.node);
-  const anchorNode = objectOrEmpty(anchorContext.node);
-  const pathDelta = arrayOfObjects(context.path_delta);
+  const fromNode = objectOrEmpty(objectOrEmpty(context.from_node).node);
+  const anchorNode = objectOrEmpty(objectOrEmpty(context.anchor_node).node);
   return [
-    "TS backtrack context:",
+    "TS lineage context:",
     `- trigger: ${formatNodeState(fromNode)}`,
     `- selected_checkpoint: ${formatNodeState(anchorNode)}`,
-    `- checkpoint_summary: ${anchorNode.mechanism_summary || anchorNode.hypothesis || "(none)"}`,
-    `- trigger_summary: ${fromNode.mechanism_summary || fromNode.program_summary || "(none)"}`,
-    `- attempted_since_checkpoint: ${pathDelta.slice(0, maxItems).map(formatNodeDelta).join("; ") || "(none)"}`,
-    "- contract: the agent must choose relation, parent, hypothesis, solution, and pathway after reviewing this context; tooling only validates the resulting topology.",
+    `- attempted_since_checkpoint: ${arrayOfObjects(context.path_delta).slice(0, maxItems).map(formatNodeState).join("; ") || "(none)"}`,
+    "- authority: the Root Agent decides whether and how to branch; the kernel only validates parent-node topology.",
   ].join("\n");
 }
 
 function parseJsonOutput(result) {
   if (result && typeof result === "object") {
     for (const key of ["stdout", "output", "text"]) {
-      if (typeof result[key] === "string" && result[key].trim()) {
-        return JSON.parse(result[key]);
-      }
+      if (typeof result[key] === "string" && result[key].trim()) return JSON.parse(result[key]);
     }
   }
-  if (typeof result === "string" && result.trim()) {
-    return JSON.parse(result);
-  }
+  if (typeof result === "string" && result.trim()) return JSON.parse(result);
   if (result && typeof result === "object" && typeof result.stderr === "string" && result.stderr.trim()) {
     const stderr = result.stderr.trim();
-    let payload;
     try {
-      payload = JSON.parse(stderr);
-    } catch (_error) {
-      payload = undefined;
-    }
-    if (payload && typeof payload === "object" && typeof payload.error === "string" && payload.error.trim()) {
-      throw new Error(payload.error.trim());
+      const payload = JSON.parse(stderr);
+      if (payload && typeof payload.error === "string" && payload.error.trim()) throw new Error(payload.error.trim());
+    } catch (error) {
+      if (error instanceof Error && error.message !== stderr) throw error;
     }
     throw new Error(stderr);
   }
@@ -297,112 +189,50 @@ function toolText(text, details = {}) {
 }
 
 function formatNode(node) {
-  const scope = node.scope ? `:${node.scope}` : "";
-  return `${node.nodeId || "node"}:${node.nodeType || "type"}${scope}/${node.lifecycle || "state"}`;
-}
-
-function formatAgentRun(run) {
-  return `${run.taskId || "run"}:${run.role || "role"}/${run.operation || "operation"}/${run.status || "status"}`;
-}
-
-function formatPredictionList(values, maxItems) {
-  if (!values.length) {
-    return "(none)";
-  }
-  return values
-    .slice(0, maxItems)
-    .map((item) => `${item.predictionId || "prediction"}:${item.scope || "scope"}`)
-    .join(", ");
-}
-
-function formatBranchList(values, maxItems) {
-  if (!values.length) {
-    return "(none)";
-  }
-  return values
-    .slice(-maxItems)
-    .map((item) => `${item.fromNode || "?"}->${item.newNode || "?"}:${item.relation || item.changedVariable || item.reasonCode || "branch"}`)
-    .join(", ");
-}
-
-function formatCheckpointList(values, maxItems) {
-  if (!values.length) {
-    return "(none)";
-  }
-  const unused = values.filter((item) => !item.hasOutgoingBranch).slice(-maxItems);
-  const remaining = Math.max(0, maxItems - unused.length);
-  const used = remaining ? values.filter((item) => item.hasOutgoingBranch).slice(-remaining) : [];
-  const candidates = unused.concat(used);
-  return candidates
-    .map((item) => `${item.nodeId || "?"}:${item.nodeType || "?"}${item.scope ? `:${item.scope}` : ""}/${item.programOutcome || item.lifecycle || "?"}/${item.hypothesisStatus || item.auditStatus || "?"}`)
-    .join(", ");
-}
-
-function formatEvidenceList(values, maxItems) {
-  if (!values.length) {
-    return "(none)";
-  }
-  return values
-    .slice(0, maxItems)
-    .map((item) => `${item.evidence_id || "?"}/${item.role || item.kind || "evidence"}: ${item.summary || ""}`)
-    .join("; ");
-}
-
-function formatArtifactPaths(value) {
-  const entries = ["inputs", "outputs", "remote", "scratch"]
-    .filter((key) => typeof value[key] === "string" && value[key].trim())
-    .map((key) => `${key}=${value[key]}`);
-  return entries.join(", ") || "(none)";
-}
-
-function normalizeBranchEvent(event) {
-  return {
-    relation: event.relation || "",
-    fromNode: event.from_node || "",
-    anchorNode: event.anchor_node || "",
-    newNode: event.new_node || "",
-    changedVariable: event.changed_variable || "",
-    reasonCode: event.reason_code || "",
-  };
-}
-
-function formatNodeDelta(node) {
-  return `${formatNodeState(node)}:${node.mechanism_summary || node.program_summary || node.objective || ""}`;
+  const tags = node.tags.length ? `[${node.tags.join(",")}]` : "";
+  return `${node.nodeId || "node"}${tags}/${node.state || "state"}`;
 }
 
 function formatNodeState(node) {
-  const type = node.node_type || "?";
-  const scope = node.validation_scope || node.audit_scope || node.candidate_kind || node.mechanism_action || "";
-  const program = node.program_outcome || node.lifecycle || "?";
-  const science = node.hypothesis_status || node.audit_status || "?";
-  return `${node.node_id || "?"}:${type}${scope ? `:${scope}` : ""}/${program}/${science}`;
+  const tags = arrayOfStrings(node.tags);
+  const result = objectOrEmpty(node.result);
+  return `${node.node_id || "?"}${tags.length ? `[${tags.join(",")}]` : ""}/${node.state || "?"}/${result.outcome || "pending"}`;
+}
+
+function formatClaim(claim) {
+  return `${claim.claimId || "claim"}/${claim.status || "?"}: ${claim.statement || ""}`;
+}
+
+function formatControl(item) {
+  return `${item.operation || "?"}:${item.intent_id || "?"}:${item.error_class || item.state || "pending"}`;
+}
+
+function formatBranchList(values, maxItems) {
+  if (!values.length) return "(none)";
+  return values.slice(-maxItems).map((item) => `${item.parent_node || "root"}->${item.node_id || "?"}`).join(", ");
+}
+
+function formatEvidenceList(values, maxItems) {
+  if (!values.length) return "(none)";
+  return values.slice(0, maxItems).map((item) => `${item.evidence_id || "?"}/${item.kind || "evidence"}/${item.state || "?"}: ${item.summary || ""}`).join("; ");
+}
+
+function formatArtifactPaths(value) {
+  return ["inputs", "outputs", "attempts", "remote", "scratch"]
+    .filter((key) => typeof value[key] === "string" && value[key].trim())
+    .map((key) => `${key}=${value[key]}`)
+    .join(", ") || "(none)";
+}
+
+function formatCounts(value) {
+  const entries = Object.entries(value).sort(([left], [right]) => left.localeCompare(right));
+  return entries.length ? entries.map(([key, count]) => `${key}=${count}`).join(", ") : "(none)";
 }
 
 function formatList(values, maxItems) {
-  if (!values.length) {
-    return "(none)";
-  }
+  if (!values.length) return "(none)";
   const visible = values.slice(0, maxItems);
-  const suffix = values.length > visible.length ? ` (+${values.length - visible.length} more)` : "";
-  return visible.join(", ") + suffix;
-}
-
-function formatAnyList(value, maxItems) {
-  if (!Array.isArray(value) || !value.length) {
-    return "(none)";
-  }
-  const visible = value.slice(0, maxItems).map((item) => {
-    if (typeof item === "string") {
-      return item;
-    }
-    try {
-      return JSON.stringify(item);
-    } catch (_error) {
-      return String(item);
-    }
-  });
-  const suffix = value.length > visible.length ? ` (+${value.length - visible.length} more)` : "";
-  return visible.join("; ") + suffix;
+  return visible.join(", ") + (values.length > visible.length ? ` (+${values.length - visible.length} more)` : "");
 }
 
 function objectOrEmpty(value) {
@@ -428,18 +258,14 @@ function main(argv) {
     return 2;
   }
   const report = JSON.parse(fs.readFileSync(argv[reportFlag + 1], "utf8"));
-  const details = buildContextDetails(report);
-  const summary = buildContextSummary(report);
-  process.stdout.write(JSON.stringify({ summary, details }, null, 2) + "\n");
+  process.stdout.write(JSON.stringify({ summary: buildContextSummary(report), details: buildContextDetails(report) }, null, 2) + "\n");
   return 0;
 }
 
-if (require.main === module) {
-  process.exitCode = main(process.argv.slice(2));
-}
+if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
 module.exports = {
-  buildBranchContextSummary,
+  buildLineageContextSummary,
   buildContextDetails,
   buildContextSummary,
   buildNodeContextSummary,

@@ -1,323 +1,137 @@
-# Transition-State Search Report: {{system_id}}
+# Transition-State Research Report: {{system_id}}
 
-## 1. Executive Verdict
+## 1. Executive Status
 
 | Field | Value |
 | --- | --- |
 | Workspace | `{{workspace_root}}` |
-| Task directory | `{{task_dir}}` |
-| Report generated | `{{timestamp}}` |
-| Target reaction / pathway step | `{{pathway_ref}}` |
-| Highest validated layer | `{{candidate | tsfreq | connectivity | accepted_ts | pathway}}` |
-| Final claim | `{{accepted | not_accepted | inconclusive | needs_followup}}` |
-| Accepted TS refs | `{{accepted_ts_refs}}` |
-| Main evidence refs | `{{evidence_refs}}` |
+| Workspace revision | `{{workspace_revision}}` |
+| Focus Claims | `{{focus_claim_refs}}` |
+| Accepted artifacts | `{{accepted_refs_or_none}}` |
+| Report generated | {{timestamp}} |
 
-**Conclusion.** {{One paragraph. State exactly what is supported, what is not
-supported, and what remains open. Do not call a candidate or isolated imaginary
-frequency an accepted TS.}}
+**Conclusion.** {{State exactly which Claims are supported, contradicted,
+inconclusive, or accepted and what remains open.}}
 
-**Decision for next action.** {{stop | open replacement branch | run follow-up
-IRC | rerun TS/Freq | ask user}} because {{short reason}}.
+**Research decision.** {{State the Root Agent's next act or explicit stop and
+its cited basis.}}
 
-## 2. Reaction Overview / Reaction And Hypothesis Scope
+## 2. Scientific Claims
 
-| Item | Value |
-| --- | --- |
-| Reactant endpoint | `{{reactant_ref}}` |
-| Product endpoint | `{{product_ref}}` |
-| Charge / multiplicity | `{{charge}} / {{multiplicity}}` |
-| Atom mapping | `{{atom_mapping_ref}}` |
-| Initial hypothesis | `{{hypothesis_id}}`: {{summary}} |
-| Proposal source / branch anchor | `{{source_node}}` / `{{branch_anchor_node}}` |
-| Proposal evidence | `{{proposal_evidence_refs}}` |
-| Reaction center | {{forming bonds; breaking bonds; transferred atoms}} |
-| Alternative hypotheses considered | {{list or none}} |
+| Claim | Parent | Kind | Status | Statement | Required Gates | Basis |
+| --- | --- | --- | --- | --- | --- | --- |
+| `{{claim_id}}` | `{{parent_claim_id_or_none}}` | `{{claim_kind}}` | `{{claim_status}}` | {{statement}} | `{{required_gates}}` | `{{evidence_and_gate_refs}}` |
 
-Endpoint provenance:
+Alternative or revised Claims:
 
-| File | Role | SHA-256 | Notes |
-| --- | --- | --- | --- |
-| `{{path}}` | reactant/product/mapping | `{{sha256}}` | {{source}} |
+{{Describe their scientific relationship. Do not infer priority from Node
+topology.}}
 
 ## 3. Computational Protocol
 
-Report enough detail that the calculation can be reproduced.
-
-| Layer | Program / version | Method settings | Key options | Artifact |
+| Operation | Program / version | Method and settings | Inputs | Primary artifacts |
 | --- | --- | --- | --- | --- |
-| Candidate generation | {{backend}} | {{method}} | {{settings}} | `{{path}}` |
-| TS optimization | {{program}} | {{functional/basis/model}} | {{opt keywords, convergence, constraints}} | `{{path}}` |
-| Frequency | {{program}} | {{same or different method}} | {{temperature, scaling, Hessian source}} | `{{path}}` |
-| IRC / connectivity | {{program}} | {{method}} | {{direction, step, max steps, endpoint opt}} | `{{path}}` |
-| Rendering | `ts_render` | {{style/options}} | {{image/animation outputs}} | `{{path}}` |
+| {{purpose}} | {{program}} | {{method_settings}} | `{{input_refs}}` | `{{artifact_refs}}` |
 
-Nondefault choices:
+Record charge, multiplicity, solvation/environment, dispersion, integration
+grid, SCF treatment, convergence criteria, constraints, temperature, pressure,
+resources, and deviations from the intended method when relevant.
 
-- Geometry constraints: {{none or details}}.
-- Optimization convergence criteria: {{defaults or explicit values}}.
-- Solvation / environment model: {{none or details}}.
-- Dispersion, grid, SCF, integration, ECP, spin treatment: {{details}}.
-- Remote execution: host `{{host}}`, node `{{compute_node}}`, cores
-  `{{cores}}`, remote directory `{{remote_dir}}`.
+## 4. Structures And Reaction Coordinate
 
-## 4. R-TS-P Structural Panel
+| Structure | Scientific use | Artifact | Key geometry | Provenance |
+| --- | --- | --- | --- | --- |
+| {{label}} | {{reactant / candidate / TS / endpoint / intermediate}} | `{{artifact_ref}}` | {{distances_angles_dihedrals}} | `{{evidence_ref}}` |
 
-| Role | Structure | Key reaction-center distances | Rendered artifact |
-| --- | --- | --- | --- |
-| R | `{{reactant_xyz}}` | {{distances}} | `assets/r_ts_p_structure_panel.svg` |
-| TS | `{{ts_xyz}}` | {{distances}} | `assets/r_ts_p_render.png` or missing |
-| P | `{{product_xyz}}` | {{distances}} | `assets/r_ts_p_structure_panel.svg` |
-
-## 5. Imaginary Mode / Vibration Analysis
+Imaginary-mode summary:
 
 | Field | Value |
 | --- | --- |
-| Imaginary frequency | {{value cm^-1}} |
-| Mode-minus structure | `{{mode_minus_xyz}}` |
-| Mode-plus structure | `{{mode_plus_xyz}}` |
-| Mode displacement artifact | `assets/irc_key_distance_profile.svg` |
-| Reaction-coordinate interpretation | {{forming/breaking/transferred coordinates}} |
+| Frequency | {{value_and_units}} |
+| Mode assignment | {{reaction_coordinate_interpretation}} |
+| Displaced structures / animation | `{{artifact_refs_or_missing}}` |
+| Evidence | `{{evidence_ref}}` |
 
-## 6. IRC / Connectivity Evidence
+## 5. Deterministic Gate Results
 
-| Direction | Endpoint artifact | Assigned basin | RMSD / metric | Key bond checks | Verdict |
+| Gate result | Gate / policy | Target Claim | Verdict | Evidence | Diagnostics |
 | --- | --- | --- | --- | --- | --- |
-| forward | `{{path}}` | reactant/product/other | {{value}} | {{values}} | {{supported/refuted}} |
-| reverse | `{{path}}` | reactant/product/other | {{value}} | {{values}} | {{supported/refuted}} |
+| `{{gate_result_id}}` | `{{gate}}` / `{{policy}}` | `{{target_claim_ref}}` | `{{verdict}}` | `{{evidence_refs}}` | {{diagnostics_or_none}} |
 
-## 7. Energy Profile
+Separate at minimum:
 
-Relative energies should be traceable to absolute energies and corrections in
-the artifacts or appendix. If R, TS, and P are not all available at comparable
-levels, report the gap explicitly.
+- saddle-point/frequency facts;
+- imaginary-mode assignment;
+- bidirectional connectivity facts;
+- any stereochemical, endpoint, electronic, robustness, thermochemistry, or
+  pathway facts required by the target Claim.
 
-| Species | Role | Artifact | E_elec / hartree | E+ZPE / hartree | G / hartree | Rel E_elec / kcal mol^-1 | Rel E+ZPE / kcal mol^-1 | Rel G / kcal mol^-1 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| R | reactant | `{{path}}` | {{E}} | {{E_ZPE}} | {{G}} | {{rel_E}} | {{rel_E_ZPE}} | {{rel_G}} |
-| TS | transition state | `{{path}}` | {{E}} | {{E_ZPE}} | {{G}} | {{rel_E}} | {{rel_E_ZPE}} | {{rel_G}} |
-| P | product | `{{path}}` | {{E}} | {{E_ZPE}} | {{G}} | {{rel_E}} | {{rel_E_ZPE}} | {{rel_G}} |
+## 6. Connectivity And Endpoints
 
-## 8. Mechanistic Interpretation
+| Direction | Termination | Endpoint artifact | Assigned basin | Assignment facts | Evidence |
+| --- | --- | --- | --- | --- | --- |
+| forward | {{status}} | `{{artifact_ref}}` | {{assignment}} | {{metrics}} | `{{evidence_ref}}` |
+| reverse | {{status}} | `{{artifact_ref}}` | {{assignment}} | {{metrics}} | `{{evidence_ref}}` |
 
-{{Explain how the reaction occurs. Distinguish accepted pathway evidence from
-mechanistic interpretation. State whether the coordinate is tightly coupled,
-asynchronous, or still compatible with a stepwise alternative. Describe which
-bond changes are advanced at the TS, what the imaginary mode does, what the IRC
-confirms, and which electronic-structure claims remain unproven.}}
+State finite-path, maximum-point, endpoint-optimization, and reference-basin
+limitations explicitly. Do not describe a connection as accepted without the
+corresponding passing Gate result.
 
-## 9. Evidence Audit
+## 7. Energies And Thermochemistry
 
-### Candidate Generation Evidence
+Keep unlike quantities separate.
 
-{{candidate evidence and rejected branches}}
-
-### TS/Freq Validation
-
-{{TS/Freq gate, mode assignment, convergence, frequencies}}
-
-### Connectivity / IRC Validation
-
-{{IRC endpoint assignment, strictness, caveats}}
-
-### Accepted-TS Audit
-
-{{accepted audit gates}}
-
-### Pathway Audit
-
-{{pathway audit outcome}}
-
-## 10. Search Tree Summary
-
-| Node | Node type / scope | Hypothesis ref | Program outcome | Scientific status | Key evidence | Implication |
+| Species | Artifact | E_elec / hartree | E+ZPE / hartree | H / hartree | G / hartree | Relative quantity / units |
 | --- | --- | --- | --- | --- | --- | --- |
-| `n000` | intake | n/a | {{program_outcome}} | {{scientific_status}} | `{{refs}}` | {{implication}} |
-| `{{node_id}}` | {{node_type}} / {{scope}} | `{{hypothesis_ref}}` | {{program_outcome}} | {{scientific_status}} | `{{refs}}` | {{implication}} |
+| {{species}} | `{{artifact_ref}}` | {{E}} | {{E_ZPE_or_missing}} | {{H_or_missing}} | {{G_or_missing}} | {{relative_value}} |
 
-Rejected or superseded branches:
+Reference state, conformer treatment, standard state, temperature, pressure,
+frequency scaling, and missing corrections:
 
-| Branch / node | Reason code | Evidence | What changed in replacement |
-| --- | --- | --- | --- |
-| `{{node_id}}` | {{reason_code}} | `{{evidence_refs}}` | {{changed variable}} |
+{{details}}
 
-## 11. Candidate Generation Evidence
+## 8. Research Nodes
 
-Candidate-generation method:
-
-- Input endpoints: `{{reactant_ref}}`, `{{product_ref}}`
-- Generator / backend: {{QBICS, NEB, scan, conformer search, manual, other}}
-- Candidate count: {{n}}
-- Ranking or filter criteria: {{energy, geometry, mode expectation, distance}}
-- Candidate artifact directory: `{{path}}`
-
-Candidate table:
-
-| Candidate | Source node | Energy / score | Key geometry | Status | Reason |
-| --- | --- | --- | --- | --- | --- |
-| `{{candidate_id}}` | `{{node_id}}` | {{value}} | {{key bonds}} | kept/rejected | {{reason}} |
-
-## 12. TS/Freq Validation
-
-| Field | Value |
-| --- | --- |
-| TS structure | `{{ts_xyz_or_log}}` |
-| Optimization convergence | {{converged / failed / partial}} |
-| Final electronic energy | {{value hartree}} |
-| ZPE / thermal corrections | {{values and units}} |
-| Imaginary frequency count | {{n}} |
-| Imaginary frequency | {{value cm^-1}} |
-| `tsfreq_gate` evidence | `{{evidence_id}}` |
-| Hypothesis match | {{supported / refuted / inconclusive}} |
-
-Imaginary-mode assignment:
-
-| Internal coordinate | Atoms | Direction / change | Relation to hypothesis |
-| --- | --- | --- | --- |
-| bond | {{i-j}} | {{forming/breaking; delta}} | {{matches or not}} |
-| angle/dihedral | {{i-j-k-l}} | {{delta}} | {{primary/secondary}} |
-
-Diagnostics:
-
-- Extra imaginary modes: {{none or list}}.
-- Mode mismatch: {{none or details}}.
-- Convergence warnings: {{none or details}}.
-- Relevant artifacts: `{{freq_log}}`, `{{mode_animation}}`,
-  `{{rendered_ts}}`.
-
-## 13. Connectivity / IRC Validation
-
-IRC or displacement settings:
-
-| Field | Value |
-| --- | --- |
-| Starting TS | `{{ts_ref}}` |
-| Direction(s) | {{forward/backward/both}} |
-| Step size | {{value and units}} |
-| Max steps / points | {{value}} |
-| Initial Hessian source | {{calcfc/readfc/other}} |
-| Endpoint optimization | {{performed / not performed}} |
-| Strict IRC complete | {{yes/no; both directions normal terminated}} |
-| IRC program failures | {{none or exact failure type/point}} |
-| Connectivity evidence | `{{evidence_id}}` |
-
-Endpoint assignment:
-
-| Direction | Endpoint artifact | Assigned basin | RMSD / metric | Key bond checks | Verdict |
-| --- | --- | --- | --- | --- | --- |
-| forward | `{{path}}` | reactant/product/other | {{value}} | {{values}} | {{supported/refuted}} |
-| reverse | `{{path}}` | reactant/product/other | {{value}} | {{values}} | {{supported/refuted}} |
-
-Connectivity conclusion:
-
-{{State whether forward and reverse paths connect the proposed reactant and
-product basins. If both sides lead to the same basin, report the TS branch as
-not accepted and identify the needed replacement hypothesis.}}
-
-## 14. Accepted-TS Audit
-
-Complete this section only when the accepted-audit gate is satisfied.
-
-| Gate | Required evidence | Present | Notes |
-| --- | --- | --- | --- |
-| TS/Freq gate | `tsfreq_gate` | yes/no | {{evidence_id}} |
-| Connectivity gate | `connectivity_gate` | yes/no | {{evidence_id}} |
-| Strict IRC gate | `strict_irc_complete` | yes/no | {{forward/reverse normal termination status}} |
-| Stereochemical gate | `stereochemical_connectivity_gate` if declared | yes/no/not required | {{evidence_id and verdict}} |
-| Endpoint/intermediate identity gate | `endpoint_identity_gate` / `intermediate_identity_gate` if declared | yes/no/not required | {{evidence_id and boundary}} |
-| Electronic/state character gate | `electronic_structure_gate` / `state_character_gate` if declared | yes/no/not required | {{evidence_id and diagnostics}} |
-| Same hypothesis ID | `{{hypothesis_id}}` | yes/no | {{notes}} |
-| Accepted artifact | `accepted/{{accepted_id}}.json` | yes/no | {{notes}} |
-
-Accepted TS statement:
-
-{{Only state accepted TS here if all required gates are yes, including the
-stereochemical gate when the hypothesis declares stereochemical requirements.
-Include accepted artifact path and evidence refs.}}
-
-## 15. Pathway Audit
-
-| Field | Value |
-| --- | --- |
-| Pathway ID / step | `{{pathway_id}} / {{step_id}}` |
-| Audited TS refs | `{{accepted_ts_refs}}` |
-| Whole R-to-P accepted | yes/no/inconclusive |
-| Audit outcome | `{{accepted | pathway_not_accepted | inconclusive}}` |
-| Pathway evidence | `{{evidence_refs}}` |
-| Shared-basin consistency | `shared_basin_consistency_gate` if declared | yes/no/not required |
-
-Pathway conclusion:
-
-{{Report a negative pathway audit as a supported negative audit, not as pathway
-success. State the failed branch and the next branch separately.}}
-
-## 16. Energy Profile
-
-Relative energies should be traceable to absolute energies and corrections in
-the artifacts or appendix.
-
-| Species | Role | Artifact | E_elec / hartree | E+ZPE / hartree | G / hartree | Rel E_elec / kcal mol^-1 | Rel E+ZPE / kcal mol^-1 | Rel G / kcal mol^-1 |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| R | reactant | `{{path}}` | {{E}} | {{E_ZPE}} | {{G}} | {{rel_E}} | {{rel_E_ZPE}} | {{rel_G}} |
-| TS | transition state | `{{path}}` | {{E}} | {{E_ZPE}} | {{G}} | {{rel_E}} | {{rel_E_ZPE}} | {{rel_G}} |
-| P | product | `{{path}}` | {{E}} | {{E_ZPE}} | {{G}} | {{rel_E}} | {{rel_E_ZPE}} | {{rel_G}} |
-
-Energy notes:
-
-- Reference state: {{reactant complex, separated reactants, conformer, other}}.
-- Corrections used: {{ZPE, H, G, single-point correction, none}}.
-- Temperature / pressure: {{values}}.
-- Conformer treatment: {{lowest, ensemble, not searched}}.
-
-## 17. Figures And Rendered Artifacts
-
-| Figure | Purpose | Artifact | Notes |
-| --- | --- | --- | --- |
-| Reaction panel | R / TS / P comparison | `{{path}}` | {{notes}} |
-| TS mode | imaginary-mode visualization | `{{path}}` | {{notes}} |
-| IRC animation | pathway inspection | `{{path}}` | {{notes}} |
-| Energy diagram | barrier summary | `{{path}}` | {{notes}} |
-
-## 18. Limitations And Open Questions
-
-- {{Unresolved conformer issue, method uncertainty, missing IRC, ambiguous
-  endpoint assignment, failed branch, spin/charge uncertainty, etc.}}
-- Required follow-up: {{specific calculation or decision}}.
-
-## 19. Artifact And Evidence Appendix
-
-Evidence registry excerpt:
-
-| Evidence ID | Kind | Role | Tier | Node | Path | Summary |
+| Node | Parent | State | Tags | Outcome | Objective | Claim / operation refs |
 | --- | --- | --- | --- | --- | --- | --- |
-| `{{evidence_id}}` | {{kind}} | {{role}} | {{tier}} | `{{node_id}}` | `{{path}}` | {{summary}} |
+| `{{node_id}}` | `{{parent_node_or_none}}` | `{{state}}` | {{tags}} | `{{outcome}}` | {{objective}} | `{{refs}}` |
 
-Key files:
+Failed, blocked, or superseded work remains visible:
 
-| Path | Purpose | SHA-256 | Produced by |
+| Node / operation | Failure fact | Artifact or journal | Scientific implication |
 | --- | --- | --- | --- |
-| `{{path}}` | {{purpose}} | `{{sha256}}` | `{{node_id}}` |
+| `{{ref}}` | {{fact}} | `{{source_ref}}` | {{none / explicit implication}} |
 
-Coordinates:
+## 9. Accepted Artifacts
 
-```xyz
-{{paste short coordinate block only when useful; otherwise link artifact path}}
-```
+| Acceptance | Policy | Target Claim | Gate results | Decision | Summary |
+| --- | --- | --- | --- | --- | --- |
+| `{{acceptance_id}}` | `{{audit_policy}}` | `{{target_claim_ref}}` | `{{gate_result_refs}}` | `{{decision_id}}` | {{summary}} |
 
-Decision JSON files:
+If no accepted artifact exists, state that directly. Normal termination, a
+candidate geometry, one imaginary frequency, or advisory Review is not a
+substitute.
 
-| Node | Action | Decision file | Result |
-| --- | --- | --- | --- |
-| `{{node_id}}` | start/update/end | `{{path}}` | {{result}} |
+## 10. Evidence Appendix
 
-## 14. Source Checklist
+| Evidence | Kind / tier | Owner Node | Summary | Facts | Artifacts | Producer |
+| --- | --- | --- | --- | --- | --- | --- |
+| `{{evidence_id}}` | `{{kind}}` / `{{tier}}` | `{{node_id}}` | {{summary}} | `{{facts_json}}` | `{{artifact_refs}}` | {{producer}} |
 
-- [ ] Workspace validates with `python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_workspace --root {{workspace_root}}`.
-- [ ] `report_workspace` was run before report generation.
-- [ ] All accepted claims cite evidence IDs.
-- [ ] TS/Freq, connectivity, and declared stereochemical evidence refer to the same hypothesis ID.
-- [ ] Negative pathway audits are reported as negative outcomes.
-- [ ] Coordinates, absolute energies, and frequency counts are present in
-      artifacts or appendix.
-- [ ] Rendered images/animations are labeled as visualization artifacts, not
-      proof by themselves.
+List withdrawn, invalidated, and superseded Evidence separately and exclude it
+from current scientific support.
+
+## 11. Operational Follow-Up
+
+- Unresolved compute controls: {{count_and_refs_or_none}}.
+- Pending Review responses: {{count_and_refs_or_none}}.
+- Missing report/render artifacts: {{list_or_none}}.
+- Notification status: {{operational_status_or_not_requested}}.
+
+Operational journals are not Evidence.
+
+## 12. Limitations And Open Questions
+
+- {{Scientific limitation or open question.}}
+- {{Method, endpoint, conformer, spin, or sampling limitation.}}
+- {{Required next discriminator, or explicit reason the study is complete.}}

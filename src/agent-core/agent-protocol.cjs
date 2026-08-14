@@ -14,18 +14,16 @@ const AUTHORITIES = Object.freeze({
 const OUTCOMES = Object.freeze(["success", "partial", "failure", "not_run"]);
 const PROGRAM_OUTCOMES = Object.freeze(["success", "failure", "not_run"]);
 const FORBIDDEN_RESULT_KEYS = new Set([
-  "accepted_ts",
-  "accepted_ts_ref",
-  "audit_status",
-  "branch_context",
-  "claim_verdict",
+  "acceptance_id",
+  "accepted_ref",
+  "audit",
+  "claim_status",
+  "claim_update",
+  "claim_updates",
   "decision",
-  "focus_hypothesis_id",
-  "hypothesis_status",
-  "next_decision",
-  "pathway_accepted",
+  "focus_claim_refs",
+  "gate_verdict",
   "study_complete",
-  "strict_pathway_decision",
 ]);
 
 const TASK_KEYS = [
@@ -36,11 +34,11 @@ const DOCUMENT_BINDING_KEYS = ["ref", "schema_version", "sha256", "bytes"];
 const REVIEW_INPUT_DOCUMENTS = Object.freeze({
   evidence_snapshot: Object.freeze({
     ref: "evidence-snapshot.json",
-    schema_version: "ts-review-evidence-snapshot/1",
+    schema_version: "ts-review-evidence-snapshot/2",
   }),
   provider_input: Object.freeze({
     ref: "provider-input.json",
-    schema_version: "ts-review-provider-input/1",
+    schema_version: "ts-review-provider-input/2",
   }),
 });
 const RESULT_KEYS = [
@@ -176,12 +174,11 @@ function validateWorkspace(value) {
 
 function validateScope(value) {
   if (!isPlainObject(value)) throw new Error("scope must be an object");
-  rejectUnknownKeys(value, ["report_id", "node_ids", "hypothesis_id", "pathway_id"], "scope");
+  rejectUnknownKeys(value, ["report_id", "node_ids", "claim_refs"], "scope");
   return {
     report_id: nullableString(value.report_id, "scope.report_id", 256),
     node_ids: uniqueStringArray(value.node_ids, "scope.node_ids", 64, 128),
-    hypothesis_id: nullableString(value.hypothesis_id, "scope.hypothesis_id", 256),
-    pathway_id: nullableString(value.pathway_id, "scope.pathway_id", 256),
+    claim_refs: uniqueStringArray(value.claim_refs, "scope.claim_refs", 64, 256),
   };
 }
 
@@ -210,10 +207,9 @@ function validateConstraints(value) {
 }
 
 function validateFact(value, index) {
-  rejectUnknownKeys(value, ["kind", "layer", "statement", "status", "basis_refs"], `facts[${index}]`);
+  rejectUnknownKeys(value, ["kind", "statement", "status", "basis_refs"], `facts[${index}]`);
   return {
     kind: requireEnum(value.kind, `facts[${index}].kind`, FACT_KINDS),
-    layer: nullableString(value.layer, `facts[${index}].layer`, 64),
     statement: requireString(value.statement, `facts[${index}].statement`, 2000),
     status: requireEnum(value.status, `facts[${index}].status`, ["observed", "supported", "contradicted", "uncertain"]),
     basis_refs: uniqueStringArray(value.basis_refs, `facts[${index}].basis_refs`, 16, 4096),

@@ -14,7 +14,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_NAME = "@iawnix/ts-agent"
-PACKAGE_VERSION = "0.4.0"
+PACKAGE_VERSION = "0.5.0"
 SKILL_ENTRY = "./skills/transition-state-workflow"
 THEME_ENTRIES = ["./themes/ts-theme.json"]
 EXTENSION_ENTRIES = [
@@ -66,9 +66,6 @@ PACKAGE_FILES = [
     "ts_web/static/*.html",
     "ts_workspace/*.py",
     "ts_workspace/contracts/*.json",
-    "ts_workspace/finalizers/*.py",
-    "ts_workspace/readers/*.py",
-    "ts_workspace/validators/*.py",
 ]
 REQUIRED_TARBALL_FILES = {
     "package.json",
@@ -103,7 +100,9 @@ REQUIRED_TARBALL_FILES = {
     "src/agents/artifacts/policy.md",
     "src/agents/artifacts/roles/report.md",
     "ts_email/delivery.py",
-    "ts_workspace/evidence_lifecycle.py",
+    "ts_workspace/engine_v3.py",
+    "ts_workspace/migrate_v2.py",
+    "scripts/migrate_workspace_v2_to_v3.py",
 }
 LEGACY_PREFIXES = (
     "agent-core/",

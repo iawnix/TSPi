@@ -1,51 +1,65 @@
 # @iawnix/ts-agent
 
-`@iawnix/ts-agent` is the Pi Package maintained in the TSAgentSkill repository.
-It provides an evidence- and hypothesis-driven transition-state research
-workflow and separates scientific decisions, program
-execution, evidence registration, branch topology, reporting, and read-only
-visualization.
+`@iawnix/ts-agent` is the Pi package maintained in the TSAgentSkill repository.
+It combines an evidence-driven transition-state research Skill, deterministic
+workspace and compute kernels, isolated operator agents, remote SSH/Torque
+execution, reporting, notifications, and a read-only workspace explorer.
 
-This branch supports Pi Agent only. The Python packages and command-line
-entrypoints are implementation kernels used by the Pi extensions, not a
-separately supported agent runtime.
+This branch supports Pi Agent only. The Python entrypoints are implementation
+kernels used by the Pi extensions, not a separate agent runtime.
+The package supports Pi `>=0.81.1 <1.0.0` and is currently validated against
+the exact Pi SDK versions in `package.json`.
 
-The workspace contract is `ts-decision/2` and `ts-node/2`. Phase-based
-workspaces are rejected and must be recreated under the current ontology.
+## Design
 
-## Architecture
+The v3 architecture has one decision boundary:
 
-- `skills/transition-state-workflow/`: the only public Pi Skill, including its
-  on-demand references and reusable report/decision assets.
-- `extensions/`: the public Pi tool and command adapters.
-- `src/agent-core/`: shared `ts-agent-task/2` / `ts-agent-result/1` protocol,
-  result normalization, disposable-session lifecycle, and durable run journal.
-- `src/agents/review/`: fresh, tool-free Pi scientific-review sessions with
-  bounded task packets and review-specific result validation.
-- `src/agents/compute/`: fresh backend sessions, compute-specific result
-  binding, and private backend skills.
-- `src/agents/artifacts/`: fresh render and report sessions,
-  request contracts, and private artifact skills.
-- `ts_workspace`: the only canonical research-state control plane.
+```text
+Root Agent chooses the research path
+  -> deterministic kernel validates contracts, references, facts, Gates,
+     transactions, and immutable operational bindings
+```
+
+The kernel does not choose a method, prescribe a node sequence, infer a next
+step from tags, or turn a failed calculation into a scientific conclusion.
+
+The canonical scientific model is deliberately small:
+
+- **Node**: one bounded research act with a parent, objective, optional tags,
+  references, and a terminal result. Tags are for display and search only.
+- **Claim**: a versioned scientific statement selected and updated by the Root
+  Agent.
+- **Evidence**: immutable facts, artifact references, and provenance. Evidence
+  has no workflow role or layer.
+- **Gate**: a named deterministic evaluation of registered facts. Gates protect
+  scientific acceptance; they do not route the workflow.
+
+New mutations use `ts-decision/3`; nodes use `ts-node/3`. Older workspaces are
+accepted only by the explicit v2-to-v3 migration command, never by runtime
+compatibility aliases.
+
+## Package Layout
+
+- `skills/transition-state-workflow/`: the only public Pi Skill, with focused
+  references and reusable decision/report assets.
+- `extensions/`: deterministic workspace/infrastructure tools, isolated
+  operator entrypoints, notifications, and TSPi UI.
+- `src/agent-core/`: `ts-agent-task/2`, `ts-agent-result/1`, result validation,
+  provider failure handling, and immutable run journals.
+- `src/agents/`: private Review, compute, render, and report operator policies.
+- `ts_workspace`: the only canonical scientific-state control plane.
 - `ts_compute` and `ts_backends`: typed calculation intents, preparation,
-  pre-bound submission/cancellation, status, collection, and
-  deterministic parsing.
-- `ts_remote`: installation-owned OpenSSH/SCP transfer, Torque lifecycle,
-  durable control records, and read-only diagnostics without scientific authority.
-- `ts_render`: local molecular rendering through `xyzrender` only.
-- `ts_report`: report-package assembly from validated workspace evidence.
-- `ts_email`: installation-configured ClawEmail notifications with bounded
-  workspace report attachments and idempotent send receipts.
+  control, collection, and deterministic parsing.
+- `ts_remote`: installation-owned OpenSSH/SCP and Torque lifecycle.
+- `ts_render`: molecular rendering through `xyzrender` only.
+- `ts_report`: atomic report-package assembly from validated v3 state.
+- `ts_email`: installation-configured ClawEmail progress notifications.
 - `ts_web`: read-only workspace normalization and visualization.
-
-The Root Agent is the sole authority for hypothesis status, branch selection,
-audit conclusions, stopping, and workspace decisions. A completed calculation
-is only a program fact.
 
 ## Install
 
-Create the research workspace, install this branch project-locally through Pi,
-then create a workspace-owned runtime from the Pi-managed checkout:
+Create one directory per research workspace and install this development branch
+project-locally:
 
 ```bash
 mkdir -p /path/to/ts-workspace
@@ -61,361 +75,188 @@ python "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
   --json
 ```
 
-The default runtime manifest is:
+The workspace owns its runtime manifest and default environment store:
 
 ```text
 <workspace>/.agents/runtime/transition-state-workflow/env.json
-```
-
-The default Conda prefix store is:
-
-```text
 <workspace>/.agents/envs/transition-state-workflow/<environment-hash>/
 ```
 
-Therefore separate Pi research workspaces do not collide by default. Set the
-same `TS_AGENT_ENV_ROOT` only when deliberate environment sharing is wanted.
-The package checkout, including a Pi `.pi/git/...` checkout installed directly
-from GitHub, never owns the workspace runtime when `--workspace-root` is used.
+Separate workspaces therefore do not collide by default. Set the same
+`TS_AGENT_ENV_ROOT` only when environment sharing is intentional.
 
-From the package checkout:
-
-```bash
-TS_WORKSPACE_ROOT=/path/to/ts-workspace npm run install-env
-TS_WORKSPACE_ROOT=/path/to/ts-workspace npm run install-env:core
-```
-
-## Render Dependency Boundary
-
-`ts_render` uses `xyzrender` only.
-
-It does not require or probe Blender, FFmpeg, OpenBabel, Mayavi, or PyVista.
-Missing render support does not block workspace validation or calculation
-parsing.
-
-## Pi Agent Usage
-
-The native adapters support Pi `>=0.81.1 <1.0.0` with matching Pi SDK packages
-and are currently validated against Pi `0.83.0`. Pi
-project-local installation registers a package reference; it does not copy the
-skill into a requested directory.
-
-Local package reference:
+For local package development:
 
 ```bash
 cd /path/to/ts-workspace
 pi install -l /absolute/path/to/TSAgentSkill --approve
+TS_WORKSPACE_ROOT=$PWD npm --prefix /absolute/path/to/TSAgentSkill run install-env
 ```
 
-Direct GitHub installation of this development branch:
+`ts_render` uses `xyzrender` only. It does not require or probe Blender,
+FFmpeg, OpenBabel, Mayavi, or PyVista; missing render support does not block
+workspace validation or calculation parsing.
 
-```bash
-cd /path/to/ts-workspace
-pi install -l git:github.com/iawnix/TSAgentSkill@pi_ts_subagents --approve
-TS_WORKSPACE_ROOT=$PWD pi --approve --session-dir .pi/sessions
-```
+## TSPi
 
-Install the package-owned `TSPi` launcher once at the installation root, next
-to its `.pi/` and `.agents/` directories. Select one isolated research
-workspace for every Pi process:
+Install the package-owned `TSPi` launcher at the installation root, next to its
+`.pi/`, `.agents/`, and `workspaces/` directories. Always select a workspace:
 
 ```bash
 ./TSPi --workspace reaction-a
 ./TSPi --workspace reaction-b
-./TSPi --workspace reaction-c
+./TSPi --check-remote
 ```
 
-Names use 1-80 letters, digits, dots, underscores, or hyphens and resolve only
-under `<installation>/workspaces/<name>/`. Plain `./TSPi` is rejected so the
-installation root cannot accidentally become research state. Each workspace
-owns its `.pi/sessions`, `.pi/root-agent.lock`, `.agents/workspace-identity.json`
-after formal initialization, `nodes/`, `inputs/`, and `reports/`. A nonblocking
-writer lock permits only one Root Agent in one workspace; different workspace
-names can run concurrently.
+Workspace names resolve only under `<installation>/workspaces/`. Each workspace
+owns its sessions, Root Agent lock, operational identity, nodes, inputs, and
+reports. One nonblocking writer lock allows one Root Agent per workspace;
+different workspaces can run concurrently.
 
-The package checkout, remote profile, notification config, shared Python environment,
-and runtime manifest remain installation-owned. Remote configuration lives at
-`<installation>/.pi/remote.toml` or the absolute path in `TS_REMOTE_CONFIG`.
-Ordinary `./TSPi --workspace <name>` startup does not contact the cluster, so a
-remote outage does not block local research. `./TSPi --check-remote` performs a
-strict read-only SSH status check, returns nonzero on failure, and does not
-require a workspace.
+Ordinary startup does not contact the cluster. `--check-remote` performs a
+strict read-only SSH diagnostic and returns nonzero when the configured remote
+profile is unhealthy.
 
-An unpinned GitHub URL resolves the repository default branch (`main`). Until
-this work is merged or tagged, it does not select `pi_ts_subagents`.
+The UI provides the TSPi startup header, rounded editor, stable footer, working
+indicator, and a bounded `TS Activity` panel. `/ts-subagent-history` opens a
+read-only paginated view of active and durable child runs. Pi's native `Ctrl+O`
+expands or collapses all expandable history entries; TS entries label that
+global behavior explicitly.
 
-Pi loads these extensions from the resolved package root:
+## Root Tools
 
-- `extensions/ts-workflow-control`
-- `extensions/ts-workflow-ui`
-- `extensions/ts-workflow-review`
-- `extensions/ts-workflow-compute`
-- `extensions/ts-workflow-artifacts`
+Pi exposes eleven tools. Their prefixes describe execution authority:
 
-Public tool prefixes describe execution rather than subject matter:
-
-- `ts_workspace_*` calls the deterministic workspace control plane without a
-  child model session.
-- `ts_subagent_*` creates one fresh, isolated child model session.
-- `ts_remote_*` runs deterministic SSH/Torque diagnostics without a child
-  model session.
-- `ts_notify_user` performs deterministic external delivery using
-  installation-owned addressing; it never delegates sending to a child.
-
-The package-owned UI extension installs a MyPi-compatible animated TSPi header,
-mode-aware rounded editor, stable session footer, working state, and terminal
-title request. A single `TS Activity` panel observes concurrent `ts_subagent_*`
-lifecycles and `/ts-remote` diagnostics. The panel shows role, node, bounded
-operation context, elapsed time, explicit wait reason, and terminal state
-without exposing model reasoning or full child transcripts. Successful rows
-remain for 15 seconds; partial, failed, cancelled, and unknown rows remain
-visible for attention. Root foreground work stays in Pi's working indicator;
-the footer contains only stable session, branch, workspace, context, thinking,
-and model information. Set `TSPI_ICON_STYLE=unicode` when the terminal does not
-use a Nerd Font; the default is `nerd`.
-Pi's native `Ctrl+O` action globally toggles every expandable history and tool
-result; TS-specific entries label it as "expand all details" or "collapse all
-details" rather than implying that it affects only the adjacent result.
-The UI reads presentation state only: it does not probe the cluster, write workspace
-state, request authorization, call a model, or make scientific decisions.
-
-The workspace control surface is exactly:
-
-- `ts_workspace_context`: read `summary`, `delta`, `node`, `branch`, or
-  `audit` context on demand.
-- `ts_workspace_decision_draft`: construct a non-mutating `ts-decision/2`
-  draft with current report and revision provenance.
-- `ts_workspace_decision_validate`: validate that draft against the live
-  workspace.
-- `ts_workspace_decision_apply`: transactionally apply a validated mutation
-  and return refreshed compact context.
-
-Pi also exposes:
-
-- `ts_subagent_review`: fresh, read-only advisory scientific review with one schema-bound result tool.
-- `ts_review_disposition`: write-once Root Agent response to a successfully
-  completed Review. The response is operational journal state, not scientific
-  evidence. A pending response blocks later scientific workspace mutations.
+- `ts_workspace_context`: read `summary`, `delta`, `node`, `lineage`, `audit`,
+  `artifacts`, or adapter `capabilities`.
+- `ts_workspace_decision_draft`: bind a Root-selected action and payload to the
+  current report and revision without mutating state.
+- `ts_workspace_decision_validate`: run schema, reference, transaction, Gate,
+  and full post-mutation dry-run validation.
+- `ts_workspace_decision_apply`: transactionally apply a validated decision.
 - `ts_remote_inspect`: read-only `status`, `doctor`, `queues`, or `nodes`
-  probe for the configured remote profile. It has no
-  upload, submit, cancel, or workspace mutation capability.
-- `ts_subagent_compute`: fresh backend subagent with only the typed
-  tools bound to one `prepare`, `submit`, `inspect`, `collect`, `cancel`, or
-  `parse` request. The Root Agent can run `submit/cancel` directly after
-  preflight; no interactive confirmation is required.
-- `ts_subagent_render`: node-scoped local render with bound paths.
-- `ts_subagent_report`: validated report-package build under
-  `reports/`.
-- `ts_notify_user`: deterministic research notification to the
-  installation-configured TSPi user. The Root Agent supplies only the event,
-  subject, summary, and optional existing files under `reports/`.
+  diagnostics for the configured SSH/Torque profile.
+- `ts_subagent_review`: run an advisory Review against one target Claim and its
+  deterministic dependency snapshot.
+- `ts_review_disposition`: record the Root Agent's write-once response to a
+  successful Review before the next scientific mutation.
+- `ts_subagent_compute`: run one typed `prepare`, `submit`, `inspect`, `collect`,
+  `cancel`, or `parse` operator action.
+- `ts_subagent_render`: produce one node-scoped local visualization.
+- `ts_subagent_report`: build one validated report package.
+- `ts_notify_user`: send one deterministic installation-configured progress
+  notification with bounded report attachments.
 
-Notification configuration is installation-private state, not package source.
-Create `<installation>/.pi/notifications.toml` with mode `0600`:
+Only `ts_workspace_decision_apply` mutates canonical scientific state.
+Subagent results and Review dispositions are operational records, not Evidence.
+
+## Workspace Protocol
+
+The Root Agent normally follows this control loop:
+
+1. Read compact context and select one research objective.
+2. Open a Node whose objective states the bounded act; tags remain descriptive.
+3. Register Claims chosen by the Root Agent.
+4. Link typed calculations or other immutable operation records to the Node.
+5. Register parsed or observed Evidence with provenance.
+6. Evaluate only the Gates required by the relevant Claim or acceptance policy.
+7. Close the Node with explicit Claim updates, limitations, and optional audit.
+8. Re-read context and choose the next Node, stop, or finish the study.
+
+The four decision actions are `init_workspace`, `start_node`,
+`update_workspace`, and `end_node`. The public Root tool drafts the latter
+three; workspace initialization is performed by the launcher/kernel entrypoint.
+
+Canonical files are:
+
+```text
+research_state.json
+claims.json
+evidence.json
+gate_results.json
+nodes/<node_id>/node.json
+accepted/<acceptance_id>.json
+decisions/<decision_id>.json
+decision_log.jsonl
+transaction_log.jsonl
+```
+
+`report_lineage_context` is a read-only ancestry/delta query. It does not select
+a checkpoint or authorize a new Node.
+
+## Compute And Remote Execution
+
+Preparation accepts `ts-calculation-request/1` and writes an immutable
+`ts-calculation-intent/3`. The Root Agent selects the Node, scientific purpose,
+backend, task, settings, resources, and attempt kind. The deterministic adapter
+resolves logical `artifactId` plus `inputRole` bindings and generates paths,
+filenames, expected artifacts, digests, and control identities.
+
+The capability catalog currently expresses Gaussian `sp|opt|freq|opt_freq|irc`,
+xTB `sp|opt|freq|opt_freq|scan|md`, CREST `conformer_search`, ASE `neb`, and
+QBICS `dmecp`. Capability means the adapter can express and validate the task;
+it does not prove local software or remote scheduler readiness.
+
+Attempt authority lives under:
+
+```text
+nodes/<node_id>/attempts/<intent_id>/
+```
+
+`ts_remote` is the only remote subsystem. It binds an immutable submission ID
+to the workspace identity, intent digest, input manifest, generated Torque
+script, expected artifacts, profile, and resources. Pre-submit transfer failure
+is retryable with the same binding; an ambiguous scheduler request is not.
+Collection verifies declared files and hashes without depending on scheduler
+history. Scheduler status is never scientific Evidence.
+
+Remote hosts, roots, queue policy, commands, and software activation come only
+from the installation TOML selected by `TS_REMOTE_CONFIG`. The Agent cannot put
+transport or host configuration into a calculation request.
+
+## Agent Protocol
+
+Every isolated operator uses `ts-agent-task/2` and `ts-agent-result/1`. Review
+receives a compact `ts-review-provider-input/2` plus a separately bound full
+`ts-review-evidence-snapshot/2`; host validation checks citations against the
+full snapshot. Provider failure takes precedence over output-contract failure.
+
+Child runs are journaled under `nodes/<node>/agent-runs/<task>/` or
+`operations/agent-runs/<task>/`. Journals change only the operational revision.
+They do not update Claims, Evidence, Gates, or accepted artifacts.
+
+## Notifications
+
+Notification configuration is installation-private state. Create
+`<installation>/.pi/notifications.toml` with mode `0600`:
 
 ```toml
 [notifications.email]
 enabled = true
 recipient = "researcher@example.org"
-clawemail_root = "/home/iaw/.pi/agent/skills/clawemail"
+clawemail_root = "/absolute/path/to/clawemail"
 ```
 
-`TSPi` exports that file as `TS_NOTIFICATION_CONFIG`; another launcher may set
-the same variable to an absolute, non-symlink mode-0600 file. This configuration
-is the persistent authorization to notify its one recipient, so no per-message
-approval, activation token, recipient input, or recipient allowlist exists.
-ClawEmail credentials remain private to its installed skill. A digest-addressed
-guard is written to `reports/email/deliveries/` before network activity. Sent
-notifications are idempotent; ambiguous delivery is never retried
-automatically. Notification failure does not mutate or block scientific state.
+This fixed configuration authorizes progress delivery to one recipient. The
+Root Agent supplies the event, subject, bounded summary, and optional existing
+files under `reports/`; it cannot alter credentials or the recipient. Delivery
+uses digest-addressed idempotency receipts. Ambiguous delivery is never retried
+automatically, and notification failure does not mutate scientific state.
 
-Users can run the same remote diagnostics with
-`/ts-remote status|doctor|queues|nodes`. The command and Agent tool are on demand; they
-do not add remote output to every turn's context. Command completion explains each
-read-only mode. The shared `TS Activity` panel shows its lifecycle; the command
-does not write a separate footer status or widget. Running `/ts-remote` without
-a mode opens a read-only diagnostic selector before any SSH request is made.
+## Reports
 
-`/ts-context` and `/ts-validate` always use the active TSPi workspace and reject
-extra arguments instead of interpreting them as paths. Their compact results
-are retained in session history; Pi's global `Ctrl+O` action expands or
-collapses the full context or validation details.
-
-`/ts-subagent-history` opens a read-only, paginated browser for active and
-durable child runs. The list shows eight runs per page; its paginated detail
-view reads only bounded run-journal JSON. Every role has `task.json`,
-`actions.json`, `result.json`, and `run.json`; Review also has the digest-bound
-`evidence-snapshot.json` and `provider-input.json`. The view shows summary,
-typed actions, artifact refs, and failure details. It does not reopen a child,
-cancel work, or change the
-workspace. A completed compute child describes the bounded adapter call only;
-remote scheduler and chemistry-program lifecycles remain separate and must be
-inspected through their typed compute status.
-
-`before_agent_start` injects only a short control-plane reminder. It does not
-inject a full workspace report every turn. Use `mode=delta` with the last
-scientific `workspace_revision` and `operational_revision` to avoid repeated
-unchanged context while still seeing new calculation or agent-run state.
-
-See `skills/transition-state-workflow/references/pi_agent_adapter.md`.
-
-## Research Nodes
-
-New nodes use one `node_type`:
-
-| Node type | Responsibility |
-|---|---|
-| `intake` | Normalize user inputs, structures, constraints, and completion criteria. Reserved for `n000`. |
-| `mechanism` | Propose, compare, revise, or evaluate a falsifiable mechanism hypothesis. |
-| `candidate_search` | Generate TS, endpoint-conformer, intermediate, or crossing-point candidates. |
-| `validation` | Produce evidence for a declared prediction and `validation_scope`. |
-| `audit` | Audit a TS, elementary step, pathway, or the study. |
-
-Frequency and IRC/connectivity are both validation nodes but remain separate
-evidence gates. Wavefunction analysis is normally
-`node_type=validation, validation_scope=electronic_structure`; a later
-`mechanism` node interprets whether that evidence supports or falsifies the
-hypothesis.
-
-Independent status axes:
-
-- `node.lifecycle`: `running|closed|stopped`
-- `closure.program.outcome`: `success|failure|not_run`
-- `closure.hypothesis.status`: `supported|unsupported|ambiguous`, mechanism only
-- `closure.audit.status`: `accepted|not_accepted|ambiguous`, audit only
-
-Candidate and validation nodes cannot set hypothesis status.
-
-## Calculation Attempts
-
-Pi preparation accepts `ts-calculation-request/1` semantics:
-
-- scientific purpose and selected workspace node
-- `attempt_kind=primary|retry|recalculation`
-- `recalculation_ref`, required only for recalculation
-- one allowlisted backend, task type, logical artifact-role bindings, and settings
-- a local or allowlisted remote execution target
-
-The deterministic host derives the node validation scope and creates the
-immutable `ts-calculation-intent/2`, intent ID, attempt directory, expected
-artifact names, execution-mirror authority, and remote directory. Pi callers do
-not create intent JSON files or fill generated path fields. Before preparation,
-`ts_workspace_context mode=artifacts` lists eligible inputs with deterministic
-`artifactId` values and compatible `inputRole` values. The prepare request must
-bind every required role through `inputArtifacts`; the kernel resolves and
-freezes the path, owner, source attempt, and SHA-256 snapshot.
-This standardizes calculation mechanics; it does not prescribe a node sequence,
-research phase, branch order, method choice, or scientific acceptance decision.
-
-The deterministic calculation matrix includes Gaussian
-`sp|opt|freq|opt_freq|irc`, xTB `sp|opt|freq|opt_freq|scan|md`, CREST
-`conformer_search`, ASE `neb`, and QBICS `dmecp`. xTB scan intents bind an XYZ
-geometry and a validated `$constrain`/`$scan` control input; parsing reports each
-scan point's target coordinate, geometry-derived actual coordinate, and energy
-from `xtbscan.log`. xTB and CREST parsing binds a primary `xtb.out` or
-`crest.out` plus the task-required sibling artifacts from the prepared manifest.
-Parsed facts distinguish process completion, requested task completion,
-convergence, and artifact completeness; they never make a TS, connectivity,
-conformer-selection, or mechanism verdict.
-
-Remote requests provide only a configured profile name and complete Torque
-resource shape. Hosts, OpenSSH configuration, scheduler commands, remote root,
-software activation, queue policy, and environment come from the
-installation-owned TOML selected by `TS_REMOTE_CONFIG`. They cannot be supplied
-by an Agent or calculation intent. Old transport, host, endpoint, or remote-root
-request fields are rejected rather than converted.
-
-All local authority for one attempt lives under:
-
-```text
-nodes/<node>/attempts/<intent>/
-├── intent.json
-├── prepared.json
-├── status.json
-├── submit_guard.json / submit_result.json
-├── cancel_guard.json / cancel_result.json
-└── outputs/
-```
-
-Each initialized workspace also owns a persistent, non-scientific identity at
-`.agents/workspace-identity.json`. Remote preparation binds this identity and
-the configured profile root into `prepared.json` as:
-
-```text
-<profile.remote_root>/workspaces/<workspace_id>/runs/<node_id>/<intent_id>
-```
-
-The remote `submission_id` is bound to both `workspace_id` and `intent_id`. This
-separates independent Pi workspaces that share one SSH account. Agents
-working in the same workspace intentionally share the identity and remain
-serialized by the existing per-intent submit/cancel guards. The identity does
-not enter canonical scientific state or `workspace_revision`. Every remote
-prepared record must contain the matching profile, workspace-bound path,
-resources, and submission binding; incomplete records are rejected.
-
-Generated remote intents always declare `authority=execution_mirror`. Results
-become usable only after collection and local verification. See
-`skills/transition-state-workflow/references/compute_operator.md`.
-
-`ts_remote` binds one `submission_id` to the intent digest, generated Torque
-script, complete input manifest, expected artifacts, and resource request. It
-persists scheduler output and known job IDs across post-`qsub` SSH failures and
-forbids automatic retry after ambiguous submission or cancellation outcomes.
-Directory-creation or upload failures remain safe to retry with the same
-immutable binding. Collection uses declared artifacts and verified hashes
-without querying scheduler history. Scheduler records are not scientific
-evidence. The complete profile, lifecycle, failure, and diagnostic contract is
-in `skills/transition-state-workflow/references/remote_contract.md`.
-
-Gaussian remote execution requires a configured `software.gaussian` profile.
-The profile binds the command, activation script, queue allowlist, and
-server-owned environment; a bare `g16` installation or client PATH override is
-insufficient.
-
-## Agent Protocol
-
-All isolated roles communicate through:
-
-- `contracts/agent_task.schema.json` (`ts-agent-task/2`)
-- `contracts/agent_result.schema.json` (`ts-agent-result/1`)
-
-Roles are `review`, `backend`, `render`, and `report`. Results cannot
-contain authoritative hypothesis, branch, acceptance, or strict pathway
-decision fields. Compute and artifact agents each compose one shared operator
-policy with one selected backend or role policy under their owning `src/agents/`
-directory. These policy fragments are runtime prompt inputs, not Pi skills.
-
-The Pi host persists every child task under `nodes/<node>/agent-runs/<task>/`
-for one-node work or `operations/agent-runs/<task>/` for study-level work.
-These immutable operational records are never evidence and do not change the
-scientific `workspace_revision`.
-
-In `ts-agent-task/2`, Review `task.json` contains only the role, operation,
-authority, scope, constraints, output contract, and SHA-256/byte bindings for
-two companion documents. `evidence-snapshot.json` retains the complete selected
-audit context used by host validation. `provider-input.json` records the exact
-bounded structured packet supplied to the model. Compute, render, and report
-keep their already-small operational inputs inline in `task.json`.
-
-## Reporting
-
-Generate the final package only from a validated workspace:
+Build reports only from a valid workspace:
 
 ```bash
 python "$TS_AGENT_SKILL_ROOT/scripts/ts_report.py" \
-  --root <workspace> \
-  --package-dir <workspace>/reports/final_report_package
+  --root "$TS_WORKSPACE_ROOT" \
+  --package-dir "$TS_WORKSPACE_ROOT/reports/final_report_package"
 ```
 
-Package creation is no-overwrite and atomic. `package_manifest.json` uses
-`ts-report-package/1` and binds the source `workspace_revision`, report,
-context, email summary, and assets by SHA-256. The email summary remains a
-report artifact and is not a required notification draft.
-
-Use `skills/transition-state-workflow/assets/templates/ts_final_report.md`.
-Keep electronic, E+ZPE, and available free energy values distinct; report
-missing corrections explicitly. Accepted-TS language still requires separate
-TS/Freq, connectivity, and audit support.
+Package creation is atomic and no-overwrite. `package_manifest.json` binds the
+source workspace revision and every generated file by SHA-256. The standard
+report projects Claims, deterministic Gate results, Evidence facts, Nodes,
+accepted artifacts, open questions, and unresolved operational controls.
 
 ## Validation
 
@@ -424,14 +265,9 @@ PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q
 npm run test:pi-adapter
 npm run typecheck
 npm run test:package
+npm pack --dry-run --json
 ```
 
-The Pi integration suite runs the real Pi executable with a local recording
-provider. It verifies the eleven-tool Root Agent inventory, a tool-free review
-child, a compute child with exactly one request-bound tool, and an artifact
-child with exactly one request-bound tool. Before release, also test one clean,
-branch- or tag-pinned GitHub installation from a network that can reach GitHub.
-
-`npm run test:subagents` runs the subagent contract and real-Pi
-recording-provider test surface non-interactively. Development tests are not
-exposed as a runtime TSPi command.
+The real-Pi integration suite uses a local recording provider to verify the
+eleven-tool Root inventory, isolated child tools, Review repair semantics,
+provider error propagation, lifecycle UI, and operational journals.

@@ -57,7 +57,8 @@ function roleLabel(role: TsPresentedSubagentRole): string {
 }
 
 function operationLabel(role: TsPresentedSubagentRole, args: Record<string, unknown>): string {
-  const operation = firstString(args.operation, args.reviewType) || (role === "report" ? "build" : role);
+  const operation = stringValue(args.operation)
+    || (role === "report" ? "build" : role === "review" ? "claim_review" : role);
   if (role === "compute") return compact([stringValue(args.backend), operation, stringValue(args.intentId)]);
   if (role === "report") return compact([operation, stringValue(args.packageRef)]);
   if (role === "render") return compact([operation, stringValue(args.outputRef)]);

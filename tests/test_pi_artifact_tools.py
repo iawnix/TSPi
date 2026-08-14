@@ -658,7 +658,7 @@ def _artifact_protocol_fixture(role: str):
             "report_id": "rep_001",
             "revision": "sha256:" + "1" * 64,
         },
-        "scope": {"report_id": "rep_001", "node_ids": node_ids, "hypothesis_id": None, "pathway_id": None},
+        "scope": {"report_id": "rep_001", "node_ids": node_ids, "claim_refs": []},
         "inputs": {"basis_allowlist": ["inputs/reactant.xyz"]},
         "capabilities": [{"render": "ts_workspace_render_execute", "report": "ts_workspace_report_build"}[role]],
         "constraints": {

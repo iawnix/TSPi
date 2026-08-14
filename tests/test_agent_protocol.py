@@ -20,7 +20,7 @@ def _task() -> dict[str, object]:
         "operation": "assemble",
         "objective": "Assemble a bounded report package.",
         "workspace": {"root": "/tmp/ws", "report_id": "rep_001", "revision": "sha256:001"},
-        "scope": {"report_id": "rep_001", "node_ids": ["n001"], "hypothesis_id": "hyp_001", "pathway_id": None},
+        "scope": {"report_id": "rep_001", "node_ids": ["n001"], "claim_refs": ["claim_001"]},
         "inputs": {"artifact_allowlist": ["reports/context.json"]},
         "capabilities": ["ts_report_assemble"],
         "constraints": {
@@ -90,7 +90,7 @@ def test_agent_protocol_binds_result_to_task_and_rejects_nested_authority(tmp_pa
     completed = subprocess.run(["node", "-e", script, str(payload)], cwd=ROOT, text=True, capture_output=True, check=True)
     assert json.loads(completed.stdout)["task_id"] == task["task_id"]
 
-    result["payload"] = {"nested": {"branch_context": {"relation": "continue_parent"}}}
+    result["payload"] = {"nested": {"claim_status": "supported"}}
     payload.write_text(json.dumps({"task": task, "result": result}), encoding="utf-8")
     rejected = subprocess.run(["node", "-e", script, str(payload)], cwd=ROOT, text=True, capture_output=True)
     assert rejected.returncode == 2

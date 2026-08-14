@@ -9,7 +9,7 @@ import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 
 const require = createRequire(import.meta.url);
 const {
-  buildBranchContextSummary,
+  buildLineageContextSummary,
   buildContextSummary,
   buildNodeContextSummary,
   resolveWorkspaceRoot,
@@ -18,7 +18,7 @@ const {
 
 type TsCommand = "start_node" | "update_workspace" | "end_node";
 const DECISION_ACTIONS = ["start_node", "update_workspace", "end_node"] as const;
-const CONTEXT_MODES = ["summary", "delta", "node", "branch", "audit", "artifacts"] as const;
+const CONTEXT_MODES = ["summary", "delta", "node", "lineage", "audit", "artifacts", "capabilities"] as const;
 const CONTEXT_ENTRY_TYPE = "ts-workspace-context-result";
 const VALIDATION_ENTRY_TYPE = "ts-workspace-validation-result";
 
@@ -74,7 +74,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.workspaceContext,
     label: "TS Context",
-    description: "Read compact workspace, historical-node, backtrack, or calculation-artifact context.",
+    description: "Read compact workspace, historical-node, backtrack, calculation-artifact, or backend-capability context.",
     promptSnippet: "Summarize the current transition-state workspace state from report_workspace",
     promptGuidelines: [
       `Use ${TS_PUBLIC_TOOL_NAMES.workspaceContext} before choosing or closing a transition-state workflow node.`,
@@ -83,36 +83,41 @@ export default function (pi: ExtensionAPI) {
       `Use ${TS_PUBLIC_TOOL_NAMES.workspaceContext} instead of reading every workspace state file when only current state is needed.`,
       "Use mode=delta with both known scientific and operational revisions; unchanged workspaces return no repeated summary.",
       "Use mode=artifacts before calculation preparation to obtain artifactId and compatible inputRole values; pass nodeId to filter by owner node.",
+      "Use mode=capabilities before selecting a candidate backend; adapter support is not a live executable or scheduler readiness result.",
     ],
     parameters: Type.Object({
       mode: Type.Optional(StringEnum(CONTEXT_MODES)),
       root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
       nodeId: Type.Optional(Type.String({ description: "Historical node to load as a compact context capsule." })),
-      fromNode: Type.Optional(Type.String({ description: "Current failure or branch trigger node." })),
-      anchorNode: Type.Optional(Type.String({ description: "Historical checkpoint selected for backtrack inspection." })),
+      fromNode: Type.Optional(Type.String({ description: "Current node for a read-only lineage comparison." })),
+      anchorNode: Type.Optional(Type.String({ description: "Ancestor node selected as the lineage comparison anchor." })),
       sinceRevision: Type.Optional(Type.String({ description: "Known workspace revision for mode=delta." })),
       sinceOperationalRevision: Type.Optional(Type.String({ description: "Known operational revision for mode=delta." })),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
-      const mode = params.mode || (params.nodeId ? "node" : params.fromNode || params.anchorNode ? "branch" : "summary");
+      const mode = params.mode || (params.nodeId ? "node" : params.fromNode || params.anchorNode ? "lineage" : "summary");
       if (mode === "artifacts") {
         const args = params.nodeId ? ["--node-id", String(params.nodeId)] : [];
         const artifactCatalog = await runComputeJson(pi, "list-artifacts", root, args, signal);
         return toolText(JSON.stringify(artifactCatalog, null, 2), { artifactCatalog });
       }
-      if (mode === "branch") {
+      if (mode === "capabilities") {
+        const capabilities = await runComputeJson(pi, "capabilities", root, [], signal);
+        return toolText(JSON.stringify(capabilities, null, 2), { capabilities });
+      }
+      if (mode === "lineage") {
         if (!params.fromNode || !params.anchorNode) {
           throw new Error("fromNode and anchorNode must be provided together");
         }
-        const branchContext = await runWorkspaceJson(
+        const lineageContext = await runWorkspaceJson(
           pi,
-          "report_branch_context",
+          "report_lineage_context",
           root,
           ["--from-node", String(params.fromNode), "--anchor-node", String(params.anchorNode)],
           signal,
         );
-        return toolText(buildBranchContextSummary(branchContext), { branchContext });
+        return toolText(buildLineageContextSummary(lineageContext), { lineageContext });
       }
       if (mode === "node") {
         if (!params.nodeId) throw new Error("mode=node requires nodeId");
@@ -166,7 +171,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionDraft,
     label: "TS Decision Draft",
-    description: "Build one non-mutating ts-decision/2 draft from the Root Agent's selected action and payload.",
+    description: "Build one non-mutating ts-decision/3 draft from the Root Agent's selected action and payload.",
     promptSnippet: "Create a versioned TS workspace decision draft without applying it",
     promptGuidelines: [
       "The Root Agent must choose the scientific action before calling this tool; the tool only adds decision identity and current report provenance.",
@@ -176,18 +181,18 @@ export default function (pi: ExtensionAPI) {
       action: StringEnum(DECISION_ACTIONS),
       rationale: Type.String({ minLength: 1, maxLength: 8000 }),
       payload: Type.Any(),
-      evidenceRefs: Type.Optional(Type.Array(Type.String(), { maxItems: 64 })),
+      basisRefs: Type.Optional(Type.Array(Type.String(), { maxItems: 128 })),
       root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
       const report = await runWorkspaceJson(pi, "report_workspace", root, [], signal);
       const decision = {
-        schema_version: "ts-decision/2",
+        schema_version: "ts-decision/3",
         decision_id: `dec_${randomUUID()}`,
         action: params.action,
         rationale: params.rationale,
-        evidence_refs: params.evidenceRefs || [],
+        basis_refs: params.basisRefs || [],
         report_ref: { report_id: report.report_id, workspace_root: root },
         base_revision: report.workspace_revision,
         payload: params.payload,
