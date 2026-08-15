@@ -19,7 +19,7 @@
     "schema_version": {"const": "ts-calculation-result/2"},
     "job_id": {"type": ["string", "null"]},
     "intent_id": {"type": "string", "pattern": "^calc_[A-Za-z0-9_.-]+$"},
-    "act_id": {"type": "string", "pattern": "^act_[0-9a-f]{24}$"},
+    "act_id": {"type": "string", "pattern": "^act_[1-9][0-9]*$"},
     "state": {
       "enum": ["prepared", "submitted", "queued", "running", "completed", "failed", "stopped", "collected", "parsed", "missing", "unknown"]
     },

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "research_act.schema.json",
   "$defs": {
-    "act_id": {"type": "string", "pattern": "^act_[0-9a-f]{24}$"},
+    "act_id": {"type": "string", "pattern": "^act_[1-9][0-9]*$"},
     "status": {"enum": ["open", "completed", "inconclusive", "blocked", "stopped"]}
   },
   "type": "object",
@@ -14,7 +14,7 @@
     "created_by_decision", "created_at"
   ],
   "properties": {
-    "schema_version": {"const": "ts-research-act/1"},
+    "schema_version": {"const": "ts-research-act/2"},
     "act_id": {"$ref": "#/$defs/act_id"},
     "objective": {"type": "string", "minLength": 1, "maxLength": 8000},
     "status": {"$ref": "#/$defs/status"},
@@ -42,7 +42,7 @@
     "finding_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "finding.schema.json#/$defs/finding_id"}},
     "validation_spec_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "validation_spec.schema.json#/$defs/spec_id"}},
     "validation_result_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "validation_result.schema.json#/$defs/result_id"}},
-    "artifact_root": {"type": "string", "pattern": "^acts/act_[0-9a-f]{24}$"},
+    "artifact_root": {"type": "string", "pattern": "^acts/act_[1-9][0-9]*$"},
     "result": {
       "oneOf": [
         {"type": "null"},

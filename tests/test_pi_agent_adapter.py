@@ -28,7 +28,7 @@ EXPECTED_COMMANDS = {"ts-context", "ts-validate", "ts-remote", "ts-subagent-hist
 
 def test_package_manifest_and_profile_expose_one_skill_five_extensions_one_theme() -> None:
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert package["version"] == "0.7.0"
+    assert package["version"] == "0.8.0"
     assert package["pi"]["skills"] == ["./skills/transition-state-workflow"]
     assert len(package["pi"]["extensions"]) == 5
     assert package["pi"]["themes"] == ["./themes/ts-theme.json"]
@@ -89,6 +89,32 @@ process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(tools).map
     assert "nodeId" not in serialized
     assert "inputRefs" not in serialized
     assert "outputRef" not in serialized
+
+
+def test_root_skill_and_public_tool_contracts_stay_within_context_budget() -> None:
+    skill_bytes = len((ROOT / "skills/transition-state-workflow/SKILL.md").read_bytes())
+    script = f"""
+import control from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
+import review from {json.dumps((ROOT / 'extensions/ts-workflow-review/index.ts').as_uri())};
+import compute from {json.dumps((ROOT / 'extensions/ts-workflow-compute/index.ts').as_uri())};
+import artifacts from {json.dumps((ROOT / 'extensions/ts-workflow-artifacts/index.ts').as_uri())};
+import {{ packageSourceSystemPrompt }} from {json.dumps((ROOT / 'extensions/shared/package-source-policy.ts').as_uri())};
+const tools=[];const pi={{registerTool:(tool)=>tools.push(tool),registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},on:()=>{{}},events:{{on:()=>()=>{{}}}}}};
+for (const install of [control,review,compute,artifacts]) install(pi);
+const rows=tools.map((tool)=>{{
+  const schema=Buffer.byteLength(JSON.stringify(tool.parameters));
+  const prose=Buffer.byteLength(String(tool.description||""))+Buffer.byteLength(String(tool.promptSnippet||""))+Buffer.byteLength(JSON.stringify(tool.promptGuidelines||[]));
+  return {{name:tool.name,schema,prose,total:schema+prose}};
+}});
+process.stdout.write(JSON.stringify({{rows,total:rows.reduce((sum,row)=>sum+row.total,0),systemPromptBytes:Buffer.byteLength(packageSourceSystemPrompt())}}));
+"""
+    measured = _node_json(script)
+    by_name = {row["name"]: row for row in measured["rows"]}
+
+    assert skill_bytes <= 7_000
+    assert by_name["ts_compute"]["schema"] <= 3_100
+    assert measured["total"] <= 13_000
+    assert skill_bytes + measured["total"] + measured["systemPromptBytes"] <= 19_800
 
 
 def test_workspace_cli_compiles_v4_frontier_and_focused_act(tmp_path: Path) -> None:

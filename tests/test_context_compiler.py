@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from tests.v4_helpers import accept_research_claim
-from ts_workspace.context import build_review_snapshot, compile_context, validation_capabilities
+from ts_workspace.context import ContextCompileError, build_review_snapshot, compile_context, validation_capabilities
 from ts_workspace.decision import draft_decision
 from ts_workspace.engine import apply_decision, init_workspace
 
@@ -98,10 +100,26 @@ def test_claim_review_snapshot_uses_graph_dependencies_not_evidence_roles(tmp_pa
 def test_validation_capabilities_are_data_driven() -> None:
     capabilities = validation_capabilities()
 
+    assert capabilities["schema_version"] == "ts-validation-capabilities/2"
     assert capabilities["agent_supplied_executable_code"] is False
     assert "observation.equals" in {item["name"] for item in capabilities["predicates"]}
     assert "classical-ts" in {item["template_id"] for item in capabilities["templates"]}
     assert "accepted-ts" in {item["profile_id"] for item in capabilities["acceptance_profiles"]}
+
+    focused = validation_capabilities(template_id="reaction-coordinate", template_version="1")
+    template = focused["selected_template"]
+    assert template["parameters"] == {"subject_ref": {"type": "string", "required": True}}
+    assert template["definition"]["checks"][0]["parameters"]["selector"]["concept_id"] == (
+        "vibration.mode_matches_reaction_coordinate"
+    )
+    assert template["digest"].startswith("sha256:")
+
+
+def test_focused_validation_capabilities_require_a_complete_registered_ref() -> None:
+    with pytest.raises(ContextCompileError, match="template_id and template_version together"):
+        validation_capabilities(template_id="reaction-coordinate")
+    with pytest.raises(ContextCompileError, match="does not exist"):
+        validation_capabilities(template_id="reaction-coordinate", template_version="999")
 
 
 def test_context_and_review_snapshot_expose_derived_acceptance_state(tmp_path: Path) -> None:

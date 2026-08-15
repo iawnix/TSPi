@@ -12,7 +12,7 @@ const { createHash } = require("node:crypto");
 const { isAbsolute, relative, resolve, sep } = require("node:path");
 
 const RENDER_OPERATIONS = Object.freeze(["render", "compare", "animate", "mechanism"]);
-const ACT_ID = /^act_[0-9a-f]{24}$/;
+const ACT_ID = /^act_[1-9][0-9]*$/;
 const ARTIFACT_ID = /^art_[0-9a-f]{24}$/;
 const OUTPUT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 

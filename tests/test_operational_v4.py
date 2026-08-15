@@ -13,14 +13,14 @@ def _write(path: Path, value: dict) -> None:
 
 def test_v4_operational_snapshot_separates_activities_reviews_and_controls(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
-    activity = root / "acts" / "act_probe" / "activities" / "activity_compute"
+    activity = root / "acts" / "act_1" / "activities" / "activity_compute"
     _write(
         activity / "request.json",
         {
             "activity_id": "activity_compute",
             "kind": "compute",
             "operation": "submit",
-            "act_refs": ["act_probe"],
+            "act_refs": ["act_1"],
             "started_at": "2026-08-16T00:00:00+00:00",
         },
     )
@@ -30,7 +30,7 @@ def test_v4_operational_snapshot_separates_activities_reviews_and_controls(tmp_p
             "activity_id": "activity_compute",
             "kind": "compute",
             "operation": "submit",
-            "act_refs": ["act_probe"],
+            "act_refs": ["act_1"],
             "status": "completed",
             "started_at": "2026-08-16T00:00:00+00:00",
             "completed_at": "2026-08-16T00:01:00+00:00",
@@ -39,7 +39,7 @@ def test_v4_operational_snapshot_separates_activities_reviews_and_controls(tmp_p
     )
     _write(activity / "result.json", {"outcome": "success", "summary": "Submission completed."})
 
-    review = root / "acts" / "act_probe" / "agent-runs" / "sub_review"
+    review = root / "acts" / "act_1" / "agent-runs" / "sub_review"
     _write(
         review / "task.json",
         {
@@ -47,7 +47,7 @@ def test_v4_operational_snapshot_separates_activities_reviews_and_controls(tmp_p
             "role": "review",
             "authority": "advisory",
             "operation": "claim_review",
-            "scope": {"act_refs": ["act_probe"], "claim_refs": ["clm_probe"]},
+            "scope": {"act_refs": ["act_1"], "claim_refs": ["clm_probe"]},
         },
     )
     _write(
@@ -62,7 +62,7 @@ def test_v4_operational_snapshot_separates_activities_reviews_and_controls(tmp_p
     )
     _write(review / "result.json", {"outcome": "success", "summary": "Review completed."})
 
-    attempt = root / "acts" / "act_probe" / "attempts" / "calc_probe"
+    attempt = root / "acts" / "act_1" / "attempts" / "calc_probe"
     _write(attempt / "submit_guard.json", {"operation": "submit"})
     _write(
         attempt / "submit_result.json",
@@ -76,11 +76,11 @@ def test_v4_operational_snapshot_separates_activities_reviews_and_controls(tmp_p
 
     report = operational_snapshot(root)
 
-    assert report["deterministic_activities"][0]["act_refs"] == ["act_probe"]
+    assert report["deterministic_activities"][0]["act_refs"] == ["act_1"]
     assert report["deterministic_activities"][0]["summary"] == "Submission completed."
     assert report["review_runs"][0]["claim_refs"] == ["clm_probe"]
-    assert report["pending_review_dispositions"][0]["act_refs"] == ["act_probe"]
-    assert report["unresolved_controls"][0]["act_id"] == "act_probe"
+    assert report["pending_review_dispositions"][0]["act_refs"] == ["act_1"]
+    assert report["unresolved_controls"][0]["act_id"] == "act_1"
     assert report["unresolved_controls"][0]["intent_id"] == "calc_probe"
     assert report["pending_controls"] == []
     assert report["operational_summary"] == {

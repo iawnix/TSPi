@@ -8,6 +8,11 @@ The draft endpoint allocates every technical ID. Each creating operation needs
 a unique `local_ref`; later operations in the same draft refer to it as
 `$local_ref`.
 
+ResearchAct IDs are workspace-local monotonic ordinals: `act_1`, `act_2`, and
+so on. Concurrent drafts from the same revision can propose the same next Act
+ID; the workspace lock and revision binding allow only one to commit. Redraft a
+stale Decision to receive the next available ordinal.
+
 ## Creating Graph Records
 
 - `create_claim`: `claimType`, `statement`, optional assumptions, falsifiers,

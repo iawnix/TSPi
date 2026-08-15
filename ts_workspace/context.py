@@ -7,14 +7,17 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from ts_validation.registry import (
+    RegistryError,
     builtin_predicate_registry,
     list_acceptance_profiles,
     list_gate_templates,
+    load_gate_template,
 )
 
 from .acceptance import project_acceptances
 from .io import read_json, sha256_json
 from .operational import operational_snapshot
+from .refs import act_sort_key
 from .revision import report_id_for_revision, workspace_revision_from_documents
 from .state import (
     CLAIMS_FILE,
@@ -169,16 +172,32 @@ def compile_context(
     return payload
 
 
-def validation_capabilities() -> dict[str, Any]:
+def validation_capabilities(
+    *,
+    template_id: str | None = None,
+    template_version: str | None = None,
+) -> dict[str, Any]:
+    if (template_id is None) != (template_version is None):
+        raise ContextCompileError("focused validation capabilities require template_id and template_version together")
     registry = builtin_predicate_registry()
-    return {
-        "schema_version": "ts-validation-capabilities/1",
+    payload = {
+        "schema_version": "ts-validation-capabilities/2",
         "predicates": registry.capabilities,
         "predicate_registry_digest": registry.digest,
         "templates": list_gate_templates(),
         "acceptance_profiles": list_acceptance_profiles(),
         "agent_supplied_executable_code": False,
     }
+    if template_id is not None and template_version is not None:
+        try:
+            template = load_gate_template(template_id, template_version)
+        except RegistryError as exc:
+            raise ContextCompileError(str(exc)) from exc
+        payload["selected_template"] = {
+            **template,
+            "digest": sha256_json(template),
+        }
+    return payload
 
 
 def build_review_snapshot(root: str | Path, *, target_claim_ref: str, depth: int = 2) -> dict[str, Any]:
@@ -196,7 +215,10 @@ def build_review_snapshot(root: str | Path, *, target_claim_ref: str, depth: int
     dependency_refs = {
         "claim_refs": sorted(str(item["claim_id"]) for item in projection["claims"]),
         "relation_refs": sorted(str(item["relation_id"]) for item in projection["claim_relations"]),
-        "act_refs": sorted(str(item["act_id"]) for item in projection["research_acts"]),
+        "act_refs": sorted(
+            (str(item["act_id"]) for item in projection["research_acts"]),
+            key=act_sort_key,
+        ),
         "observation_refs": sorted(str(item["observation_id"]) for item in projection["observations"]),
         "validation_spec_refs": sorted(str(item["spec_id"]) for item in projection["validation_specs"]),
         "validation_result_refs": sorted(str(item["result_id"]) for item in projection["validation_results"]),
@@ -330,7 +352,7 @@ def _select_graph(
     return {
         "claims": [claims[ref] for ref in sorted(selected_claims) if ref in claims],
         "claim_relations": sorted(selected_relations, key=lambda value: str(value["relation_id"])),
-        "research_acts": [acts[ref] for ref in sorted(selected_acts) if ref in acts],
+        "research_acts": [acts[ref] for ref in sorted(selected_acts, key=act_sort_key) if ref in acts],
         "observations": [observations[ref] for ref in sorted(selected_observation_refs) if ref in observations],
         "validation_specs": sorted(selected_specs, key=lambda value: str(value["spec_id"])),
         "validation_results": sorted(selected_results, key=lambda value: str(value["result_id"])),

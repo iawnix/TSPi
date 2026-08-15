@@ -20,8 +20,8 @@ def test_review_status_reporter_is_monotonic_and_review_only() -> None:
 import {{ createSubagentStatusReporter,isTsSubagentStatus,terminalStateForReport,terminalStatusForError }} from {json.dumps(STATUS.as_uri())};
 const times=[0,1000,2000,3000].map((value)=>new Date(value));let index=0;const updates=[];
 const report=createSubagentStatusReporter({{tool_call_id:"call-1",task_id:"sub_review-1",role:"review",operation:"claim_review",target_ref:"clm_probe"}},(value)=>updates.push(value.details),()=>times[index++]);
-const waiting=report("waiting",{{wait_reason:"model_response",act_refs:["act_probe"],claim_refs:["clm_probe"]}});
-const complete=report("completed",{{run_ref:"acts/act_probe/agent-runs/sub_review-1"}});
+const waiting=report("waiting",{{wait_reason:"model_response",act_refs:["act_1"],claim_refs:["clm_probe"]}});
+const complete=report("completed",{{run_ref:"acts/act_1/agent-runs/sub_review-1"}});
 process.stdout.write(JSON.stringify({{waiting,complete,updates,valid:isTsSubagentStatus(complete),computeValid:isTsSubagentStatus({{...complete,role:"compute"}}),partial:terminalStateForReport({{outcome:"partial"}}),timeout:terminalStatusForError({{code:"TS_SUBAGENT_TIMEOUT"}})}}));
 """
     result = _node_json(script)
@@ -41,9 +41,9 @@ import {{ createTsActivityStore,reduceTsToolActivity,summarizeTsActivities,sorte
 const store=createTsActivityStore();
 const start=(id,name,args,now)=>reduceTsToolActivity(store,{{type:"tool_execution_start",toolCallId:id,toolName:name,args}},now);
 start("review","ts_subagent_review",{{targetClaimRef:"clm_probe"}},1000);
-reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_subagent_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:1,tool_call_id:"review",task_id:"sub_review-1",role:"review",operation:"claim_review",state:"waiting",started_at:new Date(1000).toISOString(),updated_at:new Date(2000).toISOString(),act_refs:["act_probe"],claim_refs:["clm_probe"],wait_reason:"model_response"}}}}}},2000);
-start("compute","ts_compute",{{operation:"submit",backend:"gaussian",actId:"act_probe",intentId:"calc_probe"}},3000);
-start("render","ts_render",{{operation:"compare",actId:"act_probe",outputName:"compare.png"}},4000);
+reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_subagent_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:1,tool_call_id:"review",task_id:"sub_review-1",role:"review",operation:"claim_review",state:"waiting",started_at:new Date(1000).toISOString(),updated_at:new Date(2000).toISOString(),act_refs:["act_1"],claim_refs:["clm_probe"],wait_reason:"model_response"}}}}}},2000);
+start("compute","ts_compute",{{operation:"submit",backend:"gaussian",actId:"act_1",intentId:"calc_probe"}},3000);
+start("render","ts_render",{{operation:"compare",actId:"act_1",outputName:"compare.png"}},4000);
 reduceTsToolActivity(store,{{type:"tool_execution_end",toolCallId:"render",toolName:"ts_render",result:{{}},isError:false}},5000);
 const stale=reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_subagent_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:0,tool_call_id:"review",task_id:"sub_review-1",role:"review",operation:"claim_review",state:"running",started_at:new Date(1000).toISOString(),updated_at:new Date(6000).toISOString()}}}}}},6000);
 const before=sortedTsActivities(store);const pruned=pruneTsActivities(store,20001);const after=sortedTsActivities(store);
@@ -51,7 +51,7 @@ process.stdout.write(JSON.stringify({{before,after,summary:summarizeTsActivities
 """
     result = _node_json(script)
     by_kind = {item["kind"] + ":" + (item.get("activityKind") or "review"): item for item in result["before"]}
-    assert by_kind["review:review"]["status"]["act_refs"] == ["act_probe"]
+    assert by_kind["review:review"]["status"]["act_refs"] == ["act_1"]
     assert by_kind["deterministic:compute"]["operation"] == "submit"
     assert by_kind["deterministic:render"]["detail"] == "compare.png"
     assert result["stale"] is False
@@ -67,7 +67,7 @@ import {{ renderTsActivityPanel }} from {json.dumps(PANEL.as_uri())};
 const store=createTsActivityStore();
 for (const [id,name,args,time] of [
  ["review","ts_subagent_review",{{targetClaimRef:"clm_probe"}},1000],
- ["compute","ts_compute",{{operation:"submit",backend:"gaussian",actId:"act_probe",intentId:"calc_probe"}},2000],
+ ["compute","ts_compute",{{operation:"submit",backend:"gaussian",actId:"act_1",intentId:"calc_probe"}},2000],
  ["report","ts_report",{{operation:"build",packageName:"final"}},3000],
 ]) reduceTsToolActivity(store,{{type:"tool_execution_start",toolCallId:id,toolName:name,args}},time);
 reduceTsToolActivity(store,{{type:"tool_execution_end",toolCallId:"report",toolName:"ts_report",result:{{}},isError:true}},4000);

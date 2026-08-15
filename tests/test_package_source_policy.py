@@ -41,7 +41,7 @@ process.stdout.write(JSON.stringify({{
         assert result[key]["block"] is True
         assert "not usage documentation" in result[key]["reason"]
         assert "authored checkout" in result[key]["reason"]
-    assert "TS package knowledge policy: installed research runtime" in result["systemPrompt"]
+    assert "Installed TS research runtime" in result["systemPrompt"]
 
 
 def test_control_extension_applies_one_policy_to_root_entrypoints() -> None:
@@ -67,7 +67,7 @@ process.stdout.write(JSON.stringify({{ before, blocked }}));
 """
     result = _node_json(script)
 
-    assert result["before"]["systemPrompt"].startswith("base\n\nTS package knowledge policy: installed research runtime")
+    assert result["before"]["systemPrompt"].startswith("base\n\nInstalled TS research runtime")
     assert result["blocked"]["block"] is True
 
 

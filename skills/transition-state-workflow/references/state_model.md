@@ -27,6 +27,9 @@ A ResearchAct records one bounded act:
 - Kernel-owned artifact root `acts/<act_id>`;
 - open state or one terminal result.
 
+The Kernel allocates workspace-local IDs in creation order (`act_1`, `act_2`,
+...). The ordinal is identity, not a workflow phase, priority, or permission signal.
+
 Multiple dependencies support merges. A new Act depending on an earlier
 checkpoint supports backtracking. Preserve failed, blocked, inconclusive, and
 stopped Acts; do not rewrite history into a successful line.

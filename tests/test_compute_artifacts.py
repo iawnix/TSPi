@@ -80,7 +80,7 @@ def test_catalog_uses_workspace_and_research_act_ownership(tmp_path: Path) -> No
     act_output.write_text("1\ncandidate\nH 0 0 0\n", encoding="utf-8")
 
     with pytest.raises(ComputeContractError, match="unknown ResearchAct"):
-        list_calculation_artifacts(workspace, act_id="act_000000000000000000000000")
+        list_calculation_artifacts(workspace, act_id="act_999")
 
     catalog = list_calculation_artifacts(workspace)
     assert [item["path"] for item in catalog["artifacts"]] == [

@@ -82,7 +82,12 @@ def test_research_act_dag_supports_branch_merge_and_kernel_ids(tmp_path: Path) -
 
     allocations = drafted["allocated_refs"]
     assert set(allocations) == {"mechanism", "intake", "path_a", "path_b", "synthesis"}
-    assert all(not value.startswith("n") for value in allocations.values())
+    assert [allocations[name] for name in ("intake", "path_a", "path_b", "synthesis")] == [
+        "act_1",
+        "act_2",
+        "act_3",
+        "act_4",
+    ]
     assert result["created_refs"]["acts"] == [
         allocations["intake"],
         allocations["path_a"],
@@ -93,6 +98,66 @@ def test_research_act_dag_supports_branch_merge_and_kernel_ids(tmp_path: Path) -
     assert acts[allocations["synthesis"]]["dependency_refs"] == [allocations["path_a"], allocations["path_b"]]
     assert not (root / "acts" / allocations["synthesis"]).exists()
     assert validate_workspace(root)["valid"] is True
+
+
+def test_research_act_ids_are_monotonic_and_stale_parallel_drafts_must_reallocate(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    first, _ = _apply(
+        root,
+        [{"op": "start_act", "local_ref": "first", "objective": "Create the first bounded Act."}],
+    )
+    assert first["allocated_refs"]["first"] == "act_1"
+
+    left = draft_decision(
+        root,
+        {
+            "rationale": "Draft one branch.",
+            "basis_refs": [],
+            "operations": [{"op": "start_act", "local_ref": "left", "objective": "Create the left branch."}],
+        },
+    )
+    right = draft_decision(
+        root,
+        {
+            "rationale": "Draft another branch from the same revision.",
+            "basis_refs": [],
+            "operations": [{"op": "start_act", "local_ref": "right", "objective": "Create the right branch."}],
+        },
+    )
+    assert left["allocated_refs"]["left"] == "act_2"
+    assert right["allocated_refs"]["right"] == "act_2"
+
+    apply_decision(root, left["decision"])
+    with pytest.raises(ContractError, match="stale"):
+        apply_decision(root, right["decision"])
+
+    redrafted = draft_decision(
+        root,
+        {
+            "rationale": "Redraft the second branch against the current revision.",
+            "basis_refs": [],
+            "operations": [{"op": "start_act", "local_ref": "right", "objective": "Create the right branch."}],
+        },
+    )
+    assert redrafted["allocated_refs"]["right"] == "act_3"
+
+
+def test_decision_snapshots_preserve_human_readable_utf8(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    rationale = "未能定位连接反应物与产物的一阶鞍点。"
+    drafted, _ = _apply(
+        root,
+        [{"op": "start_act", "local_ref": "search", "objective": "搜索协同反应路径。"}],
+        rationale=rationale,
+    )
+
+    snapshot = root / "decisions" / f"{drafted['decision']['decision_id']}.json"
+    raw = snapshot.read_text(encoding="utf-8")
+    assert rationale in raw
+    assert "搜索协同反应路径" in raw
+    assert "\\u672a" not in raw
 
 
 def test_claim_relation_cycle_is_rejected_without_partial_state(tmp_path: Path) -> None:

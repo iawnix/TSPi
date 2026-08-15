@@ -335,7 +335,7 @@ def _write_change(path: Path, value: Any) -> None:
 
 def _jsonl_with_row(path: Path, row: dict[str, Any]) -> str:
     existing = path.read_text(encoding="utf-8") if path.exists() else ""
-    return existing + json.dumps(row, sort_keys=True) + "\n"
+    return existing + json.dumps(row, ensure_ascii=False, sort_keys=True) + "\n"
 
 
 def _sha256_file(path: Path) -> str:

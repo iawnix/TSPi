@@ -25,7 +25,7 @@ def _observation(
     return {
         "schema_version": "ts-observation/1",
         "observation_id": observation_id,
-        "created_by_act": "act_001",
+        "created_by_act": "act_1",
         "concept_id": concept_id,
         "subject_ref": subject_ref,
         "value": value,
@@ -33,11 +33,11 @@ def _observation(
         "unit": None,
         "qualifiers": qualifiers or {},
         "summary": concept_id,
-        "artifact_refs": ["acts/act_001/outputs/result.json"],
+        "artifact_refs": ["acts/act_1/outputs/result.json"],
         "provenance": {
             "producer": "test-parser",
             "producer_version": "1",
-            "source_digests": {"acts/act_001/outputs/result.json": "sha256:" + "a" * 64},
+            "source_digests": {"acts/act_1/outputs/result.json": "sha256:" + "a" * 64},
         },
         "created_by_decision": "dec_001",
         "created_at": "2026-08-15T00:00:00+00:00",
@@ -59,7 +59,7 @@ def _compile_classical_ts() -> dict:
         spec_id="gsp_001",
         target_claim_ref="clm_001",
         registry=registry,
-        created_by_act="act_001",
+        created_by_act="act_1",
         created_by_decision="dec_001",
         frozen_at="2026-08-15T00:00:00+00:00",
     )
@@ -91,7 +91,7 @@ def test_gate_evaluation_passes_from_exact_semantic_observations() -> None:
         spec,
         observations,
         result_id="val_001",
-        evaluated_by_act="act_001",
+        evaluated_by_act="act_1",
         evaluated_by_decision="dec_002",
         registry=registry,
         evaluated_at="2026-08-15T00:01:00+00:00",
@@ -115,7 +115,7 @@ def test_missing_observation_is_inconclusive_and_false_observation_fails() -> No
         spec,
         incomplete,
         result_id="val_001",
-        evaluated_by_act="act_001",
+        evaluated_by_act="act_1",
         evaluated_by_decision="dec_002",
         registry=registry,
     )
@@ -130,7 +130,7 @@ def test_missing_observation_is_inconclusive_and_false_observation_fails() -> No
         spec,
         complete,
         result_id="val_002",
-        evaluated_by_act="act_001",
+        evaluated_by_act="act_1",
         evaluated_by_decision="dec_003",
         registry=registry,
     )
@@ -167,7 +167,7 @@ def test_predicate_cannot_cite_observation_outside_selected_snapshot() -> None:
         spec_id="gsp_001",
         target_claim_ref="clm_001",
         registry=registry,
-        created_by_act="act_001",
+        created_by_act="act_1",
         created_by_decision="dec_001",
     )
 
@@ -175,7 +175,7 @@ def test_predicate_cannot_cite_observation_outside_selected_snapshot() -> None:
         spec,
         [_observation("obs_001", "test.value", True)],
         result_id="val_001",
-        evaluated_by_act="act_001",
+        evaluated_by_act="act_1",
         evaluated_by_decision="dec_002",
         registry=registry,
     )
@@ -207,7 +207,7 @@ def test_unknown_predicate_and_executable_fields_are_rejected() -> None:
             spec_id="gsp_001",
             target_claim_ref="clm_001",
             registry=registry,
-            created_by_act="act_001",
+            created_by_act="act_1",
             created_by_decision="dec_001",
         )
 
@@ -221,7 +221,7 @@ def test_spec_or_observation_tampering_is_detected() -> None:
             spec,
             [],
             result_id="val_001",
-            evaluated_by_act="act_001",
+            evaluated_by_act="act_1",
             evaluated_by_decision="dec_002",
             registry=registry,
         )
@@ -240,7 +240,7 @@ def test_template_rejects_missing_and_unknown_parameters() -> None:
             spec_id="gsp_001",
             target_claim_ref="clm_001",
             registry=registry,
-            created_by_act="act_001",
+            created_by_act="act_1",
             created_by_decision="dec_001",
         )
 
@@ -251,6 +251,6 @@ def test_template_rejects_missing_and_unknown_parameters() -> None:
             spec_id="gsp_001",
             target_claim_ref="clm_001",
             registry=registry,
-            created_by_act="act_001",
+            created_by_act="act_1",
             created_by_decision="dec_001",
         )

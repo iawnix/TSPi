@@ -153,9 +153,25 @@ def test_workspace_cli_draft_rejects_unknown_claim_without_mutation(tmp_path: Pa
 
 def test_workspace_cli_exposes_validation_capabilities(tmp_path: Path) -> None:
     capabilities = _run("validation_capabilities")
-    assert capabilities["schema_version"] == "ts-validation-capabilities/1"
+    assert capabilities["schema_version"] == "ts-validation-capabilities/2"
     assert capabilities["agent_supplied_executable_code"] is False
     assert "classical-ts" in {item["template_id"] for item in capabilities["templates"]}
+
+    focused = _run(
+        "validation_capabilities",
+        "--template-id",
+        "classical-ts",
+        "--template-version",
+        "1",
+    )
+    checks = focused["selected_template"]["definition"]["checks"]
+    assert {item["parameters"]["selector"]["concept_id"] for item in checks} == {
+        "program.normal_termination",
+        "stationary_point.confirmed",
+        "optimization.converged",
+        "vibration.imaginary_frequency_count",
+        "calculation.method_matches_intent",
+    }
 
 
 def test_workspace_cli_help_uses_claim_and_research_act_vocabulary() -> None:

@@ -22,20 +22,24 @@ process.stdout.write(JSON.stringify({{tools:tools.map((tool)=>tool.name),command
     assert result == {"tools": ["ts_remote_inspect", "ts_compute"], "commands": ["ts-remote"]}
 
 
-def test_compute_schema_is_operation_specific_and_uses_logical_artifacts() -> None:
+def test_compact_compute_schema_uses_logical_artifacts_and_host_enforces_operation_fields() -> None:
     script = f"""
 import install from {json.dumps(COMPUTE.as_uri())};
 import {{ Compile }} from "typebox/compile";
 let compute;const pi={{registerTool:(tool)=>{{if(tool.name==="ts_compute")compute=tool}},registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},appendEntry:()=>{{}},getThinkingLevel:()=>"off",events:{{emit:()=>{{}}}}}};
 install(pi);const check=Compile(compute.parameters);
-const base={{backend:"gaussian",actId:"act_"+"a".repeat(24)}};
+const base={{backend:"gaussian",actId:"act_1"}};
 const prepare={{...base,operation:"prepare",purpose:"Single point",taskType:"sp",inputArtifacts:[{{inputRole:"gjf",artifactId:"art_"+"b".repeat(24)}}],executionTarget:{{kind:"local"}},dryRun:true}};
+const invalidSubmit={{...base,operation:"submit",intentId:"calc_probe",purpose:"bad"}};
+let hostError="";
+try {{ await compute.execute("call-1",invalidSubmit,undefined,()=>{{}},{{cwd:"/tmp"}}); }} catch(error) {{ hostError=error.message; }}
 process.stdout.write(JSON.stringify({{
   prepare:check.Check(prepare),
   physicalPath:check.Check({{...prepare,inputArtifacts:[{{inputRole:"gjf",artifactId:"inputs/test.gjf"}}]}}),
   oldNode:check.Check({{...prepare,actId:undefined,nodeId:"n001"}}),
   submit:check.Check({{...base,operation:"submit",intentId:"calc_probe"}}),
-  submitWithIntentRequest:check.Check({{...base,operation:"submit",intentId:"calc_probe",purpose:"bad"}}),
+  compactSchemaAcceptsCrossOperationField:check.Check(invalidSubmit),
+  hostError,
 }}));
 """
     result = _node_json(script)
@@ -44,7 +48,8 @@ process.stdout.write(JSON.stringify({{
         "physicalPath": False,
         "oldNode": False,
         "submit": True,
-        "submitWithIntentRequest": False,
+        "compactSchemaAcceptsCrossOperationField": True,
+        "hostError": "submit does not accept: purpose",
     }
 
 

@@ -14,9 +14,9 @@ from ts_workspace.state import STATE_FILES
 
 def test_backend_prepares_command_without_workspace_write() -> None:
     task = BackendTask(
-        act_id="act_0123456789abcdef01234567",
+        act_id="act_1",
         task_type="opt_freq",
-        work_dir="acts/act_0123456789abcdef01234567",
+        work_dir="acts/act_1",
         inputs={"gjf": "inputs/ts.gjf"},
     )
     prepared = prepare_gaussian(task)
@@ -24,7 +24,7 @@ def test_backend_prepares_command_without_workspace_write() -> None:
     assert prepared.act_id == task.act_id
     assert prepared.command == ["g16", "inputs/ts.gjf"]
     assert prepared.expected_artifacts == [
-        "acts/act_0123456789abcdef01234567/outputs/gaussian.out"
+        "acts/act_1/outputs/gaussian.out"
     ]
     assert isinstance(GaussianBackend(), Backend)
 

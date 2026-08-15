@@ -10,7 +10,7 @@ Discover logical inputs with `ts_workspace_context mode=artifacts`, then call:
 ```json
 {
   "operation":"render",
-  "actId":"act_...",
+  "actId":"act_1",
   "inputArtifactIds":["art_..."],
   "outputName":"candidate.png"
 }

@@ -27,6 +27,8 @@ Use graph modes `frontier`, `claim`, `act`, `subgraph`, `finding`,
 `validation`, or `delta`. Use catalog modes `artifacts`,
 `compute_capabilities`, and `validation_capabilities`. Every bounded graph
 projection reports its scientific/operational revisions and omitted counts.
+The validation catalog stays compact; query one exact `templateId` and
+`templateVersion` to retrieve its parameters and Observation selectors.
 
 ## Review Isolation
 

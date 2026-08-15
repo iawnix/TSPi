@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "acts"],
   "properties": {
-    "schema_version": {"const": "ts-research-act-registry/1"},
+    "schema_version": {"const": "ts-research-act-registry/2"},
     "acts": {"type": "array", "items": {"$ref": "research_act.schema.json"}}
   }
 }

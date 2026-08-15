@@ -73,7 +73,7 @@ export default function (pi: ExtensionAPI) {
     executionMode: "sequential",
     parameters: Type.Object({
       operation: StringEnum(RENDER_OPERATIONS),
-      actId: Type.String({ pattern: "^act_[0-9a-f]{24}$" }),
+      actId: Type.String({ pattern: "^act_[1-9][0-9]*$" }),
       inputArtifactIds: Type.Array(
         Type.String({ pattern: "^art_[0-9a-f]{24}$" }),
         { minItems: 1, maxItems: 8, uniqueItems: true },

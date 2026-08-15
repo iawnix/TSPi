@@ -23,7 +23,7 @@
       --violet: #aa91d8;
       --focus: #8bd4a8;
       --sidebar: 224px;
-      --inspector: 360px;
+      --inspector: 480px;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       font-size: 14px;
       letter-spacing: 0;
@@ -289,6 +289,16 @@
     .muted { color: var(--muted); }
     .nowrap { white-space: nowrap; }
     .truncate { max-width: 440px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .act-table { min-width: 700px; table-layout: fixed; }
+    .act-table th:nth-child(1) { width: 64px; }
+    .act-table th:nth-child(3) { width: 92px; }
+    .act-table th:nth-child(4) { width: 100px; }
+    .act-table th:nth-child(5) { width: 190px; }
+    .act-table td:nth-child(1),
+    .act-table td:nth-child(3),
+    .act-table td:nth-child(4),
+    .act-table td:nth-child(5) { white-space: nowrap; }
+    .act-table td:nth-child(1) .mono { overflow-wrap: normal; }
 
     .badge {
       display: inline-flex;
@@ -349,8 +359,47 @@
     .inspector-body { min-height: 0; flex: 1; overflow-y: auto; padding: 14px; }
     .detail-id { color: var(--muted); font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
     .detail-title { margin: 10px 0 0; font-size: 16px; line-height: 1.45; }
+    .detail-hero { padding-bottom: 16px; border-bottom: 1px solid var(--line); }
+    .detail-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-top: 11px; color: var(--dim); font-size: 11px; }
     .detail-section { margin-top: 20px; }
     .detail-section h3 { margin: 0 0 8px; color: var(--muted); font-size: 11px; font-weight: 650; text-transform: uppercase; }
+    .detail-copy { margin: 0; color: var(--text); line-height: 1.55; overflow-wrap: anywhere; }
+    .detail-copy.muted { color: var(--muted); }
+    .detail-callout { padding: 10px 0 10px 12px; border-left: 3px solid var(--line); }
+    .detail-callout.good { border-left-color: var(--green); }
+    .detail-callout.bad { border-left-color: var(--red); }
+    .detail-callout.warn { border-left-color: var(--amber); }
+    .detail-callout.info { border-left-color: var(--cyan); }
+    .detail-callout-head { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin-bottom: 7px; }
+    .detail-subgroup { margin-top: 14px; }
+    .detail-subgroup:first-of-type { margin-top: 0; }
+    .detail-subheading { margin-bottom: 6px; color: var(--dim); font-size: 11px; font-weight: 600; }
+    .detail-list { margin: 7px 0 0; padding-left: 18px; color: var(--muted); line-height: 1.55; }
+    .detail-list li + li { margin-top: 4px; }
+    .detail-empty { padding: 8px 0; color: var(--dim); font-size: 11px; }
+    .detail-records { border-top: 1px solid var(--line); }
+    .detail-record, .detail-link {
+      width: 100%;
+      min-height: 52px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 0;
+      border: 0;
+      border-bottom: 1px solid var(--line-soft);
+      background: transparent;
+      text-align: left;
+    }
+    .detail-link { cursor: pointer; }
+    .detail-link:hover .detail-record-title { color: var(--green); }
+    .detail-record-main { min-width: 0; }
+    .detail-record-title { line-height: 1.4; overflow-wrap: anywhere; }
+    .detail-record-id { margin-top: 3px; color: var(--dim); font: 10px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+    .detail-record-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 5px; color: var(--dim); font-size: 10px; }
+    .detail-arrow { color: var(--dim); font-size: 17px; }
+    .audit-details { margin-top: 20px; border-top: 1px solid var(--line); }
+    .audit-details summary { padding: 12px 0; color: var(--muted); font-size: 11px; font-weight: 600; cursor: pointer; }
     .detail-grid { border-top: 1px solid var(--line); }
     .detail-field { display: grid; grid-template-columns: 112px minmax(0, 1fr); gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line-soft); }
     .detail-field dt { color: var(--dim); }
@@ -395,6 +444,9 @@
       .activity-kind { display: none; }
       .inspector { top: 0; left: 0; width: 100%; }
       .inspector-inner { width: 100%; }
+      .detail-record, .detail-link { grid-template-columns: minmax(0, 1fr); }
+      .detail-record-meta { justify-content: flex-start; }
+      .detail-arrow { display: none; }
       .data-table { min-width: 700px; }
       .table-scroll { overflow-x: auto; }
     }
@@ -711,10 +763,10 @@
     function renderActs() {
       const rows = filterRows(state.view.research_acts, ["act_id", "objective", "status", "tags", "claim_refs"]);
       content.innerHTML = renderHeader("Research Acts", "Dependency-aware research actions owned by the v4 kernel.", true) +
-        table(["Act", "Objective", "Status", "Dependencies", "Operations"], rows.map(row => ({
+        table(["Act", "Objective", "Status", "Dependencies", "Records"], rows.map(row => ({
           detail: "act", id: row.act_id,
-          cells: [mono(shortId(row.act_id)), `<div class="truncate">${escapeHtml(row.objective)}</div>`, badge(row.status), String(row.dependency_refs.length), `${row.activities.length} activity · ${row.review_runs.length} Review`],
-        })));
+          cells: [mono(row.act_id), `<div class="truncate">${escapeHtml(row.objective)}</div>`, badge(row.status), String(row.dependency_refs.length), `${row.attempts.length} calc · ${row.activities.length} ops · ${row.review_runs.length} review`],
+        })), "act-table");
       bindSearch();
     }
 
@@ -803,9 +855,9 @@
       })))}</section>`;
     }
 
-    function table(headers, rows) {
+    function table(headers, rows, className = "") {
       if (!rows.length) return `<div class="empty-state">No records</div>`;
-      return `<div class="table-scroll"><table class="data-table"><thead><tr>${headers.map(value => `<th>${escapeHtml(value)}</th>`).join("")}</tr></thead><tbody>${rows.map(row =>
+      return `<div class="table-scroll"><table class="data-table ${escapeHtml(className)}"><thead><tr>${headers.map(value => `<th>${escapeHtml(value)}</th>`).join("")}</tr></thead><tbody>${rows.map(row =>
         `<tr${row.detail ? ` data-detail="${escapeHtml(row.detail)}" data-id="${escapeHtml(row.id)}"` : ""}>${row.cells.map(cell => `<td>${cell}</td>`).join("")}</tr>`
       ).join("")}</tbody></table></div>`;
     }
@@ -883,16 +935,182 @@
 
     function renderActDetail(payload) {
       const act = payload.research_act;
+      const result = act.result && typeof act.result === "object" ? act.result : null;
+      const tags = (act.tags || []).map(value => `<span class="ref-chip">${escapeHtml(value)}</span>`).join("");
       return `
-        <div class="detail-id">${escapeHtml(act.act_id)}</div>
-        <div class="detail-title">${escapeHtml(act.objective)}</div>
-        ${detailFields({ status: act.status, tags: act.tags, dependency_refs: act.dependency_refs, claim_refs: act.claim_refs, result: act.result })}
-        ${relatedSection("Observations", payload.observations, "observation_id", "summary")}
-        ${relatedSection("Validation", payload.validation_results, "result_id", "verdict")}
-        ${relatedSection("Findings", payload.findings, "finding_id", "statement")}
-        ${relatedSection("Deterministic activity", act.activities || [], "activity_id", "summary")}
-        ${relatedSection("Review", act.review_runs || [], "task_id", "summary")}
-        ${filesSection(payload.files?.files || [])}`;
+        <div class="detail-hero">
+          <div class="detail-id">${escapeHtml(act.act_id)}</div>
+          <div class="detail-title">${escapeHtml(act.objective)}</div>
+          <div class="detail-meta">
+            ${badge(act.status)}
+            ${act.created_at ? `<span>Created ${escapeHtml(formatTime(act.created_at))}</span>` : ""}
+            ${tags ? `<span class="ref-list">${tags}</span>` : ""}
+          </div>
+        </div>
+        ${renderActOutcome(act, result)}
+        ${renderActHypothesis(act.hypothesis)}
+        ${renderActLineage(payload)}
+        ${renderActExecution(act)}
+        ${renderActScience(payload)}
+        ${renderActReviews(act.review_runs || [])}
+        ${filesSection(payload.files?.files || [])}
+        ${renderActAudit(act, result)}`;
+    }
+
+    function renderActOutcome(act, result) {
+      if (!result) {
+        return `<section class="detail-section"><h3>Outcome</h3><div class="detail-callout info"><div class="detail-callout-head">${badge(act.status)}</div><p class="detail-copy muted">No terminal result has been recorded.</p></div></section>`;
+      }
+      return `<section class="detail-section"><h3>Outcome</h3>
+        <div class="detail-callout ${tone(result.outcome)}">
+          <div class="detail-callout-head">${badge(result.outcome)}${result.completed_at ? `<span class="muted">${escapeHtml(formatTime(result.completed_at))}</span>` : ""}</div>
+          <p class="detail-copy">${escapeHtml(result.summary)}</p>
+        </div>
+        ${detailBulletGroup("Open questions", result.open_questions || [])}
+      </section>`;
+    }
+
+    function renderActHypothesis(hypothesis) {
+      if (!hypothesis || typeof hypothesis !== "object") {
+        return `<section class="detail-section"><h3>Hypothesis</h3><p class="detail-copy muted">No explicit hypothesis was recorded for this Act.</p></section>`;
+      }
+      return `<section class="detail-section"><h3>Hypothesis</h3>
+        <p class="detail-copy">${escapeHtml(hypothesis.statement)}</p>
+        ${detailBulletGroup("Assumptions", hypothesis.assumptions || [])}
+        ${detailBulletGroup("Predictions", hypothesis.predictions || [])}
+        ${detailBulletGroup("Falsifiers", hypothesis.falsifiers || [])}
+      </section>`;
+    }
+
+    function renderActLineage(payload) {
+      return `<section class="detail-section"><h3>Lineage and Claims</h3>
+        ${detailLinkedGroup("Depends on", payload.dependencies || [], "act", "act_id", "objective", "status")}
+        ${detailLinkedGroup("Continued by", payload.dependents || [], "act", "act_id", "objective", "status")}
+        ${detailLinkedGroup("Related Claims", payload.claims || [], "claim", "claim_id", "statement", "status")}
+      </section>`;
+    }
+
+    function renderActExecution(act) {
+      const attempts = (act.attempts || []).map(row => detailRecord(
+        compactText([row.backend, row.task_type]) || "Calculation attempt",
+        row.intent_id || row.ref,
+        compactHtml([
+          row.state ? badge(row.state) : "",
+          row.program_status ? badge(row.program_status) : "",
+          row.error_class ? badge(row.error_class) : "",
+        ]),
+      )).join("");
+      const activities = (act.activities || []).map(row => detailLink(
+        "activity",
+        row.activity_id,
+        compactText([row.kind, row.operation]) || "Deterministic activity",
+        compactHtml([row.status ? badge(row.status) : "", row.summary ? `<span>${escapeHtml(row.summary)}</span>` : ""]),
+      )).join("");
+      const controls = (act.unresolved_controls || []).map(row => detailLink(
+        "control",
+        `${row.intent_id}:${row.operation}`,
+        compactText([row.operation, row.intent_id]) || "Unresolved remote control",
+        compactHtml([row.state ? badge(row.state) : "", row.error_class ? badge(row.error_class) : ""]),
+      )).join("");
+      if (!attempts && !activities && !controls) {
+        return `<section class="detail-section"><h3>Execution</h3><div class="detail-empty">No deterministic execution has been recorded.</div></section>`;
+      }
+      return `<section class="detail-section"><h3>Execution</h3>
+        ${detailRecordGroup("Calculation attempts", attempts)}
+        ${detailRecordGroup("Deterministic activity", activities)}
+        ${detailRecordGroup("Unresolved controls", controls)}
+      </section>`;
+    }
+
+    function renderActScience(payload) {
+      const observations = (payload.observations || []).map(row => detailLink(
+        "observation",
+        row.observation_id,
+        row.summary || row.concept_id,
+        `<span class="mono">${escapeHtml(row.concept_id || "")}</span>`,
+      )).join("");
+      const specs = (payload.validation_specs || []).map(row => detailLink(
+        "validation-spec",
+        row.spec_id,
+        row.title || row.dimension,
+        `<span>${escapeHtml(row.dimension || "")}${Array.isArray(row.checks) ? ` · ${row.checks.length} checks` : ""}</span>`,
+      )).join("");
+      const results = (payload.validation_results || []).map(row => detailLink(
+        "validation-result",
+        row.result_id,
+        row.dimension || "Validation result",
+        badge(row.verdict),
+      )).join("");
+      const findings = (payload.findings || []).map(row => detailLink(
+        "finding",
+        row.finding_id,
+        row.statement,
+        compactHtml([badge(row.severity), badge(row.status)]),
+      )).join("");
+      if (!observations && !specs && !results && !findings) {
+        return `<section class="detail-section"><h3>Scientific record</h3><div class="detail-empty">No scientific records are linked to this Act.</div></section>`;
+      }
+      return `<section class="detail-section"><h3>Scientific record</h3>
+        ${detailRecordGroup("Observations", observations)}
+        ${detailRecordGroup("Validation specifications", specs)}
+        ${detailRecordGroup("Validation results", results)}
+        ${detailRecordGroup("Findings", findings)}
+      </section>`;
+    }
+
+    function renderActReviews(rows) {
+      if (!rows.length) return "";
+      const records = rows.map(row => detailLink(
+        "review",
+        row.task_id,
+        row.summary || row.operation || "Independent Review",
+        compactHtml([badge(row.status), row.result_outcome ? badge(row.result_outcome) : ""]),
+      )).join("");
+      return `<section class="detail-section"><h3>Independent Review</h3><div class="detail-records">${records}</div></section>`;
+    }
+
+    function renderActAudit(act, result) {
+      const values = {
+        created_by_decision: act.created_by_decision,
+        completion_decision: result?.decision_id,
+        artifact_root: act.artifact_root,
+        operation_refs: act.operation_refs,
+        observation_refs: act.observation_refs,
+        finding_refs: act.finding_refs,
+        validation_spec_refs: act.validation_spec_refs,
+        validation_result_refs: act.validation_result_refs,
+      };
+      const entries = Object.entries(values).filter(([, value]) => value !== null && value !== undefined && value !== "" && (!Array.isArray(value) || value.length));
+      if (!entries.length) return "";
+      return `<details class="audit-details"><summary>Audit references</summary><dl class="detail-grid">${entries.map(([key, value]) =>
+        `<div class="detail-field"><dt>${escapeHtml(key)}</dt><dd>${formatDetailValue(value)}</dd></div>`
+      ).join("")}</dl></details>`;
+    }
+
+    function detailBulletGroup(title, values) {
+      if (!Array.isArray(values) || !values.length) return "";
+      return `<div class="detail-subgroup"><div class="detail-subheading">${escapeHtml(title)}</div><ul class="detail-list">${values.map(value => `<li>${escapeHtml(value)}</li>`).join("")}</ul></div>`;
+    }
+
+    function detailLinkedGroup(title, rows, kind, idKey, titleKey, statusKey) {
+      const records = (rows || []).map(row => detailLink(kind, row[idKey], row[titleKey], row[statusKey] ? badge(row[statusKey]) : "")).join("");
+      return `<div class="detail-subgroup"><div class="detail-subheading">${escapeHtml(title)}</div>${records ? `<div class="detail-records">${records}</div>` : `<div class="detail-empty">None</div>`}</div>`;
+    }
+
+    function detailRecordGroup(title, records) {
+      if (!records) return "";
+      return `<div class="detail-subgroup"><div class="detail-subheading">${escapeHtml(title)}</div><div class="detail-records">${records}</div></div>`;
+    }
+
+    function detailLink(kind, id, title, meta = "") {
+      return `<button class="detail-link" type="button" data-detail="${escapeHtml(kind)}" data-id="${escapeHtml(id)}">
+        <span class="detail-record-main"><span class="detail-record-title">${escapeHtml(title || id)}</span><span class="detail-record-id">${escapeHtml(id)}</span></span>
+        <span class="detail-record-meta">${meta}<span class="detail-arrow" aria-hidden="true">›</span></span>
+      </button>`;
+    }
+
+    function detailRecord(title, id, meta = "") {
+      return `<div class="detail-record"><div class="detail-record-main"><div class="detail-record-title">${escapeHtml(title)}</div><div class="detail-record-id">${escapeHtml(id || "")}</div></div><div class="detail-record-meta">${meta}</div></div>`;
     }
 
     function detailFields(record) {
@@ -959,6 +1177,8 @@
     function shortId(value) { const text = String(value || ""); return text.length > 18 ? `${text.slice(0, 9)}…${text.slice(-6)}` : text; }
     function shortDigest(value) { const text = String(value || ""); return text.startsWith("sha256:") ? `sha256:${text.slice(7, 17)}` : shortId(text); }
     function formatValue(value) { return typeof value === "string" ? value : JSON.stringify(value); }
+    function compactText(values) { return values.filter(value => value !== null && value !== undefined && value !== "").map(String).join(" · "); }
+    function compactHtml(values) { return values.filter(Boolean).join(" "); }
     function formatTime(value) { if (!value) return ""; const date = new Date(value); return Number.isNaN(date.valueOf()) ? String(value) : date.toLocaleString(); }
     function formatBytes(value) { if (value < 1024) return `${value} B`; if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KiB`; return `${(value / 1024 / 1024).toFixed(1)} MiB`; }
     function recordId(record) { return record.claim_id || record.act_id || record.observation_id || record.spec_id || record.result_id || record.finding_id || record.acceptance_id || record.activity_id || record.task_id || record.intent_id || "Record"; }

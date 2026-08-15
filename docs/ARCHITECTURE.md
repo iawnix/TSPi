@@ -253,6 +253,10 @@ The same read-only public tool exposes `artifacts`, `compute_capabilities`, and
 counts and retrieval hints. The Pi transcript is conversational state, not a
 scientific source of truth.
 
+Validation capability discovery is progressive: the catalog is compact, while
+an exact `templateId` plus `templateVersion` returns that template's accepted
+parameters and expanded Observation selectors before a GateSpec is drafted.
+
 ## TSPi Lifecycle
 
 `TSPi` is a thin shell shim. `scripts/tspi_host.py` and

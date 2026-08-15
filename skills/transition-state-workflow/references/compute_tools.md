@@ -35,7 +35,7 @@ A prepare request binds:
 {
   "operation": "prepare",
   "backend": "gaussian",
-  "actId": "act_...",
+  "actId": "act_1",
   "purpose": "Optimize and characterize one TS candidate.",
   "taskType": "opt_freq",
   "attemptKind": "primary",
@@ -67,7 +67,7 @@ remote effect unless its typed contract permits that use.
 Use the exact `backend`, `actId`, and `intentId` returned by prepare:
 
 ```json
-{"operation":"submit","backend":"gaussian","actId":"act_...","intentId":"calc_..."}
+{"operation":"submit","backend":"gaussian","actId":"act_1","intentId":"calc_..."}
 ```
 
 Submit revalidates the immutable intent digest, stages the manifest, and issues
@@ -79,7 +79,7 @@ Inspect changed or terminal work:
 {
   "operation":"inspect",
   "backend":"gaussian",
-  "actId":"act_...",
+  "actId":"act_1",
   "intentId":"calc_...",
   "tailArtifact":"gaussian.out",
   "tailLines":80
@@ -97,7 +97,7 @@ Collect all declared outputs or an explicit allowed subset:
 {
   "operation":"collect",
   "backend":"gaussian",
-  "actId":"act_...",
+  "actId":"act_1",
   "intentId":"calc_...",
   "artifacts":["gaussian.out","program_status.json"]
 }
@@ -112,9 +112,9 @@ Parse one Kernel-bound local artifact:
 {
   "operation":"parse",
   "backend":"gaussian",
-  "actId":"act_...",
+  "actId":"act_1",
   "intentId":"calc_...",
-  "artifactRef":"acts/act_.../attempts/calc_.../outputs/remote/gaussian.out"
+  "artifactRef":"acts/act_1/attempts/calc_.../outputs/remote/gaussian.out"
 }
 ```
 
@@ -126,7 +126,7 @@ then record individual semantic Observations through a Decision.
 Cancel only a bound remote intent:
 
 ```json
-{"operation":"cancel","backend":"gaussian","actId":"act_...","intentId":"calc_..."}
+{"operation":"cancel","backend":"gaussian","actId":"act_1","intentId":"calc_..."}
 ```
 
 Known success is idempotent. An ambiguous cancel is not safe to replay without
@@ -140,7 +140,7 @@ replayed and the typed prior result proves no external effect occurred. Use
 
 ```json
 {
-  "sourceAct":"act_...",
+  "sourceAct":"act_1",
   "sourceIntentId":"calc_...",
   "changedSettings":["method"],
   "purpose":"method_robustness"

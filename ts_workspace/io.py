@@ -27,7 +27,7 @@ def write_json(path: Path, data: Any) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_name(f"{path.name}.tmp")
     with tmp.open("w", encoding="utf-8") as handle:
-        json.dump(data, handle, indent=2, sort_keys=True)
+        json.dump(data, handle, ensure_ascii=False, indent=2, sort_keys=True)
         handle.write("\n")
         handle.flush()
         os.fsync(handle.fileno())
@@ -55,7 +55,7 @@ def apply_change(path: Path, value: Any) -> None:
 def append_jsonl(path: Path, row: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     with path.open("a", encoding="utf-8") as handle:
-        json.dump(row, handle, sort_keys=True)
+        json.dump(row, handle, ensure_ascii=False, sort_keys=True)
         handle.write("\n")
         handle.flush()
         os.fsync(handle.fileno())

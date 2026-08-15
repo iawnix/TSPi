@@ -21,13 +21,13 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     package_home = install_root / ".pi" / "packages" / "ts-agent"
     package_root = package_home / "releases" / "test-release"
     package_root.mkdir(parents=True)
-    (package_root / "package.json").write_text('{"name":"@iawnix/ts-agent","version":"0.7.0"}\n', encoding="utf-8")
+    (package_root / "package.json").write_text('{"name":"@iawnix/ts-agent","version":"0.8.0"}\n', encoding="utf-8")
     (package_root / ".ts-agent-release.json").write_text(
         json.dumps(
             {
                 "schema_version": "ts-agent-release/1",
                 "release_id": "test-release",
-                "package": {"name": "@iawnix/ts-agent", "version": "0.7.0"},
+                "package": {"name": "@iawnix/ts-agent", "version": "0.8.0"},
             }
         )
         + "\n",
@@ -251,9 +251,9 @@ const records = [{{
   task_id: "sub_review-1",
   operation: "claim_review",
   state: "running",
-  act_refs: ["act_probe"],
+  act_refs: ["act_1"],
   claim_refs: ["clm_probe"],
-  run_ref: "acts/act_probe/agent-runs/sub_review-1",
+  run_ref: "acts/act_1/agent-runs/sub_review-1",
   summary: "Independent review is running.",
   live: true,
 }}];
@@ -263,7 +263,7 @@ process.stdout.write(JSON.stringify(formatTsSubagentHistoryMarkdown(records)));
     assert markdown.startswith("# TS Review History")
     assert "## Review · claim\\_review" in markdown
     assert "`sub_review-1`" in markdown
-    assert "`act_probe`" in markdown
+    assert "`act_1`" in markdown
     assert "> Independent review is running." in markdown
 
 
@@ -301,7 +301,7 @@ await handlers.tool_execution_start({{
   type: "tool_execution_start",
   toolCallId: "render-1",
   toolName: "ts_render",
-  args: {{ operation: "compare", actId: "act_probe", outputName: "compare.png" }},
+  args: {{ operation: "compare", actId: "act_1", outputName: "compare.png" }},
 }}, ctx);
 const active = widgets.findLast((item) => Array.isArray(item.content));
 await handlers.session_shutdown({{ type: "session_shutdown", reason: "quit" }}, ctx);

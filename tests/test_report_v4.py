@@ -21,7 +21,18 @@ def _seed(root: Path) -> dict[str, str]:
             "basis_refs": [],
             "operations": [
                 {"op": "create_claim", "local_ref": "claim", "claimType": "mechanism", "statement": "The pathway is concerted."},
-                {"op": "start_act", "local_ref": "act", "objective": "Search for a concerted pathway.", "claimRefs": ["$claim"]},
+                {
+                    "op": "start_act",
+                    "local_ref": "act",
+                    "objective": "Search for a concerted pathway.",
+                    "claimRefs": ["$claim"],
+                    "hypothesis": {
+                        "statement": "A concerted saddle can be located.",
+                        "assumptions": ["The selected conformer is representative."],
+                        "predictions": ["A single reaction-coordinate mode will be found."],
+                        "falsifiers": ["Every candidate relaxes to a stepwise intermediate."],
+                    },
+                },
                 {
                     "op": "record_observation",
                     "local_ref": "observation",
@@ -63,6 +74,10 @@ def test_report_projects_v4_dag_and_semantic_validation(tmp_path: Path) -> None:
     assert context["focus"]["claim_refs"] == [refs["claim"]]
     assert "## Claim Graph" in text
     assert "## ResearchAct DAG" in text
+    assert "### ResearchAct Review" in text
+    assert "A concerted saddle can be located." in text
+    assert "Every candidate relaxes to a stepwise intermediate." in text
+    assert "Linked records: 0 operations, 1 Observations, 1 Findings" in text
     assert "## Semantic Observations" in text
     assert "## Frozen Validation" in text
     assert "## Findings" in text

@@ -1447,7 +1447,7 @@ def _require_expected_intent_digest(intent: dict[str, Any], expected: str | None
 
 def _load_act(workspace: Path, act_id: str) -> dict[str, Any]:
     registry = _read_object(workspace / "research_acts.json", "ResearchAct registry")
-    if registry.get("schema_version") != "ts-research-act-registry/1":
+    if registry.get("schema_version") != "ts-research-act-registry/2":
         raise ComputeContractError("invalid ResearchAct registry")
     matches = [
         item
@@ -1467,8 +1467,8 @@ def _validate_intent(intent: dict[str, Any]) -> None:
 
 
 def _validate_intent_act_scope(workspace: Path, intent: dict[str, Any], act: dict[str, Any]) -> None:
-    if act.get("schema_version") != "ts-research-act/1":
-        raise ComputeContractError("calculations require a ts-research-act/1 owner")
+    if act.get("schema_version") != "ts-research-act/2":
+        raise ComputeContractError("calculations require a ts-research-act/2 owner")
     if act.get("status") != "open":
         raise ComputeContractError("calculations require an open ResearchAct")
     if intent.get("act_id") != act.get("act_id"):

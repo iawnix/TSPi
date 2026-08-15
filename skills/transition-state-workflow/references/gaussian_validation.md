@@ -23,6 +23,14 @@ saddle but not sufficient for a claimed reaction step. Record the frequency and
 mode vector/visualization separately. Use `reaction-coordinate@1` only after
 the displacement matches the declared bond changes or other coordinate.
 
+`reaction-coordinate@1` accepts only `subject_ref`; it does not accept an
+`expected_assignment` parameter. Keep the concrete bond-change assignment in
+the immutable Observation value/qualifiers, and record
+`vibration.mode_matches_reaction_coordinate=true` only after checking that
+assignment. `classical-ts@1` gates the imaginary-frequency count, while the
+numeric frequency remains separate evidence unless an explicit GateSpec checks
+it. Query the focused validation capability instead of guessing concept aliases.
+
 ## Electronic And Numerical Limits
 
 Record SCF instability, spin contamination, wavefunction stability, state

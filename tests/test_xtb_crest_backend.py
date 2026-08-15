@@ -51,9 +51,9 @@ def test_xtb_prepares_typed_task_matrix() -> None:
             settings["opt_level"] = "tight"
         prepared = prepare_xtb(
             BackendTask(
-                act_id="act_0123456789abcdef01234567",
+                act_id="act_1",
                 task_type=task_type,
-                work_dir="acts/act_0123456789abcdef01234567",
+                work_dir="acts/act_1",
                 inputs=inputs,
                 settings=settings,
             )
@@ -78,9 +78,9 @@ def test_xtb_control_tasks_require_bound_control_input(task_type: str) -> None:
     with pytest.raises(ValueError, match="input roles"):
         prepare_xtb(
             BackendTask(
-                act_id="act_0123456789abcdef01234567",
+                act_id="act_1",
                 task_type=task_type,
-                work_dir="acts/act_0123456789abcdef01234567",
+                work_dir="acts/act_1",
                 inputs={"xyz": "candidate.xyz"},
             )
         )
@@ -162,9 +162,9 @@ def test_xtb_scan_control_rejects_unsafe_or_inconsistent_input(
 def test_crest_prepares_distinct_conformer_search_backend() -> None:
     prepared = prepare_crest(
         BackendTask(
-            act_id="act_0123456789abcdef01234567",
+            act_id="act_1",
             task_type="conformer_search",
-            work_dir="acts/act_0123456789abcdef01234567",
+            work_dir="acts/act_1",
             inputs={"xyz": "candidate.xyz"},
             settings={
                 "charge": "0",

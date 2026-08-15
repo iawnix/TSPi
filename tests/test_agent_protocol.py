@@ -36,7 +36,7 @@ def _task() -> dict[str, object]:
         },
         "scope": {
             "report_id": "rep_001",
-            "act_refs": ["act_0123456789abcdef01234567"],
+            "act_refs": ["act_1"],
             "claim_refs": ["clm_0123456789abcdef01234567"],
         },
         "inputs": {

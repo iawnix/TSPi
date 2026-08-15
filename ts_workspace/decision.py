@@ -20,6 +20,7 @@ from .context import compile_context
 from .errors import ContractError
 from .io import now_iso, read_json, sha256_json
 from .operational import operational_snapshot
+from .refs import WorkspaceRefError, next_act_ordinal
 from .revision import workspace_revision
 from .schema_validation import SchemaValidationError, validate_contract
 from .state import (
@@ -69,8 +70,12 @@ def draft_decision(
     allocated_decision_id = decision_id or f"dec_{uuid4().hex}"
     created_at = now_iso()
     raw_operations = request["operations"]
-    allocations = _allocate_aliases(raw_operations, allocated_decision_id)
     state = _DraftState.load(root_path, decision_id=allocated_decision_id)
+    allocations = _allocate_aliases(
+        raw_operations,
+        allocated_decision_id,
+        existing_act_ids=state.acts,
+    )
     registry = builtin_predicate_registry()
     operations: list[dict[str, Any]] = []
 
@@ -143,8 +148,17 @@ def validate_decision_binding(root: str | Path, decision: dict[str, Any]) -> Non
         raise ContractError(f"completed advisory Review requires a Root response before mutation: {task_ids}")
 
 
-def _allocate_aliases(operations: list[Any], decision_id: str) -> dict[str, str]:
+def _allocate_aliases(
+    operations: list[Any],
+    decision_id: str,
+    *,
+    existing_act_ids: Any,
+) -> dict[str, str]:
     allocations: dict[str, str] = {}
+    try:
+        act_ordinal = next_act_ordinal(existing_act_ids)
+    except WorkspaceRefError as exc:
+        raise ContractError(str(exc)) from exc
     for index, operation in enumerate(operations):
         if not isinstance(operation, dict):
             continue
@@ -161,8 +175,12 @@ def _allocate_aliases(operations: list[Any], decision_id: str) -> dict[str, str]
             raise ContractError(f"operations[{index}].local_ref is invalid")
         if alias in allocations:
             raise ContractError(f"duplicate local_ref: {alias}")
-        digest = hashlib.sha256(f"{decision_id}:{index}:{name}:{alias}".encode("utf-8")).hexdigest()[:24]
-        allocations[alias] = f"{prefix}_{digest}"
+        if prefix == "act":
+            allocations[alias] = f"act_{act_ordinal}"
+            act_ordinal += 1
+        else:
+            digest = hashlib.sha256(f"{decision_id}:{index}:{name}:{alias}".encode("utf-8")).hexdigest()[:24]
+            allocations[alias] = f"{prefix}_{digest}"
     return allocations
 
 
@@ -217,7 +235,7 @@ def _normalize_operation(
         return {
             "op": "append_research_act",
             "record": {
-                "schema_version": "ts-research-act/1",
+                "schema_version": "ts-research-act/2",
                 "act_id": act_id,
                 "objective": _string(raw["objective"], "objective", 8000),
                 "status": "open",

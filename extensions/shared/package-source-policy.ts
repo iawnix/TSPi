@@ -6,7 +6,7 @@ import { PACKAGE_ROOT } from "./workspace-cli.ts";
 
 export const PACKAGE_SOURCE_READ_TOOLS = ["read", "grep", "find", "ls"] as const;
 export const PACKAGE_USAGE_GUIDELINE =
-  "Use registered tool schemas and prompt guidelines for call shape, ts_workspace_context modes for live artifacts and capabilities, and the public transition-state Skill references for operating guidance. Do not inspect package implementation or tests to learn ordinary tool usage.";
+  "Use registered schemas, bounded context catalogs, and public Skill references; do not inspect installed implementation or tests during research.";
 
 const PUBLIC_KNOWLEDGE_ROOT = resolve(
   PACKAGE_ROOT,
@@ -16,9 +16,9 @@ const PUBLIC_KNOWLEDGE_ROOT = resolve(
 
 export function packageSourceSystemPrompt(): string {
   return [
-    "TS package knowledge policy: installed research runtime.",
+    "Installed TS research runtime.",
     PACKAGE_USAGE_GUIDELINE,
-    "Package reads are limited to the public transition-state Skill, its references, and its assets. Package implementation work belongs in the separate authored checkout, not this research session.",
+    "Package maintenance belongs in the authored checkout.",
   ].join(" ");
 }
 

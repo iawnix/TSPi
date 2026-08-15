@@ -464,7 +464,7 @@ def test_compute_result_contract_rejects_scientific_verdict_fields() -> None:
         "schema_version": "ts-calculation-result/2",
         "job_id": None,
         "intent_id": "calc_test",
-        "act_id": "act_0123456789abcdef01234567",
+        "act_id": "act_1",
         "state": "prepared",
         "program_status": "not_run",
         "exit_status": None,

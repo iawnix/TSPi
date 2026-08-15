@@ -95,7 +95,13 @@
     "allocations": {
       "type": "object",
       "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$"},
-      "additionalProperties": {"type": "string", "pattern": "^(clm|rel|act|obs|fnd|gsp|val|acc)_[0-9a-f]{24}$"}
+      "additionalProperties": {
+        "type": "string",
+        "anyOf": [
+          {"pattern": "^(clm|rel|obs|fnd|gsp|val|acc)_[0-9a-f]{24}$"},
+          {"pattern": "^act_[1-9][0-9]*$"}
+        ]
+      }
     },
     "operations": {"type": "array", "minItems": 1, "maxItems": 128, "items": {"$ref": "#/$defs/operation"}},
     "created_at": {"type": "string", "minLength": 1, "maxLength": 64}

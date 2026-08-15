@@ -16,13 +16,13 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 from ts_workspace.io import read_json
+from ts_workspace.refs import ACT_ID
 
 from .contracts import ComputeContractError
 
 
 CATALOG_SCHEMA_VERSION = "ts-artifact-catalog/2"
 ARTIFACT_ID_SCHEMA_VERSION = "ts-artifact-id/2"
-ACT_ID = re.compile(r"^act_[0-9a-f]{24}$")
 INTENT_ID = re.compile(r"^calc_[A-Za-z0-9_.-]+$")
 ROLE_SUFFIXES = {
     "gjf": frozenset({".gjf", ".com"}),
@@ -298,7 +298,7 @@ def _workspace_root(root: str | Path) -> Path:
 
 def _act_ids(workspace: Path) -> set[str]:
     registry = read_json(workspace / "research_acts.json")
-    if registry.get("schema_version") != "ts-research-act-registry/1":
+    if registry.get("schema_version") != "ts-research-act-registry/2":
         raise ComputeContractError("invalid ResearchAct registry")
     ids = {
         item.get("act_id")

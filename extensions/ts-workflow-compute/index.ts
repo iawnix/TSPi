@@ -10,7 +10,6 @@ import {
   runRemoteDiagnosticJson,
 } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
-import { PACKAGE_USAGE_GUIDELINE } from "../shared/package-source-policy.ts";
 import {
   publishTsActivity,
   type TsRemoteActivity,
@@ -57,7 +56,7 @@ const RECALCULATION_PURPOSES = ["repair", "refinement", "method_robustness"] as 
 const COMPUTE_COMMON_PARAMETERS = {
   backend: StringEnum(BACKENDS),
   actId: Type.String({
-    pattern: "^act_[0-9a-f]{24}$",
+    pattern: "^act_[1-9][0-9]*$",
     maxLength: 128,
     description: "Open ResearchAct that owns this calculation attempt.",
   }),
@@ -92,54 +91,37 @@ const EXECUTION_TARGET_PARAMETER = Type.Union([
     resources: REMOTE_RESOURCES_PARAMETER,
   }, { additionalProperties: false }),
 ]);
-const COMPUTE_PARAMETERS = Type.Union([
-  Type.Object({
-    ...COMPUTE_COMMON_PARAMETERS,
-    operation: Type.Literal("prepare"),
-    purpose: Type.String({ minLength: 1, maxLength: 2000 }),
-    taskType: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]*$", maxLength: 64 }),
-    attemptKind: Type.Optional(StringEnum(ATTEMPT_KINDS)),
-    recalculationRef: Type.Optional(Type.Object({
-      sourceAct: Type.String({ pattern: "^act_[0-9a-f]{24}$" }),
-      sourceIntentId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
-      changedSettings: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { minItems: 1, uniqueItems: true }),
-      purpose: StringEnum(RECALCULATION_PURPOSES),
-    }, { additionalProperties: false })),
-    inputArtifacts: INPUT_ARTIFACTS_PARAMETER,
-    settings: Type.Optional(SETTINGS_MAP_PARAMETER),
-    executionTarget: EXECUTION_TARGET_PARAMETER,
-    dryRun: Type.Boolean({ description: "Prepare only when true; false allows a later bound submit." }),
-  }, { additionalProperties: false }),
-  Type.Object({
-    ...COMPUTE_COMMON_PARAMETERS,
-    operation: Type.Literal("submit"),
-    intentId: INTENT_ID_PARAMETER,
-  }, { additionalProperties: false }),
-  Type.Object({
-    ...COMPUTE_COMMON_PARAMETERS,
-    operation: Type.Literal("inspect"),
-    intentId: INTENT_ID_PARAMETER,
-    tailArtifact: Type.Optional(Type.String({ minLength: 1, maxLength: 255, description: "Allowlisted remote artifact basename." })),
-    tailLines: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
-  }, { additionalProperties: false }),
-  Type.Object({
-    ...COMPUTE_COMMON_PARAMETERS,
-    operation: Type.Literal("collect"),
-    intentId: INTENT_ID_PARAMETER,
-    artifacts: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 255 }), { maxItems: 32 })),
-  }, { additionalProperties: false }),
-  Type.Object({
-    ...COMPUTE_COMMON_PARAMETERS,
-    operation: Type.Literal("cancel"),
-    intentId: INTENT_ID_PARAMETER,
-  }, { additionalProperties: false }),
-  Type.Object({
-    ...COMPUTE_COMMON_PARAMETERS,
-    operation: Type.Literal("parse"),
-    intentId: INTENT_ID_PARAMETER,
-    artifactRef: Type.String({ minLength: 1, maxLength: 4096, description: "Kernel-bound ResearchAct calculation output." }),
-  }, { additionalProperties: false }),
-]);
+const COMPUTE_PARAMETERS = Type.Object({
+  ...COMPUTE_COMMON_PARAMETERS,
+  operation: StringEnum(OPERATIONS),
+  intentId: Type.Optional(INTENT_ID_PARAMETER),
+  purpose: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
+  taskType: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]*$", maxLength: 64 })),
+  attemptKind: Type.Optional(StringEnum(ATTEMPT_KINDS)),
+  recalculationRef: Type.Optional(Type.Object({
+    sourceAct: Type.String({ pattern: "^act_[1-9][0-9]*$" }),
+    sourceIntentId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+    changedSettings: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { minItems: 1, uniqueItems: true }),
+    purpose: StringEnum(RECALCULATION_PURPOSES),
+  }, { additionalProperties: false })),
+  inputArtifacts: Type.Optional(INPUT_ARTIFACTS_PARAMETER),
+  settings: Type.Optional(SETTINGS_MAP_PARAMETER),
+  executionTarget: Type.Optional(EXECUTION_TARGET_PARAMETER),
+  dryRun: Type.Optional(Type.Boolean()),
+  tailArtifact: Type.Optional(Type.String({ minLength: 1, maxLength: 255 })),
+  tailLines: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
+  artifacts: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 255 }), { maxItems: 32 })),
+  artifactRef: Type.Optional(Type.String({ minLength: 1, maxLength: 4096 })),
+}, { additionalProperties: false });
+
+const COMPUTE_OPERATION_FIELDS = Object.freeze({
+  prepare: ["purpose", "taskType", "attemptKind", "recalculationRef", "inputArtifacts", "settings", "executionTarget", "dryRun"],
+  submit: ["intentId"],
+  inspect: ["intentId", "tailArtifact", "tailLines"],
+  collect: ["intentId", "artifacts"],
+  cancel: ["intentId"],
+  parse: ["intentId", "artifactRef"],
+} satisfies Record<typeof OPERATIONS[number], readonly string[]>);
 
 type ComputeRequest = {
   operation: typeof OPERATIONS[number];
@@ -222,17 +204,16 @@ export default function (pi: ExtensionAPI) {
     description: "Execute one typed deterministic prepare, submit, inspect, collect, cancel, or parse operation.",
     promptSnippet: "Execute one bound transition-state calculation operation",
     promptGuidelines: [
-      "Before prepare, call ts_workspace_context mode=artifacts to discover logical calculation artifact IDs and compatible input roles.",
-      "For prepare, bind every backend input role with inputArtifacts; the deterministic host resolves and freezes paths and hashes, then creates the intent ID, expected artifacts, and remote directory.",
-      "Treat compute results as program and parser observations, not registered scientific Observations, Claim status, ValidationResult, or acceptance.",
-      "Use inspect for changed or terminal jobs instead of polling unchanged work every turn.",
-      "Use submit or cancel only for the pre-bound current intent, and never retry an ambiguous control result.",
-      PACKAGE_USAGE_GUIDELINE,
+      "Before prepare, discover logical inputs with ts_workspace_context mode=artifacts; the host owns paths, hashes, filenames, and IDs.",
+      "Each call performs one operation; use inspect only for changed or terminal work.",
+      "Compute output is operational until verified artifacts are recorded as semantic Observations.",
+      "Never replay an ambiguous submit or cancel.",
     ],
     executionMode: "sequential",
     parameters: COMPUTE_PARAMETERS,
     async execute(toolCallId, params, signal, onUpdate, ctx) {
       const input = params as unknown as ComputeRequest & { root?: string };
+      validatePublicComputeParameters(input);
       const root = requireWorkspaceRoot(input.root, ctx.cwd);
       const request = validateComputeRequest(
         {
@@ -621,6 +602,15 @@ function validateComputeRequest(request: ComputeRequest): ComputeRequest {
     throw new Error(`${request.operation} does not accept artifactRef`);
   }
   return request;
+}
+
+function validatePublicComputeParameters(input: ComputeRequest & { root?: string }): void {
+  if (!OPERATIONS.includes(input.operation)) throw new Error(`unsupported compute operation: ${input.operation}`);
+  const allowed = new Set(["operation", "backend", "actId", "root", ...COMPUTE_OPERATION_FIELDS[input.operation]]);
+  const unexpected = Object.keys(input).filter((key) => !allowed.has(key));
+  if (unexpected.length) {
+    throw new Error(`${input.operation} does not accept: ${unexpected.sort().join(", ")}`);
+  }
 }
 
 function buildCalculationRequest(request: ComputeRequest): Record<string, unknown> {

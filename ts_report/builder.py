@@ -10,6 +10,8 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from ts_workspace.refs import act_sort_key
+
 from .context import collect_report_context
 
 
@@ -81,7 +83,7 @@ def render_final_report(context: dict[str, Any]) -> str:
         f"| Revision | `{context['workspace_revision']}` |",
         f"| Report | `{context['report_id']}` |",
         f"| Focus Claims | `{', '.join(sorted(focus_claims)) or 'none'}` |",
-        f"| Focus ResearchActs | `{', '.join(sorted(focus_acts)) or 'none'}` |",
+        f"| Focus ResearchActs | `{', '.join(sorted(focus_acts, key=act_sort_key)) or 'none'}` |",
         f"| Claims / Acts / Observations / Findings | {len(context['claims'])} / {len(context['research_acts'])} / {len(context['observations'])} / {len(context['findings'])} |",
         "",
         _executive_sentence(context["claims"], focus_claims, accepted_claims),
@@ -113,6 +115,26 @@ def render_final_report(context: dict[str, Any]) -> str:
             f"| `{act['act_id']}`{marker} | `{act['status']}` | `{', '.join(act['dependency_refs']) or 'none'}` | "
             f"`{', '.join(act['claim_refs']) or 'none'}` | {_escape(act['objective'])} | `{outcome}` |"
         )
+
+    lines.extend(["", "### ResearchAct Review", ""])
+    for act in context["research_acts"]:
+        hypothesis = act.get("hypothesis") if isinstance(act.get("hypothesis"), dict) else None
+        result = act.get("result") if isinstance(act.get("result"), dict) else None
+        lines.extend([
+            f"#### `{act['act_id']}` - {_escape(act['objective'])}",
+            "",
+            f"- Status: `{act['status']}`; dependencies: `{', '.join(act['dependency_refs']) or 'none'}`; Claims: `{', '.join(act['claim_refs']) or 'none'}`.",
+            f"- Hypothesis: {_escape(hypothesis['statement']) if hypothesis else '_not recorded_'}",
+            f"- Assumptions: {_markdown_items(hypothesis.get('assumptions', [])) if hypothesis else '_none recorded_'}",
+            f"- Predictions: {_markdown_items(hypothesis.get('predictions', [])) if hypothesis else '_none recorded_'}",
+            f"- Falsifiers: {_markdown_items(hypothesis.get('falsifiers', [])) if hypothesis else '_none recorded_'}",
+            f"- Outcome: {_escape(result['summary']) if result else '_pending_'}",
+            f"- Open questions: {_markdown_items(result.get('open_questions', [])) if result else '_not yet recorded_'}",
+            f"- Linked records: {len(act['operation_refs'])} operations, {len(act['observation_refs'])} Observations, "
+            f"{len(act['finding_refs'])} Findings, {len(act['validation_spec_refs'])} GateSpecs, "
+            f"{len(act['validation_result_refs'])} ValidationResults.",
+            "",
+        ])
 
     lines.extend(["", "## Semantic Observations", "", "| Observation | Concept | Subject | Value | Unit | ResearchAct | Artifacts |", "| --- | --- | --- | --- | --- | --- | --- |"])
     for observation in context["observations"]:
@@ -233,3 +255,7 @@ def _sha256_file(path: Path) -> str:
 
 def _escape(value: str) -> str:
     return str(value).replace("|", "\\|").replace("\n", " ")
+
+
+def _markdown_items(values: list[Any]) -> str:
+    return "; ".join(_escape(str(value)) for value in values) or "_none_"

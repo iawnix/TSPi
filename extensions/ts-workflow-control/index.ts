@@ -92,6 +92,8 @@ export default function (pi: ExtensionAPI) {
       depth: Type.Optional(Type.Integer({ minimum: 0, maximum: 4 })),
       sinceRevision: Type.Optional(Type.String()),
       sinceOperationalRevision: Type.Optional(Type.String()),
+      templateId: Type.Optional(Type.String()),
+      templateVersion: Type.Optional(Type.String()),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
@@ -106,7 +108,13 @@ export default function (pi: ExtensionAPI) {
         return toolText(JSON.stringify(capabilities, null, 2), { capabilities });
       }
       if (mode === "validation_capabilities") {
-        const capabilities = await runWorkspaceJson(pi, "validation_capabilities", root, [], signal);
+        if ((params.templateId === undefined) !== (params.templateVersion === undefined)) {
+          throw new Error("validation capabilities require templateId and templateVersion together");
+        }
+        const args = params.templateId === undefined
+          ? []
+          : ["--template-id", params.templateId, "--template-version", params.templateVersion as string];
+        const capabilities = await runWorkspaceJson(pi, "validation_capabilities", root, args, signal);
         return toolText(JSON.stringify(capabilities, null, 2), { capabilities });
       }
       const projection = await runWorkspaceJson(pi, "context", root, contextArgs(mode, params), signal);

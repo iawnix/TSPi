@@ -43,6 +43,8 @@ def main(argv: list[str] | None = None) -> int:
 
     command = sub.add_parser("validation_capabilities", help="list registered predicates, templates, and acceptance profiles")
     command.add_argument("--root", required=False)
+    command.add_argument("--template-id")
+    command.add_argument("--template-version")
 
     command = sub.add_parser("validate_workspace", help="validate all canonical v4 state")
     command.add_argument("--root", required=True)
@@ -67,9 +69,9 @@ def main(argv: list[str] | None = None) -> int:
     try:
         result = _dispatch(args)
     except (ContractError, ValueError, OSError, json.JSONDecodeError) as exc:
-        print(json.dumps({"valid": False, "error": str(exc)}, indent=2, sort_keys=True), file=sys.stderr)
+        print(json.dumps({"valid": False, "error": str(exc)}, ensure_ascii=False, indent=2, sort_keys=True), file=sys.stderr)
         return 2
-    print(json.dumps(result, indent=2, sort_keys=True))
+    print(json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True))
     if args.command == "validate_workspace" and not result["valid"]:
         return 1
     return 0
@@ -95,7 +97,10 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.command == "build_review_snapshot":
         return build_review_snapshot(args.root, target_claim_ref=args.target_claim_ref, depth=args.depth)
     if args.command == "validation_capabilities":
-        return validation_capabilities()
+        return validation_capabilities(
+            template_id=args.template_id,
+            template_version=args.template_version,
+        )
     if args.command == "validate_workspace":
         return validate_workspace(args.root)
     if args.command == "operational":

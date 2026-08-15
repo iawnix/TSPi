@@ -61,6 +61,12 @@ def _make_workspace(root: Path) -> dict[str, str]:
                     "objective": "Search for observations that distinguish the mechanisms.",
                     "claimRefs": ["$concerted", "$stepwise"],
                     "tags": ["candidate-search"],
+                    "hypothesis": {
+                        "statement": "A bounded probe can discriminate between the competing mechanisms.",
+                        "assumptions": ["The probe is representative of the elementary step."],
+                        "predictions": ["One mechanism will remain consistent with the observations."],
+                        "falsifiers": ["The probe is compatible with both mechanisms."],
+                    },
                 },
                 {
                     "op": "record_observation",
@@ -148,6 +154,23 @@ def _make_workspace(root: Path) -> dict[str, str]:
     artifact = root / "acts" / act_id / "outputs" / "probe.json"
     artifact.parent.mkdir(parents=True, exist_ok=True)
     artifact.write_text("{}\n", encoding="utf-8")
+    _write(
+        root / "acts" / act_id / "attempts" / "calc_probe" / "intent.json",
+        {
+            "intent_id": "calc_probe",
+            "act_id": act_id,
+            "backend": "gaussian",
+            "task_type": "irc",
+        },
+    )
+    _write(
+        root / "acts" / act_id / "attempts" / "calc_probe" / "status.json",
+        {
+            "intent_id": "calc_probe",
+            "state": "completed",
+            "program_status": "normal_termination",
+        },
+    )
     _write(
         root / "acts" / act_id / "activities" / "activity_probe" / "request.json",
         {
@@ -251,14 +274,32 @@ def test_claim_and_act_details_follow_graph_references(tmp_path: Path) -> None:
     refs = _make_workspace(workspace)
 
     claim = claim_payload(workspace, refs["concerted"])
-    act = act_payload(workspace, refs["connectivity"])
+    active = act_payload(workspace, refs["connectivity"])
+    completed = act_payload(workspace, refs["search"])
 
     assert {row["act_id"] for row in claim["research_acts"]} == {refs["search"], refs["connectivity"]}
     assert claim["validation_results"][0]["verdict"] == "pass"
-    assert act["dependencies"][0]["act_id"] == refs["search"]
-    assert act["research_act"]["activities"][0]["activity_id"] == "activity_probe"
+    assert active["dependencies"][0]["act_id"] == refs["search"]
+    assert active["research_act"]["activities"][0]["activity_id"] == "activity_probe"
+    assert active["research_act"]["attempts"] == [
+        {
+            "intent_id": "calc_probe",
+            "ref": f"acts/{refs['connectivity']}/attempts/calc_probe",
+            "backend": "gaussian",
+            "task_type": "irc",
+            "state": "completed",
+            "program_status": "normal_termination",
+            "error_class": None,
+        }
+    ]
+    assert completed["dependents"][0]["act_id"] == refs["connectivity"]
+    assert completed["research_act"]["hypothesis"]["falsifiers"] == [
+        "The probe is compatible with both mechanisms."
+    ]
+    assert {row["claim_id"] for row in completed["claims"]} == {refs["concerted"], refs["stepwise"]}
+    assert completed["validation_specs"][0]["title"] == "Program completion probe"
     assert f"acts/{refs['connectivity']}/outputs/probe.json" in {
-        row["path"] for row in act["files"]["files"]
+        row["path"] for row in active["files"]["files"]
     }
 
 
@@ -268,6 +309,11 @@ def test_static_ui_exposes_v4_dual_graph_without_legacy_routes() -> None:
     assert "TS Research Explorer" in html
     assert "Claim graph" in html
     assert "ResearchAct DAG" in html
+    assert "Lineage and Claims" in html
+    assert "Calculation attempts" in html
+    assert "Scientific record" in html
+    assert "Audit references" in html
+    assert "renderActHypothesis" in html
     assert "/graph" in html
     assert "/api/node" not in html
     assert "/api/gates" not in html
@@ -360,7 +406,7 @@ def test_web_server_is_read_only_v4_and_has_no_legacy_routes(tmp_path: Path) -> 
         base = f"/api/workspace/{row['workspace_id']}"
         assert _get_json(host, port, f"{base}/graph")["schema_version"] == "ts-explorer-graph/4"
         assert _get_json(host, port, f"{base}/claims")["claims"][0]["schema_version"] == "ts-claim/1"
-        assert _get_json(host, port, f"{base}/acts")["research_acts"][0]["schema_version"] == "ts-research-act/1"
+        assert _get_json(host, port, f"{base}/acts")["research_acts"][0]["schema_version"] == "ts-research-act/2"
         assert _get_json(host, port, f"{base}/observations")["observations"][0]["schema_version"] == "ts-observation/1"
         assert _get_json(host, port, f"{base}/validation")["validation_results"][0]["verdict"] == "pass"
         assert _get_json(host, port, f"{base}/findings")["findings"][0]["status"] == "open"
@@ -370,7 +416,9 @@ def test_web_server_is_read_only_v4_and_has_no_legacy_routes(tmp_path: Path) -> 
         assert act["research_act"]["status"] == "open"
         preview = _get_json(host, port, f"{base}/file?path=acts/{refs['connectivity']}/outputs/probe.json")
         assert preview["text"] == "{}\n"
-        assert "TS Research Explorer" in _get_text(host, port, "/")[1]
+        html = _get_text(host, port, "/")[1]
+        assert "TS Research Explorer" in html
+        assert "act-table" in html
         for legacy in (f"{base}/tree", f"{base}/gates", f"{base}/evidence", f"{base}/node/n000", "/api/node/n000"):
             assert _get_text(host, port, legacy)[0] == 404
     finally:
