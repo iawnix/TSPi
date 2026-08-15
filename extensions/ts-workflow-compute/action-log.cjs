@@ -26,10 +26,10 @@ function completeAction(action, raw, toolName) {
 
 function extractComputeToolResult(raw, toolName) {
   if (!isPlainObject(raw)) throw new Error(`${toolName} returned a non-object result`);
-  if (["ts-calculation-result/1", "ts-calculation-tail/1"].includes(raw.schema_version)) {
+  if (["ts-calculation-result/2", "ts-calculation-tail/1"].includes(raw.schema_version)) {
     return raw;
   }
-  if (isPlainObject(raw.result) && raw.result.schema_version === "ts-calculation-result/1") {
+  if (isPlainObject(raw.result) && raw.result.schema_version === "ts-calculation-result/2") {
     return raw.result;
   }
   throw new Error(`${toolName} returned no canonical compute result`);
@@ -43,7 +43,7 @@ function failAction(action, error, context) {
     error_class: "tool_execution_error",
     exit_status: null,
     intent_id: nullableString(context && context.intentId),
-    node_id: nullableString(context && context.nodeId),
+    act_id: nullableString(context && context.actId),
     artifact_refs: [],
     provenance: {
       backend: nullableString(context && context.backend),

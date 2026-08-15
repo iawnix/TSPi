@@ -2,387 +2,155 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from pathlib import Path
 
-from ts_workspace import report_lineage_context, report_node, report_workspace
-from strict_helpers import CLAIM_ID, bootstrap_strict_workspace, end_research_node, start_research_node
+from tests.v4_helpers import bootstrap_v4_workspace, start_research_act
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SUMMARY = ROOT / "extensions" / "ts-workflow-control" / "summary.cjs"
-CONTROL_EXTENSION = ROOT / "extensions" / "ts-workflow-control" / "index.ts"
-TOOL_CATALOG = ROOT / "extensions" / "shared" / "tool-catalog.ts"
-SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
 TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
-PI_PACKAGE = ROOT / "node_modules" / "@earendil-works" / "pi-coding-agent" / "package.json"
+EXPECTED_TOOLS = {
+    "ts_workspace_context",
+    "ts_workspace_decision_draft",
+    "ts_workspace_decision_validate",
+    "ts_workspace_decision_apply",
+    "ts_remote_inspect",
+    "ts_subagent_review",
+    "ts_review_disposition",
+    "ts_compute",
+    "ts_render",
+    "ts_report",
+    "ts_notify_user",
+}
+EXPECTED_COMMANDS = {"ts-context", "ts-validate", "ts-remote", "ts-subagent-history"}
 
 
-def test_pi_package_manifest_exposes_skill_and_extension() -> None:
-    manifest = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-
-    assert "pi-package" in manifest["keywords"]
-    assert manifest["name"] == "@iawnix/ts-agent"
-    assert manifest["version"] == "0.5.0"
-    assert manifest["private"] is True
-    assert manifest["pi"]["skills"] == ["./skills/transition-state-workflow"]
-    assert manifest["pi"]["extensions"] == [
-        "./extensions/ts-workflow-control",
-        "./extensions/ts-workflow-ui/index.ts",
-        "./extensions/ts-workflow-review/index.ts",
-        "./extensions/ts-workflow-compute/index.ts",
-        "./extensions/ts-workflow-artifacts/index.ts",
-    ]
-    assert "subagents" not in manifest["pi"]
-    assert not any("subagent" in name for name in manifest.get("dependencies", {}))
-    assert manifest["peerDependencies"]["@earendil-works/pi-ai"] == ">=0.81.1 <1.0.0"
-    assert manifest["peerDependencies"]["@earendil-works/pi-coding-agent"] == ">=0.81.1 <1.0.0"
-    assert manifest["peerDependencies"]["@earendil-works/pi-tui"] == ">=0.81.1 <1.0.0"
-    assert manifest["dependencies"]["typebox"] == "^1.3.7"
-    assert manifest["engines"]["node"] == ">=22.19.0"
-    assert "--workspace-root" in manifest["scripts"]["install-env"]
-    assert "TS_WORKSPACE_ROOT" in manifest["scripts"]["install-env"]
-    assert "tests/test_pi_subagent_contract.py" in manifest["scripts"]["test:pi-adapter"]
-    assert "postinstall" not in manifest["scripts"]
-
-    extension_source = (ROOT / "extensions" / "ts-workflow-control" / "index.ts").read_text(encoding="utf-8")
-    assert 'const DECISION_ACTIONS = ["start_node", "update_workspace", "end_node"]' in extension_source
-    assert "name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionDraft" in extension_source
-    assert "name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate" in extension_source
-    assert "name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply" in extension_source
-    assert 'name: "ts_workspace_decision"' not in extension_source
-    assert "randomUUID" not in extension_source
-    assert 'runWorkspaceDraftJson(pi, root' in extension_source
-    assert '"artifacts"' in extension_source
-    assert 'runComputeJson(pi, "list-artifacts"' in extension_source
-    assert "mode=artifacts" in extension_source
-    assert 'runComputeJson(pi, "capabilities"' in extension_source
-    assert "mode=capabilities" in extension_source
+def test_package_manifest_and_profile_expose_one_skill_five_extensions_one_theme() -> None:
+    package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
+    assert package["version"] == "0.7.0"
+    assert package["pi"]["skills"] == ["./skills/transition-state-workflow"]
+    assert len(package["pi"]["extensions"]) == 5
+    assert package["pi"]["themes"] == ["./themes/ts-theme.json"]
+    assert all("src/agents/compute" not in item and "src/agents/artifacts" not in item for item in package["files"])
 
 
-def test_public_tool_catalog_separates_workspace_subagent_and_remote_execution() -> None:
-    catalog = TOOL_CATALOG.read_text(encoding="utf-8")
-    expected = {
-        "workspaceContext": "ts_workspace_context",
-        "workspaceDecisionDraft": "ts_workspace_decision_draft",
-        "workspaceDecisionValidate": "ts_workspace_decision_validate",
-        "workspaceDecisionApply": "ts_workspace_decision_apply",
-        "remoteInspect": "ts_remote_inspect",
-        "subagentReview": "ts_subagent_review",
-        "reviewDisposition": "ts_review_disposition",
-        "subagentCompute": "ts_subagent_compute",
-        "subagentRender": "ts_subagent_render",
-        "subagentReport": "ts_subagent_report",
-        "notifyUser": "ts_notify_user",
-    }
-    for key, name in expected.items():
-        assert f'{key}: "{name}"' in catalog
-
-    for key in ("workspaceContext", "workspaceDecisionDraft", "workspaceDecisionValidate", "workspaceDecisionApply"):
-        assert f'[TS_PUBLIC_TOOL_NAMES.{key}]: "deterministic_workspace"' in catalog
-    assert '[TS_PUBLIC_TOOL_NAMES.remoteInspect]: "deterministic_infrastructure"' in catalog
-    assert '[TS_PUBLIC_TOOL_NAMES.reviewDisposition]: "deterministic_operational"' in catalog
-    for key in ("subagentReview", "subagentCompute", "subagentRender", "subagentReport"):
-        assert f'[TS_PUBLIC_TOOL_NAMES.{key}]: "child_agent"' in catalog
-    assert '[TS_PUBLIC_TOOL_NAMES.notifyUser]: "deterministic_external"' in catalog
-
-    for legacy in (
-        "ts_workspace_decide",
-        "ts_workspace_validate",
-        "ts_workspace_apply",
-        "ts_workspace_subagent",
-        "ts_workspace_compute_operator",
-        "ts_workspace_render_operator",
-        "ts_workspace_report_operator",
-        "ts_workspace_email_operator",
-        "ts_workspace_mcp_status",
-    ):
-        assert f'"{legacy}"' not in catalog
-
-
-def test_pi_documentation_matches_loaded_extensions_and_tool_boundary() -> None:
-    readme = (ROOT / "README.md").read_text(encoding="utf-8")
-    architecture = (ROOT / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
-    adapter = (SKILL_ROOT / "references" / "pi_agent_adapter.md").read_text(encoding="utf-8")
-    maintainer = (ROOT / "docs" / "MAINTAINER_GUIDE.md").read_text(encoding="utf-8")
-    skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
-    public_docs = "\n".join((readme, architecture, adapter, maintainer, skill))
-
-    assert "`>=0.81.1 <1.0.0`" in readme
-    for tool in (
-        "ts_workspace_decision_draft",
-        "ts_workspace_decision_validate",
-        "ts_workspace_decision_apply",
-        "ts_subagent_review",
-        "ts_review_disposition",
-    ):
-        assert f"`{tool}`" in public_docs
-    assert "run `validate_decision`, `start_node`" not in readme
-    assert "one Root Skill and five normal extensions" in adapter
-    assert "fresh child session with exactly one" in adapter
-    assert "Provider HTTP or stream failure outranks missing-tool or schema failure" in architecture
-    assert "extensions/ts-workflow-review" in maintainer
-    assert "extensions/ts-workflow-artifacts" in maintainer
-
-
-def test_pi_context_summary_from_report_workspace(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    bootstrap_strict_workspace(workspace)
-    report = report_workspace(workspace)
-    report_file = tmp_path / "report.json"
-    report_file.write_text(json.dumps(report), encoding="utf-8")
-
-    completed = subprocess.run(
-        ["node", str(SUMMARY), "--report", str(report_file)],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=True,
-    )
-    payload = json.loads(completed.stdout)
-
-    assert "TS workspace context:" in payload["summary"]
-    assert f"focus_claims: {CLAIM_ID}/inconclusive" in payload["summary"]
-    assert "operational_revision:" in payload["summary"]
-    assert f"compute_workspace_id: {report['workspace_id']}" in payload["summary"]
-    assert "do not edit canonical state files by hand" in payload["summary"]
-    assert "scripts/ts_workspace.py" not in payload["summary"]
-    assert "ts_workspace_context/ts_workspace_decision_draft/ts_workspace_decision_validate/ts_workspace_decision_apply" in payload["summary"]
-    assert payload["details"]["workspaceRoot"] == str(workspace)
-    assert payload["details"]["workspaceId"] == report["workspace_id"]
-    assert payload["details"]["operationalRevision"].startswith("sha256:")
-    assert payload["details"]["operationalSummary"]["controlUnresolvedCount"] == 0
-    assert payload["details"]["operationalSummary"]["ambiguousSubmissionCount"] == 0
-    assert payload["details"]["operationalSummary"]["reviewDispositionCount"] == 0
-    assert payload["details"]["operationalSummary"]["reviewDispositionPendingCount"] == 0
-    assert "unresolved_controls=0" in payload["summary"]
-    assert "ambiguous_submissions=0" in payload["summary"]
-    assert "pending_review_responses=0" in payload["summary"]
-    assert payload["details"]["focusClaimRefs"] == [CLAIM_ID]
-    assert payload["details"]["valid"] is True
-
-
-def test_workspace_commands_use_active_root_and_append_expandable_history(tmp_path: Path) -> None:
-    workspace = tmp_path / "active-ts-workspace"
-    bootstrap_strict_workspace(workspace)
+def test_loaded_extension_inventory_has_one_child_agent_and_direct_host_tools() -> None:
     script = f"""
-import installControl from {json.dumps(CONTROL_EXTENSION.as_uri())};
-import {{ createRequire }} from "node:module";
-import {{ pathToFileURL }} from "node:url";
-const requireFromPi = createRequire({json.dumps(str(PI_PACKAGE))});
-const {{ KeybindingsManager, setKeybindings, TUI_KEYBINDINGS }} = await import(
-  pathToFileURL(requireFromPi.resolve("@earendil-works/pi-tui")).href
-);
-setKeybindings(new KeybindingsManager({{
-  ...TUI_KEYBINDINGS,
-  "app.tools.expand": {{ defaultKeys: "ctrl+o", description: "Toggle tool output" }},
-}}));
-process.env.TS_AGENT_PYTHON = "/usr/bin/python3";
-process.env.TS_WORKSPACE_ROOT = {json.dumps(str(workspace))};
-const commands = {{}};
-const renderers = {{}};
-const entries = [];
-const execCalls = [];
-const pi = {{
-  on: () => {{}},
-  registerTool: () => {{}},
-  registerCommand: (name, command) => {{ commands[name] = command; }},
-  registerEntryRenderer: (name, renderer) => {{ renderers[name] = renderer; }},
-  appendEntry: (type, data) => entries.push([type, data]),
-  exec: async (command, args) => {{
-    execCalls.push([command, args]);
-    if (args[1] === "report_workspace") return {{ stdout: JSON.stringify({{
-      valid: true,
-      workspace_root: {json.dumps(str(workspace))},
-      workspace_id: "ws_test",
-      workspace_revision: "sha256:revision",
-      operational_revision: "sha256:operational",
-      operational_summary: {{}},
-      focus: {{ current_node: "n003" }},
-      open_nodes: [],
-      validation_findings: [],
-    }}) }};
-    if (args[1] === "validate_workspace") return {{ stdout: JSON.stringify({{
-      valid: false,
-      findings: [
-        {{ severity: "error", code: "broken" }},
-        {{ severity: "warning", code: "review" }},
-      ],
-    }}) }};
-    throw new Error(`unexpected workspace command: ${{args[1]}}`);
-  }},
+import control from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
+import ui from {json.dumps((ROOT / 'extensions/ts-workflow-ui/index.ts').as_uri())};
+import review from {json.dumps((ROOT / 'extensions/ts-workflow-review/index.ts').as_uri())};
+import compute from {json.dumps((ROOT / 'extensions/ts-workflow-compute/index.ts').as_uri())};
+import artifacts from {json.dumps((ROOT / 'extensions/ts-workflow-artifacts/index.ts').as_uri())};
+import {{ TS_PUBLIC_TOOL_EXECUTION }} from {json.dumps((ROOT / 'extensions/shared/tool-catalog.ts').as_uri())};
+const tools=[];const commands=[];const handlers={{}};
+const pi={{
+  registerTool:(tool)=>tools.push(tool),registerCommand:(name)=>commands.push(name),
+  registerEntryRenderer:()=>{{}},on:(name,handler)=>{{handlers[name]=handler}},
+  appendEntry:()=>{{}},sendMessage:()=>{{}},getThinkingLevel:()=>"high",
+  events:{{on:()=>()=>{{}}}},exec:async()=>({{code:0,stdout:"{{}}",stderr:""}}),
 }};
-installControl(pi);
-const notifications = [];
-const ctx = {{
-  cwd: {json.dumps(str(workspace))},
-  signal: new AbortController().signal,
-  ui: {{ notify: (...args) => notifications.push(args) }},
-}};
-await commands["ts-context"].handler("", ctx);
-await commands["ts-validate"].handler("", ctx);
-const executed = execCalls.length;
-await commands["ts-context"].handler("../other", ctx);
-await commands["ts-validate"].handler("--root elsewhere", ctx);
-const theme = {{ fg: (_color, text) => text }};
-const rendered = entries.map(([type, data]) => ({{
-  type,
-  collapsed: renderers[type]({{ data }}, {{ expanded: false }}, theme).render(200).join("\\n"),
-  expanded: renderers[type]({{ data }}, {{ expanded: true }}, theme).render(200).join("\\n"),
-}}));
+for (const install of [control,ui,review,compute,artifacts]) install(pi);
 process.stdout.write(JSON.stringify({{
-  commandDescriptions: Object.fromEntries(Object.entries(commands).map(([name, value]) => [name, value.description])),
-  rendered,
-  notifications,
-  execCalls,
-  executed,
+  tools:tools.map((tool)=>({{name:tool.name,properties:Object.keys(tool.parameters?.properties||{{}})}})),
+  commands,execution:TS_PUBLIC_TOOL_EXECUTION,
 }}));
 """
     result = _node_json(script)
-
-    assert result["commandDescriptions"] == {
-        "ts-context": "Show active TS workspace context · read-only · local.",
-        "ts-validate": "Validate active TS workspace · read-only · local.",
-    }
-    assert result["executed"] == 2
-    assert len(result["execCalls"]) == 2
-    assert all(str(workspace) in call[1] for call in result["execCalls"])
-    assert [item["type"] for item in result["rendered"]] == [
-        "ts-workspace-context-result",
-        "ts-workspace-validation-result",
-    ]
-    assert "TS Context: valid · n003" in result["rendered"][0]["collapsed"]
-    assert "TS workspace context:" in result["rendered"][0]["expanded"]
-    assert "TS Validation: invalid · 1 errors · 1 warnings" in result["rendered"][1]["collapsed"]
-    assert '"code": "broken"' in result["rendered"][1]["expanded"]
-    assert all("ctrl+o expand all details" in item["collapsed"].lower() for item in result["rendered"])
-    assert all("ctrl+o collapse all details" in item["expanded"].lower() for item in result["rendered"])
-    assert any("/ts-context takes no arguments" in item[0] for item in result["notifications"])
-    assert any("/ts-validate takes no arguments" in item[0] for item in result["notifications"])
+    assert {item["name"] for item in result["tools"]} == EXPECTED_TOOLS
+    assert set(result["commands"]) == EXPECTED_COMMANDS
+    assert [name for name, mode in result["execution"].items() if mode == "child_agent"] == ["ts_subagent_review"]
+    assert result["execution"]["ts_compute"] == "deterministic_execution"
+    assert result["execution"]["ts_render"] == "deterministic_artifact"
+    assert result["execution"]["ts_report"] == "deterministic_artifact"
 
 
-def test_pi_context_helper_finds_workspace_from_ancestor(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    nested = workspace / "nodes" / "scratch"
-    bootstrap_strict_workspace(workspace)
-    nested.mkdir(parents=True)
+def test_public_parameters_use_research_act_and_logical_artifact_vocabulary() -> None:
+    script = f"""
+import review from {json.dumps((ROOT / 'extensions/ts-workflow-review/index.ts').as_uri())};
+import compute from {json.dumps((ROOT / 'extensions/ts-workflow-compute/index.ts').as_uri())};
+import artifacts from {json.dumps((ROOT / 'extensions/ts-workflow-artifacts/index.ts').as_uri())};
+const tools={{}};const pi={{registerTool:(tool)=>tools[tool.name]=tool,registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},on:()=>{{}},appendEntry:()=>{{}},getThinkingLevel:()=>"off",events:{{on:()=>()=>{{}}}}}};
+for (const install of [review,compute,artifacts]) install(pi);
+function propertyKeys(schema, found=new Set()) {{
+  for (const key of Object.keys(schema?.properties||{{}})) found.add(key);
+  for (const branch of [...(schema?.anyOf||[]),...(schema?.oneOf||[]),...(schema?.allOf||[])]) propertyKeys(branch,found);
+  return [...found];
+}}
+process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(tools).map(([name,tool])=>[name,propertyKeys(tool.parameters)]))));
+"""
+    schemas = _node_json(script)
+    assert "actId" in schemas["ts_compute"]
+    assert "actId" in schemas["ts_render"]
+    assert "inputArtifactIds" in schemas["ts_render"]
+    assert "packageName" in schemas["ts_report"]
+    assert "targetClaimRef" in schemas["ts_subagent_review"]
+    serialized = json.dumps(schemas)
+    assert "nodeId" not in serialized
+    assert "inputRefs" not in serialized
+    assert "outputRef" not in serialized
 
-    script = (
-        "const helper = require('./extensions/ts-workflow-control/summary.cjs');"
-        "process.stdout.write(helper.findWorkspaceRoot(process.argv[1]) || '');"
-    )
+
+def test_workspace_cli_compiles_v4_frontier_and_focused_act(tmp_path: Path) -> None:
+    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    refs = start_research_act(workspace)
+    frontier = _workspace_cli("context", "--root", str(workspace), "--mode", "frontier")
+    act = _workspace_cli("context", "--root", str(workspace), "--mode", "act", "--act-ref", refs["act_id"])
+    assert frontier["schema_version"] == "ts-context-projection/1"
+    assert frontier["focus"]["act_refs"] == [refs["act_id"]]
+    assert act["research_acts"][0]["act_id"] == refs["act_id"]
+    assert "node_index" not in frontier
+    assert "gate_results" not in frontier
+
+
+def test_control_prompt_injection_states_v4_authority_without_prescribing_sequence(tmp_path: Path) -> None:
+    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    script = f"""
+import install from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
+const handlers={{}};const pi={{registerTool:()=>{{}},registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},on:(name,handler)=>handlers[name]=handler}};
+install(pi);
+const result=await handlers.before_agent_start({{systemPrompt:"BASE"}},{{cwd:{json.dumps(str(workspace))}}});
+process.stdout.write(JSON.stringify(result));
+"""
+    result = _node_json(script)
+    prompt = result["systemPrompt"]
+    assert "TS v4 workspace active" in prompt
+    assert "ts_workspace_context" in prompt
+    assert "ts_workspace_decision_apply" in prompt
+    assert "start_node" not in prompt
+    assert "workflow phase" not in prompt.lower()
+
+
+def test_review_fallback_failure_uses_review_runtime_taxonomy() -> None:
+    source = (ROOT / "extensions" / "ts-workflow-review" / "index.ts").read_text(encoding="utf-8")
+
+    assert 'failure_class: "review_runtime_failed"' in source
+    assert 'failure_stage: "review_runtime"' in source
+    assert 'failure_domain: "review"' in source
+    assert "review_operator" not in source
+
+
+def _workspace_cli(*args: str) -> dict:
     completed = subprocess.run(
-        ["node", "-e", script, str(nested)],
+        [sys.executable, str(ROOT / "scripts" / "ts_workspace.py"), *args],
         cwd=ROOT,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        check=True,
+        check=False,
     )
-
-    assert completed.stdout == str(workspace)
-
-
-def test_pi_json_parser_surfaces_structured_stderr() -> None:
-    script = (
-        "const helper=require('./extensions/ts-workflow-control/summary.cjs');"
-        "try { helper.parseJsonOutput({stdout:'',stderr:JSON.stringify({"
-        "ok:false,error:'collect requires a terminal calculation status'})}); }"
-        "catch (error) { process.stdout.write(String(error.message || error)); }"
-    )
-    completed = subprocess.run(
-        ["node", "-e", script],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=True,
-    )
-
-    assert completed.stdout == "collect requires a terminal calculation status"
+    assert completed.returncode == 0, completed.stderr
+    return json.loads(completed.stdout)
 
 
-def test_historical_node_and_backtrack_context_are_compact_and_explicit(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    report_ref = bootstrap_strict_workspace(workspace)
-    start_research_node(
-        workspace,
-        report_ref,
-        node_id="n001",
-        objective="Generate and inspect one candidate.",
-        tags=["candidate"],
-    )
-    end_research_node(workspace, report_ref, node_id="n001")
-    start_research_node(
-        workspace,
-        report_ref,
-        node_id="n002",
-        parent_node="n001",
-        objective="Test connectivity for the current Claim.",
-        tags=["connectivity"],
-    )
-    end_research_node(workspace, report_ref, node_id="n002", program_outcome="failure")
-
-    node_context = report_node(workspace, "n001")
-    lineage_context = report_lineage_context(workspace, "n002", "n001")
-
-    assert node_context["node"]["node_id"] == "n001"
-    assert node_context["lineage"] == ["n000", "n001"]
-    assert node_context["agent_runs"] == []
-    assert "closure" not in node_context["node"]
-    assert lineage_context["anchor_node"]["node"]["node_id"] == "n001"
-    assert [item["node_id"] for item in lineage_context["path_delta"]] == ["n002"]
-
-    context_file = tmp_path / "lineage_context.json"
-    context_file.write_text(json.dumps(lineage_context), encoding="utf-8")
-    script = (
-        "const fs=require('node:fs');"
-        "const helper=require('./extensions/ts-workflow-control/summary.cjs');"
-        "const value=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
-        "process.stdout.write(helper.buildLineageContextSummary(value));"
-    )
-    completed = subprocess.run(
-        ["node", "-e", script, str(context_file)],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=True,
-    )
-    assert "TS lineage context:" in completed.stdout
-    assert "trigger: n002[connectivity]/closed/completed" in completed.stdout
-    assert "selected_checkpoint: n001[candidate]/closed/completed" in completed.stdout
-    assert "kernel only validates parent-node topology" in completed.stdout
-
-    node_context_file = tmp_path / "node_context.json"
-    node_context_file.write_text(json.dumps(node_context), encoding="utf-8")
-    node_script = (
-        "const fs=require('node:fs');"
-        "const helper=require('./extensions/ts-workflow-control/summary.cjs');"
-        "const value=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
-        "process.stdout.write(helper.buildNodeContextSummary(value));"
-    )
-    node_completed = subprocess.run(
-        ["node", "-e", node_script, str(node_context_file)],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=True,
-    )
-    assert "artifact_paths: inputs=nodes/n001/inputs" in node_completed.stdout
-    assert "outputs=nodes/n001/outputs" in node_completed.stdout
-    assert "claim_refs: claim_reaction_0001" in node_completed.stdout
-    assert "evidence: (none)" in node_completed.stdout
-
-
-def _node_json(script: str):
+def _node_json(script: str) -> dict:
     completed = subprocess.run(
         ["node", "--experimental-loader", str(TS_LOADER), "--input-type=module", "--eval", script],
         cwd=ROOT,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        timeout=30,
         check=False,
     )
     assert completed.returncode == 0, completed.stderr

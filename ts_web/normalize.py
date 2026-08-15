@@ -1,201 +1,313 @@
-"""Read-only v3 workspace projection for the web explorer."""
+"""Read-only v4 workspace projections for the research explorer."""
 
 from __future__ import annotations
 
 import json
-from collections.abc import Iterable
+from collections import deque
 from pathlib import Path
 from typing import Any
 
-from ts_workspace.evidence_v3 import EvidenceStateError, evidence_view
+from ts_workspace.acceptance import project_acceptances
 from ts_workspace.io import read_json
 from ts_workspace.operational import operational_snapshot
-from ts_workspace.state_v3 import CLAIMS_FILE, EVIDENCE_FILE, GATE_RESULTS_FILE, RESEARCH_STATE_FILE
-from ts_workspace.validator_v3 import validate_workspace
+from ts_workspace.revision import report_id_for_revision, workspace_revision_from_documents
+from ts_workspace.state import (
+    CLAIMS_FILE,
+    CLAIM_RELATIONS_FILE,
+    OBSERVATIONS_FILE,
+    FINDINGS_FILE,
+    RESEARCH_ACTS_FILE,
+    RESEARCH_STATE_FILE,
+    STATE_FILES,
+    VALIDATION_RESULTS_FILE,
+    VALIDATION_SPECS_FILE,
+    WORKSPACE_FILE,
+)
+from ts_workspace.validator import validate_workspace
 
 
 def normalize_workspace(source_root: str | Path, *, label: str | None = None) -> dict[str, Any]:
-    """Project canonical v3 state and separate operational state without deriving strategy."""
+    """Project canonical v4 graph state and separate operational overlays."""
 
-    root = Path(source_root).resolve()
+    root = Path(source_root).expanduser().resolve()
+    documents = {name: _read_object(root / name) for name in STATE_FILES}
     validation = validate_workspace(root)
-    research = _read_object(root / RESEARCH_STATE_FILE)
-    claims_registry = _read_object(root / CLAIMS_FILE)
-    evidence_registry = _read_object(root / EVIDENCE_FILE)
-    gate_registry = _read_object(root / GATE_RESULTS_FILE)
-    evidence_records = _objects(evidence_registry.get("evidence"))
-    evidence_states = _evidence_states(evidence_records, _objects(evidence_registry.get("events")))
+    revision = workspace_revision_from_documents(documents)
+    state = documents[RESEARCH_STATE_FILE]
     operations = operational_snapshot(root)
-    agent_runs = operations["agent_runs"]
-    nodes = [
-        _normalize_node(root, row, agent_runs)
-        for row in _objects(research.get("nodes"))
+    activities = operations["deterministic_activities"]
+    reviews = operations["review_runs"]
+    controls = operations["unresolved_controls"]
+    acts = [
+        _normalize_act(root, record, activities=activities, reviews=reviews, controls=controls)
+        for record in _objects(documents[RESEARCH_ACTS_FILE].get("acts"))
     ]
-    branch_events = [
-        _normalize_branch_event(event)
-        for event in _objects(research.get("branch_events"))
-    ]
-    claims = _objects(claims_registry.get("claims"))
-    gates = _objects(gate_registry.get("gate_results"))
+    acceptances = project_acceptances(root, _strings(state.get("acceptance_refs")), documents)
+    current_acceptances = [record for record in acceptances if record["current"]]
+
     return {
-        "schema_version": "ts-web-workspace/3",
+        "schema_version": "ts-web-workspace/4",
         "label": label or root.name,
         "source_root": str(root),
+        "workspace": documents[WORKSPACE_FILE],
+        "workspace_revision": revision,
+        "report_id": report_id_for_revision(revision),
         "valid": validation["valid"],
         "validation_findings": validation["findings"],
         "focus": {
-            "open_nodes": _strings(research.get("open_nodes")),
-            "focus_claim_refs": _strings(claims_registry.get("focus_claim_refs")),
-            "accepted_refs": _strings(research.get("accepted_refs")),
+            "claim_refs": _strings(state.get("focus_claim_refs")),
+            "act_refs": _strings(state.get("focus_act_refs")),
         },
-        "nodes": nodes,
-        "edges": _objects(research.get("edges")),
-        "branch_events": branch_events,
-        "branch_edges": branch_events,
-        "decision_events": _normalize_decision_events(root / "decision_log.jsonl"),
-        "claims": claims,
-        "gate_results": gates,
-        "evidence": [
-            {**record, "state": evidence_states.get(str(record.get("evidence_id")), "unknown")}
-            for record in evidence_records
-        ],
+        "acceptance_summary": {
+            "record_refs": _strings(state.get("acceptance_refs")),
+            "current_refs": [str(record["ref"]) for record in current_acceptances],
+            "stale_refs": [str(record["ref"]) for record in acceptances if not record["current"]],
+        },
+        "claims": _objects(documents[CLAIMS_FILE].get("claims")),
+        "claim_relations": _objects(documents[CLAIM_RELATIONS_FILE].get("relations")),
+        "research_acts": acts,
+        "observations": _objects(documents[OBSERVATIONS_FILE].get("observations")),
+        "validation_specs": _objects(documents[VALIDATION_SPECS_FILE].get("specs")),
+        "validation_results": _objects(documents[VALIDATION_RESULTS_FILE].get("results")),
+        "findings": _objects(documents[FINDINGS_FILE].get("findings")),
+        "acceptances": acceptances,
+        "current_acceptances": current_acceptances,
+        "decisions": _recent_decisions(root / "decision_log.jsonl"),
         "operational_revision": operations["operational_revision"],
         "operational_summary": operations["operational_summary"],
+        "deterministic_activities": activities,
+        "review_runs": reviews,
+        "pending_review_dispositions": operations["pending_review_dispositions"],
         "pending_controls": operations["pending_controls"],
-        "unresolved_controls": operations["unresolved_controls"],
-        "agent_runs": agent_runs,
+        "unresolved_controls": controls,
     }
 
 
-def explorer_job_payload(
-    source_root: str | Path,
-    *,
-    label: str | None = None,
-    workspace: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    root = Path(source_root).resolve()
-    view = normalize_workspace(root, label=label)
-    graph = explorer_graph_payload_from_view(view)
-    return {
-        "app": "TS Research Explorer",
-        "source": str(root),
-        "research_state": _read_object(root / RESEARCH_STATE_FILE),
-        "research": _research_summary(view),
-        "evidence_summary": graph["evidence_summary"],
-        "graph": graph,
-        "workspace": explorer_workspace_summary(workspace or {}, view=view),
-        "read_only": True,
-    }
-
-
-def explorer_workspace_summary(
+def workspace_summary(
     row: dict[str, Any],
     *,
     view: dict[str, Any] | None = None,
-    **_unused: Any,
 ) -> dict[str, Any]:
-    source_root = str(row.get("source_root") or row.get("source") or "")
-    label = str(row.get("label") or row.get("name") or (Path(source_root).name if source_root else ""))
-    workspace_id = str(row.get("workspace_id") or row.get("id") or "")
-    if view is None and source_root:
+    source_root = str(row.get("source_root") or "")
+    workspace_id = str(row.get("workspace_id") or "")
+    label = str(row.get("label") or (Path(source_root).name if source_root else workspace_id))
+    if view is None:
         view = normalize_workspace(source_root, label=label)
-    focus = view.get("focus", {}) if isinstance(view, dict) else {}
-    accepted_refs = _strings(focus.get("accepted_refs"))
-    claims = _objects(view.get("claims")) if isinstance(view, dict) else []
-    focus_claims = set(_strings(focus.get("focus_claim_refs")))
-    focused = [claim for claim in claims if claim.get("claim_id") in focus_claims]
-    statuses = sorted({str(claim.get("status")) for claim in focused if claim.get("status")})
-    claim_state = "accepted" if accepted_refs else (", ".join(statuses) if statuses else "unfocused")
+    focus = _object(view.get("focus"))
+    claims = _objects(view.get("claims"))
+    acts = _objects(view.get("research_acts"))
+    findings = _objects(view.get("findings"))
     return {
         **row,
-        "id": workspace_id,
         "workspace_id": workspace_id,
-        "name": label or workspace_id,
-        "label": label or workspace_id,
-        "source": source_root,
+        "label": label,
         "source_root": source_root,
-        "system": Path(source_root).name if source_root else "",
-        "claim_state": claim_state,
-        "accepted_refs": accepted_refs,
-        "focus_claim_refs": sorted(focus_claims),
-        "open_nodes": _strings(focus.get("open_nodes")),
+        "kernel_protocol": _object(view.get("workspace")).get("kernel_protocol"),
+        "workspace_revision": view.get("workspace_revision"),
+        "valid": bool(view.get("valid")),
+        "claim_count": len(claims),
+        "act_count": len(acts),
+        "open_act_count": sum(1 for act in acts if act.get("status") == "open"),
+        "open_finding_count": sum(1 for finding in findings if finding.get("status") == "open"),
+        "focus_claim_refs": _strings(focus.get("claim_refs")),
+        "focus_act_refs": _strings(focus.get("act_refs")),
+        "acceptance_record_count": len(_objects(view.get("acceptances"))),
+        "current_acceptance_count": len(_objects(view.get("current_acceptances"))),
     }
 
 
-def explorer_graph_payload(source_root: str | Path, *, label: str | None = None) -> dict[str, Any]:
-    return explorer_graph_payload_from_view(normalize_workspace(source_root, label=label))
+def graph_payload(source_root: str | Path, *, label: str | None = None) -> dict[str, Any]:
+    return graph_payload_from_view(normalize_workspace(source_root, label=label))
 
 
-def explorer_graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
-    nodes = [_explorer_node(row) for row in _objects(view.get("nodes"))]
-    edges = _explorer_edges(nodes, _objects(view.get("edges")))
-    evidence = _explorer_evidence(_objects(view.get("evidence")))
-    claims = _objects(view.get("claims"))
-    gates = _objects(view.get("gate_results"))
-    focus = view.get("focus", {}) if isinstance(view.get("focus"), dict) else {}
-    return {
-        "schema": "ts-explorer-graph/3",
-        "nodes": nodes,
-        "edges": edges,
-        "events": [*_objects(view.get("branch_events")), *_objects(view.get("decision_events"))],
-        "frontier_nodes": [node["id"] for node in nodes if node.get("frontier")],
-        "accepted_refs": _strings(focus.get("accepted_refs")),
-        "focus_claim_refs": _strings(focus.get("focus_claim_refs")),
-        "claims": claims,
-        "gate_results": gates,
-        "validation": {
-            "valid": bool(view.get("valid")),
-            "findings": _list(view.get("validation_findings")),
-        },
-        "evidence_summary": evidence["summary"],
-        "evidence": {"records": evidence["records"]},
-        "operational_revision": view.get("operational_revision"),
-        "operational_summary": view.get("operational_summary", {}),
-        "agent_runs": _objects(view.get("agent_runs")),
-        "presentation": _explorer_presentation(),
+def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
+    focus = _object(view.get("focus"))
+    focus_claims = set(_strings(focus.get("claim_refs")))
+    focus_acts = set(_strings(focus.get("act_refs")))
+    acceptances = _objects(view.get("acceptances"))
+    current_acceptances = _objects(view.get("current_acceptances"))
+    accepted_claims = {
+        str(record.get("claim_ref"))
+        for record in current_acceptances
+        if record.get("claim_ref")
     }
-
-
-def explorer_node_payload(source_root: str | Path, node_id: str, *, label: str | None = None) -> dict[str, Any]:
-    root = Path(source_root).resolve()
-    view = normalize_workspace(root, label=label)
-    graph = explorer_graph_payload_from_view(view)
-    node = next((item for item in graph["nodes"] if item.get("id") == node_id), None)
-    if node is None:
-        raise ValueError(f"unknown node id: {node_id}")
-    detail = _read_object(root / "nodes" / node_id / "node.json")
-    node_dir = root / "nodes" / node_id
-    evidence = [
-        record
-        for record in graph["evidence"]["records"]
-        if record.get("node_id") == node_id
+    historically_accepted_claims = {
+        str(record.get("claim_ref"))
+        for record in acceptances
+        if record.get("claim_ref")
+    }
+    claims = [
+        {
+            "id": record.get("claim_id"),
+            "claim_id": record.get("claim_id"),
+            "claim_type": record.get("claim_type"),
+            "statement": record.get("statement"),
+            "status": record.get("status"),
+            "tags": _strings(record.get("tags")),
+            "focus": record.get("claim_id") in focus_claims,
+            "accepted": record.get("claim_id") in accepted_claims,
+            "acceptance_state": (
+                "current"
+                if record.get("claim_id") in accepted_claims
+                else "historical"
+                if record.get("claim_id") in historically_accepted_claims
+                else "none"
+            ),
+            "observation_count": len(_strings(record.get("observation_refs"))),
+            "validation_spec_count": len(_strings(record.get("validation_spec_refs"))),
+            "validation_result_count": len(_strings(record.get("validation_result_refs"))),
+        }
+        for record in _objects(view.get("claims"))
     ]
-    gate_ids = set(_strings(detail.get("gate_result_refs")))
-    gates = [row for row in graph["gate_results"] if row.get("gate_result_id") in gate_ids]
-    claim_ids = set(_strings(detail.get("claim_refs")))
-    claims = [row for row in graph["claims"] if row.get("claim_id") in claim_ids]
+    relations = [
+        {
+            "id": record.get("relation_id"),
+            "source": record.get("source_claim_ref"),
+            "target": record.get("target_claim_ref"),
+            "kind": record.get("relation_type"),
+            "rationale": record.get("rationale"),
+        }
+        for record in _objects(view.get("claim_relations"))
+    ]
+    acts = [
+        {
+            "id": record.get("act_id"),
+            "act_id": record.get("act_id"),
+            "objective": record.get("objective"),
+            "status": record.get("status"),
+            "tags": _strings(record.get("tags")),
+            "claim_refs": _strings(record.get("claim_refs")),
+            "dependency_refs": _strings(record.get("dependency_refs")),
+            "focus": record.get("act_id") in focus_acts,
+            "outcome": _object(record.get("result")).get("outcome"),
+            "activity_count": len(_objects(record.get("activities"))),
+            "review_count": len(_objects(record.get("review_runs"))),
+            "unresolved_control_count": len(_objects(record.get("unresolved_controls"))),
+        }
+        for record in _objects(view.get("research_acts"))
+    ]
+    act_edges = [
+        {
+            "id": f"dependency:{dependency}:{act['act_id']}",
+            "source": dependency,
+            "target": act["act_id"],
+            "kind": "depends_on",
+        }
+        for act in acts
+        for dependency in act["dependency_refs"]
+    ]
+    claim_act_links = [
+        {"claim_ref": claim_ref, "act_ref": act["act_id"]}
+        for act in acts
+        for claim_ref in act["claim_refs"]
+    ]
     return {
-        "node_id": node_id,
-        "node": {**detail, **node, "node_id": node_id},
-        "markdown": {
-            "decision": _read_text(node_dir / "decision.md"),
-            "reflection": _render_result(detail),
-            "report": _read_text(node_dir / "report.md"),
-        },
-        "claims": claims,
-        "gate_results": gates,
-        "evidence": evidence,
-        "files": list_node_files(root, node_id),
+        "schema_version": "ts-explorer-graph/4",
+        "workspace": view.get("workspace"),
+        "workspace_revision": view.get("workspace_revision"),
+        "operational_revision": view.get("operational_revision"),
+        "valid": bool(view.get("valid")),
+        "validation_findings": _list(view.get("validation_findings")),
+        "focus": focus,
+        "claim_graph": {"nodes": claims, "edges": relations},
+        "research_act_dag": {"nodes": acts, "edges": act_edges},
+        "claim_act_links": claim_act_links,
+        "semantic_summary": _semantic_summary(view),
+        "operational_summary": _object(view.get("operational_summary")),
+        "deterministic_activities": _objects(view.get("deterministic_activities")),
+        "review_runs": _objects(view.get("review_runs")),
+        "unresolved_controls": _objects(view.get("unresolved_controls")),
     }
 
 
-def list_node_files(source_root: str | Path, node_id: str) -> dict[str, Any]:
-    root = Path(source_root).resolve()
-    node_dir = root / "nodes" / node_id
-    if not node_dir.is_dir() or node_dir.is_symlink():
-        return {"node_id": node_id, "files": []}
+def claim_payload(source_root: str | Path, claim_id: str, *, label: str | None = None) -> dict[str, Any]:
+    view = normalize_workspace(source_root, label=label)
+    claim = _find(_objects(view.get("claims")), "claim_id", claim_id, "Claim")
+    relations = [
+        row
+        for row in _objects(view.get("claim_relations"))
+        if claim_id in {row.get("source_claim_ref"), row.get("target_claim_ref")}
+    ]
+    acts = [row for row in _objects(view.get("research_acts")) if claim_id in _strings(row.get("claim_refs"))]
+    act_ids = {str(row.get("act_id")) for row in acts}
+    observation_ids = {
+        *_strings(claim.get("observation_refs")),
+        *(ref for act in acts for ref in _strings(act.get("observation_refs"))),
+    }
+    return {
+        "schema_version": "ts-explorer-claim/1",
+        "claim": claim,
+        "relations": relations,
+        "research_acts": acts,
+        "observations": [
+            row for row in _objects(view.get("observations")) if row.get("observation_id") in observation_ids
+        ],
+        "validation_specs": [
+            row for row in _objects(view.get("validation_specs")) if row.get("target_claim_ref") == claim_id
+        ],
+        "validation_results": [
+            row for row in _objects(view.get("validation_results")) if row.get("target_claim_ref") == claim_id
+        ],
+        "findings": [
+            row for row in _objects(view.get("findings")) if claim_id in _strings(row.get("claim_refs"))
+        ],
+        "acceptances": [
+            row for row in _objects(view.get("acceptances")) if row.get("claim_ref") == claim_id
+        ],
+        "current_acceptances": [
+            row for row in _objects(view.get("current_acceptances")) if row.get("claim_ref") == claim_id
+        ],
+        "review_runs": [
+            row
+            for row in _objects(view.get("review_runs"))
+            if claim_id in _strings(row.get("claim_refs")) or act_ids.intersection(_strings(row.get("act_refs")))
+        ],
+    }
+
+
+def act_payload(source_root: str | Path, act_id: str, *, label: str | None = None) -> dict[str, Any]:
+    root = Path(source_root).expanduser().resolve()
+    view = normalize_workspace(root, label=label)
+    act = _find(_objects(view.get("research_acts")), "act_id", act_id, "ResearchAct")
+    dependency_ids = set(_strings(act.get("dependency_refs")))
+    all_acts = _objects(view.get("research_acts"))
+    return {
+        "schema_version": "ts-explorer-research-act/1",
+        "research_act": act,
+        "dependencies": [row for row in all_acts if row.get("act_id") in dependency_ids],
+        "dependents": [row for row in all_acts if act_id in _strings(row.get("dependency_refs"))],
+        "claims": [
+            row for row in _objects(view.get("claims")) if row.get("claim_id") in _strings(act.get("claim_refs"))
+        ],
+        "observations": [
+            row
+            for row in _objects(view.get("observations"))
+            if row.get("created_by_act") == act_id or row.get("observation_id") in _strings(act.get("observation_refs"))
+        ],
+        "validation_specs": [
+            row
+            for row in _objects(view.get("validation_specs"))
+            if row.get("created_by_act") == act_id or row.get("spec_id") in _strings(act.get("validation_spec_refs"))
+        ],
+        "validation_results": [
+            row
+            for row in _objects(view.get("validation_results"))
+            if row.get("evaluated_by_act") == act_id or row.get("result_id") in _strings(act.get("validation_result_refs"))
+        ],
+        "findings": [
+            row for row in _objects(view.get("findings")) if act_id in _strings(row.get("act_refs"))
+        ],
+        "files": list_act_files(root, act_id),
+    }
+
+
+def list_act_files(source_root: str | Path, act_id: str) -> dict[str, Any]:
+    root = Path(source_root).expanduser().resolve()
+    act_dir = root / "acts" / act_id
+    if not act_dir.is_dir() or act_dir.is_symlink():
+        return {"act_id": act_id, "files": []}
     files: list[dict[str, Any]] = []
-    for path in sorted(node_dir.rglob("*")):
+    for path in sorted(act_dir.rglob("*")):
         if path.is_symlink() or not path.is_file():
             continue
         stat = path.stat()
@@ -207,267 +319,115 @@ def list_node_files(source_root: str | Path, node_id: str) -> dict[str, Any]:
                 "modified": int(stat.st_mtime),
             }
         )
-    return {"node_id": node_id, "files": files}
+    return {"act_id": act_id, "files": files}
 
 
-def _normalize_node(root: Path, row: dict[str, Any], agent_runs: list[dict[str, Any]]) -> dict[str, Any]:
-    node_id = str(row.get("node_id") or "")
-    detail = _read_object(root / "nodes" / node_id / "node.json") if node_id else {}
-    state = str(detail.get("state") or row.get("state") or "unknown")
-    result = detail.get("result") if isinstance(detail.get("result"), dict) else {}
-    outcome = result.get("outcome") or row.get("outcome")
-    label, tone = _node_display(state, outcome)
-    tags = _strings(detail.get("tags", row.get("tags")))
-    runs = [run for run in agent_runs if node_id in _strings(run.get("node_ids"))]
+def _normalize_act(
+    root: Path,
+    record: dict[str, Any],
+    *,
+    activities: list[dict[str, Any]],
+    reviews: list[dict[str, Any]],
+    controls: list[dict[str, Any]],
+) -> dict[str, Any]:
+    act_id = str(record.get("act_id") or "")
     return {
-        "node_id": node_id,
-        "parent_node": detail.get("parent_node", row.get("parent_node")),
-        "objective": detail.get("objective", row.get("objective")),
-        "state": state,
-        "tags": tags,
-        "stage": tags[0] if tags else "research",
-        "claim_refs": _strings(detail.get("claim_refs")),
-        "operation_refs": _strings(detail.get("operation_refs")),
-        "evidence_refs": _strings(detail.get("evidence_refs")),
-        "gate_result_refs": _strings(detail.get("gate_result_refs")),
-        "result": result or None,
-        "calculations": _normalize_calculations(root, node_id),
-        "agent_runs": runs,
-        "display": {"label": label, "tone": tone, "outcome": outcome},
+        **record,
+        "attempts": _calculation_attempts(root, act_id),
+        "activities": [row for row in activities if act_id in _strings(row.get("act_refs"))],
+        "review_runs": [row for row in reviews if act_id in _strings(row.get("act_refs"))],
+        "unresolved_controls": [row for row in controls if row.get("act_id") == act_id],
     }
 
 
-def _explorer_node(row: dict[str, Any]) -> dict[str, Any]:
-    calculations = _objects(row.get("calculations"))
-    runs = _objects(row.get("agent_runs"))
-    latest_calculation = calculations[-1] if calculations else {}
-    latest_run = runs[-1] if runs else {}
-    display = row.get("display") if isinstance(row.get("display"), dict) else {}
-    tags = _strings(row.get("tags"))
-    state = str(row.get("state") or "unknown")
-    label = str(display.get("label") or state)
-    return {
-        "id": row.get("node_id"),
-        "node_id": row.get("node_id"),
-        "parent_id": row.get("parent_node"),
-        "objective": row.get("objective"),
-        "state": state,
-        "tags": tags,
-        "stage_label": " / ".join(tags[:2]) if tags else "Research",
-        "card_label": label,
-        "card_line": label,
-        "card_color": _tone_color(str(display.get("tone") or "neutral")),
-        "color": _tone_color(str(display.get("tone") or "neutral")),
-        "node_state": state,
-        "state_label": label,
-        "state_line": _result_line(row.get("result")),
-        "outcome": display.get("outcome"),
-        "claim_refs": _strings(row.get("claim_refs")),
-        "operation_refs": _strings(row.get("operation_refs")),
-        "evidence_refs": _strings(row.get("evidence_refs")),
-        "gate_result_refs": _strings(row.get("gate_result_refs")),
-        "evidence_count": len(_strings(row.get("evidence_refs"))),
-        "gate_result_count": len(_strings(row.get("gate_result_refs"))),
-        "calculations": calculations,
-        "calculation_count": len(calculations),
-        "calculation_state": latest_calculation.get("state"),
-        "calculation_program_status": latest_calculation.get("program_status"),
-        "agent_runs": runs,
-        "agent_run_count": len(runs),
-        "agent_run_status": latest_run.get("status"),
-        "agent_run_role": latest_run.get("role"),
-        "active": state == "open",
-        "frontier": state == "open",
-    }
-
-
-def _normalize_calculations(root: Path, node_id: str) -> list[dict[str, Any]]:
-    paths = {
-        *root.glob(f"nodes/{node_id}/attempts/*/outputs/calculation_result.json"),
-        *root.glob(f"nodes/{node_id}/outputs/calculations/*/calculation_result.json"),
-        *root.glob(f"nodes/{node_id}/remote/calculations/*/status.json"),
-    }
-    rows: list[dict[str, Any]] = []
-    for path in sorted(paths):
-        if path.is_symlink() or not path.is_file():
+def _calculation_attempts(root: Path, act_id: str) -> list[dict[str, Any]]:
+    if not act_id:
+        return []
+    attempts: list[dict[str, Any]] = []
+    for attempt_dir in sorted((root / "acts" / act_id / "attempts").glob("*")):
+        if not attempt_dir.is_dir() or attempt_dir.is_symlink():
             continue
-        value = _read_object(path)
-        rows.append({**value, "ref": path.relative_to(root).as_posix()})
-    return rows
-
-
-def _explorer_edges(nodes: list[dict[str, Any]], tree_edges: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    known = {str(node.get("id")) for node in nodes}
-    rows: list[dict[str, Any]] = []
-    seen: set[tuple[str, str]] = set()
-    for edge in tree_edges:
-        source = str(edge.get("parent_node") or "")
-        target = str(edge.get("child_node") or "")
-        key = (source, target)
-        if not source or not target or source not in known or target not in known or key in seen:
-            continue
-        seen.add(key)
-        rows.append({"id": f"edge:{source}:{target}", "source": source, "target": target, "kind": "branch"})
-    return rows
-
-
-def _explorer_evidence(records: list[dict[str, Any]]) -> dict[str, Any]:
-    states: dict[str, int] = {}
-    tiers: dict[str, int] = {}
-    for record in records:
-        state = str(record.get("state") or "unknown")
-        tier = str(record.get("evidence_tier") or "unknown")
-        states[state] = states.get(state, 0) + 1
-        tiers[tier] = tiers.get(tier, 0) + 1
-    return {"summary": {"total": len(records), "states": states, "tiers": tiers}, "records": records}
-
-
-def _research_summary(view: dict[str, Any]) -> dict[str, Any]:
-    claims = _objects(view.get("claims"))
-    gates = _objects(view.get("gate_results"))
-    evidence = _objects(view.get("evidence"))
-    focus_refs = _strings(view.get("focus", {}).get("focus_claim_refs"))
-    focus_set = set(focus_refs)
-    open_questions = [
-        question
-        for node in _objects(view.get("nodes"))
-        for question in _strings((node.get("result") or {}).get("open_questions") if isinstance(node.get("result"), dict) else [])
-    ]
-    return {
-        "focus_claim_refs": focus_refs,
-        "accepted_refs": _strings(view.get("focus", {}).get("accepted_refs")),
-        "claim_counts": _count_by(claims, "status"),
-        "gate_counts": _count_by(gates, "verdict"),
-        "active_evidence_count": sum(1 for row in evidence if row.get("state") == "active"),
-        "focus_claims": [
-            f"{claim.get('claim_id')}: {claim.get('status')} - {claim.get('statement')}"
-            for claim in claims
-            if claim.get("claim_id") in focus_set
-        ],
-        "gate_lines": [
-            f"{gate.get('gate_result_id')}: {gate.get('gate')} = {gate.get('verdict')}"
-            for gate in gates
-        ],
-        "evidence_lines": [
-            f"{row.get('evidence_id')}: {row.get('state')} - {row.get('summary')}"
-            for row in evidence
-        ],
-        "open_questions": open_questions,
-        "claims": claims,
-        "gate_results": gates,
-    }
-
-
-def _evidence_states(records: list[dict[str, Any]], events: list[dict[str, Any]]) -> dict[str, str]:
-    try:
-        return evidence_view(records, events).state_by_id
-    except EvidenceStateError:
-        return {str(row.get("evidence_id")): "invalid" for row in records}
-
-
-def _normalize_branch_event(event: dict[str, Any]) -> dict[str, Any]:
-    node_id = str(event.get("node_id") or "")
-    parent = event.get("parent_node")
-    return {
-        "event_id": f"branch:{node_id}",
-        "event_role": "node_created",
-        "node_id": node_id,
-        "new_node": node_id,
-        "parent_node": parent,
-        "from_node": parent,
-        "decision_id": event.get("decision_id"),
-        "created_at": event.get("created_at"),
-    }
-
-
-def _normalize_decision_events(path: Path) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for item in _read_jsonl(path):
-        rows.append(
+        result = _read_optional_object(attempt_dir / "outputs" / "calculation_result.json")
+        status = _read_optional_object(attempt_dir / "status.json")
+        intent = _read_optional_object(attempt_dir / "intent.json")
+        attempts.append(
             {
-                "event_id": f"decision:{item.get('decision_id')}",
-                "event_role": "decision",
-                "decision_id": item.get("decision_id"),
-                "action": item.get("action"),
-                "created_at": item.get("created_at"),
-                "result": item.get("result"),
+                "intent_id": intent.get("intent_id") or status.get("intent_id") or attempt_dir.name,
+                "ref": attempt_dir.relative_to(root).as_posix(),
+                "backend": intent.get("backend") or result.get("backend"),
+                "task_type": intent.get("task_type") or result.get("task_type"),
+                "state": result.get("state") or status.get("state"),
+                "program_status": result.get("program_status") or status.get("program_status"),
+                "error_class": result.get("error_class") or status.get("error_class"),
             }
         )
-    return rows
+    return attempts
 
 
-def _node_display(state: str, outcome: Any) -> tuple[str, str]:
-    if state == "open":
-        return "open", "active"
-    if state == "stopped":
-        return "stopped", "stopped"
-    if outcome == "completed":
-        return "completed", "supported"
-    if outcome == "inconclusive":
-        return "inconclusive", "inconclusive"
-    if outcome == "blocked":
-        return "blocked", "failed"
-    return state, "neutral"
+def _recent_decisions(path: Path, limit: int = 200) -> list[dict[str, Any]]:
+    if not path.is_file() or path.is_symlink():
+        return []
+    rows: deque[dict[str, Any]] = deque(maxlen=limit)
+    with path.open("r", encoding="utf-8") as handle:
+        for line in handle:
+            try:
+                value = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if isinstance(value, dict):
+                rows.append(value)
+    return list(rows)
 
 
-def _tone_color(tone: str) -> str:
+def _semantic_summary(view: dict[str, Any]) -> dict[str, Any]:
+    claims = _objects(view.get("claims"))
+    acts = _objects(view.get("research_acts"))
+    results = _objects(view.get("validation_results"))
+    findings = _objects(view.get("findings"))
     return {
-        "active": "blue",
-        "supported": "green",
-        "inconclusive": "amber",
-        "failed": "red",
-        "stopped": "gray",
-    }.get(tone, "gray")
-
-
-def _result_line(value: Any) -> str:
-    if not isinstance(value, dict):
-        return "No node result recorded."
-    parts = [str(value.get("summary") or "").strip()]
-    questions = _strings(value.get("open_questions"))
-    if questions:
-        parts.append(f"{len(questions)} open question(s)")
-    return " | ".join(part for part in parts if part) or str(value.get("outcome") or "closed")
-
-
-def _render_result(node: dict[str, Any]) -> str:
-    result = node.get("result") if isinstance(node.get("result"), dict) else None
-    if result is None:
-        return ""
-    lines = ["# Node Result", "", f"- State: {node.get('state')}", f"- Outcome: {result.get('outcome')}", ""]
-    if result.get("summary"):
-        lines.extend([str(result["summary"]), ""])
-    updates = _objects(result.get("claim_updates"))
-    if updates:
-        lines.extend(["## Claim Updates", ""])
-        for update in updates:
-            lines.append(f"- {update.get('claim_ref')}: {update.get('verdict')} - {update.get('summary')}")
-        lines.append("")
-    audit = result.get("audit") if isinstance(result.get("audit"), dict) else None
-    if audit:
-        lines.extend(["## Audit", "", f"- {audit.get('policy')}: {audit.get('verdict')}", "", str(audit.get("summary") or ""), ""])
-    return "\n".join(lines).rstrip() + "\n"
-
-
-def _explorer_presentation() -> dict[str, Any]:
-    return {
-        "edge_kind": {"branch": {"label": "lineage", "color": "gray"}},
-        "event_role": {
-            "node_created": {"label": "node created", "color": "blue"},
-            "decision": {"label": "decision", "color": "gray"},
-        },
+        "claim_count": len(claims),
+        "claim_statuses": _counts(claims, "status"),
+        "act_count": len(acts),
+        "act_statuses": _counts(acts, "status"),
+        "observation_count": len(_objects(view.get("observations"))),
+        "validation_spec_count": len(_objects(view.get("validation_specs"))),
+        "validation_result_count": len(results),
+        "validation_verdicts": _counts(results, "verdict"),
+        "finding_count": len(findings),
+        "open_finding_count": sum(1 for row in findings if row.get("status") == "open"),
+        "acceptance_record_count": len(_objects(view.get("acceptances"))),
+        "current_acceptance_count": len(_objects(view.get("current_acceptances"))),
     }
 
 
-def _count_by(rows: list[dict[str, Any]], key: str) -> dict[str, int]:
+def _counts(records: list[dict[str, Any]], key: str) -> dict[str, int]:
     counts: dict[str, int] = {}
-    for row in rows:
-        value = str(row.get(key) or "unknown")
+    for record in records:
+        value = str(record.get(key) or "unknown")
         counts[value] = counts.get(value, 0) + 1
     return counts
 
 
+def _find(records: list[dict[str, Any]], key: str, value: str, label: str) -> dict[str, Any]:
+    record = next((row for row in records if row.get(key) == value), None)
+    if record is None:
+        raise ValueError(f"unknown {label}: {value}")
+    return record
+
+
 def _read_object(path: Path) -> dict[str, Any]:
+    try:
+        value = read_json(path)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"cannot read v4 workspace file {path.name}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise ValueError(f"v4 workspace file is not an object: {path.name}")
+    return value
+
+
+def _read_optional_object(path: Path) -> dict[str, Any]:
+    if not path.is_file() or path.is_symlink():
+        return {}
     try:
         value = read_json(path)
     except (OSError, ValueError):
@@ -475,42 +435,21 @@ def _read_object(path: Path) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
-def _read_text(path: Path) -> str:
-    try:
-        return path.read_text(encoding="utf-8") if path.is_file() and not path.is_symlink() else ""
-    except OSError:
-        return ""
+def _object(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
-def _read_jsonl(path: Path) -> list[dict[str, Any]]:
-    if not path.is_file() or path.is_symlink():
+def _objects(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
         return []
-    rows: list[dict[str, Any]] = []
-    try:
-        lines = path.read_text(encoding="utf-8").splitlines()
-    except OSError:
+    return [item for item in value if isinstance(item, dict)]
+
+
+def _strings(value: Any) -> list[str]:
+    if not isinstance(value, list):
         return []
-    for line in lines:
-        try:
-            value = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(value, dict):
-            rows.append(value)
-    return rows
+    return [item for item in value if isinstance(item, str)]
 
 
 def _list(value: Any) -> list[Any]:
     return value if isinstance(value, list) else []
-
-
-def _objects(value: Any) -> list[dict[str, Any]]:
-    return [item for item in _list(value) if isinstance(item, dict)]
-
-
-def _strings(value: Any) -> list[str]:
-    return [str(item) for item in _list(value) if isinstance(item, str)]
-
-
-def _dedupe(values: Iterable[str]) -> list[str]:
-    return list(dict.fromkeys(values))

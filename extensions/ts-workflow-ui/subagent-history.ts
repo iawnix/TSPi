@@ -8,11 +8,11 @@ import {
   type TUI,
 } from "@earendil-works/pi-tui";
 import {
-  agentSelectionLabel,
-  readTsAgentRunDocuments,
-  renderTsAgentDetails,
-  type TsAgentRecord,
-  type TsAgentRunDocuments,
+  readTsReviewRunDocuments,
+  renderTsReviewDetails,
+  reviewSelectionLabel,
+  type TsReviewRecord,
+  type TsReviewRunDocuments,
 } from "./agent-details.ts";
 
 export const SUBAGENT_HISTORY_PAGE_SIZE = 8;
@@ -31,29 +31,29 @@ export interface SubagentHistorySnapshot {
 }
 
 interface SubagentHistoryBrowserOptions {
-  records: TsAgentRecord[];
+  records: TsReviewRecord[];
   workspaceRoot: string;
   tui: TUI;
   theme: Theme;
   keybindings: KeybindingsManager;
   done: () => void;
   notifyWarning: (message: string) => void;
-  readDocuments?: (root: string, runRef?: string) => TsAgentRunDocuments;
+  readDocuments?: (root: string, runRef?: string) => TsReviewRunDocuments;
 }
 
 export class SubagentHistoryBrowser implements Component {
-  private readonly records: TsAgentRecord[];
+  private readonly records: TsReviewRecord[];
   private readonly workspaceRoot: string;
   private readonly tui: TUI;
   private readonly theme: Theme;
   private readonly keybindings: KeybindingsManager;
   private readonly done: () => void;
   private readonly notifyWarning: (message: string) => void;
-  private readonly readDocuments: (root: string, runRef?: string) => TsAgentRunDocuments;
+  private readonly readDocuments: (root: string, runRef?: string) => TsReviewRunDocuments;
   private mode: BrowserMode = "list";
   private selectedIndex = 0;
   private detailPage = 0;
-  private documents: TsAgentRunDocuments = {};
+  private documents: TsReviewRunDocuments = {};
   private detailLines: string[] = [];
 
   constructor(options: SubagentHistoryBrowserOptions) {
@@ -64,7 +64,7 @@ export class SubagentHistoryBrowser implements Component {
     this.keybindings = options.keybindings;
     this.done = options.done;
     this.notifyWarning = options.notifyWarning;
-    this.readDocuments = options.readDocuments || readTsAgentRunDocuments;
+    this.readDocuments = options.readDocuments || readTsReviewRunDocuments;
   }
 
   render(width: number): string[] {
@@ -97,7 +97,7 @@ export class SubagentHistoryBrowser implements Component {
     const pages = pageCount(this.records.length, SUBAGENT_HISTORY_PAGE_SIZE);
     const start = page * SUBAGENT_HISTORY_PAGE_SIZE;
     const lines = [
-      this.theme.fg("accent", truncateToWidth("TS Subagent History", safeWidth, "")),
+      this.theme.fg("accent", truncateToWidth("TS Review History", safeWidth, "")),
       this.theme.fg(
         "muted",
         truncateToWidth(
@@ -116,7 +116,7 @@ export class SubagentHistoryBrowser implements Component {
         continue;
       }
       const prefix = index === this.selectedIndex ? "→ " : "  ";
-      const text = truncateToWidth(`${prefix}${agentSelectionLabel(record)}`, safeWidth, "");
+      const text = truncateToWidth(`${prefix}${reviewSelectionLabel(record)}`, safeWidth, "");
       lines.push(index === this.selectedIndex
         ? this.theme.bg("selectedBg", this.theme.fg("text", text))
         : this.theme.fg("text", text));
@@ -134,8 +134,8 @@ export class SubagentHistoryBrowser implements Component {
   private renderDetails(width: number): string[] {
     const safeWidth = Math.max(16, Math.floor(width));
     const record = this.records[this.selectedIndex];
-    this.detailLines = record ? renderTsAgentDetails(record, this.documents, safeWidth) : [];
-    const title = this.detailLines[0] || "Subagent Run Details";
+    this.detailLines = record ? renderTsReviewDetails(record, this.documents, safeWidth) : [];
+    const title = this.detailLines[0] || "Review Run Details";
     const body = this.detailLines.slice(1);
     const pages = pageCount(body.length, SUBAGENT_DETAIL_PAGE_SIZE);
     const page = Math.min(this.detailPage, pages - 1);
@@ -212,7 +212,7 @@ export class SubagentHistoryBrowser implements Component {
     } catch (error) {
       this.notifyWarning(error instanceof Error ? error.message : String(error));
     }
-    this.detailLines = renderTsAgentDetails(record, this.documents, 80);
+    this.detailLines = renderTsReviewDetails(record, this.documents, 80);
     this.detailPage = 0;
     this.mode = "details";
   }

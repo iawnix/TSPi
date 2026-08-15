@@ -1,47 +1,59 @@
-# Transition-State Research Report: {{system_id}}
+# Transition-State Research Report: {{workspace_id}}
 
 ## 1. Executive Status
 
 | Field | Value |
 | --- | --- |
 | Workspace | `{{workspace_root}}` |
-| Workspace revision | `{{workspace_revision}}` |
+| Scientific revision | `{{workspace_revision}}` |
 | Focus Claims | `{{focus_claim_refs}}` |
-| Accepted artifacts | `{{accepted_refs_or_none}}` |
-| Report generated | {{timestamp}} |
+| Focus ResearchActs | `{{focus_act_refs}}` |
+| Current acceptance records | `{{current_acceptance_refs_or_none}}` |
+| Historical acceptance records | `{{acceptance_refs_or_none}}` |
+| Generated | {{timestamp}} |
 
-**Conclusion.** {{State exactly which Claims are supported, contradicted,
-inconclusive, or accepted and what remains open.}}
+**Conclusion.** {{State exactly which Claims are proposed, supported,
+contradicted, inconclusive, or accepted and what remains open.}}
 
-**Research decision.** {{State the Root Agent's next act or explicit stop and
-its cited basis.}}
+**Next decision.** {{State the Root Agent's next ResearchAct or explicit stop
+and cite its basis.}}
 
-## 2. Scientific Claims
+## 2. Claims And Relations
 
-| Claim | Parent | Kind | Status | Statement | Required Gates | Basis |
+| Claim | Type | Status | Statement | Assumptions | Falsifiers | Scientific basis |
 | --- | --- | --- | --- | --- | --- | --- |
-| `{{claim_id}}` | `{{parent_claim_id_or_none}}` | `{{claim_kind}}` | `{{claim_status}}` | {{statement}} | `{{required_gates}}` | `{{evidence_and_gate_refs}}` |
+| `{{claim_id}}` | `{{claim_type}}` | `{{claim_status}}` | {{statement}} | {{assumptions}} | {{falsifiers}} | `{{observation_and_validation_refs}}` |
 
-Alternative or revised Claims:
-
-{{Describe their scientific relationship. Do not infer priority from Node
-topology.}}
-
-## 3. Computational Protocol
-
-| Operation | Program / version | Method and settings | Inputs | Primary artifacts |
+| Relation | Source | Type | Target | Rationale |
 | --- | --- | --- | --- | --- |
-| {{purpose}} | {{program}} | {{method_settings}} | `{{input_refs}}` | `{{artifact_refs}}` |
+| `{{relation_id}}` | `{{source_claim_ref}}` | `{{relation_type}}` | `{{target_claim_ref}}` | {{rationale}} |
 
-Record charge, multiplicity, solvation/environment, dispersion, integration
-grid, SCF treatment, convergence criteria, constraints, temperature, pressure,
-resources, and deviations from the intended method when relevant.
+Do not infer priority or execution order from relation labels.
 
-## 4. Structures And Reaction Coordinate
+## 3. ResearchAct DAG
 
-| Structure | Scientific use | Artifact | Key geometry | Provenance |
+| ResearchAct | Dependencies | Status / outcome | Objective | Hypothesis | Open questions | Linked operations |
+| --- | --- | --- | --- | --- | --- | --- |
+| `{{act_id}}` | `{{dependency_refs_or_none}}` | `{{status_or_outcome}}` | {{objective}} | {{hypothesis_or_none}} | {{open_questions_or_none}} | `{{operation_refs}}` |
+
+Failed, blocked, inconclusive, stopped, merged, and backtracked work remains
+visible. DAG topology records lineage and does not prescribe the next act.
+
+## 4. Computational Protocol
+
+| Operation | Program / version | Method and settings | Logical inputs | Primary artifacts |
 | --- | --- | --- | --- | --- |
-| {{label}} | {{reactant / candidate / TS / endpoint / intermediate}} | `{{artifact_ref}}` | {{distances_angles_dihedrals}} | `{{evidence_ref}}` |
+| `{{operation_ref}}` | {{program}} | {{method_settings}} | `{{input_artifact_ids}}` | `{{artifact_ids}}` |
+
+Record charge, multiplicity/state, solvation or environment, dispersion,
+integration grid, SCF treatment, convergence criteria, constraints,
+temperature, pressure, resources, and deviations from intent when relevant.
+
+## 5. Structures And Reaction Coordinate
+
+| Structure | Scientific use | Artifact ID | Key geometry | Observation refs |
+| --- | --- | --- | --- | --- |
+| {{label}} | {{reactant / candidate / TS / endpoint / intermediate}} | `{{artifact_id}}` | {{distances_angles_dihedrals}} | `{{observation_refs}}` |
 
 Imaginary-mode summary:
 
@@ -49,89 +61,82 @@ Imaginary-mode summary:
 | --- | --- |
 | Frequency | {{value_and_units}} |
 | Mode assignment | {{reaction_coordinate_interpretation}} |
-| Displaced structures / animation | `{{artifact_refs_or_missing}}` |
-| Evidence | `{{evidence_ref}}` |
+| Displaced structures / animation | `{{artifact_ids_or_missing}}` |
+| Observations | `{{observation_refs}}` |
 
-## 5. Deterministic Gate Results
+## 6. Semantic Observations
 
-| Gate result | Gate / policy | Target Claim | Verdict | Evidence | Diagnostics |
+| Observation | Concept | Subject | Value / unit | Qualifiers | Summary | Artifact IDs | Producer |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `{{observation_id}}` | `{{concept_id}}` | `{{subject_ref}}` | {{value}} {{unit_or_blank}} | `{{qualifiers_json}}` | {{summary}} | `{{artifact_refs}}` | {{producer}} |
+
+Every cited artifact digest must match the recorded provenance. Do not infer
+missing values or collapse unlike scientific quantities into one observation.
+
+## 7. Frozen Validation
+
+| GateSpec | Dimension | Target Claim | Template / registry | Checks | Digest |
 | --- | --- | --- | --- | --- | --- |
-| `{{gate_result_id}}` | `{{gate}}` / `{{policy}}` | `{{target_claim_ref}}` | `{{verdict}}` | `{{evidence_refs}}` | {{diagnostics_or_none}} |
+| `{{spec_id}}` | `{{dimension}}` | `{{target_claim_ref}}` | `{{template_ref_or_custom}}` | {{check_summary}} | `{{spec_digest}}` |
 
-Separate at minimum:
-
-- saddle-point/frequency facts;
-- imaginary-mode assignment;
-- bidirectional connectivity facts;
-- any stereochemical, endpoint, electronic, robustness, thermochemistry, or
-  pathway facts required by the target Claim.
-
-## 6. Connectivity And Endpoints
-
-| Direction | Termination | Endpoint artifact | Assigned basin | Assignment facts | Evidence |
+| ValidationResult | GateSpec | Verdict | Selected Observations | Check outcomes | Digest |
 | --- | --- | --- | --- | --- | --- |
-| forward | {{status}} | `{{artifact_ref}}` | {{assignment}} | {{metrics}} | `{{evidence_ref}}` |
-| reverse | {{status}} | `{{artifact_ref}}` | {{assignment}} | {{metrics}} | `{{evidence_ref}}` |
+| `{{result_id}}` | `{{spec_ref}}` | `{{verdict}}` | `{{observation_refs}}` | {{check_results}} | `{{result_digest}}` |
 
-State finite-path, maximum-point, endpoint-optimization, and reference-basin
-limitations explicitly. Do not describe a connection as accepted without the
-corresponding passing Gate result.
+Keep `pass`, `fail`, `inconclusive`, and `error` distinct. Separate
+stationary-point, reaction-coordinate, connectivity, identity, electronic,
+state, robustness, thermochemical, and pathway dimensions as required by the
+actual Claim.
 
-## 7. Energies And Thermochemistry
+## 8. Connectivity And Endpoints
+
+| Direction | Program state | Endpoint artifact | Assigned basin | Assignment observations | Limitation |
+| --- | --- | --- | --- | --- | --- |
+| reverse | {{status}} | `{{artifact_id}}` | {{assignment}} | `{{observation_refs}}` | {{limitation_or_none}} |
+| forward | {{status}} | `{{artifact_id}}` | {{assignment}} | `{{observation_refs}}` | {{limitation_or_none}} |
+
+State finite-path, maximum-step, endpoint-optimization, atom-map, state, and
+reference-basin limitations explicitly.
+
+## 9. Energies And Thermochemistry
 
 Keep unlike quantities separate.
 
-| Species | Artifact | E_elec / hartree | E+ZPE / hartree | H / hartree | G / hartree | Relative quantity / units |
+| Species | Artifact ID | E_elec / hartree | E+ZPE / hartree | H / hartree | G / hartree | Relative value / units |
 | --- | --- | --- | --- | --- | --- | --- |
-| {{species}} | `{{artifact_ref}}` | {{E}} | {{E_ZPE_or_missing}} | {{H_or_missing}} | {{G_or_missing}} | {{relative_value}} |
+| {{species}} | `{{artifact_id}}` | {{E}} | {{E_ZPE_or_missing}} | {{H_or_missing}} | {{G_or_missing}} | {{relative_value}} |
 
 Reference state, conformer treatment, standard state, temperature, pressure,
 frequency scaling, and missing corrections:
 
 {{details}}
 
-## 8. Research Nodes
+## 10. Findings And Claim Acceptance
 
-| Node | Parent | State | Tags | Outcome | Objective | Claim / operation refs |
-| --- | --- | --- | --- | --- | --- | --- |
-| `{{node_id}}` | `{{parent_node_or_none}}` | `{{state}}` | {{tags}} | `{{outcome}}` | {{objective}} | `{{refs}}` |
-
-Failed, blocked, or superseded work remains visible:
-
-| Node / operation | Failure fact | Artifact or journal | Scientific implication |
-| --- | --- | --- | --- |
-| `{{ref}}` | {{fact}} | `{{source_ref}}` | {{none / explicit implication}} |
-
-## 9. Accepted Artifacts
-
-| Acceptance | Policy | Target Claim | Gate results | Decision | Summary |
+| Finding | Severity | Status | Claims / Acts | Statement | Basis / resolution |
 | --- | --- | --- | --- | --- | --- |
-| `{{acceptance_id}}` | `{{audit_policy}}` | `{{target_claim_ref}}` | `{{gate_result_refs}}` | `{{decision_id}}` | {{summary}} |
+| `{{finding_id}}` | `{{severity}}` | `{{finding_status}}` | `{{claim_and_act_refs}}` | {{statement}} | {{basis_or_resolution}} |
 
-If no accepted artifact exists, state that directly. Normal termination, a
-candidate geometry, one imaginary frequency, or advisory Review is not a
-substitute.
+| Acceptance | Claim | Profile | GateSpecs | ValidationResults | Finding snapshot | State / reason | Decision |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `{{acceptance_id}}` | `{{claim_ref}}` | `{{profile_id}}@{{profile_version}}` | `{{validation_spec_refs}}` | `{{validation_result_refs}}` | `{{finding_refs_or_none}}` | `{{current_or_historical_and_stale_reasons}}` | `{{decision_id}}` |
 
-## 10. Evidence Appendix
-
-| Evidence | Kind / tier | Owner Node | Summary | Facts | Artifacts | Producer |
-| --- | --- | --- | --- | --- | --- | --- |
-| `{{evidence_id}}` | `{{kind}}` / `{{tier}}` | `{{node_id}}` | {{summary}} | `{{facts_json}}` | `{{artifact_refs}}` | {{producer}} |
-
-List withdrawn, invalidated, and superseded Evidence separately and exclude it
-from current scientific support.
+If no current acceptance exists, state that directly and keep any historical
+record labeled stale. Claim status, program
+termination, a candidate geometry, one imaginary frequency, or advisory Review
+is not a substitute.
 
 ## 11. Operational Follow-Up
 
 - Unresolved compute controls: {{count_and_refs_or_none}}.
-- Pending Review responses: {{count_and_refs_or_none}}.
+- Pending Review dispositions: {{count_and_refs_or_none}}.
 - Missing report/render artifacts: {{list_or_none}}.
 - Notification status: {{operational_status_or_not_requested}}.
 
-Operational journals are not Evidence.
+Operational journals and reports are not scientific Observations.
 
 ## 12. Limitations And Open Questions
 
 - {{Scientific limitation or open question.}}
-- {{Method, endpoint, conformer, spin, or sampling limitation.}}
-- {{Required next discriminator, or explicit reason the study is complete.}}
+- {{Method, endpoint, conformer, spin/state, or sampling limitation.}}
+- {{Required discriminator, counterexample search, or explicit stop reason.}}

@@ -1,28 +1,22 @@
 # Claim Reflection
 
-Represent a mechanistic idea as an explicit Claim rather than a workflow state.
-Write a falsifiable statement, optional parent Claim, supporting details, and
-only the deterministic Gates required for its intended acceptance.
+Represent each material mechanism hypothesis as an explicit Claim with
+assumptions, predictions, and falsifiers. Relate alternatives or conflicts with
+ClaimRelation records instead of encoding them in Act tags.
 
-For each calculation or observation, distinguish:
+For each Claim, ask:
 
-- the program or instrument fact;
-- the chemical fact extracted from it;
-- the Root Agent's interpretation of whether the Claim is supported,
-  contradicted, or still inconclusive.
+- what observation would distinguish it from alternatives;
+- what electronic state, spin, charge, conformation, and environment it assumes;
+- whether it describes one elementary step or a pathway of several steps;
+- what unexpected result would invalidate the current problem framing;
+- which validation dimensions are foundational and which are optional.
 
-Inspect local geometry and electronic structure together when they are relevant.
-Every candidate-generation and TS/Freq reflection should ask whether the final
-local geometry, atom mapping, charge/spin state, orbital or population
-information, and the proposed reaction coordinate are mutually consistent. A
-plausible bond-distance pattern alone is insufficient.
+Start ResearchActs to obtain discriminating observations, not merely to fill a
+predefined checklist. A failed search may show method inadequacy, bad candidate
+construction, missing conformers, or a false Claim; keep those possibilities
+separate until the artifacts decide.
 
-Alternative explanations become sibling or child Claims. The Root Agent may
-open any bounded Node needed to discriminate them; the Kernel does not prescribe
-a special evaluation Node. Update a Claim only in an `end_node` result that
-cites its Evidence and Gate results.
-
-A failed program leaves the Claim unresolved unless the failure itself provides
-a scientifically interpretable fact. Keep technical diagnosis separate and
-choose retry, recalculation, alternative method, Claim revision, escalation, or
-stop explicitly.
+Review may propose a new validation dimension or counterexample. Record the
+Root response, then create normal Claims, Findings, Observations, and GateSpecs
+as warranted. Review prose is never direct scientific support.

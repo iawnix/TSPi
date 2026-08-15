@@ -1,0 +1,19 @@
+{
+  "schema_version": "ts-gate-template/1",
+  "template_id": "classical-ts",
+  "version": "1",
+  "title": "Classical transition-state stationary point",
+  "parameters": {
+    "subject_ref": {"type": "string", "required": true}
+  },
+  "definition": {
+    "checks": [
+      {"check_id": "normal_termination", "predicate": "observation.equals", "parameters": {"selector": {"concept_id": "program.normal_termination", "subject_ref": "${subject_ref}"}, "expected": true}, "blocking": true},
+      {"check_id": "stationary_point", "predicate": "observation.equals", "parameters": {"selector": {"concept_id": "stationary_point.confirmed", "subject_ref": "${subject_ref}"}, "expected": true}, "blocking": true},
+      {"check_id": "convergence", "predicate": "observation.equals", "parameters": {"selector": {"concept_id": "optimization.converged", "subject_ref": "${subject_ref}"}, "expected": true}, "blocking": true},
+      {"check_id": "one_imaginary_frequency", "predicate": "observation.equals", "parameters": {"selector": {"concept_id": "vibration.imaginary_frequency_count", "subject_ref": "${subject_ref}"}, "expected": 1}, "blocking": true},
+      {"check_id": "method_binding", "predicate": "observation.equals", "parameters": {"selector": {"concept_id": "calculation.method_matches_intent", "subject_ref": "${subject_ref}"}, "expected": true}, "blocking": true}
+    ],
+    "success_policy": {"mode": "all_blocking"}
+  }
+}

@@ -1,63 +1,67 @@
 # Maintainer Guide
 
 This guide covers development, validation, release, and documentation ownership
-for `@iawnix/ts-agent`. Make changes in the authored Git checkout. Installed
-releases are immutable runtime artifacts and must never be patched in place.
+for `@iawnix/ts-agent` protocol v4. Change the authored Git checkout only.
+Installed releases are immutable runtime artifacts and must never be patched in
+place.
 
-Read [Architecture](ARCHITECTURE.md) before changing a cross-module contract and
-[Installation and Operations](INSTALLATION.md) before changing release, startup,
-configuration, upgrade, or rollback behavior.
+Read [Architecture](ARCHITECTURE.md) before changing a cross-module contract,
+[Installation and Operations](INSTALLATION.md) before changing lifecycle or
+configuration, and [ADR 0001](adr/0001-dag-research-kernel-v4.md) before
+changing the research graph or validation architecture.
 
 ## Non-Negotiable Boundary
 
 ```text
-Root Agent: research strategy and scientific interpretation
-Workspace Kernel: canonical state, refs, fact policies, and transactions
-Review Agent: bounded independent advice
-Operators: pre-bound execution and operational journals
-Infrastructure: configured transport, scheduler, delivery, and UI projection
+Root Agent       research questions, strategy, method choice, interpretation
+Research Kernel  canonical graph, identities, transactions, integrity
+Validation       frozen policy, deterministic predicates, acceptance snapshots
+Review Agent     bounded independent advice only
+Tool plane       deterministic compute, artifacts, remote, and delivery effects
+UI/web           read-only projection
 ```
 
-Only `ts_workspace` writes canonical scientific state. A schema enum is
-justified only when code must execute a closed deterministic contract. Node
-categories, workflow phases or stages, Evidence roles or layers, and strategy
-rankings do not belong in the Kernel.
+Only `ts_workspace_decision_apply` writes canonical scientific state. Review is
+the only child model. Compute, Render, and Report are direct deterministic
+tools; do not reintroduce model dispatchers around deterministic actions.
 
-Review is a scientific reasoning Agent. Compute, Render, and Report currently
-use fresh child model sessions, but they are constrained operators: the host
-binds their action and deterministically owns the effect and result authority.
-Do not describe all child sessions as equivalent scientific Agents.
+Closed enums are justified only when code executes a closed contract. Research
+questions, Claim types, relation meanings, Observation concepts, Finding types,
+validation dimensions, Act tags, methods, and strategy rankings remain open
+scientific vocabulary. The Kernel contains no workflow phase, stage, Act type,
+scientific role/layer, or next-action router.
 
 ## Repository Map
 
 | Path | Owner and purpose |
 | --- | --- |
-| `skills/transition-state-workflow/` | only public Pi Skill, focused Root references, and reusable assets |
-| `extensions/ts-workflow-control/` | context, Decision draft/validate/apply, and package-source guard |
+| `skills/transition-state-workflow/` | public Root Skill, focused references, and examples |
+| `extensions/ts-workflow-control/` | context, Decision draft/validate/apply, package-source guard |
 | `extensions/ts-workflow-review/` | advisory Review entrypoint and Root disposition |
-| `extensions/ts-workflow-compute/` | typed compute operator and read-only remote diagnostics |
-| `extensions/ts-workflow-artifacts/` | Render, Report, and deterministic notification entrypoints |
-| `extensions/ts-workflow-ui/` | header, editor, footer, activity, and child history only |
-| `extensions/shared/` | public tool inventory and shared presentation/path helpers |
-| `src/agent-core/` | Agent task/result validation, failure taxonomy, session lifecycle, journals |
-| `src/agents/review/` | Review packet projection, prompts, result tool, semantic validation |
-| `src/agents/compute/` | private compute operator policy and runtime |
-| `src/agents/artifacts/` | private Render/Report operator policy and runtime |
-| `ts_workspace/` | v3 canonical state, bootstrap, readers, validators, Gates, transactions |
-| `ts_compute/` | calculation capability, artifact catalog, intents, control, collection |
-| `ts_backends/` | deterministic backend preparation and parsing |
-| `ts_remote/` | OpenSSH/SCP, Torque, transfer, diagnostics, and control records |
-| `ts_runtime/` | runtime resolution and TSPi Python lifecycle host |
+| `extensions/ts-workflow-compute/` | deterministic compute and remote diagnostics |
+| `extensions/ts-workflow-artifacts/` | deterministic Render, Report, and notification tools |
+| `extensions/ts-workflow-ui/` | startup, editor/footer, TS Activity, Review history |
+| `extensions/shared/` | public tool inventory and shared UI/path helpers |
+| `src/agent-core/` | Review task/result validation, failure taxonomy, lifecycle, journals |
+| `src/agents/review/` | Review task projection, prompt, result tool, semantic validation |
+| `src/artifacts/` | deterministic render/report request and path validation |
+| `ts_workspace/` | v4 graph state, bootstrap, Decisions, context, validation, transactions |
+| `ts_validation/` | GateSpec compiler, predicate registry, templates, acceptance profiles |
+| `ts_compute/` | capabilities, artifact catalog, immutable intents, control, collection |
+| `ts_backends/` | deterministic program preparation and parsing |
+| `ts_remote/` | OpenSSH/SCP, Torque, transfer, diagnostics, guards, and receipts |
+| `ts_runtime/` | runtime resolution and TSPi lifecycle host |
 | `ts_render/`, `ts_report/`, `ts_email/` | deterministic artifact and delivery services |
-| `ts_structures/` | pure molecular structure comparison |
+| `ts_structures/` | pure molecular comparison and alignment |
 | `ts_web/` | read-only workspace projection and external UI registry |
-| `contracts/` | shared Agent and Review JSON schemas |
-| `docs/` | human installation, architecture, and maintenance documentation |
-| `tests/` | unit, contract, package, and real-Pi recording-provider regression tests |
+| `contracts/` | shared Review task/result JSON schemas |
+| `docs/` | installation, architecture, maintenance, and ADRs |
+| `tests/` | unit, contract, package, and recording-provider regressions |
 
 `TSPi` remains a thin shell shim. Lifecycle logic belongs in
-`scripts/tspi_host.py` and `ts_runtime/launcher.py`; do not move configuration,
-bootstrap, locking, or Pi argument construction back into shell.
+`scripts/tspi_host.py` and `ts_runtime/launcher.py`; do not move release
+selection, config, runtime resolution, bootstrap, locking, or Pi arguments into
+shell.
 
 ## Public Package Surface
 
@@ -67,194 +71,227 @@ bootstrap, locking, or Pi argument construction back into shell.
 - five normal extensions: control, UI, Review, compute, and artifacts;
 - one theme: `themes/ts-theme.json`.
 
-`ts-phone-bridge` is packaged but loaded only by `TSPi --phone`. Private files
-under `src/agents/` are prompt/policy fragments, not discoverable Skills.
+`ts-phone-bridge` is packaged but loaded only by `TSPi --phone`. Files under
+`src/agents/review/` are private child-runtime material, not discoverable
+Skills.
 
-Public prefixes are semantic:
+Public names describe authority:
 
-- `ts_workspace_*`: deterministic workspace read or mutation pipeline;
-- `ts_subagent_*`: one fresh bounded child model session;
-- `ts_remote_*`: deterministic read-only infrastructure diagnostics;
+- `ts_workspace_*`: deterministic context and canonical Decision pipeline;
+- `ts_subagent_review`: the sole child-model entrypoint;
+- `ts_compute`, `ts_render`, `ts_report`: deterministic execution;
+- `ts_remote_inspect`: deterministic read-only infrastructure diagnostics;
 - `ts_review_disposition`: deterministic operational response;
 - `ts_notify_user`: deterministic fixed-target external delivery.
 
-Do not add compatibility aliases to the normal runtime. The explicit v2-to-v3
-copy migrator may read old fields; no normal tool, fixture, example, or report
-projection should produce them.
+Do not add old-name aliases, legacy field readers, dual schemas, migration
+scripts, or output shims. Protocol v4 is a clean boundary. Previous releases are
+the only way to operate earlier canonical formats.
 
-The release ships `README.md`, all three `docs/*.md` guides, the Root Skill,
-focused references, private operator policies, and executable runtime code. It
-excludes tests, build/check scripts, Git metadata, dependency trees, caches,
-credentials, sessions, and workspaces.
+The release ships runtime code, public docs, Root Skill, references, schemas,
+templates, theme, and configuration examples. It excludes tests, build/check
+scripts, Git metadata, dependency trees, caches, credentials, conversations,
+workspaces, and generated reports.
 
-## V3 Scientific Model
+## V4 Scientific Model
 
-The stable model is Node, Claim, Evidence, and Gate:
+The stable concepts and their owners are:
 
-- Node records a bounded act and parent topology. Tags are descriptive only.
-- Claim records a Root-authored statement, required Gates, cited facts, status,
-  and history.
-- Evidence records immutable facts and provenance without a workflow role or
-  layer.
-- Gate records one deterministic evaluator result for one target.
+- **Claim**: Root-authored scientific statement, assumptions, falsifiers,
+  status, and cited scientific records.
+- **ClaimRelation**: open scientific relationship between Claims. The Kernel
+  checks identity and acyclicity only.
+- **ResearchAct**: bounded act with dependency edges, objective, hypothesis,
+  linked records, and terminal result. The Kernel checks the DAG; it does not
+  choose the successor.
+- **Observation**: immutable typed semantic value with exact artifact digests
+  and provenance.
+- **Finding**: explicit anomaly, limitation, conflict, or open question.
+- **GateSpec**: frozen expanded validation policy with registry and content
+  digests.
+- **ValidationResult**: deterministic predicate outcomes over selected,
+  digest-bound Observations.
+- **Acceptance record**: immutable snapshot verified against a versioned
+  profile.
 
-Node tags must never select an allowed action, backend, next Node, or closure
-shape. They remain display and search metadata.
-
-Keep Claim and Evidence `kind` values open and versioned. Add a closed Gate only
-when both a deterministic evaluator and a real scientific or acceptance
-requirement exist. A new strategy should normally require Root reasoning and
-focused documentation, not a Kernel enum.
+Tags and relation types must never select an allowed action, backend, validation
+template, successor Act, or Claim status. New strategies normally require Root
+reasoning and focused documentation, not a Kernel enum.
 
 ## Mutation Invariants
 
-- New state uses `ts-decision/3` and `ts-node/3` only.
-- Startup bootstrap initializes fresh state once and otherwise validates without
+- New canonical state uses `ts-workspace/4` and
+  `ts-research-kernel/4` only.
+- Bootstrap initializes fresh state once and otherwise validates without
   canonical rewrites.
-- `ts_workspace_decision_draft` allocates technical Decision, Evidence, and
-  Gate-result IDs and binds the live report/revision.
-- Draft callers still own Claim IDs, facts, targets, scientific rationale, and
-  cited refs.
-- Validate performs a complete non-mutating post-state dry run.
-- Apply repeats workspace-aware validation while holding the lock.
-- Do not edit a drafted Decision between validate and apply.
-- Decision IDs are Kernel-issued idempotency keys bound to exact canonical
-  Decision content.
-- Transaction order remains prepare, Decision snapshot, proposed file writes,
-  Decision log, committed record.
-- Accepted artifacts require one named audit policy and current,
-  target-compatible passing Gate results.
-- Pending Review disposition is an operational obligation, not scientific
-  state.
+- The Decision draft accepts high-level v4 operations and local aliases; the
+  Kernel allocates all `dec_`, `clm_`, `rel_`, `act_`, `obs_`, `fnd_`, `gsp_`,
+  `val_`, and `acc_` identifiers.
+- A draft binds the current frontier projection and workspace revision.
+- Dry-run validation applies the full Decision to an isolated post-state.
+- Apply repeats binding and post-state validation under the lock.
+- A Decision ID is idempotent only for identical canonical content.
+- Any edit to a returned Decision requires a fresh draft.
+- The transaction owner writes the Decision snapshot, proposed documents,
+  decision log, and committed transaction record in its declared order.
+- Graph edges must be referentially valid and acyclic.
+- Artifacts must remain in the workspace and match recorded digests.
+- Pending Review disposition is an operational obligation that blocks the next
+  scientific mutation but is not itself science.
 
-Root state files must never be edited by extensions, operators, backends,
-remote code, renderers, reports, notification code, UI, or web projection.
+No extension, parser, backend, remote worker, renderer, reporter, notifier, UI,
+or web process may edit root state files directly.
 
-## Agent And Operator Contracts
+## Validation Engine Rules
 
-Every child session uses `ts-agent-task/2` and `ts-agent-result/1`. Scope is
-limited to report, Node, and Claim refs. Results cannot set Claim status, Gate
-verdicts, audit results, accepted refs, focus Claims, Decisions, or study
-completion.
+Keep reusable mechanism in the engine and scientific policy in data:
 
-### Review
+- templates are versioned parameterized prototypes;
+- compilation fully expands a template and freezes its digest;
+- predicates are registered deterministic code with one registry digest;
+- a GateSpec may use a template or an explicit declarative check list;
+- Agent-supplied executable code, shell, imports, and expressions are rejected;
+- evaluation selects explicit Observation refs and binds their digests;
+- predicate output refs must be a subset of that selected Observation snapshot;
+- acceptance profiles declare required dimensions and coverage rules;
+- acceptance requires a supported Claim and at least one passing GateSpec;
+- open blocking Findings prevent acceptance;
+- historical acceptance remains immutable, while currentness is one shared
+  derived projection used by Context, Report, and Web.
 
-Review uses:
+Do not add a switch statement for each new scientific domain. Add a maintained
+predicate only when existing predicates cannot express the observation-level
+check. Add a template when a reusable scientific policy exists. Add or revise
+an acceptance profile only when the acceptance standard changes.
 
-- `ts-review-evidence-snapshot/2` as the full local validation basis;
-- `ts-review-provider-input/2` as the bounded model projection;
-- exactly one `ts_review_result` tool;
-- forced named tool choice without provider-side strict mode;
-- local TypeBox and semantic validation;
-- at most one same-session format repair;
-- provider HTTP/stream failure priority over missing-tool or schema failure.
+Templates must be frozen before evaluating the selected data. Never lower a
+GateSpec after seeing a result; create a new specification and preserve the
+previous result.
 
-Unknown Evidence roles or layers must not be reintroduced into Review. Review
-dependencies are derived from Claim refs and the Kernel snapshot. Citation
-allowlists are canonical sets and must not depend on registry insertion order.
+## Review Contract
 
-Invalid Review output is a bounded mode-0600 operational artifact and must never
-enter Evidence, accepted artifacts, or reports automatically.
+Every Review uses `ts-agent-task/2` and returns `ts-agent-result/1`. Its scope is
+one target Claim and a bounded graph snapshot. It cannot set Claim status,
+create Observations, evaluate a GateSpec, accept a Claim, perform compute, or
+write canonical state.
 
-### Compute, Render, And Report
+The runtime must preserve these invariants:
 
-The Root and host bind each operator's operation, inputs, paths, capabilities,
-and allowed side effects before child creation. Request-scoped tools must remain
-narrow. Compute may summarize typed operational facts; Render and Report results
-are host-generated from actual outputs. Never let model text become the
-authoritative action result.
+- fresh child session with no parent transcript;
+- exactly one enabled `ts_review_result` tool;
+- forced named tool choice without provider-side strict function mode;
+- no Skills, extensions, filesystem, shell, network, compute, or recursion;
+- compact task projection and canonical citation allowlist;
+- local TypeBox plus semantic validation;
+- at most one same-session structural repair;
+- provider HTTP/stream failure outranks missing-tool/schema failure;
+- invalid raw output is private, bounded, operational, and never auto-ingested;
+- exactly one Root disposition before the next scientific mutation.
 
-Distinguish:
+Citation arrays are sets with canonical ordering. Never compare them using
+registry insertion order. Dependencies derive from the Claim/Act graph and
+explicit refs, not role or layer taxonomies.
 
-- typed tool return from action success;
-- pre-effect validation or staging failure from ambiguous external effect;
-- known job ID from unknown scheduler result;
-- program failure from scientific contradiction;
-- artifact action success from outer report serialization failure.
+## Deterministic Tool Contracts
 
-Never map a structured return to success just because a tool call completed.
+### Compute
+
+The Root selects purpose, Act, backend, task, settings, execution target, and
+logical input artifacts. The host owns generated paths, filenames, intent ID,
+expected artifacts, remote root, command, and submission binding.
+
+Preparation resolves `artifactId` and `inputRole`, verifies SHA-256, and writes
+`ts-calculation-intent/4`. Subsequent operations cite only the bound `intentId`.
+Backends prepare and parse program artifacts but never update Claims or produce
+ValidationResults.
+
+Keep these states separate:
+
+- typed tool return versus action success;
+- pre-effect validation/staging failure versus ambiguous external effect;
+- known job ID versus unavailable scheduler history;
+- scheduler completion versus program completion;
+- program failure versus scientific contradiction;
+- parser failure versus program failure.
+
+Never infer success merely because a deterministic tool returned structured
+JSON.
+
+### Render and Report
+
+Artifact requests bind an existing Act and logical artifact IDs. Path policy is
+Kernel/host-owned, rejects symlink traversal, and creates no-overwrite outputs.
+Report creation validates the complete v4 workspace and atomically installs a
+manifest-bound package. A report is derived output, not a canonical writer.
+
+### Remote and notification
+
+`ts_remote` is the only remote subsystem. It binds installation-owned SSH,
+Torque, storage, software, and resource policy. Preserve known job IDs, durable
+guards, receipts, and ambiguity semantics. Collection must not require queue
+history.
+
+Notifications bind a configured fixed recipient and credentials outside the
+workspace. The Root selects only event, subject, bounded summary, and allowed
+report attachments. Known delivery is idempotent; ambiguous delivery is not
+automatically retried.
 
 ## Runtime Durability Semantics
 
 Do not document stronger durability than the implementation provides:
 
-- `beginAgentRun()` atomically writes the task and bound Review documents;
-- `actions.json`, `result.json`, and `run.json` are written only during normal
-  terminal handling;
-- a process crash in between is indexed as a pending/unknown run;
-- action arrays are accumulated in memory and are not a per-effect write-ahead
-  log;
-- `TS Activity` is transient and is cleared at session start/shutdown;
-- `/ts-subagent-history` reads durable summaries on demand;
-- synchronous tool return is the current result-delivery channel; no durable
-  delivery acknowledgement or automatic replay exists.
+- Review task and bound inputs are atomically exclusive-created;
+- Review actions/result/final run state are written during normal terminal
+  handling;
+- a crash can leave a pending/unknown Review journal;
+- no background result replay or acknowledgement queue exists;
+- immediate tool return is the active conversation delivery channel;
+- deterministic tools keep separate authoritative records;
+- `TS Activity` is transient and cleared with the Pi session;
+- `/ts-subagent-history` reads durable Review summaries on demand.
 
-Remote controls have separate guards and receipts. Recovery code must inspect
-those records rather than treating child-run completion as scheduler authority.
-
-Review has explicit provider response observation. Compute and artifact
-operators currently rely on errors propagated by Pi for upstream model failure
-classification. Preserve this distinction until the runtimes share one common
-provider-observation implementation.
-
-## Compute And Remote Contracts
-
-Preparation resolves logical `artifactId` and `inputRole` pairs, validates
-digests, generates adapter-owned files, and writes immutable
-`ts-calculation-intent/3`. The Root Agent owns scientific purpose, method,
-settings, execution target, and resources. It does not own generated paths,
-filenames, expected artifacts, remote directories, or submission IDs.
-
-`ts_compute/capabilities.py` is static adapter support, not a strategy ranking
-or live readiness result. Backends prepare and parse program artifacts without
-making Claim or Gate decisions.
-
-`ts_remote` is the only remote subsystem. It binds an installation-owned
-profile, workspace identity, manifest, script, expected artifacts, resources,
-and submission ID. Preserve known job IDs, separate scheduler and program
-state, fail closed on ambiguous effects, and collect without scheduler-history
-coupling.
+Remote controls are authoritative for scheduler recovery. Activity or Review
+journal state cannot prove that a remote side effect did or did not happen.
 
 ## Documentation Ownership
-
-Maintain one owner for each kind of explanation:
 
 | Document | Audience | Owns |
 | --- | --- | --- |
 | `README.md` | first-time reader | product boundary, quick install/start, public surface, navigation |
-| `docs/INSTALLATION.md` | installation operator | prerequisites, config, startup, resume, upgrade, rollback, recovery |
-| `docs/ARCHITECTURE.md` | maintainer and advanced operator | ownership, lifecycle, persistence, context, result delivery |
+| `docs/INSTALLATION.md` | installation operator | prerequisites, configuration, startup, upgrade, rollback, recovery |
+| `docs/ARCHITECTURE.md` | maintainer/advanced operator | ownership, lifecycle, persistence, context, validation, delivery |
 | `docs/MAINTAINER_GUIDE.md` | contributor/releaser | source workflow, change matrix, validation, release discipline |
 | Root `SKILL.md` | Root Agent | concise authority rules and operating loop |
 | Skill `references/*.md` | Root Agent on demand | one focused scientific or tool topic |
-| `src/agents/**/*.md` | private child runtime | minimum role/backend policy loaded into one child session |
-| JSON schema/tool schema | callers and validators | exact fields, enums, limits, and identity |
+| `src/agents/review/**/*.md` | Review runtime | minimum private Review policy |
+| JSON/TypeBox schemas | callers and validators | exact fields, enums, limits, identity |
 
-Do not copy field-level schemas into prose. Use examples only where they clarify
-an interaction and test them against the real validator. Do not make tests the
-only available public example.
+Avoid copying complete field schemas into prose. Use examples where they
+clarify an interaction and validate them against real code. Tests must not be
+the only public examples.
 
-Normal TSPi research sessions learn package operation from registered schemas,
-live context/capabilities, the Root Skill, and focused references. They do not
-inspect source, tests, or maintainer documents to infer calls.
+Normal research sessions learn operation from registered tool schemas, live
+context/capability catalogs, the Root Skill, and focused references. Source and
+tests are maintenance material and are blocked by the package-source guard.
 
 ## Contract Change Matrix
 
-When a shared contract changes, inspect and update every applicable row:
-
 | Change | Required surfaces |
 | --- | --- |
-| Decision or scientific record | JSON schema, Python validator/engine, templates, Skill/reference, report/web projection, tests |
-| Gate | policy JSON, evaluator, audit policy if applicable, docs, fixtures, tests |
-| Public tool | tool catalog, extension schema/help, Root Skill/README/architecture, UI presentation, real-Pi inventory tests |
-| Agent task/result | JSON schema, CJS validator, runtime builder, journal/history projection, integration tests |
-| Backend capability | capability catalog, request validator, adapter, private backend policy, compute reference, parser tests |
-| Remote behavior | config/model, lifecycle/transfer, operator mapping, installation/remote docs, recovery tests |
-| Release contents | `package.json.files`, package checker, installer allow/deny lists, package tests, installation docs |
-| Startup behavior | Python host, shell-shim tests, installation docs, architecture lifecycle, real launch smoke |
+| Canonical record or Decision operation | JSON schema, draft normalizer, engine/validator, templates, Skill/reference, report/web projection, tests |
+| Graph topology | schema, validator, context traversal, Review snapshot, report/web, cycle/backtrack tests, architecture |
+| Observation concept | producer/parser, validation template/predicate, scientific reference, fixtures, tests |
+| Predicate | registry, implementation, digest behavior, unit tests, capability projection, maintainer docs |
+| Validation template/profile | versioned JSON, compiler/acceptance tests, capability projection, scientific docs |
+| Public tool | tool catalog, extension schema/help, Root Skill, README/architecture, UI, inventory tests |
+| Review task/result | JSON schema, CJS validator, packet builder, result tool, journal/history, provider tests |
+| Backend capability | capability catalog, request validator, adapter, compute reference, parser tests |
+| Remote behavior | config/model, lifecycle/transfer, compute mapping, installation/remote docs, recovery tests |
+| Release contents | `package.json.files`, package checker, installer allow/deny lists, tests, installation docs |
+| Startup behavior | Python host, launcher tests, installation docs, architecture lifecycle, launch smoke |
 
-Documentation tests should assert entrypoints and architectural invariants. Do
-not freeze entire paragraphs or require cosmetic wording.
+Documentation tests should assert entrypoints and architectural invariants, not
+freeze cosmetic wording.
 
 ## Development Setup
 
@@ -269,115 +306,116 @@ python3 scripts/install_env.py \
   --json
 ```
 
-Use the package runtime wrapper for Python tests when the host interpreter does
-not contain the declared environment:
+Use the package runtime wrapper if the host interpreter lacks declared
+dependencies:
 
 ```bash
 python3 scripts/ts_runtime.py run -m pytest -q
 ```
 
-Do not install project dependencies into a shared Conda base environment. Keep
-credentials, sessions, caches, workspaces, release archives, and generated
-reports out of tracked source files.
+Do not install project dependencies into a shared Conda base. Keep credentials,
+conversations, caches, workspaces, release archives, and generated reports out
+of tracked source.
 
 ## Validation Tiers
 
-Run the narrowest relevant test first, then the shared gates for a public or
-cross-module change.
+Run the narrowest relevant check first, then all shared checks for public or
+cross-module changes.
 
-### Documentation or Skill change
+### Documentation or Skill
 
 ```bash
-python3 -m pytest -q tests/test_readme_contract.py tests/test_decision_templates.py
+python3 -m pytest -q tests/test_readme_contract.py tests/test_report_template_contract.py tests/test_decision_templates.py
 python3 scripts/check_package.py
 git diff --check
 ```
 
-Also run the Skill validator against
-`skills/transition-state-workflow/` when available.
-
-### Python contract or kernel change
+### Python kernel or deterministic service
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q
 ```
 
-### Pi extension or Agent runtime change
+### Pi extension or Review runtime
 
 ```bash
 npm run typecheck
 npm run test:pi-adapter
 ```
 
-The recording-provider suite must cover the real public inventory, child tool
-isolation, provider failure propagation, schema repair, journals, and UI
-lifecycle without contacting a production model endpoint.
+The recording-provider suite covers public inventory, Review isolation,
+provider failure propagation, result repair, journals, and UI lifecycle without
+contacting a production model endpoint.
 
-### Package and release change
+### Package and release
 
 ```bash
-npm run test:package
-npm pack --dry-run --json
 python3 scripts/check_package.py
+NPM_CONFIG_CACHE=/tmp/ts-agent-npm-cache npm pack --dry-run --json
 python3 scripts/build_release.py --output-dir dist --json
 ```
 
-Release build requires a clean checkout. For a dirty local smoke only, use
-`--allow-dirty` and never distribute that output.
+Release build requires a clean checkout. `--allow-dirty` is only for local
+smoke validation and must not be distributed.
 
 ## Version Changes
 
-The package version is currently duplicated in maintained validation and UI
-metadata. A version bump must update and test at least:
+Package version metadata currently appears in multiple maintained surfaces. A
+version bump must update and test at least:
 
 - `package.json` and `package-lock.json`;
 - `extensions/shared/package-profile.ts`;
 - `scripts/check_package.py`;
 - version-specific tests and release fixtures.
 
-Do not change a schema version merely because the package version changed.
-Schema versions change only when their data contract changes.
+Schema versions change only when data contracts change, not whenever the
+package version changes. Validation template/profile versions are independent
+policy versions and must be bumped when their expanded meaning changes.
 
 ## Release Procedure
 
-1. Inspect `git status` and preserve unrelated user changes.
+1. Inspect `git status` and preserve unrelated changes.
 2. Run focused tests, full pytest, TypeScript typecheck, Pi adapter tests, and
    package checks.
-3. Confirm documentation and examples match the active schemas and tools.
-4. Commit the intended source changes.
-5. Build the release from the clean commit.
-6. Record release ID, source commit, archive path, size, and SHA-256.
-7. Install into a staging or target TSPi root with `install_release.py`.
-8. Install/resolve the selected Python runtime.
-9. Verify `TSPi --help`, a workspace bootstrap, tool inventory, and optional
-   remote status without submitting a real job.
-10. Restart user sessions only in an authorized maintenance window.
+3. Confirm docs, examples, CLI help, schemas, and registered tools describe one
+   v4 contract.
+4. Commit only intended source changes.
+5. Build from the clean commit and record source commit, release ID, archive,
+   size, and SHA-256.
+6. Install into staging or the authorized TSPi root with
+   `install_release.py`.
+7. Resolve the selected isolated Python runtime.
+8. Verify `TSPi --help`, fresh v4 bootstrap, tool inventory, and optional
+   read-only remote status.
+9. Restart user sessions only in an authorized maintenance window.
 
-The installer atomically selects `current`; processes already running retain
-their original release. Installing a release does not modify workspaces or
+The installer atomically selects `current`; running processes retain the release
+and runtime with which they started. Installation does not modify workspaces or
 remote jobs.
 
 ## Rollback Discipline
 
-Preserve each distributed archive and manifest. Roll back by running the same
-installer against the previous pair, resolving its Python runtime, and starting
-a new TSPi process. Do not edit installed files or use Git operations inside a
+Preserve every distributed archive and manifest. Roll back by selecting the
+previous pair through the installer, resolving its runtime, and starting a new
+TSPi process. Do not edit installed files or run Git operations inside a
 release directory.
 
-Rollback does not undo v3 Decisions or downgrade workspace state. If a release
-introduced an incompatible schema mutation, recovery requires a separately
-designed forward migration, not a package pointer switch.
+Rollback never converts canonical state. A v4 workspace requires a v4 release;
+an older workspace requires its matching release. Any future conversion must be
+a separately authorized design, not compatibility logic hidden in the runtime.
 
 ## Review Before Handoff
 
-Check the patch as if it came from another contributor:
-
-- Does every changed rule have one clear owner?
-- Do docs, CLI help, tool schemas, tests, and runtime behavior agree?
-- Did any old phase, Node type, Evidence role/layer, hypothesis field, or tool
-  alias return to a normal v3 surface?
-- Can a new installer start and resume a workspace from the documentation?
-- Can a Root Agent identify which calls reason, mutate, execute, or only render?
-- Are crash, ambiguity, and delivery limits stated rather than hidden?
-- Were unrelated working-tree changes left untouched?
-- Is every claimed validation backed by an actual completed command?
+- Does each changed rule have one owner?
+- Do schemas, draft normalization, engine behavior, docs, templates, CLI help,
+  UI, and tests agree?
+- Did any legacy reader, alias, migration, Node/Evidence record, workflow phase,
+  role/layer router, fixed Gate branch, or deterministic child model return?
+- Can a new installer start and resume a fresh workspace from the docs?
+- Can the Root Agent tell reasoning, canonical mutation, deterministic effects,
+  and presentation apart?
+- Are crash, ambiguity, and delivery limits explicit?
+- Are new scientific dimensions extensible through templates/predicates rather
+  than workflow branching?
+- Were unrelated user changes preserved?
+- Is every claimed validation backed by a completed command?

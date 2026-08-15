@@ -1,0 +1,14 @@
+{
+  "op": "start_act",
+  "local_ref": "act",
+  "objective": "${OBJECTIVE}",
+  "dependencyRefs": [],
+  "claimRefs": ["${CLAIM_REF}"],
+  "hypothesis": {
+    "statement": "${HYPOTHESIS}",
+    "assumptions": [],
+    "predictions": [],
+    "falsifiers": []
+  },
+  "tags": []
+}

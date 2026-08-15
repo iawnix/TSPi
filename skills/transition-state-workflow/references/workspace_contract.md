@@ -2,68 +2,86 @@
 
 ## Canonical Files
 
-A v3 workspace stores scientific state in:
+A v4 workspace stores scientific state in:
 
-- `research_state.json`: Node index, parent edges, open Nodes, accepted refs,
-  and provenance;
-- `claims.json`: Claims and focus Claim refs;
-- `evidence_registry.json`: immutable Evidence records and lifecycle events;
-- `gate_results.json`: deterministic Gate results;
-- `nodes/<node_id>/node.json`: complete Node record;
-- `accepted/<acceptance_id>.json`: policy-bound accepted Claim artifact;
-- `decisions/`, `decision_log.jsonl`, and `transaction_log.jsonl`: mutation
-  audit trail.
+```text
+workspace.json
+research_state.json
+claims.json
+claim_relations.json
+research_acts.json
+observations.json
+validation_specs.json
+validation_results.json
+findings.json
+acceptances/<acceptance_id>.json
+decisions/<decision_id>.json
+decision_log.jsonl
+transaction_log.jsonl
+```
 
-Reports, calculations, agent journals, remote receipts, and notifications are
-not canonical scientific state.
+`research_state.json` contains focus Claim/Act refs and immutable acceptance
+history refs; it is not a workflow router. Current acceptance is derived rather
+than stored as a permanent Claim flag. ResearchAct artifacts live below
+`acts/<act_id>/`. Reports and operational records are not canonical science.
 
-## Startup Bootstrap
+## Bootstrap
 
-Before Pi starts, the installation host calls the deterministic workspace
-bootstrap entrypoint. It initializes a fresh directory once and preserves
-unrelated input files. A complete v3 workspace is only validated; bootstrap
-does not rewrite it. Partial v3 state and invalid v3 state fail closed. A v2
-workspace must use the explicit copy migration into a different destination.
+TSPi bootstraps before starting the Root Agent:
 
-Operational `.pi/` session settings and the Root Agent lock are host state, not
-canonical scientific files.
+- a fresh workspace receives all v4 documents and required directories once;
+- a complete v4 workspace is validated without canonical rewrites;
+- partial, invalid, symlinked, or legacy canonical state fails closed.
+
+There is no legacy reader or migration command. Keep an older workspace with
+its matching release or begin a distinct v4 workspace.
 
 ## Write Boundary
 
-Only the workspace Kernel writes canonical files. Every mutation after initial
-bootstrap must use `ts-decision/3`, match the invoked action, bind the current
-report and base revision, and pass a complete post-mutation dry run.
+Only `ts_workspace_decision_apply` writes canonical state after bootstrap.
+Normal callers use:
 
-A decision ID is idempotent only when its complete content matches a committed
-transaction. Reusing the ID for different content or encountering an incomplete
-transaction fails closed.
+```text
+context -> draft -> validate -> apply
+```
 
-Transaction order is prepare record, immutable decision snapshot, proposed file
-writes, decision log, then committed record. Apply holds the workspace lock and
-repeats validation.
+Do not edit canonical JSON, JSONL, acceptance files, or `.agents` identity by
+hand. Do not use Compute, Review, Report, UI, or remote tools as alternate
+writers.
+
+## Identity And Paths
+
+The workspace has one immutable installation-derived identity. The Kernel owns
+scientific record IDs and Act artifact roots. Public calls use logical IDs,
+not constructed paths. Artifact catalog entries bind logical `art_...` IDs to
+workspace-relative regular files and SHA-256 values.
+
+Reject absolute artifact refs, traversal, symlink components, duplicate IDs,
+digest mismatch, unknown owners, and files outside the workspace. Remote paths
+are execution mirrors and never become canonical local refs.
 
 ## Integrity Invariants
 
-- Node IDs, Claim IDs, Evidence IDs, Gate-result IDs, and accepted refs are
-  unique and resolvable.
-- Parent edges match the corresponding Node records and contain no cycles.
-- Every Evidence artifact path remains inside the workspace and under an
-  allowed owner location.
-- Evidence lifecycle events refer to existing Evidence and preserve history.
-- Gate results cite active Evidence and reproduce the current deterministic
-  policy result.
-- Claim histories cite existing Nodes, Evidence, and Gate results.
-- Accepted artifacts cite one Claim and the passing Gate set required by their
-  named audit policy.
-- Operational journals cannot appear in scientific evidence registries.
+- ClaimRelation and ResearchAct dependency graphs are acyclic.
+- Every ref resolves to exactly one record of the expected kind.
+- An open ResearchAct has no terminal result; a terminal Act has one.
+- Every Observation and Finding is indexed by its producing/referenced Acts.
+- Observation datatype matches its value and artifact digests match files.
+- Every GateSpec is content- and registry-digest bound.
+- Every ValidationResult recomputes exactly from its GateSpec and selected
+  Observations.
+- Acceptance history snapshots a supported Claim, at least one GateSpec, the
+  latest passing results, and applicable Findings. A shared projection marks a
+  record current only while those inputs still match canonical state.
+- Focus refs and acceptance indexes match existing canonical records.
+- Decision replay is idempotent only for identical content.
 
-A successful Review creates an operational obligation for one write-once Root
-response. A pending response may block a later scientific mutation, but the
-response never becomes Evidence or a Gate result.
+## Operational State
 
-## Migration
+Calculation intents and attempts, remote guards/receipts, activity journals,
+Review runs/dispositions, report packages, notifications, Pi conversations,
+locks, and UI state are operational or derived. They may be cited as provenance
+only after verified primary artifacts are recorded as semantic Observations.
 
-Runtime accepts v3 only. Convert an old workspace through the explicit
-`scripts/migrate_workspace_v2_to_v3.py` copy migration, validate the destination,
-and retain the source unchanged. Do not add compatibility fields or aliases to
-normal reads and writes.
+`TS Activity` is transient. Review history and compute controls are durable but
+do not mutate Claims by themselves.

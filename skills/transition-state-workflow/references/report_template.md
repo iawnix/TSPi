@@ -1,38 +1,54 @@
 # Report Contract
 
-Build the standard report from a valid v3 workspace. A custom narrative may add
-chemistry-specific tables and figures, but it must preserve the same authority
-boundaries.
+Build the standard report from a valid v4 workspace with `ts_report`. Use the
+custom Markdown asset only when an additional narrative is required.
 
-## Required Sections
+## Required Projection
 
-1. Workspace revision and report identity.
-2. Focus Claims with kind, statement, status, required Gates, and limitations.
-3. Deterministic Gate results with policy, target, Evidence refs, verdict, and
-   diagnostics.
-4. Active Evidence with kind, tier, owner Node, facts, provenance, and artifacts.
-5. Research Nodes with parent, objective, tags, state, outcome, and open
-   questions.
-6. Accepted artifacts with policy, target Claim, Gate-result refs, and decision.
-7. Operational follow-up, including unresolved controls and pending Review
-   responses.
+The report must expose:
 
-Keep electronic energy, E+ZPE, enthalpy, and free energy distinct and label
-units and reference states. State missing corrections rather than silently
-substituting another quantity.
+1. workspace identity, scientific revision, focus Claims/Acts, and explicit
+   conclusion boundary;
+2. Claims and Claim relations, including alternatives and conflicts;
+3. ResearchAct DAG dependencies, objectives, hypotheses, outcomes, and open
+   questions;
+4. computational protocols and primary artifact refs;
+5. semantic Observations with values, units, qualifiers, provenance, and
+   digests;
+6. frozen GateSpecs and deterministic ValidationResults;
+7. Findings, including resolved and open blocking items;
+8. immutable acceptance history, profile versions, and explicit current/stale
+   status;
+9. unresolved compute controls, pending Review dispositions, and notification
+   state as operational follow-up;
+10. limitations, missing corrections, and open scientific questions.
 
 ## Acceptance Language
 
-Use accepted-transition-state language only when an accepted artifact exists for
-the target Claim under `accepted-ts/2`. Cite the passing TS/Freq and
-connectivity Gate results and any optional Gates actually included. Do not infer
-acceptance from a Node tag, one imaginary frequency, normal program termination,
-or an advisory Review.
+Do not describe a candidate as accepted from normal termination, convergence,
+one imaginary frequency, a Review opinion, or a Claim status. Cite the actual
+current acceptance record and its profile, GateSpecs, passing ValidationResults,
+and Finding snapshot. A historical record whose inputs have
+changed must be labeled stale, not used as a current accepted verdict.
 
-Use accepted-pathway language only for an accepted artifact under
-`accepted-pathway/1`. Report untested steps, finite IRC endpoints, method
-limitations, and unresolved alternative Claims explicitly.
+For a classical TS, keep stationary-point, reaction-coordinate, and
+connectivity dimensions separate. Add identity, electronic structure,
+state-character, robustness, thermochemistry, or pathway validation when the
+Claim and scientific system require them.
 
-Every number or structure claim should cite a registered Evidence ref and its
-source artifact. Review/operator journals and notification receipts are
-operational provenance and must not appear as scientific Evidence.
+## Numerical Discipline
+
+Keep electronic energy, E+ZPE, enthalpy, and free energy distinct. Report units,
+reference state, temperature, pressure, standard-state correction, frequency
+scaling, conformer treatment, solvation/environment, dispersion, and missing
+corrections. Do not infer a missing value.
+
+Every numerical or structural statement cites a registered Observation and its
+source artifact. Review journals, activity records, scheduler state, and
+notification receipts remain operational provenance.
+
+## Package Integrity
+
+The report builder creates a new no-overwrite directory atomically. Its
+manifest binds `workspace_revision`, every file path, size, and SHA-256. A
+package is usable only when its manifest matches the actual regular files.

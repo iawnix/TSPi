@@ -22,10 +22,10 @@ export function createReviewResultCapture(): ReviewResultCapture {
 
 export function createReviewResultTool(
   packet: Record<string, unknown>,
-  evidenceSnapshot: Record<string, unknown>,
+  reviewSnapshot: Record<string, unknown>,
   capture: ReviewResultCapture,
 ): ToolDefinition {
-  const parameters = createReviewResultSchema(evidenceSnapshot);
+  const parameters = createReviewResultSchema(reviewSnapshot);
   const strictValidator = Compile(parameters);
   return {
     name: REVIEW_RESULT_TOOL_NAME,
@@ -50,7 +50,7 @@ export function createReviewResultTool(
       const validated = validateReviewResult(
         buildReviewResult(params, packet),
         packet,
-        evidenceSnapshot,
+        reviewSnapshot,
       ) as ReviewResult;
       capture.accepted = validated;
       return {
@@ -62,8 +62,8 @@ export function createReviewResultTool(
   };
 }
 
-export function createReviewResultSchema(evidenceSnapshot: Record<string, unknown>) {
-  const allowedBasisRefs = stringList(evidenceSnapshot.basis_allowlist, "evidence_snapshot.basis_allowlist");
+export function createReviewResultSchema(reviewSnapshot: Record<string, unknown>) {
+  const allowedBasisRefs = stringList(reviewSnapshot.basis_allowlist, "review_snapshot.basis_allowlist");
 
   const StrictObject = (properties: Record<string, any>) =>
     Type.Object(properties, { additionalProperties: false });

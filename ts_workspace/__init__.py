@@ -1,48 +1,30 @@
-"""Writable control plane for transition-state workspaces."""
+"""Deterministic v4 Research Kernel for transition-state workspaces."""
 
-from .engine_v3 import (
-    build_review_snapshot,
-    end_node,
-    init_workspace,
-    report_lineage_context,
-    report_node,
-    report_workspace,
-    snapshot_report,
-    start_node,
-    update_workspace,
-    validate_decision_dry_run,
-    validate_workspace,
-)
+from .bootstrap import WorkspaceBootstrapError, WorkspaceBootstrapState, bootstrap_workspace, classify_workspace
+from .context import build_review_snapshot, compile_context, validation_capabilities
+from .decision import draft_decision, validate_decision
+from .engine import apply_decision, init_workspace, validate_decision_dry_run
+from .errors import ContractError, WorkspaceValidationError
 from .identity import ensure_workspace_identity, read_workspace_identity, workspace_id
-from .decision_validator_v3 import ContractError, validate_decision
-from .draft_v3 import draft_decision
-from .bootstrap import (
-    WorkspaceBootstrapError,
-    WorkspaceBootstrapState,
-    bootstrap_workspace,
-    classify_workspace,
-)
+from .validator import validate_workspace
 
 __all__ = [
     "ContractError",
     "WorkspaceBootstrapError",
     "WorkspaceBootstrapState",
+    "WorkspaceValidationError",
+    "apply_decision",
     "bootstrap_workspace",
     "build_review_snapshot",
     "classify_workspace",
-    "end_node",
+    "compile_context",
     "draft_decision",
     "ensure_workspace_identity",
     "init_workspace",
-    "report_lineage_context",
-    "report_node",
-    "report_workspace",
     "read_workspace_identity",
-    "snapshot_report",
-    "start_node",
-    "update_workspace",
-    "validate_decision_dry_run",
     "validate_decision",
+    "validate_decision_dry_run",
     "validate_workspace",
+    "validation_capabilities",
     "workspace_id",
 ]

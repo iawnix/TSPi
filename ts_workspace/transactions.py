@@ -11,7 +11,7 @@ from fcntl import LOCK_EX, LOCK_UN, flock
 from pathlib import Path
 from typing import Any, Iterator
 
-from .decision_validator_v3 import ContractError
+from .errors import ContractError
 from .io import append_jsonl, now_iso, read_json, sha256_json, write_json, write_text_atomic
 
 
@@ -77,8 +77,12 @@ def commit_transaction(
             "decision_id": decision_id,
             "created_at": now_iso(),
             "report_ref": decision.get("report_ref"),
-            "action": decision["action"],
-            "payload_hash": sha256_json(decision.get("payload", {})),
+            "operation_kinds": [
+                operation.get("op")
+                for operation in decision.get("operations", [])
+                if isinstance(operation, dict)
+            ],
+            "operations_hash": sha256_json(decision.get("operations", [])),
             "basis_refs": decision.get("basis_refs", []),
             "snapshot_ref": snapshot_ref,
             "result": result,
@@ -107,7 +111,11 @@ def commit_transaction(
         "decision_id": decision_id,
         "stage": "prepare",
         "created_at": now_iso(),
-        "action": decision.get("action"),
+        "operation_kinds": [
+            operation.get("op")
+            for operation in decision.get("operations", [])
+            if isinstance(operation, dict)
+        ],
         "paths": relative_paths,
         "directories": relative_directories,
         "staged_sha256": staged_hashes,
@@ -134,7 +142,7 @@ def commit_transaction(
                 "decision_id": decision_id,
                 "stage": "committed",
                 "created_at": now_iso(),
-                "action": decision.get("action"),
+                "operation_kinds": prepare.get("operation_kinds", []),
                 "paths": relative_paths,
             },
         )
@@ -148,7 +156,7 @@ def commit_transaction(
                     "decision_id": decision_id,
                     "stage": "aborted",
                     "created_at": now_iso(),
-                    "action": decision.get("action"),
+                    "operation_kinds": prepare.get("operation_kinds", []),
                     "paths": relative_paths,
                 },
             )
@@ -188,7 +196,7 @@ def recover_incomplete_transactions(root: Path) -> None:
                 "decision_id": decision_id,
                 "stage": "aborted",
                 "created_at": now_iso(),
-                "action": prepare.get("action"),
+                "operation_kinds": prepare.get("operation_kinds", []),
                 "paths": prepare.get("paths", []),
                 "recovered": True,
             },

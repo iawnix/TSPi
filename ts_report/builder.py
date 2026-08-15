@@ -1,4 +1,4 @@
-"""Build immutable v3 Markdown report packages from validated facts."""
+"""Build immutable Markdown packages from the v4 report projection."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
-from .context import collect_report_context, node_label, node_program_outcome
+from .context import collect_report_context
 
 
 def build_final_report(root: str | Path) -> str:
@@ -18,8 +18,10 @@ def build_final_report(root: str | Path) -> str:
 
 
 def build_report_package(root: str | Path, output_dir: str | Path | None = None) -> dict[str, str]:
-    root_path = Path(root).resolve()
-    package_dir = Path(output_dir).resolve() if output_dir is not None else root_path / "reports" / "final_report_package"
+    root_path = Path(root).expanduser().resolve()
+    package_dir = Path(output_dir).expanduser().resolve() if output_dir is not None else root_path / "reports" / "final-report"
+    if package_dir.parent != (root_path / "reports").resolve():
+        raise ValueError("report package must be a direct child of workspace reports/")
     context = collect_report_context(root_path)
     if package_dir.exists():
         raise ValueError(f"report package already exists: {package_dir}")
@@ -28,23 +30,21 @@ def build_report_package(root: str | Path, output_dir: str | Path | None = None)
     try:
         (staging / "assets").mkdir()
         _write_json(staging / "report_context.json", context)
-        _write_json(staging / "claims.json", {"claims": context["claims"], "focus_claim_refs": context["focus_claim_refs"]})
-        _write_json(staging / "gate_results.json", {"gate_results": context["gate_results"]})
-        _write_json(
-            staging / "evidence_index.json",
-            {
-                "evidence": [
-                    {
-                        "evidence_id": row.get("evidence_id"),
-                        "node_id": row.get("node_id"),
-                        "kind": row.get("kind"),
-                        "summary": row.get("summary"),
-                        "artifact_refs": row.get("artifact_refs", []),
-                    }
-                    for row in context["evidence_records"]
-                ]
-            },
-        )
+        _write_json(staging / "claim_graph.json", {
+            "claims": context["claims"],
+            "relations": context["claim_relations"],
+        })
+        _write_json(staging / "research_acts.json", {"acts": context["research_acts"]})
+        _write_json(staging / "observation_index.json", {"observations": context["observations"]})
+        _write_json(staging / "validation.json", {
+            "specs": context["validation_specs"],
+            "results": context["validation_results"],
+        })
+        _write_json(staging / "findings.json", {"findings": context["findings"]})
+        _write_json(staging / "acceptances.json", {
+            "acceptances": context["acceptances"],
+            "current_acceptance_refs": context["acceptance_summary"]["current_refs"],
+        })
         (staging / "final_report.md").write_text(render_final_report(context), encoding="utf-8")
         (staging / "email_summary.md").write_text(render_email_summary(context), encoding="utf-8")
         manifest = _package_manifest(staging, context["workspace_revision"])
@@ -67,11 +67,9 @@ def build_report_package(root: str | Path, output_dir: str | Path | None = None)
 
 
 def render_final_report(context: dict[str, Any]) -> str:
-    claims = context.get("claims", [])
-    gates = context.get("gate_results", [])
-    evidence = context.get("evidence_records", [])
-    accepted = context.get("accepted_artifacts", [])
-    focus = set(context.get("focus_claim_refs", []))
+    focus_claims = set(context["focus"]["claim_refs"])
+    focus_acts = set(context["focus"]["act_refs"])
+    accepted_claims = {item["claim_ref"] for item in context["current_acceptances"]}
     lines = [
         "# Transition-State Research Report",
         "",
@@ -79,126 +77,133 @@ def render_final_report(context: dict[str, Any]) -> str:
         "",
         "| Field | Value |",
         "| --- | --- |",
-        f"| Workspace | `{context['workspace_root']}` |",
-        f"| Workspace revision | `{context['workspace_revision']}` |",
-        f"| Focus claims | `{', '.join(context.get('focus_claim_refs', [])) or 'none'}` |",
-        f"| Accepted artifacts | `{', '.join(context.get('accepted_refs', [])) or 'none'}` |",
-        f"| Nodes / claims / evidence / gates | {len(context.get('nodes', []))} / {len(claims)} / {len(evidence)} / {len(gates)} |",
+        f"| Workspace | `{context['workspace_id']}` |",
+        f"| Revision | `{context['workspace_revision']}` |",
+        f"| Report | `{context['report_id']}` |",
+        f"| Focus Claims | `{', '.join(sorted(focus_claims)) or 'none'}` |",
+        f"| Focus ResearchActs | `{', '.join(sorted(focus_acts)) or 'none'}` |",
+        f"| Claims / Acts / Observations / Findings | {len(context['claims'])} / {len(context['research_acts'])} / {len(context['observations'])} / {len(context['findings'])} |",
         "",
-        _executive_sentence(claims, accepted, focus),
+        _executive_sentence(context["claims"], focus_claims, accepted_claims),
         "",
-        "## Scientific Claims",
+        "## Claim Graph",
         "",
-        "| Claim | Kind | Status | Statement | Required gates |",
-        "| --- | --- | --- | --- | --- |",
+        "| Claim | Type | Status | Statement |",
+        "| --- | --- | --- | --- |",
     ]
-    for claim in claims:
-        marker = " (focus)" if claim.get("claim_id") in focus else ""
+    for claim in context["claims"]:
+        marker = " (focus)" if claim["claim_id"] in focus_claims else ""
         lines.append(
-            f"| `{claim.get('claim_id', '')}`{marker} | `{claim.get('kind', '')}` | `{claim.get('status', '')}` | "
-            f"{_escape(str(claim.get('statement', '')))} | `{', '.join(claim.get('required_gates', [])) or 'none'}` |"
+            f"| `{claim['claim_id']}`{marker} | `{claim['claim_type']}` | `{claim['status']}` | {_escape(claim['statement'])} |"
         )
-    lines.extend([
-        "",
-        "## Deterministic Gate Results",
-        "",
-        "| Gate result | Gate / policy | Verdict | Target | Evidence | Diagnostics |",
-        "| --- | --- | --- | --- | --- | --- |",
-    ])
-    for gate in gates:
+    lines.extend(["", "### Relations", "", "| Relation | Source | Type | Target | Rationale |", "| --- | --- | --- | --- | --- |"])
+    for relation in context["claim_relations"]:
         lines.append(
-            f"| `{gate.get('gate_result_id', '')}` | `{gate.get('gate', '')}` / `{gate.get('policy', '')}` | "
-            f"`{gate.get('verdict', '')}` | `{gate.get('target_ref') or ''}` | "
-            f"`{', '.join(gate.get('evidence_refs', []))}` | {_escape('; '.join(gate.get('diagnostics', [])))} |"
+            f"| `{relation['relation_id']}` | `{relation['source_claim_ref']}` | `{relation['relation_type']}` | "
+            f"`{relation['target_claim_ref']}` | {_escape(relation['rationale'])} |"
         )
-    lines.extend([
-        "",
-        "## Evidence Facts",
-        "",
-        "| Evidence | Kind / tier | Owner node | Summary | Facts | Artifacts |",
-        "| --- | --- | --- | --- | --- | --- |",
-    ])
-    for row in evidence:
-        facts = json.dumps(row.get("facts", {}), sort_keys=True, separators=(",", ":"))
+    if not context["claim_relations"]:
+        lines.append("| _none_ |  |  |  |  |")
+
+    lines.extend(["", "## ResearchAct DAG", "", "| ResearchAct | Status | Dependencies | Claims | Objective | Outcome |", "| --- | --- | --- | --- | --- | --- |"])
+    for act in context["research_acts"]:
+        marker = " (focus)" if act["act_id"] in focus_acts else ""
+        outcome = act["result"]["outcome"] if isinstance(act.get("result"), dict) else "pending"
         lines.append(
-            f"| `{row.get('evidence_id', '')}` | `{row.get('kind', '')}` / `{row.get('evidence_tier', '')}` | "
-            f"`{row.get('node_id', '')}` | {_escape(str(row.get('summary', '')))} | `{_escape(facts)}` | "
-            f"`{', '.join(row.get('artifact_refs', [])) or 'none'}` |"
+            f"| `{act['act_id']}`{marker} | `{act['status']}` | `{', '.join(act['dependency_refs']) or 'none'}` | "
+            f"`{', '.join(act['claim_refs']) or 'none'}` | {_escape(act['objective'])} | `{outcome}` |"
         )
-    lines.extend([
-        "",
-        "## Research Nodes",
-        "",
-        "| Node | Parent | State | Tags | Outcome | Objective |",
-        "| --- | --- | --- | --- | --- | --- |",
-    ])
-    for node in context.get("nodes", []):
+
+    lines.extend(["", "## Semantic Observations", "", "| Observation | Concept | Subject | Value | Unit | ResearchAct | Artifacts |", "| --- | --- | --- | --- | --- | --- | --- |"])
+    for observation in context["observations"]:
+        value = json.dumps(observation["value"], ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         lines.append(
-            f"| `{node.get('node_id', '')}` | `{node.get('parent_node') or ''}` | `{node.get('state', '')}` | "
-            f"{_escape(node_label(node))} | `{node_program_outcome(node)}` | {_escape(str(node.get('objective', '')))} |"
+            f"| `{observation['observation_id']}` | `{observation['concept_id']}` | `{observation['subject_ref']}` | "
+            f"`{_escape(value)}` | `{observation['unit'] or ''}` | `{observation['created_by_act']}` | "
+            f"`{', '.join(observation['artifact_refs']) or 'none'}` |"
         )
-    lines.extend(["", "## Accepted Artifacts", ""])
-    if accepted:
-        for artifact in accepted:
+
+    lines.extend(["", "## Frozen Validation", "", "| GateSpec | Dimension | Target Claim | Checks | Latest Verdict |", "| --- | --- | --- | --- | --- |"])
+    results_by_spec: dict[str, list[dict[str, Any]]] = {}
+    for result in context["validation_results"]:
+        results_by_spec.setdefault(result["spec_ref"], []).append(result)
+    for spec in context["validation_specs"]:
+        rows = results_by_spec.get(spec["spec_id"], [])
+        latest = rows[-1]["verdict"] if rows else "not evaluated"
+        lines.append(
+            f"| `{spec['spec_id']}` | `{spec['dimension']}` | `{spec['target_claim_ref']}` | "
+            f"{len(spec['checks'])} | `{latest}` |"
+        )
+
+    lines.extend(["", "## Findings", "", "| Finding | Severity | Status | Claims | Statement |", "| --- | --- | --- | --- | --- |"])
+    for finding in context["findings"]:
+        lines.append(
+            f"| `{finding['finding_id']}` | `{finding['severity']}` | `{finding['status']}` | "
+            f"`{', '.join(finding['claim_refs']) or 'none'}` | {_escape(finding['statement'])} |"
+        )
+    if not context["findings"]:
+        lines.append("| _none_ |  |  |  |  |")
+
+    lines.extend(["", "## Claim Acceptance", ""])
+    if context["acceptances"]:
+        for acceptance in context["acceptances"]:
+            profile = acceptance["profile_ref"]
+            state = "current" if acceptance["current"] else "historical"
+            stale = "" if acceptance["current"] else f"; stale because `{', '.join(acceptance['stale_reasons'])}`"
             lines.append(
-                f"- `{artifact.get('acceptance_id')}`: target `{artifact.get('target_ref')}`, policy "
-                f"`{artifact.get('policy')}`, gates `{', '.join(artifact.get('gate_result_refs', []))}`."
+                f"- `{acceptance['acceptance_id']}` is `{state}` for `{acceptance['claim_ref']}` under "
+                f"`{profile['profile_id']}@{profile['version']}` with ValidationResults "
+                f"`{', '.join(acceptance['validation_result_refs'])}`{stale}."
             )
     else:
-        lines.append("- No claim has an accepted artifact.")
-    lines.extend(["", "## Limitations And Operational Follow-up", ""])
-    unresolved = context.get("unresolved_controls", [])
-    pending_reviews = context.get("pending_review_dispositions", [])
-    if unresolved:
-        lines.append(f"- {len(unresolved)} unresolved compute control record(s) remain.")
-    if pending_reviews:
-        lines.append(f"- {len(pending_reviews)} advisory Review response(s) remain pending.")
-    open_questions = [
-        question
-        for node in context.get("nodes", [])
-        if isinstance(node.get("result"), dict)
-        for question in node["result"].get("open_questions", [])
-    ]
-    lines.extend(f"- {question}" for question in open_questions)
-    if not unresolved and not pending_reviews and not open_questions:
-        lines.append("- No additional operational or recorded scientific limitation is open.")
+        lines.append("- No acceptance assessment has been recorded.")
+    if context["acceptances"] and not context["current_acceptances"]:
+        lines.append("- No historical acceptance remains current at this workspace revision.")
+
+    lines.extend(["", "## Operational Follow-up", ""])
+    if context["unresolved_controls"]:
+        lines.append(f"- {len(context['unresolved_controls'])} unresolved compute control record(s) remain.")
+    if context["pending_review_dispositions"]:
+        lines.append(f"- {len(context['pending_review_dispositions'])} advisory Review response(s) remain pending.")
+    open_findings = [item for item in context["findings"] if item["status"] == "open"]
+    lines.extend(f"- Open Finding `{item['finding_id']}`: {_escape(item['statement'])}" for item in open_findings)
+    if not context["unresolved_controls"] and not context["pending_review_dispositions"] and not open_findings:
+        lines.append("- No unresolved operational control, Review response, or open Finding is recorded.")
     lines.extend([
         "",
-        "The Root Agent owns research strategy and claim updates. Gate verdicts above are deterministic evaluations of registered facts.",
+        "The Root Agent owns research strategy. The Research Kernel owns canonical mutation, provenance, frozen validation, and acceptance.",
     ])
     return "\n".join(lines) + "\n"
 
 
 def render_email_summary(context: dict[str, Any]) -> str:
-    claims = context.get("claims", [])
-    focus = set(context.get("focus_claim_refs", []))
-    focus_rows = [row for row in claims if row.get("claim_id") in focus]
-    return "\n".join(
-        [
-            "Subject: TS research workspace update",
-            "",
-            _executive_sentence(claims, context.get("accepted_artifacts", []), focus),
-            "",
-            f"Workspace: {context.get('workspace_root')}",
-            f"Revision: {context.get('workspace_revision')}",
-            "Focus claims:",
-            *(f"- {row.get('claim_id')}: {row.get('status')} - {row.get('statement')}" for row in focus_rows),
-            "",
-            "Main report: final_report.md",
-            "",
-        ]
-    )
+    focus = set(context["focus"]["claim_refs"])
+    focus_rows = [item for item in context["claims"] if item["claim_id"] in focus]
+    accepted = {item["claim_ref"] for item in context["current_acceptances"]}
+    return "\n".join([
+        "Subject: TS research workspace update",
+        "",
+        _executive_sentence(context["claims"], focus, accepted),
+        "",
+        f"Workspace: {context['workspace_id']}",
+        f"Revision: {context['workspace_revision']}",
+        "Focus Claims:",
+        *(f"- {item['claim_id']}: {item['status']} - {item['statement']}" for item in focus_rows),
+        "",
+        f"Open Findings: {sum(item['status'] == 'open' for item in context['findings'])}",
+        "Main report: final_report.md",
+        "",
+    ])
 
 
-def _executive_sentence(claims: list[dict[str, Any]], accepted: list[dict[str, Any]], focus: set[str]) -> str:
-    focus_rows = [row for row in claims if row.get("claim_id") in focus]
-    accepted_targets = {row.get("target_ref") for row in accepted}
-    if focus_rows and all(row.get("claim_id") in accepted_targets for row in focus_rows):
-        return "All focus claims have policy-bound accepted artifacts."
-    if focus_rows:
-        states = ", ".join(f"{row.get('claim_id')}={row.get('status')}" for row in focus_rows)
-        return f"Focus claim status: {states}. Acceptance requires the configured deterministic gate policy."
-    return "No focus claim is selected. The report records facts without choosing a research path."
+def _executive_sentence(claims: list[dict[str, Any]], focus: set[str], accepted: set[str]) -> str:
+    rows = [item for item in claims if item["claim_id"] in focus]
+    if rows and all(item["claim_id"] in accepted for item in rows):
+        return "All focus Claims have current, immutable acceptance snapshots under versioned profiles."
+    if rows:
+        states = ", ".join(f"{item['claim_id']}={item['status']}" for item in rows)
+        return f"Focus Claim status: {states}. No current acceptance covers every focus Claim."
+    return "No focus Claim is selected; this report records the current graph without selecting a path."
 
 
 def _package_manifest(package_dir: Path, revision: str) -> dict[str, Any]:
@@ -211,11 +216,11 @@ def _package_manifest(package_dir: Path, revision: str) -> dict[str, Any]:
             "sha256": _sha256_file(path),
             "size_bytes": path.stat().st_size,
         })
-    return {"schema_version": "ts-report-package/1", "workspace_revision": revision, "files": files}
+    return {"schema_version": "ts-report-package/2", "workspace_revision": revision, "files": files}
 
 
 def _write_json(path: Path, value: Any) -> None:
-    path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(json.dumps(value, indent=2, ensure_ascii=False, sort_keys=True) + "\n", encoding="utf-8")
 
 
 def _sha256_file(path: Path) -> str:
@@ -227,4 +232,4 @@ def _sha256_file(path: Path) -> str:
 
 
 def _escape(value: str) -> str:
-    return value.replace("|", "\\|").replace("\n", " ")
+    return str(value).replace("|", "\\|").replace("\n", " ")

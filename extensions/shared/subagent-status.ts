@@ -3,27 +3,14 @@ import type { AgentToolResult, AgentToolUpdateCallback } from "@earendil-works/p
 export const TS_SUBAGENT_STATUS_SCHEMA = "ts-subagent-status/2" as const;
 
 export const TS_SUBAGENT_STATES = [
-  "queued",
-  "starting",
-  "running",
-  "waiting",
-  "validating",
-  "completed",
-  "partial",
-  "failed",
-  "cancelled",
-  "unknown",
+  "queued", "starting", "running", "waiting", "validating",
+  "completed", "partial", "failed", "cancelled", "unknown",
 ] as const;
 
-export const TS_SUBAGENT_WAIT_REASONS = [
-  "model_response",
-  "typed_tool",
-  "remote_reconciliation",
-  "parent_coordination",
-] as const;
+export const TS_SUBAGENT_WAIT_REASONS = ["model_response", "typed_tool", "parent_coordination"] as const;
 
 export type TsSubagentState = typeof TS_SUBAGENT_STATES[number];
-export type TsSubagentRole = "review" | "backend" | "render" | "report";
+export type TsSubagentRole = "review";
 export type TsSubagentFailureKind = "timeout" | "aborted" | "error";
 export type TsSubagentWaitReason = typeof TS_SUBAGENT_WAIT_REASONS[number];
 
@@ -32,14 +19,13 @@ export interface TsSubagentStatus {
   seq: number;
   tool_call_id: string;
   task_id: string;
-  role: TsSubagentRole;
+  role: "review";
   operation: string;
   state: TsSubagentState;
   started_at: string;
   updated_at: string;
-  backend?: string;
-  node_id?: string;
-  intent_id?: string;
+  act_refs?: string[];
+  claim_refs?: string[];
   target_ref?: string;
   run_ref?: string;
   wait_reason?: TsSubagentWaitReason;
@@ -52,7 +38,7 @@ type StatusBase = Omit<
 >;
 export type TsSubagentStatusUpdate = Partial<Pick<
   TsSubagentStatus,
-  "backend" | "node_id" | "intent_id" | "target_ref" | "run_ref" | "wait_reason" | "failure_kind"
+  "act_refs" | "claim_refs" | "target_ref" | "run_ref" | "wait_reason" | "failure_kind"
 >>;
 
 export type TsSubagentStatusReporter = (
@@ -68,7 +54,7 @@ export function createSubagentStatusReporter(
   const startedAt = now().toISOString();
   let seq = 0;
   let accumulated: TsSubagentStatusUpdate = {};
-  return (state: TsSubagentState, update: TsSubagentStatusUpdate = {}): TsSubagentStatus => {
+  return (state, update = {}) => {
     accumulated = withoutUndefined({ ...accumulated, ...update });
     if (state !== "waiting") delete accumulated.wait_reason;
     if (!["failed", "cancelled"].includes(state)) delete accumulated.failure_kind;
@@ -83,13 +69,13 @@ export function createSubagentStatusReporter(
     };
     if (onUpdate) {
       const partial: AgentToolResult<TsSubagentStatus> = {
-        content: [{ type: "text", text: `TS subagent ${state}` }],
+        content: [{ type: "text", text: `TS Review ${state}` }],
         details: status,
       };
       try {
         onUpdate(partial);
       } catch {
-        // UI observability must not change the delegated operation outcome.
+        // Observability cannot alter the Review outcome.
       }
     }
     return status;
@@ -103,41 +89,38 @@ export function terminalStatusForError(error: unknown): Pick<TsSubagentStatus, "
   const name = error && typeof error === "object" && "name" in error
     ? String((error as { name?: unknown }).name || "")
     : "";
-  if (code === "TS_SUBAGENT_ABORTED" || name === "AbortError") {
-    return { state: "cancelled", failure_kind: "aborted" };
-  }
+  if (code === "TS_SUBAGENT_ABORTED" || name === "AbortError") return { state: "cancelled", failure_kind: "aborted" };
   if (code === "TS_SUBAGENT_TIMEOUT") return { state: "failed", failure_kind: "timeout" };
   return { state: "failed", failure_kind: "error" };
 }
 
 export function terminalStateForReport(value: unknown): "completed" | "partial" | "failed" {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return "failed";
-  const outcome = String((value as Record<string, unknown>).outcome || "");
+  if (!isObject(value)) return "failed";
+  const outcome = String(value.outcome || "");
   if (outcome === "success") return "completed";
   if (outcome === "partial") return "partial";
   return "failed";
 }
 
 export function isTsSubagentStatus(value: unknown): value is TsSubagentStatus {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const status = value as Record<string, unknown>;
-  if (status.schema_version !== TS_SUBAGENT_STATUS_SCHEMA) return false;
-  if (!Number.isInteger(status.seq) || Number(status.seq) < 0) return false;
-  if (!requiredString(status.tool_call_id) || !requiredString(status.task_id)) return false;
-  if (!requiredString(status.operation)) return false;
-  if (!["review", "backend", "render", "report"].includes(String(status.role))) return false;
-  if (!TS_SUBAGENT_STATES.includes(status.state as TsSubagentState)) return false;
-  if (!validTimestamp(status.started_at) || !validTimestamp(status.updated_at)) return false;
-  for (const key of ["backend", "node_id", "intent_id", "target_ref", "run_ref"] as const) {
-    if (status[key] !== undefined && !requiredString(status[key])) return false;
+  if (!isObject(value)) return false;
+  if (value.schema_version !== TS_SUBAGENT_STATUS_SCHEMA || value.role !== "review") return false;
+  if (!Number.isInteger(value.seq) || Number(value.seq) < 0) return false;
+  if (!requiredString(value.tool_call_id) || !requiredString(value.task_id) || !requiredString(value.operation)) return false;
+  if (!TS_SUBAGENT_STATES.includes(value.state as TsSubagentState)) return false;
+  if (!validTimestamp(value.started_at) || !validTimestamp(value.updated_at)) return false;
+  for (const key of ["act_refs", "claim_refs"] as const) {
+    if (value[key] !== undefined && !validStringArray(value[key])) return false;
   }
-  if (status.wait_reason !== undefined) {
-    if (status.state !== "waiting") return false;
-    if (!TS_SUBAGENT_WAIT_REASONS.includes(status.wait_reason as TsSubagentWaitReason)) return false;
+  for (const key of ["target_ref", "run_ref"] as const) {
+    if (value[key] !== undefined && !requiredString(value[key])) return false;
   }
-  if (status.failure_kind !== undefined) {
-    if (!["failed", "cancelled"].includes(String(status.state))) return false;
-    if (!["timeout", "aborted", "error"].includes(String(status.failure_kind))) return false;
+  if (value.wait_reason !== undefined) {
+    if (value.state !== "waiting" || !TS_SUBAGENT_WAIT_REASONS.includes(value.wait_reason as TsSubagentWaitReason)) return false;
+  }
+  if (value.failure_kind !== undefined) {
+    if (!["failed", "cancelled"].includes(String(value.state))) return false;
+    if (!["timeout", "aborted", "error"].includes(String(value.failure_kind))) return false;
   }
   return true;
 }
@@ -150,6 +133,14 @@ function validTimestamp(value: unknown): boolean {
   return requiredString(value) && Number.isFinite(Date.parse(value));
 }
 
+function validStringArray(value: unknown): boolean {
+  return Array.isArray(value) && value.length <= 64 && value.every(requiredString) && new Set(value).size === value.length;
+}
+
 function requiredString(value: unknown): value is string {
   return typeof value === "string" && Boolean(value.trim());
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

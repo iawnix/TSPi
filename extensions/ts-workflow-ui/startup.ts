@@ -159,7 +159,7 @@ function renderStartup(
   const visibleLogo = details.compact && logo.length > 1 ? logo.slice(1, 6) : logo;
   const heroLines = [
     ...visibleLogo.map((line) => center(line, leftWidth)),
-    center(palette.muted("Evidence-driven transition-state workflow."), leftWidth),
+    center(palette.muted("DAG-based transition-state research."), leftWidth),
     center(palette.dim(`${model} · ${thinking}`), leftWidth),
     center(palette.dim(cwd), leftWidth),
   ];

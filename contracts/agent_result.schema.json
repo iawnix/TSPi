@@ -1,17 +1,18 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iawnix:ts-agent-result:1",
   "title": "TS isolated agent result",
   "type": "object",
   "required": ["schema_version", "task_id", "role", "authority", "operation", "outcome", "summary", "scope", "facts", "artifact_refs", "program", "payload", "limitations", "provenance"],
   "properties": {
     "schema_version": {"const": "ts-agent-result/1"},
     "task_id": {"type": "string", "minLength": 1, "maxLength": 128},
-    "role": {"enum": ["review", "backend", "render", "report"]},
-    "authority": {"enum": ["advisory", "operational"]},
+    "role": {"const": "review"},
+    "authority": {"const": "advisory"},
     "operation": {"type": "string", "minLength": 1, "maxLength": 128},
     "outcome": {"enum": ["success", "partial", "failure", "not_run"]},
     "summary": {"type": "string", "minLength": 1, "maxLength": 4000},
-    "scope": {"$ref": "agent_task.schema.json#/$defs/scope"},
+    "scope": {"$ref": "urn:iawnix:ts-agent-task:2#/$defs/scope"},
     "facts": {
       "type": "array",
       "maxItems": 32,
@@ -19,7 +20,7 @@
         "type": "object",
         "required": ["kind", "statement", "status", "basis_refs"],
         "properties": {
-          "kind": {"enum": ["review", "compute_preparation", "submission", "inspection", "collection", "cancellation", "program_status", "parser", "render", "report"]},
+          "kind": {"const": "review"},
           "statement": {"type": "string", "minLength": 1, "maxLength": 2000},
           "status": {"enum": ["observed", "supported", "contradicted", "uncertain"]},
           "basis_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
@@ -27,23 +28,8 @@
         "additionalProperties": false
       }
     },
-    "artifact_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
-    "program": {
-      "oneOf": [
-        {"type": "null"},
-        {
-          "type": "object",
-          "required": ["outcome", "state", "error_class", "exit_status"],
-          "properties": {
-            "outcome": {"enum": ["success", "failure", "not_run"]},
-            "state": {"type": ["string", "null"]},
-            "error_class": {"type": ["string", "null"]},
-            "exit_status": {"type": ["integer", "null"]}
-          },
-          "additionalProperties": false
-        }
-      ]
-    },
+    "artifact_refs": {"type": "array", "maxItems": 0},
+    "program": {"type": "null"},
     "payload": {"type": "object"},
     "limitations": {"type": "array", "items": {"type": "string", "minLength": 1}},
     "provenance": {"type": "object"}

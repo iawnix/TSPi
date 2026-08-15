@@ -9,27 +9,34 @@ TEMPLATE = SKILL_ROOT / "assets" / "templates" / "ts_final_report.md"
 CONTRACT = SKILL_ROOT / "references" / "report_template.md"
 
 
-def test_report_template_contains_required_v3_sections() -> None:
+def test_report_template_contains_required_v4_sections() -> None:
     text = TEMPLATE.read_text(encoding="utf-8")
     for phrase in [
         "Executive Status",
-        "Scientific Claims",
+        "Claims And Relations",
+        "ResearchAct DAG",
         "Computational Protocol",
-        "Deterministic Gate Results",
+        "Semantic Observations",
+        "Frozen Validation",
         "Connectivity And Endpoints",
-        "Research Nodes",
-        "Accepted Artifacts",
-        "Evidence Appendix",
+        "Findings And Claim Acceptance",
         "Operational Follow-Up",
     ]:
         assert phrase in text
 
 
-def test_report_template_contract_keeps_acceptance_gates_explicit() -> None:
+def test_report_contract_keeps_v4_acceptance_and_provenance_explicit() -> None:
     text = CONTRACT.read_text(encoding="utf-8")
-    assert "accepted-ts/2" in text
-    assert "TS/Freq" in text
-    assert "connectivity Gate results" in text
-    assert "accepted-pathway/1" in text
-    assert "Node tag" in text
-    assert "advisory Review" in text
+    for phrase in [
+        "acceptance record",
+        "GateSpecs",
+        "passing ValidationResults",
+        "Finding snapshot",
+        "stationary-point",
+        "reaction-coordinate",
+        "connectivity",
+        "registered Observation",
+        "source artifact",
+        "Review opinion",
+    ]:
+        assert phrase in text

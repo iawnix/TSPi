@@ -4,10 +4,15 @@ const fs = require("node:fs");
 const path = require("node:path");
 
 const WORKSPACE_MARKERS = [
+  "workspace.json",
   "research_state.json",
   "claims.json",
-  "evidence_registry.json",
-  "gate_results.json",
+  "claim_relations.json",
+  "research_acts.json",
+  "observations.json",
+  "validation_specs.json",
+  "validation_results.json",
+  "findings.json",
 ];
 
 function normalizePath(value, cwd = process.cwd()) {
@@ -16,7 +21,13 @@ function normalizePath(value, cwd = process.cwd()) {
 }
 
 function isWorkspaceRoot(root) {
-  return WORKSPACE_MARKERS.every((name) => fs.existsSync(path.join(root, name)));
+  if (!root || !WORKSPACE_MARKERS.every((name) => fs.existsSync(path.join(root, name)))) return false;
+  try {
+    const workspace = JSON.parse(fs.readFileSync(path.join(root, "workspace.json"), "utf8"));
+    return workspace.schema_version === "ts-workspace/4" && workspace.kernel_protocol === "ts-research-kernel/4";
+  } catch (_error) {
+    return false;
+  }
 }
 
 function findWorkspaceRoot(start = process.cwd(), env = process.env) {
@@ -32,136 +43,99 @@ function findWorkspaceRoot(start = process.cwd(), env = process.env) {
 }
 
 function resolveWorkspaceRoot(inputRoot, cwd = process.cwd(), env = process.env) {
-  return normalizePath(inputRoot || "", cwd) || findWorkspaceRoot(cwd, env);
+  const explicit = normalizePath(inputRoot || "", cwd);
+  if (explicit) return isWorkspaceRoot(explicit) ? explicit : null;
+  return findWorkspaceRoot(cwd, env);
 }
 
-function buildContextDetails(report) {
-  const focus = objectOrEmpty(report.focus);
-  const operational = objectOrEmpty(report.operational_summary);
+function buildContextDetails(context) {
+  const focus = objectOrEmpty(context.focus);
+  const acceptance = objectOrEmpty(context.acceptance_summary);
+  const operational = objectOrEmpty(context.operational_summary);
   return {
-    reportId: report.report_id || "",
-    workspaceId: report.workspace_id || "",
-    workspaceRevision: report.workspace_revision || "",
-    operationalRevision: report.operational_revision || "",
-    workspaceRoot: report.workspace_root || "",
-    valid: report.valid === true,
-    validationFindings: arrayOfObjects(report.validation_findings),
-    currentNode: focus.current_node || null,
-    openNodeRefs: arrayOfStrings(focus.open_node_refs),
-    focusClaimRefs: arrayOfStrings(focus.focus_claim_refs),
-    acceptedRefs: arrayOfStrings(focus.accepted_refs),
-    focusClaims: arrayOfObjects(report.focus_claims).map((claim) => ({
-      claimId: claim.claim_id || "",
-      kind: claim.kind || "",
-      statement: claim.statement || "",
-      status: claim.status || "",
-      requiredGates: arrayOfStrings(claim.required_gates),
-    })),
-    openNodes: arrayOfObjects(report.open_nodes).map((node) => ({
-      nodeId: node.node_id || "",
-      state: node.state || "",
-      tags: arrayOfStrings(node.tags),
-      objective: node.objective || "",
-    })),
-    closedNodeCount: numberOrZero(report.closed_node_count),
-    claimCount: numberOrZero(report.claim_count),
-    evidenceCount: numberOrZero(report.evidence_count),
-    gateResultCount: numberOrZero(report.gate_result_count),
-    claimStatusCounts: objectOrEmpty(report.claim_status_counts),
-    gateVerdictCounts: objectOrEmpty(report.gate_verdict_counts),
+    projectionId: stringValue(context.projection_id),
+    reportId: stringValue(context.report_id),
+    workspaceId: stringValue(context.workspace_id),
+    workspaceRevision: stringValue(context.workspace_revision),
+    operationalRevision: stringValue(context.operational_revision),
+    mode: stringValue(context.mode) || "frontier",
+    valid: context.valid === true,
+    validationFindings: arrayOfObjects(context.validation_findings),
+    focusClaimRefs: arrayOfStrings(focus.claim_refs),
+    focusActRefs: arrayOfStrings(focus.act_refs),
+    acceptanceRecordRefs: arrayOfStrings(acceptance.record_refs),
+    currentAcceptanceRefs: arrayOfStrings(acceptance.current_refs),
+    staleAcceptanceRefs: arrayOfStrings(acceptance.stale_refs),
+    claims: arrayOfObjects(context.claims),
+    claimRelations: arrayOfObjects(context.claim_relations),
+    researchActs: arrayOfObjects(context.research_acts),
+    observations: arrayOfObjects(context.observations),
+    validationSpecs: arrayOfObjects(context.validation_specs),
+    validationResults: arrayOfObjects(context.validation_results),
+    findings: arrayOfObjects(context.findings),
+    acceptances: arrayOfObjects(context.acceptances),
+    openFindings: arrayOfObjects(context.open_findings),
+    incompleteValidation: arrayOfObjects(context.incomplete_validation),
+    pendingReviewDispositions: arrayOfObjects(context.pending_review_dispositions),
+    unresolvedControls: arrayOfObjects(context.unresolved_controls),
+    recentDecisions: arrayOfObjects(context.recent_decisions),
+    omitted: objectOrEmpty(context.omitted),
+    retrieval: objectOrEmpty(context.retrieval),
     operationalSummary: {
-      trackedFileCount: numberOrZero(operational.tracked_file_count),
       calculationFileCount: numberOrZero(operational.calculation_file_count),
-      agentRunCount: numberOrZero(operational.agent_run_count),
-      agentRunFailedCount: numberOrZero(operational.agent_run_failed_count),
-      agentRunPendingCount: numberOrZero(operational.agent_run_pending_count),
-      controlPendingCount: numberOrZero(operational.control_pending_count),
+      activityCount: numberOrZero(operational.activity_count),
+      activityFailedCount: numberOrZero(operational.activity_failed_count),
+      activityRunningCount: numberOrZero(operational.activity_running_count),
+      reviewRunCount: numberOrZero(operational.review_run_count),
+      reviewRunFailedCount: numberOrZero(operational.review_run_failed_count),
+      reviewRunPendingCount: numberOrZero(operational.review_run_pending_count),
+      reviewDispositionPendingCount: numberOrZero(operational.review_disposition_pending_count),
       controlUnresolvedCount: numberOrZero(operational.control_unresolved_count),
       ambiguousSubmissionCount: numberOrZero(operational.ambiguous_submission_count),
-      ambiguousCancellationCount: numberOrZero(operational.ambiguous_cancellation_count),
-      controlRetryableCount: numberOrZero(operational.control_retryable_count),
-      reviewDispositionCount: numberOrZero(operational.review_disposition_count),
-      reviewDispositionPendingCount: numberOrZero(operational.review_disposition_pending_count),
     },
-    pendingControls: arrayOfObjects(report.pending_controls),
-    unresolvedControls: arrayOfObjects(report.unresolved_controls),
-    pendingReviewDispositions: arrayOfObjects(report.pending_review_dispositions),
-    latestAgentRuns: arrayOfObjects(report.agent_runs).slice(-5),
-    branchEvents: arrayOfObjects(report.branch_events),
-    allowedDecisionActions: arrayOfStrings(report.allowed_decision_actions),
   };
 }
 
-function buildContextSummary(report, options = {}) {
-  const details = buildContextDetails(report);
-  const maxItems = Number.isInteger(options.maxItems) ? options.maxItems : 5;
+function buildContextSummary(context, options = {}) {
+  if (context && context.changed === false) {
+    return `TS context unchanged at ${context.workspace_revision || "unknown revision"}; operational revision ${context.operational_revision || "unknown"}.`;
+  }
+  const details = buildContextDetails(context);
+  const maxItems = Number.isInteger(options.maxItems) ? options.maxItems : 6;
   const op = details.operationalSummary;
+  const openActs = details.researchActs.filter((act) => act.status === "open");
   const lines = [
-    "TS workspace context:",
-    `- workspace: ${details.workspaceRoot || "(unknown)"}; compute_workspace_id: ${details.workspaceId || "(missing)"}`,
-    `- report: ${details.reportId || "(none)"}; revision: ${details.workspaceRevision || "(none)"}; valid: ${details.valid}`,
-    `- operational_revision: ${details.operationalRevision || "(none)"}; calculations=${op.calculationFileCount}; agent_runs=${op.agentRunCount}; failed=${op.agentRunFailedCount}; pending=${op.agentRunPendingCount}; pending_review_responses=${op.reviewDispositionPendingCount}; unresolved_controls=${op.controlUnresolvedCount}; ambiguous_submissions=${op.ambiguousSubmissionCount}`,
-    `- current_node: ${details.currentNode || "(none)"}; open_nodes: ${details.openNodes.length ? details.openNodes.map(formatNode).join("; ") : "(none)"}`,
-    `- focus_claims: ${details.focusClaims.length ? details.focusClaims.map(formatClaim).join("; ") : "(none)"}`,
-    `- accepted_refs: ${formatList(details.acceptedRefs, maxItems)}`,
-    `- counts: closed_nodes=${details.closedNodeCount}; claims=${details.claimCount}; evidence=${details.evidenceCount}; gate_results=${details.gateResultCount}`,
-    `- claim_status: ${formatCounts(details.claimStatusCounts)}`,
-    `- gate_verdicts: ${formatCounts(details.gateVerdictCounts)}`,
+    "TS research context:",
+    `- projection: ${details.projectionId || "(none)"}; mode=${details.mode}; valid=${details.valid}`,
+    `- workspace: ${details.workspaceId || "(missing)"}; scientific_revision=${details.workspaceRevision || "(none)"}; operational_revision=${details.operationalRevision || "(none)"}`,
+    `- focus: claims=${formatList(details.focusClaimRefs, maxItems)}; acts=${formatList(details.focusActRefs, maxItems)}`,
+    `- acceptance: current=${formatList(details.currentAcceptanceRefs, maxItems)}; history=${details.acceptanceRecordRefs.length}; stale=${details.staleAcceptanceRefs.length}`,
+    `- open_acts: ${openActs.length ? openActs.slice(0, maxItems).map(formatAct).join("; ") : "(none)"}`,
+    `- claims: ${details.claims.length ? details.claims.slice(0, maxItems).map(formatClaim).join("; ") : "(none)"}`,
+    `- graph: relations=${details.claimRelations.length}; observations=${details.observations.length}; specs=${details.validationSpecs.length}; results=${details.validationResults.length}; findings=${details.findings.length}`,
+    `- operations: calculations=${op.calculationFileCount}; activities=${op.activityCount}; activity_failures=${op.activityFailedCount}; reviews=${op.reviewRunCount}; review_failures=${op.reviewRunFailedCount}; pending_review_responses=${op.reviewDispositionPendingCount}; unresolved_controls=${op.controlUnresolvedCount}; ambiguous_submissions=${op.ambiguousSubmissionCount}`,
   ];
-  if (details.pendingControls.length) {
-    lines.push(`- pending_controls: ${details.pendingControls.map(formatControl).join(", ")}`);
+  if (details.incompleteValidation.length) {
+    lines.push(`- incomplete_validation: ${details.incompleteValidation.slice(0, maxItems).map(formatValidationGap).join("; ")}`);
+  }
+  if (details.openFindings.length) {
+    lines.push(`- open_findings: ${details.openFindings.slice(0, maxItems).map(formatFinding).join("; ")}`);
   }
   if (details.unresolvedControls.length) {
-    lines.push(`- unresolved_controls: ${details.unresolvedControls.map(formatControl).join(", ")}`);
+    lines.push(`- unresolved_controls: ${details.unresolvedControls.slice(0, maxItems).map(formatControl).join("; ")}`);
   }
   if (details.pendingReviewDispositions.length) {
-    lines.push(`- pending_review_dispositions: ${details.pendingReviewDispositions.map((item) => `${item.task_id || "?"}:${item.operation || "?"}`).join(", ")}`);
-  }
-  lines.push(`- branch_events: ${formatBranchList(details.branchEvents, maxItems)}`);
-  lines.push(`- allowed_decision_actions: ${formatList(details.allowedDecisionActions, maxItems)}`);
-  if (details.latestAgentRuns.length) {
-    lines.push(`- latest_agent_runs: ${details.latestAgentRuns.map((run) => `${run.task_id || "?"}:${run.role || "?"}/${run.operation || "?"}/${run.status || "?"}`).join(", ")}`);
+    lines.push(`- pending_review_dispositions: ${details.pendingReviewDispositions.slice(0, maxItems).map((item) => `${item.task_id || "?"}/${formatList(arrayOfStrings(item.claim_refs), 3)}`).join("; ")}`);
   }
   if (details.validationFindings.length) {
-    lines.push(`- validation_findings: ${details.validationFindings.slice(0, maxItems).map((item) => `${item.code || "finding"}:${item.message || ""}`).join("; ")}`);
+    lines.push(`- workspace_findings: ${details.validationFindings.slice(0, maxItems).map((item) => `${item.code || "finding"}:${item.message || ""}`).join("; ")}`);
   }
-  lines.push("- authority: the Root Agent selects research actions and parent nodes; tags are display metadata only.");
-  lines.push("- contract: use ts_workspace_context/ts_workspace_decision_draft/ts_workspace_decision_validate/ts_workspace_decision_apply; do not edit canonical state files by hand.");
+  if (Object.values(details.omitted).some((value) => numberOrZero(value) > 0)) {
+    lines.push(`- omitted: ${formatCounts(details.omitted)}; retrieve a claim, act, finding, validation, or bounded subgraph explicitly.`);
+  }
+  lines.push("- authority: the Root Agent chooses hypotheses and research actions; the kernel validates and atomically commits explicit operations.");
+  lines.push("- contract: draft, validate, and apply one ts-research-decision/1; never edit canonical registries directly.");
   return lines.join("\n");
-}
-
-function buildNodeContextSummary(context, options = {}) {
-  const maxItems = Number.isInteger(options.maxItems) ? options.maxItems : 8;
-  const node = objectOrEmpty(context.node);
-  const result = objectOrEmpty(node.result);
-  const artifacts = objectOrEmpty(context.artifact_paths || node.artifacts);
-  return [
-    "TS historical node context:",
-    `- node: ${node.node_id || "?"}; state=${node.state || "?"}; tags=${formatList(arrayOfStrings(node.tags), maxItems)}`,
-    `- parent: ${node.parent_node || "(none)"}; lineage: ${formatList(arrayOfStrings(context.lineage), maxItems)}`,
-    `- objective: ${node.objective || "(none)"}`,
-    `- outcome: ${result.outcome || "(none)"}; summary: ${result.summary || "(none)"}`,
-    `- claim_refs: ${formatList(arrayOfStrings(node.claim_refs), maxItems)}`,
-    `- operation_refs: ${formatList(arrayOfStrings(context.operation_refs || node.operation_refs), maxItems)}`,
-    `- evidence: ${formatEvidenceList(arrayOfObjects(context.evidence), maxItems)}`,
-    `- gate_results: ${arrayOfObjects(context.gate_results).slice(0, maxItems).map((item) => `${item.gate_result_id || "?"}/${item.gate || "?"}/${item.verdict || "?"}`).join("; ") || "(none)"}`,
-    `- artifact_paths: ${formatArtifactPaths(artifacts)}`,
-    `- agent_runs: ${arrayOfObjects(context.agent_runs).slice(-maxItems).map((item) => `${item.task_id || "?"}:${item.role || "?"}/${item.operation || "?"}/${item.status || "?"}`).join("; ") || "(none)"}`,
-    "- contract: this report is read-only; node tags do not authorize or select later actions.",
-  ].join("\n");
-}
-
-function buildLineageContextSummary(context, options = {}) {
-  const maxItems = Number.isInteger(options.maxItems) ? options.maxItems : 8;
-  const fromNode = objectOrEmpty(objectOrEmpty(context.from_node).node);
-  const anchorNode = objectOrEmpty(objectOrEmpty(context.anchor_node).node);
-  return [
-    "TS lineage context:",
-    `- trigger: ${formatNodeState(fromNode)}`,
-    `- selected_checkpoint: ${formatNodeState(anchorNode)}`,
-    `- attempted_since_checkpoint: ${arrayOfObjects(context.path_delta).slice(0, maxItems).map(formatNodeState).join("; ") || "(none)"}`,
-    "- authority: the Root Agent decides whether and how to branch; the kernel only validates parent-node topology.",
-  ].join("\n");
 }
 
 function parseJsonOutput(result) {
@@ -188,45 +162,29 @@ function toolText(text, details = {}) {
   return { content: [{ type: "text", text }], details };
 }
 
-function formatNode(node) {
-  const tags = node.tags.length ? `[${node.tags.join(",")}]` : "";
-  return `${node.nodeId || "node"}${tags}/${node.state || "state"}`;
-}
-
-function formatNodeState(node) {
-  const tags = arrayOfStrings(node.tags);
-  const result = objectOrEmpty(node.result);
-  return `${node.node_id || "?"}${tags.length ? `[${tags.join(",")}]` : ""}/${node.state || "?"}/${result.outcome || "pending"}`;
+function formatAct(act) {
+  return `${act.act_id || "act"}/${act.status || "?"}: ${act.objective || ""}`;
 }
 
 function formatClaim(claim) {
-  return `${claim.claimId || "claim"}/${claim.status || "?"}: ${claim.statement || ""}`;
+  return `${claim.claim_id || "claim"}/${claim.status || "?"}: ${claim.statement || ""}`;
+}
+
+function formatValidationGap(item) {
+  return `${item.spec_id || item.spec_ref || "spec"}:${item.dimension || item.status || "unevaluated"}`;
+}
+
+function formatFinding(item) {
+  return `${item.finding_id || "finding"}/${item.severity || "?"}: ${item.statement || item.summary || ""}`;
 }
 
 function formatControl(item) {
-  return `${item.operation || "?"}:${item.intent_id || "?"}:${item.error_class || item.state || "pending"}`;
-}
-
-function formatBranchList(values, maxItems) {
-  if (!values.length) return "(none)";
-  return values.slice(-maxItems).map((item) => `${item.parent_node || "root"}->${item.node_id || "?"}`).join(", ");
-}
-
-function formatEvidenceList(values, maxItems) {
-  if (!values.length) return "(none)";
-  return values.slice(0, maxItems).map((item) => `${item.evidence_id || "?"}/${item.kind || "evidence"}/${item.state || "?"}: ${item.summary || ""}`).join("; ");
-}
-
-function formatArtifactPaths(value) {
-  return ["inputs", "outputs", "attempts", "remote", "scratch"]
-    .filter((key) => typeof value[key] === "string" && value[key].trim())
-    .map((key) => `${key}=${value[key]}`)
-    .join(", ") || "(none)";
+  return `${item.act_id || "?"}/${item.intent_id || "?"}/${item.operation || "?"}:${item.error_class || item.state || "unresolved"}`;
 }
 
 function formatCounts(value) {
   const entries = Object.entries(value).sort(([left], [right]) => left.localeCompare(right));
-  return entries.length ? entries.map(([key, count]) => `${key}=${count}`).join(", ") : "(none)";
+  return entries.length ? entries.map(([key, count]) => `${key}=${numberOrZero(count)}`).join(", ") : "(none)";
 }
 
 function formatList(values, maxItems) {
@@ -251,24 +209,26 @@ function numberOrZero(value) {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
+function stringValue(value) {
+  return typeof value === "string" ? value : "";
+}
+
 function main(argv) {
-  const reportFlag = argv.indexOf("--report");
-  if (reportFlag < 0 || !argv[reportFlag + 1]) {
-    console.error("usage: node summary.cjs --report <report.json>");
+  const contextFlag = argv.indexOf("--context");
+  if (contextFlag < 0 || !argv[contextFlag + 1]) {
+    console.error("usage: node summary.cjs --context <context.json>");
     return 2;
   }
-  const report = JSON.parse(fs.readFileSync(argv[reportFlag + 1], "utf8"));
-  process.stdout.write(JSON.stringify({ summary: buildContextSummary(report), details: buildContextDetails(report) }, null, 2) + "\n");
+  const context = JSON.parse(fs.readFileSync(argv[contextFlag + 1], "utf8"));
+  process.stdout.write(JSON.stringify({ summary: buildContextSummary(context), details: buildContextDetails(context) }, null, 2) + "\n");
   return 0;
 }
 
 if (require.main === module) process.exitCode = main(process.argv.slice(2));
 
 module.exports = {
-  buildLineageContextSummary,
   buildContextDetails,
   buildContextSummary,
-  buildNodeContextSummary,
   findWorkspaceRoot,
   isWorkspaceRoot,
   parseJsonOutput,

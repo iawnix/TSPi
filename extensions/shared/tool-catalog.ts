@@ -6,9 +6,9 @@ export const TS_PUBLIC_TOOL_NAMES = Object.freeze({
   remoteInspect: "ts_remote_inspect",
   subagentReview: "ts_subagent_review",
   reviewDisposition: "ts_review_disposition",
-  subagentCompute: "ts_subagent_compute",
-  subagentRender: "ts_subagent_render",
-  subagentReport: "ts_subagent_report",
+  compute: "ts_compute",
+  render: "ts_render",
+  report: "ts_report",
   notifyUser: "ts_notify_user",
 } as const);
 
@@ -20,9 +20,9 @@ export const TS_PUBLIC_TOOL_EXECUTION = Object.freeze({
   [TS_PUBLIC_TOOL_NAMES.remoteInspect]: "deterministic_infrastructure",
   [TS_PUBLIC_TOOL_NAMES.subagentReview]: "child_agent",
   [TS_PUBLIC_TOOL_NAMES.reviewDisposition]: "deterministic_operational",
-  [TS_PUBLIC_TOOL_NAMES.subagentCompute]: "child_agent",
-  [TS_PUBLIC_TOOL_NAMES.subagentRender]: "child_agent",
-  [TS_PUBLIC_TOOL_NAMES.subagentReport]: "child_agent",
+  [TS_PUBLIC_TOOL_NAMES.compute]: "deterministic_execution",
+  [TS_PUBLIC_TOOL_NAMES.render]: "deterministic_artifact",
+  [TS_PUBLIC_TOOL_NAMES.report]: "deterministic_artifact",
   [TS_PUBLIC_TOOL_NAMES.notifyUser]: "deterministic_external",
 } as const);
 

@@ -1,4 +1,4 @@
-"""Small read-only HTTP server for the workspace explorer."""
+"""Small read-only HTTP server for the v4 research explorer."""
 
 from __future__ import annotations
 
@@ -12,16 +12,20 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .normalize import (
-    explorer_graph_payload,
-    explorer_job_payload,
-    explorer_node_payload,
-    explorer_workspace_summary,
+    act_payload,
+    claim_payload,
+    graph_payload,
     normalize_workspace,
+    workspace_summary,
 )
 from .registry import ensure_state_dir, find_workspace, list_workspaces, register_workspace
 
 MAX_TEXT_BYTES = 1_000_000
 STATIC_PACKAGE = __package__ or "ts_web"
+
+
+class RouteNotFound(ValueError):
+    """Raised for an unknown read-only API route."""
 
 
 def _static_asset(name: str):
@@ -47,61 +51,33 @@ def create_server(
     if source_root is not None:
         register_workspace(source_root, state_dir, label)
     state = ensure_state_dir(state_dir, source_root=source_root)
-    handler = _make_handler(state)
-    return ThreadingHTTPServer((host, port), handler)
+    return ThreadingHTTPServer((host, port), _make_handler(state))
 
 
 def _make_handler(state_dir: Path):
     class ExplorerHandler(BaseHTTPRequestHandler):
-        server_version = "TSWeb/1.0"
+        server_version = "TSWeb/4.0"
 
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
-            path = parsed.path
             try:
-                if path in {"/", "/index.html"}:
+                if parsed.path in {"/", "/index.html"}:
                     self._send_static_file("index.html", "text/html; charset=utf-8")
-                elif path == "/api/health":
-                    self._send_json({"ok": True})
-                elif path == "/api/workspaces":
+                    return
+                if parsed.path == "/api/health":
+                    self._send_json({"ok": True, "protocol": "ts-research-kernel/4", "read_only": True})
+                    return
+                if parsed.path == "/api/workspaces":
                     self._send_json(_workspaces_payload(state_dir))
-                elif path == "/api/workspace":
-                    query = parse_qs(parsed.query)
-                    workspace_id = _first(query.get("id"))
-                    self._send_json(_workspace_payload(state_dir, workspace_id))
-                elif path.startswith("/api/workspace/"):
-                    query = parse_qs(parsed.query)
-                    workspace_id, rest = _parse_workspace_api_path(path)
+                    return
+                if parsed.path.startswith("/api/workspace/"):
+                    workspace_id, rest = _parse_workspace_api_path(parsed.path)
                     row = _workspace_row(state_dir, workspace_id)
-                    self._send_json(_workspace_route(row, rest, query))
-                elif path == "/api/job":
-                    row = _workspace_row(state_dir, None)
-                    self._send_json(explorer_job_payload(row["source_root"], label=row.get("label"), workspace=row))
-                elif path == "/api/tree":
-                    row = _workspace_row(state_dir, None)
-                    self._send_json(explorer_graph_payload(row["source_root"], label=row.get("label")))
-                elif path == "/api/claims":
-                    row = _workspace_row(state_dir, None)
-                    self._send_json(_read_json(row, "claims.json"))
-                elif path == "/api/gates":
-                    row = _workspace_row(state_dir, None)
-                    self._send_json(_read_json(row, "gate_results.json"))
-                elif path == "/api/evidence":
-                    row = _workspace_row(state_dir, None)
-                    self._send_json(_read_json(row, "evidence_registry.json"))
-                elif path.startswith("/api/node/"):
-                    row = _workspace_row(state_dir, None)
-                    node_id, rest = _parse_node_api_path(path)
-                    if rest:
-                        self._send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
-                    else:
-                        self._send_json(explorer_node_payload(row["source_root"], node_id, label=row.get("label")))
-                elif path == "/api/file":
-                    query = parse_qs(parsed.query)
-                    row = _workspace_row(state_dir, None)
-                    self._send_json(_read_workspace_file(row, _first(query.get("path")) or ""))
-                else:
-                    self._send_json({"error": "not found"}, status=HTTPStatus.NOT_FOUND)
+                    self._send_json(_workspace_route(row, rest, parse_qs(parsed.query)))
+                    return
+                raise RouteNotFound(f"unknown route: {parsed.path}")
+            except RouteNotFound as exc:
+                self._send_json({"error": str(exc)}, status=HTTPStatus.NOT_FOUND)
             except ValueError as exc:
                 self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
             except Exception as exc:  # noqa: BLE001
@@ -115,14 +91,7 @@ def _make_handler(state_dir: Path):
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
-            self.end_headers()
-            self.wfile.write(body)
-
-        def _send_file(self, path: Path, content_type: str) -> None:
-            body = path.read_bytes()
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
 
@@ -138,82 +107,85 @@ def _make_handler(state_dir: Path):
 
 
 def _workspaces_payload(state_dir: Path) -> dict[str, Any]:
-    rows = list_workspaces(state_dir)
-    summaries = [explorer_workspace_summary(row) for row in rows]
+    summaries = [workspace_summary(row) for row in list_workspaces(state_dir)]
     return {
-        "default_workspace": summaries[0]["id"] if len(summaries) == 1 else "",
+        "schema_version": "ts-explorer-workspace-list/1",
+        "default_workspace": summaries[0]["workspace_id"] if len(summaries) == 1 else None,
         "workspaces": summaries,
     }
 
 
-def _workspace_payload(state_dir: Path, workspace_id: str | None) -> dict[str, Any]:
-    row = _workspace_row(state_dir, workspace_id)
-    return {"workspace": row, "view": normalize_workspace(row["source_root"], label=row.get("label"))}
-
-
-def _workspace_row(state_dir: Path, workspace_id: str | None) -> dict[str, Any]:
-    rows = list_workspaces(state_dir)
-    if workspace_id is None:
-        if not rows:
-            raise ValueError("no workspace is registered")
-        if len(rows) > 1:
-            raise ValueError("multiple workspaces are registered; choose a workspace id")
-        return _normalize_workspace_row(rows[0])
+def _workspace_row(state_dir: Path, workspace_id: str) -> dict[str, Any]:
     _assert_safe_id(workspace_id, "workspace")
     row = find_workspace(state_dir, workspace_id)
     if row is None:
         raise ValueError(f"unknown workspace id: {workspace_id}")
-    return _normalize_workspace_row(row)
-
-
-def _normalize_workspace_row(row: dict[str, Any]) -> dict[str, Any]:
-    workspace_id = row.get("workspace_id") or row.get("id")
-    source_root = row.get("source_root") or row.get("source")
-    label = row.get("label") or row.get("name") or workspace_id
-    if not workspace_id:
-        raise ValueError("workspace row is missing an id")
+    source_root = row.get("source_root")
     if not source_root:
         raise ValueError(f"workspace {workspace_id} is missing source_root")
-    return {**row, "workspace_id": workspace_id, "source_root": source_root, "label": label}
+    return {
+        **row,
+        "workspace_id": workspace_id,
+        "source_root": source_root,
+        "label": row.get("label") or workspace_id,
+    }
 
 
 def _workspace_route(row: dict[str, Any], rest: str, query: dict[str, list[str]]) -> Any:
     source_root = row["source_root"]
     label = row.get("label")
-    if rest in {"", "job"}:
-        return explorer_job_payload(source_root, label=label, workspace=row)
-    if rest == "tree":
-        return explorer_graph_payload(source_root, label=label)
+    if rest == "":
+        view = normalize_workspace(source_root, label=label)
+        return {"workspace": workspace_summary(row, view=view), "view": view}
+    if rest == "graph":
+        return graph_payload(source_root, label=label)
     if rest == "claims":
-        return _read_json(row, "claims.json")
-    if rest == "gates":
-        return _read_json(row, "gate_results.json")
-    if rest == "evidence":
-        return _read_json(row, "evidence_registry.json")
+        view = normalize_workspace(source_root, label=label)
+        return {
+            "schema_version": "ts-explorer-claims/1",
+            "claims": view["claims"],
+            "claim_relations": view["claim_relations"],
+        }
+    if rest == "acts":
+        view = normalize_workspace(source_root, label=label)
+        return {"schema_version": "ts-explorer-research-acts/1", "research_acts": view["research_acts"]}
+    if rest == "observations":
+        view = normalize_workspace(source_root, label=label)
+        return {"schema_version": "ts-explorer-observations/1", "observations": view["observations"]}
+    if rest == "validation":
+        view = normalize_workspace(source_root, label=label)
+        return {
+            "schema_version": "ts-explorer-validation/1",
+            "validation_specs": view["validation_specs"],
+            "validation_results": view["validation_results"],
+            "acceptances": view["acceptances"],
+            "current_acceptances": view["current_acceptances"],
+            "acceptance_summary": view["acceptance_summary"],
+        }
+    if rest == "findings":
+        view = normalize_workspace(source_root, label=label)
+        return {"schema_version": "ts-explorer-findings/1", "findings": view["findings"]}
+    if rest == "activity":
+        view = normalize_workspace(source_root, label=label)
+        return {
+            "schema_version": "ts-explorer-activity/1",
+            "operational_revision": view["operational_revision"],
+            "operational_summary": view["operational_summary"],
+            "deterministic_activities": view["deterministic_activities"],
+            "review_runs": view["review_runs"],
+            "pending_review_dispositions": view["pending_review_dispositions"],
+            "pending_controls": view["pending_controls"],
+            "unresolved_controls": view["unresolved_controls"],
+        }
     if rest == "file":
         return _read_workspace_file(row, _first(query.get("path")) or "")
-    if rest.startswith("node/"):
-        node_id, node_rest = _parse_node_rest(rest)
-        if node_rest in {"", "detail"}:
-            return explorer_node_payload(source_root, node_id, label=label)
-        if node_rest == "files":
-            return explorer_node_payload(source_root, node_id, label=label)["files"]
-        if node_rest.startswith("markdown/"):
-            name = node_rest.split("/", 1)[1]
-            payload = explorer_node_payload(source_root, node_id, label=label)
-            return {"node_id": node_id, "name": name, "text": payload["markdown"].get(name, "")}
-    raise ValueError(f"unknown workspace route: {rest}")
-
-
-def _read_json(row: dict[str, Any], name: str) -> dict[str, Any]:
-    path = Path(row["source_root"]) / name
-    if not path.exists():
-        return {}
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except Exception as exc:  # noqa: BLE001
-        return {"_read_error": str(exc)}
-    return payload if isinstance(payload, dict) else {"_read_error": "JSON root is not an object"}
+    if rest.startswith("claim/"):
+        claim_id = _single_detail_id(rest, "claim")
+        return claim_payload(source_root, claim_id, label=label)
+    if rest.startswith("act/"):
+        act_id = _single_detail_id(rest, "act")
+        return act_payload(source_root, act_id, label=label)
+    raise RouteNotFound(f"unknown workspace route: {rest}")
 
 
 def _read_workspace_file(row: dict[str, Any], rel_path: str) -> dict[str, Any]:
@@ -226,7 +198,7 @@ def _read_workspace_file(row: dict[str, Any], rel_path: str) -> dict[str, Any]:
     path = (root / normalized).resolve()
     if path != root and root not in path.parents:
         raise ValueError(f"path escapes workspace: {rel_path!r}")
-    if not path.exists() or not path.is_file():
+    if not path.exists() or not path.is_file() or path.is_symlink():
         raise ValueError(f"file not found: {rel_path}")
     size = path.stat().st_size
     if size > MAX_TEXT_BYTES:
@@ -239,27 +211,20 @@ def _read_workspace_file(row: dict[str, Any], rel_path: str) -> dict[str, Any]:
 
 
 def _parse_workspace_api_path(path: str) -> tuple[str, str]:
-    rest = path[len("/api/workspace/") :]
-    parts = rest.split("/", 1)
+    tail = path.removeprefix("/api/workspace/")
+    parts = tail.split("/", 1)
     workspace_id = unquote(parts[0])
     _assert_safe_id(workspace_id, "workspace")
-    return workspace_id, parts[1] if len(parts) > 1 else ""
+    return workspace_id, parts[1].strip("/") if len(parts) > 1 else ""
 
 
-def _parse_node_api_path(path: str) -> tuple[str, str]:
-    rest = path[len("/api/node/") :]
-    parts = rest.split("/", 1)
-    node_id = unquote(parts[0])
-    _assert_safe_id(node_id, "node")
-    return node_id, parts[1] if len(parts) > 1 else ""
-
-
-def _parse_node_rest(rest: str) -> tuple[str, str]:
-    node_rest = rest[len("node/") :]
-    parts = node_rest.split("/", 1)
-    node_id = unquote(parts[0])
-    _assert_safe_id(node_id, "node")
-    return node_id, parts[1] if len(parts) > 1 else ""
+def _single_detail_id(rest: str, kind: str) -> str:
+    prefix = f"{kind}/"
+    identifier = unquote(rest.removeprefix(prefix))
+    if "/" in identifier:
+        raise RouteNotFound(f"unknown {kind} route: {rest}")
+    _assert_safe_id(identifier, kind)
+    return identifier
 
 
 def _assert_safe_id(value: str, label: str) -> None:
@@ -268,6 +233,4 @@ def _assert_safe_id(value: str, label: str) -> None:
 
 
 def _first(values: list[str] | None) -> str | None:
-    if not values:
-        return None
-    return values[0]
+    return values[0] if values else None

@@ -5,7 +5,7 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { requireWorkspaceRoot, runWorkspaceJson } from "../shared/workspace-cli.ts";
+import { requireWorkspaceRoot, runComputeJson, runWorkspaceJson } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 import {
   createSubagentStatusReporter,
@@ -13,9 +13,9 @@ import {
   terminalStatusForError,
 } from "../shared/subagent-status.ts";
 import {
-  renderTsSubagentCall,
-  renderTsSubagentResult,
-} from "../shared/subagent-tool-presentation.ts";
+  renderTsReviewCall,
+  renderTsReviewResult,
+} from "../shared/review-tool-presentation.ts";
 import { runScientificReview } from "../../src/agents/review/runtime.ts";
 
 const require = createRequire(import.meta.url);
@@ -38,18 +38,18 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.subagentReview,
     label: "TS Review Subagent",
-    description: "Run one fresh, tool-free Pi subagent against a deterministic target-claim dependency snapshot.",
+    description: "Run one isolated advisory Review against a deterministic Claim and ResearchAct DAG snapshot.",
     promptSnippet: "Delegate an independent review of one transition-state scientific claim",
     promptGuidelines: [
       `Use ${TS_PUBLIC_TOOL_NAMES.subagentReview} only at an ambiguity, failure-analysis, branch-selection, or final-audit boundary where an independent review can change the next decision.`,
       "Treat its output as advisory analysis, not registered evidence or an accepted/pathway verdict; reconcile it against primary artifacts before mutating the workspace.",
       `After every successful Review, immediately call ${TS_PUBLIC_TOOL_NAMES.reviewDisposition} with its task_id and review_run_ref. Record a concise accepted, partially_accepted, rejected, or deferred response before any further workspace mutation.`,
-      "Select targetClaimRef. The workspace kernel derives claims, gates, evidence, and owner nodes; nodeIds may add explicit operational context.",
+      "Select targetClaimRef. The Kernel derives Claims, relations, ResearchActs, Observations, frozen validation, and Findings from the graph.",
+      "Optional artifactIds must already be cited by an Observation in that graph; paths are not accepted.",
     ],
     renderShell: "self",
-    renderCall: (args, theme) => renderTsSubagentCall("review", args as Record<string, unknown>, theme),
-    renderResult: (result, options, theme, context) => renderTsSubagentResult(
-      "review",
+    renderCall: (args, theme) => renderTsReviewCall(args as Record<string, unknown>, theme),
+    renderResult: (result, options, theme, context) => renderTsReviewResult(
       result,
       options,
       theme,
@@ -60,8 +60,7 @@ export default function (pi: ExtensionAPI) {
       targetClaimRef: Type.String({ minLength: 1, maxLength: 256, description: "Scientific claim that the Review must assess." }),
       question: Type.String({ minLength: 1, maxLength: 4000, description: "Focused scientific or technical review question." }),
       root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
-      nodeIds: Type.Optional(Type.Array(Type.String(), { maxItems: 16, description: "Optional additional owner nodes for operational context." })),
-      artifactRefs: Type.Optional(Type.Array(Type.String(), { maxItems: 4 })),
+      artifactIds: Type.Optional(Type.Array(Type.String({ pattern: "^art_[0-9a-f]{24}$" }), { maxItems: 4, uniqueItems: true })),
       timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 180, description: "Host timeout in seconds. Defaults to 90." })),
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
@@ -71,7 +70,7 @@ export default function (pi: ExtensionAPI) {
         task_id: taskId,
         role: "review",
         operation: "claim_review",
-        node_id: params.nodeIds?.[0],
+        target_ref: params.targetClaimRef,
       }, onUpdate);
       reportStatus("queued");
       if (!ctx.model) {
@@ -81,22 +80,26 @@ export default function (pi: ExtensionAPI) {
         targetClaimRef: params.targetClaimRef,
         question: params.question,
         root: params.root,
-        nodeIds: params.nodeIds,
-        artifactRefs: params.artifactRefs,
+        artifactIds: params.artifactIds,
       });
       const root = requireWorkspaceRoot(request.root, ctx.cwd);
-      const workspaceReport = await runWorkspaceJson(pi, "report_workspace", root, [], signal);
       const snapshotArgs = ["--target-claim-ref", request.targetClaimRef];
-      for (const nodeId of request.nodeIds) snapshotArgs.push("--node-id", nodeId);
       const reviewSnapshot = await runWorkspaceJson(pi, "build_review_snapshot", root, snapshotArgs, signal);
+      const artifactCatalog = request.artifactIds.length
+        ? (await runComputeJson(pi, "list-artifacts", root, [], signal)).artifacts
+        : [];
       const bundle = buildReviewTaskBundle({
         runId: taskId,
         workspaceRoot: root,
         request,
-        workspaceReport,
         reviewSnapshot,
+        artifactCatalog,
       });
       const packet = bundle.task;
+      reportStatus("starting", {
+        act_refs: packet.scope.act_refs,
+        claim_refs: packet.scope.claim_refs,
+      });
       const journal = beginAgentRun(root, packet, { documents: bundle.documents });
       const persisted = readAgentRunInputs(journal);
       try {
@@ -106,7 +109,7 @@ export default function (pi: ExtensionAPI) {
         const result = await runScientificReview({
           workspaceRoot: root,
           packet: persisted.task,
-          evidenceSnapshot: persisted.documents.evidence_snapshot,
+          reviewSnapshot: persisted.documents.review_snapshot,
           providerInput: persisted.documents.provider_input,
           parentModel: ctx.model,
           parentApiKey: parentAuth?.ok ? parentAuth.apiKey : undefined,
@@ -146,9 +149,9 @@ export default function (pi: ExtensionAPI) {
           : [];
         if (invalidOutputs.length) writeInvalidReviewOutput(journal, invalidOutputs);
         const failure = classifyUpstreamModelFailure(error, { replaySafe: true }) || {
-          failure_class: "review_operator_failed",
-          failure_stage: "operator",
-          failure_domain: "review_operator",
+          failure_class: "review_runtime_failed",
+          failure_stage: "review_runtime",
+          failure_domain: "review",
           upstream_status: null,
           retry_safe: true,
         };

@@ -1,231 +1,212 @@
 ---
 name: transition-state-workflow
-description: Evidence-driven transition-state research for Pi Agent using Root-selected Claims, bounded research Nodes, deterministic scientific Gates, isolated Review/compute/render/report operators, Gaussian and other typed backends, SSH/Torque execution, IRC/connectivity validation, failure recovery, and auditable final reports. Use for TS searches, reaction-path testing, candidate generation, frequency and connectivity validation, calculation recovery, competing mechanistic Claims, or continuation of an existing TS workspace.
+description: Auditable transition-state and reaction-path research in TSPi using a Root-owned Claim graph, ResearchAct DAG, deterministic Compute/Render/Report tools, semantic Observations, declarative GateSpecs, isolated advisory Review, SSH/Torque execution, connectivity validation, failure recovery, and reproducible reports. Use for TS candidate generation, optimization/frequency/IRC studies, mechanism alternatives, pathway validation, xTB/CREST/ASE/Gaussian calculations, scientific backtracking, or continuation of a v4 TS workspace.
 ---
 
 # Transition-State Workflow
 
-Treat the workspace as an auditable research graph. Decide chemistry as the
-Root Agent. Use deterministic tools to protect contracts and execute bounded
-operations; never treat their structure as a prescribed research sequence.
+Treat the workspace as an auditable research graph. Reason about chemistry as
+the Root Agent. Use deterministic tools for state integrity and bounded effects;
+never treat graph structure or validation templates as a prescribed workflow.
 
 ## Authority
 
-- Mutate canonical scientific state only through `ts_workspace_decision_apply`.
-- Let the Root Agent choose objectives, parent Nodes, Claims, methods, retries,
-  recalculations, alternative explanations, stopping, and final interpretation.
-- Treat Node `tags` as display/search metadata only. Never infer an allowed next
-  action from a tag, parent, or Node state.
-- Treat program completion, scheduler state, and operator success as operational
-  facts, not scientific support.
-- Register Evidence only from verified local artifacts or explicit observations
-  with provenance.
-- Use deterministic Gates only for declared scientific checks. A Gate verdict
-  does not choose the next operation.
-- Treat remote directories as execution mirrors. Collect and verify locally
-  before registering Evidence.
-- Keep `ts_web` read-only.
+- Mutate canonical science only through `ts_workspace_decision_apply`.
+- Choose questions, hypotheses, methods, alternatives, dependencies,
+  backtracking, retries, stopping, and interpretation as the Root Agent.
+- Treat Claim relations, Act dependencies, and tags as recorded context only.
+  Never infer a permitted next action from them.
+- Treat program, scheduler, parser, render, report, and notification status as
+  operational facts until verified artifacts support semantic Observations.
+- Record Observations only from verified local artifacts or explicit
+  user-provided facts with provenance and exact artifact digests.
+- Record anomalies, conflicts, limitations, and unresolved questions as
+  Findings; do not hide blockers in prose.
+- Freeze a GateSpec before evaluating selected Observations. A validation
+  verdict constrains a Claim but does not choose the next Act.
+- Treat remote directories as execution mirrors. Collect and verify locally.
+- Keep `ts_web`, UI activity, and Review advisory.
 
-The v3 scientific vocabulary is intentionally small:
-
-- **Node**: one bounded research act.
-- **Claim**: one explicit scientific statement owned by the Root Agent.
-- **Evidence**: immutable facts and source bindings; it has no workflow role or
-  layer.
-- **Gate**: one named deterministic evaluation of Evidence facts.
-
-Read `references/state_model.md` and `references/workspace_contract.md` when
-state ownership or persistence is in question.
-
-For package usage, treat registered tool schemas and live capabilities as the
-call contract, and use this Skill plus focused references for guidance. Do not
-inspect implementation source or tests during ordinary research. Read
-`references/package_sources.md` when the installed-runtime/package-maintenance
-boundary is in question.
-
-Read `references/runtime_environment.md` only when resolving the isolated
-Python environment or diagnosing its manifest.
+Read [state_model.md](references/state_model.md) and
+[workspace_contract.md](references/workspace_contract.md) when ownership,
+identity, persistence, or DAG semantics are in question. Read
+[package_sources.md](references/package_sources.md) when deciding whether a
+source belongs to research use or package maintenance.
 
 ## Operating Loop
 
-1. Read `ts_workspace_context mode=summary` or `mode=delta`.
-2. State the unresolved scientific question and select one bounded objective.
-3. Open a Node with `start_node`; choose its parent and descriptive tags.
-4. Append or cite the Claims the objective tests.
-5. Select any useful method from chemistry, cost, and available Evidence. Use
-   `mode=capabilities` only to learn what adapters can express.
-6. Link immutable calculation/operator records to the Node.
-7. Parse or inspect local primary artifacts and append Evidence facts.
-8. Evaluate only the Gates required by the relevant Claim or acceptance policy.
-9. Close the Node with explicit Claim updates, open questions, and optional
-   acceptance audit.
-10. Re-read context and independently choose another Node, an alternative
-    Claim, a stop, or study completion.
+1. Read `ts_workspace_context mode=frontier` or a revision-bound `mode=delta`.
+2. State one unresolved scientific question and its possible falsifiers.
+3. Create or update explicit Claims, then start one bounded ResearchAct with
+   only scientifically meaningful dependencies.
+4. Select a method from chemistry, cost, current uncertainty, and available
+   artifacts. Capability catalogs show expressibility, not strategy or health.
+5. Run deterministic tools and link their immutable operation records to the
+   Act.
+6. Verify local primary outputs. Record semantic Observations and any Findings.
+7. Freeze relevant GateSpecs, then evaluate them over explicit Observation
+   refs. Never weaken a frozen specification after seeing a result.
+8. Update Claims with cited Observations/results, complete the Act, and create
+   an acceptance record only when a named profile passes.
+9. Recompile context and independently choose a branch, merge, backtrack, new
+   question, explicit stop, or completion.
 
-Do not default to QST2/QST3 merely because reactant and product endpoints are
-available. Require chemically compatible optimized endpoints, atom mapping,
-conformations, and an elementary-step rationale. Do not impose a universal
-low-cost-first or Gaussian-first pipeline. Gaussian remains a first-class
-candidate generator when scans, QST, or direct TS optimization are justified.
+The ResearchAct DAG preserves history and supports multiple dependencies. To
+backtrack, start a new Act that depends on the earlier checkpoint; do not erase
+failed or superseded work. Claim relations separately preserve refinement,
+dependency, conflict, and alternative scientific interpretations.
 
-Read `references/candidate_generation.md`,
-`references/mechanism_reflection.md`, and `references/backend_selection.md`
-only when selecting or reassessing a scientific strategy. Read
-`references/strategy_reflection.md` when repeated results require a bounded
-strategy reassessment.
+Do not impose a universal low-cost-first, Gaussian-first, or QST-first sequence.
+Gaussian is a first-class candidate generator when direct TS optimization,
+scans, or QST are chemically justified. Require compatible endpoints, atom
+mapping, conformations, and an elementary-step rationale before QST2/QST3.
+
+Read [candidate_generation.md](references/candidate_generation.md),
+[backend_selection.md](references/backend_selection.md), and
+[mechanism_reflection.md](references/mechanism_reflection.md) when choosing an
+initial strategy. Read [strategy_reflection.md](references/strategy_reflection.md)
+when repeated results require reassessment.
 
 ## Decisions
 
-Use the Root control tools in this order:
+Use the control tools in order:
 
-1. `ts_workspace_context` for the current report or bounded history.
-2. `ts_workspace_decision_draft` to bind the selected action and payload to the
-   current report and revision and allocate technical IDs.
-3. `ts_workspace_decision_validate` for a complete non-mutating dry run.
-4. `ts_workspace_decision_apply` for the transactional mutation.
+1. `ts_workspace_context` for the current bounded projection.
+2. `ts_workspace_decision_draft` for Root-authored v4 operations and local
+   aliases.
+3. `ts_workspace_decision_validate` for a complete non-mutating post-state
+   dry run.
+4. `ts_workspace_decision_apply` for the locked transactional commit.
 
-New decisions use `ts-decision/3`. The mutable actions are:
+The draft allocates all technical IDs and resolves `$alias` references. Do not
+invent `dec_`, `clm_`, `rel_`, `act_`, `obs_`, `fnd_`, `gsp_`, `val_`, or
+`acc_` IDs. Do not edit the returned `ts-research-decision/1`; any change needs
+a new draft.
 
-- `start_node`: open one bounded act with parent, objective, tags, and Claim refs.
-- `update_workspace`: append Claims, Evidence or Evidence events; evaluate a
-  Gate; link an operation; update focus Claim refs; append provenance.
-- `end_node`: close or stop one Node with an explicit result.
-
-Do not edit returned decisions between validate and apply. Apply repeats
-workspace-aware validation under the workspace lock, so preflight is a preview,
-not a reusable token. Stale revisions and reused decision IDs with different
-content are rejected.
-
-When drafting Evidence or a Gate evaluation, omit `evidence_id` and
-`gate_result_id`; they are Kernel-owned. Use the allocated Evidence ref returned
-by one applied Decision in later Gate or Claim decisions. The Root Agent still
-owns Claim IDs, scientific facts, Gate selection, targets, and cited refs.
-
-Use `mode=node` for one historical Node and `mode=lineage` with `fromNode` plus
-`anchorNode` for a read-only ancestor/delta comparison. The Root Agent alone
-decides whether that history justifies a new child Node.
-
-Build decisions from `references/decision_contract.md` and
-`assets/templates/decision/`. The templates demonstrate the generic mutation
-surface; they are not a workflow.
-
-## Review And Bounded Operators
-
-Every `ts_subagent_*` call creates a fresh child model session with no parent
-conversation. This is an isolation mechanism, not a grant of equal scientific
-authority. Review performs bounded advisory reasoning. Compute, Render, and
-Report are constrained operators whose action, inputs, paths, and effect are
-bound by the Root Agent and deterministic host before the child starts.
-
-Deterministic `ts_workspace_*`, `ts_remote_*`, `ts_review_disposition`, and
-`ts_notify_user` calls create no child model session.
-
-- Use `ts_subagent_review` for a focused independent assessment of one target
-  Claim. The Kernel derives its bounded dependency snapshot. Review is advisory
-  and cannot mutate the workspace.
-- After every successful Review, call `ts_review_disposition` with the returned
-  task and run refs. Briefly accept, partially accept, reject, or defer the
-  advice before another scientific mutation.
-- Use `ts_subagent_compute` for one typed `prepare`, `submit`, `inspect`,
-  `collect`, `cancel`, or `parse` action. The operator cannot select the method,
-  rewrite the intent, register Evidence, or set a Claim status. The host derives
-  authoritative action fields from the typed result; operator prose does not.
-- Use `ts_subagent_render` for one local bounded visualization.
-- Use `ts_subagent_report` for one new validated report package.
-- Use `ts_remote_inspect` only for on-demand read-only remote diagnostics. Do
-  not poll unchanged infrastructure every turn.
-
-All children use `ts-agent-task/2` and `ts-agent-result/1`. Their journals live
-under the owning Node or study-level `operations/agent-runs/`; journals are not
-Evidence and change only the operational revision.
-
-A process crash may leave a task-only journal reported as pending/unknown. The
-public tool return is the immediate result channel; a later Root turn is not
-automatically replayed an earlier child result. Re-read context, child history,
-and independent calculation control records before recovery. Never infer that a
-missing child result means a remote effect did not occur.
-
-Review binds a full `evidence-snapshot.json` for host validation and sends a
-compact `provider-input.json` to the model. Provider errors outrank missing or
-invalid result-tool output; a provider failure is not a format-repair request.
-
-Read `references/pi_agent_adapter.md`, `references/agent_decision_protocol.md`,
-and `references/artifact_operators.md` when delegation behavior is relevant.
-Read `references/render_contract.md` for rendering-specific path and authority
-rules.
-
-## Calculation Attempts
-
-Before `operation=prepare`, use `ts_workspace_context mode=artifacts` and bind
-each required logical `artifactId` to an `inputRole`. Select the Node,
-scientific purpose, backend task, attempt kind, settings, execution target, and
-resources. Do not hand-write an intent ID, generated path, filename, expected
-artifact list, remote directory, or submission ID.
-
-The deterministic host creates `ts-calculation-intent/3`, freezes artifact
-paths and SHA-256 values, and places the attempt under:
+Available draft primitives are:
 
 ```text
-nodes/<node_id>/attempts/<intent_id>/
+create_claim            relate_claims
+start_act               complete_act
+record_observation      record_finding      resolve_finding
+freeze_validation_spec evaluate_validation
+update_claim            accept_claim
+set_focus               link_operation
 ```
 
-Adapter capability is not live readiness. A supported backend/task pair may
-still fail software, profile, queue, filesystem, or scheduler preflight.
+These primitives can be combined in one ordered Decision and are not a required
+sequence. Build them from [decision_contract.md](references/decision_contract.md)
+and `assets/templates/decision/`. Follow
+[agent_decision_protocol.md](references/agent_decision_protocol.md) for
+backtracking, Review response, and acceptance discipline.
 
-For remote work, select only an installation-owned profile and complete
-resources. Hosts, roots, queues, commands, activation scripts, and environment
-come from `TS_REMOTE_CONFIG`; they are never calculation fields. Preserve
-submission manifests and idempotency bindings. Retry only when the typed result
-states `effect_attempted=false` and permits the same submission binding. Never
-replay an ambiguous scheduler request.
+## Validation
 
-Read `references/compute_operator.md`, `references/backend_contract.md`,
-`references/remote_contract.md`, and `references/program_runtime_failures.md`
-as needed.
+Use `ts_workspace_context mode=validation_capabilities` to discover registered
+predicates, templates, and acceptance profiles. Choose either:
 
-## Scientific Gates
+- a packaged versioned template plus typed parameters; or
+- a declarative definition composed only of registered predicates.
 
-- Keep TS/Freq and connectivity facts in separate Evidence records even when
-  one execution produced both.
-- A candidate, scan point, NEB image, crossing point, or isolated imaginary
-  frequency is not an accepted transition state.
-- Use `tsfreq` for normal termination, stationary-point convergence, exactly
-  one imaginary frequency, and route consistency.
-- Use `mode_assignment` to bind the imaginary mode to the declared reaction
-  coordinate.
-- Use `connectivity` for strict bidirectional endpoint assignment.
-- Add stereochemistry, endpoint identity, electronic structure, state
-  character, robustness, thermochemistry, or pathway Gates only when the Claim
-  or acceptance policy requires them.
-- Accept a Claim only through a named acceptance policy whose required Gate
-  results all pass for the same target.
+The compiler fully expands and freezes the GateSpec with template, predicate
+registry, and content digests. The evaluator binds selected Observation
+digests and returns `pass`, `fail`, `inconclusive`, or `error`. Do not treat the
+last two as pass.
 
-Failure of one calculation does not settle a Claim. Preserve the failure facts,
-then let the Root Agent decide whether to retry, recalculate, change strategy,
-revise a Claim, ask the user, or stop.
+The Agent cannot provide Python, shell, imports, expressions, or executable
+plugins. Add new scientific dimensions through maintained templates and
+predicates, not fixed workflow branches. Before accepting a Claim, require the
+profile's dimensions, a supported Claim, at least one attached GateSpec, the
+latest passing result for every attached GateSpec, current digests, and no
+applicable open blocking Finding. Treat an older acceptance as history when its
+Claim, latest validation, or relevant Finding snapshot has changed.
 
-Read `references/gaussian_validation.md`,
-`references/connectivity_validation.md`, and `references/pathway_model.md` for
-the relevant scientific checks. Read `references/ts_structures_contract.md`
-when comparing structures, atom maps, or stereochemistry.
+Read [gaussian_validation.md](references/gaussian_validation.md),
+[connectivity_validation.md](references/connectivity_validation.md), and
+[pathway_model.md](references/pathway_model.md) for common scientific checks.
+Read [ts_structures_contract.md](references/ts_structures_contract.md) for atom
+maps, alignment, stereochemistry, and endpoint identity.
 
-## Notifications And Reports
+## Compute
 
-Use `ts_notify_user` for material progress, Node completion, calculation
-failure/ambiguity, or study completion when installation notification settings
-are enabled. Supply only the event, subject, bounded summary, and optional
-existing files under `reports/`. The host owns recipient and credentials,
-validates attachments, and writes an idempotency receipt. Do not request an
-activation token or retry ambiguous delivery automatically. Treat the fixed
-target shown by the tool as authoritative: an address written in the subject
-or summary cannot redirect delivery. If the user requests another target, do
-not send, do not edit or promise to edit installation configuration, and report
-the mismatch for the host operator.
+Before `operation=prepare`, read
+`ts_workspace_context mode=artifacts` and bind required logical `artifactId`
+values to `inputRole` values. Select the owning `actId`, purpose, backend task,
+attempt kind, settings, execution target, and resources. The host creates the
+intent ID, paths, filenames, expected artifacts, remote directory, and
+submission binding.
 
-Generate a final package only from a valid workspace. Keep electronic, E+ZPE,
-and free energies distinct, expose missing corrections, and cite Claim,
-Evidence, Gate, Node, and accepted-artifact refs. Package creation is atomic and
-no-overwrite.
+Use `ts_compute` for exactly one deterministic operation:
 
-Read `references/report_template.md` and use
-`assets/templates/ts_final_report.md` when a custom narrative report is needed.
+- `prepare`: freeze `ts-calculation-intent/4` and generated inputs;
+- `submit`: stage and submit the bound remote intent;
+- `inspect`: reconcile changed or terminal state and optionally tail a declared
+  artifact;
+- `collect`: download declared artifacts through the immutable manifest;
+- `parse`: parse one local bound artifact;
+- `cancel`: cancel only the bound intent.
+
+Do not poll unchanged work every turn. Retry only when the typed result states
+that no external effect was attempted and retry is allowed. Never replay an
+ambiguous submit or cancel. A supported backend/task pair does not prove live
+software, storage, SSH, Torque, or queue health.
+
+Read [compute_tools.md](references/compute_tools.md),
+[backend_contract.md](references/backend_contract.md),
+[remote_contract.md](references/remote_contract.md), and
+[program_runtime_failures.md](references/program_runtime_failures.md) as needed.
+
+## Review
+
+Use `ts_subagent_review` for an independent assessment of one target Claim.
+Review is the only child model session. It receives a bounded graph snapshot,
+one result tool, no parent conversation, no package Skill, no filesystem,
+no compute, no mutation, and no recursive delegation.
+
+Review output is advisory. After every successful Review, call
+`ts_review_disposition` exactly once with its task/run refs and briefly accept,
+partially accept, reject, or defer the advice before another scientific
+mutation. Even accepted advice changes science only through verified artifacts
+and a normal Decision.
+
+Provider failure is not a format error. A structural result failure may receive
+one same-session repair; provider HTTP/stream failure must remain visible and
+must not be rewritten as a missing result-tool call.
+
+Read [pi_agent_adapter.md](references/pi_agent_adapter.md) for child isolation,
+context delivery, journals, and UI lifecycle.
+
+## Render, Report, And Notify
+
+Use `ts_render` for one Act-owned no-overwrite visualization and `ts_report` for
+one atomic report package from a valid workspace. Both are deterministic tools;
+neither interprets chemistry or starts a child model. Use logical artifact IDs
+and let the host allocate output paths.
+
+Use `ts_notify_user` only for material configured events. The host owns the
+fixed recipient and credentials. The Root supplies event, subject, bounded
+summary, and optional existing files under `reports/`. Text cannot redirect the
+recipient. Known delivery is idempotent; ambiguous delivery is not retried
+automatically.
+
+Read [artifact_tools.md](references/artifact_tools.md),
+[render_contract.md](references/render_contract.md), and
+[report_template.md](references/report_template.md). Use
+`assets/templates/ts_final_report.md` only for a custom narrative; the normal
+report tool renders deterministically from canonical records.
+
+## Failure Boundaries
+
+- Preserve calculation and Act failure records; failure is not automatically a
+  contradicted Claim.
+- Distinguish scheduler, transfer, program, parser, scientific, Review-provider,
+  contract, render, report, and notification failures.
+- Inspect durable compute guards/receipts before any remote recovery.
+- Record unexpected scientific output as an Observation and/or Finding when
+  verified, then decide how it changes the research question.
+- Ask the user only when scientific choice, new authority, or external
+  coordination is genuinely required.
+
+Read [runtime_environment.md](references/runtime_environment.md) only for the
+isolated Python runtime. Read [render_contract.md](references/render_contract.md)
+only for visualization path/output rules.

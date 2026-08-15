@@ -1,39 +1,36 @@
 # Backend Contract
 
-`ts_backends` prepares and describes calculation tasks. A backend may create
-inputs, commands, and parsers for its own artifacts.
+Backends are deterministic adapters. They express supported program tasks,
+validate settings, prepare immutable inputs/scripts, declare expected artifacts,
+and parse local outputs. They do not choose a method, submit an unbound job,
+update a Claim, or decide acceptance.
 
-Use `compute_operator.md` for complete Root tool calls. This reference defines
-backend behavior and boundaries, not the public `ts_subagent_compute` shape.
+Use `ts_workspace_context mode=compute_capabilities` for the current machine-
+readable catalog and [compute_tools.md](compute_tools.md) for public calls.
 
-Backends must not:
+## Supported Tasks
 
-- mutate workspace root state files;
-- close a node;
-- set a scientific verdict;
-- accept or reject a pathway;
-- write outside the node artifact directory by default.
+- Gaussian: `sp`, `opt`, `freq`, `opt_freq`, `irc`.
+- xTB: `sp`, `opt`, `freq`, `opt_freq`, `scan`, `md`.
+- CREST: `conformer_search`.
+- ASE: `neb`.
+- QBICS: `dmecp`.
 
-The expected flow is:
+The catalog is an expression contract, not a recommendation or health check.
 
-1. `start_node` creates `nodes/<node_id>/`.
-2. Backend prepares node-scoped inputs and command metadata.
-3. Local or remote execution creates artifacts.
-4. Parsed facts are registered through `update_workspace`.
-5. `end_node` commits the explicit terminal result and any cited Claim updates.
+## Adapter Output
 
-Deterministic parsers may consume multiple files only when every file is bound
-by the prepared attempt manifest and resides beside the selected primary
-artifact. The parser records a digest for each consumed input. It must report
-execution completion, requested-task completion, convergence, and artifact
-completeness separately.
+Preparation must declare exact generated files, commands, expected artifacts,
+software profile, and parser contract without accepting arbitrary shell. Parse
+must report structured program facts and provenance while retaining missing,
+ambiguous, and failure states.
 
-xTB supports `sp`, `opt`, `freq`, `opt_freq`, `scan`, and `md`. A scan binds
-exactly one XYZ input and one control input. The control file is limited to
-numbered distance, angle, or dihedral constraints in `$constrain` and sequential
-or concerted directives in `$scan`; arbitrary xTB sections and command arguments
-remain forbidden. Scan parsing binds `xtb.out`, `xtbscan.log`, `xtbopt.xyz`, and
-the control input, and reports target coordinates, geometry-derived actual
-coordinates, and energies without embedding full structures in JSON. CREST is a
-separate `crest/conformer_search` backend because its command lifecycle and
-ensemble artifacts are not xTB task artifacts.
+The host freezes those values in `ts-calculation-intent/4`. Any changed method,
+input, command-relevant setting, or expected output needs a new intent.
+
+## Scientific Boundary
+
+Parser facts are candidates for semantic Observations, not canonical science by
+themselves. The Root verifies the primary artifact, chooses separate
+`concept_id` records, and applies a Decision. Backends never infer mechanism,
+endpoint identity, mode meaning, Claim status, GateSpec verdict, or acceptance.

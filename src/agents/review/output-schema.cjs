@@ -4,7 +4,7 @@ const { validateAgentResult, validateAgentTask } = require("../../agent-core/age
 
 const MAX_OUTPUT_BYTES = 16 * 1024;
 
-function parseAndValidateReviewResult(text, packet, evidenceSnapshot) {
+function parseAndValidateReviewResult(text, packet, reviewSnapshot) {
   if (typeof text !== "string" || !text.trim()) throw new Error("review agent output is empty");
   if (Buffer.byteLength(text, "utf8") > MAX_OUTPUT_BYTES) {
     throw new Error(`review agent output exceeds ${MAX_OUTPUT_BYTES} bytes`);
@@ -15,10 +15,10 @@ function parseAndValidateReviewResult(text, packet, evidenceSnapshot) {
   } catch (error) {
     throw new Error(`review agent output must be JSON only: ${error instanceof Error ? error.message : String(error)}`);
   }
-  return validateReviewResult(value, packet, evidenceSnapshot);
+  return validateReviewResult(value, packet, reviewSnapshot);
 }
 
-function validateReviewResult(value, packet, evidenceSnapshot) {
+function validateReviewResult(value, packet, reviewSnapshot) {
   let serialized;
   try {
     serialized = JSON.stringify(value);
@@ -34,14 +34,14 @@ function validateReviewResult(value, packet, evidenceSnapshot) {
   if (result.program !== null) throw new Error("review result cannot contain program state");
   if (result.artifact_refs.length) throw new Error("review result cannot create artifacts");
 
-  if (!isPlainObject(evidenceSnapshot) || evidenceSnapshot.schema_version !== "ts-review-evidence-snapshot/2") {
-    throw new Error("review result validation requires the bound evidence snapshot");
+  if (!isPlainObject(reviewSnapshot) || reviewSnapshot.schema_version !== "ts-review-task-snapshot/1") {
+    throw new Error("Review result validation requires the bound DAG snapshot");
   }
-  if (evidenceSnapshot.task_id !== task.task_id || evidenceSnapshot.operation !== task.operation) {
-    throw new Error("review evidence snapshot does not match task");
+  if (reviewSnapshot.task_id !== task.task_id || reviewSnapshot.operation !== task.operation) {
+    throw new Error("Review DAG snapshot does not match task");
   }
   const basisAllowlist = new Set(
-    Array.isArray(evidenceSnapshot.basis_allowlist) ? evidenceSnapshot.basis_allowlist : [],
+    Array.isArray(reviewSnapshot.basis_allowlist) ? reviewSnapshot.basis_allowlist : [],
   );
   for (const [index, fact] of result.facts.entries()) {
     if (fact.kind !== "review") throw new Error(`facts[${index}].kind must be review`);

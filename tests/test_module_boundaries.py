@@ -2,26 +2,30 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ts_structures import compare_structures
-from ts_render import MolVisualizer
+import ts_remote
+from tests.v4_helpers import bootstrap_v4_workspace, start_research_act
 from ts_backends.base import Backend, BackendTask
 from ts_backends.gaussian import GaussianBackend, prepare_gaussian
-import ts_remote
+from ts_render import MolVisualizer
+from ts_structures import compare_structures
 from ts_web import normalize_workspace, register_workspace
-from strict_helpers import make_accepted_workspace
+from ts_workspace.state import STATE_FILES
 
 
 def test_backend_prepares_command_without_workspace_write() -> None:
     task = BackendTask(
-        node_id="n001",
+        act_id="act_0123456789abcdef01234567",
         task_type="opt_freq",
-        work_dir="nodes/n001",
-        inputs={"gjf": "nodes/n001/inputs/ts.gjf"},
+        work_dir="acts/act_0123456789abcdef01234567",
+        inputs={"gjf": "inputs/ts.gjf"},
     )
     prepared = prepare_gaussian(task)
     assert prepared.backend == "gaussian"
-    assert prepared.command == ["g16", "nodes/n001/inputs/ts.gjf"]
-    assert prepared.expected_artifacts == ["nodes/n001/outputs/gaussian.out"]
+    assert prepared.act_id == task.act_id
+    assert prepared.command == ["g16", "inputs/ts.gjf"]
+    assert prepared.expected_artifacts == [
+        "acts/act_0123456789abcdef01234567/outputs/gaussian.out"
+    ]
     assert isinstance(GaussianBackend(), Backend)
 
 
@@ -34,7 +38,7 @@ def test_remote_boundary_exposes_scheduler_lifecycle_without_raw_runner() -> Non
     assert not hasattr(ts_remote, "SshRunner")
 
 
-def test_ts_structures_returns_evidence_shaped_result(tmp_path: Path) -> None:
+def test_ts_structures_returns_observation_shaped_measurements(tmp_path: Path) -> None:
     xyz = "2\nh2\nH 0 0 0\nH 0 0 0.74\n"
     ref = tmp_path / "ref.xyz"
     target = tmp_path / "target.xyz"
@@ -58,18 +62,28 @@ def test_web_registry_rejects_state_dir_inside_source(tmp_path: Path) -> None:
 
 
 def test_web_normalizer_is_read_only(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    make_accepted_workspace(workspace)
-    before = {str(path.relative_to(workspace)) for path in workspace.rglob("*") if path.is_file()}
+    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    start_research_act(workspace)
+    before = {
+        path.relative_to(workspace): (path.stat().st_mtime_ns, path.read_bytes())
+        for path in workspace.rglob("*")
+        if path.is_file()
+    }
     view = normalize_workspace(workspace)
-    after = {str(path.relative_to(workspace)) for path in workspace.rglob("*") if path.is_file()}
+    after = {
+        path.relative_to(workspace): (path.stat().st_mtime_ns, path.read_bytes())
+        for path in workspace.rglob("*")
+        if path.is_file()
+    }
     assert view["valid"] is True
     assert after == before
 
 
-def test_ts_render_writes_artifact_without_root_state_mutation(tmp_path: Path, monkeypatch) -> None:
-    workspace = tmp_path / "workspace"
-    make_accepted_workspace(workspace)
+def test_ts_render_writes_artifact_without_canonical_state_mutation(tmp_path: Path, monkeypatch) -> None:
+    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    act_id = start_research_act(workspace)["act_id"]
+    xyz = workspace / "inputs" / "reactant.xyz"
+    xyz.write_text("1\nreactant\nH 0 0 0\n", encoding="utf-8")
     fake = tmp_path / "xyzrender"
     fake.write_text(
         """#!/usr/bin/env python3
@@ -84,14 +98,12 @@ if "-o" in sys.argv:
     )
     fake.chmod(0o755)
     monkeypatch.setenv("TS_RENDER_XYZRENDER", str(fake))
-    state_files = ["research_state.json", "claims.json", "evidence_registry.json", "gate_results.json"]
-    before = {name: (workspace / name).read_text(encoding="utf-8") for name in state_files}
+    before = {name: (workspace / name).read_bytes() for name in STATE_FILES}
 
     result = MolVisualizer().render_molecule(
-        workspace / "inputs" / "reactant.xyz",
-        workspace / "nodes" / "n001" / "outputs" / "render.png",
+        xyz,
+        workspace / "acts" / act_id / "outputs" / "render.png",
     )
 
-    after = {name: (workspace / name).read_text(encoding="utf-8") for name in state_files}
     assert result.ok is True
-    assert before == after
+    assert before == {name: (workspace / name).read_bytes() for name in STATE_FILES}

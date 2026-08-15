@@ -1,0 +1,8 @@
+{
+  "op": "relate_claims",
+  "local_ref": "relation",
+  "sourceClaimRef": "${SOURCE_CLAIM_REF}",
+  "targetClaimRef": "${TARGET_CLAIM_REF}",
+  "relationType": "${RELATION_TYPE}",
+  "rationale": "${RELATION_RATIONALE}"
+}

@@ -1,180 +1,210 @@
-import type { ExtensionAPI, ExtensionContext, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
+import { mkdirSync, rmdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
 import {
   requireWorkspaceRoot,
+  runComputeJson,
   runNotifyUserJson,
   runRenderJson,
   runReportJson,
-  runWorkspaceJson,
 } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
-import {
-  createSubagentStatusReporter,
-  terminalStateForReport,
-  terminalStatusForError,
-  type TsSubagentStatusReporter,
-} from "../shared/subagent-status.ts";
-import {
-  renderTsSubagentCall,
-  renderTsSubagentResult,
-} from "../shared/subagent-tool-presentation.ts";
-import { runArtifactOperator } from "../../src/agents/artifacts/runtime.ts";
 
 const require = createRequire(import.meta.url);
 const { toolText } = require("../ts-workflow-control/summary.cjs");
-const { beginAgentRun, completeAgentRun, failAgentRun } = require("../../src/agent-core/run-journal.cjs");
-const { classifyUpstreamModelFailure } = require("../../src/agent-core/failure-taxonomy.cjs");
+const { beginActivity, completeActivity, failActivity } = require("../../src/agent-core/activity-journal.cjs");
 const {
   RENDER_OPERATIONS,
   validateCreatedRenderOutput,
   validateCreatedReportPackage,
   validateRenderRequest,
   validateReportRequest,
-  validateTaskNodeScope,
-} = require("../../src/agents/artifacts/request-contract.cjs");
+} = require("../../src/artifacts/request-contract.cjs");
 
-type ArtifactRole = "render" | "report";
-type ActionLog = { tool: string; result: Record<string, unknown> }[];
+type ResolvedArtifact = {
+  artifact_id: string;
+  path: string;
+  sha256: string;
+  owner_act: string | null;
+  source_intent_id: string | null;
+};
+
 type RenderRequest = {
   operation: "render" | "compare" | "animate" | "mechanism";
-  nodeId: string;
-  inputRefs: string[];
+  actId: string;
+  artifacts: Array<{ artifactId: string; ref: string; path: string; sha256: string }>;
+  outputName: string;
   outputRef: string;
-  inputPaths: string[];
   outputPath: string;
 };
-type ReportRequest = { operation: "build"; packageRef: string; packagePath: string };
+
+type ReportRequest = {
+  operation: "build";
+  packageName: string;
+  packageRef: string;
+  packagePath: string;
+};
+
 const NOTIFICATION_EVENTS = [
   "progress",
-  "node_completed",
+  "act_completed",
   "calculation_failed",
   "calculation_ambiguous",
   "study_completed",
 ] as const;
+
 export default function (pi: ExtensionAPI) {
   const notificationTarget = configuredNotificationTarget();
 
   pi.registerTool({
-    name: TS_PUBLIC_TOOL_NAMES.subagentRender,
-    label: "TS Render Subagent",
-    description: "Run one fresh render subagent with a single path-bound local rendering tool.",
-    promptSnippet: "Render bounded local transition-state artifacts",
+    name: TS_PUBLIC_TOOL_NAMES.render,
+    label: "TS Render",
+    description: "Render bound molecular artifacts directly with the deterministic local renderer.",
+    promptSnippet: "Render one bounded workspace visualization",
     promptGuidelines: [
-      "Select the owning node and exact workspace-relative input/output refs before calling the render subagent.",
-      "Treat rendered images as visualization artifacts, never as scientific support or acceptance evidence.",
+      "Use logical artifact IDs from ts_workspace_context mode=artifacts; do not construct workspace paths.",
+      "Choose the ResearchAct that owns the new output and a safe .png or .gif outputName.",
+      "Rendered images are presentation artifacts and never scientific Observations by themselves.",
     ],
-    renderShell: "self",
-    renderCall: (args, theme) => renderTsSubagentCall("render", args as Record<string, unknown>, theme),
-    renderResult: (result, options, theme, context) => renderTsSubagentResult(
-      "render",
-      result,
-      options,
-      theme,
-      context.isError,
-    ),
     executionMode: "sequential",
     parameters: Type.Object({
       operation: StringEnum(RENDER_OPERATIONS),
-      nodeId: Type.String({ minLength: 1, maxLength: 128 }),
-      inputRefs: Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { minItems: 1, maxItems: 8 }),
-      outputRef: Type.String({ minLength: 1, maxLength: 4096 }),
+      actId: Type.String({ pattern: "^act_[0-9a-f]{24}$" }),
+      inputArtifactIds: Type.Array(
+        Type.String({ pattern: "^art_[0-9a-f]{24}$" }),
+        { minItems: 1, maxItems: 8, uniqueItems: true },
+      ),
+      outputName: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
       root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
-    }),
-    async execute(toolCallId, params, signal, onUpdate, ctx) {
-      const taskId = `agent_${randomUUID()}`;
-      const reportStatus = createSubagentStatusReporter({
-        tool_call_id: toolCallId,
-        task_id: taskId,
-        role: "render",
-        operation: params.operation,
-        node_id: params.nodeId,
-      }, onUpdate);
-      reportStatus("queued");
+    }, { additionalProperties: false }),
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
+      const resolved = await resolveArtifacts(pi, root, params.inputArtifactIds, signal);
       const request = validateRenderRequest(root, {
         operation: params.operation,
-        nodeId: params.nodeId,
-        inputRefs: params.inputRefs,
-        outputRef: params.outputRef,
-      }) as RenderRequest;
-      const actions: ActionLog = [];
-      const tools = [createRenderTool(pi, root, request, actions)];
-      const packet = await buildPacket(
-        pi,
-        root,
-        "render",
-        request.operation,
-        `Render the pre-bound local artifacts for node ${request.nodeId}.`,
-        [request.nodeId],
-        {
-          node_id: request.nodeId,
-          input_refs: request.inputRefs,
-          output_ref: request.outputRef,
-          basis_allowlist: request.inputRefs,
+        actId: params.actId,
+        inputArtifactIds: params.inputArtifactIds,
+        outputName: params.outputName,
+      }, resolved) as RenderRequest;
+      const activityId = `op_${randomUUID()}`;
+      const journal = beginActivity(root, {
+        activity_id: activityId,
+        kind: "render",
+        operation: request.operation,
+        act_refs: [request.actId],
+        request: {
+          input_artifact_ids: request.artifacts.map((item) => item.artifactId),
+          output_name: request.outputName,
         },
-        tools,
-        taskId,
-        signal,
-      );
-      return executeChild(pi, ctx, root, "render", packet, tools, actions, 240_000, reportStatus, signal);
+      });
+      onUpdate?.(toolText(`TS Render ${request.operation} · ${request.actId}`, {
+        activity: { activity_id: activityId, state: "running" },
+      }));
+      const outputDirectory = dirname(request.outputPath);
+      try {
+        mkdirSync(outputDirectory, { recursive: true, mode: 0o700 });
+        const raw = await runRenderJson(
+          pi,
+          root,
+          [request.operation, ...request.artifacts.map((item) => item.path), "-o", request.outputPath, "--json"],
+          signal,
+        );
+        if (!raw || typeof raw !== "object" || raw.ok !== true) {
+          throw new Error("render backend did not report success");
+        }
+        const output = validateCreatedRenderOutput(root, request.outputRef);
+        const [artifact] = await resolveArtifactsByRef(pi, root, request.outputRef, signal);
+        const result = {
+          schema_version: "ts-render-result/2",
+          activity_id: activityId,
+          activity_ref: journal.activityRef,
+          operation: request.operation,
+          act_id: request.actId,
+          input_artifact_ids: request.artifacts.map((item) => item.artifactId),
+          output_artifact_id: artifact.artifact_id,
+          output_digest: output.sha256,
+          output_size_bytes: output.size_bytes,
+          diagnostics: Array.isArray(raw.diagnostics) ? raw.diagnostics : [],
+        };
+        completeActivity(journal, result);
+        pi.appendEntry("ts-deterministic-activity", result);
+        return toolText(JSON.stringify(result, null, 2), { result });
+      } catch (error) {
+        const failure = deterministicFailure(activityId, journal.activityRef, "render", request.operation, [request.actId], error);
+        failActivity(journal, error, failure);
+        pi.appendEntry("ts-deterministic-activity-failed", failure);
+        try { rmdirSync(outputDirectory); } catch (_ignored) {}
+        throw error;
+      }
     },
   });
 
   pi.registerTool({
-    name: TS_PUBLIC_TOOL_NAMES.subagentReport,
-    label: "TS Report Subagent",
-    description: "Run one fresh report subagent that builds a validated local report package without adding claims.",
-    promptSnippet: "Build a bounded transition-state report package",
+    name: TS_PUBLIC_TOOL_NAMES.report,
+    label: "TS Report",
+    description: "Build a revision-bound report package directly from the v4 workspace read model.",
+    promptSnippet: "Build one validated transition-state report package",
     promptGuidelines: [
-      "Build reports only from the validated workspace read model.",
-      "Preserve negative results, ambiguity, evidence ceilings, and missing-data disclosures.",
+      "Choose a safe packageName; the deterministic host owns the reports/ path.",
+      "Reports project Claims, ResearchActs, Observations, Findings, validation, and acceptance without changing them.",
+      "Preserve negative results, ambiguity, and missing-data disclosures.",
     ],
-    renderShell: "self",
-    renderCall: (args, theme) => renderTsSubagentCall("report", args as Record<string, unknown>, theme),
-    renderResult: (result, options, theme, context) => renderTsSubagentResult(
-      "report",
-      result,
-      options,
-      theme,
-      context.isError,
-    ),
     executionMode: "sequential",
     parameters: Type.Object({
       operation: Type.Literal("build"),
-      packageRef: Type.String({ minLength: 1, maxLength: 4096, description: "New workspace-relative package directory under reports/." }),
+      packageName: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
       root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
-    }),
-    async execute(toolCallId, params, signal, onUpdate, ctx) {
-      const taskId = `agent_${randomUUID()}`;
-      const reportStatus = createSubagentStatusReporter({
-        tool_call_id: toolCallId,
-        task_id: taskId,
-        role: "report",
-        operation: "build",
-        target_ref: params.packageRef,
-      }, onUpdate);
-      reportStatus("queued");
+    }, { additionalProperties: false }),
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
-      const request = validateReportRequest(root, { operation: params.operation, packageRef: params.packageRef }) as ReportRequest;
-      const actions: ActionLog = [];
-      const tools = [createReportTool(pi, root, request, actions)];
-      const packet = await buildPacket(
-        pi,
-        root,
-        "report",
-        "build",
-        "Build the pre-bound report package from the validated workspace read model.",
-        [],
-        { package_ref: request.packageRef, basis_allowlist: [] },
-        tools,
-        taskId,
-        signal,
-      );
-      return executeChild(pi, ctx, root, "report", packet, tools, actions, 300_000, reportStatus, signal);
+      const request = validateReportRequest(root, {
+        operation: params.operation,
+        packageName: params.packageName,
+      }) as ReportRequest;
+      const activityId = `op_${randomUUID()}`;
+      const journal = beginActivity(root, {
+        activity_id: activityId,
+        kind: "report",
+        operation: "build",
+        act_refs: [],
+        request: { package_name: request.packageName },
+      });
+      onUpdate?.(toolText(`TS Report build · ${request.packageName}`, {
+        activity: { activity_id: activityId, state: "running" },
+      }));
+      try {
+        const raw = await runReportJson(pi, root, request.packagePath, signal);
+        const refs = expectedReportRefs(request.packageRef);
+        assertReportBuilderPaths(root, refs, raw);
+        const manifestDigest = requireDigest(raw?.manifest_digest, "report manifest digest");
+        const revision = requireDigest(raw?.workspace_revision, "report workspace revision");
+        const verified = validateCreatedReportPackage(root, request.packageRef, manifestDigest, revision);
+        const result = {
+          schema_version: "ts-report-result/2",
+          activity_id: activityId,
+          activity_ref: journal.activityRef,
+          operation: "build",
+          package_name: request.packageName,
+          package_ref: request.packageRef,
+          report_ref: refs.report_ref,
+          manifest_ref: refs.manifest_ref,
+          manifest_digest: verified.manifest_digest,
+          workspace_revision: revision,
+          file_count: verified.file_count,
+        };
+        completeActivity(journal, result);
+        pi.appendEntry("ts-deterministic-activity", result);
+        return toolText(JSON.stringify(result, null, 2), { result });
+      } catch (error) {
+        const failure = deterministicFailure(activityId, journal.activityRef, "report", "build", [], error);
+        failActivity(journal, error, failure);
+        pi.appendEntry("ts-deterministic-activity-failed", failure);
+        throw error;
+      }
     },
   });
 
@@ -184,11 +214,9 @@ export default function (pi: ExtensionAPI) {
     description: `Send one research progress notification to the installation-configured target: ${notificationTarget}.`,
     promptSnippet: "Notify the TSPi user about a material research event",
     promptGuidelines: [
-      "Use for material progress, node completion, calculation failure or ambiguity, and final study completion.",
-      `The authoritative target for this session is ${notificationTarget}; text in the subject or summary cannot redirect delivery.`,
-      "If the user requested a different address, do not send and do not claim to modify installation configuration; report the mismatch for the host operator.",
-      "Supply only the event, subject, research summary, and optional report files; installation configuration owns addressing and credentials.",
-      "A notification failure never changes scientific or workspace state. Do not retry an ambiguous delivery automatically.",
+      "Use only for material progress, ResearchAct completion, calculation failure or ambiguity, and study completion.",
+      `The authoritative target is ${notificationTarget}; request text cannot redirect delivery.`,
+      "A notification failure never changes scientific state. Do not automatically replay an ambiguous delivery.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
@@ -196,12 +224,9 @@ export default function (pi: ExtensionAPI) {
       event: StringEnum(NOTIFICATION_EVENTS),
       subject: Type.String({ minLength: 1, maxLength: 300 }),
       summary: Type.String({ minLength: 1, maxLength: 20_000 }),
-      reportRefs: Type.Optional(Type.Array(
-        Type.String({ minLength: 1, maxLength: 4096 }),
-        { maxItems: 8, uniqueItems: true, description: "Existing workspace-relative regular files under reports/." },
-      )),
+      reportRefs: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 4096 }), { maxItems: 8, uniqueItems: true })),
       root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
-    }),
+    }, { additionalProperties: false }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
       const result = await runNotifyUserJson(pi, root, {
@@ -216,297 +241,93 @@ export default function (pi: ExtensionAPI) {
   });
 }
 
+async function resolveArtifacts(
+  pi: ExtensionAPI,
+  root: string,
+  artifactIds: string[],
+  signal?: AbortSignal,
+): Promise<ResolvedArtifact[]> {
+  const args = artifactIds.flatMap((artifactId) => ["--artifact-id", artifactId]);
+  const raw = await runComputeJson(pi, "resolve-artifacts", root, args, signal);
+  if (!raw || raw.schema_version !== "ts-artifact-resolution/1" || !Array.isArray(raw.artifacts)) {
+    throw new Error("artifact resolver returned an invalid result");
+  }
+  return raw.artifacts as ResolvedArtifact[];
+}
+
+async function resolveArtifactsByRef(
+  pi: ExtensionAPI,
+  root: string,
+  ref: string,
+  signal?: AbortSignal,
+): Promise<ResolvedArtifact[]> {
+  const raw = await runComputeJson(pi, "list-artifacts", root, [], signal);
+  if (!raw || raw.schema_version !== "ts-artifact-catalog/2" || !Array.isArray(raw.artifacts)) {
+    throw new Error("artifact catalog returned an invalid result");
+  }
+  const matches = (raw.artifacts as ResolvedArtifact[]).filter((item) => item.path === ref);
+  if (matches.length !== 1) throw new Error(`render output could not be bound to one artifact ID: ${ref}`);
+  return matches;
+}
+
+function expectedReportRefs(packageRef: string) {
+  return {
+    package_ref: packageRef,
+    report_ref: `${packageRef}/final_report.md`,
+    context_ref: `${packageRef}/report_context.json`,
+    email_summary_ref: `${packageRef}/email_summary.md`,
+    assets_ref: `${packageRef}/assets`,
+    manifest_ref: `${packageRef}/package_manifest.json`,
+  };
+}
+
+function assertReportBuilderPaths(root: string, refs: ReturnType<typeof expectedReportRefs>, raw: any) {
+  const keys = {
+    package_ref: "package_dir",
+    report_ref: "report",
+    context_ref: "context",
+    email_summary_ref: "email_summary",
+    assets_ref: "assets_dir",
+    manifest_ref: "manifest",
+  } as const;
+  for (const [key, field] of Object.entries(keys)) {
+    const expected = refs[key as keyof typeof refs];
+    if (typeof raw?.[field] !== "string" || resolve(raw[field]) !== resolve(root, expected)) {
+      throw new Error(`report builder returned an unexpected ${key}`);
+    }
+  }
+}
+
+function deterministicFailure(
+  activityId: string,
+  activityRef: string,
+  kind: "render" | "report",
+  operation: string,
+  actRefs: string[],
+  error: unknown,
+) {
+  return {
+    schema_version: "ts-deterministic-activity-failure/1",
+    activity_id: activityId,
+    activity_ref: activityRef,
+    kind,
+    operation,
+    act_refs: actRefs,
+    error_class: error instanceof Error ? error.name : "Error",
+    message: (error instanceof Error ? error.message : String(error)).slice(0, 4000),
+  };
+}
+
+function requireDigest(value: unknown, label: string): string {
+  if (typeof value !== "string" || !/^sha256:[0-9a-f]{64}$/.test(value)) {
+    throw new Error(`${label} is missing or invalid`);
+  }
+  return value;
+}
+
 function configuredNotificationTarget(): string {
   const value = process.env.TS_NOTIFICATION_DISPLAY_TARGET?.trim();
   if (value === "disabled" || value === "not configured") return value;
   if (value && value.length <= 320 && /^[^@\s]+@[^@\s]+$/.test(value)) return value;
   return "not configured";
-}
-
-function createRenderTool(
-  pi: ExtensionAPI,
-  root: string,
-  request: RenderRequest,
-  actions: ActionLog,
-): ToolDefinition {
-  return noArgumentTool(
-    "ts_workspace_render_execute",
-    "TS Render Execute",
-    "Execute the pre-bound local render exactly once.",
-    actions,
-    {
-      operation: request.operation,
-      state: "started",
-      node_id: request.nodeId,
-      output_ref: request.outputRef,
-      artifact_refs: [request.outputRef],
-    },
-    async (signal) => {
-      const raw = await runRenderJson(
-        pi,
-        root,
-        [request.operation, ...request.inputPaths, "-o", request.outputPath, "--json"],
-        signal,
-      );
-      if (!raw || typeof raw !== "object" || raw.ok !== true) throw new Error("render backend did not create the bound output");
-      validateCreatedRenderOutput(root, request.outputRef);
-      return {
-        operation: request.operation,
-        state: "rendered",
-        node_id: request.nodeId,
-        output_ref: request.outputRef,
-        artifact_refs: [request.outputRef],
-        diagnostics: Array.isArray(raw.diagnostics) ? raw.diagnostics : [],
-      };
-    },
-  );
-}
-
-function createReportTool(
-  pi: ExtensionAPI,
-  root: string,
-  request: ReportRequest,
-  actions: ActionLog,
-): ToolDefinition {
-  return noArgumentTool(
-    "ts_workspace_report_build",
-    "TS Report Build",
-    "Build the pre-bound validated report package exactly once.",
-    actions,
-    {
-      operation: "build",
-      state: "started",
-      package_ref: request.packageRef,
-      artifact_refs: [request.packageRef],
-    },
-    async (signal) => {
-      const raw = await runReportJson(pi, root, request.packagePath, signal);
-      const refs = {
-        package_ref: request.packageRef,
-        report_ref: `${request.packageRef}/final_report.md`,
-        context_ref: `${request.packageRef}/report_context.json`,
-        email_summary_ref: `${request.packageRef}/email_summary.md`,
-        assets_ref: `${request.packageRef}/assets`,
-        manifest_ref: `${request.packageRef}/package_manifest.json`,
-      };
-      const rawKeys = {
-        package_ref: "package_dir",
-        report_ref: "report",
-        context_ref: "context",
-        email_summary_ref: "email_summary",
-        assets_ref: "assets_dir",
-        manifest_ref: "manifest",
-      } as const;
-      for (const [key, ref] of Object.entries(refs)) {
-        const actual = raw && typeof raw === "object"
-          ? raw[rawKeys[key as keyof typeof rawKeys]]
-          : undefined;
-        if (typeof actual !== "string" || resolve(actual) !== resolve(root, ref)) {
-          throw new Error(`report builder returned an unexpected ${key}`);
-        }
-      }
-      if (typeof raw.manifest_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(raw.manifest_digest)) {
-        throw new Error("report builder returned no manifest digest");
-      }
-      if (typeof raw.workspace_revision !== "string" || !/^sha256:[0-9a-f]{64}$/.test(raw.workspace_revision)) {
-        throw new Error("report builder returned no source workspace revision");
-      }
-      validateCreatedReportPackage(
-        root,
-        request.packageRef,
-        raw.manifest_digest,
-        raw.workspace_revision,
-      );
-      return {
-        operation: "build",
-        state: "built",
-        ...refs,
-        manifest_digest: raw.manifest_digest,
-        workspace_revision: raw.workspace_revision,
-        artifact_refs: [refs.report_ref, refs.context_ref, refs.email_summary_ref, refs.assets_ref, refs.manifest_ref],
-      };
-    },
-  );
-}
-
-function noArgumentTool(
-  name: string,
-  label: string,
-  description: string,
-  actions: ActionLog,
-  pendingResult: Record<string, unknown>,
-  run: (signal?: AbortSignal) => Promise<Record<string, unknown>>,
-): ToolDefinition {
-  const tool: ToolDefinition = {
-    name,
-    label,
-    description,
-    executionMode: "sequential",
-    parameters: Type.Object({}, { additionalProperties: false }),
-    async execute(_toolCallId, _params, signal) {
-      const action = reserveAction(actions, name, pendingResult);
-      try {
-        const result = await run(signal);
-        action.result = result;
-        return { ...toolText(JSON.stringify(result, null, 2), { result }), terminate: true };
-      } catch (error) {
-        action.result = {
-          ...pendingResult,
-          state: "failed",
-          artifact_refs: [],
-          error_class: "tool_execution_error",
-        };
-        throw error;
-      }
-    },
-  };
-  return tool;
-}
-
-async function buildPacket(
-  pi: ExtensionAPI,
-  root: string,
-  role: ArtifactRole,
-  operation: string,
-  objective: string,
-  nodeIds: string[],
-  inputs: Record<string, unknown>,
-  tools: ToolDefinition[],
-  taskId: string,
-  signal?: AbortSignal,
-) {
-  const workspaceReport = await runWorkspaceJson(pi, "report_workspace", root, [], signal);
-  validateTaskNodeScope(workspaceReport, nodeIds);
-  const focus = workspaceReport.focus && typeof workspaceReport.focus === "object"
-    ? workspaceReport.focus as Record<string, unknown>
-    : {};
-  return {
-    schema_version: "ts-agent-task/2",
-    task_id: taskId,
-    role,
-    authority: "operational",
-    operation,
-    objective,
-    workspace: {
-      root,
-      report_id: typeof workspaceReport.report_id === "string" ? workspaceReport.report_id : null,
-      revision: typeof workspaceReport.workspace_revision === "string" ? workspaceReport.workspace_revision : null,
-    },
-    scope: {
-      report_id: typeof workspaceReport.report_id === "string" ? workspaceReport.report_id : null,
-      node_ids: nodeIds,
-      claim_refs: Array.isArray(focus.focus_claim_refs) ? focus.focus_claim_refs : [],
-    },
-    inputs,
-    capabilities: tools.map((tool) => tool.name),
-    constraints: {
-      canonical_workspace_mutation: false,
-      scientific_decision: false,
-      recursive_delegation: false,
-      remote_authority: "execution_mirror",
-      external_side_effects: false,
-    },
-    output_contract: "ts-agent-result/1",
-  };
-}
-
-async function executeChild(
-  pi: ExtensionAPI,
-  ctx: ExtensionContext,
-  root: string,
-  role: ArtifactRole,
-  packet: Record<string, unknown>,
-  tools: ToolDefinition[],
-  actions: ActionLog,
-  timeoutMs: number,
-  reportStatus: TsSubagentStatusReporter,
-  signal?: AbortSignal,
-) {
-  if (!ctx.model) throw new Error(`No parent model is selected for TS ${role} delegation`);
-  const journal = beginAgentRun(root, packet);
-  let result;
-  try {
-    const parentAuth = ctx.modelRegistry.isUsingOAuth(ctx.model)
-      ? undefined
-      : await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
-    result = await runArtifactOperator({
-      workspaceRoot: root,
-      packet,
-      role,
-      tools,
-      actions,
-      parentModel: ctx.model,
-      parentApiKey: parentAuth?.ok ? parentAuth.apiKey : undefined,
-      thinkingLevel: pi.getThinkingLevel(),
-      timeoutMs,
-      signal,
-      onLifecycle: reportStatus,
-    });
-  } catch (error) {
-    const attemptedActions = actions.map((action) => ({
-      tool: action.tool,
-      state: typeof action.result.state === "string" ? action.result.state : null,
-      artifact_refs: Array.isArray(action.result.artifact_refs) ? action.result.artifact_refs : [],
-    }));
-    const actionOutcome = actions.length === 0
-      ? "not_executed"
-      : actions.every((action) => action.result.state === "rendered" || action.result.state === "built")
-        ? "succeeded"
-        : actions.some((action) => action.result.state === "started")
-          ? "unknown"
-          : "failed";
-    const upstreamFailure = classifyUpstreamModelFailure(error, { replaySafe: actions.length === 0 });
-    const failure = upstreamFailure
-      ? { ...upstreamFailure, action_outcome: actionOutcome }
-      : {
-        failure_class: actions.length ? "artifact_operator_failed_after_action" : "artifact_operator_failed_before_action",
-        failure_stage: actions.length ? "operator" : "pre_action",
-        failure_domain: "artifact_operator",
-        upstream_status: null,
-        retry_safe: actions.length === 0,
-        action_outcome: actionOutcome,
-      };
-    const runRef = failAgentRun(journal, {
-      actions,
-      error,
-      metadata: { role, operation: String(packet.operation), ...failure },
-    });
-    pi.appendEntry("ts-workspace-artifact-operator-failed", {
-      task_id: packet.task_id,
-      role,
-      operation: String(packet.operation),
-      attempted_actions: attemptedActions,
-      ...failure,
-      run_ref: runRef,
-    });
-    const terminal = terminalStatusForError(error);
-    reportStatus(terminal.state, { failure_kind: terminal.failure_kind, run_ref: runRef });
-    if (actions.length) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`${message}; typed artifact action outcome=${actionOutcome}`);
-    }
-    throw error;
-  }
-  const runRef = completeAgentRun(journal, {
-    actions: result.actions,
-    result: result.report,
-    metadata: result.metadata,
-  });
-  const metadata = { ...result.metadata, run_ref: runRef };
-  pi.appendEntry("ts-workspace-artifact-operator-run", metadata);
-  reportStatus(terminalStateForReport(result.report), { run_ref: runRef });
-  return toolText(JSON.stringify({ report: result.report, actions: result.actions }, null, 2), {
-    report: result.report,
-    actions: result.actions,
-    run: metadata,
-  });
-}
-
-function reserveAction(actions: ActionLog, toolName: string, pendingResult: Record<string, unknown>) {
-  if (actions.some((action) => action.tool === toolName)) {
-    throw new Error(`${toolName} may be called only once`);
-  }
-  const action = { tool: toolName, result: pendingResult };
-  actions.push(action);
-  return action;
 }

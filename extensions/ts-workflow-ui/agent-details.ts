@@ -4,25 +4,22 @@ import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { TsSubagentState } from "../shared/subagent-status.ts";
 import {
   formatElapsed,
-  roleLabel,
   stateSymbol,
 } from "./activity-panel.ts";
 import {
-  sortedTsSubagentActivities,
+  sortedTsReviewActivities,
   type TsActivityStore,
 } from "./activity-store.ts";
 
-const SAFE_RUN_REF = /^(?:nodes\/[A-Za-z0-9][A-Za-z0-9._-]*\/agent-runs|operations\/agent-runs)\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const SAFE_RUN_REF = /^(?:acts\/[A-Za-z0-9][A-Za-z0-9._-]*\/agent-runs|operations\/agent-runs)\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MAX_DETAIL_FILE_BYTES = 1024 * 1024;
 
-export interface TsAgentRecord {
+export interface TsReviewRecord {
   task_id: string;
-  role: string;
   operation: string;
   state: TsSubagentState;
-  node_ids: string[];
-  backend?: string;
-  intent_id?: string;
+  act_refs: string[];
+  claim_refs: string[];
   target_ref?: string;
   wait_reason?: string;
   run_ref?: string;
@@ -35,31 +32,31 @@ export interface TsAgentRecord {
   live: boolean;
 }
 
-export interface TsAgentRunDocuments {
+export interface TsReviewRunDocuments {
   task?: Record<string, unknown>;
-  evidenceSnapshot?: Record<string, unknown>;
+  reviewSnapshot?: Record<string, unknown>;
   providerInput?: Record<string, unknown>;
   actions?: Record<string, unknown>;
   result?: Record<string, unknown>;
   run?: Record<string, unknown>;
 }
 
-export function collectTsAgentRecords(
+export function collectTsReviewRecords(
   state: TsActivityStore,
   report: Record<string, unknown> | undefined,
-): TsAgentRecord[] {
-  const byTask = new Map<string, TsAgentRecord>();
-  const durable = report && Array.isArray(report.agent_runs) ? report.agent_runs : [];
+): TsReviewRecord[] {
+  const byTask = new Map<string, TsReviewRecord>();
+  const durable = report && Array.isArray(report.review_runs) ? report.review_runs : [];
   for (const value of durable) {
     if (!isPlainObject(value)) continue;
     const taskId = stringValue(value.task_id);
     if (!taskId) continue;
     byTask.set(taskId, {
       task_id: taskId,
-      role: stringValue(value.role) || "review",
       operation: stringValue(value.operation) || "operation",
       state: durableState(value.status, value.result_outcome),
-      node_ids: stringArray(value.node_ids),
+      act_refs: stringArray(value.act_refs),
+      claim_refs: stringArray(value.claim_refs),
       run_ref: stringValue(value.run_ref),
       started_at: stringValue(value.started_at),
       updated_at: stringValue(value.finished_at),
@@ -70,18 +67,16 @@ export function collectTsAgentRecords(
       live: false,
     });
   }
-  for (const activity of sortedTsSubagentActivities(state)) {
+  for (const activity of sortedTsReviewActivities(state)) {
     const status = activity.status;
     const previous = byTask.get(status.task_id);
     byTask.set(status.task_id, {
       ...previous,
       task_id: status.task_id,
-      role: status.role,
       operation: status.operation,
       state: status.state,
-      node_ids: status.node_id ? [status.node_id] : previous?.node_ids || [],
-      backend: status.backend,
-      intent_id: status.intent_id,
+      act_refs: status.act_refs || previous?.act_refs || [],
+      claim_refs: status.claim_refs || previous?.claim_refs || [],
       target_ref: status.target_ref,
       wait_reason: status.wait_reason,
       run_ref: status.run_ref || previous?.run_ref,
@@ -93,29 +88,28 @@ export function collectTsAgentRecords(
   return [...byTask.values()].sort(compareRecords);
 }
 
-export function agentSelectionLabel(record: TsAgentRecord): string {
-  const node = record.node_ids[0];
-  const detail = [record.backend, record.operation].filter(Boolean).join(" ");
-  const identity = [roleLabel(normalizeRole(record.role)), node, detail].filter(Boolean).join(" · ");
+export function reviewSelectionLabel(record: TsReviewRecord): string {
+  const act = record.act_refs[0];
+  const identity = ["Review", act, record.operation].filter(Boolean).join(" · ");
   return `${stateSymbol(record.state)} ${identity} · ${record.state} · ${record.task_id.slice(-8)}`;
 }
 
-export function readTsAgentRunDocuments(root: string, runRef?: string): TsAgentRunDocuments {
+export function readTsReviewRunDocuments(root: string, runRef?: string): TsReviewRunDocuments {
   if (!runRef) return {};
-  if (!isAbsolute(root) || !SAFE_RUN_REF.test(runRef)) throw new Error("invalid TS agent run reference");
+  if (!isAbsolute(root) || !SAFE_RUN_REF.test(runRef)) throw new Error("invalid TS Review run reference");
   const realRoot = realpathSync(root);
   const runDir = resolve(realRoot, ...runRef.split("/"));
   assertWithin(realRoot, runDir);
   if (!existsSync(runDir)) {
-    throw new Error(`TS agent run directory is unavailable: ${runRef}`);
+    throw new Error(`TS Review run directory is unavailable: ${runRef}`);
   }
   const runStat = lstatSync(runDir);
   if (!runStat.isDirectory() || runStat.isSymbolicLink() || realpathSync(runDir) !== runDir) {
-    throw new Error(`invalid TS agent run directory: ${runRef}`);
+    throw new Error(`invalid TS Review run directory: ${runRef}`);
   }
   return {
     task: readBoundJson(runDir, "task.json"),
-    evidenceSnapshot: readBoundJson(runDir, "evidence-snapshot.json"),
+    reviewSnapshot: readBoundJson(runDir, "review-snapshot.json"),
     providerInput: readBoundJson(runDir, "provider-input.json"),
     actions: readBoundJson(runDir, "actions.json"),
     result: readBoundJson(runDir, "result.json"),
@@ -123,21 +117,20 @@ export function readTsAgentRunDocuments(root: string, runRef?: string): TsAgentR
   };
 }
 
-export function renderTsAgentDetails(
-  record: TsAgentRecord,
-  documents: TsAgentRunDocuments,
+export function renderTsReviewDetails(
+  record: TsReviewRecord,
+  documents: TsReviewRunDocuments,
   width: number,
   now = Date.now(),
 ): string[] {
   const safeWidth = Math.max(16, Math.floor(width));
-  const lines = [truncateToWidth(`Subagent Run Details · ${roleLabel(normalizeRole(record.role))}`, safeWidth, "")];
+  const lines = [truncateToWidth("Review Run Details", safeWidth, "")];
   lines.push("");
   addField(lines, "Status", record.state, safeWidth);
   addField(lines, "Task", record.task_id, safeWidth);
-  addField(lines, "Node", record.node_ids.join(", ") || "workspace", safeWidth);
+  addField(lines, "Research acts", record.act_refs.join(", ") || "workspace", safeWidth);
+  addField(lines, "Claims", record.claim_refs.join(", ") || "(none)", safeWidth);
   addField(lines, "Operation", record.operation, safeWidth);
-  if (record.backend) addField(lines, "Backend", record.backend, safeWidth);
-  if (record.intent_id) addField(lines, "Intent", record.intent_id, safeWidth);
   if (record.wait_reason) addField(lines, "Waiting", record.wait_reason.replaceAll("_", " "), safeWidth);
   if (record.started_at) addField(lines, "Started", record.started_at, safeWidth);
   if (record.started_at) {
@@ -173,9 +166,9 @@ export function renderTsAgentDetails(
     const code = stringValue(error.code) || record.error_code;
     addSection(lines, "Error", code ? `${code}: ${errorText}` : errorText, safeWidth);
   }
-  const fileNames: Record<keyof TsAgentRunDocuments, string> = {
+  const fileNames: Record<keyof TsReviewRunDocuments, string> = {
     task: "task.json",
-    evidenceSnapshot: "evidence-snapshot.json",
+    reviewSnapshot: "review-snapshot.json",
     providerInput: "provider-input.json",
     actions: "actions.json",
     result: "result.json",
@@ -183,12 +176,12 @@ export function renderTsAgentDetails(
   };
   const files = Object.entries(documents)
     .filter(([, value]) => value)
-    .map(([name]) => fileNames[name as keyof TsAgentRunDocuments]);
+    .map(([name]) => fileNames[name as keyof TsReviewRunDocuments]);
   if (files.length > 0) addField(lines, "Files", files.join(", "), safeWidth);
   return lines;
 }
 
-function compareRecords(left: TsAgentRecord, right: TsAgentRecord): number {
+function compareRecords(left: TsReviewRecord, right: TsReviewRecord): number {
   const priority = recordPriority(left.state) - recordPriority(right.state);
   if (priority) return priority;
   return Date.parse(right.updated_at || right.started_at || "") - Date.parse(left.updated_at || left.started_at || "");
@@ -216,10 +209,10 @@ function readBoundJson(runDir: string, name: string): Record<string, unknown> | 
   if (!existsSync(path)) return undefined;
   const stat = lstatSync(path);
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > MAX_DETAIL_FILE_BYTES) {
-    throw new Error(`invalid TS agent detail file: ${name}`);
+    throw new Error(`invalid TS Review detail file: ${name}`);
   }
   const value: unknown = JSON.parse(readFileSync(path, "utf8"));
-  if (!isPlainObject(value)) throw new Error(`invalid TS agent detail JSON: ${name}`);
+  if (!isPlainObject(value)) throw new Error(`invalid TS Review detail JSON: ${name}`);
   return value;
 }
 
@@ -278,12 +271,6 @@ function findString(value: unknown, key: string): string | undefined {
     }
   }
   return undefined;
-}
-
-function normalizeRole(value: string): "review" | "backend" | "render" | "report" {
-  return ["review", "backend", "render", "report"].includes(value)
-    ? value as "review" | "backend" | "render" | "report"
-    : "review";
 }
 
 function assertWithin(root: string, path: string): void {

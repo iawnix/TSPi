@@ -132,7 +132,7 @@ class RemoteJobConfig:
     submission_id: str
     intent_id: str
     intent_digest: str
-    node_id: str
+    act_id: str
     backend: str
     profile: RemoteProfile
     remote_dir: str
@@ -154,7 +154,7 @@ class RemoteReceipt:
     submission_id: str
     intent_id: str
     intent_digest: str
-    node_id: str
+    act_id: str
     profile: str
     scheduler: str
     scheduler_id: str

@@ -11,6 +11,7 @@ README = ROOT / "README.md"
 ARCHITECTURE = ROOT / "docs" / "ARCHITECTURE.md"
 INSTALLATION = ROOT / "docs" / "INSTALLATION.md"
 MAINTAINER = ROOT / "docs" / "MAINTAINER_GUIDE.md"
+ADR = ROOT / "docs" / "adr" / "0001-dag-research-kernel-v4.md"
 SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
 SKILL = SKILL_ROOT / "SKILL.md"
 REFERENCES = SKILL_ROOT / "references"
@@ -18,29 +19,31 @@ TEMPLATES = SKILL_ROOT / "assets" / "templates"
 FINAL_REPORT = TEMPLATES / "ts_final_report.md"
 
 
-PUBLIC_DOCS = (README, ARCHITECTURE, INSTALLATION, MAINTAINER)
+PUBLIC_DOCS = (README, ARCHITECTURE, INSTALLATION, MAINTAINER, ADR)
 
 
-def test_readme_routes_each_reader_to_the_public_contracts() -> None:
+def test_readme_routes_each_reader_to_the_v4_public_contracts() -> None:
     text = README.read_text(encoding="utf-8")
 
     for phrase in [
-        "This branch supports Pi Agent only.",
+        "protocol v4",
         "docs/INSTALLATION.md",
         "docs/ARCHITECTURE.md",
         "docs/MAINTAINER_GUIDE.md",
+        "docs/adr/0001-dag-research-kernel-v4.md",
         "scripts/build_release.py",
         "scripts/install_release.py",
         ".pi/packages/ts-agent/current",
-        "never loads that checkout directly",
         "./TSPi --workspace reaction-a",
         "./TSPi --workspace reaction-a --continue",
         "/ts-subagent-history",
         "ts_workspace_decision_apply",
         "ts_subagent_review",
-        "ts_subagent_compute",
+        "ts_compute",
+        "ts_render",
+        "ts_report",
         "ts_notify_user",
-        "eleven tools",
+        "eleven public tools",
     ]:
         assert phrase in text
 
@@ -58,6 +61,7 @@ def test_public_document_set_covers_install_architecture_and_maintenance() -> No
         "## Configure Remote Execution",
         "## Configure Notifications",
         "## Start And Resume Workspaces",
+        "## Workspace Bootstrap",
         "## Upgrade",
         "## Rollback",
         "## Operational Recovery",
@@ -68,24 +72,33 @@ def test_public_document_set_covers_install_architecture_and_maintenance() -> No
     for heading in [
         "## Authority Matrix",
         "## Scientific State Model",
+        "## Decision Transaction",
+        "## Validation Engine",
+        "## Context Compiler",
         "## TSPi Lifecycle",
         "## Review Agent Runtime",
-        "## Bounded Operator Sessions",
+        "## Deterministic Tool Plane",
         "## Run Journals And Result Delivery",
         "## Contract Locations",
     ]:
         assert heading in architecture
 
     maintainer = MAINTAINER.read_text(encoding="utf-8")
-    assert "## Documentation Ownership" in maintainer
-    assert "## Contract Change Matrix" in maintainer
-    assert "## Release Procedure" in maintainer
-    assert "## Rollback Discipline" in maintainer
+    for heading in [
+        "## V4 Scientific Model",
+        "## Validation Engine Rules",
+        "## Deterministic Tool Contracts",
+        "## Documentation Ownership",
+        "## Contract Change Matrix",
+        "## Release Procedure",
+        "## Rollback Discipline",
+    ]:
+        assert heading in maintainer
 
 
 def test_public_markdown_relative_links_resolve_inside_the_package() -> None:
     link_pattern = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
-    for path in (*PUBLIC_DOCS, SKILL):
+    for path in (*PUBLIC_DOCS, SKILL, *sorted(REFERENCES.glob("*.md"))):
         for raw_target in link_pattern.findall(path.read_text(encoding="utf-8")):
             target = raw_target.strip().strip("<>")
             if target.startswith("#") or re.match(r"^[a-z][a-z0-9+.-]*:", target, re.IGNORECASE):
@@ -96,7 +109,7 @@ def test_public_markdown_relative_links_resolve_inside_the_package() -> None:
             assert resolved.exists(), (path, target)
 
 
-def test_public_docs_state_the_v3_authority_boundary() -> None:
+def test_public_docs_state_the_v4_authority_boundary() -> None:
     texts = {
         "readme": README.read_text(encoding="utf-8"),
         "architecture": ARCHITECTURE.read_text(encoding="utf-8"),
@@ -105,35 +118,35 @@ def test_public_docs_state_the_v3_authority_boundary() -> None:
         "state": (REFERENCES / "state_model.md").read_text(encoding="utf-8"),
     }
 
-    assert "Root Agent chooses the research path" in texts["readme"]
-    assert "Tags are for display and search only" in texts["readme"]
+    assert "The DAG records what happened; it does not prescribe what must happen next" in texts["readme"]
+    assert "Review is the only child model session" in texts["readme"]
     assert "Only `ts_workspace_decision_apply` may mutate canonical scientific state" in texts["architecture"]
-    assert "Review is the only child whose intended result depends on independent scientific" in texts["architecture"]
-    assert "Treat Node tags as display/search metadata only" in texts["skill"].replace("`", "")
-    assert "Node tags must never select an allowed action" in texts["maintainer"]
-    assert "Evidence has no workflow role or layer" in " ".join(texts["state"].split())
+    assert "Compute, Render, Report, remote inspection" in texts["architecture"]
+    assert "Treat Claim relations, Act dependencies, and tags as recorded context only" in texts["skill"]
+    assert "model dispatchers around deterministic actions" in texts["maintainer"]
+    assert "checks refs and acyclicity" in texts["state"]
+    assert "label to a next action" in texts["state"]
 
 
-def test_normal_runtime_docs_use_v3_contracts_only() -> None:
-    paths = [
-        *PUBLIC_DOCS,
-        SKILL,
-        *sorted(REFERENCES.glob("*.md")),
-    ]
+def test_normal_runtime_docs_expose_only_v4_contracts() -> None:
+    paths = [README, ARCHITECTURE, INSTALLATION, MAINTAINER, SKILL, *sorted(REFERENCES.glob("*.md"))]
     forbidden = [
         "ts-decision/2",
+        "ts-decision/3",
         "ts-node/2",
-        "candidate_plan",
-        "validation_scope",
-        "audit_scope",
-        "mechanism_action",
+        "ts-node/3",
+        "ts-calculation-intent/3",
+        "ts_subagent_compute",
+        "ts_subagent_render",
+        "ts_subagent_report",
+        "migrate_workspace_v2_to_v3.py",
+        "evidence_registry.json",
+        "gate_results.json",
+        "start_node",
+        "end_node",
+        "required_gates",
         "solution_ref",
-        "pathway_ref",
         "previous_attempt_summary",
-        "endpoint_identity_gate",
-        "stereochemical_connectivity_gate",
-        "candidate_search",
-        "validation/connectivity",
     ]
     for path in paths:
         text = path.read_text(encoding="utf-8")
@@ -141,15 +154,27 @@ def test_normal_runtime_docs_use_v3_contracts_only() -> None:
             assert term not in text, (path, term)
 
 
-def test_workspace_docs_match_bootstrap_canonical_file_names() -> None:
+def test_workspace_docs_match_v4_bootstrap_canonical_file_names() -> None:
     architecture = ARCHITECTURE.read_text(encoding="utf-8")
     contract = (REFERENCES / "workspace_contract.md").read_text(encoding="utf-8")
 
+    required = [
+        "workspace.json",
+        "research_state.json",
+        "claims.json",
+        "claim_relations.json",
+        "research_acts.json",
+        "observations.json",
+        "validation_specs.json",
+        "validation_results.json",
+        "findings.json",
+        "acceptances/<acceptance_id>.json",
+    ]
     for text in (architecture, contract):
-        assert "evidence_registry.json" in text
-        assert "\nevidence.json\n" not in text
-    assert "A complete v3 workspace is only validated" in contract
-    assert "Partial v3 state and invalid v3 state fail closed" in contract
+        for name in required:
+            assert name in text
+    assert "complete v4 workspace is validated without canonical rewrites" in contract
+    assert "There is no legacy reader or migration command" in contract
 
 
 def test_skill_routes_details_through_focused_references() -> None:
@@ -161,10 +186,10 @@ def test_skill_routes_details_through_focused_references() -> None:
         "references/workspace_contract.md",
         "references/decision_contract.md",
         "references/candidate_generation.md",
-        "references/compute_operator.md",
+        "references/compute_tools.md",
         "references/pi_agent_adapter.md",
         "references/agent_decision_protocol.md",
-        "references/artifact_operators.md",
+        "references/artifact_tools.md",
         "references/package_sources.md",
         "references/remote_contract.md",
         "references/report_template.md",
@@ -187,49 +212,55 @@ def test_candidate_strategy_remains_root_selected() -> None:
     backend = (REFERENCES / "backend_selection.md").read_text(encoding="utf-8")
 
     assert "Do not impose a universal" in skill
-    assert "Gaussian is a first-class candidate-generation backend" in candidate
-    assert "Do not default to QST2/QST3" in candidate
-    assert "The catalog is not a priority list" in backend
+    assert "Choose among chemically informed construction" in candidate
+    assert "Before QST2/QST3" in candidate
+    assert "The capability catalog is not a priority list" in backend
 
 
-def test_final_report_template_projects_v3_scientific_objects() -> None:
+def test_final_report_template_projects_v4_scientific_objects() -> None:
     text = FINAL_REPORT.read_text(encoding="utf-8")
 
     for phrase in [
-        "Scientific Claims",
-        "Deterministic Gate Results",
-        "Research Nodes",
-        "Accepted Artifacts",
-        "Evidence Appendix",
+        "Claims And Relations",
+        "ResearchAct DAG",
+        "Semantic Observations",
+        "Frozen Validation",
+        "Findings And Claim Acceptance",
         "Operational Follow-Up",
         "{{claim_id}}",
-        "{{gate_result_id}}",
-        "{{evidence_id}}",
+        "{{act_id}}",
+        "{{observation_id}}",
+        "{{spec_id}}",
+        "{{result_id}}",
+        "{{finding_id}}",
     ]:
         assert phrase in text
-    for legacy in ("{{node_type}}", "{{hypothesis_id}}", "{{evidence_role}}"):
+    for legacy in ("{{node_id}}", "{{evidence_id}}", "{{gate_result_id}}", "{{required_gates}}"):
         assert legacy not in text
 
 
-def test_decision_assets_are_generic_kernel_draft_examples() -> None:
+def test_decision_assets_are_generic_v4_operation_examples() -> None:
     decision_dir = TEMPLATES / "decision"
     readme = (decision_dir / "README.md").read_text(encoding="utf-8")
     files = {path.name for path in decision_dir.glob("*.json")}
 
     assert "not a prescribed research sequence" in readme
-    assert "argument objects for `ts_workspace_decision_draft`" in readme
+    assert "operations` array accepted by" in readme
     assert files == {
-        "append_claim.json",
-        "append_evidence.json",
-        "end_audit.json",
-        "end_node.json",
-        "evaluate_gate.json",
+        "accept_claim.json",
+        "complete_act.json",
+        "create_claim.json",
+        "evaluate_validation.json",
+        "freeze_validation_spec.json",
         "link_operation.json",
-        "start_node.json",
+        "record_finding.json",
+        "record_observation.json",
+        "relate_claims.json",
+        "start_act.json",
+        "update_claim.json",
     }
     for path in decision_dir.glob("*.json"):
         value = json.loads(path.read_text(encoding="utf-8"))
-        assert value["action"] in {"start_node", "update_workspace", "end_node"}
-        assert "basisRefs" in value
+        assert isinstance(value.get("op"), str)
         assert "decision_id" not in value
-        assert "report_ref" not in value
+        assert "context_ref" not in value

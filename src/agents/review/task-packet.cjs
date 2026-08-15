@@ -2,92 +2,81 @@
 
 const fs = require("node:fs");
 const path = require("node:path");
-
-const { bindAgentDocument, validateAgentTask } = require("../../agent-core/agent-protocol.cjs");
+const {
+  bindAgentDocument,
+  validateAgentTask,
+} = require("../../agent-core/agent-protocol.cjs");
 
 const REVIEW_OPERATION = "claim_review";
+const TEXT_EXTENSIONS = new Set([".com", ".gjf", ".inp", ".json", ".log", ".md", ".out", ".txt", ".xyz"]);
 const LIMITS = Object.freeze({
   maxQuestionChars: 4000,
-  maxNodeRefs: 16,
-  maxClaimRefs: 8,
-  maxGateRefs: 32,
-  maxEvidenceRefs: 32,
-  maxArtifactRefs: 4,
-  maxBasisRefs: 80,
-  maxArtifactBytes: 16 * 1024,
-  maxArtifactTotalBytes: 64 * 1024,
-  maxSnapshotBytes: 96 * 1024,
-  maxProviderArtifactBytes: 2 * 1024,
-  maxProviderArtifactTotalBytes: 8 * 1024,
-  maxProviderPacketBytes: 24 * 1024,
+  maxArtifactIds: 4,
+  maxArtifactBytes: 8 * 1024,
+  maxArtifactTotalBytes: 24 * 1024,
+  maxProviderArtifactBytes: 4 * 1024,
+  maxProviderArtifactTotalBytes: 12 * 1024,
+  maxProviderPacketBytes: 48 * 1024,
 });
-const TEXT_EXTENSIONS = new Set([
-  ".com", ".csv", ".gjf", ".json", ".log", ".md", ".out", ".txt", ".xyz", ".yaml", ".yml", ".tsv",
-]);
 
 function validateSubagentRequest(request) {
-  if (!isPlainObject(request)) throw new Error("subagent request must be an object");
-  rejectUnknownKeys(request, ["targetClaimRef", "question", "root", "nodeIds", "artifactRefs"], "subagent request");
+  if (!isPlainObject(request)) throw new Error("Review request must be an object");
+  rejectUnknownKeys(request, ["targetClaimRef", "question", "root", "artifactIds"], "Review request");
   return {
-    targetClaimRef: requireString(request.targetClaimRef, "targetClaimRef", 256),
+    targetClaimRef: requireId(request.targetClaimRef, "targetClaimRef", /^clm_[0-9a-f]{24}$/),
     question: requireString(request.question, "question", LIMITS.maxQuestionChars),
-    root: optionalString(request.root, "root", 4096),
-    nodeIds: stringArray(request.nodeIds, "nodeIds", LIMITS.maxNodeRefs, 128),
-    artifactRefs: stringArray(request.artifactRefs, "artifactRefs", LIMITS.maxArtifactRefs, 4096),
+    root: typeof request.root === "string" ? request.root : undefined,
+    artifactIds: uniqueIds(request.artifactIds || [], "artifactIds", LIMITS.maxArtifactIds, /^art_[0-9a-f]{24}$/),
   };
 }
 
-function buildReviewTaskBundle({ runId, workspaceRoot, request, workspaceReport, reviewSnapshot }) {
+function buildReviewTaskBundle({ runId, workspaceRoot, request, reviewSnapshot, artifactCatalog = [] }) {
   const normalized = validateSubagentRequest(request);
-  const root = path.resolve(requireString(workspaceRoot, "workspaceRoot", 4096));
-  if (!isPlainObject(workspaceReport)) throw new Error("workspaceReport must be an object");
-  if (workspaceReport.workspace_root && path.resolve(String(workspaceReport.workspace_root)) !== root) {
-    throw new Error("workspace report root does not match requested workspace");
-  }
-  const snapshot = validateKernelSnapshot(reviewSnapshot, normalized, workspaceReport);
-  const policy = artifactPolicy(snapshot);
-  const excerpts = normalized.artifactRefs.map((value) => readArtifactExcerpt(root, value, policy));
-  const artifactBytes = excerpts.reduce((total, item) => total + Buffer.byteLength(item.text, "utf8"), 0);
-  if (artifactBytes > LIMITS.maxArtifactTotalBytes) {
-    throw new Error(`artifact excerpts exceed ${LIMITS.maxArtifactTotalBytes} bytes`);
-  }
-
-  const taskId = requireString(runId, "runId", 128);
-  const nodeIds = stringArray(snapshot.dependency_refs.node_refs, "snapshot node refs", LIMITS.maxNodeRefs, 128);
-  const claimRefs = stringArray(snapshot.dependency_refs.claim_refs, "snapshot claim refs", LIMITS.maxClaimRefs, 256);
+  const root = requireWorkspaceRoot(workspaceRoot);
+  const snapshot = validateKernelSnapshot(reviewSnapshot, normalized.targetClaimRef);
+  const artifacts = selectArtifacts(root, normalized.artifactIds, snapshot, artifactCatalog);
+  const artifactExcerpts = artifacts.map((artifact) => readArtifactExcerpt(root, artifact));
+  const total = artifactExcerpts.reduce((sum, item) => sum + Buffer.byteLength(item.text, "utf8"), 0);
+  if (total > LIMITS.maxArtifactTotalBytes) throw new Error(`Review artifact excerpts exceed ${LIMITS.maxArtifactTotalBytes} bytes`);
+  const dependencyRefs = normalizeDependencyRefs(snapshot.dependency_refs);
   const scope = {
-    report_id: typeof workspaceReport.report_id === "string" ? workspaceReport.report_id : null,
-    node_ids: nodeIds,
-    claim_refs: claimRefs,
+    report_id: nullableString(snapshot.report_id, "review snapshot report_id", 256),
+    act_refs: dependencyRefs.act_refs,
+    claim_refs: dependencyRefs.claim_refs,
   };
   const basisAllowlist = canonicalStringSet([
-    ...claimRefs,
-    ...stringArray(snapshot.dependency_refs.gate_result_refs, "snapshot gate refs", LIMITS.maxGateRefs, 256),
-    ...stringArray(snapshot.dependency_refs.evidence_refs, "snapshot evidence refs", LIMITS.maxEvidenceRefs, 256),
-    ...excerpts.map((item) => item.ref),
+    ...Object.values(dependencyRefs).flat(),
+    ...artifactExcerpts.map((item) => item.artifact_id),
   ]);
-  const evidenceSnapshot = {
-    schema_version: "ts-review-evidence-snapshot/2",
-    task_id: taskId,
+  const taskSnapshot = {
+    schema_version: "ts-review-task-snapshot/1",
+    task_id: requireId(runId, "runId", /^sub_[A-Za-z0-9-]+$/),
     operation: REVIEW_OPERATION,
     scope,
-    target_claim_ref: normalized.targetClaimRef,
-    workspace_revision: snapshot.workspace_revision,
+    workspace_revision: requireDigest(snapshot.workspace_revision, "workspace_revision"),
+    projection_id: requireId(snapshot.projection_id, "projection_id", /^ctx_[0-9a-f]{24}$/),
+    target_claim_ref: snapshot.target_claim_ref,
     claims: snapshot.claims,
-    gate_results: snapshot.gate_results,
-    evidence: snapshot.evidence,
-    nodes: snapshot.nodes,
-    artifact_excerpts: excerpts,
+    claim_relations: snapshot.claim_relations,
+    research_acts: snapshot.research_acts,
+    observations: snapshot.observations,
+    validation_specs: snapshot.validation_specs,
+    validation_results: snapshot.validation_results,
+    findings: snapshot.findings,
+    acceptances: snapshot.acceptances,
+    dependency_refs: dependencyRefs,
+    artifact_excerpts: artifactExcerpts,
     basis_allowlist: basisAllowlist,
+    omitted: isPlainObject(snapshot.omitted) ? snapshot.omitted : {},
   };
   const providerInput = buildProviderTaskPacket({
-    task_id: taskId,
+    task_id: taskSnapshot.task_id,
     objective: normalized.question,
-    evidence_snapshot: evidenceSnapshot,
+    review_snapshot: taskSnapshot,
   });
-  const packet = {
+  const task = {
     schema_version: "ts-agent-task/2",
-    task_id: taskId,
+    task_id: taskSnapshot.task_id,
     role: "review",
     authority: "advisory",
     operation: REVIEW_OPERATION,
@@ -95,22 +84,14 @@ function buildReviewTaskBundle({ runId, workspaceRoot, request, workspaceReport,
     workspace: {
       root,
       report_id: scope.report_id,
-      revision: snapshot.workspace_revision,
+      revision: taskSnapshot.workspace_revision,
     },
     scope,
     inputs: {
-      evidence_snapshot: bindAgentDocument(
-        "evidence-snapshot.json",
-        "ts-review-evidence-snapshot/2",
-        evidenceSnapshot,
-      ),
-      provider_input: bindAgentDocument(
-        "provider-input.json",
-        "ts-review-provider-input/2",
-        providerInput,
-      ),
+      review_snapshot: bindAgentDocument("review-snapshot.json", "ts-review-task-snapshot/1", taskSnapshot),
+      provider_input: bindAgentDocument("provider-input.json", "ts-review-provider-input/3", providerInput),
     },
-    capabilities: [],
+    capabilities: ["ts_review_result"],
     constraints: {
       canonical_workspace_mutation: false,
       scientific_decision: false,
@@ -120,43 +101,71 @@ function buildReviewTaskBundle({ runId, workspaceRoot, request, workspaceReport,
     },
     output_contract: "ts-agent-result/1",
   };
-  if (Buffer.byteLength(JSON.stringify(evidenceSnapshot), "utf8") > LIMITS.maxSnapshotBytes) {
-    throw new Error(`review evidence snapshot exceeds ${LIMITS.maxSnapshotBytes} bytes`);
-  }
-  const task = validateAgentTask(packet);
-  validateEvidenceSnapshot(evidenceSnapshot, task);
-  validateProviderTaskPacket(providerInput, task, evidenceSnapshot);
-  return { task, documents: { evidence_snapshot: evidenceSnapshot, provider_input: providerInput } };
+  return validateReviewTaskBundle(task, {
+    review_snapshot: taskSnapshot,
+    provider_input: providerInput,
+  });
 }
 
-function validateKernelSnapshot(value, request, workspaceReport) {
-  if (!isPlainObject(value) || value.schema_version !== "ts-review-snapshot/1") {
-    throw new Error("review requires a ts-review-snapshot/1 kernel snapshot");
+function validateKernelSnapshot(value, targetClaimRef) {
+  if (!isPlainObject(value) || value.schema_version !== "ts-review-snapshot/3") {
+    throw new Error("Review requires a ts-review-snapshot/3 Kernel projection");
   }
-  rejectUnknownKeys(value, [
-    "schema_version", "workspace_revision", "target_claim_ref", "claims", "gate_results", "evidence", "nodes",
-    "dependency_refs",
-  ], "kernel review snapshot");
-  if (value.target_claim_ref !== request.targetClaimRef) throw new Error("kernel snapshot target claim does not match request");
-  if (value.workspace_revision !== workspaceReport.workspace_revision) throw new Error("kernel snapshot revision does not match workspace report");
-  for (const key of ["claims", "gate_results", "evidence", "nodes"]) {
-    if (!Array.isArray(value[key])) throw new Error(`kernel review snapshot ${key} must be an array`);
+  const arrays = ["claims", "claim_relations", "research_acts", "observations", "validation_specs", "validation_results", "findings", "acceptances"];
+  for (const key of arrays) if (!Array.isArray(value[key])) throw new Error(`Review Kernel snapshot ${key} must be an array`);
+  if (value.target_claim_ref !== targetClaimRef) throw new Error("Review target Claim does not match the Kernel snapshot");
+  const refs = normalizeDependencyRefs(value.dependency_refs);
+  const actual = dependencyRefsForSnapshot(value);
+  if (JSON.stringify(refs) !== JSON.stringify(actual)) throw new Error("Review Kernel snapshot dependency_refs are inconsistent");
+  if (!refs.claim_refs.includes(targetClaimRef)) throw new Error("Review target Claim is outside its dependency graph");
+  return value;
+}
+
+function validateReviewTaskBundle(taskValue, documents) {
+  const task = validateAgentTask(taskValue);
+  if (task.role !== "review" || task.operation !== REVIEW_OPERATION) throw new Error("Review task requires claim_review");
+  if (!isPlainObject(documents)) throw new Error("Review task documents must be an object");
+  rejectUnknownKeys(documents, ["review_snapshot", "provider_input"], "Review task documents");
+  const snapshot = validateTaskSnapshot(documents.review_snapshot, task);
+  const provider = validateProviderTaskPacket(documents.provider_input, task, snapshot);
+  for (const [name, document] of Object.entries({ review_snapshot: snapshot, provider_input: provider })) {
+    const binding = task.inputs[name];
+    const actual = bindAgentDocument(binding.ref, binding.schema_version, document);
+    if (actual.sha256 !== binding.sha256 || actual.bytes !== binding.bytes) {
+      throw new Error(`Review document ${name} does not match its task binding`);
+    }
   }
-  if (!isPlainObject(value.dependency_refs)) throw new Error("kernel review snapshot dependency_refs must be an object");
-  if (value.claims.length > LIMITS.maxClaimRefs) throw new Error("review claim dependency graph exceeds limit");
-  if (value.gate_results.length > LIMITS.maxGateRefs) throw new Error("review gate dependency graph exceeds limit");
-  if (value.evidence.length > LIMITS.maxEvidenceRefs) throw new Error("review evidence dependency graph exceeds limit");
-  if (value.nodes.length > LIMITS.maxNodeRefs) throw new Error("review node dependency graph exceeds limit");
+  return { task, documents: { review_snapshot: snapshot, provider_input: provider } };
+}
+
+function validateTaskSnapshot(value, task) {
+  if (!isPlainObject(value)) throw new Error("Review task snapshot must be an object");
+  if (value.schema_version !== "ts-review-task-snapshot/1") throw new Error("invalid Review task snapshot schema_version");
+  if (value.task_id !== task.task_id || value.operation !== task.operation) throw new Error("Review task snapshot identity mismatch");
+  if (JSON.stringify(value.scope) !== JSON.stringify(task.scope)) throw new Error("Review task snapshot scope mismatch");
+  if (value.workspace_revision !== task.workspace.revision) throw new Error("Review task snapshot revision mismatch");
+  const arrays = ["claims", "claim_relations", "research_acts", "observations", "validation_specs", "validation_results", "findings", "acceptances", "artifact_excerpts", "basis_allowlist"];
+  for (const key of arrays) if (!Array.isArray(value[key])) throw new Error(`Review task snapshot ${key} must be an array`);
+  const refs = normalizeDependencyRefs(value.dependency_refs);
+  const actual = dependencyRefsForSnapshot(value);
+  if (JSON.stringify(refs) !== JSON.stringify(actual)) throw new Error("Review task snapshot dependency_refs are inconsistent");
+  if (JSON.stringify(refs.claim_refs) !== JSON.stringify(task.scope.claim_refs) || JSON.stringify(refs.act_refs) !== JSON.stringify(task.scope.act_refs)) {
+    throw new Error("Review task scope does not match dependency_refs");
+  }
+  const expectedBasis = canonicalStringSet([
+    ...Object.values(refs).flat(),
+    ...value.artifact_excerpts.map((item) => requireId(item?.artifact_id, "artifact excerpt ID", /^art_[0-9a-f]{24}$/)),
+  ]);
+  const actualBasis = canonicalStringSet(value.basis_allowlist.map((item) => requireString(item, "basis_allowlist item", 128)));
+  if (JSON.stringify(expectedBasis) !== JSON.stringify(actualBasis)) throw new Error("Review basis_allowlist does not match the dependency snapshot");
   return value;
 }
 
 function buildProviderTaskPacket(value) {
-  if (!isPlainObject(value) || !isPlainObject(value.evidence_snapshot)) {
-    throw new Error("provider review input requires an evidence snapshot");
-  }
-  const snapshot = value.evidence_snapshot;
+  if (!isPlainObject(value) || !isPlainObject(value.review_snapshot)) throw new Error("provider Review input requires a task snapshot");
+  const snapshot = value.review_snapshot;
   const packet = {
-    schema_version: "ts-review-provider-input/2",
+    schema_version: "ts-review-provider-input/3",
     task_id: requireString(value.task_id, "task_id", 128),
     operation: REVIEW_OPERATION,
     objective: requireString(value.objective, "objective", LIMITS.maxQuestionChars),
@@ -164,170 +173,94 @@ function buildProviderTaskPacket(value) {
     workspace_revision: snapshot.workspace_revision,
     target_claim_ref: snapshot.target_claim_ref,
     claims: snapshot.claims.map(compactClaim),
-    gate_results: snapshot.gate_results.map(compactGate),
-    evidence: snapshot.evidence.map(compactEvidence),
-    nodes: snapshot.nodes.map(compactNode),
+    claim_relations: snapshot.claim_relations.map(compactRelation),
+    research_acts: snapshot.research_acts.map(compactAct),
+    observations: snapshot.observations.map(compactObservation),
+    validation_specs: snapshot.validation_specs.map(compactSpec),
+    validation_results: snapshot.validation_results.map(compactResult),
+    findings: snapshot.findings.map(compactFinding),
+    acceptances: snapshot.acceptances.map(compactAcceptance),
     artifact_excerpts: compactArtifactExcerpts(snapshot.artifact_excerpts),
     basis_allowlist: snapshot.basis_allowlist,
+    omitted: snapshot.omitted,
   };
-  if (Buffer.byteLength(JSON.stringify(packet), "utf8") > LIMITS.maxProviderPacketBytes) {
-    throw new Error(`provider task packet exceeds ${LIMITS.maxProviderPacketBytes} bytes`);
-  }
+  const bytes = Buffer.byteLength(JSON.stringify(packet), "utf8");
+  if (bytes > LIMITS.maxProviderPacketBytes) throw new Error(`provider Review packet exceeds ${LIMITS.maxProviderPacketBytes} bytes`);
   return packet;
 }
 
-function validateEvidenceSnapshot(value, task) {
-  if (!isPlainObject(value)) throw new Error("review evidence snapshot must be an object");
-  rejectUnknownKeys(value, [
-    "schema_version", "task_id", "operation", "scope", "target_claim_ref", "workspace_revision", "claims",
-    "gate_results", "evidence", "nodes", "artifact_excerpts", "basis_allowlist",
-  ], "review evidence snapshot");
-  if (value.schema_version !== "ts-review-evidence-snapshot/2") throw new Error("invalid review evidence snapshot schema_version");
-  assertTaskIdentity(value, task, "review evidence snapshot");
-  if (value.workspace_revision !== task.workspace.revision) throw new Error("review snapshot revision does not match task");
-  for (const key of ["claims", "gate_results", "evidence", "nodes", "artifact_excerpts", "basis_allowlist"]) {
-    if (!Array.isArray(value[key])) throw new Error(`review evidence snapshot ${key} must be an array`);
-  }
-  const expected = canonicalStringSet([
-    ...value.claims.map((item) => requireObjectId(item, "claim_id", "claim")),
-    ...value.gate_results.map((item) => requireObjectId(item, "gate_result_id", "gate result")),
-    ...value.evidence.map((item) => requireObjectId(item, "evidence_id", "evidence")),
-    ...value.artifact_excerpts.map((item) => requireObjectId(item, "ref", "artifact excerpt")),
-  ]);
-  const actual = canonicalStringSet(stringArray(
-    value.basis_allowlist,
-    "review evidence snapshot basis_allowlist",
-    LIMITS.maxBasisRefs,
-    4096,
-  ));
-  if (JSON.stringify(expected) !== JSON.stringify(actual)) {
-    throw new Error("review basis_allowlist does not match claim dependency snapshot");
-  }
-  if (!expected.includes(value.target_claim_ref)) throw new Error("review target claim is outside dependency snapshot");
-  return value;
-}
-
 function validateProviderTaskPacket(value, task, snapshot) {
-  if (!isPlainObject(value) || value.schema_version !== "ts-review-provider-input/2") {
-    throw new Error("invalid review provider input schema_version");
-  }
-  const expected = buildProviderTaskPacket({
-    task_id: task.task_id,
-    objective: task.objective,
-    evidence_snapshot: snapshot,
-  });
-  if (JSON.stringify(value) !== JSON.stringify(expected)) {
-    throw new Error("review provider input does not match deterministic snapshot projection");
-  }
+  if (!isPlainObject(value) || value.schema_version !== "ts-review-provider-input/3") throw new Error("invalid Review provider input schema_version");
+  const expected = buildProviderTaskPacket({ task_id: task.task_id, objective: task.objective, review_snapshot: snapshot });
+  if (JSON.stringify(value) !== JSON.stringify(expected)) throw new Error("Review provider input differs from its deterministic projection");
   return value;
 }
 
-function validateReviewTaskBundle(taskValue, documents) {
-  const task = validateAgentTask(taskValue);
-  if (task.role !== "review" || task.operation !== REVIEW_OPERATION) throw new Error("review task requires claim_review operation");
-  if (!isPlainObject(documents)) throw new Error("review task bundle documents must be an object");
-  rejectUnknownKeys(documents, ["evidence_snapshot", "provider_input"], "review task bundle documents");
-  const snapshot = validateEvidenceSnapshot(documents.evidence_snapshot, task);
-  const provider = validateProviderTaskPacket(documents.provider_input, task, snapshot);
-  for (const [name, document] of Object.entries({ evidence_snapshot: snapshot, provider_input: provider })) {
-    const binding = task.inputs[name];
-    const actual = bindAgentDocument(binding.ref, binding.schema_version, document);
-    if (actual.sha256 !== binding.sha256 || actual.bytes !== binding.bytes) {
-      throw new Error(`review task bundle ${name} does not match task binding`);
+function selectArtifacts(root, artifactIds, snapshot, catalogValue) {
+  if (!artifactIds.length) return [];
+  if (!Array.isArray(catalogValue)) throw new Error("Review artifact catalog must be an array");
+  const allowed = new Map();
+  for (const observation of snapshot.observations) {
+    if (!isPlainObject(observation)) continue;
+    const digests = isPlainObject(observation.provenance?.source_digests) ? observation.provenance.source_digests : {};
+    for (const artifactId of Array.isArray(observation.artifact_refs) ? observation.artifact_refs : []) {
+      const digest = digests[artifactId];
+      if (typeof digest !== "string") throw new Error(`Observation artifact has no source digest: ${artifactId}`);
+      if (allowed.has(artifactId) && allowed.get(artifactId) !== digest) throw new Error(`Observation artifact has conflicting digests: ${artifactId}`);
+      allowed.set(artifactId, digest);
     }
   }
-  return { task, documents: { evidence_snapshot: snapshot, provider_input: provider } };
+  const catalog = new Map(catalogValue.filter(isPlainObject).map((item) => [item.artifact_id, item]));
+  return artifactIds.map((artifactId) => {
+    if (!allowed.has(artifactId)) throw new Error(`Review artifact is outside the Claim dependency graph: ${artifactId}`);
+    const item = catalog.get(artifactId);
+    if (!isPlainObject(item)) throw new Error(`Review artifact is unavailable in the workspace catalog: ${artifactId}`);
+    if (item.sha256 !== allowed.get(artifactId)) throw new Error(`Review artifact digest differs from its Observation: ${artifactId}`);
+    return {
+      artifact_id: artifactId,
+      path: normalizeRelativeRef(item.path),
+      sha256: requireDigest(item.sha256, `artifact ${artifactId} sha256`),
+    };
+  });
 }
 
-function artifactPolicy(snapshot) {
-  const exact = new Set();
-  for (const evidence of snapshot.evidence) {
-    if (!isPlainObject(evidence)) continue;
-    for (const ref of Array.isArray(evidence.artifact_refs) ? evidence.artifact_refs : []) {
-      exact.add(normalizeRelativeRef(ref));
-    }
-  }
-  const directories = snapshot.nodes
-    .filter(isPlainObject)
-    .map((node) => typeof node.node_id === "string" ? `nodes/${node.node_id}` : null)
-    .filter(Boolean);
-  return { exact, directories };
-}
-
-function readArtifactExcerpt(root, inputRef, policy) {
-  const ref = normalizeRelativeRef(inputRef);
-  if (!policy.exact.has(ref) && !policy.directories.some((dir) => ref.startsWith(`${dir}/`))) {
-    throw new Error(`artifact ref is outside claim dependency nodes: ${ref}`);
-  }
-  const extension = path.extname(ref).toLowerCase();
-  if (!TEXT_EXTENSIONS.has(extension)) throw new Error(`artifact is not an allowlisted text type: ${ref}`);
-  const absolute = path.resolve(root, ref);
-  assertInside(root, absolute, `artifact path escapes workspace: ${ref}`);
-  if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) throw new Error(`artifact file does not exist: ${ref}`);
+function readArtifactExcerpt(root, artifact) {
+  const extension = path.extname(artifact.path).toLowerCase();
+  if (!TEXT_EXTENSIONS.has(extension)) throw new Error(`Review artifact is not an allowlisted text type: ${artifact.artifact_id}`);
+  const absolute = path.resolve(root, artifact.path);
+  assertInside(root, absolute, "Review artifact path escapes workspace");
+  if (!fs.existsSync(absolute) || !fs.statSync(absolute).isFile()) throw new Error(`Review artifact does not exist: ${artifact.artifact_id}`);
   const realRoot = fs.realpathSync(root);
   const realArtifact = fs.realpathSync(absolute);
-  assertInside(realRoot, realArtifact, `artifact symlink escapes workspace: ${ref}`);
+  assertInside(realRoot, realArtifact, "Review artifact symlink escapes workspace");
   const stat = fs.statSync(realArtifact);
   const tail = extension === ".log" || extension === ".out";
   const length = Math.min(stat.size, LIMITS.maxArtifactBytes);
   const start = tail ? Math.max(0, stat.size - length) : 0;
   const buffer = Buffer.alloc(length);
   const handle = fs.openSync(realArtifact, "r");
-  try {
-    fs.readSync(handle, buffer, 0, length, start);
-  } finally {
-    fs.closeSync(handle);
-  }
-  if (buffer.includes(0)) throw new Error(`artifact contains binary data: ${ref}`);
-  return { ref, selection: tail ? "tail" : "head", truncated: stat.size > length, original_bytes: stat.size, text: buffer.toString("utf8") };
+  try { fs.readSync(handle, buffer, 0, length, start); } finally { fs.closeSync(handle); }
+  if (buffer.includes(0)) throw new Error(`Review artifact contains binary data: ${artifact.artifact_id}`);
+  return {
+    artifact_id: artifact.artifact_id,
+    sha256: artifact.sha256,
+    selection: tail ? "tail" : "head",
+    truncated: stat.size > length,
+    original_bytes: stat.size,
+    text: buffer.toString("utf8"),
+  };
 }
 
 function compactClaim(value) {
-  return {
-    claim_id: value.claim_id,
-    parent_claim_id: value.parent_claim_id || null,
-    kind: value.kind,
-    statement: value.statement,
-    status: value.status,
-    required_gates: value.required_gates,
-  };
+  return pick(value, ["claim_id", "claim_type", "statement", "status", "assumptions", "falsifiers", "observation_refs", "validation_spec_refs", "validation_result_refs"]);
 }
-
-function compactGate(value) {
-  return {
-    gate_result_id: value.gate_result_id,
-    gate: value.gate,
-    policy: value.policy,
-    verdict: value.verdict,
-    target_ref: value.target_ref,
-    evidence_refs: value.evidence_refs,
-    diagnostics: value.diagnostics,
-  };
-}
-
-function compactEvidence(value) {
-  return {
-    evidence_id: value.evidence_id,
-    node_id: value.node_id,
-    kind: value.kind,
-    evidence_tier: value.evidence_tier,
-    summary: value.summary,
-    facts: value.facts,
-    state: value.state,
-    artifact_refs: value.artifact_refs,
-  };
-}
-
-function compactNode(value) {
-  return {
-    node_id: value.node_id,
-    parent_node: value.parent_node,
-    objective: value.objective,
-    state: value.state,
-    tags: value.tags,
-    result: value.result,
-  };
-}
+function compactRelation(value) { return pick(value, ["relation_id", "source_claim_ref", "target_claim_ref", "relation_type", "rationale"]); }
+function compactAct(value) { return pick(value, ["act_id", "objective", "status", "dependency_refs", "claim_refs", "hypothesis", "observation_refs", "finding_refs", "validation_spec_refs", "validation_result_refs", "result"]); }
+function compactObservation(value) { return pick(value, ["observation_id", "created_by_act", "concept_id", "subject_ref", "value", "datatype", "unit", "qualifiers", "summary", "artifact_refs"]); }
+function compactSpec(value) { return pick(value, ["spec_id", "target_claim_ref", "dimension", "title", "template_ref", "checks", "success_policy", "spec_digest"]); }
+function compactResult(value) { return pick(value, ["result_id", "spec_ref", "target_claim_ref", "dimension", "verdict", "observation_refs", "check_results", "result_digest"]); }
+function compactFinding(value) { return pick(value, ["finding_id", "finding_type", "severity", "status", "statement", "claim_refs", "act_refs", "basis_observation_refs", "resolution"]); }
+function compactAcceptance(value) { return pick(value, ["acceptance_id", "claim_ref", "profile_ref", "validation_spec_refs", "validation_result_refs", "finding_refs", "summary", "accepted_at", "current", "stale_reasons"]); }
 
 function compactArtifactExcerpts(value) {
   const excerpts = value.map((item) => {
@@ -336,7 +269,8 @@ function compactArtifactExcerpts(value) {
     const tail = item.selection === "tail";
     const start = tail ? Math.max(0, source.length - length) : 0;
     return {
-      ref: item.ref,
+      artifact_id: item.artifact_id,
+      sha256: item.sha256,
       selection: item.selection,
       truncated: Boolean(item.truncated) || source.length > length,
       original_bytes: item.original_bytes,
@@ -344,76 +278,98 @@ function compactArtifactExcerpts(value) {
     };
   });
   const total = excerpts.reduce((sum, item) => sum + Buffer.byteLength(item.text, "utf8"), 0);
-  if (total > LIMITS.maxProviderArtifactTotalBytes) throw new Error("provider artifact excerpts exceed limit");
+  if (total > LIMITS.maxProviderArtifactTotalBytes) throw new Error("provider Review artifact excerpts exceed limit");
   return excerpts;
 }
 
-function assertTaskIdentity(value, task, label) {
-  if (value.task_id !== task.task_id || value.operation !== task.operation) throw new Error(`${label} identity does not match task`);
-  if (JSON.stringify(value.scope) !== JSON.stringify(task.scope)) throw new Error(`${label} scope does not match task`);
+function dependencyRefsForSnapshot(value) {
+  return {
+    claim_refs: ids(value.claims, "claim_id"),
+    relation_refs: ids(value.claim_relations, "relation_id"),
+    act_refs: ids(value.research_acts, "act_id"),
+    observation_refs: ids(value.observations, "observation_id"),
+    validation_spec_refs: ids(value.validation_specs, "spec_id"),
+    validation_result_refs: ids(value.validation_results, "result_id"),
+    finding_refs: ids(value.findings, "finding_id"),
+    acceptance_refs: ids(value.acceptances, "acceptance_id"),
+  };
+}
+
+function normalizeDependencyRefs(value) {
+  if (!isPlainObject(value)) throw new Error("Review dependency_refs must be an object");
+  const keys = ["claim_refs", "relation_refs", "act_refs", "observation_refs", "validation_spec_refs", "validation_result_refs", "finding_refs", "acceptance_refs"];
+  rejectUnknownKeys(value, keys, "Review dependency_refs");
+  return Object.fromEntries(keys.map((key) => [key, canonicalStringSet((value[key] || []).map((item) => requireString(item, key, 128)))]));
+}
+
+function ids(values, key) {
+  if (!Array.isArray(values)) throw new Error(`Review snapshot ${key} collection must be an array`);
+  return canonicalStringSet(values.map((item) => requireString(item?.[key], key, 128)));
+}
+
+function pick(value, keys) {
+  if (!isPlainObject(value)) throw new Error("Review snapshot record must be an object");
+  return Object.fromEntries(keys.map((key) => [key, value[key]]));
+}
+
+function requireWorkspaceRoot(value) {
+  if (typeof value !== "string" || !path.isAbsolute(value)) throw new Error("workspace root must be absolute");
+  const root = fs.realpathSync(value);
+  const workspace = JSON.parse(fs.readFileSync(path.resolve(root, "workspace.json"), "utf8"));
+  if (workspace.schema_version !== "ts-workspace/4") throw new Error("Review requires a v4 workspace");
+  return root;
 }
 
 function normalizeRelativeRef(value) {
-  const text = requireString(value, "artifact ref", 4096).replace(/^@+/, "").replaceAll("\\", "/");
-  if (path.posix.isAbsolute(text)) throw new Error(`artifact ref must be workspace-relative: ${text}`);
+  const text = requireString(value, "artifact path", 4096).replaceAll("\\", "/");
+  if (path.posix.isAbsolute(text)) throw new Error("artifact path must be workspace-relative");
   const normalized = path.posix.normalize(text);
-  if (normalized === ".." || normalized.startsWith("../") || normalized === ".") throw new Error(`invalid artifact ref: ${text}`);
-  return normalized.replace(/^\.\//, "");
+  if (normalized === "." || normalized === ".." || normalized.startsWith("../")) throw new Error("invalid artifact path");
+  return normalized;
 }
 
 function assertInside(root, candidate, message) {
   const relative = path.relative(root, candidate);
-  if (relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error(message);
+  if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) throw new Error(message);
 }
 
-function requireObjectId(value, key, label) {
-  if (!isPlainObject(value)) throw new Error(`${label} must be an object`);
-  return requireString(value[key], `${label}.${key}`, 4096);
+function canonicalStringSet(values) { return [...new Set(values)].sort(); }
+function uniqueIds(value, label, maxItems, pattern) {
+  if (!Array.isArray(value) || value.length > maxItems) throw new Error(`${label} must be an array with at most ${maxItems} entries`);
+  const result = value.map((item) => requireId(item, label, pattern));
+  if (new Set(result).size !== result.length) throw new Error(`${label} contains duplicates`);
+  return result;
 }
-
-function rejectUnknownKeys(value, allowed, label) {
-  const allowedSet = new Set(allowed);
-  const unknown = Object.keys(value).filter((key) => !allowedSet.has(key));
-  if (unknown.length) throw new Error(`${label} contains unknown fields: ${unknown.join(", ")}`);
+function requireId(value, label, pattern) {
+  const id = requireString(value, label, 128);
+  if (!pattern.test(id)) throw new Error(`${label} is invalid`);
+  return id;
 }
-
+function requireDigest(value, label) {
+  const digest = requireString(value, label, 71);
+  if (!/^sha256:[0-9a-f]{64}$/.test(digest)) throw new Error(`${label} must be a SHA-256 digest`);
+  return digest;
+}
+function nullableString(value, label, maxLength) { return value === null ? null : requireString(value, label, maxLength); }
 function requireString(value, label, maxLength) {
   if (typeof value !== "string" || !value.trim()) throw new Error(`${label} must be a non-empty string`);
   const text = value.trim();
   if (text.length > maxLength) throw new Error(`${label} exceeds ${maxLength} characters`);
   return text;
 }
-
-function optionalString(value, label, maxLength) {
-  if (value === undefined || value === null || value === "") return null;
-  return requireString(value, label, maxLength);
+function rejectUnknownKeys(value, allowed, label) {
+  const known = new Set(allowed);
+  const unknown = Object.keys(value).filter((key) => !known.has(key));
+  if (unknown.length) throw new Error(`${label} contains unknown fields: ${unknown.join(", ")}`);
 }
-
-function stringArray(value, label, maxItems, maxLength) {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) throw new Error(`${label} must be an array`);
-  if (value.length > maxItems) throw new Error(`${label} exceeds ${maxItems} items`);
-  const result = value.map((item, index) => requireString(item, `${label}[${index}]`, maxLength));
-  if (new Set(result).size !== result.length) throw new Error(`${label} contains duplicates`);
-  return result;
-}
-
-function canonicalStringSet(values) {
-  return [...new Set(values)].sort();
-}
-
-function isPlainObject(value) {
-  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
-}
+function isPlainObject(value) { return Boolean(value) && typeof value === "object" && !Array.isArray(value); }
 
 module.exports = {
   LIMITS,
   REVIEW_OPERATION,
   buildProviderTaskPacket,
   buildReviewTaskBundle,
-  normalizeRelativeRef,
-  validateEvidenceSnapshot,
-  validateProviderTaskPacket,
   validateReviewTaskBundle,
   validateSubagentRequest,
+  validateTaskSnapshot,
 };

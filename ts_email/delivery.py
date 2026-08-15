@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ts_workspace import report_workspace
+from ts_workspace.context import compile_context
 
 from .artifacts import bounded_content, bounded_text, sha256_json, sha256_path, workspace_path, workspace_root
 
@@ -28,7 +28,7 @@ DELIVERY_DIR_REF = "reports/email/deliveries"
 EVENTS = frozenset(
     {
         "progress",
-        "node_completed",
+        "act_completed",
         "calculation_failed",
         "calculation_ambiguous",
         "study_completed",
@@ -69,7 +69,7 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
         workspace,
         request.get("report_refs", []),
     )
-    workspace_report = report_workspace(workspace)
+    workspace_report = compile_context(workspace, mode="frontier")
     workspace_id = bounded_text(workspace_report.get("workspace_id"), "workspace_id", 128)
     workspace_revision = bounded_text(
         workspace_report.get("workspace_revision"),
@@ -334,7 +334,7 @@ def _revalidate_notification_inputs(
     current_config = load_notification_config(config.source)
     if current_config.digest != config.digest:
         raise ValueError("notification configuration changed after preflight")
-    current_report = report_workspace(workspace)
+    current_report = compile_context(workspace, mode="frontier")
     if current_report.get("workspace_revision") != workspace_revision:
         raise ValueError("workspace revision changed after notification preflight")
     for record in attachment_records:

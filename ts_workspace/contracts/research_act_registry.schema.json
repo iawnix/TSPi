@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research_act_registry.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "acts"],
+  "properties": {
+    "schema_version": {"const": "ts-research-act-registry/1"},
+    "acts": {"type": "array", "items": {"$ref": "research_act.schema.json"}}
+  }
+}

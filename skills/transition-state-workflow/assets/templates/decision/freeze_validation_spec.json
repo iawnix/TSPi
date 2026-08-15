@@ -1,0 +1,15 @@
+{
+  "op": "freeze_validation_spec",
+  "local_ref": "validation_spec",
+  "actRef": "${ACT_REF}",
+  "targetClaimRef": "${CLAIM_REF}",
+  "dimension": "${VALIDATION_DIMENSION}",
+  "title": "${VALIDATION_TITLE}",
+  "template": {
+    "templateId": "${TEMPLATE_ID}",
+    "version": "${TEMPLATE_VERSION}",
+    "parameters": {
+      "subject_ref": "${SUBJECT_REF}"
+    }
+  }
+}

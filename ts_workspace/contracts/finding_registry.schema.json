@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "finding_registry.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "findings"],
+  "properties": {
+    "schema_version": {"const": "ts-finding-registry/1"},
+    "findings": {"type": "array", "items": {"$ref": "finding.schema.json"}}
+  }
+}

@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from strict_helpers import bootstrap_strict_workspace, start_research_node
+from tests.v4_helpers import bootstrap_v4_workspace, start_research_act
 from ts_backends.base import BackendTask
 from ts_backends.crest import prepare_crest
 from ts_backends.xtb import (
@@ -14,7 +14,13 @@ from ts_backends.xtb import (
     prepare_xtb,
 )
 from ts_backends.xtb_scan import parse_xtb_scan_control
-from ts_compute import ComputeContractError, list_calculation_artifacts, parse_calculation, prepare_calculation
+from ts_compute import (
+    ComputeContractError,
+    create_calculation_intent,
+    list_calculation_artifacts,
+    parse_calculation,
+    prepare_calculation,
+)
 from ts_workspace.io import sha256_json
 
 
@@ -45,9 +51,9 @@ def test_xtb_prepares_typed_task_matrix() -> None:
             settings["opt_level"] = "tight"
         prepared = prepare_xtb(
             BackendTask(
-                node_id="n001",
+                act_id="act_0123456789abcdef01234567",
                 task_type=task_type,
-                work_dir="nodes/n001",
+                work_dir="acts/act_0123456789abcdef01234567",
                 inputs=inputs,
                 settings=settings,
             )
@@ -72,9 +78,9 @@ def test_xtb_control_tasks_require_bound_control_input(task_type: str) -> None:
     with pytest.raises(ValueError, match="input roles"):
         prepare_xtb(
             BackendTask(
-                node_id="n001",
+                act_id="act_0123456789abcdef01234567",
                 task_type=task_type,
-                work_dir="nodes/n001",
+                work_dir="acts/act_0123456789abcdef01234567",
                 inputs={"xyz": "candidate.xyz"},
             )
         )
@@ -156,9 +162,9 @@ def test_xtb_scan_control_rejects_unsafe_or_inconsistent_input(
 def test_crest_prepares_distinct_conformer_search_backend() -> None:
     prepared = prepare_crest(
         BackendTask(
-            node_id="n001",
+            act_id="act_0123456789abcdef01234567",
             task_type="conformer_search",
-            work_dir="nodes/n001",
+            work_dir="acts/act_0123456789abcdef01234567",
             inputs={"xyz": "candidate.xyz"},
             settings={
                 "charge": "0",
@@ -211,10 +217,10 @@ def test_xtb_opt_freq_parse_consumes_bound_artifact_set_and_advances_collected_r
     spectrum.write_text(_vibspectrum(), encoding="utf-8")
     intent = json.loads((workspace / prepared["intent_ref"]).read_text(encoding="utf-8"))
     collected = {
-        "schema_version": "ts-calculation-result/1",
+        "schema_version": "ts-calculation-result/2",
         "job_id": "123.cluster",
         "intent_id": intent["intent_id"],
-        "node_id": intent["node_id"],
+        "act_id": intent["act_id"],
         "state": "collected",
         "program_status": "completed",
         "exit_status": 0,
@@ -227,7 +233,7 @@ def test_xtb_opt_freq_parse_consumes_bound_artifact_set_and_advances_collected_r
         "provenance": {
             "backend": "xtb",
             "intent_digest": sha256_json(intent),
-            "intent_schema": "ts-calculation-intent/3",
+            "intent_schema": "ts-calculation-intent/4",
             "attempt_kind": "primary",
             "recalculation_ref": None,
         },
@@ -536,7 +542,7 @@ def test_xtb_prepare_requires_task_artifacts_in_intent(tmp_path: Path) -> None:
     intent_path = _intent(workspace, "xtb", "opt")
     value = json.loads(intent_path.read_text(encoding="utf-8"))
     value["expected_artifacts"] = [
-        f"nodes/n001/attempts/{value['intent_id']}/outputs/xtb.out"
+        f"acts/{value['act_id']}/attempts/{value['intent_id']}/outputs/xtb.out"
     ]
     intent_path.write_text(json.dumps(value), encoding="utf-8")
 
@@ -546,27 +552,21 @@ def test_xtb_prepare_requires_task_artifacts_in_intent(tmp_path: Path) -> None:
 
 def test_xtb_scan_prepare_rejects_invalid_bound_control_before_execution(tmp_path: Path) -> None:
     workspace = _workspace(tmp_path)
-    (workspace / "nodes/n001/inputs/scan.inp").write_text(
+    (workspace / "inputs/scan.inp").write_text(
         "$constrain\n  distance: 1, 2, auto\n$metadyn\n  save=10\n$end\n",
         encoding="utf-8",
     )
-    intent_path = _intent(workspace, "xtb", "scan")
-
     with pytest.raises(ComputeContractError, match="invalid xTB scan control.*unsupported.*section"):
-        prepare_calculation(workspace, intent_path)
+        _intent(workspace, "xtb", "scan")
 
 
 def _workspace(tmp_path: Path) -> Path:
-    workspace = tmp_path / "workspace"
-    report_ref = bootstrap_strict_workspace(workspace)
-    start_research_node(
+    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    start_research_act(
         workspace,
-        report_ref,
-        node_id="n001",
         objective="Exercise the typed xTB and CREST adapter task matrix.",
-        tags=["candidate", "adapter-matrix"],
     )
-    inputs = workspace / "nodes/n001/inputs"
+    inputs = workspace / "inputs"
     inputs.mkdir(parents=True, exist_ok=True)
     (inputs / "candidate.xyz").write_text(_xyz(-5.0), encoding="utf-8")
     (inputs / "md.inp").write_text(
@@ -582,68 +582,37 @@ def _workspace(tmp_path: Path) -> Path:
 
 
 def _intent(workspace: Path, backend: str, task_type: str) -> Path:
-    intent_id = f"calc_n001_{backend}_{task_type}_001"
-    names = {
-        ("xtb", "sp"): ["xtb.out"],
-        ("xtb", "opt"): ["xtb.out", "xtbopt.xyz"],
-        ("xtb", "freq"): ["xtb.out", "vibspectrum"],
-        ("xtb", "opt_freq"): ["xtb.out", "xtbopt.xyz", "vibspectrum"],
-        ("xtb", "scan"): ["xtb.out", "xtbscan.log", "xtbopt.xyz"],
-        ("xtb", "md"): ["xtb.out", "xtb.trj"],
-        ("crest", "conformer_search"): [
-            "crest.out",
-            "crest_best.xyz",
-            "crest_conformers.xyz",
-            "crest.energies",
-        ],
-    }[(backend, task_type)]
-    input_refs = {
-        "xyz": "nodes/n001/inputs/candidate.xyz",
-        **(
-            {"control": f"nodes/n001/inputs/{task_type}.inp"}
-            if task_type in {"scan", "md"}
-            else {}
-        ),
-    }
+    acts = json.loads((workspace / "research_acts.json").read_text(encoding="utf-8"))["acts"]
+    act_id = acts[0]["act_id"]
     catalog = list_calculation_artifacts(workspace)
     by_path = {item["path"]: item for item in catalog["artifacts"]}
-    input_bindings = [
-        {
-            "input_role": role,
-            "artifact_id": by_path[ref]["artifact_id"],
-            "path": ref,
-            "sha256": by_path[ref]["sha256"],
-            "owner_node": by_path[ref]["owner_node"],
-            "source_intent_id": by_path[ref]["source_intent_id"],
-        }
-        for role, ref in sorted(input_refs.items())
+    input_artifacts = [
+        {"input_role": "xyz", "artifact_id": by_path["inputs/candidate.xyz"]["artifact_id"]}
     ]
-    value = {
-        "schema_version": "ts-calculation-intent/3",
-        "intent_id": intent_id,
-        "node_id": "n001",
+    if task_type in {"scan", "md"}:
+        control = by_path[f"inputs/{task_type}.inp"]
+        input_artifacts.append({"input_role": "control", "artifact_id": control["artifact_id"]})
+    created = create_calculation_intent(workspace, {
+        "schema_version": "ts-calculation-request/2",
+        "act_id": act_id,
         "purpose": f"Exercise deterministic {backend} {task_type} parsing.",
         "attempt_kind": "primary",
         "recalculation_ref": None,
         "backend": backend,
         "task_type": task_type,
-        "input_refs": input_refs,
-        "input_bindings": input_bindings,
+        "input_artifacts": input_artifacts,
         "settings": {},
-        "expected_artifacts": [
-            f"nodes/n001/attempts/{intent_id}/outputs/{name}" for name in names
-        ],
         "execution_target": {"kind": "local"},
         "dry_run": True,
-    }
-    path = workspace / f"nodes/n001/scratch/{intent_id}.json"
-    path.parent.mkdir(exist_ok=True)
-    path.write_text(json.dumps(value), encoding="utf-8")
-    return path
+    })
+    return workspace / created["intent_ref"]
 
 
 def _output_dir(workspace: Path, intent_id: str) -> Path:
-    return workspace / f"nodes/n001/attempts/{intent_id}/outputs"
+    matches = list((workspace / "acts").glob(f"*/attempts/{intent_id}/intent.json"))
+    if len(matches) != 1:
+        raise AssertionError(f"expected one intent for {intent_id}, found {len(matches)}")
+    return matches[0].parent / "outputs"
 
 
 def _xyz(energy: float) -> str:

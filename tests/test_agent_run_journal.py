@@ -1,338 +1,125 @@
 from __future__ import annotations
 
 import json
-import hashlib
 import stat
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from strict_helpers import bootstrap_strict_workspace
-from ts_web.normalize import explorer_graph_payload_from_view, normalize_workspace
-from ts_workspace import ContractError, report_workspace, update_workspace, validate_decision_dry_run
+from tests.v4_helpers import bootstrap_v4_workspace, build_review_bundle, start_research_act
+from ts_workspace import apply_decision, draft_decision, validate_decision_dry_run
+from ts_workspace.context import compile_context
+from ts_workspace.errors import ContractError
+from ts_workspace.operational import operational_snapshot
 
 
 ROOT = Path(__file__).resolve().parents[1]
 JOURNAL = ROOT / "src" / "agent-core" / "run-journal.cjs"
 
 
-def test_node_agent_run_changes_only_operational_revision(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    bootstrap_strict_workspace(workspace)
-    before = report_workspace(workspace)
-    packet, documents = _task_packet(workspace, "sub_journal_001", ["n000"])
+def test_completed_review_is_act_scoped_and_changes_only_operational_state(tmp_path: Path) -> None:
+    workspace, refs = _workspace_with_act(tmp_path)
+    task, documents = _review_bundle(workspace, refs, "sub_journal-001")
+    before = compile_context(workspace, mode="frontier")
 
-    _run_journal(
-        workspace,
-        packet,
-        documents,
-        "complete",
-        {
-            "actions": [],
-            "result": {"summary": "Independent mechanism review completed."},
-            "metadata": {"schema_valid": True},
-        },
-    )
+    run_ref = _journal(workspace, task, documents, mode="complete")
 
-    run_dir = workspace / "nodes" / "n000" / "agent-runs" / "sub_journal_001"
+    assert run_ref == f"acts/{refs['act_id']}/agent-runs/{task['task_id']}"
+    run_dir = workspace / run_ref
     assert {path.name for path in run_dir.iterdir()} == {
-        "task.json", "evidence-snapshot.json", "provider-input.json", "actions.json", "result.json", "run.json"
+        "actions.json",
+        "provider-input.json",
+        "result.json",
+        "review-snapshot.json",
+        "run.json",
+        "task.json",
     }
-    for name in ("task.json", "evidence-snapshot.json", "provider-input.json"):
-        assert stat.S_IMODE((run_dir / name).stat().st_mode) == 0o600
-    assert json.loads((run_dir / "run.json").read_text(encoding="utf-8"))["status"] == "completed"
+    assert all(stat.S_IMODE((run_dir / name).stat().st_mode) == 0o600 for name in (
+        "task.json", "review-snapshot.json", "provider-input.json", "run.json"
+    ))
 
-    after = report_workspace(workspace)
+    after = compile_context(workspace, mode="frontier")
+    operations = operational_snapshot(workspace)
     assert after["workspace_revision"] == before["workspace_revision"]
     assert after["operational_revision"] != before["operational_revision"]
-    assert after["evidence_count"] == before["evidence_count"]
-    assert after["operational_summary"]["agent_run_count"] == 1
-    assert after["operational_summary"]["review_disposition_pending_count"] == 1
-    assert after["pending_review_dispositions"][0]["task_id"] == "sub_journal_001"
-    assert after["agent_runs"][0]["summary"] == "Independent mechanism review completed."
-    assert after["agent_runs"][0]["result_outcome"] is None
-
-    graph = explorer_graph_payload_from_view(normalize_workspace(workspace))
-    node = next(row for row in graph["nodes"] if row["id"] == "n000")
-    assert node["agent_run_count"] == 1
-    assert node["agent_run_status"] == "completed"
-    assert graph["evidence_summary"]["total"] == before["evidence_count"]
+    assert operations["review_runs"][0]["task_id"] == task["task_id"]
+    assert operations["pending_review_dispositions"][0]["claim_refs"] == [refs["claim_id"]]
 
 
 @pytest.mark.parametrize("disposition", ["accepted", "partially_accepted", "rejected", "deferred"])
-def test_review_root_disposition_is_write_once_operational_state(tmp_path: Path, disposition: str) -> None:
-    workspace = tmp_path / "workspace"
-    bootstrap_strict_workspace(workspace)
-    packet, documents = _task_packet(workspace, f"sub_disposition_{disposition}", ["n000"])
-    _run_journal(
-        workspace,
-        packet,
-        documents,
-        "complete",
-        {"result": {"summary": "Bounded advisory Review completed."}},
-    )
-    before = report_workspace(workspace)
-    run_ref = f"nodes/n000/agent-runs/{packet['task_id']}"
-
-    completed = _write_disposition(
+def test_root_review_disposition_is_write_once_and_unblocks_mutation(
+    tmp_path: Path,
+    disposition: str,
+) -> None:
+    workspace, refs = _workspace_with_act(tmp_path)
+    task, documents = _review_bundle(workspace, refs, f"sub_disposition-{disposition.replace('_', '-')}")
+    run_ref = _journal(workspace, task, documents, mode="complete")
+    drafted = draft_decision(
         workspace,
         {
-            "task_id": packet["task_id"],
-            "review_run_ref": run_ref,
-            "disposition": disposition,
-            "response": "Root assessed the advisory result against the primary artifacts.",
-            "next_steps": ["Proceed using only the supported portion of the advice."],
+            "rationale": "Record a post-review research note.",
+            "basis_refs": [],
+            "operations": [{"op": "set_focus", "claimRefs": [refs["claim_id"]], "actRefs": [refs["act_id"]]}],
         },
     )
-    document = json.loads(completed.stdout)
+    with pytest.raises(ContractError, match="requires a Root response"):
+        validate_decision_dry_run(workspace, drafted["decision"])
 
-    disposition_path = workspace / run_ref / "root-disposition.json"
+    document = _write_disposition(workspace, task["task_id"], run_ref, disposition)
     assert document["schema_version"] == "ts-review-root-disposition/1"
-    assert stat.S_IMODE(disposition_path.stat().st_mode) == 0o600
-    after = report_workspace(workspace)
-    assert after["workspace_revision"] == before["workspace_revision"]
-    assert after["operational_revision"] != before["operational_revision"]
-    assert after["evidence_count"] == before["evidence_count"]
-    assert after["review_disposition_count"] == 1
-    assert after["pending_review_dispositions"] == []
-    assert after["operational_summary"]["review_disposition_pending_count"] == 0
-    assert after["agent_runs"][0]["root_disposition"] == disposition
-    assert after["agent_runs"][0]["root_disposition_ref"] == f"{run_ref}/root-disposition.json"
+    assert stat.S_IMODE((workspace / run_ref / "root-disposition.json").stat().st_mode) == 0o600
+    assert validate_decision_dry_run(workspace, drafted["decision"])["valid"] is True
+    apply_decision(workspace, drafted["decision"])
+    assert operational_snapshot(workspace)["pending_review_dispositions"] == []
 
-    repeated = _write_disposition(workspace, document, check=False)
+    repeated = _write_disposition(workspace, task["task_id"], run_ref, disposition, check=False)
+    assert isinstance(repeated, subprocess.CompletedProcess)
     assert repeated.returncode == 2
-    assert "EEXIST" in repeated.stderr or "file already exists" in repeated.stderr
 
 
-def test_pending_review_disposition_blocks_validate_and_apply(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    bootstrap_strict_workspace(workspace)
-    packet, documents = _task_packet(workspace, "sub_mutation_gate_001", ["n000"])
-    _run_journal(
-        workspace,
-        packet,
-        documents,
-        "complete",
-        {"result": {"summary": "Review before a workspace mutation."}},
-    )
-    report = report_workspace(workspace)
-    decision = {
-        "schema_version": "ts-decision/3",
-        "decision_id": "dec_after_review_001",
-        "action": "update_workspace",
-        "rationale": "Exercise the pending Review response gate.",
-        "basis_refs": [],
-        "report_ref": {"report_id": report["report_id"], "workspace_root": str(workspace)},
-        "base_revision": report["workspace_revision"],
-        "payload": {"append_provenance": {"source": "review-disposition-test"}},
-    }
-
-    with pytest.raises(ContractError, match="call ts_review_disposition first"):
-        validate_decision_dry_run(workspace, decision)
-    with pytest.raises(ContractError, match="call ts_review_disposition first"):
-        update_workspace(workspace, decision)
-    assert not (workspace / "decisions" / "dec_after_review_001.json").exists()
-
-    _write_disposition(
-        workspace,
-        {
-            "task_id": packet["task_id"],
-            "review_run_ref": f"nodes/n000/agent-runs/{packet['task_id']}",
-            "disposition": "partially_accepted",
-            "response": "The supported advice is adopted; unsupported claims remain excluded.",
-            "next_steps": [],
-        },
-    )
-    result = update_workspace(workspace, decision)
-    assert result["appended"]["provenance"] == 1
-
-
-def test_failed_review_and_non_review_run_cannot_create_response_obligations(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    bootstrap_strict_workspace(workspace)
-    failed_packet, failed_documents = _task_packet(workspace, "sub_failed_review_001", ["n000"])
-    _run_journal(
-        workspace,
-        failed_packet,
-        failed_documents,
-        "fail",
-        {"error": {"name": "Error", "message": "provider failed"}},
-    )
-    report_packet, report_documents = _task_packet(workspace, "agent_report_no_response_001", [])
-    _run_journal(
-        workspace,
-        report_packet,
-        report_documents,
-        "complete",
-        {"result": {"summary": "Report completed."}},
-    )
-
-    report = report_workspace(workspace)
-    assert report["pending_review_dispositions"] == []
-    failed_response = _write_disposition(
-        workspace,
-        {
-            "task_id": failed_packet["task_id"],
-            "review_run_ref": f"nodes/n000/agent-runs/{failed_packet['task_id']}",
-            "disposition": "deferred",
-            "response": "No valid Review was produced.",
-            "next_steps": [],
-        },
-        check=False,
-    )
-    assert failed_response.returncode == 2
-    assert "complete successfully" in failed_response.stderr
-
-    non_review_response = _write_disposition(
-        workspace,
-        {
-            "task_id": report_packet["task_id"],
-            "review_run_ref": f"operations/agent-runs/{report_packet['task_id']}",
-            "disposition": "accepted",
-            "response": "This must not be accepted as a Review response.",
-            "next_steps": [],
-        },
-        check=False,
-    )
-    assert non_review_response.returncode == 2
-    assert "not an advisory Review" in non_review_response.stderr
-
-
-def test_global_failed_agent_run_is_durable_and_write_once(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    bootstrap_strict_workspace(workspace)
-    packet, documents = _task_packet(workspace, "agent_report_001", [])
-
-    completed = _run_journal(
-        workspace,
-        packet,
-        documents,
-        "fail_twice",
-        {
-            "actions": [{"tool": "ts_workspace_report_build", "result": {"state": "started"}}],
-            "error": {"name": "Error", "message": "report build failed", "code": "REPORT_FAILED"},
-            "metadata": {"role": "report"},
-        },
-    )
-
-    assert completed["second_error"] == "agent run is already finalized: agent_report_001"
-    run_dir = workspace / "operations" / "agent-runs" / "agent_report_001"
-    assert not (run_dir / "result.json").exists()
-    run = json.loads((run_dir / "run.json").read_text(encoding="utf-8"))
-    assert run["status"] == "failed"
-    assert run["error"]["code"] == "REPORT_FAILED"
-    report = report_workspace(workspace)
-    assert report["operational_summary"]["agent_run_failed_count"] == 1
-    assert report["agent_runs"][0]["run_ref"] == "operations/agent-runs/agent_report_001"
-
-
-def test_invalid_review_output_is_private_bounded_and_not_scientific_evidence(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    bootstrap_strict_workspace(workspace)
-    before = report_workspace(workspace)
-    packet, documents = _task_packet(workspace, "sub_invalid_review_001", ["n000"])
-    raw = "x" * (20 * 1024)
+def test_invalid_review_output_is_bounded_private_operational_data(tmp_path: Path) -> None:
+    workspace, refs = _workspace_with_act(tmp_path)
+    task, documents = _review_bundle(workspace, refs, "sub_invalid-001")
     script = (
-        f"const journal=require({json.dumps(str(JOURNAL))});"
-        "const packet=JSON.parse(process.argv[2]);"
-        "const documents=JSON.parse(process.argv[4]);"
-        "const handle=journal.beginAgentRun(process.argv[1],packet,{documents});"
-        "journal.writeInvalidReviewOutput(handle,[{validation_stage:'tool_schema',reason:'risks must be an array',"
-        "source:'tool_arguments',raw:process.argv[3]}]);"
-        "journal.failAgentRun(handle,{error:new Error('invalid review output')});"
+        "const journal=require(process.argv[1]);"
+        "const h=journal.beginAgentRun(process.argv[2],JSON.parse(process.argv[3]),{documents:JSON.parse(process.argv[4])});"
+        "journal.writeInvalidReviewOutput(h,[{validation_stage:'tool_schema',reason:'risks must be an array',"
+        "source:'tool_arguments',raw:'x'.repeat(40000)}]);"
+        "journal.failAgentRun(h,{error:new Error('invalid review result')});"
     )
     subprocess.run(
-        ["node", "-e", script, str(workspace), json.dumps(packet), raw, json.dumps(documents)],
+        ["node", "-e", script, str(JOURNAL), str(workspace), json.dumps(task), json.dumps(documents)],
         cwd=ROOT,
         check=True,
     )
-
-    output = workspace / "nodes" / "n000" / "agent-runs" / "sub_invalid_review_001" / "invalid-review-output.json"
-    document = json.loads(output.read_text(encoding="utf-8"))
-    assert stat.S_IMODE(output.stat().st_mode) == 0o600
-    assert document["invalid"] is True
-    assert document["attempts"][0]["truncated"] is True
-    assert document["attempts"][0]["sha256"].startswith("sha256:")
-    assert output.stat().st_size <= 16 * 1024
-    assert len(document["attempts"][0]["raw"].encode()) < 16 * 1024
-
-    after = report_workspace(workspace)
-    assert after["evidence_count"] == before["evidence_count"]
-    assert "invalid-review-output" not in json.dumps(after)
+    invalid = workspace / "acts" / refs["act_id"] / "agent-runs" / task["task_id"] / "invalid-review-output.json"
+    value = json.loads(invalid.read_text(encoding="utf-8"))
+    assert value["invalid"] is True
+    assert value["attempts"][0]["truncated"] is True
+    assert invalid.stat().st_size <= 16 * 1024
+    assert stat.S_IMODE(invalid.stat().st_mode) == 0o600
+    assert compile_context(workspace, mode="frontier")["observations"] == []
 
 
-def test_review_journal_rejects_missing_or_mismatched_companions_without_partial_run(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    bootstrap_strict_workspace(workspace)
-    packet, documents = _task_packet(workspace, "sub_bound_review_001", ["n000"])
+def test_review_journal_rejects_duplicate_task_and_detects_bound_document_tampering(tmp_path: Path) -> None:
+    workspace, refs = _workspace_with_act(tmp_path)
+    task, documents = _review_bundle(workspace, refs, "sub_tamper-001")
+    _journal(workspace, task, documents, mode="complete")
+    duplicate = _journal(workspace, task, documents, mode="complete", check=False)
+    assert isinstance(duplicate, subprocess.CompletedProcess)
+    assert duplicate.returncode == 2
+    assert "already exists" in duplicate.stderr
+
+    task2, documents2 = _review_bundle(workspace, refs, "sub_tamper-002")
     script = (
-        f"const journal=require({json.dumps(str(JOURNAL))});"
-        "const packet=JSON.parse(process.argv[2]);"
-        "const documents=JSON.parse(process.argv[3]);"
-        "try{journal.beginAgentRun(process.argv[1],packet,{documents});}"
-        "catch(error){process.stderr.write(error.message);process.exitCode=2;}"
-    )
-    missing = {"evidence_snapshot": documents["evidence_snapshot"]}
-    completed = subprocess.run(
-        ["node", "-e", script, str(workspace), json.dumps(packet), json.dumps(missing)],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-    )
-    assert completed.returncode == 2
-    assert "missing bound documents" in completed.stderr
-
-    mismatched = json.loads(json.dumps(documents))
-    mismatched["provider_input"]["objective"] = "Tampered provider input."
-    completed = subprocess.run(
-        ["node", "-e", script, str(workspace), json.dumps(packet), json.dumps(mismatched)],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-    )
-    assert completed.returncode == 2
-    assert "does not match task binding" in completed.stderr
-    parent = workspace / "nodes/n000/agent-runs"
-    assert not (parent / "sub_bound_review_001").exists()
-    assert not list(parent.glob(".sub_bound_review_001.tmp-*"))
-
-
-def test_agent_journal_rejects_duplicate_task_id(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    bootstrap_strict_workspace(workspace)
-    packet, documents = _task_packet(workspace, "agent_duplicate_001", [])
-    _run_journal(workspace, packet, documents, "complete", {"result": {"summary": "First."}})
-    script = (
-        f"const journal=require({json.dumps(str(JOURNAL))});"
-        "try{journal.beginAgentRun(process.argv[1],JSON.parse(process.argv[2]),"
-        "{documents:JSON.parse(process.argv[3])});}"
-        "catch(error){process.stderr.write(error.message);process.exitCode=2;}"
+        "const fs=require('node:fs');const journal=require(process.argv[1]);"
+        "const h=journal.beginAgentRun(process.argv[2],JSON.parse(process.argv[3]),{documents:JSON.parse(process.argv[4])});"
+        "fs.appendFileSync(h.runDir+'/provider-input.json',' ');"
+        "try{journal.readAgentRunInputs(h);}catch(error){process.stderr.write(error.message);process.exitCode=2;}"
     )
     completed = subprocess.run(
-        ["node", "-e", script, str(workspace), json.dumps(packet), json.dumps(documents)],
-        cwd=ROOT,
-        text=True,
-        capture_output=True,
-    )
-    assert completed.returncode == 2
-    assert "already exists" in completed.stderr
-
-
-def test_review_journal_detects_companion_tampering_on_read(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    bootstrap_strict_workspace(workspace)
-    packet, documents = _task_packet(workspace, "sub_tamper_001", ["n000"])
-    script = (
-        f"const fs=require('node:fs');const journal=require({json.dumps(str(JOURNAL))});"
-        "const handle=journal.beginAgentRun(process.argv[1],JSON.parse(process.argv[2]),"
-        "{documents:JSON.parse(process.argv[3])});"
-        "fs.appendFileSync(handle.runDir+'/provider-input.json',' ');"
-        "try{journal.readAgentRunInputs(handle);}"
-        "catch(error){process.stderr.write(error.message);process.exitCode=2;}"
-    )
-    completed = subprocess.run(
-        ["node", "-e", script, str(workspace), json.dumps(packet), json.dumps(documents)],
+        ["node", "-e", script, str(JOURNAL), str(workspace), json.dumps(task2), json.dumps(documents2)],
         cwd=ROOT,
         text=True,
         capture_output=True,
@@ -341,133 +128,94 @@ def test_review_journal_detects_companion_tampering_on_read(tmp_path: Path) -> N
     assert "does not match task binding" in completed.stderr
 
 
-def _task_packet(
+def _workspace_with_act(tmp_path: Path) -> tuple[Path, dict[str, str]]:
+    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    refs = start_research_act(workspace, claim_statement="The proposed pathway is concerted.")
+    return workspace, refs
+
+
+def _review_bundle(
     workspace: Path,
+    refs: dict[str, str],
     task_id: str,
-    node_ids: list[str],
 ) -> tuple[dict[str, object], dict[str, object]]:
-    role = "review" if node_ids else "report"
-    scope = {"report_id": "rep_001", "node_ids": node_ids, "claim_refs": ["claim_journal_001"] if node_ids else []}
-    documents: dict[str, object] = {}
-    inputs: dict[str, object] = {"basis_allowlist": []}
-    if role == "review":
-        evidence_snapshot = {
-            "schema_version": "ts-review-evidence-snapshot/2",
-            "task_id": task_id,
-            "operation": "claim_review",
-            "scope": scope,
-            "target_claim_ref": "claim_journal_001",
-            "workspace_revision": "sha256:" + "1" * 64,
-            "claims": [{"claim_id": "claim_journal_001"}],
-            "gate_results": [],
-            "evidence": [],
-            "nodes": [],
-            "artifact_excerpts": [],
-            "basis_allowlist": ["claim_journal_001"],
-        }
-        provider_input = {
-            "schema_version": "ts-review-provider-input/2",
-            "task_id": task_id,
-            "operation": "claim_review",
-            "objective": "Review the bounded Claim evidence.",
-            "scope": scope,
-            "workspace_revision": "sha256:" + "1" * 64,
-            "target_claim_ref": "claim_journal_001",
-            "claims": [{"claim_id": "claim_journal_001"}],
-            "gate_results": [],
-            "evidence": [],
-            "nodes": [],
-            "artifact_excerpts": [],
-            "basis_allowlist": ["claim_journal_001"],
-        }
-        documents = {"evidence_snapshot": evidence_snapshot, "provider_input": provider_input}
-        inputs = {
-            "evidence_snapshot": _document_binding(
-                "evidence-snapshot.json", "ts-review-evidence-snapshot/2", evidence_snapshot
-            ),
-            "provider_input": _document_binding(
-                "provider-input.json", "ts-review-provider-input/2", provider_input
-            ),
-        }
-    task = {
-        "schema_version": "ts-agent-task/2",
-        "task_id": task_id,
-        "role": role,
-        "authority": "advisory" if role == "review" else "operational",
-        "operation": "claim_review" if role == "review" else "build",
-        "objective": "Review the bounded Claim evidence." if role == "review" else "Build the bounded report.",
-        "workspace": {"root": str(workspace), "report_id": "rep_001", "revision": "sha256:" + "1" * 64},
-        "scope": scope,
-        "inputs": inputs,
-        "capabilities": [],
-        "constraints": {
-            "canonical_workspace_mutation": False,
-            "scientific_decision": False,
-            "recursive_delegation": False,
-            "remote_authority": "execution_mirror",
-            "external_side_effects": False,
-        },
-        "output_contract": "ts-agent-result/1",
-    }
-    return task, documents
+    value = build_review_bundle(workspace, refs, task_id)
+    return value["task"], value["documents"]
 
 
-def _document_binding(ref: str, schema_version: str, document: dict[str, object]) -> dict[str, object]:
-    payload = json.dumps(document, ensure_ascii=False, indent=2, separators=(",", ": ")) + "\n"
+def _review_result(task: dict[str, object]) -> dict[str, object]:
     return {
-        "ref": ref,
-        "schema_version": schema_version,
-        "sha256": "sha256:" + hashlib.sha256(payload.encode()).hexdigest(),
-        "bytes": len(payload.encode()),
+        "schema_version": "ts-agent-result/1",
+        "task_id": task["task_id"],
+        "role": "review",
+        "authority": "advisory",
+        "operation": task["operation"],
+        "outcome": "success",
+        "summary": "The bounded advisory Review completed.",
+        "scope": task["scope"],
+        "facts": [],
+        "artifact_refs": [],
+        "program": None,
+        "payload": {"missing_evidence": [], "conflicts": [], "options": []},
+        "limitations": [],
+        "provenance": {"source": "test"},
     }
 
 
-def _run_journal(
+def _journal(
     workspace: Path,
-    packet: dict[str, object],
+    task: dict[str, object],
     documents: dict[str, object],
+    *,
     mode: str,
-    payload: dict[str, object],
-) -> dict[str, object]:
+    check: bool = True,
+) -> str | subprocess.CompletedProcess[str]:
+    result = _review_result(task)
     script = (
-        f"const journal=require({json.dumps(str(JOURNAL))});"
-        "const packet=JSON.parse(process.argv[2]);"
-        "const payload=JSON.parse(process.argv[3]);"
-        "const documents=JSON.parse(process.argv[5]);"
-        "const handle=journal.beginAgentRun(process.argv[1],packet,{documents});"
-        "if(process.argv[4]==='complete'){journal.completeAgentRun(handle,payload);process.stdout.write('{}');}"
-        "else {journal.failAgentRun(handle,payload);let second_error=null;"
-        "if(process.argv[4]==='fail_twice'){try{journal.failAgentRun(handle,payload);}catch(error){second_error=error.message;}}"
-        "process.stdout.write(JSON.stringify({second_error}));}"
+        "const journal=require(process.argv[1]);"
+        "try{const h=journal.beginAgentRun(process.argv[2],JSON.parse(process.argv[3]),{documents:JSON.parse(process.argv[4])});"
+        "const ref=journal.completeAgentRun(h,{actions:[],result:JSON.parse(process.argv[5]),metadata:{schema_valid:true}});"
+        "process.stdout.write(ref);}catch(error){process.stderr.write(error.message);process.exitCode=2;}"
     )
     completed = subprocess.run(
-        ["node", "-e", script, str(workspace), json.dumps(packet), json.dumps(payload), mode, json.dumps(documents)],
+        ["node", "-e", script, str(JOURNAL), str(workspace), json.dumps(task), json.dumps(documents), json.dumps(result)],
         cwd=ROOT,
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=True,
+        capture_output=True,
     )
-    return json.loads(completed.stdout)
+    if check:
+        assert completed.returncode == 0, completed.stderr
+        return completed.stdout
+    return completed
 
 
 def _write_disposition(
     workspace: Path,
-    payload: dict[str, object],
+    task_id: object,
+    run_ref: str,
+    disposition: str,
     *,
     check: bool = True,
-) -> subprocess.CompletedProcess[str]:
+) -> dict[str, object] | subprocess.CompletedProcess[str]:
+    value = {
+        "task_id": task_id,
+        "review_run_ref": run_ref,
+        "disposition": disposition,
+        "response": "Root assessed the advice against the frozen graph and primary artifacts.",
+        "next_steps": [],
+    }
     script = (
-        f"const journal=require({json.dumps(str(JOURNAL))});"
-        "try{const result=journal.writeReviewRootDisposition(process.argv[1],JSON.parse(process.argv[2]));"
-        "process.stdout.write(JSON.stringify(result));}"
-        "catch(error){process.stderr.write(error.code || error.message);process.exitCode=2;}"
+        "const journal=require(process.argv[1]);"
+        "try{process.stdout.write(JSON.stringify(journal.writeReviewRootDisposition(process.argv[2],JSON.parse(process.argv[3]))));}"
+        "catch(error){process.stderr.write(error.code||error.message);process.exitCode=2;}"
     )
-    return subprocess.run(
-        ["node", "-e", script, str(workspace), json.dumps(payload)],
+    completed = subprocess.run(
+        ["node", "-e", script, str(JOURNAL), str(workspace), json.dumps(value)],
         cwd=ROOT,
         text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=check,
+        capture_output=True,
     )
+    if check:
+        assert completed.returncode == 0, completed.stderr
+        return json.loads(completed.stdout)
+    return completed

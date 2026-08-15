@@ -32,15 +32,12 @@ function beginAgentRun(workspaceRoot, packet, { documents = {} } = {}) {
   const task = validateAgentTask(packet);
   const taskId = requireSafeId(task.task_id, "task_id");
   const scope = task.scope;
-  const nodeIds = Array.isArray(scope.node_ids) ? scope.node_ids.map((value) => requireSafeId(value, "node_id")) : [];
-  const ownerRef = nodeIds.length === 1
-    ? `nodes/${nodeIds[0]}/agent-runs`
+  const actRefs = Array.isArray(scope.act_refs) ? scope.act_refs.map((value) => requireSafeId(value, "act_ref")) : [];
+  const ownerRef = actRefs.length === 1
+    ? `acts/${actRefs[0]}/agent-runs`
     : "operations/agent-runs";
-  if (nodeIds.length === 1) {
-    const nodeFile = resolve(root, "nodes", nodeIds[0], "node.json");
-    if (!existsSync(nodeFile) || !statSync(nodeFile).isFile()) {
-      throw new Error(`agent-run owner node does not exist: ${nodeIds[0]}`);
-    }
+  if (actRefs.length === 1 && !workspaceContainsAct(root, actRefs[0])) {
+    throw new Error(`agent-run owner ResearchAct does not exist: ${actRefs[0]}`);
   }
 
   const parent = resolve(root, ...ownerRef.split("/"));
@@ -345,17 +342,26 @@ function requireSafeId(value, label) {
 function requireReviewRunRef(value, taskId) {
   if (typeof value !== "string") throw new Error("review_run_ref must be a string");
   const parts = value.split("/");
-  const nodeScoped = parts.length === 4
-    && parts[0] === "nodes"
+  const actScoped = parts.length === 4
+    && parts[0] === "acts"
     && SAFE_ID.test(parts[1] || "")
     && parts[2] === "agent-runs";
   const workspaceScoped = parts.length === 3
     && parts[0] === "operations"
     && parts[1] === "agent-runs";
-  if ((!nodeScoped && !workspaceScoped) || parts.at(-1) !== taskId) {
-    throw new Error("review_run_ref must identify the matching node or workspace agent run");
+  if ((!actScoped && !workspaceScoped) || parts.at(-1) !== taskId) {
+    throw new Error("review_run_ref must identify the matching ResearchAct or workspace agent run");
   }
   return value;
+}
+
+function workspaceContainsAct(root, actRef) {
+  const registryPath = resolve(root, "research_acts.json");
+  if (!existsSync(registryPath) || lstatSync(registryPath).isSymbolicLink()) return false;
+  const registry = JSON.parse(readFileSync(registryPath, "utf8"));
+  return registry.schema_version === "ts-research-act-registry/1"
+    && Array.isArray(registry.acts)
+    && registry.acts.some((item) => isPlainObject(item) && item.act_id === actRef);
 }
 
 function assertWithin(root, path) {

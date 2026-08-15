@@ -1,50 +1,97 @@
-# State Model
+# V4 State Model
 
-Workspace v3 separates scientific meaning from operational execution.
+Protocol v4 separates scientific meaning, deterministic execution, and
+presentation. The Root Agent owns interpretation; the Research Kernel owns
+identity, integrity, persistence, and transactions.
 
-## Node
+## Claim Graph
 
-A `ts-node/3` record is one bounded research act. It stores:
+A Claim is one explicit scientific statement with an open `claim_type`,
+assumptions, falsifiers, tags, status, and cited scientific records. Status is a
+Root interpretation recorded through a Decision, not a parser or program exit
+code.
 
-- `node_id` and one optional `parent_node`;
-- a Root-selected `objective`;
-- descriptive `tags`;
-- Claim, operation, Evidence, and Gate-result refs;
-- open/closed/stopped state and an optional terminal result.
+A ClaimRelation connects two Claims with an open relation label and rationale.
+Use it for dependency, refinement, conflict, alternatives, or another explicit
+scientific relationship. The Kernel checks refs and acyclicity but never maps a
+label to a next action.
 
-Node tags do not authorize operations or determine what may follow. A child may
-represent a retry investigation, a new method, an alternative Claim, an audit,
-or any other bounded act selected by the Root Agent.
+## ResearchAct DAG
 
-## Claim
+A ResearchAct records one bounded act:
 
-A Claim is a versioned scientific statement with a free versioned `kind`, text,
-optional parent Claim, required Gate names, supporting refs, current status, and
-append-only history. The Root Agent creates Claims and supplies every status
-update. The Kernel validates cited facts and Gate results; it does not infer a
-Claim update from a program outcome.
+- objective and optional hypothesis, assumptions, predictions, and falsifiers;
+- zero or more dependency Acts;
+- related Claims and descriptive tags;
+- deterministic operation refs and produced scientific records;
+- Kernel-owned artifact root `acts/<act_id>`;
+- open state or one terminal result.
 
-## Evidence
+Multiple dependencies support merges. A new Act depending on an earlier
+checkpoint supports backtracking. Preserve failed, blocked, inconclusive, and
+stopped Acts; do not rewrite history into a successful line.
 
-A `ts-evidence/2` record stores immutable facts, a free versioned `kind`, a
-source tier, artifact refs, and provenance. Evidence has no workflow role or
-layer. Use `supersedes_evidence_id` for a corrected record, or append a
-withdrawn/invalidated Evidence event while retaining audit history.
+## Observation
 
-## Gate
+An Observation is an immutable semantic assertion:
 
-A `ts-gate-result/1` record is the output of a named fact policy. It binds one
-or more active Evidence refs, a target ref, a policy version, a deterministic
-verdict, and diagnostics. Gates protect declared scientific checks and
-acceptance policies; they do not update Claims or choose later Nodes.
+```text
+concept + subject + typed value + unit/qualifiers
+  + artifact IDs/digests + producer + creating Act/Decision
+```
 
-## Scientific And Operational Revisions
+Use stable domain concepts such as `program.normal_termination` or
+`reaction_path.endpoint_assignment`. Do not copy a parser blob into one field
+when separate semantic values are required for validation. The Kernel does not
+guess aliases for producer-specific keys.
 
-Canonical files determine `workspace_revision`. Calculation attempts, remote
-controls, Review/operator journals, notifications, and UI state determine
-`operational_revision` only. An operational success or failure cannot silently
-change scientific state.
+## Finding
 
-Use `report_node` for one bounded history capsule and
-`report_lineage_context` for a read-only ancestor/delta comparison. Both are
-views; the Root Agent remains the only research-path authority.
+A Finding makes an anomaly, conflict, limitation, or open question explicit.
+It cites applicable Claims, Acts, and Observations and has severity
+`blocking`, `warning`, or `informational`. Resolve it only through a Decision
+with a cited explanation. Open blocking Findings prevent acceptance.
+
+## GateSpec And ValidationResult
+
+A GateSpec is a fully expanded validation specification bound to one Claim and
+one validation dimension. It freezes checks, success policy, template digest,
+predicate-registry digest, and content digest.
+
+A ValidationResult binds a GateSpec digest and selected Observation digests,
+then records every deterministic predicate result and aggregate verdict:
+
+```text
+pass | fail | inconclusive | error
+```
+
+Validation does not update Claim status or choose another Act.
+
+## Acceptance
+
+Claim status and acceptance are separate. An acceptance record snapshots:
+
+- the Claim and digest;
+- the versioned acceptance profile and digest;
+- all attached GateSpecs and one passing result per specification;
+- applicable Findings;
+- the creating Decision and summary.
+
+`acceptance_digest` binds the complete record; component digests bind the
+Claim, profile, GateSpecs, ValidationResults, and Finding snapshot separately.
+
+Acceptance requires a supported Claim, at least one GateSpec, and the latest
+passing result for every attached specification. Changing the Claim,
+specifications, latest results, profile, or any relevant Finding requires a new
+assessment. Existing records remain immutable history, but only an exact match
+to current canonical state is projected as current acceptance.
+
+## Revisions
+
+`workspace_revision` covers canonical v4 documents. `operational_revision`
+covers activity such as calculations, Review, and controls. A new operational
+record cannot silently change scientific state.
+
+The Pi conversation is neither revision. It may discuss ideas not yet committed
+and may omit older records. Recompile graph context rather than treating the
+transcript as canonical science.

@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research_state.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "focus_claim_refs", "focus_act_refs", "acceptance_refs", "created_at"],
+  "properties": {
+    "schema_version": {"const": "ts-research-state/4"},
+    "focus_claim_refs": {"type": "array", "uniqueItems": true, "maxItems": 32, "items": {"$ref": "claim.schema.json#/$defs/claim_id"}},
+    "focus_act_refs": {"type": "array", "uniqueItems": true, "maxItems": 32, "items": {"$ref": "research_act.schema.json#/$defs/act_id"}},
+    "acceptance_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^acceptances/acc_[0-9a-f]{24}\\.json$"}},
+    "created_at": {"type": "string", "minLength": 1, "maxLength": 64}
+  }
+}

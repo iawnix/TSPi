@@ -1,0 +1,10 @@
+{
+  "op": "record_finding",
+  "local_ref": "finding",
+  "findingType": "${FINDING_TYPE}",
+  "severity": "warning",
+  "statement": "${FINDING_STATEMENT}",
+  "claimRefs": ["${CLAIM_REF}"],
+  "actRefs": ["${ACT_REF}"],
+  "basisObservationRefs": []
+}

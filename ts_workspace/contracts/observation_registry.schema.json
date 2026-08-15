@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "observation_registry.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "observations"],
+  "properties": {
+    "schema_version": {"const": "ts-observation-registry/1"},
+    "observations": {"type": "array", "items": {"$ref": "observation.schema.json"}}
+  }
+}

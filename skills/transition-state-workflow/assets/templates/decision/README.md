@@ -1,12 +1,16 @@
-# Decision Templates
+# Decision Operation Templates
 
-These examples are argument objects for `ts_workspace_decision_draft`. They
-cover the generic mutation surface but are not a prescribed research sequence.
-The Root Agent chooses objectives, parents, Claims, facts, calculations, and
-when to evaluate or close work.
+Each JSON file is one operation snippet for the `operations` array accepted by
+`ts_workspace_decision_draft`. The files document the v4 vocabulary; they are
+not a prescribed research sequence.
 
-Render `${PLACEHOLDER}` values and call the draft tool. Do not add
-`decision_id`, `report_ref`, `base_revision`, Evidence `evidence_id`, or Gate
-`gate_result_id`: the deterministic workspace Kernel adds those fields and
-returns a canonical `ts-decision/3`. Pass that returned Decision unchanged to
-validate and apply.
+Replace `${PLACEHOLDER}` values, combine only the operations needed for one
+atomic research decision, and provide a separate `rationale` and `basisRefs`.
+Records created in the same draft use `$local_ref` references. Do not invent
+Claim, ResearchAct, Observation, Finding, GateSpec, ValidationResult, Decision,
+or acceptance IDs. The Kernel allocates those identifiers, binds the current
+Context projection and workspace revision, and returns a frozen
+`ts-research-decision/1`.
+
+Pass that exact Decision to `ts_workspace_decision_validate`, then to
+`ts_workspace_decision_apply`. Any change requires a new draft.

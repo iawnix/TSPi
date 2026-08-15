@@ -87,12 +87,12 @@ def _validate_remote_binding(config: RemoteJobConfig) -> None:
         or parts[0] != "workspaces"
         or _WORKSPACE_ID.fullmatch(parts[1]) is None
         or parts[2] != "runs"
-        or parts[3] != config.node_id
+        or parts[3] != config.act_id
         or parts[4] != config.intent_id
         or not config.submission_id.startswith(f"tsjob_{parts[1]}_")
     ):
         raise RemoteConfigurationError(
-            "remote_dir and submission_id do not match the workspace/node/intent binding"
+            "remote_dir and submission_id do not match the workspace/ResearchAct/intent binding"
         )
 
 

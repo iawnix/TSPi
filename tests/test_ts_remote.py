@@ -70,10 +70,10 @@ def _job(tmp_path: Path) -> RemoteJobConfig:
         submission_id="tsjob_ws_0123456789abcdef01234567_calc_test_0123456789abcdef",
         intent_id="calc_test",
         intent_digest="sha256:" + "a" * 64,
-        node_id="n001",
+        act_id="act_0123456789abcdef01234567",
         backend="gaussian",
         profile=_profile(tmp_path),
-        remote_dir="/remote/ts/workspaces/ws_0123456789abcdef01234567/runs/n001/calc_test",
+        remote_dir="/remote/ts/workspaces/ws_0123456789abcdef01234567/runs/act_0123456789abcdef01234567/calc_test",
         resources=RemoteResources(
             queue="batch",
             nodes=1,
@@ -97,7 +97,7 @@ def _executable_job(
     scratch_root: Path,
 ) -> tuple[RemoteJobConfig, Path]:
     remote_root = tmp_path / "remote"
-    remote_dir = remote_root / "workspaces/ws_0123456789abcdef01234567/runs/n001/calc_test"
+    remote_dir = remote_root / "workspaces/ws_0123456789abcdef01234567/runs/act_0123456789abcdef01234567/calc_test"
     remote_dir.mkdir(parents=True)
     (remote_dir / "candidate.gjf").write_text("#P HF/STO-3G\n", encoding="utf-8")
     activation = tmp_path / "activate.sh"

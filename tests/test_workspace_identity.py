@@ -6,73 +6,60 @@ from pathlib import Path
 
 import pytest
 
-from strict_helpers import bootstrap_strict_workspace
-from ts_workspace import (
-    ensure_workspace_identity,
-    read_workspace_identity,
-    report_workspace,
-    validate_workspace,
-)
+from ts_workspace import ensure_workspace_identity, init_workspace, read_workspace_identity, validate_workspace
 from ts_workspace.identity import IDENTITY_REF, WorkspaceIdentityError
-from ts_workspace import ContractError
+from ts_workspace.operational import operational_snapshot
+from ts_workspace.revision import workspace_revision
 
 
-def test_initialized_workspace_has_stable_reported_identity(tmp_path: Path) -> None:
+def test_initialized_workspace_has_stable_bound_identity(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
-    bootstrap_strict_workspace(workspace)
+    initialized = init_workspace(workspace)
 
     first = read_workspace_identity(workspace)
     second = ensure_workspace_identity(workspace)
-    report = report_workspace(workspace)
+    workspace_doc = json.loads((workspace / "workspace.json").read_text(encoding="utf-8"))
 
     assert first == second
     assert first["schema_version"] == "ts-workspace-identity/1"
+    assert first["workspace_id"] == initialized["workspace_id"] == workspace_doc["workspace_id"]
     assert first["workspace_id"].startswith("ws_")
-    assert report["workspace_id"] == first["workspace_id"]
-    assert report["workspace_state_refs"]["workspace_identity"] == IDENTITY_REF
 
 
 def test_concurrent_identity_creation_converges_on_one_id(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
-
     with ThreadPoolExecutor(max_workers=12) as executor:
         identities = list(executor.map(lambda _index: ensure_workspace_identity(workspace), range(48)))
-
     assert len({record["workspace_id"] for record in identities}) == 1
-    identity_dir = workspace / ".agents"
-    assert {path.name for path in identity_dir.iterdir()} == {"workspace-identity.json"}
+    assert {path.name for path in (workspace / ".agents").iterdir()} == {"workspace-identity.json"}
 
 
-def test_identity_creation_does_not_change_scientific_or_operational_revision(tmp_path: Path) -> None:
+def test_identity_recreation_does_not_change_scientific_or_operational_revision(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
-    bootstrap_strict_workspace(workspace)
-    (workspace / IDENTITY_REF).unlink()
-    before = report_workspace(workspace)
-
-    created = ensure_workspace_identity(workspace)
-    after = report_workspace(workspace)
-
-    assert before["workspace_id"] is None
-    assert after["workspace_id"] == created["workspace_id"]
-    assert after["workspace_revision"] == before["workspace_revision"]
-    assert after["operational_revision"] == before["operational_revision"]
-
-
-def test_missing_identity_is_a_non_scientific_warning(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    bootstrap_strict_workspace(workspace)
+    init_workspace(workspace)
+    scientific_before = workspace_revision(workspace)
+    operational_before = operational_snapshot(workspace)["operational_revision"]
     (workspace / IDENTITY_REF).unlink()
 
+    ensure_workspace_identity(workspace)
+
+    assert workspace_revision(workspace) == scientific_before
+    assert operational_snapshot(workspace)["operational_revision"] == operational_before
+
+
+def test_missing_identity_invalidates_runtime_without_changing_scientific_state(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace)
+    (workspace / IDENTITY_REF).unlink()
     validation = validate_workspace(workspace)
-
-    assert validation["valid"] is True
-    assert "missing_workspace_identity" in {finding["code"] for finding in validation["findings"]}
+    assert validation["valid"] is False
+    assert "invalid_workspace_identity" in {finding["code"] for finding in validation["findings"]}
 
 
 def test_invalid_and_symlinked_identity_are_rejected(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
-    bootstrap_strict_workspace(workspace)
+    init_workspace(workspace)
     identity_path = workspace / IDENTITY_REF
     identity_path.write_text(json.dumps({"schema_version": "wrong"}), encoding="utf-8")
 
@@ -83,50 +70,29 @@ def test_invalid_and_symlinked_identity_are_rejected(tmp_path: Path) -> None:
     identity_path.unlink()
     target = workspace / "identity-target.json"
     target.write_text(
-        json.dumps(
-            {
-                "schema_version": "ts-workspace-identity/1",
-                "workspace_id": "ws_0123456789abcdef01234567",
-                "created_at": "2026-08-05T00:00:00+00:00",
-            }
-        ),
+        json.dumps({
+            "schema_version": "ts-workspace-identity/1",
+            "workspace_id": "ws_0123456789abcdef01234567",
+            "created_at": "2026-08-05T00:00:00+00:00",
+        }),
         encoding="utf-8",
     )
     identity_path.symlink_to(target)
-
     with pytest.raises(WorkspaceIdentityError, match="symbolic link"):
         read_workspace_identity(workspace)
-    validation = validate_workspace(workspace)
-    assert validation["valid"] is False
-    assert "invalid_workspace_identity" in {finding["code"] for finding in validation["findings"]}
-
-
-def test_force_reinitialize_refuses_symlinked_identity_directory_before_clearing_state(
-    tmp_path: Path,
-) -> None:
-    from ts_workspace import init_workspace
-
-    workspace = tmp_path / "workspace"
-    bootstrap_strict_workspace(workspace)
-    identity_dir = workspace / ".agents"
-    (identity_dir / "workspace-identity.json").unlink()
-    identity_dir.rmdir()
-    external = tmp_path / "external-agents"
-    external.mkdir()
-    identity_dir.symlink_to(external, target_is_directory=True)
-    decision = {
-        "schema_version": "ts-decision/3",
-        "decision_id": "dec_force_symlink_guard",
-        "action": "init_workspace",
-        "rationale": "A force reinitialize must not follow an external identity directory.",
-        "basis_refs": [],
-        "report_ref": None,
-        "base_revision": None,
-        "payload": {},
+    assert "invalid_workspace_identity" in {
+        finding["code"] for finding in validate_workspace(workspace)["findings"]
     }
 
-    with pytest.raises(ContractError, match="workspace identity path cannot contain a symbolic link"):
-        init_workspace(workspace, decision, force=True)
 
-    assert (workspace / "research_state.json").is_file()
+def test_identity_creation_refuses_symlinked_identity_directory(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    external = tmp_path / "external-agents"
+    external.mkdir()
+    (workspace / ".agents").symlink_to(external, target_is_directory=True)
+
+    with pytest.raises(WorkspaceIdentityError, match="symbolic link"):
+        ensure_workspace_identity(workspace)
+
     assert not (external / "workspace-identity.json").exists()

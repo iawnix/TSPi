@@ -1,59 +1,87 @@
 # @iawnix/ts-agent
 
-`@iawnix/ts-agent` is the Pi package maintained in the TSAgentSkill
-repository. It supports evidence-driven transition-state research with one
-Root Agent, a deterministic scientific workspace, bounded Review and operator
-sessions, typed local or SSH/Torque calculations, reporting, notifications,
-and a read-only activity UI.
+`@iawnix/ts-agent` is a Pi package for auditable transition-state research. It
+combines one strategy-owning Root Agent with a deterministic research kernel,
+typed local or SSH/Torque calculations, semantic scientific observations,
+declarative validation, reproducible reports, optional notifications, and a
+read-only activity UI.
 
-This branch supports Pi Agent only. Python modules are deterministic kernels
-called by the Pi extensions; they are not a second Agent runtime. Supported Pi
-versions are `>=0.81.1 <1.0.0`, with the exact tested SDK versions pinned in
-`package.json`.
+This `ts-dag` branch is protocol v4. It intentionally has no v2/v3 reader,
+migrator, field alias, or runtime compatibility path. A legacy study must keep
+using its matching release or start a new v4 workspace.
 
 ## Core Boundary
 
 ```text
-Root Agent chooses the research path and scientific interpretation
-  -> Workspace Kernel validates and commits scientific state
-  -> Review advises; bounded operators execute selected actions
-  -> UI projects activity without gaining authority
+Root Agent
+  chooses questions, hypotheses, methods, alternatives, backtracking, and stop
+        |
+        v
+Research Kernel
+  Claim graph + ResearchAct DAG + immutable Observations + Findings
+        |
+        +-- deterministic Compute / Render / Report
+        +-- declarative Validation Engine
+        +-- graph Context Compiler
+        +-- isolated advisory Review Agent
 ```
 
-The long-lived scientific vocabulary is intentionally small:
+Only the Research Kernel mutates canonical scientific state. The Root Agent
+selects what to investigate but does not choose paths, filenames, record IDs,
+or validation verdicts. Review is the only child model session. Compute,
+Render, Report, remote inspection, notifications, and workspace control are
+deterministic host tools.
 
-- **Node**: one bounded research act with parent topology and descriptive tags.
-- **Claim**: one versioned scientific statement authored by the Root Agent.
-- **Evidence**: immutable facts, source artifacts, and provenance.
-- **Gate**: one deterministic fact-policy result used by declared acceptance
-  policies.
+The long-lived scientific vocabulary is:
 
-There is no workflow phase, stage, Node type, Evidence role, or Evidence layer
-that selects the next action. Tags are for display and search only. Program
-completion, scheduler state, Review output, and operator success are not
-scientific support by themselves.
+- **Claim**: one explicit, versioned scientific statement.
+- **ClaimRelation**: a directed dependency, refinement, conflict, or alternative
+  relation between Claims. Relations form a DAG but do not route execution.
+- **ResearchAct**: one bounded research act with zero or more dependencies.
+  Dependency edges form the exploration DAG and support branching, merging,
+  and backtracking without rewriting history.
+- **Observation**: one immutable semantic value, concept, subject, artifacts,
+  and provenance record.
+- **Finding**: one explicit anomaly, limitation, conflict, or unresolved
+  question, including acceptance-blocking findings.
+- **GateSpec / ValidationResult**: a frozen declarative validation definition
+  and its deterministic result over selected Observations.
 
-New state uses `ts-decision/3` and `ts-node/3`. Runtime reads and writes v3 only;
-v2 workspaces require the explicit copy migration.
+There is no workflow phase, stage, Node type, Evidence role/layer, fixed Gate
+router, or hard-coded research sequence. Tags and relation labels are metadata;
+they never authorize a next action.
+
+## Why This Package
+
+A general model can propose a transition-state search plan. This package adds
+the controls needed to make a long scientific campaign inspectable and
+reproducible:
+
+- canonical Claims, alternatives, hypotheses, failures, and backtracking;
+- immutable artifact and Observation provenance;
+- deterministic local and remote effects with explicit ambiguity handling;
+- validation standards frozen before evaluation and bound by digests;
+- acceptance records that snapshot the Claim, specifications, results, and
+  unresolved Findings;
+- bounded context projections instead of repeatedly dumping the workspace;
+- independent Review whose advice cannot silently change scientific state.
 
 ## Documentation
 
-- [Installation and Operations](docs/INSTALLATION.md): prerequisites, release
-  install, configuration, startup, resume, upgrade, rollback, and recovery.
-- [Architecture](docs/ARCHITECTURE.md): component ownership, Agent and operator
-  lifecycles, persistence, result delivery, and extension inventory.
-- [Maintainer Guide](docs/MAINTAINER_GUIDE.md): source setup, contract changes,
-  tests, release procedure, and documentation ownership.
-- [Root Skill](skills/transition-state-workflow/SKILL.md): the operating policy
-  loaded into research sessions, with focused scientific and tool references.
-
-These three documents are shipped in the validated release. Runtime package
-code and public operating material are immutable; maintenance still happens
-only in the authored Git checkout. `TSPi` never loads that checkout directly.
+- [Installation and Operations](docs/INSTALLATION.md): release installation,
+  runtime configuration, workspace startup, upgrade, rollback, and recovery.
+- [Architecture](docs/ARCHITECTURE.md): component ownership, state model,
+  lifecycle, persistence, validation, context, and result delivery.
+- [Maintainer Guide](docs/MAINTAINER_GUIDE.md): source layout, contract-change
+  rules, tests, release discipline, and documentation ownership.
+- [ADR 0001](docs/adr/0001-dag-research-kernel-v4.md): the incompatible v4 DAG
+  and declarative-validation decision.
+- [Root Skill](skills/transition-state-workflow/SKILL.md): concise operating
+  policy loaded into each TSPi research session.
 
 ## Quick Install
 
-Build a content-addressed archive from a clean authored checkout and install it
+Build a content-addressed release from a clean authored checkout and install it
 into a dedicated TSPi root:
 
 ```bash
@@ -74,23 +102,21 @@ python3 "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
   --json
 ```
 
-The installer verifies archive identity, size, SHA-256, safe members, required
-files, and immutable release permissions before atomically selecting
-`.pi/packages/ts-agent/current`. It installs the launcher as:
+The release installer verifies package identity, archive size, SHA-256, safe
+members, required files, and immutable permissions before atomically selecting
+`.pi/packages/ts-agent/current`. It installs:
 
 ```text
 <installation>/TSPi -> .pi/packages/ts-agent/current/TSPi
 ```
 
-Configure Pi authentication and model selection separately. Set `PI_BIN` when
-Pi is not installed at the launcher's default location. Remote execution and
-email notifications are optional installation-owned configuration; see the
-installation guide.
+Pi model authentication, SSH/Torque access, and notifications are
+installation-owned configuration and are not stored in a research workspace.
 
 ## Start TSPi
 
-No workspace directory must be created manually. The launcher creates or
-validates it under `<installation>/workspaces/`:
+The launcher creates and bootstraps a workspace under
+`<installation>/workspaces/`; the user does not create it first:
 
 ```bash
 ./TSPi --workspace reaction-a
@@ -100,58 +126,68 @@ validates it under `<installation>/workspaces/`:
 ```
 
 One nonblocking lock permits one Root Agent process per workspace. Different
-workspace names can run concurrently. Terminal mode starts a new Pi session
-unless normal Pi arguments such as `--continue` are supplied; Phone mode always
-attaches with `--continue`.
+workspace names can run concurrently. Normal terminal mode starts a new Pi
+conversation unless Pi's `--continue` is supplied; Phone mode resumes the
+workspace conversation automatically.
 
-Startup validates the active release and installation configuration, prepares
-workspace-local Pi session state, acquires the Root lock, and performs
-deterministic workspace bootstrap. Fresh workspaces are initialized once;
-complete v3 workspaces are only validated; partial, invalid, or v2 workspaces
-fail closed. Ordinary startup does not contact the remote scheduler.
+Bootstrap is idempotent for a complete v4 workspace: fresh state is created
+once, valid state is checked without canonical rewrites, and partial, invalid,
+or legacy canonical state fails closed. Ordinary startup does not contact the
+remote scheduler.
 
 ## Public Surface
 
-Pi loads one Skill, five extensions, one theme, eleven tools, and four slash
-commands. Tool prefixes describe execution authority:
+Pi loads one Skill, five extensions, one theme, eleven public tools, and four
+slash commands:
 
-- `ts_workspace_*`: deterministic context, draft, validation, and canonical
-  apply. Only `ts_workspace_decision_apply` writes scientific state.
-- `ts_subagent_review`: one fresh advisory scientific Review.
-- `ts_subagent_compute`, `ts_subagent_render`, and `ts_subagent_report`: fresh,
-  request-scoped operator sessions. They execute a Root-selected action and
-  cannot decide Claims or Gates.
-- `ts_remote_inspect`: deterministic read-only SSH/Torque diagnostics.
-- `ts_review_disposition`: deterministic write-once Root response to Review.
-- `ts_notify_user`: deterministic delivery to the fixed installation target.
+- `ts_workspace_context`: bounded graph, artifact, compute-capability, or
+  validation-capability projection.
+- `ts_workspace_decision_draft`, `ts_workspace_decision_validate`, and
+  `ts_workspace_decision_apply`: the only canonical mutation pipeline.
+- `ts_subagent_review`: one isolated advisory Review of a target Claim.
+- `ts_review_disposition`: one deterministic Root response to a completed
+  Review.
+- `ts_compute`: deterministic prepare, submit, inspect, collect, cancel, and
+  parse operations.
+- `ts_render`: deterministic local render, comparison, animation, or mechanism
+  visualization.
+- `ts_report`: deterministic atomic report-package build.
+- `ts_remote_inspect`: read-only SSH/Torque diagnostics.
+- `ts_notify_user`: fixed-target, receipt-bound notification delivery.
 
 The slash commands are `/ts-context`, `/ts-validate`, `/ts-remote`, and
-`/ts-subagent-history`. The last command merges transient activity with durable
-run journals in a paginated read-only browser.
+`/ts-subagent-history`. The history browser shows Review runs only; deterministic
+tool activity is shown through normal tool entries and the unified TS Activity
+projection.
 
 ## Research Loop
 
 The Root Agent normally:
 
-1. Reads compact context and identifies one unresolved question.
-2. Drafts, validates, and applies a `start_node` Decision.
-3. Creates or cites Claims and selects a scientifically justified method.
-4. Links immutable operations, verifies local artifacts, and registers facts.
-5. Evaluates only the Gates required by the Claim or acceptance policy.
-6. Closes the Node with explicit Claim updates, limitations, and optional audit.
-7. Re-reads context and independently chooses another Node, stop, or completion.
+1. Reads the frontier or delta context and states one unresolved question.
+2. Creates or updates Claims and starts a bounded ResearchAct with explicit
+   dependencies and falsifiers.
+3. Selects a scientifically justified method and invokes deterministic tools.
+4. Verifies local primary artifacts and records semantic Observations.
+5. Records anomalies and unresolved limits as Findings.
+6. Freezes relevant GateSpecs before evaluation, then evaluates them over
+   explicitly selected Observations.
+7. Updates Claim status, completes the ResearchAct, and accepts a Claim only
+   when a named profile passes.
+8. Recompiles context and independently chooses a branch, merge, backtrack,
+   new question, explicit stop, or completion.
 
-Gaussian is a first-class candidate generator when scans, QST, or direct TS
-optimization are justified. The adapter catalog is not a method priority list.
-A candidate, converged program, or single imaginary frequency is not an
-accepted TS. `accepted-ts/2` requires passing target-compatible TS/Freq and
-connectivity Gates; Claims may require additional Gates.
+The DAG records what happened; it does not prescribe what must happen next.
+Gaussian is a first-class candidate-generation option when scans, QST, or
+direct TS optimization are justified. The adapter catalog is not a method
+priority list. A converged program, candidate geometry, or isolated imaginary
+frequency is never an accepted TS by itself.
 
 ## Compute And Remote
 
-Preparation accepts `ts-calculation-request/1`, resolves logical `artifactId`
+Preparation accepts `ts-calculation-request/2`, resolves logical `artifactId`
 plus `inputRole` bindings, and writes an immutable
-`ts-calculation-intent/3`. Supported adapter tasks currently include:
+`ts-calculation-intent/4` under the owning Act. Supported adapter tasks include:
 
 - Gaussian: `sp`, `opt`, `freq`, `opt_freq`, `irc`;
 - xTB: `sp`, `opt`, `freq`, `opt_freq`, `scan`, `md`;
@@ -159,24 +195,53 @@ plus `inputRole` bindings, and writes an immutable
 - ASE: `neb`;
 - QBICS: `dmecp`.
 
-Capability means the adapter can express and validate a task, not that software,
-storage, SSH, or Torque is healthy. Remote jobs are isolated by workspace ID,
-Node, and intent under the configured remote root. Transfer failures before a
-scheduler effect are retryable only when the typed result says so. Ambiguous
-submit or cancel effects must be reconciled, never replayed. Collection uses
-the immutable artifact manifest and does not depend on scheduler history.
+Capability means an adapter can express and validate a task; it does not prove
+that software, storage, SSH, Torque, or a queue is healthy. Remote jobs are
+isolated by workspace ID, Act, and immutable intent. Pre-effect failures may be
+retryable. Ambiguous submit or cancel effects must be reconciled and must never
+be blindly replayed. Collection is manifest-driven and does not depend on
+scheduler history.
+
+## Validation And Acceptance
+
+Validation is data-driven:
+
+```text
+versioned template + parameters
+  -> fully expanded frozen GateSpec
+  -> registered deterministic predicates
+  -> immutable ValidationResult
+```
+
+The Root Agent may select a packaged template or compose a definition from
+registered predicates. It cannot inject Python, shell, imports, or arbitrary
+expressions. Built-in templates cover common classical TS, reaction-coordinate,
+connectivity, identity, electronic-structure, state-character, robustness,
+thermochemistry, and pathway checks. New scientific domains extend this
+mechanism with maintained templates and predicates instead of adding workflow
+branches.
+
+Acceptance is separate from Claim status. A supported Claim needs at least one
+attached GateSpec. A profile verifies required dimensions, the latest passing
+result for every attached GateSpec, current digests, and the absence of
+unresolved blocking Findings, then writes an immutable historical record.
+That record is current only while its Claim, attached specifications, latest
+results, profile, and relevant Finding snapshot still match. Later research
+does not erase history; it makes the old record stale until a new assessment is
+recorded.
 
 ## State And Reports
 
-Canonical scientific files are limited to the v3 workspace registries, Node
-records, accepted artifacts, Decisions, and transaction logs. Calculation
-attempts, remote receipts, Review/operator journals, notifications, reports,
-sessions, and UI state are operational or derived data.
+Canonical scientific state consists of v4 graph registries, frozen validation,
+acceptance snapshots, Decisions, and transaction logs. Calculation attempts,
+remote controls, Review journals, notifications, reports, Pi sessions, and UI
+activity are operational or derived state.
 
 Report packages are built atomically from a valid workspace. Their manifest
 binds the source scientific revision and every output file by SHA-256. Review
-and operator results become scientifically usable only after the Root Agent
-verifies primary artifacts and registers normal Evidence through a Decision.
+advice and deterministic tool results become scientific support only after the
+Root Agent verifies primary artifacts and records normal Observations through a
+Decision.
 
 ## Validation
 
@@ -186,7 +251,7 @@ Run validation from the authored checkout, not an installed release:
 PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q
 npm run typecheck
 npm run test:pi-adapter
-npm run test:package
-npm pack --dry-run --json
+python3 scripts/check_package.py
+NPM_CONFIG_CACHE=/tmp/ts-agent-npm-cache npm pack --dry-run --json
 git diff --check
 ```

@@ -1,0 +1,22 @@
+{
+  "op": "record_observation",
+  "local_ref": "observation",
+  "actRef": "${ACT_REF}",
+  "conceptId": "${CONCEPT_ID}",
+  "subjectRef": "${SUBJECT_REF}",
+  "value": "${VALUE}",
+  "datatype": "string",
+  "unit": null,
+  "qualifiers": {},
+  "summary": "${OBSERVATION_SUMMARY}",
+  "artifacts": [
+    {
+      "artifactId": "${ARTIFACT_ID}",
+      "sha256": "${ARTIFACT_SHA256}"
+    }
+  ],
+  "provenance": {
+    "producer": "${PRODUCER}",
+    "producerVersion": "${PRODUCER_VERSION}"
+  }
+}

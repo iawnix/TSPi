@@ -4,78 +4,96 @@ import { runScientificReview } from "../src/agents/review/runtime.ts";
 
 const require = createRequire(import.meta.url);
 const { bindAgentDocument } = require("../src/agent-core/agent-protocol.cjs");
+const { buildProviderTaskPacket } = require("../src/agents/review/task-packet.cjs");
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("ts-test-review-child", {
-    description: "Run one tool-free recording-provider review child session.",
+    description: "Run one recording-provider v4 Review child session.",
     handler: async (_args, ctx) => {
+      const taskId = "sub_review-probe";
+      const claimId = `clm_${"a".repeat(24)}`;
+      const actId = `act_${"b".repeat(24)}`;
+      const revision = `sha256:${"1".repeat(64)}`;
       const scope = {
-        report_id: "rep_review_001",
-        node_ids: ["n000"],
-        claim_refs: ["claim_probe_001"],
+        report_id: "rep_review_probe",
+        act_refs: [actId],
+        claim_refs: [claimId],
       };
-      const evidenceSnapshot = {
-        schema_version: "ts-review-evidence-snapshot/2",
-        task_id: "agent_review_001",
+      const reviewSnapshot = {
+        schema_version: "ts-review-task-snapshot/1",
+        task_id: taskId,
         operation: "claim_review",
         scope,
-        target_claim_ref: "claim_probe_001",
-        workspace_revision: "sha256:" + "2".repeat(64),
+        workspace_revision: revision,
+        projection_id: `ctx_${"c".repeat(24)}`,
+        target_claim_ref: claimId,
         claims: [{
-          claim_id: "claim_probe_001",
-          created_in_node: "n000",
-          kind: "reaction_path/1",
-          statement: "Probe claim.",
+          claim_id: claimId,
+          claim_type: "mechanism",
+          statement: "The probe pathway is concerted.",
           status: "proposed",
-          required_gates: [],
-          evidence_refs: [],
-          gate_result_refs: [],
-          details: {},
-          history: [],
+          assumptions: [],
+          falsifiers: [],
+          observation_refs: [],
+          validation_spec_refs: [],
+          validation_result_refs: [],
         }],
-        gate_results: [],
-        evidence: [],
-        nodes: [{ node_id: "n000", parent_node: null, objective: "Probe", state: "closed", tags: [], result: null }],
+        claim_relations: [],
+        research_acts: [{
+          act_id: actId,
+          objective: "Review the probe Claim.",
+          status: "open",
+          dependency_refs: [],
+          claim_refs: [claimId],
+          hypothesis: null,
+          observation_refs: [],
+          finding_refs: [],
+          validation_spec_refs: [],
+          validation_result_refs: [],
+          result: null,
+        }],
+        observations: [],
+        validation_specs: [],
+        validation_results: [],
+        findings: [],
+        acceptances: [],
+        dependency_refs: {
+          claim_refs: [claimId],
+          relation_refs: [],
+          act_refs: [actId],
+          observation_refs: [],
+          validation_spec_refs: [],
+          validation_result_refs: [],
+          finding_refs: [],
+          acceptance_refs: [],
+        },
         artifact_excerpts: [],
-        basis_allowlist: ["claim_probe_001"],
+        basis_allowlist: [actId, claimId].sort(),
+        omitted: {},
       };
-      const providerInput = {
-        schema_version: "ts-review-provider-input/2",
-        task_id: "agent_review_001",
-        operation: "claim_review",
-        objective: "Review the bounded Claim context without making a decision.",
-        scope,
-        workspace_revision: "sha256:" + "2".repeat(64),
-        target_claim_ref: "claim_probe_001",
-        claims: [{ claim_id: "claim_probe_001", parent_claim_id: null, kind: "reaction_path/1", statement: "Probe claim.", status: "proposed", required_gates: [] }],
-        gate_results: [],
-        evidence: [],
-        nodes: [{ node_id: "n000", parent_node: null, objective: "Probe", state: "closed", tags: [], result: null }],
-        artifact_excerpts: [],
-        basis_allowlist: ["claim_probe_001"],
-      };
+      const providerInput = buildProviderTaskPacket({
+        task_id: taskId,
+        objective: "Assess whether the current bounded graph supports the probe Claim.",
+        review_snapshot: reviewSnapshot,
+      });
       const packet = {
         schema_version: "ts-agent-task/2",
-        task_id: "agent_review_001",
+        task_id: taskId,
         role: "review",
         authority: "advisory",
         operation: "claim_review",
-        objective: "Review the bounded Claim context without making a decision.",
-        workspace: {
-          root: ctx.cwd,
-          report_id: scope.report_id,
-          revision: "sha256:" + "2".repeat(64),
-        },
+        objective: providerInput.objective,
+        workspace: { root: ctx.cwd, report_id: scope.report_id, revision },
         scope,
         inputs: {
-          evidence_snapshot: bindAgentDocument(
-            "evidence-snapshot.json", "ts-review-evidence-snapshot/2", evidenceSnapshot,
+          review_snapshot: bindAgentDocument(
+            "review-snapshot.json", "ts-review-task-snapshot/1", reviewSnapshot,
           ),
           provider_input: bindAgentDocument(
-            "provider-input.json", "ts-review-provider-input/2", providerInput,
+            "provider-input.json", "ts-review-provider-input/3", providerInput,
           ),
         },
-        capabilities: [],
+        capabilities: ["ts_review_result"],
         constraints: {
           canonical_workspace_mutation: false,
           scientific_decision: false,
@@ -89,7 +107,7 @@ export default function (pi: ExtensionAPI) {
         const result = await runScientificReview({
           workspaceRoot: ctx.cwd,
           packet,
-          evidenceSnapshot,
+          reviewSnapshot,
           providerInput,
           parentModel: { provider: "ts-recording", id: "recording-model" } as never,
           parentApiKey: "recording-key",

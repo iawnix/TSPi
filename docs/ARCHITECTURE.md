@@ -1,8 +1,10 @@
 # TSAgentSkill Architecture
 
-This document is the authority for component ownership and runtime boundaries in
-`@iawnix/ts-agent` v3. JSON schemas remain authoritative for field-level call
-shapes, and the Root Skill remains authoritative for research-session behavior.
+This document defines component ownership and runtime boundaries for
+`@iawnix/ts-agent` protocol v4. JSON and TypeBox schemas are authoritative for
+field-level call shapes. The Root Skill is authoritative for behavior inside a
+research session. [ADR 0001](adr/0001-dag-research-kernel-v4.md) records why
+this is an incompatible DAG-based design.
 
 ## System Shape
 
@@ -10,313 +12,400 @@ shapes, and the Root Skill remains authoritative for research-session behavior.
 Installation root
   TSPi shell shim
     -> Python lifecycle host
-       -> active immutable release
-       -> shared isolated Python runtime
-       -> selected workspace bootstrap and Root lock
+       -> immutable selected release and isolated Python runtime
+       -> workspace bootstrap and one-writer Root lock
        -> Pi process
-          -> Root Skill
-          -> five Pi extensions
-          -> Root Agent session
-             -> Workspace Kernel
-             -> advisory Review Agent
-             -> bounded compute/render/report operator sessions
-             -> deterministic remote and notification services
-          -> read-only TSPi UI projection
+          -> Root Skill + five extensions + theme
+          -> Root Agent
+             -> v4 Research Kernel
+                Claim graph + ResearchAct DAG
+                Observation and Finding registries
+                Decision transaction owner
+             -> deterministic execution plane
+                Compute + Render + Report + remote + notification
+             -> Validation Engine
+                frozen GateSpecs + registered predicates + acceptance profiles
+             -> graph Context Compiler
+             -> isolated advisory Review Agent
+          -> read-only TS Activity and history projection
 ```
 
-There are three different forms of execution and they must not be conflated:
+There are three forms of execution:
 
-1. **Root Agent reasoning** selects scientific questions, Claims, methods,
-   branch topology, retries, stopping, and interpretation.
-2. **Advisory Agent reasoning** is currently used only by Review. It analyzes a
-   bounded Claim dependency snapshot and returns non-authoritative advice.
-3. **Deterministic or bounded operation** validates data, mutates state through
-   one owner, or executes a preselected action. Compute, Render, and Report use
-   fresh model sessions as constrained dispatchers today, but their scientific
-   inputs and action effects are host-bound and their results are generated or
-   validated by deterministic code.
-
-The presence of a child model session does not grant scientific authority.
+1. **Root Agent reasoning** selects scientific questions, hypotheses, methods,
+   alternatives, counterexamples, backtracking, stopping, and interpretation.
+2. **Advisory Agent reasoning** is used only by Review. It evaluates a bounded,
+   Claim-centered dependency snapshot and returns non-authoritative advice.
+3. **Deterministic host execution** validates and commits state or performs an
+   explicitly selected side effect. Compute, Render, Report, remote inspection,
+   notifications, context compilation, and validation use no child model.
 
 ## Authority Matrix
 
 | Component | Uses a model | Writes canonical science | External effect | Durable output |
 | --- | --- | --- | --- | --- |
-| TSPi lifecycle host | No | Bootstrap only | Starts Pi | release/config selection, workspace identity, lock file |
-| Root Agent | Yes | Only through Kernel apply | Selects bounded tools | Pi session plus Decisions it applies |
-| Workspace Kernel | No | Yes, exclusively | No | canonical registries, Nodes, Decisions, transactions |
-| Review Agent | Yes | No | No | task, bound inputs, result/failure, Root disposition |
-| Compute operator session | Yes, constrained | No | Bound local/remote action | run journal plus calculation control records |
-| Render/Report operator session | Yes, constrained | No | Bound local file creation | run journal plus no-overwrite artifact/package |
-| `ts_remote` | No | No | SSH/SCP and Torque | guards, receipts, status, collected artifacts |
-| `ts_notify_user` | No | No | Fixed-target ClawEmail delivery | digest-addressed delivery receipt |
-| TSPi UI | No | No | No | transient activity only |
-| `ts_web` | No | No | No scientific effect | explicit read-only UI registry outside source state |
+| TSPi lifecycle host | No | Bootstrap only | Starts Pi | release/config selection, identity, Root lock |
+| Root Agent | Yes | Only through Decision apply | Selects bounded tools | Pi conversation and applied Decisions |
+| Research Kernel | No | Yes, exclusively | No | graph registries, acceptance, Decisions, transactions |
+| Context Compiler | No | No | No | revision-bound read projection |
+| Validation Engine | No | Through Kernel apply | No | frozen GateSpecs and ValidationResults |
+| Review Agent | Yes | No | No | task, snapshot, result/failure, Root disposition |
+| `ts_compute` | No | No | Local/SSH/Torque action | intent, control record, manifest, parsed artifacts |
+| `ts_render` / `ts_report` | No | No | Local file creation | no-overwrite artifact or report package |
+| `ts_remote_inspect` | No | No | Read-only SSH/Torque calls | tool result only |
+| `ts_notify_user` | No | No | Fixed-target ClawEmail delivery | digest-addressed receipt |
+| TSPi UI and `ts_web` | No | No | Read-only projection | transient UI or explicit UI registry |
 
 Only `ts_workspace_decision_apply` may mutate canonical scientific state after
-bootstrap. No Review, operator, scheduler, parser, renderer, report builder,
-notification, or UI event can bypass that boundary.
+bootstrap. No extension, Review result, backend, parser, scheduler, renderer,
+report builder, notification, UI event, or Agent prose may bypass that owner.
 
 ## Scientific State Model
 
-The v3 model contains four long-lived concepts:
+### Claim graph
 
-- **Node** records one bounded act, its parent, objective, descriptive tags,
-  refs, and terminal result.
-- **Claim** records a versioned Root-authored scientific statement, required
-  Gates, cited support, status, and history.
-- **Evidence** records immutable facts, artifacts, source tier, and provenance.
-  It has no workflow role or layer. Corrections use superseding records or
-  lifecycle events.
-- **Gate** records the deterministic evaluation of active Evidence facts under
-  one named policy for one target.
+A Claim contains a scientific statement, open `claim_type`, assumptions,
+falsifiers, tags, status, and exact Observation/validation history. A separate
+ClaimRelation record connects two Claims with an open scientific relation label
+such as dependency, refinement, conflict, or alternative. The Kernel enforces
+acyclic directed relations but does not interpret a label as permission to act.
 
-Closed schema enums exist only where code must execute a closed contract. The
-Kernel therefore has Decision actions, Node states/outcomes, Evidence lifecycle
-states, and Gate names, but it has no research phase, workflow stage, Node type,
-Evidence role, or strategy router. Node tags never authorize an action.
+### ResearchAct DAG
 
-The normal mutation sequence is:
+A ResearchAct is one bounded and auditable act. It records:
+
+- an objective and optional hypothesis package;
+- zero or more dependency Acts;
+- related Claims and descriptive tags;
+- linked deterministic operations, Observations, Findings, GateSpecs, and
+  ValidationResults;
+- one terminal result or an open status;
+- the Kernel-owned artifact root `acts/<act_id>`.
+
+Dependencies form a DAG. One dependency creates an ordinary continuation;
+multiple dependencies model a merge; a new Act that depends on an earlier Act
+models backtracking. Prior Acts are never rewritten or deleted to make a later
+path look linear. The DAG records lineage and does not select the next Act.
+
+### Observation and Finding
+
+An Observation is immutable and semantic. It binds a `concept_id`, subject,
+typed value, unit, qualifiers, summary, logical artifact IDs, artifact digests,
+producer, producing Act, and creating Decision. Parsers must emit declared
+concepts directly; the Kernel does not guess aliases for arbitrary output keys.
+
+A Finding makes an anomaly, conflict, limitation, or unresolved question
+queryable. It may cite Claims, Acts, and Observations. Findings can be blocking,
+warning, or informational. A Finding remains open until an explicit Decision
+resolves, accepts, or supersedes it. Open blocking Findings prevent acceptance
+of affected Claims.
+
+### Validation and acceptance
+
+A GateSpec is a fully expanded, frozen declarative check set. It records the
+target Claim, dimension, template digest when applicable, predicate-registry
+digest, checks, success policy, creator Act, and content digest. A
+ValidationResult records selected Observation refs and digests, each predicate
+outcome, the aggregate verdict, and a result digest.
+
+The four verdicts are distinct:
 
 ```text
-context -> decision draft -> complete dry-run validation -> apply under lock
+pass | fail | inconclusive | error
 ```
 
-Draft allocates technical Decision, Evidence, and Gate-result IDs and binds the
-current report and scientific revision. Validate is non-mutating. Apply repeats
-validation while holding the workspace lock and commits through the same
-transaction path. A validated Decision is not a reusable token, and callers
-must not edit it before apply.
+`inconclusive` means available valid inputs cannot decide the specification.
+`error` means the specification could not be executed as declared. Neither is
+a passing result.
 
-## Scientific, Operational, And Presentation State
+Claim status is an explicit Root interpretation; acceptance is a separate
+immutable assessment snapshot. A versioned acceptance profile checks a
+supported Claim, at least one GateSpec, required dimensions, coverage of all
+attached GateSpecs, the latest passing result per specification, content
+digests, and blocking Findings. Historical records remain canonical. Their
+currentness is derived by comparing the frozen Claim, profile, GateSpecs,
+latest results, and relevant Findings with current canonical state. The entire
+acceptance record is also self-bound by `acceptance_digest`.
 
-### Canonical scientific state
+### Open scientific vocabulary
+
+Claim types, relation types, Act tags, Finding types, validation dimensions,
+Observation concepts, and subjects remain open strings because they express
+research meaning. Closed enums exist only where deterministic code must execute
+a closed contract, such as record status, value datatype, finding severity,
+validation verdict, and Decision operation.
+
+There is no workflow phase, stage, Act type, scientific role/layer, backend
+priority, or fixed Gate-to-action router.
+
+## Canonical And Operational State
+
+Canonical v4 state is:
 
 ```text
+workspace.json
 research_state.json
 claims.json
-evidence_registry.json
-gate_results.json
-nodes/<node_id>/node.json
-accepted/<acceptance_id>.json
+claim_relations.json
+research_acts.json
+observations.json
+validation_specs.json
+validation_results.json
+findings.json
+acceptances/<acceptance_id>.json
 decisions/<decision_id>.json
 decision_log.jsonl
 transaction_log.jsonl
 ```
 
-These files determine `workspace_revision`.
+These records determine `workspace_revision`. Direct edits are unsupported.
 
-### Operational state
+Operational or derived state includes:
 
-Calculation attempts, immutable intents, scheduler controls, remote receipts,
-Review/operator runs, Root Review dispositions, reports, and notification
-receipts determine `operational_revision` or remain derived artifacts. They do
-not silently change Claims, Evidence, Gates, or accepted artifacts.
+```text
+acts/<act_id>/attempts/...
+acts/<act_id>/outputs/...
+operations/agent-runs/...
+operations/activity/...
+reports/...
+.pi/ session and lock state
+remote guards, receipts, and mirrored files
+notification receipts
+```
 
-### Presentation state
+Operational state may determine `operational_revision`, but it does not change
+a Claim, Observation, Finding, ValidationResult, or acceptance record.
 
-`TS Activity`, working text, expanded entries, and the in-memory activity store
-are presentation only. They are cleared on Pi session start and shutdown. The
-activity panel is not rebuilt automatically from journals. The
-`/ts-subagent-history` browser explicitly reads durable run summaries and merges
-them with any current in-memory activity.
+## Decision Transaction
+
+The only normal mutation sequence is:
+
+```text
+context -> decision draft -> complete dry-run validation -> apply under lock
+```
+
+`ts_workspace_decision_draft` accepts Root-authored v4 operations and local
+aliases. It allocates technical IDs, resolves `$alias` references, compiles any
+GateSpec, evaluates any requested validation against the draft state, binds the
+current frontier projection and scientific revision, and returns a complete
+`ts-research-decision/1`.
+
+Validation applies the exact Decision to an isolated copy of canonical state
+and validates the complete post-state. Apply repeats binding and post-state
+validation while holding the workspace lock, then commits through one
+transaction path. A Decision is idempotent only when its ID and full canonical
+digest match. Any edit after draft requires a new draft.
+
+Supported draft operations are:
+
+```text
+create_claim            relate_claims
+start_act               complete_act
+record_observation      record_finding      resolve_finding
+freeze_validation_spec evaluate_validation
+update_claim            accept_claim
+set_focus               link_operation
+```
+
+These are state primitives, not a prescribed sequence. A single Decision may
+contain multiple ordered operations and refer to new records with local aliases.
+
+## Validation Engine
+
+The engine separates mechanism from policy:
+
+```text
+Gate template + typed parameters
+  -> compiler expands every check
+  -> frozen GateSpec with template and registry digests
+  -> registry invokes maintained deterministic predicates
+  -> ValidationResult with selected Observation digests
+
+Acceptance profile
+  -> required dimensions + coverage rules + blocker rules
+  -> immutable assessment snapshot + derived currentness
+```
+
+The Root Agent may select a packaged template or provide a declarative
+definition composed only of registered predicates. A definition cannot contain
+Python, shell, imports, expressions, or executable plugins. New deterministic
+scientific behavior enters through maintained predicate code, tests, and a new
+registry digest.
+
+Built-in classical TS templates are ordinary packaged templates. Photochemical,
+metal-catalyzed, radical, crossing, or dynamics work can add new templates and
+predicates without adding a new workflow branch.
+
+## Context Compiler
+
+The model receives revision-bound graph projections rather than raw canonical
+files. Graph modes are:
+
+- `frontier`: focus Claims/Acts, direct alternatives/dependencies, open
+  Findings, incomplete validation, and recent object-level changes;
+- `claim`, `act`, `finding`, and `validation`: one focused object and bounded
+  neighborhood;
+- `subgraph`: caller-seeded Claim/Act graph to a bounded depth;
+- `delta`: changes since known scientific and operational revisions.
+
+The same read-only public tool exposes `artifacts`, `compute_capabilities`, and
+`validation_capabilities`. Every bounded graph projection reports omitted
+counts and retrieval hints. The Pi transcript is conversational state, not a
+scientific source of truth.
 
 ## TSPi Lifecycle
 
 `TSPi` is a thin shell shim. `scripts/tspi_host.py` and
 `ts_runtime/launcher.py` own lifecycle behavior:
 
-1. Resolve the installation root and verify that the invoking package is the
-   immutable release selected by `.pi/packages/ts-agent/current`.
-2. Select installation-owned runtime, remote, notification, and cache paths.
-3. Resolve the shared isolated Python runtime before importing workflow code.
-4. For normal startup, validate the workspace name and create or reuse
+1. Resolve the physical installation root and immutable selected release.
+2. Resolve installation-owned runtime, remote, notification, and cache paths.
+3. Select the isolated Python interpreter before importing workflow code.
+4. Validate the workspace name and create or reuse
    `<installation>/workspaces/<name>`.
 5. Create workspace-local Pi session settings and acquire a nonblocking Root
-   Agent `flock`.
-6. Initialize a fresh workspace once, validate a complete v3 workspace without
-   rewriting it, or fail closed for partial, invalid, or v2 state.
-7. `exec` Pi with exactly the package Skill, theme, and five extensions.
+   Agent lock.
+6. Initialize fresh v4 state once or validate a complete v4 workspace without
+   rewriting it. Partial, invalid, or legacy canonical state fails closed.
+7. Execute Pi with exactly the package Skill, theme, and five extensions.
 
-One workspace has one Root Agent writer process. Different workspace names may
-run concurrently and share the immutable release and Python environment without
-sharing sessions, canonical state, calculation controls, or reports.
+One workspace has one Root writer process. Different workspaces can run
+concurrently while sharing immutable code and the Python environment. They do
+not share Pi conversations, graph state, calculations, reports, or locks.
 
-A Pi session contains multiple user/assistant turns. Starting a terminal TSPi
-process does not resume a prior Pi conversation unless Pi's `--continue` is
-passed. Phone mode uses `--continue` automatically. Node completion changes the
-workspace, not the model transcript: the next Agent turn sees those changes
-only through the tool result already in context or a later
-`ts_workspace_context` read.
+A Pi conversation may contain many user/assistant turns. ResearchAct completion
+changes the workspace, not the transcript. A later turn learns the change from
+the tool result already in context or a new context projection. Terminal mode
+resumes only when `--continue` is supplied; Phone mode supplies it automatically.
 
-Before each Root Agent run, the control extension appends a short package-source
-policy and active-workspace reminder to Pi's existing system prompt. It does not
-inject the full workspace report on every turn.
+Before each Root run, the control extension appends a short package-source and
+active-workspace reminder to Pi's native system prompt. It does not inject a
+full workspace dump.
 
 ## Public Extensions
 
 | Extension | Public tools and commands | Responsibility |
 | --- | --- | --- |
-| `ts-workflow-control` | `ts_workspace_context`, draft, validate, apply; `/ts-context`, `/ts-validate` | Context projection and the only scientific mutation path |
-| `ts-workflow-review` | `ts_subagent_review`, `ts_review_disposition` | Bounded advisory Review and mandatory Root response journal |
-| `ts-workflow-compute` | `ts_subagent_compute`, `ts_remote_inspect`; `/ts-remote` | Typed calculation operations and read-only infrastructure diagnostics |
-| `ts-workflow-artifacts` | `ts_subagent_render`, `ts_subagent_report`, `ts_notify_user` | Local artifacts, report packages, and fixed-target delivery |
-| `ts-workflow-ui` | `/ts-subagent-history` | Header, editor, footer, activity, history, and presentation only |
+| `ts-workflow-control` | context, Decision draft/validate/apply; `/ts-context`, `/ts-validate` | graph projection and sole canonical mutation path |
+| `ts-workflow-review` | `ts_subagent_review`, `ts_review_disposition` | isolated advisory Review and mandatory Root response |
+| `ts-workflow-compute` | `ts_compute`, `ts_remote_inspect`; `/ts-remote` | deterministic calculation lifecycle and diagnostics |
+| `ts-workflow-artifacts` | `ts_render`, `ts_report`, `ts_notify_user` | deterministic local artifacts, reports, and delivery |
+| `ts-workflow-ui` | `/ts-subagent-history` | startup, editor/footer, TS Activity, and Review history |
 
-`ts-phone-bridge` is optional and loaded only by `TSPi --phone`; it is not one
-of the normal five extensions. It feeds messages into the same visible Pi
-process and does not create a hidden Root Agent.
+`ts-phone-bridge` is optional and loaded only by `TSPi --phone`. It forwards
+messages to the same visible Pi process and never creates a hidden Root Agent.
 
-The shared `tool-catalog.ts` records public names and coarse execution kinds.
-It is an inventory, not a full capability contract. Field shapes live in each
-registered TypeBox schema, static compute support lives in
-`ts_compute/capabilities.py`, and live readiness requires explicit diagnostics.
-
-## Root Context And Package Sources
-
-The Root Agent learns ordinary operation from these sources, in order:
-
-1. Registered tool schemas and prompt guidelines for accepted call fields.
-2. `ts_workspace_context mode=artifacts|capabilities` for live logical inputs
-   and static adapter support.
-3. The public Root Skill, focused references, and reusable assets.
-
-Implementation source and tests are maintenance material, not runtime examples.
-The package-source guard blocks structured reads into private package paths
-during research sessions. It is a routing guard rather than a general
-filesystem sandbox.
+The shared tool catalog is an inventory and execution classification, not a
+complete capability contract. Registered tool schemas define call fields;
+compute capabilities define expressible adapter tasks; validation capabilities
+list templates, predicates, and profiles; remote diagnostics establish live
+readiness.
 
 ## Review Agent Runtime
 
-Review is the only child whose intended result depends on independent scientific
-reasoning. The host:
+Review is the only child model session because its value depends on independent
+scientific reasoning. The host:
 
-1. Selects one target Claim and asks the Kernel for its deterministic dependency
-   snapshot.
-2. Binds a full `ts-review-evidence-snapshot/2` for host citation validation.
-3. Projects a compact `ts-review-provider-input/2` for the model.
-4. Starts a fresh Pi session with no parent history, Skills, extensions,
-   built-in tools, raw filesystem access, or recursive delegation.
-5. Enables exactly one `ts_review_result` tool and forces that named tool call.
-6. Validates the result locally against `ts-agent-result/1`, task identity, and
-   the full citation allowlist.
-7. Allows at most one format repair in the same session.
+1. selects one target Claim and asks the Context Compiler for its dependency
+   snapshot;
+2. creates a bounded `ts-agent-task/2` containing compact Claim, relation, Act,
+   Observation, Finding, GateSpec, ValidationResult, and artifact excerpts;
+3. starts a fresh Pi child session with no parent transcript, Skills,
+   extensions, filesystem, shell, compute, mutation, or recursive delegation;
+4. enables exactly one `ts_review_result` tool and forces that named tool;
+5. validates `ts-agent-result/1` locally against task identity, scope, citation
+   allowlist, and advisory authority;
+6. permits at most one same-session structural repair;
+7. records provider failures before classifying missing or invalid output.
 
-The provider projection is limited to 24 KiB, with at most 8 Claims, 32 Gate
-results, 32 Evidence records, 16 Nodes, 4 artifact excerpts, and 8 KiB of model
-visible excerpt text. The full local snapshot may be larger, up to 96 KiB.
-Provider HTTP or stream failure outranks missing-tool or schema failure.
+Provider-side strict function mode is not required. Local TypeBox and semantic
+validation remain authoritative. Review cannot mutate state, create scientific
+Observations, perform external effects, or accept a Claim.
 
-A successful Review remains advisory until the Root Agent records exactly one
-`ts_review_disposition`. Even accepted advice requires normal Decisions and
-primary Evidence before it changes science.
+Every successful Review requires exactly one deterministic
+`ts_review_disposition` before the next scientific mutation. Accepting advice
+still requires primary artifacts and a normal Decision.
 
-## Bounded Operator Sessions
+## Deterministic Tool Plane
 
-Compute, Render, and Report also start fresh Pi child sessions, but their role is
-different from Review:
+### Compute
 
-- the Root Agent and host bind the operation, inputs, capabilities, paths, and
-  expected effect before session creation;
-- the child receives only request-scoped typed tools;
-- Compute may provide a short operational summary, while the host derives
-  authoritative action fields from typed results;
-- Render and Report results are generated from the actual typed action and
-  verified output, not restated by the model;
-- no operator can select a method, update a Claim, evaluate a Gate, or accept a
-  TS.
+`ts_compute` performs `prepare`, `submit`, `inspect`, `collect`, `cancel`, or
+`parse`. Preparation binds one ResearchAct, logical input artifacts and roles,
+backend/task/settings, execution target, and expected outputs into an immutable
+`ts-calculation-intent/4`. The host allocates paths, filenames, intent ID,
+remote directory, and submission binding.
 
-These sessions use `ts-agent-task/2` and `ts-agent-result/1` because isolation,
-timeout, provenance, and UI lifecycle are shared. That common envelope does not
-make them scientific reviewers.
+Remote transport uses OpenSSH/SCP and Torque directly. Guards distinguish
+pre-effect retryable failure from an ambiguous external effect. Known job IDs
+are retained even if later scheduler inspection fails. Collection follows the
+immutable manifest and does not require queue history.
+
+### Render and Report
+
+`ts_render` validates one Act-owned input set and creates one no-overwrite local
+artifact. `ts_report` validates the workspace, creates a new report directory
+atomically, and verifies the package manifest and file digests. Neither uses a
+model or interprets chemistry.
+
+### Notifications
+
+`ts_notify_user` sends a fixed event shape to the installation-owned recipient
+through configured ClawEmail. Recipient and credentials are not model fields.
+Digest-bound receipts make known success idempotent; ambiguous provider effects
+are not replayed automatically.
 
 ## Run Journals And Result Delivery
 
-Review/operator journals live under one owning Node when the task has exactly
-one Node, otherwise under study-level operations:
+Review journals live under:
 
 ```text
-nodes/<node_id>/agent-runs/<task_id>/
 operations/agent-runs/<task_id>/
 ```
 
-At creation, `task.json` and any bound Review documents are written atomically.
-On normal terminal handling, the host writes `actions.json`, optional
-`result.json`, and `run.json` with `completed` or `failed`. Files are private,
-exclusive-create journal records.
+At creation, `task.json` and its bound snapshot are exclusive-created. Normal
+terminal handling writes actions, optional result, and final run state. A
+process crash can leave a task-only journal indexed as pending/unknown; there is
+no claim of per-event write-ahead durability or automatic result replay.
 
-Current durability has explicit limits:
+Deterministic operations use the activity journal and their own authoritative
+records. Compute guards and receipts remain the source for scheduler recovery;
+a UI or Review-run state never proves a remote effect.
 
-- a process crash after task creation but before terminal handling leaves no
-  `run.json`; the operational reader reports that run as pending/unknown;
-- action arrays are accumulated in memory and written at terminal handling,
-  rather than appended after each tool effect;
-- Review explicitly observes provider HTTP/stream failures; other operator
-  sessions rely on errors propagated by the Pi runtime and may retain less
-  provider-specific detail;
-- the public tool return is the immediate result-delivery channel. There is no
-  separate durable delivery acknowledgement or automatic replay into a later
-  Root turn.
+The immediate tool return is the current delivery channel into the Root
+conversation. `TS Activity` is presentation state and is cleared with the Pi
+session. `/ts-subagent-history` reads durable Review summaries on demand.
 
-Remote compute effects are protected separately by calculation guards,
-submission records, and receipts. If a child response is lost after a remote
-effect, reconcile those control records and local artifacts; do not infer safety
-from a missing child `result.json` and do not replay an ambiguous scheduler
-request.
+## Failure Semantics
 
-## Compute And Remote Lifecycle
-
-The Root Agent chooses scientific purpose, backend, task, settings, execution
-kind, profile, and bounded resources. The deterministic adapter resolves
-logical artifacts and creates the intent, paths, generated inputs, expected
-artifacts, digests, and submission identity.
-
-```text
-Root-selected typed request
-  -> ts_compute intent and local attempt
-  -> ts_backends preparation/parsing
-  -> optional ts_remote OpenSSH/SCP and Torque
-```
-
-`ts_remote` is the only remote subsystem. Installation configuration owns SSH
-host aliases, scheduler commands, roots, queues, software commands, activation,
-scratch policy, and environment. The request cannot override them.
-
-Submit separates pre-effect staging failure, known scheduler rejection, known
-job ID, and ambiguous request effect. Status keeps scheduler state and program
-state separate. Collection verifies only declared files and hashes and never
-depends on `qstat` history. Scheduler status is operational, not Evidence.
-
-## Failure And Recovery Rules
-
-- Scientific state corruption or a partial v3 workspace fails closed at
-  startup; it is not repaired opportunistically.
-- A failed program normally leaves the Claim unresolved. Scientifically useful
-  negative results require completed, verified artifacts and normal Evidence.
-- A pre-effect remote staging failure may be retried only with the exact binding
-  and an explicit retry disposition.
-- Ambiguous submit, cancel, or notification effects are never retried
-  automatically.
-- A Review provider failure is a failed operational run, not a scientific
-  opinion and not a format-repair result.
-- Render or report action success is checked against the actual output and
-  manifest even if the outer child response fails.
-- Reports and web views are projections; they cannot repair or override source
-  state.
+- A schema, binding, or staging failure before an external effect is not an
+  ambiguous submission.
+- A missing scheduler reply after effect initiation is unknown until durable
+  records or declared outputs reconcile it.
+- Program failure is not automatically scientific contradiction.
+- Parser failure is not automatically program failure.
+- A successful deterministic action is not undone by a later UI or report-entry
+  serialization error.
+- Provider HTTP/stream failure outranks Review output-contract failure.
+- Canonical corruption, stale revision, digest drift, cyclic graph, and partial
+  bootstrap fail closed.
 
 ## Contract Locations
 
-| Contract | Source of truth |
+| Contract | Owner |
 | --- | --- |
-| Scientific records and Decisions | `ts_workspace/contracts/` plus Kernel validators |
-| Gate policies | `ts_workspace/contracts/gate_policies.json` plus `gates_v3.py` |
-| Compute request, intent, and result | `ts_compute/contracts/` plus adapters |
-| Agent task and result | `contracts/` plus `src/agent-core/agent-protocol.cjs` |
-| Review packet and citation limits | `src/agents/review/task-packet.cjs` |
-| Public tool names | `extensions/shared/tool-catalog.ts` |
-| Installed release boundary | `package.json.files`, `scripts/check_package.py`, installer checks |
-| Root operating policy | `skills/transition-state-workflow/SKILL.md` and focused references |
-
-When code, schema, tool help, Skill text, examples, and tests disagree, the
-package is not documentation-complete. Repair the owning contract and all of its
-projections together.
+| Public tool names and execution classes | `extensions/shared/tool-catalog.ts` |
+| Public call schemas | each `extensions/ts-workflow-*/index.ts` |
+| Agent task/result envelopes | `contracts/agent_task.schema.json`, `contracts/agent_result.schema.json` |
+| Canonical scientific records | `ts_workspace/contracts/*.schema.json` |
+| Decision normalization and ID allocation | `ts_workspace/decision.py` |
+| Transactional mutation and validation | `ts_workspace/engine.py`, `ts_workspace/validator.py` |
+| Graph projections and Review snapshot | `ts_workspace/context.py` |
+| Predicate registry and GateSpec compiler | `ts_validation/` |
+| Built-in validation policy | `ts_validation/templates/`, `ts_validation/acceptance_profiles/` |
+| Compute request, intent, and result | `ts_compute/contracts/*.schema.json` |
+| Backend capabilities and parsers | `ts_compute/capabilities.py`, `ts_backends/` |
+| Remote lifecycle | `ts_remote/` |
+| Artifact request/path contract | `src/artifacts/request-contract.cjs` |
+| Report projection | `ts_report/` |
+| Package/release boundary | `package.json`, `scripts/check_package.py`, installer tests |

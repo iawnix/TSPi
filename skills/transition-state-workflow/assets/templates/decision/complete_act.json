@@ -1,0 +1,7 @@
+{
+  "op": "complete_act",
+  "actRef": "${ACT_REF}",
+  "outcome": "completed",
+  "summary": "${RESULT_SUMMARY}",
+  "openQuestions": []
+}

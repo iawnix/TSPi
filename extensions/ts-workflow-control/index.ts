@@ -11,46 +11,36 @@ import {
   runWorkspaceJson,
 } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
-import {
-  guardPackageSourceRead,
-  packageSourceSystemPrompt,
-} from "../shared/package-source-policy.ts";
+import { guardPackageSourceRead, packageSourceSystemPrompt } from "../shared/package-source-policy.ts";
 
 const require = createRequire(import.meta.url);
-const {
-  buildLineageContextSummary,
-  buildContextSummary,
-  buildNodeContextSummary,
-  resolveWorkspaceRoot,
-  toolText,
-} = require("./summary.cjs");
+const { buildContextSummary, resolveWorkspaceRoot, toolText } = require("./summary.cjs");
 
-type TsCommand = "start_node" | "update_workspace" | "end_node";
-const DECISION_ACTIONS = ["start_node", "update_workspace", "end_node"] as const;
-const CONTEXT_MODES = ["summary", "delta", "node", "lineage", "audit", "artifacts", "capabilities"] as const;
+const GRAPH_CONTEXT_MODES = ["frontier", "claim", "act", "subgraph", "finding", "validation", "delta"] as const;
+const CONTEXT_MODES = [...GRAPH_CONTEXT_MODES, "artifacts", "compute_capabilities", "validation_capabilities"] as const;
 const CONTEXT_ENTRY_TYPE = "ts-workspace-context-result";
 const VALIDATION_ENTRY_TYPE = "ts-workspace-validation-result";
 
 type WorkspaceContextEntryData = {
   summary: string;
   valid: boolean;
-  currentNode: string | null;
+  focusClaims: string[];
+  focusActs: string[];
 };
 
-type WorkspaceValidationEntryData = {
-  validation: Record<string, unknown>;
-};
+type WorkspaceValidationEntryData = { validation: Record<string, unknown> };
 
 export default function (pi: ExtensionAPI) {
   pi.registerEntryRenderer<WorkspaceContextEntryData>(CONTEXT_ENTRY_TYPE, (entry, { expanded }, theme) => {
     const data = entry.data;
     const status = data?.valid === true ? "valid" : "invalid";
-    const node = data?.currentNode || "no current node";
+    const focus = [
+      data?.focusClaims?.length ? `${data.focusClaims.length} claims` : undefined,
+      data?.focusActs?.length ? `${data.focusActs.length} acts` : undefined,
+    ].filter(Boolean).join(" · ") || "empty frontier";
     let text = `${theme.fg("accent", "TS Context")}: ${theme.fg(data?.valid === true ? "success" : "warning", status)}`;
-    text += theme.fg("muted", ` · ${node}`);
-    if (expanded) {
-      text += `\n${theme.fg("dim", data?.summary || "Workspace context is unavailable")}`;
-    }
+    text += theme.fg("muted", ` · ${focus}`);
+    if (expanded) text += `\n${theme.fg("dim", data?.summary || "Workspace context is unavailable")}`;
     text += expandHint(theme, expanded);
     return new Text(text, 1, 0);
   });
@@ -63,9 +53,7 @@ export default function (pi: ExtensionAPI) {
     const warnings = findings.filter((item) => isFindingWithSeverity(item, "warning")).length;
     let text = `${theme.fg("accent", "TS Validation")}: ${theme.fg(valid ? "success" : "error", valid ? "valid" : "invalid")}`;
     text += theme.fg("muted", ` · ${errors} errors · ${warnings} warnings`);
-    if (expanded) {
-      text += `\n${theme.fg("dim", JSON.stringify(validation, null, 2))}`;
-    }
+    if (expanded) text += `\n${theme.fg("dim", JSON.stringify(validation, null, 2))}`;
     text += expandHint(theme, expanded);
     return new Text(text, 1, 0);
   });
@@ -75,7 +63,7 @@ export default function (pi: ExtensionAPI) {
     const packagePolicy = packageSourceSystemPrompt();
     if (!root) return { systemPrompt: `${event.systemPrompt}\n\n${packagePolicy}` };
     return {
-      systemPrompt: `${event.systemPrompt}\n\n${packagePolicy}\n\nTS workspace active: ${root}. Use ${TS_PUBLIC_TOOL_NAMES.workspaceContext} on demand; only ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply} mutates canonical state.`,
+      systemPrompt: `${event.systemPrompt}\n\n${packagePolicy}\n\nTS v4 workspace active: ${root}. Retrieve a bounded graph projection with ${TS_PUBLIC_TOOL_NAMES.workspaceContext}. Only ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply} mutates canonical scientific state.`,
     };
   });
 
@@ -84,142 +72,81 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.workspaceContext,
     label: "TS Context",
-    description: "Read compact workspace, historical-node, backtrack, calculation-artifact, or backend-capability context.",
-    promptSnippet: "Summarize the current transition-state workspace state from report_workspace",
+    description: "Compile a bounded Claim graph and ResearchAct DAG projection, or inspect deterministic capabilities and logical artifacts.",
+    promptSnippet: "Retrieve bounded v4 TS research context by Claim, ResearchAct, Finding, validation, or frontier",
     promptGuidelines: [
-      `Use ${TS_PUBLIC_TOOL_NAMES.workspaceContext} before choosing or closing a transition-state workflow node.`,
-      "Pass nodeId to inspect a historical node before deciding whether to reuse it.",
-      "Pass both fromNode and anchorNode to compare a failure trigger with a selected historical checkpoint before backtracking.",
-      `Use ${TS_PUBLIC_TOOL_NAMES.workspaceContext} instead of reading every workspace state file when only current state is needed.`,
-      "Use mode=delta with both known scientific and operational revisions; unchanged workspaces return no repeated summary.",
-      "Use mode=artifacts before calculation preparation to obtain artifactId and compatible inputRole values; pass nodeId to filter by owner node.",
-      "Use mode=capabilities before selecting a candidate backend; adapter support is not a live executable or scheduler readiness result.",
+      "Start with mode=frontier, then retrieve a focused Claim, ResearchAct, Finding, validation result, or bounded subgraph only when needed.",
+      "Use mode=delta with both known revisions to avoid repeating unchanged scientific and operational context.",
+      "Use mode=artifacts to resolve logical artifactId values; physical workspace paths remain host-owned implementation details.",
+      "Backend capability and validation capability catalogs describe expressible operations, not live executable or scheduler health.",
     ],
     parameters: Type.Object({
       mode: Type.Optional(StringEnum(CONTEXT_MODES)),
-      root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
-      nodeId: Type.Optional(Type.String({ description: "Historical node to load as a compact context capsule." })),
-      fromNode: Type.Optional(Type.String({ description: "Current node for a read-only lineage comparison." })),
-      anchorNode: Type.Optional(Type.String({ description: "Ancestor node selected as the lineage comparison anchor." })),
-      sinceRevision: Type.Optional(Type.String({ description: "Known workspace revision for mode=delta." })),
-      sinceOperationalRevision: Type.Optional(Type.String({ description: "Known operational revision for mode=delta." })),
+      root: Type.Optional(Type.String()),
+      claimRef: Type.Optional(Type.String()),
+      actRef: Type.Optional(Type.String()),
+      findingRef: Type.Optional(Type.String()),
+      validationRef: Type.Optional(Type.String()),
+      claimSeeds: Type.Optional(Type.Array(Type.String(), { maxItems: 32 })),
+      actSeeds: Type.Optional(Type.Array(Type.String(), { maxItems: 32 })),
+      depth: Type.Optional(Type.Integer({ minimum: 0, maximum: 4 })),
+      sinceRevision: Type.Optional(Type.String()),
+      sinceOperationalRevision: Type.Optional(Type.String()),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
-      const mode = params.mode || (params.nodeId ? "node" : params.fromNode || params.anchorNode ? "lineage" : "summary");
+      const mode = params.mode || "frontier";
       if (mode === "artifacts") {
-        const args = params.nodeId ? ["--node-id", String(params.nodeId)] : [];
+        const args = params.actRef ? ["--act-id", params.actRef] : [];
         const artifactCatalog = await runComputeJson(pi, "list-artifacts", root, args, signal);
         return toolText(JSON.stringify(artifactCatalog, null, 2), { artifactCatalog });
       }
-      if (mode === "capabilities") {
+      if (mode === "compute_capabilities") {
         const capabilities = await runComputeJson(pi, "capabilities", root, [], signal);
         return toolText(JSON.stringify(capabilities, null, 2), { capabilities });
       }
-      if (mode === "lineage") {
-        if (!params.fromNode || !params.anchorNode) {
-          throw new Error("fromNode and anchorNode must be provided together");
-        }
-        const lineageContext = await runWorkspaceJson(
-          pi,
-          "report_lineage_context",
-          root,
-          ["--from-node", String(params.fromNode), "--anchor-node", String(params.anchorNode)],
-          signal,
-        );
-        return toolText(buildLineageContextSummary(lineageContext), { lineageContext });
+      if (mode === "validation_capabilities") {
+        const capabilities = await runWorkspaceJson(pi, "validation_capabilities", root, [], signal);
+        return toolText(JSON.stringify(capabilities, null, 2), { capabilities });
       }
-      if (mode === "node") {
-        if (!params.nodeId) throw new Error("mode=node requires nodeId");
-        const nodeContext = await runWorkspaceJson(pi, "report_node", root, ["--node-id", String(params.nodeId)], signal);
-        return toolText(buildNodeContextSummary(nodeContext), { nodeContext });
-      }
-      const report = await runWorkspaceJson(pi, "report_workspace", root, [], signal);
-      if (mode === "delta") {
-        const scientificChanged = params.sinceRevision !== report.workspace_revision;
-        const operationalKnown = typeof params.sinceOperationalRevision === "string";
-        const operationalChanged = operationalKnown
-          ? params.sinceOperationalRevision !== report.operational_revision
-          : false;
-        if (!scientificChanged && !operationalChanged) {
-          const operationNote = operationalKnown
-            ? ` and operational state ${report.operational_revision}`
-            : `; current operational revision is ${report.operational_revision}`;
-          return toolText(`TS scientific workspace unchanged at ${report.workspace_revision}${operationNote}.`, {
-            changed: false,
-            scientificChanged: false,
-            operationalChanged: false,
-            workspaceRevision: report.workspace_revision,
-            operationalRevision: report.operational_revision,
-          });
-        }
-        if (!scientificChanged && operationalChanged) {
-          const operations = report.operational_summary || {};
-          return toolText(
-            `TS scientific workspace unchanged at ${report.workspace_revision}. Operational state changed to ${report.operational_revision}: calculation_files=${operations.calculation_file_count || 0}; agent_runs=${operations.agent_run_count || 0}; failed=${operations.agent_run_failed_count || 0}; pending=${operations.agent_run_pending_count || 0}.`,
-            {
-              report,
-              changed: true,
-              scientificChanged: false,
-              operationalChanged: true,
-            },
-          );
-        }
-      }
-      const summary = buildContextSummary(report);
-      return toolText(summary, {
-        report,
-        changed: mode === "delta" ? true : undefined,
-        scientificChanged: mode === "delta" ? true : undefined,
-        operationalChanged: mode === "delta" && typeof params.sinceOperationalRevision === "string"
-          ? params.sinceOperationalRevision !== report.operational_revision
-          : undefined,
-      });
+      const projection = await runWorkspaceJson(pi, "context", root, contextArgs(mode, params), signal);
+      return toolText(buildContextSummary(projection), { projection });
     },
   });
 
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionDraft,
     label: "TS Decision Draft",
-    description: "Build one non-mutating ts-decision/3 draft from the Root Agent's selected action and payload.",
-    promptSnippet: "Create a versioned TS workspace decision draft without applying it",
+    description: "Allocate logical IDs and freeze one non-mutating ts-research-decision/1 from explicit v4 operations.",
+    promptSnippet: "Draft one revision-bound v4 TS research Decision",
     promptGuidelines: [
-      "The Root Agent chooses the scientific action and facts; the workspace kernel owns decision, evidence, and gate-result IDs.",
-      "Omit evidence_id and gate_result_id in draft payloads; use allocated refs returned by the kernel in later decisions.",
-      `Pass the returned decision unchanged to ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate}, then ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply}.`,
+      "Use local_ref aliases for records created in the same Decision; the kernel allocates stable Claim, ResearchAct, Observation, Finding, GateSpec, validation-result, and acceptance IDs.",
+      "Keep scientific strategy in the rationale and operations; do not invent physical paths or edit registries directly.",
+      `Pass the returned Decision unchanged to ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate}, then ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply}.`,
     ],
     parameters: Type.Object({
-      action: StringEnum(DECISION_ACTIONS),
-      rationale: Type.String({ minLength: 1, maxLength: 8000 }),
-      payload: Type.Any(),
-      basisRefs: Type.Optional(Type.Array(Type.String(), { maxItems: 128 })),
-      root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
+      rationale: Type.String({ minLength: 1, maxLength: 12000 }),
+      operations: Type.Array(Type.Any(), { minItems: 1, maxItems: 128 }),
+      basisRefs: Type.Optional(Type.Array(Type.String(), { maxItems: 256 })),
+      root: Type.Optional(Type.String()),
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
       const result = await runWorkspaceDraftJson(pi, root, {
-        action: params.action,
         rationale: params.rationale,
         basis_refs: params.basisRefs || [],
-        payload: params.payload,
+        operations: params.operations,
       }, signal);
-      return toolText(JSON.stringify(result.decision, null, 2), result);
+      return toolText(JSON.stringify(result, null, 2), result);
     },
   });
 
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate,
     label: "TS Decision Validate",
-    description: "Validate one ts_workspace decision JSON without mutating the workspace.",
-    promptSnippet: "Preflight a transition-state workspace decision JSON without applying it",
-    promptGuidelines: [
-      `Use ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate} when a decision's schema, evidence ownership, or branch topology is uncertain.`,
-      "A valid preflight does not mutate the workspace and does not establish a scientific verdict.",
-    ],
-    parameters: Type.Object({
-      decision: Type.Any(),
-      root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
-    }),
+    description: "Dry-run one frozen ts-research-decision/1 against current v4 state without mutation.",
+    promptSnippet: "Validate one frozen v4 TS research Decision without applying it",
+    parameters: Type.Object({ decision: Type.Any(), root: Type.Optional(Type.String()) }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
       const result = await runWorkspaceDecisionJson(pi, "validate_decision", root, params.decision, signal);
@@ -230,53 +157,41 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply,
     label: "TS Decision Apply",
-    description: "Apply a mutating ts_workspace decision JSON through the public control plane.",
-    promptSnippet: "Apply a transition-state workspace mutation decision JSON",
-    promptGuidelines: [
-      `Use ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply} for transition-state workspace mutations; do not edit canonical state files by hand.`,
-      `Apply only a decision returned by ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionDraft} and accepted by ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate}.`,
-    ],
-    parameters: Type.Object({
-      decision: Type.Any(),
-      root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
-    }),
+    description: "Atomically apply one validated ts-research-decision/1 to canonical v4 state.",
+    promptSnippet: "Atomically apply one validated v4 TS research Decision",
+    promptGuidelines: ["Apply only the exact Decision returned by the draft tool and accepted by dry-run validation."],
+    parameters: Type.Object({ decision: Type.Any(), root: Type.Optional(Type.String()) }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
-      if (!params.decision || typeof params.decision !== "object") throw new Error("decision must be an object");
-      const action = (params.decision as { action?: string }).action;
-      if (!DECISION_ACTIONS.includes(action as TsCommand)) throw new Error(`unsupported mutation action: ${action}`);
-      const result = await runWorkspaceDecisionJson(pi, action as TsCommand, root, params.decision, signal);
-      const report = await runWorkspaceJson(pi, "report_workspace", root, [], signal);
-      const summary = buildContextSummary(report);
-      return toolText(`${JSON.stringify(result, null, 2)}\n\n${summary}`, { result, report });
+      const result = await runWorkspaceDecisionJson(pi, "apply_decision", root, params.decision, signal);
+      const projection = await runWorkspaceJson(pi, "context", root, ["--mode", "frontier"], signal);
+      return toolText(`${JSON.stringify(result, null, 2)}\n\n${buildContextSummary(projection)}`, { result, projection });
     },
   });
 
   pi.registerCommand("ts-context", {
-    description: "Show active TS workspace context · read-only · local.",
+    description: "Show the active v4 Claim and ResearchAct frontier · read-only · local.",
     handler: async (args, ctx) => {
-      if (args.trim()) {
-        ctx.ui.notify("/ts-context takes no arguments; it uses the active TSPi workspace", "warning");
+      if (String(args || "").trim()) {
+        ctx.ui.notify("/ts-context takes no arguments; focused retrieval is available through ts_workspace_context", "warning");
         return;
       }
       const root = requireWorkspaceRoot(undefined, ctx.cwd);
-      const report = await runWorkspaceJson(pi, "report_workspace", root, [], ctx.signal);
-      const summary = buildContextSummary(report);
-      const focus = report.focus && typeof report.focus === "object"
-        ? report.focus as Record<string, unknown>
-        : {};
+      const projection = await runWorkspaceJson(pi, "context", root, ["--mode", "frontier"], ctx.signal);
+      const focus = objectValue(projection.focus);
       pi.appendEntry<WorkspaceContextEntryData>(CONTEXT_ENTRY_TYPE, {
-        summary,
-        valid: report.valid === true,
-        currentNode: typeof focus.current_node === "string" ? focus.current_node : null,
+        summary: buildContextSummary(projection),
+        valid: projection.valid === true,
+        focusClaims: stringArray(focus.claim_refs),
+        focusActs: stringArray(focus.act_refs),
       });
     },
   });
 
   pi.registerCommand("ts-validate", {
-    description: "Validate active TS workspace · read-only · local.",
+    description: "Validate active v4 canonical workspace state · read-only · local.",
     handler: async (args, ctx) => {
-      if (args.trim()) {
+      if (String(args || "").trim()) {
         ctx.ui.notify("/ts-validate takes no arguments; it uses the active TSPi workspace", "warning");
         return;
       }
@@ -287,11 +202,35 @@ export default function (pi: ExtensionAPI) {
   });
 }
 
+function contextArgs(mode: typeof GRAPH_CONTEXT_MODES[number], params: Record<string, unknown>): string[] {
+  const args = ["--mode", mode, "--depth", String(params.depth ?? 1)];
+  addArg(args, "--claim-ref", params.claimRef);
+  addArg(args, "--act-ref", params.actRef);
+  addArg(args, "--finding-ref", params.findingRef);
+  addArg(args, "--validation-ref", params.validationRef);
+  addArg(args, "--since-revision", params.sinceRevision);
+  addArg(args, "--since-operational-revision", params.sinceOperationalRevision);
+  for (const value of stringArray(params.claimSeeds)) args.push("--claim-seed", value);
+  for (const value of stringArray(params.actSeeds)) args.push("--act-seed", value);
+  return args;
+}
+
+function addArg(args: string[], flag: string, value: unknown): void {
+  if (typeof value === "string" && value) args.push(flag, value);
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function stringArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && Boolean(item)) : [];
+}
+
 function expandHint(theme: { fg: (color: "dim" | "muted", text: string) => string }, expanded: boolean): string {
   const expandKey = theme.fg("dim", keyText("app.tools.expand"));
   const action = expanded ? "collapse all details" : "expand all details";
-  const prefix = expanded ? "\n" : " ";
-  return `${prefix}${theme.fg("muted", "(")}${expandKey}${theme.fg("muted", ` ${action})`)}`;
+  return `${expanded ? "\n" : " "}${theme.fg("muted", "(")}${expandKey}${theme.fg("muted", ` ${action})`)}`;
 }
 
 function isFindingWithSeverity(value: unknown, severity: string): boolean {

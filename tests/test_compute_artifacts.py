@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from strict_helpers import bootstrap_strict_workspace, start_research_node
+from tests.v4_helpers import bootstrap_v4_workspace, start_research_act
 from ts_compute import (
     ComputeContractError,
     create_calculation_intent,
@@ -17,18 +17,13 @@ from ts_compute.cli import main as compute_cli_main
 from ts_remote.errors import RemoteError
 
 
-def _workspace(tmp_path: Path) -> Path:
-    workspace = tmp_path / "workspace"
-    report_ref = bootstrap_strict_workspace(workspace)
-    start_research_node(
+def _workspace(tmp_path: Path) -> tuple[Path, str]:
+    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    refs = start_research_act(
         workspace,
-        report_ref,
-        node_id="n001",
         objective="Exercise deterministic calculation artifact binding.",
-        tags=["candidate", "compute"],
     )
-    (workspace / "nodes/n001/inputs").mkdir()
-    return workspace
+    return workspace, refs["act_id"]
 
 
 def _artifact(catalog: dict, path: str) -> dict:
@@ -36,14 +31,15 @@ def _artifact(catalog: dict, path: str) -> dict:
 
 
 def _request(
+    act_id: str,
     artifact_id: str,
     *,
     dry_run: bool = True,
     execution_target: dict | None = None,
 ) -> dict:
     return {
-        "schema_version": "ts-calculation-request/1",
-        "node_id": "n001",
+        "schema_version": "ts-calculation-request/2",
+        "act_id": act_id,
         "purpose": "Exercise deterministic calculation artifact binding.",
         "attempt_kind": "primary",
         "recalculation_ref": None,
@@ -56,117 +52,116 @@ def _request(
     }
 
 
-def test_artifact_id_is_stable_after_same_owner_rename_and_changes_with_content(tmp_path: Path) -> None:
-    workspace = _workspace(tmp_path)
-    source = workspace / "nodes/n001/inputs/source.gjf"
+def test_artifact_id_binds_path_and_content(tmp_path: Path) -> None:
+    workspace, _ = _workspace(tmp_path)
+    source = workspace / "inputs" / "source.gjf"
     source.write_text("# HF/STO-3G\n\nSP\n\n0 1\nH 0 0 0\n\n", encoding="utf-8")
 
-    first = _artifact(list_calculation_artifacts(workspace), "nodes/n001/inputs/source.gjf")
+    first = _artifact(list_calculation_artifacts(workspace), "inputs/source.gjf")
     renamed = source.with_name("renamed.com")
     source.rename(renamed)
-    second = _artifact(list_calculation_artifacts(workspace), "nodes/n001/inputs/renamed.com")
-    assert second["artifact_id"] == first["artifact_id"]
+    second = _artifact(list_calculation_artifacts(workspace), "inputs/renamed.com")
+    assert second["artifact_id"] != first["artifact_id"]
     assert second["sha256"] == first["sha256"]
 
     renamed.write_text("# HF/STO-3G\n\nSP changed\n\n0 1\nH 0 0 0\n\n", encoding="utf-8")
-    third = _artifact(list_calculation_artifacts(workspace), "nodes/n001/inputs/renamed.com")
+    third = _artifact(list_calculation_artifacts(workspace), "inputs/renamed.com")
     assert third["artifact_id"] != second["artifact_id"]
     assert third["sha256"] != second["sha256"]
 
 
-def test_catalog_excludes_symlinks_and_unregistered_nodes_and_reports_roles(tmp_path: Path) -> None:
-    workspace = _workspace(tmp_path)
-    source = workspace / "nodes/n001/inputs/source.xyz"
-    source.write_text("1\nsource\nH 0 0 0\n", encoding="utf-8")
-    source.with_name("linked.xyz").symlink_to(source)
-    orphan = workspace / "nodes/orphan/inputs/orphan.xyz"
-    orphan.parent.mkdir(parents=True)
-    orphan.write_text("1\norphan\nH 0 0 0\n", encoding="utf-8")
+def test_catalog_uses_workspace_and_research_act_ownership(tmp_path: Path) -> None:
+    workspace, act_id = _workspace(tmp_path)
+    root_input = workspace / "inputs" / "source.xyz"
+    root_input.write_text("1\nsource\nH 0 0 0\n", encoding="utf-8")
+    root_input.with_name("linked.xyz").symlink_to(root_input)
+    act_output = workspace / "acts" / act_id / "outputs" / "candidate.xyz"
+    act_output.parent.mkdir(parents=True)
+    act_output.write_text("1\ncandidate\nH 0 0 0\n", encoding="utf-8")
 
-    with pytest.raises(ComputeContractError, match="unknown workspace node: orphan"):
-        list_calculation_artifacts(workspace, node_id="orphan")
+    with pytest.raises(ComputeContractError, match="unknown ResearchAct"):
+        list_calculation_artifacts(workspace, act_id="act_000000000000000000000000")
 
-    catalog = list_calculation_artifacts(workspace, node_id="n001")
+    catalog = list_calculation_artifacts(workspace)
+    assert [item["path"] for item in catalog["artifacts"]] == [
+        f"acts/{act_id}/outputs/candidate.xyz",
+        "inputs/source.xyz",
+    ]
+    owned = _artifact(catalog, f"acts/{act_id}/outputs/candidate.xyz")
+    shared = _artifact(catalog, "inputs/source.xyz")
+    assert owned["owner_act"] == act_id
+    assert shared["owner_act"] is None
+    assert shared["input_roles"] == ["product", "reactant", "xyz"]
+    assert list_calculation_artifacts(workspace, act_id=act_id)["artifacts"] == [owned]
 
-    assert [item["path"] for item in catalog["artifacts"]] == ["nodes/n001/inputs/source.xyz"]
-    artifact = catalog["artifacts"][0]
-    assert artifact["owner_node"] == "n001"
-    assert artifact["source_intent_id"] is None
-    assert artifact["input_roles"] == ["product", "reactant", "xyz"]
 
-
-def test_binding_rejects_missing_ambiguous_and_role_incompatible_artifacts(tmp_path: Path) -> None:
-    workspace = _workspace(tmp_path)
-    gjf = workspace / "nodes/n001/inputs/source.gjf"
+def test_binding_rejects_unknown_incompatible_and_incomplete_roles(tmp_path: Path) -> None:
+    workspace, act_id = _workspace(tmp_path)
+    gjf = workspace / "inputs" / "source.gjf"
     gjf.write_text("# HF/STO-3G\n\nSP\n\n0 1\nH 0 0 0\n\n", encoding="utf-8")
-    xyz = workspace / "nodes/n001/inputs/source.xyz"
+    xyz = workspace / "inputs" / "source.xyz"
     xyz.write_text("1\nsource\nH 0 0 0\n", encoding="utf-8")
     catalog = list_calculation_artifacts(workspace)
-    gjf_artifact = _artifact(catalog, "nodes/n001/inputs/source.gjf")
-    xyz_artifact = _artifact(catalog, "nodes/n001/inputs/source.xyz")
+    gjf_artifact = _artifact(catalog, "inputs/source.gjf")
+    xyz_artifact = _artifact(catalog, "inputs/source.xyz")
 
-    with pytest.raises(ComputeContractError, match="unknown calculation artifact_id"):
-        create_calculation_intent(workspace, _request("art_000000000000000000000000"))
+    with pytest.raises(ComputeContractError, match="unknown artifact_id"):
+        create_calculation_intent(workspace, _request(act_id, "art_000000000000000000000000"))
     with pytest.raises(ComputeContractError, match="not compatible with input role gjf"):
-        create_calculation_intent(workspace, _request(xyz_artifact["artifact_id"]))
+        create_calculation_intent(workspace, _request(act_id, xyz_artifact["artifact_id"]))
 
-    missing_role = _request(xyz_artifact["artifact_id"])
-    missing_role["backend"] = "ase_neb"
-    missing_role["task_type"] = "neb"
-    missing_role["input_artifacts"] = [
+    incomplete = _request(act_id, xyz_artifact["artifact_id"])
+    incomplete["backend"] = "ase_neb"
+    incomplete["task_type"] = "neb"
+    incomplete["input_artifacts"] = [
         {"input_role": "reactant", "artifact_id": xyz_artifact["artifact_id"]}
     ]
     with pytest.raises(ComputeContractError, match=r"missing=\['product'\]"):
-        create_calculation_intent(workspace, missing_role)
+        create_calculation_intent(workspace, incomplete)
 
-    second = workspace / "nodes/n001/inputs/second.gjf"
-    second.write_text("# HF/STO-3G\n\nSecond\n\n0 1\nH 0 0 0\n\n", encoding="utf-8")
-    second_artifact = _artifact(
-        list_calculation_artifacts(workspace),
-        "nodes/n001/inputs/second.gjf",
-    )
-    duplicate_role = _request(gjf_artifact["artifact_id"])
-    duplicate_role["input_artifacts"].append(
+    second_gjf = workspace / "inputs" / "second.gjf"
+    second_gjf.write_text("# HF/STO-3G\n\nSecond\n\n0 1\nH 0 0 0\n\n", encoding="utf-8")
+    second_artifact = _artifact(list_calculation_artifacts(workspace), "inputs/second.gjf")
+    duplicate = _request(act_id, gjf_artifact["artifact_id"])
+    duplicate["input_artifacts"].append(
         {"input_role": "gjf", "artifact_id": second_artifact["artifact_id"]}
     )
     with pytest.raises(ComputeContractError, match="duplicate calculation input role"):
-        create_calculation_intent(workspace, duplicate_role)
-
-    gjf.with_name("duplicate.com").write_bytes(gjf.read_bytes())
-    with pytest.raises(ComputeContractError, match="artifact_id is ambiguous"):
-        create_calculation_intent(workspace, _request(gjf_artifact["artifact_id"]))
+        create_calculation_intent(workspace, duplicate)
 
 
-def test_open_node_can_run_any_supported_root_selected_calculation(tmp_path: Path) -> None:
-    workspace = _workspace(tmp_path)
-    source = workspace / "nodes/n001/inputs/source.gjf"
+def test_open_research_act_can_run_any_supported_root_selected_task(tmp_path: Path) -> None:
+    workspace, act_id = _workspace(tmp_path)
+    source = workspace / "inputs" / "source.gjf"
     source.write_text("# HF/STO-3G opt\n\nOpt\n\n0 1\nH 0 0 0\n\n", encoding="utf-8")
-    artifact = _artifact(list_calculation_artifacts(workspace), "nodes/n001/inputs/source.gjf")
-    request = _request(artifact["artifact_id"])
+    artifact = _artifact(list_calculation_artifacts(workspace), "inputs/source.gjf")
+    request = _request(act_id, artifact["artifact_id"])
     request["task_type"] = "opt"
 
     created = create_calculation_intent(workspace, request)
+    assert created["act_id"] == act_id
     assert created["intent"]["backend"] == "gaussian"
     assert created["intent"]["task_type"] == "opt"
-    node = (workspace / "nodes" / "n001" / "node.json").read_text(encoding="utf-8")
-    assert "candidate_plan" not in node
+    assert created["intent_ref"].startswith(f"acts/{act_id}/attempts/")
 
-def test_list_artifacts_cli_returns_catalog_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    workspace = _workspace(tmp_path)
-    source = workspace / "nodes/n001/inputs/source.xyz"
+
+def test_list_artifacts_cli_returns_v4_catalog_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    workspace, act_id = _workspace(tmp_path)
+    source = workspace / "acts" / act_id / "inputs" / "source.xyz"
+    source.parent.mkdir(parents=True)
     source.write_text("1\nsource\nH 0 0 0\n", encoding="utf-8")
 
     assert compute_cli_main([
         "list-artifacts",
         "--root",
         str(workspace),
-        "--node-id",
-        "n001",
+        "--act-id",
+        act_id,
     ]) == 0
     output = capsys.readouterr()
     assert output.err == ""
-    assert '"schema_version": "ts-compute-artifact-catalog/1"' in output.out
-    assert '"path": "nodes/n001/inputs/source.xyz"' in output.out
+    assert '"schema_version": "ts-artifact-catalog/2"' in output.out
+    assert f'"path": "acts/{act_id}/inputs/source.xyz"' in output.out
 
 
 def test_compute_cli_serializes_remote_errors(
@@ -177,7 +172,6 @@ def test_compute_cli_serializes_remote_errors(
         raise RemoteError("remote status unavailable")
 
     monkeypatch.setattr("ts_compute.cli._dispatch", fail_remote)
-
     assert compute_cli_main(["capabilities"]) == 2
     output = capsys.readouterr()
     assert output.out == ""
@@ -188,25 +182,19 @@ def test_prepare_and_submit_reject_stale_input_binding(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    workspace = _workspace(tmp_path)
-    gjf = workspace / "nodes/n001/inputs/source.gjf"
+    workspace, act_id = _workspace(tmp_path)
+    gjf = workspace / "inputs" / "source.gjf"
     original = "# HF/STO-3G\n\nSP\n\n0 1\nH 0 0 0\n\n"
     gjf.write_text(original, encoding="utf-8")
-    artifact_id = _artifact(
-        list_calculation_artifacts(workspace),
-        "nodes/n001/inputs/source.gjf",
-    )["artifact_id"]
+    artifact_id = _artifact(list_calculation_artifacts(workspace), "inputs/source.gjf")["artifact_id"]
 
-    stale_before_prepare = create_calculation_intent(workspace, _request(artifact_id))
+    stale_before_prepare = create_calculation_intent(workspace, _request(act_id, artifact_id))
     gjf.write_text(original.replace("SP", "changed"), encoding="utf-8")
     with pytest.raises(ComputeContractError, match="input binding changed.*artifact_id mismatch"):
         prepare_calculation(workspace, stale_before_prepare["intent_ref"])
 
     gjf.write_text(original, encoding="utf-8")
-    current_id = _artifact(
-        list_calculation_artifacts(workspace),
-        "nodes/n001/inputs/source.gjf",
-    )["artifact_id"]
+    current_id = _artifact(list_calculation_artifacts(workspace), "inputs/source.gjf")["artifact_id"]
     ssh_config = tmp_path / "ssh_config"
     ssh_config.write_text("Host login.test\n  HostName login.test\n", encoding="utf-8")
     remote_config = tmp_path / "remote.toml"
@@ -230,6 +218,7 @@ allowed_queues = ["batch"]
     stale_before_submit = create_calculation_intent(
         workspace,
         _request(
+            act_id,
             current_id,
             dry_run=False,
             execution_target={
@@ -241,9 +230,9 @@ allowed_queues = ["batch"]
                     "ncpus": 8,
                     "memory": "16gb",
                     "walltime": "04:00:00",
-                        "ngpus": 0,
-                        "mpiprocs": None,
-                        "ompthreads": 8,
+                    "ngpus": 0,
+                    "mpiprocs": None,
+                    "ompthreads": 8,
                 },
             },
         ),

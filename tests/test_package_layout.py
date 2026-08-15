@@ -24,7 +24,7 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     package_root = package_home / "releases" / "test-release"
     package_root.mkdir(parents=True)
     (package_root / "package.json").write_text(
-        '{"name":"@iawnix/ts-agent","version":"0.5.0"}\n',
+        '{"name":"@iawnix/ts-agent","version":"0.7.0"}\n',
         encoding="utf-8",
     )
     (package_root / ".ts-agent-release.json").write_text(
@@ -32,7 +32,7 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
             {
                 "schema_version": "ts-agent-release/1",
                 "release_id": "test-release",
-                "package": {"name": "@iawnix/ts-agent", "version": "0.5.0"},
+                "package": {"name": "@iawnix/ts-agent", "version": "0.7.0"},
             }
         )
         + "\n",
@@ -43,7 +43,7 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     (package_root / "scripts").mkdir()
     for name in ("tspi_host.py", "ts_compute.py"):
         shutil.copy2(ROOT / "scripts" / name, package_root / "scripts" / name)
-    for name in ("ts_runtime", "ts_workspace"):
+    for name in ("ts_runtime", "ts_validation", "ts_workspace"):
         shutil.copytree(
             ROOT / name,
             package_root / name,
@@ -99,75 +99,28 @@ def test_agent_sources_have_explicit_ownership_boundaries() -> None:
     assert (ROOT / "extensions" / "shared" / "tool-catalog.ts").is_file()
     assert not (ROOT / "extensions" / "ts-workflow-context").exists()
     assert not (ROOT / "extensions" / "ts-workflow-subagent").exists()
-    for name in ("agent-protocol.cjs", "fact-kinds.cjs", "failure-taxonomy.cjs"):
+    for name in ("agent-protocol.cjs", "fact-kinds.cjs", "failure-taxonomy.cjs", "run-journal.cjs", "session-lifecycle.cjs"):
         assert (ROOT / "src" / "agent-core" / name).is_file()
     assert (AGENTS_ROOT / "review" / "runtime.ts").is_file()
     assert (AGENTS_ROOT / "review" / "prompts" / "core.md").is_file()
-    for role in ("compute", "artifacts"):
-        assert (AGENTS_ROOT / role / "runtime.ts").is_file()
-        assert (AGENTS_ROOT / role / "policy-loader.cjs").is_file()
-        assert (AGENTS_ROOT / role / "policy.md").is_file()
-    assert (AGENTS_ROOT / "artifacts" / "roles" / "report.md").is_file()
+    assert {path.name for path in AGENTS_ROOT.iterdir()} == {"review"}
+    assert (ROOT / "src" / "artifacts" / "request-contract.cjs").is_file()
+    assert (ROOT / "ts_validation" / "engine.py").is_file()
     assert (ROOT / "ts_workspace" / "bootstrap.py").is_file()
-    assert (ROOT / "ts_workspace" / "engine_v3.py").is_file()
-    assert (ROOT / "ts_workspace" / "migrate_v2.py").is_file()
-    assert not (ROOT / "ts_workspace" / "engine.py").exists()
+    assert (ROOT / "ts_workspace" / "engine.py").is_file()
+    assert not (ROOT / "ts_workspace" / "engine_v3.py").exists()
+    assert not (ROOT / "ts_workspace" / "migrate_v2.py").exists()
     assert not list((ROOT / "ts_workspace" / "validators").glob("*.py"))
     for legacy in ("agent-core", "review-agent", "compute-agent", "artifact-agent", "agent-skills"):
         assert not (ROOT / legacy).exists()
 
 
-def test_operator_policies_are_owned_by_their_only_consuming_agent() -> None:
-    compute = {path.stem for path in (AGENTS_ROOT / "compute" / "backends").glob("*.md")}
-    artifacts = {path.stem for path in (AGENTS_ROOT / "artifacts" / "roles").glob("*.md")}
-    assert compute == {"ase", "crest", "gaussian", "qbics", "rdkit", "xtb"}
-    assert artifacts == {"render", "report"}
-    assert compute.isdisjoint(artifacts)
+def test_deterministic_tool_policy_lives_outside_agent_sources() -> None:
     assert not list(AGENTS_ROOT.rglob("SKILL.md"))
-    assert not (AGENTS_ROOT / "compute" / "private-skills").exists()
-    assert not (AGENTS_ROOT / "artifacts" / "private-skills").exists()
-
-
-def test_operator_policy_loaders_compose_common_and_selected_policy() -> None:
-    compute_loader = AGENTS_ROOT / "compute" / "policy-loader.cjs"
-    artifact_loader = AGENTS_ROOT / "artifacts" / "policy-loader.cjs"
-    script = f"""
-const compute = require({json.dumps(str(compute_loader))});
-const artifacts = require({json.dumps(str(artifact_loader))});
-let computeError;
-let artifactError;
-try {{ compute.loadComputePolicy("missing"); }} catch (error) {{ computeError = error.message; }}
-try {{ artifacts.loadArtifactPolicy("missing"); }} catch (error) {{ artifactError = error.message; }}
-process.stdout.write(JSON.stringify({{
-  compute: compute.loadComputePolicy("gaussian"),
-  artifact: artifacts.loadArtifactPolicy("report"),
-  computeFiles: compute.BACKEND_POLICY_FILES,
-  roleFiles: artifacts.ROLE_POLICY_FILES,
-  computeError,
-  artifactError,
-}}));
-"""
-    completed = subprocess.run(
-        ["node", "--eval", script],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    assert completed.returncode == 0, completed.stderr
-    result = json.loads(completed.stdout)
-    assert "# Compute Operator Policy" in result["compute"]
-    assert "# Gaussian Backend Policy" in result["compute"]
-    assert "# xTB Backend Policy" not in result["compute"]
-    assert "# Artifact Operator Policy" in result["artifact"]
-    assert "# Report Role Policy" in result["artifact"]
-    assert "# Render Role Policy" not in result["artifact"]
-    assert "---" not in result["compute"] + result["artifact"]
-    assert set(result["computeFiles"]) == {"gaussian", "ase_neb", "crest", "rdkit", "xtb", "qbics_dmecp"}
-    assert set(result["roleFiles"]) == {"render", "report"}
-    assert result["computeError"] == "No compute backend policy is registered for: missing"
-    assert result["artifactError"] == "No artifact role policy is registered for: missing"
+    assert not (AGENTS_ROOT / "compute").exists()
+    assert not (AGENTS_ROOT / "artifacts").exists()
+    assert (SKILL_ROOT / "references" / "compute_tools.md").is_file()
+    assert (SKILL_ROOT / "references" / "artifact_tools.md").is_file()
 
 
 def test_package_manifest_exposes_only_the_public_skill_and_allowlisted_runtime() -> None:
@@ -423,7 +376,7 @@ print(json.dumps({
     assert result["argv"][session_index + 1] == str(workspace / ".pi" / "sessions")
     assert (workspace / ".pi" / "root-agent.lock").is_file()
     assert json.loads((workspace / ".pi" / "settings.json").read_text(encoding="utf-8")) == {"quietStartup": True}
-    assert json.loads((workspace / "research_state.json").read_text(encoding="utf-8"))["schema_version"] == "ts-research-state/3"
+    assert json.loads((workspace / "research_state.json").read_text(encoding="utf-8"))["schema_version"] == "ts-research-state/4"
     assert (workspace / ".agents" / "workspace-identity.json").is_file()
 
 
@@ -444,7 +397,7 @@ def test_tspi_workspace_preserves_pi_settings_while_bootstrapping(tmp_path: Path
         "theme": "custom",
         "warnings": {"deprecated": False},
     }
-    assert (install_root / "workspaces" / "existing" / "evidence_registry.json").is_file()
+    assert (install_root / "workspaces" / "existing" / "observations.json").is_file()
 
 
 def test_tspi_rejects_symlinked_workspace_pi_settings(tmp_path: Path) -> None:

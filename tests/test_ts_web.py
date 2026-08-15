@@ -8,183 +8,270 @@ from pathlib import Path
 
 import pytest
 
+from tests.v4_helpers import accept_research_claim
 from ts_web import normalize_workspace, register_workspace
 from ts_web import server as ts_web_server
-from ts_web.normalize import explorer_graph_payload_from_view
+from ts_web.normalize import act_payload, claim_payload, graph_payload_from_view
 from ts_web.registry import list_workspaces, register_workspaces
 from ts_web.server import create_server
-from ts_workspace.engine_v3 import end_node, init_workspace, report_workspace, start_node, update_workspace
+from ts_workspace.decision import draft_decision
+from ts_workspace.engine import apply_decision, init_workspace
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _decision(root: Path, action: str, payload: dict, decision_id: str) -> dict:
-    report = report_workspace(root)
-    return {
-        "schema_version": "ts-decision/3",
-        "decision_id": decision_id,
-        "action": action,
-        "rationale": f"Test {action}.",
-        "basis_refs": [],
-        "report_ref": {"report_id": report["report_id"], "workspace_root": str(root.resolve())},
-        "base_revision": report["workspace_revision"],
-        "payload": payload,
+def _write(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value), encoding="utf-8")
+
+
+def _make_workspace(root: Path) -> dict[str, str]:
+    init_workspace(root)
+    drafted = draft_decision(
+        root,
+        {
+            "rationale": "Create a small Claim graph and ResearchAct DAG for the explorer.",
+            "basis_refs": [],
+            "operations": [
+                {
+                    "op": "create_claim",
+                    "local_ref": "concerted",
+                    "claimType": "mechanism",
+                    "statement": "The pathway is concerted.",
+                    "falsifiers": ["A stable stepwise intermediate is observed."],
+                },
+                {
+                    "op": "create_claim",
+                    "local_ref": "stepwise",
+                    "claimType": "mechanism",
+                    "statement": "The pathway is stepwise.",
+                },
+                {
+                    "op": "relate_claims",
+                    "local_ref": "alternatives",
+                    "sourceClaimRef": "$concerted",
+                    "targetClaimRef": "$stepwise",
+                    "relationType": "alternative_to",
+                    "rationale": "The Claims are competing explanations.",
+                },
+                {
+                    "op": "start_act",
+                    "local_ref": "search",
+                    "objective": "Search for observations that distinguish the mechanisms.",
+                    "claimRefs": ["$concerted", "$stepwise"],
+                    "tags": ["candidate-search"],
+                },
+                {
+                    "op": "record_observation",
+                    "local_ref": "normal",
+                    "actRef": "$search",
+                    "conceptId": "program.normal_termination",
+                    "subjectRef": "calc_probe",
+                    "value": True,
+                    "datatype": "boolean",
+                    "summary": "The probe terminated normally.",
+                    "provenance": {"producer": "test-parser"},
+                },
+                {
+                    "op": "freeze_validation_spec",
+                    "local_ref": "spec",
+                    "actRef": "$search",
+                    "targetClaimRef": "$concerted",
+                    "dimension": "probe",
+                    "title": "Program completion probe",
+                    "definition": {
+                        "checks": [
+                            {
+                                "check_id": "normal",
+                                "predicate": "observation.equals",
+                                "parameters": {
+                                    "selector": {
+                                        "concept_id": "program.normal_termination",
+                                        "subject_ref": "calc_probe",
+                                    },
+                                    "expected": True,
+                                },
+                                "blocking": True,
+                            }
+                        ],
+                        "success_policy": {"mode": "all_blocking"},
+                    },
+                },
+                {
+                    "op": "evaluate_validation",
+                    "local_ref": "result",
+                    "actRef": "$search",
+                    "specRef": "$spec",
+                    "observationRefs": ["$normal"],
+                },
+                {
+                    "op": "update_claim",
+                    "claimRef": "$concerted",
+                    "status": "supported",
+                    "summary": "The bounded probe passed.",
+                    "observationRefs": ["$normal"],
+                    "validationResultRefs": ["$result"],
+                },
+                {
+                    "op": "record_finding",
+                    "local_ref": "ambiguity",
+                    "findingType": "mechanism_ambiguity",
+                    "severity": "warning",
+                    "statement": "Connectivity evidence is still absent.",
+                    "claimRefs": ["$concerted", "$stepwise"],
+                    "actRefs": ["$search"],
+                    "basisObservationRefs": ["$normal"],
+                },
+                {
+                    "op": "complete_act",
+                    "actRef": "$search",
+                    "outcome": "inconclusive",
+                    "summary": "The probe completed but did not resolve the mechanism.",
+                    "openQuestions": ["Which endpoints are connected?"],
+                },
+                {
+                    "op": "start_act",
+                    "local_ref": "connectivity",
+                    "objective": "Test bidirectional connectivity.",
+                    "dependencyRefs": ["$search"],
+                    "claimRefs": ["$concerted"],
+                    "tags": ["connectivity"],
+                },
+                {"op": "set_focus", "claimRefs": ["$concerted"], "actRefs": ["$connectivity"]},
+            ],
+        },
+    )
+    apply_decision(root, drafted["decision"])
+    refs = drafted["allocated_refs"]
+    act_id = refs["connectivity"]
+    artifact = root / "acts" / act_id / "outputs" / "probe.json"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_text("{}\n", encoding="utf-8")
+    _write(
+        root / "acts" / act_id / "activities" / "activity_probe" / "request.json",
+        {
+            "activity_id": "activity_probe",
+            "kind": "compute",
+            "operation": "prepare",
+            "act_refs": [act_id],
+            "started_at": "2026-08-16T00:00:00+00:00",
+        },
+    )
+    _write(
+        root / "acts" / act_id / "activities" / "activity_probe" / "status.json",
+        {
+            "activity_id": "activity_probe",
+            "kind": "compute",
+            "operation": "prepare",
+            "act_refs": [act_id],
+            "status": "completed",
+            "started_at": "2026-08-16T00:00:00+00:00",
+            "completed_at": "2026-08-16T00:01:00+00:00",
+            "error": None,
+        },
+    )
+    _write(
+        root / "acts" / act_id / "activities" / "activity_probe" / "result.json",
+        {"outcome": "success", "summary": "Input prepared."},
+    )
+    _write(
+        root / "acts" / act_id / "agent-runs" / "sub_review" / "task.json",
+        {
+            "task_id": "sub_review",
+            "role": "review",
+            "authority": "advisory",
+            "operation": "claim_review",
+            "scope": {"act_refs": [act_id], "claim_refs": [refs["concerted"]]},
+        },
+    )
+    _write(
+        root / "acts" / act_id / "agent-runs" / "sub_review" / "run.json",
+        {
+            "task_id": "sub_review",
+            "status": "completed",
+            "started_at": "2026-08-16T00:02:00+00:00",
+            "finished_at": "2026-08-16T00:03:00+00:00",
+            "error": None,
+        },
+    )
+    _write(
+        root / "acts" / act_id / "agent-runs" / "sub_review" / "result.json",
+        {"outcome": "success", "summary": "Connectivity remains untested."},
+    )
+    return refs
+
+
+def test_normalize_workspace_projects_v4_scientific_and_operational_state(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+
+    view = normalize_workspace(workspace)
+
+    assert view["schema_version"] == "ts-web-workspace/4"
+    assert view["workspace"]["kernel_protocol"] == "ts-research-kernel/4"
+    assert view["focus"]["claim_refs"] == [refs["concerted"]]
+    assert view["focus"]["act_refs"] == [refs["connectivity"]]
+    active = next(row for row in view["research_acts"] if row["act_id"] == refs["connectivity"])
+    assert active["activities"][0]["activity_id"] == "activity_probe"
+    assert active["review_runs"][0]["task_id"] == "sub_review"
+    assert all("node_id" not in row for row in view["research_acts"])
+
+
+def test_graph_uses_claim_relations_and_research_act_dependencies(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+
+    graph = graph_payload_from_view(normalize_workspace(workspace))
+
+    assert graph["schema_version"] == "ts-explorer-graph/4"
+    assert graph["claim_graph"]["edges"] == [
+        {
+            "id": refs["alternatives"],
+            "source": refs["concerted"],
+            "target": refs["stepwise"],
+            "kind": "alternative_to",
+            "rationale": "The Claims are competing explanations.",
+        }
+    ]
+    assert graph["research_act_dag"]["edges"] == [
+        {
+            "id": f"dependency:{refs['search']}:{refs['connectivity']}",
+            "source": refs["search"],
+            "target": refs["connectivity"],
+            "kind": "depends_on",
+        }
+    ]
+    assert graph["deterministic_activities"][0]["kind"] == "compute"
+    assert graph["review_runs"][0]["role"] == "review"
+
+
+def test_claim_and_act_details_follow_graph_references(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+
+    claim = claim_payload(workspace, refs["concerted"])
+    act = act_payload(workspace, refs["connectivity"])
+
+    assert {row["act_id"] for row in claim["research_acts"]} == {refs["search"], refs["connectivity"]}
+    assert claim["validation_results"][0]["verdict"] == "pass"
+    assert act["dependencies"][0]["act_id"] == refs["search"]
+    assert act["research_act"]["activities"][0]["activity_id"] == "activity_probe"
+    assert f"acts/{refs['connectivity']}/outputs/probe.json" in {
+        row["path"] for row in act["files"]["files"]
     }
 
 
-def _start(root: Path, node_id: str, parent: str | None, claim_refs: list[str]) -> None:
-    start_node(
-        root,
-        _decision(
-            root,
-            "start_node",
-            {
-                "node_id": node_id,
-                "parent_node": parent,
-                "objective": f"Research objective for {node_id}.",
-                "tags": ["validation"] if parent else ["intake"],
-                "claim_refs": claim_refs,
-            },
-            f"dec_start_{node_id}",
-        ),
-    )
-
-
-def _make_workspace(root: Path, *, child: bool = True) -> None:
-    init_workspace(root)
-    _start(root, "n000", None, [])
-    artifact = root / "nodes" / "n000" / "outputs" / "tsfreq.json"
-    artifact.parent.mkdir()
-    artifact.write_text("{}\n", encoding="utf-8")
-    update_workspace(
-        root,
-        _decision(
-            root,
-            "update_workspace",
-            {
-                "append_claim": {
-                    "claim_id": "claim_ts_web",
-                    "node_id": "n000",
-                    "kind": "transition-state/1",
-                    "statement": "The candidate has one validated imaginary mode.",
-                    "required_gates": ["tsfreq"],
-                    "details": {},
-                },
-                "append_evidence": {
-                    "schema_version": "ts-evidence/2",
-                    "evidence_id": "ev_tsfreq_web",
-                    "node_id": "n000",
-                    "kind": "gaussian.validation/1",
-                    "evidence_tier": "local_parse",
-                    "summary": "Gaussian TS/Freq facts.",
-                    "facts": {
-                        "normal_termination": True,
-                        "stationary_point": True,
-                        "final_convergence_satisfied": True,
-                        "imaginary_frequency_count": 1,
-                        "route_match": True,
-                    },
-                    "artifact_refs": ["nodes/n000/outputs/tsfreq.json"],
-                    "provenance": {"producer": "test-parser"},
-                },
-                "evaluate_gate": {
-                    "gate_result_id": "gr_tsfreq_web",
-                    "node_id": "n000",
-                    "gate": "tsfreq",
-                    "evidence_refs": ["ev_tsfreq_web"],
-                    "target_ref": "claim_ts_web",
-                },
-                "set_focus_claim_refs": ["claim_ts_web"],
-            },
-            "dec_record_web",
-        ),
-    )
-    end_node(
-        root,
-        _decision(
-            root,
-            "end_node",
-            {
-                "node_id": "n000",
-                "result": {
-                    "outcome": "completed",
-                    "summary": "TS/Freq validation completed.",
-                    "claim_updates": [
-                        {
-                            "claim_ref": "claim_ts_web",
-                            "verdict": "supported",
-                            "summary": "The deterministic TS/Freq gate passed.",
-                            "evidence_refs": ["ev_tsfreq_web"],
-                            "gate_result_refs": ["gr_tsfreq_web"],
-                        }
-                    ],
-                    "audit": None,
-                    "open_questions": [],
-                },
-            },
-            "dec_end_n000",
-        ),
-    )
-    if child:
-        _start(root, "n001", "n000", ["claim_ts_web"])
-
-
-def test_normalize_workspace_projects_v3_branch_events(tmp_path: Path) -> None:
-    workspace = tmp_path / "branch"
-    _make_workspace(workspace)
-    view = normalize_workspace(workspace)
-    event = next(item for item in view["branch_events"] if item["new_node"] == "n001")
-
-    assert event["event_role"] == "node_created"
-    assert event["from_node"] == "n000"
-    assert event["parent_node"] == "n000"
-    assert view["focus"]["focus_claim_refs"] == ["claim_ts_web"]
-
-
-def test_graph_exposes_strategy_neutral_node_fields(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    _make_workspace(workspace)
-    graph = explorer_graph_payload_from_view(normalize_workspace(workspace))
-    nodes = {node["id"]: node for node in graph["nodes"]}
-
-    assert nodes["n000"]["tags"] == ["intake"]
-    assert nodes["n000"]["state"] == "closed"
-    assert nodes["n001"]["state"] == "open"
-    assert nodes["n001"]["frontier"] is True
-    for node in nodes.values():
-        assert "phase" not in node
-        assert "node_type" not in node
-        assert "lifecycle" not in node
-        assert "scope" not in node
-
-
-def test_compute_status_is_separate_from_node_outcome(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    _make_workspace(workspace, child=False)
-    attempt = workspace / "nodes" / "n000" / "attempts" / "calc_test" / "outputs"
-    attempt.mkdir(parents=True)
-    (attempt / "calculation_result.json").write_text(
-        json.dumps({"state": "failed", "program_status": "failed", "error_class": "scheduler_failure"}),
-        encoding="utf-8",
-    )
-
-    node = explorer_graph_payload_from_view(normalize_workspace(workspace))["nodes"][0]
-    assert node["outcome"] == "completed"
-    assert node["calculation_state"] == "failed"
-    assert node["calculation_program_status"] == "failed"
-
-
-def test_static_ui_uses_v3_claim_gate_and_node_fields() -> None:
+def test_static_ui_exposes_v4_dual_graph_without_legacy_routes() -> None:
     html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
 
     assert "TS Research Explorer" in html
-    assert 'summaryRow("tags",' in html
-    assert 'summaryRow("outcome",' in html
-    assert 'summaryRow("node_type"' not in html
-    assert 'summaryRow("lifecycle"' not in html
-    assert 'summaryRow("validation_scope"' not in html
-    assert "const NODE_TYPE_ICONS" not in html
+    assert "Claim graph" in html
+    assert "ResearchAct DAG" in html
+    assert "/graph" in html
+    assert "/api/node" not in html
+    assert "/api/gates" not in html
+    assert "/api/evidence" not in html
 
 
 def test_static_asset_resolves_from_current_package() -> None:
@@ -192,13 +279,42 @@ def test_static_asset_resolves_from_current_package() -> None:
     assert ts_web_server._static_asset("index.html").read_bytes() == expected
 
 
-def test_lineage_edges_follow_node_parents_once(tmp_path: Path) -> None:
+def test_web_distinguishes_current_from_historical_acceptance(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
-    _make_workspace(workspace)
-    graph = explorer_graph_payload_from_view(normalize_workspace(workspace))
+    init_workspace(workspace)
+    refs = accept_research_claim(workspace)
 
-    lineage = [edge for edge in graph["edges"] if edge["kind"] == "branch"]
-    assert lineage == [{"id": "edge:n000:n001", "source": "n000", "target": "n001", "kind": "branch"}]
+    current = normalize_workspace(workspace)
+    assert current["current_acceptances"][0]["acceptance_id"] == refs["acceptance"]
+    assert graph_payload_from_view(current)["claim_graph"]["nodes"][0]["acceptance_state"] == "current"
+
+    drafted = draft_decision(
+        workspace,
+        {
+            "rationale": "Add a later limitation that requires reassessment.",
+            "basis_refs": [],
+            "operations": [
+                {
+                    "op": "record_finding",
+                    "local_ref": "limitation",
+                    "findingType": "later_limitation",
+                    "severity": "warning",
+                    "statement": "The earlier assessment does not include this limitation.",
+                    "claimRefs": [refs["claim"]],
+                    "actRefs": [refs["act"]],
+                }
+            ],
+        },
+    )
+    apply_decision(workspace, drafted["decision"])
+
+    historical = normalize_workspace(workspace)
+    assert historical["valid"] is True
+    assert historical["current_acceptances"] == []
+    assert historical["acceptances"][0]["current"] is False
+    claim = graph_payload_from_view(historical)["claim_graph"]["nodes"][0]
+    assert claim["accepted"] is False
+    assert claim["acceptance_state"] == "historical"
 
 
 def test_register_workspace_deduplicates_and_rejects_source_pollution(tmp_path: Path) -> None:
@@ -226,9 +342,9 @@ def test_register_workspaces_validates_all_sources_before_writing(tmp_path: Path
     assert not state.exists()
 
 
-def test_web_server_api_is_read_only_and_v3_only(tmp_path: Path) -> None:
+def test_web_server_is_read_only_v4_and_has_no_legacy_routes(tmp_path: Path) -> None:
     source = tmp_path / "workspace"
-    _make_workspace(source)
+    refs = _make_workspace(source)
     before = _relative_files(source)
     state = tmp_path / "web-state"
     row = register_workspace(source, state, "workspace")
@@ -237,22 +353,26 @@ def test_web_server_api_is_read_only_and_v3_only(tmp_path: Path) -> None:
     thread.start()
     try:
         host, port = server.server_address
-        assert _get_json(host, port, "/api/health") == {"ok": True}
+        health = _get_json(host, port, "/api/health")
+        assert health == {"ok": True, "protocol": "ts-research-kernel/4", "read_only": True}
         workspaces = _get_json(host, port, "/api/workspaces")
         assert workspaces["default_workspace"] == row["workspace_id"]
-        job = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/job")
-        assert job["app"] == "TS Research Explorer"
-        assert job["research"]["focus_claim_refs"] == ["claim_ts_web"]
-        claims = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/claims")
-        gates = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/gates")
-        assert claims["schema_version"] == "ts-claim-registry/1"
-        assert gates["schema_version"] == "ts-gate-registry/1"
-        node = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/node/n000")
-        assert node["node"]["outcome"] == "completed"
-        assert "# Node Result" in node["markdown"]["reflection"]
-        preview = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/file?path=nodes/n000/node.json")
-        assert preview["path"] == "nodes/n000/node.json"
-        assert "TS Research Explorer" in _get_text(host, port, "/")
+        base = f"/api/workspace/{row['workspace_id']}"
+        assert _get_json(host, port, f"{base}/graph")["schema_version"] == "ts-explorer-graph/4"
+        assert _get_json(host, port, f"{base}/claims")["claims"][0]["schema_version"] == "ts-claim/1"
+        assert _get_json(host, port, f"{base}/acts")["research_acts"][0]["schema_version"] == "ts-research-act/1"
+        assert _get_json(host, port, f"{base}/observations")["observations"][0]["schema_version"] == "ts-observation/1"
+        assert _get_json(host, port, f"{base}/validation")["validation_results"][0]["verdict"] == "pass"
+        assert _get_json(host, port, f"{base}/findings")["findings"][0]["status"] == "open"
+        assert _get_json(host, port, f"{base}/activity")["review_runs"][0]["task_id"] == "sub_review"
+        assert _get_json(host, port, f"{base}/claim/{refs['concerted']}")["claim"]["status"] == "supported"
+        act = _get_json(host, port, f"{base}/act/{refs['connectivity']}")
+        assert act["research_act"]["status"] == "open"
+        preview = _get_json(host, port, f"{base}/file?path=acts/{refs['connectivity']}/outputs/probe.json")
+        assert preview["text"] == "{}\n"
+        assert "TS Research Explorer" in _get_text(host, port, "/")[1]
+        for legacy in (f"{base}/tree", f"{base}/gates", f"{base}/evidence", f"{base}/node/n000", "/api/node/n000"):
+            assert _get_text(host, port, legacy)[0] == 404
     finally:
         server.shutdown()
         server.server_close()
@@ -265,16 +385,16 @@ def _relative_files(root: Path) -> set[str]:
 
 
 def _get_json(host: str, port: int, path: str) -> dict:
-    return json.loads(_get_text(host, port, path))
+    status, body = _get_text(host, port, path)
+    assert status == 200, body
+    return json.loads(body)
 
 
-def _get_text(host: str, port: int, path: str) -> str:
+def _get_text(host: str, port: int, path: str) -> tuple[int, str]:
     connection = http.client.HTTPConnection(host, port, timeout=5)
     try:
         connection.request("GET", path)
         response = connection.getresponse()
-        body = response.read().decode("utf-8")
-        assert response.status == 200, body
-        return body
+        return response.status, response.read().decode("utf-8")
     finally:
         connection.close()

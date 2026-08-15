@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research_act.schema.json",
+  "$defs": {
+    "act_id": {"type": "string", "pattern": "^act_[0-9a-f]{24}$"},
+    "status": {"enum": ["open", "completed", "inconclusive", "blocked", "stopped"]}
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "act_id", "objective", "status", "dependency_refs", "claim_refs",
+    "hypothesis", "tags", "operation_refs", "observation_refs", "finding_refs",
+    "validation_spec_refs", "validation_result_refs", "artifact_root", "result",
+    "created_by_decision", "created_at"
+  ],
+  "properties": {
+    "schema_version": {"const": "ts-research-act/1"},
+    "act_id": {"$ref": "#/$defs/act_id"},
+    "objective": {"type": "string", "minLength": 1, "maxLength": 8000},
+    "status": {"$ref": "#/$defs/status"},
+    "dependency_refs": {"type": "array", "uniqueItems": true, "maxItems": 64, "items": {"$ref": "#/$defs/act_id"}},
+    "claim_refs": {"type": "array", "uniqueItems": true, "maxItems": 128, "items": {"$ref": "claim.schema.json#/$defs/claim_id"}},
+    "hypothesis": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["statement", "assumptions", "predictions", "falsifiers"],
+          "properties": {
+            "statement": {"type": "string", "minLength": 1, "maxLength": 8000},
+            "assumptions": {"type": "array", "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 2000}},
+            "predictions": {"type": "array", "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 2000}},
+            "falsifiers": {"type": "array", "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 2000}}
+          }
+        }
+      ]
+    },
+    "tags": {"type": "array", "uniqueItems": true, "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 128}},
+    "operation_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 256}},
+    "observation_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "observation.schema.json#/$defs/observation_id"}},
+    "finding_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "finding.schema.json#/$defs/finding_id"}},
+    "validation_spec_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "validation_spec.schema.json#/$defs/spec_id"}},
+    "validation_result_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "validation_result.schema.json#/$defs/result_id"}},
+    "artifact_root": {"type": "string", "pattern": "^acts/act_[0-9a-f]{24}$"},
+    "result": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["outcome", "summary", "open_questions", "decision_id", "completed_at"],
+          "properties": {
+            "outcome": {"enum": ["completed", "inconclusive", "blocked", "stopped"]},
+            "summary": {"type": "string", "minLength": 1, "maxLength": 12000},
+            "open_questions": {"type": "array", "maxItems": 128, "items": {"type": "string", "minLength": 1, "maxLength": 2000}},
+            "decision_id": {"$ref": "decision.schema.json#/$defs/decision_id"},
+            "completed_at": {"type": "string", "minLength": 1, "maxLength": 64}
+          }
+        }
+      ]
+    },
+    "created_by_decision": {"$ref": "decision.schema.json#/$defs/decision_id"},
+    "created_at": {"type": "string", "minLength": 1, "maxLength": 64}
+  }
+}

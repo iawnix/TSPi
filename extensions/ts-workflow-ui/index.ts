@@ -16,21 +16,21 @@ import {
 import {
   formatElapsed,
   renderTsActivityPanel,
-  roleLabel,
 } from "./activity-panel.ts";
 import {
   clearTsActivityStore,
   createTsActivityStore,
-  hasActiveSubagents,
-  isSubagentTool,
+  hasActiveReviews,
+  hasActiveTsActivities,
+  isTrackedActivityTool,
   pruneTsActivities,
   reducePublishedTsActivity,
-  reduceTsSubagentActivity,
+  reduceTsToolActivity,
   summarizeTsActivities,
 } from "./activity-store.ts";
 import {
-  collectTsAgentRecords,
-  type TsAgentRecord,
+  collectTsReviewRecords,
+  type TsReviewRecord,
 } from "./agent-details.ts";
 import { SubagentHistoryBrowser } from "./subagent-history.ts";
 import { requireWorkspaceRoot, runWorkspaceJson } from "../shared/workspace-cli.ts";
@@ -42,15 +42,14 @@ export function formatTsSubagentHistory(
   data: Record<string, unknown>,
   expanded = false,
 ): string[] {
-  const role = historyRole(entryType, data);
   const operation = stringValue(data.operation) || "operation";
   const failed = entryType.endsWith("-failed");
   const outcome = failed ? "failed" : "completed";
   const duration = typeof data.duration_ms === "number" ? ` · ${formatElapsed(data.duration_ms)}` : "";
-  const lines = [`TS Subagent · ${roleLabel(role)} · ${operation} · ${outcome}${duration}`];
+  const lines = [`TS Review · ${operation} · ${outcome}${duration}`];
   const context = compact([
-    firstString(data.node_id, Array.isArray(data.node_ids) ? data.node_ids[0] : undefined),
-    firstString(data.intent_id, data.package_ref, data.run_ref),
+    Array.isArray(data.act_refs) ? firstString(data.act_refs[0]) : undefined,
+    firstString(data.run_ref),
     failed ? stringValue(data.failure_class) : undefined,
   ]);
   if (context) lines.push(context);
@@ -83,14 +82,18 @@ export default function (pi: ExtensionAPI) {
       ctx.ui.setWorkingMessage(`${tspiIconLabel("compacting")} TSPi · compacting context`);
       return;
     }
+    if (hasActiveReviews(activityStore)) {
+      ctx.ui.setWorkingMessage(`${tspiIconLabel("coordinating")} TSPi · independent review`);
+      return;
+    }
+    if (hasActiveTsActivities(activityStore)) {
+      ctx.ui.setWorkingMessage(`${tspiIconLabel("tool")} TSPi · executing workflow`);
+      return;
+    }
     const tools = [...activeTools.values()];
     if (tools.length > 0) {
       const label = tools.length === 1 ? foregroundToolLabel(tools[0] || "tool") : `running ${tools.length} tools`;
       ctx.ui.setWorkingMessage(`${tspiIconLabel("tool")} TSPi · ${label}`);
-      return;
-    }
-    if (hasActiveSubagents(activityStore)) {
-      ctx.ui.setWorkingMessage(`${tspiIconLabel("coordinating")} TSPi · coordinating agents`);
       return;
     }
     if (foregroundState === "error") {
@@ -215,15 +218,15 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.on("tool_execution_start", (event, ctx) => {
-    if (!isSubagentTool(event.toolName)) activeTools.set(event.toolCallId, event.toolName);
-    if (reduceTsSubagentActivity(activityStore, event, Date.now())) updateUi(ctx);
+    if (!isTrackedActivityTool(event.toolName)) activeTools.set(event.toolCallId, event.toolName);
+    if (reduceTsToolActivity(activityStore, event, Date.now())) updateUi(ctx);
     updateWorkingMessage(ctx);
   });
   pi.on("tool_execution_update", (event, ctx) => {
-    if (reduceTsSubagentActivity(activityStore, event, Date.now())) updateUi(ctx);
+    if (reduceTsToolActivity(activityStore, event, Date.now())) updateUi(ctx);
   });
   pi.on("tool_execution_end", (event, ctx) => {
-    if (reduceTsSubagentActivity(activityStore, event, Date.now())) updateUi(ctx);
+    if (reduceTsToolActivity(activityStore, event, Date.now())) updateUi(ctx);
     activeTools.delete(event.toolCallId);
     setForegroundState(event.isError ? "error" : "thinking");
     updateWorkingMessage(ctx);
@@ -270,7 +273,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("ts-subagent-history", {
-    description: "Browse active and recorded TS subagent runs · read-only · local.",
+    description: "Browse active and recorded advisory Review runs · read-only · local.",
     handler: async (args, ctx) => {
       if (String(args || "").trim()) {
         ctx.ui.notify("/ts-subagent-history does not accept arguments", "warning");
@@ -280,16 +283,16 @@ export default function (pi: ExtensionAPI) {
       let report: Record<string, unknown> | undefined;
       try {
         root = requireWorkspaceRoot(undefined, ctx.cwd);
-        report = await runWorkspaceJson(pi, "report_workspace", root, [], ctx.signal);
+        report = await runWorkspaceJson(pi, "operational", root, [], ctx.signal);
       } catch (error) {
         if (activityStore.activities.size === 0) {
           ctx.ui.notify(error instanceof Error ? error.message : String(error), "warning");
           return;
         }
       }
-      const records = collectTsAgentRecords(activityStore, report);
+      const records = collectTsReviewRecords(activityStore, report);
       if (records.length === 0) {
-        ctx.ui.notify("No TS subagent runs are available in this workspace", "info");
+        ctx.ui.notify("No TS Review runs are available in this workspace", "info");
         return;
       }
       if (ctx.mode === "rpc") {
@@ -315,10 +318,6 @@ export default function (pi: ExtensionAPI) {
   const historyEntries = [
     "ts-workspace-subagent-run",
     "ts-workspace-subagent-failed",
-    "ts-workspace-compute-operator-run",
-    "ts-workspace-compute-operator-failed",
-    "ts-workspace-artifact-operator-run",
-    "ts-workspace-artifact-operator-failed",
   ];
   for (const entryType of historyEntries) {
     pi.registerEntryRenderer<Record<string, unknown>>(entryType, (entry, { expanded }, theme) => {
@@ -329,19 +328,19 @@ export default function (pi: ExtensionAPI) {
   }
 }
 
-export function formatTsSubagentHistoryMarkdown(records: TsAgentRecord[]): string {
+export function formatTsSubagentHistoryMarkdown(records: TsReviewRecord[]): string {
   const visible = records.slice(0, 100);
-  const lines = ["# TS Subagent History", "", `${records.length} recorded run${records.length === 1 ? "" : "s"}.`];
+  const lines = ["# TS Review History", "", `${records.length} recorded Review run${records.length === 1 ? "" : "s"}.`];
   for (const record of visible) {
     lines.push(
       "",
-      `## ${markdownText(subagentRoleLabel(record.role))} · ${markdownText(record.operation)}`,
+      `## Review · ${markdownText(record.operation)}`,
       "",
       `- Status: \`${inlineCode(record.state)}\``,
       `- Task: \`${inlineCode(record.task_id)}\``,
-      `- Node: ${record.node_ids.length > 0 ? record.node_ids.map((value) => `\`${inlineCode(value)}\``).join(", ") : "workspace"}`,
+      `- Research acts: ${record.act_refs.length > 0 ? record.act_refs.map((value) => `\`${inlineCode(value)}\``).join(", ") : "workspace"}`,
+      `- Claims: ${record.claim_refs.length > 0 ? record.claim_refs.map((value) => `\`${inlineCode(value)}\``).join(", ") : "(none)"}`,
     );
-    if (record.backend) lines.push(`- Backend: \`${inlineCode(record.backend)}\``);
     if (record.run_ref) lines.push(`- Run: \`${inlineCode(record.run_ref)}\``);
     if (record.updated_at || record.finished_at) {
       lines.push(`- Updated: ${markdownText(record.finished_at || record.updated_at || "")}`);
@@ -373,13 +372,6 @@ function foregroundToolLabel(toolName: string): string {
   return labels[toolName] || `running ${toolName}`;
 }
 
-function historyRole(entryType: string, data: Record<string, unknown>): "review" | "backend" | "render" | "report" {
-  if (entryType.includes("compute")) return "backend";
-  if (entryType.includes("subagent")) return "review";
-  const role = stringValue(data.role);
-  return role === "render" || role === "report" ? role : "render";
-}
-
 function compact(values: Array<string | undefined>): string {
   return values.filter((value): value is string => Boolean(value)).join(" · ");
 }
@@ -394,15 +386,6 @@ function stringValue(value: unknown): string | undefined {
 
 function markdownText(value: string): string {
   return value.replace(/[\\`*_[\]<>]/g, "\\$&");
-}
-
-function subagentRoleLabel(value: string): string {
-  return {
-    review: "Review",
-    backend: "Compute",
-    render: "Render",
-    report: "Report",
-  }[value] || value;
 }
 
 function inlineCode(value: string): string {

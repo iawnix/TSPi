@@ -8,7 +8,6 @@ import {
   requireWorkspaceRoot,
   runComputeJson,
   runRemoteDiagnosticJson,
-  runWorkspaceJson,
 } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 import { PACKAGE_USAGE_GUIDELINE } from "../shared/package-source-policy.ts";
@@ -16,21 +15,10 @@ import {
   publishTsActivity,
   type TsRemoteActivity,
 } from "../shared/activity-events.ts";
-import {
-  createSubagentStatusReporter,
-  terminalStateForReport,
-  terminalStatusForError,
-} from "../shared/subagent-status.ts";
-import {
-  renderTsSubagentCall,
-  renderTsSubagentResult,
-} from "../shared/subagent-tool-presentation.ts";
-import { runComputeOperator } from "../../src/agents/compute/runtime.ts";
 
 const require = createRequire(import.meta.url);
 const { toolText } = require("../ts-workflow-control/summary.cjs");
-const { beginAgentRun, completeAgentRun, failAgentRun } = require("../../src/agent-core/run-journal.cjs");
-const { classifyUpstreamModelFailure } = require("../../src/agent-core/failure-taxonomy.cjs");
+const { beginActivity, completeActivity, failActivity } = require("../../src/agent-core/activity-journal.cjs");
 const {
   completeAction,
   extractComputeToolResult,
@@ -66,12 +54,12 @@ const REMOTE_DIAGNOSTIC_ACTIVITY = Object.freeze({
 } satisfies Record<RemoteDiagnosticMode, { description: string; detail: string; selector: string }>);
 const ATTEMPT_KINDS = ["primary", "retry", "recalculation"] as const;
 const RECALCULATION_PURPOSES = ["repair", "refinement", "method_robustness"] as const;
-const OPERATOR_COMMON_PARAMETERS = {
+const COMPUTE_COMMON_PARAMETERS = {
   backend: StringEnum(BACKENDS),
-  nodeId: Type.String({
-    pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]*$",
+  actId: Type.String({
+    pattern: "^act_[0-9a-f]{24}$",
     maxLength: 128,
-    description: "Workspace node that owns this calculation attempt.",
+    description: "Open ResearchAct that owns this calculation attempt.",
   }),
   root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
 };
@@ -104,15 +92,15 @@ const EXECUTION_TARGET_PARAMETER = Type.Union([
     resources: REMOTE_RESOURCES_PARAMETER,
   }, { additionalProperties: false }),
 ]);
-const COMPUTE_OPERATOR_PARAMETERS = Type.Union([
+const COMPUTE_PARAMETERS = Type.Union([
   Type.Object({
-    ...OPERATOR_COMMON_PARAMETERS,
+    ...COMPUTE_COMMON_PARAMETERS,
     operation: Type.Literal("prepare"),
     purpose: Type.String({ minLength: 1, maxLength: 2000 }),
     taskType: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]*$", maxLength: 64 }),
     attemptKind: Type.Optional(StringEnum(ATTEMPT_KINDS)),
     recalculationRef: Type.Optional(Type.Object({
-      sourceNode: Type.String({ minLength: 1, maxLength: 128 }),
+      sourceAct: Type.String({ pattern: "^act_[0-9a-f]{24}$" }),
       sourceIntentId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
       changedSettings: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { minItems: 1, uniqueItems: true }),
       purpose: StringEnum(RECALCULATION_PURPOSES),
@@ -123,40 +111,40 @@ const COMPUTE_OPERATOR_PARAMETERS = Type.Union([
     dryRun: Type.Boolean({ description: "Prepare only when true; false allows a later bound submit." }),
   }, { additionalProperties: false }),
   Type.Object({
-    ...OPERATOR_COMMON_PARAMETERS,
+    ...COMPUTE_COMMON_PARAMETERS,
     operation: Type.Literal("submit"),
     intentId: INTENT_ID_PARAMETER,
   }, { additionalProperties: false }),
   Type.Object({
-    ...OPERATOR_COMMON_PARAMETERS,
+    ...COMPUTE_COMMON_PARAMETERS,
     operation: Type.Literal("inspect"),
     intentId: INTENT_ID_PARAMETER,
     tailArtifact: Type.Optional(Type.String({ minLength: 1, maxLength: 255, description: "Allowlisted remote artifact basename." })),
     tailLines: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
   }, { additionalProperties: false }),
   Type.Object({
-    ...OPERATOR_COMMON_PARAMETERS,
+    ...COMPUTE_COMMON_PARAMETERS,
     operation: Type.Literal("collect"),
     intentId: INTENT_ID_PARAMETER,
     artifacts: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 255 }), { maxItems: 32 })),
   }, { additionalProperties: false }),
   Type.Object({
-    ...OPERATOR_COMMON_PARAMETERS,
+    ...COMPUTE_COMMON_PARAMETERS,
     operation: Type.Literal("cancel"),
     intentId: INTENT_ID_PARAMETER,
   }, { additionalProperties: false }),
   Type.Object({
-    ...OPERATOR_COMMON_PARAMETERS,
+    ...COMPUTE_COMMON_PARAMETERS,
     operation: Type.Literal("parse"),
     intentId: INTENT_ID_PARAMETER,
-    artifactRef: Type.String({ minLength: 1, maxLength: 4096, description: "Workspace-relative selected-node output." }),
+    artifactRef: Type.String({ minLength: 1, maxLength: 4096, description: "Kernel-bound ResearchAct calculation output." }),
   }, { additionalProperties: false }),
 ]);
 
-type OperatorRequest = {
+type ComputeRequest = {
   operation: typeof OPERATIONS[number];
   backend: typeof BACKENDS[number];
-  nodeId: string;
+  actId: string;
   intentFile?: string;
   intentRequest?: Record<string, unknown>;
   intentId?: string;
@@ -229,49 +217,28 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: TS_PUBLIC_TOOL_NAMES.subagentCompute,
-    label: "TS Compute Subagent",
-    description: "Run one fresh Pi compute subagent with request-scoped prepare, submit, inspect, collect, cancel, or parse tools.",
-    promptSnippet: "Delegate one bounded transition-state calculation operation",
+    name: TS_PUBLIC_TOOL_NAMES.compute,
+    label: "TS Compute",
+    description: "Execute one typed deterministic prepare, submit, inspect, collect, cancel, or parse operation.",
+    promptSnippet: "Execute one bound transition-state calculation operation",
     promptGuidelines: [
       "Before prepare, call ts_workspace_context mode=artifacts to discover logical calculation artifact IDs and compatible input roles.",
       "For prepare, bind every backend input role with inputArtifacts; the deterministic host resolves and freezes paths and hashes, then creates the intent ID, expected artifacts, and remote directory.",
-      "Treat subagent results as program and parser facts, not registered Evidence, Claim status, Gate verdict, or acceptance.",
+      "Treat compute results as program and parser observations, not registered scientific Observations, Claim status, ValidationResult, or acceptance.",
       "Use inspect for changed or terminal jobs instead of polling unchanged work every turn.",
       "Use submit or cancel only for the pre-bound current intent, and never retry an ambiguous control result.",
       PACKAGE_USAGE_GUIDELINE,
     ],
-    renderShell: "self",
-    renderCall: (args, theme) => renderTsSubagentCall("compute", args as Record<string, unknown>, theme),
-    renderResult: (result, options, theme, context) => renderTsSubagentResult(
-      "compute",
-      result,
-      options,
-      theme,
-      context.isError,
-    ),
     executionMode: "sequential",
-    parameters: COMPUTE_OPERATOR_PARAMETERS,
+    parameters: COMPUTE_PARAMETERS,
     async execute(toolCallId, params, signal, onUpdate, ctx) {
-      const taskId = `agent_${randomUUID()}`;
-      const reportStatus = createSubagentStatusReporter({
-        tool_call_id: toolCallId,
-        task_id: taskId,
-        role: "backend",
-        operation: params.operation,
-        backend: String(params.backend),
-        node_id: String(params.nodeId),
-        intent_id: "intentId" in params ? params.intentId : undefined,
-      }, onUpdate);
-      reportStatus("queued");
-      if (!ctx.model) throw new Error("No parent model is selected for TS compute delegation");
-      const input = params as unknown as OperatorRequest & { root?: string };
+      const input = params as unknown as ComputeRequest & { root?: string };
       const root = requireWorkspaceRoot(input.root, ctx.cwd);
-      const request = validateOperatorRequest(
+      const request = validateComputeRequest(
         {
           operation: input.operation,
           backend: input.backend,
-          nodeId: input.nodeId,
+          actId: input.actId,
           intentRequest: input.operation === "prepare" ? buildCalculationRequest(input) : undefined,
           intentId: input.intentId,
           tailArtifact: input.tailArtifact,
@@ -280,103 +247,74 @@ export default function (pi: ExtensionAPI) {
           artifactRef: input.artifactRef,
         },
       );
-      const binding = await preflightOperatorRequest(pi, root, request, signal);
-      request.intentFile = request.operation === "prepare" ? binding.intentRef : undefined;
-      request.intentId = binding.intentId;
-      request.intentDigest = binding.intentDigest;
-      request.intentRef = binding.intentRef;
-      request.artifactRef = binding.artifactRef;
-      request.executionKind = binding.executionKind;
-      request.profile = binding.profile;
-      request.remoteDir = binding.remoteDir;
-      request.jobId = binding.jobId;
-      request.executionSummary = binding.executionSummary;
-      const actions: ActionLog = [];
-      const tools = createScopedComputeTools(pi, root, request, actions);
-      const workspaceReport = await runWorkspaceJson(pi, "report_workspace", root, [], signal);
-      const focus = (
-        workspaceReport.focus && typeof workspaceReport.focus === "object"
-          ? workspaceReport.focus
-          : {}
-      ) as Record<string, unknown>;
-      const packet = {
-        schema_version: "ts-agent-task/2",
-        task_id: taskId,
-        role: "backend",
-        authority: "operational",
+      const activityId = `op_${randomUUID()}`;
+      const journal = beginActivity(root, {
+        activity_id: activityId,
+        kind: "compute",
         operation: request.operation,
-        objective: `Execute the bound ${request.operation} operation for backend ${request.backend}.`,
-        workspace: {
-          root,
-          report_id: typeof workspaceReport.report_id === "string" ? workspaceReport.report_id : null,
-          revision: typeof workspaceReport.workspace_revision === "string" ? workspaceReport.workspace_revision : null,
-        },
-        scope: {
-          report_id: typeof workspaceReport.report_id === "string" ? workspaceReport.report_id : null,
-          node_ids: [request.nodeId],
-          claim_refs: Array.isArray(focus.focus_claim_refs) ? focus.focus_claim_refs : [],
-        },
-        inputs: {
+        act_refs: [request.actId],
+        request: {
+          backend: request.backend,
+          act_id: request.actId,
           intent_id: request.intentId || null,
-          intent_ref: request.intentRef || null,
-          intent_digest: request.intentDigest,
-          node_id: request.nodeId,
-          backend: request.backend,
-          basis_allowlist: [],
+          task_type: request.taskType || null,
         },
-        capabilities: tools.map((tool) => tool.name),
-        constraints: {
-          canonical_workspace_mutation: false,
-          scientific_decision: false,
-          recursive_delegation: false,
-          remote_authority: "execution_mirror",
-          external_side_effects: request.operation === "submit" || request.operation === "cancel",
-        },
-        output_contract: "ts-agent-result/1",
-      };
-      const journal = beginAgentRun(root, packet);
-      let result;
+      });
+      const actions: ActionLog = [];
+      onUpdate?.(toolText(`TS Compute ${request.operation} · ${request.backend} · ${request.actId}`, {
+        activity: { activity_id: activityId, state: "running" },
+      }));
       try {
-        const parentAuth = ctx.modelRegistry.isUsingOAuth(ctx.model)
-          ? undefined
-          : await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model);
-        result = await runComputeOperator({
-          workspaceRoot: root,
-          packet,
-          backend: request.backend,
-          tools,
-          actions,
-          parentModel: ctx.model,
-          parentApiKey: parentAuth?.ok ? parentAuth.apiKey : undefined,
-          thinkingLevel: pi.getThinkingLevel(),
-          timeoutMs: ["submit", "collect"].includes(request.operation) ? 360_000 : 180_000,
-          signal,
-          onLifecycle: reportStatus,
-        });
-      } catch (error) {
+        const binding = await preflightComputeRequest(pi, root, request, signal);
+        request.intentFile = request.operation === "prepare" ? binding.intentRef : undefined;
+        request.intentId = binding.intentId;
+        request.intentDigest = binding.intentDigest;
+        request.intentRef = binding.intentRef;
+        request.artifactRef = binding.artifactRef;
+        request.executionKind = binding.executionKind;
+        request.profile = binding.profile;
+        request.remoteDir = binding.remoteDir;
+        request.jobId = binding.jobId;
+        request.executionSummary = binding.executionSummary;
+        const tools = createScopedComputeTools(pi, root, request, actions);
+        const selectedTools = request.operation === "inspect" && request.tailArtifact === undefined && request.tailLines === undefined
+          ? tools.slice(0, 1)
+          : tools;
+        for (const tool of selectedTools) {
+          if (!tool.execute) throw new Error(`deterministic compute tool has no execute handler: ${tool.name}`);
+          await tool.execute(`${toolCallId}:${tool.name}`, {}, signal, () => {}, ctx);
+        }
         const completedActions = compactCompletedActions(actions);
-        const failure = classifyOperatorFailure(error, completedActions);
-        const runRef = failAgentRun(journal, {
-          actions,
-          error,
-          metadata: {
-            operation: request.operation,
-            backend: request.backend,
-            intent_id: request.intentId || null,
-            ...failure,
-          },
-        });
-        pi.appendEntry("ts-workspace-compute-operator-failed", {
-          task_id: packet.task_id,
+        const result = {
+          schema_version: "ts-compute-operation-result/1",
+          activity_id: activityId,
+          activity_ref: journal.activityRef,
           operation: request.operation,
           backend: request.backend,
+          act_id: request.actId,
           intent_id: request.intentId || null,
-          completed_actions: completedActions,
+          action_outcome: actionOutcome(completedActions),
+          actions: completedActions,
+        };
+        completeActivity(journal, result);
+        pi.appendEntry("ts-workspace-compute-run", result);
+        return toolText(JSON.stringify(result, null, 2), { result });
+      } catch (error) {
+        const completedActions = compactCompletedActions(actions);
+        const failure = classifyDeterministicFailure(completedActions);
+        const failedResult = {
+          schema_version: "ts-compute-operation-result/1",
+          activity_id: activityId,
+          activity_ref: journal.activityRef,
+          operation: request.operation,
+          backend: request.backend,
+          act_id: request.actId,
+          intent_id: request.intentId || null,
+          actions: completedActions,
           ...failure,
-          run_ref: runRef,
-        });
-        const terminal = terminalStatusForError(error);
-        reportStatus(terminal.state, { failure_kind: terminal.failure_kind, run_ref: runRef });
+        };
+        failActivity(journal, error, failedResult);
+        pi.appendEntry("ts-workspace-compute-failed", failedResult);
         if (completedActions.length) {
           const message = error instanceof Error ? error.message : String(error);
           throw new Error(
@@ -386,19 +324,6 @@ export default function (pi: ExtensionAPI) {
         }
         throw error;
       }
-      const runRef = completeAgentRun(journal, {
-        actions: result.actions,
-        result: result.report,
-        metadata: result.metadata,
-      });
-      const metadata = { ...result.metadata, run_ref: runRef };
-      pi.appendEntry("ts-workspace-compute-operator-run", metadata);
-      reportStatus(terminalStateForReport(result.report), { intent_id: request.intentId, run_ref: runRef });
-      return toolText(JSON.stringify({ report: result.report, actions: result.actions }, null, 2), {
-        report: result.report,
-        actions: result.actions,
-        run: metadata,
-      });
     },
   });
 
@@ -495,7 +420,7 @@ function remoteDiagnosticError(result: Record<string, unknown>): string | undefi
 function createScopedComputeTools(
   pi: ExtensionAPI,
   root: string,
-  request: OperatorRequest,
+  request: ComputeRequest,
   actions: ActionLog,
 ): ToolDefinition[] {
   const definitions: ToolDefinition[] = [];
@@ -569,7 +494,7 @@ function createScopedComputeTools(
     add(
       "ts_workspace_compute_collect",
       "TS Compute Collect",
-      "Fetch the pre-bound allowlisted artifact subset into the selected node. Call exactly once.",
+      "Fetch the pre-bound allowlisted artifact subset into the owning ResearchAct. Call exactly once.",
       (signal) => {
         const args = ["--intent-id", request.intentId as string];
         args.push("--expected-intent-digest", request.intentDigest as string);
@@ -595,7 +520,7 @@ function createScopedComputeTools(
     add(
       "ts_workspace_compute_parse",
       "TS Compute Parse",
-      "Run the deterministic parser on the pre-bound selected-node artifact. Call exactly once.",
+      "Run the deterministic parser on the pre-bound ResearchAct artifact. Call exactly once.",
       (signal) => runComputeJson(
         pi,
         "parse",
@@ -613,10 +538,10 @@ function createScopedComputeTools(
   return definitions;
 }
 
-async function preflightOperatorRequest(
+async function preflightComputeRequest(
   pi: ExtensionAPI,
   root: string,
-  request: OperatorRequest,
+  request: ComputeRequest,
   signal?: AbortSignal,
 ) {
   if (request.operation === "prepare") {
@@ -625,7 +550,7 @@ async function preflightOperatorRequest(
     ], signal, 60_000);
     if (
       !isPlainObject(created)
-      || created.schema_version !== "ts-calculation-intent-created/1"
+      || created.schema_version !== "ts-calculation-intent-created/2"
       || typeof created.intent_ref !== "string"
     ) {
       throw new Error("compute intent creation returned an invalid binding");
@@ -634,7 +559,7 @@ async function preflightOperatorRequest(
   }
   const args = [
     "--operation", request.operation,
-    "--node-id", request.nodeId,
+    "--act-id", request.actId,
     "--backend", request.backend,
   ];
   if (request.operation === "prepare") {
@@ -647,7 +572,7 @@ async function preflightOperatorRequest(
   if (!raw || typeof raw !== "object" || raw.schema_version !== "ts-compute-binding/1") {
     throw new Error("compute preflight returned an invalid binding");
   }
-  if (raw.operation !== request.operation || raw.node_id !== request.nodeId || raw.backend !== request.backend) {
+  if (raw.operation !== request.operation || raw.act_id !== request.actId || raw.backend !== request.backend) {
     throw new Error("compute preflight binding does not match the requested operation scope");
   }
   for (const key of ["intent_id", "intent_ref", "intent_digest"] as const) {
@@ -669,11 +594,11 @@ async function preflightOperatorRequest(
   };
 }
 
-function validateOperatorRequest(request: OperatorRequest): OperatorRequest {
+function validateComputeRequest(request: ComputeRequest): ComputeRequest {
   if (!OPERATIONS.includes(request.operation)) throw new Error(`unsupported compute operation: ${request.operation}`);
   if (!BACKENDS.includes(request.backend)) throw new Error(`unsupported compute backend: ${request.backend}`);
-  if (typeof request.nodeId !== "string" || !request.nodeId.trim()) throw new Error("compute operation requires nodeId");
-  const supplied = (key: keyof OperatorRequest) => request[key] !== undefined;
+  if (typeof request.actId !== "string" || !request.actId.trim()) throw new Error("compute operation requires actId");
+  const supplied = (key: keyof ComputeRequest) => request[key] !== undefined;
   if (request.operation === "prepare") {
     if (!request.intentRequest) throw new Error("prepare requires a semantic intent request");
     for (const key of ["intentId", "tailArtifact", "tailLines", "artifacts", "artifactRef"] as const) {
@@ -698,7 +623,7 @@ function validateOperatorRequest(request: OperatorRequest): OperatorRequest {
   return request;
 }
 
-function buildCalculationRequest(request: OperatorRequest): Record<string, unknown> {
+function buildCalculationRequest(request: ComputeRequest): Record<string, unknown> {
   if (
     !request.purpose
     || !request.taskType
@@ -731,13 +656,13 @@ function buildCalculationRequest(request: OperatorRequest): Record<string, unkno
     };
   }
   return {
-    schema_version: "ts-calculation-request/1",
-    node_id: request.nodeId,
+    schema_version: "ts-calculation-request/2",
+    act_id: request.actId,
     purpose: request.purpose,
     attempt_kind: request.attemptKind || "primary",
     recalculation_ref: recalculation
       ? {
-          source_node: recalculation.sourceNode,
+          source_act: recalculation.sourceAct,
           source_intent_id: recalculation.sourceIntentId || null,
           changed_settings: recalculation.changedSettings,
           purpose: recalculation.purpose,
@@ -774,7 +699,7 @@ function compactCompletedActions(actions: ActionLog) {
       tool: action.tool,
       action_status: normalizeActionStatus(envelope, raw),
       intent_id: raw.intent_id || null,
-      node_id: raw.node_id || null,
+      act_id: raw.act_id || null,
       state: raw.state || null,
       program_status: raw.program_status || null,
       error_class: raw.error_class || null,
@@ -783,39 +708,24 @@ function compactCompletedActions(actions: ActionLog) {
   });
 }
 
-function classifyOperatorFailure(error: unknown, actions: ReturnType<typeof compactCompletedActions>) {
-  const code = isPlainObject(error) && typeof error.code === "string" ? error.code : null;
-  const actionOutcome = actions.length === 0
+function actionOutcome(actions: ReturnType<typeof compactCompletedActions>) {
+  return actions.length === 0
     ? "not_executed"
-    : actions.some((action) => action.action_status === "started")
+    : actions.some((action) => action.action_status === "started" || action.action_status === "unknown")
       ? "unknown"
-    : actions.some((action) => action.action_status === "unknown")
-      ? "unknown"
-    : actions.every((action) => action.action_status === "failed")
-      ? "failed"
-      : actions.some((action) => action.action_status === "failed")
-      ? "partial"
-      : "succeeded";
-  const upstreamFailure = classifyUpstreamModelFailure(error, { replaySafe: actions.length === 0 });
-  if (upstreamFailure) {
-    return { ...upstreamFailure, action_outcome: actionOutcome };
-  }
-  if (code === "REPORT_SERIALIZATION_FAILED_AFTER_ACTION") {
-    return {
-      failure_class: "report_serialization_failed_after_action",
-      failure_stage: "report_serialization",
-      failure_domain: "compute_operator",
-      upstream_status: null,
-      action_outcome: actionOutcome,
-      retry_safe: false,
-    };
-  }
+      : actions.every((action) => action.action_status === "failed")
+        ? "failed"
+        : actions.some((action) => action.action_status === "failed")
+          ? "partial"
+          : "succeeded";
+}
+
+function classifyDeterministicFailure(actions: ReturnType<typeof compactCompletedActions>) {
   return {
-    failure_class: actions.length ? "operator_failed_after_action" : "operator_failed_before_action",
-    failure_stage: actions.length ? "operator" : "pre_action",
-    failure_domain: "compute_operator",
-    upstream_status: null,
-    action_outcome: actionOutcome,
+    failure_class: actions.length ? "deterministic_compute_failed_after_action" : "deterministic_compute_failed_before_action",
+    failure_stage: actions.length ? "action" : "pre_action",
+    failure_domain: "compute",
+    action_outcome: actionOutcome(actions),
     retry_safe: actions.length === 0,
   };
 }

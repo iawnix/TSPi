@@ -1,0 +1,15 @@
+{
+  "schema_version": "ts-gate-template/1",
+  "template_id": "pathway-audit",
+  "version": "1",
+  "title": "Pathway audit",
+  "parameters": {
+    "subject_ref": {"type": "string", "required": true}
+  },
+  "definition": {
+    "checks": [
+      {"check_id": "pathway_decision", "predicate": "observation.equals", "parameters": {"selector": {"concept_id": "pathway.audit_verdict", "subject_ref": "${subject_ref}"}, "expected": "accepted"}, "blocking": true}
+    ],
+    "success_policy": {"mode": "all_blocking"}
+  }
+}

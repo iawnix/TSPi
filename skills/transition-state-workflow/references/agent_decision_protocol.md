@@ -2,55 +2,55 @@
 
 ## Normal Loop
 
-1. Read the compact workspace report and its scientific and operational
-   revisions.
-2. Identify the exact unresolved Claim or missing fact.
-3. Inspect only the relevant Node, artifact, or lineage delta.
-4. Choose one bounded next act from scientific judgment.
-5. Draft `ts-decision/3`, validate it, and apply it unchanged.
-6. Run bounded operators, verify local artifacts, and register factual Evidence.
-7. Evaluate declared Gates when their required facts are available.
-8. Close the Node with explicit Claim updates or an inconclusive/blocked result.
-9. Re-read state before selecting any continuation.
+1. Read a frontier or delta projection.
+2. Name the unresolved question and possible falsifiers.
+3. Select one bounded ResearchAct and explicit dependencies.
+4. Draft, validate, and apply the graph change.
+5. Run deterministic actions, then verify local primary artifacts.
+6. Record semantic Observations and Findings.
+7. Freeze and evaluate only the validation dimensions relevant to the Claim.
+8. Update the Claim and complete the Act with exact cited basis.
+9. Decide independently whether to branch, merge, backtrack, stop, or continue.
 
-The Kernel may reject invalid references, stale revisions, inconsistent facts,
-or a failed acceptance policy. It must not recommend a method or manufacture a
-continuation.
+The Kernel validates this record; it does not supply the strategy.
 
-## Previous Failed Exploration
+## Failed Exploration And Backtracking
 
-When earlier work failed, read the failed Node and relevant attempt record. Use
-`report_lineage_context(from_node, anchor_node)` only to compare an ancestor and
-the Nodes attempted after it. Then independently decide whether to:
+Preserve the failed Act, operation, output, and Finding. Distinguish an
+operational failure from a scientific result. To resume from an earlier point,
+start a new Act that depends on the earlier checkpoint and state what changed.
+Do not copy or rewrite the failed branch.
 
-- retry the same immutable execution binding after a pre-effect failure;
-- create a new calculation under the same scientific objective;
-- open a child Node for a changed method or new question;
-- append an alternative or revised Claim;
-- ask for missing user constraints;
-- stop.
-
-Never rewrite or delete the failed Node to make the graph look successful.
-Across independent repeated studies, preserve enough facts to distinguish a
-reproduced scientific failure from a repeated infrastructure failure.
+Use multiple dependencies when a new Act combines conclusions or artifacts
+from several branches. Use Claim relations to preserve competing explanations;
+do not force alternatives into one linear Act chain.
 
 ## Review
 
-Review is advisory. Target one Claim; let the deterministic snapshot builder
-collect its Claim ancestry, cited Evidence, Gate results, owner Nodes, and
-allowlisted artifacts. After a successful result, record a concise Root
-response with `ts_review_disposition`. Adopted advice still requires normal
-workspace decisions and primary Evidence.
+Request Review only for a focused Claim. After successful Review, record one
+Root disposition before another scientific mutation:
+
+- `accept`: adopt the advice as a planning input;
+- `partially_accept`: identify accepted and rejected parts;
+- `reject`: cite why it does not change the plan;
+- `defer`: state which missing information prevents a response.
+
+Disposition is operational. Any scientific change still requires verified
+Observations and a normal Decision.
 
 ## Acceptance
 
-Before accepted language:
+Before `accept_claim`:
 
-1. identify the target Claim;
-2. identify the named acceptance policy;
-3. verify every cited Gate result is current, passing, and target-compatible;
-4. state remaining limitations;
-5. decide explicitly whether the complete study is finished.
+1. confirm the Claim status is `supported` and at least one GateSpec is attached;
+2. confirm the latest ValidationResult for each attached GateSpec passes;
+3. confirm the profile's foundational dimensions are present;
+4. resolve every applicable blocking Finding;
+5. ensure the Claim statement, assumptions, and cited artifacts still match;
+6. describe residual scientific limitations in the acceptance summary.
 
-A negative or inconclusive Gate result is a fact boundary, not an automatic
-instruction to abandon or continue the research.
+An existing record is historical, not current, after any accepted Claim,
+GateSpec, latest result, profile, or relevant Finding snapshot changes.
+
+Negative, inconclusive, and error verdicts are durable boundaries. They do not
+automatically prescribe retry or abandonment.

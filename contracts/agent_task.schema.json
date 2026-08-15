@@ -1,13 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:iawnix:ts-agent-task:2",
   "title": "TS isolated agent task",
   "type": "object",
   "required": ["schema_version", "task_id", "role", "authority", "operation", "objective", "workspace", "scope", "inputs", "capabilities", "constraints", "output_contract"],
   "properties": {
     "schema_version": {"const": "ts-agent-task/2"},
     "task_id": {"type": "string", "minLength": 1, "maxLength": 128},
-    "role": {"enum": ["review", "backend", "render", "report"]},
-    "authority": {"enum": ["advisory", "operational"]},
+    "role": {"const": "review"},
+    "authority": {"const": "advisory"},
     "operation": {"type": "string", "minLength": 1, "maxLength": 128},
     "objective": {"type": "string", "minLength": 1, "maxLength": 4000},
     "workspace": {
@@ -21,7 +22,15 @@
       "additionalProperties": false
     },
     "scope": {"$ref": "#/$defs/scope"},
-    "inputs": {"type": "object"},
+    "inputs": {
+      "type": "object",
+      "required": ["review_snapshot", "provider_input"],
+      "properties": {
+        "review_snapshot": {"$ref": "#/$defs/reviewSnapshotBinding"},
+        "provider_input": {"$ref": "#/$defs/providerInputBinding"}
+      },
+      "additionalProperties": false
+    },
     "capabilities": {"type": "array", "uniqueItems": true, "maxItems": 32, "items": {"type": "string", "minLength": 1, "maxLength": 128}},
     "constraints": {
       "type": "object",
@@ -37,26 +46,6 @@
     },
     "output_contract": {"const": "ts-agent-result/1"}
   },
-  "allOf": [
-    {
-      "if": {"properties": {"role": {"const": "review"}}},
-      "then": {
-        "properties": {
-          "authority": {"const": "advisory"},
-          "inputs": {
-            "type": "object",
-            "required": ["evidence_snapshot", "provider_input"],
-            "properties": {
-              "evidence_snapshot": {"$ref": "#/$defs/evidenceSnapshotBinding"},
-              "provider_input": {"$ref": "#/$defs/providerInputBinding"}
-            },
-            "additionalProperties": false
-          }
-        }
-      }
-    },
-    {"if": {"properties": {"role": {"enum": ["backend", "render", "report"]}}}, "then": {"properties": {"authority": {"const": "operational"}}}}
-  ],
   "additionalProperties": false,
   "$defs": {
     "documentBinding": {
@@ -70,24 +59,24 @@
       },
       "additionalProperties": false
     },
-    "evidenceSnapshotBinding": {
+    "reviewSnapshotBinding": {
       "allOf": [
         {"$ref": "#/$defs/documentBinding"},
-        {"properties": {"ref": {"const": "evidence-snapshot.json"}, "schema_version": {"const": "ts-review-evidence-snapshot/2"}}}
+        {"properties": {"ref": {"const": "review-snapshot.json"}, "schema_version": {"const": "ts-review-task-snapshot/1"}}}
       ]
     },
     "providerInputBinding": {
       "allOf": [
         {"$ref": "#/$defs/documentBinding"},
-        {"properties": {"ref": {"const": "provider-input.json"}, "schema_version": {"const": "ts-review-provider-input/2"}}}
+        {"properties": {"ref": {"const": "provider-input.json"}, "schema_version": {"const": "ts-review-provider-input/3"}}}
       ]
     },
     "scope": {
       "type": "object",
-      "required": ["report_id", "node_ids", "claim_refs"],
+      "required": ["report_id", "act_refs", "claim_refs"],
       "properties": {
         "report_id": {"type": ["string", "null"]},
-        "node_ids": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "act_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "claim_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
       },
       "additionalProperties": false

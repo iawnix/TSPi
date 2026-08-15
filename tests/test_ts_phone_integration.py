@@ -21,13 +21,13 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     package_home = install_root / ".pi" / "packages" / "ts-agent"
     package_root = package_home / "releases" / "test-release"
     package_root.mkdir(parents=True)
-    (package_root / "package.json").write_text('{"name":"@iawnix/ts-agent","version":"0.5.0"}\n', encoding="utf-8")
+    (package_root / "package.json").write_text('{"name":"@iawnix/ts-agent","version":"0.7.0"}\n', encoding="utf-8")
     (package_root / ".ts-agent-release.json").write_text(
         json.dumps(
             {
                 "schema_version": "ts-agent-release/1",
                 "release_id": "test-release",
-                "package": {"name": "@iawnix/ts-agent", "version": "0.5.0"},
+                "package": {"name": "@iawnix/ts-agent", "version": "0.7.0"},
             }
         )
         + "\n",
@@ -37,7 +37,7 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     (package_root / "TSPi").chmod(0o755)
     (package_root / "scripts").mkdir()
     shutil.copy2(ROOT / "scripts" / "tspi_host.py", package_root / "scripts" / "tspi_host.py")
-    for name in ("ts_runtime", "ts_workspace"):
+    for name in ("ts_runtime", "ts_validation", "ts_workspace"):
         shutil.copytree(
             ROOT / name,
             package_root / name,
@@ -248,24 +248,23 @@ def test_rpc_subagent_history_is_bounded_markdown() -> None:
     script = f"""
 import {{ formatTsSubagentHistoryMarkdown }} from {json.dumps(UI.as_uri())};
 const records = [{{
-  task_id: "agent-1",
-  role: "backend",
-  operation: "submit",
+  task_id: "sub_review-1",
+  operation: "claim_review",
   state: "running",
-  node_ids: ["n003"],
-  backend: "gaussian",
-  run_ref: "nodes/n003/agent-runs/agent-1",
-  summary: "Remote calculation is queued.",
+  act_refs: ["act_probe"],
+  claim_refs: ["clm_probe"],
+  run_ref: "acts/act_probe/agent-runs/sub_review-1",
+  summary: "Independent review is running.",
   live: true,
 }}];
 process.stdout.write(JSON.stringify(formatTsSubagentHistoryMarkdown(records)));
 """
     markdown = _node_json(script)
-    assert markdown.startswith("# TS Subagent History")
-    assert "## Compute · submit" in markdown
-    assert "`agent-1`" in markdown
-    assert "`n003`" in markdown
-    assert "> Remote calculation is queued." in markdown
+    assert markdown.startswith("# TS Review History")
+    assert "## Review · claim\\_review" in markdown
+    assert "`sub_review-1`" in markdown
+    assert "`act_probe`" in markdown
+    assert "> Independent review is running." in markdown
 
 
 def test_rpc_activity_widget_uses_serializable_string_lines() -> None:
@@ -301,8 +300,8 @@ await handlers.session_start({{ type: "session_start", reason: "startup" }}, ctx
 await handlers.tool_execution_start({{
   type: "tool_execution_start",
   toolCallId: "render-1",
-  toolName: "ts_subagent_render",
-  args: {{ operation: "compare", nodeId: "n009" }},
+  toolName: "ts_render",
+  args: {{ operation: "compare", actId: "act_probe", outputName: "compare.png" }},
 }}, ctx);
 const active = widgets.findLast((item) => Array.isArray(item.content));
 await handlers.session_shutdown({{ type: "session_shutdown", reason: "quit" }}, ctx);

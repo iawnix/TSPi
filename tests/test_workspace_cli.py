@@ -5,24 +5,9 @@ import subprocess
 import sys
 from pathlib import Path
 
-from strict_helpers import CLAIM_ID, bootstrap_strict_workspace
-
 
 ROOT = Path(__file__).resolve().parents[1]
 CLI = ROOT / "scripts" / "ts_workspace.py"
-
-
-def _decision(report: dict, action: str, payload: dict, *, decision_id: str) -> dict:
-    return {
-        "schema_version": "ts-decision/3",
-        "decision_id": decision_id,
-        "action": action,
-        "rationale": f"Exercise the {action} CLI.",
-        "basis_refs": [],
-        "report_ref": {"report_id": report["report_id"], "workspace_root": report["workspace_root"]},
-        "base_revision": report["workspace_revision"],
-        "payload": payload,
-    }
 
 
 def _write(path: Path, value: dict) -> Path:
@@ -30,205 +15,158 @@ def _write(path: Path, value: dict) -> Path:
     return path
 
 
-def test_workspace_cli_v3_roundtrip(tmp_path: Path) -> None:
+def test_workspace_cli_v4_roundtrip(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    _run("init_workspace", "--root", str(workspace))
-    report = _run("report_workspace", "--root", str(workspace))
-    start = _decision(
-        report,
-        "start_node",
-        {
-            "node_id": "n000",
-            "parent_node": None,
-            "objective": "Normalize endpoint inputs.",
-            "tags": ["intake"],
-            "claim_refs": [],
-        },
-        decision_id="dec_cli_start",
-    )
-    start_path = _write(tmp_path / "start.json", start)
-    preflight = _run("validate_decision", "--root", str(workspace), "--decision-file", str(start_path))
-    assert preflight["valid"] is True
-    assert preflight["dry_run"]["action"] == "start_node"
-    assert not (workspace / "nodes" / "n000").exists()
-    assert _run("start_node", "--root", str(workspace), "--decision-file", str(start_path)) == {
-        "node_id": "n000",
-        "state": "open",
-    }
+    initialized = _run("init_workspace", "--root", str(workspace))
+    assert initialized["schema_version"] == "ts-workspace-init-result/4"
 
-    artifact_ref = "nodes/n000/outputs/endpoint.json"
-    (workspace / artifact_ref).parent.mkdir()
-    (workspace / artifact_ref).write_text('{"endpoints_declared":true}\n', encoding="utf-8")
-    report = _run("report_workspace", "--root", str(workspace))
-    update = _decision(
-        report,
-        "update_workspace",
-        {
-            "append_evidence": {
-                "schema_version": "ts-evidence/2",
-                "evidence_id": "ev_endpoint_001",
-                "node_id": "n000",
-                "kind": "endpoint.input/1",
-                "evidence_tier": "manual_observation",
-                "summary": "The mapped endpoint bond change is explicit.",
-                "facts": {"endpoints_declared": True},
-                "artifact_refs": [artifact_ref],
-                "provenance": {"producer": "cli-test", "producer_version": "3", "source_sha256": None},
-            }
-        },
-        decision_id="dec_cli_update",
-    )
-    update_path = _write(tmp_path / "update.json", update)
-    result = _run("update_workspace", "--root", str(workspace), "--decision-file", str(update_path))
-    assert result["appended"]["evidence"] == 1
-
-    report = _run("report_workspace", "--root", str(workspace))
-    end = _decision(
-        report,
-        "end_node",
-        {
-            "node_id": "n000",
-            "result": {
-                "outcome": "completed",
-                "summary": "Input normalization is complete.",
-                "claim_updates": [],
-                "audit": None,
-                "open_questions": [],
-            },
-        },
-        decision_id="dec_cli_end",
-    )
-    end_path = _write(tmp_path / "end.json", end)
-    assert _run("end_node", "--root", str(workspace), "--decision-file", str(end_path))["state"] == "closed"
-    assert _run("validate_workspace", "--root", str(workspace))["valid"] is True
-
-
-def test_workspace_cli_drafts_kernel_owned_evidence_id(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    _run("init_workspace", "--root", str(workspace))
-    report = _run("report_workspace", "--root", str(workspace))
-    start = _decision(
-        report,
-        "start_node",
-        {
-            "node_id": "n000",
-            "parent_node": None,
-            "objective": "Record one parser result.",
-            "tags": ["validation"],
-            "claim_refs": [],
-        },
-        decision_id="dec_cli_draft_start",
-    )
-    _run(
-        "start_node",
-        "--root",
-        str(workspace),
-        "--decision-file",
-        str(_write(tmp_path / "start-draft.json", start)),
-    )
-    artifact_ref = "nodes/n000/outputs/validation_summary.json"
-    (workspace / artifact_ref).parent.mkdir(parents=True, exist_ok=True)
-    (workspace / artifact_ref).write_text("{}\n", encoding="utf-8")
     request = {
-        "action": "update_workspace",
-        "rationale": "Record one parser result without choosing a technical ID.",
+        "rationale": "Create and evaluate one bounded research assertion.",
         "basis_refs": [],
-        "payload": {
-            "append_evidence": {
-                "schema_version": "ts-evidence/2",
-                "node_id": "n000",
-                "kind": "gaussian_tsfreq/1",
-                "evidence_tier": "local_parse",
-                "summary": "Parsed TS and frequency facts.",
-                "facts": {"stationary_point_found": True, "route_consistent": True},
-                "artifact_refs": [artifact_ref],
+        "operations": [
+            {
+                "op": "create_claim",
+                "local_ref": "claim",
+                "claimType": "test",
+                "statement": "The bounded assertion is true.",
+            },
+            {
+                "op": "start_act",
+                "local_ref": "act",
+                "objective": "Record a deterministic Observation.",
+                "claimRefs": ["$claim"],
+                "tags": ["cli-test"],
+            },
+            {
+                "op": "record_observation",
+                "local_ref": "observation",
+                "actRef": "$act",
+                "conceptId": "test.confirmed",
+                "subjectRef": "subject",
+                "value": True,
+                "datatype": "boolean",
+                "summary": "The assertion was confirmed.",
                 "provenance": {"producer": "cli-test"},
-            }
-        },
+            },
+            {
+                "op": "update_claim",
+                "claimRef": "$claim",
+                "status": "supported",
+                "summary": "The Observation supports the assertion.",
+                "observationRefs": ["$observation"],
+            },
+            {
+                "op": "complete_act",
+                "actRef": "$act",
+                "outcome": "completed",
+                "summary": "The bounded act is complete.",
+            },
+            {"op": "set_focus", "claimRefs": ["$claim"], "actRefs": []},
+        ],
     }
     drafted = _run(
         "draft_decision",
         "--root",
         str(workspace),
         "--request-file",
-        str(_write(tmp_path / "draft-request.json", request)),
+        str(_write(tmp_path / "request.json", request)),
     )
+    decision_path = _write(tmp_path / "decision.json", drafted["decision"])
+    preflight = _run(
+        "validate_decision",
+        "--root",
+        str(workspace),
+        "--decision-file",
+        str(decision_path),
+    )
+    assert preflight["valid"] is True
+    assert not json.loads((workspace / "claims.json").read_text(encoding="utf-8"))["claims"]
 
-    evidence = drafted["decision"]["payload"]["append_evidence"]
-    assert drafted["allocated_refs"]["evidence"] == [evidence["evidence_id"]]
-    assert evidence["evidence_id"].startswith("ev_")
-    assert evidence["facts"]["stationary_point"] is True
-    assert evidence["facts"]["route_match"] is True
+    applied = _run(
+        "apply_decision",
+        "--root",
+        str(workspace),
+        "--decision-file",
+        str(decision_path),
+    )
+    assert applied["operation_count"] == 6
+    context = _run("context", "--root", str(workspace), "--mode", "frontier")
+    assert [item["claim_id"] for item in context["claims"]] == [drafted["allocated_refs"]["claim"]]
+    assert _run("validate_workspace", "--root", str(workspace))["valid"] is True
 
 
-def test_workspace_cli_rejects_v2_decision_contract(tmp_path: Path) -> None:
+def test_workspace_cli_rejects_v3_decision_contract(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     _run("init_workspace", "--root", str(workspace))
     old = {
-        "schema_version": "ts-decision/2",
+        "schema_version": "ts-decision/3",
         "decision_id": "dec_old",
         "action": "start_node",
         "rationale": "Old routing decision.",
-        "evidence_refs": [],
-        "payload": {"node_type": "validation"},
+        "basis_refs": [],
+        "payload": {"node_id": "n001"},
     }
-    path = _write(tmp_path / "old.json", old)
-    completed = _run_raw("validate_decision", "--root", str(workspace), "--decision-file", str(path))
-
+    completed = _run_raw(
+        "validate_decision",
+        "--root",
+        str(workspace),
+        "--decision-file",
+        str(_write(tmp_path / "old.json", old)),
+    )
     assert completed.returncode == 2
-    assert "decision_v3.schema.json validation failed" in completed.stderr
+    assert "decision.schema.json validation failed" in completed.stderr
 
 
-def test_workspace_cli_preflight_rejects_unknown_claim_without_mutation(tmp_path: Path) -> None:
+def test_workspace_cli_draft_rejects_unknown_claim_without_mutation(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
-    bootstrap_strict_workspace(workspace)
-    report = _run("report_workspace", "--root", str(workspace))
-    decision = _decision(
-        report,
-        "start_node",
-        {
-            "node_id": "n001",
-            "parent_node": "n000",
-            "objective": "Exercise state-aware Claim reference validation.",
-            "tags": ["anything-the-root-agent-needs"],
-            "claim_refs": ["claim_missing"],
-        },
-        decision_id="dec_unknown_claim",
+    _run("init_workspace", "--root", str(workspace))
+    request = {
+        "rationale": "Try to bind an unavailable Claim.",
+        "basis_refs": [],
+        "operations": [
+            {
+                "op": "start_act",
+                "local_ref": "act",
+                "objective": "This must not be created.",
+                "claimRefs": ["clm_000000000000000000000000"],
+            }
+        ],
+    }
+    drafted = _run(
+        "draft_decision",
+        "--root",
+        str(workspace),
+        "--request-file",
+        str(_write(tmp_path / "unknown.json", request)),
     )
-    path = _write(tmp_path / "unknown-claim.json", decision)
-    preflight = _run_raw("validate_decision", "--root", str(workspace), "--decision-file", str(path))
-    mutation = _run_raw("start_node", "--root", str(workspace), "--decision-file", str(path))
-
-    assert preflight.returncode == 2
-    assert mutation.returncode == 2
-    assert "claim_refs contains unknown refs: claim_missing" in preflight.stderr
-    assert "claim_refs contains unknown refs: claim_missing" in mutation.stderr
-    assert not (workspace / "nodes" / "n001").exists()
-
-
-def test_workspace_cli_accepts_root_selected_tags_without_behavior_routing(tmp_path: Path) -> None:
-    workspace = tmp_path / "ws"
-    bootstrap_strict_workspace(workspace)
-    report = _run("report_workspace", "--root", str(workspace))
-    decision = _decision(
-        report,
-        "start_node",
-        {
-            "node_id": "n001",
-            "parent_node": "n000",
-            "objective": "Try an unconventional but contract-valid research act.",
-            "tags": ["manual-inspection", "branch-alternative"],
-            "claim_refs": [CLAIM_ID],
-        },
-        decision_id="dec_free_strategy",
+    completed = _run_raw(
+        "validate_decision",
+        "--root",
+        str(workspace),
+        "--decision-file",
+        str(_write(tmp_path / "unknown-decision.json", drafted["decision"])),
     )
-    path = _write(tmp_path / "free-strategy.json", decision)
+    assert completed.returncode == 2
+    assert "ResearchAct claim_refs contains unknown refs: clm_000000000000000000000000" in completed.stderr
+    assert json.loads((workspace / "research_acts.json").read_text(encoding="utf-8"))["acts"] == []
 
-    assert _run("validate_decision", "--root", str(workspace), "--decision-file", str(path))["valid"] is True
-    assert _run("start_node", "--root", str(workspace), "--decision-file", str(path))["state"] == "open"
-    node = json.loads((workspace / "nodes" / "n001" / "node.json").read_text(encoding="utf-8"))
-    assert node["tags"] == ["manual-inspection", "branch-alternative"]
-    assert "node_type" not in node
+
+def test_workspace_cli_exposes_validation_capabilities(tmp_path: Path) -> None:
+    capabilities = _run("validation_capabilities")
+    assert capabilities["schema_version"] == "ts-validation-capabilities/1"
+    assert capabilities["agent_supplied_executable_code"] is False
+    assert "classical-ts" in {item["template_id"] for item in capabilities["templates"]}
+
+
+def test_workspace_cli_help_uses_claim_and_research_act_vocabulary() -> None:
+    completed = _run_raw("--help")
+    assert completed.returncode == 0
+    help_text = " ".join(completed.stdout.split())
+    assert "Claim graph and ResearchAct DAG" in help_text
+    assert "dry-run one bound Decision against the complete resulting state" in help_text
+    assert "atomically apply one validated Decision under the workspace lock" in help_text
+    assert "start_node" not in help_text
+    assert "report_workspace" not in help_text
 
 
 def _run(*args: str) -> dict:

@@ -1,4 +1,10 @@
-"""Read-only indexing for noncanonical calculation and agent-run state."""
+"""Read-only projection of noncanonical v4 runtime state.
+
+Canonical scientific state lives in the v4 registries.  Calculation attempts,
+deterministic tool activities, advisory Review runs, and control receipts are
+durable operational records, but they never become scientific support merely
+because they appear in this projection.
+"""
 
 from __future__ import annotations
 
@@ -10,11 +16,12 @@ from .io import read_json, sha256_json
 
 
 def operational_snapshot(root: str | Path) -> dict[str, Any]:
-    root_path = Path(root)
+    root_path = Path(root).expanduser().resolve()
     files = _operational_files(root_path)
-    agent_runs = agent_run_index(root_path)
-    pending_review_dispositions = review_disposition_obligations(agent_runs)
-    review_disposition_count = sum(1 for row in agent_runs if row.get("root_disposition"))
+    activities = deterministic_activity_index(root_path)
+    review_runs = review_run_index(root_path)
+    pending_review_dispositions = review_disposition_obligations(review_runs)
+    review_disposition_count = sum(1 for row in review_runs if row.get("root_disposition"))
     pending_controls = _pending_controls(root_path, files)
     unresolved_controls = _unresolved_controls(root_path, files)
     ambiguous_submissions = [
@@ -35,7 +42,8 @@ def operational_snapshot(root: str | Path) -> dict[str, Any]:
                 ]
             }
         ),
-        "agent_runs": agent_runs,
+        "deterministic_activities": activities,
+        "review_runs": review_runs,
         "pending_review_dispositions": pending_review_dispositions,
         "review_disposition_count": review_disposition_count,
         "pending_controls": pending_controls,
@@ -45,10 +53,13 @@ def operational_snapshot(root: str | Path) -> dict[str, Any]:
         "retryable_controls": retryable_controls,
         "operational_summary": {
             "tracked_file_count": len(files),
-            "calculation_file_count": sum(1 for path in files if "agent-runs" not in path.parts),
-            "agent_run_count": len(agent_runs),
-            "agent_run_failed_count": sum(1 for row in agent_runs if row.get("status") == "failed"),
-            "agent_run_pending_count": sum(1 for row in agent_runs if row.get("status") == "pending"),
+            "calculation_file_count": sum(1 for path in files if "attempts" in path.parts),
+            "activity_count": len(activities),
+            "activity_failed_count": sum(1 for row in activities if row.get("status") == "failed"),
+            "activity_running_count": sum(1 for row in activities if row.get("status") == "running"),
+            "review_run_count": len(review_runs),
+            "review_run_failed_count": sum(1 for row in review_runs if row.get("status") == "failed"),
+            "review_run_pending_count": sum(1 for row in review_runs if row.get("status") == "pending"),
             "review_disposition_count": review_disposition_count,
             "review_disposition_pending_count": len(pending_review_dispositions),
             "control_pending_count": len(pending_controls),
@@ -60,10 +71,53 @@ def operational_snapshot(root: str | Path) -> dict[str, Any]:
     }
 
 
-def agent_run_index(root: str | Path) -> list[dict[str, Any]]:
-    root_path = Path(root)
+def deterministic_activity_index(root: str | Path) -> list[dict[str, Any]]:
+    """Index host-owned Compute, Render, and Report activity journals."""
+
+    root_path = Path(root).expanduser().resolve()
+    activity_dirs = [
+        *root_path.glob("acts/*/activities/*"),
+        *root_path.glob("operations/activities/*"),
+    ]
+    rows: list[dict[str, Any]] = []
+    for activity_dir in sorted(activity_dirs, key=lambda path: path.relative_to(root_path).as_posix()):
+        if not activity_dir.is_dir() or activity_dir.is_symlink():
+            continue
+        request = _read_or_empty(activity_dir / "request.json")
+        status = _read_or_empty(activity_dir / "status.json")
+        result = _read_or_empty(activity_dir / "result.json")
+        error = status.get("error") if isinstance(status.get("error"), dict) else {}
+        activity_ref = activity_dir.relative_to(root_path).as_posix()
+        rows.append(
+            {
+                "activity_id": status.get("activity_id") or request.get("activity_id") or activity_dir.name,
+                "kind": status.get("kind") or request.get("kind"),
+                "operation": status.get("operation") or request.get("operation"),
+                "status": status.get("status") or "pending",
+                "act_refs": _string_list(status.get("act_refs") or request.get("act_refs")),
+                "activity_ref": activity_ref,
+                "started_at": status.get("started_at") or request.get("started_at"),
+                "completed_at": status.get("completed_at"),
+                "summary": result.get("summary"),
+                "outcome": result.get("outcome"),
+                "error_name": error.get("name"),
+                "error_message": error.get("message"),
+            }
+        )
+    return rows
+
+
+def review_run_index(root: str | Path) -> list[dict[str, Any]]:
+    """Index isolated advisory Review sessions.
+
+    v4 has no model-based Compute, Render, or Report child sessions.  Any
+    journal that is not explicitly an advisory Review is retained on disk for
+    diagnosis but excluded from the public Review index.
+    """
+
+    root_path = Path(root).expanduser().resolve()
     run_dirs = [
-        *root_path.glob("nodes/*/agent-runs/*"),
+        *root_path.glob("acts/*/agent-runs/*"),
         *root_path.glob("operations/agent-runs/*"),
     ]
     rows: list[dict[str, Any]] = []
@@ -71,6 +125,8 @@ def agent_run_index(root: str | Path) -> list[dict[str, Any]]:
         if not run_dir.is_dir() or run_dir.is_symlink():
             continue
         task = _read_or_empty(run_dir / "task.json")
+        if task.get("role") != "review" or task.get("authority") != "advisory":
+            continue
         run = _read_or_empty(run_dir / "run.json")
         result = _read_or_empty(run_dir / "result.json")
         disposition = _read_or_empty(run_dir / "root-disposition.json")
@@ -79,11 +135,12 @@ def agent_run_index(root: str | Path) -> list[dict[str, Any]]:
         run_ref = run_dir.relative_to(root_path).as_posix()
         row = {
             "task_id": task.get("task_id") or run_dir.name,
-            "role": task.get("role"),
-            "authority": task.get("authority"),
+            "role": "review",
+            "authority": "advisory",
             "operation": task.get("operation"),
             "status": run.get("status") or "pending",
-            "node_ids": scope.get("node_ids", []),
+            "act_refs": _string_list(scope.get("act_refs")),
+            "claim_refs": _string_list(scope.get("claim_refs")),
             "run_ref": run_ref,
             "started_at": run.get("started_at"),
             "finished_at": run.get("finished_at"),
@@ -106,22 +163,20 @@ def agent_run_index(root: str | Path) -> list[dict[str, Any]]:
     return rows
 
 
-def review_disposition_obligations(agent_runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def review_disposition_obligations(review_runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Return completed advisory Reviews that still require a Root response."""
 
     return [
         {
             "task_id": row.get("task_id"),
             "operation": row.get("operation"),
-            "node_ids": row.get("node_ids", []),
+            "act_refs": row.get("act_refs", []),
+            "claim_refs": row.get("claim_refs", []),
             "run_ref": row.get("run_ref"),
             "invalid_disposition": bool(row.get("root_disposition_invalid")),
         }
-        for row in agent_runs
-        if row.get("role") == "review"
-        and row.get("authority") == "advisory"
-        and row.get("status") == "completed"
-        and not row.get("root_disposition")
+        for row in review_runs
+        if row.get("status") == "completed" and not row.get("root_disposition")
     ]
 
 
@@ -150,19 +205,15 @@ def _valid_review_disposition(disposition: dict[str, Any], run: dict[str, Any]) 
 
 def _operational_files(root: Path) -> list[Path]:
     patterns = (
-        "nodes/*/attempts/*/status.json",
-        "nodes/*/attempts/*/*_guard.json",
-        "nodes/*/attempts/*/*_result.json",
-        "nodes/*/attempts/*/*_reconciliation.json",
-        "nodes/*/attempts/*/*_receipt.json",
-        "nodes/*/attempts/*/outputs/calculation_result.json",
-        "nodes/*/remote/calculations/*/status.json",
-        "nodes/*/remote/calculations/*/*_guard.json",
-        "nodes/*/remote/calculations/*/*_result.json",
-        "nodes/*/remote/calculations/*/*_reconciliation.json",
-        "nodes/*/remote/calculations/*/*_receipt.json",
-        "nodes/*/outputs/calculations/*/calculation_result.json",
-        "nodes/*/agent-runs/*/*.json",
+        "acts/*/attempts/*/status.json",
+        "acts/*/attempts/*/*_guard.json",
+        "acts/*/attempts/*/*_result.json",
+        "acts/*/attempts/*/*_reconciliation.json",
+        "acts/*/attempts/*/*_receipt.json",
+        "acts/*/attempts/*/outputs/calculation_result.json",
+        "acts/*/activities/*/*.json",
+        "operations/activities/*/*.json",
+        "acts/*/agent-runs/*/*.json",
         "operations/agent-runs/*/*.json",
     )
     files = {
@@ -174,8 +225,8 @@ def _operational_files(root: Path) -> list[Path]:
     return sorted(files, key=lambda path: path.relative_to(root).as_posix())
 
 
-def _pending_controls(root: Path, files: list[Path]) -> list[dict[str, str]]:
-    pending: list[dict[str, str]] = []
+def _pending_controls(root: Path, files: list[Path]) -> list[dict[str, Any]]:
+    pending: list[dict[str, Any]] = []
     for guard in files:
         if not guard.name.endswith("_guard.json"):
             continue
@@ -189,13 +240,14 @@ def _pending_controls(root: Path, files: list[Path]) -> list[dict[str, str]]:
         result = guard.parent / f"{stem}_result.json"
         if result.is_file() and not result.is_symlink():
             continue
-        row = {
+        row: dict[str, Any] = {
             "operation": operation,
+            "act_id": _act_id_for_attempt(root, guard.parent),
             "intent_id": guard.parent.name,
             "guard_ref": guard.relative_to(root).as_posix(),
         }
         if attempt > 1:
-            row["attempt"] = str(attempt)
+            row["attempt"] = attempt
         pending.append(row)
     return pending
 
@@ -235,21 +287,29 @@ def _unresolved_controls(root: Path, files: list[Path]) -> list[dict[str, Any]]:
         ambiguous_error = error_class in {"submission_ambiguous", "cancellation_ambiguous"}
         if not (unresolved_state or retryable_failure or ambiguous_error):
             continue
-        row: dict[str, Any] = {
-            "operation": operation,
-            "intent_id": result_path.parent.name,
-            "attempt": attempt,
-            "result_ref": result_path.relative_to(root).as_posix(),
-            "state": state,
-            "error_class": error_class,
-            "effect_outcome": effect_outcome or ("unknown" if unresolved_state else "failed"),
-            "retry_disposition": retry_disposition or (
-                "reconcile_only" if unresolved_state or ambiguous_error else None
-            ),
-            "job_id": result.get("job_id"),
-        }
-        unresolved.append(row)
+        unresolved.append(
+            {
+                "operation": operation,
+                "act_id": _act_id_for_attempt(root, result_path.parent),
+                "intent_id": result_path.parent.name,
+                "attempt": attempt,
+                "result_ref": result_path.relative_to(root).as_posix(),
+                "state": state,
+                "error_class": error_class,
+                "effect_outcome": effect_outcome or ("unknown" if unresolved_state else "failed"),
+                "retry_disposition": retry_disposition
+                or ("reconcile_only" if unresolved_state or ambiguous_error else None),
+                "job_id": result.get("job_id"),
+            }
+        )
     return unresolved
+
+
+def _act_id_for_attempt(root: Path, attempt_dir: Path) -> str:
+    relative = attempt_dir.relative_to(root)
+    if len(relative.parts) != 4 or relative.parts[0] != "acts" or relative.parts[2] != "attempts":
+        raise ValueError(f"invalid v4 calculation attempt path: {relative.as_posix()}")
+    return relative.parts[1]
 
 
 def _control_record_name(name: str, kind: str) -> tuple[str, int, str] | None:
@@ -284,3 +344,9 @@ def _read_or_empty(path: Path) -> dict[str, Any]:
     except (OSError, ValueError):
         return {}
     return value if isinstance(value, dict) else {}
+
+
+def _string_list(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]

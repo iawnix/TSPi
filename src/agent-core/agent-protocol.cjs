@@ -4,12 +4,9 @@ const { createHash } = require("node:crypto");
 
 const { FACT_KINDS } = require("./fact-kinds.cjs");
 
-const ROLES = Object.freeze(["review", "backend", "render", "report"]);
+const ROLES = Object.freeze(["review"]);
 const AUTHORITIES = Object.freeze({
   review: "advisory",
-  backend: "operational",
-  render: "operational",
-  report: "operational",
 });
 const OUTCOMES = Object.freeze(["success", "partial", "failure", "not_run"]);
 const PROGRAM_OUTCOMES = Object.freeze(["success", "failure", "not_run"]);
@@ -32,13 +29,13 @@ const TASK_KEYS = [
 ];
 const DOCUMENT_BINDING_KEYS = ["ref", "schema_version", "sha256", "bytes"];
 const REVIEW_INPUT_DOCUMENTS = Object.freeze({
-  evidence_snapshot: Object.freeze({
-    ref: "evidence-snapshot.json",
-    schema_version: "ts-review-evidence-snapshot/2",
+  review_snapshot: Object.freeze({
+    ref: "review-snapshot.json",
+    schema_version: "ts-review-task-snapshot/1",
   }),
   provider_input: Object.freeze({
     ref: "provider-input.json",
-    schema_version: "ts-review-provider-input/2",
+    schema_version: "ts-review-provider-input/3",
   }),
 });
 const RESULT_KEYS = [
@@ -139,9 +136,7 @@ function validateAgentResult(value, task) {
   if (JSON.stringify(scope) !== JSON.stringify(normalizedTask.scope)) throw new Error("scope does not match agent task");
   const facts = objectArray(value.facts, "facts", 32).map((fact, index) => validateFact(fact, index));
   const program = validateProgram(value.program);
-  if (normalizedTask.role !== "backend" && program !== null) {
-    throw new Error(`program must be null for role ${normalizedTask.role}`);
-  }
+  if (program !== null) throw new Error("program must be null for Review");
   if (!isPlainObject(value.payload)) throw new Error("payload must be an object");
   if (!isPlainObject(value.provenance)) throw new Error("provenance must be an object");
   return {
@@ -174,10 +169,10 @@ function validateWorkspace(value) {
 
 function validateScope(value) {
   if (!isPlainObject(value)) throw new Error("scope must be an object");
-  rejectUnknownKeys(value, ["report_id", "node_ids", "claim_refs"], "scope");
+  rejectUnknownKeys(value, ["report_id", "act_refs", "claim_refs"], "scope");
   return {
     report_id: nullableString(value.report_id, "scope.report_id", 256),
-    node_ids: uniqueStringArray(value.node_ids, "scope.node_ids", 64, 128),
+    act_refs: uniqueStringArray(value.act_refs, "scope.act_refs", 64, 128),
     claim_refs: uniqueStringArray(value.claim_refs, "scope.claim_refs", 64, 256),
   };
 }

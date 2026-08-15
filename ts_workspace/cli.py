@@ -1,4 +1,4 @@
-"""CLI for the workspace control plane."""
+"""CLI for the v4 Research Kernel and Context Compiler."""
 
 from __future__ import annotations
 
@@ -8,75 +8,67 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .engine_v3 import (
-    build_review_snapshot,
-    end_node,
-    init_workspace,
-    report_lineage_context,
-    report_node,
-    report_workspace,
-    snapshot_report,
-    start_node,
-    update_workspace,
-    validate_decision_dry_run,
-    validate_workspace,
-)
-from .decision_validator_v3 import ContractError, validate_decision
-from .draft_v3 import draft_decision
+from .context import build_review_snapshot, compile_context, validation_capabilities
+from .decision import draft_decision
+from .engine import apply_decision, init_workspace, validate_decision_dry_run
+from .errors import ContractError
+from .operational import operational_snapshot
+from .validator import validate_workspace
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="ts_workspace")
+    parser = argparse.ArgumentParser(prog="ts_workspace", description="TS v4 Claim graph and ResearchAct DAG control plane")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p = sub.add_parser("init_workspace")
-    p.add_argument("--root", required=True)
-    p.add_argument("--decision-file")
-    p.add_argument(
-        "--force",
-        action="store_true",
-        help="delete workspace-owned state and reinitialize (destructive; requires --decision-file)",
-    )
+    command = sub.add_parser("init_workspace", help="initialize one fresh v4 workspace")
+    command.add_argument("--root", required=True)
 
-    p = sub.add_parser("report_workspace")
-    p.add_argument("--root", required=True)
+    command = sub.add_parser("context", help="compile one bounded graph projection")
+    command.add_argument("--root", required=True)
+    command.add_argument("--mode", choices=["frontier", "claim", "act", "subgraph", "finding", "validation", "delta"], default="frontier")
+    command.add_argument("--claim-ref")
+    command.add_argument("--act-ref")
+    command.add_argument("--finding-ref")
+    command.add_argument("--validation-ref")
+    command.add_argument("--claim-seed", action="append", default=[])
+    command.add_argument("--act-seed", action="append", default=[])
+    command.add_argument("--depth", type=int, default=1)
+    command.add_argument("--since-revision")
+    command.add_argument("--since-operational-revision")
 
-    p = sub.add_parser("report_node")
-    p.add_argument("--root", required=True)
-    p.add_argument("--node-id", required=True)
+    command = sub.add_parser("build_review_snapshot", help="build a Claim-centered Review dependency snapshot")
+    command.add_argument("--root", required=True)
+    command.add_argument("--target-claim-ref", required=True)
+    command.add_argument("--depth", type=int, default=2)
 
-    p = sub.add_parser("report_lineage_context")
-    p.add_argument("--root", required=True)
-    p.add_argument("--from-node", required=True)
-    p.add_argument("--anchor-node", required=True)
+    command = sub.add_parser("validation_capabilities", help="list registered predicates, templates, and acceptance profiles")
+    command.add_argument("--root", required=False)
 
-    p = sub.add_parser("snapshot_report")
-    p.add_argument("--root", required=True)
+    command = sub.add_parser("validate_workspace", help="validate all canonical v4 state")
+    command.add_argument("--root", required=True)
 
-    p = sub.add_parser("build_review_snapshot")
-    p.add_argument("--root", required=True)
-    p.add_argument("--target-claim-ref", required=True)
-    p.add_argument("--node-id", action="append", default=[])
+    command = sub.add_parser("operational", help="project noncanonical activities, Review runs, and controls")
+    command.add_argument("--root", required=True)
 
-    p = sub.add_parser("validate_workspace")
-    p.add_argument("--root", required=True)
+    command = sub.add_parser("draft_decision", help="allocate IDs and freeze one ts-research-decision/1")
+    command.add_argument("--root", required=True)
+    command.add_argument("--request-file", required=True)
 
-    p = sub.add_parser("draft_decision")
-    p.add_argument("--root", required=True)
-    p.add_argument("--request-file", required=True)
-
-    for command in ("validate_decision", "start_node", "update_workspace", "end_node"):
-        p = sub.add_parser(command)
-        p.add_argument("--root", required=True)
-        p.add_argument("--decision-file", required=True)
+    decision_commands = {
+        "validate_decision": "dry-run one bound Decision against the complete resulting state",
+        "apply_decision": "atomically apply one validated Decision under the workspace lock",
+    }
+    for name, help_text in decision_commands.items():
+        command = sub.add_parser(name, help=help_text)
+        command.add_argument("--root", required=True)
+        command.add_argument("--decision-file", required=True)
 
     args = parser.parse_args(argv)
     try:
         result = _dispatch(args)
-    except (ContractError, ValueError) as exc:
+    except (ContractError, ValueError, OSError, json.JSONDecodeError) as exc:
         print(json.dumps({"valid": False, "error": str(exc)}, indent=2, sort_keys=True), file=sys.stderr)
         return 2
-
     print(json.dumps(result, indent=2, sort_keys=True))
     if args.command == "validate_workspace" and not result["valid"]:
         return 1
@@ -84,53 +76,38 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
-    command = args.command
-    if command == "init_workspace":
-        decision = _load_decision(args.decision_file) if args.decision_file else None
-        return init_workspace(args.root, decision, force=args.force)
-    if command == "report_workspace":
-        return report_workspace(args.root)
-    if command == "report_node":
-        return report_node(args.root, args.node_id)
-    if command == "report_lineage_context":
-        return report_lineage_context(args.root, args.from_node, args.anchor_node)
-    if command == "snapshot_report":
-        return snapshot_report(args.root)
-    if command == "build_review_snapshot":
-        return build_review_snapshot(
+    if args.command == "init_workspace":
+        return init_workspace(args.root)
+    if args.command == "context":
+        return compile_context(
             args.root,
-            target_claim_ref=args.target_claim_ref,
-            node_ids=args.node_id or None,
+            mode=args.mode,
+            claim_ref=args.claim_ref,
+            act_ref=args.act_ref,
+            finding_ref=args.finding_ref,
+            validation_ref=args.validation_ref,
+            claim_refs=args.claim_seed,
+            act_refs=args.act_seed,
+            depth=args.depth,
+            since_revision=args.since_revision,
+            since_operational_revision=args.since_operational_revision,
         )
-    if command == "validate_workspace":
+    if args.command == "build_review_snapshot":
+        return build_review_snapshot(args.root, target_claim_ref=args.target_claim_ref, depth=args.depth)
+    if args.command == "validation_capabilities":
+        return validation_capabilities()
+    if args.command == "validate_workspace":
         return validate_workspace(args.root)
-    if command == "draft_decision":
-        return draft_decision(
-            args.root,
-            _load_object(args.request_file, "decision draft request"),
-        )
-
-    decision = _load_decision(args.decision_file)
-    if command == "validate_decision":
-        dry_run = validate_decision_dry_run(args.root, decision)
-        return {
-            "valid": True,
-            "action": decision["action"],
-            "dry_run": dry_run,
-        }
-    if command == "start_node":
-        return start_node(args.root, decision)
-    if command == "update_workspace":
-        return update_workspace(args.root, decision)
-    if command == "end_node":
-        return end_node(args.root, decision)
-    raise ContractError(f"unknown command: {command}")
-
-
-def _load_decision(path: str | None) -> dict[str, Any]:
-    if not path:
-        raise ContractError("decision file is required")
-    return _load_object(path, "decision file")
+    if args.command == "operational":
+        return operational_snapshot(args.root)
+    if args.command == "draft_decision":
+        return draft_decision(args.root, _load_object(args.request_file, "decision draft request"))
+    decision = _load_object(args.decision_file, "decision file")
+    if args.command == "validate_decision":
+        return validate_decision_dry_run(args.root, decision)
+    if args.command == "apply_decision":
+        return apply_decision(args.root, decision)
+    raise ContractError(f"unknown command: {args.command}")
 
 
 def _load_object(path: str, label: str) -> dict[str, Any]:

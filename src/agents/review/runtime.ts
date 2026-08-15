@@ -40,7 +40,7 @@ let activeRun = false;
 interface ReviewRunOptions {
   workspaceRoot: string;
   packet: Record<string, unknown>;
-  evidenceSnapshot: Record<string, unknown>;
+  reviewSnapshot: Record<string, unknown>;
   providerInput: Record<string, unknown>;
   parentModel: Model<any>;
   parentApiKey?: string;
@@ -59,7 +59,7 @@ export interface ReviewRunResult {
     run_id: string;
     operation: "claim_review";
     report_id: string;
-    node_ids: string[];
+    act_refs: string[];
     output_digest: string;
     schema_valid: true;
     model: string;
@@ -101,11 +101,11 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
   try {
     const timeoutMs = normalizeTimeout(options.timeoutMs);
     const bundle = validateReviewTaskBundle(options.packet, {
-      evidence_snapshot: options.evidenceSnapshot,
+      review_snapshot: options.reviewSnapshot,
       provider_input: options.providerInput,
     });
     options.packet = bundle.task;
-    options.evidenceSnapshot = bundle.documents.evidence_snapshot;
+    options.reviewSnapshot = bundle.documents.review_snapshot;
     options.providerInput = bundle.documents.provider_input;
     const systemPrompt = loadSystemPrompt(String(options.packet.operation || ""));
     const agentDir = getAgentDir();
@@ -131,7 +131,7 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
       retry: { enabled: false },
     });
     const capture = createReviewResultCapture();
-    const resultTool = createReviewResultTool(options.packet, options.evidenceSnapshot, capture);
+    const resultTool = createReviewResultTool(options.packet, options.reviewSnapshot, capture);
     const providerResponse: ProviderResponseObservation = {};
     const resourceLoader = await createIsolatedResourceLoader(
       systemPrompt,
@@ -216,7 +216,7 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
             run_id: String(options.packet.task_id),
             operation: "claim_review",
             report_id: String(scope.report_id || ""),
-            node_ids: Array.isArray(scope.node_ids) ? scope.node_ids.map(String) : [],
+            act_refs: Array.isArray(scope.act_refs) ? scope.act_refs.map(String) : [],
             output_digest: createHash("sha256").update(JSON.stringify(result)).digest("hex"),
             schema_valid: true,
             model: `${model.provider}/${model.id}`,

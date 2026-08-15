@@ -94,9 +94,10 @@ read-only permissions, atomically switches `current`, and installs the top-level
 The installer does not run Pi, install model credentials, create a research
 workspace, contact a cluster, or create the Python environment.
 
-Each installed release includes `README.md` and the three files under `docs/`.
-They describe that exact packaged version and remain readable under the selected
-`current` release; do not edit them in place.
+Each installed release includes `README.md`, the three top-level guides under
+`docs/`, and versioned ADRs under `docs/adr/`. They describe that exact packaged
+version and remain readable under the selected `current` release; do not edit
+them in place.
 
 ## Install The Python Runtime
 
@@ -230,25 +231,19 @@ One process owns one workspace through a nonblocking lock. Starting a second
 Root Agent for the same workspace fails immediately; another workspace can run
 at the same time.
 
-## Workspace Bootstrap And Migration
+## Workspace Bootstrap
 
 At startup:
 
 - a fresh directory is initialized once while unrelated input files remain;
-- a complete v3 workspace is validated without canonical rewrites;
-- partial or invalid v3 state fails closed;
-- v2 state fails closed and requires copy migration.
+- a complete v4 workspace is validated without canonical rewrites;
+- partial or invalid v4 state fails closed;
+- legacy canonical markers fail closed.
 
-Migrate into a different destination and keep the source unchanged:
-
-```bash
-python3 "$TS_AGENT_SKILL_ROOT/scripts/migrate_workspace_v2_to_v3.py" \
-  --source /path/to/legacy-workspace \
-  --destination /path/to/new-v3-workspace
-```
-
-Inspect the script's `--help` before use. Do not point normal TSPi startup at a
-partially migrated directory.
+Protocol v4 intentionally has no migration command, legacy reader, or field
+alias. Continue a legacy workspace with the matching old release, or create a
+new workspace name and explicitly re-establish only scientifically verified
+inputs and Claims. Do not copy legacy canonical JSON into a v4 workspace.
 
 ## Upgrade
 
@@ -281,8 +276,9 @@ release directories are retained for inspection, but retention alone is not a
 substitute for preserving the validated manifest and archive. Do not edit an
 installed release or manually replace files under `current`.
 
-Rollback changes package/runtime code only. It does not downgrade a v3
-workspace schema or reverse already committed scientific Decisions.
+Rollback changes package/runtime code only. It does not downgrade a v4
+workspace or reverse already committed scientific Decisions. A v4 workspace
+cannot be opened by a release that does not implement protocol v4.
 
 ## Operational Recovery
 
@@ -291,14 +287,14 @@ workspace schema or reverse already committed scientific Decisions.
 | `no installed TS Agent release` | Install a validated archive before startup. |
 | runtime manifest or interpreter unavailable | Run the selected release's `install_env.py`. |
 | `another Root Agent already owns workspace` | Use another workspace or stop the existing process; do not delete the lock to bypass a live owner. |
-| partial or invalid v3 workspace | Inspect validation findings and repair through an authorized recovery; startup will not guess. |
-| v2 workspace rejected | Use explicit copy migration into a new destination. |
+| partial or invalid v4 workspace | Preserve the directory, inspect validation findings, and recover through an explicitly designed repair; startup will not guess. |
+| legacy canonical state rejected | Use its matching release or start a separate fresh v4 workspace; this release has no migration path. |
 | remote `status` fails | SSH readiness is unavailable; local research remains usable. |
 | remote `doctor` fails | Inspect scheduler paths, remote root permissions, and each software profile. |
 | `submission_ambiguous` or `cancellation_ambiguous` | Reconcile durable control records; do not replay the action. |
 | notification config permission error | Set mode `0600` and verify the file is a regular non-symlink path. |
 | no API key for selected model | Repair Pi's model/auth configuration; TS workspaces do not own provider keys. |
-| child run remains pending after a crash | Inspect its journal and any independent calculation controls; no automatic stale-run resolver exists. |
+| Review run remains pending after a crash | Inspect its journal and independent calculation controls; no automatic stale-run resolver exists. |
 
 ## Installation Verification
 

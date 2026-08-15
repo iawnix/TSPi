@@ -1,49 +1,32 @@
-# TS Structures Contract
+# Molecular Structure Contract
 
-`ts_structures` is a pure structure comparison toolkit.
+Structure comparison requires explicit chemical identity and geometry rules.
+Never compare coordinates by raw row order unless the atom map is verified.
 
-Inputs should be explicit:
+## Identity And Mapping
 
-- reference structure;
-- target structure;
-- atom mapping;
-- reaction center atoms;
-- key bonds, angles, and dihedrals;
-- conformer policy;
-- stereochemical policy via explicit `stereochemical_checks`.
+Verify element counts, charge, multiplicity/state, isotopes when relevant, and
+one-to-one atom mapping. Mapping may come from stable atom order, explicit map
+metadata, graph isomorphism, or a reviewed deterministic assignment. Ambiguous
+symmetry-equivalent mappings remain a limitation.
 
-Output shape:
+## Alignment
 
-```json
-{
-  "verdict": "matched",
-  "uncertainty": "low",
-  "metrics": {
-    "alignment": {
-      "method": "kabsch",
-      "fit_selection": "heavy_atoms",
-      "fit_atom_count": 12,
-      "reflection_allowed": false
-    },
-    "heavy_atom_rmsd": 0.18,
-    "reaction_center_rmsd": 0.07,
-    "key_bonds": [],
-    "stereochemistry": []
-  },
-  "diagnostics": []
-}
-```
+Use Kabsch least-squares rigid alignment over the selected mapped atoms after
+centering. Apply one proper rotation; do not allow reflection unless the
+scientific comparison explicitly requests it. Report the aligned RMSD and the
+atom subset/weights used.
 
-The comparator validates that `atom_mapping` is a one-to-one, element-preserving
-mapping from reference indices to target indices. It fits one proper-rotation
-Kabsch transform on mapped heavy atoms (or all atoms when no heavy atoms exist),
-then applies that same transform to the complete target structure before both
-heavy-atom and reaction-center RMSDs are calculated. Mirror reflection is never
-an allowed alignment operation.
+Do not use alignment to erase meaningful internal differences. Compare bond
+distances, angles, dihedrals, forming/breaking contacts, chirality, and basin
+identity after alignment.
 
-`stereochemical_checks` supports explicit tetrahedral, alkene, and dihedral
-checks using zero-based atom indices. A failed declared check makes the
-comparator verdict `mismatched` even when RMSD and bond metrics are acceptable.
+## Scientific Recording
 
-The structure toolkit never writes workspace state files and never accepts a TS. Its result
-can be registered as evidence through `update_workspace`.
+Record mapping method, reference structure, selected atoms, RMSD, key internal
+coordinates, stereochemical verdict, and source artifact digests as semantic
+Observations. Use identity or stereochemical GateSpecs when these values are
+acceptance-critical.
+
+A visually similar render or low global RMSD does not prove endpoint identity,
+especially for fragment permutations, conformers, or stereochemical inversion.

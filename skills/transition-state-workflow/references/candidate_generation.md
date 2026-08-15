@@ -1,41 +1,39 @@
 # Candidate Generation
 
-Candidate generation proposes geometries for later scientific testing. It does
-not establish transition-state acceptance.
+Candidate generation creates structures to test; it does not establish a
+transition state.
 
 ## Root Choice
 
-Choose methods from the reaction class, mapping, conformational uncertainty,
-known endpoints, dimensionality, spin/electronic concerns, cost, and available
-software. The adapter capability catalog describes expressible operations only;
-live readiness requires separate environment or remote diagnostics.
+Choose among chemically informed construction, constrained scans, QST2/QST3,
+direct TS optimization, NEB/path interpolation, conformer search, fragment
+approach sampling, or another justified method. Do not impose one universal
+ordering.
 
-Gaussian is a first-class candidate-generation backend for relaxed scans,
-QST2/QST3, and direct TS optimization when chemically justified. xTB scans,
-CREST conformers, ASE NEB images, and other supported methods may be equally
-appropriate. Do not impose a universal low-cost-first or Gaussian-first order.
+Before QST2/QST3, verify atom count/order or an explicit map, charge/spin,
+optimized compatible endpoints, conformational compatibility, and that both
+structures describe one elementary step. Endpoint availability alone is not a
+rationale.
 
-Do not default to QST2/QST3 merely because reactant and product structures are
-available. Prefer QST only when endpoints are optimized, atom mapping and
-stoichiometry match, conformers represent the same elementary step, and the
-interpolation is chemically meaningful.
+## Recording
 
-## Candidate Record
+Create a ResearchAct whose objective states what hypothesis the candidate tests.
+Bind all seeds through logical artifact IDs. Link every immutable compute intent
+and preserve method/settings. After collection, record candidate coordinates,
+energies, constraints, and provenance as separate Observations when useful.
 
-Store seeds and generated files as artifacts, link the operation to its Node,
-and register only verified facts such as geometry, energy, convergence,
-coordinate values, or provenance. Use a free versioned Evidence `kind` that
-states what was observed.
+Use Findings for distorted geometry, atom-map ambiguity, fragment collapse,
+unexpected bonding, electronic-state concern, or missing conformers.
 
-A candidate that only satisfies target bond distances is not automatically a
-saddle point or the intended reaction path. Inspect the complete local geometry
-and available electronic diagnostics for contradictions. Later TS/Freq,
-mode-assignment, connectivity, and any reaction-specific Gates remain separate.
+## Follow-Up
 
-## Recalculation
+A candidate still requires scientifically appropriate optimization and
+characterization. For a classical TS this normally separates:
 
-A technical retry may reuse the same scientific objective and immutable
-submission identity only when the typed control result permits it. A changed
-method, model chemistry, coordinate strategy, or scientific question should be
-recorded as a new operation or Node chosen by the Root Agent. No special Node
-category is required.
+- stationary-point/convergence observations;
+- imaginary-mode/reaction-coordinate assignment;
+- bidirectional connectivity and endpoint identity;
+- additional state, robustness, stereochemical, or thermochemical checks.
+
+Freeze only the relevant GateSpecs. The DAG may branch across candidates or
+methods; it does not rank them automatically.

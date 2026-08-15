@@ -1,6 +1,6 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { tspiIcon, type TspiIconName, type TspiIconStyle } from "../shared/icons.ts";
-import type { TsSubagentRole, TsSubagentState, TsSubagentStatus } from "../shared/subagent-status.ts";
+import type { TsSubagentState, TsSubagentStatus } from "../shared/subagent-status.ts";
 import {
   activityState,
   sortedTsActivities,
@@ -8,15 +8,12 @@ import {
   type TsActivity,
   type TsActivityStore,
   type TsActivitySummary,
-  type TsSubagentActivity,
+  type TsDeterministicActivity,
+  type TsReviewActivity,
 } from "./activity-store.ts";
 
 export type TsActivityTone = "muted" | "accent" | "warning" | "success" | "error";
-
-export interface TsActivityPanelLine {
-  text: string;
-  tone: TsActivityTone;
-}
+export interface TsActivityPanelLine { text: string; tone: TsActivityTone }
 
 export function renderTsActivityPanel(
   store: TsActivityStore,
@@ -36,21 +33,9 @@ export function renderTsActivityPanel(
   }];
   for (const activity of visible) lines.push(...renderActivity(activity, safeWidth, now, iconStyle));
   if (activities.length > visible.length) {
-    lines.push({
-      text: truncateToWidth(`  +${activities.length - visible.length} more activities`, safeWidth, ""),
-      tone: "muted",
-    });
+    lines.push({ text: truncateToWidth(`  +${activities.length - visible.length} more activities`, safeWidth, ""), tone: "muted" });
   }
   return lines;
-}
-
-export function roleLabel(role: TsSubagentRole): string {
-  return {
-    review: "Review",
-    backend: "Compute",
-    render: "Render",
-    report: "Report",
-  }[role];
 }
 
 export function stateSymbol(state: TsSubagentState, style?: TspiIconStyle): string {
@@ -65,8 +50,7 @@ export function stateTone(state: TsSubagentState): TsActivityTone {
   return "accent";
 }
 
-export function detailLabel(status: TsSubagentStatus): string {
-  if (status.role === "backend") return compact([backendLabel(status.backend), status.operation, status.intent_id]);
+export function reviewDetailLabel(status: TsSubagentStatus): string {
   return compact([status.operation, status.target_ref]);
 }
 
@@ -78,38 +62,49 @@ export function formatElapsed(milliseconds: number): string {
   return `${pad(Math.floor(totalMinutes / 60))}:${pad(totalMinutes % 60)}:${pad(seconds)}`;
 }
 
-function renderActivity(
-  activity: TsActivity,
-  width: number,
-  now: number,
-  iconStyle?: TspiIconStyle,
-): TsActivityPanelLine[] {
+function renderActivity(activity: TsActivity, width: number, now: number, iconStyle?: TspiIconStyle): TsActivityPanelLine[] {
   const state = activityState(activity);
   const tone = stateTone(state);
   const right = rightLabel(activity, now, iconStyle, width >= 72);
-  const role = activity.kind === "subagent" ? roleLabel(activity.status.role) : "Remote";
-  const node = activity.kind === "subagent" ? activity.status.node_id : undefined;
-  const detail = activity.kind === "subagent"
-    ? detailLabel(activity.status) || activity.status.operation
-    : compact([activity.mode, activity.detail]);
+  const role = activityLabel(activity);
+  const act = activityActRefs(activity)[0];
+  const detail = activityDetail(activity);
   const statusIcon = stateSymbol(state, iconStyle);
   if (width < 58) {
-    const first = compact([`${statusIcon} ${role}`, node]);
     return [
-      { text: fitSides(first, right, width), tone },
+      { text: fitSides(compact([`${statusIcon} ${role}`, act]), right, width), tone },
       { text: truncateToWidth(`  ${detail}`, width, "..."), tone: "muted" },
     ];
   }
-  const roleIcon = tspiIcon(roleIconName(activity), iconStyle);
-  const identity = `${statusIcon} ${roleIcon} ${role}`;
-  return [{ text: fitSides(compact([identity, node, detail]), right, width), tone }];
+  const identity = `${statusIcon} ${tspiIcon(roleIconName(activity), iconStyle)} ${role}`;
+  return [{ text: fitSides(compact([identity, act, detail]), right, width), tone }];
 }
 
-function formatPanelHeader(
-  summary: TsActivitySummary,
-  width: number,
-  iconStyle?: TspiIconStyle,
-): string {
+function activityLabel(activity: TsActivity): string {
+  if (activity.kind === "review") return "Review";
+  if (activity.kind === "remote") return "Remote";
+  return {
+    compute: "Compute",
+    render: "Render",
+    report: "Report",
+    notify: "Notify",
+    remote: "Remote",
+  }[activity.activityKind];
+}
+
+function activityActRefs(activity: TsActivity): string[] {
+  if (activity.kind === "review") return activity.status.act_refs || [];
+  if (activity.kind === "deterministic") return activity.actRefs;
+  return [];
+}
+
+function activityDetail(activity: TsActivity): string {
+  if (activity.kind === "review") return reviewDetailLabel(activity.status) || "claim_review";
+  if (activity.kind === "remote") return compact([activity.mode, activity.detail]);
+  return compact([activity.operation, activity.detail]);
+}
+
+function formatPanelHeader(summary: TsActivitySummary, width: number, iconStyle?: TspiIconStyle): string {
   const counts = [
     summary.active > 0 ? `${summary.active} active` : undefined,
     summary.attention > 0 ? `${summary.attention} attention` : undefined,
@@ -126,48 +121,34 @@ function rightLabel(activity: TsActivity, now: number, style: TspiIconStyle | un
   const state = activityState(activity);
   if (state === "completed") return "done";
   if (state === "partial") return "partial";
-  if (state === "failed") return activity.kind === "subagent" ? activity.status.failure_kind || "failed" : "failed";
+  if (state === "failed") return activity.kind === "review" ? activity.status.failure_kind || "failed" : "failed";
   if (state === "cancelled") return "cancelled";
   if (state === "unknown") return "unknown";
-  if (state === "waiting" && activity.kind === "subagent") return waitReasonLabel(activity.status.wait_reason);
+  if (state === "waiting" && activity.kind === "review") return waitReasonLabel(activity.status.wait_reason);
   const elapsed = formatElapsed(Math.max(0, now - activity.startedAt));
   return showIcon ? `${tspiIcon("elapsed", style)} ${elapsed}` : elapsed;
 }
 
 function roleIconName(activity: TsActivity): TspiIconName {
+  if (activity.kind === "review") return "roleReview";
   if (activity.kind === "remote") return "remote";
   return {
-    backend: "roleCompute",
-    review: "roleReview",
+    compute: "roleCompute",
     render: "roleRender",
     report: "roleReport",
-  }[activity.status.role] as TspiIconName;
+    notify: "tool",
+    remote: "remote",
+  }[activity.activityKind] as TspiIconName;
 }
 
-function stateIconName(state: TsSubagentState): TspiIconName {
-  if (state === "starting") return "queued";
-  return state;
-}
+function stateIconName(state: TsSubagentState): TspiIconName { return state === "starting" ? "queued" : state; }
 
 function waitReasonLabel(value?: string): string {
   return {
     model_response: "waiting · model",
-    typed_tool: "waiting · tool",
-    remote_reconciliation: "waiting · remote",
-    parent_coordination: "waiting · parent",
+    typed_tool: "waiting · result",
+    parent_coordination: "waiting · root",
   }[value || ""] || "waiting";
-}
-
-function backendLabel(value?: string): string | undefined {
-  if (!value) return undefined;
-  return {
-    gaussian: "Gaussian",
-    ase_neb: "ASE NEB",
-    xtb: "xTB",
-    crest: "CREST",
-    qbics_dmecp: "QBICS DMECp",
-    rdkit: "RDKit",
-  }[value] || value;
 }
 
 function fitSides(left: string, right: string, width: number): string {
@@ -175,19 +156,12 @@ function fitSides(left: string, right: string, width: number): string {
   const rightWidth = visibleWidth(right);
   if (!right) return truncateToWidth(left, safeWidth, "...");
   const leftWidth = visibleWidth(left);
-  if (leftWidth + rightWidth + 1 <= safeWidth) {
-    return `${left}${" ".repeat(safeWidth - leftWidth - rightWidth)}${right}`;
-  }
+  if (leftWidth + rightWidth + 1 <= safeWidth) return `${left}${" ".repeat(safeWidth - leftWidth - rightWidth)}${right}`;
   if (rightWidth >= safeWidth) return truncateToWidth(left, safeWidth, "...");
   return `${truncateToWidth(left, Math.max(1, safeWidth - rightWidth - 1), "...")} ${right}`;
 }
 
-function compact(values: Array<string | undefined>): string {
-  return values.filter((value): value is string => Boolean(value)).join(" · ");
-}
+function compact(values: Array<string | undefined>): string { return values.filter((value): value is string => Boolean(value)).join(" · "); }
+function pad(value: number): string { return String(value).padStart(2, "0"); }
 
-function pad(value: number): string {
-  return String(value).padStart(2, "0");
-}
-
-export type { TsActivityStore, TsSubagentActivity };
+export type { TsActivityStore, TsDeterministicActivity, TsReviewActivity };

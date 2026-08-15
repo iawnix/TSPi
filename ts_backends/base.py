@@ -8,7 +8,7 @@ from dataclasses import dataclass, field
 
 @dataclass(frozen=True)
 class BackendTask:
-    node_id: str
+    act_id: str
     task_type: str
     work_dir: str
     inputs: dict[str, str]
@@ -18,7 +18,7 @@ class BackendTask:
 @dataclass(frozen=True)
 class PreparedTask:
     backend: str
-    node_id: str
+    act_id: str
     command: list[str]
     input_paths: list[str]
     expected_artifacts: list[str]
@@ -32,4 +32,4 @@ class Backend(ABC):
 
     @abstractmethod
     def prepare(self, task: BackendTask) -> PreparedTask:
-        """Return node-scoped execution metadata without mutating a workspace."""
+        """Return ResearchAct-scoped metadata without mutating canonical state."""
