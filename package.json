@@ -39,6 +39,7 @@
     "scripts/install_env.py",
     "scripts/install_release.py",
     "scripts/migrate_workspace_v2_to_v3.py",
+    "scripts/tspi_host.py",
     "scripts/ts_backend.py",
     "scripts/ts_compute.py",
     "scripts/ts_email.py",

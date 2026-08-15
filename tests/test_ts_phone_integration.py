@@ -18,15 +18,34 @@ TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
 
 def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     install_root = tmp_path / "tspi-install"
-    launcher = install_root / "TSPi"
     package_home = install_root / ".pi" / "packages" / "ts-agent"
     package_root = package_home / "releases" / "test-release"
     package_root.mkdir(parents=True)
     (package_root / "package.json").write_text('{"name":"@iawnix/ts-agent","version":"0.5.0"}\n', encoding="utf-8")
-    (package_root / ".ts-agent-release.json").write_text("{}\n", encoding="utf-8")
+    (package_root / ".ts-agent-release.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "ts-agent-release/1",
+                "release_id": "test-release",
+                "package": {"name": "@iawnix/ts-agent", "version": "0.5.0"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    shutil.copy2(TSPI, package_root / "TSPi")
+    (package_root / "TSPi").chmod(0o755)
+    (package_root / "scripts").mkdir()
+    shutil.copy2(ROOT / "scripts" / "tspi_host.py", package_root / "scripts" / "tspi_host.py")
+    for name in ("ts_runtime", "ts_workspace"):
+        shutil.copytree(
+            ROOT / name,
+            package_root / name,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
     (package_home / "current").symlink_to("releases/test-release")
-    shutil.copy2(TSPI, launcher)
-    launcher.chmod(0o755)
+    launcher = install_root / "TSPi"
+    launcher.symlink_to(".pi/packages/ts-agent/current/TSPi")
     return install_root, launcher
 
 

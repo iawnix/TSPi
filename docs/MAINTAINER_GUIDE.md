@@ -34,6 +34,8 @@ scientific layers are not such contracts.
 ## Module Ownership
 
 - `ts_workspace` exclusively owns canonical scientific writes.
+- `ts_workspace/bootstrap.py` classifies fresh, complete v3, partial v3,
+  legacy v2, and invalid workspaces before a Root Agent starts.
 - `ts_workspace/decision_validator_v3.py` validates decision shape and live
   refs.
 - `ts_workspace/validator_v3.py` validates the persisted workspace.
@@ -50,6 +52,9 @@ scientific layers are not such contracts.
   scheduler records without chemistry interpretation.
 - `ts_report` assembles validated immutable report packages.
 - `ts_web` reads source workspaces and writes only its explicit UI registry.
+- `ts_runtime/launcher.py` owns installed-release resolution, configuration,
+  workspace selection, the Root Agent lock, process environment, and Pi exec.
+- `TSPi` remains a thin shell shim and must not reacquire Python host logic.
 - `extensions/ts-workflow-control` exposes read, draft, validate, and apply.
 - `extensions/ts-workflow-review` owns bounded advisory Review and Root
   disposition.

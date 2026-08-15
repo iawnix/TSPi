@@ -12,6 +12,12 @@ root from `import.meta.url`; never construct script paths from the current
 working directory. Package development occurs in the separate authored
 checkout, then reaches TSPi through a validated release installation.
 
+The shell launcher delegates to the package Python host. The host validates
+that its package is the active `current` release, resolves installation-owned
+configuration and runtime paths, selects and bootstraps one workspace, holds
+its Root Agent lock across Pi `exec`, and then loads the bounded Pi surface.
+Ordinary startup performs no remote probe.
+
 Keep runtime state workspace-owned:
 
 ```text

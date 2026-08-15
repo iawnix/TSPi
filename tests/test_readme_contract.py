@@ -20,9 +20,11 @@ def test_readme_documents_pi_install_runtime_and_public_tools() -> None:
         "This branch supports Pi Agent only.",
         "scripts/build_release.py",
         "scripts/install_release.py",
+        "scripts/tspi_host.py",
         ".pi/packages/ts-agent/current",
         "TSPi` never loads the authored checkout directly",
         "./TSPi --workspace reaction-a",
+        "a partial or invalid v3 workspace fails closed",
         "/ts-subagent-history",
         "ts_workspace_decision_apply",
         "ts_subagent_review",
@@ -81,6 +83,17 @@ def test_normal_runtime_docs_use_v3_contracts_only() -> None:
         text = path.read_text(encoding="utf-8")
         for term in forbidden:
             assert term not in text, (path, term)
+
+
+def test_workspace_docs_match_bootstrap_canonical_file_names() -> None:
+    readme = README.read_text(encoding="utf-8")
+    contract = (REFERENCES / "workspace_contract.md").read_text(encoding="utf-8")
+
+    for text in (readme, contract):
+        assert "evidence_registry.json" in text
+        assert "\nevidence.json\n" not in text
+    assert "A complete v3 workspace is only validated" in contract
+    assert "Partial v3 state and invalid v3 state fail closed" in contract
 
 
 def test_skill_routes_details_through_focused_references() -> None:

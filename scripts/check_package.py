@@ -41,6 +41,7 @@ PACKAGE_FILES = [
     "scripts/install_env.py",
     "scripts/install_release.py",
     "scripts/migrate_workspace_v2_to_v3.py",
+    "scripts/tspi_host.py",
     "scripts/ts_backend.py",
     "scripts/ts_compute.py",
     "scripts/ts_email.py",
@@ -84,6 +85,7 @@ REQUIRED_TARBALL_FILES = {
     "environment.yml",
     "scripts/install_env.py",
     "scripts/install_release.py",
+    "scripts/tspi_host.py",
     "skills/transition-state-workflow/SKILL.md",
     "themes/ts-theme.json",
     "extensions/shared/tool-catalog.ts",
@@ -117,6 +119,7 @@ REQUIRED_TARBALL_FILES = {
     "src/agents/artifacts/roles/report.md",
     "ts_email/delivery.py",
     "ts_workspace/engine_v3.py",
+    "ts_workspace/bootstrap.py",
     "ts_workspace/migrate_v2.py",
     "scripts/migrate_workspace_v2_to_v3.py",
 }

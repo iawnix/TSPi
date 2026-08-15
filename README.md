@@ -131,6 +131,16 @@ owns its sessions, Root Agent lock, operational identity, nodes, inputs, and
 reports. One nonblocking writer lock allows one Root Agent per workspace;
 different workspaces can run concurrently.
 
+The 16-line `TSPi` shell shim delegates lifecycle work to
+`scripts/tspi_host.py` and `ts_runtime.launcher`. Before Pi starts, the host
+validates the active release and installation configuration, acquires the Root
+Agent lock, and calls deterministic workspace bootstrap:
+
+- a fresh directory is initialized once while unrelated input files remain;
+- a complete v3 workspace is validated without canonical writes;
+- a partial or invalid v3 workspace fails closed;
+- a v2 workspace requires explicit copy migration.
+
 Ordinary startup does not contact the cluster. `--check-remote` performs a
 strict read-only SSH diagnostic and returns nonzero when the configured remote
 profile is unhealthy.
@@ -217,7 +227,7 @@ Canonical files are:
 ```text
 research_state.json
 claims.json
-evidence.json
+evidence_registry.json
 gate_results.json
 nodes/<node_id>/node.json
 accepted/<acceptance_id>.json

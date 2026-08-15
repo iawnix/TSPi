@@ -29,6 +29,7 @@ REQUIRED_RUNTIME_FILES = {
     "environment.yml",
     "scripts/install_env.py",
     "scripts/install_release.py",
+    "scripts/tspi_host.py",
     "scripts/ts_compute.py",
     "skills/transition-state-workflow/SKILL.md",
     "themes/ts-theme.json",
@@ -38,6 +39,8 @@ REQUIRED_RUNTIME_FILES = {
     "extensions/ts-workflow-compute/index.ts",
     "extensions/ts-workflow-artifacts/index.ts",
     "ts_workspace/engine_v3.py",
+    "ts_workspace/bootstrap.py",
+    "ts_runtime/launcher.py",
 }
 FORBIDDEN_PARTS = {".git", ".pytest_cache", "__pycache__", "node_modules", "tests"}
 FORBIDDEN_RUNTIME_FILES = {

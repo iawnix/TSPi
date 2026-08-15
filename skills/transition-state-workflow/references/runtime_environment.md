@@ -29,7 +29,8 @@ locations are workspace-owned:
 This keeps runtime state out of immutable release directories.
 
 The installation-level `TSPi` launcher deliberately supplies all three runtime
-overrides so concurrent research workspaces reuse one validated environment:
+overrides through its Python host so concurrent research workspaces reuse one
+validated environment:
 
 ```text
 <installation>/.agents/runtime/transition-state-workflow/env.json

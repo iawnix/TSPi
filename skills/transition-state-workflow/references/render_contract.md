@@ -28,7 +28,7 @@ Render dependency boundary:
 
 Forbidden behavior:
 
-- edit `research_state.json`, `claims.json`, `evidence.json`,
+- edit `research_state.json`, `claims.json`, `evidence_registry.json`,
   `gate_results.json`, or `decision_log.jsonl`;
 - close nodes or set scientific verdicts;
 - claim candidate, TS/Freq, connectivity, accepted-TS, or pathway success;

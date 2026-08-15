@@ -6,84 +6,82 @@ import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
+
+from scripts.check_package import PACKAGE_FILES
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
 AGENTS_ROOT = ROOT / "src" / "agents"
 THEME_PATH = ROOT / "themes" / "ts-theme.json"
 TSPI_LAUNCHER = ROOT / "TSPi"
-EXPECTED_FILES = [
-    "TSPi",
-    "README.md",
-    "environment.yml",
-    "contracts/*.json",
-    "extensions/shared/*.ts",
-    "extensions/ts-phone-bridge/*.ts",
-    "extensions/ts-workflow-artifacts/*.ts",
-    "extensions/ts-workflow-compute/*.ts",
-    "extensions/ts-workflow-compute/*.cjs",
-    "extensions/ts-workflow-control/*.ts",
-    "extensions/ts-workflow-control/*.cjs",
-    "extensions/ts-workflow-review/*.ts",
-    "extensions/ts-workflow-ui/*.ts",
-    "scripts/install_env.py",
-    "scripts/install_release.py",
-    "scripts/migrate_workspace_v2_to_v3.py",
-    "scripts/ts_backend.py",
-    "scripts/ts_compute.py",
-    "scripts/ts_email.py",
-    "scripts/ts_render.py",
-    "scripts/ts_report.py",
-    "scripts/ts_runtime.py",
-    "scripts/ts_web.py",
-    "scripts/ts_workspace.py",
-    "skills/",
-    "themes/*.json",
-    "src/agent-core/*.cjs",
-    "src/agents/review/*.ts",
-    "src/agents/review/*.cjs",
-    "src/agents/review/prompts/*.md",
-    "src/agents/compute/*.ts",
-    "src/agents/compute/*.cjs",
-    "src/agents/compute/*.md",
-    "src/agents/compute/backends/*.md",
-    "src/agents/artifacts/*.ts",
-    "src/agents/artifacts/*.cjs",
-    "src/agents/artifacts/*.md",
-    "src/agents/artifacts/roles/*.md",
-    "ts_backends/*.py",
-    "ts_compute/*.py",
-    "ts_compute/contracts/*.json",
-    "ts_email/*.py",
-    "ts_remote/*.py",
-    "ts_remote/*.toml",
-    "ts_render/*.py",
-    "ts_report/*.py",
-    "ts_runtime/*.py",
-    "ts_structures/*.py",
-    "ts_web/*.py",
-    "ts_web/static/*.html",
-    "ts_workspace/*.py",
-    "ts_workspace/contracts/*.json",
-]
 
 
 def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     install_root = tmp_path / "tspi-install"
-    launcher = install_root / "TSPi"
     package_home = install_root / ".pi" / "packages" / "ts-agent"
     package_root = package_home / "releases" / "test-release"
     package_root.mkdir(parents=True)
-    (package_root / "package.json").write_text('{"name":"@iawnix/ts-agent","version":"0.5.0"}\n', encoding="utf-8")
-    (package_root / ".ts-agent-release.json").write_text("{}\n", encoding="utf-8")
+    (package_root / "package.json").write_text(
+        '{"name":"@iawnix/ts-agent","version":"0.5.0"}\n',
+        encoding="utf-8",
+    )
+    (package_root / ".ts-agent-release.json").write_text(
+        json.dumps(
+            {
+                "schema_version": "ts-agent-release/1",
+                "release_id": "test-release",
+                "package": {"name": "@iawnix/ts-agent", "version": "0.5.0"},
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    shutil.copy2(TSPI_LAUNCHER, package_root / "TSPi")
+    (package_root / "TSPi").chmod(0o755)
+    (package_root / "scripts").mkdir()
+    for name in ("tspi_host.py", "ts_compute.py"):
+        shutil.copy2(ROOT / "scripts" / name, package_root / "scripts" / name)
+    for name in ("ts_runtime", "ts_workspace"):
+        shutil.copytree(
+            ROOT / name,
+            package_root / name,
+            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+        )
     (package_home / "current").symlink_to("releases/test-release")
-    shutil.copy2(TSPI_LAUNCHER, launcher)
-    launcher.chmod(0o755)
+    launcher = install_root / "TSPi"
+    launcher.symlink_to(".pi/packages/ts-agent/current/TSPi")
     return install_root, launcher
 
 
 def _installed_package_root(install_root: Path) -> Path:
     return install_root / ".pi" / "packages" / "ts-agent" / "releases" / "test-release"
+
+
+def _fake_pi(path: Path, body: str = "raise SystemExit(0)\n") -> Path:
+    path.write_text(f"#!/usr/bin/env python3\n{body}", encoding="utf-8")
+    path.chmod(0o755)
+    return path
+
+
+def _run_tspi(
+    launcher: Path,
+    *args: str,
+    pi_bin: Path | str = "/bin/true",
+    env: dict[str, str] | None = None,
+    input_text: str | None = None,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [str(launcher), *args],
+        cwd=launcher.parent,
+        env={**os.environ, "PI_BIN": str(pi_bin), **(env or {})},
+        input=input_text,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
 
 
 def test_public_skill_uses_nested_pi_skill_layout() -> None:
@@ -101,18 +99,16 @@ def test_agent_sources_have_explicit_ownership_boundaries() -> None:
     assert (ROOT / "extensions" / "shared" / "tool-catalog.ts").is_file()
     assert not (ROOT / "extensions" / "ts-workflow-context").exists()
     assert not (ROOT / "extensions" / "ts-workflow-subagent").exists()
-    assert (ROOT / "src" / "agent-core" / "agent-protocol.cjs").is_file()
-    assert (ROOT / "src" / "agent-core" / "fact-kinds.cjs").is_file()
-    assert (ROOT / "src" / "agent-core" / "failure-taxonomy.cjs").is_file()
+    for name in ("agent-protocol.cjs", "fact-kinds.cjs", "failure-taxonomy.cjs"):
+        assert (ROOT / "src" / "agent-core" / name).is_file()
     assert (AGENTS_ROOT / "review" / "runtime.ts").is_file()
     assert (AGENTS_ROOT / "review" / "prompts" / "core.md").is_file()
-    assert (AGENTS_ROOT / "compute" / "runtime.ts").is_file()
-    assert (AGENTS_ROOT / "compute" / "policy-loader.cjs").is_file()
-    assert (AGENTS_ROOT / "compute" / "policy.md").is_file()
-    assert (AGENTS_ROOT / "artifacts" / "runtime.ts").is_file()
-    assert (AGENTS_ROOT / "artifacts" / "policy-loader.cjs").is_file()
-    assert (AGENTS_ROOT / "artifacts" / "policy.md").is_file()
+    for role in ("compute", "artifacts"):
+        assert (AGENTS_ROOT / role / "runtime.ts").is_file()
+        assert (AGENTS_ROOT / role / "policy-loader.cjs").is_file()
+        assert (AGENTS_ROOT / role / "policy.md").is_file()
     assert (AGENTS_ROOT / "artifacts" / "roles" / "report.md").is_file()
+    assert (ROOT / "ts_workspace" / "bootstrap.py").is_file()
     assert (ROOT / "ts_workspace" / "engine_v3.py").is_file()
     assert (ROOT / "ts_workspace" / "migrate_v2.py").is_file()
     assert not (ROOT / "ts_workspace" / "engine.py").exists()
@@ -168,14 +164,7 @@ process.stdout.write(JSON.stringify({{
     assert "# Report Role Policy" in result["artifact"]
     assert "# Render Role Policy" not in result["artifact"]
     assert "---" not in result["compute"] + result["artifact"]
-    assert set(result["computeFiles"]) == {
-        "gaussian",
-        "ase_neb",
-        "crest",
-        "rdkit",
-        "xtb",
-        "qbics_dmecp",
-    }
+    assert set(result["computeFiles"]) == {"gaussian", "ase_neb", "crest", "rdkit", "xtb", "qbics_dmecp"}
     assert set(result["roleFiles"]) == {"render", "report"}
     assert result["computeError"] == "No compute backend policy is registered for: missing"
     assert result["artifactError"] == "No artifact role policy is registered for: missing"
@@ -185,14 +174,14 @@ def test_package_manifest_exposes_only_the_public_skill_and_allowlisted_runtime(
     manifest = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     assert manifest["pi"]["skills"] == ["./skills/transition-state-workflow"]
     assert manifest["pi"]["themes"] == ["./themes/ts-theme.json"]
-    assert manifest["files"] == EXPECTED_FILES
+    assert manifest["files"] == PACKAGE_FILES
     assert manifest["private"] is True
     assert "tests/" not in manifest["files"]
     assert "docs/" not in manifest["files"]
     assert all("src/agents" not in entry for entry in manifest["pi"]["skills"])
 
 
-def test_tspi_launcher_is_packaged_executable_and_shell_valid() -> None:
+def test_tspi_shell_is_a_thin_executable_shim() -> None:
     completed = subprocess.run(
         ["bash", "-n", str(TSPI_LAUNCHER)],
         cwd=ROOT,
@@ -201,35 +190,32 @@ def test_tspi_launcher_is_packaged_executable_and_shell_valid() -> None:
         stderr=subprocess.PIPE,
         check=False,
     )
-
+    source = TSPI_LAUNCHER.read_text(encoding="utf-8")
     assert completed.returncode == 0, completed.stderr
     assert TSPI_LAUNCHER.stat().st_mode & 0o111
-    source = TSPI_LAUNCHER.read_text(encoding="utf-8")
-    assert 'readonly INSTALL_ROOT="${TS_AGENT_INSTALL_ROOT:-$LAUNCHER_DIR}"' in source
-    assert 'readonly TS_WORKSPACES_ROOT="$INSTALL_ROOT/workspaces"' in source
-    assert 'readonly TS_REMOTE_CONFIG_DEFAULT="$INSTALL_ROOT/.pi/remote.toml"' in source
-    assert 'readonly TS_NOTIFICATION_CONFIG_DEFAULT="$INSTALL_ROOT/.pi/notifications.toml"' in source
-    assert "configure_remote" in source
-    assert "configure_notifications" in source
-    assert "check_remote" in source
-    assert "TS_EMAIL_POLICY_ROOT" not in source
-    assert 'export TS_AGENT_RUNTIME_HOME="$TS_AGENT_INSTALL_RUNTIME_HOME"' in source
-    assert 'export TS_WORKSPACE_ROOT="$WORKSPACE_ROOT"' in source
-    assert "acquire_root_agent_lock" in source
-    assert "--workspace" in source
-    assert "--check-remote" in source
-    assert "--dev" not in source
-    assert "ts-workflow-dev" not in source
-    assert "mcp" not in source.lower()
-    assert "tunnel" not in source.lower()
+    assert len(source.splitlines()) <= 20
+    assert "scripts/tspi_host.py" in source
+    assert "TS_AGENT_INSTALL_ROOT" in source
+    for mechanism in ("configure_remote", "configure_notifications", "acquire_root_agent_lock", "ts_compute.py"):
+        assert mechanism not in source
+    help_result = subprocess.run(
+        [str(TSPI_LAUNCHER), "--help"],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert help_result.returncode == 0, help_result.stderr
+    assert "Usage:" in help_result.stdout
 
 
-def test_tspi_loads_installation_owned_remote_profile(tmp_path: Path) -> None:
+def test_tspi_loads_installation_owned_remote_profile_without_probing(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
-    ssh_config = install_root / ".pi/ssh_config"
+    ssh_config = install_root / ".pi" / "ssh_config"
     ssh_config.parent.mkdir(parents=True, exist_ok=True)
     ssh_config.write_text("Host cluster-login\n  HostName cluster.test\n", encoding="utf-8")
-    remote_config = install_root / ".pi/remote.toml"
+    remote_config = install_root / ".pi" / "remote.toml"
     remote_config.write_text(
         f'''default_profile = "cluster_1w"
 [profiles.cluster_1w]
@@ -242,128 +228,68 @@ max_nodes = 1
 ''',
         encoding="utf-8",
     )
-    script = r'''source "$1"
-configure_remote
-printf '%s\n%s\n' "$TS_REMOTE_CONFIG" "$TS_REMOTE_DISPLAY_TARGET"
-'''
-    completed = subprocess.run(
-        ["bash", "-c", script, "bash", str(launcher), "--workspace", "no-probe"],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
+    diagnostic = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
+    diagnostic.write_text("raise SystemExit('remote probe must not run')\n", encoding="utf-8")
+    fake_pi = _fake_pi(
+        tmp_path / "fake-pi.py",
+        "import json, os\nprint(json.dumps({'config': os.environ['TS_REMOTE_CONFIG'], 'display': os.environ['TS_REMOTE_DISPLAY_TARGET']}))\n",
     )
 
+    completed = _run_tspi(launcher, "--workspace", "no-probe", pi_bin=fake_pi)
+
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.splitlines() == [str(remote_config), "cluster-login · Torque"]
+    assert json.loads(completed.stdout) == {"config": str(remote_config), "display": "cluster-login · Torque"}
+    assert "remote probe must not run" not in completed.stderr
 
 
-def test_tspi_loads_installation_owned_notification_config(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    ("enabled", "expected"),
+    [(False, "disabled"), (True, "researcher@example.org")],
+)
+def test_tspi_loads_installation_owned_notification_config(
+    tmp_path: Path,
+    enabled: bool,
+    expected: str,
+) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
-    notification_config = install_root / ".pi/notifications.toml"
-    notification_config.parent.mkdir(parents=True, exist_ok=True)
-    notification_config.write_text(
-        "[notifications.email]\nenabled = false\n"
+    config = install_root / ".pi" / "notifications.toml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        "[notifications.email]\n"
+        f"enabled = {'true' if enabled else 'false'}\n"
         'recipient = "researcher@example.org"\n'
         'clawemail_root = "/tmp/clawemail"\n',
         encoding="utf-8",
     )
-    notification_config.chmod(0o600)
-    script = r'''source "$1"
-configure_notifications
-printf '%s\n%s\n' "$TS_NOTIFICATION_CONFIG" "$TS_NOTIFICATION_DISPLAY_TARGET"
-'''
-    completed = subprocess.run(
-        ["bash", "-c", script, "bash", str(launcher)],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
+    config.chmod(0o600)
+    fake_pi = _fake_pi(
+        tmp_path / "fake-pi.py",
+        "import json, os\nprint(json.dumps({'config': os.environ['TS_NOTIFICATION_CONFIG'], 'display': os.environ['TS_NOTIFICATION_DISPLAY_TARGET']}))\n",
     )
-    assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.splitlines() == [str(notification_config), "disabled"]
 
-
-def test_tspi_exposes_enabled_notification_recipient_for_display_only(tmp_path: Path) -> None:
-    _, launcher = _copy_tspi_install(tmp_path)
-    notification_config = launcher.parent / ".pi/notifications.toml"
-    notification_config.parent.mkdir(parents=True, exist_ok=True)
-    notification_config.write_text(
-        "[notifications.email]\nenabled = true\n"
-        'recipient = "researcher@example.org"\n'
-        'clawemail_root = "/tmp/clawemail"\n',
-        encoding="utf-8",
-    )
-    notification_config.chmod(0o600)
-    script = r'''source "$1"
-configure_notifications
-printf '%s\n' "$TS_NOTIFICATION_DISPLAY_TARGET"
-'''
-    completed = subprocess.run(
-        ["bash", "-c", script, "bash", str(launcher)],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    completed = _run_tspi(launcher, "--workspace", "notify", pi_bin=fake_pi)
 
     assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.strip() == "researcher@example.org"
+    assert json.loads(completed.stdout) == {"config": str(config), "display": expected}
 
 
 def test_tspi_rejects_non_private_notification_config(tmp_path: Path) -> None:
-    _, launcher = _copy_tspi_install(tmp_path)
-    notification_config = launcher.parent / ".pi/notifications.toml"
-    notification_config.parent.mkdir(parents=True, exist_ok=True)
-    notification_config.write_text(
+    install_root, launcher = _copy_tspi_install(tmp_path)
+    config = install_root / ".pi" / "notifications.toml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
         "[notifications.email]\nenabled = true\n"
         'recipient = "researcher@example.org"\n'
         'clawemail_root = "/tmp/clawemail"\n',
         encoding="utf-8",
     )
-    notification_config.chmod(0o644)
-    script = r'''source "$1"
-configure_notifications
-'''
-    completed = subprocess.run(
-        ["bash", "-c", script, "bash", str(launcher)],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    config.chmod(0o644)
+
+    completed = _run_tspi(launcher, "--workspace", "notify")
 
     assert completed.returncode == 1
     assert "must not be accessible by group or others" in completed.stderr
-
-
-def test_tspi_ordinary_startup_does_not_probe_remote(tmp_path: Path) -> None:
-    install_root, launcher = _copy_tspi_install(tmp_path)
-    fake_pi = tmp_path / "fake-pi"
-    fake_pi.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    fake_pi.chmod(0o755)
-    diagnostic = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
-    diagnostic.parent.mkdir(parents=True)
-    diagnostic.write_text("raise SystemExit('remote probe must not run')\n", encoding="utf-8")
-    script = r'''source "$1"
-main "${@:2}"
-'''
-    completed = subprocess.run(
-        ["bash", "-c", script, "bash", str(launcher), "--workspace", "no-probe"],
-        cwd=install_root,
-        env={**os.environ, "PI_BIN": str(fake_pi)},
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-
-    assert completed.returncode == 0, completed.stderr
-    assert "remote probe must not run" not in completed.stderr
+    assert not (install_root / "workspaces" / "notify").exists()
 
 
 def test_tspi_requires_an_installed_release(tmp_path: Path) -> None:
@@ -372,74 +298,50 @@ def test_tspi_requires_an_installed_release(tmp_path: Path) -> None:
     launcher = install_root / "TSPi"
     shutil.copy2(TSPI_LAUNCHER, launcher)
     launcher.chmod(0o755)
-    fake_pi = tmp_path / "fake-pi"
-    fake_pi.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
-    fake_pi.chmod(0o755)
+    (install_root / "scripts").mkdir()
+    shutil.copy2(ROOT / "scripts" / "tspi_host.py", install_root / "scripts" / "tspi_host.py")
+    shutil.copytree(ROOT / "ts_runtime", install_root / "ts_runtime", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
 
-    missing = subprocess.run(
-        [str(launcher), "--workspace", "release-required"],
-        cwd=install_root,
-        env={**os.environ, "PI_BIN": str(fake_pi)},
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-    assert missing.returncode == 1
-    assert "no installed TS Agent release" in missing.stderr
-    assert "install a validated release" in missing.stderr
+    completed = _run_tspi(launcher, "--workspace", "release-required")
+
+    assert completed.returncode == 1
+    assert "no installed TS Agent release" in completed.stderr
+    assert "install a validated release" in completed.stderr
 
 
 def test_tspi_check_remote_runs_one_strict_diagnostic(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
-    remote_config = install_root / ".pi/remote.toml"
-    remote_config.parent.mkdir(parents=True, exist_ok=True)
-    remote_config.write_text(
-        '''default_profile = "cluster"
-[profiles.cluster]
-ssh_host = "cluster-login"
-scheduler = "torque"
-''',
+    config = install_root / ".pi" / "remote.toml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
+        'default_profile = "cluster"\n[profiles.cluster]\nssh_host = "cluster-login"\nscheduler = "torque"\n',
         encoding="utf-8",
     )
     diagnostic = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
-    diagnostic.parent.mkdir(parents=True)
     diagnostic.write_text("print('{\"ok\": true}')\n", encoding="utf-8")
-    completed = subprocess.run(
-        ["bash", str(launcher), "--check-remote"],
-        cwd=install_root,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+
+    completed = _run_tspi(launcher, "--check-remote")
 
     assert completed.returncode == 0, completed.stderr
     assert "remote check passed (cluster-login · Torque)" in completed.stdout
+    assert not (install_root / "workspaces").exists()
 
 
 def test_tspi_remote_diagnostic_preserves_structured_failure(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
-    diagnostic_script = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
-    diagnostic_script.parent.mkdir(parents=True)
-    diagnostic_script.write_text(
-        "print('{\"ok\": false, \"error\": {\"class\": \"ssh_unreachable\"}}')\nraise SystemExit(3)\n",
-        encoding="utf-8",
-    )
-    remote_config = install_root / ".pi/remote.toml"
-    remote_config.parent.mkdir(parents=True, exist_ok=True)
-    remote_config.write_text(
+    config = install_root / ".pi" / "remote.toml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.write_text(
         'default_profile = "cluster"\n[profiles.cluster]\nssh_host = "cluster-login"\nscheduler = "torque"\n',
         encoding="utf-8",
     )
-    completed = subprocess.run(
-        ["bash", str(launcher), "--check-remote"],
-        cwd=install_root,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
+    diagnostic = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
+    diagnostic.write_text(
+        "print('{\"ok\": false, \"error\": {\"class\": \"ssh_unreachable\"}}')\nraise SystemExit(3)\n",
+        encoding="utf-8",
     )
+
+    completed = _run_tspi(launcher, "--check-remote")
 
     assert completed.returncode == 1
     assert "ssh_unreachable" in completed.stderr
@@ -449,31 +351,21 @@ def test_tspi_rejects_a_symlinked_remote_config(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
     target = tmp_path / "remote.toml"
     target.write_text("default_profile = 'cluster'\n", encoding="utf-8")
-    remote_config = install_root / ".pi/remote.toml"
-    remote_config.parent.mkdir(parents=True, exist_ok=True)
-    remote_config.symlink_to(target)
-    script = r'''source "$1"
-configure_remote
-'''
-    completed = subprocess.run(
-        ["bash", "-c", script, "bash", str(launcher)],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    config = install_root / ".pi" / "remote.toml"
+    config.parent.mkdir(parents=True, exist_ok=True)
+    config.symlink_to(target)
+
+    completed = _run_tspi(launcher, "--check-remote")
 
     assert completed.returncode == 1
     assert "invalid TS_REMOTE_CONFIG" in completed.stderr
 
 
-def test_tspi_runs_pi_with_workspace_local_state_and_install_runtime(tmp_path: Path) -> None:
+def test_tspi_runs_pi_with_bootstrapped_workspace_and_install_runtime(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
-    fake_pi = tmp_path / "fake-pi.py"
-    fake_pi.write_text(
-        """#!/usr/bin/env python3
-import json
+    fake_pi = _fake_pi(
+        tmp_path / "fake-pi.py",
+        """import json
 import os
 import sys
 print(json.dumps({
@@ -491,100 +383,77 @@ print(json.dumps({
     "remote_display": os.environ["TS_REMOTE_DISPLAY_TARGET"],
 }))
 """,
-        encoding="utf-8",
     )
-    fake_pi.chmod(0o755)
-    script = r'''source "$1"
-main "${@:2}"
-'''
-    completed = subprocess.run(
-        ["bash", "-c", script, "bash", str(launcher), "--workspace", "reaction-a", "--model", "test"],
-        cwd=ROOT,
+
+    completed = _run_tspi(
+        launcher,
+        "--workspace",
+        "reaction-a",
+        "--model",
+        "test",
+        pi_bin=fake_pi,
         env={
-            **os.environ,
-            "PI_BIN": str(fake_pi),
             "TS_NOTIFICATION_CONFIG": "",
             "TS_AGENT_RUNTIME_HOME": "/tmp/old-runtime",
             "TS_AGENT_RUNTIME_MANIFEST": "/tmp/old-runtime/env.json",
             "TS_AGENT_ENV_ROOT": "/tmp/old-env",
         },
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
     )
 
     assert completed.returncode == 0, completed.stderr
     result = json.loads(completed.stdout)
     workspace = install_root / "workspaces" / "reaction-a"
-    assert result["cwd"] == str(workspace)
-    assert result["workspace"] == str(workspace)
+    assert result["cwd"] == result["workspace"] == str(workspace)
     assert result["notification_config"] is None
     assert result["notification_display"] == "not configured"
-    assert result["runtime_home"] == str(install_root / ".agents/runtime/transition-state-workflow")
-    assert result["runtime_manifest"] == str(install_root / ".agents/runtime/transition-state-workflow/env.json")
-    assert result["env_root"] == str(install_root / ".agents/envs/transition-state-workflow")
-    assert result["python_cache"] == str(install_root / ".pi/runtime-cache/python/reaction-a")
+    assert result["runtime_home"] == str(install_root / ".agents" / "runtime" / "transition-state-workflow")
+    assert result["runtime_manifest"] == str(
+        install_root / ".agents" / "runtime" / "transition-state-workflow" / "env.json"
+    )
+    assert result["env_root"] == str(install_root / ".agents" / "envs" / "transition-state-workflow")
+    assert result["python_cache"] == str(install_root / ".pi" / "runtime-cache" / "python" / "reaction-a")
     assert result["pytest_options"].endswith(
-        f"--cache-dir={install_root / '.pi/runtime-cache/pytest/reaction-a'}"
+        f"--cache-dir={install_root / '.pi' / 'runtime-cache' / 'pytest' / 'reaction-a'}"
     )
     assert result["remote_config"] is None
     assert result["remote_display"] == "not configured"
     session_index = result["argv"].index("--session-dir")
-    assert result["argv"][session_index + 1] == str(workspace / ".pi/sessions")
-    assert (workspace / ".pi/root-agent.lock").is_file()
-    settings = json.loads((workspace / ".pi/settings.json").read_text(encoding="utf-8"))
-    assert settings == {"quietStartup": True}
+    assert result["argv"][session_index + 1] == str(workspace / ".pi" / "sessions")
+    assert (workspace / ".pi" / "root-agent.lock").is_file()
+    assert json.loads((workspace / ".pi" / "settings.json").read_text(encoding="utf-8")) == {"quietStartup": True}
+    assert json.loads((workspace / "research_state.json").read_text(encoding="utf-8"))["schema_version"] == "ts-research-state/3"
+    assert (workspace / ".agents" / "workspace-identity.json").is_file()
 
 
-def test_tspi_workspace_preserves_pi_settings_while_silencing_resource_inventory(tmp_path: Path) -> None:
+def test_tspi_workspace_preserves_pi_settings_while_bootstrapping(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
-    workspace = install_root / "workspaces/existing"
-    settings_path = workspace / ".pi/settings.json"
-    settings_path.parent.mkdir(parents=True)
-    settings_path.write_text(
+    settings = install_root / "workspaces" / "existing" / ".pi" / "settings.json"
+    settings.parent.mkdir(parents=True)
+    settings.write_text(
         json.dumps({"quietStartup": False, "theme": "custom", "warnings": {"deprecated": False}}),
         encoding="utf-8",
     )
-    script = r'''source "$1"
-prepare_workspace "$2"
-'''
-    completed = subprocess.run(
-        ["bash", "-c", script, "bash", str(launcher), "existing"],
-        cwd=install_root,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+
+    completed = _run_tspi(launcher, "--workspace", "existing")
 
     assert completed.returncode == 0, completed.stderr
-    assert json.loads(settings_path.read_text(encoding="utf-8")) == {
+    assert json.loads(settings.read_text(encoding="utf-8")) == {
         "quietStartup": True,
         "theme": "custom",
         "warnings": {"deprecated": False},
     }
+    assert (install_root / "workspaces" / "existing" / "evidence_registry.json").is_file()
 
 
 def test_tspi_rejects_symlinked_workspace_pi_settings(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
-    workspace = install_root / "workspaces/symlink-settings"
-    settings_path = workspace / ".pi/settings.json"
-    settings_path.parent.mkdir(parents=True)
+    settings = install_root / "workspaces" / "symlink-settings" / ".pi" / "settings.json"
+    settings.parent.mkdir(parents=True)
     target = tmp_path / "settings.json"
     target.write_text("{}\n", encoding="utf-8")
-    settings_path.symlink_to(target)
-    script = r'''source "$1"
-prepare_workspace "$2"
-'''
-    completed = subprocess.run(
-        ["bash", "-c", script, "bash", str(launcher), "symlink-settings"],
-        cwd=install_root,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+    settings.symlink_to(target)
+
+    completed = _run_tspi(launcher, "--workspace", "symlink-settings")
 
     assert completed.returncode == 1
     assert "workspace Pi settings cannot be a symbolic link" in completed.stderr
@@ -593,52 +462,25 @@ prepare_workspace "$2"
 
 def test_tspi_workspace_launch_does_not_require_remote_configuration(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
-    fake_pi = tmp_path / "fake-pi.py"
-    fake_pi.write_text(
-        """#!/usr/bin/env python3
-import json
-import os
-print(json.dumps({
-    "cwd": os.getcwd(),
-    "remote_display": os.environ["TS_REMOTE_DISPLAY_TARGET"],
-}))
-""",
-        encoding="utf-8",
-    )
-    fake_pi.chmod(0o755)
-    script = r'''source "$1"
-main "${@:2}"
-'''
-    completed = subprocess.run(
-        ["bash", "-c", script, "bash", str(launcher), "--workspace", "offline-research"],
-        cwd=ROOT,
-        env={**os.environ, "PI_BIN": str(fake_pi)},
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
+    fake_pi = _fake_pi(
+        tmp_path / "fake-pi.py",
+        "import json, os\nprint(json.dumps({'cwd': os.getcwd(), 'remote_display': os.environ['TS_REMOTE_DISPLAY_TARGET']}))\n",
     )
 
+    completed = _run_tspi(launcher, "--workspace", "offline-research", pi_bin=fake_pi)
+
     assert completed.returncode == 0, completed.stderr
-    result = json.loads(completed.stdout)
-    assert result["cwd"] == str(install_root / "workspaces/offline-research")
-    assert result["remote_display"] == "not configured"
+    assert json.loads(completed.stdout) == {
+        "cwd": str(install_root / "workspaces" / "offline-research"),
+        "remote_display": "not configured",
+    }
     assert completed.stderr == ""
 
 
 def test_tspi_check_remote_is_strict_when_configuration_is_missing(tmp_path: Path) -> None:
     _, launcher = _copy_tspi_install(tmp_path)
-    script = r'''source "$1"
-main --check-remote
-'''
-    completed = subprocess.run(
-        ["bash", "-c", script, "bash", str(launcher)],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+
+    completed = _run_tspi(launcher, "--check-remote")
 
     assert completed.returncode == 1
     assert "remote configuration is missing" in completed.stderr
@@ -647,29 +489,12 @@ main --check-remote
 
 def test_tspi_requires_a_safe_workspace_name(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
-    no_workspace = subprocess.run(
-        ["bash", str(launcher)],
-        cwd=install_root,
-        env={**os.environ, "PI_BIN": "/bin/true"},
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
+
+    no_workspace = _run_tspi(launcher)
+    traversal = _run_tspi(launcher, "--workspace", "../escaped")
+
     assert no_workspace.returncode == 2
     assert "a research workspace is required" in no_workspace.stderr
-
-    script = r'''source "$1"
-prepare_workspace "$2"
-'''
-    traversal = subprocess.run(
-        ["bash", "-c", script, "bash", str(launcher), "../escaped"],
-        cwd=install_root,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
     assert traversal.returncode == 1
     assert "invalid workspace name" in traversal.stderr
     assert not (install_root.parent / "escaped").exists()
@@ -677,15 +502,16 @@ prepare_workspace "$2"
 
 def test_tspi_root_lock_rejects_a_second_writer(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
-    holder_script = r'''source "$1"
-prepare_workspace "$2"
-acquire_root_agent_lock
-printf 'ready\n'
-read -r _release
-'''
+    blocking_pi = _fake_pi(
+        tmp_path / "blocking-pi.py",
+        "print('ready', flush=True)\ninput()\n",
+    )
+    command = [str(launcher), "--workspace", "lock-test"]
+    env = {**os.environ, "PI_BIN": str(blocking_pi)}
     holder = subprocess.Popen(
-        ["bash", "-c", holder_script, "bash", str(launcher), "lock-test"],
-        cwd=ROOT,
+        command,
+        cwd=install_root,
+        env=env,
         text=True,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -695,8 +521,9 @@ read -r _release
         assert holder.stdout is not None
         assert holder.stdout.readline().strip() == "ready"
         contender = subprocess.run(
-            ["bash", "-c", holder_script, "bash", str(launcher), "lock-test"],
-            cwd=ROOT,
+            command,
+            cwd=install_root,
+            env=env,
             input="release\n",
             text=True,
             stdout=subprocess.PIPE,
@@ -706,8 +533,9 @@ read -r _release
         assert contender.returncode == 1
         assert "another Root Agent already owns workspace" in contender.stderr
         independent = subprocess.run(
-            ["bash", "-c", holder_script, "bash", str(launcher), "independent-test"],
-            cwd=ROOT,
+            [str(launcher), "--workspace", "independent-test"],
+            cwd=install_root,
+            env=env,
             input="release\n",
             text=True,
             stdout=subprocess.PIPE,
@@ -722,8 +550,8 @@ read -r _release
         holder.stdin.flush()
         holder.communicate(timeout=5)
 
-    assert (install_root / "workspaces/lock-test/.pi/root-agent.lock").is_file()
-    assert (install_root / "workspaces/independent-test/.pi/root-agent.lock").is_file()
+    assert (install_root / "workspaces" / "lock-test" / ".pi" / "root-agent.lock").is_file()
+    assert (install_root / "workspaces" / "independent-test" / ".pi" / "root-agent.lock").is_file()
 
 
 def test_ts_theme_loads_with_pi_theme_loader() -> None:

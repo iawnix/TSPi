@@ -7,7 +7,7 @@ A v3 workspace stores scientific state in:
 - `research_state.json`: Node index, parent edges, open Nodes, accepted refs,
   and provenance;
 - `claims.json`: Claims and focus Claim refs;
-- `evidence.json`: immutable Evidence records and lifecycle events;
+- `evidence_registry.json`: immutable Evidence records and lifecycle events;
 - `gate_results.json`: deterministic Gate results;
 - `nodes/<node_id>/node.json`: complete Node record;
 - `accepted/<acceptance_id>.json`: policy-bound accepted Claim artifact;
@@ -16,6 +16,17 @@ A v3 workspace stores scientific state in:
 
 Reports, calculations, agent journals, remote receipts, and notifications are
 not canonical scientific state.
+
+## Startup Bootstrap
+
+Before Pi starts, the installation host calls the deterministic workspace
+bootstrap entrypoint. It initializes a fresh directory once and preserves
+unrelated input files. A complete v3 workspace is only validated; bootstrap
+does not rewrite it. Partial v3 state and invalid v3 state fail closed. A v2
+workspace must use the explicit copy migration into a different destination.
+
+Operational `.pi/` session settings and the Root Agent lock are host state, not
+canonical scientific files.
 
 ## Write Boundary
 

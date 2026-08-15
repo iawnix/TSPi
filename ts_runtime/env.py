@@ -1,8 +1,8 @@
 """Conda runtime discovery for the TS Agent Pi package.
 
-The skill can be installed as source code in one location while its Python
-environment lives in a workspace-local environment store. Public scripts call
-``ensure_runtime_python`` before importing heavier workflow modules.
+The package code and its Python environment live in separate roots. Public
+scripts call ``ensure_runtime_python`` before importing heavier workflow
+modules.
 """
 
 from __future__ import annotations
