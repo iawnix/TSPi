@@ -34,5 +34,5 @@ Use accepted-pathway language only for an accepted artifact under
 limitations, and unresolved alternative Claims explicitly.
 
 Every number or structure claim should cite a registered Evidence ref and its
-source artifact. Child-agent journals and notification receipts are operational
-provenance and must not appear as scientific Evidence.
+source artifact. Review/operator journals and notification receipts are
+operational provenance and must not appear as scientific Evidence.

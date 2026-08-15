@@ -10,6 +10,15 @@ Use `compute_operator.md` for complete Root `prepare`, `submit`, `inspect`,
 `collect`, `cancel`, and `parse` calls. The fragments below define remote policy
 only and are not complete `ts_subagent_compute` arguments.
 
+## Contents
+
+- [Request Shape](#request-shape)
+- [Installation Configuration](#installation-configuration)
+- [Workspace Isolation](#workspace-isolation)
+- [Lifecycle](#lifecycle)
+- [Failure Classes](#failure-classes)
+- [Diagnostics](#diagnostics)
+
 The ownership boundary is:
 
 ```text

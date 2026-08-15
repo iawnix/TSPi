@@ -22,6 +22,7 @@ from .engine_v3 import (
     validate_workspace,
 )
 from .decision_validator_v3 import ContractError, validate_decision
+from .draft_v3 import draft_decision
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -59,6 +60,10 @@ def main(argv: list[str] | None = None) -> int:
 
     p = sub.add_parser("validate_workspace")
     p.add_argument("--root", required=True)
+
+    p = sub.add_parser("draft_decision")
+    p.add_argument("--root", required=True)
+    p.add_argument("--request-file", required=True)
 
     for command in ("validate_decision", "start_node", "update_workspace", "end_node"):
         p = sub.add_parser(command)
@@ -99,6 +104,11 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
         )
     if command == "validate_workspace":
         return validate_workspace(args.root)
+    if command == "draft_decision":
+        return draft_decision(
+            args.root,
+            _load_object(args.request_file, "decision draft request"),
+        )
 
     decision = _load_decision(args.decision_file)
     if command == "validate_decision":
@@ -120,10 +130,14 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
 def _load_decision(path: str | None) -> dict[str, Any]:
     if not path:
         raise ContractError("decision file is required")
+    return _load_object(path, "decision file")
+
+
+def _load_object(path: str, label: str) -> dict[str, Any]:
     with Path(path).open("r", encoding="utf-8") as handle:
         data = json.load(handle)
     if not isinstance(data, dict):
-        raise ContractError("decision file must contain an object")
+        raise ContractError(f"{label} must contain an object")
     return data
 
 

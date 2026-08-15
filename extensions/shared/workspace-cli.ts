@@ -46,6 +46,22 @@ export async function runWorkspaceDecisionJson(
   }
 }
 
+export async function runWorkspaceDraftJson(
+  pi: ExtensionAPI,
+  root: string,
+  request: unknown,
+  signal?: AbortSignal,
+) {
+  const tempRoot = mkdtempSync(join(tmpdir(), "ts-workspace-draft-"));
+  const requestFile = join(tempRoot, "request.json");
+  try {
+    writeFileSync(requestFile, `${JSON.stringify(request, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    return await runWorkspaceJson(pi, "draft_decision", root, ["--request-file", requestFile], signal);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
 export async function runComputeJson(
   pi: ExtensionAPI,
   command: string,

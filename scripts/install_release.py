@@ -26,6 +26,9 @@ SHA256 = re.compile(r"^[0-9a-f]{64}$")
 REQUIRED_RUNTIME_FILES = {
     "package.json",
     "TSPi",
+    "docs/ARCHITECTURE.md",
+    "docs/INSTALLATION.md",
+    "docs/MAINTAINER_GUIDE.md",
     "environment.yml",
     "scripts/install_env.py",
     "scripts/install_release.py",
@@ -44,7 +47,6 @@ REQUIRED_RUNTIME_FILES = {
 }
 FORBIDDEN_PARTS = {".git", ".pytest_cache", "__pycache__", "node_modules", "tests"}
 FORBIDDEN_RUNTIME_FILES = {
-    "docs/MAINTAINER_GUIDE.md",
     "scripts/build_release.py",
     "scripts/check_package.py",
 }

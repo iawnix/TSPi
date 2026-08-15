@@ -50,10 +50,6 @@ back to package-parent stores:
 <package_parent>/.envs/transition-state-workflow/<environment-spec-hash>/
 ```
 
-Legacy manifests at `<package_root>/.runtime/env.json` are read only when no
-explicit `workspace_root`, `runtime_home`, or manifest override is supplied.
-They are compatibility input, not the target for new installs.
-
 Override points:
 
 - `TS_WORKSPACE_ROOT`: selected research workspace; it owns runtime files only
@@ -87,6 +83,11 @@ Public scripts call `ts_runtime.ensure_runtime_python()` before importing
 workflow modules. The Pi extension calls
 `scripts/ts_runtime.py resolve --workspace-root <workspace> --json` and uses
 the interpreter reported by the same Python resolver.
+
+The resolver reads exactly the manifest selected by the explicit override or
+the current default rules. It does not scan old package-local runtime paths or
+translate legacy manifests. Re-run `install_env.py` when moving from an older
+layout.
 
 Runtime helpers must not mutate workspace state files, start or close nodes, or
 interpret chemistry.

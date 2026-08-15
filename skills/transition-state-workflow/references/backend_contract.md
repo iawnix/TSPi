@@ -20,7 +20,7 @@ The expected flow is:
 2. Backend prepares node-scoped inputs and command metadata.
 3. Local or remote execution creates artifacts.
 4. Parsed facts are registered through `update_workspace`.
-5. `end_node` writes the closure and triggers finalizers.
+5. `end_node` commits the explicit terminal result and any cited Claim updates.
 
 Deterministic parsers may consume multiple files only when every file is bound
 by the prepared attempt manifest and resides beside the selected primary

@@ -5,6 +5,13 @@ Each child receives the shared artifact policy, one selected role policy, one
 typed tool, no built-in tools, no parent history, and no canonical workspace
 mutation authority. Policy fragments are not Pi skills.
 
+## Contents
+
+- [Render](#render)
+- [Report](#report)
+- [Notify User](#notify-user)
+- [Result Binding](#result-binding)
+
 ## Render
 
 `ts_subagent_render` accepts:
@@ -44,7 +51,7 @@ JSON.
 
 ## Notify User
 
-`ts_notify_user` is a deterministic Root Agent tool, not a child-agent role. It
+`ts_notify_user` is a deterministic Root Agent tool, not a child session. It
 accepts:
 
 - `operation=send`;
@@ -60,7 +67,7 @@ installation config from `TS_NOTIFICATION_CONFIG`:
 [notifications.email]
 enabled = true
 recipient = "researcher@example.org"
-clawemail_root = "/home/iaw/.pi/agent/skills/clawemail"
+clawemail_root = "/absolute/path/to/clawemail"
 ```
 
 That installation config is the persistent authorization for notifications;
@@ -98,5 +105,5 @@ host requires exactly one typed action, accepts success only from the canonical
 - a reported render success without a nonempty bound output file;
 - a report package whose manifest digest, source workspace revision, required
   files, file sizes, or file SHA-256 values do not match the generated output;
-- hypothesis, branch, accepted-TS/pathway, strict pathway, study-completion, or
-  next-decision fields anywhere in the result.
+- Claim updates, Gate verdicts, acceptance decisions, study completion, or
+  research-continuation fields anywhere in the result.

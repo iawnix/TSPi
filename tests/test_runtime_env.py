@@ -14,7 +14,6 @@ from ts_runtime.env import (
     default_env_prefix,
     default_env_store,
     default_runtime_home,
-    legacy_runtime_manifest_path,
     package_root_from_file,
     runtime_manifest_path,
     seed_workspace_root_from_argv,
@@ -91,72 +90,6 @@ def test_configured_python_reads_runtime_manifest(tmp_path: Path) -> None:
 
     assert stat.S_IMODE(manifest_path.stat().st_mode) == 0o600
     assert configured_python(package) == Path(sys.executable).resolve()
-
-
-def test_configured_python_reads_legacy_package_manifest(tmp_path: Path) -> None:
-    package = tmp_path / "skill"
-    package.mkdir()
-    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
-    path = legacy_runtime_manifest_path(package)
-    path.parent.mkdir(parents=True)
-    path.write_text(
-        json.dumps(
-            {
-                "schema_version": "ts-agent-runtime-v1",
-                "python_executable": sys.executable,
-                "spec_sha256": spec_sha256(package),
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    assert configured_python(package) == Path(sys.executable).resolve()
-
-
-def test_workspace_runtime_does_not_fall_back_to_package_manifest(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    package = tmp_path / "dev-skill"
-    workspace.mkdir()
-    package.mkdir()
-    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
-    path = legacy_runtime_manifest_path(package)
-    path.parent.mkdir(parents=True)
-    path.write_text(
-        json.dumps(
-            {
-                "schema_version": "ts-agent-runtime-v1",
-                "python_executable": sys.executable,
-                "spec_sha256": spec_sha256(package),
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    assert configured_python(package, workspace_root=workspace) is None
-
-
-def test_workspace_runtime_env_does_not_fall_back_to_package_manifest(tmp_path: Path, monkeypatch) -> None:
-    workspace = tmp_path / "workspace"
-    package = tmp_path / "dev-skill"
-    workspace.mkdir()
-    package.mkdir()
-    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
-    path = legacy_runtime_manifest_path(package)
-    path.parent.mkdir(parents=True)
-    path.write_text(
-        json.dumps(
-            {
-                "schema_version": "ts-agent-runtime-v1",
-                "python_executable": sys.executable,
-                "spec_sha256": spec_sha256(package),
-            }
-        ),
-        encoding="utf-8",
-    )
-
-    monkeypatch.setenv("TS_WORKSPACE_ROOT", str(workspace))
-
-    assert configured_python(package) is None
 
 
 def test_seed_workspace_root_from_argv_sets_runtime_env(monkeypatch, tmp_path: Path) -> None:

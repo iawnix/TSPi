@@ -2,9 +2,14 @@ import { keyText, type ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Text } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
-import { requireWorkspaceRoot, runComputeJson, runWorkspaceDecisionJson, runWorkspaceJson } from "../shared/workspace-cli.ts";
+import {
+  requireWorkspaceRoot,
+  runComputeJson,
+  runWorkspaceDecisionJson,
+  runWorkspaceDraftJson,
+  runWorkspaceJson,
+} from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 import {
   guardPackageSourceRead,
@@ -179,7 +184,8 @@ export default function (pi: ExtensionAPI) {
     description: "Build one non-mutating ts-decision/3 draft from the Root Agent's selected action and payload.",
     promptSnippet: "Create a versioned TS workspace decision draft without applying it",
     promptGuidelines: [
-      "The Root Agent must choose the scientific action before calling this tool; the tool only adds decision identity and current report provenance.",
+      "The Root Agent chooses the scientific action and facts; the workspace kernel owns decision, evidence, and gate-result IDs.",
+      "Omit evidence_id and gate_result_id in draft payloads; use allocated refs returned by the kernel in later decisions.",
       `Pass the returned decision unchanged to ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate}, then ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply}.`,
     ],
     parameters: Type.Object({
@@ -191,18 +197,13 @@ export default function (pi: ExtensionAPI) {
     }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
-      const report = await runWorkspaceJson(pi, "report_workspace", root, [], signal);
-      const decision = {
-        schema_version: "ts-decision/3",
-        decision_id: `dec_${randomUUID()}`,
+      const result = await runWorkspaceDraftJson(pi, root, {
         action: params.action,
         rationale: params.rationale,
         basis_refs: params.basisRefs || [],
-        report_ref: { report_id: report.report_id, workspace_root: root },
-        base_revision: report.workspace_revision,
         payload: params.payload,
-      };
-      return toolText(JSON.stringify(decision, null, 2), { decision, workspaceRevision: report.workspace_revision });
+      }, signal);
+      return toolText(JSON.stringify(result.decision, null, 2), result);
     },
   });
 

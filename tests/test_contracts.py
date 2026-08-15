@@ -26,6 +26,7 @@ SCHEMA_FILES = {
     "claim_input.schema.json",
     "claim_registry.schema.json",
     "decision_v3.schema.json",
+    "decision_draft_input.schema.json",
     "evidence_event.schema.json",
     "evidence_event_input.schema.json",
     "evidence_registry_v2.schema.json",

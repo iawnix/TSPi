@@ -41,7 +41,7 @@ acceptance policies; they do not update Claims or choose later Nodes.
 ## Scientific And Operational Revisions
 
 Canonical files determine `workspace_revision`. Calculation attempts, remote
-controls, child-agent journals, notifications, and UI state determine
+controls, Review/operator journals, notifications, and UI state determine
 `operational_revision` only. An operational success or failure cannot silently
 change scientific state.
 

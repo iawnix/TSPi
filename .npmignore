@@ -5,7 +5,6 @@ node_modules/
 .npm-cache/
 npm-debug.log*
 tests/
-docs/
 *.pyc
 *.pyo
 *.tmp

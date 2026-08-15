@@ -27,6 +27,7 @@ EXTENSION_ENTRIES = [
 PACKAGE_FILES = [
     "TSPi",
     "README.md",
+    "docs/*.md",
     "environment.yml",
     "contracts/*.json",
     "extensions/shared/*.ts",
@@ -82,6 +83,9 @@ PACKAGE_FILES = [
 REQUIRED_TARBALL_FILES = {
     "package.json",
     "TSPi",
+    "docs/ARCHITECTURE.md",
+    "docs/INSTALLATION.md",
+    "docs/MAINTAINER_GUIDE.md",
     "environment.yml",
     "scripts/install_env.py",
     "scripts/install_release.py",
@@ -144,7 +148,6 @@ FORBIDDEN_PARTS = {
 }
 FORBIDDEN_BASENAMES = {".env", "auth.json", "auth.toml", "config.toml", "models.json"}
 FORBIDDEN_RUNTIME_FILES = {
-    "docs/MAINTAINER_GUIDE.md",
     "scripts/build_release.py",
     "scripts/check_package.py",
 }

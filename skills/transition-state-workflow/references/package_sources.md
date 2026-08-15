@@ -47,7 +47,8 @@ workspace mutation, remote control, scientific Gate, or notification contracts.
 
 - Terminal Root and Phone Root receive the same policy from the control
   extension. Phone policy only adds remote-interaction permissions.
-- Compute, Review, Render, and Report children receive bounded task packets and
-  request-scoped tools; they do not browse package sources.
+- Review receives a bounded scientific packet. Compute, Render, and Report
+  operators receive pre-bound operational packets and request-scoped tools.
+  None of these child sessions browse package sources.
 - Deterministic CLIs and kernels execute typed data and do not consult these
   documentation files at runtime.

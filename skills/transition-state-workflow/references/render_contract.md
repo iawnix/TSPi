@@ -1,53 +1,53 @@
 # Render Contract
 
-`ts_render` creates visual artifacts from molecular structures and trajectories.
+`ts_subagent_render` creates one bounded local visualization. It starts a fresh
+operator session with exactly one path-bound render tool; it does not perform
+scientific Review.
 
-Supported public CLI shapes:
+## Public Operations
 
-```bash
-export TS_AGENT_SKILL_ROOT=/path/to/transition-state-workflow
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" diagnostic --json
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" render input.xyz -o nodes/n001/outputs/render.png
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" compare r.xyz ts.xyz p.xyz -o nodes/n001/outputs/compare.png
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" animate irc.xyz -o nodes/n001/outputs/irc.gif
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" mechanism r.xyz ts.xyz p.xyz -o nodes/n001/outputs/mechanism.png
-```
+- `render`: one structure to PNG or JPEG;
+- `compare`: multiple structures to one comparison image;
+- `animate`: one trajectory to GIF;
+- `mechanism`: reactant/TS/product structures to one mechanism image.
 
-Allowed behavior:
+The request supplies one owning `nodeId`, 1 to 8 existing workspace-relative
+`inputRefs`, and one new `outputRef` under
+`nodes/<nodeId>/outputs/`. The host rejects absolute paths, parent traversal,
+symlink components, missing inputs, cross-Node output ownership, unsupported
+extensions, and overwrite.
 
-- read input structures or trajectories;
-- call the configured `xyzrender` executable;
-- create node-scoped image, animation, or diagnostic artifacts;
-- return a structured `RenderResult`.
+`xyzrender` is the only render backend. Blender, FFmpeg, OpenBabel, Mayavi, and
+PyVista are neither required nor probed.
 
-Render dependency boundary:
+## Authority
 
-- `xyzrender` is the only render backend.
-- Blender, FFmpeg, OpenBabel, Mayavi, and PyVista are not required or probed by
-  `ts_render`.
+Render may read the declared structures or trajectories and create only the
+declared image or animation. It must not:
 
-Forbidden behavior:
+- edit canonical workspace files;
+- change a Claim or evaluate a Gate;
+- close a Node or accept a TS/pathway;
+- infer mechanism validity, stereochemistry, connectivity, or electronic state
+  from visual appearance;
+- send the artifact externally.
 
-- edit `research_state.json`, `claims.json`, `evidence_registry.json`,
-  `gate_results.json`, or `decision_log.jsonl`;
-- close nodes or set scientific verdicts;
-- claim candidate, TS/Freq, connectivity, accepted-TS, or pathway success;
-- infer mechanism validity from a rendered image.
+The host checks that a nonempty bound output exists before it reports success.
+The render journal and image are operational artifacts. A rendered picture is
+not scientific Evidence by itself.
 
-To make a render visible as workspace evidence, create the artifact first and
-then register it through `ts_workspace update_workspace` with a decision JSON.
-Use evidence fields such as:
+## Workspace Recording
 
-```json
-{
-  "schema_version": "ts-evidence/2",
-  "evidence_id": "ev_n001_render_001",
-  "node_id": "n001",
-  "kind": "render_artifact/1",
-  "evidence_tier": "local_compute",
-  "summary": "Rendered local structure view.",
-  "facts": {"render_completed": true},
-  "artifact_refs": ["nodes/n001/outputs/render.png"],
-  "provenance": {"producer": "ts_render", "producer_version": null, "source_sha256": null}
-}
-```
+Keep the render run under the owning Node and, when useful, link its immutable
+operation ref through a normal `update_workspace` Decision. Do not register
+`render_completed=true` as scientific support merely to expose the file.
+
+If the Root Agent extracts a real scientific observation, such as a declared
+stereochemical mismatch, verify that observation against the source coordinates
+with an appropriate deterministic comparator or explicit manual observation.
+Then draft normal Evidence from the source artifact and provenance, omit the
+Kernel-owned `evidence_id`, validate the Decision, and apply it unchanged.
+
+The maintenance CLI under `scripts/ts_render.py` wraps the same deterministic
+renderer, but ordinary research sessions should use the registered public tool
+and its schema rather than discovering calls from implementation scripts.

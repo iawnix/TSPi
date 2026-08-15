@@ -1,18 +1,10 @@
 {
-  "schema_version": "ts-decision/3",
-  "decision_id": "${DECISION_ID}",
   "action": "update_workspace",
   "rationale": "Register deterministic facts and their source artifact.",
-  "basis_refs": ["${ARTIFACT_REF}"],
-  "report_ref": {
-    "report_id": "${REPORT_ID}",
-    "workspace_root": "${WORKSPACE_ROOT}"
-  },
-  "base_revision": "${BASE_REVISION}",
+  "basisRefs": ["${ARTIFACT_REF}"],
   "payload": {
     "append_evidence": {
       "schema_version": "ts-evidence/2",
-      "evidence_id": "${EVIDENCE_ID}",
       "node_id": "${NODE_ID}",
       "kind": "${EVIDENCE_KIND}",
       "evidence_tier": "local_parse",

@@ -103,6 +103,64 @@ def test_workspace_cli_v3_roundtrip(tmp_path: Path) -> None:
     assert _run("validate_workspace", "--root", str(workspace))["valid"] is True
 
 
+def test_workspace_cli_drafts_kernel_owned_evidence_id(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    _run("init_workspace", "--root", str(workspace))
+    report = _run("report_workspace", "--root", str(workspace))
+    start = _decision(
+        report,
+        "start_node",
+        {
+            "node_id": "n000",
+            "parent_node": None,
+            "objective": "Record one parser result.",
+            "tags": ["validation"],
+            "claim_refs": [],
+        },
+        decision_id="dec_cli_draft_start",
+    )
+    _run(
+        "start_node",
+        "--root",
+        str(workspace),
+        "--decision-file",
+        str(_write(tmp_path / "start-draft.json", start)),
+    )
+    artifact_ref = "nodes/n000/outputs/validation_summary.json"
+    (workspace / artifact_ref).parent.mkdir(parents=True, exist_ok=True)
+    (workspace / artifact_ref).write_text("{}\n", encoding="utf-8")
+    request = {
+        "action": "update_workspace",
+        "rationale": "Record one parser result without choosing a technical ID.",
+        "basis_refs": [],
+        "payload": {
+            "append_evidence": {
+                "schema_version": "ts-evidence/2",
+                "node_id": "n000",
+                "kind": "gaussian_tsfreq/1",
+                "evidence_tier": "local_parse",
+                "summary": "Parsed TS and frequency facts.",
+                "facts": {"stationary_point_found": True, "route_consistent": True},
+                "artifact_refs": [artifact_ref],
+                "provenance": {"producer": "cli-test"},
+            }
+        },
+    }
+    drafted = _run(
+        "draft_decision",
+        "--root",
+        str(workspace),
+        "--request-file",
+        str(_write(tmp_path / "draft-request.json", request)),
+    )
+
+    evidence = drafted["decision"]["payload"]["append_evidence"]
+    assert drafted["allocated_refs"]["evidence"] == [evidence["evidence_id"]]
+    assert evidence["evidence_id"].startswith("ev_")
+    assert evidence["facts"]["stationary_point"] is True
+    assert evidence["facts"]["route_match"] is True
+
+
 def test_workspace_cli_rejects_v2_decision_contract(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     _run("init_workspace", "--root", str(workspace))

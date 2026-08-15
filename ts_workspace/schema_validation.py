@@ -35,7 +35,7 @@ def schema_findings(schema_name: str, instance: Any, source: str) -> list[dict[s
             "severity": "error",
             "code": "schema_validation_failed",
             "message": f"{schema_name}: {error.message}",
-            "path": _source_path(source, error.path),
+            "path": _source_path(source, error.absolute_path),
         }
         for error in _sorted_errors(schema_name, instance)
     ]
@@ -84,14 +84,47 @@ def _validator(schema_name: str) -> Draft202012Validator:
 
 
 def _sorted_errors(schema_name: str, instance: Any) -> list[ValidationError]:
+    expanded = [
+        leaf
+        for error in _validator(schema_name).iter_errors(instance)
+        for leaf in _leaf_errors(error)
+    ]
+    unique = {
+        (
+            tuple(error.absolute_path),
+            tuple(error.absolute_schema_path),
+            error.message,
+        ): error
+        for error in expanded
+    }
     return sorted(
-        _validator(schema_name).iter_errors(instance),
-        key=lambda error: (tuple(str(part) for part in error.path), tuple(str(part) for part in error.schema_path)),
+        unique.values(),
+        key=lambda error: (
+            tuple(str(part) for part in error.absolute_path),
+            tuple(str(part) for part in error.absolute_schema_path),
+        ),
     )
 
 
+def _leaf_errors(error: ValidationError) -> list[ValidationError]:
+    if not error.context:
+        return [error]
+    leaves = [leaf for child in error.context for leaf in _leaf_errors(child)]
+    if error.validator not in {"oneOf", "anyOf"}:
+        return leaves
+    parent_path = tuple(error.absolute_path)
+    relevant = [
+        leaf
+        for leaf in leaves
+        if not (leaf.validator == "type" and tuple(leaf.absolute_path) == parent_path)
+    ]
+    if relevant:
+        return relevant
+    return leaves
+
+
 def _summarize_errors(schema_name: str, errors: list[ValidationError]) -> str:
-    shown = [f"{_source_path('$', error.path)}: {error.message}" for error in errors[:3]]
+    shown = [f"{_source_path('$', error.absolute_path)}: {error.message}" for error in errors[:3]]
     if len(errors) > 3:
         shown.append(f"... {len(errors) - 3} more schema error(s)")
     return f"{schema_name} validation failed; " + "; ".join(shown)

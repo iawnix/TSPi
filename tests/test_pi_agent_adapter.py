@@ -50,6 +50,8 @@ def test_pi_package_manifest_exposes_skill_and_extension() -> None:
     assert "name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate" in extension_source
     assert "name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply" in extension_source
     assert 'name: "ts_workspace_decision"' not in extension_source
+    assert "randomUUID" not in extension_source
+    assert 'runWorkspaceDraftJson(pi, root' in extension_source
     assert '"artifacts"' in extension_source
     assert 'runComputeJson(pi, "list-artifacts"' in extension_source
     assert "mode=artifacts" in extension_source
@@ -99,19 +101,25 @@ def test_public_tool_catalog_separates_workspace_subagent_and_remote_execution()
 
 def test_pi_documentation_matches_loaded_extensions_and_tool_boundary() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    architecture = (ROOT / "docs" / "ARCHITECTURE.md").read_text(encoding="utf-8")
     adapter = (SKILL_ROOT / "references" / "pi_agent_adapter.md").read_text(encoding="utf-8")
     maintainer = (ROOT / "docs" / "MAINTAINER_GUIDE.md").read_text(encoding="utf-8")
+    skill = (SKILL_ROOT / "SKILL.md").read_text(encoding="utf-8")
+    public_docs = "\n".join((readme, architecture, adapter, maintainer, skill))
 
-    assert "Pi `>=0.81.1 <1.0.0`" in readme
-    assert "`ts_workspace_decision_draft`" in readme
-    assert "`ts_workspace_decision_validate`" in readme
-    assert "`ts_workspace_decision_apply`" in readme
-    assert "`ts_subagent_review`" in readme
-    assert "`ts_review_disposition`" in readme
+    assert "`>=0.81.1 <1.0.0`" in readme
+    for tool in (
+        "ts_workspace_decision_draft",
+        "ts_workspace_decision_validate",
+        "ts_workspace_decision_apply",
+        "ts_subagent_review",
+        "ts_review_disposition",
+    ):
+        assert f"`{tool}`" in public_docs
     assert "run `validate_decision`, `start_node`" not in readme
-    assert "one Root Skill and five extensions" in adapter
+    assert "one Root Skill and five normal extensions" in adapter
     assert "fresh child session with exactly one" in adapter
-    assert "Provider failure takes precedence over output-contract failure" in readme
+    assert "Provider HTTP or stream failure outranks missing-tool or schema failure" in architecture
     assert "extensions/ts-workflow-review" in maintainer
     assert "extensions/ts-workflow-artifacts" in maintainer
 

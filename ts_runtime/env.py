@@ -98,11 +98,6 @@ def runtime_manifest_path(
     return home / "env.json"
 
 
-def legacy_runtime_manifest_path(package_root: str | Path | None = None) -> Path:
-    root = _resolved_package_root(package_root)
-    return root / ".runtime" / "env.json"
-
-
 def default_env_store(
     package_root: str | Path | None = None,
     workspace_root: str | Path | None = None,
@@ -160,50 +155,14 @@ def _arg_value(args: list[str], option: str) -> str | None:
     return None
 
 
-def _allow_legacy_manifest_fallback(
-    runtime_home: str | Path | None = None,
-    workspace_root: str | Path | None = None,
-    manifest_path: str | Path | None = None,
-) -> bool:
-    if runtime_home or workspace_root or manifest_path:
-        return False
-    if os.environ.get(RUNTIME_HOME_OVERRIDE) or os.environ.get(RUNTIME_MANIFEST_OVERRIDE):
-        return False
-    if os.environ.get(WORKSPACE_ROOT_OVERRIDE):
-        return False
-    return True
-
-
-def _candidate_manifest_paths(
-    package_root: str | Path | None = None,
-    runtime_home: str | Path | None = None,
-    workspace_root: str | Path | None = None,
-    manifest_path: str | Path | None = None,
-) -> list[Path]:
-    paths = [runtime_manifest_path(package_root, runtime_home, workspace_root, manifest_path)]
-    if _allow_legacy_manifest_fallback(runtime_home, workspace_root, manifest_path):
-        legacy_path = legacy_runtime_manifest_path(package_root)
-        if legacy_path not in paths:
-            paths.append(legacy_path)
-    return paths
-
-
-def _load_first_manifest(paths: list[Path]) -> dict[str, Any] | None:
-    for path in paths:
-        manifest = _load_manifest_file(path)
-        if manifest is not None:
-            return manifest
-    return None
-
-
 def load_manifest(
     package_root: str | Path | None = None,
     runtime_home: str | Path | None = None,
     workspace_root: str | Path | None = None,
     manifest_path: str | Path | None = None,
 ) -> dict[str, Any] | None:
-    paths = _candidate_manifest_paths(package_root, runtime_home, workspace_root, manifest_path)
-    return _load_first_manifest(paths)
+    path = runtime_manifest_path(package_root, runtime_home, workspace_root, manifest_path)
+    return _load_manifest_file(path)
 
 
 def _load_manifest_file(path: Path) -> dict[str, Any] | None:

@@ -43,6 +43,9 @@ inspect implementation source or tests during ordinary research. Read
 `references/package_sources.md` when the installed-runtime/package-maintenance
 boundary is in question.
 
+Read `references/runtime_environment.md` only when resolving the isolated
+Python environment or diagnosing its manifest.
+
 ## Operating Loop
 
 1. Read `ts_workspace_context mode=summary` or `mode=delta`.
@@ -67,7 +70,9 @@ candidate generator when scans, QST, or direct TS optimization are justified.
 
 Read `references/candidate_generation.md`,
 `references/mechanism_reflection.md`, and `references/backend_selection.md`
-only when selecting or reassessing a scientific strategy.
+only when selecting or reassessing a scientific strategy. Read
+`references/strategy_reflection.md` when repeated results require a bounded
+strategy reassessment.
 
 ## Decisions
 
@@ -75,7 +80,7 @@ Use the Root control tools in this order:
 
 1. `ts_workspace_context` for the current report or bounded history.
 2. `ts_workspace_decision_draft` to bind the selected action and payload to the
-   current report and revision.
+   current report and revision and allocate technical IDs.
 3. `ts_workspace_decision_validate` for a complete non-mutating dry run.
 4. `ts_workspace_decision_apply` for the transactional mutation.
 
@@ -91,6 +96,11 @@ workspace-aware validation under the workspace lock, so preflight is a preview,
 not a reusable token. Stale revisions and reused decision IDs with different
 content are rejected.
 
+When drafting Evidence or a Gate evaluation, omit `evidence_id` and
+`gate_result_id`; they are Kernel-owned. Use the allocated Evidence ref returned
+by one applied Decision in later Gate or Claim decisions. The Root Agent still
+owns Claim IDs, scientific facts, Gate selection, targets, and cited refs.
+
 Use `mode=node` for one historical Node and `mode=lineage` with `fromNode` plus
 `anchorNode` for a read-only ancestor/delta comparison. The Root Agent alone
 decides whether that history justifies a new child Node.
@@ -99,11 +109,16 @@ Build decisions from `references/decision_contract.md` and
 `assets/templates/decision/`. The templates demonstrate the generic mutation
 surface; they are not a workflow.
 
-## Isolated Operators
+## Review And Bounded Operators
 
-Every `ts_subagent_*` call creates a fresh child model session. Deterministic
-`ts_workspace_*`, `ts_remote_*`, `ts_review_disposition`, and
-`ts_notify_user` calls do not.
+Every `ts_subagent_*` call creates a fresh child model session with no parent
+conversation. This is an isolation mechanism, not a grant of equal scientific
+authority. Review performs bounded advisory reasoning. Compute, Render, and
+Report are constrained operators whose action, inputs, paths, and effect are
+bound by the Root Agent and deterministic host before the child starts.
+
+Deterministic `ts_workspace_*`, `ts_remote_*`, `ts_review_disposition`, and
+`ts_notify_user` calls create no child model session.
 
 - Use `ts_subagent_review` for a focused independent assessment of one target
   Claim. The Kernel derives its bounded dependency snapshot. Review is advisory
@@ -113,7 +128,8 @@ Every `ts_subagent_*` call creates a fresh child model session. Deterministic
   advice before another scientific mutation.
 - Use `ts_subagent_compute` for one typed `prepare`, `submit`, `inspect`,
   `collect`, `cancel`, or `parse` action. The operator cannot select the method,
-  rewrite the intent, register Evidence, or set a Claim status.
+  rewrite the intent, register Evidence, or set a Claim status. The host derives
+  authoritative action fields from the typed result; operator prose does not.
 - Use `ts_subagent_render` for one local bounded visualization.
 - Use `ts_subagent_report` for one new validated report package.
 - Use `ts_remote_inspect` only for on-demand read-only remote diagnostics. Do
@@ -123,12 +139,20 @@ All children use `ts-agent-task/2` and `ts-agent-result/1`. Their journals live
 under the owning Node or study-level `operations/agent-runs/`; journals are not
 Evidence and change only the operational revision.
 
+A process crash may leave a task-only journal reported as pending/unknown. The
+public tool return is the immediate result channel; a later Root turn is not
+automatically replayed an earlier child result. Re-read context, child history,
+and independent calculation control records before recovery. Never infer that a
+missing child result means a remote effect did not occur.
+
 Review binds a full `evidence-snapshot.json` for host validation and sends a
 compact `provider-input.json` to the model. Provider errors outrank missing or
 invalid result-tool output; a provider failure is not a format-repair request.
 
 Read `references/pi_agent_adapter.md`, `references/agent_decision_protocol.md`,
 and `references/artifact_operators.md` when delegation behavior is relevant.
+Read `references/render_contract.md` for rendering-specific path and authority
+rules.
 
 ## Calculation Attempts
 
@@ -182,7 +206,8 @@ revise a Claim, ask the user, or stop.
 
 Read `references/gaussian_validation.md`,
 `references/connectivity_validation.md`, and `references/pathway_model.md` for
-the relevant scientific checks.
+the relevant scientific checks. Read `references/ts_structures_contract.md`
+when comparing structures, atom maps, or stereochemistry.
 
 ## Notifications And Reports
 

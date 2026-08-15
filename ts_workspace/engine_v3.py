@@ -184,6 +184,7 @@ def _update_workspace_once(root: Path, decision: dict[str, Any]) -> dict[str, An
     nodes = _node_documents(root, research)
     timestamp = now_iso()
     counts = {"claims": 0, "evidence": 0, "evidence_events": 0, "gate_results": 0, "operations": 0, "provenance": 0}
+    created_refs = {"claims": [], "evidence": [], "evidence_events": [], "gate_results": []}
 
     for item in _items(payload.get("append_claim")):
         record = {
@@ -204,6 +205,7 @@ def _update_workspace_once(root: Path, decision: dict[str, Any]) -> dict[str, An
         claims["claims"].append(record)
         _append_unique(nodes[item["node_id"]]["claim_refs"], item["claim_id"])
         counts["claims"] += 1
+        created_refs["claims"].append(item["claim_id"])
 
     for item in _items(payload.get("append_evidence")):
         record = dict(item)
@@ -211,12 +213,14 @@ def _update_workspace_once(root: Path, decision: dict[str, Any]) -> dict[str, An
         evidence["evidence"].append(record)
         _append_unique(nodes[item["node_id"]]["evidence_refs"], item["evidence_id"])
         counts["evidence"] += 1
+        created_refs["evidence"].append(item["evidence_id"])
 
     for item in _items(payload.get("append_evidence_event")):
         record = dict(item)
         record["created_at"] = timestamp
         evidence["events"].append(record)
         counts["evidence_events"] += 1
+        created_refs["evidence_events"].append(item["event_id"])
 
     active_view = evidence_view(evidence["evidence"], evidence["events"])
     active_records = active_view.active_records
@@ -232,6 +236,7 @@ def _update_workspace_once(root: Path, decision: dict[str, Any]) -> dict[str, An
         gates["gate_results"].append(result)
         _append_unique(nodes[request["node_id"]]["gate_result_refs"], request["gate_result_id"])
         counts["gate_results"] += 1
+        created_refs["gate_results"].append(request["gate_result_id"])
 
     for link in _items(payload.get("link_operation")):
         _append_unique(nodes[link["node_id"]]["operation_refs"], link["operation_ref"])
@@ -251,7 +256,11 @@ def _update_workspace_once(root: Path, decision: dict[str, Any]) -> dict[str, An
     }
     for node_id, node in nodes.items():
         changes[root / "nodes" / node_id / "node.json"] = node
-    result = {"appended": counts, "focus_claim_refs": list(claims["focus_claim_refs"])}
+    result = {
+        "appended": counts,
+        "created_refs": created_refs,
+        "focus_claim_refs": list(claims["focus_claim_refs"]),
+    }
     commit_transaction(root, decision, changes, result)
     return result
 

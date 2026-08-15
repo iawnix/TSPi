@@ -1,103 +1,112 @@
 # Strategy Reflection
 
-This file is a heuristics library, not a workflow. Hard constraints live in
-`workspace_contract.md` and the evidence gates. Nothing in this file can
-change `validate_workspace`, `accepted_audit`, or any verdict. Each entry
-ends with a reflection question, not a directive; each entry lists at least
-one case where the heuristic does not apply.
+This file is a heuristic library, not a workflow. Hard constraints live in the
+workspace contract, declared Claim requirements, deterministic Gates, and audit
+policies. Nothing here changes a validator or selects a next Node automatically.
 
-Read this file when any of the following holds:
+Read it when relevant Node results, calculation attempts, or Evidence show one
+of these patterns:
 
-- the same `hypothesis_ref` has ≥2 consecutive nodes whose IRC endpoint
-  assignments fall on the same side (product/product or reactant/reactant);
-- the same `hypothesis_ref` has ≥2 Gaussian route-mismatch diagnostics or
-  route-ineffective closures;
-- the active hypothesis `structured_claim.electronic_model`
-  marks `excited_state`, `open_shell`, or `non_adiabatic`;
-- any recent `reason_code` matches `wrong_basin|route_ineffective|surface_ambiguous`.
+- two or more IRC attempts linked to the same target Claim assign both
+  directions to the same side;
+- repeated Gaussian attempts show the same route mismatch or ineffective
+  optimization behavior;
+- the target Claim describes excited-state, open-shell, or non-adiabatic
+  chemistry;
+- repeated results indicate a wrong basin, incompatible endpoints, or an
+  ambiguous electronic surface.
 
-Every example uses a generic label (e.g. "diazo → ketene via carbene
-channel") rather than a specific molecule. Project-specific priors belong in
-the project's own `.TODO.md` or task README, not here.
+The Root Agent must inspect the cited records and decide whether any heuristic
+applies. Project-specific priors belong in the research workspace or its source
+material, not in this package reference.
 
-## R/P endpoints do not choose the TS-search method
+## Contents
 
-Reactant and product endpoints define the target basins for validation. They
-do not by themselves justify QST2/QST3 or any other method. Ask: is atom
-mapping reliable? Are conformers compatible? Is the elementary step really a
-single elementary step? Only if all three hold is QST a reasonable default;
-otherwise a scan-based or manual-seed candidate is often better.
+- [Endpoints Do Not Select A TS Search Method](#endpoints-do-not-select-a-ts-search-method)
+- [Repeated Same-Shape Gaussian Failure](#repeated-same-shape-gaussian-failure)
+- [Repeated Same-Side IRC](#repeated-same-side-irc)
+- [Excited-State, Open-Shell, And Non-Adiabatic Claims](#excited-state-open-shell-and-non-adiabatic-claims)
+- [Constraint-Derived Loose Fragments](#constraint-derived-loose-fragments)
+- [Multiple Plausible Sites Or Conformers](#multiple-plausible-sites-or-conformers)
+- [Recording The Decision](#recording-the-decision)
 
-*Does not apply when:* the endpoints have been optimized under matching
-conditions, atom mapping is unambiguous, and the mechanism claim is a single
-elementary step with no proposed intermediate.
+## Endpoints Do Not Select A TS Search Method
 
-## Repeated same-shape Gaussian failure — address route, not seed
+Reactant and product endpoints define target basins for validation. They do not
+by themselves justify QST2/QST3 or any other candidate method. Ask whether atom
+mapping is reliable, conformers are compatible, stoichiometry matches, and the
+Claim describes one elementary step. If not, a scan, NEB, chemically guided
+seed, or revised Claim may be more appropriate.
 
-When several TS/Freq or IRC jobs fail the same way (route ineffective, step
-limit reached even with `MaxCycle` bump, parser desync, corrector
-convergence), the failure is likely a backend/route property, not a seed
-quality property. Ask: does the log actually reflect the requested route?
-Was the keyword accepted? Is there a Gaussian-internal step limit
-overriding the requested one? Small seed perturbations under an ineffective
-route waste the budget.
+This heuristic does not reject QST when both endpoints are optimized under
+matching conditions, mapping is unambiguous, and interpolation is chemically
+meaningful.
 
-*Does not apply when:* the failures have distinct root causes (one on scratch
-disk full, one on a genuinely bad initial guess) — treat each on its own.
+## Repeated Same-Shape Gaussian Failure
 
-## Repeated wrong-basin IRC — question the TS type, not just the seed
+When several attempts fail with the same route readback, step-limit, corrector,
+or convergence pattern, inspect the route and optimizer behavior before
+perturbing another similar seed. Confirm that Gaussian accepted the intended
+keywords and distinguish requested `MaxCycle` from Gaussian's internal step
+diagnostics.
 
-Two or more IRC runs collapsing to the same side (product/product or
-reactant/reactant) under the same hypothesis suggests the imaginary mode is
-a shoulder, a soft mode in the same basin, or a saddle for a different
-reaction coordinate — not that the seed is slightly off. Ask: does the
-imaginary mode's displacement vector actually align with the proposed
-reaction center? Would a different TS type (e.g. constrained-scan seed
-instead of QST) reach a different basin? Continuing to perturb structurally
-similar candidates is unlikely to escape the basin.
+This heuristic does not apply when failures have different causes, such as one
+scratch failure and one chemically poor initial geometry.
 
-*Does not apply when:* one of the two IRC runs terminated early with a
-program failure that plausibly aborted before the true forward branch —
-finish that run before drawing conclusions.
+## Repeated Same-Side IRC
 
-## Photochemistry / open-shell / non-adiabatic — decompose by surface first
+Two completed IRC attempts that collapse to the same basin on both directions
+can indicate a shoulder, a soft intrabasin mode, or a saddle for another
+coordinate. Compare the imaginary displacement with the declared reaction
+center and consider whether a different candidate-generation strategy tests the
+Claim more directly.
 
-Excited-state, open-shell, or non-adiabatic hypotheses are not a single
-ground-state R→P search with an unusual TS. Before framing any IRC, ask:
-what surface is the reactant on? What surface is the TS on? Where is the
-crossing (if any)? A ground-state R→P IRC over a mechanism that involves a
-surface crossing is a category error — the answer will not match the
-hypothesis regardless of TS quality.
+This heuristic does not apply when one path terminated before a direction was
+assignable. Finish or diagnose the incomplete calculation before interpreting
+the pattern.
 
-*Does not apply when:* the state character has been diagnosed and remains
-constant across R, TS, and P — a same-surface reaction where excitation
-only altered the starting basin can be treated with the same-surface
-gates.
+## Excited-State, Open-Shell, And Non-Adiabatic Claims
 
-## Loose fragments placed by interpolation — candidate only, not TS/Freq seed
+Do not reduce a surface-changing mechanism to one unusual ground-state IRC.
+State the surface or spin character of each relevant basin and the location of
+any crossing. Use state-character, electronic-structure, or crossing evidence
+as required by the Claim.
 
-Structures produced by hand-interpolating or ad-hoc-constraining a small
-loose fragment (N₂, CO, small ligand) are candidates. Before promoting to
-TS/Freq, ask: does the constraint hide the true saddle geometry? A short
-constraint-release relaxation or a small scan through the constrained
-coordinate is cheap and tells you whether the region is stable without the
-constraint. Skipping this step often produces TS/Freq attempts that either
-fail to converge or converge to a constraint-artifact saddle.
+This heuristic does not require a crossing model when diagnostics support one
+consistent adiabatic state across the complete elementary step.
 
-*Does not apply when:* the constraint has already been released in a
-previous node and the released geometry re-converged near the constrained
-one within a small RMSD.
+## Constraint-Derived Loose Fragments
 
-## Multiple plausible reaction sites — sequence, don't parallelize
+Hand-interpolated or strongly constrained loose fragments are candidate
+geometries. Before treating one as a TS/Freq seed, test whether the structure
+remains near the candidate after releasing the constraint or after a short scan
+through the coordinate. Record the changed operation and resulting facts.
 
-When a hypothesis admits multiple a priori plausible reaction sites or
-functional-group participants, attack the site with lower structural strain
-and stronger literature precedent first. Ask: which alternative site has
-the fewest a priori objections? Which has evidence I can reuse? Parallel
-primary lines split compute and attention; the alternative is best kept as
-a checked comparator branch that runs after the primary line is either
-supported or refuted.
+This heuristic does not apply when an earlier verified operation already
+released the constraint and reproduced the same local structure.
 
-*Does not apply when:* the alternatives differ only in stereochemistry or
-regiochemistry within a symmetric neighborhood — those are cheap to run
-together and inform each other.
+## Multiple Plausible Sites Or Conformers
+
+The Kernel permits sibling or child Nodes but does not require parallel work.
+Use chemical plausibility, cost, symmetry, available Evidence, and the user's
+goal to decide whether alternatives should run sequentially or together. Keep
+each alternative visible through an explicit Claim, Node objective, or linked
+operation.
+
+Parallel work can be efficient for cheap symmetry-related stereochemical or
+regiochemical alternatives. It is less useful when it splits scarce compute
+across unrelated high-cost mechanisms without a discriminator.
+
+## Recording The Decision
+
+When a heuristic changes the plan:
+
+1. cite the Node, Claim, Evidence, Gate, or calculation records that show the
+   pattern;
+2. state which scientific assumption or technical route is changing;
+3. use `attempt_kind=retry` only for the same scientific protocol after a
+   retry-safe technical failure;
+4. use a recalculation or new Node for changed method, settings, coordinate
+   strategy, candidate, or scientific question;
+5. leave prior failures intact and close the current Node explicitly if its
+   bounded objective is complete, inconclusive, blocked, or stopped.

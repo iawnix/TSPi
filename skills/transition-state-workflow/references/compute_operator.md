@@ -13,6 +13,17 @@ Every JSON block below contains the arguments for the named public tool, not an
 entire provider API request. Replace example IDs only with values returned by
 the workspace tools.
 
+## Contents
+
+- [Discover Inputs And Capabilities](#discover-inputs-and-capabilities)
+- [Prepare](#prepare)
+- [Submit](#submit)
+- [Inspect](#inspect)
+- [Collect](#collect)
+- [Parse](#parse)
+- [Cancel](#cancel)
+- [Retry And Recalculation](#retry-and-recalculation)
+
 ## Discover Inputs And Capabilities
 
 Read the owning Node's logical artifacts before preparing a calculation:

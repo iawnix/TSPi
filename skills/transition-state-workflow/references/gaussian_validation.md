@@ -29,9 +29,10 @@ Record:
   free-energy correction when available.
 
 One imaginary frequency is necessary but not sufficient for an accepted TS. The
-mode must support the validation node's declared prediction, the final local
-geometry and available electronic diagnostics must not contradict the
-mechanism, and connectivity must be validated in a separate evidence layer.
+mode should support the target Claim's declared reaction coordinate, the final
+local geometry and relevant electronic diagnostics must not contradict that
+Claim, and connectivity must be registered and evaluated from a separate
+Evidence record.
 
 Strict TS/Freq support requires all of:
 
@@ -40,14 +41,14 @@ Strict TS/Freq support requires all of:
 - final convergence evidence and all convergence rows satisfied;
 - exactly one imaginary frequency.
 
-Strict TS/Freq support for a mechanism claim also requires a node-scoped
-mode-assignment artifact that includes local-geometry and available
-electronic-structure consistency fields. If those diagnostics show that the
-stationary point belongs to a different local motif, electronic state, charge
-distribution, or spin pattern than the declared hypothesis, the TS/Freq node
-should close as refuted or inconclusive even if it has exactly one imaginary
-frequency. Do not start IRC from a TS/Freq result whose mechanism-consistency
-review is refuted.
+When the target Claim requires `mode_assignment`, register a Node-owned
+mode-assignment Evidence record and evaluate that Gate separately. Add
+electronic-structure or state-character Gates when the Claim requires them. If
+those diagnostics show that the stationary point belongs to a different local
+motif, electronic state, charge distribution, or spin pattern, close the Node
+with an explicit contradicted or inconclusive Claim update even if it has
+exactly one imaginary frequency. Do not start IRC from a result whose declared
+reaction-coordinate assignment is contradicted.
 
 Concatenated or Link1 logs should be parsed section by section. The default is
 the final Gaussian job section unless a section index is explicitly supplied.

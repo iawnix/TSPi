@@ -1,14 +1,7 @@
 {
-  "schema_version": "ts-decision/3",
-  "decision_id": "${DECISION_ID}",
   "action": "end_node",
   "rationale": "Record the Root Agent's acceptance decision after deterministic Gates pass.",
-  "basis_refs": ["${CLAIM_ID}", "${GATE_RESULT_ID}", "${SECOND_GATE_RESULT_ID}"],
-  "report_ref": {
-    "report_id": "${REPORT_ID}",
-    "workspace_root": "${WORKSPACE_ROOT}"
-  },
-  "base_revision": "${BASE_REVISION}",
+  "basisRefs": ["${CLAIM_ID}", "${GATE_RESULT_ID}", "${SECOND_GATE_RESULT_ID}"],
   "payload": {
     "node_id": "${NODE_ID}",
     "result": {

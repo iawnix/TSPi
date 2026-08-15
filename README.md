@@ -1,68 +1,63 @@
 # @iawnix/ts-agent
 
-`@iawnix/ts-agent` is the Pi package maintained in the TSAgentSkill repository.
-It combines an evidence-driven transition-state research Skill, deterministic
-workspace and compute kernels, isolated operator agents, remote SSH/Torque
-execution, reporting, notifications, and a read-only workspace explorer.
+`@iawnix/ts-agent` is the Pi package maintained in the TSAgentSkill
+repository. It supports evidence-driven transition-state research with one
+Root Agent, a deterministic scientific workspace, bounded Review and operator
+sessions, typed local or SSH/Torque calculations, reporting, notifications,
+and a read-only activity UI.
 
-This branch supports Pi Agent only. The Python entrypoints are implementation
-kernels used by the Pi extensions, not a separate agent runtime.
-The package supports Pi `>=0.81.1 <1.0.0` and is currently validated against
-the exact Pi SDK versions in `package.json`.
+This branch supports Pi Agent only. Python modules are deterministic kernels
+called by the Pi extensions; they are not a second Agent runtime. Supported Pi
+versions are `>=0.81.1 <1.0.0`, with the exact tested SDK versions pinned in
+`package.json`.
 
-## Design
-
-The v3 architecture has one decision boundary:
+## Core Boundary
 
 ```text
-Root Agent chooses the research path
-  -> deterministic kernel validates contracts, references, facts, Gates,
-     transactions, and immutable operational bindings
+Root Agent chooses the research path and scientific interpretation
+  -> Workspace Kernel validates and commits scientific state
+  -> Review advises; bounded operators execute selected actions
+  -> UI projects activity without gaining authority
 ```
 
-The kernel does not choose a method, prescribe a node sequence, infer a next
-step from tags, or turn a failed calculation into a scientific conclusion.
+The long-lived scientific vocabulary is intentionally small:
 
-The canonical scientific model is deliberately small:
+- **Node**: one bounded research act with parent topology and descriptive tags.
+- **Claim**: one versioned scientific statement authored by the Root Agent.
+- **Evidence**: immutable facts, source artifacts, and provenance.
+- **Gate**: one deterministic fact-policy result used by declared acceptance
+  policies.
 
-- **Node**: one bounded research act with a parent, objective, optional tags,
-  references, and a terminal result. Tags are for display and search only.
-- **Claim**: a versioned scientific statement selected and updated by the Root
-  Agent.
-- **Evidence**: immutable facts, artifact references, and provenance. Evidence
-  has no workflow role or layer.
-- **Gate**: a named deterministic evaluation of registered facts. Gates protect
-  scientific acceptance; they do not route the workflow.
+There is no workflow phase, stage, Node type, Evidence role, or Evidence layer
+that selects the next action. Tags are for display and search only. Program
+completion, scheduler state, Review output, and operator success are not
+scientific support by themselves.
 
-New mutations use `ts-decision/3`; nodes use `ts-node/3`. Older workspaces are
-accepted only by the explicit v2-to-v3 migration command, never by runtime
-compatibility aliases.
+New state uses `ts-decision/3` and `ts-node/3`. Runtime reads and writes v3 only;
+v2 workspaces require the explicit copy migration.
 
-## Package Layout
+## Documentation
 
-- `skills/transition-state-workflow/`: the only public Pi Skill, with focused
-  references and reusable decision/report assets.
-- `extensions/`: deterministic workspace/infrastructure tools, isolated
-  operator entrypoints, notifications, and TSPi UI.
-- `src/agent-core/`: `ts-agent-task/2`, `ts-agent-result/1`, result validation,
-  provider failure handling, and immutable run journals.
-- `src/agents/`: private Review, compute, render, and report operator policies.
-- `ts_workspace`: the only canonical scientific-state control plane.
-- `ts_compute` and `ts_backends`: typed calculation intents, preparation,
-  control, collection, and deterministic parsing.
-- `ts_remote`: installation-owned OpenSSH/SCP and Torque lifecycle.
-- `ts_render`: molecular rendering through `xyzrender` only.
-- `ts_report`: atomic report-package assembly from validated v3 state.
-- `ts_email`: installation-configured ClawEmail progress notifications.
-- `ts_web`: read-only workspace normalization and visualization.
+- [Installation and Operations](docs/INSTALLATION.md): prerequisites, release
+  install, configuration, startup, resume, upgrade, rollback, and recovery.
+- [Architecture](docs/ARCHITECTURE.md): component ownership, Agent and operator
+  lifecycles, persistence, result delivery, and extension inventory.
+- [Maintainer Guide](docs/MAINTAINER_GUIDE.md): source setup, contract changes,
+  tests, release procedure, and documentation ownership.
+- [Root Skill](skills/transition-state-workflow/SKILL.md): the operating policy
+  loaded into research sessions, with focused scientific and tool references.
 
-## Install
+These three documents are shipped in the validated release. Runtime package
+code and public operating material are immutable; maintenance still happens
+only in the authored Git checkout. `TSPi` never loads that checkout directly.
 
-Normal installations consume a validated release instead of a Git checkout.
-From a clean maintainer checkout, build the content-addressed archive and install
-it into a dedicated TSPi root:
+## Quick Install
+
+Build a content-addressed archive from a clean authored checkout and install it
+into a dedicated TSPi root:
 
 ```bash
+python3 scripts/check_package.py
 python3 scripts/build_release.py --output-dir dist --json
 python3 scripts/install_release.py \
   --manifest dist/ts-agent-release.json \
@@ -79,253 +74,119 @@ python3 "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
   --json
 ```
 
-The installer verifies the manifest, archive filename, size, SHA-256, package
-identity, required runtime files, and safe tar members before switching the
-active release. Its layout is:
+The installer verifies archive identity, size, SHA-256, safe members, required
+files, and immutable release permissions before atomically selecting
+`.pi/packages/ts-agent/current`. It installs the launcher as:
 
 ```text
 <installation>/TSPi -> .pi/packages/ts-agent/current/TSPi
-<installation>/.pi/packages/ts-agent/current -> releases/<version>-sha256-<digest>
-<installation>/.pi/packages/ts-agent/releases/<release-id>/
 ```
 
-Old releases are retained for inspection and rollback. Reinstalling the same
-content is idempotent. The release contains runtime code and public operating
-material only; it excludes `.git`, tests, maintainer documentation, build/check
-scripts, caches, and `node_modules`.
+Configure Pi authentication and model selection separately. Set `PI_BIN` when
+Pi is not installed at the launcher's default location. Remote execution and
+email notifications are optional installation-owned configuration; see the
+installation guide.
 
-Package maintenance happens in the authored checkout, outside research
-sessions. Run tests and release checks there, then build and install a new
-validated release:
+## Start TSPi
 
-```bash
-cd /absolute/path/to/TSAgentSkill
-python3 scripts/check_package.py
-python3 scripts/build_release.py --output-dir dist --json
-python3 scripts/install_release.py \
-  --manifest dist/ts-agent-release.json \
-  --install-root /path/to/TSPi-installation \
-  --json
-```
-
-`TSPi` never loads the authored checkout directly. Every research session uses
-the versioned release selected by `.pi/packages/ts-agent/current`.
-
-`ts_render` uses `xyzrender` only. It does not require or probe Blender,
-FFmpeg, OpenBabel, Mayavi, or PyVista; missing render support does not block
-workspace validation or calculation parsing.
-
-## TSPi
-
-Install the package-owned `TSPi` launcher at the installation root, next to its
-`.pi/`, `.agents/`, and `workspaces/` directories. Always select a workspace:
+No workspace directory must be created manually. The launcher creates or
+validates it under `<installation>/workspaces/`:
 
 ```bash
 ./TSPi --workspace reaction-a
-./TSPi --workspace reaction-b
+./TSPi --workspace reaction-a --continue
+./TSPi --workspace reaction-a --phone
 ./TSPi --check-remote
 ```
 
-Workspace names resolve only under `<installation>/workspaces/`. Each workspace
-owns its sessions, Root Agent lock, operational identity, nodes, inputs, and
-reports. One nonblocking writer lock allows one Root Agent per workspace;
-different workspaces can run concurrently.
+One nonblocking lock permits one Root Agent process per workspace. Different
+workspace names can run concurrently. Terminal mode starts a new Pi session
+unless normal Pi arguments such as `--continue` are supplied; Phone mode always
+attaches with `--continue`.
 
-The 16-line `TSPi` shell shim delegates lifecycle work to
-`scripts/tspi_host.py` and `ts_runtime.launcher`. Before Pi starts, the host
-validates the active release and installation configuration, acquires the Root
-Agent lock, and calls deterministic workspace bootstrap:
+Startup validates the active release and installation configuration, prepares
+workspace-local Pi session state, acquires the Root lock, and performs
+deterministic workspace bootstrap. Fresh workspaces are initialized once;
+complete v3 workspaces are only validated; partial, invalid, or v2 workspaces
+fail closed. Ordinary startup does not contact the remote scheduler.
 
-- a fresh directory is initialized once while unrelated input files remain;
-- a complete v3 workspace is validated without canonical writes;
-- a partial or invalid v3 workspace fails closed;
-- a v2 workspace requires explicit copy migration.
+## Public Surface
 
-Ordinary startup does not contact the cluster. `--check-remote` performs a
-strict read-only SSH diagnostic and returns nonzero when the configured remote
-profile is unhealthy.
+Pi loads one Skill, five extensions, one theme, eleven tools, and four slash
+commands. Tool prefixes describe execution authority:
 
-### TS Phone
+- `ts_workspace_*`: deterministic context, draft, validation, and canonical
+  apply. Only `ts_workspace_decision_apply` writes scientific state.
+- `ts_subagent_review`: one fresh advisory scientific Review.
+- `ts_subagent_compute`, `ts_subagent_render`, and `ts_subagent_report`: fresh,
+  request-scoped operator sessions. They execute a Root-selected action and
+  cannot decide Claims or Gates.
+- `ts_remote_inspect`: deterministic read-only SSH/Torque diagnostics.
+- `ts_review_disposition`: deterministic write-once Root response to Review.
+- `ts_notify_user`: deterministic delivery to the fixed installation target.
 
-TS Phone is an optional mobile control surface for this TSPi installation. It
-does not replace the TSPi launcher, own research state, or start a hidden Pi.
-To create or reuse a workspace and attach its visible TUI to the local Broker:
+The slash commands are `/ts-context`, `/ts-validate`, `/ts-remote`, and
+`/ts-subagent-history`. The last command merges transient activity with durable
+run journals in a paginated read-only browser.
 
-```bash
-./TSPi --workspace reaction-a --phone
-```
+## Research Loop
 
-The command starts normal Pi TUI mode with `--continue`, loads the package-owned
-`ts-phone-bridge` Extension, and connects to the local Broker over a protected
-Unix socket. The same Pi process owns terminal input, phone input, model/API-key
-resolution, tools, session history, and the workspace Root Agent lock.
+The Root Agent normally:
 
-Bridged sessions preserve the normal one-Root-Agent-per-workspace lock. Read-only
-workspace, remote inspection, validation, and Review tools can run directly.
-Shell/file writes, scientific-state application, compute, rendering, report
-generation, and notification require a one-time confirmation on the phone.
-Unknown tools fail closed. Confirmation previews redact common secret fields;
-they are a decision aid, not a substitute for reviewing the requested action.
+1. Reads compact context and identifies one unresolved question.
+2. Drafts, validates, and applies a `start_node` Decision.
+3. Creates or cites Claims and selects a scientifically justified method.
+4. Links immutable operations, verifies local artifacts, and registers facts.
+5. Evaluates only the Gates required by the Claim or acceptance policy.
+6. Closes the Node with explicit Claim updates, limitations, and optional audit.
+7. Re-reads context and independently chooses another Node, stop, or completion.
 
-The TS Phone Broker, HTTPS/FRP deployment, Bearer token, and mobile app are
-maintained separately. Phone messages enter through `pi.sendUserMessage()`;
-TSPi never exposes a generic remote shell, caller-selected filesystem path,
-environment override, process launcher, or raw Pi RPC endpoint.
+Gaussian is a first-class candidate generator when scans, QST, or direct TS
+optimization are justified. The adapter catalog is not a method priority list.
+A candidate, converged program, or single imaginary frequency is not an
+accepted TS. `accepted-ts/2` requires passing target-compatible TS/Freq and
+connectivity Gates; Claims may require additional Gates.
 
-The UI provides the TSPi startup header, rounded editor, stable footer, working
-indicator, and a bounded `TS Activity` panel. `/ts-subagent-history` opens a
-read-only paginated view of active and durable child runs. Pi's native `Ctrl+O`
-expands or collapses all expandable history entries; TS entries label that
-global behavior explicitly.
+## Compute And Remote
 
-## Root Tools
+Preparation accepts `ts-calculation-request/1`, resolves logical `artifactId`
+plus `inputRole` bindings, and writes an immutable
+`ts-calculation-intent/3`. Supported adapter tasks currently include:
 
-Pi exposes eleven tools. Their prefixes describe execution authority:
+- Gaussian: `sp`, `opt`, `freq`, `opt_freq`, `irc`;
+- xTB: `sp`, `opt`, `freq`, `opt_freq`, `scan`, `md`;
+- CREST: `conformer_search`;
+- ASE: `neb`;
+- QBICS: `dmecp`.
 
-- `ts_workspace_context`: read `summary`, `delta`, `node`, `lineage`, `audit`,
-  `artifacts`, or adapter `capabilities`.
-- `ts_workspace_decision_draft`: bind a Root-selected action and payload to the
-  current report and revision without mutating state.
-- `ts_workspace_decision_validate`: run schema, reference, transaction, Gate,
-  and full post-mutation dry-run validation.
-- `ts_workspace_decision_apply`: transactionally apply a validated decision.
-- `ts_remote_inspect`: read-only `status`, `doctor`, `queues`, or `nodes`
-  diagnostics for the configured SSH/Torque profile.
-- `ts_subagent_review`: run an advisory Review against one target Claim and its
-  deterministic dependency snapshot.
-- `ts_review_disposition`: record the Root Agent's write-once response to a
-  successful Review before the next scientific mutation.
-- `ts_subagent_compute`: run one typed `prepare`, `submit`, `inspect`, `collect`,
-  `cancel`, or `parse` operator action.
-- `ts_subagent_render`: produce one node-scoped local visualization.
-- `ts_subagent_report`: build one validated report package.
-- `ts_notify_user`: send one deterministic installation-configured progress
-  notification with bounded report attachments.
+Capability means the adapter can express and validate a task, not that software,
+storage, SSH, or Torque is healthy. Remote jobs are isolated by workspace ID,
+Node, and intent under the configured remote root. Transfer failures before a
+scheduler effect are retryable only when the typed result says so. Ambiguous
+submit or cancel effects must be reconciled, never replayed. Collection uses
+the immutable artifact manifest and does not depend on scheduler history.
 
-Only `ts_workspace_decision_apply` mutates canonical scientific state.
-Subagent results and Review dispositions are operational records, not Evidence.
+## State And Reports
 
-## Workspace Protocol
+Canonical scientific files are limited to the v3 workspace registries, Node
+records, accepted artifacts, Decisions, and transaction logs. Calculation
+attempts, remote receipts, Review/operator journals, notifications, reports,
+sessions, and UI state are operational or derived data.
 
-The Root Agent normally follows this control loop:
-
-1. Read compact context and select one research objective.
-2. Open a Node whose objective states the bounded act; tags remain descriptive.
-3. Register Claims chosen by the Root Agent.
-4. Link typed calculations or other immutable operation records to the Node.
-5. Register parsed or observed Evidence with provenance.
-6. Evaluate only the Gates required by the relevant Claim or acceptance policy.
-7. Close the Node with explicit Claim updates, limitations, and optional audit.
-8. Re-read context and choose the next Node, stop, or finish the study.
-
-The four decision actions are `init_workspace`, `start_node`,
-`update_workspace`, and `end_node`. The public Root tool drafts the latter
-three; workspace initialization is performed by the launcher/kernel entrypoint.
-
-Canonical files are:
-
-```text
-research_state.json
-claims.json
-evidence_registry.json
-gate_results.json
-nodes/<node_id>/node.json
-accepted/<acceptance_id>.json
-decisions/<decision_id>.json
-decision_log.jsonl
-transaction_log.jsonl
-```
-
-`report_lineage_context` is a read-only ancestry/delta query. It does not select
-a checkpoint or authorize a new Node.
-
-## Compute And Remote Execution
-
-Preparation accepts `ts-calculation-request/1` and writes an immutable
-`ts-calculation-intent/3`. The Root Agent selects the Node, scientific purpose,
-backend, task, settings, resources, and attempt kind. The deterministic adapter
-resolves logical `artifactId` plus `inputRole` bindings and generates paths,
-filenames, expected artifacts, digests, and control identities.
-
-The capability catalog currently expresses Gaussian `sp|opt|freq|opt_freq|irc`,
-xTB `sp|opt|freq|opt_freq|scan|md`, CREST `conformer_search`, ASE `neb`, and
-QBICS `dmecp`. Capability means the adapter can express and validate the task;
-it does not prove local software or remote scheduler readiness.
-
-Attempt authority lives under:
-
-```text
-nodes/<node_id>/attempts/<intent_id>/
-```
-
-`ts_remote` is the only remote subsystem. It binds an immutable submission ID
-to the workspace identity, intent digest, input manifest, generated Torque
-script, expected artifacts, profile, and resources. Pre-submit transfer failure
-is retryable with the same binding; an ambiguous scheduler request is not.
-Collection verifies declared files and hashes without depending on scheduler
-history. Scheduler status is never scientific Evidence.
-
-Remote hosts, roots, queue policy, commands, and software activation come only
-from the installation TOML selected by `TS_REMOTE_CONFIG`. The Agent cannot put
-transport or host configuration into a calculation request.
-
-## Agent Protocol
-
-Every isolated operator uses `ts-agent-task/2` and `ts-agent-result/1`. Review
-receives a compact `ts-review-provider-input/2` plus a separately bound full
-`ts-review-evidence-snapshot/2`; host validation checks citations against the
-full snapshot. Provider failure takes precedence over output-contract failure.
-
-Child runs are journaled under `nodes/<node>/agent-runs/<task>/` or
-`operations/agent-runs/<task>/`. Journals change only the operational revision.
-They do not update Claims, Evidence, Gates, or accepted artifacts.
-
-## Notifications
-
-Notification configuration is installation-private state. Create
-`<installation>/.pi/notifications.toml` with mode `0600`:
-
-```toml
-[notifications.email]
-enabled = true
-recipient = "researcher@example.org"
-clawemail_root = "/absolute/path/to/clawemail"
-```
-
-This fixed configuration authorizes progress delivery to one recipient. The
-Root Agent supplies the event, subject, bounded summary, and optional existing
-files under `reports/`; it cannot alter credentials or the recipient. Delivery
-uses digest-addressed idempotency receipts. Ambiguous delivery is never retried
-automatically, and notification failure does not mutate scientific state.
-TSPi shows the fixed target at startup and in the notification tool metadata.
-If it differs from the address requested by the user, the Root Agent reports
-the mismatch without sending or editing installation configuration.
-
-## Reports
-
-Build reports only from a valid workspace:
-
-```bash
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_report.py" \
-  --root "$TS_WORKSPACE_ROOT" \
-  --package-dir "$TS_WORKSPACE_ROOT/reports/final_report_package"
-```
-
-Package creation is atomic and no-overwrite. `package_manifest.json` binds the
-source workspace revision and every generated file by SHA-256. The standard
-report projects Claims, deterministic Gate results, Evidence facts, Nodes,
-accepted artifacts, open questions, and unresolved operational controls.
+Report packages are built atomically from a valid workspace. Their manifest
+binds the source scientific revision and every output file by SHA-256. Review
+and operator results become scientifically usable only after the Root Agent
+verifies primary artifacts and registers normal Evidence through a Decision.
 
 ## Validation
 
+Run validation from the authored checkout, not an installed release:
+
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q
-npm run test:pi-adapter
 npm run typecheck
+npm run test:pi-adapter
 npm run test:package
 npm pack --dry-run --json
+git diff --check
 ```
-
-The real-Pi integration suite uses a local recording provider to verify the
-eleven-tool Root inventory, isolated child tools, Review repair semantics,
-provider error propagation, lifecycle UI, and operational journals.

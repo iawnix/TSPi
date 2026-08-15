@@ -15,6 +15,7 @@ from .engine_v3 import (
 )
 from .identity import ensure_workspace_identity, read_workspace_identity, workspace_id
 from .decision_validator_v3 import ContractError, validate_decision
+from .draft_v3 import draft_decision
 from .bootstrap import (
     WorkspaceBootstrapError,
     WorkspaceBootstrapState,
@@ -30,6 +31,7 @@ __all__ = [
     "build_review_snapshot",
     "classify_workspace",
     "end_node",
+    "draft_decision",
     "ensure_workspace_identity",
     "init_workspace",
     "report_lineage_context",

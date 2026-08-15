@@ -177,7 +177,9 @@ def test_package_manifest_exposes_only_the_public_skill_and_allowlisted_runtime(
     assert manifest["files"] == PACKAGE_FILES
     assert manifest["private"] is True
     assert "tests/" not in manifest["files"]
-    assert "docs/" not in manifest["files"]
+    assert "docs/*.md" in manifest["files"]
+    for name in ("ARCHITECTURE.md", "INSTALLATION.md", "MAINTAINER_GUIDE.md"):
+        assert (ROOT / "docs" / name).is_file()
     assert all("src/agents" not in entry for entry in manifest["pi"]["skills"])
 
 
