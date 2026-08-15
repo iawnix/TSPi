@@ -53,6 +53,10 @@ the next node depends on it, cite that evidence as `previous_attempt_summary`.
 - Environment/bootstrap failure: executable not found, profile sourcing failed,
   license failure, missing library, wrong interpreter, or conda/env mismatch.
   Fix the environment before making chemistry conclusions.
+- Remote bootstrap phase: inspect `program_status.json.phase`. A
+  `scratch_setup` failure means the installation-owned scratch root was invalid
+  or unavailable; an `activation` failure means the configured software profile
+  did not initialize. Neither is a chemistry result.
 - Remote lifecycle failure: duplicate live PID, missing remote directory,
   scheduler rejection, killed job, missing fetched artifacts, or stale scratch.
   Treat this as administrative/program failure.

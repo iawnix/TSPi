@@ -104,6 +104,7 @@ def render_job_script(config: RemoteJobConfig) -> str:
     lines = [
         "#!/usr/bin/env bash",
         f"#PBS -N {job_name}",
+        "#PBS -S /bin/bash",
         f"#PBS -q {config.resources.queue}",
         f"#PBS -l nodes={config.resources.nodes}:ppn={config.resources.ncpus}",
         f"#PBS -l mem={config.resources.memory}",
@@ -114,14 +115,19 @@ def render_job_script(config: RemoteJobConfig) -> str:
         "umask 077",
         f"cd -- {shlex.quote(config.remote_dir)}",
     ]
-    if software.activation_script:
-        lines.append(f"source {shlex.quote(software.activation_script)}")
-    lines.append("set -u")
     environment = {**software.environment, **config.environment}
     if config.resources.ompthreads is not None and "OMP_NUM_THREADS" not in environment:
         environment["OMP_NUM_THREADS"] = str(config.resources.ompthreads)
     for key, value in sorted(environment.items()):
         lines.append(f"export {key}={shlex.quote(value)}")
+    manages_scratch = config.backend == "gaussian" or software.scratch_root is not None
+    if manages_scratch:
+        lines.extend(_scratch_setup(config, software))
+    if software.activation_script:
+        lines.extend(_activation_wrapper(config, software.activation_script))
+    if manages_scratch:
+        lines.extend(_restore_scratch_environment(config.backend))
+    lines.append("set -u")
     lines.extend(["", *_program_wrapper(config, command), ""])
     return "\n".join(lines)
 
@@ -226,37 +232,102 @@ def resource_dict(resources: RemoteResources) -> dict[str, Any]:
     }
 
 
+def _scratch_setup(config: RemoteJobConfig, software: SoftwareProfile) -> list[str]:
+    status = shlex.quote(config.program_status_name)
+    stderr = shlex.quote(config.stderr_name)
+    prefix = f"ts-{config.backend}."
+    configured_base = shlex.quote(software.scratch_root) if software.scratch_root else "${TMPDIR:-/tmp}"
+    backend_exports = (
+        ['export GAUSS_SCRDIR="$ts_remote_scratch_dir"']
+        if config.backend == "gaussian"
+        else []
+    )
+    return [
+        f"ts_remote_scratch_base={configured_base}",
+        'ts_remote_scratch_base=${ts_remote_scratch_base%/}',
+        'scratch_started_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")',
+        f"status_tmp={status}.tmp.$$",
+        f"printf '%s\\n' '{{\"schema_version\":\"ts-remote-program-status/1\",\"state\":\"running\",\"exit_status\":null,\"phase\":\"scratch_setup\",\"started_at\":\"'\"$scratch_started_at\"'\"}}' > \"$status_tmp\"",
+        f"mv -- \"$status_tmp\" {status}",
+        "set +e",
+        'case "$ts_remote_scratch_base" in',
+        f"  /*) ts_remote_scratch_dir=$(mktemp -d \"${{ts_remote_scratch_base}}/{prefix}XXXXXX\" 2>> {stderr}); scratch_rc=$? ;;",
+        f"  *) printf '%s\\n' \"invalid scratch base: $ts_remote_scratch_base\" >> {stderr}; ts_remote_scratch_dir=; scratch_rc=1 ;;",
+        "esac",
+        "set -e",
+        'if [[ $scratch_rc -ne 0 || -z "$ts_remote_scratch_dir" ]]; then',
+        '  finished_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")',
+        f"  status_tmp={status}.tmp.$$",
+        f"  printf '%s\\n' '{{\"schema_version\":\"ts-remote-program-status/1\",\"state\":\"failed\",\"exit_status\":'\"${{scratch_rc:-1}}\"',\"phase\":\"scratch_setup\",\"started_at\":\"'\"$scratch_started_at\"'\",\"finished_at\":\"'\"$finished_at\"'\"}}' > \"$status_tmp\"",
+        f"  mv -- \"$status_tmp\" {status}",
+        '  exit "${scratch_rc:-1}"',
+        "fi",
+        "readonly ts_remote_scratch_base ts_remote_scratch_dir",
+        "cleanup_scratch() {",
+        f"  case \"$ts_remote_scratch_dir\" in \"$ts_remote_scratch_base\"/{prefix}*) rm -rf -- \"$ts_remote_scratch_dir\" || true ;; esac",
+        "}",
+        "trap cleanup_scratch EXIT",
+        'export TMPDIR="$ts_remote_scratch_dir"',
+        *backend_exports,
+    ]
+
+
+def _restore_scratch_environment(backend: str) -> list[str]:
+    lines = ['export TMPDIR="$ts_remote_scratch_dir"']
+    if backend == "gaussian":
+        lines.append('export GAUSS_SCRDIR="$ts_remote_scratch_dir"')
+    return lines
+
+
+def _activation_wrapper(config: RemoteJobConfig, activation_script: str) -> list[str]:
+    status = shlex.quote(config.program_status_name)
+    stderr = shlex.quote(config.stderr_name)
+    activation = shlex.quote(activation_script)
+    return [
+        'activation_started_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")',
+        f"status_tmp={status}.tmp.$$",
+        f"printf '%s\\n' '{{\"schema_version\":\"ts-remote-program-status/1\",\"state\":\"running\",\"exit_status\":null,\"phase\":\"activation\",\"started_at\":\"'\"$activation_started_at\"'\"}}' > \"$status_tmp\"",
+        f"mv -- \"$status_tmp\" {status}",
+        "set +e",
+        f"source {activation} 2>> {stderr}",
+        "activation_rc=$?",
+        "set -e",
+        "if [[ $activation_rc -ne 0 ]]; then",
+        '  finished_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")',
+        f"  status_tmp={status}.tmp.$$",
+        f"  printf '%s\\n' '{{\"schema_version\":\"ts-remote-program-status/1\",\"state\":\"failed\",\"exit_status\":'\"$activation_rc\"',\"phase\":\"activation\",\"started_at\":\"'\"$activation_started_at\"'\",\"finished_at\":\"'\"$finished_at\"'\"}}' > \"$status_tmp\"",
+        f"  mv -- \"$status_tmp\" {status}",
+        '  exit "$activation_rc"',
+        "fi",
+    ]
+
+
 def _program_wrapper(config: RemoteJobConfig, command: list[str]) -> list[str]:
     status = shlex.quote(config.program_status_name)
     stdout = shlex.quote(config.stdout_name)
     stderr = shlex.quote(config.stderr_name)
     start = [
-        'started_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")',
+        'program_started_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")',
         f"status_tmp={status}.tmp.$$",
-        f"printf '%s\\n' '{{\"schema_version\":\"ts-remote-program-status/1\",\"state\":\"running\",\"exit_status\":null,\"started_at\":\"'\"$started_at\"'\"}}' > \"$status_tmp\"",
+        f"printf '%s\\n' '{{\"schema_version\":\"ts-remote-program-status/1\",\"state\":\"running\",\"exit_status\":null,\"phase\":\"program\",\"started_at\":\"'\"$program_started_at\"'\"}}' > \"$status_tmp\"",
         f"mv -- \"$status_tmp\" {status}",
         "set +e",
     ]
     if config.backend == "gaussian":
         if len(command) != 2:
             raise RemoteConfigurationError("Gaussian remote execution requires one input file")
-        scratch = [
-            "scratch_base=${TMPDIR:-/tmp}",
-            'scratch_root=$(mktemp -d "${scratch_base%/}/ts-gaussian.XXXXXX")',
-            'export GAUSS_SCRDIR="$scratch_root"',
-            f"{shlex.quote(command[0])} < {shlex.quote(command[1])} > {stdout} 2> {stderr}",
+        run = [
+            f"{shlex.quote(command[0])} < {shlex.quote(command[1])} > {stdout} 2>> {stderr}",
             "rc=$?",
-            'case "$scratch_root" in "${scratch_base%/}"/ts-gaussian.*) rm -rf -- "$scratch_root" ;; *) rc=1 ;; esac',
         ]
-        run = scratch
     else:
-        run = [f"{shlex.join(command)} > {stdout} 2> {stderr}", "rc=$?"]
+        run = [f"{shlex.join(command)} > {stdout} 2>> {stderr}", "rc=$?"]
     finish = [
         "set -e",
         'finished_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")',
         'if [[ $rc -eq 0 ]]; then program_state=completed; else program_state=failed; fi',
         f"status_tmp={status}.tmp.$$",
-        f"printf '%s\\n' '{{\"schema_version\":\"ts-remote-program-status/1\",\"state\":\"'\"$program_state\"'\",\"exit_status\":'\"$rc\"',\"started_at\":\"'\"$started_at\"'\",\"finished_at\":\"'\"$finished_at\"'\"}}' > \"$status_tmp\"",
+        f"printf '%s\\n' '{{\"schema_version\":\"ts-remote-program-status/1\",\"state\":\"'\"$program_state\"'\",\"exit_status\":'\"$rc\"',\"phase\":\"program\",\"started_at\":\"'\"$program_started_at\"'\",\"finished_at\":\"'\"$finished_at\"'\"}}' > \"$status_tmp\"",
         f"mv -- \"$status_tmp\" {status}",
         'exit "$rc"',
     ]

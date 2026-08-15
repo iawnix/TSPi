@@ -29,6 +29,7 @@ class SchedulerCommands:
 class SoftwareProfile:
     command: tuple[str, ...]
     activation_script: str | None = None
+    scratch_root: str | None = None
     allowed_queues: tuple[str, ...] = ()
     requires_gpu: bool = False
     environment: dict[str, str] = field(default_factory=dict)
@@ -73,6 +74,8 @@ class RemoteProfile:
                 raise RemoteConfigurationError(f"invalid software profile: {backend!r}")
             if software.activation_script is not None:
                 validate_remote_path(software.activation_script, label=f"software.{backend}.activation_script")
+            if software.scratch_root is not None:
+                validate_remote_path(software.scratch_root, label=f"software.{backend}.scratch_root")
             if software.allowed_queues and not set(software.allowed_queues).issubset(self.allowed_queues):
                 raise RemoteConfigurationError(
                     f"software.{backend}.allowed_queues must be a subset of profile queues"

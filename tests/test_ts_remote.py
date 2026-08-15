@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
+import os
 import shutil
+import subprocess
 from dataclasses import replace
 from pathlib import Path
 
@@ -87,12 +90,55 @@ def _job(tmp_path: Path) -> RemoteJobConfig:
     )
 
 
+def _executable_job(
+    tmp_path: Path,
+    *,
+    activation_body: str,
+    scratch_root: Path,
+) -> tuple[RemoteJobConfig, Path]:
+    remote_root = tmp_path / "remote"
+    remote_dir = remote_root / "workspaces/ws_0123456789abcdef01234567/runs/n001/calc_test"
+    remote_dir.mkdir(parents=True)
+    (remote_dir / "candidate.gjf").write_text("#P HF/STO-3G\n", encoding="utf-8")
+    activation = tmp_path / "activate.sh"
+    activation.write_text(activation_body, encoding="utf-8")
+    executable = tmp_path / "fake-g16"
+    executable.write_text(
+        "#!/usr/bin/env bash\n"
+        "set -euo pipefail\n"
+        'test "$GAUSS_SCRDIR" = "$TMPDIR"\n'
+        'test -f "$GAUSS_SCRDIR/activation.marker"\n'
+        'printf "%s\\n" "$GAUSS_SCRDIR"\n',
+        encoding="utf-8",
+    )
+    executable.chmod(0o755)
+    base = _job(tmp_path)
+    software = replace(
+        base.profile.software["gaussian"],
+        command=(str(executable),),
+        activation_script=str(activation),
+        scratch_root=str(scratch_root),
+    )
+    profile = replace(
+        base.profile,
+        remote_root=str(remote_root),
+        software={"gaussian": software},
+    )
+    return replace(
+        base,
+        profile=profile,
+        remote_dir=str(remote_dir),
+        input_paths=(remote_dir / "candidate.gjf",),
+    ), remote_dir
+
+
 def test_remote_profile_is_installation_owned_and_strict(tmp_path: Path) -> None:
     profile = _profile(tmp_path)
 
     assert profile.ssh_host == "test-login"
     assert profile.scheduler == "torque"
     assert profile.software["gaussian"].command == ("/opt/g16/g16",)
+    assert profile.software["gaussian"].scratch_root is None
 
     invalid = tmp_path / "invalid.toml"
     invalid.write_text(
@@ -109,6 +155,15 @@ max_nodes = 1
     )
     with pytest.raises(RemoteConfigurationError):
         load_config(invalid)
+
+
+@pytest.mark.parametrize("scratch_root", ["/", "relative/scratch"])
+def test_remote_profile_rejects_unsafe_scratch_roots(tmp_path: Path, scratch_root: str) -> None:
+    profile = _profile(tmp_path)
+    gaussian = replace(profile.software["gaussian"], scratch_root=scratch_root)
+
+    with pytest.raises(RemoteConfigurationError, match="scratch_root must be a non-root absolute POSIX path"):
+        replace(profile, software={"gaussian": gaussian}).validate()
 
 
 def test_scheduler_commands_default_to_remote_path_lookup(tmp_path: Path) -> None:
@@ -145,14 +200,116 @@ requires_gpu = false
 def test_torque_script_owns_resources_activation_and_program_status(tmp_path: Path) -> None:
     script = render_job_script(_job(tmp_path))
 
+    assert "#PBS -S /bin/bash" in script
     assert "#PBS -q batch" in script
     assert "#PBS -l nodes=1:ppn=8" in script
     assert "#PBS -l mem=16gb" in script
-    assert "source /opt/g16/activate.sh" in script
+    assert 'scratch_base=${TMPDIR:-/tmp}' in script
+    assert 'export GAUSS_SCRDIR="$ts_remote_scratch_dir"' in script
+    assert "source /opt/g16/activate.sh 2>> remote_job.stderr" in script
     assert script.index("source /opt/g16/activate.sh") < script.index("set -u")
     assert "/opt/g16/g16 < candidate.gjf > candidate.log" in script
+    assert '"phase":"scratch_setup"' in script
+    assert '"phase":"activation"' in script
+    assert '"phase":"program"' in script
+    assert "trap cleanup_scratch EXIT" in script
     assert "ts-remote-program-status/1" in script
     assert "program_state=completed" in script
+
+
+def test_generated_gaussian_script_shares_and_cleans_configured_scratch(tmp_path: Path) -> None:
+    scratch_root = tmp_path / "scratch"
+    scratch_root.mkdir()
+    config, remote_dir = _executable_job(
+        tmp_path,
+        scratch_root=scratch_root,
+        activation_body=(
+            'test -d "$GAUSS_SCRDIR"\n'
+            'printf "activated\\n" > "$GAUSS_SCRDIR/activation.marker"\n'
+            'export TMPDIR=/tmp/activation-overrode-scratch\n'
+            'export GAUSS_SCRDIR=/tmp/activation-overrode-scratch\n'
+            "return 0\n"
+        ),
+    )
+    script = remote_dir / "job.pbs"
+    script.write_text(render_job_script(config), encoding="utf-8")
+
+    completed = subprocess.run(
+        ["bash", str(script)],
+        cwd=remote_dir,
+        env={**os.environ, "PBS_JOBID": "123.cluster"},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 0, completed.stderr
+    status_record = json.loads((remote_dir / "program_status.json").read_text(encoding="utf-8"))
+    assert status_record["state"] == "completed"
+    assert status_record["phase"] == "program"
+    assert status_record["exit_status"] == 0
+    scratch_path = Path((remote_dir / "candidate.log").read_text(encoding="utf-8").strip())
+    assert scratch_path.parent == scratch_root
+    assert not scratch_path.exists()
+    assert list(scratch_root.iterdir()) == []
+
+
+def test_generated_gaussian_script_records_activation_failure_and_cleans_scratch(tmp_path: Path) -> None:
+    scratch_root = tmp_path / "scratch"
+    scratch_root.mkdir()
+    config, remote_dir = _executable_job(
+        tmp_path,
+        scratch_root=scratch_root,
+        activation_body='printf "activation failed\\n" >&2\nreturn 7\n',
+    )
+    script = remote_dir / "job.pbs"
+    script.write_text(render_job_script(config), encoding="utf-8")
+
+    completed = subprocess.run(
+        ["bash", str(script)],
+        cwd=remote_dir,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 7
+    status_record = json.loads((remote_dir / "program_status.json").read_text(encoding="utf-8"))
+    assert status_record["state"] == "failed"
+    assert status_record["phase"] == "activation"
+    assert status_record["exit_status"] == 7
+    assert "activation failed" in (remote_dir / "remote_job.stderr").read_text(encoding="utf-8")
+    assert not (remote_dir / "candidate.log").exists()
+    assert list(scratch_root.iterdir()) == []
+
+
+def test_generated_gaussian_script_records_unavailable_scratch_root(tmp_path: Path) -> None:
+    scratch_root = tmp_path / "missing-scratch"
+    config, remote_dir = _executable_job(
+        tmp_path,
+        scratch_root=scratch_root,
+        activation_body="return 0\n",
+    )
+    script = remote_dir / "job.pbs"
+    script.write_text(render_job_script(config), encoding="utf-8")
+
+    completed = subprocess.run(
+        ["bash", str(script)],
+        cwd=remote_dir,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode != 0
+    status_record = json.loads((remote_dir / "program_status.json").read_text(encoding="utf-8"))
+    assert status_record["state"] == "failed"
+    assert status_record["phase"] == "scratch_setup"
+    assert status_record["exit_status"] != 0
+    assert not (remote_dir / "candidate.log").exists()
 
 
 def test_torque_parser_and_terminal_c_do_not_imply_program_failure() -> None:
@@ -192,6 +349,45 @@ def test_program_status_remains_authoritative_after_qstat_history_expires(tmp_pa
     assert observed.program_status == "completed"
     assert observed.exit_status == 0
     assert observed.scheduler_query_error == "Unknown Job Id"
+
+
+@pytest.mark.parametrize(
+    ("phase", "error_class"),
+    [
+        ("scratch_setup", "remote_scratch_failed"),
+        ("activation", "remote_activation_failed"),
+        ("program", "remote_program_failed"),
+    ],
+)
+def test_program_failure_phase_maps_to_specific_remote_error(
+    tmp_path: Path,
+    phase: str,
+    error_class: str,
+) -> None:
+    config = _job(tmp_path)
+
+    class Client:
+        def read_text(self, _path, *, check=True, max_bytes=0):
+            del check, max_bytes
+            return json.dumps(
+                {
+                    "schema_version": "ts-remote-program-status/1",
+                    "state": "failed",
+                    "exit_status": 7,
+                    "phase": phase,
+                }
+            )
+
+        def run(self, argv, *, check=True):
+            del check
+            return CommandResult(tuple(argv), 153, "", "Unknown Job Id")
+
+    observed = status(config, "207100.cluster.hpc", client=Client())
+
+    assert observed.state == "failed"
+    assert observed.program_status == "failed"
+    assert observed.exit_status == 7
+    assert observed.error_class == error_class
 
 
 def test_status_rejects_scheduler_record_for_a_different_job(tmp_path: Path) -> None:

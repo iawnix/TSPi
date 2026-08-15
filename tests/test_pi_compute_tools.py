@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 from pathlib import Path
+
+from ts_compute.capabilities import BACKEND_TASK_INPUT_ROLES
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -12,6 +15,8 @@ ACTION_LOG = ROOT / "extensions" / "ts-workflow-compute" / "action-log.cjs"
 COMPUTE_EXTENSION = ROOT / "extensions" / "ts-workflow-compute" / "index.ts"
 TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
 PI_PACKAGE = ROOT / "node_modules" / "@earendil-works" / "pi-coding-agent" / "package.json"
+COMPUTE_REFERENCE = ROOT / "skills" / "transition-state-workflow" / "references" / "compute_operator.md"
+CONTROL_EXTENSION = ROOT / "extensions" / "ts-workflow-control" / "index.ts"
 
 
 def test_pi_package_registers_one_compute_operator_extension() -> None:
@@ -121,6 +126,73 @@ process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(tools).map
         "hasCall": False,
         "hasResult": False,
     }
+
+
+def test_compute_reference_examples_match_registered_tool_schemas_and_capabilities() -> None:
+    text = COMPUTE_REFERENCE.read_text(encoding="utf-8")
+    compute_examples = _marked_json_examples(text, "ts_subagent_compute-example")
+    context_examples = _marked_json_examples(text, "ts_workspace_context-example")
+
+    assert set(compute_examples) == {
+        "local-prepare",
+        "remote-prepare",
+        "submit",
+        "inspect",
+        "collect",
+        "parse",
+        "cancel",
+        "recalculation-prepare",
+    }
+    assert set(context_examples) == {"artifact-discovery", "capabilities"}
+
+    script = f"""
+import installCompute from {json.dumps(COMPUTE_EXTENSION.as_uri())};
+import installControl from {json.dumps(CONTROL_EXTENSION.as_uri())};
+import {{ Compile }} from "typebox/compile";
+const tools = {{}};
+const pi = {{
+  on: () => {{}},
+  registerEntryRenderer: () => {{}},
+  registerTool: (tool) => tools[tool.name] = tool,
+  registerCommand: () => {{}},
+}};
+installCompute(pi);
+installControl(pi);
+const compute = Compile(tools.ts_subagent_compute.parameters);
+const context = Compile(tools.ts_workspace_context.parameters);
+const computeExamples = {json.dumps(compute_examples)};
+const contextExamples = {json.dumps(context_examples)};
+const failures = [];
+for (const [name, value] of Object.entries(computeExamples)) {{
+  if (!compute.Check(value)) failures.push({{ name, errors: [...compute.Errors(value)].map((error) => error.message) }});
+}}
+for (const [name, value] of Object.entries(contextExamples)) {{
+  if (!context.Check(value)) failures.push({{ name, errors: [...context.Errors(value)].map((error) => error.message) }});
+}}
+process.stdout.write(JSON.stringify({{
+  failures,
+  description: tools.ts_subagent_compute.description,
+  guidelines: tools.ts_subagent_compute.promptGuidelines,
+}}));
+"""
+    result = _node_json(script)
+
+    assert result["failures"] == []
+    assert "prepare, submit, inspect, collect, cancel, or parse" in result["description"]
+    assert "status/tail" not in result["description"]
+    assert any("Do not inspect package implementation or tests" in value for value in result["guidelines"])
+
+    for name, example in compute_examples.items():
+        if example["operation"] != "prepare":
+            continue
+        supported_roles = BACKEND_TASK_INPUT_ROLES[example["backend"]][example["taskType"]]
+        example_roles = {binding["inputRole"] for binding in example["inputArtifacts"]}
+        assert example_roles == supported_roles, name
+
+    gaussian = compute_examples["remote-prepare"]
+    assert gaussian["backend"] == "gaussian"
+    assert gaussian["taskType"] == "opt_freq"
+    assert gaussian["inputArtifacts"][0]["inputRole"] == "gjf"
 
 
 def test_ts_remote_command_previews_modes_and_shows_progress_until_result() -> None:
@@ -829,3 +901,11 @@ def _node_json(script: str):
     )
     assert completed.returncode == 0, completed.stderr
     return json.loads(completed.stdout)
+
+
+def _marked_json_examples(text: str, marker: str) -> dict[str, dict[str, object]]:
+    pattern = re.compile(
+        rf"<!-- {re.escape(marker)}:([a-z0-9-]+) -->\s*```json\n(.*?)\n```",
+        re.DOTALL,
+    )
+    return {name: json.loads(payload) for name, payload in pattern.findall(text)}

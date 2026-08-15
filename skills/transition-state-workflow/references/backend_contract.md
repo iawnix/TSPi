@@ -3,6 +3,9 @@
 `ts_backends` prepares and describes calculation tasks. A backend may create
 inputs, commands, and parsers for its own artifacts.
 
+Use `compute_operator.md` for complete Root tool calls. This reference defines
+backend behavior and boundaries, not the public `ts_subagent_compute` shape.
+
 Backends must not:
 
 - mutate workspace root state files;

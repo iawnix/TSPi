@@ -1,11 +1,9 @@
 import type { ExtensionAPI, ToolCallEvent } from "@earendil-works/pi-coding-agent";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
+import { PACKAGE_SOURCE_READ_TOOLS } from "../shared/package-source-policy.ts";
 
 const DIRECTLY_ALLOWED_TOOLS = new Set<string>([
-  "read",
-  "grep",
-  "find",
-  "ls",
+  ...PACKAGE_SOURCE_READ_TOOLS,
   TS_PUBLIC_TOOL_NAMES.workspaceContext,
   TS_PUBLIC_TOOL_NAMES.workspaceDecisionDraft,
   TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate,

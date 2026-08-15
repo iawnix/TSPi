@@ -22,6 +22,7 @@ from .control import (
     submit_calculation,
 )
 from ts_remote.diagnostics import MODES as REMOTE_DIAGNOSTIC_MODES, diagnose as diagnose_remote
+from ts_remote.errors import RemoteError
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -79,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         result = _dispatch(args)
-    except (ComputeContractError, OSError, ValueError, json.JSONDecodeError) as exc:
+    except (ComputeContractError, RemoteError, OSError, ValueError, json.JSONDecodeError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, indent=2, sort_keys=True), file=sys.stderr)
         return 2
     print(json.dumps(result, indent=2, sort_keys=True))

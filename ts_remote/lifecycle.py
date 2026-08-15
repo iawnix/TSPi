@@ -200,7 +200,12 @@ def status(
     if program_state == "completed":
         state, program_status, error_class = "completed", "completed", None
     elif program_state == "failed":
-        state, program_status, error_class = "failed", "failed", "remote_program_failed"
+        phase = program.get("phase")
+        error_class = {
+            "scratch_setup": "remote_scratch_failed",
+            "activation": "remote_activation_failed",
+        }.get(phase, "remote_program_failed")
+        state, program_status = "failed", "failed"
     else:
         state, program_status, error_class = scheduler_semantics(scheduler_state, scheduler_exit)
         if scheduler_error and state == "unknown":

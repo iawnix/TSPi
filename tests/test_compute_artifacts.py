@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from ts_compute import (
     submit_calculation,
 )
 from ts_compute.cli import main as compute_cli_main
+from ts_remote.errors import RemoteError
 
 
 def _workspace(tmp_path: Path) -> Path:
@@ -165,6 +167,21 @@ def test_list_artifacts_cli_returns_catalog_json(tmp_path: Path, capsys: pytest.
     assert output.err == ""
     assert '"schema_version": "ts-compute-artifact-catalog/1"' in output.out
     assert '"path": "nodes/n001/inputs/source.xyz"' in output.out
+
+
+def test_compute_cli_serializes_remote_errors(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def fail_remote(_args) -> dict:
+        raise RemoteError("remote status unavailable")
+
+    monkeypatch.setattr("ts_compute.cli._dispatch", fail_remote)
+
+    assert compute_cli_main(["capabilities"]) == 2
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert json.loads(output.err) == {"ok": False, "error": "remote status unavailable"}
 
 
 def test_prepare_and_submit_reject_stale_input_binding(

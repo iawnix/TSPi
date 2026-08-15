@@ -6,6 +6,11 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { requireWorkspaceRoot, runComputeJson, runWorkspaceDecisionJson, runWorkspaceJson } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
+import {
+  guardPackageSourceRead,
+  packageSourceMode,
+  packageSourceSystemPrompt,
+} from "../shared/package-source-policy.ts";
 
 const require = createRequire(import.meta.url);
 const {
@@ -33,6 +38,8 @@ type WorkspaceValidationEntryData = {
 };
 
 export default function (pi: ExtensionAPI) {
+  const sourceMode = packageSourceMode();
+
   pi.registerEntryRenderer<WorkspaceContextEntryData>(CONTEXT_ENTRY_TYPE, (entry, { expanded }, theme) => {
     const data = entry.data;
     const status = data?.valid === true ? "valid" : "invalid";
@@ -63,13 +70,14 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("before_agent_start", async (event, ctx) => {
     const root = resolveWorkspaceRoot("", ctx.cwd);
-    if (!root) {
-      return;
-    }
+    const packagePolicy = packageSourceSystemPrompt(sourceMode);
+    if (!root) return { systemPrompt: `${event.systemPrompt}\n\n${packagePolicy}` };
     return {
-      systemPrompt: `${event.systemPrompt}\n\nTS workspace active: ${root}. Use ${TS_PUBLIC_TOOL_NAMES.workspaceContext} on demand; only ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply} mutates canonical state.`,
+      systemPrompt: `${event.systemPrompt}\n\n${packagePolicy}\n\nTS workspace active: ${root}. Use ${TS_PUBLIC_TOOL_NAMES.workspaceContext} on demand; only ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply} mutates canonical state.`,
     };
   });
+
+  pi.on("tool_call", async (event, ctx) => guardPackageSourceRead(event, ctx.cwd, sourceMode));
 
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.workspaceContext,

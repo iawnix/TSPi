@@ -34,6 +34,7 @@
     },
     "basis_allowlist": {
       "type": "array",
+      "description": "Set of citable refs; host-generated snapshots serialize it in lexicographic order.",
       "uniqueItems": true,
       "maxItems": 80,
       "items": {"type": "string", "minLength": 1, "maxLength": 4096}

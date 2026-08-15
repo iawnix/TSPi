@@ -19,6 +19,8 @@ pbsnodes = "pbsnodes"
 [profiles.cluster_1w.software.gaussian]
 command = ["g16"]
 activation_script = "/home/agent/soft/gaussian/activate_gaussian16.sh"
+# Optional. Omit to use the execution node's TMPDIR, falling back to /tmp.
+# scratch_root = "/local/scratch"
 allowed_queues = ["batch", "fat", "fata"]
 requires_gpu = false
 

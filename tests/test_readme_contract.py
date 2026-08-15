@@ -91,6 +91,7 @@ def test_skill_routes_details_through_focused_references() -> None:
         "references/decision_contract.md",
         "references/candidate_generation.md",
         "references/compute_operator.md",
+        "references/package_sources.md",
         "references/remote_contract.md",
         "references/report_template.md",
     ]:

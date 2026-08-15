@@ -1,0 +1,88 @@
+import type { ToolCallEvent, ToolCallEventResult } from "@earendil-works/pi-coding-agent";
+import { existsSync, realpathSync } from "node:fs";
+import { homedir } from "node:os";
+import { isAbsolute, relative, resolve } from "node:path";
+import { PACKAGE_ROOT } from "./workspace-cli.ts";
+
+export const PACKAGE_SOURCE_MODE_ENV = "TS_PACKAGE_SOURCE_MODE";
+export const PACKAGE_SOURCE_READ_TOOLS = ["read", "grep", "find", "ls"] as const;
+export const PACKAGE_USAGE_GUIDELINE =
+  "Use registered tool schemas and prompt guidelines for call shape, ts_workspace_context modes for live artifacts and capabilities, and the public transition-state Skill references for operating guidance. Do not inspect package implementation or tests to learn ordinary tool usage.";
+
+export type PackageSourceMode = "research" | "maintenance";
+
+const PUBLIC_KNOWLEDGE_ROOT = resolve(
+  PACKAGE_ROOT,
+  "skills",
+  "transition-state-workflow",
+);
+
+export function packageSourceMode(value = process.env[PACKAGE_SOURCE_MODE_ENV]): PackageSourceMode {
+  return value === "maintenance" ? "maintenance" : "research";
+}
+
+export function packageSourceSystemPrompt(mode: PackageSourceMode): string {
+  if (mode === "maintenance") {
+    return [
+      "TS package source mode: maintenance.",
+      PACKAGE_USAGE_GUIDELINE,
+      "Read implementation and regression tests only when the user explicitly asks to diagnose, change, or validate the TS package; tests are verification material, not public usage documentation.",
+    ].join(" ");
+  }
+  return [
+    "TS package source mode: research.",
+    PACKAGE_USAGE_GUIDELINE,
+    "Package reads are limited to the public transition-state Skill, its references, and its assets. If package implementation diagnosis is required, report that boundary instead of browsing source or tests in this session.",
+  ].join(" ");
+}
+
+export function guardPackageSourceRead(
+  event: ToolCallEvent,
+  cwd: string,
+  mode: PackageSourceMode,
+): ToolCallEventResult | undefined {
+  if (mode === "maintenance" || !isPackageReadTool(event.toolName)) return undefined;
+  const input = event.input as { path?: unknown };
+  const rawPath = typeof input.path === "string" && input.path.trim()
+    ? input.path.trim()
+    : cwd;
+  const target = resolveToolPath(rawPath, cwd);
+  const packageRoot = canonicalPath(PACKAGE_ROOT);
+  if (!isWithin(packageRoot, target)) return undefined;
+  if (isWithin(canonicalPath(PUBLIC_KNOWLEDGE_ROOT), target)) return undefined;
+  return {
+    block: true,
+    reason: [
+      "TS package implementation and tests are not usage documentation in research mode.",
+      "Use the registered tool schema, ts_workspace_context mode=artifacts or mode=capabilities,",
+      "or skills/transition-state-workflow references. Restart with",
+      `${PACKAGE_SOURCE_MODE_ENV}=maintenance only for explicit package development or debugging.`,
+    ].join(" "),
+  };
+}
+
+function isPackageReadTool(name: string): name is typeof PACKAGE_SOURCE_READ_TOOLS[number] {
+  return (PACKAGE_SOURCE_READ_TOOLS as readonly string[]).includes(name);
+}
+
+function resolveToolPath(value: string, cwd: string): string {
+  let expanded = value;
+  if (value === "~") expanded = homedir();
+  else if (value.startsWith("~/")) expanded = resolve(homedir(), value.slice(2));
+  const absolute = isAbsolute(expanded) ? resolve(expanded) : resolve(cwd, expanded);
+  return canonicalPath(absolute);
+}
+
+function canonicalPath(path: string): string {
+  if (!existsSync(path)) return resolve(path);
+  try {
+    return realpathSync.native(path);
+  } catch (_error) {
+    return resolve(path);
+  }
+}
+
+function isWithin(root: string, target: string): boolean {
+  const child = relative(root, target);
+  return child === "" || (!child.startsWith("..") && !isAbsolute(child));
+}

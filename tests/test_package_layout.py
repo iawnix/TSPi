@@ -197,6 +197,7 @@ def test_tspi_launcher_is_packaged_executable_and_shell_valid() -> None:
     assert "TS_EMAIL_POLICY_ROOT" not in source
     assert 'export TS_AGENT_RUNTIME_HOME="$TS_AGENT_INSTALL_RUNTIME_HOME"' in source
     assert 'export TS_WORKSPACE_ROOT="$WORKSPACE_ROOT"' in source
+    assert "TS_PACKAGE_SOURCE_MODE" in source
     assert "acquire_root_agent_lock" in source
     assert "--workspace" in source
     assert "--check-remote" in source
@@ -204,6 +205,40 @@ def test_tspi_launcher_is_packaged_executable_and_shell_valid() -> None:
     assert "ts-workflow-dev" not in source
     assert "mcp" not in source.lower()
     assert "tunnel" not in source.lower()
+
+
+def test_tspi_defaults_package_source_mode_and_rejects_unknown_mode(tmp_path: Path) -> None:
+    install_root, launcher = _copy_tspi_install(tmp_path)
+    fake_pi = tmp_path / "fake-pi.py"
+    fake_pi.write_text(
+        "#!/usr/bin/env python3\nimport json,os\nprint(json.dumps(os.environ.get('TS_PACKAGE_SOURCE_MODE')))\n",
+        encoding="utf-8",
+    )
+    fake_pi.chmod(0o755)
+
+    started = subprocess.run(
+        [str(launcher), "--workspace", "source-policy"],
+        cwd=install_root,
+        env={**os.environ, "PI_BIN": str(fake_pi), "TS_PACKAGE_SOURCE_MODE": ""},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert started.returncode == 0, started.stderr
+    assert json.loads(started.stdout) == "research"
+
+    rejected = subprocess.run(
+        [str(launcher), "--workspace", "source-policy-invalid"],
+        cwd=install_root,
+        env={**os.environ, "PI_BIN": str(fake_pi), "TS_PACKAGE_SOURCE_MODE": "debug"},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert rejected.returncode == 2
+    assert "must be research or maintenance" in rejected.stderr
 
 
 def test_tspi_loads_installation_owned_remote_profile(tmp_path: Path) -> None:

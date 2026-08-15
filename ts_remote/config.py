@@ -103,6 +103,9 @@ def _software(name: str, raw: dict[str, Any], profile_queues: tuple[str, ...]) -
     activation = raw.get("activation_script")
     if activation is not None and (not isinstance(activation, str) or not activation):
         raise RemoteConfigurationError(f"software.{name}.activation_script must be a path string")
+    scratch_root = raw.get("scratch_root")
+    if scratch_root is not None and (not isinstance(scratch_root, str) or not scratch_root):
+        raise RemoteConfigurationError(f"software.{name}.scratch_root must be a path string")
     allowed = _strings(
         raw.get("allowed_queues", list(profile_queues)),
         f"software.{name}.allowed_queues",
@@ -119,6 +122,7 @@ def _software(name: str, raw: dict[str, Any], profile_queues: tuple[str, ...]) -
     return SoftwareProfile(
         command=command,
         activation_script=activation,
+        scratch_root=scratch_root,
         allowed_queues=allowed,
         requires_gpu=requires_gpu,
         environment=environment,

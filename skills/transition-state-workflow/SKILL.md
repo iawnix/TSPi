@@ -37,6 +37,12 @@ The v3 scientific vocabulary is intentionally small:
 Read `references/state_model.md` and `references/workspace_contract.md` when
 state ownership or persistence is in question.
 
+For package usage, treat registered tool schemas and live capabilities as the
+call contract, and use this Skill plus focused references for guidance. Do not
+inspect implementation source or tests during ordinary research. Read
+`references/package_sources.md` when the research/maintenance boundary is in
+question.
+
 ## Operating Loop
 
 1. Read `ts_workspace_context mode=summary` or `mode=delta`.

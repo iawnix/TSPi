@@ -69,6 +69,8 @@ Each workspace name creates or reuses an isolated research directory under
 ./workspaces/. Only one Root Agent may write one workspace at a time.
 Remote computation uses the installation-owned .pi/remote.toml profile.
 Phone mode asks the local TS Phone service to open the selected workspace.
+TS_PACKAGE_SOURCE_MODE defaults to research; maintenance is reserved for
+explicit package development or debugging.
 EOF
 }
 
@@ -322,6 +324,14 @@ main() {
     usage >&2
     return 2
   fi
+
+  case "${TS_PACKAGE_SOURCE_MODE:-research}" in
+    research|maintenance) export TS_PACKAGE_SOURCE_MODE="${TS_PACKAGE_SOURCE_MODE:-research}" ;;
+    *)
+      printf 'TSPi: TS_PACKAGE_SOURCE_MODE must be research or maintenance\n' >&2
+      return 2
+      ;;
+  esac
 
   prepare_workspace "$workspace_name"
   if [[ "$phone_mode" == true ]]; then

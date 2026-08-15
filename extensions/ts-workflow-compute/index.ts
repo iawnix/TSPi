@@ -11,6 +11,7 @@ import {
   runWorkspaceJson,
 } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
+import { PACKAGE_USAGE_GUIDELINE } from "../shared/package-source-policy.ts";
 import {
   publishTsActivity,
   type TsRemoteActivity,
@@ -230,7 +231,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.subagentCompute,
     label: "TS Compute Subagent",
-    description: "Run one fresh Pi compute subagent with request-scoped prepare, submit, status/tail, collect, cancel, or parse tools.",
+    description: "Run one fresh Pi compute subagent with request-scoped prepare, submit, inspect, collect, cancel, or parse tools.",
     promptSnippet: "Delegate one bounded transition-state calculation operation",
     promptGuidelines: [
       "Before prepare, call ts_workspace_context mode=artifacts to discover logical calculation artifact IDs and compatible input roles.",
@@ -238,6 +239,7 @@ export default function (pi: ExtensionAPI) {
       "Treat subagent results as program and parser facts, not registered Evidence, Claim status, Gate verdict, or acceptance.",
       "Use inspect for changed or terminal jobs instead of polling unchanged work every turn.",
       "Use submit or cancel only for the pre-bound current intent, and never retry an ambiguous control result.",
+      PACKAGE_USAGE_GUIDELINE,
     ],
     renderShell: "self",
     renderCall: (args, theme) => renderTsSubagentCall("compute", args as Record<string, unknown>, theme),

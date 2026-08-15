@@ -6,6 +6,10 @@ installation-owned OpenSSH profile and controls Torque through bounded
 transport, nested compute-host login, HTTP service, tunnel manager, or
 compatibility adapter.
 
+Use `compute_operator.md` for complete Root `prepare`, `submit`, `inspect`,
+`collect`, `cancel`, and `parse` calls. The fragments below define remote policy
+only and are not complete `ts_subagent_compute` arguments.
+
 The ownership boundary is:
 
 ```text
@@ -68,14 +72,25 @@ max_nodes = 1
 [profiles.cluster_1w.software.gaussian]
 command = ["/opt/gaussian/g16/g16"]
 activation_script = "/opt/gaussian/g16/activate.sh"
+# Optional; otherwise the execution node uses TMPDIR or /tmp.
+scratch_root = "/local/scratch"
 allowed_queues = ["batch"]
 requires_gpu = false
 ```
 
 SSH authentication stays in OpenSSH configuration and the user's agent or key
 files. Secrets are not calculation-intent data. Software profiles are the only
-source of executable paths, activation scripts, allowed queues, GPU policy,
-and server-owned environment values.
+source of executable paths, activation scripts, scratch roots, allowed queues,
+GPU policy, and server-owned environment values. A configured `scratch_root`
+must be an absolute non-root POSIX path. Gaussian otherwise uses the execution
+node's `TMPDIR`, falling back to `/tmp`; a calculation request cannot override
+this policy.
+
+The Torque adapter creates one private per-job scratch directory. Gaussian
+activation and program execution share that directory, and an `EXIT` trap
+removes it on success or failure. `program_status.json` identifies failures in
+the `scratch_setup`, `activation`, or `program` phase before scheduler history
+is consulted.
 
 ## Workspace Isolation
 

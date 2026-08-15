@@ -74,8 +74,10 @@ The host persists and digest-binds:
 - actions, result or failure, and run metadata.
 
 The model sees the compact provider input. The host validates its citations
-against the full snapshot. One invalid result may be repaired once in the same
-session. A provider HTTP/stream failure stops immediately and must not be
+against the full snapshot. `basis_allowlist` is a set of citable refs; the host
+serializes it in stable lexicographic order and validates membership without
+depending on registry order. One invalid result may be repaired once in the
+same session. A provider HTTP/stream failure stops immediately and must not be
 reported as missing tool output.
 
 After success, the Root Agent records one write-once disposition. It remains

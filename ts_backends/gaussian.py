@@ -198,6 +198,7 @@ def route_requires_extra_section(route: str) -> bool:
 def compact_route(route: str) -> str:
     route = normalize_route_readback(route).strip()
     route = re.sub(r"^\s*#\s*[pnPN]?\s*", "", route)
+    route = re.sub(r"\s*=\s*", "=", route)
     return re.sub(r"\s+", " ", route).strip().lower()
 
 

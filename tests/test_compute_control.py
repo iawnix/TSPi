@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from strict_helpers import bootstrap_strict_workspace, start_research_node
+from ts_backends.gaussian import route_expectation
 from ts_compute import (
     ComputeContractError,
     cancel_calculation,
@@ -895,6 +896,17 @@ def test_prepared_backend_metadata_is_revalidated_before_remote_access(
 
     with pytest.raises(ComputeContractError, match="backend metadata does not match"):
         calculation_status(workspace, "calc_n001_optfreq_001")
+
+
+def test_gaussian_route_expectation_ignores_equals_whitespace() -> None:
+    expected = "#P wB97XD/def2TZVP Opt=(TS,Tight,MaxCycle=250) Freq"
+    logged = "#p wB97XD/def2TZVP Opt=(TS,Tight,MaxCycle =250) Freq"
+
+    result = route_expectation(expected, logged, "")
+
+    assert result["matched"] is True
+    assert result["mismatches"] == []
+    assert result["expected_settings"] == result["log_settings"]
 
 
 def test_gaussian_parse_returns_program_facts_without_workspace_verdict(tmp_path: Path) -> None:

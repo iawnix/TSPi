@@ -13,6 +13,7 @@ const LIMITS = Object.freeze({
   maxGateRefs: 32,
   maxEvidenceRefs: 32,
   maxArtifactRefs: 4,
+  maxBasisRefs: 80,
   maxArtifactBytes: 16 * 1024,
   maxArtifactTotalBytes: 64 * 1024,
   maxSnapshotBytes: 96 * 1024,
@@ -59,7 +60,7 @@ function buildReviewTaskBundle({ runId, workspaceRoot, request, workspaceReport,
     node_ids: nodeIds,
     claim_refs: claimRefs,
   };
-  const basisAllowlist = uniqueStrings([
+  const basisAllowlist = canonicalStringSet([
     ...claimRefs,
     ...stringArray(snapshot.dependency_refs.gate_result_refs, "snapshot gate refs", LIMITS.maxGateRefs, 256),
     ...stringArray(snapshot.dependency_refs.evidence_refs, "snapshot evidence refs", LIMITS.maxEvidenceRefs, 256),
@@ -187,13 +188,19 @@ function validateEvidenceSnapshot(value, task) {
   for (const key of ["claims", "gate_results", "evidence", "nodes", "artifact_excerpts", "basis_allowlist"]) {
     if (!Array.isArray(value[key])) throw new Error(`review evidence snapshot ${key} must be an array`);
   }
-  const expected = uniqueStrings([
+  const expected = canonicalStringSet([
     ...value.claims.map((item) => requireObjectId(item, "claim_id", "claim")),
     ...value.gate_results.map((item) => requireObjectId(item, "gate_result_id", "gate result")),
     ...value.evidence.map((item) => requireObjectId(item, "evidence_id", "evidence")),
     ...value.artifact_excerpts.map((item) => requireObjectId(item, "ref", "artifact excerpt")),
   ]);
-  if (JSON.stringify(expected) !== JSON.stringify(value.basis_allowlist)) {
+  const actual = canonicalStringSet(stringArray(
+    value.basis_allowlist,
+    "review evidence snapshot basis_allowlist",
+    LIMITS.maxBasisRefs,
+    4096,
+  ));
+  if (JSON.stringify(expected) !== JSON.stringify(actual)) {
     throw new Error("review basis_allowlist does not match claim dependency snapshot");
   }
   if (!expected.includes(value.target_claim_ref)) throw new Error("review target claim is outside dependency snapshot");
@@ -391,8 +398,8 @@ function stringArray(value, label, maxItems, maxLength) {
   return result;
 }
 
-function uniqueStrings(values) {
-  return [...new Set(values)];
+function canonicalStringSet(values) {
+  return [...new Set(values)].sort();
 }
 
 function isPlainObject(value) {

@@ -155,6 +155,12 @@ Contract changes must update together:
 Documentation tests should assert architecture invariants and public entrypoints,
 not freeze prose or reintroduce removed concepts.
 
+Normal TSPi sessions use `TS_PACKAGE_SOURCE_MODE=research`: Root Agents learn
+public calls from registered schemas, live capabilities, the Skill, and focused
+references. Use `TS_PACKAGE_SOURCE_MODE=maintenance` only for explicit package
+development or debugging. Tests remain verification material and must not be
+the only source of a public usage example.
+
 ## Release Validation
 
 Run:

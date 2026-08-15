@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from strict_helpers import CLAIM_ID, bootstrap_strict_workspace
+from strict_helpers import CLAIM_ID, bootstrap_strict_workspace, make_accepted_workspace
 from ts_workspace import build_review_snapshot, report_workspace
 
 
@@ -39,9 +39,17 @@ def _node(script: str, *args: str, check: bool = True) -> subprocess.CompletedPr
     )
 
 
-def _packet(tmp_path: Path, *, artifact_ref: str | None = None) -> ReviewTaskFixture:
+def _packet(
+    tmp_path: Path,
+    *,
+    artifact_ref: str | None = None,
+    accepted_workspace: bool = False,
+) -> ReviewTaskFixture:
     workspace = tmp_path / "ws"
-    bootstrap_strict_workspace(workspace)
+    if accepted_workspace:
+        make_accepted_workspace(workspace)
+    else:
+        bootstrap_strict_workspace(workspace)
     payload = {
         "runId": "sub_test_001",
         "workspaceRoot": str(workspace),
@@ -152,6 +160,38 @@ def test_task_packet_is_claim_scoped_bounded_and_advisory(tmp_path: Path) -> Non
     assert len(json.dumps(provider, separators=(",", ":")).encode()) <= 24 * 1024
     assert "workspace" not in provider
     assert "constraints" not in provider
+
+
+def test_review_basis_allowlist_is_order_independent_and_canonical(tmp_path: Path) -> None:
+    packet = _packet(tmp_path, accepted_workspace=True)
+    snapshot = packet.documents["evidence_snapshot"]
+    basis = snapshot["basis_allowlist"]
+
+    assert basis == sorted(basis)
+    assert set(basis) == {
+        CLAIM_ID,
+        "ev_conn_001",
+        "ev_endpoint_0001",
+        "ev_tsfreq_001",
+        "gr_conn_001",
+        "gr_tsfreq_001",
+        "nodes/n000/outputs/endpoint-summary.json",
+    }
+
+    reordered = {**snapshot, "basis_allowlist": list(reversed(basis))}
+    task_path = tmp_path / "task-order.json"
+    snapshot_path = tmp_path / "snapshot-order.json"
+    task_path.write_text(json.dumps(packet), encoding="utf-8")
+    snapshot_path.write_text(json.dumps(reordered), encoding="utf-8")
+    script = (
+        "const fs=require('node:fs');"
+        f"const helper=require({json.dumps(str(TASK_PACKET))});"
+        "const task=JSON.parse(fs.readFileSync(process.argv[1],'utf8'));"
+        "const snapshot=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));"
+        "process.stdout.write(JSON.stringify(helper.validateEvidenceSnapshot(snapshot,task).basis_allowlist));"
+    )
+    validated = json.loads(_node(script, str(task_path), str(snapshot_path)).stdout)
+    assert validated == list(reversed(basis))
 
 
 @pytest.mark.parametrize("artifact_ref", ["../outside.txt", "/tmp/outside.txt", "nodes/n999/output.log"])
