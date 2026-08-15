@@ -9,7 +9,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 TSPI = ROOT / "TSPi"
-PHONE_POLICY = ROOT / "extensions" / "ts-phone-policy" / "index.ts"
+PHONE_POLICY = ROOT / "extensions" / "ts-phone-bridge" / "policy.ts"
+PHONE_PROTOCOL = ROOT / "extensions" / "ts-phone-bridge" / "protocol.ts"
+PHONE_CLIENT = ROOT / "extensions" / "ts-phone-bridge" / "bridge-client.ts"
 UI = ROOT / "extensions" / "ts-workflow-ui" / "index.ts"
 TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
 
@@ -24,38 +26,20 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     return install_root, launcher
 
 
-def test_tspi_phone_control_opens_one_registered_workspace(tmp_path: Path) -> None:
-    install_root, launcher = _copy_launcher(tmp_path)
-    phone_ctl = tmp_path / "ts-phone-ctl"
-    phone_ctl.write_text("#!/usr/bin/env bash\nprintf '%s\\n' \"$*\"\n", encoding="utf-8")
-    phone_ctl.chmod(0o755)
-
-    completed = subprocess.run(
-        [str(launcher), "--workspace", "reaction-phone", "--phone"],
-        cwd=install_root,
-        env={**os.environ, "TS_PHONE_CTL": str(phone_ctl), "PI_BIN": "/missing/pi"},
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=False,
-    )
-
-    assert completed.returncode == 0, completed.stderr
-    assert completed.stdout.strip() == "open reaction-phone"
-    assert (install_root / "workspaces" / "reaction-phone" / ".pi" / "settings.json").is_file()
-
-
-def test_tspi_phone_worker_is_internal_and_loads_rpc_policy(tmp_path: Path) -> None:
+def test_tspi_phone_starts_visible_bridged_tui(tmp_path: Path) -> None:
     install_root, launcher = _copy_launcher(tmp_path)
     fake_pi = tmp_path / "fake-pi.py"
     fake_pi.write_text(
-        "#!/usr/bin/env python3\nimport json,sys\nprint(json.dumps(sys.argv[1:]))\n",
+        "#!/usr/bin/env python3\n"
+        "import json,os,sys\n"
+        "print(json.dumps({'args': sys.argv[1:], 'mode': os.environ.get('TS_PHONE_MODE'), "
+        "'workspace': os.environ.get('TS_PHONE_WORKSPACE_ID')}))\n",
         encoding="utf-8",
     )
     fake_pi.chmod(0o755)
 
-    rejected = subprocess.run(
-        [str(launcher), "--workspace", "reaction-phone", "--phone-worker"],
+    completed = subprocess.run(
+        [str(launcher), "--workspace", "reaction-phone", "--phone"],
         cwd=install_root,
         env={**os.environ, "PI_BIN": str(fake_pi)},
         text=True,
@@ -63,63 +47,178 @@ def test_tspi_phone_worker_is_internal_and_loads_rpc_policy(tmp_path: Path) -> N
         stderr=subprocess.PIPE,
         check=False,
     )
-    assert rejected.returncode == 2
-    assert "reserved for the TS Phone service" in rejected.stderr
 
-    started = subprocess.run(
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    assert result["mode"] == "bridge"
+    assert result["workspace"] == "reaction-phone"
+    assert "--continue" in result["args"]
+    assert "--mode" not in result["args"]
+    assert any(value.endswith("/extensions/ts-phone-bridge/index.ts") for value in result["args"])
+    assert (install_root / "workspaces" / "reaction-phone" / ".pi" / "settings.json").is_file()
+
+
+def test_tspi_phone_worker_is_removed(tmp_path: Path) -> None:
+    install_root, launcher = _copy_launcher(tmp_path)
+    rejected = subprocess.run(
         [str(launcher), "--workspace", "reaction-phone", "--phone-worker"],
         cwd=install_root,
-        env={**os.environ, "PI_BIN": str(fake_pi), "TS_PHONE_MODE": "research"},
+        env=os.environ,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
         check=False,
     )
-    assert started.returncode == 0, started.stderr
-    args = json.loads(started.stdout)
-    assert "--mode" in args and args[args.index("--mode") + 1] == "rpc"
-    assert "--continue" in args
-    assert "--phone-worker" not in args
-    assert any(value.endswith("/extensions/ts-phone-policy/index.ts") for value in args)
+    assert rejected.returncode == 2
+    assert "was removed" in rejected.stderr
 
 
-def test_phone_policy_confirms_mutations_and_fails_closed() -> None:
+def test_phone_policy_classifies_tools_and_redacts_confirmation() -> None:
     script = f"""
-import installPolicy, {{ formatConfirmation }} from {json.dumps(PHONE_POLICY.as_uri())};
-process.env.TS_PHONE_MODE = "research";
-let handler;
-const pi = {{ on: (name, value) => {{ if (name === "tool_call") handler = value; }} }};
-installPolicy(pi);
-const decisions = [false, true];
-const confirmations = [];
-const ctx = {{ ui: {{ confirm: async (title, message, options) => {{
-  confirmations.push({{ title, message, options }});
-  return decisions.shift();
-}} }} }};
-const allowed = await handler({{ type: "tool_call", toolCallId: "read-1", toolName: "read", input: {{ path: "README.md" }} }}, ctx);
-const unknown = await handler({{ type: "tool_call", toolCallId: "new-1", toolName: "new_tool", input: {{}} }}, ctx);
-const compute = await handler({{ type: "tool_call", toolCallId: "compute-1", toolName: "ts_subagent_compute", input: {{ operation: "submit", apiKey: "secret-value" }} }}, ctx);
-const bash = await handler({{ type: "tool_call", toolCallId: "bash-1", toolName: "bash", input: {{ command: "pwd" }} }}, ctx);
+import {{ CONFIRMATION_REQUIRED_TOOLS, DIRECTLY_ALLOWED_TOOLS, formatConfirmation }} from {json.dumps(PHONE_POLICY.as_uri())};
 const preview = formatConfirmation({{ type: "tool_call", toolCallId: "write-1", toolName: "write", input: {{ path: "result.md", token: "secret-value" }} }});
 process.stdout.write(JSON.stringify({{
-  allowed: allowed === undefined,
-  unknown,
-  compute,
-  bash: bash === undefined,
-  confirmations,
+  read: DIRECTLY_ALLOWED_TOOLS.has("read"),
+  bash: CONFIRMATION_REQUIRED_TOOLS.has("bash"),
+  unknown: DIRECTLY_ALLOWED_TOOLS.has("new_tool") || CONFIRMATION_REQUIRED_TOOLS.has("new_tool"),
   preview,
 }}));
 """
     result = _node_json(script)
-    assert result["allowed"] is True
-    assert result["unknown"]["block"] is True
-    assert result["compute"]["block"] is True
+    assert result["read"] is True
     assert result["bash"] is True
-    assert len(result["confirmations"]) == 2
-    assert result["confirmations"][0]["options"]["timeout"] == 300_000
-    assert "secret-value" not in result["confirmations"][0]["message"]
+    assert result["unknown"] is False
     assert "secret-value" not in result["preview"]
     assert "[redacted]" in result["preview"]
+
+
+def test_phone_bridge_protocol_rejects_raw_rpc_records() -> None:
+    script = f"""
+import {{ parseBridgeServerRecord }} from {json.dumps(PHONE_PROTOCOL.as_uri())};
+let rawRpcError;
+try {{ parseBridgeServerRecord({{ protocolVersion: "ts-phone-bridge/1", type: "prompt", message: "x" }}); }}
+catch (error) {{ rawRpcError = error.message; }}
+const command = parseBridgeServerRecord({{
+  protocolVersion: "ts-phone-bridge/1",
+  type: "command.prompt",
+  workspaceId: "ts_006",
+  instanceEpoch: "epoch-1",
+  sessionGeneration: 2,
+  requestId: "request-1",
+  clientMessageId: "client-1",
+  message: "hello",
+}});
+process.stdout.write(JSON.stringify({{ rawRpcError, command }}));
+"""
+    result = _node_json(script)
+    assert result["rawRpcError"]
+    assert result["command"]["message"] == "hello"
+
+
+def test_phone_bridge_client_exchanges_events_commands_and_approval(tmp_path: Path) -> None:
+    socket_path = tmp_path / "bridge.sock"
+    secret_path = tmp_path / "bridge.secret"
+    secret_path.write_text("A" * 43 + "\n", encoding="utf-8")
+    secret_path.chmod(0o600)
+    script = f"""
+import {{ createServer }} from "node:net";
+import {{ unlink }} from "node:fs/promises";
+import {{ TsPhoneBridgeClient }} from {json.dumps(PHONE_CLIENT.as_uri())};
+const socketPath = {json.dumps(str(socket_path))};
+const received = [];
+const commands = [];
+let promptAck = false;
+let approvalAck = false;
+let approvalResult;
+let resolveDone;
+const done = new Promise((resolve) => {{ resolveDone = resolve; }});
+function maybeDone() {{ if (promptAck && approvalAck) resolveDone(); }}
+const server = createServer((socket) => {{
+  let buffer = "";
+  socket.setEncoding("utf8");
+  socket.on("data", (chunk) => {{
+    buffer += chunk;
+    while (true) {{
+      const newline = buffer.indexOf("\\n");
+      if (newline < 0) break;
+      const line = buffer.slice(0, newline);
+      buffer = buffer.slice(newline + 1);
+      if (!line) continue;
+      const record = JSON.parse(line);
+      received.push(record);
+      const base = {{
+        protocolVersion: "ts-phone-bridge/1",
+        workspaceId: "ts_006",
+        instanceEpoch: record.instanceEpoch,
+      }};
+      if (record.type === "bridge.register") {{
+        socket.write(JSON.stringify({{ ...base, type: "bridge.registered" }}) + "\\n");
+      }} else if (record.type === "session.snapshot") {{
+        socket.write(JSON.stringify({{
+          ...base,
+          type: "command.prompt",
+          sessionGeneration: 1,
+          requestId: "prompt-request",
+          clientMessageId: "phone-message-1",
+          message: "hello from phone",
+        }}) + "\\n");
+      }} else if (record.type === "approval.request") {{
+        socket.write(JSON.stringify({{
+          ...base,
+          type: "approval.respond",
+          sessionGeneration: 1,
+          requestId: "approval-response",
+          approvalId: record.approvalId,
+          approved: true,
+        }}) + "\\n");
+      }} else if (record.type === "command.ack" && record.requestId === "prompt-request") {{
+        promptAck = record.ok;
+        maybeDone();
+      }} else if (record.type === "command.ack" && record.requestId === "approval-response") {{
+        approvalAck = record.ok;
+        maybeDone();
+      }}
+    }}
+  }});
+}});
+await new Promise((resolve, reject) => {{ server.once("error", reject); server.listen(socketPath, resolve); }});
+const client = new TsPhoneBridgeClient({{
+  workspaceId: "ts_006",
+  workspaceRoot: "/tmp/ts_006",
+  socketPath,
+  secretPath: {json.dumps(str(secret_path))},
+  getSessionGeneration: () => 1,
+  onCommand: (command) => {{ commands.push(command); }},
+  onConnected: () => {{
+    client.publishSnapshot({{ sessionId: "session-1", isStreaming: false, messages: [] }});
+    client.publishEvent("input", {{ text: "CLI prompt", origin: "local" }});
+    void client.requestApproval({{
+      turnId: "turn-1",
+      toolCallId: "tool-1",
+      toolName: "bash",
+      preview: "Tool: bash",
+    }}).then((value) => {{ approvalResult = value; }});
+  }},
+  onConnectionChanged: () => {{}},
+}});
+client.start();
+await Promise.race([done, new Promise((_, reject) => setTimeout(() => reject(new Error("timeout")), 5000))]);
+await new Promise((resolve) => setTimeout(resolve, 0));
+client.stop();
+await new Promise((resolve) => server.close(resolve));
+await unlink(socketPath).catch(() => {{}});
+process.stdout.write(JSON.stringify({{
+  commands,
+  approvalResult,
+  eventTypes: received.map((record) => record.type),
+}}));
+"""
+    result = _node_json(script)
+    assert result["commands"][0]["message"] == "hello from phone"
+    assert result["approvalResult"] is True
+    assert "session.snapshot" in result["eventTypes"]
+    assert "event.publish" in result["eventTypes"]
+    assert "approval.request" in result["eventTypes"]
 
 
 def test_rpc_subagent_history_is_bounded_markdown() -> None:
@@ -203,6 +302,7 @@ def _node_json(script: str):
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
+        timeout=20,
         check=False,
     )
     assert completed.returncode == 0, completed.stderr

@@ -104,6 +104,7 @@ def render_job_script(config: RemoteJobConfig) -> str:
     lines = [
         "#!/usr/bin/env bash",
         f"#PBS -N {job_name}",
+        "#PBS -S /bin/bash",
         f"#PBS -q {config.resources.queue}",
         f"#PBS -l nodes={config.resources.nodes}:ppn={config.resources.ncpus}",
         f"#PBS -l mem={config.resources.memory}",
@@ -113,9 +114,11 @@ def render_job_script(config: RemoteJobConfig) -> str:
         "set -Eeo pipefail",
         "umask 077",
         f"cd -- {shlex.quote(config.remote_dir)}",
+        "install -d -m 700 -- .scratch",
+        'export TMPDIR="$PWD/.scratch"',
     ]
     if software.activation_script:
-        lines.append(f"source {shlex.quote(software.activation_script)}")
+        lines.extend(_activation_wrapper(config, software.activation_script))
     lines.append("set -u")
     environment = {**software.environment, **config.environment}
     if config.resources.ompthreads is not None and "OMP_NUM_THREADS" not in environment:
@@ -224,6 +227,29 @@ def resource_dict(resources: RemoteResources) -> dict[str, Any]:
         "mpiprocs": resources.mpiprocs,
         "ompthreads": resources.ompthreads,
     }
+
+
+def _activation_wrapper(config: RemoteJobConfig, activation_script: str) -> list[str]:
+    status = shlex.quote(config.program_status_name)
+    stderr = shlex.quote(config.stderr_name)
+    activation = shlex.quote(activation_script)
+    return [
+        'started_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")',
+        f"status_tmp={status}.tmp.$$",
+        f"printf '%s\\n' '{{\"schema_version\":\"ts-remote-program-status/1\",\"state\":\"running\",\"exit_status\":null,\"phase\":\"activation\",\"started_at\":\"'\"$started_at\"'\"}}' > \"$status_tmp\"",
+        f"mv -- \"$status_tmp\" {status}",
+        "set +e",
+        f"source {activation} 2> {stderr}",
+        "activation_rc=$?",
+        "set -e",
+        "if [[ $activation_rc -ne 0 ]]; then",
+        '  finished_at=$(date -u +"%Y-%m-%dT%H:%M:%SZ")',
+        f"  status_tmp={status}.tmp.$$",
+        f"  printf '%s\\n' '{{\"schema_version\":\"ts-remote-program-status/1\",\"state\":\"failed\",\"exit_status\":'\"$activation_rc\"',\"phase\":\"activation\",\"started_at\":\"'\"$started_at\"'\",\"finished_at\":\"'\"$finished_at\"'\"}}' > \"$status_tmp\"",
+        f"  mv -- \"$status_tmp\" {status}",
+        '  exit "$activation_rc"',
+        "fi",
+    ]
 
 
 def _program_wrapper(config: RemoteJobConfig, command: list[str]) -> list[str]:

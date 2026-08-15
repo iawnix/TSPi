@@ -68,7 +68,7 @@ Usage:
 Each workspace name creates or reuses an isolated research directory under
 ./workspaces/. Only one Root Agent may write one workspace at a time.
 Remote computation uses the installation-owned .pi/remote.toml profile.
-Phone mode asks the local TS Phone service to open the selected workspace.
+Phone mode starts the visible TSPi session with the local TS Phone bridge.
 EOF
 }
 
@@ -245,24 +245,9 @@ raise SystemExit(0 if payload.get("ok") is True else 1)
   return 1
 }
 
-open_phone_workspace() {
-  local workspace_name="$1"
-  local phone_ctl="${TS_PHONE_CTL:-}"
-
-  if [[ -z "$phone_ctl" ]]; then
-    phone_ctl="$(command -v ts-phone-ctl || true)"
-  fi
-  if [[ -z "$phone_ctl" || ! -x "$phone_ctl" ]]; then
-    printf 'TSPi: ts-phone-ctl is unavailable; deploy TS Phone or set TS_PHONE_CTL to its executable\n' >&2
-    return 127
-  fi
-  "$phone_ctl" open "$workspace_name"
-}
-
 main() {
   local check_remote_only=false
   local phone_mode=false
-  local phone_worker=false
   local show_help=false
   local workspace_name=""
   local -a phone_extension=()
@@ -274,7 +259,10 @@ main() {
         check_remote_only=true
         ;;
       --phone) phone_mode=true ;;
-      --phone-worker) phone_worker=true ;;
+      --phone-worker)
+        printf 'TSPi: --phone-worker was removed; use --phone to start the visible bridged TUI\n' >&2
+        return 2
+        ;;
       --workspace)
         shift
         if [[ $# -eq 0 || -z "$1" ]]; then
@@ -304,11 +292,7 @@ main() {
     printf 'TSPi: TS package not found: %s\n' "$TS_PACKAGE_ROOT" >&2
     return 1
   fi
-  if [[ "$phone_mode" == true && "$phone_worker" == true ]]; then
-    printf 'TSPi: --phone and --phone-worker cannot be combined\n' >&2
-    return 2
-  fi
-  if [[ "$check_remote_only" == true && ( "$phone_mode" == true || "$phone_worker" == true ) ]]; then
+  if [[ "$check_remote_only" == true && "$phone_mode" == true ]]; then
     printf 'TSPi: --check-remote cannot be combined with phone mode\n' >&2
     return 2
   fi
@@ -329,20 +313,10 @@ main() {
       printf 'TSPi: --phone does not accept Pi arguments\n' >&2
       return 2
     fi
-    open_phone_workspace "$workspace_name"
-    return
-  fi
-  if [[ "$phone_worker" == true ]]; then
-    if [[ "${TS_PHONE_MODE:-}" != "research" ]]; then
-      printf 'TSPi: --phone-worker is reserved for the TS Phone service\n' >&2
-      return 2
-    fi
-    if [[ ${#pi_args[@]} -ne 0 ]]; then
-      printf 'TSPi: --phone-worker does not accept Pi arguments\n' >&2
-      return 2
-    fi
-    phone_extension=(-e "$TS_PACKAGE_ROOT/extensions/ts-phone-policy/index.ts")
-    pi_args=(--mode rpc --continue)
+    export TS_PHONE_MODE="bridge"
+    export TS_PHONE_WORKSPACE_ID="$workspace_name"
+    phone_extension=(-e "$TS_PACKAGE_ROOT/extensions/ts-phone-bridge/index.ts")
+    pi_args=(--continue)
   fi
   configure_remote
   configure_notifications

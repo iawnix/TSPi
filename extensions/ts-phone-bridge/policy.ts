@@ -1,7 +1,7 @@
-import type { ExtensionAPI, ToolCallEvent } from "@earendil-works/pi-coding-agent";
+import type { ToolCallEvent } from "@earendil-works/pi-coding-agent";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 
-const DIRECTLY_ALLOWED_TOOLS = new Set<string>([
+export const DIRECTLY_ALLOWED_TOOLS = new Set<string>([
   "read",
   "grep",
   "find",
@@ -14,7 +14,7 @@ const DIRECTLY_ALLOWED_TOOLS = new Set<string>([
   TS_PUBLIC_TOOL_NAMES.reviewDisposition,
 ]);
 
-const CONFIRMATION_REQUIRED_TOOLS = new Set<string>([
+export const CONFIRMATION_REQUIRED_TOOLS = new Set<string>([
   "bash",
   "edit",
   "write",
@@ -25,33 +25,7 @@ const CONFIRMATION_REQUIRED_TOOLS = new Set<string>([
   TS_PUBLIC_TOOL_NAMES.notifyUser,
 ]);
 
-const CONFIRMATION_TIMEOUT_MS = 5 * 60_000;
 const MAX_INPUT_PREVIEW_CHARS = 1_800;
-
-export default function (pi: ExtensionAPI) {
-  if (process.env.TS_PHONE_MODE !== "research") return;
-
-  pi.on("tool_call", async (event, ctx) => {
-    if (DIRECTLY_ALLOWED_TOOLS.has(event.toolName)) return;
-    if (!CONFIRMATION_REQUIRED_TOOLS.has(event.toolName)) {
-      return {
-        block: true,
-        reason: `TS Phone blocked unclassified tool: ${event.toolName}`,
-      };
-    }
-
-    const approved = await ctx.ui.confirm(
-      "TS Phone permission",
-      formatConfirmation(event),
-      { timeout: CONFIRMATION_TIMEOUT_MS },
-    );
-    if (approved) return;
-    return {
-      block: true,
-      reason: `TS Phone user did not approve tool: ${event.toolName}`,
-    };
-  });
-}
 
 export function formatConfirmation(event: ToolCallEvent): string {
   const preview = JSON.stringify(event.input, redactSensitiveFields, 2)

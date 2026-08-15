@@ -145,11 +145,17 @@ requires_gpu = false
 def test_torque_script_owns_resources_activation_and_program_status(tmp_path: Path) -> None:
     script = render_job_script(_job(tmp_path))
 
+    assert "#PBS -S /bin/bash" in script
     assert "#PBS -q batch" in script
     assert "#PBS -l nodes=1:ppn=8" in script
     assert "#PBS -l mem=16gb" in script
-    assert "source /opt/g16/activate.sh" in script
+    assert "install -d -m 700 -- .scratch" in script
+    assert 'export TMPDIR="$PWD/.scratch"' in script
+    assert script.index('export TMPDIR="$PWD/.scratch"') < script.index("source /opt/g16/activate.sh")
+    assert "source /opt/g16/activate.sh 2> remote_job.stderr" in script
     assert script.index("source /opt/g16/activate.sh") < script.index("set -u")
+    assert '"phase":"activation"' in script
+    assert 'exit "$activation_rc"' in script
     assert "/opt/g16/g16 < candidate.gjf > candidate.log" in script
     assert "ts-remote-program-status/1" in script
     assert "program_state=completed" in script
