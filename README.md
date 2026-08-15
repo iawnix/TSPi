@@ -120,30 +120,29 @@ profile is unhealthy.
 ### TS Phone
 
 TS Phone is an optional mobile control surface for this TSPi installation. It
-does not replace the TSPi launcher or own research state. To create or reuse a
-workspace and make it available to the already-running local TS Phone service:
+does not replace the TSPi launcher, own research state, or start a hidden Pi.
+To create or reuse a workspace and attach its visible TUI to the local Broker:
 
 ```bash
 ./TSPi --workspace reaction-a --phone
 ```
 
-The command invokes `ts-phone-ctl open reaction-a`; set `TS_PHONE_CTL` when the
-control executable is not on `PATH`. It does not start another TS Phone server.
-The service later starts the workspace through the internal
-`--phone-worker` entrypoint, which adds Pi RPC mode, session continuation, and
-the package-owned phone permission policy. Direct use of `--phone-worker` is
-rejected.
+The command starts normal Pi TUI mode with `--continue`, loads the package-owned
+`ts-phone-bridge` Extension, and connects to the local Broker over a protected
+Unix socket. The same Pi process owns terminal input, phone input, model/API-key
+resolution, tools, session history, and the workspace Root Agent lock.
 
-Phone sessions preserve the normal one-Root-Agent-per-workspace lock. Read-only
+Bridged sessions preserve the normal one-Root-Agent-per-workspace lock. Read-only
 workspace, remote inspection, validation, and Review tools can run directly.
 Shell/file writes, scientific-state application, compute, rendering, report
 generation, and notification require a one-time confirmation on the phone.
 Unknown tools fail closed. Confirmation previews redact common secret fields;
 they are a decision aid, not a substitute for reviewing the requested action.
 
-The TS Phone server, HTTPS/FRP deployment, Bearer token, and mobile app are
-maintained separately. TSPi never exposes a generic remote shell, filesystem
-path, environment override, or raw Pi RPC endpoint.
+The TS Phone Broker, HTTPS/FRP deployment, Bearer token, and mobile app are
+maintained separately. Phone messages enter through `pi.sendUserMessage()`;
+TSPi never exposes a generic remote shell, caller-selected filesystem path,
+environment override, process launcher, or raw Pi RPC endpoint.
 
 The UI provides the TSPi startup header, rounded editor, stable footer, working
 indicator, and a bounded `TS Activity` panel. `/ts-subagent-history` opens a

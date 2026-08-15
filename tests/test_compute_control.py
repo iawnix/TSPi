@@ -26,6 +26,7 @@ from ts_compute.control import _validate_intent_node_scope
 from ts_remote import lifecycle as remote_lifecycle
 from ts_remote.models import RemoteJobStatus, RemoteReceipt
 from ts_remote.errors import RemotePreSubmitError, RemoteSubmissionAmbiguous, RemoteSubmissionRejected
+from ts_backends.gaussian import route_expectation
 from ts_workspace.operational import operational_snapshot
 from ts_workspace import report_workspace
 from ts_workspace.identity import workspace_id
@@ -898,10 +899,22 @@ def test_prepared_backend_metadata_is_revalidated_before_remote_access(
         calculation_status(workspace, "calc_n001_optfreq_001")
 
 
-def test_gaussian_route_expectation_ignores_equals_whitespace() -> None:
-    expected = "#P wB97XD/def2TZVP Opt=(TS,Tight,MaxCycle=250) Freq"
-    logged = "#p wB97XD/def2TZVP Opt=(TS,Tight,MaxCycle =250) Freq"
-
+@pytest.mark.parametrize(
+    ("expected", "logged"),
+    [
+        (
+            "#P wB97XD/def2TZVP Opt=(TS,Tight,MaxCycle=250) Freq",
+            "#p wB97XD/def2TZVP Opt=(TS,Tight,MaxCycle =250) Freq",
+        ),
+        (
+            "#P wB97XD/def2TZVP SCF=(Tight,XQC,MaxCycle=512)",
+            "#p wB97XD/def2TZVP SCF=( Tight,XQC,MaxCycle=512 )",
+        ),
+    ],
+)
+def test_gaussian_route_expectation_ignores_gaussian_delimiter_whitespace(
+    expected: str, logged: str
+) -> None:
     result = route_expectation(expected, logged, "")
 
     assert result["matched"] is True

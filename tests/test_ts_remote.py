@@ -208,9 +208,10 @@ def test_torque_script_owns_resources_activation_and_program_status(tmp_path: Pa
     assert 'export GAUSS_SCRDIR="$ts_remote_scratch_dir"' in script
     assert "source /opt/g16/activate.sh 2>> remote_job.stderr" in script
     assert script.index("source /opt/g16/activate.sh") < script.index("set -u")
+    assert '"phase":"activation"' in script
+    assert 'exit "$activation_rc"' in script
     assert "/opt/g16/g16 < candidate.gjf > candidate.log" in script
     assert '"phase":"scratch_setup"' in script
-    assert '"phase":"activation"' in script
     assert '"phase":"program"' in script
     assert "trap cleanup_scratch EXIT" in script
     assert "ts-remote-program-status/1" in script

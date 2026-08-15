@@ -18,7 +18,7 @@ EXPECTED_FILES = [
     "environment.yml",
     "contracts/*.json",
     "extensions/shared/*.ts",
-    "extensions/ts-phone-policy/*.ts",
+    "extensions/ts-phone-bridge/*.ts",
     "extensions/ts-workflow-artifacts/*.ts",
     "extensions/ts-workflow-compute/*.ts",
     "extensions/ts-workflow-compute/*.cjs",
