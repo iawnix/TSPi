@@ -4,6 +4,7 @@ import hashlib
 import io
 import json
 import os
+import stat
 import subprocess
 import tarfile
 from datetime import datetime, timezone
@@ -58,6 +59,8 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert not (package_root / "tests").exists()
     assert not (package_root / ".git").exists()
     assert not (package_root / "node_modules").exists()
+    assert stat.S_IMODE(package_root.stat().st_mode) == 0o500
+    assert all(stat.S_IMODE(path.stat().st_mode) & 0o222 == 0 for path in package_root.rglob("*"))
     assert (install_root / "TSPi").is_symlink()
     assert (install_root / "TSPi").resolve() == package_root / "TSPi"
     help_result = subprocess.run(

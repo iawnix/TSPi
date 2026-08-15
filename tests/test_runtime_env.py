@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import stat
 import subprocess
 import sys
 from pathlib import Path
@@ -79,7 +80,7 @@ def test_configured_python_reads_runtime_manifest(tmp_path: Path) -> None:
     package = tmp_path / "skill"
     package.mkdir()
     (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
-    write_manifest(
+    manifest_path = write_manifest(
         package,
         {
             "schema_version": "ts-agent-runtime-v1",
@@ -88,6 +89,7 @@ def test_configured_python_reads_runtime_manifest(tmp_path: Path) -> None:
         },
     )
 
+    assert stat.S_IMODE(manifest_path.stat().st_mode) == 0o600
     assert configured_python(package) == Path(sys.executable).resolve()
 
 

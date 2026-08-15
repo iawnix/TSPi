@@ -9,6 +9,7 @@ import json
 import os
 import re
 import shutil
+import stat
 import sys
 import tarfile
 import tempfile
@@ -107,11 +108,12 @@ def install_release(manifest_path: Path, archive_path: Path | None, install_root
             extract_archive(resolved_archive, members, staging)
             validate_extracted_package(staging, manifest)
             atomic_write_json(staging / ".ts-agent-release.json", manifest, mode=0o600)
+            finalize_release_permissions(staging)
             os.replace(staging, target)
             created = True
         finally:
             if staging.exists():
-                shutil.rmtree(staging)
+                remove_staging_tree(staging)
 
     switch_current(package_home, target)
     install_launcher(install_root, package_home)
@@ -250,6 +252,32 @@ def validate_existing_release(target: Path, manifest: dict[str, Any]) -> None:
     if release_identity(installed) != release_identity(manifest):
         raise ReleaseInstallError(f"existing release manifest does not match: {target}")
     validate_extracted_package(target, manifest)
+    validate_release_permissions(target)
+
+
+def finalize_release_permissions(root: Path) -> None:
+    directories: list[Path] = []
+    for path in root.rglob("*"):
+        if path.is_dir():
+            directories.append(path)
+            continue
+        mode = stat.S_IMODE(path.stat().st_mode)
+        path.chmod(0o500 if mode & 0o111 else 0o400)
+    for path in sorted(directories, key=lambda value: len(value.parts), reverse=True):
+        path.chmod(0o500)
+    root.chmod(0o500)
+
+
+def validate_release_permissions(root: Path) -> None:
+    for path in [root, *root.rglob("*")]:
+        if stat.S_IMODE(path.stat().st_mode) & 0o222:
+            raise ReleaseInstallError(f"existing release contains a writable path: {path}")
+
+
+def remove_staging_tree(root: Path) -> None:
+    for current, _, _ in os.walk(root):
+        Path(current).chmod(0o700)
+    shutil.rmtree(root)
 
 
 def prepare_install_root(path: Path) -> Path:
