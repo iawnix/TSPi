@@ -19,8 +19,12 @@ TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
 def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     install_root = tmp_path / "tspi-install"
     launcher = install_root / "TSPi"
-    package_root = install_root / ".pi" / "git" / "github.com" / "iawnix" / "TSAgentSkill"
+    package_home = install_root / ".pi" / "packages" / "ts-agent"
+    package_root = package_home / "releases" / "test-release"
     package_root.mkdir(parents=True)
+    (package_root / "package.json").write_text('{"name":"@iawnix/ts-agent","version":"0.5.0"}\n', encoding="utf-8")
+    (package_root / ".ts-agent-release.json").write_text("{}\n", encoding="utf-8")
+    (package_home / "current").symlink_to("releases/test-release")
     shutil.copy2(TSPI, launcher)
     launcher.chmod(0o755)
     return install_root, launcher

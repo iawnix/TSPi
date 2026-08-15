@@ -58,40 +58,53 @@ compatibility aliases.
 
 ## Install
 
-Create one directory per research workspace and install this development branch
-project-locally:
+Normal installations consume a validated release instead of a Git checkout.
+From a clean maintainer checkout, build the content-addressed archive and install
+it into a dedicated TSPi root:
 
 ```bash
-mkdir -p /path/to/ts-workspace
-cd /path/to/ts-workspace
-pi install -l git:github.com/iawnix/TSAgentSkill@pi_ts_subagents --approve
-export TS_WORKSPACE_ROOT=$PWD
-export TS_AGENT_SKILL_ROOT=$PWD/.pi/git/github.com/iawnix/TSAgentSkill
-python "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
+python3 scripts/build_release.py --output-dir dist --json
+python3 scripts/install_release.py \
+  --manifest dist/ts-agent-release.json \
+  --install-root /path/to/TSPi-installation \
+  --json
+
+export TS_AGENT_SKILL_ROOT=/path/to/TSPi-installation/.pi/packages/ts-agent/current
+python3 "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
   --package-root "$TS_AGENT_SKILL_ROOT" \
-  --workspace-root "$TS_WORKSPACE_ROOT" \
+  --runtime-home /path/to/TSPi-installation/.agents/runtime/transition-state-workflow \
+  --env-root /path/to/TSPi-installation/.agents/envs/transition-state-workflow \
   --conda-root /path/to/miniforge3 \
   --with-render \
   --json
 ```
 
-The workspace owns its runtime manifest and default environment store:
+The installer verifies the manifest, archive filename, size, SHA-256, package
+identity, required runtime files, and safe tar members before switching the
+active release. Its layout is:
 
 ```text
-<workspace>/.agents/runtime/transition-state-workflow/env.json
-<workspace>/.agents/envs/transition-state-workflow/<environment-hash>/
+<installation>/TSPi -> .pi/packages/ts-agent/current/TSPi
+<installation>/.pi/packages/ts-agent/current -> releases/<version>-sha256-<digest>
+<installation>/.pi/packages/ts-agent/releases/<release-id>/
 ```
 
-Separate workspaces therefore do not collide by default. Set the same
-`TS_AGENT_ENV_ROOT` only when environment sharing is intentional.
+Old releases are retained for inspection and rollback. Reinstalling the same
+content is idempotent. The release contains runtime code and public operating
+material only; it excludes `.git`, tests, maintainer documentation, build/check
+scripts, caches, and `node_modules`.
 
-For local package development:
+For explicit source development, run the authored launcher against a separate
+installation root. Development mode defaults to maintenance source access:
 
 ```bash
-cd /path/to/ts-workspace
-pi install -l /absolute/path/to/TSAgentSkill --approve
-TS_WORKSPACE_ROOT=$PWD npm --prefix /absolute/path/to/TSAgentSkill run install-env
+TS_AGENT_INSTALL_ROOT=/path/to/TSPi-installation \
+TS_PACKAGE_DEV_ROOT=/absolute/path/to/TSAgentSkill \
+  /absolute/path/to/TSAgentSkill/TSPi --workspace package-dev
 ```
+
+Normal release startup forces `TS_PACKAGE_SOURCE_MODE=research`; maintenance
+mode cannot be enabled without `TS_PACKAGE_DEV_ROOT`.
 
 `ts_render` uses `xyzrender` only. It does not require or probe Blender,
 FFmpeg, OpenBabel, Mayavi, or PyVista; missing render support does not block

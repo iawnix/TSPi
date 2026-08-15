@@ -18,8 +18,10 @@ def test_readme_documents_pi_install_runtime_and_public_tools() -> None:
 
     for phrase in [
         "This branch supports Pi Agent only.",
-        "pi install -l git:github.com/iawnix/TSAgentSkill@pi_ts_subagents --approve",
-        "$PWD/.pi/git/github.com/iawnix/TSAgentSkill",
+        "scripts/build_release.py",
+        "scripts/install_release.py",
+        ".pi/packages/ts-agent/current",
+        "TS_PACKAGE_DEV_ROOT",
         "./TSPi --workspace reaction-a",
         "/ts-subagent-history",
         "ts_workspace_decision_apply",

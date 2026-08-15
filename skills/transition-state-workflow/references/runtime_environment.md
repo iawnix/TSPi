@@ -1,13 +1,14 @@
 # Runtime Environment Contract
 
 TSAgentSkill uses an isolated Conda or Mamba runtime for Python dependencies.
-Package installation only registers or fetches the skill package; it does not
-create the Python environment automatically.
+Installing a validated package release does not create the Python environment
+automatically.
 
 Keep three roots separate:
 
-- `package_root`: the skill code checkout or installed copy. This may be a
-  Pi `.pi/git` checkout, a Pi local package reference, or a development tree.
+- `package_root`: the active versioned release under
+  `<installation>/.pi/packages/ts-agent/current`, or an explicit development
+  tree selected with `TS_PACKAGE_DEV_ROOT`.
 - `workspace_root`: the TS research workspace that owns state and runtime
   metadata.
 - `runtime_home`: the directory that stores the runtime manifest.
@@ -26,9 +27,8 @@ locations are workspace-owned:
 <workspace_root>/.agents/envs/transition-state-workflow/<environment-spec-hash>/
 ```
 
-This keeps runtime state out of Pi Git package checkouts, which may be reset or
-cleaned during package updates, and it keeps local Pi path installs from
-reusing a development-tree runtime.
+This keeps runtime state out of immutable release directories and prevents an
+explicit development tree from silently owning installation state.
 
 The installation-level `TSPi` launcher deliberately supplies all three runtime
 overrides so concurrent research workspaces reuse one validated environment:
@@ -72,8 +72,8 @@ Override points:
 Install or refresh the runtime with explicit package and workspace roots:
 
 ```bash
-export TS_AGENT_SKILL_ROOT=/path/to/transition-state-workflow
-export TS_WORKSPACE_ROOT=/path/to/ts-workspace
+export TS_AGENT_SKILL_ROOT=/path/to/TSPi-installation/.pi/packages/ts-agent/current
+export TS_WORKSPACE_ROOT=/path/to/TSPi-installation/workspaces/reaction-a
 python "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
   --package-root "$TS_AGENT_SKILL_ROOT" \
   --workspace-root "$TS_WORKSPACE_ROOT" \

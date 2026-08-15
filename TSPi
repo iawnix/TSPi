@@ -3,9 +3,11 @@
 set -euo pipefail
 
 readonly LAUNCHER_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
-readonly INSTALL_ROOT="$LAUNCHER_DIR"
+readonly INSTALL_ROOT="${TS_AGENT_INSTALL_ROOT:-$LAUNCHER_DIR}"
 readonly TS_WORKSPACES_ROOT="$INSTALL_ROOT/workspaces"
-readonly TS_PACKAGE_ROOT="$INSTALL_ROOT/.pi/git/github.com/iawnix/TSAgentSkill"
+readonly TS_PACKAGE_HOME="$INSTALL_ROOT/.pi/packages/ts-agent"
+readonly TS_PACKAGE_RELEASES_ROOT="$TS_PACKAGE_HOME/releases"
+readonly TS_PACKAGE_CURRENT="$TS_PACKAGE_HOME/current"
 readonly PI_BIN="${PI_BIN:-/home/iaw/.npm-global/bin/pi}"
 readonly TS_REMOTE_CONFIG_DEFAULT="$INSTALL_ROOT/.pi/remote.toml"
 readonly TS_NOTIFICATION_CONFIG_DEFAULT="$INSTALL_ROOT/.pi/notifications.toml"
@@ -16,6 +18,68 @@ readonly TSPI_PROCESS_CACHE_ROOT="$INSTALL_ROOT/.pi/runtime-cache"
 
 WORKSPACE_ROOT=""
 ROOT_AGENT_LOCK_FD=""
+TS_PACKAGE_ROOT=""
+TS_PACKAGE_INSTALL_MODE=""
+
+resolve_package_root() {
+  local requested_root="${TS_PACKAGE_DEV_ROOT:-}"
+  local resolved_releases_root
+
+  if [[ -n "$requested_root" ]]; then
+    if [[ "$requested_root" != /* || ! -d "$requested_root" ]]; then
+      printf 'TSPi: TS_PACKAGE_DEV_ROOT must be an absolute source directory: %s\n' "$requested_root" >&2
+      return 1
+    fi
+    TS_PACKAGE_ROOT="$(cd -- "$requested_root" && pwd -P)"
+    TS_PACKAGE_INSTALL_MODE="development"
+  else
+    if [[ ! -L "$TS_PACKAGE_CURRENT" ]]; then
+      printf 'TSPi: no installed TS Agent release: %s\n' "$TS_PACKAGE_CURRENT" >&2
+      printf 'TSPi: install a validated release or set TS_PACKAGE_DEV_ROOT for explicit source development\n' >&2
+      return 1
+    fi
+    TS_PACKAGE_ROOT="$(readlink -f -- "$TS_PACKAGE_CURRENT")"
+    if [[ -z "$TS_PACKAGE_ROOT" || ! -d "$TS_PACKAGE_ROOT" ]]; then
+      printf 'TSPi: current TS Agent release is unavailable: %s\n' "$TS_PACKAGE_CURRENT" >&2
+      return 1
+    fi
+    resolved_releases_root="$(cd -- "$TS_PACKAGE_RELEASES_ROOT" && pwd -P)"
+    if [[ "$TS_PACKAGE_ROOT" != "$resolved_releases_root/"* ]]; then
+      printf 'TSPi: current TS Agent release escaped the release store: %s\n' "$TS_PACKAGE_ROOT" >&2
+      return 1
+    fi
+    if [[ ! -f "$TS_PACKAGE_ROOT/.ts-agent-release.json" ]]; then
+      printf 'TSPi: current TS Agent release has no installation manifest: %s\n' "$TS_PACKAGE_ROOT" >&2
+      return 1
+    fi
+    TS_PACKAGE_INSTALL_MODE="release"
+  fi
+  if [[ ! -f "$TS_PACKAGE_ROOT/package.json" ]]; then
+    printf 'TSPi: TS package is incomplete: %s\n' "$TS_PACKAGE_ROOT" >&2
+    return 1
+  fi
+  export TS_PACKAGE_ROOT TS_PACKAGE_INSTALL_MODE
+}
+
+configure_package_source_mode() {
+  local requested_mode="${TS_PACKAGE_SOURCE_MODE:-}"
+
+  if [[ "$TS_PACKAGE_INSTALL_MODE" == "release" ]]; then
+    if [[ -n "$requested_mode" && "$requested_mode" != "research" ]]; then
+      printf 'TSPi: maintenance source mode requires TS_PACKAGE_DEV_ROOT\n' >&2
+      return 1
+    fi
+    export TS_PACKAGE_SOURCE_MODE="research"
+    return
+  fi
+  case "${requested_mode:-maintenance}" in
+    research|maintenance) export TS_PACKAGE_SOURCE_MODE="${requested_mode:-maintenance}" ;;
+    *)
+      printf 'TSPi: TS_PACKAGE_SOURCE_MODE must be research or maintenance\n' >&2
+      return 1
+      ;;
+  esac
+}
 
 configure_workspace_pi_settings() {
   local settings_path="$WORKSPACE_ROOT/.pi/settings.json"
@@ -69,8 +133,8 @@ Each workspace name creates or reuses an isolated research directory under
 ./workspaces/. Only one Root Agent may write one workspace at a time.
 Remote computation uses the installation-owned .pi/remote.toml profile.
 Phone mode starts the visible TSPi session with the local TS Phone bridge.
-TS_PACKAGE_SOURCE_MODE defaults to research; maintenance is reserved for
-explicit package development or debugging.
+Normal installations load a validated release from .pi/packages/ts-agent/current.
+Source development requires an explicit TS_PACKAGE_DEV_ROOT.
 EOF
 }
 
@@ -290,10 +354,8 @@ main() {
     usage
     return 0
   fi
-  if [[ ! -d "$TS_PACKAGE_ROOT" ]]; then
-    printf 'TSPi: TS package not found: %s\n' "$TS_PACKAGE_ROOT" >&2
-    return 1
-  fi
+  resolve_package_root
+  configure_package_source_mode
   if [[ "$check_remote_only" == true && "$phone_mode" == true ]]; then
     printf 'TSPi: --check-remote cannot be combined with phone mode\n' >&2
     return 2
@@ -308,14 +370,6 @@ main() {
     usage >&2
     return 2
   fi
-
-  case "${TS_PACKAGE_SOURCE_MODE:-research}" in
-    research|maintenance) export TS_PACKAGE_SOURCE_MODE="${TS_PACKAGE_SOURCE_MODE:-research}" ;;
-    *)
-      printf 'TSPi: TS_PACKAGE_SOURCE_MODE must be research or maintenance\n' >&2
-      return 2
-      ;;
-  esac
 
   prepare_workspace "$workspace_name"
   if [[ "$phone_mode" == true ]]; then

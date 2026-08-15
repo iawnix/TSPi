@@ -38,7 +38,17 @@ PACKAGE_FILES = [
     "extensions/ts-workflow-control/*.cjs",
     "extensions/ts-workflow-review/*.ts",
     "extensions/ts-workflow-ui/*.ts",
-    "scripts/*.py",
+    "scripts/install_env.py",
+    "scripts/install_release.py",
+    "scripts/migrate_workspace_v2_to_v3.py",
+    "scripts/ts_backend.py",
+    "scripts/ts_compute.py",
+    "scripts/ts_email.py",
+    "scripts/ts_render.py",
+    "scripts/ts_report.py",
+    "scripts/ts_runtime.py",
+    "scripts/ts_web.py",
+    "scripts/ts_workspace.py",
     "skills/",
     "themes/*.json",
     "src/agent-core/*.cjs",
@@ -73,6 +83,7 @@ REQUIRED_TARBALL_FILES = {
     "TSPi",
     "environment.yml",
     "scripts/install_env.py",
+    "scripts/install_release.py",
     "skills/transition-state-workflow/SKILL.md",
     "themes/ts-theme.json",
     "extensions/shared/tool-catalog.ts",
@@ -129,6 +140,11 @@ FORBIDDEN_PARTS = {
     "tests",
 }
 FORBIDDEN_BASENAMES = {".env", "auth.json", "auth.toml", "config.toml", "models.json"}
+FORBIDDEN_RUNTIME_FILES = {
+    "docs/MAINTAINER_GUIDE.md",
+    "scripts/build_release.py",
+    "scripts/check_package.py",
+}
 
 
 class PackageCheckError(RuntimeError):
@@ -239,6 +255,9 @@ def validate_tarball(files: set[str]) -> None:
     for value in sorted(files):
         path = Path(value)
         if value == "SKILL.md" or value.startswith(LEGACY_PREFIXES):
+            forbidden.append(value)
+            continue
+        if value in FORBIDDEN_RUNTIME_FILES:
             forbidden.append(value)
             continue
         if FORBIDDEN_PARTS.intersection(path.parts):

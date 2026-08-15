@@ -26,7 +26,17 @@ EXPECTED_FILES = [
     "extensions/ts-workflow-control/*.cjs",
     "extensions/ts-workflow-review/*.ts",
     "extensions/ts-workflow-ui/*.ts",
-    "scripts/*.py",
+    "scripts/install_env.py",
+    "scripts/install_release.py",
+    "scripts/migrate_workspace_v2_to_v3.py",
+    "scripts/ts_backend.py",
+    "scripts/ts_compute.py",
+    "scripts/ts_email.py",
+    "scripts/ts_render.py",
+    "scripts/ts_report.py",
+    "scripts/ts_runtime.py",
+    "scripts/ts_web.py",
+    "scripts/ts_workspace.py",
     "skills/",
     "themes/*.json",
     "src/agent-core/*.cjs",
@@ -61,11 +71,19 @@ EXPECTED_FILES = [
 def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     install_root = tmp_path / "tspi-install"
     launcher = install_root / "TSPi"
-    package_root = install_root / ".pi" / "git" / "github.com" / "iawnix" / "TSAgentSkill"
+    package_home = install_root / ".pi" / "packages" / "ts-agent"
+    package_root = package_home / "releases" / "test-release"
     package_root.mkdir(parents=True)
+    (package_root / "package.json").write_text('{"name":"@iawnix/ts-agent","version":"0.5.0"}\n', encoding="utf-8")
+    (package_root / ".ts-agent-release.json").write_text("{}\n", encoding="utf-8")
+    (package_home / "current").symlink_to("releases/test-release")
     shutil.copy2(TSPI_LAUNCHER, launcher)
     launcher.chmod(0o755)
     return install_root, launcher
+
+
+def _installed_package_root(install_root: Path) -> Path:
+    return install_root / ".pi" / "packages" / "ts-agent" / "releases" / "test-release"
 
 
 def test_public_skill_uses_nested_pi_skill_layout() -> None:
@@ -187,7 +205,7 @@ def test_tspi_launcher_is_packaged_executable_and_shell_valid() -> None:
     assert completed.returncode == 0, completed.stderr
     assert TSPI_LAUNCHER.stat().st_mode & 0o111
     source = TSPI_LAUNCHER.read_text(encoding="utf-8")
-    assert 'readonly INSTALL_ROOT="$LAUNCHER_DIR"' in source
+    assert 'readonly INSTALL_ROOT="${TS_AGENT_INSTALL_ROOT:-$LAUNCHER_DIR}"' in source
     assert 'readonly TS_WORKSPACES_ROOT="$INSTALL_ROOT/workspaces"' in source
     assert 'readonly TS_REMOTE_CONFIG_DEFAULT="$INSTALL_ROOT/.pi/remote.toml"' in source
     assert 'readonly TS_NOTIFICATION_CONFIG_DEFAULT="$INSTALL_ROOT/.pi/notifications.toml"' in source
@@ -237,8 +255,8 @@ def test_tspi_defaults_package_source_mode_and_rejects_unknown_mode(tmp_path: Pa
         stderr=subprocess.PIPE,
         check=False,
     )
-    assert rejected.returncode == 2
-    assert "must be research or maintenance" in rejected.stderr
+    assert rejected.returncode == 1
+    assert "maintenance source mode requires TS_PACKAGE_DEV_ROOT" in rejected.stderr
 
 
 def test_tspi_loads_installation_owned_remote_profile(tmp_path: Path) -> None:
@@ -363,7 +381,7 @@ def test_tspi_ordinary_startup_does_not_probe_remote(tmp_path: Path) -> None:
     fake_pi = tmp_path / "fake-pi"
     fake_pi.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
     fake_pi.chmod(0o755)
-    diagnostic = install_root / ".pi/git/github.com/iawnix/TSAgentSkill/scripts/ts_compute.py"
+    diagnostic = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
     diagnostic.parent.mkdir(parents=True)
     diagnostic.write_text("raise SystemExit('remote probe must not run')\n", encoding="utf-8")
     script = r'''source "$1"
@@ -383,6 +401,60 @@ main "${@:2}"
     assert "remote probe must not run" not in completed.stderr
 
 
+def test_tspi_requires_a_release_unless_development_root_is_explicit(tmp_path: Path) -> None:
+    install_root = tmp_path / "tspi-install"
+    install_root.mkdir()
+    launcher = install_root / "TSPi"
+    shutil.copy2(TSPI_LAUNCHER, launcher)
+    launcher.chmod(0o755)
+    fake_pi = tmp_path / "fake-pi"
+    fake_pi.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_pi.chmod(0o755)
+
+    missing = subprocess.run(
+        [str(launcher), "--workspace", "release-required"],
+        cwd=install_root,
+        env={**os.environ, "PI_BIN": str(fake_pi)},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    development = subprocess.run(
+        [str(launcher), "--workspace", "source-explicit"],
+        cwd=install_root,
+        env={**os.environ, "PI_BIN": str(fake_pi), "TS_PACKAGE_DEV_ROOT": str(ROOT)},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert missing.returncode == 1
+    assert "no installed TS Agent release" in missing.stderr
+    assert development.returncode == 0, development.stderr
+
+
+def test_tspi_release_mode_rejects_maintenance_source_access(tmp_path: Path) -> None:
+    install_root, launcher = _copy_tspi_install(tmp_path)
+    fake_pi = tmp_path / "fake-pi"
+    fake_pi.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
+    fake_pi.chmod(0o755)
+
+    completed = subprocess.run(
+        [str(launcher), "--workspace", "release-mode"],
+        cwd=install_root,
+        env={**os.environ, "PI_BIN": str(fake_pi), "TS_PACKAGE_SOURCE_MODE": "maintenance"},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 1
+    assert "maintenance source mode requires TS_PACKAGE_DEV_ROOT" in completed.stderr
+
+
 def test_tspi_check_remote_runs_one_strict_diagnostic(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
     remote_config = install_root / ".pi/remote.toml"
@@ -395,7 +467,7 @@ scheduler = "torque"
 ''',
         encoding="utf-8",
     )
-    diagnostic = install_root / ".pi/git/github.com/iawnix/TSAgentSkill/scripts/ts_compute.py"
+    diagnostic = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
     diagnostic.parent.mkdir(parents=True)
     diagnostic.write_text("print('{\"ok\": true}')\n", encoding="utf-8")
     completed = subprocess.run(
@@ -413,7 +485,7 @@ scheduler = "torque"
 
 def test_tspi_remote_diagnostic_preserves_structured_failure(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
-    diagnostic_script = install_root / ".pi/git/github.com/iawnix/TSAgentSkill/scripts/ts_compute.py"
+    diagnostic_script = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
     diagnostic_script.parent.mkdir(parents=True)
     diagnostic_script.write_text(
         "print('{\"ok\": false, \"error\": {\"class\": \"ssh_unreachable\"}}')\nraise SystemExit(3)\n",

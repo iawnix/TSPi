@@ -6,8 +6,8 @@ from executing installed package code.
 
 ## Research Mode
 
-Research mode is the default for terminal and Phone Root sessions. Use sources
-in this order:
+Research mode is mandatory for versioned release installations and is the
+default for terminal and Phone Root sessions. Use sources in this order:
 
 1. Registered tool schemas and prompt guidelines define accepted call fields.
 2. `ts_workspace_context mode=artifacts` and `mode=capabilities` provide live
@@ -26,10 +26,14 @@ not a filesystem security sandbox. Research workspace files remain readable.
 ## Maintenance Mode
 
 Use maintenance mode only for an explicit request to diagnose, change, or
-validate the TS package:
+validate an authored TS package checkout. A release cannot be switched into
+maintenance mode. Start the source launcher with an explicit development root:
 
 ```bash
-TS_PACKAGE_SOURCE_MODE=maintenance ./TSPi --workspace <name>
+TS_AGENT_INSTALL_ROOT=/path/to/TSPi-installation \
+TS_PACKAGE_DEV_ROOT=/absolute/path/to/TSAgentSkill \
+TS_PACKAGE_SOURCE_MODE=maintenance \
+  /absolute/path/to/TSAgentSkill/TSPi --workspace <name>
 ```
 
 Implementation and tests may then be inspected, but public calls must still be

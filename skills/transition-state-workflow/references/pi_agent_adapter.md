@@ -6,9 +6,11 @@ exact SDK versions declared in `package.json`.
 
 ## Package And Runtime Paths
 
-`pi install -l` registers a package reference. Extensions resolve the package
+Normal TSPi startup loads the active versioned release from
+`<installation>/.pi/packages/ts-agent/current`. Extensions resolve that package
 root from `import.meta.url`; never construct script paths from the current
-working directory.
+working directory. An authored tree is loaded only when the launcher receives
+an explicit `TS_PACKAGE_DEV_ROOT`.
 
 Keep runtime state workspace-owned:
 

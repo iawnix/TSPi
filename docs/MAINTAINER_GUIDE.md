@@ -155,11 +155,29 @@ Contract changes must update together:
 Documentation tests should assert architecture invariants and public entrypoints,
 not freeze prose or reintroduce removed concepts.
 
-Normal TSPi sessions use `TS_PACKAGE_SOURCE_MODE=research`: Root Agents learn
-public calls from registered schemas, live capabilities, the Skill, and focused
-references. Use `TS_PACKAGE_SOURCE_MODE=maintenance` only for explicit package
-development or debugging. Tests remain verification material and must not be
-the only source of a public usage example.
+Normal TSPi sessions load only `.pi/packages/ts-agent/current` and force
+`TS_PACKAGE_SOURCE_MODE=research`: Root Agents learn public calls from
+registered schemas, live capabilities, the Skill, and focused references.
+Source development requires both `TS_PACKAGE_DEV_ROOT` and an explicit authored
+launcher; it defaults to maintenance mode. Tests remain verification material
+and must not be the only source of a public usage example.
+
+Build releases only from a clean authored checkout. `--allow-dirty` exists for
+local validation and must not be used for a published artifact:
+
+```bash
+python3 scripts/build_release.py --output-dir dist --json
+python3 scripts/install_release.py \
+  --manifest dist/ts-agent-release.json \
+  --install-root /path/to/TSPi-installation \
+  --json
+```
+
+The release is content-addressed and installation is an atomic pointer switch.
+Keep previous release directories; rollback is performed by installing or
+selecting a previously validated release, not by editing its contents. Runtime
+archives must exclude tests, maintainer documents, build/check scripts, Git
+metadata, caches, and dependency trees.
 
 ## Release Validation
 
@@ -172,6 +190,7 @@ npm run test:pi-adapter
 npm run test:package
 npm pack --dry-run --json
 python3 scripts/check_package.py
+python3 scripts/build_release.py --output-dir dist --json
 git diff --check
 ```
 

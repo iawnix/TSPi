@@ -3,6 +3,7 @@ __pycache__/
 .runtime/
 node_modules/
 .npm-cache/
+dist/
 npm-debug.log*
 *.pyc
 *.pyo
