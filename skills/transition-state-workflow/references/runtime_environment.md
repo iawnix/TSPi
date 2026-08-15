@@ -7,8 +7,7 @@ automatically.
 Keep three roots separate:
 
 - `package_root`: the active versioned release under
-  `<installation>/.pi/packages/ts-agent/current`, or an explicit development
-  tree selected with `TS_PACKAGE_DEV_ROOT`.
+  `<installation>/.pi/packages/ts-agent/current`.
 - `workspace_root`: the TS research workspace that owns state and runtime
   metadata.
 - `runtime_home`: the directory that stores the runtime manifest.
@@ -27,8 +26,7 @@ locations are workspace-owned:
 <workspace_root>/.agents/envs/transition-state-workflow/<environment-spec-hash>/
 ```
 
-This keeps runtime state out of immutable release directories and prevents an
-explicit development tree from silently owning installation state.
+This keeps runtime state out of immutable release directories.
 
 The installation-level `TSPi` launcher deliberately supplies all three runtime
 overrides so concurrent research workspaces reuse one validated environment:

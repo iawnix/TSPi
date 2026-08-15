@@ -9,8 +9,8 @@ exact SDK versions declared in `package.json`.
 Normal TSPi startup loads the active versioned release from
 `<installation>/.pi/packages/ts-agent/current`. Extensions resolve that package
 root from `import.meta.url`; never construct script paths from the current
-working directory. An authored tree is loaded only when the launcher receives
-an explicit `TS_PACKAGE_DEV_ROOT`.
+working directory. Package development occurs in the separate authored
+checkout, then reaches TSPi through a validated release installation.
 
 Keep runtime state workspace-owned:
 

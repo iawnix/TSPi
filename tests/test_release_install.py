@@ -77,8 +77,7 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     fake_pi.write_text(
         "#!/usr/bin/env python3\n"
         "import json, os\n"
-        "print(json.dumps({\"package_root\": os.environ[\"TS_PACKAGE_ROOT\"], "
-        "\"source_mode\": os.environ[\"TS_PACKAGE_SOURCE_MODE\"]}))\n",
+        "print(json.dumps({\"package_root\": os.environ[\"TS_PACKAGE_ROOT\"]}))\n",
         encoding="utf-8",
     )
     fake_pi.chmod(0o755)
@@ -94,7 +93,6 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert startup.returncode == 0, startup.stderr
     startup_result = json.loads(startup.stdout)
     assert Path(startup_result["package_root"]) == package_root
-    assert startup_result["source_mode"] == "research"
     assert (install_root / "workspaces" / "release-smoke").is_dir()
 
 

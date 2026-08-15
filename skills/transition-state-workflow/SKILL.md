@@ -40,8 +40,8 @@ state ownership or persistence is in question.
 For package usage, treat registered tool schemas and live capabilities as the
 call contract, and use this Skill plus focused references for guidance. Do not
 inspect implementation source or tests during ordinary research. Read
-`references/package_sources.md` when the research/maintenance boundary is in
-question.
+`references/package_sources.md` when the installed-runtime/package-maintenance
+boundary is in question.
 
 ## Operating Loop
 

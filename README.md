@@ -94,17 +94,22 @@ content is idempotent. The release contains runtime code and public operating
 material only; it excludes `.git`, tests, maintainer documentation, build/check
 scripts, caches, and `node_modules`.
 
-For explicit source development, run the authored launcher against a separate
-installation root. Development mode defaults to maintenance source access:
+Package maintenance happens in the authored checkout, outside research
+sessions. Run tests and release checks there, then build and install a new
+validated release:
 
 ```bash
-TS_AGENT_INSTALL_ROOT=/path/to/TSPi-installation \
-TS_PACKAGE_DEV_ROOT=/absolute/path/to/TSAgentSkill \
-  /absolute/path/to/TSAgentSkill/TSPi --workspace package-dev
+cd /absolute/path/to/TSAgentSkill
+python3 scripts/check_package.py
+python3 scripts/build_release.py --output-dir dist --json
+python3 scripts/install_release.py \
+  --manifest dist/ts-agent-release.json \
+  --install-root /path/to/TSPi-installation \
+  --json
 ```
 
-Normal release startup forces `TS_PACKAGE_SOURCE_MODE=research`; maintenance
-mode cannot be enabled without `TS_PACKAGE_DEV_ROOT`.
+`TSPi` never loads the authored checkout directly. Every research session uses
+the versioned release selected by `.pi/packages/ts-agent/current`.
 
 `ts_render` uses `xyzrender` only. It does not require or probe Blender,
 FFmpeg, OpenBabel, Mayavi, or PyVista; missing render support does not block

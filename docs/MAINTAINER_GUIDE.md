@@ -155,12 +155,12 @@ Contract changes must update together:
 Documentation tests should assert architecture invariants and public entrypoints,
 not freeze prose or reintroduce removed concepts.
 
-Normal TSPi sessions load only `.pi/packages/ts-agent/current` and force
-`TS_PACKAGE_SOURCE_MODE=research`: Root Agents learn public calls from
-registered schemas, live capabilities, the Skill, and focused references.
-Source development requires both `TS_PACKAGE_DEV_ROOT` and an explicit authored
-launcher; it defaults to maintenance mode. Tests remain verification material
-and must not be the only source of a public usage example.
+Normal TSPi sessions load only `.pi/packages/ts-agent/current`: Root Agents
+learn public calls from registered schemas, live capabilities, the Skill, and
+focused references. Package diagnosis and changes happen in the authored
+checkout, where tests remain verification material rather than the only source
+of a public usage example. Research TSPi sessions never load that checkout
+directly.
 
 Build releases only from a clean authored checkout. `--allow-dirty` exists for
 local validation and must not be used for a published artifact:

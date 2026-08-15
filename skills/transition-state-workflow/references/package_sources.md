@@ -4,10 +4,10 @@ This policy separates public operating knowledge from package implementation.
 It governs how the Root Agent learns to use TSPi; it does not prevent the host
 from executing installed package code.
 
-## Research Mode
+## Research Runtime
 
-Research mode is mandatory for versioned release installations and is the
-default for terminal and Phone Root sessions. Use sources in this order:
+Terminal and Phone Root sessions always run a versioned installed release. Use
+knowledge sources in this order:
 
 1. Registered tool schemas and prompt guidelines define accepted call fields.
 2. `ts_workspace_context mode=artifacts` and `mode=capabilities` provide live
@@ -20,26 +20,28 @@ implementation to discover ordinary tool usage. Tests are regression evidence,
 not examples for a research Agent.
 
 The Root host blocks structured `read`, `grep`, `find`, and `ls` calls into
-non-public package paths in research mode. This is a knowledge-routing guard,
-not a filesystem security sandbox. Research workspace files remain readable.
+non-public package paths. This is a knowledge-routing guard, not a filesystem
+security sandbox. Research workspace files remain readable.
 
-## Maintenance Mode
+## Package Maintenance
 
-Use maintenance mode only for an explicit request to diagnose, change, or
-validate an authored TS package checkout. A release cannot be switched into
-maintenance mode. Start the source launcher with an explicit development root:
+Diagnose, change, and validate package implementation in the separate authored
+checkout, not inside a research TSPi session. After tests pass, build and
+install a versioned release:
 
 ```bash
-TS_AGENT_INSTALL_ROOT=/path/to/TSPi-installation \
-TS_PACKAGE_DEV_ROOT=/absolute/path/to/TSAgentSkill \
-TS_PACKAGE_SOURCE_MODE=maintenance \
-  /absolute/path/to/TSAgentSkill/TSPi --workspace <name>
+cd /absolute/path/to/TSAgentSkill
+python3 scripts/check_package.py
+python3 scripts/build_release.py --output-dir dist --json
+python3 scripts/install_release.py \
+  --manifest dist/ts-agent-release.json \
+  --install-root /path/to/TSPi-installation \
+  --json
 ```
 
-Implementation and tests may then be inspected, but public calls must still be
-derived from registered schemas and capabilities. Maintenance mode does not
-relax workspace mutation, remote control, scientific Gate, or notification
-contracts.
+The next TSPi process resolves the newly selected `current` release. Existing
+processes keep the release they started with. Installation never relaxes
+workspace mutation, remote control, scientific Gate, or notification contracts.
 
 ## Entry Points
 

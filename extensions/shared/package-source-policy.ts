@@ -4,12 +4,9 @@ import { homedir } from "node:os";
 import { isAbsolute, relative, resolve } from "node:path";
 import { PACKAGE_ROOT } from "./workspace-cli.ts";
 
-export const PACKAGE_SOURCE_MODE_ENV = "TS_PACKAGE_SOURCE_MODE";
 export const PACKAGE_SOURCE_READ_TOOLS = ["read", "grep", "find", "ls"] as const;
 export const PACKAGE_USAGE_GUIDELINE =
   "Use registered tool schemas and prompt guidelines for call shape, ts_workspace_context modes for live artifacts and capabilities, and the public transition-state Skill references for operating guidance. Do not inspect package implementation or tests to learn ordinary tool usage.";
-
-export type PackageSourceMode = "research" | "maintenance";
 
 const PUBLIC_KNOWLEDGE_ROOT = resolve(
   PACKAGE_ROOT,
@@ -17,31 +14,19 @@ const PUBLIC_KNOWLEDGE_ROOT = resolve(
   "transition-state-workflow",
 );
 
-export function packageSourceMode(value = process.env[PACKAGE_SOURCE_MODE_ENV]): PackageSourceMode {
-  return value === "maintenance" ? "maintenance" : "research";
-}
-
-export function packageSourceSystemPrompt(mode: PackageSourceMode): string {
-  if (mode === "maintenance") {
-    return [
-      "TS package source mode: maintenance.",
-      PACKAGE_USAGE_GUIDELINE,
-      "Read implementation and regression tests only when the user explicitly asks to diagnose, change, or validate the TS package; tests are verification material, not public usage documentation.",
-    ].join(" ");
-  }
+export function packageSourceSystemPrompt(): string {
   return [
-    "TS package source mode: research.",
+    "TS package knowledge policy: installed research runtime.",
     PACKAGE_USAGE_GUIDELINE,
-    "Package reads are limited to the public transition-state Skill, its references, and its assets. If package implementation diagnosis is required, report that boundary instead of browsing source or tests in this session.",
+    "Package reads are limited to the public transition-state Skill, its references, and its assets. Package implementation work belongs in the separate authored checkout, not this research session.",
   ].join(" ");
 }
 
 export function guardPackageSourceRead(
   event: ToolCallEvent,
   cwd: string,
-  mode: PackageSourceMode,
 ): ToolCallEventResult | undefined {
-  if (mode === "maintenance" || !isPackageReadTool(event.toolName)) return undefined;
+  if (!isPackageReadTool(event.toolName)) return undefined;
   const input = event.input as { path?: unknown };
   const rawPath = typeof input.path === "string" && input.path.trim()
     ? input.path.trim()
@@ -53,10 +38,10 @@ export function guardPackageSourceRead(
   return {
     block: true,
     reason: [
-      "TS package implementation and tests are not usage documentation in research mode.",
+      "TS package implementation and tests are not usage documentation in the installed research runtime.",
       "Use the registered tool schema, ts_workspace_context mode=artifacts or mode=capabilities,",
-      "or skills/transition-state-workflow references. Restart with",
-      `${PACKAGE_SOURCE_MODE_ENV}=maintenance only for explicit package development or debugging.`,
+      "or skills/transition-state-workflow references. Diagnose or change package implementation",
+      "from the separate authored checkout, then build and install a validated release.",
     ].join(" "),
   };
 }

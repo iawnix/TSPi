@@ -21,7 +21,7 @@ def test_readme_documents_pi_install_runtime_and_public_tools() -> None:
         "scripts/build_release.py",
         "scripts/install_release.py",
         ".pi/packages/ts-agent/current",
-        "TS_PACKAGE_DEV_ROOT",
+        "TSPi` never loads the authored checkout directly",
         "./TSPi --workspace reaction-a",
         "/ts-subagent-history",
         "ts_workspace_decision_apply",
