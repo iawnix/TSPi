@@ -1,17 +1,45 @@
 # Deterministic Artifact Tools
 
-Import, Render, and Report are direct host tools. They start no child model,
+Structure Seed, Import, Render, and Report are direct host tools. They start no child model,
 make no scientific decision, and never mutate canonical records.
 
 ## Contents
 
-- [Import The First Input](#import-the-first-input)
+- [Generate A Structure Seed](#generate-a-structure-seed)
+- [Import An Existing Input](#import-an-existing-input)
 - [Render](#render)
 - [Report](#report)
 - [Notify](#notify)
 - [Activity And Provenance](#activity-and-provenance)
 
-## Import The First Input
+## Generate A Structure Seed
+
+For one connected molecule described by SMILES:
+
+```json
+{
+  "operation":"generate",
+  "actId":"act_1",
+  "smiles":"C1=CCCCC1",
+  "charge":0,
+  "multiplicity":1,
+  "optimization":"uff"
+}
+```
+
+`optimization` is `none` or `uff`. The host fixes RDKit ETKDGv3 parameters and
+random seed, adds explicit hydrogens, checks formal charge and electron-count
+parity, and writes content-addressed XYZ plus provenance under the open Act.
+The activity request retains a SMILES digest, not the body. The provenance
+records canonical SMILES, RDKit version, parameters, metadata, output digest,
+and limitations. Multi-fragment SMILES are rejected because this tool does not
+choose a reactive encounter geometry.
+
+This output is only an initial geometry. Neither ETKDG coordinates nor UFF
+energy establishes a stationary point, transition state, mechanism, or
+acceptance fact. Use normal Compute and validation afterward.
+
+## Import An Existing Input
 
 After starting an open ResearchAct, create one bounded seed without choosing a
 path or filename:
@@ -106,7 +134,7 @@ failure has no scientific effect.
 
 ## Activity And Provenance
 
-Compute, Import, Render, and Report write deterministic activity journals whose
+Compute, Structure Seed, Import, Render, and Report write deterministic activity journals whose
 `act_refs` are the only operation-to-Act link. Notification writes a delivery
 receipt. These records support diagnosis and reporting but do not become
 Observations or acceptance basis automatically.

@@ -37,8 +37,8 @@ There are three forms of execution:
 2. **Advisory Agent reasoning** is used only by Review. It evaluates a bounded,
    Claim-centered dependency snapshot and returns non-authoritative advice.
 3. **Deterministic host execution** validates and commits state or performs an
-   explicitly selected side effect. Compute, Render, Report, remote inspection,
-   artifact import, notifications, context compilation, and validation use no
+   explicitly selected side effect. Compute, structure seeding, Render, Report,
+   remote inspection, artifact import, notifications, context, and validation use no
    child model.
 
 ## Authority Matrix
@@ -52,6 +52,7 @@ There are three forms of execution:
 | Validation Engine | No | Through Kernel apply | No | frozen GateSpecs and ValidationResults |
 | Review Agent | Yes | No | No | task, snapshot, result/failure, Root disposition |
 | `ts_compute` | No | No | Local/SSH/Torque action | intent, control record, manifest, parsed artifacts |
+| `ts_structure_seed` | No | No | Bounded local generation | Act-owned XYZ, provenance, and activity |
 | `ts_artifact_import` | No | No | Bounded local file creation | Act-owned content-addressed input and activity |
 | `ts_render` / `ts_report` | No | No | Local file creation | no-overwrite artifact or report package |
 | `ts_remote_inspect` | No | No | Read-only SSH/Torque calls | tool result only |
@@ -71,6 +72,7 @@ falsifiers, tags, status, and exact Observation/validation history. A separate
 ClaimRelation record connects two Claims with an open scientific relation label
 such as dependency, refinement, conflict, or alternative. The Kernel enforces
 acyclic directed relations but does not interpret a label as permission to act.
+ClaimRelation IDs are readable workspace-local ordinals (`rel_1`, `rel_2`, ...).
 Claim IDs are workspace-local monotonic ordinals (`claim_1`, `claim_2`, ...),
 used only as immutable identity and never as confidence, priority, or policy.
 `ResearchAct.claim_refs` records Claims in an Act's declared scope, while
@@ -101,12 +103,15 @@ An Observation is immutable and semantic. It binds a `concept_id`, subject,
 typed value, unit, qualifiers, summary, logical artifact IDs, artifact digests,
 producer, producing Act, and creating Decision. Parsers must emit declared
 concepts directly; the Kernel does not guess aliases for arbitrary output keys.
+Observation IDs are readable workspace-local ordinals (`obs_1`, `obs_2`, ...);
+the record fields, not the ordinal, carry scientific meaning.
 
 A Finding makes an anomaly, conflict, limitation, or unresolved question
 queryable. It may cite Claims, Acts, and Observations. Findings can be blocking,
 warning, or informational. A Finding remains open until an explicit Decision
 resolves, accepts, or supersedes it. Open blocking Findings prevent acceptance
 of affected Claims.
+Finding IDs are readable workspace-local ordinals (`fnd_1`, `fnd_2`, ...).
 
 ### Validation and acceptance
 
@@ -115,6 +120,8 @@ target Claim, dimension, template digest when applicable, predicate-registry
 digest, checks, success policy, creator Act, and content digest. A
 ValidationResult records selected Observation refs and digests, each predicate
 outcome, the aggregate verdict, and a result digest.
+GateSpec and ValidationResult IDs are likewise readable creation ordinals
+(`gsp_1`, `gsp_2`, ... and `val_1`, `val_2`, ...).
 
 The four verdicts are distinct:
 
@@ -134,6 +141,7 @@ digests, and blocking Findings. Historical records remain canonical. Their
 currentness is derived by comparing the frozen Claim, profile, GateSpecs,
 latest results, and relevant Findings with current canonical state. The entire
 acceptance record is also self-bound by `acceptance_digest`.
+Acceptance IDs and filenames use readable ordinals (`acc_1`, `acc_2`, ...).
 
 ### Open scientific vocabulary
 
@@ -311,7 +319,7 @@ full workspace dump.
 | `ts-workflow-control` | context, Decision draft/validate/apply; `/ts-context`, `/ts-validate` | graph projection and sole canonical mutation path |
 | `ts-workflow-review` | `ts_subagent_review`, `ts_review_disposition` | isolated advisory Review and mandatory Root response |
 | `ts-workflow-compute` | `ts_compute`, `ts_remote_inspect`; `/ts-remote` | deterministic calculation lifecycle and diagnostics |
-| `ts-workflow-artifacts` | `ts_artifact_import`, `ts_render`, `ts_report`, `ts_notify_user` | deterministic local artifacts, reports, and delivery |
+| `ts-workflow-artifacts` | `ts_structure_seed`, `ts_artifact_import`, `ts_render`, `ts_report`, `ts_notify_user` | deterministic local artifacts, reports, and delivery |
 | `ts-workflow-ui` | `/ts-subagent-history` | startup, editor/footer, TS Activity, and Review history |
 
 `ts-phone-bridge` is optional and loaded only by `TSPi --phone`. It forwards
@@ -368,7 +376,15 @@ pre-effect retryable failure from an ambiguous external effect. Known job IDs
 are retained even if later scheduler inspection fails. Collection follows the
 immutable manifest and does not require queue history.
 
-### Artifact Import
+### Structure Seed And Artifact Import
+
+`ts_structure_seed` accepts one connected SMILES plus declared charge,
+multiplicity, and `none` or `uff` initialization. The host uses fixed-seed
+RDKit ETKDGv3, explicit hydrogens, charge/electron-parity checks, and optional
+UFF optimization. It writes private, content-addressed XYZ and provenance files
+under one open ResearchAct. The request journal stores the submitted digest,
+not the SMILES body. The resulting geometry and any UFF energy are initialization
+diagnostics, never stationary-point, TS, or acceptance evidence.
 
 `ts_artifact_import` closes the empty-workspace bootstrap boundary. It accepts
 bounded inline Gaussian, XYZ, or xTB control text for one open ResearchAct,

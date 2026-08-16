@@ -9,7 +9,12 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .artifacts import import_calculation_artifact, list_calculation_artifacts, resolve_artifact_ids
+from .artifacts import (
+    create_structure_seed_artifact,
+    import_calculation_artifact,
+    list_calculation_artifacts,
+    resolve_artifact_ids,
+)
 from .capabilities import calculation_capabilities
 from .contracts import ComputeContractError
 from .control import (
@@ -51,6 +56,10 @@ def main(argv: list[str] | None = None) -> int:
     import_artifact = sub.add_parser("import-artifact")
     import_artifact.add_argument("--root", required=True)
     import_artifact.add_argument("--request-file", required=True)
+
+    structure_seed = sub.add_parser("structure-seed")
+    structure_seed.add_argument("--root", required=True)
+    structure_seed.add_argument("--request-file", required=True)
 
     capabilities = sub.add_parser("capabilities")
     capabilities.add_argument("--root")
@@ -117,17 +126,11 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
             "artifacts": artifacts,
         }
     if args.command == "import-artifact":
-        request_path = Path(args.request_file)
-        if not request_path.is_file() or request_path.is_symlink():
-            raise ComputeContractError("artifact import request must be a regular file")
-        if stat.S_IMODE(request_path.stat().st_mode) & 0o077:
-            raise ComputeContractError("artifact import request file must be private (mode 0600 or stricter)")
-        if request_path.stat().st_size > 2 * 128 * 1024:
-            raise ComputeContractError("artifact import request file is too large")
-        request = json.loads(request_path.read_text(encoding="utf-8"))
-        if not isinstance(request, dict):
-            raise ComputeContractError("artifact import request must contain an object")
+        request = _read_private_request(args.request_file, "artifact import", 2 * 128 * 1024)
         return import_calculation_artifact(args.root, request)
+    if args.command == "structure-seed":
+        request = _read_private_request(args.request_file, "structure seed", 16 * 1024)
+        return create_structure_seed_artifact(args.root, request)
     if args.command == "preflight":
         return preflight_calculation(
             args.root,
@@ -158,3 +161,17 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.command == "parse":
         return parse_calculation(args.root, args.intent_id, args.artifact_ref, args.expected_intent_digest)
     raise ComputeContractError(f"unknown compute command: {args.command}")
+
+
+def _read_private_request(value: str, label: str, max_bytes: int) -> dict[str, Any]:
+    request_path = Path(value)
+    if not request_path.is_file() or request_path.is_symlink():
+        raise ComputeContractError(f"{label} request must be a regular file")
+    if stat.S_IMODE(request_path.stat().st_mode) & 0o077:
+        raise ComputeContractError(f"{label} request file must be private (mode 0600 or stricter)")
+    if request_path.stat().st_size > max_bytes:
+        raise ComputeContractError(f"{label} request file is too large")
+    request = json.loads(request_path.read_text(encoding="utf-8"))
+    if not isinstance(request, dict):
+        raise ComputeContractError(f"{label} request must contain an object")
+    return request

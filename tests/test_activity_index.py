@@ -112,6 +112,22 @@ def test_artifact_import_is_a_valid_act_owned_activity(tmp_path: Path) -> None:
     assert index["activities"][0]["kind"] == "artifact_import"
 
 
+def test_structure_seed_is_a_valid_act_owned_activity(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    refs = start_research_act(root)
+    activity = _activity_documents(root, refs["act_id"])
+    for name in ("request.json", "status.json"):
+        document = read_json(activity / name)
+        document["kind"] = "structure_seed"
+        document["operation"] = "generate"
+        write_json(activity / name, document)
+
+    index = build_activity_index(root)
+    assert index["integrity_findings"] == []
+    assert index["activities"][0]["kind"] == "structure_seed"
+
+
 @pytest.mark.parametrize(
     ("mutation", "code"),
     [

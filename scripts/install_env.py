@@ -112,6 +112,12 @@ def main() -> int:
         if completed.returncode != 0:
             return completed.returncode
 
+    try:
+        runtime_probe = _run_runtime_probe(python, package_root)
+    except RuntimeError as exc:
+        print(f"error: managed runtime capability probe failed: {exc}", file=sys.stderr)
+        return 1
+
     manifest = {
         "schema_version": MANIFEST_VERSION,
         "package_root": str(package_root),
@@ -124,6 +130,7 @@ def main() -> int:
         "conda_root": str(conda_root) if conda_root else None,
         "conda_executable": conda,
         "render_dependencies_requested": bool(args.with_render),
+        "runtime_probe": runtime_probe,
         "created_at_utc": datetime.now(timezone.utc).isoformat(),
     }
     manifest_path = write_manifest(
@@ -135,6 +142,7 @@ def main() -> int:
     )
     payload["manifest_path"] = str(manifest_path)
     payload["action"] = action
+    payload["runtime_probe"] = runtime_probe
     _print(payload, args.json)
     return 0
 
@@ -180,6 +188,35 @@ def _conda_env_command(conda: str, action: str, prefix: Path, spec_path: Path) -
     if action == "update":
         command.append("--prune")
     return command
+
+
+def _run_runtime_probe(python: Path, package_root: Path) -> dict:
+    environment = dict(os.environ)
+    existing_pythonpath = environment.get("PYTHONPATH")
+    environment["PYTHONPATH"] = os.pathsep.join(
+        item for item in (str(package_root), existing_pythonpath) if item
+    )
+    environment["PYTHONNOUSERSITE"] = "1"
+    environment.pop("PYTHONHOME", None)
+    completed = subprocess.run(
+        [str(python), "-m", "ts_runtime.probe", "--json"],
+        cwd=package_root,
+        env=environment,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or "probe process failed"
+        raise RuntimeError(detail)
+    try:
+        result = json.loads(completed.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError("probe did not return valid JSON") from exc
+    if not isinstance(result, dict) or result.get("ok") is not True:
+        raise RuntimeError("probe returned an unhealthy result")
+    return result
 
 
 def _print(payload: dict, as_json: bool) -> None:

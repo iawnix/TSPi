@@ -9,12 +9,13 @@ workspace-local monotonic ordinals (`dec_1`, `dec_2`, ...). Each creating
 operation needs a unique `local_ref`; later operations in the same draft refer
 to it as `$local_ref`.
 
-Claim and ResearchAct IDs are also workspace-local monotonic ordinals:
-`claim_1`, `act_1`, and so on. Concurrent drafts from the same revision can
-propose the same next IDs. Drafting does not reserve them. The first Decision to
-commit owns its Decision ID and canonical changes; exact content can replay
-idempotently, while conflicting content or stale allocations must be redrafted.
-Committed, aborted, and recoverable Decision transaction IDs are not reused.
+All canonical research records use workspace-local monotonic ordinals:
+`claim_1`, `rel_1`, `act_1`, `obs_1`, `fnd_1`, `gsp_1`, `val_1`, `acc_1`, and
+so on. Concurrent drafts from the same revision can propose the same next IDs.
+Drafting does not reserve them. The first Decision to commit owns its Decision
+ID and canonical changes; exact content can replay idempotently, while
+conflicting content or stale allocations must be redrafted. Committed, aborted,
+and recoverable Decision transaction IDs are not reused.
 
 ## Creating Graph Records
 

@@ -12,6 +12,7 @@ import {
   runNotifyUserJson,
   runRenderJson,
   runReportJson,
+  runStructureSeedJson,
 } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 
@@ -58,9 +59,83 @@ const NOTIFICATION_EVENTS = [
   "study_completed",
 ] as const;
 const IMPORT_FORMATS = ["gaussian_input", "xyz_structure", "xtb_control"] as const;
+const STRUCTURE_OPTIMIZATIONS = ["none", "uff"] as const;
 
 export default function (pi: ExtensionAPI) {
   const notificationTarget = configuredNotificationTarget();
+
+  pi.registerTool({
+    name: TS_PUBLIC_TOOL_NAMES.structureSeed,
+    label: "TS Structure Seed",
+    description: "Generate an Act-owned RDKit XYZ seed.",
+    promptSnippet: "Generate a 3D seed",
+    promptGuidelines: [
+      "One connected SMILES; declare charge, multiplicity, and none or uff.",
+      "Host fixes ETKDGv3 and returns content-addressed XYZ and provenance.",
+      "Initial geometry only; never TS or acceptance evidence.",
+    ],
+    executionMode: "sequential",
+    parameters: Type.Object({
+      operation: Type.Literal("generate"),
+      actId: Type.String({ pattern: "^act_[1-9][0-9]*$" }),
+      smiles: Type.String({ minLength: 1, maxLength: 4_096 }),
+      charge: Type.Integer({ minimum: -20, maximum: 20 }),
+      multiplicity: Type.Integer({ minimum: 1, maximum: 21 }),
+      optimization: StringEnum(STRUCTURE_OPTIMIZATIONS),
+      root: Type.Optional(Type.String()),
+    }, { additionalProperties: false }),
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      const root = requireWorkspaceRoot(params.root, ctx.cwd);
+      const activityId = `op_${randomUUID()}`;
+      const journal = beginActivity(root, {
+        activity_id: activityId,
+        kind: "structure_seed",
+        operation: "generate",
+        act_refs: [params.actId],
+        request: {
+          source_format: "smiles",
+          submitted_sha256: `sha256:${createHash("sha256").update(params.smiles, "utf8").digest("hex")}`,
+          submitted_size_bytes: Buffer.byteLength(params.smiles, "utf8"),
+          charge: params.charge,
+          multiplicity: params.multiplicity,
+          optimization: params.optimization,
+          generator: "rdkit_etkdgv3",
+        },
+      });
+      onUpdate?.(toolText(`TS Structure seed · ${params.actId}`, {
+        activity: { activity_id: activityId, state: "running" },
+      }));
+      try {
+        const raw = await runStructureSeedJson(pi, root, {
+          schema_version: "ts-structure-seed-request/1",
+          act_id: params.actId,
+          smiles: params.smiles,
+          charge: params.charge,
+          multiplicity: params.multiplicity,
+          optimization: params.optimization,
+        }, signal);
+        if (!raw || raw.schema_version !== "ts-structure-seed-result/1" || raw.operation !== "generate") {
+          throw new Error("structure seed generator returned an invalid result");
+        }
+        const result = { ...raw, activity_id: activityId, activity_ref: journal.activityRef };
+        completeActivity(journal, result);
+        pi.appendEntry("ts-deterministic-activity", result);
+        return toolText(JSON.stringify(result, null, 2), { result });
+      } catch (error) {
+        const failure = deterministicFailure(
+          activityId,
+          journal.activityRef,
+          "structure_seed",
+          "generate",
+          [params.actId],
+          error,
+        );
+        failActivity(journal, error, failure);
+        pi.appendEntry("ts-deterministic-activity-failed", failure);
+        throw error;
+      }
+    },
+  });
 
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.artifactImport,
@@ -381,7 +456,7 @@ function assertReportBuilderPaths(root: string, refs: ReturnType<typeof expected
 function deterministicFailure(
   activityId: string,
   activityRef: string,
-  kind: "artifact_import" | "render" | "report",
+  kind: "structure_seed" | "artifact_import" | "render" | "report",
   operation: string,
   actRefs: string[],
   error: unknown,

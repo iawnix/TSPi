@@ -40,11 +40,12 @@ def test_readme_routes_each_reader_to_the_v4_public_contracts() -> None:
         "ts_workspace_decision_apply",
         "ts_subagent_review",
         "ts_compute",
+        "ts_structure_seed",
         "ts_artifact_import",
         "ts_render",
         "ts_report",
         "ts_notify_user",
-        "twelve public tools",
+        "thirteen public tools",
     ]:
         assert phrase in text
 
@@ -122,7 +123,7 @@ def test_public_docs_state_the_v4_authority_boundary() -> None:
     assert "The DAG records what happened; it does not prescribe what must happen next" in texts["readme"]
     assert "Review is the only child model session" in texts["readme"]
     assert "Only `ts_workspace_decision_apply` may mutate canonical scientific state" in texts["architecture"]
-    assert "Compute, Render, Report, remote inspection" in texts["architecture"]
+    assert "Compute, structure seeding, Render, Report" in texts["architecture"]
     assert "Treat Claim relations, Act dependencies, and tags as recorded context only" in texts["skill"]
     assert "model dispatchers around deterministic actions" in texts["maintainer"]
     assert "checks refs and acyclicity" in texts["state"]

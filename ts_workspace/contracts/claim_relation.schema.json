@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "claim_relation.schema.json",
-  "$defs": {"relation_id": {"type": "string", "pattern": "^rel_[0-9a-f]{24}$"}},
+  "$defs": {"relation_id": {"type": "string", "pattern": "^rel_[1-9][0-9]*$"}},
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "relation_id", "source_claim_ref", "target_claim_ref", "relation_type", "rationale", "created_by_decision", "created_at"],

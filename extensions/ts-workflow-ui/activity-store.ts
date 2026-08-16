@@ -13,10 +13,11 @@ const TERMINAL_STATES = new Set<TsSubagentState>(["completed", "partial", "faile
 const ATTENTION_STATES = new Set<TsSubagentState>(["partial", "failed", "cancelled", "unknown"]);
 const ACTIVE_STATES = new Set<TsSubagentState>(["queued", "starting", "running", "waiting", "validating"]);
 
-export type TsDeterministicKind = "compute" | "artifact" | "render" | "report" | "notify" | "remote";
+export type TsDeterministicKind = "compute" | "structure" | "artifact" | "render" | "report" | "notify" | "remote";
 
 const DETERMINISTIC_TOOLS = new Map<string, TsDeterministicKind>([
   [TS_PUBLIC_TOOL_NAMES.compute, "compute"],
+  [TS_PUBLIC_TOOL_NAMES.structureSeed, "structure"],
   [TS_PUBLIC_TOOL_NAMES.artifactImport, "artifact"],
   [TS_PUBLIC_TOOL_NAMES.render, "render"],
   [TS_PUBLIC_TOOL_NAMES.report, "report"],
@@ -225,6 +226,7 @@ function operationFor(kind: TsDeterministicKind, args: Record<string, unknown>):
 
 function detailFor(kind: TsDeterministicKind, args: Record<string, unknown>): string | undefined {
   if (kind === "compute") return compact([stringValue(args.backend), stringValue(args.intentId)]);
+  if (kind === "structure") return compact(["SMILES", stringValue(args.optimization)]);
   if (kind === "artifact") return compact([stringValue(args.format), stringValue(args.actId)]);
   if (kind === "render") return stringValue(args.outputName);
   if (kind === "report") return stringValue(args.packageName);

@@ -4,11 +4,13 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from scripts.check_package import PACKAGE_FILES
+from tests.runtime_helpers import write_test_runtime_manifest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -49,6 +51,8 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
             package_root / name,
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
         )
+    shutil.copy2(ROOT / "environment.yml", package_root / "environment.yml")
+    write_test_runtime_manifest(package_root, install_root)
     (package_home / "current").symlink_to("releases/test-release")
     launcher = install_root / "TSPi"
     launcher.symlink_to(".pi/packages/ts-agent/current/TSPi")
@@ -105,6 +109,8 @@ def test_agent_sources_have_explicit_ownership_boundaries() -> None:
     assert (AGENTS_ROOT / "review" / "prompts" / "core.md").is_file()
     assert {path.name for path in AGENTS_ROOT.iterdir()} == {"review"}
     assert (ROOT / "src" / "artifacts" / "request-contract.cjs").is_file()
+    assert (ROOT / "ts_runtime" / "probe.py").is_file()
+    assert (ROOT / "ts_structures" / "seed.py").is_file()
     assert (ROOT / "ts_validation" / "engine.py").is_file()
     assert (ROOT / "ts_workspace" / "bootstrap.py").is_file()
     assert (ROOT / "ts_workspace" / "engine.py").is_file()
@@ -332,6 +338,10 @@ print(json.dumps({
     "runtime_home": os.environ["TS_AGENT_RUNTIME_HOME"],
     "runtime_manifest": os.environ["TS_AGENT_RUNTIME_MANIFEST"],
     "env_root": os.environ["TS_AGENT_ENV_ROOT"],
+    "managed_python": os.environ["TS_AGENT_PYTHON"],
+    "path_python": __import__("shutil").which("python"),
+    "path_python3": __import__("shutil").which("python3"),
+    "no_user_site": os.environ.get("PYTHONNOUSERSITE"),
     "python_cache": os.environ["PYTHONPYCACHEPREFIX"],
     "pytest_options": os.environ["PYTEST_ADDOPTS"],
     "remote_config": os.environ.get("TS_REMOTE_CONFIG"),
@@ -366,6 +376,10 @@ print(json.dumps({
         install_root / ".agents" / "runtime" / "transition-state-workflow" / "env.json"
     )
     assert result["env_root"] == str(install_root / ".agents" / "envs" / "transition-state-workflow")
+    assert result["managed_python"] == str(Path(sys.executable).resolve())
+    assert Path(result["path_python"]).resolve() == Path(sys.executable).resolve()
+    assert Path(result["path_python3"]).resolve() == Path(sys.executable).resolve()
+    assert result["no_user_site"] == "1"
     assert result["python_cache"] == str(install_root / ".pi" / "runtime-cache" / "python" / "reaction-a")
     assert result["pytest_options"].endswith(
         f"--cache-dir={install_root / '.pi' / 'runtime-cache' / 'pytest' / 'reaction-a'}"
@@ -378,6 +392,18 @@ print(json.dumps({
     assert json.loads((workspace / ".pi" / "settings.json").read_text(encoding="utf-8")) == {"quietStartup": True}
     assert json.loads((workspace / "research_state.json").read_text(encoding="utf-8"))["schema_version"] == "ts-research-state/4"
     assert (workspace / ".agents" / "workspace-identity.json").is_file()
+
+
+def test_tspi_fails_closed_without_managed_runtime_manifest(tmp_path: Path) -> None:
+    install_root, launcher = _copy_tspi_install(tmp_path)
+    manifest = install_root / ".agents" / "runtime" / "transition-state-workflow" / "env.json"
+    manifest.unlink()
+
+    completed = _run_tspi(launcher, "--workspace", "missing-runtime")
+
+    assert completed.returncode == 1
+    assert "managed TS Python runtime is missing or stale" in completed.stderr
+    assert not (install_root / "workspaces" / "missing-runtime").exists()
 
 
 def test_tspi_workspace_preserves_pi_settings_while_bootstrapping(tmp_path: Path) -> None:

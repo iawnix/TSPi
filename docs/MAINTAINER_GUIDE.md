@@ -39,7 +39,7 @@ scientific role/layer, or next-action router.
 | `extensions/ts-workflow-control/` | context, Decision draft/validate/apply, package-source guard |
 | `extensions/ts-workflow-review/` | advisory Review entrypoint and Root disposition |
 | `extensions/ts-workflow-compute/` | deterministic compute and remote diagnostics |
-| `extensions/ts-workflow-artifacts/` | deterministic input import, Render, Report, and notification tools |
+| `extensions/ts-workflow-artifacts/` | deterministic structure seed, input import, Render, Report, and notification tools |
 | `extensions/ts-workflow-ui/` | startup, editor/footer, TS Activity, Review history |
 | `extensions/shared/` | public tool inventory and shared UI/path helpers |
 | `src/agent-core/` | Review task/result validation, failure taxonomy, lifecycle, journals |
@@ -50,9 +50,9 @@ scientific role/layer, or next-action router.
 | `ts_compute/` | capabilities, artifact catalog, immutable intents, control, collection |
 | `ts_backends/` | deterministic program preparation and parsing |
 | `ts_remote/` | OpenSSH/SCP, Torque, transfer, diagnostics, guards, and receipts |
-| `ts_runtime/` | runtime resolution and TSPi lifecycle host |
+| `ts_runtime/` | runtime resolution, capability probe, and TSPi lifecycle host |
 | `ts_render/`, `ts_report/`, `ts_email/` | deterministic artifact and delivery services |
-| `ts_structures/` | pure molecular comparison and alignment |
+| `ts_structures/` | molecular comparison plus deterministic RDKit seed generation |
 | `ts_web/` | read-only workspace projection and external UI registry |
 | `contracts/` | shared Review task/result JSON schemas |
 | `docs/` | installation, architecture, maintenance, and ADRs |
@@ -79,7 +79,7 @@ Public names describe authority:
 
 - `ts_workspace_*`: deterministic context and canonical Decision pipeline;
 - `ts_subagent_review`: the sole child-model entrypoint;
-- `ts_compute`, `ts_artifact_import`, `ts_render`, `ts_report`: deterministic execution;
+- `ts_compute`, `ts_structure_seed`, `ts_artifact_import`, `ts_render`, `ts_report`: deterministic execution;
 - `ts_remote_inspect`: deterministic read-only infrastructure diagnostics;
 - `ts_review_disposition`: deterministic operational response;
 - `ts_notify_user`: deterministic fixed-target external delivery.
@@ -130,8 +130,10 @@ reasoning and focused documentation, not a Kernel enum.
 - A draft binds the current frontier projection and workspace revision.
 - Dry-run validation applies the full Decision to an isolated post-state.
 - Apply repeats binding and post-state validation under the lock.
-- Decision IDs are workspace-local monotonic ordinals; draft allocation has no
-  reservation, and durable transaction history prevents reuse.
+- All canonical research record IDs are readable workspace-local monotonic
+  ordinals; draft allocation has no reservation, and revision binding prevents
+  conflicting record allocation. Durable transaction history additionally
+  prevents Decision ID reuse.
 - A Decision ID is idempotent only for identical canonical content.
 - Any edit to a returned Decision requires a fresh draft.
 - The transaction owner writes the Decision snapshot, proposed documents,
@@ -225,14 +227,15 @@ Keep these states separate:
 Never infer success merely because a deterministic tool returned structured
 JSON.
 
-### Artifact import
+### Structure seed and artifact import
 
-The first input in a fresh workspace must enter through
-`ts_artifact_import`. Keep this boundary narrow: one open Act, bounded inline
-UTF-8, registered formats, declared charge/multiplicity for structures,
-host-generated content-addressed names, mode-0600 files, and no symlink or
-overwrite path. The activity request records only digest/size/metadata. The
-returned `art_*` is then consumed by the ordinary Compute contract.
+The first input in a fresh workspace enters through `ts_structure_seed` or
+`ts_artifact_import`. Structure seeding owns fixed ETKDG parameters, one
+connected SMILES, chemical metadata checks, content-addressed XYZ/provenance,
+and the explicit rule that a generated geometry is not evidence. Import remains
+bounded inline UTF-8 in registered formats. Both require one open Act, mode-0600
+files, no caller path, no symlink/overwrite path, and digest-only activity
+requests. Their returned `art_*` is consumed by the ordinary Compute contract.
 
 ### Render and Report
 

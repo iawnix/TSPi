@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "finding.schema.json",
-  "$defs": {"finding_id": {"type": "string", "pattern": "^fnd_[0-9a-f]{24}$"}},
+  "$defs": {"finding_id": {"type": "string", "pattern": "^fnd_[1-9][0-9]*$"}},
   "type": "object",
   "additionalProperties": false,
   "required": [

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import stat
 from concurrent.futures import ThreadPoolExecutor
@@ -11,6 +12,7 @@ from tests.v4_helpers import bootstrap_v4_workspace, start_research_act
 from ts_compute import (
     ComputeContractError,
     create_calculation_intent,
+    create_structure_seed_artifact,
     import_calculation_artifact,
     list_calculation_artifacts,
     prepare_calculation,
@@ -18,6 +20,7 @@ from ts_compute import (
 )
 from ts_compute.cli import main as compute_cli_main
 from ts_remote.errors import RemoteError
+from ts_structures import StructureSeedError, generate_smiles_seed
 
 
 def _workspace(tmp_path: Path) -> tuple[Path, str]:
@@ -119,6 +122,106 @@ def test_concurrent_identical_seed_import_creates_one_artifact(tmp_path: Path) -
     assert sorted(result["created"] for result in results) == [False, True]
     assert results[0]["artifact"] == results[1]["artifact"]
     assert len(list_calculation_artifacts(workspace, act_id=act_id)["artifacts"]) == 1
+
+
+def test_rdkit_structure_seed_is_deterministic_and_explicit_about_limitations() -> None:
+    first = generate_smiles_seed(
+        "C1=CCCCC1",
+        charge=0,
+        multiplicity=1,
+        optimization="uff",
+    )
+    second = generate_smiles_seed(
+        "C1=CCCCC1",
+        charge=0,
+        multiplicity=1,
+        optimization="uff",
+    )
+
+    assert first == second
+    assert first["schema_version"] == "ts-structure-seed/1"
+    assert first["chemical_metadata"]["formula"] == "C6H10"
+    assert first["chemical_metadata"]["atom_count"] == 16
+    assert first["parameters"]["random_seed"] == 61_453
+    assert first["parameters"]["optimization"] == "uff"
+    assert first["xyz"].startswith("16\nts-structure-seed/1 ")
+    assert any("not a stationary point" in item for item in first["limitations"])
+
+
+def test_structure_seed_provenance_distinguishes_submitted_and_normalized_smiles() -> None:
+    submitted = " CCO "
+    result = generate_smiles_seed(
+        submitted,
+        charge=0,
+        multiplicity=1,
+        optimization="none",
+    )
+
+    assert result["source"]["submitted_sha256"] == (
+        "sha256:" + hashlib.sha256(submitted.encode("ascii")).hexdigest()
+    )
+    assert result["source"]["normalized_sha256"] == (
+        "sha256:" + hashlib.sha256(b"CCO").hexdigest()
+    )
+    with pytest.raises(StructureSeedError, match="one ASCII line"):
+        generate_smiles_seed("CCO\n", charge=0, multiplicity=1, optimization="none")
+
+
+def test_structure_seed_artifact_is_private_content_addressed_and_idempotent(tmp_path: Path) -> None:
+    workspace, act_id = _workspace(tmp_path)
+    request = {
+        "schema_version": "ts-structure-seed-request/1",
+        "act_id": act_id,
+        "smiles": "C1=CCCCC1",
+        "charge": 0,
+        "multiplicity": 1,
+        "optimization": "uff",
+    }
+
+    first = create_structure_seed_artifact(workspace, request)
+    second = create_structure_seed_artifact(workspace, request)
+    artifact = first["artifact"]
+    provenance_artifact = first["provenance_artifact"]
+    xyz_path = workspace / artifact["path"]
+    provenance_path = workspace / provenance_artifact["path"]
+    provenance = json.loads(provenance_path.read_text(encoding="utf-8"))
+
+    assert first["schema_version"] == "ts-structure-seed-result/1"
+    assert first["created"] is True
+    assert second["created"] is False
+    assert second["artifact"] == artifact
+    assert second["provenance_artifact"] == provenance_artifact
+    assert artifact["owner_act"] == act_id
+    assert artifact["input_roles"] == ["product", "reactant", "xyz"]
+    assert artifact["path"].startswith(f"acts/{act_id}/inputs/structure_seed_")
+    assert provenance_artifact["input_roles"] == ["config"]
+    assert provenance["source"]["canonical_smiles"] == "C1=CCCCC1"
+    assert provenance["output"]["artifact_id"] == artifact["artifact_id"]
+    assert provenance["output"]["sha256"] == artifact["sha256"]
+    assert stat.S_IMODE(xyz_path.stat().st_mode) == 0o600
+    assert stat.S_IMODE(provenance_path.stat().st_mode) == 0o600
+    assert len(list_calculation_artifacts(workspace, act_id=act_id)["artifacts"]) == 2
+
+
+def test_structure_seed_rejects_chemical_and_contract_mismatches(tmp_path: Path) -> None:
+    workspace, act_id = _workspace(tmp_path)
+    base = {
+        "schema_version": "ts-structure-seed-request/1",
+        "act_id": act_id,
+        "smiles": "CC",
+        "charge": 0,
+        "multiplicity": 1,
+        "optimization": "none",
+    }
+
+    with pytest.raises(ComputeContractError, match="formal charge"):
+        create_structure_seed_artifact(workspace, {**base, "charge": 1})
+    with pytest.raises(ComputeContractError, match="one connected molecule"):
+        create_structure_seed_artifact(workspace, {**base, "smiles": "C.C"})
+    with pytest.raises(ComputeContractError, match=r"unexpected=\['output_path'\]"):
+        create_structure_seed_artifact(workspace, {**base, "output_path": "/tmp/seed.xyz"})
+    with pytest.raises(StructureSeedError, match="electron-count parity"):
+        generate_smiles_seed("CC", charge=0, multiplicity=2, optimization="none")
 
 
 def test_seed_import_rejects_invalid_metadata_content_and_symlink_root(tmp_path: Path) -> None:
@@ -316,6 +419,47 @@ def test_import_artifact_cli_uses_bounded_request_file(tmp_path: Path, capsys: p
     request.chmod(0o644)
     assert compute_cli_main([
         "import-artifact",
+        "--root",
+        str(workspace),
+        "--request-file",
+        str(request),
+    ]) == 2
+    assert "must be private" in capsys.readouterr().err
+
+
+def test_structure_seed_cli_uses_private_bounded_request_file(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace, act_id = _workspace(tmp_path)
+    request = tmp_path / "structure-seed.json"
+    request.write_text(
+        json.dumps({
+            "schema_version": "ts-structure-seed-request/1",
+            "act_id": act_id,
+            "smiles": "CCO",
+            "charge": 0,
+            "multiplicity": 1,
+            "optimization": "uff",
+        }),
+        encoding="utf-8",
+    )
+    request.chmod(0o600)
+
+    assert compute_cli_main([
+        "structure-seed",
+        "--root",
+        str(workspace),
+        "--request-file",
+        str(request),
+    ]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["artifact"]["artifact_id"].startswith("art_")
+    assert result["chemical_metadata"]["formula"] == "C2H6O"
+
+    request.chmod(0o644)
+    assert compute_cli_main([
+        "structure-seed",
         "--root",
         str(workspace),
         "--request-file",

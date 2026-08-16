@@ -9,6 +9,16 @@ class ObservationSelectionError(ValueError):
     """Raised when a predicate selector is malformed."""
 
 
+def observation_id_sort_key(value: Any) -> tuple[int, int | str]:
+    """Sort readable Observation ordinals numerically with a defensive fallback."""
+
+    text = str(value or "")
+    suffix = text.removeprefix("obs_")
+    if text.startswith("obs_") and suffix.isdigit() and int(suffix) > 0:
+        return (0, int(suffix))
+    return (1, text)
+
+
 def select_observations(
     observations: list[dict[str, Any]],
     selector: dict[str, Any],
@@ -38,4 +48,4 @@ def select_observations(
         if any(actual_qualifiers.get(key) != value for key, value in qualifiers.items()):
             continue
         selected.append(observation)
-    return sorted(selected, key=lambda value: str(value.get("observation_id") or ""))
+    return sorted(selected, key=lambda value: observation_id_sort_key(value.get("observation_id")))

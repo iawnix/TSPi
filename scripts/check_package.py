@@ -113,6 +113,8 @@ REQUIRED_TARBALL_FILES = {
     "src/agents/review/prompts/core.md",
     "src/artifacts/request-contract.cjs",
     "ts_email/delivery.py",
+    "ts_runtime/probe.py",
+    "ts_structures/seed.py",
     "ts_workspace/engine.py",
     "ts_workspace/context.py",
     "ts_workspace/bootstrap.py",

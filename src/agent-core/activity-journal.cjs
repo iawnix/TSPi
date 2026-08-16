@@ -15,7 +15,7 @@ const { randomBytes } = require("node:crypto");
 const { isAbsolute, relative, resolve, sep } = require("node:path");
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const KINDS = new Set(["compute", "artifact_import", "render", "report"]);
+const KINDS = new Set(["compute", "structure_seed", "artifact_import", "render", "report"]);
 
 function beginActivity(workspaceRoot, input) {
   const root = requireWorkspaceRoot(workspaceRoot);

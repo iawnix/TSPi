@@ -6,6 +6,8 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from tests.runtime_helpers import write_test_runtime_manifest
+
 
 ROOT = Path(__file__).resolve().parents[1]
 TSPI = ROOT / "TSPi"
@@ -43,6 +45,8 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
             package_root / name,
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
         )
+    shutil.copy2(ROOT / "environment.yml", package_root / "environment.yml")
+    write_test_runtime_manifest(package_root, install_root)
     (package_home / "current").symlink_to("releases/test-release")
     launcher = install_root / "TSPi"
     launcher.symlink_to(".pi/packages/ts-agent/current/TSPi")
@@ -155,6 +159,7 @@ const preview = formatConfirmation({{ type: "tool_call", toolCallId: "write-1", 
 process.stdout.write(JSON.stringify({{
   read: DIRECTLY_ALLOWED_TOOLS.has("read"),
   bash: CONFIRMATION_REQUIRED_TOOLS.has("bash"),
+  structureSeed: CONFIRMATION_REQUIRED_TOOLS.has("ts_structure_seed"),
   artifactImport: CONFIRMATION_REQUIRED_TOOLS.has("ts_artifact_import"),
   unknown: DIRECTLY_ALLOWED_TOOLS.has("new_tool") || CONFIRMATION_REQUIRED_TOOLS.has("new_tool"),
   observerRead: OBSERVER_ALLOWED_TOOLS.has("read"),
@@ -165,6 +170,7 @@ process.stdout.write(JSON.stringify({{
     result = _node_json(script)
     assert result["read"] is True
     assert result["bash"] is True
+    assert result["structureSeed"] is True
     assert result["artifactImport"] is True
     assert result["unknown"] is False
     assert result["observerRead"] is True

@@ -39,8 +39,8 @@ effects, provenance, and validation.
    backtrack, stop, or completion.
 
 Backtrack with a new Act depending on an earlier checkpoint; never erase
-history. Act IDs are `act_1`, `act_2`, ...; the ordinal is identity, not phase
-or priority.
+history. Canonical records use readable workspace ordinals (`act_1`, `claim_1`,
+`obs_1`, `fnd_1`, `gsp_1`, `val_1`); ordinals are identity, not phase or rank.
 
 Do not impose a universal low-cost-first, Gaussian-first, or QST-first sequence. Gaussian
 may generate candidates when direct TS optimization, scans, or QST are
@@ -78,13 +78,12 @@ requires current passing coverage and no applicable open blocking Finding.
 ## Compute
 
 Before `operation=prepare`, read `ts_workspace_context mode=artifacts` and bind
-logical `artifactId` values to required `inputRole` values. `ts_compute`
-performs exactly one deterministic operation. The host owns intent IDs, paths,
-filenames, manifests, remote directories, and binding checks.
+each `artifactId` to its required `inputRole`. `ts_compute` runs one operation;
+the host owns IDs, paths, names, manifests, remote directories, and bindings.
 
-If no suitable input exists, first start an open Act and call
-`ts_artifact_import`; provide bounded Gaussian/XYZ/control text, never a path.
-Use its returned `artifactId` for Compute.
+If none exists, start an open Act. Use `ts_structure_seed` for one connected
+SMILES, or `ts_artifact_import` for bounded Gaussian/XYZ/control text. Never
+provide a path; pass the returned `artifactId` to Compute.
 
 Do not poll unchanged work. Retry only when a typed result says no external
 effect was attempted; never replay an ambiguous submit or cancel. Capability

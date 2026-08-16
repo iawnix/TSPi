@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "validation_spec.schema.json",
-  "$defs": {"spec_id": {"type": "string", "pattern": "^gsp_[0-9a-f]{24}$"}},
+  "$defs": {"spec_id": {"type": "string", "pattern": "^gsp_[1-9][0-9]*$"}},
   "type": "object",
   "additionalProperties": false,
   "required": [

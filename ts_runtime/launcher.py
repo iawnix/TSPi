@@ -16,7 +16,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import NoReturn
 
-from .env import ensure_runtime_python
+from .env import (
+    DISABLE_REEXEC,
+    ENV_OVERRIDE,
+    RuntimeEnvironmentError,
+    bind_runtime_process_environment,
+    ensure_runtime_python,
+)
 
 
 PACKAGE_NAME = "@iawnix/ts-agent"
@@ -169,6 +175,8 @@ def _validate_release_identity(root: Path) -> None:
 
 
 def configure_runtime_environment(installation: Installation) -> None:
+    os.environ.pop(ENV_OVERRIDE, None)
+    os.environ.pop(DISABLE_REEXEC, None)
     os.environ["TS_AGENT_RUNTIME_HOME"] = str(installation.runtime_home)
     os.environ["TS_AGENT_RUNTIME_MANIFEST"] = str(installation.runtime_manifest)
     os.environ["TS_AGENT_ENV_ROOT"] = str(installation.env_root)
@@ -455,7 +463,13 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         raise TSPiHostError("--phone does not accept Pi arguments", exit_code=2)
     installation = resolve_installation(package_root, install_root)
     configure_runtime_environment(installation)
-    ensure_runtime_python(installation.package_root)
+    try:
+        python = ensure_runtime_python(installation.package_root, required=True)
+        if python is None:
+            raise RuntimeEnvironmentError("managed TS Python runtime could not be selected")
+        bind_runtime_process_environment(python)
+    except RuntimeEnvironmentError as exc:
+        raise TSPiHostError(str(exc)) from exc
     configure_remote(installation)
     if request.check_remote:
         return check_remote(installation)

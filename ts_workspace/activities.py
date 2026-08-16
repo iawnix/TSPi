@@ -1,7 +1,7 @@
 """Validated read model for deterministic activity journals.
 
-The activity journal is the authoritative record of Compute, input import,
-Render, and Report execution. ResearchAct documents do not duplicate these
+The activity journal is the authoritative record of Compute, structure seed,
+input import, Render, and Report execution. ResearchAct documents do not duplicate these
 relationships.
 """
 
@@ -16,7 +16,7 @@ from .io import read_json
 
 ACTIVITY_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 ACT_ID = re.compile(r"^act_[1-9][0-9]*$")
-ACTIVITY_KINDS = frozenset({"compute", "artifact_import", "render", "report"})
+ACTIVITY_KINDS = frozenset({"compute", "structure_seed", "artifact_import", "render", "report"})
 ACTIVITY_STATES = frozenset({"running", "completed", "failed"})
 MAX_DOCUMENT_BYTES = 1024 * 1024
 REQUEST_FIELDS = frozenset({

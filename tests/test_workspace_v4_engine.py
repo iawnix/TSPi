@@ -250,6 +250,77 @@ def test_claim_ids_are_monotonic_and_parallel_decision_collision_must_redraft(tm
     assert redrafted["allocated_refs"]["right"] == "claim_3"
 
 
+def test_validation_record_ids_are_readable_workspace_ordinals(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+
+    first = accept_research_claim(root)
+    assert first["observation"] == "obs_1"
+    assert first["spec"] == "gsp_1"
+    assert first["result"] == "val_1"
+
+    drafted = draft_decision(
+        root,
+        {
+            "rationale": "Record and validate a second bounded observation.",
+            "basis_refs": [],
+            "operations": [
+                {
+                    "op": "record_observation",
+                    "local_ref": "observation",
+                    "actRef": first["act"],
+                    "conceptId": "test.confirmed_again",
+                    "subjectRef": "subject",
+                    "value": True,
+                    "datatype": "boolean",
+                    "summary": "The second bounded condition was observed.",
+                    "provenance": {"producer": "test"},
+                },
+                {
+                    "op": "freeze_validation_spec",
+                    "local_ref": "spec",
+                    "actRef": first["act"],
+                    "targetClaimRef": first["claim"],
+                    "dimension": "test_again",
+                    "title": "Second bounded check",
+                    "definition": {
+                        "checks": [
+                            {
+                                "check_id": "confirmed_again",
+                                "predicate": "observation.equals",
+                                "parameters": {
+                                    "selector": {
+                                        "concept_id": "test.confirmed_again",
+                                        "subject_ref": "subject",
+                                    },
+                                    "expected": True,
+                                },
+                                "blocking": True,
+                            }
+                        ],
+                        "success_policy": {"mode": "all_blocking"},
+                    },
+                },
+                {
+                    "op": "evaluate_validation",
+                    "local_ref": "result",
+                    "actRef": first["act"],
+                    "specRef": "$spec",
+                    "observationRefs": ["$observation"],
+                },
+            ],
+        },
+    )
+
+    assert drafted["allocated_refs"] == {
+        "observation": "obs_2",
+        "spec": "gsp_2",
+        "result": "val_2",
+    }
+    apply_decision(root, drafted["decision"])
+    assert validate_workspace(root)["valid"] is True
+
+
 def test_decision_snapshots_preserve_human_readable_utf8(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
@@ -278,6 +349,7 @@ def test_claim_relation_cycle_is_rejected_without_partial_state(tmp_path: Path) 
             {"op": "relate_claims", "local_ref": "ab", "sourceClaimRef": "$a", "targetClaimRef": "$b", "relationType": "depends_on", "rationale": "A depends on B."},
         ],
     )
+    assert drafted["allocated_refs"]["ab"] == "rel_1"
     a = drafted["allocated_refs"]["a"]
     b = drafted["allocated_refs"]["b"]
     before = read_json(root / "claim_relations.json")
@@ -413,6 +485,13 @@ def test_declarative_specs_observations_and_acceptance_share_one_transaction(tmp
     assert len(result["created_refs"]["validation_specs"]) == 3
     assert len(result["created_refs"]["validation_results"]) == 3
     assert len(result["created_refs"]["acceptances"]) == 1
+    assert drafted["allocated_refs"]["normal"] == "obs_1"
+    assert drafted["allocated_refs"]["forward_endpoint"] == "obs_10"
+    assert drafted["allocated_refs"]["stationary_spec"] == "gsp_1"
+    assert drafted["allocated_refs"]["connectivity_spec"] == "gsp_3"
+    assert drafted["allocated_refs"]["stationary_result"] == "val_1"
+    assert drafted["allocated_refs"]["connectivity_result"] == "val_3"
+    assert drafted["allocated_refs"]["accepted_ts"] == "acc_1"
     acceptance_id = drafted["allocated_refs"]["accepted_ts"]
     accepted = read_json(root / "acceptances" / f"{acceptance_id}.json")
     assert accepted["schema_version"] == "ts-acceptance-record/1"
@@ -441,6 +520,7 @@ def test_open_blocking_finding_prevents_acceptance(tmp_path: Path) -> None:
             {"op": "record_finding", "local_ref": "risk", "findingType": "unexpected_state", "severity": "blocking", "statement": "An unresolved anomaly remains.", "claimRefs": ["$claim"], "actRefs": ["$act"]},
         ],
     )
+    assert drafted["allocated_refs"]["risk"] == "fnd_1"
     claim = drafted["allocated_refs"]["claim"]
     with pytest.raises(ContractError, match="blocking Findings"):
         draft_decision(
@@ -500,11 +580,12 @@ def test_acceptance_history_becomes_stale_and_can_be_reassessed(tmp_path: Path) 
     root = tmp_path / "workspace"
     init_workspace(root)
     refs = accept_research_claim(root)
+    assert refs["acceptance"] == "acc_1"
 
     initial = _acceptance_projection(root)
     assert [(item["acceptance_id"], item["current"]) for item in initial] == [(refs["acceptance"], True)]
 
-    _apply(
+    finding, _ = _apply(
         root,
         [
             {
@@ -518,6 +599,7 @@ def test_acceptance_history_becomes_stale_and_can_be_reassessed(tmp_path: Path) 
             }
         ],
     )
+    assert finding["allocated_refs"]["limitation"] == "fnd_1"
     stale = _acceptance_projection(root)
     assert stale[0]["current"] is False
     assert stale[0]["stale_reasons"] == ["finding_snapshot_changed"]
@@ -539,6 +621,7 @@ def test_acceptance_history_becomes_stale_and_can_be_reassessed(tmp_path: Path) 
     )
     projected = _acceptance_projection(root)
     assert [item["current"] for item in projected] == [False, True]
+    assert reassessed["allocated_refs"]["reassessment"] == "acc_2"
     assert projected[-1]["acceptance_id"] == reassessed["allocated_refs"]["reassessment"]
 
 

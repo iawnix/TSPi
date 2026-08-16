@@ -1,7 +1,7 @@
 """Typed operational control plane for transition-state calculations."""
 
 from .contracts import ComputeContractError
-from .artifacts import import_calculation_artifact, list_calculation_artifacts
+from .artifacts import create_structure_seed_artifact, import_calculation_artifact, list_calculation_artifacts
 from .capabilities import calculation_capabilities
 from .control import (
     cancel_calculation,
@@ -23,6 +23,7 @@ __all__ = [
     "calculation_capabilities",
     "collect_calculation",
     "create_calculation_intent",
+    "create_structure_seed_artifact",
     "import_calculation_artifact",
     "list_calculation_artifacts",
     "parse_calculation",

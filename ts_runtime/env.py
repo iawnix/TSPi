@@ -21,9 +21,14 @@ ENV_ROOT_OVERRIDE = "TS_AGENT_ENV_ROOT"
 RUNTIME_HOME_OVERRIDE = "TS_AGENT_RUNTIME_HOME"
 RUNTIME_MANIFEST_OVERRIDE = "TS_AGENT_RUNTIME_MANIFEST"
 WORKSPACE_ROOT_OVERRIDE = "TS_WORKSPACE_ROOT"
-MANIFEST_VERSION = "ts-agent-runtime-v1"
+MANIFEST_VERSION = "ts-agent-runtime-v2"
+RUNTIME_PROBE_VERSION = "ts-runtime-probe/1"
 SKILL_NAME = "transition-state-workflow"
 PACKAGE_SKILL_PATH = Path("skills") / SKILL_NAME / "SKILL.md"
+
+
+class RuntimeEnvironmentError(RuntimeError):
+    """The installation-owned Python runtime cannot be used safely."""
 
 
 def package_root_from_file(path: str | Path) -> Path:
@@ -221,28 +226,111 @@ def configured_python(
     return path if path.exists() else None
 
 
+def require_runtime_python(
+    package_root: str | Path | None = None,
+    runtime_home: str | Path | None = None,
+    workspace_root: str | Path | None = None,
+    manifest_path: str | Path | None = None,
+) -> Path:
+    """Return an executable managed Python or fail without a host fallback."""
+
+    python = configured_python(package_root, runtime_home, workspace_root, manifest_path)
+    if python is None:
+        manifest = runtime_manifest_path(package_root, runtime_home, workspace_root, manifest_path)
+        raise RuntimeEnvironmentError(
+            f"managed TS Python runtime is missing or stale: {manifest}; "
+            "reinstall the package runtime with scripts/install_env.py"
+        )
+    if not python.is_file() or not os.access(python, os.X_OK):
+        raise RuntimeEnvironmentError(f"managed TS Python is not executable: {python}")
+    return python
+
+
 def _manifest_matches_spec(package_root: str | Path | None, manifest: dict[str, Any]) -> bool:
     expected = manifest.get("spec_sha256")
-    if not expected:
-        return True
+    if not isinstance(expected, str) or not expected:
+        return False
     spec = environment_spec_path(package_root)
     if not spec.exists():
         return False
-    return str(expected) == spec_sha256(package_root)
+    if expected != spec_sha256(package_root):
+        return False
+    probe = manifest.get("runtime_probe")
+    if not isinstance(probe, dict):
+        return False
+    if probe.get("schema_version") != RUNTIME_PROBE_VERSION or probe.get("ok") is not True:
+        return False
+    capabilities = probe.get("capabilities")
+    required = ("rdkit_smiles_parse", "rdkit_etkdg_embed", "rdkit_uff_optimize")
+    if not isinstance(capabilities, dict) or not all(
+        capabilities.get(name) is True for name in required
+    ):
+        return False
+    env_prefix = manifest.get("env_prefix")
+    python_executable = manifest.get("python_executable")
+    probe_python = probe.get("python")
+    modules = probe.get("modules")
+    if not all(isinstance(value, str) and value for value in (env_prefix, python_executable)):
+        return False
+    if not isinstance(probe_python, dict) or not isinstance(probe_python.get("executable"), str):
+        return False
+    prefix = Path(str(env_prefix)).expanduser().resolve()
+    executable = Path(str(python_executable)).expanduser().resolve()
+    if Path(str(probe_python["executable"])).expanduser().resolve() != executable:
+        return False
+    if not executable.is_relative_to(prefix) or not isinstance(modules, dict):
+        return False
+    for name in ("numpy", "rdkit"):
+        module = modules.get(name)
+        if not isinstance(module, dict):
+            return False
+        version = module.get("version")
+        origin = module.get("origin")
+        if not isinstance(version, str) or not version or not isinstance(origin, str):
+            return False
+        module_path = Path(origin).expanduser().resolve()
+        if not module_path.is_file() or not module_path.is_relative_to(prefix):
+            return False
+    return True
 
 
-def ensure_runtime_python(package_root: str | Path | None = None) -> None:
-    """Re-exec the current script with the configured runtime Python if needed."""
+def ensure_runtime_python(
+    package_root: str | Path | None = None,
+    *,
+    required: bool = False,
+) -> Path | None:
+    """Re-exec with the configured runtime Python, optionally failing closed."""
+
+    python = require_runtime_python(package_root) if required else configured_python(package_root)
+    if python is None:
+        return None
 
     if os.environ.get(DISABLE_REEXEC) == "1":
-        return
-
-    python = configured_python(package_root)
-    if python is None:
-        return
+        if required and Path(sys.executable).resolve() != python:
+            raise RuntimeEnvironmentError(
+                "managed TS Python is required but runtime re-exec is disabled"
+            )
+        return python
 
     current = Path(sys.executable).resolve()
     if current == python:
-        return
+        return python
 
     os.execv(str(python), [str(python), *sys.argv])
+    return None
+
+
+def bind_runtime_process_environment(python: str | Path) -> None:
+    """Bind Python commands in the current process tree to the managed runtime."""
+
+    executable = Path(python).expanduser().resolve()
+    if not executable.is_file() or not os.access(executable, os.X_OK):
+        raise RuntimeEnvironmentError(f"managed TS Python is not executable: {executable}")
+    bin_directory = str(executable.parent)
+    existing = [item for item in os.environ.get("PATH", "").split(os.pathsep) if item]
+    os.environ["PATH"] = os.pathsep.join(
+        [bin_directory, *(item for item in existing if item != bin_directory)]
+    )
+    os.environ[ENV_OVERRIDE] = str(executable)
+    os.environ["PYTHONNOUSERSITE"] = "1"
+    os.environ.pop("PYTHONHOME", None)

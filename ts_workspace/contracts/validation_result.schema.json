@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "validation_result.schema.json",
   "$defs": {
-    "result_id": {"type": "string", "pattern": "^val_[0-9a-f]{24}$"},
+    "result_id": {"type": "string", "pattern": "^val_[1-9][0-9]*$"},
     "verdict": {"enum": ["pass", "fail", "inconclusive", "error"]}
   },
   "type": "object",
@@ -23,7 +23,7 @@
     "observation_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "observation.schema.json#/$defs/observation_id"}},
     "observation_digests": {
       "type": "object",
-      "propertyNames": {"pattern": "^obs_[0-9a-f]{24}$"},
+      "propertyNames": {"pattern": "^obs_[1-9][0-9]*$"},
       "additionalProperties": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
     },
     "check_results": {

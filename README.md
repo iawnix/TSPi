@@ -137,7 +137,7 @@ remote scheduler.
 
 ## Public Surface
 
-Pi loads one Skill, five extensions, one theme, twelve public tools, and four
+Pi loads one Skill, five extensions, one theme, thirteen public tools, and four
 slash commands:
 
 - `ts_workspace_context`: bounded graph, artifact, compute-capability, or
@@ -150,6 +150,8 @@ slash commands:
   Review.
 - `ts_compute`: deterministic prepare, submit, inspect, collect, cancel, and
   parse operations.
+- `ts_structure_seed`: deterministic RDKit ETKDGv3 seed generation from one
+  connected SMILES, with content-addressed XYZ and provenance.
 - `ts_artifact_import`: bounded, Act-owned bootstrap import for Gaussian, XYZ,
   or xTB control inputs; the host allocates path, filename, digest, and ID.
 - `ts_render`: deterministic local render, comparison, animation, or mechanism
@@ -186,9 +188,10 @@ direct TS optimization are justified. The adapter catalog is not a method
 priority list. A converged program, candidate geometry, or isolated imaginary
 frequency is never an accepted TS by itself.
 
-An empty workspace is not a compute dead end. Start an open ResearchAct, import
-the first bounded seed with `ts_artifact_import`, resolve its logical `art_*`
-record, and then prepare Compute. Imported text never grants path authority.
+An empty workspace is not a compute dead end. Start an open ResearchAct. Use
+`ts_structure_seed` for a single-molecule SMILES or `ts_artifact_import` for
+existing Gaussian, XYZ, or xTB control text, then pass the returned logical
+`art_*` to Compute. Neither tool grants path authority or scientific validity.
 
 ## Compute And Remote
 

@@ -19,6 +19,7 @@ EXPECTED_TOOLS = {
     "ts_subagent_review",
     "ts_review_disposition",
     "ts_compute",
+    "ts_structure_seed",
     "ts_artifact_import",
     "ts_render",
     "ts_report",
@@ -62,6 +63,7 @@ process.stdout.write(JSON.stringify({{
     assert set(result["commands"]) == EXPECTED_COMMANDS
     assert [name for name, mode in result["execution"].items() if mode == "child_agent"] == ["ts_subagent_review"]
     assert result["execution"]["ts_compute"] == "deterministic_execution"
+    assert result["execution"]["ts_structure_seed"] == "deterministic_artifact"
     assert result["execution"]["ts_artifact_import"] == "deterministic_artifact"
     assert result["execution"]["ts_render"] == "deterministic_artifact"
     assert result["execution"]["ts_report"] == "deterministic_artifact"
@@ -83,6 +85,8 @@ process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(tools).map
 """
     schemas = _node_json(script)
     assert "actId" in schemas["ts_compute"]
+    assert "smiles" in schemas["ts_structure_seed"]
+    assert "optimization" in schemas["ts_structure_seed"]
     assert "actId" in schemas["ts_artifact_import"]
     assert "content" in schemas["ts_artifact_import"]
     assert "actId" in schemas["ts_render"]

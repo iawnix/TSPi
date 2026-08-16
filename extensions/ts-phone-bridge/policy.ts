@@ -18,6 +18,7 @@ export const CONFIRMATION_REQUIRED_TOOLS = new Set<string>([
   "write",
   TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply,
   TS_PUBLIC_TOOL_NAMES.compute,
+  TS_PUBLIC_TOOL_NAMES.structureSeed,
   TS_PUBLIC_TOOL_NAMES.artifactImport,
   TS_PUBLIC_TOOL_NAMES.render,
   TS_PUBLIC_TOOL_NAMES.report,

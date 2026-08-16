@@ -10,16 +10,20 @@ from pathlib import Path
 import pytest
 
 from ts_runtime.env import (
+    RuntimeEnvironmentError,
+    bind_runtime_process_environment,
     configured_python,
     default_env_prefix,
     default_env_store,
     default_runtime_home,
     package_root_from_file,
+    require_runtime_python,
     runtime_manifest_path,
     seed_workspace_root_from_argv,
     spec_sha256,
     write_manifest,
 )
+from ts_runtime.probe import probe_runtime_capabilities
 import ts_runtime.cli as runtime_cli
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -82,9 +86,11 @@ def test_configured_python_reads_runtime_manifest(tmp_path: Path) -> None:
     manifest_path = write_manifest(
         package,
         {
-            "schema_version": "ts-agent-runtime-v1",
+            "schema_version": "ts-agent-runtime-v2",
             "python_executable": sys.executable,
+            "env_prefix": str(Path(sys.executable).resolve().parent.parent),
             "spec_sha256": spec_sha256(package),
+            "runtime_probe": _runtime_probe(),
         },
     )
 
@@ -111,13 +117,78 @@ def test_configured_python_ignores_stale_runtime_manifest(tmp_path: Path) -> Non
     write_manifest(
         package,
         {
-            "schema_version": "ts-agent-runtime-v1",
+            "schema_version": "ts-agent-runtime-v2",
             "python_executable": sys.executable,
             "spec_sha256": "stale",
         },
     )
 
     assert configured_python(package) is None
+
+
+def test_configured_python_rejects_unprobed_or_external_modules(tmp_path: Path) -> None:
+    package = tmp_path / "skill"
+    package.mkdir()
+    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
+    base = {
+        "schema_version": "ts-agent-runtime-v2",
+        "python_executable": sys.executable,
+        "env_prefix": str(Path(sys.executable).resolve().parent.parent),
+        "spec_sha256": spec_sha256(package),
+    }
+    write_manifest(package, {**base, "runtime_probe": {"ok": True}})
+    assert configured_python(package) is None
+
+    probe = _runtime_probe()
+    probe["modules"]["rdkit"]["origin"] = str(tmp_path / "user-site" / "rdkit.py")
+    write_manifest(package, {**base, "runtime_probe": probe})
+    assert configured_python(package) is None
+
+
+def test_required_runtime_fails_closed_for_stale_manifest(tmp_path: Path) -> None:
+    package = tmp_path / "skill"
+    package.mkdir()
+    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
+    write_manifest(
+        package,
+        {
+            "schema_version": "ts-agent-runtime-v2",
+            "python_executable": sys.executable,
+            "spec_sha256": "stale",
+        },
+    )
+
+    with pytest.raises(RuntimeEnvironmentError, match="missing or stale"):
+        require_runtime_python(package)
+
+
+def test_runtime_process_binding_owns_python_commands(monkeypatch: pytest.MonkeyPatch) -> None:
+    executable = Path(sys.executable).resolve()
+    monkeypatch.setenv("PATH", f"/usr/bin{os.pathsep}{executable.parent}")
+    monkeypatch.setenv("PYTHONHOME", "/tmp/foreign-python")
+    monkeypatch.delenv("PYTHONNOUSERSITE", raising=False)
+
+    bind_runtime_process_environment(executable)
+
+    assert os.environ["TS_AGENT_PYTHON"] == str(executable)
+    assert os.environ["PATH"].split(os.pathsep)[0] == str(executable.parent)
+    assert os.environ["PATH"].split(os.pathsep).count(str(executable.parent)) == 1
+    assert os.environ["PYTHONNOUSERSITE"] == "1"
+    assert "PYTHONHOME" not in os.environ
+
+
+def test_scientific_runtime_probe_exercises_rdkit_capabilities() -> None:
+    result = probe_runtime_capabilities()
+
+    assert result["schema_version"] == "ts-runtime-probe/1"
+    assert result["ok"] is True
+    assert result["capabilities"] == {
+        "rdkit_smiles_parse": True,
+        "rdkit_etkdg_embed": True,
+        "rdkit_uff_optimize": True,
+    }
+    assert Path(result["modules"]["numpy"]["origin"]).is_file()
+    assert Path(result["modules"]["rdkit"]["origin"]).is_file()
 
 
 def test_install_env_dry_run_reports_hashed_prefix(tmp_path: Path) -> None:
@@ -265,9 +336,11 @@ def test_ts_runtime_isolated_run_cannot_modify_workspace_manifest(tmp_path: Path
     manifest = write_manifest(
         ROOT,
         {
-            "schema_version": "ts-agent-runtime-v1",
+            "schema_version": "ts-agent-runtime-v2",
             "python_executable": sys.executable,
+            "env_prefix": str(Path(sys.executable).resolve().parent.parent),
             "spec_sha256": spec_sha256(ROOT),
+            "runtime_probe": _runtime_probe(),
         },
         workspace_root=workspace,
     )
@@ -319,6 +392,14 @@ def test_ts_runtime_script_passes_dash_m_arguments() -> None:
 def test_ts_runtime_resolve_reports_external_manifest_path(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     workspace.mkdir()
+    env = dict(os.environ)
+    for name in (
+        "TS_AGENT_PYTHON",
+        "TS_AGENT_RUNTIME_HOME",
+        "TS_AGENT_RUNTIME_MANIFEST",
+        "TS_AGENT_ENV_ROOT",
+    ):
+        env.pop(name, None)
     completed = subprocess.run(
         [
             sys.executable,
@@ -329,6 +410,7 @@ def test_ts_runtime_resolve_reports_external_manifest_path(tmp_path: Path) -> No
             "--json",
         ],
         cwd=ROOT,
+        env=env,
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -339,3 +421,24 @@ def test_ts_runtime_resolve_reports_external_manifest_path(tmp_path: Path) -> No
     assert payload["configured"] is False
     assert payload["manifest_path"] == str(workspace / ".agents" / "runtime" / "transition-state-workflow" / "env.json")
     assert payload["env_prefix"].startswith(str(workspace / ".agents" / "envs" / "transition-state-workflow"))
+
+
+def _runtime_probe() -> dict[str, object]:
+    import numpy
+    import rdkit
+
+    executable = Path(sys.executable).resolve()
+    return {
+        "schema_version": "ts-runtime-probe/1",
+        "ok": True,
+        "python": {"version": sys.version.split()[0], "executable": str(executable)},
+        "modules": {
+            "numpy": {"version": numpy.__version__, "origin": str(Path(numpy.__file__).resolve())},
+            "rdkit": {"version": rdkit.__version__, "origin": str(Path(rdkit.__file__).resolve())},
+        },
+        "capabilities": {
+            "rdkit_smiles_parse": True,
+            "rdkit_etkdg_embed": True,
+            "rdkit_uff_optimize": True,
+        },
+    }

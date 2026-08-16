@@ -116,14 +116,22 @@ python3 "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
   --json
 ```
 
-Omit `--with-render` when visualization is not required. Use `--dry-run` to
-inspect the selected prefix and command. Use `--force` only when the existing
-hash-addressed environment must be refreshed.
+RDKit and its compatible NumPy range are core dependencies; `xyzrender` remains
+optional. Omit `--with-render` when visualization is not required. Use
+`--dry-run` to inspect the selected prefix and command. Use `--force` only when
+the existing hash-addressed environment must be refreshed.
 
-The runtime manifest records the selected interpreter and environment spec
-digest outside the immutable release. TSPi supplies installation-level runtime
-overrides automatically. `TS_WORKSPACE_ROOT` still identifies the selected
-research workspace and does not merge workspace state.
+Before writing runtime manifest v2, the installer imports NumPy and RDKit,
+parses a SMILES, performs fixed-seed ETKDG embedding, and completes a UFF
+optimization. The manifest records versions, module origins, capabilities,
+selected interpreter, and environment-spec digest outside the immutable
+release. A failed probe produces no trusted manifest.
+
+TSPi fails closed when that manifest is missing or stale. After selecting it,
+TSPi places the managed environment first on `PATH`, exports
+`TS_AGENT_PYTHON`, disables user site packages, and clears `PYTHONHOME` for the
+entire Pi process tree. `TS_WORKSPACE_ROOT` still identifies only the selected
+research workspace.
 
 ## Select The Pi Executable
 
@@ -286,6 +294,7 @@ cannot be opened by a release that does not implement protocol v4.
 | --- | --- |
 | `no installed TS Agent release` | Install a validated archive before startup. |
 | runtime manifest or interpreter unavailable | Run the selected release's `install_env.py`. |
+| managed runtime capability probe fails | Do not fall back to system Python. Recreate the hash-addressed environment and inspect the recorded NumPy/RDKit import error. |
 | `another Root Agent already owns workspace` | Use another workspace or stop the existing process; do not delete the lock to bypass a live owner. |
 | partial or invalid v4 workspace | Preserve the directory, inspect validation findings, and recover through an explicitly designed repair; startup will not guess. |
 | legacy canonical state rejected | Use its matching release or start a separate fresh v4 workspace; this release has no migration path. |

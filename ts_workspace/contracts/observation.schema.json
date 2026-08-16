@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "observation.schema.json",
-  "$defs": {"observation_id": {"type": "string", "pattern": "^obs_[0-9a-f]{24}$"}},
+  "$defs": {"observation_id": {"type": "string", "pattern": "^obs_[1-9][0-9]*$"}},
   "type": "object",
   "additionalProperties": false,
   "required": [

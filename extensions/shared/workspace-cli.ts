@@ -84,11 +84,31 @@ export async function runArtifactImportJson(
   request: unknown,
   signal?: AbortSignal,
 ) {
-  const tempRoot = mkdtempSync(join(tmpdir(), "ts-artifact-import-"));
+  return runPrivateComputeRequest(pi, "ts-artifact-import-", "import-artifact", root, request, signal);
+}
+
+export async function runStructureSeedJson(
+  pi: ExtensionAPI,
+  root: string,
+  request: unknown,
+  signal?: AbortSignal,
+) {
+  return runPrivateComputeRequest(pi, "ts-structure-seed-", "structure-seed", root, request, signal);
+}
+
+async function runPrivateComputeRequest(
+  pi: ExtensionAPI,
+  temporaryPrefix: string,
+  command: string,
+  root: string,
+  request: unknown,
+  signal?: AbortSignal,
+) {
+  const tempRoot = mkdtempSync(join(tmpdir(), temporaryPrefix));
   const requestFile = join(tempRoot, "request.json");
   try {
     writeFileSync(requestFile, `${JSON.stringify(request, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-    return await runComputeJson(pi, "import-artifact", root, ["--request-file", requestFile], signal);
+    return await runComputeJson(pi, command, root, ["--request-file", requestFile], signal);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -224,13 +244,20 @@ async function resolvePythonExecutable(
       { signal },
     );
     const runtime = parseJsonOutput(result);
-    if (runtime && typeof runtime.python_executable === "string" && existsSync(runtime.python_executable)) {
+    if (
+      runtime
+      && runtime.configured === true
+      && typeof runtime.python_executable === "string"
+      && isAbsolute(runtime.python_executable)
+      && existsSync(runtime.python_executable)
+    ) {
       return runtime.python_executable;
     }
-  } catch (_error) {
-    return "python3";
+  } catch (error) {
+    const detail = error instanceof Error ? `: ${error.message}` : "";
+    throw new Error(`TS managed Python runtime is unavailable${detail}`);
   }
-  return "python3";
+  throw new Error("TS managed Python runtime is unavailable; reinstall it with scripts/install_env.py");
 }
 
 async function runPackageJson(

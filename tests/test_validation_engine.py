@@ -56,7 +56,7 @@ def _compile_classical_ts() -> dict:
                 "parameters": {"subject_ref": "calc_001"},
             },
         },
-        spec_id="gsp_001",
+        spec_id="gsp_1",
         target_claim_ref="claim_1",
         registry=registry,
         created_by_act="act_1",
@@ -80,17 +80,17 @@ def test_gate_evaluation_passes_from_exact_semantic_observations() -> None:
     registry = builtin_predicate_registry()
     spec = _compile_classical_ts()
     observations = [
-        _observation("obs_001", "program.normal_termination", True),
-        _observation("obs_002", "stationary_point.confirmed", True),
-        _observation("obs_003", "optimization.converged", True),
-        _observation("obs_004", "vibration.imaginary_frequency_count", 1),
-        _observation("obs_005", "calculation.method_matches_intent", True),
+        _observation("obs_1", "program.normal_termination", True),
+        _observation("obs_2", "stationary_point.confirmed", True),
+        _observation("obs_3", "optimization.converged", True),
+        _observation("obs_4", "vibration.imaginary_frequency_count", 1),
+        _observation("obs_5", "calculation.method_matches_intent", True),
     ]
 
     result = evaluate_gate_spec(
         spec,
         observations,
-        result_id="val_001",
+        result_id="val_1",
         evaluated_by_act="act_1",
         evaluated_by_decision="dec_2",
         registry=registry,
@@ -100,21 +100,71 @@ def test_gate_evaluation_passes_from_exact_semantic_observations() -> None:
     assert result["verdict"] == "pass"
     assert {item["verdict"] for item in result["check_results"]} == {"pass"}
     assert result["spec_digest"] == spec["spec_digest"]
-    assert result["observation_refs"] == [f"obs_{index:03d}" for index in range(1, 6)]
+    assert result["observation_refs"] == [f"obs_{index}" for index in range(1, 6)]
     assert result["result_digest"].startswith("sha256:")
+
+
+def test_observation_refs_sort_by_readable_ordinal_not_lexically() -> None:
+    registry = PredicateRegistry()
+    registry.register(
+        "test.select_all",
+        "1",
+        lambda _parameters, observations: {
+            "verdict": "pass",
+            "observation_refs": [item["observation_id"] for item in observations],
+            "message": "Selected every bounded observation.",
+        },
+    )
+    spec = compile_gate_spec(
+        {
+            "dimension": "ordering",
+            "title": "Readable ordinal ordering",
+            "definition": {
+                "checks": [
+                    {
+                        "check_id": "all",
+                        "predicate": "test.select_all",
+                        "parameters": {},
+                        "blocking": True,
+                    }
+                ],
+                "success_policy": {"mode": "all"},
+            },
+        },
+        spec_id="gsp_1",
+        target_claim_ref="claim_1",
+        registry=registry,
+        created_by_act="act_1",
+        created_by_decision="dec_1",
+    )
+    result = evaluate_gate_spec(
+        spec,
+        [
+            _observation("obs_10", "test.value", True),
+            _observation("obs_2", "test.value", True),
+            _observation("obs_1", "test.value", True),
+        ],
+        result_id="val_1",
+        evaluated_by_act="act_1",
+        evaluated_by_decision="dec_2",
+        registry=registry,
+    )
+
+    assert result["observation_refs"] == ["obs_1", "obs_2", "obs_10"]
+    assert result["check_results"][0]["observation_refs"] == ["obs_1", "obs_2", "obs_10"]
 
 
 def test_missing_observation_is_inconclusive_and_false_observation_fails() -> None:
     registry = builtin_predicate_registry()
     spec = _compile_classical_ts()
     incomplete = [
-        _observation("obs_001", "program.normal_termination", True),
-        _observation("obs_002", "stationary_point.confirmed", True),
+        _observation("obs_1", "program.normal_termination", True),
+        _observation("obs_2", "stationary_point.confirmed", True),
     ]
     inconclusive = evaluate_gate_spec(
         spec,
         incomplete,
-        result_id="val_001",
+        result_id="val_1",
         evaluated_by_act="act_1",
         evaluated_by_decision="dec_2",
         registry=registry,
@@ -122,14 +172,14 @@ def test_missing_observation_is_inconclusive_and_false_observation_fails() -> No
     assert inconclusive["verdict"] == "inconclusive"
 
     complete = incomplete + [
-        _observation("obs_003", "optimization.converged", False),
-        _observation("obs_004", "vibration.imaginary_frequency_count", 1),
-        _observation("obs_005", "calculation.method_matches_intent", True),
+        _observation("obs_3", "optimization.converged", False),
+        _observation("obs_4", "vibration.imaginary_frequency_count", 1),
+        _observation("obs_5", "calculation.method_matches_intent", True),
     ]
     failed = evaluate_gate_spec(
         spec,
         complete,
-        result_id="val_002",
+        result_id="val_2",
         evaluated_by_act="act_1",
         evaluated_by_decision="dec_3",
         registry=registry,
@@ -164,7 +214,7 @@ def test_predicate_cannot_cite_observation_outside_selected_snapshot() -> None:
                 "success_policy": {"mode": "all"},
             },
         },
-        spec_id="gsp_001",
+        spec_id="gsp_1",
         target_claim_ref="claim_1",
         registry=registry,
         created_by_act="act_1",
@@ -173,8 +223,8 @@ def test_predicate_cannot_cite_observation_outside_selected_snapshot() -> None:
 
     result = evaluate_gate_spec(
         spec,
-        [_observation("obs_001", "test.value", True)],
-        result_id="val_001",
+        [_observation("obs_1", "test.value", True)],
+        result_id="val_1",
         evaluated_by_act="act_1",
         evaluated_by_decision="dec_2",
         registry=registry,
@@ -204,7 +254,7 @@ def test_unknown_predicate_and_executable_fields_are_rejected() -> None:
                     "success_policy": {"mode": "all"},
                 },
             },
-            spec_id="gsp_001",
+            spec_id="gsp_1",
             target_claim_ref="claim_1",
             registry=registry,
             created_by_act="act_1",
@@ -220,7 +270,7 @@ def test_spec_or_observation_tampering_is_detected() -> None:
         evaluate_gate_spec(
             spec,
             [],
-            result_id="val_001",
+            result_id="val_1",
             evaluated_by_act="act_1",
             evaluated_by_decision="dec_2",
             registry=registry,
@@ -237,7 +287,7 @@ def test_template_rejects_missing_and_unknown_parameters() -> None:
     with pytest.raises(GateSpecCompileError, match="missing template parameters"):
         compile_gate_spec(
             base,
-            spec_id="gsp_001",
+            spec_id="gsp_1",
             target_claim_ref="claim_1",
             registry=registry,
             created_by_act="act_1",
@@ -248,7 +298,7 @@ def test_template_rejects_missing_and_unknown_parameters() -> None:
     with pytest.raises(GateSpecCompileError, match="unknown template parameters"):
         compile_gate_spec(
             base,
-            spec_id="gsp_001",
+            spec_id="gsp_1",
             target_claim_ref="claim_1",
             registry=registry,
             created_by_act="act_1",

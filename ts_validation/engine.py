@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .digests import now_iso, sha256_json
+from .observations import observation_id_sort_key
 from .registry import PredicateRegistry, RegistryError
 
 
@@ -56,7 +57,7 @@ def evaluate_gate_spec(
         "target_claim_ref": spec["target_claim_ref"],
         "dimension": spec["dimension"],
         "verdict": verdict,
-        "observation_refs": sorted(observation_digests),
+        "observation_refs": sorted(observation_digests, key=observation_id_sort_key),
         "observation_digests": observation_digests,
         "check_results": check_results,
         "evaluated_by_act": evaluated_by_act,
@@ -103,7 +104,7 @@ def _validate_observations(observations: list[dict[str, Any]]) -> list[dict[str,
             raise ValidationEngineError(f"duplicate or invalid observation_id: {observation_id}")
         seen.add(observation_id)
         values.append(item)
-    return sorted(values, key=lambda value: value["observation_id"])
+    return sorted(values, key=lambda value: observation_id_sort_key(value["observation_id"]))
 
 
 def _normalize_outcome(value: Any, selected_refs: set[str]) -> dict[str, Any]:
@@ -123,7 +124,11 @@ def _normalize_outcome(value: Any, selected_refs: set[str]) -> dict[str, Any]:
         )
     if not isinstance(message, str) or len(message) > 2000:
         raise ValidationEngineError("predicate returned an invalid message")
-    return {"verdict": verdict, "observation_refs": sorted(set(refs)), "message": message}
+    return {
+        "verdict": verdict,
+        "observation_refs": sorted(set(refs), key=observation_id_sort_key),
+        "message": message,
+    }
 
 
 def _aggregate(policy: dict[str, Any], results: list[dict[str, Any]]) -> str:

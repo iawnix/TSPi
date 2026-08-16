@@ -19,6 +19,7 @@ from typing import Any, Iterable
 from ts_workspace.io import read_json
 from ts_workspace.refs import ACT_ID
 from ts_workspace.transactions import workspace_lock
+from ts_structures.seed import StructureSeedError, generate_smiles_seed
 
 from .contracts import ComputeContractError
 
@@ -27,6 +28,8 @@ CATALOG_SCHEMA_VERSION = "ts-artifact-catalog/2"
 ARTIFACT_ID_SCHEMA_VERSION = "ts-artifact-id/2"
 IMPORT_REQUEST_SCHEMA_VERSION = "ts-artifact-import-request/1"
 IMPORT_RESULT_SCHEMA_VERSION = "ts-artifact-import-result/1"
+STRUCTURE_SEED_REQUEST_SCHEMA_VERSION = "ts-structure-seed-request/1"
+STRUCTURE_SEED_RESULT_SCHEMA_VERSION = "ts-structure-seed-result/1"
 MAX_IMPORT_BYTES = 128 * 1024
 INTENT_ID = re.compile(r"^calc_[A-Za-z0-9_.-]+$")
 IMPORT_FORMATS = {
@@ -128,6 +131,82 @@ def import_calculation_artifact(root: str | Path, request: dict[str, Any]) -> di
         "created": created,
         "chemical_metadata": metadata,
         "artifact": artifact,
+    }
+
+
+def create_structure_seed_artifact(root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
+    """Generate and persist one Act-owned RDKit structure seed and provenance."""
+
+    workspace = _workspace_root(root)
+    normalized = _validate_structure_seed_request(request)
+    try:
+        generated = generate_smiles_seed(
+            normalized["smiles"],
+            charge=normalized["charge"],
+            multiplicity=normalized["multiplicity"],
+            optimization=normalized["optimization"],
+        )
+    except StructureSeedError as exc:
+        raise ComputeContractError(str(exc)) from exc
+
+    xyz_payload = generated["xyz"].encode("utf-8")
+    xyz_digest = "sha256:" + hashlib.sha256(xyz_payload).hexdigest()
+    xyz_filename = f"structure_seed_{xyz_digest.removeprefix('sha256:')}.xyz"
+    with workspace_lock(workspace):
+        act = _act_record(workspace, normalized["act_id"])
+        if act.get("status") != "open":
+            raise ComputeContractError(
+                f"structure seed generation requires an open ResearchAct: {normalized['act_id']}"
+            )
+        inputs = _act_inputs_directory(workspace, normalized["act_id"])
+        xyz_path = inputs / xyz_filename
+        xyz_ref = xyz_path.relative_to(workspace).as_posix()
+        xyz_artifact_id = _artifact_id(xyz_ref, xyz_digest)
+        provenance = {
+            "schema_version": "ts-structure-seed-provenance/1",
+            "source": generated["source"],
+            "generator": generated["generator"],
+            "parameters": generated["parameters"],
+            "chemical_metadata": generated["chemical_metadata"],
+            "limitations": generated["limitations"],
+            "output": {
+                "artifact_id": xyz_artifact_id,
+                "artifact_ref": xyz_ref,
+                "sha256": xyz_digest,
+                "size_bytes": len(xyz_payload),
+            },
+        }
+        provenance_payload = (
+            json.dumps(provenance, indent=2, sort_keys=True, ensure_ascii=True) + "\n"
+        ).encode("utf-8")
+        provenance_digest = "sha256:" + hashlib.sha256(provenance_payload).hexdigest()
+        provenance_path = inputs / (
+            f"structure_seed_{provenance_digest.removeprefix('sha256:')}.provenance.json"
+        )
+        created_paths: list[Path] = []
+        try:
+            if _write_import_payload(xyz_path, xyz_payload):
+                created_paths.append(xyz_path)
+            if _write_import_payload(provenance_path, provenance_payload):
+                created_paths.append(provenance_path)
+        except Exception:
+            for path in reversed(created_paths):
+                path.unlink(missing_ok=True)
+            raise
+        known_acts = _act_ids(workspace)
+        artifact = _artifact_for_path(workspace, xyz_path, known_acts)
+        provenance_artifact = _artifact_for_path(workspace, provenance_path, known_acts)
+
+    return {
+        "schema_version": STRUCTURE_SEED_RESULT_SCHEMA_VERSION,
+        "operation": "generate",
+        "act_id": normalized["act_id"],
+        "created": bool(created_paths),
+        "artifact": artifact,
+        "provenance_artifact": provenance_artifact,
+        "chemical_metadata": generated["chemical_metadata"],
+        "generator": generated["generator"],
+        "limitations": generated["limitations"],
     }
 
 
@@ -335,6 +414,44 @@ def _validate_import_request(request: dict[str, Any]) -> dict[str, Any]:
             raise ComputeContractError("structure artifact multiplicity must be an integer from 1 to 21")
     elif charge is not None or multiplicity is not None:
         raise ComputeContractError("xTB control artifact does not accept charge or multiplicity")
+    return dict(request)
+
+
+def _validate_structure_seed_request(request: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(request, dict):
+        raise ComputeContractError("structure seed request must be an object")
+    required = {
+        "schema_version",
+        "act_id",
+        "smiles",
+        "charge",
+        "multiplicity",
+        "optimization",
+    }
+    missing = sorted(required - set(request))
+    unexpected = sorted(set(request) - required)
+    if missing or unexpected:
+        raise ComputeContractError(
+            f"structure seed fields are invalid: missing={missing}; unexpected={unexpected}"
+        )
+    if request.get("schema_version") != STRUCTURE_SEED_REQUEST_SCHEMA_VERSION:
+        raise ComputeContractError(
+            f"structure seed schema_version must be {STRUCTURE_SEED_REQUEST_SCHEMA_VERSION}"
+        )
+    act_id = request.get("act_id")
+    if not isinstance(act_id, str) or ACT_ID.fullmatch(act_id) is None:
+        raise ComputeContractError("structure seed act_id is invalid")
+    smiles = request.get("smiles")
+    if not isinstance(smiles, str) or not 1 <= len(smiles) <= 4_096:
+        raise ComputeContractError("structure seed SMILES must contain 1 to 4096 characters")
+    charge = request.get("charge")
+    multiplicity = request.get("multiplicity")
+    if type(charge) is not int or not -20 <= charge <= 20:
+        raise ComputeContractError("structure seed charge must be an integer from -20 to 20")
+    if type(multiplicity) is not int or not 1 <= multiplicity <= 21:
+        raise ComputeContractError("structure seed multiplicity must be an integer from 1 to 21")
+    if request.get("optimization") not in {"none", "uff"}:
+        raise ComputeContractError("structure seed optimization must be none or uff")
     return dict(request)
 
 

@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from scripts.install_release import REQUIRED_RUNTIME_FILES
+from tests.runtime_helpers import write_test_runtime_manifest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -87,6 +88,7 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
         encoding="utf-8",
     )
     fake_pi.chmod(0o755)
+    write_test_runtime_manifest(package_root, install_root)
     startup = subprocess.run(
         [str(install_root / "TSPi"), "--workspace", "release-smoke"],
         cwd=install_root,

@@ -18,7 +18,16 @@ from .acceptance import project_acceptances
 from .associations import derive_claim_act_links
 from .io import read_json, sha256_json
 from .operational import operational_snapshot
-from .refs import act_sort_key, claim_sort_key
+from .refs import (
+    acceptance_sort_key,
+    act_sort_key,
+    claim_relation_sort_key,
+    claim_sort_key,
+    finding_sort_key,
+    observation_sort_key,
+    validation_result_sort_key,
+    validation_spec_sort_key,
+)
 from .revision import report_id_for_revision, workspace_revision_from_documents
 from .state import (
     CLAIMS_FILE,
@@ -226,16 +235,34 @@ def build_review_snapshot(root: str | Path, *, target_claim_ref: str, depth: int
             (str(item["claim_id"]) for item in projection["claims"]),
             key=claim_sort_key,
         ),
-        "relation_refs": sorted(str(item["relation_id"]) for item in projection["claim_relations"]),
+        "relation_refs": sorted(
+            (str(item["relation_id"]) for item in projection["claim_relations"]),
+            key=claim_relation_sort_key,
+        ),
         "act_refs": sorted(
             (str(item["act_id"]) for item in projection["research_acts"]),
             key=act_sort_key,
         ),
-        "observation_refs": sorted(str(item["observation_id"]) for item in projection["observations"]),
-        "validation_spec_refs": sorted(str(item["spec_id"]) for item in projection["validation_specs"]),
-        "validation_result_refs": sorted(str(item["result_id"]) for item in projection["validation_results"]),
-        "finding_refs": sorted(str(item["finding_id"]) for item in projection["findings"]),
-        "acceptance_refs": sorted(str(item["acceptance_id"]) for item in projection["acceptances"]),
+        "observation_refs": sorted(
+            (str(item["observation_id"]) for item in projection["observations"]),
+            key=observation_sort_key,
+        ),
+        "validation_spec_refs": sorted(
+            (str(item["spec_id"]) for item in projection["validation_specs"]),
+            key=validation_spec_sort_key,
+        ),
+        "validation_result_refs": sorted(
+            (str(item["result_id"]) for item in projection["validation_results"]),
+            key=validation_result_sort_key,
+        ),
+        "finding_refs": sorted(
+            (str(item["finding_id"]) for item in projection["findings"]),
+            key=finding_sort_key,
+        ),
+        "acceptance_refs": sorted(
+            (str(item["acceptance_id"]) for item in projection["acceptances"]),
+            key=acceptance_sort_key,
+        ),
     }
     return {
         "schema_version": "ts-review-snapshot/3",
@@ -370,7 +397,10 @@ def _select_graph(
     ]
     return {
         "claims": [claims[ref] for ref in sorted(selected_claims, key=claim_sort_key) if ref in claims],
-        "claim_relations": sorted(selected_relations, key=lambda value: str(value["relation_id"])),
+        "claim_relations": sorted(
+            selected_relations,
+            key=lambda value: claim_relation_sort_key(str(value["relation_id"])),
+        ),
         "research_acts": [
             {
                 **acts[ref],
@@ -383,10 +413,23 @@ def _select_graph(
             for ref in sorted(selected_acts, key=act_sort_key)
             if ref in acts
         ],
-        "observations": [observations[ref] for ref in sorted(selected_observation_refs) if ref in observations],
-        "validation_specs": sorted(selected_specs, key=lambda value: str(value["spec_id"])),
-        "validation_results": sorted(selected_results, key=lambda value: str(value["result_id"])),
-        "findings": sorted(selected_findings, key=lambda value: str(value["finding_id"])),
+        "observations": [
+            observations[ref]
+            for ref in sorted(selected_observation_refs, key=observation_sort_key)
+            if ref in observations
+        ],
+        "validation_specs": sorted(
+            selected_specs,
+            key=lambda value: validation_spec_sort_key(str(value["spec_id"])),
+        ),
+        "validation_results": sorted(
+            selected_results,
+            key=lambda value: validation_result_sort_key(str(value["result_id"])),
+        ),
+        "findings": sorted(
+            selected_findings,
+            key=lambda value: finding_sort_key(str(value["finding_id"])),
+        ),
     }
 
 

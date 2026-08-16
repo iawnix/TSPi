@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
@@ -22,9 +21,15 @@ from .operational import operational_snapshot
 from .refs import (
     WorkspaceRefError,
     decision_ordinal,
+    next_acceptance_ordinal,
     next_act_ordinal,
     next_claim_ordinal,
+    next_claim_relation_ordinal,
     next_decision_ordinal,
+    next_finding_ordinal,
+    next_observation_ordinal,
+    next_validation_result_ordinal,
+    next_validation_spec_ordinal,
 )
 from .revision import workspace_revision
 from .schema_validation import SchemaValidationError, validate_contract
@@ -34,6 +39,7 @@ from .state import (
     OBSERVATIONS_FILE,
     FINDINGS_FILE,
     RESEARCH_ACTS_FILE,
+    RESEARCH_STATE_FILE,
     VALIDATION_RESULTS_FILE,
     VALIDATION_SPECS_FILE,
 )
@@ -85,9 +91,14 @@ def draft_decision(
     state = _DraftState.load(root_path, decision_id=allocated_decision_id)
     allocations = _allocate_aliases(
         raw_operations,
-        allocated_decision_id,
         existing_claim_ids=state.claims,
+        existing_claim_relation_ids=state.relations,
         existing_act_ids=state.acts,
+        existing_observation_ids=state.observations,
+        existing_finding_ids=state.findings,
+        existing_validation_spec_ids=state.specs,
+        existing_validation_result_ids=state.results,
+        existing_acceptance_ids=state.acceptances,
     )
     registry = builtin_predicate_registry()
     operations: list[dict[str, Any]] = []
@@ -163,15 +174,28 @@ def validate_decision_binding(root: str | Path, decision: dict[str, Any]) -> Non
 
 def _allocate_aliases(
     operations: list[Any],
-    decision_id: str,
     *,
     existing_claim_ids: Any,
+    existing_claim_relation_ids: Any,
     existing_act_ids: Any,
+    existing_observation_ids: Any,
+    existing_finding_ids: Any,
+    existing_validation_spec_ids: Any,
+    existing_validation_result_ids: Any,
+    existing_acceptance_ids: Any,
 ) -> dict[str, str]:
     allocations: dict[str, str] = {}
     try:
-        claim_ordinal = next_claim_ordinal(existing_claim_ids)
-        act_ordinal = next_act_ordinal(existing_act_ids)
+        ordinals = {
+            "claim": next_claim_ordinal(existing_claim_ids),
+            "rel": next_claim_relation_ordinal(existing_claim_relation_ids),
+            "act": next_act_ordinal(existing_act_ids),
+            "obs": next_observation_ordinal(existing_observation_ids),
+            "fnd": next_finding_ordinal(existing_finding_ids),
+            "gsp": next_validation_spec_ordinal(existing_validation_spec_ids),
+            "val": next_validation_result_ordinal(existing_validation_result_ids),
+            "acc": next_acceptance_ordinal(existing_acceptance_ids),
+        }
     except WorkspaceRefError as exc:
         raise ContractError(str(exc)) from exc
     for index, operation in enumerate(operations):
@@ -190,15 +214,8 @@ def _allocate_aliases(
             raise ContractError(f"operations[{index}].local_ref is invalid")
         if alias in allocations:
             raise ContractError(f"duplicate local_ref: {alias}")
-        if prefix == "claim":
-            allocations[alias] = f"claim_{claim_ordinal}"
-            claim_ordinal += 1
-        elif prefix == "act":
-            allocations[alias] = f"act_{act_ordinal}"
-            act_ordinal += 1
-        else:
-            digest = hashlib.sha256(f"{decision_id}:{index}:{name}:{alias}".encode("utf-8")).hexdigest()[:24]
-            allocations[alias] = f"{prefix}_{digest}"
+        allocations[alias] = f"{prefix}_{ordinals[prefix]}"
+        ordinals[prefix] += 1
     return allocations
 
 
@@ -460,7 +477,19 @@ def _normalize_operation(
 
 
 class _DraftState:
-    def __init__(self, *, decision_id: str, claims: dict[str, dict[str, Any]], relations: dict[str, dict[str, Any]], acts: dict[str, dict[str, Any]], observations: dict[str, dict[str, Any]], specs: dict[str, dict[str, Any]], results: dict[str, dict[str, Any]], findings: dict[str, dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        *,
+        decision_id: str,
+        claims: dict[str, dict[str, Any]],
+        relations: dict[str, dict[str, Any]],
+        acts: dict[str, dict[str, Any]],
+        observations: dict[str, dict[str, Any]],
+        specs: dict[str, dict[str, Any]],
+        results: dict[str, dict[str, Any]],
+        findings: dict[str, dict[str, Any]],
+        acceptances: set[str],
+    ) -> None:
         self.decision_id = decision_id
         self.claims = claims
         self.relations = relations
@@ -469,6 +498,7 @@ class _DraftState:
         self.specs = specs
         self.results = results
         self.findings = findings
+        self.acceptances = acceptances
 
     @classmethod
     def load(cls, root: Path, *, decision_id: str) -> "_DraftState":
@@ -481,6 +511,11 @@ class _DraftState:
             specs=_map(read_json(root / VALIDATION_SPECS_FILE)["specs"], "spec_id"),
             results=_map(read_json(root / VALIDATION_RESULTS_FILE)["results"], "result_id"),
             findings=_map(read_json(root / FINDINGS_FILE)["findings"], "finding_id"),
+            acceptances={
+                Path(ref).stem
+                for ref in read_json(root / RESEARCH_STATE_FILE)["acceptance_refs"]
+                if isinstance(ref, str)
+            },
         )
 
     def apply(self, operation: dict[str, Any]) -> None:
@@ -513,6 +548,8 @@ class _DraftState:
             self.results[record["result_id"]] = record
             _append_unique(self.claims.get(record["target_claim_ref"], {}).get("validation_result_refs"), record["result_id"])
             _append_unique(self.acts.get(record["evaluated_by_act"], {}).get("validation_result_refs"), record["result_id"])
+        elif name == "accept_claim":
+            self.acceptances.add(str(operation["record"]["acceptance_id"]))
         elif name == "update_claim":
             claim = self.claims.get(operation["claim_ref"])
             if claim:

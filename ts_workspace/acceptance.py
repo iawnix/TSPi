@@ -10,6 +10,7 @@ from typing import Any, Iterable, Mapping
 from ts_validation.registry import load_acceptance_profile
 
 from .io import read_json, sha256_json
+from .refs import finding_sort_key, validation_spec_sort_key
 from .state import (
     CLAIMS_FILE,
     FINDINGS_FILE,
@@ -62,9 +63,12 @@ def acceptance_policy_violations(
 
     blocked_severities = set(profile.get("block_on_open_finding_severity", []))
     blockers = sorted(
-        str(finding.get("finding_id"))
-        for finding in snapshot_findings
-        if finding.get("status") == "open" and finding.get("severity") in blocked_severities
+        (
+            str(finding.get("finding_id"))
+            for finding in snapshot_findings
+            if finding.get("status") == "open" and finding.get("severity") in blocked_severities
+        ),
+        key=finding_sort_key,
     )
     if blockers:
         violations.append(
@@ -109,7 +113,7 @@ def relevant_findings(
             for finding in rows
             if isinstance(finding, dict) and claim_ref in finding.get("claim_refs", [])
         ),
-        key=lambda item: str(item["finding_id"]),
+        key=lambda item: finding_sort_key(str(item["finding_id"])),
     )
 
 
@@ -150,7 +154,8 @@ def acceptance_currentness(
 
     selected_spec_refs = _string_list(record.get("validation_spec_refs"))
     attached_spec_refs = sorted(
-        spec_id for spec_id, spec in specs.items() if spec.get("target_claim_ref") == claim_ref
+        (spec_id for spec_id, spec in specs.items() if spec.get("target_claim_ref") == claim_ref),
+        key=validation_spec_sort_key,
     )
     if profile is not None and profile.get("require_all_attached_specs") is True:
         if selected_spec_refs != attached_spec_refs:
@@ -247,7 +252,7 @@ def project_acceptances(
 def acceptance_path(root: Path, ref: Any) -> Path:
     """Resolve one canonical acceptance ref without accepting traversal or symlinks."""
 
-    if not isinstance(ref, str) or re.fullmatch(r"acceptances/acc_[0-9a-f]{24}\.json", ref) is None:
+    if not isinstance(ref, str) or re.fullmatch(r"acceptances/acc_[1-9][0-9]*\.json", ref) is None:
         raise AcceptanceError(f"invalid acceptance ref: {ref!r}")
     expected_parent = root / "acceptances"
     candidate = root / ref

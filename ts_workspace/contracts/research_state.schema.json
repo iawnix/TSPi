@@ -8,7 +8,7 @@
     "schema_version": {"const": "ts-research-state/4"},
     "focus_claim_refs": {"type": "array", "uniqueItems": true, "maxItems": 32, "items": {"$ref": "claim.schema.json#/$defs/claim_id"}},
     "focus_act_refs": {"type": "array", "uniqueItems": true, "maxItems": 32, "items": {"$ref": "research_act.schema.json#/$defs/act_id"}},
-    "acceptance_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^acceptances/acc_[0-9a-f]{24}\\.json$"}},
+    "acceptance_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "pattern": "^acceptances/acc_[1-9][0-9]*\\.json$"}},
     "created_at": {"type": "string", "minLength": 1, "maxLength": 64}
   }
 }

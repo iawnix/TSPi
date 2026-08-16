@@ -36,6 +36,8 @@ Use it for dependency, refinement, conflict, alternatives, or another explicit
 scientific relationship. The Kernel checks refs and acyclicity but never maps a
 label to a next action.
 
+ClaimRelation IDs use workspace-local creation ordinals (`rel_1`, `rel_2`, ...).
+
 The Kernel allocates workspace-local Claim IDs in creation order (`claim_1`,
 `claim_2`, ...). Claim uses `ts-claim/2`; its ordinal is identity only, not
 confidence, priority, hierarchy, or a workflow phase.
@@ -85,12 +87,17 @@ Use stable domain concepts such as `program.normal_termination` or
 when separate semantic values are required for validation. The Kernel does not
 guess aliases for producer-specific keys.
 
+The Kernel allocates workspace-local Observation IDs in creation order
+(`obs_1`, `obs_2`, ...). The ID is a readable reference; scientific meaning
+remains in `concept_id`, `subject_ref`, value, and summary.
+
 ## Finding
 
 A Finding makes an anomaly, conflict, limitation, or open question explicit.
 It cites applicable Claims, Acts, and Observations and has severity
 `blocking`, `warning`, or `informational`. Resolve it only through a Decision
 with a cited explanation. Open blocking Findings prevent acceptance.
+Finding IDs use workspace-local creation ordinals (`fnd_1`, `fnd_2`, ...).
 
 ## GateSpec And ValidationResult
 
@@ -107,6 +114,10 @@ pass | fail | inconclusive | error
 
 Validation does not update Claim status or choose another Act.
 
+GateSpecs and ValidationResults use workspace-local creation ordinals
+(`gsp_1`, `gsp_2`, ... and `val_1`, `val_2`, ...). Their dimensions, titles,
+checks, and verdicts carry meaning; the ordinal does not rank scientific value.
+
 ## Acceptance
 
 Claim status and acceptance are separate. An acceptance record snapshots:
@@ -119,6 +130,9 @@ Claim status and acceptance are separate. An acceptance record snapshots:
 
 `acceptance_digest` binds the complete record; component digests bind the
 Claim, profile, GateSpecs, ValidationResults, and Finding snapshot separately.
+
+Acceptance records use workspace-local creation ordinals (`acc_1`, `acc_2`,
+...) in both their IDs and canonical filenames.
 
 Acceptance requires a supported Claim, at least one GateSpec, and the latest
 passing result for every attached specification. Changing the Claim,

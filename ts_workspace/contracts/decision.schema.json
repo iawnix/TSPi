@@ -90,7 +90,7 @@
         "type": "string",
         "anyOf": [
           {"pattern": "^claim_[1-9][0-9]*$"},
-          {"pattern": "^(rel|obs|fnd|gsp|val|acc)_[0-9a-f]{24}$"},
+          {"pattern": "^(rel|obs|fnd|gsp|val|acc)_[1-9][0-9]*$"},
           {"pattern": "^act_[1-9][0-9]*$"}
         ]
       }
