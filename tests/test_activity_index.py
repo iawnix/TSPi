@@ -96,6 +96,22 @@ def test_activity_is_derived_for_its_act_without_a_link_decision(tmp_path: Path)
     assert validate_workspace(root)["valid"] is True
 
 
+def test_artifact_import_is_a_valid_act_owned_activity(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    refs = start_research_act(root)
+    activity = _activity_documents(root, refs["act_id"])
+    for name in ("request.json", "status.json"):
+        document = read_json(activity / name)
+        document["kind"] = "artifact_import"
+        document["operation"] = "import"
+        write_json(activity / name, document)
+
+    index = build_activity_index(root)
+    assert index["integrity_findings"] == []
+    assert index["activities"][0]["kind"] == "artifact_import"
+
+
 @pytest.mark.parametrize(
     ("mutation", "code"),
     [

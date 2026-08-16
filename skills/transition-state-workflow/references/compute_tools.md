@@ -27,6 +27,11 @@ The artifact catalog supplies logical `art_...` IDs, paths, SHA-256, owners,
 and compatible roles. The capability catalog supplies backend/task/settings
 shape. It does not prove live software or remote health.
 
+If a fresh workspace has no suitable input, start an open ResearchAct and use
+`ts_artifact_import` with bounded inline Gaussian, XYZ, or xTB control text.
+The host creates the file and returns the logical ID; callers never create an
+`art_*` value or workspace path.
+
 ## Prepare
 
 A prepare request binds:
@@ -40,7 +45,7 @@ A prepare request binds:
   "taskType": "opt_freq",
   "attemptKind": "primary",
   "inputArtifacts": [
-    {"inputRole": "structure", "artifactId": "art_..."}
+    {"inputRole": "gjf", "artifactId": "art_..."}
   ],
   "settings": {"method": "M062X", "basis": "6-31G(d)"},
   "executionTarget": {

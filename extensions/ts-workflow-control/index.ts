@@ -72,13 +72,11 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.workspaceContext,
     label: "TS Context",
-    description: "Compile a bounded Claim graph and ResearchAct DAG projection, or inspect deterministic capabilities and logical artifacts.",
-    promptSnippet: "Retrieve bounded v4 TS research context by Claim, ResearchAct, Finding, validation, or frontier",
+    description: "Read a bounded TS graph, capability catalog, or logical artifact catalog.",
+    promptSnippet: "Read bounded TS workspace context",
     promptGuidelines: [
-      "Start with mode=frontier, then retrieve a focused Claim, ResearchAct, Finding, validation result, or bounded subgraph only when needed.",
-      "Use mode=delta with both known revisions to avoid repeating unchanged scientific and operational context.",
-      "Use mode=artifacts to resolve logical artifactId values; physical workspace paths remain host-owned implementation details.",
-      "Backend capability and validation capability catalogs describe expressible operations, not live executable or scheduler health.",
+      "Start with frontier or revision-bound delta; retrieve focused graph objects only when needed.",
+      "Artifact IDs are logical and capability catalogs do not prove runtime or scheduler readiness.",
     ],
     parameters: Type.Object({
       mode: Type.Optional(StringEnum(CONTEXT_MODES)),
@@ -125,11 +123,11 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionDraft,
     label: "TS Decision Draft",
-    description: "Allocate logical IDs and freeze one non-mutating ts-research-decision/1 from explicit v4 operations.",
-    promptSnippet: "Draft one revision-bound v4 TS research Decision",
+    description: "Allocate IDs and freeze one non-mutating v4 research Decision.",
+    promptSnippet: "Draft one revision-bound TS Decision",
     promptGuidelines: [
-      "Use local_ref aliases for records created in the same Decision; the kernel allocates stable Claim, ResearchAct, Observation, Finding, GateSpec, validation-result, and acceptance IDs.",
-      "Keep scientific strategy in the rationale and operations; do not invent physical paths or edit registries directly.",
+      "Use local_ref aliases; the Kernel allocates all durable IDs.",
+      "Put strategy in rationale and operations; never invent paths or edit registries.",
       `Pass the returned Decision unchanged to ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate}, then ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply}.`,
     ],
     parameters: Type.Object({

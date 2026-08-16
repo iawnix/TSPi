@@ -1,7 +1,41 @@
 # Deterministic Artifact Tools
 
-Render and Report are direct host tools. They start no child model, make no
-scientific decision, and never mutate canonical records.
+Import, Render, and Report are direct host tools. They start no child model,
+make no scientific decision, and never mutate canonical records.
+
+## Contents
+
+- [Import The First Input](#import-the-first-input)
+- [Render](#render)
+- [Report](#report)
+- [Notify](#notify)
+- [Activity And Provenance](#activity-and-provenance)
+
+## Import The First Input
+
+After starting an open ResearchAct, create one bounded seed without choosing a
+path or filename:
+
+```json
+{
+  "operation":"import",
+  "actId":"act_1",
+  "format":"gaussian_input",
+  "content":"#p M062X/6-31+G(d,p) opt\n\n...\n",
+  "charge":0,
+  "multiplicity":1
+}
+```
+
+Formats are `gaussian_input`, `xyz_structure`, and `xtb_control`. Gaussian and
+XYZ imports require declared charge and multiplicity. The host bounds and
+validates UTF-8 text, rejects traversal and symlinks, generates a private
+content-addressed Act input, and returns its logical `artifactId`. Identical
+replay is idempotent. The activity journal stores hashes and metadata, never
+the input body. QST2/QST3 imports also require every structure to use the same
+declared charge/multiplicity, atom count, and atom order. Multi-job `--Link1--`
+inputs and Link 0 filesystem paths are rejected. Resolve the result with
+`ts_workspace_context mode=artifacts` before Compute.
 
 ## Render
 
@@ -72,7 +106,7 @@ failure has no scientific effect.
 
 ## Activity And Provenance
 
-Compute, Render, and Report write deterministic activity journals whose
+Compute, Import, Render, and Report write deterministic activity journals whose
 `act_refs` are the only operation-to-Act link. Notification writes a delivery
 receipt. These records support diagnosis and reporting but do not become
 Observations or acceptance basis automatically.

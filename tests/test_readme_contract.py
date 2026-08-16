@@ -40,10 +40,11 @@ def test_readme_routes_each_reader_to_the_v4_public_contracts() -> None:
         "ts_workspace_decision_apply",
         "ts_subagent_review",
         "ts_compute",
+        "ts_artifact_import",
         "ts_render",
         "ts_report",
         "ts_notify_user",
-        "eleven public tools",
+        "twelve public tools",
     ]:
         assert phrase in text
 
@@ -215,6 +216,13 @@ def test_candidate_strategy_remains_root_selected() -> None:
     assert "Choose among chemically informed construction" in candidate
     assert "Before QST2/QST3" in candidate
     assert "The capability catalog is not a priority list" in backend
+
+
+def test_compute_reference_uses_the_registered_gaussian_input_role() -> None:
+    compute = (REFERENCES / "compute_tools.md").read_text(encoding="utf-8")
+
+    assert '"inputRole": "gjf"' in compute
+    assert '"inputRole": "structure"' not in compute
 
 
 def test_final_report_template_projects_v4_scientific_objects() -> None:

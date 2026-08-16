@@ -5,10 +5,10 @@ services, not a second Agent runtime.
 
 ## Loaded Surface
 
-Normal startup loads one Root Skill, five extensions, one theme, eleven public
+Normal startup loads one Root Skill, five extensions, one theme, twelve public
 tools, and four slash commands. Only `ts_subagent_review` creates a child model
-session. Compute, Render, Report, remote inspection, workspace control, Review
-disposition, and notification are direct deterministic calls.
+session. Input import, Compute, Render, Report, remote inspection, workspace
+control, Review disposition, and notification are deterministic calls.
 
 ## Root Conversation
 

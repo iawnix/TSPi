@@ -38,14 +38,12 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.subagentReview,
     label: "TS Review Subagent",
-    description: "Run one isolated advisory Review against a deterministic Claim and ResearchAct DAG snapshot.",
-    promptSnippet: "Delegate an independent review of one transition-state scientific claim",
+    description: "Run one isolated advisory Review of a target Claim.",
+    promptSnippet: "Review one TS Claim independently",
     promptGuidelines: [
-      `Use ${TS_PUBLIC_TOOL_NAMES.subagentReview} only at an ambiguity, failure-analysis, branch-selection, or final-audit boundary where an independent review can change the next decision.`,
-      "Treat its output as advisory analysis, not registered evidence or an accepted/pathway verdict; reconcile it against primary artifacts before mutating the workspace.",
-      `After every successful Review, immediately call ${TS_PUBLIC_TOOL_NAMES.reviewDisposition} with its task_id and review_run_ref. Record a concise accepted, partially_accepted, rejected, or deferred response before any further workspace mutation.`,
-      "Select targetClaimRef. The Kernel derives Claims, relations, ResearchActs, Observations, frozen validation, and Findings from the graph.",
-      "Optional artifactIds must already be cited by an Observation in that graph; paths are not accepted.",
+      "Use at ambiguity, failure analysis, branch selection, or final audit; advice is not evidence or acceptance.",
+      `After success, call ${TS_PUBLIC_TOOL_NAMES.reviewDisposition} before scientific mutation.`,
+      "Select one Claim; optional artifact IDs must already be cited in its derived graph. Paths are forbidden.",
     ],
     renderShell: "self",
     renderCall: (args, theme) => renderTsReviewCall(args as Record<string, unknown>, theme),
@@ -176,12 +174,11 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.reviewDisposition,
     label: "TS Review Response",
-    description: "Record the Root Agent's concise, write-once response to one successfully completed advisory Review.",
-    promptSnippet: "Record the Root Agent disposition for a completed TS Review",
+    description: "Record Root's write-once response to a completed Review.",
+    promptSnippet: "Record a TS Review disposition",
     promptGuidelines: [
-      `Call ${TS_PUBLIC_TOOL_NAMES.reviewDisposition} immediately after every successful ${TS_PUBLIC_TOOL_NAMES.subagentReview} result.`,
-      "Respond briefly and independently: accepted means the advice is adopted, partially_accepted names the adopted portion, rejected gives the reason, and deferred names the missing basis or later decision point.",
-      "This operational response is not scientific evidence and does not change the Review's advisory authority.",
+      `Call after every successful ${TS_PUBLIC_TOOL_NAMES.subagentReview} and before scientific mutation.`,
+      "State what is adopted, rejected, or deferred and why; this response is not evidence.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({

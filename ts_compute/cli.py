@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import stat
 import sys
+from pathlib import Path
 from typing import Any
 
-from .artifacts import list_calculation_artifacts, resolve_artifact_ids
+from .artifacts import import_calculation_artifact, list_calculation_artifacts, resolve_artifact_ids
 from .capabilities import calculation_capabilities
 from .contracts import ComputeContractError
 from .control import (
@@ -45,6 +47,10 @@ def main(argv: list[str] | None = None) -> int:
     resolve_artifacts = sub.add_parser("resolve-artifacts")
     resolve_artifacts.add_argument("--root", required=True)
     resolve_artifacts.add_argument("--artifact-id", action="append", required=True)
+
+    import_artifact = sub.add_parser("import-artifact")
+    import_artifact.add_argument("--root", required=True)
+    import_artifact.add_argument("--request-file", required=True)
 
     capabilities = sub.add_parser("capabilities")
     capabilities.add_argument("--root")
@@ -110,6 +116,18 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
             "artifact_count": len(artifacts),
             "artifacts": artifacts,
         }
+    if args.command == "import-artifact":
+        request_path = Path(args.request_file)
+        if not request_path.is_file() or request_path.is_symlink():
+            raise ComputeContractError("artifact import request must be a regular file")
+        if stat.S_IMODE(request_path.stat().st_mode) & 0o077:
+            raise ComputeContractError("artifact import request file must be private (mode 0600 or stricter)")
+        if request_path.stat().st_size > 2 * 128 * 1024:
+            raise ComputeContractError("artifact import request file is too large")
+        request = json.loads(request_path.read_text(encoding="utf-8"))
+        if not isinstance(request, dict):
+            raise ComputeContractError("artifact import request must contain an object")
+        return import_calculation_artifact(args.root, request)
     if args.command == "preflight":
         return preflight_calculation(
             args.root,

@@ -78,6 +78,22 @@ export async function runComputeJson(
   return parseJsonOutput(result);
 }
 
+export async function runArtifactImportJson(
+  pi: ExtensionAPI,
+  root: string,
+  request: unknown,
+  signal?: AbortSignal,
+) {
+  const tempRoot = mkdtempSync(join(tmpdir(), "ts-artifact-import-"));
+  const requestFile = join(tempRoot, "request.json");
+  try {
+    writeFileSync(requestFile, `${JSON.stringify(request, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    return await runComputeJson(pi, "import-artifact", root, ["--request-file", requestFile], signal);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
 export async function runRemoteDiagnosticJson(
   pi: ExtensionAPI,
   mode: "status" | "doctor" | "queues" | "nodes",

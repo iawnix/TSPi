@@ -14,7 +14,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_NAME = "@iawnix/ts-agent"
-PACKAGE_VERSION = "0.10.0"
+PACKAGE_VERSION = "0.10.1"
 SKILL_ENTRY = "./skills/transition-state-workflow"
 THEME_ENTRIES = ["./themes/ts-theme.json"]
 EXTENSION_ENTRIES = [

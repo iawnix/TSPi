@@ -85,6 +85,7 @@ function activityLabel(activity: TsActivity): string {
   if (activity.kind === "remote") return "Remote";
   return {
     compute: "Compute",
+    artifact: "Artifact",
     render: "Render",
     report: "Report",
     notify: "Notify",
@@ -134,6 +135,7 @@ function roleIconName(activity: TsActivity): TspiIconName {
   if (activity.kind === "remote") return "remote";
   return {
     compute: "roleCompute",
+    artifact: "tool",
     render: "roleRender",
     report: "roleReport",
     notify: "tool",

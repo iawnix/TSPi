@@ -2,11 +2,12 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { mkdirSync, rmdirSync } from "node:fs";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import {
   requireWorkspaceRoot,
+  runArtifactImportJson,
   runComputeJson,
   runNotifyUserJson,
   runRenderJson,
@@ -56,9 +57,80 @@ const NOTIFICATION_EVENTS = [
   "calculation_ambiguous",
   "study_completed",
 ] as const;
+const IMPORT_FORMATS = ["gaussian_input", "xyz_structure", "xtb_control"] as const;
 
 export default function (pi: ExtensionAPI) {
   const notificationTarget = configuredNotificationTarget();
+
+  pi.registerTool({
+    name: TS_PUBLIC_TOOL_NAMES.artifactImport,
+    label: "TS Artifact Import",
+    description: "Create one validated Act-owned calculation input from bounded inline text.",
+    promptSnippet: "Import one seed calculation artifact",
+    promptGuidelines: [
+      "Use when no suitable logical input exists; the host owns its path, filename, digest, and artifact ID.",
+      "Declare charge and multiplicity for Gaussian or XYZ structures; use the returned artifactId with Compute.",
+    ],
+    executionMode: "sequential",
+    parameters: Type.Object({
+      operation: Type.Literal("import"),
+      actId: Type.String({ pattern: "^act_[1-9][0-9]*$" }),
+      format: StringEnum(IMPORT_FORMATS),
+      content: Type.String({ minLength: 1, maxLength: 131_072 }),
+      charge: Type.Optional(Type.Integer({ minimum: -20, maximum: 20 })),
+      multiplicity: Type.Optional(Type.Integer({ minimum: 1, maximum: 21 })),
+      root: Type.Optional(Type.String()),
+    }, { additionalProperties: false }),
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      const root = requireWorkspaceRoot(params.root, ctx.cwd);
+      const activityId = `op_${randomUUID()}`;
+      const journal = beginActivity(root, {
+        activity_id: activityId,
+        kind: "artifact_import",
+        operation: "import",
+        act_refs: [params.actId],
+        request: {
+          format: params.format,
+          submitted_sha256: `sha256:${createHash("sha256").update(params.content, "utf8").digest("hex")}`,
+          submitted_size_bytes: Buffer.byteLength(params.content, "utf8"),
+          charge: params.charge,
+          multiplicity: params.multiplicity,
+        },
+      });
+      onUpdate?.(toolText(`TS Artifact import · ${params.actId}`, {
+        activity: { activity_id: activityId, state: "running" },
+      }));
+      try {
+        const raw = await runArtifactImportJson(pi, root, {
+          schema_version: "ts-artifact-import-request/1",
+          act_id: params.actId,
+          format: params.format,
+          content: params.content,
+          charge: params.charge,
+          multiplicity: params.multiplicity,
+        }, signal);
+        if (!raw || raw.schema_version !== "ts-artifact-import-result/1" || raw.operation !== "import") {
+          throw new Error("artifact importer returned an invalid result");
+        }
+        const result = { ...raw, activity_id: activityId, activity_ref: journal.activityRef };
+        completeActivity(journal, result);
+        pi.appendEntry("ts-deterministic-activity", result);
+        return toolText(JSON.stringify(result, null, 2), { result });
+      } catch (error) {
+        const failure = deterministicFailure(
+          activityId,
+          journal.activityRef,
+          "artifact_import",
+          "import",
+          [params.actId],
+          error,
+        );
+        failActivity(journal, error, failure);
+        pi.appendEntry("ts-deterministic-activity-failed", failure);
+        throw error;
+      }
+    },
+  });
 
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.render,
@@ -309,7 +381,7 @@ function assertReportBuilderPaths(root: string, refs: ReturnType<typeof expected
 function deterministicFailure(
   activityId: string,
   activityRef: string,
-  kind: "render" | "report",
+  kind: "artifact_import" | "render" | "report",
   operation: string,
   actRefs: string[],
   error: unknown,

@@ -29,6 +29,7 @@ EXPECTED_TOOLS = {
     "ts_review_disposition",
     "ts_compute",
     "ts_remote_inspect",
+    "ts_artifact_import",
     "ts_render",
     "ts_report",
     "ts_notify_user",

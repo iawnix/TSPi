@@ -43,6 +43,7 @@ const start=(id,name,args,now)=>reduceTsToolActivity(store,{{type:"tool_executio
 start("review","ts_subagent_review",{{targetClaimRef:"claim_1"}},1000);
 reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_subagent_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:1,tool_call_id:"review",task_id:"sub_review-1",role:"review",operation:"claim_review",state:"waiting",started_at:new Date(1000).toISOString(),updated_at:new Date(2000).toISOString(),act_refs:["act_1"],claim_refs:["claim_1"],wait_reason:"model_response"}}}}}},2000);
 start("compute","ts_compute",{{operation:"submit",backend:"gaussian",actId:"act_1",intentId:"calc_probe"}},3000);
+start("artifact","ts_artifact_import",{{operation:"import",format:"xyz_structure",actId:"act_1"}},3500);
 start("render","ts_render",{{operation:"compare",actId:"act_1",outputName:"compare.png"}},4000);
 reduceTsToolActivity(store,{{type:"tool_execution_end",toolCallId:"render",toolName:"ts_render",result:{{}},isError:false}},5000);
 const stale=reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_subagent_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:0,tool_call_id:"review",task_id:"sub_review-1",role:"review",operation:"claim_review",state:"running",started_at:new Date(1000).toISOString(),updated_at:new Date(6000).toISOString()}}}}}},6000);
@@ -53,11 +54,12 @@ process.stdout.write(JSON.stringify({{before,after,summary:summarizeTsActivities
     by_kind = {item["kind"] + ":" + (item.get("activityKind") or "review"): item for item in result["before"]}
     assert by_kind["review:review"]["status"]["act_refs"] == ["act_1"]
     assert by_kind["deterministic:compute"]["operation"] == "submit"
+    assert by_kind["deterministic:artifact"]["detail"] == "xyz_structure · act_1"
     assert by_kind["deterministic:render"]["detail"] == "compare.png"
     assert result["stale"] is False
     assert result["pruned"] is True
     assert all(item.get("activityKind") != "render" for item in result["after"])
-    assert result["summary"]["active"] == 2
+    assert result["summary"]["active"] == 3
 
 
 def test_activity_panel_renders_compact_review_compute_and_failure_rows() -> None:

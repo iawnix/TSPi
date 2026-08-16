@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import stat
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -9,6 +11,7 @@ from tests.v4_helpers import bootstrap_v4_workspace, start_research_act
 from ts_compute import (
     ComputeContractError,
     create_calculation_intent,
+    import_calculation_artifact,
     list_calculation_artifacts,
     prepare_calculation,
     submit_calculation,
@@ -68,6 +71,125 @@ def test_artifact_id_binds_path_and_content(tmp_path: Path) -> None:
     third = _artifact(list_calculation_artifacts(workspace), "inputs/renamed.com")
     assert third["artifact_id"] != second["artifact_id"]
     assert third["sha256"] != second["sha256"]
+
+
+def test_seed_import_is_private_content_addressed_and_idempotent(tmp_path: Path) -> None:
+    workspace, act_id = _workspace(tmp_path)
+    request = {
+        "schema_version": "ts-artifact-import-request/1",
+        "act_id": act_id,
+        "format": "xyz_structure",
+        "content": "2\nH2\nH 0 0 0\nH 0 0 0.74\n",
+        "charge": 0,
+        "multiplicity": 1,
+    }
+
+    first = import_calculation_artifact(workspace, request)
+    second = import_calculation_artifact(workspace, request)
+    artifact = first["artifact"]
+    path = workspace / artifact["path"]
+
+    assert first["schema_version"] == "ts-artifact-import-result/1"
+    assert first["created"] is True
+    assert second["created"] is False
+    assert second["artifact"] == artifact
+    assert artifact["artifact_id"].startswith("art_")
+    assert artifact["owner_act"] == act_id
+    assert artifact["input_roles"] == ["product", "reactant", "xyz"]
+    assert artifact["path"].startswith(f"acts/{act_id}/inputs/seed_")
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert first["chemical_metadata"]["atom_order"] == ["H", "H"]
+    assert list_calculation_artifacts(workspace, act_id=act_id)["artifacts"] == [artifact]
+
+
+def test_concurrent_identical_seed_import_creates_one_artifact(tmp_path: Path) -> None:
+    workspace, act_id = _workspace(tmp_path)
+    request = {
+        "schema_version": "ts-artifact-import-request/1",
+        "act_id": act_id,
+        "format": "xyz_structure",
+        "content": "2\nH2\nH 0 0 0\nH 0 0 0.74\n",
+        "charge": 0,
+        "multiplicity": 1,
+    }
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: import_calculation_artifact(workspace, request), range(2)))
+
+    assert sorted(result["created"] for result in results) == [False, True]
+    assert results[0]["artifact"] == results[1]["artifact"]
+    assert len(list_calculation_artifacts(workspace, act_id=act_id)["artifacts"]) == 1
+
+
+def test_seed_import_rejects_invalid_metadata_content_and_symlink_root(tmp_path: Path) -> None:
+    workspace, act_id = _workspace(tmp_path)
+    base = {
+        "schema_version": "ts-artifact-import-request/1",
+        "act_id": act_id,
+        "format": "gaussian_input",
+        "content": "#p hf/sto-3g sp\n\nH2\n\n0 1\nH 0 0 0\nH 0 0 0.74\n\n",
+        "charge": 0,
+        "multiplicity": 1,
+    }
+    with pytest.raises(ComputeContractError, match="does not match declared"):
+        import_calculation_artifact(workspace, {**base, "multiplicity": 3})
+    with pytest.raises(ComputeContractError, match="Cartesian coordinates"):
+        import_calculation_artifact(
+            workspace,
+            {**base, "content": base["content"].replace("H 0 0 0.74", "H R1 0 0")},
+        )
+    with pytest.raises(ComputeContractError, match="exactly one job"):
+        import_calculation_artifact(
+            workspace,
+            {**base, "content": base["content"] + "--Link1--\n%chk=/tmp/escape.chk\n"},
+        )
+    with pytest.raises(ComputeContractError, match="cannot select filesystem paths"):
+        import_calculation_artifact(
+            workspace,
+            {**base, "content": base["content"] + "%oldchk=../outside.chk\n"},
+        )
+
+    unsafe = tmp_path / "outside"
+    unsafe.mkdir()
+    act_root = workspace / "acts" / act_id
+    act_root.mkdir()
+    (act_root / "inputs").symlink_to(unsafe, target_is_directory=True)
+    with pytest.raises(ComputeContractError, match="input root is unsafe"):
+        import_calculation_artifact(workspace, base)
+
+
+def test_gaussian_qst_import_validates_every_structure_and_atom_mapping(tmp_path: Path) -> None:
+    workspace, act_id = _workspace(tmp_path)
+    qst2 = {
+        "schema_version": "ts-artifact-import-request/1",
+        "act_id": act_id,
+        "format": "gaussian_input",
+        "content": (
+            "#p hf/sto-3g opt=(qst2,calcfc)\n\nReactant\n\n0 1\n"
+            "C 0 0 0\nH 0 0 1\n\nProduct\n\n0 1\nC 0 0 0\nH 0 1 0\n\n"
+        ),
+        "charge": 0,
+        "multiplicity": 1,
+    }
+
+    imported = import_calculation_artifact(workspace, qst2)
+    assert imported["chemical_metadata"]["structure_count"] == 2
+    assert imported["chemical_metadata"]["atom_order"] == ["C", "H"]
+
+    wrong_order = qst2["content"].replace(
+        "Product\n\n0 1\nC 0 0 0\nH 0 1 0",
+        "Product\n\n0 1\nH 0 1 0\nC 0 0 0",
+    )
+    with pytest.raises(ComputeContractError, match="atom order does not match"):
+        import_calculation_artifact(workspace, {**qst2, "content": wrong_order})
+
+    wrong_spin = qst2["content"].replace("Product\n\n0 1", "Product\n\n0 3")
+    with pytest.raises(ComputeContractError, match="does not match declared"):
+        import_calculation_artifact(workspace, {**qst2, "content": wrong_spin})
+
+    qst3_missing_guess = qst2["content"].replace("qst2", "qst3")
+    with pytest.raises(ComputeContractError, match="title section 3 of 3"):
+        import_calculation_artifact(workspace, {**qst2, "content": qst3_missing_guess})
 
 
 def test_catalog_uses_workspace_and_research_act_ownership(tmp_path: Path) -> None:
@@ -162,6 +284,44 @@ def test_list_artifacts_cli_returns_v4_catalog_json(tmp_path: Path, capsys: pyte
     assert output.err == ""
     assert '"schema_version": "ts-artifact-catalog/2"' in output.out
     assert f'"path": "acts/{act_id}/inputs/source.xyz"' in output.out
+
+
+def test_import_artifact_cli_uses_bounded_request_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    workspace, act_id = _workspace(tmp_path)
+    request = tmp_path / "import.json"
+    request.write_text(
+        json.dumps({
+            "schema_version": "ts-artifact-import-request/1",
+            "act_id": act_id,
+            "format": "xyz_structure",
+            "content": "1\nH\nH 0 0 0\n",
+            "charge": 0,
+            "multiplicity": 2,
+        }),
+        encoding="utf-8",
+    )
+    request.chmod(0o600)
+
+    assert compute_cli_main([
+        "import-artifact",
+        "--root",
+        str(workspace),
+        "--request-file",
+        str(request),
+    ]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["artifact"]["artifact_id"].startswith("art_")
+    assert result["chemical_metadata"]["multiplicity"] == 2
+
+    request.chmod(0o644)
+    assert compute_cli_main([
+        "import-artifact",
+        "--root",
+        str(workspace),
+        "--request-file",
+        str(request),
+    ]) == 2
+    assert "must be private" in capsys.readouterr().err
 
 
 def test_compute_cli_serializes_remote_errors(

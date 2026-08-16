@@ -178,14 +178,11 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.remoteInspect,
     label: "TS Remote Inspect",
-    description: "Run a read-only SSH/Torque connection, queue, node, or environment-health probe for a configured ts_remote profile.",
-    promptSnippet: "Query the configured TS remote cluster without changing jobs or files",
+    description: "Run one read-only SSH/Torque readiness probe.",
+    promptSnippet: "Inspect TS remote readiness",
     promptGuidelines: [
-      "Use mode=status when SSH connectivity is unknown.",
-      "Use mode=doctor for a complete SSH, scheduler, storage, and registered-software check.",
-      "Use mode=queues or mode=nodes when only that scheduler view is relevant.",
-      "A diagnostic timeout means readiness is unknown; no remote action has occurred.",
-      "This tool is read-only and cannot upload files, submit jobs, cancel jobs, mutate workspace state, or authorize compute control.",
+      "Use status for connectivity, doctor for the full chain, or queues/nodes for one scheduler view.",
+      "Timeout means unknown readiness; this tool never changes files, jobs, or scientific state.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({

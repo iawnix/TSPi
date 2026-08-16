@@ -155,6 +155,7 @@ const preview = formatConfirmation({{ type: "tool_call", toolCallId: "write-1", 
 process.stdout.write(JSON.stringify({{
   read: DIRECTLY_ALLOWED_TOOLS.has("read"),
   bash: CONFIRMATION_REQUIRED_TOOLS.has("bash"),
+  artifactImport: CONFIRMATION_REQUIRED_TOOLS.has("ts_artifact_import"),
   unknown: DIRECTLY_ALLOWED_TOOLS.has("new_tool") || CONFIRMATION_REQUIRED_TOOLS.has("new_tool"),
   observerRead: OBSERVER_ALLOWED_TOOLS.has("read"),
   observerWrite: OBSERVER_ALLOWED_TOOLS.has("write"),
@@ -164,6 +165,7 @@ process.stdout.write(JSON.stringify({{
     result = _node_json(script)
     assert result["read"] is True
     assert result["bash"] is True
+    assert result["artifactImport"] is True
     assert result["unknown"] is False
     assert result["observerRead"] is True
     assert result["observerWrite"] is False

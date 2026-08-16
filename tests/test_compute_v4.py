@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from ts_compute.artifacts import list_calculation_artifacts, resolve_artifact_ids
+from ts_compute.artifacts import import_calculation_artifact, list_calculation_artifacts, resolve_artifact_ids
 from ts_compute.contracts import ComputeContractError
 from ts_compute.control import create_calculation_intent, prepare_calculation
 from ts_workspace.decision import draft_decision
@@ -82,6 +82,47 @@ def test_v4_artifact_to_prepared_intent_is_research_act_scoped(tmp_path: Path) -
     prepared = prepare_calculation(root, created["intent_ref"], created["intent_digest"])
     assert prepared["result"]["schema_version"] == "ts-calculation-result/2"
     assert prepared["result"]["act_id"] == act_id
+    assert prepared["result"]["state"] == "prepared"
+
+
+def test_fresh_workspace_imports_first_artifact_before_compute_prepare(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    act_id = _open_act(root)
+    assert list_calculation_artifacts(root)["artifacts"] == []
+
+    imported = import_calculation_artifact(
+        root,
+        {
+            "schema_version": "ts-artifact-import-request/1",
+            "act_id": act_id,
+            "format": "gaussian_input",
+            "content": "#p hf/sto-3g sp\n\nH2\n\n0 1\nH 0 0 0\nH 0 0 0.74\n\n",
+            "charge": 0,
+            "multiplicity": 1,
+        },
+    )
+    artifact_id = imported["artifact"]["artifact_id"]
+    catalog = list_calculation_artifacts(root, act_id=act_id)
+    assert [item["artifact_id"] for item in catalog["artifacts"]] == [artifact_id]
+
+    created = create_calculation_intent(
+        root,
+        {
+            "schema_version": "ts-calculation-request/2",
+            "act_id": act_id,
+            "purpose": "Verify first-artifact bootstrap.",
+            "attempt_kind": "primary",
+            "recalculation_ref": None,
+            "backend": "gaussian",
+            "task_type": "sp",
+            "input_artifacts": [{"input_role": "gjf", "artifact_id": artifact_id}],
+            "settings": {},
+            "execution_target": {"kind": "local"},
+            "dry_run": True,
+        },
+    )
+    prepared = prepare_calculation(root, created["intent_ref"], created["intent_digest"])
     assert prepared["result"]["state"] == "prepared"
 
 

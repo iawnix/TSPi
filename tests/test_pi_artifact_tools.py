@@ -5,6 +5,7 @@ import json
 import os
 import stat
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -17,6 +18,57 @@ from ts_report import build_report_package
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "src" / "artifacts" / "request-contract.cjs"
+TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
+ARTIFACT_EXTENSION = ROOT / "extensions" / "ts-workflow-artifacts" / "index.ts"
+
+
+def test_public_import_tool_materializes_seed_without_journaling_body(tmp_path: Path) -> None:
+    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    refs = start_research_act(workspace)
+    content = "2\nH2\nH 0 0 0\nH 0 0 0.74\n"
+    script = f"""
+import install from {json.dumps(ARTIFACT_EXTENSION.as_uri())};
+import {{ spawnSync }} from "node:child_process";
+process.env.TS_AGENT_PYTHON={json.dumps(sys.executable)};
+const tools={{}};const entries=[];const updates=[];
+const pi={{
+  registerTool:(tool)=>tools[tool.name]=tool,
+  appendEntry:(type,data)=>entries.push({{type,data}}),
+  exec:async(command,args)=>{{
+    const value=spawnSync(command,args,{{encoding:"utf8",env:process.env}});
+    return {{code:value.status,stdout:value.stdout,stderr:value.stderr}};
+  }},
+}};
+install(pi);
+await tools.ts_artifact_import.execute("call-import",{{
+  operation:"import",actId:{json.dumps(refs['act_id'])},format:"xyz_structure",
+  content:{json.dumps(content)},charge:0,multiplicity:1,
+}},undefined,(value)=>updates.push(value),{{cwd:{json.dumps(str(workspace))}}});
+process.stdout.write(JSON.stringify({{entries,updates}}));
+"""
+    completed = subprocess.run(
+        ["node", "--experimental-loader", str(TS_LOADER), "--input-type=module", "--eval", script],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=30,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    value = json.loads(completed.stdout)
+    result = value["entries"][0]["data"]
+    assert value["entries"][0]["type"] == "ts-deterministic-activity"
+    assert result["schema_version"] == "ts-artifact-import-result/1"
+    assert result["artifact"]["artifact_id"].startswith("art_")
+    activity = workspace / result["activity_ref"]
+    request = json.loads((activity / "request.json").read_text(encoding="utf-8"))
+    status = json.loads((activity / "status.json").read_text(encoding="utf-8"))
+    assert request["kind"] == "artifact_import"
+    assert "content" not in json.dumps(request)
+    assert content not in json.dumps(request)
+    assert status["status"] == "completed"
+    assert stat.S_IMODE((activity / "request.json").stat().st_mode) == 0o600
 
 
 def test_render_request_resolves_logical_ids_and_host_owns_output_path(tmp_path: Path) -> None:

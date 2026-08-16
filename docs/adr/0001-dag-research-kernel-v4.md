@@ -164,6 +164,8 @@ not scientific source of truth.
 - `Node`, `required_gates`, fixed Gate enums, phase/stage/lifecycle routing,
   evidence roles/layers, and scientific fact alias guessing leave the runtime.
 - Paths and filenames remain Kernel-owned; public calls use logical IDs.
+- Fresh-workspace seed text enters only through a bounded Act-owned importer;
+  callers cannot create artifact IDs or choose managed paths.
 - Existing v3 workspaces must continue with a v3 release or begin a new v4
   workspace. This branch deliberately contains no migration command.
 - Refactoring is complete only when package docs, Skill references, UI wording,

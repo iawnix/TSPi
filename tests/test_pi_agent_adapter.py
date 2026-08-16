@@ -19,6 +19,7 @@ EXPECTED_TOOLS = {
     "ts_subagent_review",
     "ts_review_disposition",
     "ts_compute",
+    "ts_artifact_import",
     "ts_render",
     "ts_report",
     "ts_notify_user",
@@ -28,7 +29,7 @@ EXPECTED_COMMANDS = {"ts-context", "ts-validate", "ts-remote", "ts-subagent-hist
 
 def test_package_manifest_and_profile_expose_one_skill_five_extensions_one_theme() -> None:
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert package["version"] == "0.10.0"
+    assert package["version"] == "0.10.1"
     assert package["pi"]["skills"] == ["./skills/transition-state-workflow"]
     assert len(package["pi"]["extensions"]) == 5
     assert package["pi"]["themes"] == ["./themes/ts-theme.json"]
@@ -61,6 +62,7 @@ process.stdout.write(JSON.stringify({{
     assert set(result["commands"]) == EXPECTED_COMMANDS
     assert [name for name, mode in result["execution"].items() if mode == "child_agent"] == ["ts_subagent_review"]
     assert result["execution"]["ts_compute"] == "deterministic_execution"
+    assert result["execution"]["ts_artifact_import"] == "deterministic_artifact"
     assert result["execution"]["ts_render"] == "deterministic_artifact"
     assert result["execution"]["ts_report"] == "deterministic_artifact"
 
@@ -81,6 +83,8 @@ process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(tools).map
 """
     schemas = _node_json(script)
     assert "actId" in schemas["ts_compute"]
+    assert "actId" in schemas["ts_artifact_import"]
+    assert "content" in schemas["ts_artifact_import"]
     assert "actId" in schemas["ts_render"]
     assert "inputArtifactIds" in schemas["ts_render"]
     assert "packageName" in schemas["ts_report"]

@@ -38,7 +38,8 @@ There are three forms of execution:
    Claim-centered dependency snapshot and returns non-authoritative advice.
 3. **Deterministic host execution** validates and commits state or performs an
    explicitly selected side effect. Compute, Render, Report, remote inspection,
-   notifications, context compilation, and validation use no child model.
+   artifact import, notifications, context compilation, and validation use no
+   child model.
 
 ## Authority Matrix
 
@@ -51,6 +52,7 @@ There are three forms of execution:
 | Validation Engine | No | Through Kernel apply | No | frozen GateSpecs and ValidationResults |
 | Review Agent | Yes | No | No | task, snapshot, result/failure, Root disposition |
 | `ts_compute` | No | No | Local/SSH/Torque action | intent, control record, manifest, parsed artifacts |
+| `ts_artifact_import` | No | No | Bounded local file creation | Act-owned content-addressed input and activity |
 | `ts_render` / `ts_report` | No | No | Local file creation | no-overwrite artifact or report package |
 | `ts_remote_inspect` | No | No | Read-only SSH/Torque calls | tool result only |
 | `ts_notify_user` | No | No | Fixed-target ClawEmail delivery | digest-addressed receipt |
@@ -309,7 +311,7 @@ full workspace dump.
 | `ts-workflow-control` | context, Decision draft/validate/apply; `/ts-context`, `/ts-validate` | graph projection and sole canonical mutation path |
 | `ts-workflow-review` | `ts_subagent_review`, `ts_review_disposition` | isolated advisory Review and mandatory Root response |
 | `ts-workflow-compute` | `ts_compute`, `ts_remote_inspect`; `/ts-remote` | deterministic calculation lifecycle and diagnostics |
-| `ts-workflow-artifacts` | `ts_render`, `ts_report`, `ts_notify_user` | deterministic local artifacts, reports, and delivery |
+| `ts-workflow-artifacts` | `ts_artifact_import`, `ts_render`, `ts_report`, `ts_notify_user` | deterministic local artifacts, reports, and delivery |
 | `ts-workflow-ui` | `/ts-subagent-history` | startup, editor/footer, TS Activity, and Review history |
 
 `ts-phone-bridge` is optional and loaded only by `TSPi --phone`. It forwards
@@ -365,6 +367,16 @@ Remote transport uses OpenSSH/SCP and Torque directly. Guards distinguish
 pre-effect retryable failure from an ambiguous external effect. Known job IDs
 are retained even if later scheduler inspection fails. Collection follows the
 immutable manifest and does not require queue history.
+
+### Artifact Import
+
+`ts_artifact_import` closes the empty-workspace bootstrap boundary. It accepts
+bounded inline Gaussian, XYZ, or xTB control text for one open ResearchAct,
+checks structure metadata and format, and writes a private content-addressed
+file under the Act. Callers cannot provide a path or filename. Repeating
+identical content is idempotent; conflicting or unsafe targets fail closed.
+Only digest, size, format, chemical metadata, and the resulting logical
+artifact are journaled, never the input body.
 
 ### Render and Report
 
@@ -440,6 +452,7 @@ session. `/ts-subagent-history` reads durable Review summaries on demand.
 | Compute request, intent, and result | `ts_compute/contracts/*.schema.json` |
 | Backend capabilities and parsers | `ts_compute/capabilities.py`, `ts_backends/` |
 | Remote lifecycle | `ts_remote/` |
-| Artifact request/path contract | `src/artifacts/request-contract.cjs` |
+| Artifact import/catalog contract | `ts_compute/artifacts.py`, `ts_compute/cli.py` |
+| Render/report request/path contract | `src/artifacts/request-contract.cjs` |
 | Report projection | `ts_report/` |
 | Package/release boundary | `package.json`, `scripts/check_package.py`, installer tests |

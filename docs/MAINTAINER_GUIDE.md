@@ -39,7 +39,7 @@ scientific role/layer, or next-action router.
 | `extensions/ts-workflow-control/` | context, Decision draft/validate/apply, package-source guard |
 | `extensions/ts-workflow-review/` | advisory Review entrypoint and Root disposition |
 | `extensions/ts-workflow-compute/` | deterministic compute and remote diagnostics |
-| `extensions/ts-workflow-artifacts/` | deterministic Render, Report, and notification tools |
+| `extensions/ts-workflow-artifacts/` | deterministic input import, Render, Report, and notification tools |
 | `extensions/ts-workflow-ui/` | startup, editor/footer, TS Activity, Review history |
 | `extensions/shared/` | public tool inventory and shared UI/path helpers |
 | `src/agent-core/` | Review task/result validation, failure taxonomy, lifecycle, journals |
@@ -79,7 +79,7 @@ Public names describe authority:
 
 - `ts_workspace_*`: deterministic context and canonical Decision pipeline;
 - `ts_subagent_review`: the sole child-model entrypoint;
-- `ts_compute`, `ts_render`, `ts_report`: deterministic execution;
+- `ts_compute`, `ts_artifact_import`, `ts_render`, `ts_report`: deterministic execution;
 - `ts_remote_inspect`: deterministic read-only infrastructure diagnostics;
 - `ts_review_disposition`: deterministic operational response;
 - `ts_notify_user`: deterministic fixed-target external delivery.
@@ -224,6 +224,15 @@ Keep these states separate:
 
 Never infer success merely because a deterministic tool returned structured
 JSON.
+
+### Artifact import
+
+The first input in a fresh workspace must enter through
+`ts_artifact_import`. Keep this boundary narrow: one open Act, bounded inline
+UTF-8, registered formats, declared charge/multiplicity for structures,
+host-generated content-addressed names, mode-0600 files, and no symlink or
+overwrite path. The activity request records only digest/size/metadata. The
+returned `art_*` is then consumed by the ordinary Compute contract.
 
 ### Render and Report
 

@@ -82,6 +82,10 @@ logical `artifactId` values to required `inputRole` values. `ts_compute`
 performs exactly one deterministic operation. The host owns intent IDs, paths,
 filenames, manifests, remote directories, and binding checks.
 
+If no suitable input exists, first start an open Act and call
+`ts_artifact_import`; provide bounded Gaussian/XYZ/control text, never a path.
+Use its returned `artifactId` for Compute.
+
 Do not poll unchanged work. Retry only when a typed result says no external
 effect was attempted; never replay an ambiguous submit or cancel. Capability
 means expressibility, not live software, storage, SSH, scheduler, or queue
@@ -98,7 +102,7 @@ physical paths stay hidden.
 After success, call `ts_review_disposition` before scientific mutation. Apply
 advice only through verified Decisions, and preserve provider failures as such.
 
-## Render, Report, And Notify
+## Artifacts, Render, Report, And Notify
 
 `ts_render` creates one Act-owned no-overwrite visualization; `ts_report`
 creates one atomic package. Both use logical artifacts.

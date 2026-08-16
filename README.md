@@ -137,7 +137,7 @@ remote scheduler.
 
 ## Public Surface
 
-Pi loads one Skill, five extensions, one theme, eleven public tools, and four
+Pi loads one Skill, five extensions, one theme, twelve public tools, and four
 slash commands:
 
 - `ts_workspace_context`: bounded graph, artifact, compute-capability, or
@@ -150,6 +150,8 @@ slash commands:
   Review.
 - `ts_compute`: deterministic prepare, submit, inspect, collect, cancel, and
   parse operations.
+- `ts_artifact_import`: bounded, Act-owned bootstrap import for Gaussian, XYZ,
+  or xTB control inputs; the host allocates path, filename, digest, and ID.
 - `ts_render`: deterministic local render, comparison, animation, or mechanism
   visualization.
 - `ts_report`: deterministic atomic report-package build.
@@ -183,6 +185,10 @@ Gaussian is a first-class candidate-generation option when scans, QST, or
 direct TS optimization are justified. The adapter catalog is not a method
 priority list. A converged program, candidate geometry, or isolated imaginary
 frequency is never an accepted TS by itself.
+
+An empty workspace is not a compute dead end. Start an open ResearchAct, import
+the first bounded seed with `ts_artifact_import`, resolve its logical `art_*`
+record, and then prepare Compute. Imported text never grants path authority.
 
 ## Compute And Remote
 

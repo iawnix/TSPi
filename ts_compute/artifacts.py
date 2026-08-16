@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import posixpath
 import re
@@ -17,13 +18,22 @@ from typing import Any, Iterable
 
 from ts_workspace.io import read_json
 from ts_workspace.refs import ACT_ID
+from ts_workspace.transactions import workspace_lock
 
 from .contracts import ComputeContractError
 
 
 CATALOG_SCHEMA_VERSION = "ts-artifact-catalog/2"
 ARTIFACT_ID_SCHEMA_VERSION = "ts-artifact-id/2"
+IMPORT_REQUEST_SCHEMA_VERSION = "ts-artifact-import-request/1"
+IMPORT_RESULT_SCHEMA_VERSION = "ts-artifact-import-result/1"
+MAX_IMPORT_BYTES = 128 * 1024
 INTENT_ID = re.compile(r"^calc_[A-Za-z0-9_.-]+$")
+IMPORT_FORMATS = {
+    "gaussian_input": ".gjf",
+    "xyz_structure": ".xyz",
+    "xtb_control": ".inp",
+}
 ROLE_SUFFIXES = {
     "gjf": frozenset({".gjf", ".com"}),
     "xyz": frozenset({".xyz"}),
@@ -77,6 +87,48 @@ def resolve_artifact_ids(
     if missing:
         raise ComputeContractError("unknown artifact_id: " + ", ".join(missing))
     return [catalog[artifact_id] for artifact_id in requested]
+
+
+def import_calculation_artifact(root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
+    """Materialize one validated, Act-owned calculation input without a caller path."""
+
+    workspace = _workspace_root(root)
+    normalized = _validate_import_request(request)
+    with workspace_lock(workspace):
+        act = _act_record(workspace, normalized["act_id"])
+        if act.get("status") != "open":
+            raise ComputeContractError(
+                f"artifact import requires an open ResearchAct: {normalized['act_id']}"
+            )
+        content = _normalize_import_content(normalized["content"])
+        payload = content.encode("utf-8")
+        if len(payload) > MAX_IMPORT_BYTES:
+            raise ComputeContractError(
+                f"artifact import exceeds {MAX_IMPORT_BYTES} UTF-8 bytes"
+            )
+        metadata = _validate_import_content(
+            normalized["format"],
+            content,
+            normalized.get("charge"),
+            normalized.get("multiplicity"),
+        )
+        digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+        suffix = IMPORT_FORMATS[normalized["format"]]
+        filename = f"seed_{digest.removeprefix('sha256:')}{suffix}"
+        inputs = _act_inputs_directory(workspace, normalized["act_id"])
+        path = inputs / filename
+        created = _write_import_payload(path, payload)
+        artifact = _artifact_for_path(workspace, path, _act_ids(workspace))
+
+    return {
+        "schema_version": IMPORT_RESULT_SCHEMA_VERSION,
+        "operation": "import",
+        "act_id": normalized["act_id"],
+        "format": normalized["format"],
+        "created": created,
+        "chemical_metadata": metadata,
+        "artifact": artifact,
+    }
 
 
 def resolve_input_artifacts(
@@ -246,6 +298,290 @@ def _artifact_id(path: str, digest: str) -> str:
         separators=(",", ":"),
     ).encode("utf-8")
     return "art_" + hashlib.sha256(material).hexdigest()[:24]
+
+
+def _validate_import_request(request: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(request, dict):
+        raise ComputeContractError("artifact import request must be an object")
+    required = {"schema_version", "act_id", "format", "content"}
+    optional = {"charge", "multiplicity"}
+    missing = sorted(required - set(request))
+    unexpected = sorted(set(request) - required - optional)
+    if missing or unexpected:
+        raise ComputeContractError(
+            f"artifact import fields are invalid: missing={missing}; unexpected={unexpected}"
+        )
+    if request.get("schema_version") != IMPORT_REQUEST_SCHEMA_VERSION:
+        raise ComputeContractError(
+            f"artifact import schema_version must be {IMPORT_REQUEST_SCHEMA_VERSION}"
+        )
+    act_id = request.get("act_id")
+    if not isinstance(act_id, str) or ACT_ID.fullmatch(act_id) is None:
+        raise ComputeContractError("artifact import act_id is invalid")
+    artifact_format = request.get("format")
+    if artifact_format not in IMPORT_FORMATS:
+        raise ComputeContractError(
+            "artifact import format must be one of: " + ", ".join(sorted(IMPORT_FORMATS))
+        )
+    content = request.get("content")
+    if not isinstance(content, str) or not content:
+        raise ComputeContractError("artifact import content must be a non-empty string")
+    charge = request.get("charge")
+    multiplicity = request.get("multiplicity")
+    if artifact_format in {"gaussian_input", "xyz_structure"}:
+        if type(charge) is not int or not -20 <= charge <= 20:
+            raise ComputeContractError("structure artifact charge must be an integer from -20 to 20")
+        if type(multiplicity) is not int or not 1 <= multiplicity <= 21:
+            raise ComputeContractError("structure artifact multiplicity must be an integer from 1 to 21")
+    elif charge is not None or multiplicity is not None:
+        raise ComputeContractError("xTB control artifact does not accept charge or multiplicity")
+    return dict(request)
+
+
+def _normalize_import_content(content: str) -> str:
+    if "\x00" in content:
+        raise ComputeContractError("artifact import content cannot contain NUL bytes")
+    normalized = content.replace("\r\n", "\n").replace("\r", "\n")
+    if not normalized.strip():
+        raise ComputeContractError("artifact import content cannot be blank")
+    return normalized if normalized.endswith("\n") else normalized + "\n"
+
+
+def _validate_import_content(
+    artifact_format: str,
+    content: str,
+    charge: int | None,
+    multiplicity: int | None,
+) -> dict[str, Any]:
+    if artifact_format == "xyz_structure":
+        return _xyz_import_metadata(content, int(charge), int(multiplicity))
+    if artifact_format == "gaussian_input":
+        return _gaussian_import_metadata(content, int(charge), int(multiplicity))
+    if not re.search(r"(?m)^\s*\$[A-Za-z]", content) or not re.search(
+        r"(?mi)^\s*\$end\s*$", content
+    ):
+        raise ComputeContractError("xTB control input requires at least one $ block and a $end line")
+    return {"format": "xtb_control"}
+
+
+def _xyz_import_metadata(content: str, charge: int, multiplicity: int) -> dict[str, Any]:
+    lines = content.splitlines()
+    if len(lines) < 3:
+        raise ComputeContractError("XYZ seed is too short")
+    try:
+        atom_count = int(lines[0].strip())
+    except ValueError as exc:
+        raise ComputeContractError("XYZ seed first line must be an atom count") from exc
+    if not 1 <= atom_count <= 512:
+        raise ComputeContractError("XYZ seed atom count must be from 1 to 512")
+    if len(lines) < atom_count + 2 or any(line.strip() for line in lines[atom_count + 2 :]):
+        raise ComputeContractError("XYZ seed must contain exactly one complete frame")
+    atom_order: list[str] = []
+    for index, line in enumerate(lines[2 : atom_count + 2], start=3):
+        parts = line.split()
+        if len(parts) < 4 or re.fullmatch(r"(?:[A-Za-z]{1,3}|[1-9][0-9]{0,2})", parts[0]) is None:
+            raise ComputeContractError(f"XYZ seed has an invalid atom line {index}")
+        try:
+            coordinates = [float(value) for value in parts[1:4]]
+        except ValueError as exc:
+            raise ComputeContractError(f"XYZ seed has a non-numeric coordinate on line {index}") from exc
+        if not all(math.isfinite(value) for value in coordinates):
+            raise ComputeContractError(f"XYZ seed has a non-finite coordinate on line {index}")
+        atom_order.append(parts[0])
+    return {
+        "format": "xyz",
+        "charge": charge,
+        "multiplicity": multiplicity,
+        "atom_count": atom_count,
+        "atom_order": atom_order,
+    }
+
+
+def _gaussian_import_metadata(content: str, charge: int, multiplicity: int) -> dict[str, Any]:
+    lines = content.splitlines()
+    route_index = next((index for index, line in enumerate(lines) if line.lstrip().startswith("#")), None)
+    if route_index is None:
+        raise ComputeContractError("Gaussian seed requires a route section")
+    route_end = next(
+        (index for index in range(route_index + 1, len(lines)) if not lines[index].strip()),
+        len(lines),
+    )
+    route = " ".join(line.strip() for line in lines[route_index:route_end]).strip()
+    if route in {"#", "#p", "#P"}:
+        raise ComputeContractError("Gaussian seed route section cannot be empty")
+    if any(re.fullmatch(r"\s*--Link1--\s*", line, flags=re.IGNORECASE) for line in lines):
+        raise ComputeContractError("Gaussian seed must contain exactly one job; --Link1-- is not allowed")
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("%") and any(marker in stripped for marker in ("/", "\\", "..")):
+            raise ComputeContractError("Gaussian Link 0 directives cannot select filesystem paths")
+
+    qst_matches = {int(match.group(1)) for match in re.finditer(r"(?i)\bqst([23])\b", route)}
+    if len(qst_matches) > 1:
+        raise ComputeContractError("Gaussian seed route cannot request both QST2 and QST3")
+    structure_count = next(iter(qst_matches), 1)
+    structures: list[list[str]] = []
+    cursor = route_end
+    for structure_index in range(1, structure_count + 1):
+        cursor = _skip_blank_lines(lines, cursor)
+        title_start = cursor
+        while cursor < len(lines) and lines[cursor].strip():
+            cursor += 1
+        if cursor == title_start:
+            raise ComputeContractError(
+                f"Gaussian seed requires title section {structure_index} of {structure_count}"
+            )
+        cursor = _skip_blank_lines(lines, cursor)
+        atom_order, cursor = _gaussian_cartesian_structure(
+            lines,
+            cursor,
+            charge,
+            multiplicity,
+            structure_index,
+            structure_count,
+        )
+        structures.append(atom_order)
+
+    atom_order = structures[0]
+    for structure_index, candidate in enumerate(structures[1:], start=2):
+        if len(candidate) != len(atom_order):
+            raise ComputeContractError(
+                f"Gaussian QST structure {structure_index} atom count does not match structure 1"
+            )
+        if candidate != atom_order:
+            raise ComputeContractError(
+                f"Gaussian QST structure {structure_index} atom order does not match structure 1"
+            )
+    return {
+        "format": "gaussian_input",
+        "charge": charge,
+        "multiplicity": multiplicity,
+        "structure_count": structure_count,
+        "atom_count": len(atom_order),
+        "atom_order": atom_order,
+        "route": route,
+    }
+
+
+def _skip_blank_lines(lines: list[str], cursor: int) -> int:
+    while cursor < len(lines) and not lines[cursor].strip():
+        cursor += 1
+    return cursor
+
+
+def _gaussian_cartesian_structure(
+    lines: list[str],
+    cursor: int,
+    charge: int,
+    multiplicity: int,
+    structure_index: int,
+    structure_count: int,
+) -> tuple[list[str], int]:
+    if cursor >= len(lines):
+        raise ComputeContractError(
+            f"Gaussian seed requires charge and multiplicity for structure "
+            f"{structure_index} of {structure_count}"
+        )
+    charge_line = re.fullmatch(
+        r"\s*([+-]?\d+)\s+(\d+)(?:\s+[+-]?\d+\s+\d+)*\s*",
+        lines[cursor],
+    )
+    if charge_line is None:
+        raise ComputeContractError(
+            f"Gaussian seed has an invalid charge/multiplicity line for structure "
+            f"{structure_index} of {structure_count}"
+        )
+    embedded = (int(charge_line.group(1)), int(charge_line.group(2)))
+    if embedded != (charge, multiplicity):
+        raise ComputeContractError(
+            f"Gaussian seed structure {structure_index} charge/multiplicity does not match "
+            "declared chemical metadata"
+        )
+
+    cursor += 1
+    atom_order: list[str] = []
+    while cursor < len(lines) and lines[cursor].strip():
+        parts = lines[cursor].split()
+        symbol = re.match(r"^(?:[A-Za-z]{1,3}|[1-9][0-9]{0,2})", parts[0]) if parts else None
+        if len(parts) < 4 or symbol is None:
+            raise ComputeContractError(f"Gaussian seed has an invalid Cartesian atom line {cursor + 1}")
+        try:
+            coordinates = [float(value) for value in parts[-3:]]
+        except ValueError as exc:
+            raise ComputeContractError(
+                f"Gaussian seed requires Cartesian coordinates on line {cursor + 1}"
+            ) from exc
+        if not all(math.isfinite(value) for value in coordinates):
+            raise ComputeContractError(f"Gaussian seed has a non-finite coordinate on line {cursor + 1}")
+        atom_order.append(symbol.group(0))
+        cursor += 1
+    if not atom_order:
+        raise ComputeContractError(
+            f"Gaussian seed requires at least one Cartesian atom in structure "
+            f"{structure_index} of {structure_count}"
+        )
+    if len(atom_order) > 512:
+        raise ComputeContractError("Gaussian seed atom count cannot exceed 512")
+    return atom_order, cursor
+
+
+def _act_inputs_directory(workspace: Path, act_id: str) -> Path:
+    acts_root = workspace / "acts"
+    if not acts_root.is_dir() or acts_root.is_symlink():
+        raise ComputeContractError("workspace acts root must be a physical directory")
+    act_root = acts_root / act_id
+    if act_root.exists():
+        if not act_root.is_dir() or act_root.is_symlink():
+            raise ComputeContractError(f"ResearchAct artifact root is unsafe: {act_id}")
+    else:
+        act_root.mkdir(mode=0o700)
+    inputs = act_root / "inputs"
+    if inputs.exists():
+        if not inputs.is_dir() or inputs.is_symlink():
+            raise ComputeContractError(f"ResearchAct input root is unsafe: {act_id}")
+    else:
+        inputs.mkdir(mode=0o700)
+    expected = workspace / "acts" / act_id / "inputs"
+    if inputs.resolve(strict=True) != expected.resolve(strict=True):
+        raise ComputeContractError(f"ResearchAct input root escapes the workspace: {act_id}")
+    return inputs
+
+
+def _write_import_payload(path: Path, payload: bytes) -> bool:
+    if path.exists() or path.is_symlink():
+        if path.is_symlink() or not path.is_file():
+            raise ComputeContractError("artifact import target is not a regular file")
+        if path.read_bytes() != payload:
+            raise ComputeContractError("artifact import content-address collision")
+        if path.stat().st_mode & 0o077:
+            raise ComputeContractError("existing imported artifact is not private")
+        return False
+    descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    try:
+        with os.fdopen(descriptor, "wb") as handle:
+            descriptor = -1
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except Exception:
+        path.unlink(missing_ok=True)
+        raise
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    return True
+
+
+def _act_record(workspace: Path, act_id: str) -> dict[str, Any]:
+    registry = read_json(workspace / "research_acts.json")
+    matches = [
+        item
+        for item in registry.get("acts", [])
+        if isinstance(item, dict) and item.get("act_id") == act_id
+    ]
+    if len(matches) != 1:
+        raise ComputeContractError(f"unknown ResearchAct: {act_id}")
+    return matches[0]
 
 
 def _ownership(ref: str) -> tuple[str | None, str | None]:
