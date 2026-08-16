@@ -126,13 +126,14 @@ export async function runReportJson(
   pi: ExtensionAPI,
   root: string,
   packagePath: string,
+  excludeActivityRef: string,
   signal?: AbortSignal,
 ) {
   return runPackageJson(
     pi,
     root,
     REPORT_CLI,
-    ["--root", root, "--package-dir", packagePath, "--json"],
+    ["--root", root, "--package-dir", packagePath, "--exclude-activity-ref", excludeActivityRef, "--json"],
     signal,
     300_000,
   );

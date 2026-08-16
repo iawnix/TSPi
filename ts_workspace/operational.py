@@ -10,15 +10,25 @@ from __future__ import annotations
 
 import hashlib
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
+from .activities import activity_completion_blockers, build_activity_index
 from .io import read_json, sha256_json
 
 
-def operational_snapshot(root: str | Path) -> dict[str, Any]:
+def operational_snapshot(
+    root: str | Path,
+    *,
+    exclude_activity_refs: Iterable[str] = (),
+) -> dict[str, Any]:
     root_path = Path(root).expanduser().resolve()
-    files = _operational_files(root_path)
-    activities = deterministic_activity_index(root_path)
+    activity_index = build_activity_index(
+        root_path,
+        exclude_activity_refs=exclude_activity_refs,
+    )
+    excluded = set(activity_index["excluded_activity_refs"])
+    files = _operational_files(root_path, excluded_activity_refs=excluded)
+    activities = activity_index["activities"]
     review_runs = review_run_index(root_path)
     pending_review_dispositions = review_disposition_obligations(review_runs)
     review_disposition_count = sum(1 for row in review_runs if row.get("root_disposition"))
@@ -39,10 +49,15 @@ def operational_snapshot(root: str | Path) -> dict[str, Any]:
                 "files": [
                     {"path": path.relative_to(root_path).as_posix(), "sha256": _sha256_file(path)}
                     for path in files
-                ]
+                ],
+                "activity_integrity_findings": activity_index["integrity_findings"],
+                "excluded_activity_refs": activity_index["excluded_activity_refs"],
             }
         ),
         "deterministic_activities": activities,
+        "activity_summaries": activity_index["activity_summaries"],
+        "activity_integrity_findings": activity_index["integrity_findings"],
+        "excluded_activity_refs": activity_index["excluded_activity_refs"],
         "review_runs": review_runs,
         "pending_review_dispositions": pending_review_dispositions,
         "review_disposition_count": review_disposition_count,
@@ -57,6 +72,8 @@ def operational_snapshot(root: str | Path) -> dict[str, Any]:
             "activity_count": len(activities),
             "activity_failed_count": sum(1 for row in activities if row.get("status") == "failed"),
             "activity_running_count": sum(1 for row in activities if row.get("status") == "running"),
+            "activity_pending_count": sum(1 for row in activities if row.get("status") == "pending"),
+            "activity_integrity_error_count": len(activity_index["integrity_findings"]),
             "review_run_count": len(review_runs),
             "review_run_failed_count": sum(1 for row in review_runs if row.get("status") == "failed"),
             "review_run_pending_count": sum(1 for row in review_runs if row.get("status") == "pending"),
@@ -71,40 +88,39 @@ def operational_snapshot(root: str | Path) -> dict[str, Any]:
     }
 
 
-def deterministic_activity_index(root: str | Path) -> list[dict[str, Any]]:
-    """Index host-owned Compute, Render, and Report activity journals."""
+def act_completion_blockers(
+    snapshot: dict[str, Any],
+    *,
+    act_id: str,
+    outcome: str,
+) -> list[dict[str, str]]:
+    """Combine activity and remote-control blockers for one Act completion."""
 
-    root_path = Path(root).expanduser().resolve()
-    activity_dirs = [
-        *root_path.glob("acts/*/activities/*"),
-        *root_path.glob("operations/activities/*"),
-    ]
-    rows: list[dict[str, Any]] = []
-    for activity_dir in sorted(activity_dirs, key=lambda path: path.relative_to(root_path).as_posix()):
-        if not activity_dir.is_dir() or activity_dir.is_symlink():
-            continue
-        request = _read_or_empty(activity_dir / "request.json")
-        status = _read_or_empty(activity_dir / "status.json")
-        result = _read_or_empty(activity_dir / "result.json")
-        error = status.get("error") if isinstance(status.get("error"), dict) else {}
-        activity_ref = activity_dir.relative_to(root_path).as_posix()
-        rows.append(
-            {
-                "activity_id": status.get("activity_id") or request.get("activity_id") or activity_dir.name,
-                "kind": status.get("kind") or request.get("kind"),
-                "operation": status.get("operation") or request.get("operation"),
-                "status": status.get("status") or "pending",
-                "act_refs": _string_list(status.get("act_refs") or request.get("act_refs")),
-                "activity_ref": activity_ref,
-                "started_at": status.get("started_at") or request.get("started_at"),
-                "completed_at": status.get("completed_at"),
-                "summary": result.get("summary"),
-                "outcome": result.get("outcome"),
-                "error_name": error.get("name"),
-                "error_message": error.get("message"),
-            }
-        )
-    return rows
+    blockers = activity_completion_blockers(
+        {
+            "activities": snapshot.get("deterministic_activities", []),
+            "integrity_findings": snapshot.get("activity_integrity_findings", []),
+        },
+        act_id=act_id,
+        outcome=outcome,
+    )
+    for row in snapshot.get("pending_controls", []):
+        if isinstance(row, dict) and row.get("act_id") == act_id:
+            ref = str(row.get("guard_ref") or row.get("intent_id") or act_id)
+            blockers.append({
+                "code": "pending_compute_control",
+                "ref": ref,
+                "message": f"pending compute control must finish before Act completion: {ref}",
+            })
+    for row in snapshot.get("unresolved_controls", []):
+        if isinstance(row, dict) and row.get("act_id") == act_id:
+            ref = str(row.get("result_ref") or row.get("intent_id") or act_id)
+            blockers.append({
+                "code": "unresolved_compute_control",
+                "ref": ref,
+                "message": f"unresolved or ambiguous compute control must be reconciled before Act completion: {ref}",
+            })
+    return blockers
 
 
 def review_run_index(root: str | Path) -> list[dict[str, Any]]:
@@ -203,7 +219,7 @@ def _valid_review_disposition(disposition: dict[str, Any], run: dict[str, Any]) 
     )
 
 
-def _operational_files(root: Path) -> list[Path]:
+def _operational_files(root: Path, *, excluded_activity_refs: set[str]) -> list[Path]:
     patterns = (
         "acts/*/attempts/*/status.json",
         "acts/*/attempts/*/*_guard.json",
@@ -216,12 +232,15 @@ def _operational_files(root: Path) -> list[Path]:
         "acts/*/agent-runs/*/*.json",
         "operations/agent-runs/*/*.json",
     )
-    files = {
-        path
-        for pattern in patterns
-        for path in root.glob(pattern)
-        if path.is_file() and not path.is_symlink()
-    }
+    files = set()
+    for pattern in patterns:
+        for path in root.glob(pattern):
+            if not path.is_file() or path.is_symlink():
+                continue
+            ref = path.relative_to(root).as_posix()
+            if any(ref.startswith(f"{activity_ref}/") for activity_ref in excluded_activity_refs):
+                continue
+            files.add(path)
     return sorted(files, key=lambda path: path.relative_to(root).as_posix())
 
 

@@ -177,12 +177,19 @@ export default function (pi: ExtensionAPI) {
         activity: { activity_id: activityId, state: "running" },
       }));
       try {
-        const raw = await runReportJson(pi, root, request.packagePath, signal);
+        const raw = await runReportJson(pi, root, request.packagePath, journal.activityRef, signal);
         const refs = expectedReportRefs(request.packageRef);
         assertReportBuilderPaths(root, refs, raw);
         const manifestDigest = requireDigest(raw?.manifest_digest, "report manifest digest");
         const revision = requireDigest(raw?.workspace_revision, "report workspace revision");
-        const verified = validateCreatedReportPackage(root, request.packageRef, manifestDigest, revision);
+        const operationalRevision = requireDigest(raw?.operational_revision, "report operational revision");
+        const verified = validateCreatedReportPackage(
+          root,
+          request.packageRef,
+          manifestDigest,
+          revision,
+          operationalRevision,
+        );
         const result = {
           schema_version: "ts-report-result/2",
           activity_id: activityId,
@@ -194,6 +201,7 @@ export default function (pi: ExtensionAPI) {
           manifest_ref: refs.manifest_ref,
           manifest_digest: verified.manifest_digest,
           workspace_revision: revision,
+          operational_revision: operationalRevision,
           file_count: verified.file_count,
         };
         completeActivity(journal, result);

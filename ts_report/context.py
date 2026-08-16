@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from ts_workspace.acceptance import project_acceptances
 from ts_workspace.io import read_json
@@ -24,7 +24,11 @@ from ts_workspace.state import (
 from ts_workspace.validator import validate_workspace
 
 
-def collect_report_context(root: str | Path) -> dict[str, Any]:
+def collect_report_context(
+    root: str | Path,
+    *,
+    exclude_activity_refs: Iterable[str] = (),
+) -> dict[str, Any]:
     root_path = Path(root).expanduser().resolve()
     validation = validate_workspace(root_path)
     if not validation["valid"]:
@@ -45,12 +49,13 @@ def collect_report_context(root: str | Path) -> dict[str, Any]:
         include_snapshots=True,
     )
     current_acceptances = [item for item in acceptances if item["current"]]
-    operations = operational_snapshot(root_path)
+    operations = operational_snapshot(root_path, exclude_activity_refs=exclude_activity_refs)
     return {
-        "schema_version": "ts-report-context/4",
+        "schema_version": "ts-report-context/5",
         "workspace_root": str(root_path),
         "workspace_id": documents[WORKSPACE_FILE]["workspace_id"],
         "workspace_revision": revision,
+        "operational_revision": operations["operational_revision"],
         "report_id": report_id_for_revision(revision),
         "focus": {
             "claim_refs": list(state["focus_claim_refs"]),
@@ -70,6 +75,10 @@ def collect_report_context(root: str | Path) -> dict[str, Any]:
         "findings": list(documents[FINDINGS_FILE]["findings"]),
         "acceptances": acceptances,
         "current_acceptances": current_acceptances,
+        "deterministic_activities": operations["deterministic_activities"],
+        "activity_summaries": operations["activity_summaries"],
+        "activity_integrity_findings": operations["activity_integrity_findings"],
+        "excluded_activity_refs": operations["excluded_activity_refs"],
         "operational_summary": operations["operational_summary"],
         "unresolved_controls": operations["unresolved_controls"],
         "pending_review_dispositions": operations["pending_review_dispositions"],

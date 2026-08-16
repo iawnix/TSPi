@@ -1,6 +1,6 @@
 {
   "name": "@iawnix/ts-agent",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "private": true,
   "type": "module",
   "description": "Pi package for DAG-based transition-state research with deterministic validation and advisory Review.",

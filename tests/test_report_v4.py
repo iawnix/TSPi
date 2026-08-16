@@ -70,14 +70,15 @@ def test_report_projects_v4_dag_and_semantic_validation(tmp_path: Path) -> None:
     context = collect_report_context(root)
     text = build_final_report(root)
 
-    assert context["schema_version"] == "ts-report-context/4"
+    assert context["schema_version"] == "ts-report-context/5"
     assert context["focus"]["claim_refs"] == [refs["claim"]]
     assert "## Claim Graph" in text
     assert "## ResearchAct DAG" in text
     assert "### ResearchAct Review" in text
     assert "A concerted saddle can be located." in text
     assert "Every candidate relaxes to a stepwise intermediate." in text
-    assert "Linked records: 0 operations, 1 Observations, 1 Findings" in text
+    assert "Deterministic activities: 0 total" in text
+    assert "Scientific records: 1 Observations, 1 Findings" in text
     assert "## Semantic Observations" in text
     assert "## Frozen Validation" in text
     assert "## Findings" in text
@@ -95,11 +96,13 @@ def test_report_package_is_revision_and_manifest_bound(tmp_path: Path) -> None:
     result = build_report_package(root, target)
     manifest = read_json(Path(result["manifest"]))
 
-    assert manifest["schema_version"] == "ts-report-package/2"
+    assert manifest["schema_version"] == "ts-report-package/3"
     assert manifest["workspace_revision"] == result["workspace_revision"]
+    assert manifest["operational_revision"] == result["operational_revision"]
     refs = {item["ref"] for item in manifest["files"]}
     assert {
         "acceptances.json",
+        "activities.json",
         "claim_graph.json",
         "email_summary.md",
         "final_report.md",

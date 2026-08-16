@@ -9,6 +9,7 @@ from ts_validation import builtin_predicate_registry, evaluate_gate_spec, load_a
 from ts_validation.digests import sha256_json
 
 from .acceptance import AcceptanceError, acceptance_currentness, acceptance_path, acceptance_policy_violations
+from .activities import build_activity_index
 from .identity import WorkspaceIdentityError, read_workspace_identity
 from .io import read_json
 from .refs import WorkspaceRefError, validate_artifact_bindings
@@ -100,6 +101,8 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
     _validate_findings(finding_map, claims, acts, observations, findings)
     _validate_specs_and_results(specs, results, claims, acts, observations, findings)
     _validate_acceptance(root_path, documents, claims, specs, results, finding_map, findings)
+    activity_index = build_activity_index(root_path, known_act_ids=acts)
+    findings.extend(activity_index["integrity_findings"])
     return _result(findings)
 
 

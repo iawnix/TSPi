@@ -19,8 +19,8 @@ The report must expose:
 7. Findings, including resolved and open blocking items;
 8. immutable acceptance history, profile versions, and explicit current/stale
    status;
-9. unresolved compute controls, pending Review dispositions, and notification
-   state as operational follow-up;
+9. deterministic activities, activity integrity, unresolved compute controls,
+   pending Review dispositions, and notification state as operational follow-up;
 10. limitations, missing corrections, and open scientific questions.
 
 ## Acceptance Language
@@ -50,5 +50,7 @@ notification receipts remain operational provenance.
 ## Package Integrity
 
 The report builder creates a new no-overwrite directory atomically. Its
-manifest binds `workspace_revision`, every file path, size, and SHA-256. A
-package is usable only when its manifest matches the actual regular files.
+manifest binds `workspace_revision`, `operational_revision`, every file path,
+size, and SHA-256. `activities.json` records the deterministic activity
+projection. A package is usable only when its manifest matches the actual
+regular files.

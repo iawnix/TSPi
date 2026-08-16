@@ -50,7 +50,6 @@ INPUT_OPERATIONS = frozenset({
     "complete_act",
     "resolve_finding",
     "set_focus",
-    "link_operation",
 })
 
 
@@ -235,7 +234,7 @@ def _normalize_operation(
         return {
             "op": "append_research_act",
             "record": {
-                "schema_version": "ts-research-act/2",
+                "schema_version": "ts-research-act/3",
                 "act_id": act_id,
                 "objective": _string(raw["objective"], "objective", 8000),
                 "status": "open",
@@ -243,7 +242,6 @@ def _normalize_operation(
                 "claim_refs": _refs(raw.get("claimRefs", []), allocations),
                 "hypothesis": _hypothesis(raw.get("hypothesis")),
                 "tags": _unique_strings(raw.get("tags", []), "tags", 64, 128),
-                "operation_refs": [],
                 "observation_refs": [],
                 "finding_refs": [],
                 "validation_spec_refs": [],
@@ -387,13 +385,6 @@ def _normalize_operation(
     if name == "set_focus":
         _keys(raw, required={"op", "claimRefs", "actRefs"})
         return {"op": "set_focus", "claim_refs": _refs(raw["claimRefs"], allocations), "act_refs": _refs(raw["actRefs"], allocations)}
-    if name == "link_operation":
-        _keys(raw, required={"op", "actRef", "operationRef"})
-        return {
-            "op": "link_operation",
-            "act_ref": _ref(raw["actRef"], allocations),
-            "operation_ref": _string(raw["operationRef"], "operationRef", 256),
-        }
     if name == "accept_claim":
         _keys(raw, required={"op", "local_ref", "claimRef", "profile", "summary"})
         claim_ref = _ref(raw["claimRef"], allocations)
@@ -534,10 +525,6 @@ class _DraftState:
                     "decision_id": self.decision_id,
                     "resolved_at": operation["resolved_at"],
                 }
-        elif name == "link_operation":
-            act = self.acts.get(operation["act_ref"])
-            if act:
-                _append_unique(act["operation_refs"], operation["operation_ref"])
 
 
 def _created_identifier(operation: dict[str, Any]) -> str | None:

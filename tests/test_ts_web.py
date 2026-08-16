@@ -174,16 +174,19 @@ def _make_workspace(root: Path) -> dict[str, str]:
     _write(
         root / "acts" / act_id / "activities" / "activity_probe" / "request.json",
         {
+            "schema_version": "ts-deterministic-activity-request/1",
             "activity_id": "activity_probe",
             "kind": "compute",
             "operation": "prepare",
             "act_refs": [act_id],
+            "request": {},
             "started_at": "2026-08-16T00:00:00+00:00",
         },
     )
     _write(
         root / "acts" / act_id / "activities" / "activity_probe" / "status.json",
         {
+            "schema_version": "ts-deterministic-activity-status/1",
             "activity_id": "activity_probe",
             "kind": "compute",
             "operation": "prepare",
@@ -406,7 +409,7 @@ def test_web_server_is_read_only_v4_and_has_no_legacy_routes(tmp_path: Path) -> 
         base = f"/api/workspace/{row['workspace_id']}"
         assert _get_json(host, port, f"{base}/graph")["schema_version"] == "ts-explorer-graph/4"
         assert _get_json(host, port, f"{base}/claims")["claims"][0]["schema_version"] == "ts-claim/1"
-        assert _get_json(host, port, f"{base}/acts")["research_acts"][0]["schema_version"] == "ts-research-act/2"
+        assert _get_json(host, port, f"{base}/acts")["research_acts"][0]["schema_version"] == "ts-research-act/3"
         assert _get_json(host, port, f"{base}/observations")["observations"][0]["schema_version"] == "ts-observation/1"
         assert _get_json(host, port, f"{base}/validation")["validation_results"][0]["verdict"] == "pass"
         assert _get_json(host, port, f"{base}/findings")["findings"][0]["status"] == "open"

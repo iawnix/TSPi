@@ -359,7 +359,7 @@ function workspaceContainsAct(root, actRef) {
   const registryPath = resolve(root, "research_acts.json");
   if (!existsSync(registryPath) || lstatSync(registryPath).isSymbolicLink()) return false;
   const registry = JSON.parse(readFileSync(registryPath, "utf8"));
-  return registry.schema_version === "ts-research-act-registry/2"
+  return registry.schema_version === "ts-research-act-registry/3"
     && Array.isArray(registry.acts)
     && registry.acts.some((item) => isPlainObject(item) && item.act_id === actRef);
 }

@@ -76,6 +76,8 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         "operational_revision": operations["operational_revision"],
         "operational_summary": operations["operational_summary"],
         "deterministic_activities": activities,
+        "activity_summaries": operations["activity_summaries"],
+        "activity_integrity_findings": operations["activity_integrity_findings"],
         "review_runs": reviews,
         "pending_review_dispositions": operations["pending_review_dispositions"],
         "pending_controls": operations["pending_controls"],
@@ -215,6 +217,8 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
         "semantic_summary": _semantic_summary(view),
         "operational_summary": _object(view.get("operational_summary")),
         "deterministic_activities": _objects(view.get("deterministic_activities")),
+        "activity_summaries": _objects(view.get("activity_summaries")),
+        "activity_integrity_findings": _list(view.get("activity_integrity_findings")),
         "review_runs": _objects(view.get("review_runs")),
         "unresolved_controls": _objects(view.get("unresolved_controls")),
     }

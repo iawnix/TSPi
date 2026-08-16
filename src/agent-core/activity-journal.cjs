@@ -116,6 +116,9 @@ function validateActRefs(root, actRefs) {
     throw new Error("v4 ResearchAct registry does not exist");
   }
   const registry = JSON.parse(readFileSync(registryPath, "utf8"));
+  if (!isPlainObject(registry) || registry.schema_version !== "ts-research-act-registry/3") {
+    throw new Error("deterministic activities require ts-research-act-registry/3");
+  }
   const known = new Set(
     Array.isArray(registry.acts)
       ? registry.acts.filter(isPlainObject).map((act) => act.act_id).filter((value) => typeof value === "string")

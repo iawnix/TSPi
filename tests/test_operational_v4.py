@@ -13,20 +13,24 @@ def _write(path: Path, value: dict) -> None:
 
 def test_v4_operational_snapshot_separates_activities_reviews_and_controls(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
+    _write(root / "research_acts.json", {"schema_version": "ts-research-act-registry/3", "acts": [{"act_id": "act_1"}]})
     activity = root / "acts" / "act_1" / "activities" / "activity_compute"
     _write(
         activity / "request.json",
         {
+            "schema_version": "ts-deterministic-activity-request/1",
             "activity_id": "activity_compute",
             "kind": "compute",
             "operation": "submit",
             "act_refs": ["act_1"],
+            "request": {},
             "started_at": "2026-08-16T00:00:00+00:00",
         },
     )
     _write(
         activity / "status.json",
         {
+            "schema_version": "ts-deterministic-activity-status/1",
             "activity_id": "activity_compute",
             "kind": "compute",
             "operation": "submit",
@@ -89,6 +93,8 @@ def test_v4_operational_snapshot_separates_activities_reviews_and_controls(tmp_p
         "activity_count": 1,
         "activity_failed_count": 0,
         "activity_running_count": 0,
+        "activity_pending_count": 0,
+        "activity_integrity_error_count": 0,
         "review_run_count": 1,
         "review_run_failed_count": 0,
         "review_run_pending_count": 0,

@@ -65,6 +65,11 @@ are execution mirrors and never become canonical local refs.
 - ClaimRelation and ResearchAct dependency graphs are acyclic.
 - Every ref resolves to exactly one record of the expected kind.
 - An open ResearchAct has no terminal result; a terminal Act has one.
+- Activity request/status bindings, IDs, physical ownership, `act_refs`, and
+  terminal status/result combinations are consistent.
+- A ResearchAct cannot complete with running/pending activities or
+  pending/unresolved compute controls. Failed activities require a non-success
+  Act outcome.
 - Every Observation and Finding is indexed by its producing/referenced Acts.
 - Observation datatype matches its value and artifact digests match files.
 - Every GateSpec is content- and registry-digest bound.
@@ -83,5 +88,6 @@ Review runs/dispositions, report packages, notifications, Pi conversations,
 locks, and UI state are operational or derived. They may be cited as provenance
 only after verified primary artifacts are recorded as semantic Observations.
 
-`TS Activity` is transient. Review history and compute controls are durable but
-do not mutate Claims by themselves.
+`TS Activity` is transient presentation state. The Activity Journal, Review
+history, and compute controls are durable but do not mutate Claims by
+themselves.

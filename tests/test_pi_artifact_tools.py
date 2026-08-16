@@ -76,6 +76,7 @@ def test_report_package_is_verified_against_manifest_and_workspace_revision(tmp_
         "reports/study-report",
         digest,
         built["workspace_revision"],
+        built["operational_revision"],
     )
     assert result["package_ref"] == "reports/study-report"
     assert result["manifest_digest"] == digest
@@ -92,6 +93,7 @@ def test_report_package_is_verified_against_manifest_and_workspace_revision(tmp_
         "reports/study-report",
         digest,
         built["workspace_revision"],
+        built["operational_revision"],
         check=False,
     )
     assert isinstance(rejected, subprocess.CompletedProcess)

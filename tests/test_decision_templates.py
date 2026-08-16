@@ -18,7 +18,6 @@ EXPECTED_FILES = {
     "create_claim.json",
     "evaluate_validation.json",
     "freeze_validation_spec.json",
-    "link_operation.json",
     "record_finding.json",
     "record_observation.json",
     "relate_claims.json",
@@ -57,11 +56,6 @@ def test_representative_templates_compose_through_v4_draft_contract(tmp_path: Pa
             CLAIM_REF="$claim",
             ACT_REF="$act",
         ),
-        _render(
-            "link_operation.json",
-            ACT_REF="$act",
-            OPERATION_REF="acts/pending/attempts/calc_probe/intent.json",
-        ),
         _render("complete_act.json", ACT_REF="$act", RESULT_SUMMARY="The bounded search completed."),
     ]
     drafted = draft_decision(
@@ -75,7 +69,6 @@ def test_representative_templates_compose_through_v4_draft_contract(tmp_path: Pa
         "append_claim",
         "append_research_act",
         "append_finding",
-        "link_operation",
         "complete_research_act",
     ]
 

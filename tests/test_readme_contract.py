@@ -252,7 +252,6 @@ def test_decision_assets_are_generic_v4_operation_examples() -> None:
         "create_claim.json",
         "evaluate_validation.json",
         "freeze_validation_spec.json",
-        "link_operation.json",
         "record_finding.json",
         "record_observation.json",
         "relate_claims.json",

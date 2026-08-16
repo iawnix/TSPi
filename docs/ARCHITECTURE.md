@@ -77,8 +77,8 @@ A ResearchAct is one bounded and auditable act. It records:
 - an objective and optional hypothesis package;
 - zero or more dependency Acts;
 - related Claims and descriptive tags;
-- linked deterministic operations, Observations, Findings, GateSpecs, and
-  ValidationResults;
+- Observations, Findings, GateSpecs, and ValidationResults linked by canonical
+  scientific refs;
 - one terminal result or an open status;
 - the Kernel-owned artifact root `acts/<act_id>`.
 
@@ -166,7 +166,8 @@ Operational or derived state includes:
 acts/<act_id>/attempts/...
 acts/<act_id>/outputs/...
 operations/agent-runs/...
-operations/activity/...
+acts/<act_id>/activities/...
+operations/activities/...
 reports/...
 .pi/ session and lock state
 remote guards, receipts, and mirrored files
@@ -204,7 +205,7 @@ start_act               complete_act
 record_observation      record_finding      resolve_finding
 freeze_validation_spec evaluate_validation
 update_claim            accept_claim
-set_focus               link_operation
+set_focus
 ```
 
 These are state primitives, not a prescribed sequence. A single Decision may
@@ -372,9 +373,18 @@ terminal handling writes actions, optional result, and final run state. A
 process crash can leave a task-only journal indexed as pending/unknown; there is
 no claim of per-event write-ahead durability or automatic result replay.
 
-Deterministic operations use the activity journal and their own authoritative
-records. Compute guards and receipts remain the source for scheduler recovery;
-a UI or Review-run state never proves a remote effect.
+Deterministic operations use the Activity Journal as their single activity
+source of truth. Every request/status record carries `act_refs`; a shared
+Activity Index validates IDs, paths, ownership, status/result consistency, and
+referenced Acts, then derives per-Act activity projections. ResearchAct records
+do not duplicate activity refs and no Decision is needed to link an operation.
+Compute guards and receipts remain the source for scheduler recovery; a UI or
+Review-run state never proves a remote effect.
+
+An Act cannot become terminal while one of its activities is running or
+pending, its activity journal is inconsistent, or a compute control is pending
+or unresolved. A failed terminal activity may close only as `inconclusive`,
+`blocked`, or `stopped`. An analytical Act with no activity remains valid.
 
 The immediate tool return is the current delivery channel into the Root
 conversation. `TS Activity` is presentation state and is cleared with the Pi

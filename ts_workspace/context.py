@@ -108,6 +108,13 @@ def compile_context(
         item for item in all_acceptances if item.get("claim_ref") in selected_claim_refs
     ]
     bounded, omitted = _bound_selection(selected, {**DEFAULT_LIMITS, **(limits or {})})
+    selected_act_ids = {str(item["act_id"]) for item in bounded["research_acts"]}
+    activity_summaries = [
+        item
+        for item in operations["activity_summaries"]
+        if item.get("act_id") in selected_act_ids
+        and (item.get("activity_count") or item.get("integrity_error_count"))
+    ]
     recent_decisions, omitted_decisions = _recent_decisions(root_path, (limits or {}).get("decisions", DEFAULT_LIMITS["decisions"]))
     omitted["decisions"] = omitted_decisions
     validation = validate_workspace(root_path)
@@ -143,6 +150,7 @@ def compile_context(
         "incomplete_validation": _incomplete_validation(bounded["validation_specs"], bounded["validation_results"]),
         "unresolved_controls": operations["unresolved_controls"],
         "pending_review_dispositions": operations["pending_review_dispositions"],
+        "activity_summaries": activity_summaries,
         "operational_summary": operations["operational_summary"],
         "recent_decisions": recent_decisions,
         "omitted": omitted,

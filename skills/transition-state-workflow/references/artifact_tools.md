@@ -40,8 +40,9 @@ Build one new package:
 
 The host owns `reports/<packageName>`, validates the complete v4 workspace,
 renders the report from canonical records, installs the directory atomically,
-and verifies `package_manifest.json`, workspace revision, file list, and
-SHA-256. Existing package names are never overwritten.
+and verifies `package_manifest.json`, scientific and operational revisions,
+file list, and SHA-256. Existing package names are never overwritten. The
+caller's in-flight Report activity is explicitly excluded from its own snapshot.
 
 Reports project state; they cannot repair or complete it. Missing or
 inconclusive science remains visible.
@@ -71,6 +72,7 @@ failure has no scientific effect.
 
 ## Activity And Provenance
 
-Render and Report write deterministic activity journals. Notification writes a
-delivery receipt. These records support diagnosis and reporting but do not
-become Observations or acceptance basis automatically.
+Compute, Render, and Report write deterministic activity journals whose
+`act_refs` are the only operation-to-Act link. Notification writes a delivery
+receipt. These records support diagnosis and reporting but do not become
+Observations or acceptance basis automatically.

@@ -15,6 +15,7 @@ from .decision import validate_decision, validate_decision_binding
 from .errors import ContractError
 from .identity import WorkspaceIdentityError, ensure_workspace_identity
 from .io import now_iso, read_json, write_json
+from .operational import act_completion_blockers, operational_snapshot
 from .state import (
     CLAIMS_FILE,
     CLAIM_RELATIONS_FILE,
@@ -108,7 +109,7 @@ def validate_decision_dry_run(root: str | Path, decision: dict[str, Any]) -> dic
 def _validate_decision_dry_run_bound(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
     with tempfile.TemporaryDirectory(prefix="ts-workspace-v4-dry-run-") as temporary:
         target = Path(temporary) / "workspace"
-        shutil.copytree(root, target, ignore=_ignore_dry_run_entries)
+        shutil.copytree(root, target, ignore=_ignore_dry_run_entries, symlinks=True)
         result = _apply_once(target, decision)
         validation = validate_workspace(target)
         if not validation["valid"]:
@@ -146,6 +147,7 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
     specs = _map(documents[VALIDATION_SPECS_FILE]["specs"], "spec_id")
     results = _map(documents[VALIDATION_RESULTS_FILE]["results"], "result_id")
     findings = _map(documents[FINDINGS_FILE]["findings"], "finding_id")
+    operational = operational_snapshot(root)
     accepted_changes: dict[Path, Any] = {}
     created_refs = {
         "claims": [],
@@ -267,6 +269,14 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
             })
         elif name == "complete_research_act":
             act = _require_open_act(acts, operation["act_ref"], "completion")
+            blockers = act_completion_blockers(
+                operational,
+                act_id=operation["act_ref"],
+                outcome=operation["outcome"],
+            )
+            if blockers:
+                details = "; ".join(f"[{item['code']}] {item['message']}" for item in blockers[:8])
+                raise ContractError(f"ResearchAct completion is blocked: {details}")
             act["status"] = operation["outcome"]
             act["result"] = {
                 "outcome": operation["outcome"],
@@ -295,9 +305,6 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
             _require_known(operation["act_refs"], acts, "focus ResearchAct refs")
             documents[RESEARCH_STATE_FILE]["focus_claim_refs"] = list(operation["claim_refs"])
             documents[RESEARCH_STATE_FILE]["focus_act_refs"] = list(operation["act_refs"])
-        elif name == "link_operation":
-            act = _require_open_act(acts, operation["act_ref"], "operation link")
-            _append_unique(act["operation_refs"], operation["operation_ref"])
         elif name == "accept_claim":
             record = deepcopy(operation["record"])
             acceptance_id = record["acceptance_id"]

@@ -1,5 +1,0 @@
-{
-  "op": "link_operation",
-  "actRef": "${ACT_REF}",
-  "operationRef": "${OPERATION_REF}"
-}

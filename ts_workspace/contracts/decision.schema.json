@@ -58,15 +58,6 @@
             "act_refs": {"type": "array", "uniqueItems": true, "maxItems": 32, "items": {"$ref": "research_act.schema.json#/$defs/act_id"}}
           }
         },
-        {
-          "type": "object", "additionalProperties": false,
-          "required": ["op", "act_ref", "operation_ref"],
-          "properties": {
-            "op": {"const": "link_operation"},
-            "act_ref": {"$ref": "research_act.schema.json#/$defs/act_id"},
-            "operation_ref": {"type": "string", "minLength": 1, "maxLength": 256}
-          }
-        },
         {"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "accept_claim"}, "record": {"$ref": "acceptance_record.schema.json"}}}
       ]
     }

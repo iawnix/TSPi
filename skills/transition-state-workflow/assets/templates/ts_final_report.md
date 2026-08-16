@@ -6,6 +6,7 @@
 | --- | --- |
 | Workspace | `{{workspace_root}}` |
 | Scientific revision | `{{workspace_revision}}` |
+| Operational revision | `{{operational_revision}}` |
 | Focus Claims | `{{focus_claim_refs}}` |
 | Focus ResearchActs | `{{focus_act_refs}}` |
 | Current acceptance records | `{{current_acceptance_refs_or_none}}` |
@@ -32,9 +33,9 @@ Do not infer priority or execution order from relation labels.
 
 ## 3. ResearchAct DAG
 
-| ResearchAct | Dependencies | Status / outcome | Objective | Hypothesis | Open questions | Linked operations |
+| ResearchAct | Dependencies | Status / outcome | Objective | Hypothesis | Open questions | Derived activities |
 | --- | --- | --- | --- | --- | --- | --- |
-| `{{act_id}}` | `{{dependency_refs_or_none}}` | `{{status_or_outcome}}` | {{objective}} | {{hypothesis_or_none}} | {{open_questions_or_none}} | `{{operation_refs}}` |
+| `{{act_id}}` | `{{dependency_refs_or_none}}` | `{{status_or_outcome}}` | {{objective}} | {{hypothesis_or_none}} | {{open_questions_or_none}} | `{{activity_refs}}` |
 
 Failed, blocked, inconclusive, stopped, merged, and backtracked work remains
 visible. DAG topology records lineage and does not prescribe the next act.
@@ -129,6 +130,7 @@ is not a substitute.
 ## 11. Operational Follow-Up
 
 - Unresolved compute controls: {{count_and_refs_or_none}}.
+- Activity integrity errors: {{count_and_refs_or_none}}.
 - Pending Review dispositions: {{count_and_refs_or_none}}.
 - Missing report/render artifacts: {{list_or_none}}.
 - Notification status: {{operational_status_or_not_requested}}.

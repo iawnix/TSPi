@@ -21,13 +21,13 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     package_home = install_root / ".pi" / "packages" / "ts-agent"
     package_root = package_home / "releases" / "test-release"
     package_root.mkdir(parents=True)
-    (package_root / "package.json").write_text('{"name":"@iawnix/ts-agent","version":"0.8.0"}\n', encoding="utf-8")
+    (package_root / "package.json").write_text('{"name":"@iawnix/ts-agent","version":"0.9.0"}\n', encoding="utf-8")
     (package_root / ".ts-agent-release.json").write_text(
         json.dumps(
             {
                 "schema_version": "ts-agent-release/1",
                 "release_id": "test-release",
-                "package": {"name": "@iawnix/ts-agent", "version": "0.8.0"},
+                "package": {"name": "@iawnix/ts-agent", "version": "0.9.0"},
             }
         )
         + "\n",

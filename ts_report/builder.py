@@ -8,7 +8,7 @@ import os
 import shutil
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 from ts_workspace.refs import act_sort_key
 
@@ -19,12 +19,17 @@ def build_final_report(root: str | Path) -> str:
     return render_final_report(collect_report_context(root))
 
 
-def build_report_package(root: str | Path, output_dir: str | Path | None = None) -> dict[str, str]:
+def build_report_package(
+    root: str | Path,
+    output_dir: str | Path | None = None,
+    *,
+    exclude_activity_refs: Iterable[str] = (),
+) -> dict[str, str]:
     root_path = Path(root).expanduser().resolve()
     package_dir = Path(output_dir).expanduser().resolve() if output_dir is not None else root_path / "reports" / "final-report"
     if package_dir.parent != (root_path / "reports").resolve():
         raise ValueError("report package must be a direct child of workspace reports/")
-    context = collect_report_context(root_path)
+    context = collect_report_context(root_path, exclude_activity_refs=exclude_activity_refs)
     if package_dir.exists():
         raise ValueError(f"report package already exists: {package_dir}")
     package_dir.parent.mkdir(parents=True, exist_ok=True)
@@ -37,6 +42,12 @@ def build_report_package(root: str | Path, output_dir: str | Path | None = None)
             "relations": context["claim_relations"],
         })
         _write_json(staging / "research_acts.json", {"acts": context["research_acts"]})
+        _write_json(staging / "activities.json", {
+            "activities": context["deterministic_activities"],
+            "activity_summaries": context["activity_summaries"],
+            "activity_integrity_findings": context["activity_integrity_findings"],
+            "excluded_activity_refs": context["excluded_activity_refs"],
+        })
         _write_json(staging / "observation_index.json", {"observations": context["observations"]})
         _write_json(staging / "validation.json", {
             "specs": context["validation_specs"],
@@ -49,7 +60,11 @@ def build_report_package(root: str | Path, output_dir: str | Path | None = None)
         })
         (staging / "final_report.md").write_text(render_final_report(context), encoding="utf-8")
         (staging / "email_summary.md").write_text(render_email_summary(context), encoding="utf-8")
-        manifest = _package_manifest(staging, context["workspace_revision"])
+        manifest = _package_manifest(
+            staging,
+            context["workspace_revision"],
+            context["operational_revision"],
+        )
         _write_json(staging / "package_manifest.json", manifest)
         manifest_digest = _sha256_file(staging / "package_manifest.json")
         os.rename(staging, package_dir)
@@ -65,6 +80,7 @@ def build_report_package(root: str | Path, output_dir: str | Path | None = None)
         "manifest": str(package_dir / "package_manifest.json"),
         "manifest_digest": manifest_digest,
         "workspace_revision": str(context["workspace_revision"]),
+        "operational_revision": str(context["operational_revision"]),
     }
 
 
@@ -72,6 +88,11 @@ def render_final_report(context: dict[str, Any]) -> str:
     focus_claims = set(context["focus"]["claim_refs"])
     focus_acts = set(context["focus"]["act_refs"])
     accepted_claims = {item["claim_ref"] for item in context["current_acceptances"]}
+    activity_summaries = {
+        item["act_id"]: item
+        for item in context["activity_summaries"]
+        if isinstance(item, dict) and isinstance(item.get("act_id"), str)
+    }
     lines = [
         "# Transition-State Research Report",
         "",
@@ -81,6 +102,7 @@ def render_final_report(context: dict[str, Any]) -> str:
         "| --- | --- |",
         f"| Workspace | `{context['workspace_id']}` |",
         f"| Revision | `{context['workspace_revision']}` |",
+        f"| Operational revision | `{context['operational_revision']}` |",
         f"| Report | `{context['report_id']}` |",
         f"| Focus Claims | `{', '.join(sorted(focus_claims)) or 'none'}` |",
         f"| Focus ResearchActs | `{', '.join(sorted(focus_acts, key=act_sort_key)) or 'none'}` |",
@@ -120,6 +142,7 @@ def render_final_report(context: dict[str, Any]) -> str:
     for act in context["research_acts"]:
         hypothesis = act.get("hypothesis") if isinstance(act.get("hypothesis"), dict) else None
         result = act.get("result") if isinstance(act.get("result"), dict) else None
+        activity = activity_summaries.get(act["act_id"], {})
         lines.extend([
             f"#### `{act['act_id']}` - {_escape(act['objective'])}",
             "",
@@ -130,7 +153,10 @@ def render_final_report(context: dict[str, Any]) -> str:
             f"- Falsifiers: {_markdown_items(hypothesis.get('falsifiers', [])) if hypothesis else '_none recorded_'}",
             f"- Outcome: {_escape(result['summary']) if result else '_pending_'}",
             f"- Open questions: {_markdown_items(result.get('open_questions', [])) if result else '_not yet recorded_'}",
-            f"- Linked records: {len(act['operation_refs'])} operations, {len(act['observation_refs'])} Observations, "
+            f"- Deterministic activities: {activity.get('activity_count', 0)} total, "
+            f"{activity.get('completed_count', 0)} completed, {activity.get('failed_count', 0)} failed, "
+            f"{activity.get('running_count', 0)} running, {activity.get('pending_count', 0)} pending.",
+            f"- Scientific records: {len(act['observation_refs'])} Observations, "
             f"{len(act['finding_refs'])} Findings, {len(act['validation_spec_refs'])} GateSpecs, "
             f"{len(act['validation_result_refs'])} ValidationResults.",
             "",
@@ -187,9 +213,11 @@ def render_final_report(context: dict[str, Any]) -> str:
         lines.append(f"- {len(context['unresolved_controls'])} unresolved compute control record(s) remain.")
     if context["pending_review_dispositions"]:
         lines.append(f"- {len(context['pending_review_dispositions'])} advisory Review response(s) remain pending.")
+    if context["activity_integrity_findings"]:
+        lines.append(f"- {len(context['activity_integrity_findings'])} deterministic activity integrity error(s) remain.")
     open_findings = [item for item in context["findings"] if item["status"] == "open"]
     lines.extend(f"- Open Finding `{item['finding_id']}`: {_escape(item['statement'])}" for item in open_findings)
-    if not context["unresolved_controls"] and not context["pending_review_dispositions"] and not open_findings:
+    if not context["unresolved_controls"] and not context["pending_review_dispositions"] and not context["activity_integrity_findings"] and not open_findings:
         lines.append("- No unresolved operational control, Review response, or open Finding is recorded.")
     lines.extend([
         "",
@@ -228,7 +256,7 @@ def _executive_sentence(claims: list[dict[str, Any]], focus: set[str], accepted:
     return "No focus Claim is selected; this report records the current graph without selecting a path."
 
 
-def _package_manifest(package_dir: Path, revision: str) -> dict[str, Any]:
+def _package_manifest(package_dir: Path, revision: str, operational_revision: str) -> dict[str, Any]:
     files = []
     for path in sorted(package_dir.rglob("*")):
         if not path.is_file() or path.is_symlink() or path.name == "package_manifest.json":
@@ -238,7 +266,12 @@ def _package_manifest(package_dir: Path, revision: str) -> dict[str, Any]:
             "sha256": _sha256_file(path),
             "size_bytes": path.stat().st_size,
         })
-    return {"schema_version": "ts-report-package/2", "workspace_revision": revision, "files": files}
+    return {
+        "schema_version": "ts-report-package/3",
+        "workspace_revision": revision,
+        "operational_revision": operational_revision,
+        "files": files,
+    }
 
 
 def _write_json(path: Path, value: Any) -> None:

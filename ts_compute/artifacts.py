@@ -298,7 +298,7 @@ def _workspace_root(root: str | Path) -> Path:
 
 def _act_ids(workspace: Path) -> set[str]:
     registry = read_json(workspace / "research_acts.json")
-    if registry.get("schema_version") != "ts-research-act-registry/2":
+    if registry.get("schema_version") != "ts-research-act-registry/3":
         raise ComputeContractError("invalid ResearchAct registry")
     ids = {
         item.get("act_id")

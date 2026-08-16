@@ -4,6 +4,16 @@ Protocol v4 separates scientific meaning, deterministic execution, and
 presentation. The Root Agent owns interpretation; the Research Kernel owns
 identity, integrity, persistence, and transactions.
 
+## Contents
+
+- Claim Graph
+- ResearchAct DAG
+- Observation
+- Finding
+- GateSpec And ValidationResult
+- Acceptance
+- Revisions
+
 ## Claim Graph
 
 A Claim is one explicit scientific statement with an open `claim_type`,
@@ -23,7 +33,8 @@ A ResearchAct records one bounded act:
 - objective and optional hypothesis, assumptions, predictions, and falsifiers;
 - zero or more dependency Acts;
 - related Claims and descriptive tags;
-- deterministic operation refs and produced scientific records;
+- produced scientific records; deterministic activities are derived from the
+  separate Activity Journal by `act_refs`;
 - Kernel-owned artifact root `acts/<act_id>`;
 - open state or one terminal result.
 
@@ -33,6 +44,11 @@ The Kernel allocates workspace-local IDs in creation order (`act_1`, `act_2`,
 Multiple dependencies support merges. A new Act depending on an earlier
 checkpoint supports backtracking. Preserve failed, blocked, inconclusive, and
 stopped Acts; do not rewrite history into a successful line.
+
+ResearchAct uses `ts-research-act/3`. It contains no `operation_refs` field.
+The shared Activity Index projects activities from
+`acts/<act_id>/activities/*` and `operations/activities/*`, validates journal
+integrity, and supplies completion guards, reports, and UI views.
 
 ## Observation
 

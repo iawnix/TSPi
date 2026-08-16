@@ -29,11 +29,12 @@ effects, provenance, and validation.
 3. Create or update Claims and start one bounded ResearchAct with meaningful
    dependencies.
 4. Select a method from chemistry, uncertainty, cost, and available artifacts.
-5. Run deterministic tools and link their immutable records to the Act.
+5. Run deterministic tools with the owning Act; the Activity Journal derives
+   the immutable link from `act_refs`.
 6. Verify local primary outputs; record semantic Observations and Findings.
 7. Freeze and evaluate GateSpecs over explicit Observation refs.
-8. Update Claims, complete the Act, and accept only through a passing named
-   profile.
+8. Update Claims, complete the Act only after activity/control checks pass, and
+   accept only through a passing named profile.
 9. Recompile context and independently choose the next question, branch, merge,
    backtrack, stop, or completion.
 
