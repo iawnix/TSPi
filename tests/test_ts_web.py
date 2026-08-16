@@ -306,6 +306,50 @@ def test_claim_and_act_details_follow_graph_references(tmp_path: Path) -> None:
     }
 
 
+def test_web_derives_claim_act_link_from_creator_provenance(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace)
+    act_draft = draft_decision(
+        workspace,
+        {
+            "rationale": "Start an exploratory Act before it discovers a Claim.",
+            "basis_refs": [],
+            "operations": [
+                {"op": "start_act", "local_ref": "exploration", "objective": "Look for an alternative mechanism."}
+            ],
+        },
+    )
+    apply_decision(workspace, act_draft["decision"])
+    act_id = act_draft["allocated_refs"]["exploration"]
+    claim_draft = draft_decision(
+        workspace,
+        {
+            "rationale": "Record the alternative Claim discovered by the Act.",
+            "basis_refs": [],
+            "operations": [
+                {
+                    "op": "create_claim",
+                    "local_ref": "alternative",
+                    "claimType": "mechanism",
+                    "statement": "An alternative pathway may exist.",
+                    "createdByAct": act_id,
+                }
+            ],
+        },
+    )
+    apply_decision(workspace, claim_draft["decision"])
+    claim_id = claim_draft["allocated_refs"]["alternative"]
+
+    view = normalize_workspace(workspace)
+    act = next(row for row in view["research_acts"] if row["act_id"] == act_id)
+    graph = graph_payload_from_view(view)
+    assert act["claim_refs"] == []
+    assert act["related_claim_refs"] == [claim_id]
+    assert graph["claim_act_links"] == [{"claim_ref": claim_id, "act_ref": act_id}]
+    assert [row["act_id"] for row in claim_payload(workspace, claim_id)["research_acts"]] == [act_id]
+    assert [row["claim_id"] for row in act_payload(workspace, act_id)["claims"]] == [claim_id]
+
+
 def test_static_ui_exposes_v4_dual_graph_without_legacy_routes() -> None:
     html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
 
@@ -408,7 +452,7 @@ def test_web_server_is_read_only_v4_and_has_no_legacy_routes(tmp_path: Path) -> 
         assert workspaces["default_workspace"] == row["workspace_id"]
         base = f"/api/workspace/{row['workspace_id']}"
         assert _get_json(host, port, f"{base}/graph")["schema_version"] == "ts-explorer-graph/4"
-        assert _get_json(host, port, f"{base}/claims")["claims"][0]["schema_version"] == "ts-claim/1"
+        assert _get_json(host, port, f"{base}/claims")["claims"][0]["schema_version"] == "ts-claim/2"
         assert _get_json(host, port, f"{base}/acts")["research_acts"][0]["schema_version"] == "ts-research-act/3"
         assert _get_json(host, port, f"{base}/observations")["observations"][0]["schema_version"] == "ts-observation/1"
         assert _get_json(host, port, f"{base}/validation")["validation_results"][0]["verdict"] == "pass"

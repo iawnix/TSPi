@@ -37,17 +37,17 @@ def _task() -> dict[str, object]:
         "scope": {
             "report_id": "rep_001",
             "act_refs": ["act_1"],
-            "claim_refs": ["clm_0123456789abcdef01234567"],
+            "claim_refs": ["claim_1"],
         },
         "inputs": {
             "review_snapshot": _binding(
                 "review-snapshot.json",
-                "ts-review-task-snapshot/1",
+                "ts-review-task-snapshot/2",
                 "b",
             ),
             "provider_input": _binding(
                 "provider-input.json",
-                "ts-review-provider-input/3",
+                "ts-review-provider-input/4",
                 "c",
             ),
         },
@@ -78,7 +78,7 @@ def _result(task: dict[str, object]) -> dict[str, object]:
                 "kind": "review",
                 "statement": "The current basis is internally consistent.",
                 "status": "supported",
-                "basis_refs": ["clm_0123456789abcdef01234567"],
+                "basis_refs": ["claim_1"],
             }
         ],
         "artifact_refs": [],

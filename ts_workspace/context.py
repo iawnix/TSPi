@@ -15,9 +15,10 @@ from ts_validation.registry import (
 )
 
 from .acceptance import project_acceptances
+from .associations import derive_claim_act_links
 from .io import read_json, sha256_json
 from .operational import operational_snapshot
-from .refs import act_sort_key
+from .refs import act_sort_key, claim_sort_key
 from .revision import report_id_for_revision, workspace_revision_from_documents
 from .state import (
     CLAIMS_FILE,
@@ -221,7 +222,10 @@ def build_review_snapshot(root: str | Path, *, target_claim_ref: str, depth: int
         "decisions": 0,
     })
     dependency_refs = {
-        "claim_refs": sorted(str(item["claim_id"]) for item in projection["claims"]),
+        "claim_refs": sorted(
+            (str(item["claim_id"]) for item in projection["claims"]),
+            key=claim_sort_key,
+        ),
         "relation_refs": sorted(str(item["relation_id"]) for item in projection["claim_relations"]),
         "act_refs": sorted(
             (str(item["act_id"]) for item in projection["research_acts"]),
@@ -272,6 +276,7 @@ def _select_graph(
     results = _map(documents[VALIDATION_RESULTS_FILE]["results"], "result_id")
     findings = _map(documents[FINDINGS_FILE]["findings"], "finding_id")
     state = documents[RESEARCH_STATE_FILE]
+    claim_act_links = derive_claim_act_links(claims.values(), acts.values())
 
     selected_claims: set[str] = set()
     selected_acts: set[str] = set()
@@ -280,9 +285,9 @@ def _select_graph(
         selected_acts.update(str(ref) for ref in state["focus_act_refs"])
         selected_acts.update(act_id for act_id, act in acts.items() if act.get("status") == "open")
         selected_claims.update(
-            str(ref)
-            for act_id in selected_acts
-            for ref in acts.get(act_id, {}).get("claim_refs", [])
+            claim_id
+            for claim_id, act_id in claim_act_links
+            if act_id in selected_acts
         )
     elif mode == "claim":
         if claim_ref not in claims:
@@ -292,9 +297,13 @@ def _select_graph(
         if act_ref not in acts:
             raise ContextCompileError(f"unknown ResearchAct: {act_ref}")
         selected_acts.add(str(act_ref))
-        selected_claims.update(str(ref) for ref in acts[str(act_ref)].get("claim_refs", []))
+        selected_claims.update(
+            claim_id
+            for claim_id, linked_act_id in claim_act_links
+            if linked_act_id == act_ref
+        )
     elif mode == "subgraph":
-        unknown_claims = sorted(set(claim_refs) - set(claims))
+        unknown_claims = sorted(set(claim_refs) - set(claims), key=claim_sort_key)
         unknown_acts = sorted(set(act_refs) - set(acts))
         if unknown_claims or unknown_acts or not (claim_refs or act_refs):
             raise ContextCompileError("subgraph requires known claim_refs or act_refs")
@@ -319,14 +328,16 @@ def _select_graph(
             selected_acts.add(str(spec.get("created_by_act")))
 
     selected_claims = _expand_claims(selected_claims, relations.values(), depth)
-    for act_id, act in acts.items():
-        if selected_claims.intersection(str(ref) for ref in act.get("claim_refs", [])):
-            selected_acts.add(act_id)
+    selected_acts.update(
+        act_id
+        for claim_id, act_id in claim_act_links
+        if claim_id in selected_claims
+    )
     selected_acts = _expand_acts(selected_acts, acts, depth)
     selected_claims.update(
-        str(ref)
-        for act_id in selected_acts
-        for ref in acts.get(act_id, {}).get("claim_refs", [])
+        claim_id
+        for claim_id, act_id in claim_act_links
+        if act_id in selected_acts
     )
 
     selected_relations = [
@@ -358,9 +369,20 @@ def _select_graph(
         )
     ]
     return {
-        "claims": [claims[ref] for ref in sorted(selected_claims) if ref in claims],
+        "claims": [claims[ref] for ref in sorted(selected_claims, key=claim_sort_key) if ref in claims],
         "claim_relations": sorted(selected_relations, key=lambda value: str(value["relation_id"])),
-        "research_acts": [acts[ref] for ref in sorted(selected_acts, key=act_sort_key) if ref in acts],
+        "research_acts": [
+            {
+                **acts[ref],
+                "related_claim_refs": [
+                    claim_id
+                    for claim_id, act_id in claim_act_links
+                    if act_id == ref
+                ],
+            }
+            for ref in sorted(selected_acts, key=act_sort_key)
+            if ref in acts
+        ],
         "observations": [observations[ref] for ref in sorted(selected_observation_refs) if ref in observations],
         "validation_specs": sorted(selected_specs, key=lambda value: str(value["spec_id"])),
         "validation_results": sorted(selected_results, key=lambda value: str(value["result_id"])),

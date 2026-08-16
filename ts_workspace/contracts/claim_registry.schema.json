@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "claims"],
   "properties": {
-    "schema_version": {"const": "ts-claim-registry/2"},
+    "schema_version": {"const": "ts-claim-registry/3"},
     "claims": {"type": "array", "items": {"$ref": "claim.schema.json"}}
   }
 }

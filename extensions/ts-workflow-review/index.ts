@@ -120,7 +120,7 @@ export default function (pi: ExtensionAPI) {
         });
         if (result.invalidOutputs.length) writeInvalidReviewOutput(journal, result.invalidOutputs);
         const runRef = completeAgentRun(journal, {
-          actions: [],
+          actions: result.actions,
           result: result.result,
           metadata: result.metadata,
         });
@@ -147,6 +147,10 @@ export default function (pi: ExtensionAPI) {
           && Array.isArray((error as { invalidReviewOutputs?: unknown[] }).invalidReviewOutputs)
           ? (error as { invalidReviewOutputs: unknown[] }).invalidReviewOutputs
           : [];
+        const actions = error && typeof error === "object"
+          && Array.isArray((error as { reviewActions?: unknown[] }).reviewActions)
+          ? (error as { reviewActions: unknown[] }).reviewActions
+          : [];
         if (invalidOutputs.length) writeInvalidReviewOutput(journal, invalidOutputs);
         const failure = classifyUpstreamModelFailure(error, { replaySafe: true }) || {
           failure_class: "review_runtime_failed",
@@ -155,7 +159,7 @@ export default function (pi: ExtensionAPI) {
           upstream_status: null,
           retry_safe: true,
         };
-        const runRef = failAgentRun(journal, { actions: [], error, metadata: failure });
+        const runRef = failAgentRun(journal, { actions, error, metadata: failure });
         pi.appendEntry("ts-workspace-subagent-failed", {
           task_id: packet.task_id,
           operation: packet.operation,

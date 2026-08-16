@@ -51,7 +51,7 @@ def test_v4_operational_snapshot_separates_activities_reviews_and_controls(tmp_p
             "role": "review",
             "authority": "advisory",
             "operation": "claim_review",
-            "scope": {"act_refs": ["act_1"], "claim_refs": ["clm_probe"]},
+            "scope": {"act_refs": ["act_1"], "claim_refs": ["claim_1"]},
         },
     )
     _write(
@@ -82,7 +82,7 @@ def test_v4_operational_snapshot_separates_activities_reviews_and_controls(tmp_p
 
     assert report["deterministic_activities"][0]["act_refs"] == ["act_1"]
     assert report["deterministic_activities"][0]["summary"] == "Submission completed."
-    assert report["review_runs"][0]["claim_refs"] == ["clm_probe"]
+    assert report["review_runs"][0]["claim_refs"] == ["claim_1"]
     assert report["pending_review_dispositions"][0]["act_refs"] == ["act_1"]
     assert report["unresolved_controls"][0]["act_id"] == "act_1"
     assert report["unresolved_controls"][0]["intent_id"] == "calc_probe"

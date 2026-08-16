@@ -21,13 +21,13 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     package_home = install_root / ".pi" / "packages" / "ts-agent"
     package_root = package_home / "releases" / "test-release"
     package_root.mkdir(parents=True)
-    (package_root / "package.json").write_text('{"name":"@iawnix/ts-agent","version":"0.9.0"}\n', encoding="utf-8")
+    (package_root / "package.json").write_text('{"name":"@iawnix/ts-agent","version":"0.10.0"}\n', encoding="utf-8")
     (package_root / ".ts-agent-release.json").write_text(
         json.dumps(
             {
                 "schema_version": "ts-agent-release/1",
                 "release_id": "test-release",
-                "package": {"name": "@iawnix/ts-agent", "version": "0.9.0"},
+                "package": {"name": "@iawnix/ts-agent", "version": "0.10.0"},
             }
         )
         + "\n",
@@ -56,7 +56,8 @@ def test_tspi_phone_starts_visible_bridged_tui(tmp_path: Path) -> None:
         "#!/usr/bin/env python3\n"
         "import json,os,sys\n"
         "print(json.dumps({'args': sys.argv[1:], 'mode': os.environ.get('TS_PHONE_MODE'), "
-        "'workspace': os.environ.get('TS_PHONE_WORKSPACE_ID')}))\n",
+        "'workspace': os.environ.get('TS_PHONE_WORKSPACE_ID'), "
+        "'access': os.environ.get('TS_PHONE_ACCESS_MODE')}))\n",
         encoding="utf-8",
     )
     fake_pi.chmod(0o755)
@@ -75,10 +76,61 @@ def test_tspi_phone_starts_visible_bridged_tui(tmp_path: Path) -> None:
     result = json.loads(completed.stdout)
     assert result["mode"] == "bridge"
     assert result["workspace"] == "reaction-phone"
+    assert result["access"] == "controller"
     assert "--continue" in result["args"]
     assert "--mode" not in result["args"]
     assert any(value.endswith("/extensions/ts-phone-bridge/index.ts") for value in result["args"])
     assert (install_root / "workspaces" / "reaction-phone" / ".pi" / "settings.json").is_file()
+
+
+def test_second_phone_session_is_a_new_read_only_observer(tmp_path: Path) -> None:
+    install_root, launcher = _copy_launcher(tmp_path)
+    controller_pi = tmp_path / "controller-pi.py"
+    controller_pi.write_text(
+        "#!/usr/bin/env python3\nprint('ready', flush=True)\ninput()\n",
+        encoding="utf-8",
+    )
+    controller_pi.chmod(0o755)
+    observer_pi = tmp_path / "observer-pi.py"
+    observer_pi.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json,os,sys\n"
+        "print(json.dumps({'args': sys.argv[1:], 'access': os.environ.get('TS_PHONE_ACCESS_MODE')}))\n",
+        encoding="utf-8",
+    )
+    observer_pi.chmod(0o755)
+
+    holder = subprocess.Popen(
+        [str(launcher), "--workspace", "shared-phone"],
+        cwd=install_root,
+        env={**os.environ, "PI_BIN": str(controller_pi)},
+        text=True,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    try:
+        assert holder.stdout is not None
+        assert holder.stdout.readline().strip() == "ready"
+        observer = subprocess.run(
+            [str(launcher), "--workspace", "shared-phone", "--phone"],
+            cwd=install_root,
+            env={**os.environ, "PI_BIN": str(observer_pi)},
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        assert observer.returncode == 0, observer.stderr
+        result = json.loads(observer.stdout)
+        assert result["access"] == "observer"
+        assert "--continue" not in result["args"]
+        assert "read-only phone observer" in observer.stderr
+    finally:
+        assert holder.stdin is not None
+        holder.stdin.write("release\n")
+        holder.stdin.flush()
+        holder.communicate(timeout=5)
 
 
 def test_tspi_phone_worker_is_removed(tmp_path: Path) -> None:
@@ -98,12 +150,14 @@ def test_tspi_phone_worker_is_removed(tmp_path: Path) -> None:
 
 def test_phone_policy_classifies_tools_and_redacts_confirmation() -> None:
     script = f"""
-import {{ CONFIRMATION_REQUIRED_TOOLS, DIRECTLY_ALLOWED_TOOLS, formatConfirmation }} from {json.dumps(PHONE_POLICY.as_uri())};
+import {{ CONFIRMATION_REQUIRED_TOOLS, DIRECTLY_ALLOWED_TOOLS, OBSERVER_ALLOWED_TOOLS, formatConfirmation }} from {json.dumps(PHONE_POLICY.as_uri())};
 const preview = formatConfirmation({{ type: "tool_call", toolCallId: "write-1", toolName: "write", input: {{ path: "result.md", token: "secret-value" }} }});
 process.stdout.write(JSON.stringify({{
   read: DIRECTLY_ALLOWED_TOOLS.has("read"),
   bash: CONFIRMATION_REQUIRED_TOOLS.has("bash"),
   unknown: DIRECTLY_ALLOWED_TOOLS.has("new_tool") || CONFIRMATION_REQUIRED_TOOLS.has("new_tool"),
+  observerRead: OBSERVER_ALLOWED_TOOLS.has("read"),
+  observerWrite: OBSERVER_ALLOWED_TOOLS.has("write"),
   preview,
 }}));
 """
@@ -111,6 +165,8 @@ process.stdout.write(JSON.stringify({{
     assert result["read"] is True
     assert result["bash"] is True
     assert result["unknown"] is False
+    assert result["observerRead"] is True
+    assert result["observerWrite"] is False
     assert "secret-value" not in result["preview"]
     assert "[redacted]" in result["preview"]
 
@@ -119,12 +175,13 @@ def test_phone_bridge_protocol_rejects_raw_rpc_records() -> None:
     script = f"""
 import {{ parseBridgeServerRecord }} from {json.dumps(PHONE_PROTOCOL.as_uri())};
 let rawRpcError;
-try {{ parseBridgeServerRecord({{ protocolVersion: "ts-phone-bridge/1", type: "prompt", message: "x" }}); }}
+try {{ parseBridgeServerRecord({{ protocolVersion: "ts-phone-bridge/2", type: "prompt", message: "x" }}); }}
 catch (error) {{ rawRpcError = error.message; }}
 const command = parseBridgeServerRecord({{
-  protocolVersion: "ts-phone-bridge/1",
+  protocolVersion: "ts-phone-bridge/2",
   type: "command.prompt",
   workspaceId: "ts_006",
+  sessionId: "session-1",
   instanceEpoch: "epoch-1",
   sessionGeneration: 2,
   requestId: "request-1",
@@ -170,8 +227,9 @@ const server = createServer((socket) => {{
       const record = JSON.parse(line);
       received.push(record);
       const base = {{
-        protocolVersion: "ts-phone-bridge/1",
+        protocolVersion: "ts-phone-bridge/2",
         workspaceId: "ts_006",
+        sessionId: "session-1",
         instanceEpoch: record.instanceEpoch,
       }};
       if (record.type === "bridge.register") {{
@@ -208,8 +266,10 @@ await new Promise((resolve, reject) => {{ server.once("error", reject); server.l
 const client = new TsPhoneBridgeClient({{
   workspaceId: "ts_006",
   workspaceRoot: "/tmp/ts_006",
+  accessMode: "controller",
   socketPath,
   secretPath: {json.dumps(str(secret_path))},
+  getSessionId: () => "session-1",
   getSessionGeneration: () => 1,
   onCommand: (command) => {{ commands.push(command); }},
   onConnected: () => {{
@@ -252,7 +312,7 @@ const records = [{{
   operation: "claim_review",
   state: "running",
   act_refs: ["act_1"],
-  claim_refs: ["clm_probe"],
+  claim_refs: ["claim_1"],
   run_ref: "acts/act_1/agent-runs/sub_review-1",
   summary: "Independent review is running.",
   live: true,

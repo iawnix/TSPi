@@ -128,7 +128,7 @@ def test_workspace_cli_draft_rejects_unknown_claim_without_mutation(tmp_path: Pa
                 "op": "start_act",
                 "local_ref": "act",
                 "objective": "This must not be created.",
-                "claimRefs": ["clm_000000000000000000000000"],
+                "claimRefs": ["claim_999"],
             }
         ],
     }
@@ -147,7 +147,7 @@ def test_workspace_cli_draft_rejects_unknown_claim_without_mutation(tmp_path: Pa
         str(_write(tmp_path / "unknown-decision.json", drafted["decision"])),
     )
     assert completed.returncode == 2
-    assert "ResearchAct claim_refs contains unknown refs: clm_000000000000000000000000" in completed.stderr
+    assert "ResearchAct claim_refs contains unknown refs: claim_999" in completed.stderr
     assert json.loads((workspace / "research_acts.json").read_text(encoding="utf-8"))["acts"] == []
 
 

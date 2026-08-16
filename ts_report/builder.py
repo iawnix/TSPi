@@ -10,7 +10,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 
-from ts_workspace.refs import act_sort_key
+from ts_workspace.associations import derive_claim_act_links
+from ts_workspace.refs import act_sort_key, claim_sort_key
 
 from .context import collect_report_context
 
@@ -93,6 +94,15 @@ def render_final_report(context: dict[str, Any]) -> str:
         for item in context["activity_summaries"]
         if isinstance(item, dict) and isinstance(item.get("act_id"), str)
     }
+    claim_act_links = derive_claim_act_links(context["claims"], context["research_acts"])
+    related_claim_refs = {
+        act["act_id"]: [
+            claim_id
+            for claim_id, act_id in claim_act_links
+            if act_id == act["act_id"]
+        ]
+        for act in context["research_acts"]
+    }
     lines = [
         "# Transition-State Research Report",
         "",
@@ -104,7 +114,7 @@ def render_final_report(context: dict[str, Any]) -> str:
         f"| Revision | `{context['workspace_revision']}` |",
         f"| Operational revision | `{context['operational_revision']}` |",
         f"| Report | `{context['report_id']}` |",
-        f"| Focus Claims | `{', '.join(sorted(focus_claims)) or 'none'}` |",
+        f"| Focus Claims | `{', '.join(sorted(focus_claims, key=claim_sort_key)) or 'none'}` |",
         f"| Focus ResearchActs | `{', '.join(sorted(focus_acts, key=act_sort_key)) or 'none'}` |",
         f"| Claims / Acts / Observations / Findings | {len(context['claims'])} / {len(context['research_acts'])} / {len(context['observations'])} / {len(context['findings'])} |",
         "",
@@ -133,9 +143,10 @@ def render_final_report(context: dict[str, Any]) -> str:
     for act in context["research_acts"]:
         marker = " (focus)" if act["act_id"] in focus_acts else ""
         outcome = act["result"]["outcome"] if isinstance(act.get("result"), dict) else "pending"
+        claim_refs = related_claim_refs[act["act_id"]]
         lines.append(
             f"| `{act['act_id']}`{marker} | `{act['status']}` | `{', '.join(act['dependency_refs']) or 'none'}` | "
-            f"`{', '.join(act['claim_refs']) or 'none'}` | {_escape(act['objective'])} | `{outcome}` |"
+            f"`{', '.join(claim_refs) or 'none'}` | {_escape(act['objective'])} | `{outcome}` |"
         )
 
     lines.extend(["", "### ResearchAct Review", ""])
@@ -143,10 +154,11 @@ def render_final_report(context: dict[str, Any]) -> str:
         hypothesis = act.get("hypothesis") if isinstance(act.get("hypothesis"), dict) else None
         result = act.get("result") if isinstance(act.get("result"), dict) else None
         activity = activity_summaries.get(act["act_id"], {})
+        claim_refs = related_claim_refs[act["act_id"]]
         lines.extend([
             f"#### `{act['act_id']}` - {_escape(act['objective'])}",
             "",
-            f"- Status: `{act['status']}`; dependencies: `{', '.join(act['dependency_refs']) or 'none'}`; Claims: `{', '.join(act['claim_refs']) or 'none'}`.",
+            f"- Status: `{act['status']}`; dependencies: `{', '.join(act['dependency_refs']) or 'none'}`; Claims: `{', '.join(claim_refs) or 'none'}`.",
             f"- Hypothesis: {_escape(hypothesis['statement']) if hypothesis else '_not recorded_'}",
             f"- Assumptions: {_markdown_items(hypothesis.get('assumptions', [])) if hypothesis else '_none recorded_'}",
             f"- Predictions: {_markdown_items(hypothesis.get('predictions', [])) if hypothesis else '_none recorded_'}",

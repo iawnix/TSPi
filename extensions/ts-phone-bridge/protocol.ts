@@ -1,7 +1,8 @@
-export const BRIDGE_PROTOCOL_VERSION = "ts-phone-bridge/1" as const;
+export const BRIDGE_PROTOCOL_VERSION = "ts-phone-bridge/2" as const;
 
 export interface BridgeIdentity {
   workspaceId: string;
+  sessionId: string;
   instanceEpoch: string;
   sessionGeneration: number;
 }
@@ -10,6 +11,7 @@ export interface BridgeRegisteredRecord {
   protocolVersion: typeof BRIDGE_PROTOCOL_VERSION;
   type: "bridge.registered";
   workspaceId: string;
+  sessionId: string;
   instanceEpoch: string;
 }
 
@@ -46,12 +48,14 @@ export function parseBridgeServerRecord(value: unknown): BridgeServerRecord {
       protocolVersion: BRIDGE_PROTOCOL_VERSION,
       type,
       workspaceId: requiredWorkspaceId(record.workspaceId),
+      sessionId: requiredId(record.sessionId, "sessionId"),
       instanceEpoch: requiredId(record.instanceEpoch, "instanceEpoch"),
     };
   }
   const identity = {
     protocolVersion: BRIDGE_PROTOCOL_VERSION,
     workspaceId: requiredWorkspaceId(record.workspaceId),
+    sessionId: requiredId(record.sessionId, "sessionId"),
     instanceEpoch: requiredId(record.instanceEpoch, "instanceEpoch"),
     sessionGeneration: positiveInteger(record.sessionGeneration, "sessionGeneration"),
   };

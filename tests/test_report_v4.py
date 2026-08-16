@@ -34,6 +34,13 @@ def _seed(root: Path) -> dict[str, str]:
                     },
                 },
                 {
+                    "op": "create_claim",
+                    "local_ref": "discovered",
+                    "claimType": "mechanism",
+                    "statement": "A stepwise alternative may require investigation.",
+                    "createdByAct": "$act",
+                },
+                {
                     "op": "record_observation",
                     "local_ref": "observation",
                     "actRef": "$act",
@@ -83,6 +90,7 @@ def test_report_projects_v4_dag_and_semantic_validation(tmp_path: Path) -> None:
     assert "## Frozen Validation" in text
     assert "## Findings" in text
     assert refs["act"] in text
+    assert f"`{refs['claim']}, {refs['discovered']}`" in text
     assert "required_gates" not in text
     assert "node_id" not in text
 

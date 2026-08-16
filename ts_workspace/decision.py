@@ -6,7 +6,6 @@ import hashlib
 from copy import deepcopy
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
 
 from ts_validation import builtin_predicate_registry, compile_gate_spec, evaluate_gate_spec, load_acceptance_profile
 
@@ -20,7 +19,13 @@ from .context import compile_context
 from .errors import ContractError
 from .io import now_iso, read_json, sha256_json
 from .operational import operational_snapshot
-from .refs import WorkspaceRefError, next_act_ordinal
+from .refs import (
+    WorkspaceRefError,
+    decision_ordinal,
+    next_act_ordinal,
+    next_claim_ordinal,
+    next_decision_ordinal,
+)
 from .revision import workspace_revision
 from .schema_validation import SchemaValidationError, validate_contract
 from .state import (
@@ -32,10 +37,11 @@ from .state import (
     VALIDATION_RESULTS_FILE,
     VALIDATION_SPECS_FILE,
 )
+from .transactions import recorded_decision_ids
 
 
 CREATOR_PREFIXES = {
-    "create_claim": "clm",
+    "create_claim": "claim",
     "relate_claims": "rel",
     "start_act": "act",
     "record_observation": "obs",
@@ -66,13 +72,21 @@ def draft_decision(
     except SchemaValidationError as exc:
         raise ContractError(str(exc)) from exc
     root_path = Path(root).expanduser().resolve()
-    allocated_decision_id = decision_id or f"dec_{uuid4().hex}"
+    try:
+        if decision_id is None:
+            allocated_decision_id = f"dec_{next_decision_ordinal(recorded_decision_ids(root_path))}"
+        else:
+            decision_ordinal(decision_id)
+            allocated_decision_id = decision_id
+    except WorkspaceRefError as exc:
+        raise ContractError(str(exc)) from exc
     created_at = now_iso()
     raw_operations = request["operations"]
     state = _DraftState.load(root_path, decision_id=allocated_decision_id)
     allocations = _allocate_aliases(
         raw_operations,
         allocated_decision_id,
+        existing_claim_ids=state.claims,
         existing_act_ids=state.acts,
     )
     registry = builtin_predicate_registry()
@@ -151,10 +165,12 @@ def _allocate_aliases(
     operations: list[Any],
     decision_id: str,
     *,
+    existing_claim_ids: Any,
     existing_act_ids: Any,
 ) -> dict[str, str]:
     allocations: dict[str, str] = {}
     try:
+        claim_ordinal = next_claim_ordinal(existing_claim_ids)
         act_ordinal = next_act_ordinal(existing_act_ids)
     except WorkspaceRefError as exc:
         raise ContractError(str(exc)) from exc
@@ -174,7 +190,10 @@ def _allocate_aliases(
             raise ContractError(f"operations[{index}].local_ref is invalid")
         if alias in allocations:
             raise ContractError(f"duplicate local_ref: {alias}")
-        if prefix == "act":
+        if prefix == "claim":
+            allocations[alias] = f"claim_{claim_ordinal}"
+            claim_ordinal += 1
+        elif prefix == "act":
             allocations[alias] = f"act_{act_ordinal}"
             act_ordinal += 1
         else:
@@ -196,7 +215,7 @@ def _normalize_operation(
     if name == "create_claim":
         _keys(raw, required={"op", "local_ref", "claimType", "statement"}, optional={"createdByAct", "assumptions", "falsifiers", "tags"})
         record = {
-            "schema_version": "ts-claim/1",
+            "schema_version": "ts-claim/2",
             "claim_id": allocations[raw["local_ref"]],
             "claim_type": _string(raw["claimType"], "claimType", 128),
             "statement": _string(raw["statement"], "statement", 12000),

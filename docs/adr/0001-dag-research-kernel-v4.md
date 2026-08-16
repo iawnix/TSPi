@@ -83,6 +83,14 @@ temporary copy. Apply repeats validation under the workspace lock and commits
 atomically. Reusing a Decision ID is idempotent only when the complete Decision
 digest matches.
 
+Decisions, Claims, and ResearchActs use workspace-local monotonic identities
+(`dec_1`, `claim_1`, `act_1`, ...). Their ordinals are identity only. Drafting
+does not reserve an ordinal, so parallel drafts may propose the same next ID.
+For a Decision collision, only identical content is an idempotent replay; other
+content is rejected and must be redrafted. Claim and Act collisions are also
+prevented by revision binding. Fresh drafts allocate after durable history, and
+aborted or recoverable Decision transaction IDs are not reused.
+
 The Kernel persists concise hypotheses, assumptions, predictions, falsifiers,
 decisions, and provenance. It never persists private chain-of-thought.
 

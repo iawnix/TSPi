@@ -30,8 +30,11 @@ def test_review_task_v2_is_graph_scoped_bounded_and_advisory(tmp_path: Path) -> 
     assert task["scope"]["act_refs"] == [refs["act_id"]]
     assert task["scope"]["claim_refs"] == [refs["claim_id"]]
     assert set(task["inputs"]) == {"review_snapshot", "provider_input"}
-    assert snapshot["schema_version"] == "ts-review-task-snapshot/1"
-    assert provider["schema_version"] == "ts-review-provider-input/3"
+    assert snapshot["schema_version"] == "ts-review-task-snapshot/2"
+    assert provider["schema_version"] == "ts-review-provider-input/4"
+    assert snapshot["artifact_manifest"] == []
+    assert provider["artifact_manifest"] == []
+    assert provider["research_acts"][0]["related_claim_refs"] == [refs["claim_id"]]
     assert len(json.dumps(provider).encode()) < 48 * 1024
     serialized = json.dumps(provider)
     for retired in ('"node_id"', '"evidence"', '"gate_results"', '"required_gates"'):
@@ -42,9 +45,9 @@ def test_review_request_accepts_only_claim_and_logical_artifact_ids() -> None:
     script = (
         f"const helper=require({json.dumps(str(TASK_PACKET))});"
         "const values=["
-        "{targetClaimRef:'clm_'+ 'a'.repeat(24),question:'Review this.',artifactIds:['art_'+ 'b'.repeat(24)]},"
-        "{targetClaimRef:'clm_'+ 'a'.repeat(24),question:'Review this.',artifactIds:['../output.log']},"
-        "{targetClaimRef:'claim_old',question:'Review this.',artifactIds:[]}];"
+        "{targetClaimRef:'claim_1',question:'Review this.',artifactIds:['art_'+ 'b'.repeat(24)]},"
+        "{targetClaimRef:'claim_1',question:'Review this.',artifactIds:['../output.log']},"
+        "{targetClaimRef:'clm_'+ 'a'.repeat(24),question:'Review this.',artifactIds:[]}];"
         "const out=values.map(v=>{try{return {ok:true,value:helper.validateSubagentRequest(v)}}"
         "catch(error){return {ok:false,error:error.message}}});process.stdout.write(JSON.stringify(out));"
     )
@@ -121,7 +124,7 @@ process.stdout.write(JSON.stringify({{
     assert result == {"constrainedSampling": False, "valid": True, "stringRisks": False}
 
 
-def test_review_runtime_forces_named_tool_but_never_adds_function_strict() -> None:
+def test_review_runtime_can_force_named_tool_without_adding_function_strict() -> None:
     script = f"""
 import {{ forceReviewResultToolChoice }} from {json.dumps(RUNTIME.as_uri())};
 const payload=forceReviewResultToolChoice({{model:"probe",tools:[{{type:"function",function:{{name:"ts_review_result",parameters:{{type:"object"}}}}}}]}});

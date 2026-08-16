@@ -8,7 +8,12 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { TsPhoneBridgeClient } from "./bridge-client.ts";
 import type { BridgeAbortCommand, BridgePromptCommand } from "./protocol.ts";
-import { CONFIRMATION_REQUIRED_TOOLS, DIRECTLY_ALLOWED_TOOLS, formatConfirmation } from "./policy.ts";
+import {
+  CONFIRMATION_REQUIRED_TOOLS,
+  DIRECTLY_ALLOWED_TOOLS,
+  OBSERVER_ALLOWED_TOOLS,
+  formatConfirmation,
+} from "./policy.ts";
 
 type TurnOrigin =
   | { kind: "local" | "extension" | "unknown"; turnId: string }
@@ -27,6 +32,7 @@ const MAX_SNAPSHOT_BYTES = 6 * 1024 * 1024;
 export default function installTsPhoneBridge(pi: ExtensionAPI) {
   if (process.env.TS_PHONE_MODE !== "bridge") return;
   const workspaceId = requireWorkspaceId(process.env.TS_PHONE_WORKSPACE_ID);
+  const accessMode = requireAccessMode(process.env.TS_PHONE_ACCESS_MODE);
   const socketPath = process.env.TS_PHONE_BRIDGE_SOCKET || defaultSocketPath();
   const secretPath = process.env.TS_PHONE_BRIDGE_SECRET_FILE
     || resolve(homedir(), ".local/state/ts-phone/bridge.secret");
@@ -41,13 +47,16 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
   const bridge = new TsPhoneBridgeClient({
     workspaceId,
     workspaceRoot: process.cwd(),
+    accessMode,
     socketPath,
     secretPath,
+    getSessionId: () => context?.sessionManager.getSessionId() || "",
     getSessionGeneration: () => sessionGeneration,
     onCommand: (command) => handleCommand(command),
     onConnected: () => publishSnapshot(),
     onConnectionChanged(connected) {
-      context?.ui.setStatus("ts-phone", connected ? "Phone connected" : "Phone offline");
+      const label = accessMode === "observer" ? "Phone observer" : "Phone connected";
+      context?.ui.setStatus("ts-phone", connected ? label : "Phone offline");
     },
   });
 
@@ -126,7 +135,11 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
 
   async function handleCommand(command: BridgePromptCommand | BridgeAbortCommand): Promise<void> {
     const ctx = context;
-    if (!ctx || command.sessionGeneration !== sessionGeneration) throw new Error("stale_session");
+    if (!ctx
+      || command.sessionId !== ctx.sessionManager.getSessionId()
+      || command.sessionGeneration !== sessionGeneration) {
+      throw new Error("stale_session");
+    }
     if (command.type === "command.abort") {
       ctx.abort();
       return;
@@ -170,6 +183,10 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
   }
 
   async function authorizePhoneTool(event: ToolCallEvent) {
+    if (accessMode === "observer") {
+      if (OBSERVER_ALLOWED_TOOLS.has(event.toolName)) return;
+      return { block: true, reason: `TS Phone observer session blocked write-capable tool: ${event.toolName}` };
+    }
     if (activeOrigin.kind !== "phone") return;
     if (DIRECTLY_ALLOWED_TOOLS.has(event.toolName)) return;
     if (!CONFIRMATION_REQUIRED_TOOLS.has(event.toolName)) {
@@ -224,6 +241,12 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
     turnSequence += 1;
     return `turn-${sessionGeneration}-${turnSequence}`;
   }
+}
+
+function requireAccessMode(value: string | undefined): "controller" | "observer" {
+  if (value === undefined || value === "controller") return "controller";
+  if (value === "observer") return value;
+  throw new Error("TS_PHONE_ACCESS_MODE must be controller or observer");
 }
 
 export function projectMessage(message: unknown): unknown {

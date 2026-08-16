@@ -761,7 +761,7 @@
     }
 
     function renderActs() {
-      const rows = filterRows(state.view.research_acts, ["act_id", "objective", "status", "tags", "claim_refs"]);
+      const rows = filterRows(state.view.research_acts, ["act_id", "objective", "status", "tags", "claim_refs", "related_claim_refs"]);
       content.innerHTML = renderHeader("Research Acts", "Dependency-aware research actions owned by the v4 kernel.", true) +
         table(["Act", "Objective", "Status", "Dependencies", "Records"], rows.map(row => ({
           detail: "act", id: row.act_id,

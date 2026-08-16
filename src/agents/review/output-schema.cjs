@@ -18,7 +18,7 @@ function parseAndValidateReviewResult(text, packet, reviewSnapshot) {
   return validateReviewResult(value, packet, reviewSnapshot);
 }
 
-function validateReviewResult(value, packet, reviewSnapshot) {
+function validateReviewResult(value, packet, reviewSnapshot, readArtifactIds = []) {
   let serialized;
   try {
     serialized = JSON.stringify(value);
@@ -34,7 +34,7 @@ function validateReviewResult(value, packet, reviewSnapshot) {
   if (result.program !== null) throw new Error("review result cannot contain program state");
   if (result.artifact_refs.length) throw new Error("review result cannot create artifacts");
 
-  if (!isPlainObject(reviewSnapshot) || reviewSnapshot.schema_version !== "ts-review-task-snapshot/1") {
+  if (!isPlainObject(reviewSnapshot) || reviewSnapshot.schema_version !== "ts-review-task-snapshot/2") {
     throw new Error("Review result validation requires the bound DAG snapshot");
   }
   if (reviewSnapshot.task_id !== task.task_id || reviewSnapshot.operation !== task.operation) {
@@ -43,11 +43,23 @@ function validateReviewResult(value, packet, reviewSnapshot) {
   const basisAllowlist = new Set(
     Array.isArray(reviewSnapshot.basis_allowlist) ? reviewSnapshot.basis_allowlist : [],
   );
+  const artifactBasisRefs = new Set(
+    Array.isArray(reviewSnapshot.artifact_manifest)
+      ? reviewSnapshot.artifact_manifest.map((item) => item?.artifact_id).filter((item) => typeof item === "string")
+      : [],
+  );
+  if (!Array.isArray(readArtifactIds) || readArtifactIds.some((item) => typeof item !== "string" || !artifactBasisRefs.has(item))) {
+    throw new Error("Review read artifact IDs must belong to the bound artifact manifest");
+  }
+  const readArtifactBasisRefs = new Set(readArtifactIds);
   for (const [index, fact] of result.facts.entries()) {
     if (fact.kind !== "review") throw new Error(`facts[${index}].kind must be review`);
     if (!fact.basis_refs.length) throw new Error(`facts[${index}].basis_refs must cite task packet evidence`);
     for (const ref of fact.basis_refs) {
       if (!basisAllowlist.has(ref)) throw new Error(`fact basis ref is outside task packet: ${ref}`);
+      if (artifactBasisRefs.has(ref) && !readArtifactBasisRefs.has(ref)) {
+        throw new Error(`fact artifact basis ref was not read by this Review: ${ref}`);
+      }
     }
   }
 

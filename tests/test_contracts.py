@@ -123,19 +123,41 @@ def test_decision_snapshot_transaction_and_replay_are_bound(tmp_path: Path) -> N
                 }
             ],
         },
-        decision_id="dec_0123456789abcdef0123456789abcdef",
+        decision_id="dec_1",
     )
     first = apply_decision(workspace, drafted["decision"])
     second = apply_decision(workspace, drafted["decision"])
     assert first == second
     assert json.loads(
-        (workspace / "decisions" / "dec_0123456789abcdef0123456789abcdef.json").read_text(encoding="utf-8")
+        (workspace / "decisions" / "dec_1.json").read_text(encoding="utf-8")
     ) == drafted["decision"]
     events = [
         json.loads(line)
         for line in (workspace / "transaction_log.jsonl").read_text(encoding="utf-8").splitlines()
     ]
     assert [event["stage"] for event in events[-2:]] == ["prepare", "committed"]
+
+
+def test_explicit_decision_id_requires_canonical_numeric_ordinal(tmp_path: Path) -> None:
+    workspace = tmp_path / "ws"
+    init_workspace(workspace)
+    with pytest.raises(ContractError, match="invalid Decision ID"):
+        draft_decision(
+            workspace,
+            {
+                "rationale": "Reject a non-canonical Decision ID.",
+                "basis_refs": [],
+                "operations": [
+                    {
+                        "op": "create_claim",
+                        "local_ref": "claim",
+                        "claimType": "mechanism",
+                        "statement": "The pathway is concerted.",
+                    }
+                ],
+            },
+            decision_id="dec_01",
+        )
 
 
 def test_context_and_validation_are_pure_reads(tmp_path: Path) -> None:

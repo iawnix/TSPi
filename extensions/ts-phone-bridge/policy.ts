@@ -23,6 +23,12 @@ export const CONFIRMATION_REQUIRED_TOOLS = new Set<string>([
   TS_PUBLIC_TOOL_NAMES.notifyUser,
 ]);
 
+export const OBSERVER_ALLOWED_TOOLS = new Set<string>([
+  ...PACKAGE_SOURCE_READ_TOOLS,
+  TS_PUBLIC_TOOL_NAMES.workspaceContext,
+  TS_PUBLIC_TOOL_NAMES.remoteInspect,
+]);
+
 const MAX_INPUT_PREVIEW_CHARS = 1_800;
 
 export function formatConfirmation(event: ToolCallEvent): string {

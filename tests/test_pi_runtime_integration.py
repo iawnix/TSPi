@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -114,6 +115,52 @@ def test_real_pi_review_uses_named_result_tool_without_provider_strict(tmp_path:
     }
 
 
+def test_real_pi_review_reads_one_artifact_batch_then_forces_result(tmp_path: Path) -> None:
+    pi = _supported_pi()
+    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    artifact_bytes = b"normal termination\nmode follows the proposed coordinate\n"
+    (workspace / "review-artifact.log").write_bytes(artifact_bytes)
+    artifact_id = "art_" + hashlib.sha256(artifact_bytes).hexdigest()[:24]
+    agent_dir = tmp_path / "pi-agent"
+    agent_dir.mkdir()
+    requests: list[dict[str, object]] = []
+    responses = [
+        _tool_call_chunks(
+            "ts_review_artifact_read",
+            {"requests": [{"artifact_id": artifact_id, "section": "overview"}]},
+        ),
+        _tool_call_chunks("ts_review_result", _review_result()),
+    ]
+    with _RecordingServer(requests, responses) as base_url:
+        _write_recording_model(agent_dir, base_url)
+        completed = _run_review_probe(
+            pi,
+            workspace,
+            agent_dir,
+            tmp_path / "sessions",
+            "TS_TEST_REVIEW:",
+            command="/ts-test-review-child artifact",
+        )
+
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(_notification(completed.stdout, "TS_TEST_REVIEW:").split(":", 1)[1])
+    assert len(requests) == 2
+    assert {item["function"]["name"] for item in requests[0]["tools"]} == {
+        "ts_review_artifact_read",
+        "ts_review_result",
+    }
+    assert "tool_choice" not in requests[0]
+    assert requests[1]["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "ts_review_result"},
+    }
+    assert len(result["actions"]) == 1
+    assert result["actions"][0]["action"] == "artifact_read"
+    assert "path" not in result["actions"][0]
+    assert "text" not in result["actions"][0]
+    assert result["metadata"]["artifact_read_count"] == 1
+
+
 def test_real_pi_review_surfaces_provider_502_without_format_retry(tmp_path: Path) -> None:
     pi = _supported_pi()
     workspace = bootstrap_v4_workspace(tmp_path / "workspace")
@@ -132,6 +179,46 @@ def test_real_pi_review_surfaces_provider_502_without_format_retry(tmp_path: Pat
     assert "internal_server_error" in message
     assert "without calling ts_review_result" not in message
     assert len(requests) == 1
+
+
+def test_real_pi_review_preserves_artifact_read_audit_on_provider_failure(tmp_path: Path) -> None:
+    pi = _supported_pi()
+    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    artifact_bytes = b"normal termination\n"
+    (workspace / "review-artifact.log").write_bytes(artifact_bytes)
+    artifact_id = "art_" + hashlib.sha256(artifact_bytes).hexdigest()[:24]
+    agent_dir = tmp_path / "pi-agent"
+    agent_dir.mkdir()
+    requests: list[dict[str, object]] = []
+    error = _HttpError(502, {"error": {"type": "server_error", "code": "internal_server_error", "message": "Bad gateway"}})
+    with _RecordingServer(requests, [
+        _tool_call_chunks(
+            "ts_review_artifact_read",
+            {"requests": [{"artifact_id": artifact_id, "section": "overview"}]},
+        ),
+        error,
+    ]) as base_url:
+        _write_recording_model(agent_dir, base_url)
+        completed = _run_review_probe(
+            pi,
+            workspace,
+            agent_dir,
+            tmp_path / "sessions",
+            "TS_TEST_REVIEW_ERROR:",
+            command="/ts-test-review-child artifact",
+        )
+
+    assert completed.returncode == 0, completed.stderr
+    failure = json.loads(_notification(completed.stdout, "TS_TEST_REVIEW_ERROR:").split(":", 1)[1])
+    assert "provider request failed" in failure["message"]
+    assert len(failure["actions"]) == 1
+    assert failure["actions"][0]["action"] == "artifact_read"
+    assert "text" not in failure["actions"][0]
+    assert len(requests) == 2
+    assert requests[1]["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "ts_review_result"},
+    }
 
 
 def _supported_pi() -> str:
@@ -159,6 +246,8 @@ def _run_review_probe(
     agent_dir: Path,
     session_dir: Path,
     prefix: str,
+    *,
+    command: str = "/ts-test-review-child",
 ) -> SimpleNamespace:
     env = {**os.environ, "PI_CODING_AGENT_DIR": str(agent_dir), "PI_OFFLINE": "1"}
     return _run_rpc_until(
@@ -177,7 +266,7 @@ def _run_review_probe(
         ],
         workspace,
         env,
-        {"id": "review", "type": "prompt", "message": "/ts-test-review-child"},
+        {"id": "review", "type": "prompt", "message": command},
         prefix,
     )
 

@@ -69,6 +69,12 @@ falsifiers, tags, status, and exact Observation/validation history. A separate
 ClaimRelation record connects two Claims with an open scientific relation label
 such as dependency, refinement, conflict, or alternative. The Kernel enforces
 acyclic directed relations but does not interpret a label as permission to act.
+Claim IDs are workspace-local monotonic ordinals (`claim_1`, `claim_2`, ...),
+used only as immutable identity and never as confidence, priority, or policy.
+`ResearchAct.claim_refs` records Claims in an Act's declared scope, while
+`Claim.created_by_act` records the Act in which a new Claim originated. They are
+not mirrored fields. Read projections derive the Claim-Act neighborhood from
+their union so provenance-only links remain visible without canonical rewrites.
 
 ### ResearchAct DAG
 
@@ -195,7 +201,12 @@ Validation applies the exact Decision to an isolated copy of canonical state
 and validates the complete post-state. Apply repeats binding and post-state
 validation while holding the workspace lock, then commits through one
 transaction path. A Decision is idempotent only when its ID and full canonical
-digest match. Any edit after draft requires a new draft.
+digest match. Decision IDs are workspace-local monotonic ordinals (`dec_1`,
+`dec_2`, ...), used only as immutable identity. Drafting does not reserve an
+ordinal: parallel drafts may receive the same next ID, the first committed
+content owns it, and a conflicting draft must be redrafted. Committed, aborted,
+and recoverable transaction IDs are never reused. Any edit after draft requires
+a new draft.
 
 Supported draft operations are:
 
@@ -253,6 +264,10 @@ The same read-only public tool exposes `artifacts`, `compute_capabilities`, and
 `validation_capabilities`. Every bounded graph projection reports omitted
 counts and retrieval hints. The Pi transcript is conversational state, not a
 scientific source of truth.
+
+Claim-Act traversal uses the union of declared Act scope and Claim creator
+provenance. Context, Review, report rendering, and `ts_web` share this derived
+relationship; none mutates the underlying Claim or ResearchAct records.
 
 Validation capability discovery is progressive: the catalog is compact, while
 an exact `templateId` plus `templateVersion` returns that template's accepted
@@ -314,14 +329,19 @@ scientific reasoning. The host:
 1. selects one target Claim and asks the Context Compiler for its dependency
    snapshot;
 2. creates a bounded `ts-agent-task/2` containing compact Claim, relation, Act,
-   Observation, Finding, GateSpec, ValidationResult, and artifact excerpts;
+   Observation, Finding, GateSpec, ValidationResult, and a logical artifact
+   manifest without paths or file contents;
 3. starts a fresh Pi child session with no parent transcript, Skills,
-   extensions, filesystem, shell, compute, mutation, or recursive delegation;
-4. enables exactly one `ts_review_result` tool and forces that named tool;
-5. validates `ts-agent-result/1` locally against task identity, scope, citation
+   extensions, direct filesystem, shell, compute, mutation, or delegation;
+4. enables `ts_review_result` plus, only when artifacts were selected, one
+   batch-only `ts_review_artifact_read` tool; the initial turn may read once or
+   submit directly, and every post-read or repair turn forces the result tool;
+5. verifies path containment, size, SHA-256, Claim ownership, section and byte
+   budgets before returning any excerpt, while journaling metadata but no text;
+6. validates `ts-agent-result/1` locally against task identity, scope, citation
    allowlist, and advisory authority;
-6. permits at most one same-session structural repair;
-7. records provider failures before classifying missing or invalid output.
+7. permits at most one same-session structural repair;
+8. records provider failures before classifying missing or invalid output.
 
 Provider-side strict function mode is not required. Local TypeBox and semantic
 validation remain authoritative. Review cannot mutate state, create scientific

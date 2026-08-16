@@ -22,8 +22,10 @@ interface PendingApproval {
 export interface BridgeClientOptions {
   workspaceId: string;
   workspaceRoot: string;
+  accessMode: "controller" | "observer";
   socketPath: string;
   secretPath: string;
+  getSessionId(): string;
   getSessionGeneration(): number;
   onCommand(command: BridgePromptCommand | BridgeAbortCommand): Promise<void> | void;
   onConnected(): void;
@@ -117,7 +119,9 @@ export class TsPhoneBridgeClient {
         protocolVersion: BRIDGE_PROTOCOL_VERSION,
         type: "bridge.register",
         workspaceId: this.#options.workspaceId,
+        sessionId: this.#options.getSessionId(),
         workspaceRoot: this.#options.workspaceRoot,
+        accessMode: this.#options.accessMode,
         instanceEpoch: this.instanceEpoch,
         sessionGeneration: this.#options.getSessionGeneration(),
         secret,
@@ -135,7 +139,9 @@ export class TsPhoneBridgeClient {
   async #handleRecord(value: unknown): Promise<void> {
     try {
       const record = parseBridgeServerRecord(value);
-      if (record.workspaceId !== this.#options.workspaceId || record.instanceEpoch !== this.instanceEpoch) {
+      if (record.workspaceId !== this.#options.workspaceId
+        || record.sessionId !== this.#options.getSessionId()
+        || record.instanceEpoch !== this.instanceEpoch) {
         throw new Error("TS Phone bridge server changed connection identity");
       }
       if (record.type === "bridge.registered") {
@@ -178,6 +184,7 @@ export class TsPhoneBridgeClient {
       protocolVersion: BRIDGE_PROTOCOL_VERSION,
       type,
       workspaceId: this.#options.workspaceId,
+      sessionId: this.#options.getSessionId(),
       instanceEpoch: this.instanceEpoch,
       sessionGeneration: this.#options.getSessionGeneration(),
       sequence: this.#sequence,
@@ -191,6 +198,7 @@ export class TsPhoneBridgeClient {
       protocolVersion: BRIDGE_PROTOCOL_VERSION,
       type: "command.ack",
       workspaceId: this.#options.workspaceId,
+      sessionId: this.#options.getSessionId(),
       instanceEpoch: this.instanceEpoch,
       sessionGeneration: this.#options.getSessionGeneration(),
       requestId,

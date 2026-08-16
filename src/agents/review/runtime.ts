@@ -23,6 +23,12 @@ import {
   REVIEW_RESULT_TOOL_NAME,
   type ReviewResultCapture,
 } from "./result-tool.ts";
+import {
+  createReviewArtifactReadCapture,
+  createReviewArtifactReadTool,
+} from "./artifact-tool.ts";
+
+const { ARTIFACT_READ_TOOL_NAME } = require("./artifact-access.cjs");
 
 const SUBAGENT_DIR = dirname(fileURLToPath(import.meta.url));
 const PROMPT_DIR = resolve(SUBAGENT_DIR, "prompts");
@@ -55,6 +61,7 @@ interface ReviewRunOptions {
 
 export interface ReviewRunResult {
   result: Record<string, unknown>;
+  actions: Array<Record<string, unknown>>;
   metadata: {
     run_id: string;
     operation: "claim_review";
@@ -74,6 +81,7 @@ export interface ReviewRunResult {
     };
     duration_ms: number;
     result_attempts: number;
+    artifact_read_count: number;
   };
   invalidOutputs: InvalidReviewOutput[];
 }
@@ -97,6 +105,7 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
   activeRun = true;
   const startedAt = Date.now();
   const invalidOutputs: InvalidReviewOutput[] = [];
+  const artifactReadCapture = createReviewArtifactReadCapture();
 
   try {
     const timeoutMs = normalizeTimeout(options.timeoutMs);
@@ -131,7 +140,19 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
       retry: { enabled: false },
     });
     const capture = createReviewResultCapture();
-    const resultTool = createReviewResultTool(options.packet, options.reviewSnapshot, capture);
+    const artifactManifest = Array.isArray(options.reviewSnapshot.artifact_manifest)
+      ? options.reviewSnapshot.artifact_manifest
+      : [];
+    const resultTool = createReviewResultTool(
+      options.packet,
+      options.reviewSnapshot,
+      capture,
+      artifactReadCapture,
+    );
+    const artifactTool = artifactManifest.length
+      ? createReviewArtifactReadTool(options.workspaceRoot, artifactManifest, artifactReadCapture)
+      : null;
+    const toolChoiceState = { forceResult: false };
     const providerResponse: ProviderResponseObservation = {};
     const resourceLoader = await createIsolatedResourceLoader(
       systemPrompt,
@@ -139,7 +160,15 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
       agentDir,
       settingsManager,
       providerResponse,
+      () => !artifactTool
+        || artifactReadCapture.completed
+        || capture.attemptCount > 0
+        || toolChoiceState.forceResult,
     );
+    const toolNames = artifactTool
+      ? [ARTIFACT_READ_TOOL_NAME, REVIEW_RESULT_TOOL_NAME]
+      : [REVIEW_RESULT_TOOL_NAME];
+    const customTools = artifactTool ? [artifactTool, resultTool] : [resultTool];
     return await withDisposableSession(
       () => createAgentSession({
         cwd: options.workspaceRoot,
@@ -149,8 +178,8 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
         modelRuntime,
         resourceLoader,
         noTools: "builtin",
-        tools: [REVIEW_RESULT_TOOL_NAME],
-        customTools: [resultTool],
+        tools: toolNames,
+        customTools,
         sessionManager: SessionManager.inMemory(options.workspaceRoot),
         settingsManager,
       }),
@@ -160,7 +189,7 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
         }
         const session = created.session;
         const activeTools = session.getActiveToolNames().sort();
-        if (JSON.stringify(activeTools) !== JSON.stringify([REVIEW_RESULT_TOOL_NAME])) {
+        if (JSON.stringify(activeTools) !== JSON.stringify([...toolNames].sort())) {
           throw new Error(`TS subagent isolation failed; active tools: ${activeTools.join(", ")}`);
         }
 
@@ -182,7 +211,7 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
           }
         });
         try {
-          await promptWithDeadline(session, buildTaskPrompt(options.providerInput), {
+          await promptWithDeadline(session, buildTaskPrompt(options.providerInput, Boolean(artifactTool)), {
             timeoutMs,
             signal: options.signal,
             onLifecycle: options.onLifecycle,
@@ -203,6 +232,7 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
             capture,
             invalidOutputs,
             attempts,
+            toolChoiceState,
           );
         } finally {
           unsubscribe();
@@ -212,6 +242,7 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
         const scope = options.packet.scope as Record<string, unknown>;
         return {
           result,
+          actions: artifactReadCapture.actions,
           metadata: {
             run_id: String(options.packet.task_id),
             operation: "claim_review",
@@ -231,6 +262,7 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
             },
             duration_ms: Date.now() - startedAt,
             result_attempts: capture.attemptCount + invalidOutputs.filter((item) => item.validation_stage === "missing_tool_call").length,
+            artifact_read_count: artifactReadCapture.actions.length,
           },
           invalidOutputs,
         };
@@ -240,6 +272,9 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
   } catch (error) {
     if (invalidOutputs.length && error && typeof error === "object") {
       (error as Error & { invalidReviewOutputs?: InvalidReviewOutput[] }).invalidReviewOutputs = invalidOutputs;
+    }
+    if (error && typeof error === "object") {
+      (error as Error & { reviewActions?: Array<Record<string, unknown>> }).reviewActions = artifactReadCapture.actions;
     }
     throw error;
   } finally {
@@ -253,6 +288,7 @@ async function createIsolatedResourceLoader(
   agentDir: string,
   settingsManager: SettingsManager,
   providerResponse: ProviderResponseObservation,
+  shouldForceResult: () => boolean,
 ): Promise<ResourceLoader> {
   const loader = new DefaultResourceLoader({
     cwd,
@@ -272,7 +308,9 @@ async function createIsolatedResourceLoader(
           pi.on("before_provider_request", (event) => {
             delete providerResponse.status;
             delete providerResponse.contentType;
-            return forceReviewResultToolChoice(event.payload);
+            return shouldForceResult()
+              ? forceReviewResultToolChoice(event.payload)
+              : event.payload;
           });
           pi.on("after_provider_response", (event) => {
             providerResponse.status = event.status;
@@ -307,8 +345,11 @@ function loadSystemPrompt(operation: string): string {
   return `${core}\n\nReview mode instructions:\n${role}`;
 }
 
-function buildTaskPrompt(providerInput: Record<string, unknown>): string {
-  return `Review this bounded TS workspace task packet. Submit the result exactly once through ${REVIEW_RESULT_TOOL_NAME}; free text is not a result.\n\n${JSON.stringify(providerInput)}`;
+function buildTaskPrompt(providerInput: Record<string, unknown>, hasArtifacts: boolean): string {
+  const artifactInstruction = hasArtifacts
+    ? ` You may call ${ARTIFACT_READ_TOOL_NAME} once with a bounded batch if the logical artifact manifest is needed; otherwise submit directly.`
+    : "";
+  return `Review this bounded TS workspace task packet.${artifactInstruction} Submit the result exactly once through ${REVIEW_RESULT_TOOL_NAME}; free text is not a result.\n\n${JSON.stringify(providerInput)}`;
 }
 
 async function repairMissingToolCall(
@@ -321,6 +362,7 @@ async function repairMissingToolCall(
   capture: ReviewResultCapture,
   invalidOutputs: InvalidReviewOutput[],
   attempts: Map<string, unknown>,
+  toolChoiceState: { forceResult: boolean },
 ): Promise<void> {
   if (capture.accepted || capture.attemptCount > 0) return;
   const raw = session.getLastAssistantText() || "";
@@ -332,6 +374,7 @@ async function repairMissingToolCall(
   });
   const remainingMs = timeoutMs - (Date.now() - startedAt);
   if (remainingMs < 1) throw reviewResultError(invalidOutputs);
+  toolChoiceState.forceResult = true;
   await promptWithDeadline(
     session,
     `Format repair only. Keep the same analysis and call ${REVIEW_RESULT_TOOL_NAME} exactly once with a schema-valid result. Do not return free text.`,

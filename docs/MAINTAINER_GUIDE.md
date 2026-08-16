@@ -125,11 +125,13 @@ reasoning and focused documentation, not a Kernel enum.
 - Bootstrap initializes fresh state once and otherwise validates without
   canonical rewrites.
 - The Decision draft accepts high-level v4 operations and local aliases; the
-  Kernel allocates all `dec_`, `clm_`, `rel_`, `act_`, `obs_`, `fnd_`, `gsp_`,
+  Kernel allocates all `dec_`, `claim_`, `rel_`, `act_`, `obs_`, `fnd_`, `gsp_`,
   `val_`, and `acc_` identifiers.
 - A draft binds the current frontier projection and workspace revision.
 - Dry-run validation applies the full Decision to an isolated post-state.
 - Apply repeats binding and post-state validation under the lock.
+- Decision IDs are workspace-local monotonic ordinals; draft allocation has no
+  reservation, and durable transaction history prevents reuse.
 - A Decision ID is idempotent only for identical canonical content.
 - Any edit to a returned Decision requires a fresh draft.
 - The transaction owner writes the Decision snapshot, proposed documents,
@@ -178,14 +180,20 @@ write canonical state.
 The runtime must preserve these invariants:
 
 - fresh child session with no parent transcript;
-- exactly one enabled `ts_review_result` tool;
-- forced named tool choice without provider-side strict function mode;
-- no Skills, extensions, filesystem, shell, network, compute, or recursion;
+- `ts_review_result` plus an optional task-bound `ts_review_artifact_read`;
+- no artifact content or physical path in the initial provider packet;
+- at most one successful artifact-read batch, six section requests, 4 KiB per
+  excerpt, and 12 KiB total;
+- forced result-tool choice after artifact read and during repair, without
+  provider-side strict function mode;
+- no Skills, extensions, direct filesystem, shell, network, compute, or recursion;
 - compact task projection and canonical citation allowlist;
 - local TypeBox plus semantic validation;
 - at most one same-session structural repair;
 - provider HTTP/stream failure outranks missing-tool/schema failure;
 - invalid raw output is private, bounded, operational, and never auto-ingested;
+- artifact-read journals contain digests, line ranges and byte counts, never
+  copied source text;
 - exactly one Root disposition before the next scientific mutation.
 
 Citation arrays are sets with canonical ordering. Never compare them using

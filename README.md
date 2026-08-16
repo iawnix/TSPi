@@ -144,7 +144,8 @@ slash commands:
   validation-capability projection.
 - `ts_workspace_decision_draft`, `ts_workspace_decision_validate`, and
   `ts_workspace_decision_apply`: the only canonical mutation pipeline.
-- `ts_subagent_review`: one isolated advisory Review of a target Claim.
+- `ts_subagent_review`: one isolated advisory Review of a target Claim, with an
+  optional one-batch logical-artifact reader instead of preloaded file content.
 - `ts_review_disposition`: one deterministic Root response to a completed
   Review.
 - `ts_compute`: deterministic prepare, submit, inspect, collect, cancel, and

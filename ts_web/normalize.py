@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from ts_workspace.acceptance import project_acceptances
+from ts_workspace.associations import derive_claim_act_links
 from ts_workspace.io import read_json
 from ts_workspace.operational import operational_snapshot
 from ts_workspace.revision import report_id_for_revision, workspace_revision_from_documents
@@ -38,10 +39,18 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
     activities = operations["deterministic_activities"]
     reviews = operations["review_runs"]
     controls = operations["unresolved_controls"]
+    claims = _objects(documents[CLAIMS_FILE].get("claims"))
     acts = [
         _normalize_act(root, record, activities=activities, reviews=reviews, controls=controls)
         for record in _objects(documents[RESEARCH_ACTS_FILE].get("acts"))
     ]
+    claim_act_links = derive_claim_act_links(claims, acts)
+    for act in acts:
+        act["related_claim_refs"] = [
+            claim_id
+            for claim_id, act_id in claim_act_links
+            if act_id == act.get("act_id")
+        ]
     acceptances = project_acceptances(root, _strings(state.get("acceptance_refs")), documents)
     current_acceptances = [record for record in acceptances if record["current"]]
 
@@ -63,7 +72,7 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
             "current_refs": [str(record["ref"]) for record in current_acceptances],
             "stale_refs": [str(record["ref"]) for record in acceptances if not record["current"]],
         },
-        "claims": _objects(documents[CLAIMS_FILE].get("claims")),
+        "claims": claims,
         "claim_relations": _objects(documents[CLAIM_RELATIONS_FILE].get("relations")),
         "research_acts": acts,
         "observations": _objects(documents[OBSERVATIONS_FILE].get("observations")),
@@ -171,6 +180,10 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
         }
         for record in _objects(view.get("claim_relations"))
     ]
+    claim_act_pairs = derive_claim_act_links(
+        _objects(view.get("claims")),
+        _objects(view.get("research_acts")),
+    )
     acts = [
         {
             "id": record.get("act_id"),
@@ -179,6 +192,11 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
             "status": record.get("status"),
             "tags": _strings(record.get("tags")),
             "claim_refs": _strings(record.get("claim_refs")),
+            "related_claim_refs": [
+                claim_id
+                for claim_id, act_id in claim_act_pairs
+                if act_id == record.get("act_id")
+            ],
             "dependency_refs": _strings(record.get("dependency_refs")),
             "focus": record.get("act_id") in focus_acts,
             "outcome": _object(record.get("result")).get("outcome"),
@@ -199,9 +217,8 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
         for dependency in act["dependency_refs"]
     ]
     claim_act_links = [
-        {"claim_ref": claim_ref, "act_ref": act["act_id"]}
-        for act in acts
-        for claim_ref in act["claim_refs"]
+        {"claim_ref": claim_ref, "act_ref": act_ref}
+        for claim_ref, act_ref in claim_act_pairs
     ]
     return {
         "schema_version": "ts-explorer-graph/4",
@@ -226,13 +243,20 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
 
 def claim_payload(source_root: str | Path, claim_id: str, *, label: str | None = None) -> dict[str, Any]:
     view = normalize_workspace(source_root, label=label)
-    claim = _find(_objects(view.get("claims")), "claim_id", claim_id, "Claim")
+    all_claims = _objects(view.get("claims"))
+    all_acts = _objects(view.get("research_acts"))
+    claim = _find(all_claims, "claim_id", claim_id, "Claim")
     relations = [
         row
         for row in _objects(view.get("claim_relations"))
         if claim_id in {row.get("source_claim_ref"), row.get("target_claim_ref")}
     ]
-    acts = [row for row in _objects(view.get("research_acts")) if claim_id in _strings(row.get("claim_refs"))]
+    related_act_ids = {
+        act_ref
+        for claim_ref, act_ref in derive_claim_act_links(all_claims, all_acts)
+        if claim_ref == claim_id
+    }
+    acts = [row for row in all_acts if row.get("act_id") in related_act_ids]
     act_ids = {str(row.get("act_id")) for row in acts}
     observation_ids = {
         *_strings(claim.get("observation_refs")),
@@ -275,13 +299,19 @@ def act_payload(source_root: str | Path, act_id: str, *, label: str | None = Non
     act = _find(_objects(view.get("research_acts")), "act_id", act_id, "ResearchAct")
     dependency_ids = set(_strings(act.get("dependency_refs")))
     all_acts = _objects(view.get("research_acts"))
+    all_claims = _objects(view.get("claims"))
+    related_claim_ids = {
+        claim_ref
+        for claim_ref, linked_act_id in derive_claim_act_links(all_claims, all_acts)
+        if linked_act_id == act_id
+    }
     return {
         "schema_version": "ts-explorer-research-act/1",
         "research_act": act,
         "dependencies": [row for row in all_acts if row.get("act_id") in dependency_ids],
         "dependents": [row for row in all_acts if act_id in _strings(row.get("dependency_refs"))],
         "claims": [
-            row for row in _objects(view.get("claims")) if row.get("claim_id") in _strings(act.get("claim_refs"))
+            row for row in all_claims if row.get("claim_id") in related_claim_ids
         ],
         "observations": [
             row

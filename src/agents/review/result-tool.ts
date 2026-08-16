@@ -3,6 +3,7 @@ import { type ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { Compile } from "typebox/compile";
 import { createRequire } from "node:module";
+import { type ReviewArtifactReadCapture } from "./artifact-tool.ts";
 
 const require = createRequire(import.meta.url);
 const { validateReviewResult } = require("./output-schema.cjs");
@@ -24,6 +25,7 @@ export function createReviewResultTool(
   packet: Record<string, unknown>,
   reviewSnapshot: Record<string, unknown>,
   capture: ReviewResultCapture,
+  artifactReadCapture?: ReviewArtifactReadCapture,
 ): ToolDefinition {
   const parameters = createReviewResultSchema(reviewSnapshot);
   const strictValidator = Compile(parameters);
@@ -51,6 +53,7 @@ export function createReviewResultTool(
         buildReviewResult(params, packet),
         packet,
         reviewSnapshot,
+        artifactReadCapture ? [...artifactReadCapture.readArtifactIds] : [],
       ) as ReviewResult;
       capture.accepted = validated;
       return {

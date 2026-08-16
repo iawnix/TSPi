@@ -82,6 +82,7 @@ def test_research_act_dag_supports_branch_merge_and_kernel_ids(tmp_path: Path) -
 
     allocations = drafted["allocated_refs"]
     assert set(allocations) == {"mechanism", "intake", "path_a", "path_b", "synthesis"}
+    assert allocations["mechanism"] == "claim_1"
     assert [allocations[name] for name in ("intake", "path_a", "path_b", "synthesis")] == [
         "act_1",
         "act_2",
@@ -100,7 +101,7 @@ def test_research_act_dag_supports_branch_merge_and_kernel_ids(tmp_path: Path) -
     assert validate_workspace(root)["valid"] is True
 
 
-def test_research_act_ids_are_monotonic_and_stale_parallel_drafts_must_reallocate(tmp_path: Path) -> None:
+def test_research_act_ids_are_monotonic_and_parallel_decision_collision_must_redraft(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
     first, _ = _apply(
@@ -129,7 +130,7 @@ def test_research_act_ids_are_monotonic_and_stale_parallel_drafts_must_reallocat
     assert right["allocated_refs"]["right"] == "act_2"
 
     apply_decision(root, left["decision"])
-    with pytest.raises(ContractError, match="stale"):
+    with pytest.raises(ContractError, match="already exists with different content"):
         apply_decision(root, right["decision"])
 
     redrafted = draft_decision(
@@ -141,6 +142,112 @@ def test_research_act_ids_are_monotonic_and_stale_parallel_drafts_must_reallocat
         },
     )
     assert redrafted["allocated_refs"]["right"] == "act_3"
+
+
+def test_decision_ids_are_monotonic_and_parallel_drafts_conflict_before_redraft(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    left = draft_decision(
+        root,
+        {
+            "rationale": "Draft the left branch.",
+            "basis_refs": [],
+            "operations": [{"op": "start_act", "local_ref": "left", "objective": "Create the left branch."}],
+        },
+    )
+    right = draft_decision(
+        root,
+        {
+            "rationale": "Draft the right branch from the same revision.",
+            "basis_refs": [],
+            "operations": [{"op": "start_act", "local_ref": "right", "objective": "Create the right branch."}],
+        },
+    )
+    assert left["decision"]["decision_id"] == "dec_1"
+    assert right["decision"]["decision_id"] == "dec_1"
+
+    applied = apply_decision(root, left["decision"])
+    assert apply_decision(root, left["decision"]) == applied
+    with pytest.raises(ContractError, match="already exists with different content"):
+        apply_decision(root, right["decision"])
+
+    redrafted = draft_decision(
+        root,
+        {
+            "rationale": "Redraft the right branch against the current revision.",
+            "basis_refs": [],
+            "operations": [{"op": "start_act", "local_ref": "right", "objective": "Create the right branch."}],
+        },
+    )
+    assert redrafted["decision"]["decision_id"] == "dec_2"
+
+
+def test_recorded_aborted_decision_id_is_not_reused(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    (root / "transaction_log.jsonl").write_text(
+        json.dumps({"decision_id": "dec_1", "stage": "aborted"}) + "\n",
+        encoding="utf-8",
+    )
+
+    drafted = draft_decision(
+        root,
+        {
+            "rationale": "Allocate after an aborted transaction.",
+            "basis_refs": [],
+            "operations": [{"op": "start_act", "local_ref": "next", "objective": "Use the next Decision ID."}],
+        },
+    )
+    assert drafted["decision"]["decision_id"] == "dec_2"
+
+
+def test_claim_ids_are_monotonic_and_parallel_decision_collision_must_redraft(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    first, _ = _apply(
+        root,
+        [{"op": "create_claim", "local_ref": "first", "claimType": "hypothesis", "statement": "First Claim."}],
+    )
+    assert first["allocated_refs"]["first"] == "claim_1"
+
+    left = draft_decision(
+        root,
+        {
+            "rationale": "Draft one Claim.",
+            "basis_refs": [],
+            "operations": [
+                {"op": "create_claim", "local_ref": "left", "claimType": "hypothesis", "statement": "Left Claim."}
+            ],
+        },
+    )
+    right = draft_decision(
+        root,
+        {
+            "rationale": "Draft another Claim from the same revision.",
+            "basis_refs": [],
+            "operations": [
+                {"op": "create_claim", "local_ref": "right", "claimType": "hypothesis", "statement": "Right Claim."}
+            ],
+        },
+    )
+    assert left["allocated_refs"]["left"] == "claim_2"
+    assert right["allocated_refs"]["right"] == "claim_2"
+
+    apply_decision(root, left["decision"])
+    with pytest.raises(ContractError, match="already exists with different content"):
+        apply_decision(root, right["decision"])
+
+    redrafted = draft_decision(
+        root,
+        {
+            "rationale": "Redraft the second Claim against the current revision.",
+            "basis_refs": [],
+            "operations": [
+                {"op": "create_claim", "local_ref": "right", "claimType": "hypothesis", "statement": "Right Claim."}
+            ],
+        },
+    )
+    assert redrafted["allocated_refs"]["right"] == "claim_3"
 
 
 def test_decision_snapshots_preserve_human_readable_utf8(tmp_path: Path) -> None:
@@ -449,7 +556,7 @@ def test_acceptance_record_tampering_is_rejected(tmp_path: Path) -> None:
     assert "acceptance_digest_mismatch" in {item["code"] for item in validation["findings"]}
 
 
-def test_decision_replay_is_idempotent_but_stale_new_decision_is_rejected(tmp_path: Path) -> None:
+def test_decision_replay_is_idempotent_but_conflicting_parallel_decision_is_rejected(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
     first = draft_decision(
@@ -462,7 +569,7 @@ def test_decision_replay_is_idempotent_but_stale_new_decision_is_rejected(tmp_pa
     )
     applied = apply_decision(root, first["decision"])
     assert apply_decision(root, first["decision"]) == applied
-    with pytest.raises(ContractError, match="stale"):
+    with pytest.raises(ContractError, match="already exists with different content"):
         apply_decision(root, stale["decision"])
 
 

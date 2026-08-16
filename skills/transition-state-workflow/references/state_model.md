@@ -6,6 +6,7 @@ identity, integrity, persistence, and transactions.
 
 ## Contents
 
+- Decision Identity
 - Claim Graph
 - ResearchAct DAG
 - Observation
@@ -13,6 +14,15 @@ identity, integrity, persistence, and transactions.
 - GateSpec And ValidationResult
 - Acceptance
 - Revisions
+
+## Decision Identity
+
+The Kernel allocates workspace-local Decision IDs (`dec_1`, `dec_2`, ...).
+Their ordinal is immutable identity only, not research order, priority, or a
+workflow phase. Drafting does not reserve an ID: parallel drafts may receive the
+same next ordinal, but only identical content can replay it after one commits.
+Conflicting content must be redrafted. Durable committed, aborted, and
+recoverable transaction IDs are not reused.
 
 ## Claim Graph
 
@@ -26,6 +36,16 @@ Use it for dependency, refinement, conflict, alternatives, or another explicit
 scientific relationship. The Kernel checks refs and acyclicity but never maps a
 label to a next action.
 
+The Kernel allocates workspace-local Claim IDs in creation order (`claim_1`,
+`claim_2`, ...). Claim uses `ts-claim/2`; its ordinal is identity only, not
+confidence, priority, hierarchy, or a workflow phase.
+
+`ResearchAct.claim_refs` is declared research scope. `Claim.created_by_act` is
+origin provenance for a Claim discovered during an Act. The canonical fields
+are intentionally not mirrored. Context and UI projections derive related
+Claim-Act pairs from their union, so either relationship remains traversable
+without synchronizing duplicate state.
+
 ## ResearchAct DAG
 
 A ResearchAct records one bounded act:
@@ -38,8 +58,9 @@ A ResearchAct records one bounded act:
 - Kernel-owned artifact root `acts/<act_id>`;
 - open state or one terminal result.
 
-The Kernel allocates workspace-local IDs in creation order (`act_1`, `act_2`,
-...). The ordinal is identity, not a workflow phase, priority, or permission signal.
+The Kernel allocates workspace-local Act IDs in creation order (`act_1`,
+`act_2`, ...). The ordinal is identity, not a workflow phase, priority, or
+permission signal.
 
 Multiple dependencies support merges. A new Act depending on an earlier
 checkpoint supports backtracking. Preserve failed, blocked, inconclusive, and

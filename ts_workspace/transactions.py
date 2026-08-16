@@ -220,6 +220,34 @@ def transaction_status(root: Path, decision_id: str) -> str:
     return status
 
 
+def recorded_decision_ids(root: Path) -> set[str]:
+    """Return Decision IDs already present in durable or recoverable history."""
+
+    identifiers = {
+        path.stem
+        for path in (root / "decisions").glob("*.json")
+        if path.is_file() and not path.is_symlink()
+    }
+    for name in ("decision_log.jsonl", "transaction_log.jsonl"):
+        path = root / name
+        for line in path.read_text(encoding="utf-8").splitlines() if path.is_file() else []:
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            decision_id = row.get("decision_id") if isinstance(row, dict) else None
+            if isinstance(decision_id, str) and decision_id:
+                identifiers.add(decision_id)
+    transaction_root = root / TRANSACTION_DIR
+    if transaction_root.is_dir():
+        identifiers.update(
+            path.name
+            for path in transaction_root.iterdir()
+            if path.is_dir() and not path.is_symlink()
+        )
+    return identifiers
+
+
 def _remove_empty_transaction_container(root: Path) -> None:
     try:
         (root / TRANSACTION_DIR).rmdir()

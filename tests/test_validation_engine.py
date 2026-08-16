@@ -39,7 +39,7 @@ def _observation(
             "producer_version": "1",
             "source_digests": {"acts/act_1/outputs/result.json": "sha256:" + "a" * 64},
         },
-        "created_by_decision": "dec_001",
+        "created_by_decision": "dec_1",
         "created_at": "2026-08-15T00:00:00+00:00",
     }
 
@@ -57,10 +57,10 @@ def _compile_classical_ts() -> dict:
             },
         },
         spec_id="gsp_001",
-        target_claim_ref="clm_001",
+        target_claim_ref="claim_1",
         registry=registry,
         created_by_act="act_1",
-        created_by_decision="dec_001",
+        created_by_decision="dec_1",
         frozen_at="2026-08-15T00:00:00+00:00",
     )
 
@@ -92,7 +92,7 @@ def test_gate_evaluation_passes_from_exact_semantic_observations() -> None:
         observations,
         result_id="val_001",
         evaluated_by_act="act_1",
-        evaluated_by_decision="dec_002",
+        evaluated_by_decision="dec_2",
         registry=registry,
         evaluated_at="2026-08-15T00:01:00+00:00",
     )
@@ -116,7 +116,7 @@ def test_missing_observation_is_inconclusive_and_false_observation_fails() -> No
         incomplete,
         result_id="val_001",
         evaluated_by_act="act_1",
-        evaluated_by_decision="dec_002",
+        evaluated_by_decision="dec_2",
         registry=registry,
     )
     assert inconclusive["verdict"] == "inconclusive"
@@ -131,7 +131,7 @@ def test_missing_observation_is_inconclusive_and_false_observation_fails() -> No
         complete,
         result_id="val_002",
         evaluated_by_act="act_1",
-        evaluated_by_decision="dec_003",
+        evaluated_by_decision="dec_3",
         registry=registry,
     )
     assert failed["verdict"] == "fail"
@@ -165,10 +165,10 @@ def test_predicate_cannot_cite_observation_outside_selected_snapshot() -> None:
             },
         },
         spec_id="gsp_001",
-        target_claim_ref="clm_001",
+        target_claim_ref="claim_1",
         registry=registry,
         created_by_act="act_1",
-        created_by_decision="dec_001",
+        created_by_decision="dec_1",
     )
 
     result = evaluate_gate_spec(
@@ -176,7 +176,7 @@ def test_predicate_cannot_cite_observation_outside_selected_snapshot() -> None:
         [_observation("obs_001", "test.value", True)],
         result_id="val_001",
         evaluated_by_act="act_1",
-        evaluated_by_decision="dec_002",
+        evaluated_by_decision="dec_2",
         registry=registry,
     )
 
@@ -205,10 +205,10 @@ def test_unknown_predicate_and_executable_fields_are_rejected() -> None:
                 },
             },
             spec_id="gsp_001",
-            target_claim_ref="clm_001",
+            target_claim_ref="claim_1",
             registry=registry,
             created_by_act="act_1",
-            created_by_decision="dec_001",
+            created_by_decision="dec_1",
         )
 
 
@@ -222,7 +222,7 @@ def test_spec_or_observation_tampering_is_detected() -> None:
             [],
             result_id="val_001",
             evaluated_by_act="act_1",
-            evaluated_by_decision="dec_002",
+            evaluated_by_decision="dec_2",
             registry=registry,
         )
 
@@ -238,10 +238,10 @@ def test_template_rejects_missing_and_unknown_parameters() -> None:
         compile_gate_spec(
             base,
             spec_id="gsp_001",
-            target_claim_ref="clm_001",
+            target_claim_ref="claim_1",
             registry=registry,
             created_by_act="act_1",
-            created_by_decision="dec_001",
+            created_by_decision="dec_1",
         )
 
     base["template"]["parameters"] = {"subject_ref": "calc_001", "code": "bad"}
@@ -249,8 +249,8 @@ def test_template_rejects_missing_and_unknown_parameters() -> None:
         compile_gate_spec(
             base,
             spec_id="gsp_001",
-            target_claim_ref="clm_001",
+            target_claim_ref="claim_1",
             registry=registry,
             created_by_act="act_1",
-            created_by_decision="dec_001",
+            created_by_decision="dec_1",
         )

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "decision.schema.json",
   "$defs": {
-    "decision_id": {"type": "string", "pattern": "^dec_[0-9a-f]{32}$"},
+    "decision_id": {"type": "string", "pattern": "^dec_[1-9][0-9]*$"},
     "operation": {
       "oneOf": [
         {"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "append_claim"}, "record": {"$ref": "claim.schema.json"}}},
@@ -89,7 +89,8 @@
       "additionalProperties": {
         "type": "string",
         "anyOf": [
-          {"pattern": "^(clm|rel|obs|fnd|gsp|val|acc)_[0-9a-f]{24}$"},
+          {"pattern": "^claim_[1-9][0-9]*$"},
+          {"pattern": "^(rel|obs|fnd|gsp|val|acc)_[0-9a-f]{24}$"},
           {"pattern": "^act_[1-9][0-9]*$"}
         ]
       }

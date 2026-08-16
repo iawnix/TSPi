@@ -62,6 +62,8 @@ Each workspace name creates or reuses an isolated research directory under
 ./workspaces/. Only one Root Agent may write one workspace at a time.
 Remote computation uses the installation-owned .pi/remote.toml profile.
 Phone mode starts the visible TSPi session with the local TS Phone bridge.
+When another Root Agent owns the workspace, phone mode starts a separate
+read-only observer session instead of sharing the writer's Pi session.
 TSPi loads only the validated release selected by .pi/packages/ts-agent/current.
 Package development runs separately in the authored checkout.
 """
@@ -346,7 +348,7 @@ def configure_process_environment(installation: Installation, workspace: Path, w
     os.environ["PYTEST_ADDOPTS"] = f"{existing} {cache_option}".strip()
 
 
-def acquire_root_agent_lock(workspace: Path) -> int:
+def acquire_root_agent_lock(workspace: Path, *, observer_on_contention: bool = False) -> int | None:
     lock_path = workspace / ".pi" / "root-agent.lock"
     if lock_path.is_symlink():
         raise TSPiHostError(f"Root Agent lock cannot be a symbolic link: {lock_path}")
@@ -360,6 +362,9 @@ def acquire_root_agent_lock(workspace: Path) -> int:
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
+            if observer_on_contention:
+                os.close(descriptor)
+                return None
             raise TSPiHostError(
                 f"another Root Agent already owns workspace {workspace}\n"
                 "TSPi: choose another --workspace name or stop the existing Root Agent"
@@ -404,7 +409,7 @@ def build_pi_command(
         os.environ["TS_PHONE_MODE"] = "bridge"
         os.environ["TS_PHONE_WORKSPACE_ID"] = str(request.workspace_name)
         phone_extension = ["-e", str(installation.package_root / "extensions" / "ts-phone-bridge" / "index.ts")]
-        pi_args = ["--continue"]
+        pi_args = ["--continue"] if os.environ.get("TS_PHONE_ACCESS_MODE") == "controller" else []
     package = installation.package_root
     return [
         str(_resolve_pi_binary()),
@@ -459,13 +464,27 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
     configure_notifications(installation)
     workspace = prepare_workspace(installation, request.workspace_name)
     configure_process_environment(installation, workspace, request.workspace_name)
-    _lock_descriptor = acquire_root_agent_lock(workspace)
-    from ts_workspace.bootstrap import WorkspaceBootstrapError, bootstrap_workspace
+    _lock_descriptor = acquire_root_agent_lock(workspace, observer_on_contention=request.phone_mode)
+    if _lock_descriptor is None:
+        workspace_manifest = workspace / "workspace.json"
+        if workspace_manifest.is_symlink() or not workspace_manifest.is_file():
+            raise TSPiHostError(
+                "the controller is still preparing this workspace; retry the phone observer after it starts"
+            )
+        os.environ["TS_PHONE_ACCESS_MODE"] = "observer"
+        print(
+            f"TSPi: workspace {request.workspace_name} is already controlled; starting a read-only phone observer",
+            file=sys.stderr,
+        )
+    else:
+        if request.phone_mode:
+            os.environ["TS_PHONE_ACCESS_MODE"] = "controller"
+        from ts_workspace.bootstrap import WorkspaceBootstrapError, bootstrap_workspace
 
-    try:
-        bootstrap_workspace(workspace)
-    except WorkspaceBootstrapError as exc:
-        raise TSPiHostError(str(exc)) from exc
+        try:
+            bootstrap_workspace(workspace)
+        except WorkspaceBootstrapError as exc:
+            raise TSPiHostError(str(exc)) from exc
     command = build_pi_command(installation, workspace, request)
     exec_pi(command, workspace)
 

@@ -4,14 +4,17 @@
 `basis_refs`, and an ordered non-empty `operations` array. It returns a complete
 revision-bound `ts-research-decision/1` plus `allocated_refs`.
 
-The draft endpoint allocates every technical ID. Each creating operation needs
-a unique `local_ref`; later operations in the same draft refer to it as
-`$local_ref`.
+The draft endpoint allocates every technical ID. Decision IDs are
+workspace-local monotonic ordinals (`dec_1`, `dec_2`, ...). Each creating
+operation needs a unique `local_ref`; later operations in the same draft refer
+to it as `$local_ref`.
 
-ResearchAct IDs are workspace-local monotonic ordinals: `act_1`, `act_2`, and
-so on. Concurrent drafts from the same revision can propose the same next Act
-ID; the workspace lock and revision binding allow only one to commit. Redraft a
-stale Decision to receive the next available ordinal.
+Claim and ResearchAct IDs are also workspace-local monotonic ordinals:
+`claim_1`, `act_1`, and so on. Concurrent drafts from the same revision can
+propose the same next IDs. Drafting does not reserve them. The first Decision to
+commit owns its Decision ID and canonical changes; exact content can replay
+idempotently, while conflicting content or stale allocations must be redrafted.
+Committed, aborted, and recoverable Decision transaction IDs are not reused.
 
 ## Creating Graph Records
 

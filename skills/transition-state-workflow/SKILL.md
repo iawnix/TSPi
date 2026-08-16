@@ -90,13 +90,13 @@ health.
 ## Review
 
 Use `ts_subagent_review` for an independent assessment of one target Claim.
-Review is the only child model session. It receives a bounded graph snapshot,
-one result tool, and no parent transcript, Skill, filesystem, compute, mutation,
-or recursive delegation.
+Review is the only child model session. It receives a bounded graph and result
+tool, with no parent transcript, Skill, raw filesystem, compute, mutation, or
+delegation. Artifacts are logical IDs; one bounded host read is allowed and
+physical paths stay hidden.
 
-After success, call `ts_review_disposition` once before further scientific
-mutation. Advice changes science only through normal verified Decisions.
-Preserve provider failures as provider failures.
+After success, call `ts_review_disposition` before scientific mutation. Apply
+advice only through verified Decisions, and preserve provider failures as such.
 
 ## Render, Report, And Notify
 

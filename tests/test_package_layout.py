@@ -24,7 +24,7 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     package_root = package_home / "releases" / "test-release"
     package_root.mkdir(parents=True)
     (package_root / "package.json").write_text(
-        '{"name":"@iawnix/ts-agent","version":"0.9.0"}\n',
+        '{"name":"@iawnix/ts-agent","version":"0.10.0"}\n',
         encoding="utf-8",
     )
     (package_root / ".ts-agent-release.json").write_text(
@@ -32,7 +32,7 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
             {
                 "schema_version": "ts-agent-release/1",
                 "release_id": "test-release",
-                "package": {"name": "@iawnix/ts-agent", "version": "0.9.0"},
+                "package": {"name": "@iawnix/ts-agent", "version": "0.10.0"},
             }
         )
         + "\n",

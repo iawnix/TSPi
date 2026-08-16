@@ -37,12 +37,17 @@ The Review host builds one Claim-centered snapshot and a compact
 
 - no parent transcript;
 - no Root Skill or package extensions;
-- no filesystem, shell, network, compute, or workspace mutation;
+- no direct filesystem, shell, network, compute, or workspace mutation;
 - no recursive delegation;
-- exactly one `ts_review_result` tool.
+- exactly one `ts_review_result` tool;
+- when the task selects artifacts, one batch-only `ts_review_artifact_read`
+  tool bound to their logical IDs and immutable digests.
 
-The host forces that named tool, validates `ts-agent-result/1` locally, checks
-task/scope/citation identity, and permits one same-session structural repair.
+The initial provider packet contains no artifact paths or contents. The child
+may submit directly or read up to six semantic sections in one bounded batch.
+The host then forces the named result tool, validates `ts-agent-result/1`
+locally, checks task/scope/citation identity, and permits one same-session
+structural repair. Artifact citations are accepted only for IDs actually read.
 Provider-side strict function mode is deliberately not required. Provider
 HTTP/stream errors must remain provider errors.
 
