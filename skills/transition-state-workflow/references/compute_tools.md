@@ -1,15 +1,29 @@
-# Deterministic Compute Tools
+# Compute Subagent And Typed Actions
 
-`ts_compute` executes one typed action selected by the Root Agent. It starts no
-child model and cannot choose a method, modify a prepared intent, record a
-scientific Observation, or update a Claim.
+`ts_subagent_compute` delegates one bounded operational lifecycle. Root chooses
+the chemistry, method, ResearchAct, inputs, settings, and execution target. The
+host resolves the immutable intent and exposes only pre-bound zero-argument
+tools to the isolated child.
+
+The public lifecycle is closed:
+
+```text
+launch   prepare -> submit
+inspect  status -> optional tail
+finalize collect -> parse
+cancel   cancel
+```
+
+There is no public `prepare`, `submit`, `status`, `tail`, `collect`, or `parse`
+operation. Those are private deterministic actions. The child cannot change
+their arguments, call another tool, or choose a scientific method.
 
 ## Contents
 
 - [Discover Inputs](#discover-inputs)
-- [Prepare](#prepare)
-- [Submit And Inspect](#submit-and-inspect)
-- [Collect And Parse](#collect-and-parse)
+- [Launch](#launch)
+- [Inspect](#inspect)
+- [Finalize](#finalize)
 - [Cancel](#cancel)
 - [Retry And Recalculation](#retry-and-recalculation)
 - [Result Authority](#result-authority)
@@ -32,13 +46,13 @@ If a fresh workspace has no suitable input, start an open ResearchAct. Use
 bounded Gaussian, XYZ, or xTB control text. The host returns the logical ID;
 callers never create an `art_*` value or workspace path.
 
-## Prepare
+## Launch
 
-A prepare request binds:
+Launch accepts the complete semantic request and remote execution target:
 
 ```json
 {
-  "operation": "prepare",
+  "operation": "launch",
   "backend": "gaussian",
   "actId": "act_1",
   "purpose": "Optimize and characterize one TS candidate.",
@@ -55,100 +69,79 @@ A prepare request binds:
       "queue": "batch", "nodes": 1, "ncpus": 8,
       "memory": "16gb", "walltime": "24:00:00", "ngpus": 0
     }
-  },
-  "dryRun": false
+  }
 }
 ```
 
-The host resolves input paths and digests, allocates the intent, derives
-expected artifacts, and writes `ts-calculation-intent/4` under
-`acts/<act_id>/attempts/<intent_id>/`. Do not construct those values.
+Before the child starts, the host creates and validates
+`ts-calculation-intent/4`, resolves paths and digests, allocates expected
+artifacts, and freezes the execution binding. The child then calls prepare and,
+only after known prepare success, submit. Submit is single-use. An unknown
+effect ends the lifecycle with reconciliation required.
 
-`dryRun=true` prepares and validates only. It cannot later be submitted as a
-remote effect unless its typed contract permits that use.
+## Inspect
 
-## Submit And Inspect
-
-Use the exact `backend`, `actId`, and `intentId` returned by prepare:
-
-```json
-{"operation":"submit","backend":"gaussian","actId":"act_1","intentId":"calc_..."}
-```
-
-Submit revalidates the immutable intent digest, stages the manifest, and issues
-one scheduler request. Never call submit twice for the same uncertain control.
-
-Inspect changed or terminal work:
+Inspect polls one bound intent and may read one declared artifact tail:
 
 ```json
 {
-  "operation":"inspect",
-  "backend":"gaussian",
-  "actId":"act_1",
-  "intentId":"calc_...",
-  "tailArtifact":"gaussian.out",
-  "tailLines":80
+  "operation": "inspect",
+  "backend": "gaussian",
+  "actId": "act_1",
+  "intentId": "calc_...",
+  "tailArtifact": "gaussian.out",
+  "tailLines": 80
 }
 ```
 
-Tail is restricted to declared artifact basenames and at most 500 lines.
-Scheduler status, program status, and output availability are separate fields.
+Status always runs first. The child may submit the result immediately or call
+tail once when diagnostics are useful. Tail is restricted to declared artifact
+basenames and at most 500 lines. Scheduler state, program state, and output
+availability remain separate fields.
 
-## Collect And Parse
+## Finalize
 
-Collect all declared outputs or an explicit allowed subset:
+Finalize collects an allowed output set and parses one collected artifact:
 
 ```json
 {
-  "operation":"collect",
-  "backend":"gaussian",
-  "actId":"act_1",
-  "intentId":"calc_...",
-  "artifacts":["gaussian.out","program_status.json"]
+  "operation": "finalize",
+  "backend": "gaussian",
+  "actId": "act_1",
+  "intentId": "calc_...",
+  "artifacts": ["gaussian.out", "program_status.json"],
+  "artifactRef": "acts/act_1/attempts/calc_.../outputs/remote/gaussian.out"
 }
 ```
 
-Collection verifies the immutable remote manifest and downloads into the Act's
-local attempt tree. It does not depend on Torque history.
-
-Parse one Kernel-bound local artifact:
-
-```json
-{
-  "operation":"parse",
-  "backend":"gaussian",
-  "actId":"act_1",
-  "intentId":"calc_...",
-  "artifactRef":"acts/act_1/attempts/calc_.../outputs/remote/gaussian.out"
-}
-```
-
-Parser facts are structured operational output. Verify their source artifacts,
-then record individual semantic Observations through a Decision.
+Parse runs only after collection completes. Collection verifies the immutable
+remote manifest and does not depend on Torque history. Parser facts are
+operational output. Root must verify the primary artifacts before recording
+individual semantic Observations through a Decision.
 
 ## Cancel
 
-Cancel only a bound remote intent:
+Cancel targets one bound remote intent:
 
 ```json
 {"operation":"cancel","backend":"gaussian","actId":"act_1","intentId":"calc_..."}
 ```
 
-Known success is idempotent. An ambiguous cancel is not safe to replay without
-reconciliation.
+The action is single-use. Known success is idempotent. An ambiguous cancel must
+be reconciled and is never replayed by the child.
 
 ## Retry And Recalculation
 
-Use `attemptKind=retry` only when the same immutable scientific intent can be
-replayed and the typed prior result proves no external effect occurred. Use
-`attemptKind=recalculation` when settings or purpose change and provide:
+Use `attemptKind=retry` on a new launch only when the same immutable scientific
+intent can be replayed and the prior typed result proves no external effect was
+attempted. Use `attemptKind=recalculation` when settings or purpose change:
 
 ```json
 {
-  "sourceAct":"act_1",
-  "sourceIntentId":"calc_...",
-  "changedSettings":["method"],
-  "purpose":"method_robustness"
+  "sourceAct": "act_1",
+  "sourceIntentId": "calc_...",
+  "changedSettings": ["method"],
+  "purpose": "method_robustness"
 }
 ```
 
@@ -157,7 +150,12 @@ a new ResearchAct rather than only a recalculation record.
 
 ## Result Authority
 
-The typed action result distinguishes `completed`, `failed`, and `unknown`,
-plus whether an external effect was attempted and whether retry is safe. A
-returned JSON object is not proof of action success. Program failure is not
-automatically Claim contradiction, and parser failure is not program failure.
+The model fills only `summary` and `limitations` in `ts_compute_result`. The
+host derives action outcome, program state, artifacts, facts, provenance, and
+reconciliation flags from the typed action journal. A structured tool return is
+not proof of remote success. Program failure is not Claim contradiction, and
+parser failure is not program failure.
+
+If a submit or cancel action loses its typed client result, it is recorded as
+`client_result_unknown` and requires reconciliation. This does not replace the
+more precise retryable pre-submit upload result returned by the compute kernel.

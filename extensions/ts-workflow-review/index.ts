@@ -24,8 +24,8 @@ const { buildReviewTaskBundle, validateSubagentRequest } = require(resolve(EXTEN
 const {
   beginAgentRun,
   completeAgentRun,
-  failAgentRun,
   readAgentRunInputs,
+  settleFailedAgentRun,
   writeInvalidReviewOutput,
   writeReviewRootDisposition,
 } = require(resolve(EXTENSION_DIR, "..", "..", "src", "agent-core", "run-journal.cjs"));
@@ -150,14 +150,22 @@ export default function (pi: ExtensionAPI) {
           ? (error as { reviewActions: unknown[] }).reviewActions
           : [];
         if (invalidOutputs.length) writeInvalidReviewOutput(journal, invalidOutputs);
-        const failure = classifyUpstreamModelFailure(error, { replaySafe: true }) || {
+        let failure = classifyUpstreamModelFailure(error, { replaySafe: true }) || {
           failure_class: "review_runtime_failed",
           failure_stage: "review_runtime",
           failure_domain: "review",
           upstream_status: null,
           retry_safe: true,
         };
-        const runRef = failAgentRun(journal, { actions, error, metadata: failure });
+        const settlement = settleFailedAgentRun(journal, { actions, error, metadata: failure });
+        const runRef = settlement.run_ref || journal.runRef;
+        if (settlement.journal_error) {
+          failure = {
+            ...failure,
+            agent_journal_status: "pending",
+            agent_journal_error: settlement.journal_error,
+          };
+        }
         pi.appendEntry("ts-workspace-subagent-failed", {
           task_id: packet.task_id,
           operation: packet.operation,

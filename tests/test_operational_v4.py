@@ -82,7 +82,7 @@ def test_v4_operational_snapshot_separates_activities_reviews_and_controls(tmp_p
 
     assert report["deterministic_activities"][0]["act_refs"] == ["act_1"]
     assert report["deterministic_activities"][0]["summary"] == "Submission completed."
-    assert report["review_runs"][0]["claim_refs"] == ["claim_1"]
+    assert report["agent_runs"][0]["claim_refs"] == ["claim_1"]
     assert report["pending_review_dispositions"][0]["act_refs"] == ["act_1"]
     assert report["unresolved_controls"][0]["act_id"] == "act_1"
     assert report["unresolved_controls"][0]["intent_id"] == "calc_probe"
@@ -95,9 +95,9 @@ def test_v4_operational_snapshot_separates_activities_reviews_and_controls(tmp_p
         "activity_running_count": 0,
         "activity_pending_count": 0,
         "activity_integrity_error_count": 0,
-        "review_run_count": 1,
-        "review_run_failed_count": 0,
-        "review_run_pending_count": 0,
+        "agent_run_count": 1,
+        "agent_run_failed_count": 0,
+        "agent_run_pending_count": 0,
         "review_disposition_count": 0,
         "review_disposition_pending_count": 1,
         "control_pending_count": 0,
@@ -116,6 +116,6 @@ def test_operational_snapshot_ignores_legacy_node_paths(tmp_path: Path) -> None:
     report = operational_snapshot(root)
 
     assert report["deterministic_activities"] == []
-    assert report["review_runs"] == []
+    assert report["agent_runs"] == []
     assert report["pending_controls"] == []
     assert report["operational_summary"]["tracked_file_count"] == 0

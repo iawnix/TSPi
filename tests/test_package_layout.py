@@ -107,7 +107,9 @@ def test_agent_sources_have_explicit_ownership_boundaries() -> None:
         assert (ROOT / "src" / "agent-core" / name).is_file()
     assert (AGENTS_ROOT / "review" / "runtime.ts").is_file()
     assert (AGENTS_ROOT / "review" / "prompts" / "core.md").is_file()
-    assert {path.name for path in AGENTS_ROOT.iterdir()} == {"review"}
+    assert (AGENTS_ROOT / "compute" / "runtime.ts").is_file()
+    assert (AGENTS_ROOT / "compute" / "prompts" / "core.md").is_file()
+    assert {path.name for path in AGENTS_ROOT.iterdir()} == {"compute", "review"}
     assert (ROOT / "src" / "artifacts" / "request-contract.cjs").is_file()
     assert (ROOT / "ts_runtime" / "probe.py").is_file()
     assert (ROOT / "ts_structures" / "seed.py").is_file()
@@ -121,10 +123,10 @@ def test_agent_sources_have_explicit_ownership_boundaries() -> None:
         assert not (ROOT / legacy).exists()
 
 
-def test_deterministic_tool_policy_lives_outside_agent_sources() -> None:
+def test_child_agent_sources_do_not_embed_skills_or_artifact_operators() -> None:
     assert not list(AGENTS_ROOT.rglob("SKILL.md"))
-    assert not (AGENTS_ROOT / "compute").exists()
     assert not (AGENTS_ROOT / "artifacts").exists()
+    assert {path.name for path in AGENTS_ROOT.iterdir()} == {"compute", "review"}
     assert (SKILL_ROOT / "references" / "compute_tools.md").is_file()
     assert (SKILL_ROOT / "references" / "artifact_tools.md").is_file()
 

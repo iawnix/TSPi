@@ -17,13 +17,15 @@ Root Agent       research questions, strategy, method choice, interpretation
 Research Kernel  canonical graph, identities, transactions, integrity
 Validation       frozen policy, deterministic predicates, acceptance snapshots
 Review Agent     bounded independent advice only
-Tool plane       deterministic compute, artifacts, remote, and delivery effects
+Compute Agent    fixed operational plan over pre-bound typed tools only
+Tool plane       deterministic compute kernel, artifacts, remote, and delivery effects
 UI/web           read-only projection
 ```
 
-Only `ts_workspace_decision_apply` writes canonical scientific state. Review is
-the only child model. Compute, Render, and Report are direct deterministic
-tools; do not reintroduce model dispatchers around deterministic actions.
+Only `ts_workspace_decision_apply` writes canonical scientific state. Compute
+and Review are the only child models. Compute may orchestrate only its closed,
+host-bound lifecycle; it cannot choose chemistry, arguments, paths, outcome, or
+provenance. Render and Report remain direct deterministic tools.
 
 Closed enums are justified only when code executes a closed contract. Research
 questions, Claim types, relation meanings, Observation concepts, Finding types,
@@ -38,11 +40,12 @@ scientific role/layer, or next-action router.
 | `skills/transition-state-workflow/` | public Root Skill, focused references, and examples |
 | `extensions/ts-workflow-control/` | context, Decision draft/validate/apply, package-source guard |
 | `extensions/ts-workflow-review/` | advisory Review entrypoint and Root disposition |
-| `extensions/ts-workflow-compute/` | deterministic compute and remote diagnostics |
+| `extensions/ts-workflow-compute/` | Compute subagent entrypoint, bound action tools, and remote diagnostics |
 | `extensions/ts-workflow-artifacts/` | deterministic structure seed, input import, Render, Report, and notification tools |
-| `extensions/ts-workflow-ui/` | startup, editor/footer, TS Activity, Review history |
+| `extensions/ts-workflow-ui/` | startup, editor/footer, TS Activity, Compute/Review history |
 | `extensions/shared/` | public tool inventory and shared UI/path helpers |
-| `src/agent-core/` | Review task/result validation, failure taxonomy, lifecycle, journals |
+| `src/agent-core/` | shared task/result validation, provider failure propagation, lifecycle, journals |
+| `src/agents/compute/` | Compute task plan, isolated runtime, result derivation, and private prompt |
 | `src/agents/review/` | Review task projection, prompt, result tool, semantic validation |
 | `src/artifacts/` | deterministic render/report request and path validation |
 | `ts_workspace/` | v4 graph state, bootstrap, Decisions, context, validation, transactions |
@@ -72,14 +75,14 @@ shell.
 - one theme: `themes/ts-theme.json`.
 
 `ts-phone-bridge` is packaged but loaded only by `TSPi --phone`. Files under
-`src/agents/review/` are private child-runtime material, not discoverable
-Skills.
+`src/agents/compute/` and `src/agents/review/` are private child-runtime
+material, not discoverable Skills.
 
 Public names describe authority:
 
 - `ts_workspace_*`: deterministic context and canonical Decision pipeline;
-- `ts_subagent_review`: the sole child-model entrypoint;
-- `ts_compute`, `ts_structure_seed`, `ts_artifact_import`, `ts_render`, `ts_report`: deterministic execution;
+- `ts_subagent_compute`, `ts_subagent_review`: bounded child-model entrypoints;
+- `ts_structure_seed`, `ts_artifact_import`, `ts_render`, `ts_report`: deterministic execution;
 - `ts_remote_inspect`: deterministic read-only infrastructure diagnostics;
 - `ts_review_disposition`: deterministic operational response;
 - `ts_notify_user`: deterministic fixed-target external delivery.
@@ -172,7 +175,14 @@ Templates must be frozen before evaluating the selected data. Never lower a
 GateSpec after seeing a result; create a new specification and preserve the
 previous result.
 
-## Review Contract
+## Agent Contracts
+
+Compute and Review use `ts-agent-task/2` and return `ts-agent-result/1`. Shared
+code owns role/authority identity, provider-failure priority, session lifetime,
+journal bounds, and forbidden authoritative fields. Role-specific builders and
+validators own their distinct input, capability, action, and result rules.
+
+### Review
 
 Every Review uses `ts-agent-task/2` and returns `ts-agent-result/1`. Its scope is
 one target Claim and a bounded graph snapshot. It cannot set Claim status,
@@ -202,13 +212,29 @@ Citation arrays are sets with canonical ordering. Never compare them using
 registry insertion order. Dependencies derive from the Claim/Act graph and
 explicit refs, not role or layer taxonomies.
 
+### Compute
+
+The Compute task binds one Act, backend, intent ID/digest, remote execution, and
+one exact plan: `launch`, `inspect`, `finalize`, or `cancel`. The child must have
+only the zero-argument action tools for that plan plus `ts_compute_result`.
+Dependent actions require a completed prerequisite, every action is single-use,
+and unknown submit/cancel effects end the plan without replay.
+
+The result model may provide only `summary` and `limitations`. Code derives the
+complete result from the action journal and rejects invented artifacts, changed
+intent identity, mismatched program state, or fabricated outcome/provenance.
+`inspect` deliberately permits either direct result delivery after `status` or
+one `tail` before result delivery. Provider-side strict function mode remains
+disabled; local TypeBox and semantic validators are authoritative.
+
 ## Deterministic Tool Contracts
 
 ### Compute
 
 The Root selects purpose, Act, backend, task, settings, execution target, and
-logical input artifacts. The host owns generated paths, filenames, intent ID,
-expected artifacts, remote root, command, and submission binding.
+logical input artifacts when invoking `ts_subagent_compute`. The host owns
+generated paths, filenames, intent ID, expected artifacts, remote root,
+command, submission binding, action tools, and final structured outcome.
 
 Preparation resolves `artifactId` and `inputRole`, verifies SHA-256, and writes
 `ts-calculation-intent/4`. Subsequent operations cite only the bound `intentId`.
@@ -260,17 +286,17 @@ automatically retried.
 
 Do not document stronger durability than the implementation provides:
 
-- Review task and bound inputs are atomically exclusive-created;
-- Review actions/result/final run state are written during normal terminal
+- Compute/Review tasks and Review-bound inputs are atomically exclusive-created;
+- agent actions/result/final run state are written during normal terminal
   handling;
-- a crash can leave a pending/unknown Review journal;
+- a crash can leave a pending/unknown agent journal;
 - no background result replay or acknowledgement queue exists;
 - immediate tool return is the active conversation delivery channel;
 - deterministic tools keep separate authoritative records;
 - `TS Activity` is transient and cleared with the Pi session;
-- `/ts-subagent-history` reads durable Review summaries on demand.
+- `/ts-subagent-history` reads durable Compute and Review summaries on demand.
 
-Remote controls are authoritative for scheduler recovery. Activity or Review
+Remote controls are authoritative for scheduler recovery. Activity or agent
 journal state cannot prove that a remote side effect did or did not happen.
 
 ## Documentation Ownership
@@ -283,6 +309,7 @@ journal state cannot prove that a remote side effect did or did not happen.
 | `docs/MAINTAINER_GUIDE.md` | contributor/releaser | source workflow, change matrix, validation, release discipline |
 | Root `SKILL.md` | Root Agent | concise authority rules and operating loop |
 | Skill `references/*.md` | Root Agent on demand | one focused scientific or tool topic |
+| `src/agents/compute/**/*.md` | Compute runtime | minimum private operational policy |
 | `src/agents/review/**/*.md` | Review runtime | minimum private Review policy |
 | JSON/TypeBox schemas | callers and validators | exact fields, enums, limits, identity |
 
@@ -304,7 +331,7 @@ tests are maintenance material and are blocked by the package-source guard.
 | Predicate | registry, implementation, digest behavior, unit tests, capability projection, maintainer docs |
 | Validation template/profile | versioned JSON, compiler/acceptance tests, capability projection, scientific docs |
 | Public tool | tool catalog, extension schema/help, Root Skill, README/architecture, UI, inventory tests |
-| Review task/result | JSON schema, CJS validator, packet builder, result tool, journal/history, provider tests |
+| Compute/Review task or result | JSON schema, CJS validator, role packet builder, result tool, journal/history, provider tests |
 | Backend capability | capability catalog, request validator, adapter, compute reference, parser tests |
 | Remote behavior | config/model, lifecycle/transfer, compute mapping, installation/remote docs, recovery tests |
 | Release contents | `package.json.files`, package checker, installer allow/deny lists, tests, installation docs |

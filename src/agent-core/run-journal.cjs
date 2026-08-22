@@ -20,16 +20,22 @@ const { isAbsolute, relative, resolve, sep } = require("node:path");
 const {
   REVIEW_INPUT_DOCUMENTS,
   serializeAgentDocument,
+  validateAgentResult,
   validateAgentTask,
 } = require("./agent-protocol.cjs");
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
 const MAX_INVALID_REVIEW_RAW_BYTES = 16 * 1024;
+const MAX_AGENT_TASK_BYTES = 64 * 1024;
+const MAX_AGENT_ACTIONS_BYTES = 1024 * 1024;
 const REVIEW_DISPOSITIONS = ["accepted", "partially_accepted", "rejected", "deferred"];
 
 function beginAgentRun(workspaceRoot, packet, { documents = {} } = {}) {
   const root = requireWorkspaceRoot(workspaceRoot);
   const task = validateAgentTask(packet);
+  if (Buffer.byteLength(serializeAgentDocument(task), "utf8") > MAX_AGENT_TASK_BYTES) {
+    throw new Error(`agent task exceeds ${MAX_AGENT_TASK_BYTES} bytes`);
+  }
   const taskId = requireSafeId(task.task_id, "task_id");
   const scope = task.scope;
   const actRefs = Array.isArray(scope.act_refs) ? scope.act_refs.map((value) => requireSafeId(value, "act_ref")) : [];
@@ -114,8 +120,10 @@ function writeBoundDocuments(runDir, task, documents) {
 function completeAgentRun(handle, { actions = [], result, metadata = {} }) {
   requireOpenHandle(handle);
   if (!isPlainObject(result)) throw new Error("completed agent run requires a result object");
+  const task = readBoundJson(handle.runDir, "task.json");
+  const validatedResult = validateAgentResult(result, task);
   writeJsonExclusive(resolve(handle.runDir, "actions.json"), actionDocument(handle.taskId, actions));
-  writeJsonExclusive(resolve(handle.runDir, "result.json"), result);
+  writeJsonExclusive(resolve(handle.runDir, "result.json"), validatedResult);
   writeJsonExclusive(
     resolve(handle.runDir, "run.json"),
     runDocument(handle, "completed", metadata, null),
@@ -160,6 +168,17 @@ function failAgentRun(handle, { actions = [], error, metadata = {} }) {
   );
   handle.finalized = true;
   return handle.runRef;
+}
+
+function settleFailedAgentRun(handle, options) {
+  try {
+    return { run_ref: failAgentRun(handle, options), journal_error: null };
+  } catch (error) {
+    return {
+      run_ref: handle && typeof handle.runRef === "string" ? handle.runRef : null,
+      journal_error: sanitizeError(error),
+    };
+  }
 }
 
 function writeInvalidReviewOutput(handle, attempts) {
@@ -258,11 +277,16 @@ function writeReviewRootDisposition(workspaceRoot, input) {
 
 function actionDocument(taskId, actions) {
   if (!Array.isArray(actions)) throw new Error("agent-run actions must be an array");
-  return {
+  if (actions.length > 8) throw new Error("agent-run actions exceed 8 entries");
+  const document = {
     schema_version: "ts-agent-actions/1",
     task_id: taskId,
     actions: JSON.parse(JSON.stringify(actions)),
   };
+  if (Buffer.byteLength(serializeAgentDocument(document), "utf8") > MAX_AGENT_ACTIONS_BYTES) {
+    throw new Error(`agent-run actions exceed ${MAX_AGENT_ACTIONS_BYTES} bytes`);
+  }
+  return document;
 }
 
 function runDocument(handle, status, metadata, error) {
@@ -410,6 +434,7 @@ module.exports = {
   completeAgentRun,
   failAgentRun,
   readAgentRunInputs,
+  settleFailedAgentRun,
   writeInvalidReviewOutput,
   writeReviewRootDisposition,
 };

@@ -29,8 +29,8 @@ import {
   summarizeTsActivities,
 } from "./activity-store.ts";
 import {
-  collectTsReviewRecords,
-  type TsReviewRecord,
+  collectTsSubagentRecords,
+  type TsSubagentRecord,
 } from "./agent-details.ts";
 import { SubagentHistoryBrowser } from "./subagent-history.ts";
 import { requireWorkspaceRoot, runWorkspaceJson } from "../shared/workspace-cli.ts";
@@ -42,11 +42,12 @@ export function formatTsSubagentHistory(
   data: Record<string, unknown>,
   expanded = false,
 ): string[] {
+  const role = stringValue(data.role) === "compute" ? "Compute" : "Review";
   const operation = stringValue(data.operation) || "operation";
   const failed = entryType.endsWith("-failed");
   const outcome = failed ? "failed" : "completed";
   const duration = typeof data.duration_ms === "number" ? ` · ${formatElapsed(data.duration_ms)}` : "";
-  const lines = [`TS Review · ${operation} · ${outcome}${duration}`];
+  const lines = [`TS ${role} · ${operation} · ${outcome}${duration}`];
   const context = compact([
     Array.isArray(data.act_refs) ? firstString(data.act_refs[0]) : undefined,
     firstString(data.run_ref),
@@ -273,7 +274,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("ts-subagent-history", {
-    description: "Browse active and recorded advisory Review runs · read-only · local.",
+    description: "Browse active and recorded Compute and Review subagent runs · read-only · local.",
     handler: async (args, ctx) => {
       if (String(args || "").trim()) {
         ctx.ui.notify("/ts-subagent-history does not accept arguments", "warning");
@@ -290,9 +291,9 @@ export default function (pi: ExtensionAPI) {
           return;
         }
       }
-      const records = collectTsReviewRecords(activityStore, report);
+      const records = collectTsSubagentRecords(activityStore, report);
       if (records.length === 0) {
-        ctx.ui.notify("No TS Review runs are available in this workspace", "info");
+        ctx.ui.notify("No TS subagent runs are available in this workspace", "info");
         return;
       }
       if (ctx.mode === "rpc") {
@@ -328,13 +329,14 @@ export default function (pi: ExtensionAPI) {
   }
 }
 
-export function formatTsSubagentHistoryMarkdown(records: TsReviewRecord[]): string {
+export function formatTsSubagentHistoryMarkdown(records: TsSubagentRecord[]): string {
   const visible = records.slice(0, 100);
-  const lines = ["# TS Review History", "", `${records.length} recorded Review run${records.length === 1 ? "" : "s"}.`];
+  const lines = ["# TS Subagent History", "", `${records.length} recorded subagent run${records.length === 1 ? "" : "s"}.`];
   for (const record of visible) {
+    const role = record.role === "compute" ? "Compute" : "Review";
     lines.push(
       "",
-      `## Review · ${markdownText(record.operation)}`,
+      `## ${role} · ${markdownText(record.operation)}`,
       "",
       `- Status: \`${inlineCode(record.state)}\``,
       `- Task: \`${inlineCode(record.task_id)}\``,

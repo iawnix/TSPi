@@ -13,10 +13,9 @@ const TERMINAL_STATES = new Set<TsSubagentState>(["completed", "partial", "faile
 const ATTENTION_STATES = new Set<TsSubagentState>(["partial", "failed", "cancelled", "unknown"]);
 const ACTIVE_STATES = new Set<TsSubagentState>(["queued", "starting", "running", "waiting", "validating"]);
 
-export type TsDeterministicKind = "compute" | "structure" | "artifact" | "render" | "report" | "notify" | "remote";
+export type TsDeterministicKind = "structure" | "artifact" | "render" | "report" | "notify" | "remote";
 
 const DETERMINISTIC_TOOLS = new Map<string, TsDeterministicKind>([
-  [TS_PUBLIC_TOOL_NAMES.compute, "compute"],
   [TS_PUBLIC_TOOL_NAMES.structureSeed, "structure"],
   [TS_PUBLIC_TOOL_NAMES.artifactImport, "artifact"],
   [TS_PUBLIC_TOOL_NAMES.render, "render"],
@@ -25,8 +24,8 @@ const DETERMINISTIC_TOOLS = new Map<string, TsDeterministicKind>([
   [TS_PUBLIC_TOOL_NAMES.remoteInspect, "remote"],
 ]);
 
-export interface TsReviewActivity {
-  kind: "review";
+export interface TsSubagentActivity {
+  kind: "subagent";
   id: string;
   status: TsSubagentStatus;
   startedAt: number;
@@ -48,7 +47,7 @@ export interface TsDeterministicActivity {
   error?: string;
 }
 
-export type TsActivity = TsReviewActivity | TsDeterministicActivity | TsRemoteActivity;
+export type TsActivity = TsSubagentActivity | TsDeterministicActivity | TsRemoteActivity;
 export interface TsActivityStore { activities: Map<string, TsActivity> }
 export interface TsActivitySummary { active: number; attention: number; done: number; total: number }
 
@@ -58,7 +57,7 @@ export function createTsActivityStore(): TsActivityStore { return { activities: 
 export function clearTsActivityStore(store: TsActivityStore): void { store.activities.clear(); }
 
 export function reduceTsToolActivity(store: TsActivityStore, event: ToolLifecycleEvent, now = Date.now()): boolean {
-  if (event.toolName === TS_PUBLIC_TOOL_NAMES.subagentReview) return reduceReviewActivity(store, event, now);
+  if (isSubagentTool(event.toolName)) return reduceSubagentActivity(store, event, now);
   const activityKind = DETERMINISTIC_TOOLS.get(event.toolName);
   if (!activityKind) return false;
   const id = `tool:${event.toolCallId}`;
@@ -91,14 +90,14 @@ export function reduceTsToolActivity(store: TsActivityStore, event: ToolLifecycl
   return true;
 }
 
-function reduceReviewActivity(store: TsActivityStore, event: ToolLifecycleEvent, now: number): boolean {
-  const id = `review:${event.toolCallId}`;
+function reduceSubagentActivity(store: TsActivityStore, event: ToolLifecycleEvent, now: number): boolean {
+  const id = `subagent:${event.toolCallId}`;
   if (event.type === "tool_execution_start") {
     if (store.activities.has(id)) return false;
     store.activities.set(id, {
-      kind: "review",
+      kind: "subagent",
       id,
-      status: fallbackReviewStatus(event, now),
+      status: fallbackSubagentStatus(event, now),
       startedAt: now,
       updatedAt: now,
     });
@@ -108,10 +107,10 @@ function reduceReviewActivity(store: TsActivityStore, event: ToolLifecycleEvent,
   if (event.type === "tool_execution_update") {
     const status = event.partialResult?.details;
     if (!isTsSubagentStatus(status) || status.tool_call_id !== event.toolCallId) return false;
-    if (current?.kind === "review" && (status.seq <= current.status.seq || TERMINAL_STATES.has(current.status.state))) return false;
-    const startedAt = timestamp(status.started_at) ?? (current?.kind === "review" ? current.startedAt : now);
+    if (current?.kind === "subagent" && (status.seq <= current.status.seq || TERMINAL_STATES.has(current.status.state))) return false;
+    const startedAt = timestamp(status.started_at) ?? (current?.kind === "subagent" ? current.startedAt : now);
     store.activities.set(id, {
-      kind: "review",
+      kind: "subagent",
       id,
       status,
       startedAt,
@@ -120,7 +119,7 @@ function reduceReviewActivity(store: TsActivityStore, event: ToolLifecycleEvent,
     });
     return true;
   }
-  if (current?.kind !== "review" || TERMINAL_STATES.has(current.status.state)) return false;
+  if (current?.kind !== "subagent" || TERMINAL_STATES.has(current.status.state)) return false;
   const state: TsSubagentState = event.isError ? "failed" : "completed";
   store.activities.set(id, {
     ...current,
@@ -164,8 +163,8 @@ export function sortedTsActivities(store: TsActivityStore): TsActivity[] {
   });
 }
 
-export function sortedTsReviewActivities(store: TsActivityStore): TsReviewActivity[] {
-  return sortedTsActivities(store).filter((activity): activity is TsReviewActivity => activity.kind === "review");
+export function sortedTsSubagentActivities(store: TsActivityStore): TsSubagentActivity[] {
+  return sortedTsActivities(store).filter((activity): activity is TsSubagentActivity => activity.kind === "subagent");
 }
 
 export function summarizeTsActivities(store: TsActivityStore): TsActivitySummary {
@@ -179,7 +178,9 @@ export function summarizeTsActivities(store: TsActivityStore): TsActivitySummary
 }
 
 export function hasActiveReviews(store: TsActivityStore): boolean {
-  return [...store.activities.values()].some((activity) => activity.kind === "review" && ACTIVE_STATES.has(activity.status.state));
+  return [...store.activities.values()].some(
+    (activity) => activity.kind === "subagent" && activity.status.role === "review" && ACTIVE_STATES.has(activity.status.state),
+  );
 }
 
 export function hasActiveTsActivities(store: TsActivityStore): boolean {
@@ -187,13 +188,16 @@ export function hasActiveTsActivities(store: TsActivityStore): boolean {
 }
 
 export function activityState(activity: TsActivity): TsSubagentState {
-  if (activity.kind === "review") return activity.status.state;
+  if (activity.kind === "subagent") return activity.status.state;
   return activity.state;
 }
 
-export function isReviewTool(toolName: string): boolean { return toolName === TS_PUBLIC_TOOL_NAMES.subagentReview; }
+export function isSubagentTool(toolName: string): boolean {
+  return toolName === TS_PUBLIC_TOOL_NAMES.subagentReview
+    || toolName === TS_PUBLIC_TOOL_NAMES.subagentCompute;
+}
 export function isTrackedActivityTool(toolName: string): boolean {
-  return isReviewTool(toolName) || DETERMINISTIC_TOOLS.has(toolName);
+  return isSubagentTool(toolName) || DETERMINISTIC_TOOLS.has(toolName);
 }
 
 function statePriority(state: TsSubagentState): number {
@@ -203,20 +207,23 @@ function statePriority(state: TsSubagentState): number {
   return 3;
 }
 
-function fallbackReviewStatus(event: ToolExecutionStartEvent, now: number): TsSubagentStatus {
+function fallbackSubagentStatus(event: ToolExecutionStartEvent, now: number): TsSubagentStatus {
   const args = objectValue(event.args);
   const timestampValue = new Date(now).toISOString();
+  const role = event.toolName === TS_PUBLIC_TOOL_NAMES.subagentCompute ? "compute" : "review";
+  const actId = stringValue(args.actId);
   return {
     schema_version: TS_SUBAGENT_STATUS_SCHEMA,
     seq: 0,
     tool_call_id: event.toolCallId,
     task_id: event.toolCallId,
-    role: "review",
-    operation: "claim_review",
+    role,
+    operation: role === "compute" ? stringValue(args.operation) || "operation" : "claim_review",
     state: "queued",
     started_at: timestampValue,
     updated_at: timestampValue,
-    target_ref: stringValue(args.targetClaimRef),
+    act_refs: actId ? [actId] : undefined,
+    target_ref: role === "compute" ? stringValue(args.intentId) : stringValue(args.targetClaimRef),
   };
 }
 
@@ -225,7 +232,6 @@ function operationFor(kind: TsDeterministicKind, args: Record<string, unknown>):
 }
 
 function detailFor(kind: TsDeterministicKind, args: Record<string, unknown>): string | undefined {
-  if (kind === "compute") return compact([stringValue(args.backend), stringValue(args.intentId)]);
   if (kind === "structure") return compact(["SMILES", stringValue(args.optimization)]);
   if (kind === "artifact") return compact([stringValue(args.format), stringValue(args.actId)]);
   if (kind === "render") return stringValue(args.outputName);

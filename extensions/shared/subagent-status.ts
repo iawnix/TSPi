@@ -10,7 +10,7 @@ export const TS_SUBAGENT_STATES = [
 export const TS_SUBAGENT_WAIT_REASONS = ["model_response", "typed_tool", "parent_coordination"] as const;
 
 export type TsSubagentState = typeof TS_SUBAGENT_STATES[number];
-export type TsSubagentRole = "review";
+export type TsSubagentRole = "review" | "compute";
 export type TsSubagentFailureKind = "timeout" | "aborted" | "error";
 export type TsSubagentWaitReason = typeof TS_SUBAGENT_WAIT_REASONS[number];
 
@@ -19,7 +19,7 @@ export interface TsSubagentStatus {
   seq: number;
   tool_call_id: string;
   task_id: string;
-  role: "review";
+  role: TsSubagentRole;
   operation: string;
   state: TsSubagentState;
   started_at: string;
@@ -69,13 +69,13 @@ export function createSubagentStatusReporter(
     };
     if (onUpdate) {
       const partial: AgentToolResult<TsSubagentStatus> = {
-        content: [{ type: "text", text: `TS Review ${state}` }],
+        content: [{ type: "text", text: `TS ${roleLabel(status.role)} ${state}` }],
         details: status,
       };
       try {
         onUpdate(partial);
       } catch {
-        // Observability cannot alter the Review outcome.
+        // Observability cannot alter the subagent outcome.
       }
     }
     return status;
@@ -104,7 +104,7 @@ export function terminalStateForReport(value: unknown): "completed" | "partial" 
 
 export function isTsSubagentStatus(value: unknown): value is TsSubagentStatus {
   if (!isObject(value)) return false;
-  if (value.schema_version !== TS_SUBAGENT_STATUS_SCHEMA || value.role !== "review") return false;
+  if (value.schema_version !== TS_SUBAGENT_STATUS_SCHEMA || !["review", "compute"].includes(String(value.role))) return false;
   if (!Number.isInteger(value.seq) || Number(value.seq) < 0) return false;
   if (!requiredString(value.tool_call_id) || !requiredString(value.task_id) || !requiredString(value.operation)) return false;
   if (!TS_SUBAGENT_STATES.includes(value.state as TsSubagentState)) return false;
@@ -143,4 +143,8 @@ function requiredString(value: unknown): value is string {
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function roleLabel(role: TsSubagentRole): string {
+  return role === "compute" ? "Compute" : "Review";
 }

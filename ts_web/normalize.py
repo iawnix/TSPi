@@ -37,11 +37,11 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
     state = documents[RESEARCH_STATE_FILE]
     operations = operational_snapshot(root)
     activities = operations["deterministic_activities"]
-    reviews = operations["review_runs"]
+    agent_runs = operations["agent_runs"]
     controls = operations["unresolved_controls"]
     claims = _objects(documents[CLAIMS_FILE].get("claims"))
     acts = [
-        _normalize_act(root, record, activities=activities, reviews=reviews, controls=controls)
+        _normalize_act(root, record, activities=activities, agent_runs=agent_runs, controls=controls)
         for record in _objects(documents[RESEARCH_ACTS_FILE].get("acts"))
     ]
     claim_act_links = derive_claim_act_links(claims, acts)
@@ -87,7 +87,7 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         "deterministic_activities": activities,
         "activity_summaries": operations["activity_summaries"],
         "activity_integrity_findings": operations["activity_integrity_findings"],
-        "review_runs": reviews,
+        "agent_runs": agent_runs,
         "pending_review_dispositions": operations["pending_review_dispositions"],
         "pending_controls": operations["pending_controls"],
         "unresolved_controls": controls,
@@ -201,7 +201,7 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
             "focus": record.get("act_id") in focus_acts,
             "outcome": _object(record.get("result")).get("outcome"),
             "activity_count": len(_objects(record.get("activities"))),
-            "review_count": len(_objects(record.get("review_runs"))),
+            "agent_run_count": len(_objects(record.get("agent_runs"))),
             "unresolved_control_count": len(_objects(record.get("unresolved_controls"))),
         }
         for record in _objects(view.get("research_acts"))
@@ -236,7 +236,7 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
         "deterministic_activities": _objects(view.get("deterministic_activities")),
         "activity_summaries": _objects(view.get("activity_summaries")),
         "activity_integrity_findings": _list(view.get("activity_integrity_findings")),
-        "review_runs": _objects(view.get("review_runs")),
+        "agent_runs": _objects(view.get("agent_runs")),
         "unresolved_controls": _objects(view.get("unresolved_controls")),
     }
 
@@ -285,9 +285,9 @@ def claim_payload(source_root: str | Path, claim_id: str, *, label: str | None =
         "current_acceptances": [
             row for row in _objects(view.get("current_acceptances")) if row.get("claim_ref") == claim_id
         ],
-        "review_runs": [
+        "agent_runs": [
             row
-            for row in _objects(view.get("review_runs"))
+            for row in _objects(view.get("agent_runs"))
             if claim_id in _strings(row.get("claim_refs")) or act_ids.intersection(_strings(row.get("act_refs")))
         ],
     }
@@ -361,7 +361,7 @@ def _normalize_act(
     record: dict[str, Any],
     *,
     activities: list[dict[str, Any]],
-    reviews: list[dict[str, Any]],
+    agent_runs: list[dict[str, Any]],
     controls: list[dict[str, Any]],
 ) -> dict[str, Any]:
     act_id = str(record.get("act_id") or "")
@@ -369,7 +369,7 @@ def _normalize_act(
         **record,
         "attempts": _calculation_attempts(root, act_id),
         "activities": [row for row in activities if act_id in _strings(row.get("act_refs"))],
-        "review_runs": [row for row in reviews if act_id in _strings(row.get("act_refs"))],
+        "agent_runs": [row for row in agent_runs if act_id in _strings(row.get("act_refs"))],
         "unresolved_controls": [row for row in controls if row.get("act_id") == act_id],
     }
 

@@ -16,6 +16,11 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 const { promptWithDeadline, withDisposableSession } = require("../../agent-core/session-lifecycle.cjs");
+const {
+  assertProviderTurnSucceeded,
+  forceNamedToolChoice,
+  headerValue,
+} = require("../../agent-core/provider-turn.cjs");
 const { validateReviewTaskBundle } = require("./task-packet.cjs");
 import {
   createReviewResultCapture,
@@ -220,7 +225,12 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
             session,
             model,
             providerResponse,
-            capture.attemptCount > 0 || invalidOutputs.length > 0,
+            {
+              label: "TS Review",
+              code: "TS_SUBAGENT_PROVIDER_ERROR",
+              errorName: "ReviewProviderError",
+              hostAbortExpected: capture.attemptCount > 0 || invalidOutputs.length > 0,
+            },
           );
           await repairMissingToolCall(
             session,
@@ -325,14 +335,7 @@ async function createIsolatedResourceLoader(
 }
 
 export function forceReviewResultToolChoice(payload: unknown): unknown {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) return payload;
-  return {
-    ...payload,
-    tool_choice: {
-      type: "function",
-      function: { name: REVIEW_RESULT_TOOL_NAME },
-    },
-  };
+  return forceNamedToolChoice(payload, REVIEW_RESULT_TOOL_NAME);
 }
 
 function loadSystemPrompt(operation: string): string {
@@ -384,7 +387,12 @@ async function repairMissingToolCall(
     session,
     model,
     providerResponse,
-    capture.attemptCount > 0 || invalidOutputs.length > 0,
+    {
+      label: "TS Review",
+      code: "TS_SUBAGENT_PROVIDER_ERROR",
+      errorName: "ReviewProviderError",
+      hostAbortExpected: capture.attemptCount > 0 || invalidOutputs.length > 0,
+    },
   );
   if (!capture.accepted && capture.attemptCount === 0 && attempts.size === 0) {
     invalidOutputs.push({
@@ -394,80 +402,6 @@ async function repairMissingToolCall(
       raw: session.getLastAssistantText() || "",
     });
   }
-}
-
-function assertProviderTurnSucceeded(
-  session: Awaited<ReturnType<typeof createAgentSession>>["session"],
-  model: Model<any>,
-  response: ProviderResponseObservation,
-  hostAbortExpected = false,
-): void {
-  const message = session.messages
-    .slice()
-    .reverse()
-    .find((candidate) => candidate.role === "assistant") as Record<string, unknown> | undefined;
-  if (!message || message.stopReason !== "error") return;
-
-  const providerMessage = typeof message.errorMessage === "string" && message.errorMessage.trim()
-    ? message.errorMessage.trim()
-    : "provider returned an error before completing the assistant response";
-  if (hostAbortExpected && /^This operation was aborted\.?$/i.test(providerMessage)) return;
-  const status = response.status ?? numericHttpStatus(providerMessage);
-  const details = parseProviderErrorDetails(providerMessage);
-  const error = new Error(`TS Review provider request failed: ${providerMessage}`) as Error & {
-    code?: string;
-    status?: number;
-    provider?: string;
-    model?: string;
-    upstreamErrorType?: string;
-    upstreamErrorCode?: string;
-    responseContentType?: string | null;
-    responseBlockTypes?: string[];
-  };
-  error.name = "ReviewProviderError";
-  error.code = "TS_SUBAGENT_PROVIDER_ERROR";
-  if (status !== undefined) error.status = status;
-  error.provider = model.provider;
-  error.model = model.id;
-  error.responseBlockTypes = Array.isArray(message.content)
-    ? message.content
-      .map((block) => block && typeof block === "object" ? String((block as Record<string, unknown>).type || "") : "")
-      .filter(Boolean)
-    : [];
-  if (details.type) error.upstreamErrorType = details.type;
-  if (details.code) error.upstreamErrorCode = details.code;
-  error.responseContentType = response.contentType ?? null;
-  throw error;
-}
-
-function numericHttpStatus(message: string): number | undefined {
-  const match = message.match(/(?:^|\s)([1-5][0-9]{2})(?=\s|:|$)/);
-  return match ? Number(match[1]) : undefined;
-}
-
-function parseProviderErrorDetails(message: string): { type?: string; code?: string } {
-  const start = message.indexOf("{");
-  if (start < 0) return {};
-  try {
-    const parsed = JSON.parse(message.slice(start));
-    const value = parsed && typeof parsed === "object" && !Array.isArray(parsed)
-      ? parsed as Record<string, unknown>
-      : {};
-    const nested = value.error && typeof value.error === "object" && !Array.isArray(value.error)
-      ? value.error as Record<string, unknown>
-      : value;
-    return {
-      type: typeof nested.type === "string" ? nested.type : undefined,
-      code: typeof nested.code === "string" ? nested.code : undefined,
-    };
-  } catch {
-    return {};
-  }
-}
-
-function headerValue(headers: Record<string, string>, expected: string): string | undefined {
-  const match = Object.entries(headers).find(([name]) => name.toLowerCase() === expected);
-  return match?.[1];
 }
 
 function requireCapturedResult(

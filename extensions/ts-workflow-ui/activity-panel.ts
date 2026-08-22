@@ -9,7 +9,7 @@ import {
   type TsActivityStore,
   type TsActivitySummary,
   type TsDeterministicActivity,
-  type TsReviewActivity,
+  type TsSubagentActivity,
 } from "./activity-store.ts";
 
 export type TsActivityTone = "muted" | "accent" | "warning" | "success" | "error";
@@ -50,7 +50,7 @@ export function stateTone(state: TsSubagentState): TsActivityTone {
   return "accent";
 }
 
-export function reviewDetailLabel(status: TsSubagentStatus): string {
+export function subagentDetailLabel(status: TsSubagentStatus): string {
   return compact([status.operation, status.target_ref]);
 }
 
@@ -81,10 +81,9 @@ function renderActivity(activity: TsActivity, width: number, now: number, iconSt
 }
 
 function activityLabel(activity: TsActivity): string {
-  if (activity.kind === "review") return "Review";
+  if (activity.kind === "subagent") return activity.status.role === "compute" ? "Compute" : "Review";
   if (activity.kind === "remote") return "Remote";
   return {
-    compute: "Compute",
     structure: "Structure",
     artifact: "Artifact",
     render: "Render",
@@ -95,13 +94,13 @@ function activityLabel(activity: TsActivity): string {
 }
 
 function activityActRefs(activity: TsActivity): string[] {
-  if (activity.kind === "review") return activity.status.act_refs || [];
+  if (activity.kind === "subagent") return activity.status.act_refs || [];
   if (activity.kind === "deterministic") return activity.actRefs;
   return [];
 }
 
 function activityDetail(activity: TsActivity): string {
-  if (activity.kind === "review") return reviewDetailLabel(activity.status) || "claim_review";
+  if (activity.kind === "subagent") return subagentDetailLabel(activity.status) || activity.status.operation;
   if (activity.kind === "remote") return compact([activity.mode, activity.detail]);
   return compact([activity.operation, activity.detail]);
 }
@@ -123,19 +122,18 @@ function rightLabel(activity: TsActivity, now: number, style: TspiIconStyle | un
   const state = activityState(activity);
   if (state === "completed") return "done";
   if (state === "partial") return "partial";
-  if (state === "failed") return activity.kind === "review" ? activity.status.failure_kind || "failed" : "failed";
+  if (state === "failed") return activity.kind === "subagent" ? activity.status.failure_kind || "failed" : "failed";
   if (state === "cancelled") return "cancelled";
   if (state === "unknown") return "unknown";
-  if (state === "waiting" && activity.kind === "review") return waitReasonLabel(activity.status.wait_reason);
+  if (state === "waiting" && activity.kind === "subagent") return waitReasonLabel(activity.status.wait_reason);
   const elapsed = formatElapsed(Math.max(0, now - activity.startedAt));
   return showIcon ? `${tspiIcon("elapsed", style)} ${elapsed}` : elapsed;
 }
 
 function roleIconName(activity: TsActivity): TspiIconName {
-  if (activity.kind === "review") return "roleReview";
+  if (activity.kind === "subagent") return activity.status.role === "compute" ? "roleCompute" : "roleReview";
   if (activity.kind === "remote") return "remote";
   return {
-    compute: "roleCompute",
     structure: "tool",
     artifact: "tool",
     render: "roleRender",
@@ -168,4 +166,4 @@ function fitSides(left: string, right: string, width: number): string {
 function compact(values: Array<string | undefined>): string { return values.filter((value): value is string => Boolean(value)).join(" · "); }
 function pad(value: number): string { return String(value).padStart(2, "0"); }
 
-export type { TsActivityStore, TsDeterministicActivity, TsReviewActivity };
+export type { TsActivityStore, TsDeterministicActivity, TsSubagentActivity };

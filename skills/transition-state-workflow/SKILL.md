@@ -29,8 +29,8 @@ effects, provenance, and validation.
 3. Create or update Claims and start one bounded ResearchAct with meaningful
    dependencies.
 4. Select a method from chemistry, uncertainty, cost, and available artifacts.
-5. Run deterministic tools with the owning Act; the Activity Journal derives
-   the immutable link from `act_refs`.
+5. Run bounded tools with the owning Act; the Activity Journal derives the
+   immutable link from `act_refs`.
 6. Verify local primary outputs; record semantic Observations and Findings.
 7. Freeze and evaluate GateSpecs over explicit Observation refs.
 8. Update Claims, complete the Act only after activity/control checks pass, and
@@ -77,26 +77,27 @@ requires current passing coverage and no applicable open blocking Finding.
 
 ## Compute
 
-Before `operation=prepare`, read `ts_workspace_context mode=artifacts` and bind
-each `artifactId` to its required `inputRole`. `ts_compute` runs one operation;
-the host owns IDs, paths, names, manifests, remote directories, and bindings.
+Before `launch`, read `ts_workspace_context mode=artifacts` and bind each
+`artifactId` to its `inputRole`. `ts_subagent_compute` executes one host-bound
+lifecycle: `launch` prepare+submit, `inspect` status+optional tail, `finalize`
+collect+parse, or `cancel`. The host owns identities, paths, arguments, and
+bindings.
 
-If none exists, start an open Act. Use `ts_structure_seed` for one connected
-SMILES, or `ts_artifact_import` for bounded Gaussian/XYZ/control text. Never
-provide a path; pass the returned `artifactId` to Compute.
+If no input exists, start an Act; use `ts_structure_seed` for one SMILES or
+`ts_artifact_import` for bounded Gaussian/XYZ/control text. Pass its
+`artifactId`, never a path.
 
-Do not poll unchanged work. Retry only when a typed result says no external
-effect was attempted; never replay an ambiguous submit or cancel. Capability
-means expressibility, not live software, storage, SSH, scheduler, or queue
-health.
+Do not poll unchanged work. Retry only when a typed result proves no external
+effect; never replay ambiguous submit or cancel. Capability means
+expressibility, not live infrastructure health.
 
 ## Review
 
 Use `ts_subagent_review` for an independent assessment of one target Claim.
-Review is the only child model session. It receives a bounded graph and result
-tool, with no parent transcript, Skill, raw filesystem, compute, mutation, or
-delegation. Artifacts are logical IDs; one bounded host read is allowed and
-physical paths stay hidden.
+It gets a bounded graph and result tool, no parent transcript or Skill, and no
+raw filesystem, compute, mutation, or delegation. It may read one logical
+artifact batch. Compute gets a fixed zero-argument plan and no scientific or
+method authority.
 
 After success, call `ts_review_disposition` before scientific mutation. Apply
 advice only through verified Decisions, and preserve provider failures as such.

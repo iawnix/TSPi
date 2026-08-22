@@ -86,9 +86,9 @@ function buildContextDetails(context) {
       activityCount: numberOrZero(operational.activity_count),
       activityFailedCount: numberOrZero(operational.activity_failed_count),
       activityRunningCount: numberOrZero(operational.activity_running_count),
-      reviewRunCount: numberOrZero(operational.review_run_count),
-      reviewRunFailedCount: numberOrZero(operational.review_run_failed_count),
-      reviewRunPendingCount: numberOrZero(operational.review_run_pending_count),
+      agentRunCount: numberOrZero(operational.agent_run_count),
+      agentRunFailedCount: numberOrZero(operational.agent_run_failed_count),
+      agentRunPendingCount: numberOrZero(operational.agent_run_pending_count),
       reviewDispositionPendingCount: numberOrZero(operational.review_disposition_pending_count),
       controlUnresolvedCount: numberOrZero(operational.control_unresolved_count),
       ambiguousSubmissionCount: numberOrZero(operational.ambiguous_submission_count),
@@ -113,7 +113,7 @@ function buildContextSummary(context, options = {}) {
     `- open_acts: ${openActs.length ? openActs.slice(0, maxItems).map(formatAct).join("; ") : "(none)"}`,
     `- claims: ${details.claims.length ? details.claims.slice(0, maxItems).map(formatClaim).join("; ") : "(none)"}`,
     `- graph: relations=${details.claimRelations.length}; observations=${details.observations.length}; specs=${details.validationSpecs.length}; results=${details.validationResults.length}; findings=${details.findings.length}`,
-    `- operations: calculations=${op.calculationFileCount}; activities=${op.activityCount}; activity_failures=${op.activityFailedCount}; reviews=${op.reviewRunCount}; review_failures=${op.reviewRunFailedCount}; pending_review_responses=${op.reviewDispositionPendingCount}; unresolved_controls=${op.controlUnresolvedCount}; ambiguous_submissions=${op.ambiguousSubmissionCount}`,
+    `- operations: calculations=${op.calculationFileCount}; activities=${op.activityCount}; activity_failures=${op.activityFailedCount}; agent_runs=${op.agentRunCount}; agent_failures=${op.agentRunFailedCount}; agent_pending=${op.agentRunPendingCount}; pending_review_responses=${op.reviewDispositionPendingCount}; unresolved_controls=${op.controlUnresolvedCount}; ambiguous_submissions=${op.ambiguousSubmissionCount}`,
   ];
   if (details.incompleteValidation.length) {
     lines.push(`- incomplete_validation: ${details.incompleteValidation.slice(0, maxItems).map(formatValidationGap).join("; ")}`);

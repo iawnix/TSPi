@@ -172,7 +172,7 @@ def _workspace_route(row: dict[str, Any], rest: str, query: dict[str, list[str]]
             "operational_revision": view["operational_revision"],
             "operational_summary": view["operational_summary"],
             "deterministic_activities": view["deterministic_activities"],
-            "review_runs": view["review_runs"],
+            "agent_runs": view["agent_runs"],
             "pending_review_dispositions": view["pending_review_dispositions"],
             "pending_controls": view["pending_controls"],
             "unresolved_controls": view["unresolved_controls"],

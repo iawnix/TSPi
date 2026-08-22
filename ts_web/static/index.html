@@ -577,7 +577,7 @@
       setCount("observations", view.observations.length);
       setCount("validation", view.validation_results.length);
       setCount("findings", view.findings.length);
-      setCount("activity", view.deterministic_activities.length + view.review_runs.length);
+      setCount("activity", view.deterministic_activities.length + view.agent_runs.length);
       document.getElementById("sidebar-meta").innerHTML = [
         escapeHtml(view.workspace.workspace_id),
         escapeHtml(shortDigest(view.workspace_revision)),
@@ -765,7 +765,7 @@
       content.innerHTML = renderHeader("Research Acts", "Dependency-aware research actions owned by the v4 kernel.", true) +
         table(["Act", "Objective", "Status", "Dependencies", "Records"], rows.map(row => ({
           detail: "act", id: row.act_id,
-          cells: [mono(row.act_id), `<div class="truncate">${escapeHtml(row.objective)}</div>`, badge(row.status), String(row.dependency_refs.length), `${row.attempts.length} calc · ${row.activities.length} ops · ${row.review_runs.length} review`],
+          cells: [mono(row.act_id), `<div class="truncate">${escapeHtml(row.objective)}</div>`, badge(row.status), String(row.dependency_refs.length), `${row.attempts.length} calc · ${row.activities.length} ops · ${row.agent_runs.length} agent`],
         })), "act-table");
       bindSearch();
     }
@@ -811,34 +811,35 @@
 
     function renderActivity() {
       const activities = filterRows(state.view.deterministic_activities, ["activity_id", "kind", "operation", "status", "summary", "act_refs"]);
-      const reviews = filterRows(state.view.review_runs, ["task_id", "operation", "status", "summary", "claim_refs", "act_refs"]);
-      content.innerHTML = renderHeader("Activity", "Deterministic host operations and isolated advisory Review runs.", true) +
-        `<section class="section"><div class="section-header"><h2>Deterministic</h2><span class="section-meta">${activities.length}</span></div>${activityList(activities, false)}</section>` +
-        `<section class="section"><div class="section-header"><h2>Review</h2><span class="section-meta">${reviews.length}</span></div>${activityList(reviews, true)}</section>` +
+      const agents = filterRows(state.view.agent_runs, ["task_id", "role", "operation", "status", "summary", "claim_refs", "act_refs"]);
+      content.innerHTML = renderHeader("Activity", "Deterministic host operations and isolated Compute or Review runs.", true) +
+        `<section class="section"><div class="section-header"><h2>Deterministic</h2><span class="section-meta">${activities.length}</span></div>${activityList(activities, "activity")}</section>` +
+        `<section class="section"><div class="section-header"><h2>Subagents</h2><span class="section-meta">${agents.length}</span></div>${activityList(agents, "agent")}</section>` +
         controlsSection();
       bindSearch();
     }
 
     function recentActivitySection() {
       const combined = [
-        ...state.view.deterministic_activities.map(row => ({ ...row, _review: false, _time: row.completed_at || row.started_at })),
-        ...state.view.review_runs.map(row => ({ ...row, _review: true, _time: row.finished_at || row.started_at })),
+        ...state.view.deterministic_activities.map(row => ({ ...row, _record_kind: "activity", _time: row.completed_at || row.started_at })),
+        ...state.view.agent_runs.map(row => ({ ...row, _record_kind: "agent", _time: row.finished_at || row.started_at })),
       ].sort((a, b) => String(b._time || "").localeCompare(String(a._time || ""))).slice(0, 8);
       if (!combined.length) return "";
       return `<section class="section"><div class="section-header"><h2>Recent activity</h2><span class="section-meta">${combined.length}</span></div>${activityList(combined, null)}</section>`;
     }
 
-    function activityList(rows, forceReview) {
+    function activityList(rows, recordKind) {
       if (!rows.length) return `<div class="empty-state">No records</div>`;
       return `<div class="activity-list">${rows.map(row => {
-        const isReview = forceReview === null ? Boolean(row._review) : forceReview;
-        const id = isReview ? row.task_id : row.activity_id;
-        const kind = isReview ? "Review" : (row.kind || "Activity");
+        const isAgent = (recordKind || row._record_kind) === "agent";
+        const isReview = isAgent && row.role === "review";
+        const id = isAgent ? row.task_id : row.activity_id;
+        const kind = isAgent ? (isReview ? "Review" : "Compute") : (row.kind || "Activity");
         const operation = row.operation || "operation";
         const summary = row.summary || row.error_message || row.error_code || "No summary";
-        const time = isReview ? (row.finished_at || row.started_at) : (row.completed_at || row.started_at);
-        return `<div class="activity-row ${isReview ? "review" : ""}" data-detail="${isReview ? "review" : "activity"}" data-id="${escapeHtml(id)}">
-          <span class="activity-symbol">${isReview ? "◇" : "●"}</span>
+        const time = isAgent ? (row.finished_at || row.started_at) : (row.completed_at || row.started_at);
+        return `<div class="activity-row ${isReview ? "review" : ""}" data-detail="${isAgent ? "agent" : "activity"}" data-id="${escapeHtml(id)}">
+          <span class="activity-symbol">${isReview ? "◇" : isAgent ? "▣" : "●"}</span>
           <span class="activity-kind">${escapeHtml(kind)}</span>
           <span class="activity-title"><strong>${escapeHtml(operation)} · ${escapeHtml(row.status || "pending")}</strong><span>${escapeHtml(summary)}</span></span>
           <span class="activity-time">${escapeHtml(formatTime(time))}</span>
@@ -905,7 +906,7 @@
         finding: [state.view.findings, "finding_id"],
         acceptance: [state.view.acceptances, "acceptance_id"],
         activity: [state.view.deterministic_activities, "activity_id"],
-        review: [state.view.review_runs, "task_id"],
+        agent: [state.view.agent_runs, "task_id"],
       };
       if (kind === "control") {
         return state.view.unresolved_controls.find(row => `${row.intent_id}:${row.operation}` === id) || {};
@@ -930,7 +931,7 @@
         ${relatedSection("Research Acts", payload.research_acts, "act_id", "objective")}
         ${relatedSection("Validation", payload.validation_results, "result_id", "verdict")}
         ${relatedSection("Findings", payload.findings, "finding_id", "statement")}
-        ${relatedSection("Review", payload.review_runs, "task_id", "summary")}`;
+        ${relatedSection("Subagents", payload.agent_runs, "task_id", "summary")}`;
     }
 
     function renderActDetail(payload) {
@@ -952,7 +953,7 @@
         ${renderActLineage(payload)}
         ${renderActExecution(act)}
         ${renderActScience(payload)}
-        ${renderActReviews(act.review_runs || [])}
+        ${renderActAgents(act.agent_runs || [])}
         ${filesSection(payload.files?.files || [])}
         ${renderActAudit(act, result)}`;
     }
@@ -1058,15 +1059,15 @@
       </section>`;
     }
 
-    function renderActReviews(rows) {
+    function renderActAgents(rows) {
       if (!rows.length) return "";
       const records = rows.map(row => detailLink(
-        "review",
+        "agent",
         row.task_id,
-        row.summary || row.operation || "Independent Review",
-        compactHtml([badge(row.status), row.result_outcome ? badge(row.result_outcome) : ""]),
+        row.summary || row.operation || "Subagent run",
+        compactHtml([badge(row.role), badge(row.status), row.result_outcome ? badge(row.result_outcome) : ""]),
       )).join("");
-      return `<section class="detail-section"><h3>Independent Review</h3><div class="detail-records">${records}</div></section>`;
+      return `<section class="detail-section"><h3>Subagent runs</h3><div class="detail-records">${records}</div></section>`;
     }
 
     function renderActAudit(act, result) {
@@ -1181,7 +1182,7 @@
     function formatTime(value) { if (!value) return ""; const date = new Date(value); return Number.isNaN(date.valueOf()) ? String(value) : date.toLocaleString(); }
     function formatBytes(value) { if (value < 1024) return `${value} B`; if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KiB`; return `${(value / 1024 / 1024).toFixed(1)} MiB`; }
     function recordId(record) { return record.claim_id || record.act_id || record.observation_id || record.spec_id || record.result_id || record.finding_id || record.acceptance_id || record.activity_id || record.task_id || record.intent_id || "Record"; }
-    function labelForKind(kind) { return ({ claim: "Claim", act: "Research Act", observation: "Observation", "validation-spec": "GateSpec", "validation-result": "Validation Result", finding: "Finding", acceptance: "Acceptance", activity: "Deterministic Activity", review: "Review", control: "Remote Control" })[kind] || "Details"; }
+    function labelForKind(kind) { return ({ claim: "Claim", act: "Research Act", observation: "Observation", "validation-spec": "GateSpec", "validation-result": "Validation Result", finding: "Finding", acceptance: "Acceptance", activity: "Deterministic Activity", agent: "Subagent Run", control: "Remote Control" })[kind] || "Details"; }
 
     function escapeHtml(value) {
       return String(value ?? "").replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);

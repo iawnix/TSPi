@@ -240,7 +240,7 @@ def test_normalize_workspace_projects_v4_scientific_and_operational_state(tmp_pa
     assert view["focus"]["act_refs"] == [refs["connectivity"]]
     active = next(row for row in view["research_acts"] if row["act_id"] == refs["connectivity"])
     assert active["activities"][0]["activity_id"] == "activity_probe"
-    assert active["review_runs"][0]["task_id"] == "sub_review"
+    assert active["agent_runs"][0]["task_id"] == "sub_review"
     assert all("node_id" not in row for row in view["research_acts"])
 
 
@@ -269,7 +269,7 @@ def test_graph_uses_claim_relations_and_research_act_dependencies(tmp_path: Path
         }
     ]
     assert graph["deterministic_activities"][0]["kind"] == "compute"
-    assert graph["review_runs"][0]["role"] == "review"
+    assert graph["agent_runs"][0]["role"] == "review"
 
 
 def test_claim_and_act_details_follow_graph_references(tmp_path: Path) -> None:
@@ -457,7 +457,7 @@ def test_web_server_is_read_only_v4_and_has_no_legacy_routes(tmp_path: Path) -> 
         assert _get_json(host, port, f"{base}/observations")["observations"][0]["schema_version"] == "ts-observation/1"
         assert _get_json(host, port, f"{base}/validation")["validation_results"][0]["verdict"] == "pass"
         assert _get_json(host, port, f"{base}/findings")["findings"][0]["status"] == "open"
-        assert _get_json(host, port, f"{base}/activity")["review_runs"][0]["task_id"] == "sub_review"
+        assert _get_json(host, port, f"{base}/activity")["agent_runs"][0]["task_id"] == "sub_review"
         assert _get_json(host, port, f"{base}/claim/{refs['concerted']}")["claim"]["status"] == "supported"
         act = _get_json(host, port, f"{base}/act/{refs['connectivity']}")
         assert act["research_act"]["status"] == "open"

@@ -2,12 +2,18 @@
 
 const { createHash } = require("node:crypto");
 
-const { FACT_KINDS } = require("./fact-kinds.cjs");
+const {
+  COMPUTE_FACT_KINDS,
+  REVIEW_FACT_KINDS,
+} = require("./fact-kinds.cjs");
 
-const ROLES = Object.freeze(["review"]);
+const ROLES = Object.freeze(["review", "compute"]);
 const AUTHORITIES = Object.freeze({
   review: "advisory",
+  compute: "operational",
 });
+const COMPUTE_OPERATIONS = Object.freeze(["launch", "inspect", "finalize", "cancel"]);
+const COMPUTE_ACTIONS = Object.freeze(["prepare", "submit", "status", "tail", "collect", "parse", "cancel"]);
 const OUTCOMES = Object.freeze(["success", "partial", "failure", "not_run"]);
 const PROGRAM_OUTCOMES = Object.freeze(["success", "failure", "not_run"]);
 const FORBIDDEN_RESULT_KEYS = new Set([
@@ -52,10 +58,17 @@ function validateAgentTask(value) {
   const authority = requireEnum(value.authority, "authority", ["advisory", "operational"]);
   if (authority !== AUTHORITIES[role]) throw new Error(`authority does not match role ${role}`);
   const operation = requireString(value.operation, "operation", 128);
+  if (role === "review" && operation !== "claim_review") {
+    throw new Error("Review task operation must be claim_review");
+  }
+  if (role === "compute" && !COMPUTE_OPERATIONS.includes(operation)) {
+    throw new Error(`invalid Compute task operation: ${operation}`);
+  }
   const objective = requireString(value.objective, "objective", 4000);
   const workspace = validateWorkspace(value.workspace);
   const scope = validateScope(value.scope);
   const inputs = validateTaskInputs(value.inputs, role);
+  if (role === "compute") validateComputePlan(operation, inputs);
   const capabilities = uniqueStringArray(value.capabilities, "capabilities", 32, 128);
   const constraints = validateConstraints(value.constraints);
   if (value.output_contract !== "ts-agent-result/1") throw new Error("output_contract must be ts-agent-result/1");
@@ -77,13 +90,83 @@ function validateAgentTask(value) {
 
 function validateTaskInputs(value, role) {
   if (!isPlainObject(value)) throw new Error("inputs must be an object");
-  if (role !== "review") return JSON.parse(JSON.stringify(value));
-  rejectUnknownKeys(value, Object.keys(REVIEW_INPUT_DOCUMENTS), "review inputs");
-  const result = {};
-  for (const [name, expected] of Object.entries(REVIEW_INPUT_DOCUMENTS)) {
-    result[name] = validateDocumentBinding(value[name], `inputs.${name}`, expected);
+  if (role === "review") {
+    rejectUnknownKeys(value, Object.keys(REVIEW_INPUT_DOCUMENTS), "review inputs");
+    const result = {};
+    for (const [name, expected] of Object.entries(REVIEW_INPUT_DOCUMENTS)) {
+      result[name] = validateDocumentBinding(value[name], `inputs.${name}`, expected);
+    }
+    return result;
   }
-  return result;
+  if (role === "compute") return validateComputeInputs(value);
+  throw new Error(`unsupported agent task role: ${role}`);
+}
+
+function validateComputeInputs(value) {
+  const keys = [
+    "backend", "act_id", "intent_id", "intent_digest", "execution_kind",
+    "required_actions", "optional_actions", "tail", "collect_artifacts",
+    "parse_artifact_ref",
+  ];
+  rejectUnknownKeys(value, keys, "compute inputs");
+  const actId = requireString(value.act_id, "inputs.act_id", 128);
+  if (!/^act_[1-9][0-9]*$/.test(actId)) throw new Error("inputs.act_id must be a ResearchAct ID");
+  const intentId = requireString(value.intent_id, "inputs.intent_id", 128);
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{5,127}$/.test(intentId)) {
+    throw new Error("inputs.intent_id contains invalid characters");
+  }
+  if (typeof value.intent_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(value.intent_digest)) {
+    throw new Error("inputs.intent_digest must be a SHA-256 digest");
+  }
+  const tail = value.tail === null ? null : validateComputeTail(value.tail);
+  return {
+    backend: requireString(value.backend, "inputs.backend", 64),
+    act_id: actId,
+    intent_id: intentId,
+    intent_digest: value.intent_digest,
+    execution_kind: requireEnum(value.execution_kind, "inputs.execution_kind", ["remote"]),
+    required_actions: uniqueEnumArray(value.required_actions, "inputs.required_actions", COMPUTE_ACTIONS, 2),
+    optional_actions: uniqueEnumArray(value.optional_actions, "inputs.optional_actions", COMPUTE_ACTIONS, 2),
+    tail,
+    collect_artifacts: uniqueStringArray(value.collect_artifacts, "inputs.collect_artifacts", 32, 255),
+    parse_artifact_ref: nullableString(value.parse_artifact_ref, "inputs.parse_artifact_ref", 4096),
+  };
+}
+
+function validateComputeTail(value) {
+  if (!isPlainObject(value)) throw new Error("inputs.tail must be an object or null");
+  rejectUnknownKeys(value, ["artifact", "lines"], "inputs.tail");
+  return {
+    artifact: nullableString(value.artifact, "inputs.tail.artifact", 255),
+    lines: requireIntegerRange(value.lines, "inputs.tail.lines", 1, 500),
+  };
+}
+
+function validateComputePlan(operation, inputs) {
+  const expected = {
+    launch: { required: ["prepare", "submit"], optional: [] },
+    inspect: { required: ["status"], optional: ["tail"] },
+    finalize: { required: ["collect", "parse"], optional: [] },
+    cancel: { required: ["cancel"], optional: [] },
+  }[operation];
+  if (!expected) throw new Error(`invalid Compute task operation: ${operation}`);
+  if (JSON.stringify(inputs.required_actions) !== JSON.stringify(expected.required)) {
+    throw new Error(`Compute ${operation} required_actions do not match the fixed plan`);
+  }
+  if (JSON.stringify(inputs.optional_actions) !== JSON.stringify(expected.optional)) {
+    throw new Error(`Compute ${operation} optional_actions do not match the fixed plan`);
+  }
+  if (inputs.execution_kind !== "remote") {
+    throw new Error(`Compute ${operation} requires remote execution`);
+  }
+  if ((operation === "inspect") !== (inputs.tail !== null)) {
+    throw new Error(`Compute ${operation} tail binding does not match the fixed plan`);
+  }
+  if (operation === "finalize") {
+    if (!inputs.parse_artifact_ref) throw new Error("Compute finalize requires parse_artifact_ref");
+  } else if (inputs.collect_artifacts.length || inputs.parse_artifact_ref !== null) {
+    throw new Error(`Compute ${operation} cannot bind collection or parse artifacts`);
+  }
 }
 
 function validateDocumentBinding(value, label, expected) {
@@ -134,9 +217,10 @@ function validateAgentResult(value, task) {
   assertSame(requireString(value.operation, "operation", 128), normalizedTask.operation, "operation");
   const scope = validateScope(value.scope);
   if (JSON.stringify(scope) !== JSON.stringify(normalizedTask.scope)) throw new Error("scope does not match agent task");
-  const facts = objectArray(value.facts, "facts", 32).map((fact, index) => validateFact(fact, index));
+  const facts = objectArray(value.facts, "facts", 32).map((fact, index) => validateFact(fact, index, normalizedTask.role));
   const program = validateProgram(value.program);
-  if (program !== null) throw new Error("program must be null for Review");
+  if (normalizedTask.role === "review" && program !== null) throw new Error("program must be null for Review");
+  if (normalizedTask.role === "compute" && program === null) throw new Error("program must be an object for Compute");
   if (!isPlainObject(value.payload)) throw new Error("payload must be an object");
   if (!isPlainObject(value.provenance)) throw new Error("provenance must be an object");
   return {
@@ -149,7 +233,7 @@ function validateAgentResult(value, task) {
     summary: requireString(value.summary, "summary", 4000),
     scope,
     facts,
-    artifact_refs: uniqueStringArray(value.artifact_refs, "artifact_refs", 64, 4096),
+    artifact_refs: validateArtifactRefs(value.artifact_refs, normalizedTask.role),
     program,
     payload: value.payload,
     limitations: stringArray(value.limitations, "limitations", 24, 2000),
@@ -201,14 +285,21 @@ function validateConstraints(value) {
   };
 }
 
-function validateFact(value, index) {
+function validateFact(value, index, role) {
   rejectUnknownKeys(value, ["kind", "statement", "status", "basis_refs"], `facts[${index}]`);
+  const roleKinds = role === "review" ? REVIEW_FACT_KINDS : COMPUTE_FACT_KINDS;
   return {
-    kind: requireEnum(value.kind, `facts[${index}].kind`, FACT_KINDS),
+    kind: requireEnum(value.kind, `facts[${index}].kind`, roleKinds),
     statement: requireString(value.statement, `facts[${index}].statement`, 2000),
     status: requireEnum(value.status, `facts[${index}].status`, ["observed", "supported", "contradicted", "uncertain"]),
     basis_refs: uniqueStringArray(value.basis_refs, `facts[${index}].basis_refs`, 16, 4096),
   };
+}
+
+function validateArtifactRefs(value, role) {
+  const refs = uniqueStringArray(value, "artifact_refs", 64, 4096);
+  if (role === "review" && refs.length) throw new Error("artifact_refs must be empty for Review");
+  return refs;
 }
 
 function validateProgram(value) {
@@ -264,6 +355,14 @@ function requireInteger(value, label) {
   return value;
 }
 
+function requireIntegerRange(value, label, minimum, maximum) {
+  const result = requireInteger(value, label);
+  if (result < minimum || result > maximum) {
+    throw new Error(`${label} must be an integer from ${minimum} to ${maximum}`);
+  }
+  return result;
+}
+
 function objectArray(value, label, maxItems) {
   if (!Array.isArray(value)) throw new Error(`${label} must be an array`);
   if (value.length > maxItems) throw new Error(`${label} exceeds ${maxItems} items`);
@@ -285,6 +384,14 @@ function uniqueStringArray(value, label, maxItems, maxLength) {
   return result;
 }
 
+function uniqueEnumArray(value, label, allowed, maxItems) {
+  if (!Array.isArray(value)) throw new Error(`${label} must be an array`);
+  if (value.length > maxItems) throw new Error(`${label} exceeds ${maxItems} items`);
+  const result = value.map((item, index) => requireEnum(item, `${label}[${index}]`, allowed));
+  if (new Set(result).size !== result.length) throw new Error(`${label} contains duplicates`);
+  return result;
+}
+
 function rejectUnknownKeys(value, allowed, label) {
   const allowedSet = new Set(allowed);
   const unknown = Object.keys(value).filter((key) => !allowedSet.has(key));
@@ -297,6 +404,8 @@ function isPlainObject(value) {
 
 module.exports = {
   AUTHORITIES,
+  COMPUTE_ACTIONS,
+  COMPUTE_OPERATIONS,
   FORBIDDEN_RESULT_KEYS,
   PROGRAM_OUTCOMES,
   ROLES,

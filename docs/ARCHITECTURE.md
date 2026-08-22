@@ -22,10 +22,11 @@ Installation root
                 Observation and Finding registries
                 Decision transaction owner
              -> deterministic execution plane
-                Compute + Render + Report + remote + notification
+                compute kernel + Render + Report + remote + notification
              -> Validation Engine
                 frozen GateSpecs + registered predicates + acceptance profiles
              -> graph Context Compiler
+             -> isolated operational Compute Agent
              -> isolated advisory Review Agent
           -> read-only TS Activity and history projection
 ```
@@ -34,12 +35,13 @@ There are three forms of execution:
 
 1. **Root Agent reasoning** selects scientific questions, hypotheses, methods,
    alternatives, counterexamples, backtracking, stopping, and interpretation.
-2. **Advisory Agent reasoning** is used only by Review. It evaluates a bounded,
-   Claim-centered dependency snapshot and returns non-authoritative advice.
+2. **Bounded child-agent execution** has two roles. Review evaluates a compact
+   Claim-centered snapshot and returns non-authoritative advice. Compute
+   orchestrates one host-bound action plan and has no scientific discretion.
 3. **Deterministic host execution** validates and commits state or performs an
-   explicitly selected side effect. Compute, structure seeding, Render, Report,
-   remote inspection, artifact import, notifications, context, and validation use no
-   child model.
+   explicitly selected side effect. Every compute action, structure seed,
+   Render, Report, remote inspection, artifact import, notification, context,
+   and validation operation is implemented outside the child model.
 
 ## Authority Matrix
 
@@ -51,7 +53,8 @@ There are three forms of execution:
 | Context Compiler | No | No | No | revision-bound read projection |
 | Validation Engine | No | Through Kernel apply | No | frozen GateSpecs and ValidationResults |
 | Review Agent | Yes | No | No | task, snapshot, result/failure, Root disposition |
-| `ts_compute` | No | No | Local/SSH/Torque action | intent, control record, manifest, parsed artifacts |
+| Compute Agent | Yes | No | Only through bound typed tools | task, actions, deterministic result/failure |
+| Compute kernel | No | No | Local/SSH/Torque action | intent, control record, manifest, parsed artifacts |
 | `ts_structure_seed` | No | No | Bounded local generation | Act-owned XYZ, provenance, and activity |
 | `ts_artifact_import` | No | No | Bounded local file creation | Act-owned content-addressed input and activity |
 | `ts_render` / `ts_report` | No | No | Local file creation | no-overwrite artifact or report package |
@@ -318,9 +321,9 @@ full workspace dump.
 | --- | --- | --- |
 | `ts-workflow-control` | context, Decision draft/validate/apply; `/ts-context`, `/ts-validate` | graph projection and sole canonical mutation path |
 | `ts-workflow-review` | `ts_subagent_review`, `ts_review_disposition` | isolated advisory Review and mandatory Root response |
-| `ts-workflow-compute` | `ts_compute`, `ts_remote_inspect`; `/ts-remote` | deterministic calculation lifecycle and diagnostics |
+| `ts-workflow-compute` | `ts_subagent_compute`, `ts_remote_inspect`; `/ts-remote` | isolated operational lifecycle over deterministic compute actions and diagnostics |
 | `ts-workflow-artifacts` | `ts_structure_seed`, `ts_artifact_import`, `ts_render`, `ts_report`, `ts_notify_user` | deterministic local artifacts, reports, and delivery |
-| `ts-workflow-ui` | `/ts-subagent-history` | startup, editor/footer, TS Activity, and Review history |
+| `ts-workflow-ui` | `/ts-subagent-history` | startup, editor/footer, TS Activity, and Compute/Review history |
 
 `ts-phone-bridge` is optional and loaded only by `TSPi --phone`. It forwards
 messages to the same visible Pi process and never creates a hidden Root Agent.
@@ -331,10 +334,18 @@ compute capabilities define expressible adapter tasks; validation capabilities
 list templates, predicates, and profiles; remote diagnostics establish live
 readiness.
 
-## Review Agent Runtime
+## Isolated Agent Runtimes
 
-Review is the only child model session because its value depends on independent
-scientific reasoning. The host:
+Compute and Review share the same process-level safeguards: a fresh in-memory
+Pi session, inherited model identity without fallback, no parent transcript,
+no Skills or package extensions, no built-in tools, no recursive delegation,
+bounded task/result contracts, local validation, one structural repair, and
+provider-error-first reporting. Their authority and available tools differ.
+
+### Review
+
+Review exists because its value depends on independent scientific reasoning.
+The host:
 
 1. selects one target Claim and asks the Context Compiler for its dependency
    snapshot;
@@ -361,12 +372,35 @@ Every successful Review requires exactly one deterministic
 `ts_review_disposition` before the next scientific mutation. Accepting advice
 still requires primary artifacts and a normal Decision.
 
+### Compute
+
+`ts_subagent_compute` receives one `ts-agent-task/2` with
+`role=compute`, `authority=operational`, one Act, one immutable intent digest,
+and one of four closed plans:
+
+```text
+launch   prepare -> submit
+inspect  status -> optional tail
+finalize collect -> parse
+cancel   cancel
+```
+
+Before the child starts, the host creates or resolves the intent and completes
+all path, identity, digest, backend, and execution-target checks. Each child
+action is a zero-argument tool bound to that preflight result. A prerequisite
+must complete before a dependent action; every action can be called at most
+once. `submit` and `cancel` are never replayed after an unknown effect. After a
+terminal plan, the host forces `ts_compute_result`. The model supplies only
+`summary` and `limitations`; the host derives all outcomes, facts, program
+state, artifacts, provenance, and reconciliation flags from typed action
+receipts.
+
 ## Deterministic Tool Plane
 
 ### Compute
 
-`ts_compute` performs `prepare`, `submit`, `inspect`, `collect`, `cancel`, or
-`parse`. Preparation binds one ResearchAct, logical input artifacts and roles,
+The private compute kernel performs `prepare`, `submit`, `status`, `tail`,
+`collect`, `cancel`, or `parse`. Preparation binds one ResearchAct, logical input artifacts and roles,
 backend/task/settings, execution target, and expected outputs into an immutable
 `ts-calculation-intent/4`. The host allocates paths, filenames, intent ID,
 remote directory, and submission binding.
@@ -410,16 +444,19 @@ are not replayed automatically.
 
 ## Run Journals And Result Delivery
 
-Review journals live under:
+Compute and Review journals live under:
 
 ```text
-operations/agent-runs/<task_id>/
+acts/<act_id>/agent-runs/<task_id>/
 ```
 
 At creation, `task.json` and its bound snapshot are exclusive-created. Normal
 terminal handling writes actions, optional result, and final run state. A
 process crash can leave a task-only journal indexed as pending/unknown; there is
 no claim of per-event write-ahead durability or automatic result replay.
+If terminal journal persistence itself fails, the runtime preserves the primary
+provider or action error, reports the journal failure separately, and leaves the
+run pending rather than rewriting the remote action outcome.
 
 Deterministic operations use the Activity Journal as their single activity
 source of truth. Every request/status record carries `act_refs`; a shared
@@ -427,7 +464,7 @@ Activity Index validates IDs, paths, ownership, status/result consistency, and
 referenced Acts, then derives per-Act activity projections. ResearchAct records
 do not duplicate activity refs and no Decision is needed to link an operation.
 Compute guards and receipts remain the source for scheduler recovery; a UI or
-Review-run state never proves a remote effect.
+agent-run state never proves a remote effect.
 
 An Act cannot become terminal while one of its activities is running or
 pending, its activity journal is inconsistent, or a compute control is pending
@@ -436,7 +473,7 @@ or unresolved. A failed terminal activity may close only as `inconclusive`,
 
 The immediate tool return is the current delivery channel into the Root
 conversation. `TS Activity` is presentation state and is cleared with the Pi
-session. `/ts-subagent-history` reads durable Review summaries on demand.
+session. `/ts-subagent-history` reads durable Compute and Review summaries on demand.
 
 ## Failure Semantics
 
@@ -448,7 +485,7 @@ session. `/ts-subagent-history` reads durable Review summaries on demand.
 - Parser failure is not automatically program failure.
 - A successful deterministic action is not undone by a later UI or report-entry
   serialization error.
-- Provider HTTP/stream failure outranks Review output-contract failure.
+- Provider HTTP/stream failure outranks Compute/Review output-contract failure.
 - Canonical corruption, stale revision, digest drift, cyclic graph, and partial
   bootstrap fail closed.
 

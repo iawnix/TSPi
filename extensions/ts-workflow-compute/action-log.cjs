@@ -37,21 +37,44 @@ function extractComputeToolResult(raw, toolName) {
 
 function failAction(action, error, context) {
   const diagnostic = sanitizeActionError(error);
+  const controlOperation = action.tool === "ts_workspace_compute_submit"
+    ? "submit"
+    : action.tool === "ts_workspace_compute_cancel"
+      ? "cancel"
+      : null;
+  const jobId = nullableString(context && context.jobId);
   const result = {
-    state: "unknown",
+    schema_version: "ts-calculation-result/2",
+    job_id: jobId,
+    state: controlOperation ? "unknown" : "failed",
     program_status: "not_run",
-    error_class: "tool_execution_error",
+    error_class: controlOperation ? `${controlOperation === "submit" ? "submission" : "cancellation"}_ambiguous` : "tool_execution_error",
     exit_status: null,
     intent_id: nullableString(context && context.intentId),
     act_id: nullableString(context && context.actId),
     artifact_refs: [],
+    parser_facts: {},
+    control: controlOperation
+      ? {
+          schema_version: "ts-control-outcome/1",
+          operation: controlOperation,
+          phase: "client_result_unknown",
+          effect_outcome: "unknown",
+          effect_attempted: true,
+          retry_disposition: "reconcile_only",
+          reconciliation_required: true,
+          submission_id: null,
+          job_id: jobId,
+        }
+      : undefined,
     provenance: {
       backend: nullableString(context && context.backend),
       intent_digest: nullableString(context && context.intentDigest),
+      diagnostic,
     },
-    diagnostic,
   };
-  action.result = { action_status: "failed", result };
+  if (!controlOperation) delete result.control;
+  action.result = { action_status: controlOperation ? "unknown" : "failed", result };
   return result;
 }
 

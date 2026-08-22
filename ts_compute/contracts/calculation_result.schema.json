@@ -67,6 +67,7 @@
             "scheduler_result_unknown",
             "scheduler_accept",
             "receipt_persist",
+            "client_result_unknown",
             "reconciled",
             "cancel_request",
             "cancel_confirmed"

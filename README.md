@@ -20,16 +20,19 @@ Root Agent
 Research Kernel
   Claim graph + ResearchAct DAG + immutable Observations + Findings
         |
-        +-- deterministic Compute / Render / Report
+        +-- deterministic compute kernel / Render / Report
         +-- declarative Validation Engine
         +-- graph Context Compiler
+        +-- isolated operational Compute Agent
         +-- isolated advisory Review Agent
 ```
 
 Only the Research Kernel mutates canonical scientific state. The Root Agent
 selects what to investigate but does not choose paths, filenames, record IDs,
-or validation verdicts. Review is the only child model session. Compute,
-Render, Report, remote inspection, notifications, and workspace control are
+or validation verdicts. Compute and Review use isolated child model sessions.
+Compute may only execute a fixed host-bound action plan; it cannot choose a
+method or create scientific meaning. Render, Report, remote inspection,
+notifications, workspace control, and every underlying compute action remain
 deterministic host tools.
 
 The long-lived scientific vocabulary is:
@@ -148,8 +151,10 @@ slash commands:
   optional one-batch logical-artifact reader instead of preloaded file content.
 - `ts_review_disposition`: one deterministic Root response to a completed
   Review.
-- `ts_compute`: deterministic prepare, submit, inspect, collect, cancel, and
-  parse operations.
+- `ts_subagent_compute`: one isolated operational lifecycle: `launch`
+  (`prepare -> submit`), `inspect` (`status -> optional tail`), `finalize`
+  (`collect -> parse`), or `cancel`. Every action is a zero-argument tool bound
+  by the host to one immutable intent.
 - `ts_structure_seed`: deterministic RDKit ETKDGv3 seed generation from one
   connected SMILES, with content-addressed XYZ and provenance.
 - `ts_artifact_import`: bounded, Act-owned bootstrap import for Gaussian, XYZ,
@@ -161,9 +166,9 @@ slash commands:
 - `ts_notify_user`: fixed-target, receipt-bound notification delivery.
 
 The slash commands are `/ts-context`, `/ts-validate`, `/ts-remote`, and
-`/ts-subagent-history`. The history browser shows Review runs only; deterministic
-tool activity is shown through normal tool entries and the unified TS Activity
-projection.
+`/ts-subagent-history`. The history browser shows durable Compute and Review
+runs; deterministic tool activity is shown through normal tool entries and the
+unified TS Activity projection.
 
 ## Research Loop
 
@@ -172,7 +177,7 @@ The Root Agent normally:
 1. Reads the frontier or delta context and states one unresolved question.
 2. Creates or updates Claims and starts a bounded ResearchAct with explicit
    dependencies and falsifiers.
-3. Selects a scientifically justified method and invokes deterministic tools.
+3. Selects a scientifically justified method and invokes bounded tools.
 4. Verifies local primary artifacts and records semantic Observations.
 5. Records anomalies and unresolved limits as Findings.
 6. Freezes relevant GateSpecs before evaluation, then evaluates them over
@@ -212,6 +217,15 @@ retryable. Ambiguous submit or cancel effects must be reconciled and must never
 be blindly replayed. Collection is manifest-driven and does not depend on
 scheduler history.
 
+The Root supplies the scientific request to `ts_subagent_compute`. Before the
+child starts, the host creates or resolves the intent, verifies its digest, and
+binds the exact action tools. The child receives no Root transcript, Skill,
+filesystem, shell, arbitrary arguments, or recursive delegation. Its result
+tool accepts only a summary and limitations; outcome, program state, artifacts,
+facts, provenance, and reconciliation state are derived from journaled typed
+actions. These operational records are not Observations until Root verifies the
+primary artifacts and applies a Decision.
+
 ## Validation And Acceptance
 
 Validation is data-driven:
@@ -244,12 +258,12 @@ recorded.
 
 Canonical scientific state consists of v4 graph registries, frozen validation,
 acceptance snapshots, Decisions, and transaction logs. Calculation attempts,
-remote controls, Review journals, notifications, reports, Pi sessions, and UI
+remote controls, Compute/Review journals, notifications, reports, Pi sessions, and UI
 activity are operational or derived state.
 
 Report packages are built atomically from a valid workspace. Their manifest
 binds the source scientific revision and every output file by SHA-256. Review
-advice and deterministic tool results become scientific support only after the
+advice and Compute or deterministic tool results become scientific support only after the
 Root Agent verifies primary artifacts and records normal Observations through a
 Decision.
 

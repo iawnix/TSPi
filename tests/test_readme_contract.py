@@ -39,7 +39,7 @@ def test_readme_routes_each_reader_to_the_v4_public_contracts() -> None:
         "/ts-subagent-history",
         "ts_workspace_decision_apply",
         "ts_subagent_review",
-        "ts_compute",
+        "ts_subagent_compute",
         "ts_structure_seed",
         "ts_artifact_import",
         "ts_render",
@@ -78,7 +78,7 @@ def test_public_document_set_covers_install_architecture_and_maintenance() -> No
         "## Validation Engine",
         "## Context Compiler",
         "## TSPi Lifecycle",
-        "## Review Agent Runtime",
+        "## Isolated Agent Runtimes",
         "## Deterministic Tool Plane",
         "## Run Journals And Result Delivery",
         "## Contract Locations",
@@ -121,11 +121,11 @@ def test_public_docs_state_the_v4_authority_boundary() -> None:
     }
 
     assert "The DAG records what happened; it does not prescribe what must happen next" in texts["readme"]
-    assert "Review is the only child model session" in texts["readme"]
+    assert "Compute and Review use isolated child model sessions" in texts["readme"]
     assert "Only `ts_workspace_decision_apply` may mutate canonical scientific state" in texts["architecture"]
-    assert "Compute, structure seeding, Render, Report" in texts["architecture"]
+    assert "Every compute action, structure seed" in texts["architecture"]
     assert "Treat Claim relations, Act dependencies, and tags as recorded context only" in texts["skill"]
-    assert "model dispatchers around deterministic actions" in texts["maintainer"]
+    assert "Compute may orchestrate only its closed" in texts["maintainer"]
     assert "checks refs and acyclicity" in texts["state"]
     assert "label to a next action" in texts["state"]
 
@@ -138,7 +138,7 @@ def test_normal_runtime_docs_expose_only_v4_contracts() -> None:
         "ts-node/2",
         "ts-node/3",
         "ts-calculation-intent/3",
-        "ts_subagent_compute",
+        "`ts_compute`",
         "ts_subagent_render",
         "ts_subagent_report",
         "migrate_workspace_v2_to_v3.py",

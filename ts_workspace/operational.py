@@ -1,7 +1,7 @@
 """Read-only projection of noncanonical v4 runtime state.
 
 Canonical scientific state lives in the v4 registries.  Calculation attempts,
-deterministic tool activities, advisory Review runs, and control receipts are
+deterministic tool activities, Compute/Review runs, and control receipts are
 durable operational records, but they never become scientific support merely
 because they appear in this projection.
 """
@@ -29,9 +29,9 @@ def operational_snapshot(
     excluded = set(activity_index["excluded_activity_refs"])
     files = _operational_files(root_path, excluded_activity_refs=excluded)
     activities = activity_index["activities"]
-    review_runs = review_run_index(root_path)
-    pending_review_dispositions = review_disposition_obligations(review_runs)
-    review_disposition_count = sum(1 for row in review_runs if row.get("root_disposition"))
+    agent_runs = agent_run_index(root_path)
+    pending_review_dispositions = review_disposition_obligations(agent_runs)
+    review_disposition_count = sum(1 for row in agent_runs if row.get("root_disposition"))
     pending_controls = _pending_controls(root_path, files)
     unresolved_controls = _unresolved_controls(root_path, files)
     ambiguous_submissions = [
@@ -58,7 +58,7 @@ def operational_snapshot(
         "activity_summaries": activity_index["activity_summaries"],
         "activity_integrity_findings": activity_index["integrity_findings"],
         "excluded_activity_refs": activity_index["excluded_activity_refs"],
-        "review_runs": review_runs,
+        "agent_runs": agent_runs,
         "pending_review_dispositions": pending_review_dispositions,
         "review_disposition_count": review_disposition_count,
         "pending_controls": pending_controls,
@@ -74,9 +74,9 @@ def operational_snapshot(
             "activity_running_count": sum(1 for row in activities if row.get("status") == "running"),
             "activity_pending_count": sum(1 for row in activities if row.get("status") == "pending"),
             "activity_integrity_error_count": len(activity_index["integrity_findings"]),
-            "review_run_count": len(review_runs),
-            "review_run_failed_count": sum(1 for row in review_runs if row.get("status") == "failed"),
-            "review_run_pending_count": sum(1 for row in review_runs if row.get("status") == "pending"),
+            "agent_run_count": len(agent_runs),
+            "agent_run_failed_count": sum(1 for row in agent_runs if row.get("status") == "failed"),
+            "agent_run_pending_count": sum(1 for row in agent_runs if row.get("status") == "pending"),
             "review_disposition_count": review_disposition_count,
             "review_disposition_pending_count": len(pending_review_dispositions),
             "control_pending_count": len(pending_controls),
@@ -123,13 +123,8 @@ def act_completion_blockers(
     return blockers
 
 
-def review_run_index(root: str | Path) -> list[dict[str, Any]]:
-    """Index isolated advisory Review sessions.
-
-    v4 has no model-based Compute, Render, or Report child sessions.  Any
-    journal that is not explicitly an advisory Review is retained on disk for
-    diagnosis but excluded from the public Review index.
-    """
+def agent_run_index(root: str | Path) -> list[dict[str, Any]]:
+    """Index isolated Review and Compute sessions without granting authority."""
 
     root_path = Path(root).expanduser().resolve()
     run_dirs = [
@@ -141,7 +136,9 @@ def review_run_index(root: str | Path) -> list[dict[str, Any]]:
         if not run_dir.is_dir() or run_dir.is_symlink():
             continue
         task = _read_or_empty(run_dir / "task.json")
-        if task.get("role") != "review" or task.get("authority") != "advisory":
+        role = task.get("role")
+        authority = task.get("authority")
+        if (role, authority) not in {("review", "advisory"), ("compute", "operational")}:
             continue
         run = _read_or_empty(run_dir / "run.json")
         result = _read_or_empty(run_dir / "result.json")
@@ -151,8 +148,8 @@ def review_run_index(root: str | Path) -> list[dict[str, Any]]:
         run_ref = run_dir.relative_to(root_path).as_posix()
         row = {
             "task_id": task.get("task_id") or run_dir.name,
-            "role": "review",
-            "authority": "advisory",
+            "role": role,
+            "authority": authority,
             "operation": task.get("operation"),
             "status": run.get("status") or "pending",
             "act_refs": _string_list(scope.get("act_refs")),
@@ -164,22 +161,32 @@ def review_run_index(root: str | Path) -> list[dict[str, Any]]:
             "result_outcome": result.get("outcome"),
             "error_code": error.get("code"),
             "error_message": error.get("message"),
+            "backend": (
+                task.get("inputs", {}).get("backend")
+                if isinstance(task.get("inputs"), dict)
+                else None
+            ),
+            "intent_id": (
+                task.get("inputs", {}).get("intent_id")
+                if isinstance(task.get("inputs"), dict)
+                else None
+            ),
         }
-        disposition_valid = _valid_review_disposition(disposition, row)
+        disposition_valid = role == "review" and _valid_review_disposition(disposition, row)
         row.update(
             {
                 "root_disposition": disposition.get("disposition") if disposition_valid else None,
                 "root_response": disposition.get("response") if disposition_valid else None,
                 "root_next_steps": disposition.get("next_steps", []) if disposition_valid else [],
                 "root_disposition_ref": f"{run_ref}/root-disposition.json" if disposition_valid else None,
-                "root_disposition_invalid": bool(disposition) and not disposition_valid,
+                "root_disposition_invalid": role == "review" and bool(disposition) and not disposition_valid,
             }
         )
         rows.append(row)
     return rows
 
 
-def review_disposition_obligations(review_runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def review_disposition_obligations(agent_runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Return completed advisory Reviews that still require a Root response."""
 
     return [
@@ -191,8 +198,11 @@ def review_disposition_obligations(review_runs: list[dict[str, Any]]) -> list[di
             "run_ref": row.get("run_ref"),
             "invalid_disposition": bool(row.get("root_disposition_invalid")),
         }
-        for row in review_runs
-        if row.get("status") == "completed" and not row.get("root_disposition")
+        for row in agent_runs
+        if row.get("role") == "review"
+        and row.get("authority") == "advisory"
+        and row.get("status") == "completed"
+        and not row.get("root_disposition")
     ]
 
 

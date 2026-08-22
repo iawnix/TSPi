@@ -24,13 +24,16 @@ Research Kernel
         +-- Observation plane
         +-- Validation Engine
         +-- Context Compiler
+        +-- bounded operational Compute Agent
         +-- independent advisory Review Agent
 ```
 
-Compute, Render, and Report are direct deterministic tools. Review is the only
-child model session in the initial v4 runtime. A future model-based analyst,
-writer, or designer must be read-only and advisory; it cannot become an
-alternate canonical writer.
+Render and Report remain direct deterministic tools. Compute may use a bounded
+child session only to orchestrate a frozen sequence of pre-bound deterministic
+actions; method choice, paths, arguments, outcomes, provenance, and ambiguity
+semantics remain host-owned. Review is an independent advisory child. A future
+model-based analyst, writer, or designer must remain read-only or advisory and
+cannot become an alternate canonical writer.
 
 ## Canonical Model
 

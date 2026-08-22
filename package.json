@@ -3,7 +3,7 @@
   "version": "0.10.1",
   "private": true,
   "type": "module",
-  "description": "Pi package for DAG-based transition-state research with deterministic validation and advisory Review.",
+  "description": "Pi package for DAG-based transition-state research with deterministic validation and bounded Compute and Review subagents.",
   "keywords": [
     "pi-package",
     "transition-state",
@@ -52,6 +52,9 @@
     "skills/",
     "themes/*.json",
     "src/agent-core/*.cjs",
+    "src/agents/compute/*.ts",
+    "src/agents/compute/*.cjs",
+    "src/agents/compute/prompts/*.md",
     "src/agents/review/*.ts",
     "src/agents/review/*.cjs",
     "src/agents/review/prompts/*.md",

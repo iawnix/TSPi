@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.v4_helpers import bootstrap_v4_workspace
+from tests.v4_helpers import bootstrap_v4_workspace, start_research_act
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -27,7 +27,7 @@ EXPECTED_TOOLS = {
     "ts_workspace_decision_apply",
     "ts_subagent_review",
     "ts_review_disposition",
-    "ts_compute",
+    "ts_subagent_compute",
     "ts_remote_inspect",
     "ts_structure_seed",
     "ts_artifact_import",
@@ -85,7 +85,7 @@ def test_real_pi_offline_loads_v4_extensions_and_public_inventory(tmp_path: Path
     inventory = json.loads(message.split(":", 1)[1])
     assert set(inventory["active"]) == EXPECTED_TOOLS
     assert EXPECTED_TOOLS <= set(inventory["all"])
-    assert not {"ts_subagent_compute", "ts_subagent_render", "ts_subagent_report"} & set(inventory["all"])
+    assert not {"ts_compute", "ts_subagent_render", "ts_subagent_report"} & set(inventory["all"])
 
 
 def test_real_pi_review_uses_named_result_tool_without_provider_strict(tmp_path: Path) -> None:
@@ -223,6 +223,164 @@ def test_real_pi_review_preserves_artifact_read_audit_on_provider_failure(tmp_pa
     }
 
 
+@pytest.mark.parametrize(
+    ("scenario", "action_names"),
+    [
+        ("launch", ["ts_workspace_compute_prepare", "ts_workspace_compute_submit"]),
+        ("inspect-tail", ["ts_workspace_compute_status", "ts_workspace_compute_tail"]),
+        ("finalize", ["ts_workspace_compute_collect", "ts_workspace_compute_parse"]),
+    ],
+)
+def test_real_pi_compute_executes_fixed_plan_and_derives_result(
+    tmp_path: Path,
+    scenario: str,
+    action_names: list[str],
+) -> None:
+    pi = _supported_pi()
+    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    start_research_act(workspace)
+    before = _canonical_files(workspace)
+    agent_dir = tmp_path / "pi-agent"
+    agent_dir.mkdir()
+    requests: list[dict[str, object]] = []
+    responses = [
+        *[_tool_call_chunks(name, {}, call_id=f"call_action_{index}") for index, name in enumerate(action_names)],
+        _tool_call_chunks("ts_compute_result", _compute_result(), call_id="call_compute_result"),
+    ]
+    with _RecordingServer(requests, responses) as base_url:
+        _write_recording_model(agent_dir, base_url)
+        completed = _run_compute_probe(
+            pi,
+            workspace,
+            agent_dir,
+            tmp_path / "sessions",
+            scenario,
+        )
+
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(_notification(completed.stdout, "TS_TEST_COMPUTE:").split(":", 1)[1])
+    assert result["result"]["role"] == "compute"
+    assert result["result"]["authority"] == "operational"
+    assert result["result"]["payload"]["completed_actions"] == [name.rsplit("_", 1)[-1] for name in action_names]
+    assert result["metadata"]["action_names"] == action_names
+    assert [action["tool"] for action in result["actions"]] == action_names
+    assert len(requests) == len(action_names) + 1
+    for request in requests:
+        assert all(tool["function"].get("strict") is not True for tool in request["tools"])
+    assert "tool_choice" not in requests[-2]
+    assert requests[-1]["tool_choice"] == {
+        "type": "function",
+        "function": {"name": "ts_compute_result"},
+    }
+    assert _canonical_files(workspace) == before
+
+
+@pytest.mark.parametrize(
+    ("scenario", "action_names"),
+    [
+        ("launch-ambiguous", ["ts_workspace_compute_prepare", "ts_workspace_compute_submit"]),
+        ("cancel-ambiguous", ["ts_workspace_compute_cancel"]),
+    ],
+)
+def test_real_pi_compute_never_replays_ambiguous_controls(
+    tmp_path: Path,
+    scenario: str,
+    action_names: list[str],
+) -> None:
+    pi = _supported_pi()
+    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    start_research_act(workspace)
+    agent_dir = tmp_path / "pi-agent"
+    agent_dir.mkdir()
+    requests: list[dict[str, object]] = []
+    responses = [
+        *[_tool_call_chunks(name, {}, call_id=f"call_ambiguous_{index}") for index, name in enumerate(action_names)],
+        _tool_call_chunks("ts_compute_result", _compute_result(), call_id="call_compute_result"),
+    ]
+    with _RecordingServer(requests, responses) as base_url:
+        _write_recording_model(agent_dir, base_url)
+        completed = _run_compute_probe(
+            pi,
+            workspace,
+            agent_dir,
+            tmp_path / "sessions",
+            scenario,
+        )
+
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(_notification(completed.stdout, "TS_TEST_COMPUTE:").split(":", 1)[1])
+    assert [action["tool"] for action in result["actions"]] == action_names
+    assert result["result"]["outcome"] == "partial"
+    assert result["result"]["payload"]["action_outcome"] == "unknown"
+    assert result["result"]["payload"]["reconciliation_required"] is True
+    assert len(requests) == len(action_names) + 1
+    assert requests[-1]["tool_choice"]["function"]["name"] == "ts_compute_result"
+
+
+def test_real_pi_compute_recovers_from_premature_result_call(tmp_path: Path) -> None:
+    pi = _supported_pi()
+    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    start_research_act(workspace)
+    agent_dir = tmp_path / "pi-agent"
+    agent_dir.mkdir()
+    requests: list[dict[str, object]] = []
+    responses = [
+        _tool_call_chunks("ts_compute_result", _compute_result(), call_id="call_premature_result"),
+        _tool_call_chunks("ts_workspace_compute_prepare", {}, call_id="call_prepare_after_result"),
+        _tool_call_chunks("ts_workspace_compute_submit", {}, call_id="call_submit_after_result"),
+        _tool_call_chunks("ts_compute_result", _compute_result(), call_id="call_final_result"),
+    ]
+    with _RecordingServer(requests, responses) as base_url:
+        _write_recording_model(agent_dir, base_url)
+        completed = _run_compute_probe(
+            pi,
+            workspace,
+            agent_dir,
+            tmp_path / "sessions",
+            "launch",
+        )
+
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(_notification(completed.stdout, "TS_TEST_COMPUTE:").split(":", 1)[1])
+    assert result["metadata"]["result_attempts"] == 2
+    assert [action["tool"] for action in result["actions"]] == [
+        "ts_workspace_compute_prepare",
+        "ts_workspace_compute_submit",
+    ]
+    assert len(requests) == 4
+    assert "tool_choice" not in requests[1]
+    assert "tool_choice" not in requests[2]
+    assert requests[3]["tool_choice"]["function"]["name"] == "ts_compute_result"
+
+
+def test_real_pi_compute_surfaces_provider_502_before_result_contract_error(tmp_path: Path) -> None:
+    pi = _supported_pi()
+    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    start_research_act(workspace)
+    agent_dir = tmp_path / "pi-agent"
+    agent_dir.mkdir()
+    requests: list[dict[str, object]] = []
+    error = _HttpError(502, {"error": {"type": "server_error", "code": "internal_server_error", "message": "Bad gateway"}})
+    with _RecordingServer(requests, [error]) as base_url:
+        _write_recording_model(agent_dir, base_url)
+        completed = _run_compute_probe(
+            pi,
+            workspace,
+            agent_dir,
+            tmp_path / "sessions",
+            "cancel",
+        )
+
+    assert completed.returncode == 0, completed.stderr
+    failure = json.loads(_notification(completed.stdout, "TS_TEST_COMPUTE_ERROR:").split(":", 1)[1])
+    assert "provider request failed" in failure["message"]
+    assert "502" in failure["message"]
+    assert "internal_server_error" in failure["message"]
+    assert "Compute ended" not in failure["message"]
+    assert failure["actions"] == []
+    assert len(requests) == 1
+
+
 def _supported_pi() -> str:
     configured = os.environ.get("PI_TEST_BINARY")
     candidates = [
@@ -270,6 +428,35 @@ def _run_review_probe(
         env,
         {"id": "review", "type": "prompt", "message": command},
         prefix,
+    )
+
+
+def _run_compute_probe(
+    pi: str,
+    workspace: Path,
+    agent_dir: Path,
+    session_dir: Path,
+    scenario: str,
+) -> SimpleNamespace:
+    env = {**os.environ, "PI_CODING_AGENT_DIR": str(agent_dir), "PI_OFFLINE": "1"}
+    return _run_rpc_until(
+        [
+            pi,
+            "--mode", "rpc",
+            "--offline",
+            "--no-session",
+            "--session-dir", str(session_dir),
+            "--no-context-files",
+            "--no-skills",
+            "--no-extensions",
+            "--no-builtin-tools",
+            "--approve",
+            "--extension", str(ROOT / "tests" / "pi_compute_probe.ts"),
+        ],
+        workspace,
+        env,
+        {"id": "compute", "type": "prompt", "message": f"/ts-test-compute-child {scenario}"},
+        "TS_TEST_COMPUTE",
     )
 
 
@@ -366,7 +553,19 @@ def _review_result() -> dict[str, object]:
     }
 
 
-def _tool_call_chunks(name: str, arguments: dict[str, object]) -> list[dict[str, object]]:
+def _compute_result() -> dict[str, object]:
+    return {
+        "summary": "The fixed Compute lifecycle reached a terminal operational result.",
+        "limitations": ["Recording-provider integration test."],
+    }
+
+
+def _tool_call_chunks(
+    name: str,
+    arguments: dict[str, object],
+    *,
+    call_id: str = "call_review_001",
+) -> list[dict[str, object]]:
     return [
         {
             "id": "chatcmpl-tool",
@@ -377,7 +576,7 @@ def _tool_call_chunks(name: str, arguments: dict[str, object]) -> list[dict[str,
                 "index": 0,
                 "delta": {"role": "assistant", "tool_calls": [{
                     "index": 0,
-                    "id": "call_review_001",
+                    "id": call_id,
                     "type": "function",
                     "function": {"name": name, "arguments": json.dumps(arguments)},
                 }]},
@@ -392,6 +591,10 @@ def _tool_call_chunks(name: str, arguments: dict[str, object]) -> list[dict[str,
             "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}],
         },
     ]
+
+
+def _canonical_files(workspace: Path) -> dict[str, bytes]:
+    return {path.name: path.read_bytes() for path in sorted(workspace.glob("*.json"))}
 
 
 class _HttpError:

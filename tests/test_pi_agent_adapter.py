@@ -18,7 +18,7 @@ EXPECTED_TOOLS = {
     "ts_remote_inspect",
     "ts_subagent_review",
     "ts_review_disposition",
-    "ts_compute",
+    "ts_subagent_compute",
     "ts_structure_seed",
     "ts_artifact_import",
     "ts_render",
@@ -34,10 +34,11 @@ def test_package_manifest_and_profile_expose_one_skill_five_extensions_one_theme
     assert package["pi"]["skills"] == ["./skills/transition-state-workflow"]
     assert len(package["pi"]["extensions"]) == 5
     assert package["pi"]["themes"] == ["./themes/ts-theme.json"]
-    assert all("src/agents/compute" not in item and "src/agents/artifacts" not in item for item in package["files"])
+    assert any("src/agents/compute" in item for item in package["files"])
+    assert all("src/agents/artifacts" not in item for item in package["files"])
 
 
-def test_loaded_extension_inventory_has_one_child_agent_and_direct_host_tools() -> None:
+def test_loaded_extension_inventory_has_two_bounded_child_agents_and_direct_host_tools() -> None:
     script = f"""
 import control from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
 import ui from {json.dumps((ROOT / 'extensions/ts-workflow-ui/index.ts').as_uri())};
@@ -61,8 +62,9 @@ process.stdout.write(JSON.stringify({{
     result = _node_json(script)
     assert {item["name"] for item in result["tools"]} == EXPECTED_TOOLS
     assert set(result["commands"]) == EXPECTED_COMMANDS
-    assert [name for name, mode in result["execution"].items() if mode == "child_agent"] == ["ts_subagent_review"]
-    assert result["execution"]["ts_compute"] == "deterministic_execution"
+    assert {name for name, mode in result["execution"].items() if mode == "child_agent"} == {
+        "ts_subagent_review", "ts_subagent_compute"
+    }
     assert result["execution"]["ts_structure_seed"] == "deterministic_artifact"
     assert result["execution"]["ts_artifact_import"] == "deterministic_artifact"
     assert result["execution"]["ts_render"] == "deterministic_artifact"
@@ -84,7 +86,7 @@ function propertyKeys(schema, found=new Set()) {{
 process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(tools).map(([name,tool])=>[name,propertyKeys(tool.parameters)]))));
 """
     schemas = _node_json(script)
-    assert "actId" in schemas["ts_compute"]
+    assert "actId" in schemas["ts_subagent_compute"]
     assert "smiles" in schemas["ts_structure_seed"]
     assert "optimization" in schemas["ts_structure_seed"]
     assert "actId" in schemas["ts_artifact_import"]
@@ -120,7 +122,7 @@ process.stdout.write(JSON.stringify({{rows,total:rows.reduce((sum,row)=>sum+row.
     by_name = {row["name"]: row for row in measured["rows"]}
 
     assert skill_bytes <= 7_000
-    assert by_name["ts_compute"]["schema"] <= 3_100
+    assert by_name["ts_subagent_compute"]["schema"] <= 4_500
     assert measured["total"] <= 13_000
     assert skill_bytes + measured["total"] + measured["systemPromptBytes"] <= 19_800
 
@@ -135,6 +137,26 @@ def test_workspace_cli_compiles_v4_frontier_and_focused_act(tmp_path: Path) -> N
     assert act["research_acts"][0]["act_id"] == refs["act_id"]
     assert "node_index" not in frontier
     assert "gate_results" not in frontier
+
+
+def test_context_summary_uses_unified_agent_run_counts() -> None:
+    script = f"""
+import summary from {json.dumps((ROOT / 'extensions/ts-workflow-control/summary.cjs').as_uri())};
+const {{buildContextDetails,buildContextSummary}}=summary;
+const context={{valid:true,operational_summary:{{
+  agent_run_count:3,agent_run_failed_count:1,agent_run_pending_count:1,
+  review_disposition_pending_count:1,
+}}}};
+process.stdout.write(JSON.stringify({{details:buildContextDetails(context),summary:buildContextSummary(context)}}));
+"""
+    result = _node_json(script)
+    operational = result["details"]["operationalSummary"]
+    assert operational["agentRunCount"] == 3
+    assert operational["agentRunFailedCount"] == 1
+    assert operational["agentRunPendingCount"] == 1
+    assert "agent_runs=3" in result["summary"]
+    assert "agent_failures=1" in result["summary"]
+    assert "reviews=" not in result["summary"]
 
 
 def test_control_prompt_injection_states_v4_authority_without_prescribing_sequence(tmp_path: Path) -> None:

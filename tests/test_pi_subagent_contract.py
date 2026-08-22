@@ -13,6 +13,10 @@ OUTPUT_SCHEMA = ROOT / "src" / "agents" / "review" / "output-schema.cjs"
 RESULT_TOOL = ROOT / "src" / "agents" / "review" / "result-tool.ts"
 RUNTIME = ROOT / "src" / "agents" / "review" / "runtime.ts"
 TASK_PACKET = ROOT / "src" / "agents" / "review" / "task-packet.cjs"
+COMPUTE_OUTPUT_SCHEMA = ROOT / "src" / "agents" / "compute" / "output-schema.cjs"
+COMPUTE_RESULT_TOOL = ROOT / "src" / "agents" / "compute" / "result-tool.ts"
+COMPUTE_RUNTIME = ROOT / "src" / "agents" / "compute" / "runtime.ts"
+COMPUTE_TASK_PACKET = ROOT / "src" / "agents" / "compute" / "task-packet.cjs"
 
 
 def test_review_task_v2_is_graph_scoped_bounded_and_advisory(tmp_path: Path) -> None:
@@ -139,14 +143,97 @@ process.stdout.write(JSON.stringify(payload));
     assert source.index("assertProviderTurnSucceeded") < source.index("repairMissingToolCall")
 
 
-def test_review_is_the_only_model_child_runtime() -> None:
+def test_compute_and_review_are_the_only_model_child_runtimes() -> None:
     agent_root = ROOT / "src" / "agents"
     packaged_namespaces = {
         path.relative_to(agent_root).parts[0]
         for path in agent_root.rglob("*")
         if path.is_file()
     }
-    assert packaged_namespaces == {"review"}
+    assert packaged_namespaces == {"compute", "review"}
+
+
+def test_compute_task_and_result_are_bound_to_typed_actions(tmp_path: Path) -> None:
+    script = f"""
+const taskHelper=require({json.dumps(str(COMPUTE_TASK_PACKET))});
+const resultHelper=require({json.dumps(str(COMPUTE_OUTPUT_SCHEMA))});
+const task=taskHelper.buildComputeTask({{
+  runId:"sub_compute-001",workspaceRoot:process.argv[1],operation:"launch",backend:"gaussian",actId:"act_1",
+  binding:{{intentId:"calc_probe",intentDigest:"sha256:"+"a".repeat(64),executionKind:"remote"}},
+}});
+const canonical=(state,control={{effect_outcome:"succeeded",reconciliation_required:false}})=>({{
+  schema_version:"ts-calculation-result/2",intent_id:"calc_probe",act_id:"act_1",state,
+  program_status:"not_run",error_class:null,exit_status:null,artifact_refs:[],control,
+  provenance:{{intent_digest:"sha256:"+"a".repeat(64)}},
+}});
+const successActions=[
+  {{tool:"ts_workspace_compute_prepare",result:{{action_status:"completed",result:canonical("prepared")}}}},
+  {{tool:"ts_workspace_compute_submit",result:{{action_status:"completed",result:canonical("submitted")}}}},
+];
+const ambiguousResult=canonical("unknown",{{effect_outcome:"unknown",reconciliation_required:true}});
+ambiguousResult.error_class="submission_ambiguous";
+const ambiguousActions=[
+  successActions[0],
+  {{tool:"ts_workspace_compute_submit",result:{{action_status:"unknown",result:ambiguousResult}}}},
+];
+const success=resultHelper.buildComputeResult({{summary:"Launch completed.",limitations:[]}},task,successActions);
+const ambiguous=resultHelper.buildComputeResult({{summary:"Submission requires reconciliation.",limitations:["Scheduler result is unknown."]}},task,ambiguousActions);
+let invented="";
+try{{resultHelper.buildComputeResult({{summary:"x",limitations:[],outcome:"success"}},task,successActions)}}catch(error){{invented=error.message}}
+process.stdout.write(JSON.stringify({{task,success,ambiguous,invented}}));
+"""
+    completed = _node(script, str(tmp_path))
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    assert result["task"]["role"] == "compute"
+    assert result["task"]["authority"] == "operational"
+    assert result["task"]["inputs"]["required_actions"] == ["prepare", "submit"]
+    assert result["success"]["outcome"] == "success"
+    assert result["success"]["payload"]["action_outcome"] == "succeeded"
+    assert result["ambiguous"]["outcome"] == "partial"
+    assert result["ambiguous"]["payload"]["action_outcome"] == "unknown"
+    assert result["ambiguous"]["payload"]["reconciliation_required"] is True
+    assert "unknown fields" in result["invented"]
+
+
+def test_compute_result_tool_is_local_and_inspect_retains_optional_tail(tmp_path: Path) -> None:
+    script = f"""
+import {{ Compile }} from "typebox/compile";
+import {{ createComputeResultCapture,createComputeResultTool }} from {json.dumps(COMPUTE_RESULT_TOOL.as_uri())};
+import {{ shouldForceComputeResult }} from {json.dumps(COMPUTE_RUNTIME.as_uri())};
+import {{ createRequire }} from "node:module";
+const require=createRequire(import.meta.url);
+const taskHelper=require({json.dumps(str(COMPUTE_TASK_PACKET))});
+const task=taskHelper.buildComputeTask({{
+  runId:"sub_compute-002",workspaceRoot:process.argv[1],operation:"inspect",backend:"gaussian",actId:"act_1",
+  binding:{{intentId:"calc_probe",intentDigest:"sha256:"+"b".repeat(64),executionKind:"remote"}},tailLines:80,
+}});
+const result={{schema_version:"ts-calculation-result/2",intent_id:"calc_probe",act_id:"act_1",state:"running",program_status:"running",error_class:null,exit_status:null,artifact_refs:[],provenance:{{intent_digest:"sha256:"+"b".repeat(64)}}}};
+const status={{tool:"ts_workspace_compute_status",result:{{action_status:"completed",result}}}};
+const tail={{tool:"ts_workspace_compute_tail",result:{{action_status:"completed",result:{{...result,schema_version:"ts-calculation-tail/1"}}}}}};
+const actions=[];
+const tool=createComputeResultTool(task,actions,createComputeResultCapture());
+const check=Compile(tool.parameters);
+process.stdout.write(JSON.stringify({{
+  constrainedSampling:Object.hasOwn(tool,"constrainedSampling"),
+  keys:Object.keys(tool.parameters.properties).sort(),
+  valid:check.Check({{summary:"Status checked.",limitations:[]}}),
+  before:shouldForceComputeResult(task,[]),
+  afterStatus:shouldForceComputeResult(task,[status]),
+  afterTail:shouldForceComputeResult(task,[status,tail]),
+  repair:shouldForceComputeResult(task,[status],true),
+}}));
+"""
+    result = json.loads(_node_ts(script, str(tmp_path)).stdout)
+    assert result == {
+        "constrainedSampling": False,
+        "keys": ["limitations", "summary"],
+        "valid": True,
+        "before": False,
+        "afterStatus": False,
+        "afterTail": True,
+        "repair": True,
+    }
 
 
 def _result(task: dict, basis_ref: str) -> dict:

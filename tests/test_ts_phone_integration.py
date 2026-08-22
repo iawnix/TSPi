@@ -328,7 +328,7 @@ const records = [{{
 process.stdout.write(JSON.stringify(formatTsSubagentHistoryMarkdown(records)));
 """
     markdown = _node_json(script)
-    assert markdown.startswith("# TS Review History")
+    assert markdown.startswith("# TS Subagent History")
     assert "## Review · claim\\_review" in markdown
     assert "`sub_review-1`" in markdown
     assert "`act_1`" in markdown
