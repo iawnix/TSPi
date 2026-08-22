@@ -100,6 +100,12 @@ multiple dependencies model a merge; a new Act that depends on an earlier Act
 models backtracking. Prior Acts are never rewritten or deleted to make a later
 path look linear. The DAG records lineage and does not select the next Act.
 
+Act granularity follows scientific purpose, not a fixed number of operations.
+One Act owns one principal question and deliverable; retries with the same
+objective remain Attempts, while a changed objective or principal deliverable
+starts a dependent Act. This is authoring guidance, not a phase enum or Kernel
+permission rule.
+
 ### Observation and Finding
 
 An Observation is immutable and semantic. It binds a `concept_id`, subject,
@@ -273,10 +279,18 @@ files. Graph modes are:
 - `subgraph`: caller-seeded Claim/Act graph to a bounded depth;
 - `delta`: changes since known scientific and operational revisions.
 
-The same read-only public tool exposes `artifacts`, `compute_capabilities`, and
-`validation_capabilities`. Every bounded graph projection reports omitted
-counts and retrieval hints. The Pi transcript is conversational state, not a
-scientific source of truth.
+The same read-only public tool exposes `locate`, `artifacts`,
+`compute_capabilities`, and `validation_capabilities`. `locate` accepts one
+exact ID or text query and joins Claims, Acts, Observations, Attempts, and the
+authoritative artifact catalog to bounded current paths. An Attempt result
+distinguishes the frozen input bindings from the output artifacts it produced.
+A Claim result includes only artifacts reached through its direct
+`observation_refs`; related Act roots remain navigation, not implied evidence.
+The projection is rebuilt on demand, creates no index file, and changes neither
+scientific nor operational revision.
+
+Every bounded graph projection reports omitted counts and retrieval hints. The
+Pi transcript is conversational state, not a scientific source of truth.
 
 Claim-Act traversal uses the union of declared Act scope and Claim creator
 provenance. Context, Review, report rendering, and `ts_web` share this derived

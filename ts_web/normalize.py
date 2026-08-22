@@ -11,6 +11,7 @@ from ts_workspace.acceptance import project_acceptances
 from ts_workspace.associations import derive_claim_act_links
 from ts_workspace.io import read_json
 from ts_workspace.operational import operational_snapshot
+from ts_workspace.locator import locate_research_files
 from ts_workspace.revision import report_id_for_revision, workspace_revision_from_documents
 from ts_workspace.state import (
     CLAIMS_FILE,
@@ -129,6 +130,15 @@ def workspace_summary(
 
 def graph_payload(source_root: str | Path, *, label: str | None = None) -> dict[str, Any]:
     return graph_payload_from_view(normalize_workspace(source_root, label=label))
+
+
+def research_files_payload(source_root: str | Path, query: str = "") -> dict[str, Any]:
+    """Join v4 research records to the authoritative logical artifact catalog."""
+
+    from ts_compute.artifacts import list_calculation_artifacts
+
+    catalog = list_calculation_artifacts(source_root)
+    return locate_research_files(source_root, query, artifacts=catalog["artifacts"])
 
 
 def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:

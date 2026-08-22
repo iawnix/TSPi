@@ -17,7 +17,7 @@ const require = createRequire(import.meta.url);
 const { buildContextSummary, resolveWorkspaceRoot, toolText } = require("./summary.cjs");
 
 const GRAPH_CONTEXT_MODES = ["frontier", "claim", "act", "subgraph", "finding", "validation", "delta"] as const;
-const CONTEXT_MODES = [...GRAPH_CONTEXT_MODES, "artifacts", "compute_capabilities", "validation_capabilities"] as const;
+const CONTEXT_MODES = [...GRAPH_CONTEXT_MODES, "locate", "artifacts", "compute_capabilities", "validation_capabilities"] as const;
 const CONTEXT_ENTRY_TYPE = "ts-workspace-context-result";
 const VALIDATION_ENTRY_TYPE = "ts-workspace-validation-result";
 
@@ -72,15 +72,17 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.workspaceContext,
     label: "TS Context",
-    description: "Read a bounded TS graph, capability catalog, or logical artifact catalog.",
+    description: "Read a bounded TS graph, research-file location, capability catalog, or logical artifact catalog.",
     promptSnippet: "Read bounded TS workspace context",
     promptGuidelines: [
       "Start with frontier or revision-bound delta; retrieve focused graph objects only when needed.",
+      "Use mode=locate with one exact ID or keyword query to find related Acts, attempts, and physical artifact paths.",
       "Artifact IDs are logical and capability catalogs do not prove runtime or scheduler readiness.",
     ],
     parameters: Type.Object({
       mode: Type.Optional(StringEnum(CONTEXT_MODES)),
       root: Type.Optional(Type.String()),
+      query: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
       claimRef: Type.Optional(Type.String()),
       actRef: Type.Optional(Type.String()),
       findingRef: Type.Optional(Type.String()),
@@ -96,6 +98,21 @@ export default function (pi: ExtensionAPI) {
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
       const mode = params.mode || "frontier";
+      if (mode === "locate") {
+        const query = typeof params.query === "string" ? params.query.trim() : "";
+        if (!query) throw new Error("workspace locate requires a non-empty query");
+        const locator = await runWorkspaceJson(
+          pi,
+          "context",
+          root,
+          ["--mode", "locate", "--query", query],
+          signal,
+        );
+        return toolText(JSON.stringify(locator, null, 2), { locator });
+      }
+      if (params.query !== undefined) {
+        throw new Error("workspace context query is only valid with mode=locate");
+      }
       if (mode === "artifacts") {
         const args = params.actRef ? ["--act-id", params.actRef] : [];
         const artifactCatalog = await runComputeJson(pi, "list-artifacts", root, args, signal);

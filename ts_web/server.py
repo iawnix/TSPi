@@ -16,6 +16,7 @@ from .normalize import (
     claim_payload,
     graph_payload,
     normalize_workspace,
+    research_files_payload,
     workspace_summary,
 )
 from .registry import ensure_state_dir, find_workspace, list_workspaces, register_workspace
@@ -165,6 +166,8 @@ def _workspace_route(row: dict[str, Any], rest: str, query: dict[str, list[str]]
     if rest == "findings":
         view = normalize_workspace(source_root, label=label)
         return {"schema_version": "ts-explorer-findings/1", "findings": view["findings"]}
+    if rest == "files":
+        return research_files_payload(source_root, _first(query.get("query")) or "")
     if rest == "activity":
         view = normalize_workspace(source_root, label=label)
         return {

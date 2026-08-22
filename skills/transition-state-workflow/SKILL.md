@@ -1,6 +1,6 @@
 ---
 name: transition-state-workflow
-description: Auditable TS and reaction-path research in TSPi. Use for candidate search, optimization/frequency/IRC, mechanisms, connectivity, xTB/CREST/ASE/Gaussian, branching, recovery, or v4 continuation.
+description: Auditable TS and reaction-path research in TSPi. Use for candidates, optimization/frequency/IRC, mechanisms, connectivity, xTB/CREST/ASE/Gaussian, branching, recovery, or v4 continuation.
 ---
 
 # Transition-State Workflow
@@ -11,12 +11,10 @@ effects, provenance, and validation.
 ## Non-Negotiable Boundaries
 
 - Mutate canonical science only through `ts_workspace_decision_apply`.
-- Root chooses questions, hypotheses, methods, branches, backtracking,
-  stopping, and interpretation. Graph edges and validation never choose the
-  next action.
+- Root chooses questions, hypotheses, methods, branches, stopping, and
+  interpretation. Graph edges and validation never choose the next action.
 - Treat Claim relations, Act dependencies, and tags as recorded context only.
-- Program, scheduler, parser, render, report, and delivery results are
-  operational until verified local artifacts support semantic Observations.
+- Tool results stay operational until verified artifacts support Observations.
 - Record anomalies, conflicts, limitations, and unresolved questions as
   Findings. Never hide an acceptance blocker in prose.
 - Freeze GateSpecs before evaluation. Review, UI, reports, and historical
@@ -24,28 +22,28 @@ effects, provenance, and validation.
 
 ## Operating Loop
 
-1. Read a `frontier` projection, or `delta` when both prior revisions are known.
+1. Read `frontier`, or `delta` when both prior revisions are known.
 2. State one unresolved question, assumptions, predictions, and falsifiers.
-3. Create or update Claims and start one bounded ResearchAct with meaningful
-   dependencies.
+3. Create/update Claims and start one bounded ResearchAct with dependencies.
 4. Select a method from chemistry, uncertainty, cost, and available artifacts.
-5. Run bounded tools with the owning Act; the Activity Journal derives the
-   immutable link from `act_refs`.
+5. Run bounded tools with the owning Act; its `act_refs` bind the journal.
 6. Verify local primary outputs; record semantic Observations and Findings.
 7. Freeze and evaluate GateSpecs over explicit Observation refs.
-8. Update Claims, complete the Act only after activity/control checks pass, and
-   accept only through a passing named profile.
-9. Recompile context and independently choose the next question, branch, merge,
-   backtrack, stop, or completion.
+8. Update Claims; complete the Act after control checks; accept through a
+   passing named profile only.
+9. Recompile context and choose the next question, branch, merge, backtrack,
+   stop, or completion.
+
+One Act owns one principal question and deliverable. Same-objective retries stay
+Attempts; a changed objective or principal deliverable starts a dependent Act.
 
 Backtrack with a new Act depending on an earlier checkpoint; never erase
 history. Canonical records use readable workspace ordinals (`act_1`, `claim_1`,
 `obs_1`, `fnd_1`, `gsp_1`, `val_1`); ordinals are identity, not phase or rank.
 
-Do not impose a universal low-cost-first, Gaussian-first, or QST-first sequence. Gaussian
-may generate candidates when direct TS optimization, scans, or QST are
-justified. Before QST2/QST3, require compatible endpoints, mapping,
-conformations, and an elementary-step rationale.
+Do not impose a universal low-cost-, Gaussian-, or QST-first sequence. Gaussian
+may generate candidates when justified. Before QST2/QST3, require compatible
+endpoints, mapping, conformations, and an elementary-step rationale.
 
 ## Decisions
 
@@ -56,32 +54,27 @@ Use the control tools in this order:
 3. `ts_workspace_decision_validate` for a complete non-mutating dry run.
 4. `ts_workspace_decision_apply` for the locked transactional commit.
 
-The draft allocates IDs and resolves `$alias` references. Never invent IDs or
-edit the returned `ts-research-decision/1`; any change requires a new draft.
-Decision primitives are composable operations, not a prescribed sequence.
+The draft allocates IDs and resolves `$alias`. Never invent IDs or edit its
+Decision; any change requires a new draft. Operations do not prescribe order.
 
 ## Validation
 
-Use `ts_workspace_context mode=validation_capabilities` to discover registered
-predicates, templates, and acceptance profiles. Choose either a packaged,
-versioned template with typed parameters or a declarative definition composed
-only of registered predicates.
+Use `mode=validation_capabilities` to discover predicates, templates, and
+acceptance profiles. Use a versioned template or registered predicates only.
 
 Before a template GateSpec, query its exact `templateId` and `templateVersion`;
 the focused result lists parameters and Observation selectors.
 
-The compiler freezes template, registry, content, and selected Observation
-digests. Verdicts are `pass`, `fail`, `inconclusive`, or `error`; only `pass`
-satisfies a GateSpec. Agent-supplied executable code is forbidden. Acceptance
-requires current passing coverage and no applicable open blocking Finding.
+The compiler freezes template, registry, content, and Observation digests. Only
+`pass` satisfies a GateSpec. Agent code is forbidden. Acceptance requires
+current passing coverage and no applicable open blocking Finding.
 
 ## Compute
 
-Before `launch`, read `ts_workspace_context mode=artifacts` and bind each
-`artifactId` to its `inputRole`. `ts_subagent_compute` executes one host-bound
-lifecycle: `launch` prepare+submit, `inspect` status+optional tail, `finalize`
-collect+parse, or `cancel`. The host owns identities, paths, arguments, and
-bindings.
+Use context `mode=locate` to map a Claim/Act/Observation/Attempt to paths. Before
+`launch`, read `mode=artifacts` and bind each `artifactId` to its `inputRole`.
+`ts_subagent_compute` runs one host-bound `launch`, `inspect`, `finalize`, or
+`cancel` lifecycle. The host owns identities, paths, arguments, and bindings.
 
 If no input exists, start an Act; use `ts_structure_seed` for one SMILES or
 `ts_artifact_import` for bounded Gaussian/XYZ/control text. Pass its
@@ -93,11 +86,10 @@ expressibility, not live infrastructure health.
 
 ## Review
 
-Use `ts_subagent_review` for an independent assessment of one target Claim.
-It gets a bounded graph and result tool, no parent transcript or Skill, and no
-raw filesystem, compute, mutation, or delegation. It may read one logical
-artifact batch. Compute gets a fixed zero-argument plan and no scientific or
-method authority.
+`ts_subagent_review` independently assesses one Claim from a bounded graph and
+one logical artifact batch, without parent transcript, Skill, raw filesystem,
+compute, mutation, or delegation. Compute gets a fixed plan and no scientific
+or method authority.
 
 After success, call `ts_review_disposition` before scientific mutation. Apply
 advice only through verified Decisions, and preserve provider failures as such.

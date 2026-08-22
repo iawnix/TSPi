@@ -68,10 +68,22 @@ Multiple dependencies support merges. A new Act depending on an earlier
 checkpoint supports backtracking. Preserve failed, blocked, inconclusive, and
 stopped Acts; do not rewrite history into a successful line.
 
+Act granularity is semantic, not a fixed attempt count. One Act should own one
+principal scientific question and deliverable. Retries that preserve that
+objective remain calculation Attempts below the Act; a changed objective or
+principal deliverable starts a dependent Act. This guidance preserves
+discoverability without turning Act labels or tags into a workflow policy.
+
 ResearchAct uses `ts-research-act/3`. It contains no `operation_refs` field.
 The shared Activity Index projects activities from
 `acts/<act_id>/activities/*` and `operations/activities/*`, validates journal
 integrity, and supplies completion guards, reports, and UI views.
+
+The read-only Research Files locator joins Claim, Act, Observation, logical
+artifact, and calculation-intent identities to their current paths. Attempt
+results distinguish frozen inputs from produced outputs. The projection is
+rebuilt from canonical records and the artifact catalog, creates no new state,
+and never treats every file owned by a related Act as evidence for a Claim.
 
 ## Observation
 

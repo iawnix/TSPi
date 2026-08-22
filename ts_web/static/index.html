@@ -339,13 +339,13 @@
     .activity-time { color: var(--dim); font-size: 11px; text-align: right; }
 
     .inspector {
-      width: var(--inspector);
+      width: 100%;
       min-width: 0;
       border-left: 1px solid var(--line);
       background: var(--surface);
       overflow: hidden;
     }
-    .inspector-inner { width: var(--inspector); height: 100%; display: flex; flex-direction: column; }
+    .inspector-inner { width: 100%; height: 100%; display: flex; flex-direction: column; }
     .inspector-header {
       min-height: 54px;
       display: flex;
@@ -410,12 +410,38 @@
     .file-button:hover { color: var(--green); }
     .file-preview { margin: 10px 0 0; padding: 10px; border: 1px solid var(--line); background: #101210; color: #cbd2cc; font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 
+    .locator-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: -6px 0 14px; color: var(--dim); font-size: 11px; }
+    .locator-list { border-top: 1px solid var(--line); }
+    .locator-match { padding: 18px 0 22px; border-bottom: 1px solid var(--line); }
+    .locator-match-head { display: flex; align-items: flex-start; gap: 10px; }
+    .locator-match-title { min-width: 0; flex: 1; }
+    .locator-match-title strong { display: block; font-size: 14px; line-height: 1.4; overflow-wrap: anywhere; }
+    .locator-match-title span { display: block; margin-top: 4px; color: var(--dim); }
+    .locator-refs { margin-top: 10px; }
+    .locator-groups { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; margin-top: 15px; }
+    .locator-group { min-width: 0; }
+    .locator-group.wide { grid-column: 1 / -1; }
+    .locator-group h3 { margin: 0 0 7px; color: var(--muted); font-size: 11px; font-weight: 650; text-transform: uppercase; }
+    .path-list { border-top: 1px solid var(--line-soft); }
+    .path-row { min-height: 42px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line-soft); }
+    .path-main { min-width: 0; }
+    .path-main button { width: 100%; padding: 0; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+    .path-main button:hover { color: var(--green); }
+    .path-meta { margin-top: 3px; color: var(--dim); font-size: 10px; }
+    .path-actions { display: flex; flex-wrap: wrap; gap: 5px; }
+    .path-actions.preview-actions { margin-top: 10px; }
+    .path-action { min-height: 27px; padding: 3px 7px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface-2); color: var(--muted); font-size: 10px; cursor: pointer; }
+    .path-action:hover { border-color: #4a524b; color: var(--text); }
+    .locator-artifact-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
+    .locator-more { margin-top: 8px; color: var(--amber); font-size: 11px; }
+
     .loading { opacity: .55; pointer-events: none; }
     .fatal { margin: 24px; padding: 16px; border-left: 3px solid var(--red); background: #2b1c1c; color: #f2d7d7; white-space: pre-wrap; }
 
     @media (max-width: 1120px) {
       body.inspector-open .shell { grid-template-columns: var(--sidebar) minmax(0, 1fr); }
-      .inspector { position: fixed; z-index: 20; top: 58px; right: 0; bottom: 0; box-shadow: -12px 0 30px #0008; }
+      .inspector { position: fixed; z-index: 20; top: 58px; right: 0; bottom: 0; visibility: hidden; transform: translateX(100%); pointer-events: none; box-shadow: -12px 0 30px #0008; transition: transform 160ms ease, visibility 160ms; }
+      body.inspector-open .inspector { visibility: visible; transform: translateX(0); pointer-events: auto; }
       .metrics { grid-template-columns: repeat(3, minmax(105px, 1fr)); }
       .metric:nth-child(3) { border-right: 0; }
       .metric:nth-child(-n+3) { border-bottom: 1px solid var(--line-soft); }
@@ -447,6 +473,9 @@
       .detail-record, .detail-link { grid-template-columns: minmax(0, 1fr); }
       .detail-record-meta { justify-content: flex-start; }
       .detail-arrow { display: none; }
+      .locator-groups { grid-template-columns: minmax(0, 1fr); }
+      .locator-group.wide { grid-column: auto; }
+      .path-row { grid-template-columns: minmax(0, 1fr); }
       .data-table { min-width: 700px; }
       .table-scroll { overflow-x: auto; }
     }
@@ -475,6 +504,7 @@
       <button class="nav-button" type="button" data-view="claims"><span class="nav-icon">◇</span><span>Claims</span><span class="nav-count" data-count="claims">0</span></button>
       <button class="nav-button" type="button" data-view="acts"><span class="nav-icon">↳</span><span>Research Acts</span><span class="nav-count" data-count="acts">0</span></button>
       <button class="nav-button" type="button" data-view="observations"><span class="nav-icon">≡</span><span>Observations</span><span class="nav-count" data-count="observations">0</span></button>
+      <button class="nav-button" type="button" data-view="files"><span class="nav-icon">⌕</span><span>Research Files</span><span class="nav-count"></span></button>
       <button class="nav-button" type="button" data-view="validation"><span class="nav-icon">✓</span><span>Validation</span><span class="nav-count" data-count="validation">0</span></button>
       <button class="nav-button" type="button" data-view="findings"><span class="nav-icon">!</span><span>Findings</span><span class="nav-count" data-count="findings">0</span></button>
       <div class="nav-heading">Operations</div>
@@ -507,6 +537,9 @@
       graph: null,
       currentView: "overview",
       query: "",
+      locator: null,
+      locatorRequest: 0,
+      locatorTimer: null,
     };
 
     const content = document.getElementById("content");
@@ -545,12 +578,15 @@
     }
 
     async function loadWorkspace() {
+      state.locatorRequest += 1;
+      clearTimeout(state.locatorTimer);
       setLoading(true);
       try {
         const base = `/api/workspace/${encodeURIComponent(state.workspaceId)}`;
         const [workspacePayload, graphPayload] = await Promise.all([api(base), api(`${base}/graph`)]);
         state.view = workspacePayload.view;
         state.graph = graphPayload;
+        state.locator = null;
         localStorage.setItem("ts-explorer-workspace", state.workspaceId);
         updateChrome();
         renderCurrentView();
@@ -599,6 +635,7 @@
         claims: renderClaims,
         acts: renderActs,
         observations: renderObservations,
+        files: renderResearchFiles,
         validation: renderValidation,
         findings: renderFindings,
         activity: renderActivity,
@@ -607,11 +644,11 @@
       document.getElementById("workspace-main").scrollTop = 0;
     }
 
-    function renderHeader(title, subtitle, searchable = false) {
+    function renderHeader(title, subtitle, searchable = false, placeholder = "Filter") {
       return `
         <div class="view-header">
           <div class="view-heading"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(subtitle)}</p></div>
-          ${searchable ? `<div class="view-tools"><input class="search-input" id="search-input" type="search" value="${escapeHtml(state.query)}" placeholder="Filter" aria-label="Filter"></div>` : ""}
+          ${searchable ? `<div class="view-tools"><input class="search-input" id="search-input" type="search" value="${escapeHtml(state.query)}" placeholder="${escapeHtml(placeholder)}" aria-label="${escapeHtml(placeholder)}"></div>` : ""}
         </div>`;
     }
 
@@ -778,6 +815,143 @@
           cells: [mono(shortId(row.observation_id)), mono(row.concept_id), `<div class="truncate">${escapeHtml(row.subject_ref)}</div>`, `<div class="truncate">${escapeHtml(formatValue(row.value))}</div>`, mono(shortId(row.created_by_act))],
         })));
       bindSearch();
+    }
+
+    function renderResearchFiles() {
+      const query = state.query.trim();
+      content.innerHTML = renderHeader(
+        "Research Files",
+        "Locate scientific records, Research Acts, calculation attempts, and exact artifact paths.",
+        true,
+        "Search claim_3, calc_…, concept, task, or path",
+      ) + `<div id="locator-results">${renderLocatorBody(query)}</div>`;
+      bindLocatorSearch();
+      if (!state.locator || state.locator.query !== query) loadResearchFiles(query);
+    }
+
+    function bindLocatorSearch() {
+      const input = document.getElementById("search-input");
+      if (!input) return;
+      input.addEventListener("input", event => {
+        state.query = event.target.value;
+        clearTimeout(state.locatorTimer);
+        const target = document.getElementById("locator-results");
+        if (target) target.innerHTML = `<div class="empty-state">Searching…</div>`;
+        state.locatorTimer = setTimeout(() => loadResearchFiles(state.query.trim()), 250);
+      });
+    }
+
+    async function loadResearchFiles(query) {
+      const request = ++state.locatorRequest;
+      const workspaceId = state.workspaceId;
+      try {
+        const payload = await api(`/api/workspace/${encodeURIComponent(workspaceId)}/files?query=${encodeURIComponent(query)}`);
+        if (request !== state.locatorRequest || workspaceId !== state.workspaceId) return;
+        state.locator = payload;
+        if (state.currentView === "files" && state.query.trim() === query) {
+          const target = document.getElementById("locator-results");
+          if (target) target.innerHTML = renderLocatorBody(query);
+        }
+      } catch (error) {
+        if (request !== state.locatorRequest) return;
+        const target = document.getElementById("locator-results");
+        if (target) target.innerHTML = `<div class="fatal">${escapeHtml(error.message || String(error))}</div>`;
+      }
+    }
+
+    function renderLocatorBody(query) {
+      const locator = state.locator;
+      if (!locator || locator.query !== query) return `<div class="empty-state">Searching…</div>`;
+      const matchSummary = locator.returned_match_count === locator.match_count
+        ? `${locator.match_count} match(es)`
+        : `${locator.match_count} matches · showing ${locator.returned_match_count}`;
+      const summary = `<div class="locator-summary">
+        <span>${escapeHtml(locator.query_mode)} lookup</span>
+        <span>${escapeHtml(matchSummary)}</span>
+        <span>${escapeHtml(shortDigest(locator.workspace_revision))}</span>
+      </div>`;
+      if (!locator.matches.length) return summary + `<div class="empty-state">No matching research records or artifacts</div>`;
+      const omitted = locator.omitted_matches
+        ? `<div class="locator-more">${locator.omitted_matches} additional match(es) omitted</div>`
+        : "";
+      return summary + `<div class="locator-list">${locator.matches.map(renderLocatorMatch).join("")}</div>` + omitted;
+    }
+
+    function renderLocatorMatch(match) {
+      const references = [
+        ...match.claim_refs.map(ref => `<span class="ref-chip">Claim ${escapeHtml(ref)}</span>`),
+        ...match.act_refs.map(ref => `<span class="ref-chip">Act ${escapeHtml(ref)}</span>`),
+        ...match.observation_refs.map(ref => `<span class="ref-chip">Observation ${escapeHtml(ref)}</span>`),
+      ].join("");
+      const directories = match.directories.length
+        ? `<div class="path-list">${match.directories.map(row => locatorPathRow(
+            row.path,
+            `${row.purpose}${row.exists ? "" : " · not materialized"}`,
+            false,
+          )).join("")}</div>`
+        : `<div class="detail-empty">No related directory</div>`;
+      const attempts = match.attempts.length
+        ? `<div class="path-list">${match.attempts.map(row => locatorPathRow(
+            row.path,
+            compactText([row.intent_id, row.backend, row.task_type, row.state, row.program_status]),
+            false,
+          )).join("")}</div>`
+        : `<div class="detail-empty">No calculation attempt</div>`;
+      const artifacts = match.artifacts.length
+        ? `<div class="path-list">${match.artifacts.map(row => locatorArtifactRow(row)).join("")}</div>`
+        : `<div class="detail-empty">No resolved artifact</div>`;
+      const omitted = [
+        match.omitted_directories ? `${match.omitted_directories} directories` : "",
+        match.omitted_attempts ? `${match.omitted_attempts} attempts` : "",
+        match.omitted_artifacts ? `${match.omitted_artifacts} artifacts` : "",
+      ].filter(Boolean);
+      const unresolved = match.unresolved_artifact_refs.length
+        ? `<div class="locator-more">Unresolved artifact IDs: ${escapeHtml(match.unresolved_artifact_refs.join(", "))}</div>`
+        : "";
+      return `<article class="locator-match">
+        <div class="locator-match-head">
+          ${badge(match.kind)}
+          <div class="locator-match-title"><strong>${escapeHtml(match.label)}</strong><span class="mono">${escapeHtml(match.ref)}</span></div>
+          ${match.status ? badge(match.status) : ""}
+        </div>
+        ${references ? `<div class="ref-list locator-refs">${references}</div>` : ""}
+        <div class="locator-groups">
+          <section class="locator-group"><h3>Directories</h3>${directories}</section>
+          <section class="locator-group"><h3>Calculation Attempts</h3>${attempts}</section>
+          <section class="locator-group wide"><h3>Artifacts and Semantic Bindings</h3>${artifacts}${unresolved}</section>
+        </div>
+        ${omitted.length ? `<div class="locator-more">Omitted: ${escapeHtml(omitted.join(" · "))}</div>` : ""}
+      </article>`;
+    }
+
+    function locatorArtifactRow(row) {
+      const semantics = [
+        `<span class="ref-chip">${escapeHtml(row.relation)}</span>`,
+        ...row.concept_ids.map(value => `<span class="ref-chip">${escapeHtml(value)}</span>`),
+        ...row.observation_refs.map(value => `<span class="ref-chip">${escapeHtml(value)}</span>`),
+      ].join("");
+      return `<div class="path-row">
+        <div class="path-main">
+          <button class="mono" type="button" data-file="${escapeHtml(row.path)}">${escapeHtml(row.path)}</button>
+          <div class="locator-artifact-meta">${semantics}<span class="path-meta">${formatBytes(row.size_bytes)}</span></div>
+        </div>
+        ${pathActionButtons(row.path)}
+      </div>`;
+    }
+
+    function locatorPathRow(path, meta, preview) {
+      const pathHtml = preview
+        ? `<button class="mono" type="button" data-file="${escapeHtml(path)}">${escapeHtml(path)}</button>`
+        : `<div class="mono">${escapeHtml(path)}</div>`;
+      return `<div class="path-row"><div class="path-main">${pathHtml}<div class="path-meta">${escapeHtml(meta)}</div></div>${pathActionButtons(path)}</div>`;
+    }
+
+    function pathActionButtons(path, wrapped = true) {
+      const buttons = `
+        <button class="path-action" type="button" data-copy-path="${escapeHtml(path)}" data-copy-mode="relative" title="Copy relative path">⧉ Relative</button>
+        <button class="path-action" type="button" data-copy-path="${escapeHtml(path)}" data-copy-mode="absolute" title="Copy absolute path">⧉ Absolute</button>
+      `;
+      return wrapped ? `<div class="path-actions">${buttons}</div>` : buttons;
     }
 
     function renderValidation() {
@@ -1144,8 +1318,16 @@
     }
 
     async function previewFile(path) {
-      const target = document.getElementById("file-preview");
-      if (!target) return;
+      let target = document.getElementById("file-preview");
+      if (!target) {
+        document.body.classList.add("inspector-open");
+        inspectorTitle.textContent = pathName(path);
+        inspectorBody.innerHTML = `
+          <div class="detail-id">${escapeHtml(path)}</div>
+          <div class="path-actions preview-actions">${pathActionButtons(path, false)}</div>
+          <div id="file-preview"></div>`;
+        target = document.getElementById("file-preview");
+      }
       target.innerHTML = `<div class="muted">Loading…</div>`;
       try {
         const payload = await api(`/api/workspace/${encodeURIComponent(state.workspaceId)}/file?path=${encodeURIComponent(path)}`);
@@ -1153,6 +1335,36 @@
       } catch (error) {
         target.innerHTML = `<div class="fatal">${escapeHtml(error.message || String(error))}</div>`;
       }
+    }
+
+    async function copyWorkspacePath(button) {
+      const relative = button.dataset.copyPath || "";
+      const root = state.locator?.workspace_root || state.view?.source_root || "";
+      const value = button.dataset.copyMode === "absolute"
+        ? `${String(root).replace(/\/$/, "")}/${relative}`
+        : relative;
+      const original = button.textContent;
+      try {
+        if (navigator.clipboard && window.isSecureContext) {
+          await navigator.clipboard.writeText(value);
+        } else {
+          const fallback = document.createElement("textarea");
+          fallback.value = value;
+          fallback.style.position = "fixed";
+          fallback.style.opacity = "0";
+          document.body.appendChild(fallback);
+          fallback.select();
+          try {
+            if (!document.execCommand("copy")) throw new Error("copy command failed");
+          } finally {
+            fallback.remove();
+          }
+        }
+        button.textContent = "Copied";
+      } catch (_error) {
+        button.textContent = "Copy failed";
+      }
+      setTimeout(() => { button.textContent = original; }, 1200);
     }
 
     function badge(value) {
@@ -1181,6 +1393,7 @@
     function compactHtml(values) { return values.filter(Boolean).join(" "); }
     function formatTime(value) { if (!value) return ""; const date = new Date(value); return Number.isNaN(date.valueOf()) ? String(value) : date.toLocaleString(); }
     function formatBytes(value) { if (value < 1024) return `${value} B`; if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KiB`; return `${(value / 1024 / 1024).toFixed(1)} MiB`; }
+    function pathName(value) { const parts = String(value || "File").split("/"); return parts[parts.length - 1] || "File"; }
     function recordId(record) { return record.claim_id || record.act_id || record.observation_id || record.spec_id || record.result_id || record.finding_id || record.acceptance_id || record.activity_id || record.task_id || record.intent_id || "Record"; }
     function labelForKind(kind) { return ({ claim: "Claim", act: "Research Act", observation: "Observation", "validation-spec": "GateSpec", "validation-result": "Validation Result", finding: "Finding", acceptance: "Acceptance", activity: "Deterministic Activity", agent: "Subagent Run", control: "Remote Control" })[kind] || "Details"; }
 
@@ -1200,6 +1413,11 @@
     });
 
     document.addEventListener("click", event => {
+      const copy = event.target.closest("[data-copy-path]");
+      if (copy) {
+        copyWorkspacePath(copy);
+        return;
+      }
       const detail = event.target.closest("[data-detail]");
       if (detail) openDetail(detail.dataset.detail, detail.dataset.id);
       const file = event.target.closest("[data-file]");

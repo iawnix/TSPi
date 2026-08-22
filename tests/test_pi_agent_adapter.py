@@ -69,6 +69,8 @@ process.stdout.write(JSON.stringify({{
     assert result["execution"]["ts_artifact_import"] == "deterministic_artifact"
     assert result["execution"]["ts_render"] == "deterministic_artifact"
     assert result["execution"]["ts_report"] == "deterministic_artifact"
+    context = next(item for item in result["tools"] if item["name"] == "ts_workspace_context")
+    assert "query" in context["properties"]
 
 
 def test_public_parameters_use_research_act_and_logical_artifact_vocabulary() -> None:

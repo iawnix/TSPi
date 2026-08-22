@@ -11,7 +11,12 @@ import pytest
 from tests.v4_helpers import accept_research_claim
 from ts_web import normalize_workspace, register_workspace
 from ts_web import server as ts_web_server
-from ts_web.normalize import act_payload, claim_payload, graph_payload_from_view
+from ts_web.normalize import (
+    act_payload,
+    claim_payload,
+    graph_payload_from_view,
+    research_files_payload,
+)
 from ts_web.registry import list_workspaces, register_workspaces
 from ts_web.server import create_server
 from ts_workspace.decision import draft_decision
@@ -358,6 +363,9 @@ def test_static_ui_exposes_v4_dual_graph_without_legacy_routes() -> None:
     assert "ResearchAct DAG" in html
     assert "Lineage and Claims" in html
     assert "Calculation attempts" in html
+    assert "Research Files" in html
+    assert "renderResearchFiles" in html
+    assert "/files?query=" in html
     assert "Scientific record" in html
     assert "Audit references" in html
     assert "renderActHypothesis" in html
@@ -365,6 +373,20 @@ def test_static_ui_exposes_v4_dual_graph_without_legacy_routes() -> None:
     assert "/api/node" not in html
     assert "/api/gates" not in html
     assert "/api/evidence" not in html
+
+
+def test_research_files_payload_is_a_read_only_locator_projection(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+    before = _relative_files(workspace)
+
+    result = research_files_payload(workspace, refs["connectivity"])
+
+    assert result["schema_version"] == "ts-workspace-locator/1"
+    assert result["query_mode"] == "exact"
+    assert result["matches"][0]["kind"] == "act"
+    assert result["matches"][0]["directories"][0]["path"] == f"acts/{refs['connectivity']}"
+    assert _relative_files(workspace) == before
 
 
 def test_static_asset_resolves_from_current_package() -> None:
@@ -457,6 +479,9 @@ def test_web_server_is_read_only_v4_and_has_no_legacy_routes(tmp_path: Path) -> 
         assert _get_json(host, port, f"{base}/observations")["observations"][0]["schema_version"] == "ts-observation/1"
         assert _get_json(host, port, f"{base}/validation")["validation_results"][0]["verdict"] == "pass"
         assert _get_json(host, port, f"{base}/findings")["findings"][0]["status"] == "open"
+        files = _get_json(host, port, f"{base}/files?query={refs['connectivity']}")
+        assert files["matches"][0]["ref"] == refs["connectivity"]
+        assert _get_json(host, port, f"{base}/files")["query_mode"] == "index"
         assert _get_json(host, port, f"{base}/activity")["agent_runs"][0]["task_id"] == "sub_review"
         assert _get_json(host, port, f"{base}/claim/{refs['concerted']}")["claim"]["status"] == "supported"
         act = _get_json(host, port, f"{base}/act/{refs['connectivity']}")

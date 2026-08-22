@@ -25,7 +25,8 @@ def main(argv: list[str] | None = None) -> int:
 
     command = sub.add_parser("context", help="compile one bounded graph projection")
     command.add_argument("--root", required=True)
-    command.add_argument("--mode", choices=["frontier", "claim", "act", "subgraph", "finding", "validation", "delta"], default="frontier")
+    command.add_argument("--mode", choices=["frontier", "claim", "act", "subgraph", "finding", "validation", "delta", "locate"], default="frontier")
+    command.add_argument("--query")
     command.add_argument("--claim-ref")
     command.add_argument("--act-ref")
     command.add_argument("--finding-ref")
@@ -81,6 +82,21 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.command == "init_workspace":
         return init_workspace(args.root)
     if args.command == "context":
+        if args.mode == "locate":
+            if not isinstance(args.query, str) or not args.query.strip():
+                raise ContractError("context mode=locate requires a non-empty --query")
+            from ts_compute.artifacts import list_calculation_artifacts
+
+            from .locator import locate_research_files
+
+            catalog = list_calculation_artifacts(args.root)
+            return locate_research_files(
+                args.root,
+                args.query,
+                artifacts=catalog["artifacts"],
+            )
+        if args.query is not None:
+            raise ContractError("context --query is only valid with mode=locate")
         return compile_context(
             args.root,
             mode=args.mode,
