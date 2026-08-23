@@ -3,7 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="data:,">
   <title>TS Research Explorer</title>
+  <script>
+    (() => {
+      const media = window.matchMedia("(prefers-color-scheme: dark)");
+      let saved = null;
+      try { saved = localStorage.getItem("ts-explorer-theme"); } catch (_error) {}
+      document.documentElement.dataset.theme = ["dark", "light"].includes(saved)
+        ? saved
+        : (media.matches ? "dark" : "light");
+    })();
+  </script>
   <style>
     :root {
       color-scheme: dark;
@@ -15,18 +26,115 @@
       --line-soft: #292e2a;
       --text: #edf1ed;
       --muted: #a3aba4;
-      --dim: #737c74;
+      --dim: #778179;
       --green: #67c48e;
       --cyan: #6bbaca;
       --amber: #dcad5f;
       --red: #e57878;
       --violet: #aa91d8;
       --focus: #8bd4a8;
+      --brand-border: #4c6656;
+      --brand-bg: #1b2b20;
+      --focus-ring: #67c48e22;
+      --control-hover-line: #4a524b;
+      --sidebar-bg: #141715;
+      --nav-active-border: #3d5646;
+      --nav-active-bg: #1b2a20;
+      --nav-active-text: #dff5e7;
+      --notice-warn-bg: #2b2519;
+      --notice-warn-text: #eadfc7;
+      --notice-error-bg: #2b1c1c;
+      --notice-error-text: #f2d7d7;
+      --notice-info-bg: #172629;
+      --notice-info-text: #d3e9ed;
+      --graph-bg: #131614;
+      --graph-grid: #242925;
+      --graph-edge: #4d5750;
+      --graph-edge-claim: #557783;
+      --node-hover-line: #59615a;
+      --focus-shadow: #67c48e33;
+      --table-head: #1b1f1c;
+      --badge-good-border: #3e694f;
+      --badge-good-text: #9ee0b7;
+      --badge-good-bg: #19271e;
+      --badge-bad-border: #734444;
+      --badge-bad-text: #f2a0a0;
+      --badge-bad-bg: #2c1b1b;
+      --badge-warn-border: #735c36;
+      --badge-warn-text: #edc985;
+      --badge-warn-bg: #2a2418;
+      --badge-info-border: #3c6972;
+      --badge-info-text: #9dd5df;
+      --badge-info-bg: #17262a;
+      --badge-review-border: #66517d;
+      --badge-review-text: #cbb3ed;
+      --badge-review-bg: #241d2c;
+      --preview-bg: #101210;
+      --preview-text: #cbd2cc;
+      --overlay-shadow: #0008;
       --sidebar: 224px;
       --inspector: 480px;
       font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       font-size: 14px;
       letter-spacing: 0;
+    }
+
+    :root[data-theme="light"] {
+      color-scheme: light;
+      --bg: #f4f6f5;
+      --surface: #ffffff;
+      --surface-2: #edf1ee;
+      --surface-3: #e2e8e4;
+      --line: #c6cec8;
+      --line-soft: #dce2de;
+      --text: #1a211c;
+      --muted: #58635b;
+      --dim: #657068;
+      --green: #2f7a4d;
+      --cyan: #277185;
+      --amber: #936018;
+      --red: #b03e3e;
+      --violet: #6e52a3;
+      --focus: #2e7d4e;
+      --brand-border: #98b5a1;
+      --brand-bg: #e5f2e9;
+      --focus-ring: #2f7a4d26;
+      --control-hover-line: #9aa59d;
+      --sidebar-bg: #f0f3f1;
+      --nav-active-border: #90b09a;
+      --nav-active-bg: #e4f0e7;
+      --nav-active-text: #173c27;
+      --notice-warn-bg: #fff7e7;
+      --notice-warn-text: #65440d;
+      --notice-error-bg: #fff0f0;
+      --notice-error-text: #7e2929;
+      --notice-info-bg: #edf8fa;
+      --notice-info-text: #245764;
+      --graph-bg: #fafcfb;
+      --graph-grid: #e4e9e5;
+      --graph-edge: #97a29a;
+      --graph-edge-claim: #6b9099;
+      --node-hover-line: #8e9991;
+      --focus-shadow: #2f7a4d2e;
+      --table-head: #eef2ef;
+      --badge-good-border: #8fbea0;
+      --badge-good-text: #245f3b;
+      --badge-good-bg: #e8f4ec;
+      --badge-bad-border: #d9a1a1;
+      --badge-bad-text: #8b3030;
+      --badge-bad-bg: #faeaea;
+      --badge-warn-border: #d8bd84;
+      --badge-warn-text: #725018;
+      --badge-warn-bg: #fbf3df;
+      --badge-info-border: #91bdc5;
+      --badge-info-text: #275e69;
+      --badge-info-bg: #e7f3f5;
+      --badge-review-border: #b7a3d3;
+      --badge-review-text: #5e4285;
+      --badge-review-bg: #f0eaf7;
+      --preview-bg: #f7f9f8;
+      --preview-text: #344038;
+      --overlay-shadow: #0003;
     }
 
     * { box-sizing: border-box; }
@@ -57,9 +165,9 @@
       height: 30px;
       display: grid;
       place-items: center;
-      border: 1px solid #4c6656;
+      border: 1px solid var(--brand-border);
       border-radius: 5px;
-      background: #1b2b20;
+      background: var(--brand-bg);
       color: var(--green);
       font: 700 16px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
     }
@@ -85,7 +193,7 @@
       outline: none;
     }
     select { max-width: 280px; padding: 0 30px 0 10px; }
-    select:focus, .search-input:focus { border-color: var(--focus); box-shadow: 0 0 0 2px #67c48e22; }
+    select:focus, .search-input:focus { border-color: var(--focus); box-shadow: 0 0 0 2px var(--focus-ring); }
 
     .icon-button {
       width: 34px;
@@ -98,7 +206,11 @@
       background: var(--surface-2);
       cursor: pointer;
     }
-    .icon-button:hover { background: var(--surface-3); border-color: #4a524b; }
+    .icon-button:hover { background: var(--surface-3); border-color: var(--control-hover-line); }
+    .icon-button:disabled { cursor: wait; }
+    .button-icon { display: block; width: 18px; line-height: 18px; text-align: center; }
+    .icon-button.refreshing .button-icon { animation: refresh-spin 700ms linear infinite; }
+    @keyframes refresh-spin { to { transform: rotate(360deg); } }
 
     .health {
       display: inline-flex;
@@ -124,7 +236,7 @@
       min-width: 0;
       padding: 14px 10px;
       border-right: 1px solid var(--line);
-      background: #141715;
+      background: var(--sidebar-bg);
       overflow-y: auto;
     }
 
@@ -151,7 +263,7 @@
       cursor: pointer;
     }
     .nav-button:hover { background: var(--surface-2); }
-    .nav-button.active { border-color: #3d5646; background: #1b2a20; color: #dff5e7; }
+    .nav-button.active { border-color: var(--nav-active-border); background: var(--nav-active-bg); color: var(--nav-active-text); }
     .nav-icon { color: var(--muted); font-size: 15px; text-align: center; }
     .nav-count { min-width: 22px; color: var(--dim); font-size: 11px; text-align: right; }
 
@@ -200,11 +312,11 @@
       min-height: 38px;
       padding: 8px 11px;
       border-left: 3px solid var(--amber);
-      background: #2b2519;
-      color: #eadfc7;
+      background: var(--notice-warn-bg);
+      color: var(--notice-warn-text);
     }
-    .notice.error { border-color: var(--red); background: #2b1c1c; color: #f2d7d7; }
-    .notice.info { border-color: var(--cyan); background: #172629; color: #d3e9ed; }
+    .notice.error { border-color: var(--red); background: var(--notice-error-bg); color: var(--notice-error-text); }
+    .notice.info { border-color: var(--cyan); background: var(--notice-info-bg); color: var(--notice-info-text); }
     .notice code { color: inherit; font-size: 11px; }
 
     .section { margin-top: 26px; }
@@ -225,16 +337,16 @@
       min-height: 270px;
       overflow: auto;
       border: 1px solid var(--line);
-      background-color: #131614;
+      background-color: var(--graph-bg);
       background-image:
-        linear-gradient(#242925 1px, transparent 1px),
-        linear-gradient(90deg, #242925 1px, transparent 1px);
+        linear-gradient(var(--graph-grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--graph-grid) 1px, transparent 1px);
       background-size: 24px 24px;
     }
     .graph-stage { position: relative; min-width: 100%; min-height: 270px; }
     .graph-stage svg { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
-    .graph-edge { fill: none; stroke: #4d5750; stroke-width: 1.5; }
-    .graph-edge.claim { stroke: #557783; }
+    .graph-edge { fill: none; stroke: var(--graph-edge); stroke-width: 1.5; }
+    .graph-edge.claim { stroke: var(--graph-edge-claim); }
     .graph-edge-label { fill: var(--dim); font: 10px ui-monospace, SFMono-Regular, Menlo, monospace; }
 
     .graph-node {
@@ -250,8 +362,8 @@
       cursor: pointer;
       overflow: hidden;
     }
-    .graph-node:hover { border-color: #59615a; background: var(--surface-3); }
-    .graph-node.focus { box-shadow: 0 0 0 2px #67c48e33; }
+    .graph-node:hover { border-color: var(--node-hover-line); background: var(--surface-3); }
+    .graph-node.focus { box-shadow: 0 0 0 2px var(--focus-shadow); }
     .graph-node.status-open, .graph-node.status-proposed { border-left-color: var(--cyan); }
     .graph-node.status-completed, .graph-node.status-supported, .graph-node.status-pass { border-left-color: var(--green); }
     .graph-node.status-blocked, .graph-node.status-fail, .graph-node.status-contradicted { border-left-color: var(--red); }
@@ -275,7 +387,7 @@
       height: 36px;
       padding: 0 11px;
       border-bottom: 1px solid var(--line);
-      background: #1b1f1c;
+      background: var(--table-head);
       color: var(--muted);
       font-size: 11px;
       font-weight: 600;
@@ -312,11 +424,11 @@
       font-size: 10px;
       line-height: 1.2;
     }
-    .badge.good { border-color: #3e694f; color: #9ee0b7; background: #19271e; }
-    .badge.bad { border-color: #734444; color: #f2a0a0; background: #2c1b1b; }
-    .badge.warn { border-color: #735c36; color: #edc985; background: #2a2418; }
-    .badge.info { border-color: #3c6972; color: #9dd5df; background: #17262a; }
-    .badge.review { border-color: #66517d; color: #cbb3ed; background: #241d2c; }
+    .badge.good { border-color: var(--badge-good-border); color: var(--badge-good-text); background: var(--badge-good-bg); }
+    .badge.bad { border-color: var(--badge-bad-border); color: var(--badge-bad-text); background: var(--badge-bad-bg); }
+    .badge.warn { border-color: var(--badge-warn-border); color: var(--badge-warn-text); background: var(--badge-warn-bg); }
+    .badge.info { border-color: var(--badge-info-border); color: var(--badge-info-text); background: var(--badge-info-bg); }
+    .badge.review { border-color: var(--badge-review-border); color: var(--badge-review-text); background: var(--badge-review-bg); }
 
     .activity-list { border: 1px solid var(--line); background: var(--surface); }
     .activity-row {
@@ -341,10 +453,11 @@
     .inspector {
       width: 100%;
       min-width: 0;
-      border-left: 1px solid var(--line);
+      border-left: 0;
       background: var(--surface);
       overflow: hidden;
     }
+    body.inspector-open .inspector { border-left: 1px solid var(--line); }
     .inspector-inner { width: 100%; height: 100%; display: flex; flex-direction: column; }
     .inspector-header {
       min-height: 54px;
@@ -411,7 +524,7 @@
     .ref-chip { padding: 3px 5px; border: 1px solid var(--line); border-radius: 4px; color: var(--muted); font: 10px/1.25 ui-monospace, SFMono-Regular, Menlo, monospace; }
     .file-button { width: 100%; padding: 7px 0; border: 0; border-bottom: 1px solid var(--line-soft); background: transparent; text-align: left; cursor: pointer; }
     .file-button:hover { color: var(--green); }
-    .file-preview { margin: 10px 0 0; padding: 10px; border: 1px solid var(--line); background: #101210; color: #cbd2cc; font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .file-preview { margin: 10px 0 0; padding: 10px; border: 1px solid var(--line); background: var(--preview-bg); color: var(--preview-text); font: 11px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
 
     .locator-summary { display: flex; flex-wrap: wrap; gap: 8px; margin: -6px 0 14px; color: var(--dim); font-size: 11px; }
     .locator-list { border-top: 1px solid var(--line); }
@@ -434,16 +547,17 @@
     .path-actions { display: flex; flex-wrap: wrap; gap: 5px; }
     .path-actions.preview-actions { margin-top: 10px; }
     .path-action { min-height: 27px; padding: 3px 7px; border: 1px solid var(--line); border-radius: 4px; background: var(--surface-2); color: var(--muted); font-size: 10px; cursor: pointer; }
-    .path-action:hover { border-color: #4a524b; color: var(--text); }
+    .path-action:hover { border-color: var(--control-hover-line); color: var(--text); }
     .locator-artifact-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 4px; }
     .locator-more { margin-top: 8px; color: var(--amber); font-size: 11px; }
 
     .loading { opacity: .55; pointer-events: none; }
-    .fatal { margin: 24px; padding: 16px; border-left: 3px solid var(--red); background: #2b1c1c; color: #f2d7d7; white-space: pre-wrap; }
+    .fatal { margin: 24px; padding: 16px; border-left: 3px solid var(--red); background: var(--notice-error-bg); color: var(--notice-error-text); white-space: pre-wrap; }
+    .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 
     @media (max-width: 1120px) {
       body.inspector-open .shell { grid-template-columns: var(--sidebar) minmax(0, 1fr); }
-      .inspector { position: fixed; z-index: 20; top: 58px; right: 0; bottom: 0; visibility: hidden; transform: translateX(100%); pointer-events: none; box-shadow: -12px 0 30px #0008; transition: transform 160ms ease, visibility 160ms; }
+      .inspector { position: fixed; z-index: 20; top: 58px; right: 0; bottom: 0; visibility: hidden; transform: translateX(100%); pointer-events: none; box-shadow: -12px 0 30px var(--overlay-shadow); transition: transform 160ms ease, visibility 160ms; }
       body.inspector-open .inspector { visibility: visible; transform: translateX(0); pointer-events: auto; }
       .metrics { grid-template-columns: repeat(3, minmax(105px, 1fr)); }
       .metric:nth-child(3) { border-right: 0; }
@@ -495,7 +609,9 @@
     </div>
     <div class="workspace-control">
       <select id="workspace-select" aria-label="Workspace"></select>
-      <button class="icon-button" id="refresh-button" type="button" title="Refresh" aria-label="Refresh">↻</button>
+      <button class="icon-button" id="theme-button" type="button" title="Use light theme" aria-label="Use light theme"><span class="button-icon" id="theme-icon" aria-hidden="true">☀</span></button>
+      <button class="icon-button" id="refresh-button" type="button" title="Refresh workspaces" aria-label="Refresh workspaces"><span class="button-icon" id="refresh-icon" aria-hidden="true">↻</span></button>
+      <span class="sr-only" id="refresh-status" role="status" aria-live="polite"></span>
       <div class="health" id="health"><span class="health-dot"></span><span id="health-label">Loading</span></div>
     </div>
   </header>
@@ -543,14 +659,23 @@
       locator: null,
       locatorRequest: 0,
       locatorTimer: null,
+      refreshing: false,
+      refreshResetTimer: null,
     };
 
     const content = document.getElementById("content");
     const workspaceSelect = document.getElementById("workspace-select");
+    const themeButton = document.getElementById("theme-button");
+    const themeIcon = document.getElementById("theme-icon");
+    const refreshButton = document.getElementById("refresh-button");
+    const refreshIcon = document.getElementById("refresh-icon");
+    const refreshStatus = document.getElementById("refresh-status");
     const health = document.getElementById("health");
     const healthLabel = document.getElementById("health-label");
     const inspectorTitle = document.getElementById("inspector-title");
     const inspectorBody = document.getElementById("inspector-body");
+    const themeMedia = window.matchMedia("(prefers-color-scheme: dark)");
+    const themeStorageKey = "ts-explorer-theme";
 
     async function api(path) {
       const response = await fetch(path, { cache: "no-store" });
@@ -564,20 +689,24 @@
     async function boot() {
       setLoading(true);
       try {
-        const payload = await api("/api/workspaces");
-        state.workspaces = payload.workspaces || [];
-        if (!state.workspaces.length) throw new Error("No workspace is registered.");
-        const saved = localStorage.getItem("ts-explorer-workspace");
-        state.workspaceId = state.workspaces.some(row => row.workspace_id === saved)
-          ? saved
-          : (payload.default_workspace || state.workspaces[0].workspace_id);
-        renderWorkspaceOptions();
+        await loadWorkspaceCatalog();
         await loadWorkspace();
       } catch (error) {
         renderFatal(error);
       } finally {
         setLoading(false);
       }
+    }
+
+    async function loadWorkspaceCatalog() {
+      const payload = await api("/api/workspaces");
+      state.workspaces = payload.workspaces || [];
+      if (!state.workspaces.length) throw new Error("No workspace is registered.");
+      const saved = state.workspaceId || localStorage.getItem("ts-explorer-workspace");
+      state.workspaceId = state.workspaces.some(row => row.workspace_id === saved)
+        ? saved
+        : (payload.default_workspace || state.workspaces[0].workspace_id);
+      renderWorkspaceOptions();
     }
 
     async function loadWorkspace() {
@@ -593,11 +722,76 @@
         localStorage.setItem("ts-explorer-workspace", state.workspaceId);
         updateChrome();
         renderCurrentView();
+        return true;
       } catch (error) {
         renderFatal(error);
+        return false;
       } finally {
         setLoading(false);
       }
+    }
+
+    async function refreshExplorer() {
+      if (state.refreshing) return;
+      state.refreshing = true;
+      clearTimeout(state.refreshResetTimer);
+      refreshButton.disabled = true;
+      refreshButton.classList.add("refreshing");
+      refreshButton.title = "Refreshing workspaces";
+      refreshButton.setAttribute("aria-label", "Refreshing workspaces");
+      refreshIcon.textContent = "↻";
+      refreshStatus.textContent = "Refreshing workspaces";
+      setLoading(true);
+      let succeeded = false;
+      try {
+        await loadWorkspaceCatalog();
+        succeeded = await loadWorkspace();
+      } catch (error) {
+        renderFatal(error);
+      } finally {
+        state.refreshing = false;
+        refreshButton.disabled = false;
+        refreshButton.classList.remove("refreshing");
+        setLoading(false);
+        showRefreshResult(succeeded);
+      }
+    }
+
+    function showRefreshResult(succeeded) {
+      const message = succeeded ? "Workspace list refreshed" : "Refresh failed";
+      refreshIcon.textContent = succeeded ? "✓" : "!";
+      refreshButton.title = message;
+      refreshButton.setAttribute("aria-label", message);
+      refreshStatus.textContent = message;
+      state.refreshResetTimer = setTimeout(resetRefreshButton, 1400);
+    }
+
+    function resetRefreshButton() {
+      refreshIcon.textContent = "↻";
+      refreshButton.title = "Refresh workspaces";
+      refreshButton.setAttribute("aria-label", "Refresh workspaces");
+    }
+
+    function updateThemeControl() {
+      const current = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+      const next = current === "dark" ? "light" : "dark";
+      const label = `Use ${next} theme`;
+      themeIcon.textContent = current === "dark" ? "☀" : "☾";
+      themeButton.title = label;
+      themeButton.setAttribute("aria-label", label);
+    }
+
+    function applyTheme(theme, persist = false) {
+      document.documentElement.dataset.theme = theme;
+      if (persist) {
+        try { localStorage.setItem(themeStorageKey, theme); } catch (_error) {}
+      }
+      updateThemeControl();
+    }
+
+    function toggleTheme() {
+      const current = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+      applyTheme(current === "dark" ? "light" : "dark", true);
     }
 
     function renderWorkspaceOptions() {
@@ -1452,10 +1646,17 @@
       document.body.classList.remove("inspector-open");
       await loadWorkspace();
     });
-    document.getElementById("refresh-button").addEventListener("click", loadWorkspace);
+    themeButton.addEventListener("click", toggleTheme);
+    themeMedia.addEventListener("change", event => {
+      let saved = null;
+      try { saved = localStorage.getItem(themeStorageKey); } catch (_error) {}
+      if (!saved) applyTheme(event.matches ? "dark" : "light");
+    });
+    refreshButton.addEventListener("click", refreshExplorer);
     document.getElementById("close-inspector").addEventListener("click", () => document.body.classList.remove("inspector-open"));
     window.addEventListener("resize", () => { if (state.currentView === "overview") requestAnimationFrame(drawAllGraphs); });
 
+    updateThemeControl();
     boot();
   </script>
 </body>

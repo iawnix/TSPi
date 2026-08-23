@@ -436,6 +436,20 @@ def test_static_ui_exposes_v4_dual_graph_without_legacy_routes() -> None:
     assert "/api/evidence" not in html
 
 
+def test_static_ui_refreshes_registry_and_persists_theme() -> None:
+    html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
+
+    assert ':root[data-theme="light"]' in html
+    assert 'id="theme-button"' in html
+    assert 'const themeStorageKey = "ts-explorer-theme"' in html
+    assert 'themeButton.addEventListener("click", toggleTheme)' in html
+    assert "async function loadWorkspaceCatalog()" in html
+    assert 'const payload = await api("/api/workspaces")' in html
+    assert 'refreshButton.addEventListener("click", refreshExplorer)' in html
+    assert 'refreshStatus.textContent = "Refreshing workspaces"' in html
+    assert 'const message = succeeded ? "Workspace list refreshed" : "Refresh failed"' in html
+
+
 def test_research_files_payload_is_a_read_only_locator_projection(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     refs = _make_workspace(workspace)
