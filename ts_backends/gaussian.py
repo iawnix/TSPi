@@ -45,10 +45,10 @@ PERIODIC_TABLE = [
 
 def prepare_gaussian(task: BackendTask) -> PreparedTask:
     gjf = task.inputs["gjf"]
-    output = task.settings.get("output", f"acts/{task.act_id}/outputs/gaussian.out")
+    output = task.settings.get("output", f"nodes/{task.node_id}/outputs/gaussian.out")
     return PreparedTask(
         backend="gaussian",
-        act_id=task.act_id,
+        node_id=task.node_id,
         command=["g16", gjf],
         input_paths=[gjf],
         expected_artifacts=[output],

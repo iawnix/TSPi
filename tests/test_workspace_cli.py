@@ -15,15 +15,21 @@ def _write(path: Path, value: dict) -> Path:
     return path
 
 
-def test_workspace_cli_v4_roundtrip(tmp_path: Path) -> None:
+def test_workspace_cli_v5_roundtrip(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     initialized = _run("init_workspace", "--root", str(workspace))
-    assert initialized["schema_version"] == "ts-workspace-init-result/4"
+    assert initialized["schema_version"] == "ts-workspace-init-result/5"
 
     request = {
         "rationale": "Create and evaluate one bounded research assertion.",
         "basis_refs": [],
         "operations": [
+            {
+                "op": "create_phase",
+                "local_ref": "phase",
+                "title": "CLI validation",
+                "objective": "Exercise the complete v5 CLI round trip.",
+            },
             {
                 "op": "create_claim",
                 "local_ref": "claim",
@@ -31,18 +37,20 @@ def test_workspace_cli_v4_roundtrip(tmp_path: Path) -> None:
                 "statement": "The bounded assertion is true.",
             },
             {
-                "op": "start_act",
-                "local_ref": "act",
-                "title": "Bounded research act",
+                "op": "start_node",
+                "local_ref": "node",
+                "phaseRef": "$phase",
+                "title": "Bounded research node",
                 "deliverable": "One bounded research result.",
                 "objective": "Record a deterministic Observation.",
+                "primaryClaimRef": "$claim",
                 "claimRefs": ["$claim"],
                 "tags": ["cli-test"],
             },
             {
                 "op": "record_observation",
                 "local_ref": "observation",
-                "actRef": "$act",
+                "nodeRef": "$node",
                 "conceptId": "test.confirmed",
                 "subjectRef": "subject",
                 "value": True,
@@ -58,12 +66,12 @@ def test_workspace_cli_v4_roundtrip(tmp_path: Path) -> None:
                 "observationRefs": ["$observation"],
             },
             {
-                "op": "complete_act",
-                "actRef": "$act",
+                "op": "complete_node",
+                "nodeRef": "$node",
                 "outcome": "completed",
-                "summary": "The bounded act is complete.",
+                "summary": "The bounded node is complete.",
             },
-            {"op": "set_focus", "claimRefs": ["$claim"], "actRefs": []},
+            {"op": "set_focus", "claimRefs": ["$claim"], "nodeRefs": []},
         ],
     }
     drafted = _run(
@@ -91,7 +99,7 @@ def test_workspace_cli_v4_roundtrip(tmp_path: Path) -> None:
         "--decision-file",
         str(decision_path),
     )
-    assert applied["operation_count"] == 6
+    assert applied["operation_count"] == 7
     context = _run("context", "--root", str(workspace), "--mode", "frontier")
     assert [item["claim_id"] for item in context["claims"]] == [drafted["allocated_refs"]["claim"]]
     assert _run("validate_workspace", "--root", str(workspace))["valid"] is True
@@ -127,9 +135,16 @@ def test_workspace_cli_draft_rejects_unknown_claim_without_mutation(tmp_path: Pa
         "basis_refs": [],
         "operations": [
             {
-                "op": "start_act",
-                "local_ref": "act",
-                "title": "Bounded research act",
+                "op": "create_phase",
+                "local_ref": "phase",
+                "title": "Invalid reference probe",
+                "objective": "Verify that unknown Claim references fail closed.",
+            },
+            {
+                "op": "start_node",
+                "local_ref": "node",
+                "phaseRef": "$phase",
+                "title": "Bounded research node",
                 "deliverable": "One bounded research result.",
                 "objective": "This must not be created.",
                 "claimRefs": ["claim_999"],
@@ -151,8 +166,8 @@ def test_workspace_cli_draft_rejects_unknown_claim_without_mutation(tmp_path: Pa
         str(_write(tmp_path / "unknown-decision.json", drafted["decision"])),
     )
     assert completed.returncode == 2
-    assert "ResearchAct claim_refs contains unknown refs: claim_999" in completed.stderr
-    assert json.loads((workspace / "research_acts.json").read_text(encoding="utf-8"))["acts"] == []
+    assert "ResearchNode claim_refs contains unknown refs: claim_999" in completed.stderr
+    assert json.loads((workspace / "research_nodes.json").read_text(encoding="utf-8"))["nodes"] == []
 
 
 def test_workspace_cli_exposes_validation_capabilities(tmp_path: Path) -> None:
@@ -178,11 +193,11 @@ def test_workspace_cli_exposes_validation_capabilities(tmp_path: Path) -> None:
     }
 
 
-def test_workspace_cli_help_uses_claim_and_research_act_vocabulary() -> None:
+def test_workspace_cli_help_uses_claim_and_research_node_vocabulary() -> None:
     completed = _run_raw("--help")
     assert completed.returncode == 0
     help_text = " ".join(completed.stdout.split())
-    assert "Claim graph and ResearchAct DAG" in help_text
+    assert "Claim graph and ResearchNode DAG" in help_text
     assert "dry-run one bound Decision against the complete resulting state" in help_text
     assert "atomically apply one validated Decision under the workspace lock" in help_text
     assert "start_node" not in help_text

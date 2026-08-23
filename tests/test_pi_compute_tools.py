@@ -30,7 +30,7 @@ import install from {json.dumps(COMPUTE.as_uri())};
 import {{ Compile }} from "typebox/compile";
 let compute;const pi={{registerTool:(tool)=>{{if(tool.name==="ts_subagent_compute")compute=tool}},registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},appendEntry:()=>{{}},getThinkingLevel:()=>"off",events:{{emit:()=>{{}}}}}};
 install(pi);const check=Compile(compute.parameters);
-const base={{backend:"gaussian",actId:"act_1"}};
+const base={{backend:"gaussian",nodeId:"node_1"}};
 const launch={{...base,operation:"launch",purpose:"Single point",taskType:"sp",inputArtifacts:[{{inputRole:"gjf",artifactId:"art_"+"b".repeat(24)}}],executionTarget:{{kind:"remote",profile:"cluster_1w",resources:{{queue:"batch",nodes:1,ncpus:8,memory:"16gb",walltime:"01:00:00",ngpus:0}}}}}};
 const invalidInspect={{...base,operation:"inspect",intentId:"calc_1",purpose:"bad"}};
 let hostError="";
@@ -38,7 +38,7 @@ try {{ await compute.execute("call-1",invalidInspect,undefined,()=>{{}},{{cwd:"/
 process.stdout.write(JSON.stringify({{
   launch:check.Check(launch),
   physicalPath:check.Check({{...launch,inputArtifacts:[{{inputRole:"gjf",artifactId:"inputs/test.gjf"}}]}}),
-  oldNode:check.Check({{...launch,actId:undefined,nodeId:"n001"}}),
+  oldNode:check.Check({{...launch,nodeId:undefined,nodeId:"n001"}}),
   inspect:check.Check({{...base,operation:"inspect",intentId:"calc_1"}}),
   legacyIntent:check.Check({{...base,operation:"inspect",intentId:"calc_probe"}}),
   compactSchemaAcceptsCrossOperationField:check.Check(invalidInspect),
@@ -97,7 +97,7 @@ def test_untyped_control_exception_requires_reconciliation_and_stays_schema_vali
         f"const helper=require({json.dumps(str(ACTION_LOG))});"
         "const actions=[];const action=helper.reserveAction(actions,'ts_workspace_compute_submit');"
         "const result=helper.failAction(action,new Error('connection lost'),{"
-        "intentId:'calc_1',actId:'act_1',backend:'gaussian',"
+        "intentId:'calc_1',nodeId:'node_1',backend:'gaussian',"
         "intentDigest:'sha256:'+'a'.repeat(64)});"
         "process.stdout.write(JSON.stringify({action,result}));"
     )

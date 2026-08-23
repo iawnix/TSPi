@@ -19,7 +19,7 @@ def compile_gate_spec(
     spec_id: str,
     target_claim_ref: str,
     registry: PredicateRegistry,
-    created_by_act: str,
+    created_by_node: str,
     created_by_decision: str,
     frozen_at: str | None = None,
 ) -> dict[str, Any]:
@@ -57,7 +57,7 @@ def compile_gate_spec(
 
     normalized = _normalize_definition(definition, registry)
     spec = {
-        "schema_version": "ts-gate-spec/1",
+        "schema_version": "ts-gate-spec/2",
         "spec_id": spec_id,
         "target_claim_ref": target_claim_ref,
         "dimension": dimension,
@@ -67,7 +67,7 @@ def compile_gate_spec(
         "predicate_registry_digest": registry.digest,
         "checks": normalized["checks"],
         "success_policy": normalized["success_policy"],
-        "created_by_act": created_by_act,
+        "created_by_node": created_by_node,
         "created_by_decision": created_by_decision,
         "frozen_at": frozen_at or now_iso(),
     }

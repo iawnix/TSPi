@@ -1,6 +1,6 @@
 ---
 name: transition-state-workflow
-description: Auditable TS and reaction-path research in TSPi. Use for candidates, optimization/frequency/IRC, mechanisms, connectivity, xTB/CREST/ASE/Gaussian, branching, recovery, or v4 continuation.
+description: Auditable TS and reaction-path research in TSPi. Use for candidates, optimization/frequency/IRC, mechanisms, connectivity, xTB/CREST/ASE/Gaussian, branching, recovery, or v5 continuation.
 ---
 
 # Transition-State Workflow
@@ -13,7 +13,7 @@ effects, provenance, and validation.
 - Mutate canonical science only through `ts_workspace_decision_apply`.
 - Root chooses questions, hypotheses, methods, branches, stopping, and
   interpretation. Graph edges and validation never choose the next action.
-- Treat Claim relations, Act dependencies, and tags as recorded context only.
+- Treat Claim relations, Node dependencies, and tags as recorded context only.
 - Tool results stay operational until verified artifacts support Observations.
 - Record anomalies, conflicts, limitations, and unresolved questions as
   Findings. Never hide an acceptance blocker in prose.
@@ -24,22 +24,23 @@ effects, provenance, and validation.
 
 1. Read `frontier`, or `delta` when both prior revisions are known.
 2. State one unresolved question, assumptions, predictions, and falsifiers.
-3. Create/update Claims and start one bounded ResearchAct with dependencies.
+3. Create or reuse a ResearchPhase, create/update Claims, and start one bounded
+   ResearchNode with dependencies and Claim scope.
 4. Select a method from chemistry, uncertainty, cost, and available artifacts.
-5. Run bounded tools with the owning Act; its `act_refs` bind the journal.
+5. Run bounded tools with the owning Node; its `node_refs` bind the journal.
 6. Verify local primary outputs; record semantic Observations and Findings.
 7. Freeze and evaluate GateSpecs over explicit Observation refs.
-8. Update Claims; complete the Act after control checks; accept through a
+8. Update Claims; complete the Node after control checks; accept through a
    passing named profile only.
 9. Recompile context and choose the next question, branch, merge, backtrack,
    stop, or completion.
 
-One Act owns one principal question and deliverable. Same-objective retries stay
-Attempts; a changed objective or principal deliverable starts a dependent Act.
+One Node owns one principal question and deliverable. Same-objective retries stay
+Attempts; a changed objective or principal deliverable starts a dependent Node.
 
-Backtrack with a new Act depending on an earlier checkpoint; never erase
-history. Canonical records use readable workspace ordinals (`act_1`, `claim_1`,
-`obs_1`, `fnd_1`, `gsp_1`, `val_1`); ordinals are identity, not phase or rank.
+Backtrack with a new Node depending on an earlier checkpoint; never erase
+history. Canonical records use readable workspace ordinals (`node_1`, `claim_1`,
+`obs_1`, `fnd_1`, `gsp_1`, `val_1`); ordinals are identity, not Phase or rank.
 
 Do not impose a universal low-cost-, Gaussian-, or QST-first sequence. Gaussian
 may generate candidates when justified. Before QST2/QST3, require compatible
@@ -71,12 +72,12 @@ current passing coverage and no applicable open blocking Finding.
 
 ## Compute
 
-Use context `mode=locate` to map a Claim/Act/Observation/Attempt to paths. Before
+Use context `mode=locate` to map a Claim/Node/Observation/Attempt to paths. Before
 `launch`, read `mode=artifacts` and bind each `artifactId` to its `inputRole`.
 `ts_subagent_compute` runs one host-bound `launch`, `inspect`, `finalize`, or
 `cancel` lifecycle. The host owns identities, paths, arguments, and bindings.
 
-If no input exists, start an Act; use `ts_structure_seed` for one SMILES or
+If no input exists, start a Node; use `ts_structure_seed` for one SMILES or
 `ts_artifact_import` for bounded Gaussian/XYZ/control text. Pass its
 `artifactId`, never a path.
 
@@ -96,7 +97,7 @@ advice only through verified Decisions, and preserve provider failures as such.
 
 ## Artifacts, Render, Report, And Notify
 
-`ts_render` creates one Act-owned no-overwrite visualization; `ts_report`
+`ts_render` creates one Node-owned no-overwrite visualization; `ts_report`
 creates one atomic package. Both use logical artifacts.
 
 Use `ts_notify_user` only for configured material events. The host owns the
@@ -105,7 +106,7 @@ delivery.
 
 ## Failure Boundaries
 
-- Preserve failed Acts and calculations; operational failure does not
+- Preserve failed Nodes and calculations; operational failure does not
   contradict a Claim.
 - Distinguish scheduler, transfer, program, parser, scientific, Review-provider,
   contract, artifact, and delivery failures.

@@ -1,6 +1,6 @@
-"""Read-only projection of noncanonical v4 runtime state.
+"""Read-only projection of noncanonical v5 runtime state.
 
-Canonical scientific state lives in the v4 registries.  Calculation attempts,
+Canonical scientific state lives in the v5 registries.  Calculation attempts,
 deterministic tool activities, Compute/Review runs, and control receipts are
 durable operational records, but they never become scientific support merely
 because they appear in this projection.
@@ -14,7 +14,7 @@ from typing import Any, Iterable
 
 from .activities import activity_completion_blockers, build_activity_index
 from .io import read_json, sha256_json
-from .refs import ACT_ID, ACTIVITY_ID, CALCULATION_ID, CLAIM_ID, SUBAGENT_RUN_ID
+from .refs import NODE_ID, ACTIVITY_ID, CALCULATION_ID, CLAIM_ID, SUBAGENT_RUN_ID
 
 
 def operational_snapshot(
@@ -89,52 +89,52 @@ def operational_snapshot(
     }
 
 
-def act_completion_blockers(
+def node_completion_blockers(
     snapshot: dict[str, Any],
     *,
-    act_id: str,
+    node_id: str,
     outcome: str,
 ) -> list[dict[str, str]]:
-    """Combine activity and remote-control blockers for one Act completion."""
+    """Combine activity and remote-control blockers for one Node completion."""
 
     blockers = activity_completion_blockers(
         {
             "activities": snapshot.get("deterministic_activities", []),
             "integrity_findings": snapshot.get("activity_integrity_findings", []),
         },
-        act_id=act_id,
+        node_id=node_id,
         outcome=outcome,
     )
     for row in snapshot.get("agent_runs", []):
         if (
             not isinstance(row, dict)
             or row.get("role") != "compute"
-            or act_id not in _string_list(row.get("act_refs"))
+            or node_id not in _string_list(row.get("node_refs"))
         ):
             continue
         state = str(row.get("status") or "pending")
         if state not in {"completed", "failed"}:
-            ref = str(row.get("run_ref") or row.get("task_id") or act_id)
+            ref = str(row.get("run_ref") or row.get("task_id") or node_id)
             blockers.append({
                 "code": "compute_run_not_terminal",
                 "ref": ref,
                 "message": f"Compute run is still {state}: {ref}",
             })
     for row in snapshot.get("pending_controls", []):
-        if isinstance(row, dict) and row.get("act_id") == act_id:
-            ref = str(row.get("guard_ref") or row.get("intent_id") or act_id)
+        if isinstance(row, dict) and row.get("node_id") == node_id:
+            ref = str(row.get("guard_ref") or row.get("intent_id") or node_id)
             blockers.append({
                 "code": "pending_compute_control",
                 "ref": ref,
-                "message": f"pending compute control must finish before Act completion: {ref}",
+                "message": f"pending compute control must finish before Node completion: {ref}",
             })
     for row in snapshot.get("unresolved_controls", []):
-        if isinstance(row, dict) and row.get("act_id") == act_id:
-            ref = str(row.get("result_ref") or row.get("intent_id") or act_id)
+        if isinstance(row, dict) and row.get("node_id") == node_id:
+            ref = str(row.get("result_ref") or row.get("intent_id") or node_id)
             blockers.append({
                 "code": "unresolved_compute_control",
                 "ref": ref,
-                "message": f"unresolved or ambiguous compute control must be reconciled before Act completion: {ref}",
+                "message": f"unresolved or ambiguous compute control must be reconciled before Node completion: {ref}",
             })
     return blockers
 
@@ -144,7 +144,7 @@ def agent_run_index(root: str | Path) -> list[dict[str, Any]]:
 
     root_path = Path(root).expanduser().resolve()
     run_dirs = [
-        *root_path.glob("acts/*/attempts/*/runs/*"),
+        *root_path.glob("nodes/*/attempts/*/runs/*"),
         *root_path.glob("reviews/*/runs/*"),
     ]
     rows: list[dict[str, Any]] = []
@@ -168,11 +168,11 @@ def agent_run_index(root: str | Path) -> list[dict[str, Any]]:
         disposition = _read_or_empty(run_dir / "root-disposition.json")
         error = run.get("error") if isinstance(run.get("error"), dict) else {}
         scope = task.get("scope") if isinstance(task.get("scope"), dict) else {}
-        act_refs = _string_list(scope.get("act_refs"))
+        node_refs = _string_list(scope.get("node_refs"))
         claim_refs = _string_list(scope.get("claim_refs"))
         inputs = task.get("inputs") if isinstance(task.get("inputs"), dict) else {}
         if role == "compute" and (
-            act_refs != [ownership["act_id"]]
+            node_refs != [ownership["node_id"]]
             or inputs.get("intent_id") != ownership["intent_id"]
         ):
             continue
@@ -185,7 +185,7 @@ def agent_run_index(root: str | Path) -> list[dict[str, Any]]:
             "authority": authority,
             "operation": task.get("operation"),
             "status": run.get("status") or "pending",
-            "act_refs": act_refs,
+            "node_refs": node_refs,
             "claim_refs": claim_refs,
             "run_ref": run_ref,
             "started_at": run.get("started_at"),
@@ -221,14 +221,14 @@ def _agent_run_ownership(root: Path, run_dir: Path) -> dict[str, str] | None:
     parts = run_dir.relative_to(root).parts
     if (
         len(parts) == 6
-        and parts[0] == "acts"
-        and ACT_ID.fullmatch(parts[1])
+        and parts[0] == "nodes"
+        and NODE_ID.fullmatch(parts[1])
         and parts[2] == "attempts"
         and CALCULATION_ID.fullmatch(parts[3])
         and parts[4] == "runs"
         and SUBAGENT_RUN_ID.fullmatch(parts[5])
     ):
-        return {"role": "compute", "act_id": parts[1], "intent_id": parts[3]}
+        return {"role": "compute", "node_id": parts[1], "intent_id": parts[3]}
     if (
         len(parts) == 4
         and parts[0] == "reviews"
@@ -247,7 +247,7 @@ def review_disposition_obligations(agent_runs: list[dict[str, Any]]) -> list[dic
         {
             "task_id": row.get("task_id"),
             "operation": row.get("operation"),
-            "act_refs": row.get("act_refs", []),
+            "node_refs": row.get("node_refs", []),
             "claim_refs": row.get("claim_refs", []),
             "run_ref": row.get("run_ref"),
             "invalid_disposition": bool(row.get("root_disposition_invalid")),
@@ -286,15 +286,15 @@ def _valid_review_disposition(disposition: dict[str, Any], run: dict[str, Any]) 
 def _operational_files(root: Path, *, excluded_activity_refs: set[str]) -> list[Path]:
     patterns = (
         ".ts-operational-ids.json",
-        "acts/*/attempts/*/status.json",
-        "acts/*/attempts/*/*_guard.json",
-        "acts/*/attempts/*/*_result.json",
-        "acts/*/attempts/*/*_reconciliation.json",
-        "acts/*/attempts/*/*_receipt.json",
-        "acts/*/attempts/*/outputs/calculation_result.json",
-        "acts/*/activities/*/*.json",
+        "nodes/*/attempts/*/status.json",
+        "nodes/*/attempts/*/*_guard.json",
+        "nodes/*/attempts/*/*_result.json",
+        "nodes/*/attempts/*/*_reconciliation.json",
+        "nodes/*/attempts/*/*_receipt.json",
+        "nodes/*/attempts/*/outputs/calculation_result.json",
+        "nodes/*/activities/*/*.json",
         "operations/activities/*/*.json",
-        "acts/*/attempts/*/runs/*/*.json",
+        "nodes/*/attempts/*/runs/*/*.json",
         "reviews/*/runs/*/*.json",
     )
     files = set()
@@ -314,7 +314,7 @@ def _operational_files(root: Path, *, excluded_activity_refs: set[str]) -> list[
 def _is_current_operational_path(parts: tuple[str, ...]) -> bool:
     if parts == (".ts-operational-ids.json",):
         return True
-    if len(parts) >= 5 and parts[0] == "acts" and ACT_ID.fullmatch(parts[1]):
+    if len(parts) >= 5 and parts[0] == "nodes" and NODE_ID.fullmatch(parts[1]):
         if parts[2] == "attempts" and CALCULATION_ID.fullmatch(parts[3]):
             return len(parts) < 6 or parts[4] != "runs" or SUBAGENT_RUN_ID.fullmatch(parts[5]) is not None
         if parts[2] == "activities" and ACTIVITY_ID.fullmatch(parts[3]):
@@ -352,7 +352,7 @@ def _pending_controls(root: Path, files: list[Path]) -> list[dict[str, Any]]:
             continue
         row: dict[str, Any] = {
             "operation": operation,
-            "act_id": _act_id_for_attempt(root, guard.parent),
+            "node_id": _node_id_for_attempt(root, guard.parent),
             "intent_id": guard.parent.name,
             "guard_ref": guard.relative_to(root).as_posix(),
         }
@@ -400,7 +400,7 @@ def _unresolved_controls(root: Path, files: list[Path]) -> list[dict[str, Any]]:
         unresolved.append(
             {
                 "operation": operation,
-                "act_id": _act_id_for_attempt(root, result_path.parent),
+                "node_id": _node_id_for_attempt(root, result_path.parent),
                 "intent_id": result_path.parent.name,
                 "attempt": attempt,
                 "result_ref": result_path.relative_to(root).as_posix(),
@@ -415,10 +415,10 @@ def _unresolved_controls(root: Path, files: list[Path]) -> list[dict[str, Any]]:
     return unresolved
 
 
-def _act_id_for_attempt(root: Path, attempt_dir: Path) -> str:
+def _node_id_for_attempt(root: Path, attempt_dir: Path) -> str:
     relative = attempt_dir.relative_to(root)
-    if len(relative.parts) != 4 or relative.parts[0] != "acts" or relative.parts[2] != "attempts":
-        raise ValueError(f"invalid v4 calculation attempt path: {relative.as_posix()}")
+    if len(relative.parts) != 4 or relative.parts[0] != "nodes" or relative.parts[2] != "attempts":
+        raise ValueError(f"invalid v5 calculation attempt path: {relative.as_posix()}")
     return relative.parts[1]
 
 

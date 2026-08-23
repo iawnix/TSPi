@@ -70,10 +70,10 @@ const ATTEMPT_KINDS = ["primary", "retry", "recalculation"] as const;
 const RECALCULATION_PURPOSES = ["repair", "refinement", "method_robustness"] as const;
 const COMPUTE_COMMON_PARAMETERS = {
   backend: StringEnum(BACKENDS),
-  actId: Type.String({
-    pattern: "^act_[1-9][0-9]*$",
+  nodeId: Type.String({
+    pattern: "^node_[1-9][0-9]*$",
     maxLength: 128,
-    description: "Open ResearchAct that owns this calculation attempt.",
+    description: "Open ResearchNode that owns this calculation attempt.",
   }),
   root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
 };
@@ -109,7 +109,7 @@ const COMPUTE_PARAMETERS = Type.Object({
   taskType: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]*$", maxLength: 64 })),
   attemptKind: Type.Optional(StringEnum(ATTEMPT_KINDS)),
   recalculationRef: Type.Optional(Type.Object({
-    sourceAct: Type.String({ pattern: "^act_[1-9][0-9]*$" }),
+    sourceNode: Type.String({ pattern: "^node_[1-9][0-9]*$" }),
     sourceIntentId: Type.Optional(INTENT_ID_PARAMETER),
     changedSettings: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { minItems: 1, uniqueItems: true }),
     purpose: StringEnum(RECALCULATION_PURPOSES),
@@ -134,7 +134,7 @@ const COMPUTE_OPERATION_FIELDS = Object.freeze({
 type ComputeRequest = {
   operation: typeof OPERATIONS[number];
   backend: typeof BACKENDS[number];
-  actId: string;
+  nodeId: string;
   intentFile?: string;
   intentRequest?: Record<string, unknown>;
   intentId?: string;
@@ -232,7 +232,7 @@ export default function (pi: ExtensionAPI) {
         {
           operation: input.operation,
           backend: input.backend,
-          actId: input.actId,
+          nodeId: input.nodeId,
           purpose: input.purpose,
           taskType: input.taskType,
           intentRequest: input.operation === "launch" ? buildCalculationRequest(input) : undefined,
@@ -252,7 +252,7 @@ export default function (pi: ExtensionAPI) {
         operation: request.operation,
         target_ref: request.intentId,
       }, onUpdate);
-      reportStatus("queued", { act_refs: [request.actId] });
+      reportStatus("queued", { node_refs: [request.nodeId] });
       const actions: ActionLog = [];
       let agentJournal: ReturnType<typeof beginAgentRun> | undefined;
       let completedRunRef: string | undefined;
@@ -279,7 +279,7 @@ export default function (pi: ExtensionAPI) {
           workspaceRoot: root,
           operation: request.operation,
           backend: request.backend,
-          actId: request.actId,
+          nodeId: request.nodeId,
           binding,
           tailArtifact: request.tailArtifact,
           tailLines: request.tailLines,
@@ -287,7 +287,7 @@ export default function (pi: ExtensionAPI) {
           artifactRef: request.artifactRef,
         });
         reportStatus("starting", {
-          act_refs: packet.scope.act_refs,
+          node_refs: packet.scope.node_refs,
           claim_refs: packet.scope.claim_refs,
           target_ref: request.intentId,
         });
@@ -350,7 +350,7 @@ export default function (pi: ExtensionAPI) {
             task_id: taskId,
             role: "compute",
             operation: request.operation,
-            act_refs: [request.actId],
+            node_refs: [request.nodeId],
             ...failure,
             run_ref: runRef || null,
           });
@@ -546,7 +546,7 @@ function createScopedComputeTools(
     add(
       "ts_workspace_compute_collect",
       "TS Compute Collect",
-      "Fetch the pre-bound allowlisted artifact subset into the owning ResearchAct. Call exactly once.",
+      "Fetch the pre-bound allowlisted artifact subset into the owning ResearchNode. Call exactly once.",
       (signal) => {
         const args = ["--intent-id", request.intentId as string];
         args.push("--expected-intent-digest", request.intentDigest as string);
@@ -620,7 +620,7 @@ async function preflightComputeRequest(
     ], signal, 60_000);
     if (
       !isPlainObject(created)
-      || created.schema_version !== "ts-calculation-intent-created/2"
+      || created.schema_version !== "ts-calculation-intent-created/3"
       || typeof created.intent_ref !== "string"
     ) {
       throw new Error("compute intent creation returned an invalid binding");
@@ -636,7 +636,7 @@ async function preflightComputeRequest(
   onStage?.("preflight");
   const args = [
     "--operation", preflightOperation,
-    "--act-id", request.actId,
+    "--node-id", request.nodeId,
     "--backend", request.backend,
   ];
   if (request.operation === "launch") {
@@ -648,7 +648,7 @@ async function preflightComputeRequest(
   if (!raw || typeof raw !== "object" || raw.schema_version !== "ts-compute-binding/1") {
     throw new Error("compute preflight returned an invalid binding");
   }
-  if (raw.operation !== preflightOperation || raw.act_id !== request.actId || raw.backend !== request.backend) {
+  if (raw.operation !== preflightOperation || raw.node_id !== request.nodeId || raw.backend !== request.backend) {
     throw new Error("compute preflight binding does not match the requested operation scope");
   }
   for (const key of ["intent_id", "intent_ref", "intent_digest"] as const) {
@@ -669,7 +669,7 @@ async function preflightComputeRequest(
 function validateComputeRequest(request: ComputeRequest): ComputeRequest {
   if (!OPERATIONS.includes(request.operation)) throw new Error(`unsupported compute operation: ${request.operation}`);
   if (!BACKENDS.includes(request.backend)) throw new Error(`unsupported compute backend: ${request.backend}`);
-  if (typeof request.actId !== "string" || !request.actId.trim()) throw new Error("compute operation requires actId");
+  if (typeof request.nodeId !== "string" || !request.nodeId.trim()) throw new Error("compute operation requires nodeId");
   const supplied = (key: keyof ComputeRequest) => request[key] !== undefined;
   if (request.operation === "launch") {
     if (!request.intentRequest) throw new Error("launch requires a semantic intent request");
@@ -697,7 +697,7 @@ function validateComputeRequest(request: ComputeRequest): ComputeRequest {
 
 function validatePublicComputeParameters(input: ComputeRequest & { root?: string }): void {
   if (!OPERATIONS.includes(input.operation)) throw new Error(`unsupported compute operation: ${input.operation}`);
-  const allowed = new Set(["operation", "backend", "actId", "root", ...COMPUTE_OPERATION_FIELDS[input.operation]]);
+  const allowed = new Set(["operation", "backend", "nodeId", "root", ...COMPUTE_OPERATION_FIELDS[input.operation]]);
   const unexpected = Object.keys(input).filter((key) => !allowed.has(key));
   if (unexpected.length) {
     throw new Error(`${input.operation} does not accept: ${unexpected.sort().join(", ")}`);
@@ -732,13 +732,13 @@ function buildCalculationRequest(request: ComputeRequest): Record<string, unknow
     },
   };
   return {
-    schema_version: "ts-calculation-request/2",
-    act_id: request.actId,
+    schema_version: "ts-calculation-request/3",
+    node_id: request.nodeId,
     purpose: request.purpose,
     attempt_kind: request.attemptKind || "primary",
     recalculation_ref: recalculation
       ? {
-          source_act: recalculation.sourceAct,
+          source_node: recalculation.sourceNode,
           source_intent_id: recalculation.sourceIntentId || null,
           changed_settings: recalculation.changedSettings,
           purpose: recalculation.purpose,
@@ -775,7 +775,7 @@ function compactCompletedActions(actions: ActionLog) {
       tool: action.tool,
       action_status: normalizeActionStatus(envelope, raw),
       intent_id: raw.intent_id || null,
-      act_id: raw.act_id || null,
+      node_id: raw.node_id || null,
       state: raw.state || null,
       program_status: raw.program_status || null,
       error_class: raw.error_class || null,

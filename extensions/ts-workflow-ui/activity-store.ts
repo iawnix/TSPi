@@ -38,7 +38,7 @@ export interface TsDeterministicActivity {
   id: string;
   activityKind: TsDeterministicKind;
   operation: string;
-  actRefs: string[];
+  nodeRefs: string[];
   detail?: string;
   state: TsSubagentState;
   startedAt: number;
@@ -70,7 +70,7 @@ export function reduceTsToolActivity(store: TsActivityStore, event: ToolLifecycl
       id,
       activityKind,
       operation: operationFor(activityKind, args),
-      actRefs: stringValue(args.actId) ? [String(args.actId)] : [],
+      nodeRefs: stringValue(args.nodeId) ? [String(args.nodeId)] : [],
       detail: detailFor(activityKind, args),
       state: "running",
       startedAt: now,
@@ -211,7 +211,7 @@ function fallbackSubagentStatus(event: ToolExecutionStartEvent, now: number): Ts
   const args = objectValue(event.args);
   const timestampValue = new Date(now).toISOString();
   const role = event.toolName === TS_PUBLIC_TOOL_NAMES.subagentCompute ? "compute" : "review";
-  const actId = stringValue(args.actId);
+  const nodeId = stringValue(args.nodeId);
   return {
     schema_version: TS_SUBAGENT_STATUS_SCHEMA,
     seq: 0,
@@ -222,7 +222,7 @@ function fallbackSubagentStatus(event: ToolExecutionStartEvent, now: number): Ts
     state: "queued",
     started_at: timestampValue,
     updated_at: timestampValue,
-    act_refs: actId ? [actId] : undefined,
+    node_refs: nodeId ? [nodeId] : undefined,
     target_ref: role === "compute" ? stringValue(args.intentId) : stringValue(args.targetClaimRef),
   };
 }
@@ -233,7 +233,7 @@ function operationFor(kind: TsDeterministicKind, args: Record<string, unknown>):
 
 function detailFor(kind: TsDeterministicKind, args: Record<string, unknown>): string | undefined {
   if (kind === "structure") return compact(["SMILES", stringValue(args.optimization)]);
-  if (kind === "artifact") return compact([stringValue(args.format), stringValue(args.actId)]);
+  if (kind === "artifact") return compact([stringValue(args.format), stringValue(args.nodeId)]);
   if (kind === "render") return stringValue(args.outputName);
   if (kind === "report") return stringValue(args.packageName);
   if (kind === "notify") return stringValue(args.event);

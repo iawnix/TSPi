@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.v4_helpers import bootstrap_v4_workspace, start_research_act
+from tests.v5_helpers import bootstrap_v5_workspace, start_research_node
 from ts_compute import (
     ComputeContractError,
     calculation_status,
@@ -28,18 +28,18 @@ from ts_workspace.identity import workspace_id
 
 
 def _workspace(tmp_path: Path) -> tuple[Path, str]:
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
-    act_id = start_research_act(
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    node_id = start_research_node(
         workspace,
         objective="Run the Root-selected Gaussian validation calculation.",
         claim_type="transition_state",
-    )["act_id"]
+    )["node_id"]
     gjf = workspace / "inputs" / "candidate.gjf"
     gjf.write_text(
         "%chk=candidate.chk\n#P B3LYP/6-31G(d) opt=(ts,calcfc) freq\n\nTS\n\n0 1\nH 0 0 0\n\n",
         encoding="utf-8",
     )
-    return workspace, act_id
+    return workspace, node_id
 
 
 def _artifact_id(workspace: Path, path: str = "inputs/candidate.gjf") -> str:
@@ -52,15 +52,15 @@ def _artifact_id(workspace: Path, path: str = "inputs/candidate.gjf") -> str:
 
 def _request(
     workspace: Path,
-    act_id: str,
+    node_id: str,
     *,
     target: dict[str, object] | None = None,
     dry_run: bool = True,
     task_type: str = "opt_freq",
 ) -> dict[str, object]:
     return {
-        "schema_version": "ts-calculation-request/2",
-        "act_id": act_id,
+        "schema_version": "ts-calculation-request/3",
+        "node_id": node_id,
         "purpose": "Evaluate the selected candidate with a bound calculation.",
         "attempt_kind": "primary",
         "recalculation_ref": None,
@@ -75,7 +75,7 @@ def _request(
 
 def _create(
     workspace: Path,
-    act_id: str,
+    node_id: str,
     *,
     target: dict[str, object] | None = None,
     dry_run: bool = True,
@@ -83,7 +83,7 @@ def _create(
 ) -> dict:
     return create_calculation_intent(
         workspace,
-        _request(workspace, act_id, target=target, dry_run=dry_run, task_type=task_type),
+        _request(workspace, node_id, target=target, dry_run=dry_run, task_type=task_type),
     )
 
 
@@ -165,7 +165,7 @@ def _receipt_for(config) -> RemoteReceipt:
         submission_id=config.submission_id,
         intent_id=config.intent_id,
         intent_digest=config.intent_digest,
-        act_id=config.act_id,
+        node_id=config.node_id,
         profile=config.profile.name,
         scheduler="torque",
         scheduler_id="123.cluster",
@@ -180,41 +180,41 @@ def _prepared_remote(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> tuple[Path, str, dict]:
-    workspace, act_id = _workspace(tmp_path)
+    workspace, node_id = _workspace(tmp_path)
     _configure_remote(tmp_path, monkeypatch)
     created = _create(
         workspace,
-        act_id,
+        node_id,
         target=_remote_request_target(),
         dry_run=False,
     )
     prepare_calculation(workspace, created["intent_ref"], created["intent_digest"])
-    return workspace, act_id, created
+    return workspace, node_id, created
 
 
-def test_intent_paths_ids_and_preflight_are_research_act_bound(tmp_path: Path) -> None:
-    workspace, act_id = _workspace(tmp_path)
-    first = _create(workspace, act_id)
-    second = _create(workspace, act_id)
+def test_intent_paths_ids_and_preflight_are_research_node_bound(tmp_path: Path) -> None:
+    workspace, node_id = _workspace(tmp_path)
+    first = _create(workspace, node_id)
+    second = _create(workspace, node_id)
 
-    assert first["schema_version"] == "ts-calculation-intent-created/2"
+    assert first["schema_version"] == "ts-calculation-intent-created/3"
     assert first["intent_id"] == "calc_1"
     assert second["intent_id"] == "calc_2"
-    assert first["intent_ref"] == f"acts/{act_id}/attempts/calc_1/intent.json"
+    assert first["intent_ref"] == f"nodes/{node_id}/attempts/calc_1/intent.json"
     assert first["input_refs"] == {"gjf": "inputs/candidate.gjf"}
     assert first["expected_artifacts"] == [
-        f"acts/{act_id}/attempts/calc_1/outputs/gaussian.out"
+        f"nodes/{node_id}/attempts/calc_1/outputs/gaussian.out"
     ]
 
     binding = preflight_calculation(
         workspace,
         "prepare",
-        act_id,
+        node_id,
         "gaussian",
         intent_file=first["intent_ref"],
     )
     assert binding["schema_version"] == "ts-compute-binding/1"
-    assert binding["act_id"] == act_id
+    assert binding["node_id"] == node_id
     assert binding["intent_digest"] == first["intent_digest"]
     prepared = prepare_calculation(workspace, first["intent_ref"], first["intent_digest"])
     assert prepared["result"]["state"] == "prepared"
@@ -224,13 +224,13 @@ def test_intent_sequence_reservation_is_concurrent_and_failure_atomic(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    workspace, act_id = _workspace(tmp_path)
+    workspace, node_id = _workspace(tmp_path)
     with ThreadPoolExecutor(max_workers=8) as pool:
-        created = list(pool.map(lambda _: _create(workspace, act_id), range(12)))
+        created = list(pool.map(lambda _: _create(workspace, node_id), range(12)))
     assert len({item["intent_id"] for item in created}) == 12
     assert all((workspace / item["intent_ref"]).is_file() for item in created)
 
-    workspace2, act_id2 = _workspace(tmp_path / "second")
+    workspace2, node_id2 = _workspace(tmp_path / "second")
 
     def fail_write(path: Path, _data: object) -> None:
         path.with_name(f"{path.name}.tmp").write_text("partial", encoding="utf-8")
@@ -238,20 +238,20 @@ def test_intent_sequence_reservation_is_concurrent_and_failure_atomic(
 
     monkeypatch.setattr("ts_compute.control.write_json", fail_write)
     with pytest.raises(OSError, match="simulated intent write failure"):
-        _create(workspace2, act_id2)
-    assert not (workspace2 / "acts" / act_id2 / "attempts").exists()
+        _create(workspace2, node_id2)
+    assert not (workspace2 / "nodes" / node_id2 / "attempts").exists()
 
 
-def test_remote_target_is_workspace_and_research_act_scoped(
+def test_remote_target_is_workspace_and_research_node_scoped(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    workspace, act_id = _workspace(tmp_path)
+    workspace, node_id = _workspace(tmp_path)
     _configure_remote(tmp_path, monkeypatch)
-    created = _create(workspace, act_id, target=_remote_request_target())
+    created = _create(workspace, node_id, target=_remote_request_target())
     identity = workspace_id(workspace, create=False)
     assert created["execution_target"]["remote_dir"] == (
-        f"/remote/ts/workspaces/{identity}/runs/{act_id}/{created['intent_id']}"
+        f"/remote/ts/workspaces/{identity}/runs/{node_id}/{created['intent_id']}"
     )
     assert created["execution_target"]["authority"] == "execution_mirror"
 
@@ -260,12 +260,12 @@ def test_remote_submit_status_tail_collect_and_cancel_are_receipt_bound(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    workspace, act_id, created = _prepared_remote(tmp_path, monkeypatch)
+    workspace, node_id, created = _prepared_remote(tmp_path, monkeypatch)
     calls = {"submit": 0, "status": 0, "collect": 0, "cancel": 0}
 
     def fake_submit(config):
         calls["submit"] += 1
-        assert config.act_id == act_id
+        assert config.node_id == node_id
         assert config.remote_dir == created["execution_target"]["remote_dir"]
         return _receipt_for(config)
 
@@ -306,7 +306,7 @@ def test_remote_submit_status_tail_collect_and_cancel_are_receipt_bound(
     assert calculation_tail(workspace, created["intent_id"], "gaussian.out", 40)["text"] == "running\n"
     collected = collect_calculation(workspace, created["intent_id"], ["gaussian.out"])
     assert collected["artifact_refs"] == [
-        f"acts/{act_id}/attempts/{created['intent_id']}/outputs/remote/gaussian.out"
+        f"nodes/{node_id}/attempts/{created['intent_id']}/outputs/remote/gaussian.out"
     ]
     assert cancel_calculation(workspace, created["intent_id"], expected_job_id="123.cluster")["state"] == "stopped"
     assert calls == {"submit": 1, "status": 1, "collect": 1, "cancel": 1}
@@ -316,7 +316,7 @@ def test_pre_submit_failure_is_retryable_but_scheduler_rejection_is_not(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    workspace, _act_id, created = _prepared_remote(tmp_path, monkeypatch)
+    workspace, _node_id, created = _prepared_remote(tmp_path, monkeypatch)
     attempts = 0
 
     def transient(config):
@@ -333,7 +333,7 @@ def test_pre_submit_failure_is_retryable_but_scheduler_rejection_is_not(
     assert failed["control"]["retry_disposition"] == "retry_same_submission"
     assert submit_calculation(workspace, created["intent_id"])["state"] == "submitted"
 
-    workspace2, _act_id2, created2 = _prepared_remote(tmp_path / "rejected", monkeypatch)
+    workspace2, _node_id2, created2 = _prepared_remote(tmp_path / "rejected", monkeypatch)
     monkeypatch.setattr(
         "ts_compute.control.remote_lifecycle.submit",
         lambda _config: (_ for _ in ()).throw(
@@ -351,7 +351,7 @@ def test_ambiguous_submit_reconciles_only_from_a_matching_durable_record(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    workspace, _act_id, created = _prepared_remote(tmp_path, monkeypatch)
+    workspace, _node_id, created = _prepared_remote(tmp_path, monkeypatch)
     monkeypatch.setattr(
         "ts_compute.control.remote_lifecycle.submit",
         lambda _config: (_ for _ in ()).throw(
@@ -406,7 +406,7 @@ def test_failed_collection_leaves_no_partial_output_directory(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    workspace, act_id, created = _prepared_remote(tmp_path, monkeypatch)
+    workspace, node_id, created = _prepared_remote(tmp_path, monkeypatch)
     monkeypatch.setattr("ts_compute.control.remote_lifecycle.submit", _receipt_for)
 
     def fail_collect(_config, _artifacts, staging):
@@ -418,16 +418,16 @@ def test_failed_collection_leaves_no_partial_output_directory(
     submit_calculation(workspace, created["intent_id"])
     with pytest.raises(OSError, match="simulated transfer failure"):
         collect_calculation(workspace, created["intent_id"], ["gaussian.out"])
-    attempt = workspace / "acts" / act_id / "attempts" / created["intent_id"]
+    attempt = workspace / "nodes" / node_id / "attempts" / created["intent_id"]
     assert not (attempt / "outputs").exists()
     assert not list(attempt.glob(".collect-*"))
 
 
 def test_gaussian_parse_is_attempt_scoped_idempotent_and_scientifically_read_only(tmp_path: Path) -> None:
-    workspace, act_id = _workspace(tmp_path)
-    created = _create(workspace, act_id)
+    workspace, node_id = _workspace(tmp_path)
+    created = _create(workspace, node_id)
     prepare_calculation(workspace, created["intent_ref"], created["intent_digest"])
-    artifact_ref = f"acts/{act_id}/attempts/{created['intent_id']}/outputs/gaussian.out"
+    artifact_ref = f"nodes/{node_id}/attempts/{created['intent_id']}/outputs/gaussian.out"
     log = workspace / artifact_ref
     log.parent.mkdir(parents=True, exist_ok=True)
     log.write_text(_gaussian_log(), encoding="utf-8")
@@ -454,7 +454,7 @@ def test_gaussian_parse_is_attempt_scoped_idempotent_and_scientifically_read_onl
 
     foreign = workspace / "inputs" / "foreign.log"
     foreign.write_text(_gaussian_log(), encoding="utf-8")
-    with pytest.raises(ComputeContractError, match=f"acts/{act_id}/attempts/{created['intent_id']}/outputs"):
+    with pytest.raises(ComputeContractError, match=f"nodes/{node_id}/attempts/{created['intent_id']}/outputs"):
         parse_calculation(workspace, created["intent_id"], "inputs/foreign.log")
 
 
@@ -463,7 +463,7 @@ def test_compute_result_contract_rejects_scientific_verdict_fields() -> None:
         "schema_version": "ts-calculation-result/2",
         "job_id": None,
         "intent_id": "calc_1",
-        "act_id": "act_1",
+        "node_id": "node_1",
         "state": "prepared",
         "program_status": "not_run",
         "exit_status": None,

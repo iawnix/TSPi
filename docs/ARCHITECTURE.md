@@ -1,10 +1,10 @@
 # TSAgentSkill Architecture
 
 This document defines component ownership and runtime boundaries for
-`@iawnix/ts-agent` protocol v4. JSON and TypeBox schemas are authoritative for
+`@iawnix/ts-agent` protocol v5. JSON and TypeBox schemas are authoritative for
 field-level call shapes. The Root Skill is authoritative for behavior inside a
-research session. [ADR 0001](adr/0001-dag-research-kernel-v4.md) records why
-this is an incompatible DAG-based design.
+research session. [ADR 0002](adr/0002-phase-node-research-kernel-v5.md)
+records why this is an incompatible Phase + ResearchNode design.
 
 ## System Shape
 
@@ -17,8 +17,8 @@ Installation root
        -> Pi process
           -> Root Skill + five extensions + theme
           -> Root Agent
-             -> v4 Research Kernel
-                Claim graph + ResearchAct DAG
+             -> v5 Research Kernel
+                ResearchPhase roadmap + ResearchNode DAG + Claim graph
                 Observation and Finding registries
                 Decision transaction owner
              -> deterministic execution plane
@@ -55,8 +55,8 @@ There are three forms of execution:
 | Review Agent | Yes | No | No | task, snapshot, result/failure, Root disposition |
 | Compute Agent | Yes | No | Only through bound typed tools | task, actions, deterministic result/failure |
 | Compute kernel | No | No | Local/SSH/Torque action | intent, control record, manifest, parsed artifacts |
-| `ts_structure_seed` | No | No | Bounded local generation | Act-owned XYZ, provenance, and activity |
-| `ts_artifact_import` | No | No | Bounded local file creation | Act-owned content-addressed input and activity |
+| `ts_structure_seed` | No | No | Bounded local generation | Node-owned XYZ, provenance, and activity |
+| `ts_artifact_import` | No | No | Bounded local file creation | Node-owned content-addressed input and activity |
 | `ts_render` / `ts_report` | No | No | Local file creation | no-overwrite artifact or report package |
 | `ts_remote_inspect` | No | No | Read-only SSH/Torque calls | tool result only |
 | `ts_notify_user` | No | No | Fixed-target ClawEmail delivery | digest-addressed receipt |
@@ -74,50 +74,61 @@ A Claim contains a scientific statement, open `claim_type`, assumptions,
 falsifiers, tags, status, and exact Observation/validation history. A separate
 ClaimRelation record connects two Claims with an open scientific relation label
 such as dependency, refinement, conflict, or alternative. The Kernel enforces
-acyclic directed relations but does not interpret a label as permission to act.
+acyclic directed relations but does not interpret a label as permission to
+start a Node.
 ClaimRelation IDs are readable workspace-local ordinals (`rel_1`, `rel_2`, ...).
 Claim IDs are workspace-local monotonic ordinals (`claim_1`, `claim_2`, ...),
 used only as immutable identity and never as confidence, priority, or policy.
-`ResearchAct.claim_refs` records Claims in an Act's declared scope, while
-`Claim.created_by_act` records the Act in which a new Claim originated. They are
-not mirrored fields. Read projections derive the Claim-Act neighborhood from
+`ResearchNode.claim_refs` records Claims in a Node's declared scope, while
+`Claim.created_by_node` records the Node in which a new Claim originated. They are
+not mirrored fields. Read projections derive the Claim-Node neighborhood from
 their union so provenance-only links remain visible without canonical rewrites.
 
-### ResearchAct DAG
+### ResearchPhase roadmap
 
-A ResearchAct is one bounded and auditable act. It records:
+A ResearchPhase is a narrow human-navigation record: readable ordinal ID,
+title, objective, creation Decision, and timestamp. Every ResearchNode belongs
+to exactly one Phase. A Phase has no status, successor rule, method policy,
+validation policy, or permission meaning. Cross-Phase Node dependencies remain
+valid. Reports and `ts_web` may derive Node counts for display, but never write
+derived Phase state.
 
-- a short human-facing title, one objective, one principal deliverable, and an
-  optional hypothesis package;
-- zero or more dependency Acts;
-- related Claims and descriptive tags;
+### ResearchNode DAG
+
+A ResearchNode is one bounded and auditable node. It records:
+
+- one Phase, a short human-facing title, one objective, and one principal
+  deliverable;
+- zero or more dependency Nodes;
+- one optional primary Claim, additional related Claims, and descriptive tags;
 - Observations, Findings, GateSpecs, and ValidationResults linked by canonical
   scientific refs;
 - one terminal result or an open status;
-- the Kernel-owned artifact root `acts/<act_id>`.
+- the Kernel-owned artifact root `nodes/<node_id>`.
 
 Dependencies form a DAG. One dependency creates an ordinary continuation;
-multiple dependencies model a merge; a new Act that depends on an earlier Act
-models backtracking. Prior Acts are never rewritten or deleted to make a later
-path look linear. The DAG records lineage and does not select the next Act.
+multiple dependencies model a merge; a new Node that depends on an earlier Node
+models backtracking. Prior Nodes are never rewritten or deleted to make a later
+path look linear. The DAG records lineage and does not select the next Node.
 
-Act granularity follows scientific purpose, not a fixed number of operations.
-One Act owns one principal question and deliverable; retries with the same
+Node granularity follows scientific purpose, not a fixed number of operations.
+One Node owns one principal question and deliverable; retries with the same
 objective remain Attempts, while a changed objective or principal deliverable
-starts a dependent Act. This is authoring guidance, not a phase enum or Kernel
-permission rule.
+starts a dependent Node. Scientific hypotheses, assumptions, and falsifiers
+remain on Claims so multiple Nodes can test the same statement without copied
+state. This is authoring guidance, not Phase lifecycle or Kernel permission.
 
 ### Observation and Finding
 
 An Observation is immutable and semantic. It binds a `concept_id`, subject,
 typed value, unit, qualifiers, summary, logical artifact IDs, artifact digests,
-producer, producing Act, and creating Decision. Parsers must emit declared
+producer, producing Node, and creating Decision. Parsers must emit declared
 concepts directly; the Kernel does not guess aliases for arbitrary output keys.
 Observation IDs are readable workspace-local ordinals (`obs_1`, `obs_2`, ...);
 the record fields, not the ordinal, carry scientific meaning.
 
 A Finding makes an anomaly, conflict, limitation, or unresolved question
-queryable. It may cite Claims, Acts, and Observations. Findings can be blocking,
+queryable. It may cite Claims, Nodes, and Observations. Findings can be blocking,
 warning, or informational. A Finding remains open until an explicit Decision
 resolves, accepts, or supersedes it. Open blocking Findings prevent acceptance
 of affected Claims.
@@ -127,7 +138,7 @@ Finding IDs are readable workspace-local ordinals (`fnd_1`, `fnd_2`, ...).
 
 A GateSpec is a fully expanded, frozen declarative check set. It records the
 target Claim, dimension, template digest when applicable, predicate-registry
-digest, checks, success policy, creator Act, and content digest. A
+digest, checks, success policy, creator Node, and content digest. A
 ValidationResult records selected Observation refs and digests, each predicate
 outcome, the aggregate verdict, and a result digest.
 GateSpec and ValidationResult IDs are likewise readable creation ordinals
@@ -155,25 +166,26 @@ Acceptance IDs and filenames use readable ordinals (`acc_1`, `acc_2`, ...).
 
 ### Open scientific vocabulary
 
-Claim types, relation types, Act tags, Finding types, validation dimensions,
+Claim types, relation types, Node tags, Finding types, validation dimensions,
 Observation concepts, and subjects remain open strings because they express
 research meaning. Closed enums exist only where deterministic code must execute
 a closed contract, such as record status, value datatype, finding severity,
 validation verdict, and Decision operation.
 
-There is no workflow phase, stage, Act type, scientific role/layer, backend
-priority, or fixed Gate-to-action router.
+There is no prescriptive stage, Phase lifecycle, Node type, scientific
+role/layer, backend priority, or fixed Gate-to-action router.
 
 ## Canonical And Operational State
 
-Canonical v4 state is:
+Canonical v5 state is:
 
 ```text
 workspace.json
 research_state.json
+phases.json
 claims.json
 claim_relations.json
-research_acts.json
+research_nodes.json
 observations.json
 validation_specs.json
 validation_results.json
@@ -190,11 +202,11 @@ Operational or derived state includes:
 
 ```text
 .ts-operational-ids.json
-acts/<act_id>/attempts/<calc_id>/...
-acts/<act_id>/attempts/<calc_id>/runs/<sub_id>/...
+nodes/<node_id>/attempts/<calc_id>/...
+nodes/<node_id>/attempts/<calc_id>/runs/<sub_id>/...
 reviews/<claim_id>/runs/<sub_id>/...
-acts/<act_id>/outputs/...
-acts/<act_id>/activities/...
+nodes/<node_id>/outputs/...
+nodes/<node_id>/activities/...
 operations/activities/...
 reports/...
 .pi/ session and lock state
@@ -218,11 +230,11 @@ The only normal mutation sequence is:
 context -> decision draft -> complete dry-run validation -> apply under lock
 ```
 
-`ts_workspace_decision_draft` accepts Root-authored v4 operations and local
+`ts_workspace_decision_draft` accepts Root-authored v5 operations and local
 aliases. It allocates technical IDs, resolves `$alias` references, compiles any
 GateSpec, evaluates any requested validation against the draft state, binds the
 current frontier projection and scientific revision, and returns a complete
-`ts-research-decision/1`.
+`ts-research-decision/2`.
 
 Validation applies the exact Decision to an isolated copy of canonical state
 and validates the complete post-state. Apply repeats binding and post-state
@@ -238,8 +250,8 @@ a new draft.
 Supported draft operations are:
 
 ```text
-create_claim            relate_claims
-start_act               complete_act
+create_phase            create_claim            relate_claims
+start_node               complete_node
 record_observation      record_finding      resolve_finding
 freeze_validation_spec evaluate_validation
 update_claim            accept_claim
@@ -280,33 +292,60 @@ predicates without adding a new workflow branch.
 The model receives revision-bound graph projections rather than raw canonical
 files. Graph modes are:
 
-- `frontier`: focus Claims/Acts, direct alternatives/dependencies, open
+- `frontier`: focus Claims/Nodes, direct alternatives/dependencies, open
   Findings, incomplete validation, and recent object-level changes;
-- `claim`, `act`, `finding`, and `validation`: one focused object and bounded
+- `claim`, `node`, `finding`, and `validation`: one focused object and bounded
   neighborhood;
-- `subgraph`: caller-seeded Claim/Act graph to a bounded depth;
+- `subgraph`: caller-seeded Claim/Node graph to a bounded depth;
 - `delta`: changes since known scientific and operational revisions.
 
 The same read-only public tool exposes `locate`, `artifacts`,
 `compute_capabilities`, and `validation_capabilities`. `locate` accepts one
-exact ID or text query and joins Claims, Acts, Observations, Attempts, and the
+exact ID or text query and joins Claims, Nodes, Observations, Attempts, and the
 authoritative artifact catalog to bounded current paths. An Attempt result
 distinguishes the frozen input bindings from the output artifacts it produced.
 A Claim result includes only artifacts reached through its direct
-`observation_refs`; related Act roots remain navigation, not implied evidence.
+`observation_refs`; related Node roots remain navigation, not implied evidence.
 The projection is rebuilt on demand, creates no index file, and changes neither
 scientific nor operational revision.
 
 Every bounded graph projection reports omitted counts and retrieval hints. The
 Pi transcript is conversational state, not a scientific source of truth.
 
-Claim-Act traversal uses the union of declared Act scope and Claim creator
+Claim-Node traversal uses the union of declared Node scope and Claim creator
 provenance. Context, Review, report rendering, and `ts_web` share this derived
-relationship; none mutates the underlying Claim or ResearchAct records.
+relationship; none mutates the underlying Claim or ResearchNode records.
 
 Validation capability discovery is progressive: the catalog is compact, while
 an exact `templateId` plus `templateVersion` returns that template's accepted
 parameters and expanded Observation selectors before a GateSpec is drafted.
+
+## Read-Only Web Projection
+
+`ts_web` is an external explorer, not another workflow runtime. Its registry is
+stored outside every research workspace and maps a display label to one source
+root. Each request validates the current v5 workspace and rebuilds its view from
+canonical records plus the operational projection; no Web index is canonical or
+written back to the study.
+
+The default navigation is `ResearchPhase -> ResearchNode`. Phase bands summarize
+their current Nodes, while Node details separate conclusions, Evidence, runs,
+files, and Decision history. Claims, acceptance, validation, Findings, and the
+Research Files locator remain separate scientific views. Claim and Node graphs
+are available only as advanced inspection views so graph topology does not
+replace the human roadmap.
+
+Operational overlays preserve their actual owners: calculation Attempts belong
+to Nodes, Compute runs belong to Attempts, Review runs belong to Claims, and
+deterministic activities cite their Node scope. A projected unresolved control
+uses intent, operation, and control-attempt identity so submit and cancel effects
+for one calculation cannot collapse into one row.
+
+The HTTP API has no mutation route. File preview is limited to current
+Node-owned files already admitted by the Node file projection, rejects symlinks
+and traversal, and enforces a byte limit. The server has no authentication
+layer; operators must bind it to loopback or expose it only on a trusted,
+firewalled network.
 
 ## TSPi Lifecycle
 
@@ -320,7 +359,7 @@ parameters and expanded Observation selectors before a GateSpec is drafted.
    `<installation>/workspaces/<name>`.
 5. Create workspace-local Pi session settings and acquire a nonblocking Root
    Agent lock.
-6. Initialize fresh v4 state once or validate a complete v4 workspace without
+6. Initialize fresh v5 state once or validate a complete v5 workspace without
    rewriting it. Partial, invalid, or legacy canonical state fails closed.
 7. Execute Pi with exactly the package Skill, theme, and five extensions.
 
@@ -328,7 +367,7 @@ One workspace has one Root writer process. Different workspaces can run
 concurrently while sharing immutable code and the Python environment. They do
 not share Pi conversations, graph state, calculations, reports, or locks.
 
-A Pi conversation may contain many user/assistant turns. ResearchAct completion
+A Pi conversation may contain many user/assistant turns. ResearchNode completion
 changes the workspace, not the transcript. A later turn learns the change from
 the tool result already in context or a new context projection. Terminal mode
 resumes only when `--continue` is supplied; Phone mode supplies it automatically.
@@ -371,7 +410,7 @@ The host:
 
 1. selects one target Claim and asks the Context Compiler for its dependency
    snapshot;
-2. creates a bounded `ts-agent-task/2` containing compact Claim, relation, Act,
+2. creates a bounded `ts-agent-task/2` containing compact Claim, relation, Node,
    Observation, Finding, GateSpec, ValidationResult, and a logical artifact
    manifest without paths or file contents;
 3. starts a fresh Pi child session with no parent transcript, Skills,
@@ -397,7 +436,7 @@ still requires primary artifacts and a normal Decision.
 ### Compute
 
 `ts_subagent_compute` receives one `ts-agent-task/2` with
-`role=compute`, `authority=operational`, one Act, one immutable intent digest,
+`role=compute`, `authority=operational`, one Node, one immutable intent digest,
 and one of four closed plans:
 
 ```text
@@ -422,9 +461,9 @@ receipts.
 ### Compute
 
 The private compute kernel performs `prepare`, `submit`, `status`, `tail`,
-`collect`, `cancel`, or `parse`. Preparation binds one ResearchAct, logical input artifacts and roles,
+`collect`, `cancel`, or `parse`. Preparation binds one ResearchNode, logical input artifacts and roles,
 backend/task/settings, execution target, and expected outputs into an immutable
-`ts-calculation-intent/4`. The host allocates paths, filenames, intent ID,
+`ts-calculation-intent/5`. The host allocates paths, filenames, intent ID,
 remote directory, and submission binding.
 
 Remote transport uses OpenSSH/SCP and Torque directly. Guards distinguish
@@ -438,21 +477,21 @@ immutable manifest and does not require queue history.
 multiplicity, and `none` or `uff` initialization. The host uses fixed-seed
 RDKit ETKDGv3, explicit hydrogens, charge/electron-parity checks, and optional
 UFF optimization. It writes private, content-addressed XYZ and provenance files
-under one open ResearchAct. The request journal stores the submitted digest,
+under one open ResearchNode. The request journal stores the submitted digest,
 not the SMILES body. The resulting geometry and any UFF energy are initialization
 diagnostics, never stationary-point, TS, or acceptance evidence.
 
 `ts_artifact_import` closes the empty-workspace bootstrap boundary. It accepts
-bounded inline Gaussian, XYZ, or xTB control text for one open ResearchAct,
+bounded inline Gaussian, XYZ, or xTB control text for one open ResearchNode,
 checks structure metadata and format, and writes a private content-addressed
-file under the Act. Callers cannot provide a path or filename. Repeating
+file under the Node. Callers cannot provide a path or filename. Repeating
 identical content is idempotent; conflicting or unsafe targets fail closed.
 Only digest, size, format, chemical metadata, and the resulting logical
 artifact are journaled, never the input body.
 
 ### Render and Report
 
-`ts_render` validates one Act-owned input set and creates one no-overwrite local
+`ts_render` validates one Node-owned input set and creates one no-overwrite local
 artifact. `ts_report` validates the workspace, creates a new report directory
 atomically, and verifies the package manifest and file digests. Optional logical
 PNG/GIF artifact IDs are re-resolved and copied into the package `assets/`
@@ -464,7 +503,7 @@ tool uses a model or interprets chemistry.
 `ts_notify_user` sends a fixed event shape to the installation-owned recipient
 through configured ClawEmail. Recipient and credentials are not model fields.
 `notifications.toml` is the sole recipient authority. Attachments must be exact,
-unchanged members of one `ts-report-package/3` manifest. Digest-bound receipts
+unchanged members of one `ts-report-package/4` manifest. Digest-bound receipts
 make known success idempotent; structured errors distinguish a delivery that did
 not start from an ambiguous provider effect, which is never replayed
 automatically.
@@ -474,13 +513,13 @@ automatically.
 Compute and Review journals have different scientific owners:
 
 ```text
-acts/<act_id>/attempts/<calc_id>/runs/<sub_id>/
+nodes/<node_id>/attempts/<calc_id>/runs/<sub_id>/
 reviews/<claim_id>/runs/<sub_id>/
 ```
 
 A Compute run is part of one immutable Attempt. A Review run is advisory about
-one target Claim. This ownership is enforced before journal creation; Act refs
-inside a Review scope do not make the Review an Act-owned execution.
+one target Claim. This ownership is enforced before journal creation; Node refs
+inside a Review scope do not make the Review a Node-owned execution.
 
 At creation, `task.json` and its bound snapshot are exclusive-created. Normal
 terminal handling writes actions, optional result, and final run state. A
@@ -491,17 +530,17 @@ provider or action error, reports the journal failure separately, and leaves the
 run pending rather than rewriting the remote action outcome.
 
 Deterministic operations use the Activity Journal as their single activity
-source of truth. Every request/status record carries `act_refs`; a shared
+source of truth. Every request/status record carries `node_refs`; a shared
 Activity Index validates IDs, paths, ownership, status/result consistency, and
-referenced Acts, then derives per-Act activity projections. ResearchAct records
+referenced Nodes, then derives per-Node activity projections. ResearchNode records
 do not duplicate activity refs and no Decision is needed to link an operation.
 Compute guards and receipts remain the source for scheduler recovery; a UI or
 agent-run state never proves a remote effect.
 
-An Act cannot become terminal while an owned Compute run or deterministic
+A Node cannot become terminal while an owned Compute run or deterministic
 activity is non-terminal, its activity journal is inconsistent, or a compute
 control is pending or unresolved. A failed terminal activity may close only as
-`inconclusive`, `blocked`, or `stopped`. An analytical Act with no activity
+`inconclusive`, `blocked`, or `stopped`. An analytical Node with no activity
 remains valid.
 
 The immediate tool return is the current delivery channel into the Root
@@ -541,4 +580,5 @@ session. `/ts-subagent-history` reads durable Compute and Review summaries on de
 | Artifact import/catalog contract | `ts_compute/artifacts.py`, `ts_compute/cli.py` |
 | Render/report request/path contract | `src/artifacts/request-contract.cjs` |
 | Report projection | `ts_report/` |
+| Read-only Web projection and UI | `ts_web/normalize.py`, `ts_web/server.py`, `ts_web/static/` |
 | Package/release boundary | `package.json`, `scripts/check_package.py`, installer tests |

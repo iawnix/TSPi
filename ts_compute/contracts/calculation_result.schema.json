@@ -6,7 +6,7 @@
     "schema_version",
     "job_id",
     "intent_id",
-    "act_id",
+    "node_id",
     "state",
     "program_status",
     "exit_status",
@@ -19,7 +19,7 @@
     "schema_version": {"const": "ts-calculation-result/2"},
     "job_id": {"type": ["string", "null"]},
     "intent_id": {"type": "string", "pattern": "^calc_[1-9][0-9]*$"},
-    "act_id": {"type": "string", "pattern": "^act_[1-9][0-9]*$"},
+    "node_id": {"type": "string", "pattern": "^node_[1-9][0-9]*$"},
     "state": {
       "enum": ["prepared", "submitted", "queued", "running", "completed", "failed", "stopped", "collected", "parsed", "missing", "unknown"]
     },

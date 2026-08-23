@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ts_workspace.operational import act_completion_blockers, operational_snapshot
+from ts_workspace.operational import node_completion_blockers, operational_snapshot
 
 
 def _write(path: Path, value: dict) -> None:
@@ -11,10 +11,10 @@ def _write(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value), encoding="utf-8")
 
 
-def test_v4_operational_snapshot_separates_activities_reviews_and_controls(tmp_path: Path) -> None:
+def test_v5_operational_snapshot_separates_activities_reviews_and_controls(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
-    _write(root / "research_acts.json", {"schema_version": "ts-research-act-registry/3", "acts": [{"act_id": "act_1"}]})
-    activity = root / "acts" / "act_1" / "activities" / "op_1"
+    _write(root / "research_nodes.json", {"schema_version": "ts-research-node-registry/1", "nodes": [{"node_id": "node_1"}]})
+    activity = root / "nodes" / "node_1" / "activities" / "op_1"
     _write(
         activity / "request.json",
         {
@@ -22,7 +22,7 @@ def test_v4_operational_snapshot_separates_activities_reviews_and_controls(tmp_p
             "activity_id": "op_1",
             "kind": "report",
             "operation": "build",
-            "act_refs": ["act_1"],
+            "node_refs": ["node_1"],
             "request": {},
             "started_at": "2026-08-16T00:00:00+00:00",
         },
@@ -34,7 +34,7 @@ def test_v4_operational_snapshot_separates_activities_reviews_and_controls(tmp_p
             "activity_id": "op_1",
             "kind": "report",
             "operation": "build",
-            "act_refs": ["act_1"],
+            "node_refs": ["node_1"],
             "status": "completed",
             "started_at": "2026-08-16T00:00:00+00:00",
             "completed_at": "2026-08-16T00:01:00+00:00",
@@ -51,7 +51,7 @@ def test_v4_operational_snapshot_separates_activities_reviews_and_controls(tmp_p
             "role": "review",
             "authority": "advisory",
             "operation": "claim_review",
-            "scope": {"act_refs": ["act_1"], "claim_refs": ["claim_1"]},
+            "scope": {"node_refs": ["node_1"], "claim_refs": ["claim_1"]},
         },
     )
     _write(
@@ -66,7 +66,7 @@ def test_v4_operational_snapshot_separates_activities_reviews_and_controls(tmp_p
     )
     _write(review / "result.json", {"outcome": "success", "summary": "Review completed."})
 
-    attempt = root / "acts" / "act_1" / "attempts" / "calc_1"
+    attempt = root / "nodes" / "node_1" / "attempts" / "calc_1"
     _write(attempt / "submit_guard.json", {"operation": "submit"})
     _write(
         attempt / "submit_result.json",
@@ -80,11 +80,11 @@ def test_v4_operational_snapshot_separates_activities_reviews_and_controls(tmp_p
 
     report = operational_snapshot(root)
 
-    assert report["deterministic_activities"][0]["act_refs"] == ["act_1"]
+    assert report["deterministic_activities"][0]["node_refs"] == ["node_1"]
     assert report["deterministic_activities"][0]["summary"] == "Submission completed."
     assert report["agent_runs"][0]["claim_refs"] == ["claim_1"]
-    assert report["pending_review_dispositions"][0]["act_refs"] == ["act_1"]
-    assert report["unresolved_controls"][0]["act_id"] == "act_1"
+    assert report["pending_review_dispositions"][0]["node_refs"] == ["node_1"]
+    assert report["unresolved_controls"][0]["node_id"] == "node_1"
     assert report["unresolved_controls"][0]["intent_id"] == "calc_1"
     assert report["pending_controls"] == []
     assert report["operational_summary"] == {
@@ -112,20 +112,20 @@ def test_operational_snapshot_ignores_legacy_node_paths(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     _write(root / "nodes" / "n001" / "attempts" / "calc_old" / "submit_guard.json", {})
     _write(root / "nodes" / "n001" / "agent-runs" / "sub_old" / "task.json", {"role": "review"})
-    _write(root / "acts" / "act_1" / "agent-runs" / "sub_1" / "task.json", {"role": "review"})
+    _write(root / "nodes" / "node_1" / "agent-runs" / "sub_1" / "task.json", {"role": "review"})
     _write(root / "operations" / "agent-runs" / "sub_2" / "task.json", {"role": "review"})
-    _write(root / "acts" / "act_1" / "attempts" / "calc_old" / "submit_guard.json", {})
+    _write(root / "nodes" / "node_1" / "attempts" / "calc_old" / "submit_guard.json", {})
     _write(
         root / "reviews" / "claim_1" / "runs" / "sub_028def15-cbb5-42b4-bbfc-cfbd256c4a0b" / "task.json",
         {"task_id": "sub_028def15-cbb5-42b4-bbfc-cfbd256c4a0b", "role": "review", "authority": "advisory"},
     )
     _write(
-        root / "acts" / "act_1" / "attempts" / "calc_old" / "runs" / "sub_3" / "task.json",
+        root / "nodes" / "node_1" / "attempts" / "calc_old" / "runs" / "sub_3" / "task.json",
         {
             "task_id": "sub_3",
             "role": "compute",
             "authority": "operational",
-            "scope": {"act_refs": ["act_1"], "claim_refs": []},
+            "scope": {"node_refs": ["node_1"], "claim_refs": []},
             "inputs": {"intent_id": "calc_old"},
         },
     )
@@ -138,28 +138,28 @@ def test_operational_snapshot_ignores_legacy_node_paths(tmp_path: Path) -> None:
     assert report["operational_summary"]["tracked_file_count"] == 0
 
 
-def test_pending_compute_run_blocks_act_completion_without_duplicate_activity(tmp_path: Path) -> None:
+def test_pending_compute_run_blocks_node_completion_without_duplicate_activity(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
-    _write(root / "research_acts.json", {
-        "schema_version": "ts-research-act-registry/3",
-        "acts": [{"act_id": "act_1"}],
+    _write(root / "research_nodes.json", {
+        "schema_version": "ts-research-node-registry/1",
+        "nodes": [{"node_id": "node_1"}],
     })
-    run = root / "acts" / "act_1" / "attempts" / "calc_1" / "runs" / "sub_1"
+    run = root / "nodes" / "node_1" / "attempts" / "calc_1" / "runs" / "sub_1"
     _write(run / "task.json", {
         "task_id": "sub_1",
         "role": "compute",
         "authority": "operational",
         "operation": "launch",
-        "scope": {"act_refs": ["act_1"], "claim_refs": []},
+        "scope": {"node_refs": ["node_1"], "claim_refs": []},
         "inputs": {"intent_id": "calc_1", "backend": "gaussian"},
     })
 
     pending = operational_snapshot(root)
     assert pending["deterministic_activities"] == []
-    assert act_completion_blockers(pending, act_id="act_1", outcome="completed") == [{
+    assert node_completion_blockers(pending, node_id="node_1", outcome="completed") == [{
         "code": "compute_run_not_terminal",
-        "ref": "acts/act_1/attempts/calc_1/runs/sub_1",
-        "message": "Compute run is still pending: acts/act_1/attempts/calc_1/runs/sub_1",
+        "ref": "nodes/node_1/attempts/calc_1/runs/sub_1",
+        "message": "Compute run is still pending: nodes/node_1/attempts/calc_1/runs/sub_1",
     }]
 
     _write(run / "run.json", {
@@ -168,4 +168,4 @@ def test_pending_compute_run_blocks_act_completion_without_duplicate_activity(tm
         "error": {"code": "provider_failed", "message": "Provider failed."},
     })
     terminal = operational_snapshot(root)
-    assert act_completion_blockers(terminal, act_id="act_1", outcome="inconclusive") == []
+    assert node_completion_blockers(terminal, node_id="node_1", outcome="inconclusive") == []

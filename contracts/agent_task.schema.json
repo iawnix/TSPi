@@ -92,13 +92,13 @@
     "reviewSnapshotBinding": {
       "allOf": [
         {"$ref": "#/$defs/documentBinding"},
-        {"properties": {"ref": {"const": "review-snapshot.json"}, "schema_version": {"const": "ts-review-task-snapshot/2"}}}
+        {"properties": {"ref": {"const": "review-snapshot.json"}, "schema_version": {"const": "ts-review-task-snapshot/3"}}}
       ]
     },
     "providerInputBinding": {
       "allOf": [
         {"$ref": "#/$defs/documentBinding"},
-        {"properties": {"ref": {"const": "provider-input.json"}, "schema_version": {"const": "ts-review-provider-input/4"}}}
+        {"properties": {"ref": {"const": "provider-input.json"}, "schema_version": {"const": "ts-review-provider-input/5"}}}
       ]
     },
     "reviewInputs": {
@@ -121,10 +121,10 @@
     },
     "computeInputs": {
       "type": "object",
-      "required": ["backend", "act_id", "intent_id", "intent_digest", "execution_kind", "required_actions", "optional_actions", "tail", "collect_artifacts", "parse_artifact_ref"],
+      "required": ["backend", "node_id", "intent_id", "intent_digest", "execution_kind", "required_actions", "optional_actions", "tail", "collect_artifacts", "parse_artifact_ref"],
       "properties": {
         "backend": {"type": "string", "minLength": 1, "maxLength": 64},
-        "act_id": {"type": "string", "pattern": "^act_[1-9][0-9]*$", "maxLength": 128},
+        "node_id": {"type": "string", "pattern": "^node_[1-9][0-9]*$", "maxLength": 128},
         "intent_id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{5,127}$"},
         "intent_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
         "execution_kind": {"const": "remote"},
@@ -138,10 +138,10 @@
     },
     "scope": {
       "type": "object",
-      "required": ["report_id", "act_refs", "claim_refs"],
+      "required": ["report_id", "node_refs", "claim_refs"],
       "properties": {
         "report_id": {"type": ["string", "null"]},
-        "act_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+        "node_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
         "claim_refs": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}}
       },
       "additionalProperties": false

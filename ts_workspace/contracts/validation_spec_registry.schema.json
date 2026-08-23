@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "specs"],
   "properties": {
-    "schema_version": {"const": "ts-validation-spec-registry/1"},
+    "schema_version": {"const": "ts-validation-spec-registry/2"},
     "specs": {"type": "array", "items": {"$ref": "validation_spec.schema.json"}}
   }
 }

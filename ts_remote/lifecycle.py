@@ -138,7 +138,7 @@ def receipt_from_submission_record(
         submission_id=config.submission_id,
         intent_id=config.intent_id,
         intent_digest=config.intent_digest,
-        act_id=config.act_id,
+        node_id=config.node_id,
         profile=config.profile.name,
         scheduler=config.profile.scheduler,
         scheduler_id=job_id,

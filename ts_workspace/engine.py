@@ -1,4 +1,4 @@
-"""Transactional v4 ResearchAct DAG and Claim graph mutation engine."""
+"""Transactional v5 Phase, ResearchNode DAG, and Claim graph mutation engine."""
 
 from __future__ import annotations
 
@@ -15,14 +15,15 @@ from .decision import validate_decision, validate_decision_binding
 from .errors import ContractError
 from .identity import WorkspaceIdentityError, ensure_workspace_identity
 from .io import now_iso, read_json, write_json
-from .operational import act_completion_blockers, operational_snapshot
+from .operational import node_completion_blockers, operational_snapshot
 from .state import (
     CLAIMS_FILE,
     CLAIM_RELATIONS_FILE,
     OBSERVATIONS_FILE,
     FINDINGS_FILE,
     OPTIONAL_DIRS,
-    RESEARCH_ACTS_FILE,
+    RESEARCH_PHASES_FILE,
+    RESEARCH_NODES_FILE,
     RESEARCH_STATE_FILE,
     REQUIRED_DIRS,
     REQUIRED_FILES,
@@ -77,9 +78,9 @@ def init_workspace(root: str | Path) -> dict[str, Any]:
     (root_path / "transaction_log.jsonl").touch(mode=0o600)
     validation = validate_workspace(root_path)
     if not validation["valid"]:
-        raise ContractError("fresh v4 workspace failed validation: " + _error_messages(validation))
+        raise ContractError("fresh v5 workspace failed validation: " + _error_messages(validation))
     return {
-        "schema_version": "ts-workspace-init-result/4",
+        "schema_version": "ts-workspace-init-result/5",
         "root": str(root_path),
         "workspace_id": identity["workspace_id"],
         "created": True,
@@ -107,13 +108,13 @@ def validate_decision_dry_run(root: str | Path, decision: dict[str, Any]) -> dic
 
 
 def _validate_decision_dry_run_bound(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
-    with tempfile.TemporaryDirectory(prefix="ts-workspace-v4-dry-run-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="ts-workspace-v5-dry-run-") as temporary:
         target = Path(temporary) / "workspace"
         shutil.copytree(root, target, ignore=_ignore_dry_run_entries, symlinks=True)
         result = _apply_once(target, decision)
         validation = validate_workspace(target)
         if not validation["valid"]:
-            raise ContractError("decision dry run produced an invalid v4 workspace: " + _error_messages(validation))
+            raise ContractError("decision dry run produced an invalid v5 workspace: " + _error_messages(validation))
         created_acceptances = set(result["created_refs"]["acceptances"])
         if created_acceptances:
             documents = {name: read_json(target / name) for name in STATE_FILES}
@@ -140,9 +141,10 @@ def _validate_decision_dry_run_bound(root: Path, decision: dict[str, Any]) -> di
 
 def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
     documents = {name: deepcopy(read_json(root / name)) for name in STATE_FILES}
+    phases = _map(documents[RESEARCH_PHASES_FILE]["phases"], "phase_id")
     claims = _map(documents[CLAIMS_FILE]["claims"], "claim_id")
     relations = _map(documents[CLAIM_RELATIONS_FILE]["relations"], "relation_id")
-    acts = _map(documents[RESEARCH_ACTS_FILE]["acts"], "act_id")
+    nodes = _map(documents[RESEARCH_NODES_FILE]["nodes"], "node_id")
     observations = _map(documents[OBSERVATIONS_FILE]["observations"], "observation_id")
     specs = _map(documents[VALIDATION_SPECS_FILE]["specs"], "spec_id")
     results = _map(documents[VALIDATION_RESULTS_FILE]["results"], "result_id")
@@ -150,9 +152,10 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
     operational = operational_snapshot(root)
     accepted_changes: dict[Path, Any] = {}
     created_refs = {
+        "phases": [],
         "claims": [],
         "relations": [],
-        "acts": [],
+        "nodes": [],
         "observations": [],
         "findings": [],
         "validation_specs": [],
@@ -162,11 +165,17 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
 
     for operation in decision["operations"]:
         name = operation["op"]
-        if name == "append_claim":
+        if name == "append_research_phase":
+            record = deepcopy(operation["record"])
+            _require_new(record["phase_id"], phases, "ResearchPhase")
+            phases[record["phase_id"]] = record
+            documents[RESEARCH_PHASES_FILE]["phases"].append(record)
+            created_refs["phases"].append(record["phase_id"])
+        elif name == "append_claim":
             record = deepcopy(operation["record"])
             _require_new(record["claim_id"], claims, "Claim")
-            if record["created_by_act"] is not None:
-                _require_known([record["created_by_act"]], acts, "Claim created_by_act")
+            if record["created_by_node"] is not None:
+                _require_known([record["created_by_node"]], nodes, "Claim created_by_node")
             claims[record["claim_id"]] = record
             documents[CLAIMS_FILE]["claims"].append(record)
             created_refs["claims"].append(record["claim_id"])
@@ -177,38 +186,41 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
             relations[record["relation_id"]] = record
             documents[CLAIM_RELATIONS_FILE]["relations"].append(record)
             created_refs["relations"].append(record["relation_id"])
-        elif name == "append_research_act":
+        elif name == "append_research_node":
             record = deepcopy(operation["record"])
-            _require_new(record["act_id"], acts, "ResearchAct")
-            _require_known(record["dependency_refs"], acts, "ResearchAct dependency_refs")
-            _require_known(record["claim_refs"], claims, "ResearchAct claim_refs")
-            acts[record["act_id"]] = record
-            documents[RESEARCH_ACTS_FILE]["acts"].append(record)
-            created_refs["acts"].append(record["act_id"])
+            _require_new(record["node_id"], nodes, "ResearchNode")
+            _require_known([record["phase_ref"]], phases, "ResearchNode phase_ref")
+            _require_known(record["dependency_refs"], nodes, "ResearchNode dependency_refs")
+            _require_known(record["claim_refs"], claims, "ResearchNode claim_refs")
+            if record["primary_claim_ref"] is not None and record["primary_claim_ref"] not in record["claim_refs"]:
+                raise ContractError("ResearchNode primary_claim_ref must appear in claim_refs")
+            nodes[record["node_id"]] = record
+            documents[RESEARCH_NODES_FILE]["nodes"].append(record)
+            created_refs["nodes"].append(record["node_id"])
         elif name == "append_observation":
             record = deepcopy(operation["record"])
             _require_new(record["observation_id"], observations, "Observation")
-            act = _require_open_act(acts, record["created_by_act"], "Observation")
+            node = _require_open_node(nodes, record["created_by_node"], "Observation")
             observations[record["observation_id"]] = record
             documents[OBSERVATIONS_FILE]["observations"].append(record)
-            _append_unique(act["observation_refs"], record["observation_id"])
+            _append_unique(node["observation_refs"], record["observation_id"])
             created_refs["observations"].append(record["observation_id"])
         elif name == "append_finding":
             record = deepcopy(operation["record"])
             _require_new(record["finding_id"], findings, "Finding")
             _require_known(record["claim_refs"], claims, "Finding claim_refs")
-            _require_known(record["act_refs"], acts, "Finding act_refs")
+            _require_known(record["node_refs"], nodes, "Finding node_refs")
             _require_known(record["basis_observation_refs"], observations, "Finding basis_observation_refs")
             findings[record["finding_id"]] = record
             documents[FINDINGS_FILE]["findings"].append(record)
-            for act_ref in record["act_refs"]:
-                _append_unique(acts[act_ref]["finding_refs"], record["finding_id"])
+            for node_ref in record["node_refs"]:
+                _append_unique(nodes[node_ref]["finding_refs"], record["finding_id"])
             created_refs["findings"].append(record["finding_id"])
         elif name == "append_validation_spec":
             record = deepcopy(operation["record"])
             _require_new(record["spec_id"], specs, "GateSpec")
             claim = _require_claim(claims, record["target_claim_ref"])
-            act = _require_open_act(acts, record["created_by_act"], "GateSpec")
+            node = _require_open_node(nodes, record["created_by_node"], "GateSpec")
             expected = dict(record)
             digest = expected.pop("spec_digest")
             from .io import sha256_json
@@ -218,7 +230,7 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
             specs[record["spec_id"]] = record
             documents[VALIDATION_SPECS_FILE]["specs"].append(record)
             _append_unique(claim["validation_spec_refs"], record["spec_id"])
-            _append_unique(act["validation_spec_refs"], record["spec_id"])
+            _append_unique(node["validation_spec_refs"], record["spec_id"])
             created_refs["validation_specs"].append(record["spec_id"])
         elif name == "append_validation_result":
             record = deepcopy(operation["record"])
@@ -226,14 +238,14 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
             spec = specs.get(record["spec_ref"])
             if spec is None:
                 raise ContractError(f"ValidationResult references unknown GateSpec: {record['spec_ref']}")
-            act = _require_open_act(acts, record["evaluated_by_act"], "ValidationResult")
+            node = _require_open_node(nodes, record["evaluated_by_node"], "ValidationResult")
             claim = _require_claim(claims, record["target_claim_ref"])
             _require_known(record["observation_refs"], observations, "ValidationResult observation_refs")
             expected = evaluate_gate_spec(
                 spec,
                 [observations[ref] for ref in record["observation_refs"]],
                 result_id=record["result_id"],
-                evaluated_by_act=record["evaluated_by_act"],
+                evaluated_by_node=record["evaluated_by_node"],
                 evaluated_by_decision=record["evaluated_by_decision"],
                 registry=builtin_predicate_registry(),
                 evaluated_at=record["evaluated_at"],
@@ -243,7 +255,7 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
             results[record["result_id"]] = record
             documents[VALIDATION_RESULTS_FILE]["results"].append(record)
             _append_unique(claim["validation_result_refs"], record["result_id"])
-            _append_unique(act["validation_result_refs"], record["result_id"])
+            _append_unique(node["validation_result_refs"], record["result_id"])
             created_refs["validation_results"].append(record["result_id"])
         elif name == "update_claim":
             claim = _require_claim(claims, operation["claim_ref"])
@@ -267,18 +279,18 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
                 "decision_id": decision["decision_id"],
                 "created_at": operation["updated_at"],
             })
-        elif name == "complete_research_act":
-            act = _require_open_act(acts, operation["act_ref"], "completion")
-            blockers = act_completion_blockers(
+        elif name == "complete_research_node":
+            node = _require_open_node(nodes, operation["node_ref"], "completion")
+            blockers = node_completion_blockers(
                 operational,
-                act_id=operation["act_ref"],
+                node_id=operation["node_ref"],
                 outcome=operation["outcome"],
             )
             if blockers:
                 details = "; ".join(f"[{item['code']}] {item['message']}" for item in blockers[:8])
-                raise ContractError(f"ResearchAct completion is blocked: {details}")
-            act["status"] = operation["outcome"]
-            act["result"] = {
+                raise ContractError(f"ResearchNode completion is blocked: {details}")
+            node["status"] = operation["outcome"]
+            node["result"] = {
                 "outcome": operation["outcome"],
                 "summary": operation["summary"],
                 "open_questions": list(operation["open_questions"]),
@@ -302,9 +314,9 @@ def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
             }
         elif name == "set_focus":
             _require_known(operation["claim_refs"], claims, "focus Claim refs")
-            _require_known(operation["act_refs"], acts, "focus ResearchAct refs")
+            _require_known(operation["node_refs"], nodes, "focus ResearchNode refs")
             documents[RESEARCH_STATE_FILE]["focus_claim_refs"] = list(operation["claim_refs"])
-            documents[RESEARCH_STATE_FILE]["focus_act_refs"] = list(operation["act_refs"])
+            documents[RESEARCH_STATE_FILE]["focus_node_refs"] = list(operation["node_refs"])
         elif name == "accept_claim":
             record = deepcopy(operation["record"])
             acceptance_id = record["acceptance_id"]
@@ -356,13 +368,13 @@ def _require_claim(claims: dict[str, dict[str, Any]], claim_ref: str) -> dict[st
         raise ContractError(f"unknown Claim: {claim_ref}") from exc
 
 
-def _require_open_act(acts: dict[str, dict[str, Any]], act_ref: str, operation: str) -> dict[str, Any]:
-    act = acts.get(act_ref)
-    if act is None:
-        raise ContractError(f"{operation} references unknown ResearchAct: {act_ref}")
-    if act.get("status") != "open":
-        raise ContractError(f"{operation} requires an open ResearchAct: {act_ref}")
-    return act
+def _require_open_node(nodes: dict[str, dict[str, Any]], node_ref: str, operation: str) -> dict[str, Any]:
+    node = nodes.get(node_ref)
+    if node is None:
+        raise ContractError(f"{operation} references unknown ResearchNode: {node_ref}")
+    if node.get("status") != "open":
+        raise ContractError(f"{operation} requires an open ResearchNode: {node_ref}")
+    return node
 
 
 def _append_unique(values: list[str], value: str) -> None:

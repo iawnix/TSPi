@@ -47,7 +47,7 @@ def main(argv: list[str] | None = None) -> int:
 
     list_artifacts = sub.add_parser("list-artifacts")
     list_artifacts.add_argument("--root", required=True)
-    list_artifacts.add_argument("--act-id")
+    list_artifacts.add_argument("--node-id")
 
     resolve_artifacts = sub.add_parser("resolve-artifacts")
     resolve_artifacts.add_argument("--root", required=True)
@@ -71,7 +71,7 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         choices=("prepare", "submit", "inspect", "collect", "cancel", "parse"),
     )
-    preflight.add_argument("--act-id", required=True)
+    preflight.add_argument("--node-id", required=True)
     preflight.add_argument("--backend", required=True)
     preflight.add_argument("--intent-file")
     preflight.add_argument("--intent-id")
@@ -117,11 +117,11 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
             raise ComputeContractError("calculation request must be a JSON object")
         return create_calculation_intent(args.root, request)
     if args.command == "list-artifacts":
-        return list_calculation_artifacts(args.root, act_id=args.act_id)
+        return list_calculation_artifacts(args.root, node_id=args.node_id)
     if args.command == "resolve-artifacts":
         artifacts = resolve_artifact_ids(args.root, args.artifact_id)
         return {
-            "schema_version": "ts-artifact-resolution/1",
+            "schema_version": "ts-artifact-resolution/2",
             "artifact_count": len(artifacts),
             "artifacts": artifacts,
         }
@@ -135,7 +135,7 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return preflight_calculation(
             args.root,
             args.operation,
-            args.act_id,
+            args.node_id,
             args.backend,
             intent_file=args.intent_file,
             intent_id=args.intent_id,

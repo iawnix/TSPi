@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.v4_helpers import bootstrap_v4_workspace, start_research_act
+from tests.v5_helpers import bootstrap_v5_workspace, start_research_node
 from ts_compute.artifacts import list_calculation_artifacts
 from ts_email.delivery import notify_user
 from ts_email.errors import NotificationError
@@ -24,8 +24,8 @@ ARTIFACT_EXTENSION = ROOT / "extensions" / "ts-workflow-artifacts" / "index.ts"
 
 
 def test_public_import_tool_materializes_seed_without_journaling_body(tmp_path: Path) -> None:
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
-    refs = start_research_act(workspace)
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    refs = start_research_node(workspace)
     content = "2\nH2\nH 0 0 0\nH 0 0 0.74\n"
     script = f"""
 import install from {json.dumps(ARTIFACT_EXTENSION.as_uri())};
@@ -42,7 +42,7 @@ const pi={{
 }};
 install(pi);
 await tools.ts_artifact_import.execute("call-import",{{
-  operation:"import",actId:{json.dumps(refs['act_id'])},format:"xyz_structure",
+  operation:"import",nodeId:{json.dumps(refs['node_id'])},format:"xyz_structure",
   content:{json.dumps(content)},charge:0,multiplicity:1,
 }},undefined,(value)=>updates.push(value),{{cwd:{json.dumps(str(workspace))}}});
 process.stdout.write(JSON.stringify({{entries,updates}}));
@@ -73,8 +73,8 @@ process.stdout.write(JSON.stringify({{entries,updates}}));
 
 
 def test_public_structure_seed_tool_generates_xyz_without_journaling_smiles(tmp_path: Path) -> None:
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
-    refs = start_research_act(workspace)
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    refs = start_research_node(workspace)
     smiles = "C1=CCCCC1"
     script = f"""
 import install from {json.dumps(ARTIFACT_EXTENSION.as_uri())};
@@ -91,7 +91,7 @@ const pi={{
 }};
 install(pi);
 await tools.ts_structure_seed.execute("call-seed",{{
-  operation:"generate",actId:{json.dumps(refs['act_id'])},smiles:{json.dumps(smiles)},
+  operation:"generate",nodeId:{json.dumps(refs['node_id'])},smiles:{json.dumps(smiles)},
   charge:0,multiplicity:1,optimization:"uff",
 }},undefined,(value)=>updates.push(value),{{cwd:{json.dumps(str(workspace))}}});
 process.stdout.write(JSON.stringify({{entries,updates}}));
@@ -127,14 +127,14 @@ def test_render_request_resolves_logical_ids_and_host_owns_output_path(tmp_path:
     workspace, refs, artifacts = _workspace_with_xyz(tmp_path)
     request = {
         "operation": "compare",
-        "actId": refs["act_id"],
+        "nodeId": refs["node_id"],
         "inputArtifactIds": [item["artifact_id"] for item in artifacts],
         "outputName": "candidate-comparison.png",
     }
     result = _contract_call("validateRenderRequest", workspace, request, artifacts)
     assert result["operation"] == "compare"
-    assert result["actId"] == refs["act_id"]
-    assert result["outputRef"] == f"acts/{refs['act_id']}/outputs/render/candidate-comparison.png"
+    assert result["nodeId"] == refs["node_id"]
+    assert result["outputRef"] == f"nodes/{refs['node_id']}/outputs/render/candidate-comparison.png"
     assert result["artifacts"][0]["artifactId"].startswith("art_")
     assert all(Path(item["path"]).is_absolute() for item in result["artifacts"])
 
@@ -144,7 +144,7 @@ def test_render_request_rejects_agent_selected_paths(tmp_path: Path, output_name
     workspace, refs, artifacts = _workspace_with_xyz(tmp_path)
     request = {
         "operation": "compare",
-        "actId": refs["act_id"],
+        "nodeId": refs["node_id"],
         "inputArtifactIds": [item["artifact_id"] for item in artifacts],
         "outputName": output_name,
     }
@@ -155,7 +155,7 @@ def test_render_request_rejects_agent_selected_paths(tmp_path: Path, output_name
 
 def test_render_output_must_be_new_nonempty_regular_file(tmp_path: Path) -> None:
     workspace, refs, _artifacts = _workspace_with_xyz(tmp_path)
-    output_ref = f"acts/{refs['act_id']}/outputs/render/candidate.png"
+    output_ref = f"nodes/{refs['node_id']}/outputs/render/candidate.png"
     missing = _contract_call("validateCreatedRenderOutput", workspace, output_ref, check=False)
     assert isinstance(missing, subprocess.CompletedProcess)
     assert missing.returncode == 2
@@ -168,8 +168,8 @@ def test_render_output_must_be_new_nonempty_regular_file(tmp_path: Path) -> None
 
 
 def test_report_package_is_verified_against_manifest_and_workspace_revision(tmp_path: Path) -> None:
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
-    start_research_act(workspace)
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    start_research_node(workspace)
     package = workspace / "reports" / "study-report"
     built = build_report_package(workspace, package)
     manifest = Path(built["manifest"])
@@ -209,8 +209,8 @@ def test_notification_uses_fixed_installation_recipient_and_is_idempotent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
-    start_research_act(workspace)
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    start_research_node(workspace)
     capture = tmp_path / "clawemail-args.json"
     config = _notification_install(tmp_path, capture=capture)
     monkeypatch.setenv("TS_NOTIFICATION_CONFIG", str(config))
@@ -219,9 +219,9 @@ def test_notification_uses_fixed_installation_recipient_and_is_idempotent(
         json.dumps(
             {
                 "schema_version": "ts-user-notification/1",
-                "event": "act_completed",
-                "subject": "Research act completed",
-                "summary": "The bounded research act completed.",
+                "event": "node_completed",
+                "subject": "Research node completed",
+                "summary": "The bounded research node completed.",
                 "report_refs": [],
             }
         ),
@@ -238,11 +238,11 @@ def test_notification_uses_fixed_installation_recipient_and_is_idempotent(
     assert stat.S_IMODE((workspace / first["receipt_ref"]).stat().st_mode) == 0o600
 
 
-def test_notification_rejects_legacy_node_event_and_unsafe_report_ref(
+def test_notification_rejects_legacy_act_event_and_unsafe_report_ref(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
     config = _notification_install(tmp_path)
     monkeypatch.setenv("TS_NOTIFICATION_CONFIG", str(config))
     request = tmp_path / "notification.json"
@@ -252,7 +252,7 @@ def test_notification_rejects_legacy_node_event_and_unsafe_report_ref(
         "summary": "Bounded progress update.",
         "report_refs": [],
     }
-    request.write_text(json.dumps({**base, "event": "node_completed"}), encoding="utf-8")
+    request.write_text(json.dumps({**base, "event": "act_completed"}), encoding="utf-8")
     with pytest.raises(ValueError, match="unsupported notification event"):
         notify_user(workspace, request)
     request.write_text(
@@ -267,8 +267,8 @@ def test_notification_accepts_only_unchanged_manifested_report_members(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
-    start_research_act(workspace)
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    start_research_node(workspace)
     package = workspace / "reports" / "progress-report"
     build_report_package(workspace, package)
     capture = tmp_path / "clawemail-args.json"
@@ -305,7 +305,7 @@ def test_notification_accepts_only_unchanged_manifested_report_members(
 
 
 def test_notification_cli_json_failure_is_structured(tmp_path: Path) -> None:
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
     request = tmp_path / "notification.json"
     request.write_text(json.dumps({
         "schema_version": "ts-user-notification/1",
@@ -349,8 +349,8 @@ def test_notification_preserves_bounded_provider_diagnostic_without_retrying(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
-    start_research_act(workspace)
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    start_research_node(workspace)
     config = _notification_install(tmp_path)
     manager = tmp_path / "clawemail" / "bin" / "clawemail-manager"
     manager.write_text(
@@ -457,8 +457,8 @@ try {{
 
 
 def _workspace_with_xyz(tmp_path: Path) -> tuple[Path, dict[str, str], list[dict]]:
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
-    refs = start_research_act(workspace)
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    refs = start_research_node(workspace)
     inputs = workspace / "inputs"
     inputs.mkdir(exist_ok=True)
     (inputs / "reactant.xyz").write_text("1\nR\nH 0 0 0\n", encoding="utf-8")

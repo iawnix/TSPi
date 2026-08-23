@@ -4,7 +4,7 @@
   "type": "object",
   "required": [
     "schema_version",
-    "act_id",
+    "node_id",
     "purpose",
     "attempt_kind",
     "recalculation_ref",
@@ -16,10 +16,10 @@
     "dry_run"
   ],
   "properties": {
-    "schema_version": {"const": "ts-calculation-request/2"},
-    "act_id": {
+    "schema_version": {"const": "ts-calculation-request/3"},
+    "node_id": {
       "type": "string",
-      "pattern": "^act_[1-9][0-9]*$"
+      "pattern": "^node_[1-9][0-9]*$"
     },
     "purpose": {"type": "string", "minLength": 1, "maxLength": 2000},
     "attempt_kind": {"enum": ["primary", "retry", "recalculation"]},
@@ -28,9 +28,9 @@
         {"type": "null"},
         {
           "type": "object",
-          "required": ["source_act", "source_intent_id", "changed_settings", "purpose"],
+          "required": ["source_node", "source_intent_id", "changed_settings", "purpose"],
           "properties": {
-            "source_act": {"type": "string", "pattern": "^act_[1-9][0-9]*$"},
+            "source_node": {"type": "string", "pattern": "^node_[1-9][0-9]*$"},
             "source_intent_id": {"type": ["string", "null"], "pattern": "^calc_[1-9][0-9]*$", "maxLength": 128},
             "changed_settings": {
               "type": "array",

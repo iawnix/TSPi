@@ -1,4 +1,4 @@
-"""Read-only v4 workspace projections for the research explorer."""
+"""Read-only v5 workspace projections for the research explorer."""
 
 from __future__ import annotations
 
@@ -8,18 +8,25 @@ from pathlib import Path
 from typing import Any
 
 from ts_workspace.acceptance import project_acceptances
-from ts_workspace.associations import derive_claim_act_links
+from ts_workspace.associations import derive_claim_node_links
 from ts_workspace.io import read_json
 from ts_workspace.locator import locate_research_files
 from ts_workspace.operational import operational_snapshot
-from ts_workspace.refs import ACTIVITY_ID, CALCULATION_ID, SUBAGENT_RUN_ID
+from ts_workspace.refs import (
+    ACTIVITY_ID,
+    CALCULATION_ID,
+    SUBAGENT_RUN_ID,
+    node_sort_key,
+    phase_sort_key,
+)
 from ts_workspace.revision import report_id_for_revision, workspace_revision_from_documents
 from ts_workspace.state import (
     CLAIMS_FILE,
     CLAIM_RELATIONS_FILE,
     OBSERVATIONS_FILE,
     FINDINGS_FILE,
-    RESEARCH_ACTS_FILE,
+    RESEARCH_PHASES_FILE,
+    RESEARCH_NODES_FILE,
     RESEARCH_STATE_FILE,
     STATE_FILES,
     VALIDATION_RESULTS_FILE,
@@ -30,7 +37,7 @@ from ts_workspace.validator import validate_workspace
 
 
 def normalize_workspace(source_root: str | Path, *, label: str | None = None) -> dict[str, Any]:
-    """Project canonical v4 graph state and separate operational overlays."""
+    """Project canonical v5 graph state and separate operational overlays."""
 
     root = Path(source_root).expanduser().resolve()
     documents = {name: _read_object(root / name) for name in STATE_FILES}
@@ -40,24 +47,37 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
     operations = operational_snapshot(root)
     activities = operations["deterministic_activities"]
     agent_runs = operations["agent_runs"]
-    controls = operations["unresolved_controls"]
+    controls = [_normalize_control(record) for record in operations["unresolved_controls"]]
     claims = _objects(documents[CLAIMS_FILE].get("claims"))
-    acts = [
-        _normalize_act(root, record, activities=activities, agent_runs=agent_runs, controls=controls)
-        for record in _objects(documents[RESEARCH_ACTS_FILE].get("acts"))
-    ]
-    claim_act_links = derive_claim_act_links(claims, acts)
-    for act in acts:
-        act["related_claim_refs"] = [
+    nodes = sorted([
+        _normalize_node(root, record, activities=activities, agent_runs=agent_runs, controls=controls)
+        for record in _objects(documents[RESEARCH_NODES_FILE].get("nodes"))
+    ], key=lambda record: node_sort_key(str(record.get("node_id") or "")))
+    claim_node_links = derive_claim_node_links(claims, nodes)
+    for node in nodes:
+        node["related_claim_refs"] = [
             claim_id
-            for claim_id, act_id in claim_act_links
-            if act_id == act.get("act_id")
+            for claim_id, node_id in claim_node_links
+            if node_id == node.get("node_id")
         ]
     acceptances = project_acceptances(root, _strings(state.get("acceptance_refs")), documents)
     current_acceptances = [record for record in acceptances if record["current"]]
+    focus_node_refs = _strings(state.get("focus_node_refs"))
+    focus_phase_refs = {
+        str(node["phase_ref"])
+        for node in nodes
+        if node.get("node_id") in focus_node_refs and isinstance(node.get("phase_ref"), str)
+    }
+    phases = sorted(
+        [
+            _normalize_phase(record, nodes=nodes, focused=record.get("phase_id") in focus_phase_refs)
+            for record in _objects(documents[RESEARCH_PHASES_FILE].get("phases"))
+        ],
+        key=lambda record: phase_sort_key(str(record.get("phase_id") or "")),
+    )
 
     return {
-        "schema_version": "ts-web-workspace/4",
+        "schema_version": "ts-web-workspace/5",
         "label": label or root.name,
         "source_root": str(root),
         "workspace": documents[WORKSPACE_FILE],
@@ -67,7 +87,8 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         "validation_findings": validation["findings"],
         "focus": {
             "claim_refs": _strings(state.get("focus_claim_refs")),
-            "act_refs": _strings(state.get("focus_act_refs")),
+            "phase_refs": sorted(focus_phase_refs, key=phase_sort_key),
+            "node_refs": focus_node_refs,
         },
         "acceptance_summary": {
             "record_refs": _strings(state.get("acceptance_refs")),
@@ -76,7 +97,8 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         },
         "claims": claims,
         "claim_relations": _objects(documents[CLAIM_RELATIONS_FILE].get("relations")),
-        "research_acts": acts,
+        "research_phases": phases,
+        "research_nodes": nodes,
         "observations": _objects(documents[OBSERVATIONS_FILE].get("observations")),
         "validation_specs": _objects(documents[VALIDATION_SPECS_FILE].get("specs")),
         "validation_results": _objects(documents[VALIDATION_RESULTS_FILE].get("results")),
@@ -108,7 +130,8 @@ def workspace_summary(
         view = normalize_workspace(source_root, label=label)
     focus = _object(view.get("focus"))
     claims = _objects(view.get("claims"))
-    acts = _objects(view.get("research_acts"))
+    phases = _objects(view.get("research_phases"))
+    nodes = _objects(view.get("research_nodes"))
     findings = _objects(view.get("findings"))
     return {
         **row,
@@ -119,11 +142,12 @@ def workspace_summary(
         "workspace_revision": view.get("workspace_revision"),
         "valid": bool(view.get("valid")),
         "claim_count": len(claims),
-        "act_count": len(acts),
-        "open_act_count": sum(1 for act in acts if act.get("status") == "open"),
+        "phase_count": len(phases),
+        "node_count": len(nodes),
+        "open_node_count": sum(1 for node in nodes if node.get("status") == "open"),
         "open_finding_count": sum(1 for finding in findings if finding.get("status") == "open"),
         "focus_claim_refs": _strings(focus.get("claim_refs")),
-        "focus_act_refs": _strings(focus.get("act_refs")),
+        "focus_node_refs": _strings(focus.get("node_refs")),
         "acceptance_record_count": len(_objects(view.get("acceptances"))),
         "current_acceptance_count": len(_objects(view.get("current_acceptances"))),
     }
@@ -134,7 +158,7 @@ def graph_payload(source_root: str | Path, *, label: str | None = None) -> dict[
 
 
 def research_files_payload(source_root: str | Path, query: str = "") -> dict[str, Any]:
-    """Join v4 research records to the authoritative logical artifact catalog."""
+    """Join v5 research records to the authoritative logical artifact catalog."""
 
     from ts_compute.artifacts import list_calculation_artifacts
 
@@ -145,7 +169,7 @@ def research_files_payload(source_root: str | Path, query: str = "") -> dict[str
 def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
     focus = _object(view.get("focus"))
     focus_claims = set(_strings(focus.get("claim_refs")))
-    focus_acts = set(_strings(focus.get("act_refs")))
+    focus_nodes = set(_strings(focus.get("node_refs")))
     acceptances = _objects(view.get("acceptances"))
     current_acceptances = _objects(view.get("current_acceptances"))
     accepted_claims = {
@@ -196,59 +220,65 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
         }
         for record in _objects(view.get("claim_relations"))
     ]
-    claim_act_pairs = derive_claim_act_links(
+    claim_node_pairs = derive_claim_node_links(
         _objects(view.get("claims")),
-        _objects(view.get("research_acts")),
+        _objects(view.get("research_nodes")),
     )
-    acts = [
+    nodes = [
         {
-            "id": record.get("act_id"),
-            "act_id": record.get("act_id"),
+            "id": record.get("node_id"),
+            "node_id": record.get("node_id"),
             "title": record.get("title"),
+            "phase_ref": record.get("phase_ref"),
             "objective": record.get("objective"),
             "deliverable": record.get("deliverable"),
             "status": record.get("status"),
+            "primary_claim_ref": record.get("primary_claim_ref"),
             "tags": _strings(record.get("tags")),
             "claim_refs": _strings(record.get("claim_refs")),
             "related_claim_refs": [
                 claim_id
-                for claim_id, act_id in claim_act_pairs
-                if act_id == record.get("act_id")
+                for claim_id, node_id in claim_node_pairs
+                if node_id == record.get("node_id")
             ],
             "dependency_refs": _strings(record.get("dependency_refs")),
-            "focus": record.get("act_id") in focus_acts,
+            "focus": record.get("node_id") in focus_nodes,
             "outcome": _object(record.get("result")).get("outcome"),
             "activity_count": len(_objects(record.get("activities"))),
             "compute_run_count": int(record.get("compute_run_count") or 0),
             "unresolved_control_count": len(_objects(record.get("unresolved_controls"))),
         }
-        for record in _objects(view.get("research_acts"))
+        for record in _objects(view.get("research_nodes"))
     ]
-    act_edges = [
+    node_edges = [
         {
-            "id": f"dependency:{dependency}:{act['act_id']}",
+            "id": f"dependency:{dependency}:{node['node_id']}",
             "source": dependency,
-            "target": act["act_id"],
+            "target": node["node_id"],
             "kind": "depends_on",
         }
-        for act in acts
-        for dependency in act["dependency_refs"]
+        for node in nodes
+        for dependency in node["dependency_refs"]
     ]
-    claim_act_links = [
-        {"claim_ref": claim_ref, "act_ref": act_ref}
-        for claim_ref, act_ref in claim_act_pairs
+    claim_node_links = [
+        {"claim_ref": claim_ref, "node_ref": node_ref}
+        for claim_ref, node_ref in claim_node_pairs
     ]
     return {
-        "schema_version": "ts-explorer-graph/4",
+        "schema_version": "ts-explorer-graph/5",
         "workspace": view.get("workspace"),
         "workspace_revision": view.get("workspace_revision"),
         "operational_revision": view.get("operational_revision"),
         "valid": bool(view.get("valid")),
         "validation_findings": _list(view.get("validation_findings")),
         "focus": focus,
+        "phase_roadmap": {
+            "phases": _objects(view.get("research_phases")),
+            "nodes": nodes,
+        },
         "claim_graph": {"nodes": claims, "edges": relations},
-        "research_act_dag": {"nodes": acts, "edges": act_edges},
-        "claim_act_links": claim_act_links,
+        "research_node_dag": {"nodes": nodes, "edges": node_edges},
+        "claim_node_links": claim_node_links,
         "semantic_summary": _semantic_summary(view),
         "operational_summary": _object(view.get("operational_summary")),
         "deterministic_activities": _objects(view.get("deterministic_activities")),
@@ -262,28 +292,28 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
 def claim_payload(source_root: str | Path, claim_id: str, *, label: str | None = None) -> dict[str, Any]:
     view = normalize_workspace(source_root, label=label)
     all_claims = _objects(view.get("claims"))
-    all_acts = _objects(view.get("research_acts"))
+    all_nodes = _objects(view.get("research_nodes"))
     claim = _find(all_claims, "claim_id", claim_id, "Claim")
     relations = [
         row
         for row in _objects(view.get("claim_relations"))
         if claim_id in {row.get("source_claim_ref"), row.get("target_claim_ref")}
     ]
-    related_act_ids = {
-        act_ref
-        for claim_ref, act_ref in derive_claim_act_links(all_claims, all_acts)
+    related_node_ids = {
+        node_ref
+        for claim_ref, node_ref in derive_claim_node_links(all_claims, all_nodes)
         if claim_ref == claim_id
     }
-    acts = [row for row in all_acts if row.get("act_id") in related_act_ids]
+    nodes = [row for row in all_nodes if row.get("node_id") in related_node_ids]
     observation_ids = {
         *_strings(claim.get("observation_refs")),
-        *(ref for act in acts for ref in _strings(act.get("observation_refs"))),
+        *(ref for node in nodes for ref in _strings(node.get("observation_refs"))),
     }
     return {
         "schema_version": "ts-explorer-claim/1",
         "claim": claim,
         "relations": relations,
-        "research_acts": acts,
+        "research_nodes": nodes,
         "observations": [
             row for row in _objects(view.get("observations")) if row.get("observation_id") in observation_ids
         ],
@@ -310,58 +340,71 @@ def claim_payload(source_root: str | Path, claim_id: str, *, label: str | None =
     }
 
 
-def act_payload(source_root: str | Path, act_id: str, *, label: str | None = None) -> dict[str, Any]:
+def node_payload(source_root: str | Path, node_id: str, *, label: str | None = None) -> dict[str, Any]:
     root = Path(source_root).expanduser().resolve()
     view = normalize_workspace(root, label=label)
-    act = _find(_objects(view.get("research_acts")), "act_id", act_id, "ResearchAct")
-    dependency_ids = set(_strings(act.get("dependency_refs")))
-    all_acts = _objects(view.get("research_acts"))
+    node = _find(_objects(view.get("research_nodes")), "node_id", node_id, "ResearchNode")
+    dependency_ids = set(_strings(node.get("dependency_refs")))
+    all_nodes = _objects(view.get("research_nodes"))
     all_claims = _objects(view.get("claims"))
     related_claim_ids = {
         claim_ref
-        for claim_ref, linked_act_id in derive_claim_act_links(all_claims, all_acts)
-        if linked_act_id == act_id
+        for claim_ref, linked_node_id in derive_claim_node_links(all_claims, all_nodes)
+        if linked_node_id == node_id
     }
+    phase = _find(
+        _objects(view.get("research_phases")),
+        "phase_id",
+        str(node.get("phase_ref") or ""),
+        "ResearchPhase",
+    )
     return {
-        "schema_version": "ts-explorer-research-act/1",
-        "research_act": act,
-        "dependencies": [row for row in all_acts if row.get("act_id") in dependency_ids],
-        "dependents": [row for row in all_acts if act_id in _strings(row.get("dependency_refs"))],
+        "schema_version": "ts-explorer-research-node/1",
+        "research_node": node,
+        "phase": phase,
+        "dependencies": [row for row in all_nodes if row.get("node_id") in dependency_ids],
+        "dependents": [row for row in all_nodes if node_id in _strings(row.get("dependency_refs"))],
         "claims": [
             row for row in all_claims if row.get("claim_id") in related_claim_ids
         ],
         "observations": [
             row
             for row in _objects(view.get("observations"))
-            if row.get("created_by_act") == act_id or row.get("observation_id") in _strings(act.get("observation_refs"))
+            if row.get("created_by_node") == node_id or row.get("observation_id") in _strings(node.get("observation_refs"))
         ],
         "validation_specs": [
             row
             for row in _objects(view.get("validation_specs"))
-            if row.get("created_by_act") == act_id or row.get("spec_id") in _strings(act.get("validation_spec_refs"))
+            if row.get("created_by_node") == node_id or row.get("spec_id") in _strings(node.get("validation_spec_refs"))
         ],
         "validation_results": [
             row
             for row in _objects(view.get("validation_results"))
-            if row.get("evaluated_by_act") == act_id or row.get("result_id") in _strings(act.get("validation_result_refs"))
+            if row.get("evaluated_by_node") == node_id or row.get("result_id") in _strings(node.get("validation_result_refs"))
         ],
         "findings": [
-            row for row in _objects(view.get("findings")) if act_id in _strings(row.get("act_refs"))
+            row for row in _objects(view.get("findings")) if node_id in _strings(row.get("node_refs"))
         ],
-        "files": list_act_files(root, act_id),
+        "agent_runs": [
+            row for row in _objects(view.get("agent_runs")) if node_id in _strings(row.get("node_refs"))
+        ],
+        "history": [
+            row for row in _objects(view.get("decisions")) if _contains_ref(row, node_id)
+        ],
+        "files": list_node_files(root, node_id),
     }
 
 
-def list_act_files(source_root: str | Path, act_id: str) -> dict[str, Any]:
+def list_node_files(source_root: str | Path, node_id: str) -> dict[str, Any]:
     root = Path(source_root).expanduser().resolve()
-    act_dir = root / "acts" / act_id
-    if not act_dir.is_dir() or act_dir.is_symlink():
-        return {"act_id": act_id, "files": []}
+    node_dir = root / "nodes" / node_id
+    if not node_dir.is_dir() or node_dir.is_symlink():
+        return {"node_id": node_id, "files": []}
     files: list[dict[str, Any]] = []
-    for path in sorted(act_dir.rglob("*")):
+    for path in sorted(node_dir.rglob("*")):
         if path.is_symlink() or not path.is_file():
             continue
-        if not _is_current_act_file(path.relative_to(act_dir).parts):
+        if not _is_current_node_file(path.relative_to(node_dir).parts):
             continue
         stat = path.stat()
         files.append(
@@ -372,10 +415,10 @@ def list_act_files(source_root: str | Path, act_id: str) -> dict[str, Any]:
                 "modified": int(stat.st_mtime),
             }
         )
-    return {"act_id": act_id, "files": files}
+    return {"node_id": node_id, "files": files}
 
 
-def _is_current_act_file(parts: tuple[str, ...]) -> bool:
+def _is_current_node_file(parts: tuple[str, ...]) -> bool:
     if not parts:
         return False
     if parts[0] == "agent-runs":
@@ -391,7 +434,7 @@ def _is_current_act_file(parts: tuple[str, ...]) -> bool:
     return len(parts) >= 5 and SUBAGENT_RUN_ID.fullmatch(parts[3]) is not None
 
 
-def _normalize_act(
+def _normalize_node(
     root: Path,
     record: dict[str, Any],
     *,
@@ -399,33 +442,60 @@ def _normalize_act(
     agent_runs: list[dict[str, Any]],
     controls: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    act_id = str(record.get("act_id") or "")
-    act_runs = [
+    node_id = str(record.get("node_id") or "")
+    node_runs = [
         row
         for row in agent_runs
-        if row.get("role") == "compute" and act_id in _strings(row.get("act_refs"))
+        if row.get("role") == "compute" and node_id in _strings(row.get("node_refs"))
     ]
-    attempts = _calculation_attempts(root, act_id, agent_runs=act_runs)
+    attempts = _calculation_attempts(root, node_id, agent_runs=node_runs)
     return {
         **record,
         "attempts": attempts,
-        "activities": [row for row in activities if act_id in _strings(row.get("act_refs"))],
+        "activities": [row for row in activities if node_id in _strings(row.get("node_refs"))],
         "compute_run_count": sum(len(_objects(attempt.get("runs"))) for attempt in attempts),
-        "unresolved_controls": [row for row in controls if row.get("act_id") == act_id],
+        "unresolved_controls": [row for row in controls if row.get("node_id") == node_id],
     }
+
+
+def _normalize_phase(
+    record: dict[str, Any],
+    *,
+    nodes: list[dict[str, Any]],
+    focused: bool,
+) -> dict[str, Any]:
+    phase_id = str(record.get("phase_id") or "")
+    phase_nodes = [node for node in nodes if node.get("phase_ref") == phase_id]
+    return {
+        **record,
+        "node_refs": [str(node["node_id"]) for node in phase_nodes],
+        "node_count": len(phase_nodes),
+        "open_node_count": sum(1 for node in phase_nodes if node.get("status") == "open"),
+        "node_statuses": _counts(phase_nodes, "status"),
+        "focused": focused,
+    }
+
+
+def _normalize_control(record: dict[str, Any]) -> dict[str, Any]:
+    """Give one projected control effect a stable identity within the Web view."""
+
+    intent_id = str(record.get("intent_id") or "unknown-intent")
+    operation = str(record.get("operation") or "unknown-operation")
+    attempt = record.get("attempt") if isinstance(record.get("attempt"), int) else 1
+    return {**record, "control_id": f"{intent_id}:{operation}:{attempt}"}
 
 
 def _calculation_attempts(
     root: Path,
-    act_id: str,
+    node_id: str,
     *,
     agent_runs: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    if not act_id:
+    if not node_id:
         return []
     attempts: list[dict[str, Any]] = []
     for attempt_dir in sorted(
-        (root / "acts" / act_id / "attempts").glob("*"),
+        (root / "nodes" / node_id / "attempts").glob("*"),
         key=_calculation_path_sort_key,
     ):
         if (
@@ -482,14 +552,16 @@ def _recent_decisions(path: Path, limit: int = 200) -> list[dict[str, Any]]:
 
 def _semantic_summary(view: dict[str, Any]) -> dict[str, Any]:
     claims = _objects(view.get("claims"))
-    acts = _objects(view.get("research_acts"))
+    phases = _objects(view.get("research_phases"))
+    nodes = _objects(view.get("research_nodes"))
     results = _objects(view.get("validation_results"))
     findings = _objects(view.get("findings"))
     return {
         "claim_count": len(claims),
         "claim_statuses": _counts(claims, "status"),
-        "act_count": len(acts),
-        "act_statuses": _counts(acts, "status"),
+        "phase_count": len(phases),
+        "node_count": len(nodes),
+        "node_statuses": _counts(nodes, "status"),
         "observation_count": len(_objects(view.get("observations"))),
         "validation_spec_count": len(_objects(view.get("validation_specs"))),
         "validation_result_count": len(results),
@@ -509,6 +581,16 @@ def _counts(records: list[dict[str, Any]], key: str) -> dict[str, int]:
     return counts
 
 
+def _contains_ref(value: Any, reference: str) -> bool:
+    if value == reference:
+        return True
+    if isinstance(value, dict):
+        return any(_contains_ref(item, reference) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_ref(item, reference) for item in value)
+    return False
+
+
 def _find(records: list[dict[str, Any]], key: str, value: str, label: str) -> dict[str, Any]:
     record = next((row for row in records if row.get(key) == value), None)
     if record is None:
@@ -520,9 +602,9 @@ def _read_object(path: Path) -> dict[str, Any]:
     try:
         value = read_json(path)
     except (OSError, ValueError) as exc:
-        raise ValueError(f"cannot read v4 workspace file {path.name}: {exc}") from exc
+        raise ValueError(f"cannot read v5 workspace file {path.name}: {exc}") from exc
     if not isinstance(value, dict):
-        raise ValueError(f"v4 workspace file is not an object: {path.name}")
+        raise ValueError(f"v5 workspace file is not an object: {path.name}")
     return value
 
 

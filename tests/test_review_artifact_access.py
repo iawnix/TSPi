@@ -141,7 +141,7 @@ def _manifest(source: Path, relative_path: str, *, artifact_type: str = "text_do
         "path": relative_path,
         "sha256": digest,
         "size_bytes": source.stat().st_size,
-        "owner_act": None,
+        "owner_node": None,
         "source_intent_id": None,
         "artifact_type": artifact_type,
         "available_sections": sections,

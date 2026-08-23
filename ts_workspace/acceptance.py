@@ -1,4 +1,4 @@
-"""Acceptance history and currentness for the v4 research Kernel."""
+"""Acceptance history and currentness for the v5 research Kernel."""
 
 from __future__ import annotations
 

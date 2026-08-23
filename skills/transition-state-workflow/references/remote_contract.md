@@ -1,7 +1,7 @@
 # Remote Execution Contract
 
 `ts_remote` uses OpenSSH/SCP and Torque directly. There is no MCP transport in
-protocol v4.
+protocol v5.
 
 ## Installation-Owned Policy
 
@@ -21,7 +21,7 @@ Ordinary startup performs no remote probe.
 
 ## Isolation
 
-Remote directories are derived from workspace identity, ResearchAct, and
+Remote directories are derived from workspace identity, ResearchNode, and
 intent. The upload manifest binds regular files, sizes, SHA-256, command, profile,
 resources, expected artifacts, and submission ID. Remote content is an
 execution mirror, never a canonical local path.

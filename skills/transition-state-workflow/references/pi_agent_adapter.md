@@ -1,6 +1,6 @@
 # Pi Runtime Adapter
 
-TSPi embeds the v4 Research Kernel into Pi. Python modules are deterministic
+TSPi embeds the v5 Research Kernel into Pi. Python modules are deterministic
 services, not a second Agent runtime.
 
 ## Contents
@@ -25,7 +25,7 @@ disposition, and notification remain deterministic host calls.
 ## Root Conversation
 
 A Pi conversation may contain many user/assistant turns. The workspace is the
-scientific source of truth; the conversation is not. Completing a ResearchAct
+scientific source of truth; the conversation is not. Completing a ResearchNode
 does not inject a new message by itself. The current tool result is visible in
 the active turn; later turns should read a frontier or delta projection.
 
@@ -35,7 +35,7 @@ workspace.
 
 ## Context
 
-Use graph modes `frontier`, `claim`, `act`, `subgraph`, `finding`,
+Use graph modes `frontier`, `claim`, `node`, `subgraph`, `finding`,
 `validation`, or `delta`. Use catalog modes `artifacts`,
 `compute_capabilities`, and `validation_capabilities`. Every bounded graph
 projection reports its scientific/operational revisions and omitted counts.
@@ -68,7 +68,7 @@ normal Decision pipeline for any scientific change.
 
 ## Compute Isolation
 
-The Compute host resolves one Act-owned intent before starting the child and
+The Compute host resolves one Node-owned intent before starting the child and
 builds a compact `ts-agent-task/2`. The child has no parent transcript, Skill,
 package extension, built-in tool, filesystem, shell, arbitrary argument, or
 recursive delegation. It receives only the zero-argument tools for one plan:

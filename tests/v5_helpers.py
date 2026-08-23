@@ -9,18 +9,18 @@ from ts_workspace.context import build_review_snapshot
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-REVIEW_BUNDLE_PROBE = REPO_ROOT / "tests" / "review_v4_bundle_probe.cjs"
+REVIEW_BUNDLE_PROBE = REPO_ROOT / "tests" / "review_v5_bundle_probe.cjs"
 
 
-def bootstrap_v4_workspace(root: Path) -> Path:
+def bootstrap_v5_workspace(root: Path) -> Path:
     init_workspace(root)
     return root
 
 
-def start_research_act(
+def start_research_node(
     root: Path,
     *,
-    title: str = "Bounded research act",
+    title: str = "Bounded research node",
     objective: str = "Run one bounded research operation.",
     deliverable: str = "One bounded research result.",
     claim_type: str = "test",
@@ -29,9 +29,15 @@ def start_research_act(
     drafted = draft_decision(
         root,
         {
-            "rationale": "Create one Claim and one open ResearchAct for a test.",
+            "rationale": "Create one Claim and one open ResearchNode for a test.",
             "basis_refs": [],
             "operations": [
+                {
+                    "op": "create_phase",
+                    "local_ref": "phase",
+                    "title": "Test phase",
+                    "objective": "Contain the bounded test research.",
+                },
                 {
                     "op": "create_claim",
                     "local_ref": "claim",
@@ -39,25 +45,28 @@ def start_research_act(
                     "statement": claim_statement,
                 },
                 {
-                    "op": "start_act",
-                    "local_ref": "act",
+                    "op": "start_node",
+                    "local_ref": "node",
+                    "phaseRef": "$phase",
                     "title": title,
                     "objective": objective,
                     "deliverable": deliverable,
+                    "primaryClaimRef": "$claim",
                     "claimRefs": ["$claim"],
                 },
                 {
                     "op": "set_focus",
                     "claimRefs": ["$claim"],
-                    "actRefs": ["$act"],
+                    "nodeRefs": ["$node"],
                 },
             ],
         },
     )
     apply_decision(root, drafted["decision"])
     return {
+        "phase_id": drafted["allocated_refs"]["phase"],
         "claim_id": drafted["allocated_refs"]["claim"],
-        "act_id": drafted["allocated_refs"]["act"],
+        "node_id": drafted["allocated_refs"]["node"],
     }
 
 
@@ -68,19 +77,27 @@ def accept_research_claim(root: Path) -> dict[str, str]:
             "rationale": "Create and accept one deterministically validated Claim.",
             "basis_refs": [],
             "operations": [
+                {
+                    "op": "create_phase",
+                    "local_ref": "phase",
+                    "title": "Validation phase",
+                    "objective": "Validate and accept one bounded scientific Claim.",
+                },
                 {"op": "create_claim", "local_ref": "claim", "claimType": "research", "statement": "A bounded claim is supported."},
                 {
-                    "op": "start_act",
-                    "local_ref": "act",
+                    "op": "start_node",
+                    "local_ref": "node",
+                    "phaseRef": "$phase",
                     "title": "Bounded Claim validation",
                     "objective": "Test the bounded Claim.",
                     "deliverable": "One frozen validation result for the Claim.",
+                    "primaryClaimRef": "$claim",
                     "claimRefs": ["$claim"],
                 },
                 {
                     "op": "record_observation",
                     "local_ref": "observation",
-                    "actRef": "$act",
+                    "nodeRef": "$node",
                     "conceptId": "test.confirmed",
                     "subjectRef": "subject",
                     "value": True,
@@ -91,7 +108,7 @@ def accept_research_claim(root: Path) -> dict[str, str]:
                 {
                     "op": "freeze_validation_spec",
                     "local_ref": "spec",
-                    "actRef": "$act",
+                    "nodeRef": "$node",
                     "targetClaimRef": "$claim",
                     "dimension": "test",
                     "title": "Bounded Claim check",
@@ -110,7 +127,7 @@ def accept_research_claim(root: Path) -> dict[str, str]:
                         "success_policy": {"mode": "all_blocking"},
                     },
                 },
-                {"op": "evaluate_validation", "local_ref": "result", "actRef": "$act", "specRef": "$spec", "observationRefs": ["$observation"]},
+                {"op": "evaluate_validation", "local_ref": "result", "nodeRef": "$node", "specRef": "$spec", "observationRefs": ["$observation"]},
                 {
                     "op": "update_claim",
                     "claimRef": "$claim",
@@ -126,7 +143,7 @@ def accept_research_claim(root: Path) -> dict[str, str]:
                     "profile": {"profileId": "research-claim", "version": "1"},
                     "summary": "The bounded Claim passed its declared validation.",
                 },
-                {"op": "set_focus", "claimRefs": ["$claim"], "actRefs": ["$act"]},
+                {"op": "set_focus", "claimRefs": ["$claim"], "nodeRefs": ["$node"]},
             ],
         },
     )

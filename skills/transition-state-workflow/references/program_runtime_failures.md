@@ -4,7 +4,7 @@ Keep failure domains separate before deciding scientific meaning.
 
 ## Triage Order
 
-1. Confirm the immutable intent, Act, backend, input artifact digests, and
+1. Confirm the immutable intent, Node, backend, input artifact digests, and
    execution target.
 2. Inspect durable control guards and receipts before any resubmit/cancel.
 3. Distinguish SSH/transfer, scheduler, remote bootstrap, software activation,
@@ -12,7 +12,7 @@ Keep failure domains separate before deciding scientific meaning.
 4. Collect all declared outputs that exist and verify them locally.
 5. Record scientifically meaningful negative or anomalous observations only
    when primary artifacts support them.
-6. Decide retry, recalculation, changed strategy, new Act, user escalation, or
+6. Decide retry, recalculation, changed strategy, new Node, user escalation, or
    stop as the Root Agent.
 
 ## Common Classes
@@ -33,7 +33,7 @@ Keep failure domains separate before deciding scientific meaning.
 ## Retry Versus New Work
 
 Retry only an unchanged intent with proven retry safety. Recalculation preserves
-the source Act/intent and states changed settings and purpose. Start a new Act
+the source Node/intent and states changed settings and purpose. Start a new Node
 when the scientific objective, hypothesis, method rationale, or branch changes.
 
 Program failure is normally an operational fact. It contradicts a Claim only
@@ -41,5 +41,5 @@ when a frozen GateSpec deliberately treats the verified observation as a
 scientific failure condition.
 
 Record durable summaries through the existing calculation record, Finding, and
-Act result. Do not invent an Observation merely to make an operational error
+Node result. Do not invent an Observation merely to make an operational error
 visible.

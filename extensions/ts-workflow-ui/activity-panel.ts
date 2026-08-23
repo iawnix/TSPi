@@ -67,17 +67,17 @@ function renderActivity(activity: TsActivity, width: number, now: number, iconSt
   const tone = stateTone(state);
   const right = rightLabel(activity, now, iconStyle, width >= 72);
   const role = activityLabel(activity);
-  const act = activityActRefs(activity)[0];
+  const node = activityNodeRefs(activity)[0];
   const detail = activityDetail(activity);
   const statusIcon = stateSymbol(state, iconStyle);
   if (width < 58) {
     return [
-      { text: fitSides(compact([`${statusIcon} ${role}`, act]), right, width), tone },
+      { text: fitSides(compact([`${statusIcon} ${role}`, node]), right, width), tone },
       { text: truncateToWidth(`  ${detail}`, width, "..."), tone: "muted" },
     ];
   }
   const identity = `${statusIcon} ${tspiIcon(roleIconName(activity), iconStyle)} ${role}`;
-  return [{ text: fitSides(compact([identity, act, detail]), right, width), tone }];
+  return [{ text: fitSides(compact([identity, node, detail]), right, width), tone }];
 }
 
 function activityLabel(activity: TsActivity): string {
@@ -93,9 +93,9 @@ function activityLabel(activity: TsActivity): string {
   }[activity.activityKind];
 }
 
-function activityActRefs(activity: TsActivity): string[] {
-  if (activity.kind === "subagent") return activity.status.act_refs || [];
-  if (activity.kind === "deterministic") return activity.actRefs;
+function activityNodeRefs(activity: TsActivity): string[] {
+  if (activity.kind === "subagent") return activity.status.node_refs || [];
+  if (activity.kind === "deterministic") return activity.nodeRefs;
   return [];
 }
 

@@ -11,7 +11,7 @@ import {
   type TsActivityStore,
 } from "./activity-store.ts";
 
-const SAFE_RUN_REF = /^(?:acts\/act_[1-9][0-9]*\/attempts\/calc_[1-9][0-9]*|reviews\/claim_[1-9][0-9]*)\/runs\/sub_[1-9][0-9]*$/;
+const SAFE_RUN_REF = /^(?:nodes\/node_[1-9][0-9]*\/attempts\/calc_[1-9][0-9]*|reviews\/claim_[1-9][0-9]*)\/runs\/sub_[1-9][0-9]*$/;
 const MAX_DETAIL_FILE_BYTES = 1024 * 1024;
 
 export interface TsSubagentRecord {
@@ -20,7 +20,7 @@ export interface TsSubagentRecord {
   authority: "advisory" | "operational";
   operation: string;
   state: TsSubagentState;
-  act_refs: string[];
+  node_refs: string[];
   claim_refs: string[];
   target_ref?: string;
   wait_reason?: string;
@@ -59,7 +59,7 @@ export function collectTsSubagentRecords(
       authority: value.role === "compute" ? "operational" : "advisory",
       operation: stringValue(value.operation) || "operation",
       state: durableState(value.status, value.result_outcome),
-      act_refs: stringArray(value.act_refs),
+      node_refs: stringArray(value.node_refs),
       claim_refs: stringArray(value.claim_refs),
       run_ref: stringValue(value.run_ref),
       started_at: stringValue(value.started_at),
@@ -81,7 +81,7 @@ export function collectTsSubagentRecords(
       authority: status.role === "compute" ? "operational" : "advisory",
       operation: status.operation,
       state: status.state,
-      act_refs: status.act_refs || previous?.act_refs || [],
+      node_refs: status.node_refs || previous?.node_refs || [],
       claim_refs: status.claim_refs || previous?.claim_refs || [],
       target_ref: status.target_ref,
       wait_reason: status.wait_reason,
@@ -95,8 +95,8 @@ export function collectTsSubagentRecords(
 }
 
 export function subagentSelectionLabel(record: TsSubagentRecord): string {
-  const act = record.act_refs[0];
-  const identity = [roleLabel(record.role), act, record.operation].filter(Boolean).join(" · ");
+  const node = record.node_refs[0];
+  const identity = [roleLabel(record.role), node, record.operation].filter(Boolean).join(" · ");
   return `${stateSymbol(record.state)} ${identity} · ${record.state} · ${record.task_id.slice(-8)}`;
 }
 
@@ -136,7 +136,7 @@ export function renderTsSubagentDetails(
   addField(lines, "Task", record.task_id, safeWidth);
   addField(lines, "Role", roleLabel(record.role), safeWidth);
   addField(lines, "Authority", record.authority, safeWidth);
-  addField(lines, "Research acts", record.act_refs.join(", ") || "workspace", safeWidth);
+  addField(lines, "Research nodes", record.node_refs.join(", ") || "workspace", safeWidth);
   addField(lines, "Claims", record.claim_refs.join(", ") || "(none)", safeWidth);
   addField(lines, "Operation", record.operation, safeWidth);
   if (record.wait_reason) addField(lines, "Waiting", record.wait_reason.replaceAll("_", " "), safeWidth);

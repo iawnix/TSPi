@@ -25,7 +25,7 @@ software profile, and parser contract without accepting arbitrary shell. Parse
 must report structured program facts and provenance while retaining missing,
 ambiguous, and failure states.
 
-The host freezes those values in `ts-calculation-intent/4`. Any changed method,
+The host freezes those values in `ts-calculation-intent/5`. Any changed method,
 input, command-relevant setting, or expected output needs a new intent.
 
 ## Scientific Boundary

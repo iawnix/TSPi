@@ -1,27 +1,28 @@
 # Report Contract
 
-Build the standard report from a valid v4 workspace with `ts_report`. Use the
+Build the standard report from a valid v5 workspace with `ts_report`. Use the
 custom Markdown asset only when an additional narrative is required.
 
 ## Required Projection
 
 The report must expose:
 
-1. workspace identity, scientific revision, focus Claims/Acts, and explicit
+1. workspace identity, scientific revision, focus Claims/Nodes, and explicit
    conclusion boundary;
-2. Claims and Claim relations, including alternatives and conflicts;
-3. ResearchAct DAG dependencies, objectives, hypotheses, outcomes, and open
+2. ResearchPhases and their grouped Nodes as the human roadmap;
+3. Claims and Claim relations, including alternatives and conflicts;
+4. ResearchNode DAG dependencies, objectives, Claim scope, outcomes, and open
    questions;
-4. computational protocols and primary artifact refs;
-5. semantic Observations with values, units, qualifiers, provenance, and
+5. computational protocols and primary artifact refs;
+6. semantic Observations with values, units, qualifiers, provenance, and
    digests;
-6. frozen GateSpecs and deterministic ValidationResults;
-7. Findings, including resolved and open blocking items;
-8. immutable acceptance history, profile versions, and explicit current/stale
+7. frozen GateSpecs and deterministic ValidationResults;
+8. Findings, including resolved and open blocking items;
+9. immutable acceptance history, profile versions, and explicit current/stale
    status;
-9. deterministic activities, activity integrity, unresolved compute controls,
+10. deterministic activities, activity integrity, unresolved compute controls,
    pending Review dispositions, and notification state as operational follow-up;
-10. limitations, missing corrections, and open scientific questions.
+11. limitations, missing corrections, and open scientific questions.
 
 ## Acceptance Language
 

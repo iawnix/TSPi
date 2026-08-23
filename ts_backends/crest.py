@@ -66,7 +66,7 @@ def prepare_crest(task: BackendTask) -> PreparedTask:
         command.extend(["-alpb" if model == "alpb" else "-g", str(solvent)])
     return PreparedTask(
         backend="crest",
-        act_id=task.act_id,
+        node_id=task.node_id,
         command=command,
         input_paths=[task.inputs["xyz"]],
         expected_artifacts=sorted(CREST_REQUIRED_ARTIFACTS),

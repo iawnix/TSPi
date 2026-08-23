@@ -30,7 +30,7 @@ DELIVERY_DIR_REF = "reports/email/deliveries"
 EVENTS = frozenset(
     {
         "progress",
-        "act_completed",
+        "node_completed",
         "calculation_failed",
         "calculation_ambiguous",
         "study_completed",
@@ -295,7 +295,7 @@ def _report_manifest_binding(workspace: Path, ref: str, path: Path) -> dict[str,
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ValueError(f"report package manifest is invalid: {manifest_ref}") from exc
-    if not isinstance(manifest, dict) or manifest.get("schema_version") != "ts-report-package/3":
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != "ts-report-package/4":
         raise ValueError(f"report package manifest has an unsupported schema: {manifest_ref}")
     files = manifest.get("files")
     if not isinstance(files, list):

@@ -71,7 +71,7 @@ export interface ReviewRunResult {
     run_id: string;
     operation: "claim_review";
     report_id: string;
-    act_refs: string[];
+    node_refs: string[];
     output_digest: string;
     schema_valid: true;
     model: string;
@@ -257,7 +257,7 @@ export async function runScientificReview(options: ReviewRunOptions): Promise<Re
             run_id: String(options.packet.task_id),
             operation: "claim_review",
             report_id: String(scope.report_id || ""),
-            act_refs: Array.isArray(scope.act_refs) ? scope.act_refs.map(String) : [],
+            node_refs: Array.isArray(scope.node_refs) ? scope.node_refs.map(String) : [],
             output_digest: createHash("sha256").update(JSON.stringify(result)).digest("hex"),
             schema_valid: true,
             model: `${model.provider}/${model.id}`,

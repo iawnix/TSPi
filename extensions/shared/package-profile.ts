@@ -1,8 +1,8 @@
 export const TS_PACKAGE_PROFILE = Object.freeze({
   displayName: "TSPi",
-  version: "0.10.1",
+  version: "0.11.0",
   title: "Transition-state workflow",
-  description: "DAG-based TS research with semantic observations and deterministic validation.",
+  description: "Phase-guided TS research with a ResearchNode DAG and deterministic validation.",
   skill: Object.freeze({
     name: "transition-state-workflow",
     path: "./skills/transition-state-workflow",

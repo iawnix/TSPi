@@ -11,14 +11,15 @@
 
 ## Canonical Files
 
-A v4 workspace stores scientific state in:
+A v5 workspace stores scientific state in:
 
 ```text
 workspace.json
 research_state.json
+phases.json
 claims.json
 claim_relations.json
-research_acts.json
+research_nodes.json
 observations.json
 validation_specs.json
 validation_results.json
@@ -29,21 +30,22 @@ decision_log.jsonl
 transaction_log.jsonl
 ```
 
-`research_state.json` contains focus Claim/Act refs and immutable acceptance
+`research_state.json` contains focus Claim/Node refs and immutable acceptance
 history refs; it is not a workflow router. Current acceptance is derived rather
-than stored as a permanent Claim flag. ResearchAct artifacts live below
-`acts/<act_id>/`. Reports and operational records are not canonical science.
+than stored as a permanent Claim flag. `phases.json` groups Nodes for human
+navigation and carries no lifecycle or policy. ResearchNode artifacts live below
+`nodes/<node_id>/`. Reports and operational records are not canonical science.
 
 ## Bootstrap
 
 TSPi bootstraps before starting the Root Agent:
 
-- a fresh workspace receives all v4 documents and required directories once;
-- a complete v4 workspace is validated without canonical rewrites;
+- a fresh workspace receives all v5 documents and required directories once;
+- a complete v5 workspace is validated without canonical rewrites;
 - partial, invalid, symlinked, or legacy canonical state fails closed.
 
 There is no legacy reader or migration command. Keep an older workspace with
-its matching release or begin a distinct v4 workspace.
+its matching release or begin a distinct v5 workspace.
 
 ## Write Boundary
 
@@ -61,7 +63,7 @@ writers.
 ## Identity And Paths
 
 The workspace has one immutable installation-derived identity. The Kernel owns
-scientific record IDs and Act artifact roots. Public calls use logical IDs,
+scientific record IDs and Node artifact roots. Public calls use logical IDs,
 not constructed paths. Artifact catalog entries bind logical `art_...` IDs to
 workspace-relative regular files and SHA-256 values.
 
@@ -71,15 +73,17 @@ are execution mirrors and never become canonical local refs.
 
 ## Integrity Invariants
 
-- ClaimRelation and ResearchAct dependency graphs are acyclic.
+- ClaimRelation and ResearchNode dependency graphs are acyclic.
+- Every ResearchNode references one existing ResearchPhase; a primary Claim,
+  when present, is included in the Node Claim scope.
 - Every ref resolves to exactly one record of the expected kind.
-- An open ResearchAct has no terminal result; a terminal Act has one.
-- Activity request/status bindings, IDs, physical ownership, `act_refs`, and
+- An open ResearchNode has no terminal result; a terminal Node has one.
+- Activity request/status bindings, IDs, physical ownership, `node_refs`, and
   terminal status/result combinations are consistent.
-- A ResearchAct cannot complete with a non-terminal owned Compute run,
+- A ResearchNode cannot complete with a non-terminal owned Compute run,
   running/pending activities, or pending/unresolved compute controls. Failed
-  activities require a non-success Act outcome.
-- Every Observation and Finding is indexed by its producing/referenced Acts.
+  activities require a non-success Node outcome.
+- Every Observation and Finding is indexed by its producing/referenced Nodes.
 - Observation datatype matches its value and artifact digests match files.
 - Every GateSpec is content- and registry-digest bound.
 - Every ValidationResult recomputes exactly from its GateSpec and selected
@@ -100,15 +104,15 @@ only after verified primary artifacts are recorded as semantic Observations.
 New operational ownership is explicit:
 
 ```text
-acts/<act_id>/attempts/<calc_id>/runs/<sub_id>/  Compute
+nodes/<node_id>/attempts/<calc_id>/runs/<sub_id>/  Compute
 reviews/<claim_id>/runs/<sub_id>/                Review
-acts/<act_id>/activities/<op_id>/                deterministic tools
+nodes/<node_id>/activities/<op_id>/                deterministic tools
 operations/activities/<op_id>/                   workspace-level deterministic tools
 ```
 
 `calc_n`, `sub_n`, and `op_n` are global workspace ordinals used for lookup,
 not scientific meaning. Canonical Claims and Observations remain single
-registries; the Web/locator derives their Claim-Act-Attempt neighborhood instead
+registries; the Web/locator derives their Claim-Node-Attempt neighborhood instead
 of duplicating records into operational directories.
 
 `TS Activity` is transient presentation state. The Activity Journal, Review

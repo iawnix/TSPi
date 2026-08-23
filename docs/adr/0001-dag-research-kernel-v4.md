@@ -1,6 +1,6 @@
 # ADR 0001: DAG Research Kernel And Declarative Validation
 
-- Status: accepted for the `ts-dag` branch
+- Status: superseded by ADR 0002; retained only as the v4 historical record
 - Date: 2026-08-15
 - Scope: `@iawnix/ts-agent` v4 runtime and canonical workspace
 

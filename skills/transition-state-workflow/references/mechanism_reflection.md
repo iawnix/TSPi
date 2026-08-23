@@ -2,7 +2,7 @@
 
 Represent each material mechanism hypothesis as an explicit Claim with
 assumptions, predictions, and falsifiers. Relate alternatives or conflicts with
-ClaimRelation records instead of encoding them in Act tags.
+ClaimRelation records instead of encoding them in Node tags.
 
 For each Claim, ask:
 
@@ -12,7 +12,7 @@ For each Claim, ask:
 - what unexpected result would invalidate the current problem framing;
 - which validation dimensions are foundational and which are optional.
 
-Start ResearchActs to obtain discriminating observations, not merely to fill a
+Start ResearchNodes to obtain discriminating observations, not merely to fill a
 predefined checklist. A failed search may show method inadequacy, bad candidate
 construction, missing conformers, or a false Claim; keep those possibilities
 separate until the artifacts decide.

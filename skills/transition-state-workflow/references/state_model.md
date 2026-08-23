@@ -1,6 +1,6 @@
-# V4 State Model
+# V5 State Model
 
-Protocol v4 separates scientific meaning, deterministic execution, and
+Protocol v5 separates scientific meaning, deterministic execution, and
 presentation. The Root Agent owns interpretation; the Research Kernel owns
 identity, integrity, persistence, and transactions.
 
@@ -8,7 +8,8 @@ identity, integrity, persistence, and transactions.
 
 - Decision Identity
 - Claim Graph
-- ResearchAct DAG
+- ResearchPhase Roadmap
+- ResearchNode DAG
 - Observation
 - Finding
 - GateSpec And ValidationResult
@@ -39,52 +40,60 @@ label to a next action.
 ClaimRelation IDs use workspace-local creation ordinals (`rel_1`, `rel_2`, ...).
 
 The Kernel allocates workspace-local Claim IDs in creation order (`claim_1`,
-`claim_2`, ...). Claim uses `ts-claim/2`; its ordinal is identity only, not
-confidence, priority, hierarchy, or a workflow phase.
+`claim_2`, ...). Claim uses `ts-claim/3`; its ordinal is identity only, not
+confidence, priority, hierarchy, or a ResearchPhase.
 
-`ResearchAct.claim_refs` is declared research scope. `Claim.created_by_act` is
-origin provenance for a Claim discovered during an Act. The canonical fields
+`ResearchNode.claim_refs` is declared research scope. `Claim.created_by_node` is
+origin provenance for a Claim discovered during a Node. The canonical fields
 are intentionally not mirrored. Context and UI projections derive related
-Claim-Act pairs from their union, so either relationship remains traversable
+Claim-Node pairs from their union, so either relationship remains traversable
 without synchronizing duplicate state.
 
-## ResearchAct DAG
+## ResearchPhase Roadmap
 
-A ResearchAct records one bounded act:
+A ResearchPhase has one readable ID (`phase_1`, `phase_2`, ...), title,
+objective, creation Decision, and timestamp. Every ResearchNode references one
+Phase. Phases organize the human roadmap only: they have no status, successor,
+allowed method, required validation, or action authority. Cross-Phase Node
+dependencies are valid.
 
-- short title, objective, principal deliverable, and optional hypothesis,
-  assumptions, predictions, and falsifiers;
-- zero or more dependency Acts;
-- related Claims and descriptive tags;
+## ResearchNode DAG
+
+A ResearchNode records one bounded node:
+
+- one Phase, short title, objective, and principal deliverable;
+- zero or more dependency Nodes;
+- optional primary Claim, related Claim scope, and descriptive tags;
 - produced scientific records; deterministic activities are derived from the
-  separate Activity Journal by `act_refs`;
-- Kernel-owned artifact root `acts/<act_id>`;
+  separate Activity Journal by `node_refs`;
+- Kernel-owned artifact root `nodes/<node_id>`;
 - open state or one terminal result.
 
-The Kernel allocates workspace-local Act IDs in creation order (`act_1`,
-`act_2`, ...). The ordinal is identity, not a workflow phase, priority, or
+The Kernel allocates workspace-local Node IDs in creation order (`node_1`,
+`node_2`, ...). The ordinal is identity, not a ResearchPhase, priority, or
 permission signal.
 
-Multiple dependencies support merges. A new Act depending on an earlier
+Multiple dependencies support merges. A new Node depending on an earlier
 checkpoint supports backtracking. Preserve failed, blocked, inconclusive, and
-stopped Acts; do not rewrite history into a successful line.
+stopped Nodes; do not rewrite history into a successful line.
 
-Act granularity is semantic, not a fixed attempt count. One Act should own one
+Node granularity is semantic, not a fixed attempt count. One Node should own one
 principal scientific question and deliverable. Retries that preserve that
-objective remain calculation Attempts below the Act; a changed objective or
-principal deliverable starts a dependent Act. This guidance preserves
-discoverability without turning Act labels or tags into a workflow policy.
+objective remain calculation Attempts below the Node; a changed objective or
+principal deliverable starts a dependent Node. Hypotheses, assumptions, and
+falsifiers remain on Claims. This guidance preserves
+discoverability without turning Node labels or tags into a workflow policy.
 
-ResearchAct uses `ts-research-act/3`. It contains no `operation_refs` field.
+ResearchNode uses `ts-research-node/1`. It contains no `operation_refs` field.
 The shared Activity Index projects activities from
-`acts/<act_id>/activities/*` and `operations/activities/*`, validates journal
+`nodes/<node_id>/activities/*` and `operations/activities/*`, validates journal
 integrity, and supplies completion guards, reports, and UI views.
 
-The read-only Research Files locator joins Claim, Act, Observation, logical
+The read-only Research Files locator joins Claim, Node, Observation, logical
 artifact, and calculation-intent identities to their current paths. Attempt
 results distinguish frozen inputs from produced outputs. The projection is
 rebuilt from canonical records and the artifact catalog, creates no new state,
-and never treats every file owned by a related Act as evidence for a Claim.
+and never treats every file owned by a related Node as evidence for a Claim.
 
 ## Observation
 
@@ -92,7 +101,7 @@ An Observation is an immutable semantic assertion:
 
 ```text
 concept + subject + typed value + unit/qualifiers
-  + artifact IDs/digests + producer + creating Act/Decision
+  + artifact IDs/digests + producer + creating Node/Decision
 ```
 
 Use stable domain concepts such as `program.normal_termination` or
@@ -107,7 +116,7 @@ remains in `concept_id`, `subject_ref`, value, and summary.
 ## Finding
 
 A Finding makes an anomaly, conflict, limitation, or open question explicit.
-It cites applicable Claims, Acts, and Observations and has severity
+It cites applicable Claims, Nodes, and Observations and has severity
 `blocking`, `warning`, or `informational`. Resolve it only through a Decision
 with a cited explanation. Open blocking Findings prevent acceptance.
 Finding IDs use workspace-local creation ordinals (`fnd_1`, `fnd_2`, ...).
@@ -125,7 +134,7 @@ then records every deterministic predicate result and aggregate verdict:
 pass | fail | inconclusive | error
 ```
 
-Validation does not update Claim status or choose another Act.
+Validation does not update Claim status or choose another Node.
 
 GateSpecs and ValidationResults use workspace-local creation ordinals
 (`gsp_1`, `gsp_2`, ... and `val_1`, `val_2`, ...). Their dimensions, titles,
@@ -155,7 +164,7 @@ to current canonical state is projected as current acceptance.
 
 ## Revisions
 
-`workspace_revision` covers canonical v4 documents. `operational_revision`
+`workspace_revision` covers canonical v5 documents. `operational_revision`
 covers activity such as calculations, Review, and controls. A new operational
 record cannot silently change scientific state.
 

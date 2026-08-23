@@ -1,7 +1,7 @@
 {
   "op": "freeze_validation_spec",
   "local_ref": "validation_spec",
-  "actRef": "${ACT_REF}",
+  "nodeRef": "${NODE_REF}",
   "targetClaimRef": "${CLAIM_REF}",
   "dimension": "${VALIDATION_DIMENSION}",
   "title": "${VALIDATION_TITLE}",

@@ -1,4 +1,4 @@
-"""Small read-only HTTP server for the v4 research explorer."""
+"""Small read-only HTTP server for the v5 research explorer."""
 
 from __future__ import annotations
 
@@ -12,9 +12,10 @@ from typing import Any
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .normalize import (
-    act_payload,
+    node_payload,
     claim_payload,
     graph_payload,
+    list_node_files,
     normalize_workspace,
     research_files_payload,
     workspace_summary,
@@ -57,7 +58,7 @@ def create_server(
 
 def _make_handler(state_dir: Path):
     class ExplorerHandler(BaseHTTPRequestHandler):
-        server_version = "TSWeb/4.0"
+        server_version = "TSWeb/5.0"
 
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
@@ -65,8 +66,14 @@ def _make_handler(state_dir: Path):
                 if parsed.path in {"/", "/index.html"}:
                     self._send_static_file("index.html", "text/html; charset=utf-8")
                     return
+                if parsed.path == "/app.css":
+                    self._send_static_file("app.css", "text/css; charset=utf-8")
+                    return
+                if parsed.path == "/app.js":
+                    self._send_static_file("app.js", "text/javascript; charset=utf-8")
+                    return
                 if parsed.path == "/api/health":
-                    self._send_json({"ok": True, "protocol": "ts-research-kernel/4", "read_only": True})
+                    self._send_json({"ok": True, "protocol": "ts-research-kernel/5", "read_only": True})
                     return
                 if parsed.path == "/api/workspaces":
                     self._send_json(_workspaces_payload(state_dir))
@@ -88,7 +95,7 @@ def _make_handler(state_dir: Path):
             return
 
         def _send_json(self, payload: Any, *, status: HTTPStatus = HTTPStatus.OK) -> None:
-            body = json.dumps(payload, indent=2, sort_keys=True).encode("utf-8")
+            body = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
@@ -101,6 +108,7 @@ def _make_handler(state_dir: Path):
             self.send_response(HTTPStatus.OK)
             self.send_header("Content-Type", content_type)
             self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
             self.end_headers()
             self.wfile.write(body)
 
@@ -147,9 +155,12 @@ def _workspace_route(row: dict[str, Any], rest: str, query: dict[str, list[str]]
             "claims": view["claims"],
             "claim_relations": view["claim_relations"],
         }
-    if rest == "acts":
+    if rest == "phases":
         view = normalize_workspace(source_root, label=label)
-        return {"schema_version": "ts-explorer-research-acts/1", "research_acts": view["research_acts"]}
+        return {"schema_version": "ts-explorer-research-phases/1", "research_phases": view["research_phases"]}
+    if rest == "nodes":
+        view = normalize_workspace(source_root, label=label)
+        return {"schema_version": "ts-explorer-research-nodes/1", "research_nodes": view["research_nodes"]}
     if rest == "observations":
         view = normalize_workspace(source_root, label=label)
         return {"schema_version": "ts-explorer-observations/1", "observations": view["observations"]}
@@ -185,9 +196,9 @@ def _workspace_route(row: dict[str, Any], rest: str, query: dict[str, list[str]]
     if rest.startswith("claim/"):
         claim_id = _single_detail_id(rest, "claim")
         return claim_payload(source_root, claim_id, label=label)
-    if rest.startswith("act/"):
-        act_id = _single_detail_id(rest, "act")
-        return act_payload(source_root, act_id, label=label)
+    if rest.startswith("node/"):
+        node_id = _single_detail_id(rest, "node")
+        return node_payload(source_root, node_id, label=label)
     raise RouteNotFound(f"unknown workspace route: {rest}")
 
 
@@ -203,6 +214,16 @@ def _read_workspace_file(row: dict[str, Any], rel_path: str) -> dict[str, Any]:
         raise ValueError(f"path escapes workspace: {rel_path!r}")
     if not path.exists() or not path.is_file() or path.is_symlink():
         raise ValueError(f"file not found: {rel_path}")
+    parts = Path(normalized).parts
+    if len(parts) < 3 or parts[0] != "nodes":
+        raise ValueError("file preview is limited to current ResearchNode files")
+    allowed = {
+        row["path"]
+        for row in list_node_files(root, parts[1])["files"]
+        if isinstance(row.get("path"), str)
+    }
+    if normalized not in allowed:
+        raise ValueError("file preview is limited to current ResearchNode files")
     size = path.stat().st_size
     if size > MAX_TEXT_BYTES:
         raise ValueError(f"file is larger than {MAX_TEXT_BYTES} bytes")

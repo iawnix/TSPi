@@ -1,4 +1,4 @@
-"""Idempotent startup bootstrap for clean v4 workspaces only."""
+"""Idempotent startup bootstrap for clean v5 workspaces only."""
 
 from __future__ import annotations
 
@@ -14,15 +14,15 @@ from .state import LEGACY_MARKERS, OPTIONAL_DIRS, REQUIRED_DIRS, REQUIRED_FILES,
 from .validator import validate_workspace
 
 
-BOOTSTRAP_SCHEMA = "ts-workspace-bootstrap/2"
+BOOTSTRAP_SCHEMA = "ts-workspace-bootstrap/3"
 
 
 class WorkspaceBootstrapState(str, Enum):
     FRESH = "fresh"
-    VALID_V4 = "valid_v4"
-    PARTIAL_V4 = "partial_v4"
+    VALID_V5 = "valid_v5"
+    PARTIAL_V5 = "partial_v5"
     LEGACY_UNSUPPORTED = "legacy_unsupported"
-    INVALID_V4 = "invalid_v4"
+    INVALID_V5 = "invalid_v5"
 
 
 @dataclass(frozen=True)
@@ -33,7 +33,7 @@ class WorkspaceClassification:
 
 
 class WorkspaceBootstrapError(ValueError):
-    """Raised when startup cannot safely initialize or reuse a v4 workspace."""
+    """Raised when startup cannot safely initialize or reuse a v5 workspace."""
 
     def __init__(self, state: WorkspaceBootstrapState, message: str):
         super().__init__(message)
@@ -43,16 +43,16 @@ class WorkspaceBootstrapError(ValueError):
 def classify_workspace(root: str | Path) -> WorkspaceClassification:
     requested = Path(root).expanduser()
     if requested.is_symlink():
-        return WorkspaceClassification(requested.absolute(), WorkspaceBootstrapState.INVALID_V4, ("workspace root is a symbolic link",))
+        return WorkspaceClassification(requested.absolute(), WorkspaceBootstrapState.INVALID_V5, ("workspace root is a symbolic link",))
     if requested.exists() and not requested.is_dir():
-        return WorkspaceClassification(requested.absolute(), WorkspaceBootstrapState.INVALID_V4, ("workspace root is not a directory",))
+        return WorkspaceClassification(requested.absolute(), WorkspaceBootstrapState.INVALID_V5, ("workspace root is not a directory",))
     root_path = requested.resolve()
     if not root_path.exists():
         return WorkspaceClassification(root_path, WorkspaceBootstrapState.FRESH)
 
     unsafe = _unsafe_workspace_paths(root_path)
     if unsafe:
-        return WorkspaceClassification(root_path, WorkspaceBootstrapState.INVALID_V4, tuple(unsafe))
+        return WorkspaceClassification(root_path, WorkspaceBootstrapState.INVALID_V5, tuple(unsafe))
     legacy = _legacy_details(root_path)
     if legacy:
         return WorkspaceClassification(root_path, WorkspaceBootstrapState.LEGACY_UNSUPPORTED, tuple(legacy))
@@ -65,8 +65,8 @@ def classify_workspace(root: str | Path) -> WorkspaceClassification:
     if missing:
         return WorkspaceClassification(
             root_path,
-            WorkspaceBootstrapState.PARTIAL_V4,
-            (f"missing canonical v4 paths: {', '.join(missing)}",),
+            WorkspaceBootstrapState.PARTIAL_V5,
+            (f"missing canonical v5 paths: {', '.join(missing)}",),
         )
     validation = validate_workspace(root_path)
     if validation.get("valid") is not True:
@@ -75,8 +75,8 @@ def classify_workspace(root: str | Path) -> WorkspaceClassification:
             for item in validation.get("findings", [])
             if isinstance(item, dict) and item.get("severity") == "error"
         )
-        return WorkspaceClassification(root_path, WorkspaceBootstrapState.INVALID_V4, errors or ("workspace validation failed",))
-    return WorkspaceClassification(root_path, WorkspaceBootstrapState.VALID_V4)
+        return WorkspaceClassification(root_path, WorkspaceBootstrapState.INVALID_V5, errors or ("workspace validation failed",))
+    return WorkspaceClassification(root_path, WorkspaceBootstrapState.VALID_V5)
 
 
 def bootstrap_workspace(root: str | Path) -> dict[str, Any]:
@@ -87,7 +87,7 @@ def bootstrap_workspace(root: str | Path) -> dict[str, Any]:
         initialized = init_workspace(root_path)
         validation = validate_workspace(root_path)
         if initialized.get("valid") is not True or validation.get("valid") is not True:
-            raise WorkspaceBootstrapError(WorkspaceBootstrapState.INVALID_V4, "workspace initialization did not produce a valid v4 workspace")
+            raise WorkspaceBootstrapError(WorkspaceBootstrapState.INVALID_V5, "workspace initialization did not produce a valid v5 workspace")
         return {
             "schema_version": BOOTSTRAP_SCHEMA,
             "root": str(root_path),
@@ -96,7 +96,7 @@ def bootstrap_workspace(root: str | Path) -> dict[str, Any]:
             "workspace_id": initialized["workspace_id"],
             "validation": validation,
         }
-    if classification.state is WorkspaceBootstrapState.VALID_V4:
+    if classification.state is WorkspaceBootstrapState.VALID_V5:
         validation = validate_workspace(root_path)
         identity = read_workspace_identity(root_path)
         return {
@@ -110,11 +110,11 @@ def bootstrap_workspace(root: str | Path) -> dict[str, Any]:
 
     detail = "; ".join(classification.details)
     if classification.state is WorkspaceBootstrapState.LEGACY_UNSUPPORTED:
-        message = "legacy TS workspace is not supported by the v4 runtime; continue it with the matching previous release or start a new v4 workspace"
-    elif classification.state is WorkspaceBootstrapState.PARTIAL_V4:
-        message = "partially initialized v4 workspace cannot be repaired during startup"
+        message = "legacy TS workspace is not supported by the v5 runtime; continue it with the matching previous release or start a new v5 workspace"
+    elif classification.state is WorkspaceBootstrapState.PARTIAL_V5:
+        message = "partially initialized v5 workspace cannot be repaired during startup"
     else:
-        message = "invalid v4 workspace cannot be started"
+        message = "invalid v5 workspace cannot be started"
     if detail:
         message = f"{message}: {detail}"
     raise WorkspaceBootstrapError(classification.state, message)
@@ -145,6 +145,10 @@ def _unsafe_workspace_paths(root: Path) -> list[str]:
 
 def _legacy_details(root: Path) -> list[str]:
     details = [f"legacy marker exists: {name}" for name in sorted(LEGACY_MARKERS) if (root / name).exists()]
+    expected_schemas = {
+        WORKSPACE_FILE: "ts-workspace/5",
+        "research_state.json": "ts-research-state/5",
+    }
     for name in (WORKSPACE_FILE, "research_state.json"):
         path = root / name
         if not path.is_file() or path.is_symlink():
@@ -154,7 +158,7 @@ def _legacy_details(root: Path) -> list[str]:
         except (OSError, json.JSONDecodeError):
             continue
         schema = value.get("schema_version") if isinstance(value, dict) else None
-        if isinstance(schema, str) and schema not in {"ts-workspace/4", "ts-research-state/4"}:
+        if isinstance(schema, str) and schema != expected_schemas[name]:
             details.append(f"legacy schema exists: {name}={schema}")
     if (root / "hypotheses.json").exists():
         details.append("legacy marker exists: hypotheses.json")

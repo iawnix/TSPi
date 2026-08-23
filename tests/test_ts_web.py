@@ -8,11 +8,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.v4_helpers import accept_research_claim
+from tests.v5_helpers import accept_research_claim
 from ts_web import normalize_workspace, register_workspace
 from ts_web import server as ts_web_server
 from ts_web.normalize import (
-    act_payload,
+    node_payload,
     claim_payload,
     graph_payload_from_view,
     research_files_payload,
@@ -36,9 +36,15 @@ def _make_workspace(root: Path) -> dict[str, str]:
     drafted = draft_decision(
         root,
         {
-            "rationale": "Create a small Claim graph and ResearchAct DAG for the explorer.",
+            "rationale": "Create a small Claim graph and ResearchNode DAG for the explorer.",
             "basis_refs": [],
             "operations": [
+                {
+                    "op": "create_phase",
+                    "local_ref": "mechanism",
+                    "title": "Mechanism search",
+                    "objective": "Distinguish concerted and stepwise pathways.",
+                },
                 {
                     "op": "create_claim",
                     "local_ref": "concerted",
@@ -61,24 +67,20 @@ def _make_workspace(root: Path) -> dict[str, str]:
                     "rationale": "The Claims are competing explanations.",
                 },
                 {
-                    "op": "start_act",
+                    "op": "start_node",
                     "local_ref": "search",
-                    "title": "Bounded research act",
+                    "phaseRef": "$mechanism",
+                    "title": "Bounded research node",
                     "deliverable": "One bounded research result.",
                     "objective": "Search for observations that distinguish the mechanisms.",
+                    "primaryClaimRef": "$concerted",
                     "claimRefs": ["$concerted", "$stepwise"],
                     "tags": ["candidate-search"],
-                    "hypothesis": {
-                        "statement": "A bounded probe can discriminate between the competing mechanisms.",
-                        "assumptions": ["The probe is representative of the elementary step."],
-                        "predictions": ["One mechanism will remain consistent with the observations."],
-                        "falsifiers": ["The probe is compatible with both mechanisms."],
-                    },
                 },
                 {
                     "op": "record_observation",
                     "local_ref": "normal",
-                    "actRef": "$search",
+                    "nodeRef": "$search",
                     "conceptId": "program.normal_termination",
                     "subjectRef": "calc_probe",
                     "value": True,
@@ -89,7 +91,7 @@ def _make_workspace(root: Path) -> dict[str, str]:
                 {
                     "op": "freeze_validation_spec",
                     "local_ref": "spec",
-                    "actRef": "$search",
+                    "nodeRef": "$search",
                     "targetClaimRef": "$concerted",
                     "dimension": "probe",
                     "title": "Program completion probe",
@@ -114,7 +116,7 @@ def _make_workspace(root: Path) -> dict[str, str]:
                 {
                     "op": "evaluate_validation",
                     "local_ref": "result",
-                    "actRef": "$search",
+                    "nodeRef": "$search",
                     "specRef": "$spec",
                     "observationRefs": ["$normal"],
                 },
@@ -133,47 +135,49 @@ def _make_workspace(root: Path) -> dict[str, str]:
                     "severity": "warning",
                     "statement": "Connectivity evidence is still absent.",
                     "claimRefs": ["$concerted", "$stepwise"],
-                    "actRefs": ["$search"],
+                    "nodeRefs": ["$search"],
                     "basisObservationRefs": ["$normal"],
                 },
                 {
-                    "op": "complete_act",
-                    "actRef": "$search",
+                    "op": "complete_node",
+                    "nodeRef": "$search",
                     "outcome": "inconclusive",
                     "summary": "The probe completed but did not resolve the mechanism.",
                     "openQuestions": ["Which endpoints are connected?"],
                 },
                 {
-                    "op": "start_act",
+                    "op": "start_node",
                     "local_ref": "connectivity",
-                    "title": "Bounded research act",
+                    "phaseRef": "$mechanism",
+                    "title": "Bounded research node",
                     "deliverable": "One bounded research result.",
                     "objective": "Test bidirectional connectivity.",
                     "dependencyRefs": ["$search"],
+                    "primaryClaimRef": "$concerted",
                     "claimRefs": ["$concerted"],
                     "tags": ["connectivity"],
                 },
-                {"op": "set_focus", "claimRefs": ["$concerted"], "actRefs": ["$connectivity"]},
+                {"op": "set_focus", "claimRefs": ["$concerted"], "nodeRefs": ["$connectivity"]},
             ],
         },
     )
     apply_decision(root, drafted["decision"])
     refs = drafted["allocated_refs"]
-    act_id = refs["connectivity"]
-    artifact = root / "acts" / act_id / "outputs" / "probe.json"
+    node_id = refs["connectivity"]
+    artifact = root / "nodes" / node_id / "outputs" / "probe.json"
     artifact.parent.mkdir(parents=True, exist_ok=True)
     artifact.write_text("{}\n", encoding="utf-8")
     _write(
-        root / "acts" / act_id / "attempts" / "calc_1" / "intent.json",
+        root / "nodes" / node_id / "attempts" / "calc_1" / "intent.json",
         {
             "intent_id": "calc_1",
-            "act_id": act_id,
+            "node_id": node_id,
             "backend": "gaussian",
             "task_type": "irc",
         },
     )
     _write(
-        root / "acts" / act_id / "attempts" / "calc_1" / "status.json",
+        root / "nodes" / node_id / "attempts" / "calc_1" / "status.json",
         {
             "intent_id": "calc_1",
             "state": "completed",
@@ -181,25 +185,25 @@ def _make_workspace(root: Path) -> dict[str, str]:
         },
     )
     _write(
-        root / "acts" / act_id / "activities" / "op_1" / "request.json",
+        root / "nodes" / node_id / "activities" / "op_1" / "request.json",
         {
             "schema_version": "ts-deterministic-activity-request/1",
             "activity_id": "op_1",
             "kind": "render",
             "operation": "molecule",
-            "act_refs": [act_id],
+            "node_refs": [node_id],
             "request": {},
             "started_at": "2026-08-16T00:00:00+00:00",
         },
     )
     _write(
-        root / "acts" / act_id / "activities" / "op_1" / "status.json",
+        root / "nodes" / node_id / "activities" / "op_1" / "status.json",
         {
             "schema_version": "ts-deterministic-activity-status/1",
             "activity_id": "op_1",
             "kind": "render",
             "operation": "molecule",
-            "act_refs": [act_id],
+            "node_refs": [node_id],
             "status": "completed",
             "started_at": "2026-08-16T00:00:00+00:00",
             "completed_at": "2026-08-16T00:01:00+00:00",
@@ -207,22 +211,22 @@ def _make_workspace(root: Path) -> dict[str, str]:
         },
     )
     _write(
-        root / "acts" / act_id / "activities" / "op_1" / "result.json",
+        root / "nodes" / node_id / "activities" / "op_1" / "result.json",
         {"outcome": "success", "summary": "Molecule rendered."},
     )
     _write(
-        root / "acts" / act_id / "attempts" / "calc_1" / "runs" / "sub_1" / "task.json",
+        root / "nodes" / node_id / "attempts" / "calc_1" / "runs" / "sub_1" / "task.json",
         {
             "task_id": "sub_1",
             "role": "compute",
             "authority": "operational",
             "operation": "finalize",
-            "scope": {"act_refs": [act_id], "claim_refs": [refs["concerted"]]},
-            "inputs": {"act_id": act_id, "intent_id": "calc_1", "backend": "gaussian"},
+            "scope": {"node_refs": [node_id], "claim_refs": [refs["concerted"]]},
+            "inputs": {"node_id": node_id, "intent_id": "calc_1", "backend": "gaussian"},
         },
     )
     _write(
-        root / "acts" / act_id / "attempts" / "calc_1" / "runs" / "sub_1" / "run.json",
+        root / "nodes" / node_id / "attempts" / "calc_1" / "runs" / "sub_1" / "run.json",
         {
             "task_id": "sub_1",
             "status": "completed",
@@ -232,7 +236,7 @@ def _make_workspace(root: Path) -> dict[str, str]:
         },
     )
     _write(
-        root / "acts" / act_id / "attempts" / "calc_1" / "runs" / "sub_1" / "result.json",
+        root / "nodes" / node_id / "attempts" / "calc_1" / "runs" / "sub_1" / "result.json",
         {"outcome": "success", "summary": "Calculation finalized."},
     )
     _write(
@@ -242,7 +246,7 @@ def _make_workspace(root: Path) -> dict[str, str]:
             "role": "review",
             "authority": "advisory",
             "operation": "claim_review",
-            "scope": {"act_refs": [act_id], "claim_refs": [refs["concerted"]]},
+            "scope": {"node_refs": [node_id], "claim_refs": [refs["concerted"]]},
         },
     )
     _write(
@@ -262,56 +266,87 @@ def _make_workspace(root: Path) -> dict[str, str]:
     return refs
 
 
-def test_normalize_workspace_projects_v4_scientific_and_operational_state(tmp_path: Path) -> None:
+def test_normalize_workspace_projects_v5_phase_node_and_operational_state(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     refs = _make_workspace(workspace)
 
     view = normalize_workspace(workspace)
 
-    assert view["schema_version"] == "ts-web-workspace/4"
-    assert view["workspace"]["kernel_protocol"] == "ts-research-kernel/4"
+    assert view["schema_version"] == "ts-web-workspace/5"
+    assert view["workspace"]["kernel_protocol"] == "ts-research-kernel/5"
+    assert view["research_phases"][0]["phase_id"] == refs["mechanism"]
+    assert view["research_phases"][0]["node_refs"] == [refs["search"], refs["connectivity"]]
+    assert view["focus"]["phase_refs"] == [refs["mechanism"]]
     assert view["focus"]["claim_refs"] == [refs["concerted"]]
-    assert view["focus"]["act_refs"] == [refs["connectivity"]]
-    active = next(row for row in view["research_acts"] if row["act_id"] == refs["connectivity"])
+    assert view["focus"]["node_refs"] == [refs["connectivity"]]
+    active = next(row for row in view["research_nodes"] if row["node_id"] == refs["connectivity"])
     assert active["activities"][0]["activity_id"] == "op_1"
     assert active["attempts"][0]["runs"][0]["task_id"] == "sub_1"
     assert active["compute_run_count"] == 1
-    assert all("node_id" not in row for row in view["research_acts"])
+    assert all(row["phase_ref"] == refs["mechanism"] for row in view["research_nodes"])
+
+
+def test_web_control_projection_distinguishes_submit_and_cancel_for_one_attempt(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+    node_id = refs["connectivity"]
+    attempt = workspace / "nodes" / node_id / "attempts" / "calc_1"
+    for operation, error_class in (
+        ("submit", "submission_ambiguous"),
+        ("cancel", "cancellation_ambiguous"),
+    ):
+        _write(attempt / f"{operation}_guard.json", {"operation": operation})
+        _write(
+            attempt / f"{operation}_result.json",
+            {
+                "state": "unknown",
+                "error_class": error_class,
+                "job_id": None,
+                "control": {"effect_outcome": "unknown", "retry_disposition": "reconcile_only"},
+            },
+        )
+
+    view = normalize_workspace(workspace)
+    detail = node_payload(workspace, node_id)
+
+    expected = {"calc_1:submit:1", "calc_1:cancel:1"}
+    assert {row["control_id"] for row in view["unresolved_controls"]} == expected
+    assert {row["control_id"] for row in detail["research_node"]["unresolved_controls"]} == expected
 
 
 def test_web_ignores_legacy_attempt_ids_and_sorts_current_ordinals(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     refs = _make_workspace(workspace)
-    act_id = refs["connectivity"]
+    node_id = refs["connectivity"]
     for intent_id in ("calc_10", "calc_2", "calc_legacy"):
         _write(
-            workspace / "acts" / act_id / "attempts" / intent_id / "intent.json",
-            {"intent_id": intent_id, "act_id": act_id, "backend": "gaussian", "task_type": "sp"},
+            workspace / "nodes" / node_id / "attempts" / intent_id / "intent.json",
+            {"intent_id": intent_id, "node_id": node_id, "backend": "gaussian", "task_type": "sp"},
         )
     legacy_activity = "op_019a338f-acaf-43e6-b498-4e3994971399"
     legacy_run = "sub_028def15-cbb5-42b4-bbfc-cfbd256c4a0b"
-    _write(workspace / "acts" / act_id / "activities" / legacy_activity / "request.json", {})
-    _write(workspace / "acts" / act_id / "agent-runs" / "sub_old" / "task.json", {})
-    _write(workspace / "acts" / act_id / "attempts" / "calc_1" / "runs" / legacy_run / "task.json", {})
+    _write(workspace / "nodes" / node_id / "activities" / legacy_activity / "request.json", {})
+    _write(workspace / "nodes" / node_id / "agent-runs" / "sub_old" / "task.json", {})
+    _write(workspace / "nodes" / node_id / "attempts" / "calc_1" / "runs" / legacy_run / "task.json", {})
 
     view = normalize_workspace(workspace)
-    detail = act_payload(workspace, act_id)
+    detail = node_payload(workspace, node_id)
 
-    active = next(row for row in view["research_acts"] if row["act_id"] == act_id)
+    active = next(row for row in view["research_nodes"] if row["node_id"] == node_id)
     assert [row["intent_id"] for row in active["attempts"]] == ["calc_1", "calc_2", "calc_10"]
     paths = {row["path"] for row in detail["files"]["files"]}
-    assert f"acts/{act_id}/attempts/calc_1/runs/sub_1/task.json" in paths
+    assert f"nodes/{node_id}/attempts/calc_1/runs/sub_1/task.json" in paths
     assert not any(legacy_activity in path or legacy_run in path or "/agent-runs/" in path for path in paths)
     assert not any("/attempts/calc_legacy/" in path for path in paths)
 
 
-def test_graph_uses_claim_relations_and_research_act_dependencies(tmp_path: Path) -> None:
+def test_graph_uses_claim_relations_and_research_node_dependencies(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     refs = _make_workspace(workspace)
 
     graph = graph_payload_from_view(normalize_workspace(workspace))
 
-    assert graph["schema_version"] == "ts-explorer-graph/4"
+    assert graph["schema_version"] == "ts-explorer-graph/5"
     assert graph["claim_graph"]["edges"] == [
         {
             "id": refs["alternatives"],
@@ -321,7 +356,7 @@ def test_graph_uses_claim_relations_and_research_act_dependencies(tmp_path: Path
             "rationale": "The Claims are competing explanations.",
         }
     ]
-    assert graph["research_act_dag"]["edges"] == [
+    assert graph["research_node_dag"]["edges"] == [
         {
             "id": f"dependency:{refs['search']}:{refs['connectivity']}",
             "source": refs["search"],
@@ -333,23 +368,23 @@ def test_graph_uses_claim_relations_and_research_act_dependencies(tmp_path: Path
     assert {row["role"] for row in graph["agent_runs"]} == {"compute", "review"}
 
 
-def test_claim_and_act_details_follow_graph_references(tmp_path: Path) -> None:
+def test_claim_and_node_details_follow_graph_references(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     refs = _make_workspace(workspace)
 
     claim = claim_payload(workspace, refs["concerted"])
-    active = act_payload(workspace, refs["connectivity"])
-    completed = act_payload(workspace, refs["search"])
+    active = node_payload(workspace, refs["connectivity"])
+    completed = node_payload(workspace, refs["search"])
 
-    assert {row["act_id"] for row in claim["research_acts"]} == {refs["search"], refs["connectivity"]}
+    assert {row["node_id"] for row in claim["research_nodes"]} == {refs["search"], refs["connectivity"]}
     assert claim["validation_results"][0]["verdict"] == "pass"
-    assert active["dependencies"][0]["act_id"] == refs["search"]
-    assert active["research_act"]["activities"][0]["activity_id"] == "op_1"
+    assert active["dependencies"][0]["node_id"] == refs["search"]
+    assert active["research_node"]["activities"][0]["activity_id"] == "op_1"
     assert claim["review_runs"][0]["task_id"] == "sub_2"
-    attempt = active["research_act"]["attempts"][0]
+    attempt = active["research_node"]["attempts"][0]
     assert {key: value for key, value in attempt.items() if key != "runs"} == {
         "intent_id": "calc_1",
-        "ref": f"acts/{refs['connectivity']}/attempts/calc_1",
+        "ref": f"nodes/{refs['connectivity']}/attempts/calc_1",
         "backend": "gaussian",
         "task_type": "irc",
         "state": "completed",
@@ -358,36 +393,36 @@ def test_claim_and_act_details_follow_graph_references(tmp_path: Path) -> None:
         "run_count": 1,
     }
     assert attempt["runs"][0]["task_id"] == "sub_1"
-    assert completed["dependents"][0]["act_id"] == refs["connectivity"]
-    assert completed["research_act"]["hypothesis"]["falsifiers"] == [
-        "The probe is compatible with both mechanisms."
-    ]
+    assert completed["dependents"][0]["node_id"] == refs["connectivity"]
+    assert completed["phase"]["phase_id"] == refs["mechanism"]
+    assert completed["history"][0]["decision_id"] == completed["research_node"]["created_by_decision"]
     assert {row["claim_id"] for row in completed["claims"]} == {refs["concerted"], refs["stepwise"]}
     assert completed["validation_specs"][0]["title"] == "Program completion probe"
-    assert f"acts/{refs['connectivity']}/outputs/probe.json" in {
+    assert f"nodes/{refs['connectivity']}/outputs/probe.json" in {
         row["path"] for row in active["files"]["files"]
     }
 
 
-def test_web_derives_claim_act_link_from_creator_provenance(tmp_path: Path) -> None:
+def test_web_derives_claim_node_link_from_creator_provenance(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     init_workspace(workspace)
-    act_draft = draft_decision(
+    node_draft = draft_decision(
         workspace,
         {
-            "rationale": "Start an exploratory Act before it discovers a Claim.",
+            "rationale": "Start an exploratory Node before it discovers a Claim.",
             "basis_refs": [],
             "operations": [
-                {"op": "start_act", "local_ref": "exploration", "title": "Bounded research act", "deliverable": "One bounded research result.", "objective": "Look for an alternative mechanism."}
+                {"op": "create_phase", "local_ref": "exploration_phase", "title": "Exploration", "objective": "Look for an alternative mechanism."},
+                {"op": "start_node", "local_ref": "exploration", "phaseRef": "$exploration_phase", "title": "Bounded research node", "deliverable": "One bounded research result.", "objective": "Look for an alternative mechanism."}
             ],
         },
     )
-    apply_decision(workspace, act_draft["decision"])
-    act_id = act_draft["allocated_refs"]["exploration"]
+    apply_decision(workspace, node_draft["decision"])
+    node_id = node_draft["allocated_refs"]["exploration"]
     claim_draft = draft_decision(
         workspace,
         {
-            "rationale": "Record the alternative Claim discovered by the Act.",
+            "rationale": "Record the alternative Claim discovered by the Node.",
             "basis_refs": [],
             "operations": [
                 {
@@ -395,7 +430,7 @@ def test_web_derives_claim_act_link_from_creator_provenance(tmp_path: Path) -> N
                     "local_ref": "alternative",
                     "claimType": "mechanism",
                     "statement": "An alternative pathway may exist.",
-                    "createdByAct": act_id,
+                    "createdByNode": node_id,
                 }
             ],
         },
@@ -404,50 +439,51 @@ def test_web_derives_claim_act_link_from_creator_provenance(tmp_path: Path) -> N
     claim_id = claim_draft["allocated_refs"]["alternative"]
 
     view = normalize_workspace(workspace)
-    act = next(row for row in view["research_acts"] if row["act_id"] == act_id)
+    node = next(row for row in view["research_nodes"] if row["node_id"] == node_id)
     graph = graph_payload_from_view(view)
-    assert act["claim_refs"] == []
-    assert act["related_claim_refs"] == [claim_id]
-    assert graph["claim_act_links"] == [{"claim_ref": claim_id, "act_ref": act_id}]
-    assert [row["act_id"] for row in claim_payload(workspace, claim_id)["research_acts"]] == [act_id]
-    assert [row["claim_id"] for row in act_payload(workspace, act_id)["claims"]] == [claim_id]
+    assert node["claim_refs"] == []
+    assert node["related_claim_refs"] == [claim_id]
+    assert graph["claim_node_links"] == [{"claim_ref": claim_id, "node_ref": node_id}]
+    assert [row["node_id"] for row in claim_payload(workspace, claim_id)["research_nodes"]] == [node_id]
+    assert [row["claim_id"] for row in node_payload(workspace, node_id)["claims"]] == [claim_id]
 
 
-def test_static_ui_exposes_v4_dual_graph_without_legacy_routes() -> None:
+def test_static_ui_exposes_v5_phase_roadmap_and_on_demand_node_details() -> None:
     html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
+    script = (ROOT / "ts_web" / "static" / "app.js").read_text(encoding="utf-8")
 
     assert "TS Research Explorer" in html
-    assert "Claim graph" in html
-    assert "ResearchAct DAG" in html
-    assert "Lineage and Claims" in html
-    assert "Calculation attempts" in html
-    assert "Compute runs" in html
-    assert "Review runs" in html
-    assert "Research contract" in html
+    assert "Research Roadmap" in html
+    assert "Scientific Conclusions" in html
     assert "Research Files" in html
-    assert "renderResearchFiles" in html
-    assert "/files?query=" in html
-    assert "Scientific record" in html
-    assert "Audit references" in html
-    assert "renderActHypothesis" in html
-    assert "/graph" in html
-    assert "/api/node" not in html
-    assert "/api/gates" not in html
-    assert "/api/evidence" not in html
+    assert "Advanced Graphs" in html
+    assert "app.css" in html
+    assert "app.js" in html
+    assert "renderPhaseBand" in script
+    assert "renderNodeDetail" in script
+    assert 'const tabs = ["overview", "conclusions", "evidence", "runs", "files", "history"]' in script
+    assert 'control: [state.view.unresolved_controls, "control_id"]' in script
+    assert "function renderActDetail" not in script
+    assert "/api/node" not in html + script
+    assert "/api/gates" not in html + script
+    assert "/api/evidence" not in html + script
 
 
 def test_static_ui_refreshes_registry_and_persists_theme() -> None:
     html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
+    css = (ROOT / "ts_web" / "static" / "app.css").read_text(encoding="utf-8")
+    script = (ROOT / "ts_web" / "static" / "app.js").read_text(encoding="utf-8")
 
-    assert ':root[data-theme="light"]' in html
+    assert ':root[data-theme="dark"]' in css
+    assert "body.inspector-open { overflow: hidden; }" in css
     assert 'id="theme-button"' in html
-    assert 'const themeStorageKey = "ts-explorer-theme"' in html
-    assert 'themeButton.addEventListener("click", toggleTheme)' in html
-    assert "async function loadWorkspaceCatalog()" in html
-    assert 'const payload = await api("/api/workspaces")' in html
-    assert 'refreshButton.addEventListener("click", refreshExplorer)' in html
-    assert 'refreshStatus.textContent = "Refreshing workspaces"' in html
-    assert 'const message = succeeded ? "Workspace list refreshed" : "Refresh failed"' in html
+    assert 'const themeStorageKey = "ts-explorer-theme"' in script
+    assert 'themeButton.addEventListener("click", toggleTheme)' in script
+    assert "async function loadWorkspaceCatalog()" in script
+    assert 'const payload = await api("/api/workspaces")' in script
+    assert 'refreshButton.addEventListener("click", refreshExplorer)' in script
+    assert 'refreshStatus.textContent = "Refreshing workspace"' in script
+    assert 'showToast("Workspace refreshed")' in script
 
 
 def test_research_files_payload_is_a_read_only_locator_projection(tmp_path: Path) -> None:
@@ -459,14 +495,15 @@ def test_research_files_payload_is_a_read_only_locator_projection(tmp_path: Path
 
     assert result["schema_version"] == "ts-workspace-locator/1"
     assert result["query_mode"] == "exact"
-    assert result["matches"][0]["kind"] == "act"
-    assert result["matches"][0]["directories"][0]["path"] == f"acts/{refs['connectivity']}"
+    assert result["matches"][0]["kind"] == "node"
+    assert result["matches"][0]["directories"][0]["path"] == f"nodes/{refs['connectivity']}"
     assert _relative_files(workspace) == before
 
 
 def test_static_asset_resolves_from_current_package() -> None:
-    expected = files("ts_web").joinpath("static", "index.html").read_bytes()
-    assert ts_web_server._static_asset("index.html").read_bytes() == expected
+    for name in ("index.html", "app.css", "app.js"):
+        expected = files("ts_web").joinpath("static", name).read_bytes()
+        assert ts_web_server._static_asset(name).read_bytes() == expected
 
 
 def test_web_distinguishes_current_from_historical_acceptance(tmp_path: Path) -> None:
@@ -491,7 +528,7 @@ def test_web_distinguishes_current_from_historical_acceptance(tmp_path: Path) ->
                     "severity": "warning",
                     "statement": "The earlier assessment does not include this limitation.",
                     "claimRefs": [refs["claim"]],
-                    "actRefs": [refs["act"]],
+                    "nodeRefs": [refs["node"]],
                 }
             ],
         },
@@ -532,7 +569,7 @@ def test_register_workspaces_validates_all_sources_before_writing(tmp_path: Path
     assert not state.exists()
 
 
-def test_web_server_is_read_only_v4_and_has_no_legacy_routes(tmp_path: Path) -> None:
+def test_web_server_is_read_only_v5_and_has_no_legacy_routes(tmp_path: Path) -> None:
     source = tmp_path / "workspace"
     refs = _make_workspace(source)
     before = _relative_files(source)
@@ -544,14 +581,15 @@ def test_web_server_is_read_only_v4_and_has_no_legacy_routes(tmp_path: Path) -> 
     try:
         host, port = server.server_address
         health = _get_json(host, port, "/api/health")
-        assert health == {"ok": True, "protocol": "ts-research-kernel/4", "read_only": True}
+        assert health == {"ok": True, "protocol": "ts-research-kernel/5", "read_only": True}
         workspaces = _get_json(host, port, "/api/workspaces")
         assert workspaces["default_workspace"] == row["workspace_id"]
         base = f"/api/workspace/{row['workspace_id']}"
-        assert _get_json(host, port, f"{base}/graph")["schema_version"] == "ts-explorer-graph/4"
-        assert _get_json(host, port, f"{base}/claims")["claims"][0]["schema_version"] == "ts-claim/2"
-        assert _get_json(host, port, f"{base}/acts")["research_acts"][0]["schema_version"] == "ts-research-act/3"
-        assert _get_json(host, port, f"{base}/observations")["observations"][0]["schema_version"] == "ts-observation/1"
+        assert _get_json(host, port, f"{base}/graph")["schema_version"] == "ts-explorer-graph/5"
+        assert _get_json(host, port, f"{base}/phases")["research_phases"][0]["phase_id"] == refs["mechanism"]
+        assert _get_json(host, port, f"{base}/claims")["claims"][0]["schema_version"] == "ts-claim/3"
+        assert _get_json(host, port, f"{base}/nodes")["research_nodes"][0]["schema_version"] == "ts-research-node/1"
+        assert _get_json(host, port, f"{base}/observations")["observations"][0]["schema_version"] == "ts-observation/2"
         assert _get_json(host, port, f"{base}/validation")["validation_results"][0]["verdict"] == "pass"
         assert _get_json(host, port, f"{base}/findings")["findings"][0]["status"] == "open"
         files = _get_json(host, port, f"{base}/files?query={refs['connectivity']}")
@@ -563,15 +601,18 @@ def test_web_server_is_read_only_v4_and_has_no_legacy_routes(tmp_path: Path) -> 
             ("sub_2", "review"),
         }
         assert _get_json(host, port, f"{base}/claim/{refs['concerted']}")["claim"]["status"] == "supported"
-        act = _get_json(host, port, f"{base}/act/{refs['connectivity']}")
-        assert act["research_act"]["status"] == "open"
-        preview = _get_json(host, port, f"{base}/file?path=acts/{refs['connectivity']}/outputs/probe.json")
+        node = _get_json(host, port, f"{base}/node/{refs['connectivity']}")
+        assert node["research_node"]["status"] == "open"
+        preview = _get_json(host, port, f"{base}/file?path=nodes/{refs['connectivity']}/outputs/probe.json")
         assert preview["text"] == "{}\n"
+        assert _get_text(host, port, f"{base}/file?path=workspace.json")[0] == 400
         html = _get_text(host, port, "/")[1]
         assert "TS Research Explorer" in html
-        assert "act-table" in html
-        for legacy in (f"{base}/tree", f"{base}/gates", f"{base}/evidence", f"{base}/node/n000", "/api/node/n000"):
+        assert _get_text(host, port, "/app.css")[0] == 200
+        assert _get_text(host, port, "/app.js")[0] == 200
+        for legacy in (f"{base}/tree", f"{base}/gates", f"{base}/evidence", "/api/node/n000"):
             assert _get_text(host, port, legacy)[0] == 404
+        assert _get_text(host, port, f"{base}/node/n000")[0] == 400
     finally:
         server.shutdown()
         server.server_close()

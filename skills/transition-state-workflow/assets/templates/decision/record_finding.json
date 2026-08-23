@@ -5,6 +5,6 @@
   "severity": "warning",
   "statement": "${FINDING_STATEMENT}",
   "claimRefs": ["${CLAIM_REF}"],
-  "actRefs": ["${ACT_REF}"],
+  "nodeRefs": ["${NODE_REF}"],
   "basisObservationRefs": []
 }

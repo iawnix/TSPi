@@ -5,7 +5,7 @@ intermediate/basin identities. Do not infer pathway acceptance from one accepted
 transition state or from DAG topology.
 
 Record explicit Claims for material steps and species identities. Relate their
-scientific dependencies with ClaimRelations. ResearchAct dependencies show how
+scientific dependencies with ClaimRelations. ResearchNode dependencies show how
 the study produced results, not chemical connectivity.
 
 For a pathway audit, record semantic Observations covering the ordered step

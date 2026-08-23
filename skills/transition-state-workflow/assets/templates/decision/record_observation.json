@@ -1,7 +1,7 @@
 {
   "op": "record_observation",
   "local_ref": "observation",
-  "actRef": "${ACT_REF}",
+  "nodeRef": "${NODE_REF}",
   "conceptId": "${CONCEPT_ID}",
   "subjectRef": "${SUBJECT_REF}",
   "value": "${VALUE}",

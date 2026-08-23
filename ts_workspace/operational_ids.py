@@ -23,13 +23,13 @@ _ID_PATTERNS = {
     "op": ACTIVITY_ID,
 }
 _SCAN_PATTERNS = {
-    "calc": ("acts/*/attempts/calc_*",),
+    "calc": ("nodes/*/attempts/calc_*",),
     "sub": (
-        "acts/*/attempts/*/runs/sub_*",
+        "nodes/*/attempts/*/runs/sub_*",
         "reviews/*/runs/sub_*",
     ),
     "op": (
-        "acts/*/activities/op_*",
+        "nodes/*/activities/op_*",
         "operations/activities/op_*",
     ),
 }

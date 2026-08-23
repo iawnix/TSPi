@@ -10,7 +10,7 @@ type ActionLog = { tool: string; result: Record<string, unknown> }[];
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("ts-test-compute-child", {
-    description: "Run one recording-provider v4 Compute child session.",
+    description: "Run one recording-provider v5 Compute child session.",
     handler: async (args, ctx) => {
       const scenario = String(args || "launch").trim() || "launch";
       const operation = operationForScenario(scenario);
@@ -25,13 +25,13 @@ export default function (pi: ExtensionAPI) {
         workspaceRoot: ctx.cwd,
         operation,
         backend: "gaussian",
-        actId: "act_1",
+        nodeId: "node_1",
         binding,
         tailArtifact: operation === "inspect" ? "gaussian.out" : undefined,
         tailLines: operation === "inspect" ? 80 : undefined,
         artifacts: operation === "finalize" ? ["gaussian.out"] : undefined,
         artifactRef: operation === "finalize"
-          ? "acts/act_1/attempts/calc_1/outputs/remote/gaussian.out"
+          ? "nodes/node_1/attempts/calc_1/outputs/remote/gaussian.out"
           : undefined,
       });
       const actions: ActionLog = [];
@@ -105,13 +105,13 @@ function resultFor(name: string, scenario: string, intentDigest: string): Record
   return {
     schema_version: action === "tail" ? "ts-calculation-tail/1" : "ts-calculation-result/2",
     intent_id: "calc_1",
-    act_id: "act_1",
+    node_id: "node_1",
     state,
     program_status: action === "parse" ? "completed" : action === "status" ? "running" : "not_run",
     error_class: ambiguous ? (action === "submit" ? "submission_ambiguous" : "cancellation_ambiguous") : null,
     exit_status: action === "parse" ? 0 : null,
     artifact_refs: ["collect", "parse"].includes(action)
-      ? ["acts/act_1/attempts/calc_1/outputs/remote/gaussian.out"]
+      ? ["nodes/node_1/attempts/calc_1/outputs/remote/gaussian.out"]
       : [],
     control: ["submit", "cancel"].includes(action)
       ? {

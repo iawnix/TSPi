@@ -1,4 +1,4 @@
-"""Logical identifier and artifact binding validation for v4."""
+"""Logical identifier and artifact binding validation for v5."""
 
 from __future__ import annotations
 
@@ -10,8 +10,10 @@ DECISION_ID_PATTERN = r"^dec_[1-9][0-9]*$"
 DECISION_ID = re.compile(DECISION_ID_PATTERN)
 CLAIM_ID_PATTERN = r"^claim_[1-9][0-9]*$"
 CLAIM_ID = re.compile(CLAIM_ID_PATTERN)
-ACT_ID_PATTERN = r"^act_[1-9][0-9]*$"
-ACT_ID = re.compile(ACT_ID_PATTERN)
+PHASE_ID_PATTERN = r"^phase_[1-9][0-9]*$"
+PHASE_ID = re.compile(PHASE_ID_PATTERN)
+NODE_ID_PATTERN = r"^node_[1-9][0-9]*$"
+NODE_ID = re.compile(NODE_ID_PATTERN)
 CALCULATION_ID_PATTERN = r"^calc_[1-9][0-9]*$"
 CALCULATION_ID = re.compile(CALCULATION_ID_PATTERN)
 SUBAGENT_RUN_ID_PATTERN = r"^sub_[1-9][0-9]*$"
@@ -34,7 +36,7 @@ ARTIFACT_ID = re.compile(r"^art_[0-9a-f]{24}$")
 
 
 class WorkspaceRefError(ValueError):
-    """Raised when a v4 logical reference is invalid."""
+    """Raised when a v5 logical reference is invalid."""
 
 
 def decision_ordinal(value: str) -> int:
@@ -61,6 +63,24 @@ def next_claim_ordinal(values: Any) -> int:
     return _next_ordinal(values, claim_ordinal)
 
 
+def phase_ordinal(value: str) -> int:
+    """Return the workspace-local ordinal encoded by one ResearchPhase ID."""
+
+    return _ordinal(value, pattern=PHASE_ID, prefix="phase_", label="ResearchPhase")
+
+
+def next_phase_ordinal(values: Any) -> int:
+    """Allocate after the highest existing ResearchPhase ordinal."""
+
+    return _next_ordinal(values, phase_ordinal)
+
+
+def phase_sort_key(value: str) -> tuple[int, str]:
+    """Sort canonical ResearchPhase IDs numerically while remaining defensive."""
+
+    return _sort_key(value, phase_ordinal)
+
+
 def claim_sort_key(value: str) -> tuple[int, str]:
     """Sort canonical Claim IDs numerically while remaining defensive."""
 
@@ -70,23 +90,23 @@ def claim_sort_key(value: str) -> tuple[int, str]:
         return (2**63 - 1, str(value))
 
 
-def act_ordinal(value: str) -> int:
-    """Return the workspace-local ordinal encoded by one canonical Act ID."""
+def node_ordinal(value: str) -> int:
+    """Return the workspace-local ordinal encoded by one canonical Node ID."""
 
-    return _ordinal(value, pattern=ACT_ID, prefix="act_", label="ResearchAct")
+    return _ordinal(value, pattern=NODE_ID, prefix="node_", label="ResearchNode")
 
 
-def next_act_ordinal(values: Any) -> int:
+def next_node_ordinal(values: Any) -> int:
     """Allocate after the highest existing ordinal without reusing history."""
 
-    return _next_ordinal(values, act_ordinal)
+    return _next_ordinal(values, node_ordinal)
 
 
-def act_sort_key(value: str) -> tuple[int, str]:
-    """Sort canonical Act IDs numerically while remaining defensive."""
+def node_sort_key(value: str) -> tuple[int, str]:
+    """Sort canonical Node IDs numerically while remaining defensive."""
 
     try:
-        return (act_ordinal(value), "")
+        return (node_ordinal(value), "")
     except WorkspaceRefError:
         return (2**63 - 1, str(value))
 

@@ -39,8 +39,8 @@ function beginAgentRun(workspaceRoot, packet, { documents = {}, ownerClaimRef } 
   }
   const taskId = requireSafeId(task.task_id, "task_id");
   const scope = task.scope;
-  const actRefs = Array.isArray(scope.act_refs) ? scope.act_refs.map((value) => requireSafeId(value, "act_ref")) : [];
-  const ownerRef = agentRunOwnerRef(root, task, actRefs, ownerClaimRef);
+  const nodeRefs = Array.isArray(scope.node_refs) ? scope.node_refs.map((value) => requireSafeId(value, "node_ref")) : [];
+  const ownerRef = agentRunOwnerRef(root, task, nodeRefs, ownerClaimRef);
 
   const parent = resolve(root, ...ownerRef.split("/"));
   assertWithin(root, parent);
@@ -372,16 +372,16 @@ function requireReviewRunRef(value, taskId) {
   return value;
 }
 
-function agentRunOwnerRef(root, task, actRefs, ownerClaimRef) {
+function agentRunOwnerRef(root, task, nodeRefs, ownerClaimRef) {
   if (task.role === "compute") {
-    if (actRefs.length !== 1) throw new Error("Compute run requires exactly one owner ResearchAct");
-    const actRef = actRefs[0];
-    if (!workspaceContainsAct(root, actRef)) {
-      throw new Error(`agent-run owner ResearchAct does not exist: ${actRef}`);
+    if (nodeRefs.length !== 1) throw new Error("Compute run requires exactly one owner ResearchNode");
+    const nodeRef = nodeRefs[0];
+    if (!workspaceContainsNode(root, nodeRef)) {
+      throw new Error(`agent-run owner ResearchNode does not exist: ${nodeRef}`);
     }
     const inputs = isPlainObject(task.inputs) ? task.inputs : {};
     const intentId = requireSafeId(inputs.intent_id, "intent_id");
-    const attemptRef = `acts/${actRef}/attempts/${intentId}`;
+    const attemptRef = `nodes/${nodeRef}/attempts/${intentId}`;
     assertNoSymlinkComponents(root, attemptRef);
     const attemptDir = resolve(root, ...attemptRef.split("/"));
     if (!existsSync(attemptDir)) throw new Error(`Compute run owner attempt does not exist: ${intentId}`);
@@ -390,8 +390,8 @@ function agentRunOwnerRef(root, task, actRefs, ownerClaimRef) {
       throw new Error(`Compute run owner attempt is invalid: ${intentId}`);
     }
     const intent = readBoundJson(attemptDir, "intent.json");
-    if (intent.intent_id !== intentId || intent.act_id !== actRef) {
-      throw new Error(`Compute run owner attempt is not bound to ${actRef}/${intentId}`);
+    if (intent.intent_id !== intentId || intent.node_id !== nodeRef) {
+      throw new Error(`Compute run owner attempt is not bound to ${nodeRef}/${intentId}`);
     }
     return `${attemptRef}/runs`;
   }
@@ -413,20 +413,20 @@ function agentRunOwnerRef(root, task, actRefs, ownerClaimRef) {
   throw new Error(`unsupported agent-run role: ${task.role}`);
 }
 
-function workspaceContainsAct(root, actRef) {
-  const registryPath = resolve(root, "research_acts.json");
+function workspaceContainsNode(root, nodeRef) {
+  const registryPath = resolve(root, "research_nodes.json");
   if (!existsSync(registryPath) || lstatSync(registryPath).isSymbolicLink()) return false;
   const registry = JSON.parse(readFileSync(registryPath, "utf8"));
-  return registry.schema_version === "ts-research-act-registry/3"
-    && Array.isArray(registry.acts)
-    && registry.acts.some((item) => isPlainObject(item) && item.act_id === actRef);
+  return registry.schema_version === "ts-research-node-registry/1"
+    && Array.isArray(registry.nodes)
+    && registry.nodes.some((item) => isPlainObject(item) && item.node_id === nodeRef);
 }
 
 function workspaceContainsClaim(root, claimRef) {
   const registryPath = resolve(root, "claims.json");
   if (!existsSync(registryPath) || lstatSync(registryPath).isSymbolicLink()) return false;
   const registry = JSON.parse(readFileSync(registryPath, "utf8"));
-  return registry.schema_version === "ts-claim-registry/3"
+  return registry.schema_version === "ts-claim-registry/4"
     && Array.isArray(registry.claims)
     && registry.claims.some((item) => isPlainObject(item) && item.claim_id === claimRef);
 }

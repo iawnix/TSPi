@@ -34,7 +34,7 @@ function validateReviewResult(value, packet, reviewSnapshot, readArtifactIds = [
   if (result.program !== null) throw new Error("review result cannot contain program state");
   if (result.artifact_refs.length) throw new Error("review result cannot create artifacts");
 
-  if (!isPlainObject(reviewSnapshot) || reviewSnapshot.schema_version !== "ts-review-task-snapshot/2") {
+  if (!isPlainObject(reviewSnapshot) || reviewSnapshot.schema_version !== "ts-review-task-snapshot/3") {
     throw new Error("Review result validation requires the bound DAG snapshot");
   }
   if (reviewSnapshot.task_id !== task.task_id || reviewSnapshot.operation !== task.operation) {

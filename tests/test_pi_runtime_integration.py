@@ -16,7 +16,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from tests.v4_helpers import bootstrap_v4_workspace, start_research_act
+from tests.v5_helpers import bootstrap_v5_workspace, start_research_node
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,9 +37,9 @@ EXPECTED_TOOLS = {
 }
 
 
-def test_real_pi_offline_loads_v4_extensions_and_public_inventory(tmp_path: Path) -> None:
+def test_real_pi_offline_loads_v5_extensions_and_public_inventory(tmp_path: Path) -> None:
     pi = _supported_pi()
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
     agent_dir = tmp_path / "pi-agent"
     env = {
         **os.environ,
@@ -90,7 +90,7 @@ def test_real_pi_offline_loads_v4_extensions_and_public_inventory(tmp_path: Path
 
 def test_real_pi_review_uses_named_result_tool_without_provider_strict(tmp_path: Path) -> None:
     pi = _supported_pi()
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
     agent_dir = tmp_path / "pi-agent"
     agent_dir.mkdir()
     requests: list[dict[str, object]] = []
@@ -102,7 +102,7 @@ def test_real_pi_review_uses_named_result_tool_without_provider_strict(tmp_path:
     message = _notification(completed.stdout, "TS_TEST_REVIEW:")
     result = json.loads(message.split(":", 1)[1])
     assert result["result"]["role"] == "review"
-    assert result["result"]["scope"]["act_refs"][0].startswith("act_")
+    assert result["result"]["scope"]["node_refs"][0].startswith("node_")
     assert result["metadata"]["operation"] == "claim_review"
     assert len(requests) == 1
     function = requests[0]["tools"][0]["function"]
@@ -119,7 +119,7 @@ def test_real_pi_review_uses_named_result_tool_without_provider_strict(tmp_path:
 
 def test_real_pi_review_reads_one_artifact_batch_then_forces_result(tmp_path: Path) -> None:
     pi = _supported_pi()
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
     artifact_bytes = b"normal termination\nmode follows the proposed coordinate\n"
     (workspace / "review-artifact.log").write_bytes(artifact_bytes)
     artifact_id = "art_" + hashlib.sha256(artifact_bytes).hexdigest()[:24]
@@ -165,7 +165,7 @@ def test_real_pi_review_reads_one_artifact_batch_then_forces_result(tmp_path: Pa
 
 def test_real_pi_review_surfaces_provider_502_without_format_retry(tmp_path: Path) -> None:
     pi = _supported_pi()
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
     agent_dir = tmp_path / "pi-agent"
     agent_dir.mkdir()
     requests: list[dict[str, object]] = []
@@ -185,7 +185,7 @@ def test_real_pi_review_surfaces_provider_502_without_format_retry(tmp_path: Pat
 
 def test_real_pi_review_preserves_artifact_read_audit_on_provider_failure(tmp_path: Path) -> None:
     pi = _supported_pi()
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
     artifact_bytes = b"normal termination\n"
     (workspace / "review-artifact.log").write_bytes(artifact_bytes)
     artifact_id = "art_" + hashlib.sha256(artifact_bytes).hexdigest()[:24]
@@ -237,8 +237,8 @@ def test_real_pi_compute_executes_fixed_plan_and_derives_result(
     action_names: list[str],
 ) -> None:
     pi = _supported_pi()
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
-    start_research_act(workspace)
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    start_research_node(workspace)
     before = _canonical_files(workspace)
     agent_dir = tmp_path / "pi-agent"
     agent_dir.mkdir()
@@ -288,8 +288,8 @@ def test_real_pi_compute_never_replays_ambiguous_controls(
     action_names: list[str],
 ) -> None:
     pi = _supported_pi()
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
-    start_research_act(workspace)
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    start_research_node(workspace)
     agent_dir = tmp_path / "pi-agent"
     agent_dir.mkdir()
     requests: list[dict[str, object]] = []
@@ -319,8 +319,8 @@ def test_real_pi_compute_never_replays_ambiguous_controls(
 
 def test_real_pi_compute_recovers_from_premature_result_call(tmp_path: Path) -> None:
     pi = _supported_pi()
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
-    start_research_act(workspace)
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    start_research_node(workspace)
     agent_dir = tmp_path / "pi-agent"
     agent_dir.mkdir()
     requests: list[dict[str, object]] = []
@@ -355,8 +355,8 @@ def test_real_pi_compute_recovers_from_premature_result_call(tmp_path: Path) -> 
 
 def test_real_pi_compute_surfaces_provider_502_before_result_contract_error(tmp_path: Path) -> None:
     pi = _supported_pi()
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
-    start_research_act(workspace)
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    start_research_node(workspace)
     agent_dir = tmp_path / "pi-agent"
     agent_dir.mkdir()
     requests: list[dict[str, object]] = []

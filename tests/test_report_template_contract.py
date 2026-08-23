@@ -9,12 +9,12 @@ TEMPLATE = SKILL_ROOT / "assets" / "templates" / "ts_final_report.md"
 CONTRACT = SKILL_ROOT / "references" / "report_template.md"
 
 
-def test_report_template_contains_required_v4_sections() -> None:
+def test_report_template_contains_required_v5_sections() -> None:
     text = TEMPLATE.read_text(encoding="utf-8")
     for phrase in [
         "Executive Status",
-        "Claims And Relations",
-        "ResearchAct DAG",
+        "Research Roadmap",
+        "Scientific Conclusions",
         "Computational Protocol",
         "Semantic Observations",
         "Frozen Validation",
@@ -25,7 +25,7 @@ def test_report_template_contains_required_v4_sections() -> None:
         assert phrase in text
 
 
-def test_report_contract_keeps_v4_acceptance_and_provenance_explicit() -> None:
+def test_report_contract_keeps_v5_acceptance_and_provenance_explicit() -> None:
     text = CONTRACT.read_text(encoding="utf-8")
     for phrase in [
         "acceptance record",

@@ -21,7 +21,7 @@ from .models import (
 _JOB_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\[\]-]{0,255}$")
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _WORKSPACE_ID = re.compile(r"^ws_[0-9a-f]{24}$")
-_ACT_ID = re.compile(r"^act_[1-9][0-9]*$")
+_NODE_ID = re.compile(r"^node_[1-9][0-9]*$")
 _CALCULATION_ID = re.compile(r"^calc_[1-9][0-9]*$")
 
 
@@ -77,8 +77,8 @@ def validate_job(config: RemoteJobConfig) -> None:
 
 
 def _validate_remote_binding(config: RemoteJobConfig) -> None:
-    if _ACT_ID.fullmatch(config.act_id) is None:
-        raise RemoteConfigurationError("act_id must be a ResearchAct ID")
+    if _NODE_ID.fullmatch(config.node_id) is None:
+        raise RemoteConfigurationError("node_id must be a ResearchNode ID")
     if _CALCULATION_ID.fullmatch(config.intent_id) is None:
         raise RemoteConfigurationError("intent_id must be a calculation Attempt ID")
     root = PurePosixPath(validate_remote_path(config.profile.remote_root, label="remote_root"))
@@ -93,12 +93,12 @@ def _validate_remote_binding(config: RemoteJobConfig) -> None:
         or parts[0] != "workspaces"
         or _WORKSPACE_ID.fullmatch(parts[1]) is None
         or parts[2] != "runs"
-        or parts[3] != config.act_id
+        or parts[3] != config.node_id
         or parts[4] != config.intent_id
         or not config.submission_id.startswith(f"tsjob_{parts[1]}_")
     ):
         raise RemoteConfigurationError(
-            "remote_dir and submission_id do not match the workspace/ResearchAct/intent binding"
+            "remote_dir and submission_id do not match the workspace/ResearchNode/intent binding"
         )
 
 

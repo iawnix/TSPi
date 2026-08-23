@@ -3,12 +3,12 @@
 `@iawnix/ts-agent` is a Pi package for auditable transition-state research. It
 combines one strategy-owning Root Agent with a deterministic research kernel,
 typed local or SSH/Torque calculations, semantic scientific observations,
-declarative validation, reproducible reports, optional notifications, and a
-read-only activity UI.
+declarative validation, reproducible reports, optional notifications, a
+session-scoped activity UI, and a read-only multi-workspace research explorer.
 
-This `ts-dag` branch is protocol v4. It intentionally has no v2/v3 reader,
+This `ts-dag` branch is protocol v5. It intentionally has no v2/v3 reader,
 migrator, field alias, or runtime compatibility path. A legacy study must keep
-using its matching release or start a new v4 workspace.
+using its matching release or start a new v5 workspace.
 
 ## Core Boundary
 
@@ -18,7 +18,8 @@ Root Agent
         |
         v
 Research Kernel
-  Claim graph + ResearchAct DAG + immutable Observations + Findings
+  ResearchPhase roadmap + ResearchNode DAG + Claim graph
+  immutable Observations + Findings + frozen Validation
         |
         +-- deterministic compute kernel / Render / Report
         +-- declarative Validation Engine
@@ -37,10 +38,12 @@ deterministic host tools.
 
 The long-lived scientific vocabulary is:
 
+- **ResearchPhase**: a human-readable roadmap group with a title and objective.
+  It organizes Nodes for navigation but has no lifecycle or policy authority.
 - **Claim**: one explicit, versioned scientific statement.
 - **ClaimRelation**: a directed dependency, refinement, conflict, or alternative
   relation between Claims. Relations form a DAG but do not route execution.
-- **ResearchAct**: one bounded research act with zero or more dependencies.
+- **ResearchNode**: one bounded research node with zero or more dependencies.
   Dependency edges form the exploration DAG and support branching, merging,
   and backtracking without rewriting history.
 - **Observation**: one immutable semantic value, concept, subject, artifacts,
@@ -50,9 +53,10 @@ The long-lived scientific vocabulary is:
 - **GateSpec / ValidationResult**: a frozen declarative validation definition
   and its deterministic result over selected Observations.
 
-There is no workflow phase, stage, Node type, Evidence role/layer, fixed Gate
-router, or hard-coded research sequence. Tags and relation labels are metadata;
-they never authorize a next action.
+There is no prescriptive workflow stage, Node type, Evidence role/layer, fixed
+Gate router, or hard-coded research sequence. ResearchPhase, tags, and relation
+labels are navigation or scientific metadata; they never authorize a next
+action.
 
 ## Why This Package
 
@@ -77,8 +81,8 @@ reproducible:
   lifecycle, persistence, validation, context, and result delivery.
 - [Maintainer Guide](docs/MAINTAINER_GUIDE.md): source layout, contract-change
   rules, tests, release discipline, and documentation ownership.
-- [ADR 0001](docs/adr/0001-dag-research-kernel-v4.md): the incompatible v4 DAG
-  and declarative-validation decision.
+- [ADR 0002](docs/adr/0002-phase-node-research-kernel-v5.md): the incompatible
+  Phase + ResearchNode v5 kernel and declarative-validation decision.
 - [Root Skill](skills/transition-state-workflow/SKILL.md): concise operating
   policy loaded into each TSPi research session.
 
@@ -133,10 +137,32 @@ workspace names can run concurrently. Normal terminal mode starts a new Pi
 conversation unless Pi's `--continue` is supplied; Phone mode resumes the
 workspace conversation automatically.
 
-Bootstrap is idempotent for a complete v4 workspace: fresh state is created
+Bootstrap is idempotent for a complete v5 workspace: fresh state is created
 once, valid state is checked without canonical rewrites, and partial, invalid,
 or legacy canonical state fails closed. Ordinary startup does not contact the
 remote scheduler.
+
+## Explore Workspaces
+
+The packaged `ts_web` server gives users a Phase-first roadmap without changing
+research state. Its default view groups ResearchNodes under ResearchPhases;
+Claims, validation, Findings, operational runs, files, and advanced graphs stay
+in separate views.
+
+```bash
+python3 "$TS_AGENT_SKILL_ROOT/scripts/ts_web.py" serve \
+  --state-dir /path/to/TSPi-installation/.pi/ts-web \
+  --source-root /path/to/TSPi-installation/workspaces/reaction-a \
+  --label "Reaction A" \
+  --host 127.0.0.1 \
+  --port 8766
+```
+
+Repeat `--source-root` and `--label` to register several workspaces. The Web
+registry must remain outside every source workspace. The server has no login;
+use `--host 0.0.0.0` only on a trusted, firewalled LAN. See
+[Installation and Operations](docs/INSTALLATION.md#run-the-research-explorer)
+for registration and exposure details.
 
 ## Public Surface
 
@@ -157,7 +183,7 @@ slash commands:
   by the host to one immutable intent.
 - `ts_structure_seed`: deterministic RDKit ETKDGv3 seed generation from one
   connected SMILES, with content-addressed XYZ and provenance.
-- `ts_artifact_import`: bounded, Act-owned bootstrap import for Gaussian, XYZ,
+- `ts_artifact_import`: bounded, Node-owned bootstrap import for Gaussian, XYZ,
   or xTB control inputs; the host allocates path, filename, digest, and ID.
 - `ts_render`: deterministic local render, comparison, animation, or mechanism
   visualization.
@@ -175,14 +201,14 @@ unified TS Activity projection.
 The Root Agent normally:
 
 1. Reads the frontier or delta context and states one unresolved question.
-2. Creates or updates Claims and starts a bounded ResearchAct with explicit
-   dependencies and falsifiers.
+2. Creates or reuses a navigation Phase, creates or updates Claims, and starts
+   a bounded ResearchNode with explicit dependencies and Claim scope.
 3. Selects a scientifically justified method and invokes bounded tools.
 4. Verifies local primary artifacts and records semantic Observations.
 5. Records anomalies and unresolved limits as Findings.
 6. Freezes relevant GateSpecs before evaluation, then evaluates them over
    explicitly selected Observations.
-7. Updates Claim status, completes the ResearchAct, and accepts a Claim only
+7. Updates Claim status, completes the ResearchNode, and accepts a Claim only
    when a named profile passes.
 8. Recompiles context and independently chooses a branch, merge, backtrack,
    new question, explicit stop, or completion.
@@ -193,16 +219,16 @@ direct TS optimization are justified. The adapter catalog is not a method
 priority list. A converged program, candidate geometry, or isolated imaginary
 frequency is never an accepted TS by itself.
 
-An empty workspace is not a compute dead end. Start an open ResearchAct. Use
+An empty workspace is not a compute dead end. Start an open ResearchNode. Use
 `ts_structure_seed` for a single-molecule SMILES or `ts_artifact_import` for
 existing Gaussian, XYZ, or xTB control text, then pass the returned logical
 `art_*` to Compute. Neither tool grants path authority or scientific validity.
 
 ## Compute And Remote
 
-Preparation accepts `ts-calculation-request/2`, resolves logical `artifactId`
+Preparation accepts `ts-calculation-request/3`, resolves logical `artifactId`
 plus `inputRole` bindings, and writes an immutable
-`ts-calculation-intent/4` under the owning Act. Supported adapter tasks include:
+`ts-calculation-intent/5` under the owning Node. Supported adapter tasks include:
 
 - Gaussian: `sp`, `opt`, `freq`, `opt_freq`, `irc`;
 - xTB: `sp`, `opt`, `freq`, `opt_freq`, `scan`, `md`;
@@ -212,7 +238,7 @@ plus `inputRole` bindings, and writes an immutable
 
 Capability means an adapter can express and validate a task; it does not prove
 that software, storage, SSH, Torque, or a queue is healthy. Remote jobs are
-isolated by workspace ID, Act, and immutable intent. Pre-effect failures may be
+isolated by workspace ID, Node, and immutable intent. Pre-effect failures may be
 retryable. Ambiguous submit or cancel effects must be reconciled and must never
 be blindly replayed. Collection is manifest-driven and does not depend on
 scheduler history.
@@ -256,7 +282,8 @@ recorded.
 
 ## State And Reports
 
-Canonical scientific state consists of v4 graph registries, frozen validation,
+Canonical scientific state consists of v5 Phase, Node, and Claim registries,
+frozen validation,
 acceptance snapshots, Decisions, and transaction logs. Calculation attempts,
 remote controls, Compute/Review journals, notifications, reports, Pi sessions, and UI
 activity are operational or derived state.

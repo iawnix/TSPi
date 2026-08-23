@@ -24,7 +24,7 @@ export interface TsSubagentStatus {
   state: TsSubagentState;
   started_at: string;
   updated_at: string;
-  act_refs?: string[];
+  node_refs?: string[];
   claim_refs?: string[];
   target_ref?: string;
   run_ref?: string;
@@ -38,7 +38,7 @@ type StatusBase = Omit<
 >;
 export type TsSubagentStatusUpdate = Partial<Pick<
   TsSubagentStatus,
-  "act_refs" | "claim_refs" | "target_ref" | "run_ref" | "wait_reason" | "failure_kind"
+  "node_refs" | "claim_refs" | "target_ref" | "run_ref" | "wait_reason" | "failure_kind"
 >>;
 
 export type TsSubagentStatusReporter = (
@@ -109,7 +109,7 @@ export function isTsSubagentStatus(value: unknown): value is TsSubagentStatus {
   if (!requiredString(value.tool_call_id) || !requiredString(value.task_id) || !requiredString(value.operation)) return false;
   if (!TS_SUBAGENT_STATES.includes(value.state as TsSubagentState)) return false;
   if (!validTimestamp(value.started_at) || !validTimestamp(value.updated_at)) return false;
-  for (const key of ["act_refs", "claim_refs"] as const) {
+  for (const key of ["node_refs", "claim_refs"] as const) {
     if (value[key] !== undefined && !validStringArray(value[key])) return false;
   }
   for (const key of ["target_ref", "run_ref"] as const) {

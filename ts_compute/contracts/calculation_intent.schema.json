@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "TS calculation intent v4",
+  "title": "TS calculation intent v5",
   "type": "object",
-  "required": ["schema_version", "intent_id", "act_id", "purpose", "attempt_kind", "recalculation_ref", "backend", "task_type", "input_refs", "input_bindings", "settings", "expected_artifacts", "execution_target", "dry_run"],
+  "required": ["schema_version", "intent_id", "node_id", "purpose", "attempt_kind", "recalculation_ref", "backend", "task_type", "input_refs", "input_bindings", "settings", "expected_artifacts", "execution_target", "dry_run"],
   "properties": {
-    "schema_version": {"const": "ts-calculation-intent/4"},
+    "schema_version": {"const": "ts-calculation-intent/5"},
     "intent_id": {"type": "string", "pattern": "^calc_[1-9][0-9]*$", "maxLength": 128},
-    "act_id": {"type": "string", "pattern": "^act_[1-9][0-9]*$"},
+    "node_id": {"type": "string", "pattern": "^node_[1-9][0-9]*$"},
     "purpose": {"type": "string", "minLength": 1, "maxLength": 2000},
     "attempt_kind": {"enum": ["primary", "retry", "recalculation"]},
     "recalculation_ref": {
@@ -14,9 +14,9 @@
         {"type": "null"},
         {
           "type": "object",
-          "required": ["source_act", "source_intent_id", "changed_settings", "purpose"],
+          "required": ["source_node", "source_intent_id", "changed_settings", "purpose"],
           "properties": {
-            "source_act": {"type": "string", "pattern": "^act_[1-9][0-9]*$"},
+            "source_node": {"type": "string", "pattern": "^node_[1-9][0-9]*$"},
             "source_intent_id": {"type": ["string", "null"], "pattern": "^calc_[1-9][0-9]*$", "maxLength": 128},
             "changed_settings": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 256}},
             "purpose": {"enum": ["repair", "refinement", "method_robustness"]}
@@ -35,13 +35,13 @@
       "uniqueItems": true,
       "items": {
         "type": "object",
-        "required": ["input_role", "artifact_id", "path", "sha256", "owner_act", "source_intent_id"],
+        "required": ["input_role", "artifact_id", "path", "sha256", "owner_node", "source_intent_id"],
         "properties": {
           "input_role": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_]*$", "maxLength": 64},
           "artifact_id": {"type": "string", "pattern": "^art_[0-9a-f]{24}$"},
           "path": {"type": "string", "minLength": 1, "maxLength": 4096},
           "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-          "owner_act": {"type": ["string", "null"], "pattern": "^act_[1-9][0-9]*$"},
+          "owner_node": {"type": ["string", "null"], "pattern": "^node_[1-9][0-9]*$"},
           "source_intent_id": {"type": ["string", "null"], "pattern": "^calc_[1-9][0-9]*$", "maxLength": 128}
         },
         "additionalProperties": false

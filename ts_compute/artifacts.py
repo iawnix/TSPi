@@ -17,14 +17,14 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 from ts_workspace.io import read_json
-from ts_workspace.refs import ACT_ID, CALCULATION_ID
+from ts_workspace.refs import NODE_ID, CALCULATION_ID
 from ts_workspace.transactions import workspace_lock
 from ts_structures.seed import StructureSeedError, generate_smiles_seed
 
 from .contracts import ComputeContractError
 
 
-CATALOG_SCHEMA_VERSION = "ts-artifact-catalog/2"
+CATALOG_SCHEMA_VERSION = "ts-artifact-catalog/3"
 ARTIFACT_ID_SCHEMA_VERSION = "ts-artifact-id/2"
 IMPORT_REQUEST_SCHEMA_VERSION = "ts-artifact-import-request/1"
 IMPORT_RESULT_SCHEMA_VERSION = "ts-artifact-import-result/1"
@@ -52,23 +52,23 @@ ELIGIBLE_SUFFIXES = frozenset({
 def list_calculation_artifacts(
     root: str | Path,
     *,
-    act_id: str | None = None,
+    node_id: str | None = None,
 ) -> dict[str, Any]:
     """Return a bounded catalog of files eligible as calculation inputs."""
 
     workspace = _workspace_root(root)
-    known_acts = _act_ids(workspace)
-    if act_id is not None and act_id not in known_acts:
-        raise ComputeContractError(f"unknown ResearchAct: {act_id}")
+    known_nodes = _node_ids(workspace)
+    if node_id is not None and node_id not in known_nodes:
+        raise ComputeContractError(f"unknown ResearchNode: {node_id}")
     artifacts = [
         item
-        for item in _catalog_items(workspace, known_acts)
-        if act_id is None or item["owner_act"] == act_id
+        for item in _catalog_items(workspace, known_nodes)
+        if node_id is None or item["owner_node"] == node_id
     ]
     return {
         "schema_version": CATALOG_SCHEMA_VERSION,
         "workspace_root": str(workspace),
-        "act_id": act_id,
+        "node_id": node_id,
         "artifact_count": len(artifacts),
         "artifacts": artifacts,
     }
@@ -84,7 +84,7 @@ def resolve_artifact_ids(
     requested = list(artifact_ids)
     if not requested or len(set(requested)) != len(requested):
         raise ComputeContractError("artifact_ids must be a non-empty unique list")
-    catalog = {item["artifact_id"]: item for item in _catalog_items(workspace, _act_ids(workspace))}
+    catalog = {item["artifact_id"]: item for item in _catalog_items(workspace, _node_ids(workspace))}
     missing = [artifact_id for artifact_id in requested if artifact_id not in catalog]
     if missing:
         raise ComputeContractError("unknown artifact_id: " + ", ".join(missing))
@@ -92,15 +92,15 @@ def resolve_artifact_ids(
 
 
 def import_calculation_artifact(root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
-    """Materialize one validated, Act-owned calculation input without a caller path."""
+    """Materialize one validated, Node-owned calculation input without a caller path."""
 
     workspace = _workspace_root(root)
     normalized = _validate_import_request(request)
     with workspace_lock(workspace):
-        act = _act_record(workspace, normalized["act_id"])
-        if act.get("status") != "open":
+        node = _node_record(workspace, normalized["node_id"])
+        if node.get("status") != "open":
             raise ComputeContractError(
-                f"artifact import requires an open ResearchAct: {normalized['act_id']}"
+                f"artifact import requires an open ResearchNode: {normalized['node_id']}"
             )
         content = _normalize_import_content(normalized["content"])
         payload = content.encode("utf-8")
@@ -117,15 +117,15 @@ def import_calculation_artifact(root: str | Path, request: dict[str, Any]) -> di
         digest = "sha256:" + hashlib.sha256(payload).hexdigest()
         suffix = IMPORT_FORMATS[normalized["format"]]
         filename = f"seed_{digest.removeprefix('sha256:')}{suffix}"
-        inputs = _act_inputs_directory(workspace, normalized["act_id"])
+        inputs = _node_inputs_directory(workspace, normalized["node_id"])
         path = inputs / filename
         created = _write_import_payload(path, payload)
-        artifact = _artifact_for_path(workspace, path, _act_ids(workspace))
+        artifact = _artifact_for_path(workspace, path, _node_ids(workspace))
 
     return {
         "schema_version": IMPORT_RESULT_SCHEMA_VERSION,
         "operation": "import",
-        "act_id": normalized["act_id"],
+        "node_id": normalized["node_id"],
         "format": normalized["format"],
         "created": created,
         "chemical_metadata": metadata,
@@ -134,7 +134,7 @@ def import_calculation_artifact(root: str | Path, request: dict[str, Any]) -> di
 
 
 def create_structure_seed_artifact(root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
-    """Generate and persist one Act-owned RDKit structure seed and provenance."""
+    """Generate and persist one Node-owned RDKit structure seed and provenance."""
 
     workspace = _workspace_root(root)
     normalized = _validate_structure_seed_request(request)
@@ -152,12 +152,12 @@ def create_structure_seed_artifact(root: str | Path, request: dict[str, Any]) ->
     xyz_digest = "sha256:" + hashlib.sha256(xyz_payload).hexdigest()
     xyz_filename = f"structure_seed_{xyz_digest.removeprefix('sha256:')}.xyz"
     with workspace_lock(workspace):
-        act = _act_record(workspace, normalized["act_id"])
-        if act.get("status") != "open":
+        node = _node_record(workspace, normalized["node_id"])
+        if node.get("status") != "open":
             raise ComputeContractError(
-                f"structure seed generation requires an open ResearchAct: {normalized['act_id']}"
+                f"structure seed generation requires an open ResearchNode: {normalized['node_id']}"
             )
-        inputs = _act_inputs_directory(workspace, normalized["act_id"])
+        inputs = _node_inputs_directory(workspace, normalized["node_id"])
         xyz_path = inputs / xyz_filename
         xyz_ref = xyz_path.relative_to(workspace).as_posix()
         xyz_artifact_id = _artifact_id(xyz_ref, xyz_digest)
@@ -192,14 +192,14 @@ def create_structure_seed_artifact(root: str | Path, request: dict[str, Any]) ->
             for path in reversed(created_paths):
                 path.unlink(missing_ok=True)
             raise
-        known_acts = _act_ids(workspace)
-        artifact = _artifact_for_path(workspace, xyz_path, known_acts)
-        provenance_artifact = _artifact_for_path(workspace, provenance_path, known_acts)
+        known_nodes = _node_ids(workspace)
+        artifact = _artifact_for_path(workspace, xyz_path, known_nodes)
+        provenance_artifact = _artifact_for_path(workspace, provenance_path, known_nodes)
 
     return {
         "schema_version": STRUCTURE_SEED_RESULT_SCHEMA_VERSION,
         "operation": "generate",
-        "act_id": normalized["act_id"],
+        "node_id": normalized["node_id"],
         "created": bool(created_paths),
         "artifact": artifact,
         "provenance_artifact": provenance_artifact,
@@ -251,7 +251,7 @@ def resolve_input_artifacts(
                 "artifact_id": artifact["artifact_id"],
                 "path": path,
                 "sha256": artifact["sha256"],
-                "owner_act": artifact["owner_act"],
+                "owner_node": artifact["owner_node"],
                 "source_intent_id": artifact["source_intent_id"],
             }
         )
@@ -277,43 +277,43 @@ def verify_input_bindings(workspace: Path, intent: dict[str, Any]) -> None:
         by_role[role] = binding
     if set(by_role) != set(refs):
         raise ComputeContractError("calculation input_bindings roles must match input_refs")
-    known_acts = _act_ids(workspace)
+    known_nodes = _node_ids(workspace)
     for role, ref in sorted(refs.items()):
         binding = by_role[role]
         if binding.get("path") != ref:
             raise ComputeContractError(f"calculation input binding path mismatch for role {role}")
-        current = _artifact_for_ref(workspace, str(ref), known_acts)
-        for key in ("artifact_id", "sha256", "owner_act", "source_intent_id"):
+        current = _artifact_for_ref(workspace, str(ref), known_nodes)
+        for key in ("artifact_id", "sha256", "owner_node", "source_intent_id"):
             if binding.get(key) != current.get(key):
                 raise ComputeContractError(
                     f"calculation input binding changed for role {role}: {key} mismatch"
                 )
 
 
-def _catalog_items(workspace: Path, known_acts: set[str]) -> list[dict[str, Any]]:
+def _catalog_items(workspace: Path, known_nodes: set[str]) -> list[dict[str, Any]]:
     artifacts = [
-        _artifact_for_path(workspace, path, known_acts)
-        for path in _eligible_paths(workspace, known_acts)
+        _artifact_for_path(workspace, path, known_nodes)
+        for path in _eligible_paths(workspace, known_nodes)
     ]
     artifacts.sort(key=lambda item: str(item["path"]))
     return artifacts
 
 
-def _eligible_paths(workspace: Path, known_acts: set[str]) -> Iterable[Path]:
+def _eligible_paths(workspace: Path, known_nodes: set[str]) -> Iterable[Path]:
     roots: list[Path] = []
     inputs = workspace / "inputs"
     if inputs.is_dir() and not inputs.is_symlink():
         roots.append(inputs)
-    acts_root = workspace / "acts"
-    if acts_root.is_dir() and not acts_root.is_symlink():
-        for act_dir in sorted(acts_root.iterdir()):
-            if not act_dir.is_dir() or act_dir.is_symlink() or act_dir.name not in known_acts:
+    nodes_root = workspace / "nodes"
+    if nodes_root.is_dir() and not nodes_root.is_symlink():
+        for node_dir in sorted(nodes_root.iterdir()):
+            if not node_dir.is_dir() or node_dir.is_symlink() or node_dir.name not in known_nodes:
                 continue
             for name in ("inputs", "outputs"):
-                candidate = act_dir / name
+                candidate = node_dir / name
                 if candidate.is_dir() and not candidate.is_symlink():
                     roots.append(candidate)
-            attempts = act_dir / "attempts"
+            attempts = node_dir / "attempts"
             if attempts.is_dir() and not attempts.is_symlink():
                 for attempt in sorted(attempts.iterdir()):
                     output = attempt / "outputs"
@@ -340,20 +340,20 @@ def _eligible_paths(workspace: Path, known_acts: set[str]) -> Iterable[Path]:
                 if ref in seen:
                     continue
                 try:
-                    _safe_existing_path(workspace, ref, known_acts)
+                    _safe_existing_path(workspace, ref, known_nodes)
                 except ComputeContractError:
                     continue
                 seen.add(ref)
                 yield path
 
 
-def _artifact_for_path(workspace: Path, path: Path, known_acts: set[str]) -> dict[str, Any]:
-    return _artifact_for_ref(workspace, path.relative_to(workspace).as_posix(), known_acts)
+def _artifact_for_path(workspace: Path, path: Path, known_nodes: set[str]) -> dict[str, Any]:
+    return _artifact_for_ref(workspace, path.relative_to(workspace).as_posix(), known_nodes)
 
 
-def _artifact_for_ref(workspace: Path, ref: str, known_acts: set[str]) -> dict[str, Any]:
-    normalized, path = _safe_existing_path(workspace, ref, known_acts)
-    owner_act, source_intent_id = _ownership(normalized)
+def _artifact_for_ref(workspace: Path, ref: str, known_nodes: set[str]) -> dict[str, Any]:
+    normalized, path = _safe_existing_path(workspace, ref, known_nodes)
+    owner_node, source_intent_id = _ownership(normalized)
     roles = sorted(
         role for role, suffixes in ROLE_SUFFIXES.items() if path.suffix.lower() in suffixes
     )
@@ -361,7 +361,7 @@ def _artifact_for_ref(workspace: Path, ref: str, known_acts: set[str]) -> dict[s
     return {
         "artifact_id": _artifact_id(normalized, digest),
         "path": normalized,
-        "owner_act": owner_act,
+        "owner_node": owner_node,
         "source_intent_id": source_intent_id,
         "size_bytes": path.stat().st_size,
         "sha256": digest,
@@ -381,7 +381,7 @@ def _artifact_id(path: str, digest: str) -> str:
 def _validate_import_request(request: dict[str, Any]) -> dict[str, Any]:
     if not isinstance(request, dict):
         raise ComputeContractError("artifact import request must be an object")
-    required = {"schema_version", "act_id", "format", "content"}
+    required = {"schema_version", "node_id", "format", "content"}
     optional = {"charge", "multiplicity"}
     missing = sorted(required - set(request))
     unexpected = sorted(set(request) - required - optional)
@@ -393,9 +393,9 @@ def _validate_import_request(request: dict[str, Any]) -> dict[str, Any]:
         raise ComputeContractError(
             f"artifact import schema_version must be {IMPORT_REQUEST_SCHEMA_VERSION}"
         )
-    act_id = request.get("act_id")
-    if not isinstance(act_id, str) or ACT_ID.fullmatch(act_id) is None:
-        raise ComputeContractError("artifact import act_id is invalid")
+    node_id = request.get("node_id")
+    if not isinstance(node_id, str) or NODE_ID.fullmatch(node_id) is None:
+        raise ComputeContractError("artifact import node_id is invalid")
     artifact_format = request.get("format")
     if artifact_format not in IMPORT_FORMATS:
         raise ComputeContractError(
@@ -421,7 +421,7 @@ def _validate_structure_seed_request(request: dict[str, Any]) -> dict[str, Any]:
         raise ComputeContractError("structure seed request must be an object")
     required = {
         "schema_version",
-        "act_id",
+        "node_id",
         "smiles",
         "charge",
         "multiplicity",
@@ -437,9 +437,9 @@ def _validate_structure_seed_request(request: dict[str, Any]) -> dict[str, Any]:
         raise ComputeContractError(
             f"structure seed schema_version must be {STRUCTURE_SEED_REQUEST_SCHEMA_VERSION}"
         )
-    act_id = request.get("act_id")
-    if not isinstance(act_id, str) or ACT_ID.fullmatch(act_id) is None:
-        raise ComputeContractError("structure seed act_id is invalid")
+    node_id = request.get("node_id")
+    if not isinstance(node_id, str) or NODE_ID.fullmatch(node_id) is None:
+        raise ComputeContractError("structure seed node_id is invalid")
     smiles = request.get("smiles")
     if not isinstance(smiles, str) or not 1 <= len(smiles) <= 4_096:
         raise ComputeContractError("structure seed SMILES must contain 1 to 4096 characters")
@@ -641,25 +641,25 @@ def _gaussian_cartesian_structure(
     return atom_order, cursor
 
 
-def _act_inputs_directory(workspace: Path, act_id: str) -> Path:
-    acts_root = workspace / "acts"
-    if not acts_root.is_dir() or acts_root.is_symlink():
-        raise ComputeContractError("workspace acts root must be a physical directory")
-    act_root = acts_root / act_id
-    if act_root.exists():
-        if not act_root.is_dir() or act_root.is_symlink():
-            raise ComputeContractError(f"ResearchAct artifact root is unsafe: {act_id}")
+def _node_inputs_directory(workspace: Path, node_id: str) -> Path:
+    nodes_root = workspace / "nodes"
+    if not nodes_root.is_dir() or nodes_root.is_symlink():
+        raise ComputeContractError("workspace nodes root must be a physical directory")
+    node_root = nodes_root / node_id
+    if node_root.exists():
+        if not node_root.is_dir() or node_root.is_symlink():
+            raise ComputeContractError(f"ResearchNode artifact root is unsafe: {node_id}")
     else:
-        act_root.mkdir(mode=0o700)
-    inputs = act_root / "inputs"
+        node_root.mkdir(mode=0o700)
+    inputs = node_root / "inputs"
     if inputs.exists():
         if not inputs.is_dir() or inputs.is_symlink():
-            raise ComputeContractError(f"ResearchAct input root is unsafe: {act_id}")
+            raise ComputeContractError(f"ResearchNode input root is unsafe: {node_id}")
     else:
         inputs.mkdir(mode=0o700)
-    expected = workspace / "acts" / act_id / "inputs"
+    expected = workspace / "nodes" / node_id / "inputs"
     if inputs.resolve(strict=True) != expected.resolve(strict=True):
-        raise ComputeContractError(f"ResearchAct input root escapes the workspace: {act_id}")
+        raise ComputeContractError(f"ResearchNode input root escapes the workspace: {node_id}")
     return inputs
 
 
@@ -688,15 +688,15 @@ def _write_import_payload(path: Path, payload: bytes) -> bool:
     return True
 
 
-def _act_record(workspace: Path, act_id: str) -> dict[str, Any]:
-    registry = read_json(workspace / "research_acts.json")
+def _node_record(workspace: Path, node_id: str) -> dict[str, Any]:
+    registry = read_json(workspace / "research_nodes.json")
     matches = [
         item
-        for item in registry.get("acts", [])
-        if isinstance(item, dict) and item.get("act_id") == act_id
+        for item in registry.get("nodes", [])
+        if isinstance(item, dict) and item.get("node_id") == node_id
     ]
     if len(matches) != 1:
-        raise ComputeContractError(f"unknown ResearchAct: {act_id}")
+        raise ComputeContractError(f"unknown ResearchNode: {node_id}")
     return matches[0]
 
 
@@ -704,19 +704,19 @@ def _ownership(ref: str) -> tuple[str | None, str | None]:
     parts = PurePosixPath(ref).parts
     if len(parts) >= 2 and parts[0] == "inputs":
         return None, None
-    if len(parts) >= 4 and parts[0] == "acts" and parts[2] in {"inputs", "outputs"}:
+    if len(parts) >= 4 and parts[0] == "nodes" and parts[2] in {"inputs", "outputs"}:
         return parts[1], None
-    if len(parts) >= 6 and parts[0] == "acts" and parts[2] == "attempts" and parts[4] == "outputs":
+    if len(parts) >= 6 and parts[0] == "nodes" and parts[2] == "attempts" and parts[4] == "outputs":
         return parts[1], parts[3]
     raise ComputeContractError(
-        "calculation artifacts must come from workspace inputs or ResearchAct inputs/outputs"
+        "calculation artifacts must come from workspace inputs or ResearchNode inputs/outputs"
     )
 
 
 def _safe_existing_path(
     workspace: Path,
     value: str,
-    known_acts: set[str],
+    known_nodes: set[str],
 ) -> tuple[str, Path]:
     text = str(value).replace("\\", "/").lstrip("@")
     if PurePosixPath(text).is_absolute():
@@ -724,9 +724,9 @@ def _safe_existing_path(
     normalized = posixpath.normpath(text)
     if normalized in {"", ".", ".."} or normalized.startswith("../"):
         raise ComputeContractError(f"invalid workspace path: {value}")
-    owner_act, _ = _ownership(normalized)
-    if owner_act is not None and owner_act not in known_acts:
-        raise ComputeContractError(f"calculation artifact owner ResearchAct does not exist: {owner_act}")
+    owner_node, _ = _ownership(normalized)
+    if owner_node is not None and owner_node not in known_nodes:
+        raise ComputeContractError(f"calculation artifact owner ResearchNode does not exist: {owner_node}")
     path = workspace.joinpath(*PurePosixPath(normalized).parts)
     if not path.is_file() or path.is_symlink():
         raise ComputeContractError(f"workspace calculation artifact does not exist: {normalized}")
@@ -740,25 +740,25 @@ def _safe_existing_path(
 def _workspace_root(root: str | Path) -> Path:
     workspace = Path(root).expanduser().resolve()
     workspace_doc = workspace / "workspace.json"
-    acts_doc = workspace / "research_acts.json"
-    if not workspace_doc.is_file() or not acts_doc.is_file() or not (workspace / "acts").is_dir():
-        raise ComputeContractError(f"not an initialized v4 TS workspace: {workspace}")
-    if read_json(workspace_doc).get("schema_version") != "ts-workspace/4":
+    acts_doc = workspace / "research_nodes.json"
+    if not workspace_doc.is_file() or not acts_doc.is_file() or not (workspace / "nodes").is_dir():
+        raise ComputeContractError(f"not an initialized v5 TS workspace: {workspace}")
+    if read_json(workspace_doc).get("schema_version") != "ts-workspace/5":
         raise ComputeContractError(f"unsupported workspace protocol: {workspace}")
     return workspace
 
 
-def _act_ids(workspace: Path) -> set[str]:
-    registry = read_json(workspace / "research_acts.json")
-    if registry.get("schema_version") != "ts-research-act-registry/3":
-        raise ComputeContractError("invalid ResearchAct registry")
+def _node_ids(workspace: Path) -> set[str]:
+    registry = read_json(workspace / "research_nodes.json")
+    if registry.get("schema_version") != "ts-research-node-registry/1":
+        raise ComputeContractError("invalid ResearchNode registry")
     ids = {
-        item.get("act_id")
-        for item in registry.get("acts", [])
-        if isinstance(item, dict) and isinstance(item.get("act_id"), str)
+        item.get("node_id")
+        for item in registry.get("nodes", [])
+        if isinstance(item, dict) and isinstance(item.get("node_id"), str)
     }
-    if any(ACT_ID.fullmatch(value) is None for value in ids):
-        raise ComputeContractError("ResearchAct registry contains an invalid act_id")
+    if any(NODE_ID.fullmatch(value) is None for value in ids):
+        raise ComputeContractError("ResearchNode registry contains an invalid node_id")
     return ids
 
 

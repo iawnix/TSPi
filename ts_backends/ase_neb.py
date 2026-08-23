@@ -14,7 +14,7 @@ def prepare_ase_neb(task: BackendTask) -> PreparedTask:
     python = configured_python() or "python"
     return PreparedTask(
         backend="ase_neb",
-        act_id=task.act_id,
+        node_id=task.node_id,
         command=[str(python), "-m", "ase", "neb", "--images", images, reactant, product],
         input_paths=[reactant, product],
         expected_artifacts=["neb.traj", "neb_summary.json"],

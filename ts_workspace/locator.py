@@ -1,6 +1,6 @@
 """Read-only research-object to filesystem locator projection.
 
-The canonical Claim graph and ResearchAct DAG remain the source of scientific
+The canonical Claim graph and ResearchNode DAG remain the source of scientific
 meaning. This module joins those records to the injected calculation artifact
 catalog so callers can find physical files without creating another index.
 """
@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
-from .associations import derive_claim_act_links
+from .associations import derive_claim_node_links
 from .errors import ContractError
 from .io import read_json
 from .refs import CALCULATION_ID
@@ -21,7 +21,7 @@ from .revision import workspace_revision_from_documents
 from .state import (
     CLAIMS_FILE,
     OBSERVATIONS_FILE,
-    RESEARCH_ACTS_FILE,
+    RESEARCH_NODES_FILE,
     STATE_FILES,
     WORKSPACE_FILE,
 )
@@ -34,19 +34,19 @@ EXACT_ARTIFACT_LIMIT = 32
 SEARCH_ARTIFACT_LIMIT = 4
 DIRECTORY_LIMIT = 8
 ATTEMPT_LIMIT = 8
-KIND_ORDER = {"claim": 0, "act": 1, "observation": 2, "attempt": 3, "artifact": 4}
+KIND_ORDER = {"claim": 0, "node": 1, "observation": 2, "attempt": 3, "artifact": 4}
 
 
 @dataclass(frozen=True)
 class _LocatorIndex:
     root: Path
     claims: dict[str, dict[str, Any]]
-    acts: dict[str, dict[str, Any]]
+    nodes: dict[str, dict[str, Any]]
     observations: dict[str, dict[str, Any]]
     artifacts: dict[str, dict[str, Any]]
     attempts: dict[tuple[str, str], dict[str, Any]]
-    claim_to_acts: dict[str, set[str]]
-    act_to_claims: dict[str, set[str]]
+    claim_to_nodes: dict[str, set[str]]
+    node_to_claims: dict[str, set[str]]
     observation_to_claims: dict[str, set[str]]
     artifact_to_observations: dict[str, set[str]]
 
@@ -71,8 +71,8 @@ def locate_research_files(
 
     root_path = Path(root).expanduser().resolve()
     documents = {name: read_json(root_path / name) for name in STATE_FILES}
-    if documents[WORKSPACE_FILE].get("schema_version") != "ts-workspace/4":
-        raise ContractError(f"not an initialized v4 TS workspace: {root_path}")
+    if documents[WORKSPACE_FILE].get("schema_version") != "ts-workspace/5":
+        raise ContractError(f"not an initialized v5 TS workspace: {root_path}")
     index = _build_index(root_path, documents, artifacts)
     entities = _entities(index)
     exact = [item for item in entities if item["ref"].casefold() == normalized_query.casefold()]
@@ -87,7 +87,7 @@ def locate_research_files(
     else:
         query_mode = "index"
         terms = []
-        selected = [item for item in entities if item["kind"] in {"claim", "act"}]
+        selected = [item for item in entities if item["kind"] in {"claim", "node"}]
 
     selected.sort(key=lambda item: _entity_sort_key(item, normalized_query))
     match_count = len(selected)
@@ -122,7 +122,7 @@ def _build_index(
     artifact_rows: Iterable[dict[str, Any]],
 ) -> _LocatorIndex:
     claims = _record_map(documents[CLAIMS_FILE].get("claims"), "claim_id")
-    acts = _record_map(documents[RESEARCH_ACTS_FILE].get("acts"), "act_id")
+    nodes = _record_map(documents[RESEARCH_NODES_FILE].get("nodes"), "node_id")
     observations = _record_map(documents[OBSERVATIONS_FILE].get("observations"), "observation_id")
     artifacts: dict[str, dict[str, Any]] = {}
     for raw in artifact_rows:
@@ -136,11 +136,11 @@ def _build_index(
             raise ContractError(f"artifact catalog contains duplicate artifact_id: {artifact_id}")
         artifacts[artifact_id] = dict(raw)
 
-    claim_to_acts = {claim_id: set() for claim_id in claims}
-    act_to_claims = {act_id: set() for act_id in acts}
-    for claim_id, act_id in derive_claim_act_links(claims.values(), acts.values()):
-        claim_to_acts[claim_id].add(act_id)
-        act_to_claims[act_id].add(claim_id)
+    claim_to_nodes = {claim_id: set() for claim_id in claims}
+    node_to_claims = {node_id: set() for node_id in nodes}
+    for claim_id, node_id in derive_claim_node_links(claims.values(), nodes.values()):
+        claim_to_nodes[claim_id].add(node_id)
+        node_to_claims[node_id].add(claim_id)
 
     observation_to_claims = {observation_id: set() for observation_id in observations}
     for claim_id, claim in claims.items():
@@ -153,16 +153,16 @@ def _build_index(
         for artifact_id in _strings(observation.get("artifact_refs")):
             artifact_to_observations.setdefault(artifact_id, set()).add(observation_id)
 
-    attempts = _read_attempts(root, acts, artifacts)
+    attempts = _read_attempts(root, nodes, artifacts)
     return _LocatorIndex(
         root=root,
         claims=claims,
-        acts=acts,
+        nodes=nodes,
         observations=observations,
         artifacts=artifacts,
         attempts=attempts,
-        claim_to_acts=claim_to_acts,
-        act_to_claims=act_to_claims,
+        claim_to_nodes=claim_to_nodes,
+        node_to_claims=node_to_claims,
         observation_to_claims=observation_to_claims,
         artifact_to_observations=artifact_to_observations,
     )
@@ -186,20 +186,23 @@ def _entities(index: _LocatorIndex) -> list[dict[str, Any]]:
                 },
             )
         )
-    for act_id, act in index.acts.items():
-        hypothesis = act.get("hypothesis") if isinstance(act.get("hypothesis"), dict) else {}
+    for node_id, node in index.nodes.items():
         entities.append(
             _entity(
-                "act",
-                act_id,
-                str(act.get("objective") or act_id),
-                act.get("status"),
+                "node",
+                node_id,
+                str(node.get("objective") or node_id),
+                node.get("status"),
                 {
-                    "ref": act_id,
-                    "objective": act.get("objective"),
-                    "hypothesis": hypothesis,
-                    "status": act.get("status"),
-                    "tags": act.get("tags"),
+                    "ref": node_id,
+                    "phase": node.get("phase_ref"),
+                    "title": node.get("title"),
+                    "objective": node.get("objective"),
+                    "deliverable": node.get("deliverable"),
+                    "primary_claim": node.get("primary_claim_ref"),
+                    "claims": node.get("claim_refs"),
+                    "status": node.get("status"),
+                    "tags": node.get("tags"),
                 },
             )
         )
@@ -236,7 +239,7 @@ def _entities(index: _LocatorIndex) -> list[dict[str, Any]]:
                     {
                         "ref": key[1],
                         "path": attempt.get("path"),
-                        "act": key[0],
+                        "node": key[0],
                         "backend": attempt.get("backend"),
                         "task": attempt.get("task_type"),
                         "state": attempt.get("state"),
@@ -258,7 +261,7 @@ def _entities(index: _LocatorIndex) -> list[dict[str, Any]]:
                     "ref": artifact_id,
                     "path": artifact.get("path"),
                     "name": PurePosixPath(str(artifact.get("path"))).name,
-                    "act": artifact.get("owner_act"),
+                    "node": artifact.get("owner_node"),
                     "attempt": artifact.get("source_intent_id"),
                     "roles": artifact.get("input_roles"),
                 },
@@ -293,25 +296,25 @@ def _project_match(
     kind = str(entity["kind"])
     ref = str(entity["ref"])
     claim_refs: set[str] = set()
-    act_refs: set[str] = set()
+    node_refs: set[str] = set()
     observation_refs: set[str] = set()
     artifact_refs: set[str] = set()
     attempt_keys: set[tuple[str, str]] = set()
 
     if kind == "claim":
         claim_refs.add(ref)
-        act_refs.update(index.claim_to_acts.get(ref, set()))
+        node_refs.update(index.claim_to_nodes.get(ref, set()))
         observation_refs.update(_strings(index.claims[ref].get("observation_refs")))
         artifact_refs.update(_observation_artifacts(index, observation_refs))
         attempt_keys.update(_artifact_attempts(index, artifact_refs))
-    elif kind == "act":
-        act_refs.add(ref)
-        claim_refs.update(index.act_to_claims.get(ref, set()))
-        observation_refs.update(_act_observations(index, ref))
+    elif kind == "node":
+        node_refs.add(ref)
+        claim_refs.update(index.node_to_claims.get(ref, set()))
+        observation_refs.update(_node_observations(index, ref))
         artifact_refs.update(
             artifact_id
             for artifact_id, artifact in index.artifacts.items()
-            if artifact.get("owner_act") == ref
+            if artifact.get("owner_node") == ref
         )
         artifact_refs.update(_observation_artifacts(index, observation_refs))
         attempt_keys.update(key for key in index.attempts if key[0] == ref)
@@ -319,9 +322,9 @@ def _project_match(
     elif kind == "observation":
         observation_refs.add(ref)
         observation = index.observations[ref]
-        creator = observation.get("created_by_act")
+        creator = observation.get("created_by_node")
         if isinstance(creator, str):
-            act_refs.add(creator)
+            node_refs.add(creator)
         claim_refs.update(index.observation_to_claims.get(ref, set()))
         artifact_refs.update(_strings(observation.get("artifact_refs")))
         attempt_keys.update(_artifact_attempts(index, artifact_refs))
@@ -329,17 +332,17 @@ def _project_match(
         artifact_refs.add(ref)
         observation_refs.update(index.artifact_to_observations.get(ref, set()))
         claim_refs.update(_observation_claims(index, observation_refs))
-        act_refs.update(_observation_acts(index, observation_refs))
+        node_refs.update(_observation_acts(index, observation_refs))
         artifact = index.artifacts[ref]
-        owner = artifact.get("owner_act")
+        owner = artifact.get("owner_node")
         if isinstance(owner, str):
-            act_refs.add(owner)
+            node_refs.add(owner)
         attempt_keys.update(_artifact_attempts(index, artifact_refs))
-        act_refs.update(key[0] for key in attempt_keys)
+        node_refs.update(key[0] for key in attempt_keys)
     elif kind == "attempt":
         key = entity["key"]
         attempt_keys.add(key)
-        act_refs.add(key[0])
+        node_refs.add(key[0])
         artifact_refs.update(index.attempts[key]["artifact_ids"])
         observation_refs.update(_artifact_observations(index, artifact_refs))
         claim_refs.update(_observation_claims(index, observation_refs))
@@ -363,7 +366,7 @@ def _project_match(
     ]
     omitted_artifacts = max(0, len(available_artifact_refs) - artifact_limit)
     selected_attempts = sorted(attempt_keys, key=lambda key: (key[0], key[1]))
-    directories = _directories(index, act_refs)
+    directories = _directories(index, node_refs)
     return {
         "kind": kind,
         "ref": ref,
@@ -371,7 +374,7 @@ def _project_match(
         "status": entity["status"],
         "matched_fields": matched_fields,
         "claim_refs": _natural_refs(claim_refs),
-        "act_refs": _natural_refs(act_refs),
+        "node_refs": _natural_refs(node_refs),
         "observation_refs": _natural_refs(observation_refs),
         "directories": directories[:DIRECTORY_LIMIT],
         "omitted_directories": max(0, len(directories) - DIRECTORY_LIMIT),
@@ -417,11 +420,11 @@ def _project_artifact(
     elif kind == "artifact":
         relation = "matched_artifact"
     elif selected_sources:
-        relation = "act_observation_source"
+        relation = "node_observation_source"
     elif attempt_direction:
-        relation = f"act_attempt_{attempt_direction}"
+        relation = f"node_attempt_{attempt_direction}"
     else:
-        relation = "act_owned"
+        relation = "node_owned"
     return {
         **artifact,
         "relation": relation,
@@ -433,15 +436,15 @@ def _project_artifact(
 
 def _directories(
     index: _LocatorIndex,
-    act_refs: set[str],
+    node_refs: set[str],
 ) -> list[dict[str, Any]]:
     return [
         _directory(
             index.root,
-            str(index.acts.get(act_id, {}).get("artifact_root") or f"acts/{act_id}"),
-            "act_root",
+            str(index.nodes.get(node_id, {}).get("artifact_root") or f"nodes/{node_id}"),
+            "node_root",
         )
-        for act_id in _natural_refs(act_refs)
+        for node_id in _natural_refs(node_refs)
     ]
 
 
@@ -456,12 +459,12 @@ def _directory(root: Path, path: str, purpose: str) -> dict[str, Any]:
 
 def _read_attempts(
     root: Path,
-    acts: dict[str, dict[str, Any]],
+    nodes: dict[str, dict[str, Any]],
     artifacts: dict[str, dict[str, Any]],
 ) -> dict[tuple[str, str], dict[str, Any]]:
     attempts: dict[tuple[str, str], dict[str, Any]] = {}
-    for act_id in acts:
-        attempts_root = root / "acts" / act_id / "attempts"
+    for node_id in nodes:
+        attempts_root = root / "nodes" / node_id / "attempts"
         if not attempts_root.is_dir() or attempts_root.is_symlink():
             continue
         for attempt_dir in sorted(attempts_root.iterdir()):
@@ -474,10 +477,10 @@ def _read_attempts(
             intent = _read_optional_object(attempt_dir / "intent.json")
             status = _read_optional_object(attempt_dir / "status.json")
             result = _read_optional_object(attempt_dir / "outputs" / "calculation_result.json")
-            key = (act_id, attempt_dir.name)
+            key = (node_id, attempt_dir.name)
             attempts[key] = {
                 "intent_id": attempt_dir.name,
-                "owner_act": act_id,
+                "owner_node": node_id,
                 "path": attempt_dir.relative_to(root).as_posix(),
                 "backend": intent.get("backend") or result.get("backend"),
                 "task_type": intent.get("task_type") or result.get("task_type"),
@@ -488,17 +491,17 @@ def _read_attempts(
                 "output_artifact_ids": [],
             }
     for artifact_id, artifact in artifacts.items():
-        act_id = artifact.get("owner_act")
+        node_id = artifact.get("owner_node")
         intent_id = artifact.get("source_intent_id")
-        if not isinstance(act_id, str) or not isinstance(intent_id, str):
+        if not isinstance(node_id, str) or not isinstance(intent_id, str):
             continue
-        key = (act_id, intent_id)
+        key = (node_id, intent_id)
         attempts.setdefault(
             key,
             {
                 "intent_id": intent_id,
-                "owner_act": act_id,
-                "path": f"acts/{act_id}/attempts/{intent_id}",
+                "owner_node": node_id,
+                "path": f"nodes/{node_id}/attempts/{intent_id}",
                 "backend": None,
                 "task_type": None,
                 "state": None,
@@ -572,12 +575,12 @@ def _sorted_artifact_ids(
     )
 
 
-def _act_observations(index: _LocatorIndex, act_id: str) -> set[str]:
-    refs = set(_strings(index.acts[act_id].get("observation_refs")))
+def _node_observations(index: _LocatorIndex, node_id: str) -> set[str]:
+    refs = set(_strings(index.nodes[node_id].get("observation_refs")))
     refs.update(
         observation_id
         for observation_id, observation in index.observations.items()
-        if observation.get("created_by_act") == act_id
+        if observation.get("created_by_node") == node_id
     )
     return refs
 
@@ -609,10 +612,10 @@ def _observation_claims(index: _LocatorIndex, observation_refs: Iterable[str]) -
 
 def _observation_acts(index: _LocatorIndex, observation_refs: Iterable[str]) -> set[str]:
     return {
-        str(index.observations[observation_id]["created_by_act"])
+        str(index.observations[observation_id]["created_by_node"])
         for observation_id in observation_refs
         if observation_id in index.observations
-        and isinstance(index.observations[observation_id].get("created_by_act"), str)
+        and isinstance(index.observations[observation_id].get("created_by_node"), str)
     }
 
 
@@ -626,10 +629,10 @@ def _artifact_attempts(
         artifact = index.artifacts.get(artifact_id)
         if artifact is None:
             continue
-        act_id = artifact.get("owner_act")
+        node_id = artifact.get("owner_node")
         intent_id = artifact.get("source_intent_id")
-        if isinstance(act_id, str) and isinstance(intent_id, str):
-            keys.add((act_id, intent_id))
+        if isinstance(node_id, str) and isinstance(intent_id, str):
+            keys.add((node_id, intent_id))
     keys.update(
         key
         for key, attempt in index.attempts.items()
@@ -698,7 +701,7 @@ def _natural_refs(values: Iterable[str]) -> list[str]:
 
 
 def _natural_ref_key(value: str) -> tuple[int, str]:
-    match = re.fullmatch(r"(?:claim|act|obs)_([1-9][0-9]*)", value)
+    match = re.fullmatch(r"(?:claim|node|obs)_([1-9][0-9]*)", value)
     return (int(match.group(1)), "") if match else (2**63 - 1, value)
 
 

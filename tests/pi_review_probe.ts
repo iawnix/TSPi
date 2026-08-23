@@ -11,11 +11,12 @@ const { buildProviderTaskPacket } = require("../src/agents/review/task-packet.cj
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("ts-test-review-child", {
-    description: "Run one recording-provider v4 Review child session.",
+    description: "Run one recording-provider v5 Review child session.",
     handler: async (args, ctx) => {
       const taskId = "sub_1";
       const claimId = "claim_1";
-      const actId = "act_1";
+      const nodeId = "node_1";
+      const phaseId = "phase_1";
       const artifactMode = args.trim() === "artifact";
       const artifactPath = "review-artifact.log";
       const artifactBytes = artifactMode ? readFileSync(resolve(ctx.cwd, artifactPath)) : null;
@@ -27,17 +28,22 @@ export default function (pi: ExtensionAPI) {
       const revision = `sha256:${"1".repeat(64)}`;
       const scope = {
         report_id: "rep_review_probe",
-        act_refs: [actId],
+        node_refs: [nodeId],
         claim_refs: [claimId],
       };
       const reviewSnapshot = {
-        schema_version: "ts-review-task-snapshot/2",
+        schema_version: "ts-review-task-snapshot/3",
         task_id: taskId,
         operation: "claim_review",
         scope,
         workspace_revision: revision,
         projection_id: `ctx_${"c".repeat(24)}`,
         target_claim_ref: claimId,
+        research_phases: [{
+          phase_id: phaseId,
+          title: "Probe phase",
+          objective: "Contain the recording-provider Review probe.",
+        }],
         claims: [{
           claim_id: claimId,
           claim_type: "mechanism",
@@ -50,13 +56,17 @@ export default function (pi: ExtensionAPI) {
           validation_result_refs: [],
         }],
         claim_relations: [],
-        research_acts: [{
-          act_id: actId,
+        research_nodes: [{
+          node_id: nodeId,
+          phase_ref: phaseId,
+          title: "Review probe",
           objective: "Review the probe Claim.",
+          deliverable: "One bounded advisory result.",
           status: "open",
           dependency_refs: [],
+          primary_claim_ref: claimId,
           claim_refs: [claimId],
-          hypothesis: null,
+          related_claim_refs: [claimId],
           observation_refs: observationId ? [observationId] : [],
           finding_refs: [],
           validation_spec_refs: [],
@@ -65,7 +75,7 @@ export default function (pi: ExtensionAPI) {
         }],
         observations: observationId && artifactId && artifactDigest ? [{
           observation_id: observationId,
-          created_by_act: actId,
+          created_by_node: nodeId,
           concept_id: "program.normal_termination",
           subject_ref: "calc_review_probe",
           value: true,
@@ -85,9 +95,10 @@ export default function (pi: ExtensionAPI) {
         findings: [],
         acceptances: [],
         dependency_refs: {
+          phase_refs: [phaseId],
           claim_refs: [claimId],
           relation_refs: [],
-          act_refs: [actId],
+          node_refs: [nodeId],
           observation_refs: observationId ? [observationId] : [],
           validation_spec_refs: [],
           validation_result_refs: [],
@@ -99,12 +110,12 @@ export default function (pi: ExtensionAPI) {
           path: artifactPath,
           sha256: artifactDigest,
           size_bytes: statSync(resolve(ctx.cwd, artifactPath)).size,
-          owner_act: null,
+          owner_node: null,
           source_intent_id: null,
           artifact_type: "text_document",
           available_sections: ["document", "overview", "diagnostics", "head", "tail"],
         }] : [],
-        basis_allowlist: [actId, claimId, ...(observationId ? [observationId] : []), ...(artifactId ? [artifactId] : [])].sort(),
+        basis_allowlist: [nodeId, claimId, ...(observationId ? [observationId] : []), ...(artifactId ? [artifactId] : [])].sort(),
         omitted: {},
       };
       const providerInput = buildProviderTaskPacket({
@@ -123,10 +134,10 @@ export default function (pi: ExtensionAPI) {
         scope,
         inputs: {
           review_snapshot: bindAgentDocument(
-            "review-snapshot.json", "ts-review-task-snapshot/2", reviewSnapshot,
+            "review-snapshot.json", "ts-review-task-snapshot/3", reviewSnapshot,
           ),
           provider_input: bindAgentDocument(
-            "provider-input.json", "ts-review-provider-input/4", providerInput,
+            "provider-input.json", "ts-review-provider-input/5", providerInput,
           ),
         },
         capabilities: artifactMode

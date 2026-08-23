@@ -1,9 +1,9 @@
 {
   "name": "@iawnix/ts-agent",
-  "version": "0.10.1",
+  "version": "0.11.0",
   "private": true,
   "type": "module",
-  "description": "Pi package for DAG-based transition-state research with deterministic validation and bounded Compute and Review subagents.",
+  "description": "Pi package for Phase-guided transition-state research with a ResearchNode DAG, deterministic validation, and bounded Compute and Review subagents.",
   "keywords": [
     "pi-package",
     "transition-state",
@@ -75,6 +75,8 @@
     "ts_validation/acceptance_profiles/*.json",
     "ts_web/*.py",
     "ts_web/static/*.html",
+    "ts_web/static/*.css",
+    "ts_web/static/*.js",
     "ts_workspace/*.py",
     "ts_workspace/contracts/*.json"
   ],

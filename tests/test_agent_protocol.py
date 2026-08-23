@@ -36,18 +36,18 @@ def _task() -> dict[str, object]:
         },
         "scope": {
             "report_id": "rep_001",
-            "act_refs": ["act_1"],
+            "node_refs": ["node_1"],
             "claim_refs": ["claim_1"],
         },
         "inputs": {
             "review_snapshot": _binding(
                 "review-snapshot.json",
-                "ts-review-task-snapshot/2",
+                "ts-review-task-snapshot/3",
                 "b",
             ),
             "provider_input": _binding(
                 "provider-input.json",
-                "ts-review-provider-input/4",
+                "ts-review-provider-input/5",
                 "c",
             ),
         },
@@ -114,7 +114,7 @@ def test_agent_protocol_binds_review_result_to_task() -> None:
     assert json.loads(completed.stdout) == result
 
     mismatched = _result(task)
-    mismatched["scope"] = {**task["scope"], "act_refs": []}
+    mismatched["scope"] = {**task["scope"], "node_refs": []}
     rejected = _run("validateAgentResult", mismatched, task)
     assert rejected.returncode == 2
     assert "scope does not match agent task" in rejected.stderr

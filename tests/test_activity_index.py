@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.v4_helpers import start_research_act
+from tests.v5_helpers import start_research_node
 from ts_report import build_report_package
 from ts_workspace.activities import build_activity_index
 from ts_workspace.context import compile_context
@@ -24,14 +24,14 @@ ACTIVITY_JOURNAL = ROOT / "src" / "agent-core" / "activity-journal.cjs"
 
 def _activity_documents(
     root: Path,
-    act_id: str,
+    node_id: str,
     *,
     activity_id: str = "op_1",
     state: str = "completed",
-    owner_act: str | None = None,
+    owner_node: str | None = None,
 ) -> Path:
-    owner = owner_act or act_id
-    activity = root / "acts" / owner / "activities" / activity_id
+    owner = owner_node or node_id
+    activity = root / "nodes" / owner / "activities" / activity_id
     started_at = "2026-08-16T00:00:00+00:00"
     write_json(
         activity / "request.json",
@@ -40,7 +40,7 @@ def _activity_documents(
             "activity_id": activity_id,
             "kind": "render",
             "operation": "render",
-            "act_refs": [act_id],
+            "node_refs": [node_id],
             "request": {"input_artifact_ids": []},
             "started_at": started_at,
         },
@@ -53,7 +53,7 @@ def _activity_documents(
             "activity_id": activity_id,
             "kind": "render",
             "operation": "render",
-            "act_refs": [act_id],
+            "node_refs": [node_id],
             "status": state,
             "started_at": started_at,
             "completed_at": "2026-08-16T00:01:00+00:00" if terminal else None,
@@ -67,35 +67,35 @@ def _activity_documents(
     return activity
 
 
-def _completion(root: Path, act_id: str, outcome: str) -> dict:
+def _completion(root: Path, node_id: str, outcome: str) -> dict:
     return draft_decision(
         root,
         {
-            "rationale": "Close the bounded ResearchAct after checking operational state.",
+            "rationale": "Close the bounded ResearchNode after checking operational state.",
             "basis_refs": [],
             "operations": [
                 {
-                    "op": "complete_act",
-                    "actRef": act_id,
+                    "op": "complete_node",
+                    "nodeRef": node_id,
                     "outcome": outcome,
-                    "summary": "The bounded Act reached a terminal outcome.",
+                    "summary": "The bounded Node reached a terminal outcome.",
                 }
             ],
         },
     )["decision"]
 
 
-def test_activity_is_derived_for_its_act_without_a_link_decision(tmp_path: Path) -> None:
+def test_activity_is_derived_for_its_node_without_a_link_decision(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
-    refs = start_research_act(root)
-    activity = _activity_documents(root, refs["act_id"])
+    refs = start_research_node(root)
+    activity = _activity_documents(root, refs["node_id"])
 
     index = build_activity_index(root)
-    act = read_json(root / "research_acts.json")["acts"][0]
+    node = read_json(root / "research_nodes.json")["nodes"][0]
 
-    assert act["schema_version"] == "ts-research-act/3"
-    assert "operation_refs" not in act
+    assert node["schema_version"] == "ts-research-node/1"
+    assert "operation_refs" not in node
     assert index["integrity_findings"] == []
     assert index["activities"][0]["activity_ref"] == activity.relative_to(root).as_posix()
     assert index["activity_summaries"][0]["completed_count"] == 1
@@ -105,7 +105,7 @@ def test_activity_is_derived_for_its_act_without_a_link_decision(tmp_path: Path)
 def test_activity_journal_rejects_legacy_activity_ids(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
-    refs = start_research_act(root)
+    refs = start_research_node(root)
     script = (
         "const journal=require(process.argv[1]);"
         "const input=JSON.parse(process.argv[3]);"
@@ -124,7 +124,7 @@ def test_activity_journal_rejects_legacy_activity_ids(tmp_path: Path) -> None:
                 "activity_id": "activity_probe",
                 "kind": "render",
                 "operation": "render",
-                "act_refs": [refs["act_id"]],
+                "node_refs": [refs["node_id"]],
                 "request": {},
             }),
         ],
@@ -141,9 +141,9 @@ def test_activity_journal_rejects_legacy_activity_ids(tmp_path: Path) -> None:
 def test_activity_index_ignores_legacy_uuid_journals(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
-    refs = start_research_act(root)
+    refs = start_research_node(root)
     legacy_id = "op_019a338f-acaf-43e6-b498-4e3994971399"
-    activity = _activity_documents(root, refs["act_id"], activity_id=legacy_id)
+    activity = _activity_documents(root, refs["node_id"], activity_id=legacy_id)
     for name in ("request.json", "status.json"):
         document = read_json(activity / name)
         document["kind"] = "compute"
@@ -158,9 +158,9 @@ def test_activity_index_ignores_legacy_uuid_journals(tmp_path: Path) -> None:
 def test_activity_index_sorts_operational_ordinals_numerically(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
-    refs = start_research_act(root)
-    _activity_documents(root, refs["act_id"], activity_id="op_10")
-    _activity_documents(root, refs["act_id"], activity_id="op_2")
+    refs = start_research_node(root)
+    _activity_documents(root, refs["node_id"], activity_id="op_10")
+    _activity_documents(root, refs["node_id"], activity_id="op_2")
 
     index = build_activity_index(root)
 
@@ -168,11 +168,11 @@ def test_activity_index_sorts_operational_ordinals_numerically(tmp_path: Path) -
     assert [row["activity_id"] for row in index["activities"]] == ["op_2", "op_10"]
 
 
-def test_artifact_import_is_a_valid_act_owned_activity(tmp_path: Path) -> None:
+def test_artifact_import_is_a_valid_node_owned_activity(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
-    refs = start_research_act(root)
-    activity = _activity_documents(root, refs["act_id"])
+    refs = start_research_node(root)
+    activity = _activity_documents(root, refs["node_id"])
     for name in ("request.json", "status.json"):
         document = read_json(activity / name)
         document["kind"] = "artifact_import"
@@ -184,11 +184,11 @@ def test_artifact_import_is_a_valid_act_owned_activity(tmp_path: Path) -> None:
     assert index["activities"][0]["kind"] == "artifact_import"
 
 
-def test_structure_seed_is_a_valid_act_owned_activity(tmp_path: Path) -> None:
+def test_structure_seed_is_a_valid_node_owned_activity(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
-    refs = start_research_act(root)
-    activity = _activity_documents(root, refs["act_id"])
+    refs = start_research_node(root)
+    activity = _activity_documents(root, refs["node_id"])
     for name in ("request.json", "status.json"):
         document = read_json(activity / name)
         document["kind"] = "structure_seed"
@@ -205,7 +205,7 @@ def test_structure_seed_is_a_valid_act_owned_activity(tmp_path: Path) -> None:
     [
         ("directory_id", "activity_id_path_mismatch"),
         ("status_id", "activity_request_status_mismatch"),
-        ("act_refs", "activity_path_owner_mismatch"),
+        ("node_refs", "activity_path_owner_mismatch"),
     ],
 )
 def test_activity_integrity_rejects_path_id_and_owner_mismatches(
@@ -215,8 +215,8 @@ def test_activity_integrity_rejects_path_id_and_owner_mismatches(
 ) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
-    refs = start_research_act(root)
-    activity = _activity_documents(root, refs["act_id"])
+    refs = start_research_node(root)
+    activity = _activity_documents(root, refs["node_id"])
     if mutation == "directory_id":
         activity.rename(activity.with_name("op_2"))
     elif mutation == "status_id":
@@ -225,7 +225,7 @@ def test_activity_integrity_rejects_path_id_and_owner_mismatches(
         write_json(activity / "status.json", status)
     else:
         status = read_json(activity / "status.json")
-        status["act_refs"] = []
+        status["node_refs"] = []
         write_json(activity / "status.json", status)
 
     validation = validate_workspace(root)
@@ -237,8 +237,8 @@ def test_activity_integrity_rejects_path_id_and_owner_mismatches(
 def test_activity_integrity_detects_missing_documents_and_symlinks(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
-    refs = start_research_act(root)
-    activity = _activity_documents(root, refs["act_id"])
+    refs = start_research_node(root)
+    activity = _activity_documents(root, refs["node_id"])
     (activity / "status.json").unlink()
     (activity / "status.json").symlink_to("request.json")
 
@@ -247,21 +247,21 @@ def test_activity_integrity_detects_missing_documents_and_symlinks(tmp_path: Pat
     assert "activity_document_symlink" in codes
     assert "invalid_activity_status_schema" in codes
     with pytest.raises(ContractError, match="activity_integrity_error"):
-        validate_decision_dry_run(root, _completion(root, refs["act_id"], "blocked"))
+        validate_decision_dry_run(root, _completion(root, refs["node_id"], "blocked"))
 
 
 def test_running_activity_blocks_dry_run_and_apply(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
-    refs = start_research_act(root)
-    _activity_documents(root, refs["act_id"], state="running")
-    decision = _completion(root, refs["act_id"], "completed")
+    refs = start_research_node(root)
+    _activity_documents(root, refs["node_id"], state="running")
+    decision = _completion(root, refs["node_id"], "completed")
 
     with pytest.raises(ContractError, match="activity_not_terminal"):
         validate_decision_dry_run(root, decision)
     with pytest.raises(ContractError, match="activity_not_terminal"):
         apply_decision(root, decision)
-    assert read_json(root / "research_acts.json")["acts"][0]["status"] == "open"
+    assert read_json(root / "research_nodes.json")["nodes"][0]["status"] == "open"
 
 
 @pytest.mark.parametrize(
@@ -278,8 +278,8 @@ def test_pending_and_ambiguous_compute_controls_block_completion(
 ) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
-    refs = start_research_act(root)
-    attempt = root / "acts" / refs["act_id"] / "attempts" / "calc_1"
+    refs = start_research_node(root)
+    attempt = root / "nodes" / refs["node_id"] / "attempts" / "calc_1"
     write_json(attempt / "submit_guard.json", {"operation": "submit"})
     if records == "ambiguous":
         write_json(
@@ -293,32 +293,32 @@ def test_pending_and_ambiguous_compute_controls_block_completion(
         )
 
     with pytest.raises(ContractError, match=expected):
-        validate_decision_dry_run(root, _completion(root, refs["act_id"], "blocked"))
+        validate_decision_dry_run(root, _completion(root, refs["node_id"], "blocked"))
 
 
 def test_analytical_and_terminal_activity_completion_policy(tmp_path: Path) -> None:
     analytical = tmp_path / "analytical"
     init_workspace(analytical)
-    analytical_refs = start_research_act(analytical)
-    analytical_decision = _completion(analytical, analytical_refs["act_id"], "completed")
+    analytical_refs = start_research_node(analytical)
+    analytical_decision = _completion(analytical, analytical_refs["node_id"], "completed")
     validate_decision_dry_run(analytical, analytical_decision)
     apply_decision(analytical, analytical_decision)
 
     successful = tmp_path / "successful"
     init_workspace(successful)
-    successful_refs = start_research_act(successful)
-    _activity_documents(successful, successful_refs["act_id"], state="completed")
-    successful_decision = _completion(successful, successful_refs["act_id"], "completed")
+    successful_refs = start_research_node(successful)
+    _activity_documents(successful, successful_refs["node_id"], state="completed")
+    successful_decision = _completion(successful, successful_refs["node_id"], "completed")
     validate_decision_dry_run(successful, successful_decision)
     apply_decision(successful, successful_decision)
 
     failed = tmp_path / "failed"
     init_workspace(failed)
-    failed_refs = start_research_act(failed)
-    _activity_documents(failed, failed_refs["act_id"], state="failed")
+    failed_refs = start_research_node(failed)
+    _activity_documents(failed, failed_refs["node_id"], state="failed")
     with pytest.raises(ContractError, match="failed_activity_requires_non_success_outcome"):
-        validate_decision_dry_run(failed, _completion(failed, failed_refs["act_id"], "completed"))
-    inconclusive = _completion(failed, failed_refs["act_id"], "inconclusive")
+        validate_decision_dry_run(failed, _completion(failed, failed_refs["node_id"], "completed"))
+    inconclusive = _completion(failed, failed_refs["node_id"], "inconclusive")
     validate_decision_dry_run(failed, inconclusive)
     apply_decision(failed, inconclusive)
 
@@ -326,8 +326,8 @@ def test_analytical_and_terminal_activity_completion_policy(tmp_path: Path) -> N
 def test_report_and_frontier_use_compact_derived_activity_projection(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
-    refs = start_research_act(root)
-    _activity_documents(root, refs["act_id"], state="completed")
+    refs = start_research_node(root)
+    _activity_documents(root, refs["node_id"], state="completed")
     report_activity = root / "operations" / "activities" / "op_2"
     started_at = "2026-08-16T01:00:00+00:00"
     write_json(
@@ -337,7 +337,7 @@ def test_report_and_frontier_use_compact_derived_activity_projection(tmp_path: P
             "activity_id": "op_2",
             "kind": "report",
             "operation": "build",
-            "act_refs": [],
+            "node_refs": [],
             "request": {"package_name": "study"},
             "started_at": started_at,
         },
@@ -349,7 +349,7 @@ def test_report_and_frontier_use_compact_derived_activity_projection(tmp_path: P
             "activity_id": "op_2",
             "kind": "report",
             "operation": "build",
-            "act_refs": [],
+            "node_refs": [],
             "status": "running",
             "started_at": started_at,
             "completed_at": None,

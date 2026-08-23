@@ -17,7 +17,7 @@ rationale.
 
 ## Recording
 
-Create a ResearchAct whose objective states what hypothesis the candidate tests.
+Create a ResearchNode whose objective states what hypothesis the candidate tests.
 Bind all seeds through logical artifact IDs. Link every immutable compute intent
 and preserve method/settings. After collection, record candidate coordinates,
 energies, constraints, and provenance as separate Observations when useful.

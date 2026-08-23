@@ -46,7 +46,7 @@ function buildComputeResult(submission, packet, actions) {
     program: programResult(primaryResult),
     payload: {
       backend: task.inputs.backend,
-      act_id: task.inputs.act_id,
+      node_id: task.inputs.node_id,
       intent_id: task.inputs.intent_id,
       action_outcome: actionOutcome(normalizedActions),
       completed_actions: normalizedActions.map((action) => actionName(action.tool)),
@@ -149,7 +149,7 @@ function validateAction(value, task, expectedAction, index) {
   if (!status || status === "started") throw new Error(`Compute action ${index + 1} is incomplete`);
   const canonical = operationResult(value.result);
   if (!isPlainObject(canonical)) throw new Error(`Compute action ${index + 1} has no canonical result`);
-  if (canonical.intent_id !== task.inputs.intent_id || canonical.act_id !== task.inputs.act_id) {
+  if (canonical.intent_id !== task.inputs.intent_id || canonical.node_id !== task.inputs.node_id) {
     throw new Error(`Compute action ${index + 1} does not match the bound intent`);
   }
   const provenance = isPlainObject(canonical.provenance) ? canonical.provenance : {};
@@ -171,10 +171,10 @@ function validateSubmission(value) {
 function validatePayload(value, task, actions) {
   if (!isPlainObject(value)) throw new Error("Compute payload must be an object");
   rejectUnknownKeys(value, [
-    "backend", "act_id", "intent_id", "action_outcome", "completed_actions",
+    "backend", "node_id", "intent_id", "action_outcome", "completed_actions",
     "reconciliation_required",
   ], "Compute payload");
-  if (value.backend !== task.inputs.backend || value.act_id !== task.inputs.act_id || value.intent_id !== task.inputs.intent_id) {
+  if (value.backend !== task.inputs.backend || value.node_id !== task.inputs.node_id || value.intent_id !== task.inputs.intent_id) {
     throw new Error("Compute payload does not match the bound task");
   }
   const expectedActions = actions.map((action) => actionName(action.tool));
@@ -256,7 +256,7 @@ function actionName(toolName) {
 }
 
 function actionResultRef(task, index) {
-  return `acts/${task.inputs.act_id}/attempts/${task.inputs.intent_id}/runs/${task.task_id}/actions.json#/actions/${index}/result`;
+  return `nodes/${task.inputs.node_id}/attempts/${task.inputs.intent_id}/runs/${task.task_id}/actions.json#/actions/${index}/result`;
 }
 
 function uniqueStrings(values) {

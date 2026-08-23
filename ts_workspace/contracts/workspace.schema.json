@@ -5,9 +5,9 @@
   "additionalProperties": false,
   "required": ["schema_version", "workspace_id", "kernel_protocol", "created_at"],
   "properties": {
-    "schema_version": {"const": "ts-workspace/4"},
+    "schema_version": {"const": "ts-workspace/5"},
     "workspace_id": {"type": "string", "pattern": "^ws_[0-9a-f]{24}$"},
-    "kernel_protocol": {"const": "ts-research-kernel/4"},
+    "kernel_protocol": {"const": "ts-research-kernel/5"},
     "created_at": {"type": "string", "minLength": 1, "maxLength": 64}
   }
 }

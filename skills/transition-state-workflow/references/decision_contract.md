@@ -2,7 +2,7 @@
 
 `ts_workspace_decision_draft` accepts one object with `rationale`, unique
 `basis_refs`, and an ordered non-empty `operations` array. It returns a complete
-revision-bound `ts-research-decision/1` plus `allocated_refs`.
+revision-bound `ts-research-decision/2` plus `allocated_refs`.
 
 The draft endpoint allocates every technical ID. Decision IDs are
 workspace-local monotonic ordinals (`dec_1`, `dec_2`, ...). Each creating
@@ -10,7 +10,7 @@ operation needs a unique `local_ref`; later operations in the same draft refer
 to it as `$local_ref`.
 
 All canonical research records use workspace-local monotonic ordinals:
-`claim_1`, `rel_1`, `act_1`, `obs_1`, `fnd_1`, `gsp_1`, `val_1`, `acc_1`, and
+`phase_1`, `claim_1`, `rel_1`, `node_1`, `obs_1`, `fnd_1`, `gsp_1`, `val_1`, `acc_1`, and
 so on. Concurrent drafts from the same revision can propose the same next IDs.
 Drafting does not reserve them. The first Decision to commit owns its Decision
 ID and canonical changes; exact content can replay idempotently, while
@@ -19,22 +19,24 @@ and recoverable Decision transaction IDs are not reused.
 
 ## Creating Graph Records
 
+- `create_phase`: human-facing title and objective. It groups Nodes but carries
+  no lifecycle or policy.
 - `create_claim`: `claimType`, `statement`, optional assumptions, falsifiers,
-  tags, and optional creator Act.
+  tags, and optional creator Node.
 - `relate_claims`: source/target Claim refs, open relation type, and rationale.
-- `start_act`: objective, optional dependency/Claim refs, hypothesis package,
-  and tags.
+- `start_node`: required Phase, title, objective, deliverable, optional
+  dependency refs, primary/additional Claim refs, and tags.
 
-Act dependencies may cite several earlier Acts. They express provenance, not a
+Node dependencies may cite several earlier Nodes. They express provenance, not a
 required order or permission.
 
 ## Recording Science
 
-- `record_observation`: producing Act, semantic `conceptId`, `subjectRef`, typed
+- `record_observation`: producing Node, semantic `conceptId`, `subjectRef`, typed
   value, optional unit/qualifiers, summary, verified artifact ID/digest pairs,
   and producer provenance.
 - `record_finding`: open finding type, severity, statement, and applicable
-  Claim/Act/Observation refs.
+  Claim/Node/Observation refs.
 - `resolve_finding`: terminal status, summary, and optional resolving
   Observation refs.
 
@@ -44,9 +46,9 @@ has no file source.
 
 ## Validation And Acceptance
 
-- `freeze_validation_spec`: producing Act, target Claim, open dimension, title,
+- `freeze_validation_spec`: producing Node, target Claim, open dimension, title,
   and exactly one packaged template binding or declarative definition.
-- `evaluate_validation`: producing Act, frozen spec ref, and explicit selected
+- `evaluate_validation`: producing Node, frozen spec ref, and explicit selected
   Observation refs.
 - `accept_claim`: target Claim, versioned profile, summary, and a local ref for
   the acceptance record.
@@ -66,17 +68,17 @@ derived comparison against later canonical state.
 
 - `update_claim`: target, new status, cited summary, Observation refs, and
   ValidationResult refs.
-- `complete_act`: target, outcome `completed|inconclusive|blocked|stopped`,
+- `complete_node`: target, outcome `completed|inconclusive|blocked|stopped`,
   summary, and open questions.
-- `set_focus`: current focus Claim and Act refs.
+- `set_focus`: current focus Claim and Node refs.
 
-Completing an Act does not infer Claim status or acceptance. Updating a Claim
-does not complete an Act. Deterministic activities are derived from journaled
-`act_refs`; never add a Decision solely to link an operation. Completion fails
+Completing a Node does not infer Claim status or acceptance. Updating a Claim
+does not complete a Node. Deterministic activities are derived from journaled
+`node_refs`; never add a Decision solely to link an operation. Completion fails
 while an owned Compute run or deterministic activity is non-terminal, an owned
 activity journal is inconsistent, or a compute control is pending/unresolved. A
-terminal failed activity can close the Act as `inconclusive`, `blocked`, or
-`stopped`, but not as `completed`. Pure analytical Acts need no activity record.
+terminal failed activity can close the Node as `inconclusive`, `blocked`, or
+`stopped`, but not as `completed`. Pure analytical Nodes need no activity record.
 
 ## Three-Step Commit
 

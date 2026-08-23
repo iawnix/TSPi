@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.v4_helpers import bootstrap_v4_workspace, build_review_bundle, start_research_act
+from tests.v5_helpers import bootstrap_v5_workspace, build_review_bundle, start_research_node
 from ts_workspace import apply_decision, draft_decision, validate_decision_dry_run
 from ts_workspace.context import compile_context
 from ts_workspace.errors import ContractError
@@ -62,7 +62,7 @@ def test_root_review_disposition_is_write_once_and_unblocks_mutation(
         {
             "rationale": "Record a post-review research note.",
             "basis_refs": [],
-            "operations": [{"op": "set_focus", "claimRefs": [refs["claim_id"]], "actRefs": [refs["act_id"]]}],
+            "operations": [{"op": "set_focus", "claimRefs": [refs["claim_id"]], "nodeRefs": [refs["node_id"]]}],
         },
     )
     with pytest.raises(ContractError, match="requires a Root response"):
@@ -156,7 +156,7 @@ def test_agent_run_index_sorts_workspace_ordinals_numerically(tmp_path: Path) ->
 
 def test_completed_compute_is_attempt_scoped_private_and_never_requires_review_disposition(tmp_path: Path) -> None:
     workspace, refs = _workspace_with_act(tmp_path)
-    bundle = _compute_bundle(workspace, refs["act_id"], "sub_1")
+    bundle = _compute_bundle(workspace, refs["node_id"], "sub_1")
     script = (
         "const journal=require(process.argv[1]);"
         "const h=journal.beginAgentRun(process.argv[2],JSON.parse(process.argv[3]));"
@@ -174,7 +174,7 @@ def test_completed_compute_is_attempt_scoped_private_and_never_requires_review_d
     )
     assert completed.returncode == 0, completed.stderr
     run_ref = completed.stdout
-    assert run_ref == f"acts/{refs['act_id']}/attempts/calc_1/runs/{bundle['task']['task_id']}"
+    assert run_ref == f"nodes/{refs['node_id']}/attempts/calc_1/runs/{bundle['task']['task_id']}"
 
     run_dir = workspace / run_ref
     assert stat.S_IMODE(run_dir.stat().st_mode) == 0o700
@@ -205,20 +205,20 @@ def test_completed_compute_is_attempt_scoped_private_and_never_requires_review_d
 
 def test_compute_journal_enforces_task_result_and_action_size_limits(tmp_path: Path) -> None:
     workspace, refs = _workspace_with_act(tmp_path)
-    _write_attempt_intent(workspace, refs["act_id"], "calc_1")
+    _write_attempt_intent(workspace, refs["node_id"], "calc_1")
     script = """
 const journal=require(process.argv[1]);
 const taskHelper=require(process.argv[2]);
 const resultHelper=require(process.argv[3]);
 const workspace=process.argv[4];
-const actId=process.argv[5];
+const nodeId=process.argv[5];
 const digest="sha256:"+"d".repeat(64);
 const task=taskHelper.buildComputeTask({
-  runId:"sub_1",workspaceRoot:workspace,operation:"cancel",backend:"gaussian",actId,
+  runId:"sub_1",workspaceRoot:workspace,operation:"cancel",backend:"gaussian",nodeId,
   binding:{intentId:"calc_1",intentDigest:digest,executionKind:"remote"},
 });
 const canonical={
-  schema_version:"ts-calculation-result/2",intent_id:"calc_1",act_id:actId,state:"cancelled",
+  schema_version:"ts-calculation-result/2",intent_id:"calc_1",node_id:nodeId,state:"cancelled",
   program_status:"not_run",error_class:null,exit_status:null,artifact_refs:[],
   control:{effect_outcome:"succeeded",reconciliation_required:false},
   provenance:{intent_digest:digest},
@@ -252,7 +252,7 @@ process.stdout.write(JSON.stringify({taskError,resultError,actionError,runRef:ha
     completed = subprocess.run(
         [
             "node", "-e", script, str(JOURNAL), str(COMPUTE_TASK), str(COMPUTE_OUTPUT),
-            str(workspace), refs["act_id"],
+            str(workspace), refs["node_id"],
         ],
         cwd=ROOT,
         text=True,
@@ -270,7 +270,7 @@ process.stdout.write(JSON.stringify({taskError,resultError,actionError,runRef:ha
 
 def test_failed_run_settlement_preserves_partial_journal_as_pending(tmp_path: Path) -> None:
     workspace, refs = _workspace_with_act(tmp_path)
-    bundle = _compute_bundle(workspace, refs["act_id"], "sub_1")
+    bundle = _compute_bundle(workspace, refs["node_id"], "sub_1")
     script = """
 const fs=require("node:fs");
 const path=require("node:path");
@@ -309,8 +309,8 @@ process.stdout.write(JSON.stringify({settled,files:fs.readdirSync(handle.runDir)
 
 
 def _workspace_with_act(tmp_path: Path) -> tuple[Path, dict[str, str]]:
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
-    refs = start_research_act(workspace, claim_statement="The proposed pathway is concerted.")
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    refs = start_research_node(workspace, claim_statement="The proposed pathway is concerted.")
     return workspace, refs
 
 
@@ -323,21 +323,21 @@ def _review_bundle(
     return value["task"], value["documents"]
 
 
-def _compute_bundle(workspace: Path, act_id: str, task_id: str) -> dict[str, object]:
-    _write_attempt_intent(workspace, act_id, "calc_1")
+def _compute_bundle(workspace: Path, node_id: str, task_id: str) -> dict[str, object]:
+    _write_attempt_intent(workspace, node_id, "calc_1")
     script = """
 const taskHelper=require(process.argv[1]);
 const resultHelper=require(process.argv[2]);
 const workspace=process.argv[3];
-const actId=process.argv[4];
+const nodeId=process.argv[4];
 const taskId=process.argv[5];
 const digest="sha256:"+"c".repeat(64);
 const task=taskHelper.buildComputeTask({
-  runId:taskId,workspaceRoot:workspace,operation:"cancel",backend:"gaussian",actId,
+  runId:taskId,workspaceRoot:workspace,operation:"cancel",backend:"gaussian",nodeId,
   binding:{intentId:"calc_1",intentDigest:digest,executionKind:"remote"},
 });
 const canonical={
-  schema_version:"ts-calculation-result/2",intent_id:"calc_1",act_id:actId,state:"cancelled",
+  schema_version:"ts-calculation-result/2",intent_id:"calc_1",node_id:nodeId,state:"cancelled",
   program_status:"not_run",error_class:null,exit_status:null,artifact_refs:[],
   control:{effect_outcome:"succeeded",reconciliation_required:false},
   provenance:{intent_digest:digest},
@@ -349,7 +349,7 @@ process.stdout.write(JSON.stringify({task,actions,result}));
     completed = subprocess.run(
         [
             "node", "-e", script, str(COMPUTE_TASK), str(COMPUTE_OUTPUT),
-            str(workspace), act_id, task_id,
+            str(workspace), node_id, task_id,
         ],
         cwd=ROOT,
         text=True,
@@ -359,11 +359,11 @@ process.stdout.write(JSON.stringify({task,actions,result}));
     return json.loads(completed.stdout)
 
 
-def _write_attempt_intent(workspace: Path, act_id: str, intent_id: str) -> None:
-    path = workspace / "acts" / act_id / "attempts" / intent_id / "intent.json"
+def _write_attempt_intent(workspace: Path, node_id: str, intent_id: str) -> None:
+    path = workspace / "nodes" / node_id / "attempts" / intent_id / "intent.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps({"intent_id": intent_id, "act_id": act_id}) + "\n",
+        json.dumps({"intent_id": intent_id, "node_id": node_id}) + "\n",
         encoding="utf-8",
     )
 

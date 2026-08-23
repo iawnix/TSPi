@@ -34,6 +34,7 @@ REQUIRED_RUNTIME_FILES = {
     "scripts/install_release.py",
     "scripts/tspi_host.py",
     "scripts/ts_compute.py",
+    "scripts/ts_web.py",
     "skills/transition-state-workflow/SKILL.md",
     "themes/ts-theme.json",
     "extensions/ts-workflow-control/index.ts",
@@ -44,8 +45,16 @@ REQUIRED_RUNTIME_FILES = {
     "ts_workspace/engine.py",
     "ts_workspace/context.py",
     "ts_workspace/bootstrap.py",
+    "ts_workspace/contracts/research_phase.schema.json",
+    "ts_workspace/contracts/research_node.schema.json",
     "ts_validation/engine.py",
     "ts_runtime/launcher.py",
+    "ts_web/normalize.py",
+    "ts_web/server.py",
+    "ts_web/static/index.html",
+    "ts_web/static/app.css",
+    "ts_web/static/app.js",
+    "docs/adr/0002-phase-node-research-kernel-v5.md",
 }
 FORBIDDEN_PARTS = {".git", ".pytest_cache", "__pycache__", "node_modules", "tests"}
 FORBIDDEN_RUNTIME_FILES = {

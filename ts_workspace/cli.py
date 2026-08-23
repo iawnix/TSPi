@@ -1,4 +1,4 @@
-"""CLI for the v4 Research Kernel and Context Compiler."""
+"""CLI for the v5 Research Kernel and Context Compiler."""
 
 from __future__ import annotations
 
@@ -18,22 +18,22 @@ from .validator import validate_workspace
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="ts_workspace", description="TS v4 Claim graph and ResearchAct DAG control plane")
+    parser = argparse.ArgumentParser(prog="ts_workspace", description="TS v5 Claim graph and ResearchNode DAG control plane")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    command = sub.add_parser("init_workspace", help="initialize one fresh v4 workspace")
+    command = sub.add_parser("init_workspace", help="initialize one fresh v5 workspace")
     command.add_argument("--root", required=True)
 
     command = sub.add_parser("context", help="compile one bounded graph projection")
     command.add_argument("--root", required=True)
-    command.add_argument("--mode", choices=["frontier", "claim", "act", "subgraph", "finding", "validation", "delta", "locate"], default="frontier")
+    command.add_argument("--mode", choices=["frontier", "claim", "node", "subgraph", "finding", "validation", "delta", "locate"], default="frontier")
     command.add_argument("--query")
     command.add_argument("--claim-ref")
-    command.add_argument("--act-ref")
+    command.add_argument("--node-ref")
     command.add_argument("--finding-ref")
     command.add_argument("--validation-ref")
     command.add_argument("--claim-seed", action="append", default=[])
-    command.add_argument("--act-seed", action="append", default=[])
+    command.add_argument("--node-seed", action="append", default=[])
     command.add_argument("--depth", type=int, default=1)
     command.add_argument("--since-revision")
     command.add_argument("--since-operational-revision")
@@ -48,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     command.add_argument("--template-id")
     command.add_argument("--template-version")
 
-    command = sub.add_parser("validate_workspace", help="validate all canonical v4 state")
+    command = sub.add_parser("validate_workspace", help="validate all canonical v5 state")
     command.add_argument("--root", required=True)
 
     command = sub.add_parser("operational", help="project noncanonical activities, Review runs, and controls")
@@ -58,7 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     command.add_argument("--root", required=True)
     command.add_argument("--kind", required=True, choices=["calc", "sub", "op"])
 
-    command = sub.add_parser("draft_decision", help="allocate IDs and freeze one ts-research-decision/1")
+    command = sub.add_parser("draft_decision", help="allocate IDs and freeze one ts-research-decision/2")
     command.add_argument("--root", required=True)
     command.add_argument("--request-file", required=True)
 
@@ -106,11 +106,11 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
             args.root,
             mode=args.mode,
             claim_ref=args.claim_ref,
-            act_ref=args.act_ref,
+            node_ref=args.node_ref,
             finding_ref=args.finding_ref,
             validation_ref=args.validation_ref,
             claim_refs=args.claim_seed,
-            act_refs=args.act_seed,
+            node_refs=args.node_seed,
             depth=args.depth,
             since_revision=args.since_revision,
             since_operational_revision=args.since_operational_revision,

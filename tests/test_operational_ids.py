@@ -34,8 +34,8 @@ def test_operational_ids_are_workspace_wide_monotonic_and_private(tmp_path: Path
 def test_operational_allocator_reconciles_human_ids_and_ignores_uuid_history(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     init_workspace(workspace)
-    (workspace / "acts" / "act_1" / "attempts" / "calc_7").mkdir(parents=True)
-    (workspace / "acts" / "act_1" / "attempts" / "calc_7" / "runs" / "sub_9").mkdir(parents=True)
+    (workspace / "nodes" / "node_1" / "attempts" / "calc_7").mkdir(parents=True)
+    (workspace / "nodes" / "node_1" / "attempts" / "calc_7" / "runs" / "sub_9").mkdir(parents=True)
     (workspace / "reviews" / "claim_1" / "runs" / "sub_028def15-cbb5-42b4-bbfc-cfbd256c4a0b").mkdir(parents=True)
     (workspace / "operations" / "activities" / "op_5").mkdir(parents=True)
 

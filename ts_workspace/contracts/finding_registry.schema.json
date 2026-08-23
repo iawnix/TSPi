@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "findings"],
   "properties": {
-    "schema_version": {"const": "ts-finding-registry/1"},
+    "schema_version": {"const": "ts-finding-registry/2"},
     "findings": {"type": "array", "items": {"$ref": "finding.schema.json"}}
   }
 }

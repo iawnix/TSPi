@@ -10,7 +10,7 @@
     "finding_snapshot", "finding_snapshot_digest", "summary", "decision_id", "accepted_at", "acceptance_digest"
   ],
   "properties": {
-    "schema_version": {"const": "ts-acceptance-record/1"},
+    "schema_version": {"const": "ts-acceptance-record/2"},
     "acceptance_id": {"$ref": "#/$defs/acceptance_id"},
     "claim_ref": {"$ref": "claim.schema.json#/$defs/claim_id"},
     "claim_snapshot": {"$ref": "claim.schema.json"},

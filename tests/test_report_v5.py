@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.v4_helpers import accept_research_claim
+from tests.v5_helpers import accept_research_claim
 from ts_compute.artifacts import list_calculation_artifacts
 from ts_report import build_final_report, build_report_package
 from ts_report.context import collect_report_context
@@ -21,32 +21,36 @@ def _seed(root: Path) -> dict[str, str]:
             "rationale": "Seed a reportable DAG.",
             "basis_refs": [],
             "operations": [
-                {"op": "create_claim", "local_ref": "claim", "claimType": "mechanism", "statement": "The pathway is concerted."},
+                {"op": "create_phase", "local_ref": "phase", "title": "Mechanism search", "objective": "Locate and validate a concerted pathway."},
                 {
-                    "op": "start_act",
-                    "local_ref": "act",
-                    "title": "Bounded research act",
+                    "op": "create_claim",
+                    "local_ref": "claim",
+                    "claimType": "mechanism",
+                    "statement": "A concerted saddle can be located for the pathway.",
+                    "assumptions": ["The selected conformer is representative."],
+                    "falsifiers": ["Every candidate relaxes to a stepwise intermediate."],
+                },
+                {
+                    "op": "start_node",
+                    "local_ref": "node",
+                    "phaseRef": "$phase",
+                    "title": "Bounded research node",
                     "deliverable": "One bounded research result.",
                     "objective": "Search for a concerted pathway.",
+                    "primaryClaimRef": "$claim",
                     "claimRefs": ["$claim"],
-                    "hypothesis": {
-                        "statement": "A concerted saddle can be located.",
-                        "assumptions": ["The selected conformer is representative."],
-                        "predictions": ["A single reaction-coordinate mode will be found."],
-                        "falsifiers": ["Every candidate relaxes to a stepwise intermediate."],
-                    },
                 },
                 {
                     "op": "create_claim",
                     "local_ref": "discovered",
                     "claimType": "mechanism",
                     "statement": "A stepwise alternative may require investigation.",
-                    "createdByAct": "$act",
+                    "createdByNode": "$node",
                 },
                 {
                     "op": "record_observation",
                     "local_ref": "observation",
-                    "actRef": "$act",
+                    "nodeRef": "$node",
                     "conceptId": "candidate.count",
                     "subjectRef": "search_001",
                     "value": 3,
@@ -61,10 +65,10 @@ def _seed(root: Path) -> dict[str, str]:
                     "severity": "blocking",
                     "statement": "Connectivity has not been established.",
                     "claimRefs": ["$claim"],
-                    "actRefs": ["$act"],
+                    "nodeRefs": ["$node"],
                     "basisObservationRefs": ["$observation"],
                 },
-                {"op": "set_focus", "claimRefs": ["$claim"], "actRefs": ["$act"]},
+                {"op": "set_focus", "claimRefs": ["$claim"], "nodeRefs": ["$node"]},
             ],
         },
     )
@@ -72,7 +76,7 @@ def _seed(root: Path) -> dict[str, str]:
     return drafted["allocated_refs"]
 
 
-def test_report_projects_v4_dag_and_semantic_validation(tmp_path: Path) -> None:
+def test_report_projects_v5_roadmap_and_semantic_validation(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
     refs = _seed(root)
@@ -82,17 +86,18 @@ def test_report_projects_v4_dag_and_semantic_validation(tmp_path: Path) -> None:
 
     assert context["schema_version"] == "ts-report-context/5"
     assert context["focus"]["claim_refs"] == [refs["claim"]]
-    assert "## Claim Graph" in text
-    assert "## ResearchAct DAG" in text
-    assert "### ResearchAct Review" in text
-    assert "A concerted saddle can be located." in text
+    assert "## Research Roadmap" in text
+    assert "## Scientific Conclusions" in text
+    assert "## ResearchNode Records" in text
+    assert refs["phase"] in text
+    assert "A concerted saddle can be located for the pathway." in text
     assert "Every candidate relaxes to a stepwise intermediate." in text
     assert "Deterministic activities: 0 total" in text
     assert "Scientific records: 1 Observations, 1 Findings" in text
     assert "## Semantic Observations" in text
     assert "## Frozen Validation" in text
     assert "## Findings" in text
-    assert refs["act"] in text
+    assert refs["node"] in text
     assert f"`{refs['claim']}, {refs['discovered']}`" in text
     assert "required_gates" not in text
     assert "node_id" not in text
@@ -107,7 +112,7 @@ def test_report_package_is_revision_and_manifest_bound(tmp_path: Path) -> None:
     result = build_report_package(root, target)
     manifest = read_json(Path(result["manifest"]))
 
-    assert manifest["schema_version"] == "ts-report-package/3"
+    assert manifest["schema_version"] == "ts-report-package/4"
     assert manifest["workspace_revision"] == result["workspace_revision"]
     assert manifest["operational_revision"] == result["operational_revision"]
     refs = {item["ref"] for item in manifest["files"]}
@@ -120,7 +125,7 @@ def test_report_package_is_revision_and_manifest_bound(tmp_path: Path) -> None:
         "findings.json",
         "observation_index.json",
         "report_context.json",
-        "research_acts.json",
+        "research_roadmap.json",
         "validation.json",
     } <= refs
     for item in manifest["files"]:
@@ -143,7 +148,7 @@ def test_report_copies_logical_render_artifacts_into_manifested_assets(tmp_path:
     root = tmp_path / "workspace"
     init_workspace(root)
     refs = _seed(root)
-    source = root / "acts" / refs["act"] / "outputs" / "render" / "mechanism overview.png"
+    source = root / "nodes" / refs["node"] / "outputs" / "render" / "mechanism overview.png"
     source.parent.mkdir(parents=True)
     source.write_bytes(b"PNG report asset")
     artifact = next(
@@ -192,7 +197,7 @@ def test_report_uses_only_current_acceptance_for_executive_status(tmp_path: Path
                     "severity": "warning",
                     "statement": "A later limitation requires a new acceptance assessment.",
                     "claimRefs": [refs["claim"]],
-                    "actRefs": [refs["act"]],
+                    "nodeRefs": [refs["node"]],
                 }
             ],
         },

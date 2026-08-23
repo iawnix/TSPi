@@ -16,7 +16,7 @@ import { guardPackageSourceRead, packageSourceSystemPrompt } from "../shared/pac
 const require = createRequire(import.meta.url);
 const { buildContextSummary, resolveWorkspaceRoot, toolText } = require("./summary.cjs");
 
-const GRAPH_CONTEXT_MODES = ["frontier", "claim", "act", "subgraph", "finding", "validation", "delta"] as const;
+const GRAPH_CONTEXT_MODES = ["frontier", "claim", "node", "subgraph", "finding", "validation", "delta"] as const;
 const CONTEXT_MODES = [...GRAPH_CONTEXT_MODES, "locate", "artifacts", "compute_capabilities", "validation_capabilities"] as const;
 const CONTEXT_ENTRY_TYPE = "ts-workspace-context-result";
 const VALIDATION_ENTRY_TYPE = "ts-workspace-validation-result";
@@ -36,7 +36,7 @@ export default function (pi: ExtensionAPI) {
     const status = data?.valid === true ? "valid" : "invalid";
     const focus = [
       data?.focusClaims?.length ? `${data.focusClaims.length} claims` : undefined,
-      data?.focusActs?.length ? `${data.focusActs.length} acts` : undefined,
+      data?.focusActs?.length ? `${data.focusActs.length} nodes` : undefined,
     ].filter(Boolean).join(" · ") || "empty frontier";
     let text = `${theme.fg("accent", "TS Context")}: ${theme.fg(data?.valid === true ? "success" : "warning", status)}`;
     text += theme.fg("muted", ` · ${focus}`);
@@ -63,7 +63,7 @@ export default function (pi: ExtensionAPI) {
     const packagePolicy = packageSourceSystemPrompt();
     if (!root) return { systemPrompt: `${event.systemPrompt}\n\n${packagePolicy}` };
     return {
-      systemPrompt: `${event.systemPrompt}\n\n${packagePolicy}\n\nTS v4 workspace active: ${root}. Retrieve a bounded graph projection with ${TS_PUBLIC_TOOL_NAMES.workspaceContext}. Only ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply} mutates canonical scientific state.`,
+      systemPrompt: `${event.systemPrompt}\n\n${packagePolicy}\n\nTS v5 workspace active: ${root}. Retrieve a bounded graph projection with ${TS_PUBLIC_TOOL_NAMES.workspaceContext}. Only ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply} mutates canonical scientific state.`,
     };
   });
 
@@ -76,7 +76,7 @@ export default function (pi: ExtensionAPI) {
     promptSnippet: "Read bounded TS workspace context",
     promptGuidelines: [
       "Start with frontier or revision-bound delta; retrieve focused graph objects only when needed.",
-      "Use mode=locate with one exact ID or keyword query to find related Acts, attempts, and physical artifact paths.",
+      "Use mode=locate with one exact ID or keyword query to find related Nodes, attempts, and physical artifact paths.",
       "Artifact IDs are logical and capability catalogs do not prove runtime or scheduler readiness.",
     ],
     parameters: Type.Object({
@@ -84,7 +84,7 @@ export default function (pi: ExtensionAPI) {
       root: Type.Optional(Type.String()),
       query: Type.Optional(Type.String({ minLength: 1, maxLength: 256 })),
       claimRef: Type.Optional(Type.String()),
-      actRef: Type.Optional(Type.String()),
+      nodeRef: Type.Optional(Type.String()),
       findingRef: Type.Optional(Type.String()),
       validationRef: Type.Optional(Type.String()),
       claimSeeds: Type.Optional(Type.Array(Type.String(), { maxItems: 32 })),
@@ -114,7 +114,7 @@ export default function (pi: ExtensionAPI) {
         throw new Error("workspace context query is only valid with mode=locate");
       }
       if (mode === "artifacts") {
-        const args = params.actRef ? ["--act-id", params.actRef] : [];
+        const args = params.nodeRef ? ["--node-id", params.nodeRef] : [];
         const artifactCatalog = await runComputeJson(pi, "list-artifacts", root, args, signal);
         return toolText(JSON.stringify(artifactCatalog, null, 2), { artifactCatalog });
       }
@@ -140,7 +140,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionDraft,
     label: "TS Decision Draft",
-    description: "Allocate IDs and freeze one non-mutating v4 research Decision.",
+    description: "Allocate IDs and freeze one non-mutating v5 research Decision.",
     promptSnippet: "Draft one revision-bound TS Decision",
     promptGuidelines: [
       "Use local_ref aliases; the Kernel allocates all durable IDs.",
@@ -167,8 +167,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate,
     label: "TS Decision Validate",
-    description: "Dry-run one frozen ts-research-decision/1 against current v4 state without mutation.",
-    promptSnippet: "Validate one frozen v4 TS research Decision without applying it",
+    description: "Dry-run one frozen ts-research-decision/2 against current v5 state without mutation.",
+    promptSnippet: "Validate one frozen v5 TS research Decision without applying it",
     parameters: Type.Object({ decision: Type.Any(), root: Type.Optional(Type.String()) }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
@@ -180,8 +180,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply,
     label: "TS Decision Apply",
-    description: "Atomically apply one validated ts-research-decision/1 to canonical v4 state.",
-    promptSnippet: "Atomically apply one validated v4 TS research Decision",
+    description: "Atomically apply one validated ts-research-decision/2 to canonical v5 state.",
+    promptSnippet: "Atomically apply one validated v5 TS research Decision",
     promptGuidelines: ["Apply only the exact Decision returned by the draft tool and accepted by dry-run validation."],
     parameters: Type.Object({ decision: Type.Any(), root: Type.Optional(Type.String()) }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
@@ -193,7 +193,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("ts-context", {
-    description: "Show the active v4 Claim and ResearchAct frontier · read-only · local.",
+    description: "Show the active v5 Claim and ResearchNode frontier · read-only · local.",
     handler: async (args, ctx) => {
       if (String(args || "").trim()) {
         ctx.ui.notify("/ts-context takes no arguments; focused retrieval is available through ts_workspace_context", "warning");
@@ -206,13 +206,13 @@ export default function (pi: ExtensionAPI) {
         summary: buildContextSummary(projection),
         valid: projection.valid === true,
         focusClaims: stringArray(focus.claim_refs),
-        focusActs: stringArray(focus.act_refs),
+        focusActs: stringArray(focus.node_refs),
       });
     },
   });
 
   pi.registerCommand("ts-validate", {
-    description: "Validate active v4 canonical workspace state · read-only · local.",
+    description: "Validate active v5 canonical workspace state · read-only · local.",
     handler: async (args, ctx) => {
       if (String(args || "").trim()) {
         ctx.ui.notify("/ts-validate takes no arguments; it uses the active TSPi workspace", "warning");
@@ -228,13 +228,13 @@ export default function (pi: ExtensionAPI) {
 function contextArgs(mode: typeof GRAPH_CONTEXT_MODES[number], params: Record<string, unknown>): string[] {
   const args = ["--mode", mode, "--depth", String(params.depth ?? 1)];
   addArg(args, "--claim-ref", params.claimRef);
-  addArg(args, "--act-ref", params.actRef);
+  addArg(args, "--node-ref", params.nodeRef);
   addArg(args, "--finding-ref", params.findingRef);
   addArg(args, "--validation-ref", params.validationRef);
   addArg(args, "--since-revision", params.sinceRevision);
   addArg(args, "--since-operational-revision", params.sinceOperationalRevision);
   for (const value of stringArray(params.claimSeeds)) args.push("--claim-seed", value);
-  for (const value of stringArray(params.actSeeds)) args.push("--act-seed", value);
+  for (const value of stringArray(params.actSeeds)) args.push("--node-seed", value);
   return args;
 }
 

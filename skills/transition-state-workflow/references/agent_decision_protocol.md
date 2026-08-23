@@ -4,26 +4,26 @@
 
 1. Read a frontier or delta projection.
 2. Name the unresolved question and possible falsifiers.
-3. Select one bounded ResearchAct and explicit dependencies.
+3. Select one bounded ResearchNode and explicit dependencies.
 4. Draft, validate, and apply the graph change.
 5. Run deterministic actions, then verify local primary artifacts.
 6. Record semantic Observations and Findings.
 7. Freeze and evaluate only the validation dimensions relevant to the Claim.
-8. Update the Claim and complete the Act with exact cited basis.
+8. Update the Claim and complete the Node with exact cited basis.
 9. Decide independently whether to branch, merge, backtrack, stop, or continue.
 
 The Kernel validates this record; it does not supply the strategy.
 
 ## Failed Exploration And Backtracking
 
-Preserve the failed Act, operation, output, and Finding. Distinguish an
+Preserve the failed Node, operation, output, and Finding. Distinguish an
 operational failure from a scientific result. To resume from an earlier point,
-start a new Act that depends on the earlier checkpoint and state what changed.
+start a new Node that depends on the earlier checkpoint and state what changed.
 Do not copy or rewrite the failed branch.
 
-Use multiple dependencies when a new Act combines conclusions or artifacts
+Use multiple dependencies when a new Node combines conclusions or artifacts
 from several branches. Use Claim relations to preserve competing explanations;
-do not force alternatives into one linear Act chain.
+do not force alternatives into one linear Node chain.
 
 ## Review
 

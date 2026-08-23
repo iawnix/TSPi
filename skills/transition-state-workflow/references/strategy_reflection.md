@@ -17,8 +17,8 @@ is Root reasoning; it does not change a validator or route the DAG.
 
 ## Response
 
-Preserve prior Acts and artifacts. Record verified anomalies as Observations and
-open Findings. Revise or relate Claims explicitly. Start a new ResearchAct with
+Preserve prior Nodes and artifacts. Record verified anomalies as Observations and
+open Findings. Revise or relate Claims explicitly. Start a new ResearchNode with
 the earlier checkpoint(s) as dependencies and state the changed hypothesis,
 method, input, or discriminator.
 

@@ -1,4 +1,4 @@
-"""Cross-document validation for the v4 research Kernel."""
+"""Cross-document validation for the v5 research Kernel."""
 
 from __future__ import annotations
 
@@ -20,7 +20,8 @@ from .state import (
     OBSERVATIONS_FILE,
     FINDINGS_FILE,
     LEGACY_MARKERS,
-    RESEARCH_ACTS_FILE,
+    RESEARCH_PHASES_FILE,
+    RESEARCH_NODES_FILE,
     RESEARCH_STATE_FILE,
     REQUIRED_DIRS,
     REQUIRED_FILES,
@@ -48,7 +49,7 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
                 findings,
                 "error",
                 "legacy_state_present",
-                f"legacy canonical state is unsupported by v4: {marker}",
+                f"legacy canonical state is unsupported by v5: {marker}",
                 marker,
             )
     for name in sorted(REQUIRED_FILES):
@@ -84,40 +85,41 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
     except WorkspaceIdentityError as exc:
         _finding(findings, "error", "invalid_workspace_identity", str(exc), ".agents/workspace-identity.json")
 
+    phases = _unique_map(documents[RESEARCH_PHASES_FILE].get("phases"), "phase_id", RESEARCH_PHASES_FILE, findings)
     claims = _unique_map(documents[CLAIMS_FILE].get("claims"), "claim_id", CLAIMS_FILE, findings)
     relations = _unique_map(documents[CLAIM_RELATIONS_FILE].get("relations"), "relation_id", CLAIM_RELATIONS_FILE, findings)
-    acts = _unique_map(documents[RESEARCH_ACTS_FILE].get("acts"), "act_id", RESEARCH_ACTS_FILE, findings)
+    nodes = _unique_map(documents[RESEARCH_NODES_FILE].get("nodes"), "node_id", RESEARCH_NODES_FILE, findings)
     observations = _unique_map(documents[OBSERVATIONS_FILE].get("observations"), "observation_id", OBSERVATIONS_FILE, findings)
     specs = _unique_map(documents[VALIDATION_SPECS_FILE].get("specs"), "spec_id", VALIDATION_SPECS_FILE, findings)
     results = _unique_map(documents[VALIDATION_RESULTS_FILE].get("results"), "result_id", VALIDATION_RESULTS_FILE, findings)
     finding_map = _unique_map(documents[FINDINGS_FILE].get("findings"), "finding_id", FINDINGS_FILE, findings)
 
     _require_refs(documents[RESEARCH_STATE_FILE].get("focus_claim_refs"), claims, "focus_claim_refs", RESEARCH_STATE_FILE, findings)
-    _require_refs(documents[RESEARCH_STATE_FILE].get("focus_act_refs"), acts, "focus_act_refs", RESEARCH_STATE_FILE, findings)
-    _validate_claims(claims, acts, observations, specs, results, findings)
+    _require_refs(documents[RESEARCH_STATE_FILE].get("focus_node_refs"), nodes, "focus_node_refs", RESEARCH_STATE_FILE, findings)
+    _validate_claims(claims, nodes, observations, specs, results, findings)
     _validate_claim_relations(relations, claims, findings)
-    _validate_acts(acts, claims, observations, specs, results, finding_map, findings)
-    _validate_observations(observations, acts, findings)
-    _validate_findings(finding_map, claims, acts, observations, findings)
-    _validate_specs_and_results(specs, results, claims, acts, observations, findings)
+    _validate_nodes(nodes, phases, claims, observations, specs, results, finding_map, findings)
+    _validate_observations(observations, nodes, findings)
+    _validate_findings(finding_map, claims, nodes, observations, findings)
+    _validate_specs_and_results(specs, results, claims, nodes, observations, findings)
     _validate_acceptance(root_path, documents, claims, specs, results, finding_map, findings)
-    activity_index = build_activity_index(root_path, known_act_ids=acts)
+    activity_index = build_activity_index(root_path, known_node_ids=nodes)
     findings.extend(activity_index["integrity_findings"])
     return _result(findings)
 
 
 def _validate_claims(
     claims: dict[str, dict[str, Any]],
-    acts: dict[str, dict[str, Any]],
+    nodes: dict[str, dict[str, Any]],
     observations: dict[str, dict[str, Any]],
     specs: dict[str, dict[str, Any]],
     results: dict[str, dict[str, Any]],
     findings: list[dict[str, str]],
 ) -> None:
     for claim_id, claim in claims.items():
-        act_ref = claim.get("created_by_act")
-        if act_ref is not None and act_ref not in acts:
-            _finding(findings, "error", "unknown_claim_creator", f"Claim {claim_id} references unknown creator Act", CLAIMS_FILE)
+        node_ref = claim.get("created_by_node")
+        if node_ref is not None and node_ref not in nodes:
+            _finding(findings, "error", "unknown_claim_creator", f"Claim {claim_id} references unknown creator Node", CLAIMS_FILE)
         _require_refs(claim.get("observation_refs"), observations, f"Claim {claim_id} observation_refs", CLAIMS_FILE, findings)
         _require_refs(claim.get("validation_spec_refs"), specs, f"Claim {claim_id} validation_spec_refs", CLAIMS_FILE, findings)
         _require_refs(claim.get("validation_result_refs"), results, f"Claim {claim_id} validation_result_refs", CLAIMS_FILE, findings)
@@ -148,8 +150,9 @@ def _validate_claim_relations(
         _finding(findings, "error", "claim_graph_cycle", "Claim relation DAG contains a cycle: " + " -> ".join(cycle), CLAIM_RELATIONS_FILE)
 
 
-def _validate_acts(
-    acts: dict[str, dict[str, Any]],
+def _validate_nodes(
+    nodes: dict[str, dict[str, Any]],
+    phases: dict[str, dict[str, Any]],
     claims: dict[str, dict[str, Any]],
     observations: dict[str, dict[str, Any]],
     specs: dict[str, dict[str, Any]],
@@ -158,36 +161,42 @@ def _validate_acts(
     findings: list[dict[str, str]],
 ) -> None:
     edges: list[tuple[str, str]] = []
-    for act_id, act in acts.items():
-        if act.get("artifact_root") != f"acts/{act_id}":
-            _finding(findings, "error", "act_artifact_root_mismatch", f"ResearchAct {act_id} has a non-canonical artifact root", RESEARCH_ACTS_FILE)
-        dependencies = act.get("dependency_refs", [])
-        _require_refs(dependencies, acts, f"ResearchAct {act_id} dependency_refs", RESEARCH_ACTS_FILE, findings)
-        edges.extend((str(ref), act_id) for ref in dependencies if ref in acts)
-        _require_refs(act.get("claim_refs"), claims, f"ResearchAct {act_id} claim_refs", RESEARCH_ACTS_FILE, findings)
-        _require_refs(act.get("observation_refs"), observations, f"ResearchAct {act_id} observation_refs", RESEARCH_ACTS_FILE, findings)
-        _require_refs(act.get("finding_refs"), finding_map, f"ResearchAct {act_id} finding_refs", RESEARCH_ACTS_FILE, findings)
-        _require_refs(act.get("validation_spec_refs"), specs, f"ResearchAct {act_id} validation_spec_refs", RESEARCH_ACTS_FILE, findings)
-        _require_refs(act.get("validation_result_refs"), results, f"ResearchAct {act_id} validation_result_refs", RESEARCH_ACTS_FILE, findings)
-        state = act.get("status")
-        if (state == "open") != (act.get("result") is None):
-            _finding(findings, "error", "act_terminal_state_mismatch", f"ResearchAct {act_id} status/result are inconsistent", RESEARCH_ACTS_FILE)
-    cycle = _find_cycle(set(acts), edges)
+    for node_id, node in nodes.items():
+        phase_ref = node.get("phase_ref")
+        if phase_ref not in phases:
+            _finding(findings, "error", "unknown_node_phase", f"ResearchNode {node_id} references unknown ResearchPhase", RESEARCH_NODES_FILE)
+        if node.get("artifact_root") != f"nodes/{node_id}":
+            _finding(findings, "error", "node_artifact_root_mismatch", f"ResearchNode {node_id} has a non-canonical artifact root", RESEARCH_NODES_FILE)
+        dependencies = node.get("dependency_refs", [])
+        _require_refs(dependencies, nodes, f"ResearchNode {node_id} dependency_refs", RESEARCH_NODES_FILE, findings)
+        edges.extend((str(ref), node_id) for ref in dependencies if ref in nodes)
+        _require_refs(node.get("claim_refs"), claims, f"ResearchNode {node_id} claim_refs", RESEARCH_NODES_FILE, findings)
+        primary_claim_ref = node.get("primary_claim_ref")
+        if primary_claim_ref is not None and primary_claim_ref not in node.get("claim_refs", []):
+            _finding(findings, "error", "node_primary_claim_scope_mismatch", f"ResearchNode {node_id} primary Claim is outside claim_refs", RESEARCH_NODES_FILE)
+        _require_refs(node.get("observation_refs"), observations, f"ResearchNode {node_id} observation_refs", RESEARCH_NODES_FILE, findings)
+        _require_refs(node.get("finding_refs"), finding_map, f"ResearchNode {node_id} finding_refs", RESEARCH_NODES_FILE, findings)
+        _require_refs(node.get("validation_spec_refs"), specs, f"ResearchNode {node_id} validation_spec_refs", RESEARCH_NODES_FILE, findings)
+        _require_refs(node.get("validation_result_refs"), results, f"ResearchNode {node_id} validation_result_refs", RESEARCH_NODES_FILE, findings)
+        state = node.get("status")
+        if (state == "open") != (node.get("result") is None):
+            _finding(findings, "error", "node_terminal_state_mismatch", f"ResearchNode {node_id} status/result are inconsistent", RESEARCH_NODES_FILE)
+    cycle = _find_cycle(set(nodes), edges)
     if cycle:
-        _finding(findings, "error", "research_act_cycle", "ResearchAct DAG contains a cycle: " + " -> ".join(cycle), RESEARCH_ACTS_FILE)
+        _finding(findings, "error", "research_node_cycle", "ResearchNode DAG contains a cycle: " + " -> ".join(cycle), RESEARCH_NODES_FILE)
 
 
 def _validate_observations(
     observations: dict[str, dict[str, Any]],
-    acts: dict[str, dict[str, Any]],
+    nodes: dict[str, dict[str, Any]],
     findings: list[dict[str, str]],
 ) -> None:
     for observation_id, observation in observations.items():
-        act_ref = observation.get("created_by_act")
-        if act_ref not in acts:
-            _finding(findings, "error", "unknown_observation_creator", f"Observation {observation_id} references unknown Act", OBSERVATIONS_FILE)
-        elif observation_id not in acts[act_ref].get("observation_refs", []):
-            _finding(findings, "error", "observation_owner_index_mismatch", f"Observation {observation_id} is not indexed by its creator Act", OBSERVATIONS_FILE)
+        node_ref = observation.get("created_by_node")
+        if node_ref not in nodes:
+            _finding(findings, "error", "unknown_observation_creator", f"Observation {observation_id} references unknown Node", OBSERVATIONS_FILE)
+        elif observation_id not in nodes[node_ref].get("observation_refs", []):
+            _finding(findings, "error", "observation_owner_index_mismatch", f"Observation {observation_id} is not indexed by its creator Node", OBSERVATIONS_FILE)
         try:
             validate_artifact_bindings(observation)
         except WorkspaceRefError as exc:
@@ -199,17 +208,17 @@ def _validate_observations(
 def _validate_findings(
     finding_map: dict[str, dict[str, Any]],
     claims: dict[str, dict[str, Any]],
-    acts: dict[str, dict[str, Any]],
+    nodes: dict[str, dict[str, Any]],
     observations: dict[str, dict[str, Any]],
     findings: list[dict[str, str]],
 ) -> None:
     for finding_id, record in finding_map.items():
         _require_refs(record.get("claim_refs"), claims, f"Finding {finding_id} claim_refs", FINDINGS_FILE, findings)
-        _require_refs(record.get("act_refs"), acts, f"Finding {finding_id} act_refs", FINDINGS_FILE, findings)
+        _require_refs(record.get("node_refs"), nodes, f"Finding {finding_id} node_refs", FINDINGS_FILE, findings)
         _require_refs(record.get("basis_observation_refs"), observations, f"Finding {finding_id} observations", FINDINGS_FILE, findings)
-        for act_ref in record.get("act_refs", []):
-            if act_ref in acts and finding_id not in acts[act_ref].get("finding_refs", []):
-                _finding(findings, "error", "finding_owner_index_mismatch", f"Finding {finding_id} is not indexed by Act {act_ref}", FINDINGS_FILE)
+        for node_ref in record.get("node_refs", []):
+            if node_ref in nodes and finding_id not in nodes[node_ref].get("finding_refs", []):
+                _finding(findings, "error", "finding_owner_index_mismatch", f"Finding {finding_id} is not indexed by Node {node_ref}", FINDINGS_FILE)
         resolution = record.get("resolution")
         if (record.get("status") == "open") != (resolution is None):
             _finding(findings, "error", "finding_resolution_mismatch", f"Finding {finding_id} status/resolution are inconsistent", FINDINGS_FILE)
@@ -221,18 +230,18 @@ def _validate_specs_and_results(
     specs: dict[str, dict[str, Any]],
     results: dict[str, dict[str, Any]],
     claims: dict[str, dict[str, Any]],
-    acts: dict[str, dict[str, Any]],
+    nodes: dict[str, dict[str, Any]],
     observations: dict[str, dict[str, Any]],
     findings: list[dict[str, str]],
 ) -> None:
     registry = builtin_predicate_registry()
     for spec_id, spec in specs.items():
         target = spec.get("target_claim_ref")
-        creator = spec.get("created_by_act")
-        if target not in claims or creator not in acts:
+        creator = spec.get("created_by_node")
+        if target not in claims or creator not in nodes:
             _finding(findings, "error", "unknown_validation_spec_ref", f"GateSpec {spec_id} has an unknown target or creator", VALIDATION_SPECS_FILE)
             continue
-        if spec_id not in claims[target].get("validation_spec_refs", []) or spec_id not in acts[creator].get("validation_spec_refs", []):
+        if spec_id not in claims[target].get("validation_spec_refs", []) or spec_id not in nodes[creator].get("validation_spec_refs", []):
             _finding(findings, "error", "validation_spec_index_mismatch", f"GateSpec {spec_id} is missing from target indexes", VALIDATION_SPECS_FILE)
         expected = dict(spec)
         digest = expected.pop("spec_digest", None)
@@ -243,7 +252,7 @@ def _validate_specs_and_results(
 
     for result_id, result in results.items():
         spec = specs.get(str(result.get("spec_ref") or ""))
-        creator = acts.get(str(result.get("evaluated_by_act") or ""))
+        creator = nodes.get(str(result.get("evaluated_by_node") or ""))
         target = claims.get(str(result.get("target_claim_ref") or ""))
         selected = [observations[ref] for ref in result.get("observation_refs", []) if ref in observations]
         if spec is None or creator is None or target is None or len(selected) != len(result.get("observation_refs", [])):
@@ -256,7 +265,7 @@ def _validate_specs_and_results(
                 spec,
                 selected,
                 result_id=result_id,
-                evaluated_by_act=result["evaluated_by_act"],
+                evaluated_by_node=result["evaluated_by_node"],
                 evaluated_by_decision=result["evaluated_by_decision"],
                 registry=registry,
                 evaluated_at=result["evaluated_at"],
@@ -478,7 +487,7 @@ def _finding(findings: list[dict[str, str]], severity: str, code: str, message: 
 
 def _result(findings: list[dict[str, str]]) -> dict[str, Any]:
     return {
-        "schema_version": "ts-workspace-validation/4",
+        "schema_version": "ts-workspace-validation/5",
         "valid": not any(item["severity"] == "error" for item in findings),
         "findings": findings,
     }

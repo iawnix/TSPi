@@ -14,7 +14,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_NAME = "@iawnix/ts-agent"
-PACKAGE_VERSION = "0.10.1"
+PACKAGE_VERSION = "0.11.0"
 SKILL_ENTRY = "./skills/transition-state-workflow"
 THEME_ENTRIES = ["./themes/ts-theme.json"]
 EXTENSION_ENTRIES = [
@@ -77,6 +77,8 @@ PACKAGE_FILES = [
     "ts_validation/acceptance_profiles/*.json",
     "ts_web/*.py",
     "ts_web/static/*.html",
+    "ts_web/static/*.css",
+    "ts_web/static/*.js",
     "ts_workspace/*.py",
     "ts_workspace/contracts/*.json",
 ]
@@ -127,11 +129,17 @@ REQUIRED_TARBALL_FILES = {
     "ts_workspace/engine.py",
     "ts_workspace/context.py",
     "ts_workspace/bootstrap.py",
-    "ts_workspace/contracts/research_act.schema.json",
+    "ts_workspace/contracts/research_phase.schema.json",
+    "ts_workspace/contracts/research_phase_registry.schema.json",
+    "ts_workspace/contracts/research_node.schema.json",
     "ts_validation/engine.py",
     "ts_validation/templates/builtin/classical-ts__1.json",
     "ts_validation/acceptance_profiles/accepted-ts__3.json",
+    "ts_web/static/index.html",
+    "ts_web/static/app.css",
+    "ts_web/static/app.js",
     "docs/adr/0001-dag-research-kernel-v4.md",
+    "docs/adr/0002-phase-node-research-kernel-v5.md",
 }
 LEGACY_PREFIXES = (
     "agent-core/",

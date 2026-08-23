@@ -12,16 +12,16 @@ const { createHash } = require("node:crypto");
 const { isAbsolute, relative, resolve, sep } = require("node:path");
 
 const RENDER_OPERATIONS = Object.freeze(["render", "compare", "animate", "mechanism"]);
-const ACT_ID = /^act_[1-9][0-9]*$/;
+const NODE_ID = /^node_[1-9][0-9]*$/;
 const ARTIFACT_ID = /^art_[0-9a-f]{24}$/;
 const OUTPUT_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
 
 function validateRenderRequest(rootValue, input, resolvedArtifacts) {
   const root = requireWorkspaceRoot(rootValue);
   if (!isPlainObject(input)) throw new Error("render request must be an object");
-  rejectUnknownKeys(input, ["operation", "actId", "inputArtifactIds", "outputName"], "render request");
+  rejectUnknownKeys(input, ["operation", "nodeId", "inputArtifactIds", "outputName"], "render request");
   const operation = requireEnum(input.operation, "render operation", RENDER_OPERATIONS);
-  const actId = requireAct(root, input.actId);
+  const nodeId = requireAct(root, input.nodeId);
   const inputArtifactIds = uniqueStrings(input.inputArtifactIds, "inputArtifactIds", 8, ARTIFACT_ID);
   const required = operation === "render" || operation === "animate" ? 1 : 2;
   if (inputArtifactIds.length < required || (required === 1 && inputArtifactIds.length !== 1)) {
@@ -49,12 +49,12 @@ function validateRenderRequest(rootValue, input, resolvedArtifacts) {
   }
   if (operation === "animate" && !/\.gif$/i.test(outputName)) throw new Error("animate outputName must end in .gif");
   if (operation !== "animate" && !/\.png$/i.test(outputName)) throw new Error(`${operation} outputName must end in .png`);
-  const outputRef = `acts/${actId}/outputs/render/${outputName}`;
+  const outputRef = `nodes/${nodeId}/outputs/render/${outputName}`;
   const outputPath = resolve(root, ...outputRef.split("/"));
   assertWithin(root, outputPath);
   assertNoSymlinkComponents(root, outputRef);
   if (existsSync(outputPath)) throw new Error(`render output already exists: ${outputName}`);
-  return { operation, actId, artifacts, outputName, outputRef, outputPath };
+  return { operation, nodeId, artifacts, outputName, outputRef, outputPath };
 }
 
 function validateReportRequest(rootValue, input, resolvedArtifacts = []) {
@@ -114,7 +114,7 @@ function validateCreatedReportPackage(rootValue, packageRef, expectedManifestDig
     throw new Error("report package manifest digest mismatch");
   }
   const manifest = JSON.parse(manifestBytes.toString("utf8"));
-  if (manifest.schema_version !== "ts-report-package/3") throw new Error("report package manifest schema is invalid");
+  if (manifest.schema_version !== "ts-report-package/4") throw new Error("report package manifest schema is invalid");
   if (manifest.workspace_revision !== expectedRevision) throw new Error("report package revision mismatch");
   if (manifest.operational_revision !== expectedOperationalRevision) throw new Error("report package operational revision mismatch");
   const listed = new Set((manifest.files || []).map((item) => item?.ref).filter((item) => typeof item === "string"));
@@ -127,21 +127,21 @@ function validateCreatedReportPackage(rootValue, packageRef, expectedManifestDig
 }
 
 function requireAct(root, value) {
-  const actId = requireString(value, "actId", 128);
-  if (!ACT_ID.test(actId)) throw new Error("actId must be a v4 ResearchAct ID");
-  const registry = JSON.parse(readFileSync(resolve(root, "research_acts.json"), "utf8"));
-  const matches = Array.isArray(registry.acts)
-    ? registry.acts.filter((item) => isPlainObject(item) && item.act_id === actId)
+  const nodeId = requireString(value, "nodeId", 128);
+  if (!NODE_ID.test(nodeId)) throw new Error("nodeId must be a v5 ResearchNode ID");
+  const registry = JSON.parse(readFileSync(resolve(root, "research_nodes.json"), "utf8"));
+  const matches = Array.isArray(registry.nodes)
+    ? registry.nodes.filter((item) => isPlainObject(item) && item.node_id === nodeId)
     : [];
-  if (matches.length !== 1) throw new Error(`unknown ResearchAct: ${actId}`);
-  return actId;
+  if (matches.length !== 1) throw new Error(`unknown ResearchNode: ${nodeId}`);
+  return nodeId;
 }
 
 function requireWorkspaceRoot(value) {
   if (typeof value !== "string" || !value || !isAbsolute(value)) throw new Error("workspace root must be absolute");
   const root = realpathSync(value);
   const workspace = JSON.parse(readFileSync(resolve(root, "workspace.json"), "utf8"));
-  if (workspace.schema_version !== "ts-workspace/4") throw new Error("artifact tools require a v4 workspace");
+  if (workspace.schema_version !== "ts-workspace/5") throw new Error("artifact tools require a v5 workspace");
   return root;
 }
 

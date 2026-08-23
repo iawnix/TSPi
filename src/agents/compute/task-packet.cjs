@@ -36,7 +36,7 @@ function buildComputeTask({
   workspaceRoot,
   operation,
   backend,
-  actId,
+  nodeId,
   binding,
   tailArtifact,
   tailLines,
@@ -48,7 +48,7 @@ function buildComputeTask({
   if (!plan) throw new Error(`unsupported Compute operation: ${operation}`);
   if (!isPlainObject(binding)) throw new Error("Compute task requires a preflight binding");
   const taskId = requirePattern(runId, "runId", /^sub_[1-9][0-9]*$/, 128);
-  const normalizedActId = requirePattern(actId, "actId", /^act_[1-9][0-9]*$/, 128);
+  const normalizedNodeId = requirePattern(nodeId, "nodeId", /^node_[1-9][0-9]*$/, 128);
   const normalizedBackend = requireString(backend, "backend", 64);
   const intentId = requirePattern(binding.intentId, "binding.intentId", /^calc_[1-9][0-9]*$/, 128);
   const intentDigest = requirePattern(binding.intentDigest, "binding.intentDigest", /^sha256:[0-9a-f]{64}$/, 71);
@@ -63,7 +63,7 @@ function buildComputeTask({
     : null;
   const inputs = {
     backend: normalizedBackend,
-    act_id: normalizedActId,
+    node_id: normalizedNodeId,
     intent_id: intentId,
     intent_digest: intentDigest,
     execution_kind: "remote",
@@ -86,7 +86,7 @@ function buildComputeTask({
     operation,
     objective: OBJECTIVES[operation],
     workspace: { root, report_id: null, revision: null },
-    scope: { report_id: null, act_refs: [normalizedActId], claim_refs: [] },
+    scope: { report_id: null, node_refs: [normalizedNodeId], claim_refs: [] },
     inputs,
     capabilities: [
       ...plan.required.map((action) => COMPUTE_ACTION_TOOL_NAMES[action]),

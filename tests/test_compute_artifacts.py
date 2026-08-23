@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.v4_helpers import bootstrap_v4_workspace, start_research_act
+from tests.v5_helpers import bootstrap_v5_workspace, start_research_node
 from ts_compute import (
     ComputeContractError,
     create_calculation_intent,
@@ -24,12 +24,12 @@ from ts_structures import StructureSeedError, generate_smiles_seed
 
 
 def _workspace(tmp_path: Path) -> tuple[Path, str]:
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
-    refs = start_research_act(
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    refs = start_research_node(
         workspace,
         objective="Exercise deterministic calculation artifact binding.",
     )
-    return workspace, refs["act_id"]
+    return workspace, refs["node_id"]
 
 
 def _artifact(catalog: dict, path: str) -> dict:
@@ -37,15 +37,15 @@ def _artifact(catalog: dict, path: str) -> dict:
 
 
 def _request(
-    act_id: str,
+    node_id: str,
     artifact_id: str,
     *,
     dry_run: bool = True,
     execution_target: dict | None = None,
 ) -> dict:
     return {
-        "schema_version": "ts-calculation-request/2",
-        "act_id": act_id,
+        "schema_version": "ts-calculation-request/3",
+        "node_id": node_id,
         "purpose": "Exercise deterministic calculation artifact binding.",
         "attempt_kind": "primary",
         "recalculation_ref": None,
@@ -77,10 +77,10 @@ def test_artifact_id_binds_path_and_content(tmp_path: Path) -> None:
 
 
 def test_seed_import_is_private_content_addressed_and_idempotent(tmp_path: Path) -> None:
-    workspace, act_id = _workspace(tmp_path)
+    workspace, node_id = _workspace(tmp_path)
     request = {
         "schema_version": "ts-artifact-import-request/1",
-        "act_id": act_id,
+        "node_id": node_id,
         "format": "xyz_structure",
         "content": "2\nH2\nH 0 0 0\nH 0 0 0.74\n",
         "charge": 0,
@@ -97,19 +97,19 @@ def test_seed_import_is_private_content_addressed_and_idempotent(tmp_path: Path)
     assert second["created"] is False
     assert second["artifact"] == artifact
     assert artifact["artifact_id"].startswith("art_")
-    assert artifact["owner_act"] == act_id
+    assert artifact["owner_node"] == node_id
     assert artifact["input_roles"] == ["product", "reactant", "xyz"]
-    assert artifact["path"].startswith(f"acts/{act_id}/inputs/seed_")
+    assert artifact["path"].startswith(f"nodes/{node_id}/inputs/seed_")
     assert stat.S_IMODE(path.stat().st_mode) == 0o600
     assert first["chemical_metadata"]["atom_order"] == ["H", "H"]
-    assert list_calculation_artifacts(workspace, act_id=act_id)["artifacts"] == [artifact]
+    assert list_calculation_artifacts(workspace, node_id=node_id)["artifacts"] == [artifact]
 
 
 def test_concurrent_identical_seed_import_creates_one_artifact(tmp_path: Path) -> None:
-    workspace, act_id = _workspace(tmp_path)
+    workspace, node_id = _workspace(tmp_path)
     request = {
         "schema_version": "ts-artifact-import-request/1",
-        "act_id": act_id,
+        "node_id": node_id,
         "format": "xyz_structure",
         "content": "2\nH2\nH 0 0 0\nH 0 0 0.74\n",
         "charge": 0,
@@ -121,7 +121,7 @@ def test_concurrent_identical_seed_import_creates_one_artifact(tmp_path: Path) -
 
     assert sorted(result["created"] for result in results) == [False, True]
     assert results[0]["artifact"] == results[1]["artifact"]
-    assert len(list_calculation_artifacts(workspace, act_id=act_id)["artifacts"]) == 1
+    assert len(list_calculation_artifacts(workspace, node_id=node_id)["artifacts"]) == 1
 
 
 def test_rdkit_structure_seed_is_deterministic_and_explicit_about_limitations() -> None:
@@ -168,10 +168,10 @@ def test_structure_seed_provenance_distinguishes_submitted_and_normalized_smiles
 
 
 def test_structure_seed_artifact_is_private_content_addressed_and_idempotent(tmp_path: Path) -> None:
-    workspace, act_id = _workspace(tmp_path)
+    workspace, node_id = _workspace(tmp_path)
     request = {
         "schema_version": "ts-structure-seed-request/1",
-        "act_id": act_id,
+        "node_id": node_id,
         "smiles": "C1=CCCCC1",
         "charge": 0,
         "multiplicity": 1,
@@ -191,23 +191,23 @@ def test_structure_seed_artifact_is_private_content_addressed_and_idempotent(tmp
     assert second["created"] is False
     assert second["artifact"] == artifact
     assert second["provenance_artifact"] == provenance_artifact
-    assert artifact["owner_act"] == act_id
+    assert artifact["owner_node"] == node_id
     assert artifact["input_roles"] == ["product", "reactant", "xyz"]
-    assert artifact["path"].startswith(f"acts/{act_id}/inputs/structure_seed_")
+    assert artifact["path"].startswith(f"nodes/{node_id}/inputs/structure_seed_")
     assert provenance_artifact["input_roles"] == ["config"]
     assert provenance["source"]["canonical_smiles"] == "C1=CCCCC1"
     assert provenance["output"]["artifact_id"] == artifact["artifact_id"]
     assert provenance["output"]["sha256"] == artifact["sha256"]
     assert stat.S_IMODE(xyz_path.stat().st_mode) == 0o600
     assert stat.S_IMODE(provenance_path.stat().st_mode) == 0o600
-    assert len(list_calculation_artifacts(workspace, act_id=act_id)["artifacts"]) == 2
+    assert len(list_calculation_artifacts(workspace, node_id=node_id)["artifacts"]) == 2
 
 
 def test_structure_seed_rejects_chemical_and_contract_mismatches(tmp_path: Path) -> None:
-    workspace, act_id = _workspace(tmp_path)
+    workspace, node_id = _workspace(tmp_path)
     base = {
         "schema_version": "ts-structure-seed-request/1",
-        "act_id": act_id,
+        "node_id": node_id,
         "smiles": "CC",
         "charge": 0,
         "multiplicity": 1,
@@ -225,10 +225,10 @@ def test_structure_seed_rejects_chemical_and_contract_mismatches(tmp_path: Path)
 
 
 def test_seed_import_rejects_invalid_metadata_content_and_symlink_root(tmp_path: Path) -> None:
-    workspace, act_id = _workspace(tmp_path)
+    workspace, node_id = _workspace(tmp_path)
     base = {
         "schema_version": "ts-artifact-import-request/1",
-        "act_id": act_id,
+        "node_id": node_id,
         "format": "gaussian_input",
         "content": "#p hf/sto-3g sp\n\nH2\n\n0 1\nH 0 0 0\nH 0 0 0.74\n\n",
         "charge": 0,
@@ -254,18 +254,18 @@ def test_seed_import_rejects_invalid_metadata_content_and_symlink_root(tmp_path:
 
     unsafe = tmp_path / "outside"
     unsafe.mkdir()
-    act_root = workspace / "acts" / act_id
-    act_root.mkdir()
-    (act_root / "inputs").symlink_to(unsafe, target_is_directory=True)
+    node_root = workspace / "nodes" / node_id
+    node_root.mkdir()
+    (node_root / "inputs").symlink_to(unsafe, target_is_directory=True)
     with pytest.raises(ComputeContractError, match="input root is unsafe"):
         import_calculation_artifact(workspace, base)
 
 
 def test_gaussian_qst_import_validates_every_structure_and_atom_mapping(tmp_path: Path) -> None:
-    workspace, act_id = _workspace(tmp_path)
+    workspace, node_id = _workspace(tmp_path)
     qst2 = {
         "schema_version": "ts-artifact-import-request/1",
-        "act_id": act_id,
+        "node_id": node_id,
         "format": "gaussian_input",
         "content": (
             "#p hf/sto-3g opt=(qst2,calcfc)\n\nReactant\n\n0 1\n"
@@ -295,33 +295,33 @@ def test_gaussian_qst_import_validates_every_structure_and_atom_mapping(tmp_path
         import_calculation_artifact(workspace, {**qst2, "content": qst3_missing_guess})
 
 
-def test_catalog_uses_workspace_and_research_act_ownership(tmp_path: Path) -> None:
-    workspace, act_id = _workspace(tmp_path)
+def test_catalog_uses_workspace_and_research_node_ownership(tmp_path: Path) -> None:
+    workspace, node_id = _workspace(tmp_path)
     root_input = workspace / "inputs" / "source.xyz"
     root_input.write_text("1\nsource\nH 0 0 0\n", encoding="utf-8")
     root_input.with_name("linked.xyz").symlink_to(root_input)
-    act_output = workspace / "acts" / act_id / "outputs" / "candidate.xyz"
-    act_output.parent.mkdir(parents=True)
-    act_output.write_text("1\ncandidate\nH 0 0 0\n", encoding="utf-8")
+    node_output = workspace / "nodes" / node_id / "outputs" / "candidate.xyz"
+    node_output.parent.mkdir(parents=True)
+    node_output.write_text("1\ncandidate\nH 0 0 0\n", encoding="utf-8")
 
-    with pytest.raises(ComputeContractError, match="unknown ResearchAct"):
-        list_calculation_artifacts(workspace, act_id="act_999")
+    with pytest.raises(ComputeContractError, match="unknown ResearchNode"):
+        list_calculation_artifacts(workspace, node_id="node_999")
 
     catalog = list_calculation_artifacts(workspace)
     assert [item["path"] for item in catalog["artifacts"]] == [
-        f"acts/{act_id}/outputs/candidate.xyz",
         "inputs/source.xyz",
+        f"nodes/{node_id}/outputs/candidate.xyz",
     ]
-    owned = _artifact(catalog, f"acts/{act_id}/outputs/candidate.xyz")
+    owned = _artifact(catalog, f"nodes/{node_id}/outputs/candidate.xyz")
     shared = _artifact(catalog, "inputs/source.xyz")
-    assert owned["owner_act"] == act_id
-    assert shared["owner_act"] is None
+    assert owned["owner_node"] == node_id
+    assert shared["owner_node"] is None
     assert shared["input_roles"] == ["product", "reactant", "xyz"]
-    assert list_calculation_artifacts(workspace, act_id=act_id)["artifacts"] == [owned]
+    assert list_calculation_artifacts(workspace, node_id=node_id)["artifacts"] == [owned]
 
 
 def test_binding_rejects_unknown_incompatible_and_incomplete_roles(tmp_path: Path) -> None:
-    workspace, act_id = _workspace(tmp_path)
+    workspace, node_id = _workspace(tmp_path)
     gjf = workspace / "inputs" / "source.gjf"
     gjf.write_text("# HF/STO-3G\n\nSP\n\n0 1\nH 0 0 0\n\n", encoding="utf-8")
     xyz = workspace / "inputs" / "source.xyz"
@@ -331,11 +331,11 @@ def test_binding_rejects_unknown_incompatible_and_incomplete_roles(tmp_path: Pat
     xyz_artifact = _artifact(catalog, "inputs/source.xyz")
 
     with pytest.raises(ComputeContractError, match="unknown artifact_id"):
-        create_calculation_intent(workspace, _request(act_id, "art_000000000000000000000000"))
+        create_calculation_intent(workspace, _request(node_id, "art_000000000000000000000000"))
     with pytest.raises(ComputeContractError, match="not compatible with input role gjf"):
-        create_calculation_intent(workspace, _request(act_id, xyz_artifact["artifact_id"]))
+        create_calculation_intent(workspace, _request(node_id, xyz_artifact["artifact_id"]))
 
-    incomplete = _request(act_id, xyz_artifact["artifact_id"])
+    incomplete = _request(node_id, xyz_artifact["artifact_id"])
     incomplete["backend"] = "ase_neb"
     incomplete["task_type"] = "neb"
     incomplete["input_artifacts"] = [
@@ -347,7 +347,7 @@ def test_binding_rejects_unknown_incompatible_and_incomplete_roles(tmp_path: Pat
     second_gjf = workspace / "inputs" / "second.gjf"
     second_gjf.write_text("# HF/STO-3G\n\nSecond\n\n0 1\nH 0 0 0\n\n", encoding="utf-8")
     second_artifact = _artifact(list_calculation_artifacts(workspace), "inputs/second.gjf")
-    duplicate = _request(act_id, gjf_artifact["artifact_id"])
+    duplicate = _request(node_id, gjf_artifact["artifact_id"])
     duplicate["input_artifacts"].append(
         {"input_role": "gjf", "artifact_id": second_artifact["artifact_id"]}
     )
@@ -355,24 +355,24 @@ def test_binding_rejects_unknown_incompatible_and_incomplete_roles(tmp_path: Pat
         create_calculation_intent(workspace, duplicate)
 
 
-def test_open_research_act_can_run_any_supported_root_selected_task(tmp_path: Path) -> None:
-    workspace, act_id = _workspace(tmp_path)
+def test_open_research_node_can_run_any_supported_root_selected_task(tmp_path: Path) -> None:
+    workspace, node_id = _workspace(tmp_path)
     source = workspace / "inputs" / "source.gjf"
     source.write_text("# HF/STO-3G opt\n\nOpt\n\n0 1\nH 0 0 0\n\n", encoding="utf-8")
     artifact = _artifact(list_calculation_artifacts(workspace), "inputs/source.gjf")
-    request = _request(act_id, artifact["artifact_id"])
+    request = _request(node_id, artifact["artifact_id"])
     request["task_type"] = "opt"
 
     created = create_calculation_intent(workspace, request)
-    assert created["act_id"] == act_id
+    assert created["node_id"] == node_id
     assert created["intent"]["backend"] == "gaussian"
     assert created["intent"]["task_type"] == "opt"
-    assert created["intent_ref"].startswith(f"acts/{act_id}/attempts/")
+    assert created["intent_ref"].startswith(f"nodes/{node_id}/attempts/")
 
 
-def test_list_artifacts_cli_returns_v4_catalog_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    workspace, act_id = _workspace(tmp_path)
-    source = workspace / "acts" / act_id / "inputs" / "source.xyz"
+def test_list_artifacts_cli_returns_v3_catalog_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    workspace, node_id = _workspace(tmp_path)
+    source = workspace / "nodes" / node_id / "inputs" / "source.xyz"
     source.parent.mkdir(parents=True)
     source.write_text("1\nsource\nH 0 0 0\n", encoding="utf-8")
 
@@ -380,22 +380,22 @@ def test_list_artifacts_cli_returns_v4_catalog_json(tmp_path: Path, capsys: pyte
         "list-artifacts",
         "--root",
         str(workspace),
-        "--act-id",
-        act_id,
+        "--node-id",
+        node_id,
     ]) == 0
     output = capsys.readouterr()
     assert output.err == ""
-    assert '"schema_version": "ts-artifact-catalog/2"' in output.out
-    assert f'"path": "acts/{act_id}/inputs/source.xyz"' in output.out
+    assert '"schema_version": "ts-artifact-catalog/3"' in output.out
+    assert f'"path": "nodes/{node_id}/inputs/source.xyz"' in output.out
 
 
 def test_import_artifact_cli_uses_bounded_request_file(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
-    workspace, act_id = _workspace(tmp_path)
+    workspace, node_id = _workspace(tmp_path)
     request = tmp_path / "import.json"
     request.write_text(
         json.dumps({
             "schema_version": "ts-artifact-import-request/1",
-            "act_id": act_id,
+            "node_id": node_id,
             "format": "xyz_structure",
             "content": "1\nH\nH 0 0 0\n",
             "charge": 0,
@@ -431,12 +431,12 @@ def test_structure_seed_cli_uses_private_bounded_request_file(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    workspace, act_id = _workspace(tmp_path)
+    workspace, node_id = _workspace(tmp_path)
     request = tmp_path / "structure-seed.json"
     request.write_text(
         json.dumps({
             "schema_version": "ts-structure-seed-request/1",
-            "act_id": act_id,
+            "node_id": node_id,
             "smiles": "CCO",
             "charge": 0,
             "multiplicity": 1,
@@ -486,13 +486,13 @@ def test_prepare_and_submit_reject_stale_input_binding(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    workspace, act_id = _workspace(tmp_path)
+    workspace, node_id = _workspace(tmp_path)
     gjf = workspace / "inputs" / "source.gjf"
     original = "# HF/STO-3G\n\nSP\n\n0 1\nH 0 0 0\n\n"
     gjf.write_text(original, encoding="utf-8")
     artifact_id = _artifact(list_calculation_artifacts(workspace), "inputs/source.gjf")["artifact_id"]
 
-    stale_before_prepare = create_calculation_intent(workspace, _request(act_id, artifact_id))
+    stale_before_prepare = create_calculation_intent(workspace, _request(node_id, artifact_id))
     gjf.write_text(original.replace("SP", "changed"), encoding="utf-8")
     with pytest.raises(ComputeContractError, match="input binding changed.*artifact_id mismatch"):
         prepare_calculation(workspace, stale_before_prepare["intent_ref"])
@@ -522,7 +522,7 @@ allowed_queues = ["batch"]
     stale_before_submit = create_calculation_intent(
         workspace,
         _request(
-            act_id,
+            node_id,
             current_id,
             dry_run=False,
             execution_target={

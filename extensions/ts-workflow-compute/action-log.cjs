@@ -51,7 +51,7 @@ function failAction(action, error, context) {
     error_class: controlOperation ? `${controlOperation === "submit" ? "submission" : "cancellation"}_ambiguous` : "tool_execution_error",
     exit_status: null,
     intent_id: nullableString(context && context.intentId),
-    act_id: nullableString(context && context.actId),
+    node_id: nullableString(context && context.nodeId),
     artifact_refs: [],
     parser_facts: {},
     control: controlOperation

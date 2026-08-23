@@ -20,6 +20,6 @@ relaxed scans, QST, and follow-up characterization. xTB/CREST can efficiently
 explore conformers and rough paths. ASE NEB can provide path images. QBICS can
 address crossing searches. None is universally first.
 
-Record the method choice and falsifiable purpose in the ResearchAct/Claim. If a
+Record the method choice and falsifiable purpose in the ResearchNode/Claim. If a
 method changes, preserve the prior intent and use a recalculation record or a
-new Act when the scientific objective changes.
+new Node when the scientific objective changes.

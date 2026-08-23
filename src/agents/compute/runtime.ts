@@ -66,7 +66,7 @@ export interface ComputeRunResult {
     operation: string;
     backend: string;
     intent_id: string;
-    act_refs: string[];
+    node_refs: string[];
     action_names: string[];
     action_digest: string;
     output_digest: string;
@@ -198,7 +198,7 @@ export async function runComputeOperator(options: ComputeRunOptions): Promise<Co
             operation: String(packet.operation),
             backend: String(inputs.backend),
             intent_id: String(inputs.intent_id),
-            act_refs: Array.isArray(scope.act_refs) ? scope.act_refs.map(String) : [],
+            node_refs: Array.isArray(scope.node_refs) ? scope.node_refs.map(String) : [],
             action_names: options.actions.map((action) => action.tool),
             action_digest: createHash("sha256").update(JSON.stringify(options.actions)).digest("hex"),
             output_digest: createHash("sha256").update(JSON.stringify(result)).digest("hex"),

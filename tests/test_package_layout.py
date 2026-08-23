@@ -139,6 +139,8 @@ def test_package_manifest_exposes_only_the_public_skill_and_allowlisted_runtime(
     assert manifest["private"] is True
     assert "tests/" not in manifest["files"]
     assert "docs/*.md" in manifest["files"]
+    assert "ts_web/static/*.css" in manifest["files"]
+    assert "ts_web/static/*.js" in manifest["files"]
     for name in ("ARCHITECTURE.md", "INSTALLATION.md", "MAINTAINER_GUIDE.md"):
         assert (ROOT / "docs" / name).is_file()
     assert all("src/agents" not in entry for entry in manifest["pi"]["skills"])
@@ -395,7 +397,7 @@ print(json.dumps({
     assert result["argv"][session_index + 1] == str(workspace / ".pi" / "sessions")
     assert (workspace / ".pi" / "root-agent.lock").is_file()
     assert json.loads((workspace / ".pi" / "settings.json").read_text(encoding="utf-8")) == {"quietStartup": True}
-    assert json.loads((workspace / "research_state.json").read_text(encoding="utf-8"))["schema_version"] == "ts-research-state/4"
+    assert json.loads((workspace / "research_state.json").read_text(encoding="utf-8"))["schema_version"] == "ts-research-state/5"
     assert (workspace / ".agents" / "workspace-identity.json").is_file()
 
 

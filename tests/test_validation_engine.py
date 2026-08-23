@@ -23,9 +23,9 @@ def _observation(
     qualifiers: dict | None = None,
 ) -> dict:
     return {
-        "schema_version": "ts-observation/1",
+        "schema_version": "ts-observation/2",
         "observation_id": observation_id,
-        "created_by_act": "act_1",
+        "created_by_node": "node_1",
         "concept_id": concept_id,
         "subject_ref": subject_ref,
         "value": value,
@@ -33,11 +33,11 @@ def _observation(
         "unit": None,
         "qualifiers": qualifiers or {},
         "summary": concept_id,
-        "artifact_refs": ["acts/act_1/outputs/result.json"],
+        "artifact_refs": ["nodes/node_1/outputs/result.json"],
         "provenance": {
             "producer": "test-parser",
             "producer_version": "1",
-            "source_digests": {"acts/act_1/outputs/result.json": "sha256:" + "a" * 64},
+            "source_digests": {"nodes/node_1/outputs/result.json": "sha256:" + "a" * 64},
         },
         "created_by_decision": "dec_1",
         "created_at": "2026-08-15T00:00:00+00:00",
@@ -59,7 +59,7 @@ def _compile_classical_ts() -> dict:
         spec_id="gsp_1",
         target_claim_ref="claim_1",
         registry=registry,
-        created_by_act="act_1",
+        created_by_node="node_1",
         created_by_decision="dec_1",
         frozen_at="2026-08-15T00:00:00+00:00",
     )
@@ -68,7 +68,7 @@ def _compile_classical_ts() -> dict:
 def test_template_compilation_is_expanded_and_digest_bound() -> None:
     spec = _compile_classical_ts()
 
-    assert spec["schema_version"] == "ts-gate-spec/1"
+    assert spec["schema_version"] == "ts-gate-spec/2"
     assert spec["template_ref"] == {"template_id": "classical-ts", "version": "1"}
     assert spec["template_digest"].startswith("sha256:")
     assert spec["spec_digest"].startswith("sha256:")
@@ -91,7 +91,7 @@ def test_gate_evaluation_passes_from_exact_semantic_observations() -> None:
         spec,
         observations,
         result_id="val_1",
-        evaluated_by_act="act_1",
+        evaluated_by_node="node_1",
         evaluated_by_decision="dec_2",
         registry=registry,
         evaluated_at="2026-08-15T00:01:00+00:00",
@@ -134,7 +134,7 @@ def test_observation_refs_sort_by_readable_ordinal_not_lexically() -> None:
         spec_id="gsp_1",
         target_claim_ref="claim_1",
         registry=registry,
-        created_by_act="act_1",
+        created_by_node="node_1",
         created_by_decision="dec_1",
     )
     result = evaluate_gate_spec(
@@ -145,7 +145,7 @@ def test_observation_refs_sort_by_readable_ordinal_not_lexically() -> None:
             _observation("obs_1", "test.value", True),
         ],
         result_id="val_1",
-        evaluated_by_act="act_1",
+        evaluated_by_node="node_1",
         evaluated_by_decision="dec_2",
         registry=registry,
     )
@@ -165,7 +165,7 @@ def test_missing_observation_is_inconclusive_and_false_observation_fails() -> No
         spec,
         incomplete,
         result_id="val_1",
-        evaluated_by_act="act_1",
+        evaluated_by_node="node_1",
         evaluated_by_decision="dec_2",
         registry=registry,
     )
@@ -180,7 +180,7 @@ def test_missing_observation_is_inconclusive_and_false_observation_fails() -> No
         spec,
         complete,
         result_id="val_2",
-        evaluated_by_act="act_1",
+        evaluated_by_node="node_1",
         evaluated_by_decision="dec_3",
         registry=registry,
     )
@@ -217,7 +217,7 @@ def test_predicate_cannot_cite_observation_outside_selected_snapshot() -> None:
         spec_id="gsp_1",
         target_claim_ref="claim_1",
         registry=registry,
-        created_by_act="act_1",
+        created_by_node="node_1",
         created_by_decision="dec_1",
     )
 
@@ -225,7 +225,7 @@ def test_predicate_cannot_cite_observation_outside_selected_snapshot() -> None:
         spec,
         [_observation("obs_1", "test.value", True)],
         result_id="val_1",
-        evaluated_by_act="act_1",
+        evaluated_by_node="node_1",
         evaluated_by_decision="dec_2",
         registry=registry,
     )
@@ -257,7 +257,7 @@ def test_unknown_predicate_and_executable_fields_are_rejected() -> None:
             spec_id="gsp_1",
             target_claim_ref="claim_1",
             registry=registry,
-            created_by_act="act_1",
+            created_by_node="node_1",
             created_by_decision="dec_1",
         )
 
@@ -271,7 +271,7 @@ def test_spec_or_observation_tampering_is_detected() -> None:
             spec,
             [],
             result_id="val_1",
-            evaluated_by_act="act_1",
+            evaluated_by_node="node_1",
             evaluated_by_decision="dec_2",
             registry=registry,
         )
@@ -290,7 +290,7 @@ def test_template_rejects_missing_and_unknown_parameters() -> None:
             spec_id="gsp_1",
             target_claim_ref="claim_1",
             registry=registry,
-            created_by_act="act_1",
+            created_by_node="node_1",
             created_by_decision="dec_1",
         )
 
@@ -301,6 +301,6 @@ def test_template_rejects_missing_and_unknown_parameters() -> None:
             spec_id="gsp_1",
             target_claim_ref="claim_1",
             registry=registry,
-            created_by_act="act_1",
+            created_by_node="node_1",
             created_by_decision="dec_1",
         )

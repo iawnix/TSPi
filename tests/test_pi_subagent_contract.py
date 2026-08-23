@@ -4,7 +4,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from tests.v4_helpers import accept_research_claim, bootstrap_v4_workspace, build_review_bundle, start_research_act
+from tests.v5_helpers import accept_research_claim, bootstrap_v5_workspace, build_review_bundle, start_research_node
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,8 +20,8 @@ COMPUTE_TASK_PACKET = ROOT / "src" / "agents" / "compute" / "task-packet.cjs"
 
 
 def test_review_task_v2_is_graph_scoped_bounded_and_advisory(tmp_path: Path) -> None:
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
-    refs = start_research_act(workspace, claim_statement="The pathway is concerted.")
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    refs = start_research_node(workspace, claim_statement="The pathway is concerted.")
     bundle = build_review_bundle(workspace, refs, "sub_1")
     task = bundle["task"]
     snapshot = bundle["documents"]["review_snapshot"]
@@ -31,17 +31,19 @@ def test_review_task_v2_is_graph_scoped_bounded_and_advisory(tmp_path: Path) -> 
     assert task["role"] == "review"
     assert task["authority"] == "advisory"
     assert task["capabilities"] == ["ts_review_result"]
-    assert task["scope"]["act_refs"] == [refs["act_id"]]
+    assert task["scope"]["node_refs"] == [refs["node_id"]]
     assert task["scope"]["claim_refs"] == [refs["claim_id"]]
     assert set(task["inputs"]) == {"review_snapshot", "provider_input"}
-    assert snapshot["schema_version"] == "ts-review-task-snapshot/2"
-    assert provider["schema_version"] == "ts-review-provider-input/4"
+    assert snapshot["schema_version"] == "ts-review-task-snapshot/3"
+    assert provider["schema_version"] == "ts-review-provider-input/5"
     assert snapshot["artifact_manifest"] == []
     assert provider["artifact_manifest"] == []
-    assert provider["research_acts"][0]["related_claim_refs"] == [refs["claim_id"]]
-    assert len(json.dumps(provider).encode()) < 48 * 1024
+    assert provider["dossier"]["nodes"][0]["related_claim_refs"] == [refs["claim_id"]]
+    assert provider["dossier"]["nodes"][0]["phase_ref"] == refs["phase_id"]
+    assert provider["dossier"]["phases"][0]["phase_id"] == refs["phase_id"]
+    assert len(json.dumps(provider).encode()) < 32 * 1024
     serialized = json.dumps(provider)
-    for retired in ('"node_id"', '"evidence"', '"gate_results"', '"required_gates"'):
+    for retired in ('"act_id"', '"hypothesis"', '"evidence"', '"gate_results"', '"required_gates"'):
         assert retired not in serialized
 
 
@@ -62,15 +64,15 @@ def test_review_request_accepts_only_claim_and_logical_artifact_ids() -> None:
 
 
 def test_review_packet_carries_compact_current_acceptance_state(tmp_path: Path) -> None:
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
     refs = accept_research_claim(workspace)
     bundle = build_review_bundle(
         workspace,
-        {"claim_id": refs["claim"], "act_id": refs["act"]},
+        {"claim_id": refs["claim"], "node_id": refs["node"]},
         "sub_1",
     )
 
-    acceptance = bundle["documents"]["provider_input"]["acceptances"][0]
+    acceptance = bundle["documents"]["provider_input"]["dossier"]["acceptances"][0]
     assert acceptance["acceptance_id"] == refs["acceptance"]
     assert acceptance["current"] is True
     assert acceptance["stale_reasons"] == []
@@ -78,8 +80,8 @@ def test_review_packet_carries_compact_current_acceptance_state(tmp_path: Path) 
 
 
 def test_review_result_requires_array_risks_and_bound_basis_refs(tmp_path: Path) -> None:
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
-    refs = start_research_act(workspace)
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    refs = start_research_node(workspace)
     bundle = build_review_bundle(workspace, refs, "sub_1")
     task = bundle["task"]
     snapshot = bundle["documents"]["review_snapshot"]
@@ -104,8 +106,8 @@ def test_review_result_requires_array_risks_and_bound_basis_refs(tmp_path: Path)
 
 
 def test_review_tool_uses_local_schema_without_provider_strict_mode(tmp_path: Path) -> None:
-    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
-    refs = start_research_act(workspace)
+    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    refs = start_research_node(workspace)
     bundle = build_review_bundle(workspace, refs, "sub_1")
     input_path = tmp_path / "bundle.json"
     input_path.write_text(json.dumps(bundle), encoding="utf-8")
@@ -158,11 +160,11 @@ def test_compute_task_and_result_are_bound_to_typed_actions(tmp_path: Path) -> N
 const taskHelper=require({json.dumps(str(COMPUTE_TASK_PACKET))});
 const resultHelper=require({json.dumps(str(COMPUTE_OUTPUT_SCHEMA))});
 const task=taskHelper.buildComputeTask({{
-  runId:"sub_1",workspaceRoot:process.argv[1],operation:"launch",backend:"gaussian",actId:"act_1",
+  runId:"sub_1",workspaceRoot:process.argv[1],operation:"launch",backend:"gaussian",nodeId:"node_1",
   binding:{{intentId:"calc_1",intentDigest:"sha256:"+"a".repeat(64),executionKind:"remote"}},
 }});
 const canonical=(state,control={{effect_outcome:"succeeded",reconciliation_required:false}})=>({{
-  schema_version:"ts-calculation-result/2",intent_id:"calc_1",act_id:"act_1",state,
+  schema_version:"ts-calculation-result/2",intent_id:"calc_1",node_id:"node_1",state,
   program_status:"not_run",error_class:null,exit_status:null,artifact_refs:[],control,
   provenance:{{intent_digest:"sha256:"+"a".repeat(64)}},
 }});
@@ -205,10 +207,10 @@ import {{ createRequire }} from "node:module";
 const require=createRequire(import.meta.url);
 const taskHelper=require({json.dumps(str(COMPUTE_TASK_PACKET))});
 const task=taskHelper.buildComputeTask({{
-  runId:"sub_2",workspaceRoot:process.argv[1],operation:"inspect",backend:"gaussian",actId:"act_1",
+  runId:"sub_2",workspaceRoot:process.argv[1],operation:"inspect",backend:"gaussian",nodeId:"node_1",
   binding:{{intentId:"calc_1",intentDigest:"sha256:"+"b".repeat(64),executionKind:"remote"}},tailLines:80,
 }});
-const result={{schema_version:"ts-calculation-result/2",intent_id:"calc_1",act_id:"act_1",state:"running",program_status:"running",error_class:null,exit_status:null,artifact_refs:[],provenance:{{intent_digest:"sha256:"+"b".repeat(64)}}}};
+const result={{schema_version:"ts-calculation-result/2",intent_id:"calc_1",node_id:"node_1",state:"running",program_status:"running",error_class:null,exit_status:null,artifact_refs:[],provenance:{{intent_digest:"sha256:"+"b".repeat(64)}}}};
 const status={{tool:"ts_workspace_compute_status",result:{{action_status:"completed",result}}}};
 const tail={{tool:"ts_workspace_compute_tail",result:{{action_status:"completed",result:{{...result,schema_version:"ts-calculation-tail/1"}}}}}};
 const actions=[];

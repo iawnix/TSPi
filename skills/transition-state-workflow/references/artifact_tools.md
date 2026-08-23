@@ -19,7 +19,7 @@ For one connected molecule described by SMILES:
 ```json
 {
   "operation":"generate",
-  "actId":"act_1",
+  "nodeId":"node_1",
   "smiles":"C1=CCCCC1",
   "charge":0,
   "multiplicity":1,
@@ -29,7 +29,7 @@ For one connected molecule described by SMILES:
 
 `optimization` is `none` or `uff`. The host fixes RDKit ETKDGv3 parameters and
 random seed, adds explicit hydrogens, checks formal charge and electron-count
-parity, and writes content-addressed XYZ plus provenance under the open Act.
+parity, and writes content-addressed XYZ plus provenance under the open Node.
 The activity request retains a SMILES digest, not the body. The provenance
 records canonical SMILES, RDKit version, parameters, metadata, output digest,
 and limitations. Multi-fragment SMILES are rejected because this tool does not
@@ -41,13 +41,13 @@ acceptance fact. Use normal Compute and validation afterward.
 
 ## Import An Existing Input
 
-After starting an open ResearchAct, create one bounded seed without choosing a
+After starting an open ResearchNode, create one bounded seed without choosing a
 path or filename:
 
 ```json
 {
   "operation":"import",
-  "actId":"act_1",
+  "nodeId":"node_1",
   "format":"gaussian_input",
   "content":"#p M062X/6-31+G(d,p) opt\n\n...\n",
   "charge":0,
@@ -58,7 +58,7 @@ path or filename:
 Formats are `gaussian_input`, `xyz_structure`, and `xtb_control`. Gaussian and
 XYZ imports require declared charge and multiplicity. The host bounds and
 validates UTF-8 text, rejects traversal and symlinks, generates a private
-content-addressed Act input, and returns its logical `artifactId`. Identical
+content-addressed Node input, and returns its logical `artifactId`. Identical
 replay is idempotent. The activity journal stores hashes and metadata, never
 the input body. QST2/QST3 imports also require every structure to use the same
 declared charge/multiplicity, atom count, and atom order. Multi-job `--Link1--`
@@ -72,7 +72,7 @@ Discover logical inputs with `ts_workspace_context mode=artifacts`, then call:
 ```json
 {
   "operation":"render",
-  "actId":"act_1",
+  "nodeId":"node_1",
   "inputArtifactIds":["art_..."],
   "outputName":"candidate.png"
 }
@@ -85,8 +85,8 @@ Operations are:
 - `compare`: at least two inputs, `.png` output;
 - `mechanism`: at least two inputs, `.png` output.
 
-The host resolves IDs and digests, validates the owning Act, rejects traversal
-and symlinks, allocates `acts/<act_id>/outputs/render/<outputName>`, refuses
+The host resolves IDs and digests, validates the owning Node, rejects traversal
+and symlinks, allocates `nodes/<node_id>/outputs/render/<outputName>`, refuses
 overwrite, runs the renderer, and verifies a non-empty regular output.
 
 An image is presentation. Scientific use requires verified source artifacts and
@@ -104,7 +104,7 @@ Build one new package:
 }
 ```
 
-The host owns `reports/<packageName>`, validates the complete v4 workspace,
+The host owns `reports/<packageName>`, validates the complete v5 workspace,
 renders the report from canonical records, installs the directory atomically,
 and verifies `package_manifest.json`, scientific and operational revisions,
 file list, and SHA-256. Existing package names are never overwritten. The
@@ -122,17 +122,17 @@ When fixed-target notifications are enabled:
 ```json
 {
   "operation":"send",
-  "event":"act_completed",
+  "event":"node_completed",
   "subject":"TS study update",
-  "summary":"The bounded validation Act completed; connectivity remains open.",
+  "summary":"The bounded validation Node completed; connectivity remains open.",
   "reportRefs":["reports/final-study/final_report.md"]
 }
 ```
 
-Allowed events are `progress`, `act_completed`, `calculation_failed`,
+Allowed events are `progress`, `node_completed`, `calculation_failed`,
 `calculation_ambiguous`, and `study_completed`. Attachments must be existing
-regular files listed by the exact `ts-report-package/3` manifest under
-`reports/<packageName>/`. A Render file below `acts/` must first be included by
+regular files listed by the exact `ts-report-package/4` manifest under
+`reports/<packageName>/`. A Render file below `nodes/` must first be included by
 logical artifact ID when building the report package.
 
 The installation owns recipient and credentials. Subject/summary text cannot
@@ -143,7 +143,7 @@ failure has no scientific effect.
 ## Activity And Provenance
 
 Structure Seed, Import, Render, and Report write deterministic activity journals
-whose `act_refs` are the only operation-to-Act link. Compute instead writes one
+whose `node_refs` are the only operation-to-Node link. Compute instead writes one
 `sub_n` run below its owning `calc_n` Attempt. Notification writes a delivery
 receipt. These records support diagnosis and reporting but do not become
 Observations or acceptance basis automatically.

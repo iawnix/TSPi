@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.v4_helpers import start_research_act
+from tests.v5_helpers import start_research_node
 from ts_compute.artifacts import list_calculation_artifacts
 from ts_workspace.cli import main as workspace_cli
 from ts_workspace.decision import draft_decision
@@ -25,15 +25,15 @@ def _write(path: Path, value: dict | str) -> None:
 def _workspace(tmp_path: Path) -> tuple[Path, dict[str, str], dict[str, dict]]:
     root = tmp_path / "workspace"
     init_workspace(root)
-    refs = start_research_act(
+    refs = start_research_node(
         root,
         objective="Verify a concerted Diels-Alder transition structure with Gaussian.",
         claim_type="mechanism",
         claim_statement="The Diels-Alder pathway is concerted.",
     )
     intent_id = "calc_1"
-    attempt = root / "acts" / refs["act_id"] / "attempts" / intent_id
-    input_path = root / "acts" / refs["act_id"] / "inputs" / "candidate.gjf"
+    attempt = root / "nodes" / refs["node_id"] / "attempts" / intent_id
+    input_path = root / "nodes" / refs["node_id"] / "inputs" / "candidate.gjf"
     _write(input_path, "%chk=candidate.chk\n# opt freq hf/sto-3g\n\nCandidate\n\n0 1\nH 0 0 0\n\n")
     input_artifact = next(
         row
@@ -44,14 +44,14 @@ def _workspace(tmp_path: Path) -> tuple[Path, dict[str, str], dict[str, dict]]:
         attempt / "intent.json",
         {
             "intent_id": intent_id,
-            "act_id": refs["act_id"],
+            "node_id": refs["node_id"],
             "backend": "gaussian",
             "task_type": "opt_freq",
             "input_bindings": [
                 {
                     "artifact_id": input_artifact["artifact_id"],
                     "input_role": "gjf",
-                    "owner_act": refs["act_id"],
+                    "owner_node": refs["node_id"],
                     "path": input_artifact["path"],
                     "sha256": input_artifact["sha256"],
                     "source_intent_id": None,
@@ -69,11 +69,11 @@ def _workspace(tmp_path: Path) -> tuple[Path, dict[str, str], dict[str, dict]]:
     )
     _write(attempt / "outputs" / "remote" / "gaussian.out", "Normal termination\n")
     _write(attempt / "outputs" / "parsed" / "frequencies_cm-1.txt", "-503.1\n")
-    _write(root / "acts" / refs["act_id"] / "outputs" / "unrelated.xyz", "1\nunrelated\nH 0 0 0\n")
+    _write(root / "nodes" / refs["node_id"] / "outputs" / "unrelated.xyz", "1\nunrelated\nH 0 0 0\n")
     catalog = list_calculation_artifacts(root)
     by_path = {row["path"]: row for row in catalog["artifacts"]}
     gaussian = by_path[
-        f"acts/{refs['act_id']}/attempts/{intent_id}/outputs/remote/gaussian.out"
+        f"nodes/{refs['node_id']}/attempts/{intent_id}/outputs/remote/gaussian.out"
     ]
     drafted = draft_decision(
         root,
@@ -84,7 +84,7 @@ def _workspace(tmp_path: Path) -> tuple[Path, dict[str, str], dict[str, dict]]:
                 {
                     "op": "record_observation",
                     "local_ref": "frequency",
-                    "actRef": refs["act_id"],
+                    "nodeRef": refs["node_id"],
                     "conceptId": "vibration.imaginary_frequency_count",
                     "subjectRef": intent_id,
                     "value": 1,
@@ -98,7 +98,7 @@ def _workspace(tmp_path: Path) -> tuple[Path, dict[str, str], dict[str, dict]]:
                 {
                     "op": "record_observation",
                     "local_ref": "diagnostic",
-                    "actRef": refs["act_id"],
+                    "nodeRef": refs["node_id"],
                     "conceptId": "program.normal_termination",
                     "subjectRef": intent_id,
                     "value": True,
@@ -127,7 +127,7 @@ def _workspace(tmp_path: Path) -> tuple[Path, dict[str, str], dict[str, dict]]:
         "intent_id": intent_id,
         "artifact_id": gaussian["artifact_id"],
         "input_artifact_id": input_artifact["artifact_id"],
-        "unrelated_artifact_id": by_path[f"acts/{refs['act_id']}/outputs/unrelated.xyz"]["artifact_id"],
+        "unrelated_artifact_id": by_path[f"nodes/{refs['node_id']}/outputs/unrelated.xyz"]["artifact_id"],
     }
     refreshed = list_calculation_artifacts(root)
     return root, refs, {row["artifact_id"]: row for row in refreshed["artifacts"]}
@@ -141,7 +141,7 @@ def _locate(root: Path, query: str, catalog: dict[str, dict]) -> dict:
     ("ref_key", "kind"),
     [
         ("claim_id", "claim"),
-        ("act_id", "act"),
+        ("node_id", "node"),
         ("observation_id", "observation"),
         ("artifact_id", "artifact"),
         ("intent_id", "attempt"),
@@ -170,7 +170,7 @@ def test_claim_locator_only_returns_direct_observation_artifacts(tmp_path: Path)
     match = _locate(root, refs["claim_id"], catalog)["matches"][0]
 
     assert match["claim_refs"] == [refs["claim_id"]]
-    assert match["act_refs"] == [refs["act_id"]]
+    assert match["node_refs"] == [refs["node_id"]]
     assert match["observation_refs"] == [refs["observation_id"]]
     assert [row["artifact_id"] for row in match["artifacts"]] == [refs["artifact_id"]]
     assert match["artifacts"][0]["relation"] == "direct_claim_evidence"
@@ -178,14 +178,14 @@ def test_claim_locator_only_returns_direct_observation_artifacts(tmp_path: Path)
     assert match["artifacts"][0]["concept_ids"] == ["vibration.imaginary_frequency_count"]
     assert refs["unrelated_artifact_id"] not in {row["artifact_id"] for row in match["artifacts"]}
     assert match["directories"] == [
-        {"path": f"acts/{refs['act_id']}", "purpose": "act_root", "exists": True}
+        {"path": f"nodes/{refs['node_id']}", "purpose": "node_root", "exists": True}
     ]
 
 
-def test_act_locator_exposes_owned_files_attempts_and_semantic_bindings(tmp_path: Path) -> None:
+def test_node_locator_exposes_owned_files_attempts_and_semantic_bindings(tmp_path: Path) -> None:
     root, refs, catalog = _workspace(tmp_path)
 
-    match = _locate(root, refs["act_id"], catalog)["matches"][0]
+    match = _locate(root, refs["node_id"], catalog)["matches"][0]
 
     assert {row["artifact_id"] for row in match["artifacts"]} == set(catalog)
     assert match["attempts"][0]["intent_id"] == refs["intent_id"]
@@ -193,7 +193,7 @@ def test_act_locator_exposes_owned_files_attempts_and_semantic_bindings(tmp_path
     assert match["attempts"][0]["input_artifact_count"] == 1
     assert match["attempts"][0]["output_artifact_count"] == 2
     evidence = next(row for row in match["artifacts"] if row["artifact_id"] == refs["artifact_id"])
-    assert evidence["relation"] == "act_observation_source"
+    assert evidence["relation"] == "node_observation_source"
     assert evidence["concept_ids"] == [
         "program.normal_termination",
         "vibration.imaginary_frequency_count",
@@ -201,16 +201,16 @@ def test_act_locator_exposes_owned_files_attempts_and_semantic_bindings(tmp_path
     unrelated = next(
         row for row in match["artifacts"] if row["artifact_id"] == refs["unrelated_artifact_id"]
     )
-    assert unrelated["relation"] == "act_owned"
+    assert unrelated["relation"] == "node_owned"
     assert unrelated["observation_refs"] == []
     attempt_input = next(
         row for row in match["artifacts"] if row["artifact_id"] == refs["input_artifact_id"]
     )
-    assert attempt_input["relation"] == "act_attempt_input"
+    assert attempt_input["relation"] == "node_attempt_input"
     unparsed_output = next(
         row for row in match["artifacts"] if row["path"].endswith("frequencies_cm-1.txt")
     )
-    assert unparsed_output["relation"] == "act_attempt_output"
+    assert unparsed_output["relation"] == "node_attempt_output"
 
 
 def test_attempt_locator_distinguishes_frozen_inputs_from_outputs(tmp_path: Path) -> None:
@@ -226,7 +226,7 @@ def test_attempt_locator_distinguishes_frozen_inputs_from_outputs(tmp_path: Path
 
     input_match = _locate(root, refs["input_artifact_id"], catalog)["matches"][0]
     assert input_match["attempts"][0]["intent_id"] == refs["intent_id"]
-    assert input_match["act_refs"] == [refs["act_id"]]
+    assert input_match["node_refs"] == [refs["node_id"]]
 
 
 def test_locator_searches_scientific_terms_tasks_and_paths(tmp_path: Path) -> None:
@@ -237,7 +237,7 @@ def test_locator_searches_scientific_terms_tasks_and_paths(tmp_path: Path) -> No
     path = _locate(root, "frequencies_cm-1", catalog)
 
     assert scientific["query_mode"] == "search"
-    assert {row["kind"] for row in scientific["matches"]} >= {"claim", "act"}
+    assert {row["kind"] for row in scientific["matches"]} >= {"claim", "node"}
     assert (task["matches"][0]["kind"], task["matches"][0]["ref"]) == (
         "attempt",
         refs["intent_id"],
@@ -263,7 +263,7 @@ def test_locator_index_and_results_are_bounded_and_read_only(tmp_path: Path) -> 
     assert result["query_mode"] == "index"
     assert [(row["kind"], row["ref"]) for row in result["matches"]] == [
         ("claim", refs["claim_id"]),
-        ("act", refs["act_id"]),
+        ("node", refs["node_id"]),
     ]
     assert result["returned_match_count"] <= 8
     assert all(len(row["artifacts"]) <= 4 for row in result["matches"])
@@ -289,7 +289,7 @@ def test_locator_reports_total_and_returned_match_counts(tmp_path: Path) -> None
             "path": f"inputs/gaussian_candidate_{index}.log",
             "sha256": f"sha256:{index:064x}",
             "size_bytes": index,
-            "owner_act": None,
+            "owner_node": None,
             "source_intent_id": None,
             "input_roles": [],
         }

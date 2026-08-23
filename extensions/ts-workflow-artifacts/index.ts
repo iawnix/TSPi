@@ -32,13 +32,13 @@ type ResolvedArtifact = {
   artifact_id: string;
   path: string;
   sha256: string;
-  owner_act: string | null;
+  owner_node: string | null;
   source_intent_id: string | null;
 };
 
 type RenderRequest = {
   operation: "render" | "compare" | "animate" | "mechanism";
-  actId: string;
+  nodeId: string;
   artifacts: Array<{ artifactId: string; ref: string; path: string; sha256: string }>;
   outputName: string;
   outputRef: string;
@@ -56,7 +56,7 @@ type ReportRequest = {
 
 const NOTIFICATION_EVENTS = [
   "progress",
-  "act_completed",
+  "node_completed",
   "calculation_failed",
   "calculation_ambiguous",
   "study_completed",
@@ -70,7 +70,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.structureSeed,
     label: "TS Structure Seed",
-    description: "Generate an Act-owned RDKit XYZ seed.",
+    description: "Generate a Node-owned RDKit XYZ seed.",
     promptSnippet: "Generate a 3D seed",
     promptGuidelines: [
       "One connected SMILES; declare charge, multiplicity, and none or uff.",
@@ -80,7 +80,7 @@ export default function (pi: ExtensionAPI) {
     executionMode: "sequential",
     parameters: Type.Object({
       operation: Type.Literal("generate"),
-      actId: Type.String({ pattern: "^act_[1-9][0-9]*$" }),
+      nodeId: Type.String({ pattern: "^node_[1-9][0-9]*$" }),
       smiles: Type.String({ minLength: 1, maxLength: 4_096 }),
       charge: Type.Integer({ minimum: -20, maximum: 20 }),
       multiplicity: Type.Integer({ minimum: 1, maximum: 21 }),
@@ -94,7 +94,7 @@ export default function (pi: ExtensionAPI) {
         activity_id: activityId,
         kind: "structure_seed",
         operation: "generate",
-        act_refs: [params.actId],
+        node_refs: [params.nodeId],
         request: {
           source_format: "smiles",
           submitted_sha256: `sha256:${createHash("sha256").update(params.smiles, "utf8").digest("hex")}`,
@@ -105,13 +105,13 @@ export default function (pi: ExtensionAPI) {
           generator: "rdkit_etkdgv3",
         },
       });
-      onUpdate?.(toolText(`TS Structure seed · ${params.actId}`, {
+      onUpdate?.(toolText(`TS Structure seed · ${params.nodeId}`, {
         activity: { activity_id: activityId, state: "running" },
       }));
       try {
         const raw = await runStructureSeedJson(pi, root, {
           schema_version: "ts-structure-seed-request/1",
-          act_id: params.actId,
+          node_id: params.nodeId,
           smiles: params.smiles,
           charge: params.charge,
           multiplicity: params.multiplicity,
@@ -130,7 +130,7 @@ export default function (pi: ExtensionAPI) {
           journal.activityRef,
           "structure_seed",
           "generate",
-          [params.actId],
+          [params.nodeId],
           error,
         );
         failActivity(journal, error, failure);
@@ -143,7 +143,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.artifactImport,
     label: "TS Artifact Import",
-    description: "Create one validated Act-owned calculation input from bounded inline text.",
+    description: "Create one validated Node-owned calculation input from bounded inline text.",
     promptSnippet: "Import one seed calculation artifact",
     promptGuidelines: [
       "Use when no suitable logical input exists; the host owns its path, filename, digest, and artifact ID.",
@@ -152,7 +152,7 @@ export default function (pi: ExtensionAPI) {
     executionMode: "sequential",
     parameters: Type.Object({
       operation: Type.Literal("import"),
-      actId: Type.String({ pattern: "^act_[1-9][0-9]*$" }),
+      nodeId: Type.String({ pattern: "^node_[1-9][0-9]*$" }),
       format: StringEnum(IMPORT_FORMATS),
       content: Type.String({ minLength: 1, maxLength: 131_072 }),
       charge: Type.Optional(Type.Integer({ minimum: -20, maximum: 20 })),
@@ -166,7 +166,7 @@ export default function (pi: ExtensionAPI) {
         activity_id: activityId,
         kind: "artifact_import",
         operation: "import",
-        act_refs: [params.actId],
+        node_refs: [params.nodeId],
         request: {
           format: params.format,
           submitted_sha256: `sha256:${createHash("sha256").update(params.content, "utf8").digest("hex")}`,
@@ -175,13 +175,13 @@ export default function (pi: ExtensionAPI) {
           multiplicity: params.multiplicity,
         },
       });
-      onUpdate?.(toolText(`TS Artifact import · ${params.actId}`, {
+      onUpdate?.(toolText(`TS Artifact import · ${params.nodeId}`, {
         activity: { activity_id: activityId, state: "running" },
       }));
       try {
         const raw = await runArtifactImportJson(pi, root, {
           schema_version: "ts-artifact-import-request/1",
-          act_id: params.actId,
+          node_id: params.nodeId,
           format: params.format,
           content: params.content,
           charge: params.charge,
@@ -200,7 +200,7 @@ export default function (pi: ExtensionAPI) {
           journal.activityRef,
           "artifact_import",
           "import",
-          [params.actId],
+          [params.nodeId],
           error,
         );
         failActivity(journal, error, failure);
@@ -217,13 +217,13 @@ export default function (pi: ExtensionAPI) {
     promptSnippet: "Render one bounded workspace visualization",
     promptGuidelines: [
       "Use logical artifact IDs from ts_workspace_context mode=artifacts; do not construct workspace paths.",
-      "Choose the ResearchAct that owns the new output and a safe .png or .gif outputName.",
+      "Choose the ResearchNode that owns the new output and a safe .png or .gif outputName.",
       "Rendered images are presentation artifacts and never scientific Observations by themselves.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
       operation: StringEnum(RENDER_OPERATIONS),
-      actId: Type.String({ pattern: "^act_[1-9][0-9]*$" }),
+      nodeId: Type.String({ pattern: "^node_[1-9][0-9]*$" }),
       inputArtifactIds: Type.Array(
         Type.String({ pattern: "^art_[0-9a-f]{24}$" }),
         { minItems: 1, maxItems: 8, uniqueItems: true },
@@ -236,7 +236,7 @@ export default function (pi: ExtensionAPI) {
       const resolved = await resolveArtifacts(pi, root, params.inputArtifactIds, signal);
       const request = validateRenderRequest(root, {
         operation: params.operation,
-        actId: params.actId,
+        nodeId: params.nodeId,
         inputArtifactIds: params.inputArtifactIds,
         outputName: params.outputName,
       }, resolved) as RenderRequest;
@@ -245,13 +245,13 @@ export default function (pi: ExtensionAPI) {
         activity_id: activityId,
         kind: "render",
         operation: request.operation,
-        act_refs: [request.actId],
+        node_refs: [request.nodeId],
         request: {
           input_artifact_ids: request.artifacts.map((item) => item.artifactId),
           output_name: request.outputName,
         },
       });
-      onUpdate?.(toolText(`TS Render ${request.operation} · ${request.actId}`, {
+      onUpdate?.(toolText(`TS Render ${request.operation} · ${request.nodeId}`, {
         activity: { activity_id: activityId, state: "running" },
       }));
       const outputDirectory = dirname(request.outputPath);
@@ -273,7 +273,7 @@ export default function (pi: ExtensionAPI) {
           activity_id: activityId,
           activity_ref: journal.activityRef,
           operation: request.operation,
-          act_id: request.actId,
+          node_id: request.nodeId,
           input_artifact_ids: request.artifacts.map((item) => item.artifactId),
           output_artifact_id: artifact.artifact_id,
           output_digest: output.sha256,
@@ -284,7 +284,7 @@ export default function (pi: ExtensionAPI) {
         pi.appendEntry("ts-deterministic-activity", result);
         return toolText(JSON.stringify(result, null, 2), { result });
       } catch (error) {
-        const failure = deterministicFailure(activityId, journal.activityRef, "render", request.operation, [request.actId], error);
+        const failure = deterministicFailure(activityId, journal.activityRef, "render", request.operation, [request.nodeId], error);
         failActivity(journal, error, failure);
         pi.appendEntry("ts-deterministic-activity-failed", failure);
         try { rmdirSync(outputDirectory); } catch (_ignored) {}
@@ -296,11 +296,11 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.report,
     label: "TS Report",
-    description: "Build a revision-bound report package directly from the v4 workspace read model.",
+    description: "Build a revision-bound report package directly from the v5 workspace read model.",
     promptSnippet: "Build one validated transition-state report package",
     promptGuidelines: [
       "Choose a safe packageName; the deterministic host owns the reports/ path.",
-      "Reports project Claims, ResearchActs, Observations, Findings, validation, and acceptance without changing them.",
+      "Reports project Claims, ResearchNodes, Observations, Findings, validation, and acceptance without changing them.",
       "Preserve negative results, ambiguity, and missing-data disclosures.",
     ],
     executionMode: "sequential",
@@ -329,7 +329,7 @@ export default function (pi: ExtensionAPI) {
         activity_id: activityId,
         kind: "report",
         operation: "build",
-        act_refs: [...new Set(request.assets.map((item) => item.owner_act).filter((item): item is string => typeof item === "string"))],
+        node_refs: [...new Set(request.assets.map((item) => item.owner_node).filter((item): item is string => typeof item === "string"))],
         request: { package_name: request.packageName, asset_artifact_ids: request.assetArtifactIds },
       });
       onUpdate?.(toolText(`TS Report build · ${request.packageName}`, {
@@ -390,7 +390,7 @@ export default function (pi: ExtensionAPI) {
     description: `Send one research progress notification to the installation-configured target: ${notificationTarget}.`,
     promptSnippet: "Notify the TSPi user about a material research event",
     promptGuidelines: [
-      "Use only for material progress, ResearchAct completion, calculation failure or ambiguity, and study completion.",
+      "Use only for material progress, ResearchNode completion, calculation failure or ambiguity, and study completion.",
       `The authoritative target is ${notificationTarget}; request text cannot redirect delivery.`,
       "A notification failure never changes scientific state. Do not automatically replay an ambiguous delivery.",
     ],
@@ -425,7 +425,7 @@ async function resolveArtifacts(
 ): Promise<ResolvedArtifact[]> {
   const args = artifactIds.flatMap((artifactId) => ["--artifact-id", artifactId]);
   const raw = await runComputeJson(pi, "resolve-artifacts", root, args, signal);
-  if (!raw || raw.schema_version !== "ts-artifact-resolution/1" || !Array.isArray(raw.artifacts)) {
+  if (!raw || raw.schema_version !== "ts-artifact-resolution/2" || !Array.isArray(raw.artifacts)) {
     throw new Error("artifact resolver returned an invalid result");
   }
   return raw.artifacts as ResolvedArtifact[];
@@ -438,7 +438,7 @@ async function resolveArtifactsByRef(
   signal?: AbortSignal,
 ): Promise<ResolvedArtifact[]> {
   const raw = await runComputeJson(pi, "list-artifacts", root, [], signal);
-  if (!raw || raw.schema_version !== "ts-artifact-catalog/2" || !Array.isArray(raw.artifacts)) {
+  if (!raw || raw.schema_version !== "ts-artifact-catalog/3" || !Array.isArray(raw.artifacts)) {
     throw new Error("artifact catalog returned an invalid result");
   }
   const matches = (raw.artifacts as ResolvedArtifact[]).filter((item) => item.path === ref);
@@ -491,7 +491,7 @@ function deterministicFailure(
   activityRef: string,
   kind: "structure_seed" | "artifact_import" | "render" | "report",
   operation: string,
-  actRefs: string[],
+  nodeRefs: string[],
   error: unknown,
 ) {
   return {
@@ -500,7 +500,7 @@ function deterministicFailure(
     activity_ref: activityRef,
     kind,
     operation,
-    act_refs: actRefs,
+    node_refs: nodeRefs,
     error_class: error instanceof Error ? error.name : "Error",
     message: (error instanceof Error ? error.message : String(error)).slice(0, 4000),
   };

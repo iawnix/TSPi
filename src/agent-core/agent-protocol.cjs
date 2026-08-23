@@ -37,11 +37,11 @@ const DOCUMENT_BINDING_KEYS = ["ref", "schema_version", "sha256", "bytes"];
 const REVIEW_INPUT_DOCUMENTS = Object.freeze({
   review_snapshot: Object.freeze({
     ref: "review-snapshot.json",
-    schema_version: "ts-review-task-snapshot/2",
+    schema_version: "ts-review-task-snapshot/3",
   }),
   provider_input: Object.freeze({
     ref: "provider-input.json",
-    schema_version: "ts-review-provider-input/4",
+    schema_version: "ts-review-provider-input/5",
   }),
 });
 const RESULT_KEYS = [
@@ -105,13 +105,13 @@ function validateTaskInputs(value, role) {
 
 function validateComputeInputs(value) {
   const keys = [
-    "backend", "act_id", "intent_id", "intent_digest", "execution_kind",
+    "backend", "node_id", "intent_id", "intent_digest", "execution_kind",
     "required_actions", "optional_actions", "tail", "collect_artifacts",
     "parse_artifact_ref",
   ];
   rejectUnknownKeys(value, keys, "compute inputs");
-  const actId = requireString(value.act_id, "inputs.act_id", 128);
-  if (!/^act_[1-9][0-9]*$/.test(actId)) throw new Error("inputs.act_id must be a ResearchAct ID");
+  const nodeId = requireString(value.node_id, "inputs.node_id", 128);
+  if (!/^node_[1-9][0-9]*$/.test(nodeId)) throw new Error("inputs.node_id must be a ResearchNode ID");
   const intentId = requireString(value.intent_id, "inputs.intent_id", 128);
   if (!/^calc_[1-9][0-9]*$/.test(intentId)) {
     throw new Error("inputs.intent_id must be a calculation Attempt ID");
@@ -122,7 +122,7 @@ function validateComputeInputs(value) {
   const tail = value.tail === null ? null : validateComputeTail(value.tail);
   return {
     backend: requireString(value.backend, "inputs.backend", 64),
-    act_id: actId,
+    node_id: nodeId,
     intent_id: intentId,
     intent_digest: value.intent_digest,
     execution_kind: requireEnum(value.execution_kind, "inputs.execution_kind", ["remote"]),
@@ -254,10 +254,10 @@ function validateWorkspace(value) {
 
 function validateScope(value) {
   if (!isPlainObject(value)) throw new Error("scope must be an object");
-  rejectUnknownKeys(value, ["report_id", "act_refs", "claim_refs"], "scope");
+  rejectUnknownKeys(value, ["report_id", "node_refs", "claim_refs"], "scope");
   return {
     report_id: nullableString(value.report_id, "scope.report_id", 256),
-    act_refs: uniqueStringArray(value.act_refs, "scope.act_refs", 64, 128),
+    node_refs: uniqueStringArray(value.node_refs, "scope.node_refs", 64, 128),
     claim_refs: uniqueStringArray(value.claim_refs, "scope.claim_refs", 64, 256),
   };
 }

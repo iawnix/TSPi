@@ -18,7 +18,7 @@ def evaluate_gate_spec(
     observations: list[dict[str, Any]],
     *,
     result_id: str,
-    evaluated_by_act: str,
+    evaluated_by_node: str,
     evaluated_by_decision: str,
     registry: PredicateRegistry,
     evaluated_at: str | None = None,
@@ -50,7 +50,7 @@ def evaluate_gate_spec(
         for item in selected
     }
     result = {
-        "schema_version": "ts-validation-result/1",
+        "schema_version": "ts-validation-result/2",
         "result_id": result_id,
         "spec_ref": spec["spec_id"],
         "spec_digest": spec["spec_digest"],
@@ -60,7 +60,7 @@ def evaluate_gate_spec(
         "observation_refs": sorted(observation_digests, key=observation_id_sort_key),
         "observation_digests": observation_digests,
         "check_results": check_results,
-        "evaluated_by_act": evaluated_by_act,
+        "evaluated_by_node": evaluated_by_node,
         "evaluated_by_decision": evaluated_by_decision,
         "evaluated_at": evaluated_at or now_iso(),
     }
@@ -69,7 +69,7 @@ def evaluate_gate_spec(
 
 
 def _validate_spec_binding(spec: dict[str, Any], registry: PredicateRegistry) -> None:
-    if not isinstance(spec, dict) or spec.get("schema_version") != "ts-gate-spec/1":
+    if not isinstance(spec, dict) or spec.get("schema_version") != "ts-gate-spec/2":
         raise ValidationEngineError("unsupported or malformed GateSpec")
     expected = dict(spec)
     digest = expected.pop("spec_digest", None)
@@ -97,7 +97,7 @@ def _validate_observations(observations: list[dict[str, Any]]) -> list[dict[str,
     seen: set[str] = set()
     values = []
     for item in observations:
-        if not isinstance(item, dict) or item.get("schema_version") != "ts-observation/1":
+        if not isinstance(item, dict) or item.get("schema_version") != "ts-observation/2":
             raise ValidationEngineError("observation snapshot contains an unsupported record")
         observation_id = item.get("observation_id")
         if not isinstance(observation_id, str) or not observation_id or observation_id in seen:

@@ -12,7 +12,7 @@ export function renderTsReviewCall(
 ): Text {
   const identity = compact([
     `${tspiIcon("running")} ${tspiIcon("roleReview")} Review`,
-    firstStringFromArray(args.actRefs),
+    firstStringFromArray(args.nodeRefs),
     stringValue(args.targetClaimRef),
     stringValue(args.operation) || "claim_review",
   ]);

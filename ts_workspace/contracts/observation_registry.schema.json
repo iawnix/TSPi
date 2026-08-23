@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "observations"],
   "properties": {
-    "schema_version": {"const": "ts-observation-registry/1"},
+    "schema_version": {"const": "ts-observation-registry/2"},
     "observations": {"type": "array", "items": {"$ref": "observation.schema.json"}}
   }
 }

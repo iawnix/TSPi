@@ -1,4 +1,4 @@
-"""Build immutable Markdown packages from the v4 report projection."""
+"""Build immutable Markdown packages from the v5 report projection."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ import tempfile
 from pathlib import Path
 from typing import Any, Iterable
 
-from ts_workspace.associations import derive_claim_act_links
-from ts_workspace.refs import act_sort_key, claim_sort_key
+from ts_workspace.associations import derive_claim_node_links
+from ts_workspace.refs import node_sort_key, claim_sort_key
 from ts_compute.artifacts import resolve_artifact_ids
 
 from .context import collect_report_context
@@ -50,7 +50,10 @@ def build_report_package(
             "claims": context["claims"],
             "relations": context["claim_relations"],
         })
-        _write_json(staging / "research_acts.json", {"acts": context["research_acts"]})
+        _write_json(staging / "research_roadmap.json", {
+            "phases": context["research_phases"],
+            "nodes": context["research_nodes"],
+        })
         _write_json(staging / "activities.json", {
             "activities": context["deterministic_activities"],
             "activity_summaries": context["activity_summaries"],
@@ -142,21 +145,27 @@ def _copy_report_assets(
 
 def render_final_report(context: dict[str, Any]) -> str:
     focus_claims = set(context["focus"]["claim_refs"])
-    focus_acts = set(context["focus"]["act_refs"])
+    focus_nodes = set(context["focus"]["node_refs"])
     accepted_claims = {item["claim_ref"] for item in context["current_acceptances"]}
-    activity_summaries = {
-        item["act_id"]: item
-        for item in context["activity_summaries"]
-        if isinstance(item, dict) and isinstance(item.get("act_id"), str)
+    phase_by_id = {item["phase_id"]: item for item in context["research_phases"]}
+    focus_phase_refs = {
+        node["phase_ref"]
+        for node in context["research_nodes"]
+        if node["node_id"] in focus_nodes
     }
-    claim_act_links = derive_claim_act_links(context["claims"], context["research_acts"])
+    activity_summaries = {
+        item["node_id"]: item
+        for item in context["activity_summaries"]
+        if isinstance(item, dict) and isinstance(item.get("node_id"), str)
+    }
+    claim_node_links = derive_claim_node_links(context["claims"], context["research_nodes"])
     related_claim_refs = {
-        act["act_id"]: [
+        node["node_id"]: [
             claim_id
-            for claim_id, act_id in claim_act_links
-            if act_id == act["act_id"]
+            for claim_id, node_id in claim_node_links
+            if node_id == node["node_id"]
         ]
-        for act in context["research_acts"]
+        for node in context["research_nodes"]
     }
     lines = [
         "# Transition-State Research Report",
@@ -170,22 +179,50 @@ def render_final_report(context: dict[str, Any]) -> str:
         f"| Operational revision | `{context['operational_revision']}` |",
         f"| Report | `{context['report_id']}` |",
         f"| Focus Claims | `{', '.join(sorted(focus_claims, key=claim_sort_key)) or 'none'}` |",
-        f"| Focus ResearchActs | `{', '.join(sorted(focus_acts, key=act_sort_key)) or 'none'}` |",
-        f"| Claims / Acts / Observations / Findings | {len(context['claims'])} / {len(context['research_acts'])} / {len(context['observations'])} / {len(context['findings'])} |",
+        f"| Focus Phases | `{', '.join(sorted(focus_phase_refs)) or 'none'}` |",
+        f"| Focus ResearchNodes | `{', '.join(sorted(focus_nodes, key=node_sort_key)) or 'none'}` |",
+        f"| Phases / Nodes / Claims / Observations / Findings | {len(context['research_phases'])} / {len(context['research_nodes'])} / {len(context['claims'])} / {len(context['observations'])} / {len(context['findings'])} |",
         "",
         _executive_sentence(context["claims"], focus_claims, accepted_claims),
         "",
-        "## Claim Graph",
-        "",
-        "| Claim | Type | Status | Statement |",
-        "| --- | --- | --- | --- |",
+        "## Research Roadmap",
     ]
+    for phase in context["research_phases"]:
+        marker = " (focus)" if phase["phase_id"] in focus_phase_refs else ""
+        lines.extend([
+            "",
+            f"### `{phase['phase_id']}` - {_escape(phase['title'])}{marker}",
+            "",
+            _escape(phase["objective"]),
+            "",
+            "| ResearchNode | Status | Dependencies | Primary Claim | Claim scope | Deliverable |",
+            "| --- | --- | --- | --- | --- | --- |",
+        ])
+        phase_nodes = [node for node in context["research_nodes"] if node["phase_ref"] == phase["phase_id"]]
+        for node in phase_nodes:
+            node_marker = " (focus)" if node["node_id"] in focus_nodes else ""
+            claim_refs = related_claim_refs[node["node_id"]]
+            lines.append(
+                f"| `{node['node_id']}`{node_marker} | `{node['status']}` | `{', '.join(node['dependency_refs']) or 'none'}` | "
+                f"`{node.get('primary_claim_ref') or 'none'}` | `{', '.join(claim_refs) or 'none'}` | {_escape(node['deliverable'])} |"
+            )
+        if not phase_nodes:
+            lines.append("| _none_ |  |  |  |  |  |")
+
+    lines.extend([
+        "",
+        "## Scientific Conclusions",
+        "",
+        "| Claim | Type | Status | Statement | Assumptions | Falsifiers |",
+        "| --- | --- | --- | --- | --- | --- |",
+    ])
     for claim in context["claims"]:
         marker = " (focus)" if claim["claim_id"] in focus_claims else ""
         lines.append(
-            f"| `{claim['claim_id']}`{marker} | `{claim['claim_type']}` | `{claim['status']}` | {_escape(claim['statement'])} |"
+            f"| `{claim['claim_id']}`{marker} | `{claim['claim_type']}` | `{claim['status']}` | {_escape(claim['statement'])} | "
+            f"{_markdown_items(claim['assumptions'])} | {_markdown_items(claim['falsifiers'])} |"
         )
-    lines.extend(["", "### Relations", "", "| Relation | Source | Type | Target | Rationale |", "| --- | --- | --- | --- | --- |"])
+    lines.extend(["", "### Claim Relations", "", "| Relation | Source | Type | Target | Rationale |", "| --- | --- | --- | --- | --- |"])
     for relation in context["claim_relations"]:
         lines.append(
             f"| `{relation['relation_id']}` | `{relation['source_claim_ref']}` | `{relation['relation_type']}` | "
@@ -194,47 +231,37 @@ def render_final_report(context: dict[str, Any]) -> str:
     if not context["claim_relations"]:
         lines.append("| _none_ |  |  |  |  |")
 
-    lines.extend(["", "## ResearchAct DAG", "", "| ResearchAct | Status | Dependencies | Claims | Objective | Outcome |", "| --- | --- | --- | --- | --- | --- |"])
-    for act in context["research_acts"]:
-        marker = " (focus)" if act["act_id"] in focus_acts else ""
-        outcome = act["result"]["outcome"] if isinstance(act.get("result"), dict) else "pending"
-        claim_refs = related_claim_refs[act["act_id"]]
-        lines.append(
-            f"| `{act['act_id']}`{marker} | `{act['status']}` | `{', '.join(act['dependency_refs']) or 'none'}` | "
-            f"`{', '.join(claim_refs) or 'none'}` | {_escape(act['objective'])} | `{outcome}` |"
-        )
-
-    lines.extend(["", "### ResearchAct Review", ""])
-    for act in context["research_acts"]:
-        hypothesis = act.get("hypothesis") if isinstance(act.get("hypothesis"), dict) else None
-        result = act.get("result") if isinstance(act.get("result"), dict) else None
-        activity = activity_summaries.get(act["act_id"], {})
-        claim_refs = related_claim_refs[act["act_id"]]
+    lines.extend(["", "## ResearchNode Records", ""])
+    for node in context["research_nodes"]:
+        result = node.get("result") if isinstance(node.get("result"), dict) else None
+        activity = activity_summaries.get(node["node_id"], {})
+        claim_refs = related_claim_refs[node["node_id"]]
+        phase = phase_by_id[node["phase_ref"]]
         lines.extend([
-            f"#### `{act['act_id']}` - {_escape(act['objective'])}",
+            f"### `{node['node_id']}` - {_escape(node['title'])}",
             "",
-            f"- Status: `{act['status']}`; dependencies: `{', '.join(act['dependency_refs']) or 'none'}`; Claims: `{', '.join(claim_refs) or 'none'}`.",
-            f"- Hypothesis: {_escape(hypothesis['statement']) if hypothesis else '_not recorded_'}",
-            f"- Assumptions: {_markdown_items(hypothesis.get('assumptions', [])) if hypothesis else '_none recorded_'}",
-            f"- Predictions: {_markdown_items(hypothesis.get('predictions', [])) if hypothesis else '_none recorded_'}",
-            f"- Falsifiers: {_markdown_items(hypothesis.get('falsifiers', [])) if hypothesis else '_none recorded_'}",
+            f"- Phase: `{phase['phase_id']}` ({_escape(phase['title'])}).",
+            f"- Status: `{node['status']}`; dependencies: `{', '.join(node['dependency_refs']) or 'none'}`.",
+            f"- Objective: {_escape(node['objective'])}",
+            f"- Deliverable: {_escape(node['deliverable'])}",
+            f"- Primary Claim: `{node.get('primary_claim_ref') or 'none'}`; Claim scope: `{', '.join(claim_refs) or 'none'}`.",
             f"- Outcome: {_escape(result['summary']) if result else '_pending_'}",
             f"- Open questions: {_markdown_items(result.get('open_questions', [])) if result else '_not yet recorded_'}",
             f"- Deterministic activities: {activity.get('activity_count', 0)} total, "
             f"{activity.get('completed_count', 0)} completed, {activity.get('failed_count', 0)} failed, "
             f"{activity.get('running_count', 0)} running, {activity.get('pending_count', 0)} pending.",
-            f"- Scientific records: {len(act['observation_refs'])} Observations, "
-            f"{len(act['finding_refs'])} Findings, {len(act['validation_spec_refs'])} GateSpecs, "
-            f"{len(act['validation_result_refs'])} ValidationResults.",
+            f"- Scientific records: {len(node['observation_refs'])} Observations, "
+            f"{len(node['finding_refs'])} Findings, {len(node['validation_spec_refs'])} GateSpecs, "
+            f"{len(node['validation_result_refs'])} ValidationResults.",
             "",
         ])
 
-    lines.extend(["", "## Semantic Observations", "", "| Observation | Concept | Subject | Value | Unit | ResearchAct | Artifacts |", "| --- | --- | --- | --- | --- | --- | --- |"])
+    lines.extend(["", "## Semantic Observations", "", "| Observation | Concept | Subject | Value | Unit | ResearchNode | Artifacts |", "| --- | --- | --- | --- | --- | --- | --- |"])
     for observation in context["observations"]:
         value = json.dumps(observation["value"], ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         lines.append(
             f"| `{observation['observation_id']}` | `{observation['concept_id']}` | `{observation['subject_ref']}` | "
-            f"`{_escape(value)}` | `{observation['unit'] or ''}` | `{observation['created_by_act']}` | "
+            f"`{_escape(value)}` | `{observation['unit'] or ''}` | `{observation['created_by_node']}` | "
             f"`{', '.join(observation['artifact_refs']) or 'none'}` |"
         )
 
@@ -334,7 +361,7 @@ def _package_manifest(package_dir: Path, revision: str, operational_revision: st
             "size_bytes": path.stat().st_size,
         })
     return {
-        "schema_version": "ts-report-package/3",
+        "schema_version": "ts-report-package/4",
         "workspace_revision": revision,
         "operational_revision": operational_revision,
         "files": files,

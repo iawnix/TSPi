@@ -94,7 +94,7 @@ export default function (pi: ExtensionAPI) {
       });
       const packet = bundle.task;
       reportStatus("starting", {
-        act_refs: packet.scope.act_refs,
+        node_refs: packet.scope.node_refs,
         claim_refs: packet.scope.claim_refs,
       });
       const journal = beginAgentRun(root, packet, {

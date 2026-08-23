@@ -1,4 +1,4 @@
-"""Deterministic v4 Research Kernel for transition-state workspaces."""
+"""Deterministic v5 Research Kernel for transition-state workspaces."""
 
 from .bootstrap import WorkspaceBootstrapError, WorkspaceBootstrapState, bootstrap_workspace, classify_workspace
 from .context import build_review_snapshot, compile_context, validation_capabilities

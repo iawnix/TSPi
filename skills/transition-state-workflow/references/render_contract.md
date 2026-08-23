@@ -4,14 +4,14 @@
 model and performs no scientific inference.
 
 The request selects `render`, `animate`, `compare`, or `mechanism`, one existing
-ResearchAct, logical input artifact IDs, and a safe output filename. The host
+ResearchNode, logical input artifact IDs, and a safe output filename. The host
 resolves paths/digests and owns:
 
 ```text
-acts/<act_id>/outputs/render/<outputName>
+nodes/<node_id>/outputs/render/<outputName>
 ```
 
-It rejects unknown Acts/artifacts, wrong input count, absolute/traversing paths,
+It rejects unknown Nodes/artifacts, wrong input count, absolute/traversing paths,
 symlink components, missing files, unsafe names, extension mismatch, and
 overwrite. A successful backend must produce a non-empty regular PNG/GIF whose
 digest is returned through the artifact catalog.

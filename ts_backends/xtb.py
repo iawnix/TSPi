@@ -72,7 +72,7 @@ def prepare_xtb(task: BackendTask) -> PreparedTask:
         command.extend(["--cycles", str(_positive_int(task.settings["max_cycles"], "max_cycles"))])
     return PreparedTask(
         backend="xtb",
-        act_id=task.act_id,
+        node_id=task.node_id,
         command=command,
         input_paths=[task.inputs[role] for role in ("xyz", "control") if role in task.inputs],
         expected_artifacts=list(XTB_ARTIFACTS[task.task_type]),

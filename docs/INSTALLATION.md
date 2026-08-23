@@ -206,7 +206,7 @@ change the recipient or credentials. Set `enabled=false` to disable delivery.
 Every attachment must be an unchanged member of a generated report package
 manifest. To attach a Render result, pass its logical artifact ID to
 `ts_report.assetArtifactIds`, then pass the returned `reports/.../assets/...`
-reference to `ts_notify_user`; do not attach `acts/...` paths directly.
+reference to `ts_notify_user`; do not attach `nodes/...` paths directly.
 
 The installation configuration is persistent authorization for that one target.
 There is no per-message activation token. A mismatch between the user's
@@ -248,14 +248,41 @@ at the same time.
 At startup:
 
 - a fresh directory is initialized once while unrelated input files remain;
-- a complete v4 workspace is validated without canonical rewrites;
-- partial or invalid v4 state fails closed;
+- a complete v5 workspace is validated without canonical rewrites;
+- partial or invalid v5 state fails closed;
 - legacy canonical markers fail closed.
 
-Protocol v4 intentionally has no migration command, legacy reader, or field
+Protocol v5 intentionally has no migration command, legacy reader, or field
 alias. Continue a legacy workspace with the matching old release, or create a
 new workspace name and explicitly re-establish only scientifically verified
-inputs and Claims. Do not copy legacy canonical JSON into a v4 workspace.
+inputs and Claims. Do not copy legacy canonical JSON into a v5 workspace.
+
+## Run The Research Explorer
+
+`ts_web` is an optional read-only process. Keep its registry outside all source
+workspaces and register one or more v5 studies while starting the server:
+
+```bash
+python3 "$TS_AGENT_SKILL_ROOT/scripts/ts_web.py" serve \
+  --state-dir /path/to/TSPi-installation/.pi/ts-web \
+  --source-root /path/to/TSPi-installation/workspaces/reaction-a \
+  --label "Reaction A" \
+  --source-root /path/to/TSPi-installation/workspaces/reaction-b \
+  --label "Reaction B" \
+  --host 127.0.0.1 \
+  --port 8766
+```
+
+The registry persists, so later starts may omit `--source-root`. Use the same
+script with `register`, `list`, or `remove` to maintain it explicitly. Open
+`http://127.0.0.1:8766/` in a browser.
+
+The explorer validates current state on read and exposes no mutation endpoint.
+Its default route is the ResearchPhase roadmap; Claim/Node graphs are advanced
+views. File preview is bounded to current ResearchNode files. The server does
+not implement user authentication. Bind `127.0.0.1` by default; bind
+`0.0.0.0` only for a trusted, firewalled LAN and assume every reachable client
+can inspect the registered research data.
 
 ## Upgrade
 
@@ -293,9 +320,9 @@ release directories are retained for inspection, but retention alone is not a
 substitute for preserving the validated manifest and archive. Do not edit an
 installed release or manually replace files under `current`.
 
-Rollback changes package/runtime code only. It does not downgrade a v4
-workspace or reverse already committed scientific Decisions. A v4 workspace
-cannot be opened by a release that does not implement protocol v4.
+Rollback changes package/runtime code only. It does not downgrade a v5
+workspace or reverse already committed scientific Decisions. A v5 workspace
+cannot be opened by a release that does not implement protocol v5.
 
 ## Operational Recovery
 
@@ -305,8 +332,8 @@ cannot be opened by a release that does not implement protocol v4.
 | runtime manifest or interpreter unavailable | Run the selected release's `install_env.py`. |
 | managed runtime capability probe fails | Do not fall back to system Python. Recreate the hash-addressed environment and inspect the recorded NumPy/RDKit import error. |
 | `another Root Agent already owns workspace` | Use another workspace or stop the existing process; do not delete the lock to bypass a live owner. |
-| partial or invalid v4 workspace | Preserve the directory, inspect validation findings, and recover through an explicitly designed repair; startup will not guess. |
-| legacy canonical state rejected | Use its matching release or start a separate fresh v4 workspace; this release has no migration path. |
+| partial or invalid v5 workspace | Preserve the directory, inspect validation findings, and recover through an explicitly designed repair; startup will not guess. |
+| legacy canonical state rejected | Use its matching release or start a separate fresh v5 workspace; this release has no migration path. |
 | remote `status` fails | SSH readiness is unavailable; local research remains usable. |
 | remote `doctor` fails | Inspect scheduler paths, remote root permissions, and each software profile. |
 | `submission_ambiguous` or `cancellation_ambiguous` | Reconcile durable control records; do not replay the action. |

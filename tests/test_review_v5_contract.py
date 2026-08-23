@@ -26,8 +26,9 @@ def test_review_bundle_uses_dag_objects_and_logical_artifact_ids(tmp_path: Path)
     refs = _apply(
         root,
         [
+            {"op": "create_phase", "local_ref": "phase", "title": "Mechanism review", "objective": "Review one mechanism Claim."},
             {"op": "create_claim", "local_ref": "claim", "claimType": "mechanism", "statement": "The pathway is concerted."},
-            {"op": "start_act", "local_ref": "act", "title": "Bounded research act", "deliverable": "One bounded research result.", "objective": "Test the concerted pathway.", "claimRefs": ["$claim"]},
+            {"op": "start_node", "local_ref": "node", "phaseRef": "$phase", "title": "Bounded research node", "deliverable": "One bounded research result.", "objective": "Test the concerted pathway.", "primaryClaimRef": "$claim", "claimRefs": ["$claim"]},
         ],
     )
     log = root / "inputs" / "diagnostic.log"
@@ -39,7 +40,7 @@ def test_review_bundle_uses_dag_objects_and_logical_artifact_ids(tmp_path: Path)
             {
                 "op": "record_observation",
                 "local_ref": "observation",
-                "actRef": refs["act"],
+                "nodeRef": refs["node"],
                 "conceptId": "program.normal_termination",
                 "subjectRef": "calc_probe",
                 "value": True,
@@ -72,7 +73,7 @@ def test_review_bundle_uses_dag_objects_and_logical_artifact_ids(tmp_path: Path)
     request_file = tmp_path / "review-request.json"
     request_file.write_text(json.dumps(payload), encoding="utf-8")
     completed = subprocess.run(
-        ["node", str(REPO / "tests/review_v4_bundle_probe.cjs"), str(request_file)],
+        ["node", str(REPO / "tests/review_v5_bundle_probe.cjs"), str(request_file)],
         cwd=REPO,
         check=True,
         text=True,
@@ -80,12 +81,14 @@ def test_review_bundle_uses_dag_objects_and_logical_artifact_ids(tmp_path: Path)
     )
     bundle = json.loads(completed.stdout)
 
-    assert bundle["task"]["scope"]["act_refs"] == [refs["act"]]
+    assert bundle["task"]["scope"]["node_refs"] == [refs["node"]]
     assert bundle["task"]["scope"]["claim_refs"] == [refs["claim"]]
     assert bundle["task"]["capabilities"] == ["ts_review_artifact_read", "ts_review_result"]
-    assert bundle["documents"]["review_snapshot"]["schema_version"] == "ts-review-task-snapshot/2"
-    assert bundle["documents"]["provider_input"]["schema_version"] == "ts-review-provider-input/4"
-    assert bundle["documents"]["provider_input"]["observations"][0]["observation_id"] == observation_refs["observation"]
+    assert bundle["documents"]["review_snapshot"]["schema_version"] == "ts-review-task-snapshot/3"
+    assert bundle["documents"]["provider_input"]["schema_version"] == "ts-review-provider-input/5"
+    dossier = bundle["documents"]["provider_input"]["dossier"]
+    assert dossier["observations"][0]["observation_id"] == observation_refs["observation"]
+    assert dossier["phases"][0]["phase_id"] == refs["phase"]
     private_manifest = bundle["documents"]["review_snapshot"]["artifact_manifest"][0]
     provider_manifest = bundle["documents"]["provider_input"]["artifact_manifest"][0]
     assert private_manifest["path"] == "inputs/diagnostic.log"
@@ -94,7 +97,8 @@ def test_review_bundle_uses_dag_objects_and_logical_artifact_ids(tmp_path: Path)
     assert "text" not in provider_manifest
     assert "normal termination" not in json.dumps(bundle["documents"]["provider_input"])
     serialized = json.dumps(bundle["documents"]["provider_input"])
-    assert "node_id" not in serialized
+    assert '"act_id"' not in serialized
+    assert '"hypothesis"' not in serialized
     assert "gate_results" not in serialized
     assert "evidence" not in serialized
 

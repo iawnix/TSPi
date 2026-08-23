@@ -1,7 +1,7 @@
 # Compute Subagent And Typed Actions
 
 `ts_subagent_compute` delegates one bounded operational lifecycle. Root chooses
-the chemistry, method, ResearchAct, inputs, settings, and execution target. The
+the chemistry, method, ResearchNode, inputs, settings, and execution target. The
 host resolves the immutable intent and exposes only pre-bound zero-argument
 tools to the isolated child.
 
@@ -41,7 +41,7 @@ The artifact catalog supplies logical `art_...` IDs, paths, SHA-256, owners,
 and compatible roles. The capability catalog supplies backend/task/settings
 shape. It does not prove live software or remote health.
 
-If a fresh workspace has no suitable input, start an open ResearchAct. Use
+If a fresh workspace has no suitable input, start an open ResearchNode. Use
 `ts_structure_seed` for one connected SMILES or `ts_artifact_import` for
 bounded Gaussian, XYZ, or xTB control text. The host returns the logical ID;
 callers never create an `art_*` value or workspace path.
@@ -54,7 +54,7 @@ Launch accepts the complete semantic request and remote execution target:
 {
   "operation": "launch",
   "backend": "gaussian",
-  "actId": "act_1",
+  "nodeId": "node_1",
   "purpose": "Optimize and characterize one TS candidate.",
   "taskType": "opt_freq",
   "attemptKind": "primary",
@@ -74,7 +74,7 @@ Launch accepts the complete semantic request and remote execution target:
 ```
 
 Before the child starts, the host creates and validates
-`ts-calculation-intent/4`, resolves paths and digests, allocates expected
+`ts-calculation-intent/5`, resolves paths and digests, allocates expected
 artifacts, and freezes the execution binding. The child then calls prepare and,
 only after known prepare success, submit. Submit is single-use. An unknown
 effect ends the lifecycle with reconciliation required.
@@ -87,7 +87,7 @@ Inspect polls one bound intent and may read one declared artifact tail:
 {
   "operation": "inspect",
   "backend": "gaussian",
-  "actId": "act_1",
+  "nodeId": "node_1",
   "intentId": "calc_1",
   "tailArtifact": "gaussian.out",
   "tailLines": 80
@@ -107,10 +107,10 @@ Finalize collects an allowed output set and parses one collected artifact:
 {
   "operation": "finalize",
   "backend": "gaussian",
-  "actId": "act_1",
+  "nodeId": "node_1",
   "intentId": "calc_1",
   "artifacts": ["gaussian.out", "program_status.json"],
-  "artifactRef": "acts/act_1/attempts/calc_1/outputs/remote/gaussian.out"
+  "artifactRef": "nodes/node_1/attempts/calc_1/outputs/remote/gaussian.out"
 }
 ```
 
@@ -124,7 +124,7 @@ individual semantic Observations through a Decision.
 Cancel targets one bound remote intent:
 
 ```json
-{"operation":"cancel","backend":"gaussian","actId":"act_1","intentId":"calc_1"}
+{"operation":"cancel","backend":"gaussian","nodeId":"node_1","intentId":"calc_1"}
 ```
 
 The action is single-use. Known success is idempotent. An ambiguous cancel must
@@ -138,7 +138,7 @@ attempted. Use `attemptKind=recalculation` when settings or purpose change:
 
 ```json
 {
-  "sourceAct": "act_1",
+  "sourceNode": "node_1",
   "sourceIntentId": "calc_1",
   "changedSettings": ["method"],
   "purpose": "method_robustness"
@@ -146,7 +146,7 @@ attempted. Use `attemptKind=recalculation` when settings or purpose change:
 ```
 
 Preserve the previous attempt. A new method or scientific objective may warrant
-a new ResearchAct rather than only a recalculation record.
+a new ResearchNode rather than only a recalculation record.
 
 ## Result Authority
 

@@ -14,7 +14,7 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
-def compact_id_time() -> str:
+def compnode_id_time() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S")
 
 

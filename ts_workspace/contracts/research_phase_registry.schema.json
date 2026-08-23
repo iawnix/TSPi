@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research_phase_registry.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "phases"],
+  "properties": {
+    "schema_version": {"const": "ts-research-phase-registry/1"},
+    "phases": {
+      "type": "array",
+      "items": {"$ref": "research_phase.schema.json"}
+    }
+  }
+}

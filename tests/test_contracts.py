@@ -30,8 +30,10 @@ SCHEMA_FILES = {
     "finding_registry.schema.json",
     "observation.schema.json",
     "observation_registry.schema.json",
-    "research_act.schema.json",
-    "research_act_registry.schema.json",
+    "research_phase.schema.json",
+    "research_phase_registry.schema.json",
+    "research_node.schema.json",
+    "research_node_registry.schema.json",
     "research_state.schema.json",
     "validation_result.schema.json",
     "validation_result_registry.schema.json",
@@ -43,9 +45,10 @@ SCHEMA_FILES = {
 CANONICAL_JSON = {
     "workspace.json",
     "research_state.json",
+    "phases.json",
     "claims.json",
     "claim_relations.json",
-    "research_acts.json",
+    "research_nodes.json",
     "observations.json",
     "validation_specs.json",
     "validation_results.json",
@@ -53,10 +56,10 @@ CANONICAL_JSON = {
 }
 
 
-def test_required_schema_files_are_v4_only() -> None:
+def test_required_schema_files_are_v5_only() -> None:
     contract_dir = ROOT / "ts_workspace" / "contracts"
     assert {path.name for path in contract_dir.glob("*.schema.json")} == SCHEMA_FILES
-    assert not any("v2" in name or "v3" in name or "node" in name or "evidence" in name for name in SCHEMA_FILES)
+    assert not any("v2" in name or "v3" in name or "research_act" in name or "evidence" in name for name in SCHEMA_FILES)
     for name in SCHEMA_FILES:
         assert json.loads((contract_dir / name).read_text(encoding="utf-8"))["type"] == "object"
 
@@ -65,15 +68,15 @@ def test_contract_schemas_are_valid_draft_2020_12() -> None:
     check_all_contract_schemas()
 
 
-def test_init_workspace_creates_only_v4_canonical_state(tmp_path: Path) -> None:
+def test_init_workspace_creates_only_v5_canonical_state(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     result = init_workspace(workspace)
-    assert result["schema_version"] == "ts-workspace-init-result/4"
+    assert result["schema_version"] == "ts-workspace-init-result/5"
     assert {path.name for path in workspace.glob("*.json")} == CANONICAL_JSON
     assert {
         path.name for path in workspace.iterdir() if path.is_dir() and not path.name.startswith(".")
-    } == {"acceptances", "acts", "decisions", "inputs", "operations", "reports", "scratch"}
-    assert json.loads((workspace / "workspace.json").read_text(encoding="utf-8"))["kernel_protocol"] == "ts-research-kernel/4"
+    } == {"acceptances", "nodes", "decisions", "inputs", "operations", "reports", "scratch"}
+    assert json.loads((workspace / "workspace.json").read_text(encoding="utf-8"))["kernel_protocol"] == "ts-research-kernel/5"
     assert validate_workspace(workspace)["valid"] is True
 
 
@@ -175,7 +178,7 @@ def test_context_and_validation_are_pure_reads(tmp_path: Path) -> None:
         for path in workspace.rglob("*")
         if path.is_file()
     }
-    assert projection["schema_version"] == "ts-context-projection/1"
+    assert projection["schema_version"] == "ts-context-projection/2"
     assert validation["valid"] is True
     assert before == after
 

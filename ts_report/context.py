@@ -1,4 +1,4 @@
-"""Validated v4 report projection."""
+"""Validated v5 report projection."""
 
 from __future__ import annotations
 
@@ -14,7 +14,8 @@ from ts_workspace.state import (
     CLAIM_RELATIONS_FILE,
     OBSERVATIONS_FILE,
     FINDINGS_FILE,
-    RESEARCH_ACTS_FILE,
+    RESEARCH_PHASES_FILE,
+    RESEARCH_NODES_FILE,
     RESEARCH_STATE_FILE,
     STATE_FILES,
     VALIDATION_RESULTS_FILE,
@@ -59,7 +60,7 @@ def collect_report_context(
         "report_id": report_id_for_revision(revision),
         "focus": {
             "claim_refs": list(state["focus_claim_refs"]),
-            "act_refs": list(state["focus_act_refs"]),
+            "node_refs": list(state["focus_node_refs"]),
         },
         "acceptance_summary": {
             "record_refs": acceptance_refs,
@@ -68,7 +69,8 @@ def collect_report_context(
         },
         "claims": list(documents[CLAIMS_FILE]["claims"]),
         "claim_relations": list(documents[CLAIM_RELATIONS_FILE]["relations"]),
-        "research_acts": list(documents[RESEARCH_ACTS_FILE]["acts"]),
+        "research_phases": list(documents[RESEARCH_PHASES_FILE]["phases"]),
+        "research_nodes": list(documents[RESEARCH_NODES_FILE]["nodes"]),
         "observations": list(documents[OBSERVATIONS_FILE]["observations"]),
         "validation_specs": list(documents[VALIDATION_SPECS_FILE]["specs"]),
         "validation_results": list(documents[VALIDATION_RESULTS_FILE]["results"]),

@@ -49,7 +49,7 @@ export function formatTsSubagentHistory(
   const duration = typeof data.duration_ms === "number" ? ` · ${formatElapsed(data.duration_ms)}` : "";
   const lines = [`TS ${role} · ${operation} · ${outcome}${duration}`];
   const context = compact([
-    Array.isArray(data.act_refs) ? firstString(data.act_refs[0]) : undefined,
+    Array.isArray(data.node_refs) ? firstString(data.node_refs[0]) : undefined,
     firstString(data.run_ref),
     failed ? stringValue(data.failure_class) : undefined,
   ]);
@@ -340,7 +340,7 @@ export function formatTsSubagentHistoryMarkdown(records: TsSubagentRecord[]): st
       "",
       `- Status: \`${inlineCode(record.state)}\``,
       `- Task: \`${inlineCode(record.task_id)}\``,
-      `- Research acts: ${record.act_refs.length > 0 ? record.act_refs.map((value) => `\`${inlineCode(value)}\``).join(", ") : "workspace"}`,
+      `- Research nodes: ${record.node_refs.length > 0 ? record.node_refs.map((value) => `\`${inlineCode(value)}\``).join(", ") : "workspace"}`,
       `- Claims: ${record.claim_refs.length > 0 ? record.claim_refs.map((value) => `\`${inlineCode(value)}\``).join(", ") : "(none)"}`,
     );
     if (record.run_ref) lines.push(`- Run: \`${inlineCode(record.run_ref)}\``);

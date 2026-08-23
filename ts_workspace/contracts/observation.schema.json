@@ -5,14 +5,14 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema_version", "observation_id", "created_by_act", "concept_id", "subject_ref",
+    "schema_version", "observation_id", "created_by_node", "concept_id", "subject_ref",
     "value", "datatype", "unit", "qualifiers", "summary", "artifact_refs", "provenance",
     "created_by_decision", "created_at"
   ],
   "properties": {
-    "schema_version": {"const": "ts-observation/1"},
+    "schema_version": {"const": "ts-observation/2"},
     "observation_id": {"$ref": "#/$defs/observation_id"},
-    "created_by_act": {"$ref": "research_act.schema.json#/$defs/act_id"},
+    "created_by_node": {"$ref": "research_node.schema.json#/$defs/node_id"},
     "concept_id": {"type": "string", "pattern": "^[A-Za-z][A-Za-z0-9_.-]*$", "maxLength": 256},
     "subject_ref": {"type": "string", "minLength": 1, "maxLength": 512},
     "value": {},

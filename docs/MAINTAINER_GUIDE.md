@@ -1,14 +1,14 @@
 # Maintainer Guide
 
 This guide covers development, validation, release, and documentation ownership
-for `@iawnix/ts-agent` protocol v4. Change the authored Git checkout only.
+for `@iawnix/ts-agent` protocol v5. Change the authored Git checkout only.
 Installed releases are immutable runtime artifacts and must never be patched in
 place.
 
 Read [Architecture](ARCHITECTURE.md) before changing a cross-module contract,
 [Installation and Operations](INSTALLATION.md) before changing lifecycle or
-configuration, and [ADR 0001](adr/0001-dag-research-kernel-v4.md) before
-changing the research graph or validation architecture.
+configuration, and [ADR 0002](adr/0002-phase-node-research-kernel-v5.md)
+before changing the research graph or validation architecture.
 
 ## Non-Negotiable Boundary
 
@@ -29,9 +29,9 @@ provenance. Render and Report remain direct deterministic tools.
 
 Closed enums are justified only when code executes a closed contract. Research
 questions, Claim types, relation meanings, Observation concepts, Finding types,
-validation dimensions, Act tags, methods, and strategy rankings remain open
-scientific vocabulary. The Kernel contains no workflow phase, stage, Act type,
-scientific role/layer, or next-action router.
+validation dimensions, Phase titles, Node tags, methods, and strategy rankings
+remain open scientific vocabulary. The Kernel contains no Phase lifecycle,
+prescriptive stage, Node type, scientific role/layer, or next-action router.
 
 ## Repository Map
 
@@ -48,7 +48,7 @@ scientific role/layer, or next-action router.
 | `src/agents/compute/` | Compute task plan, isolated runtime, result derivation, and private prompt |
 | `src/agents/review/` | Review task projection, prompt, result tool, semantic validation |
 | `src/artifacts/` | deterministic render/report request and path validation |
-| `ts_workspace/` | v4 graph state, bootstrap, Decisions, context, validation, transactions |
+| `ts_workspace/` | v5 graph state, bootstrap, Decisions, context, validation, transactions |
 | `ts_validation/` | GateSpec compiler, predicate registry, templates, acceptance profiles |
 | `ts_compute/` | capabilities, artifact catalog, immutable intents, control, collection |
 | `ts_backends/` | deterministic program preparation and parsing |
@@ -88,7 +88,7 @@ Public names describe authority:
 - `ts_notify_user`: deterministic fixed-target external delivery.
 
 Do not add old-name aliases, legacy field readers, dual schemas, migration
-scripts, or output shims. Protocol v4 is a clean boundary. Previous releases are
+scripts, or output shims. Protocol v5 is a clean boundary. Previous releases are
 the only way to operate earlier canonical formats.
 
 The release ships runtime code, public docs, Root Skill, references, schemas,
@@ -96,17 +96,19 @@ templates, theme, and configuration examples. It excludes tests, build/check
 scripts, Git metadata, dependency trees, caches, credentials, conversations,
 workspaces, and generated reports.
 
-## V4 Scientific Model
+## V5 Scientific Model
 
 The stable concepts and their owners are:
 
+- **ResearchPhase**: human navigation metadata only. Every Node has one Phase;
+  Phase never controls lifecycle, policy, or next action.
 - **Claim**: Root-authored scientific statement, assumptions, falsifiers,
   status, and cited scientific records.
 - **ClaimRelation**: open scientific relationship between Claims. The Kernel
   checks identity and acyclicity only.
-- **ResearchAct**: bounded act with a short title, one objective, one principal
-  deliverable, dependency edges, hypothesis, linked records, and terminal
-  result. The Kernel checks the DAG; it does not choose the successor.
+- **ResearchNode**: bounded node with one Phase, a short title, one objective,
+  one principal deliverable, dependency edges, Claim scope, linked records, and
+  terminal result. The Kernel checks the DAG; it does not choose the successor.
 - **Observation**: immutable typed semantic value with exact artifact digests
   and provenance.
 - **Finding**: explicit anomaly, limitation, conflict, or open question.
@@ -118,17 +120,17 @@ The stable concepts and their owners are:
   profile.
 
 Tags and relation types must never select an allowed action, backend, validation
-template, successor Act, or Claim status. New strategies normally require Root
+template, successor Node, or Claim status. New strategies normally require Root
 reasoning and focused documentation, not a Kernel enum.
 
 ## Mutation Invariants
 
-- New canonical state uses `ts-workspace/4` and
-  `ts-research-kernel/4` only.
+- New canonical state uses `ts-workspace/5` and
+  `ts-research-kernel/5` only.
 - Bootstrap initializes fresh state once and otherwise validates without
   canonical rewrites.
-- The Decision draft accepts high-level v4 operations and local aliases; the
-  Kernel allocates all `dec_`, `claim_`, `rel_`, `act_`, `obs_`, `fnd_`, `gsp_`,
+- The Decision draft accepts high-level v5 operations and local aliases; the
+  Kernel allocates all `dec_`, `claim_`, `rel_`, `node_`, `obs_`, `fnd_`, `gsp_`,
   `val_`, and `acc_` identifiers.
 - A draft binds the current frontier projection and workspace revision.
 - Dry-run validation applies the full Decision to an isolated post-state.
@@ -209,12 +211,12 @@ The runtime must preserve these invariants:
 - exactly one Root disposition before the next scientific mutation.
 
 Citation arrays are sets with canonical ordering. Never compare them using
-registry insertion order. Dependencies derive from the Claim/Act graph and
+registry insertion order. Dependencies derive from the Claim/Node graph and
 explicit refs, not role or layer taxonomies.
 
 ### Compute
 
-The Compute task binds one Act, backend, intent ID/digest, remote execution, and
+The Compute task binds one Node, backend, intent ID/digest, remote execution, and
 one exact plan: `launch`, `inspect`, `finalize`, or `cancel`. The child must have
 only the zero-argument action tools for that plan plus `ts_compute_result`.
 Dependent actions require a completed prerequisite, every action is single-use,
@@ -231,13 +233,13 @@ disabled; local TypeBox and semantic validators are authoritative.
 
 ### Compute
 
-The Root selects purpose, Act, backend, task, settings, execution target, and
+The Root selects purpose, Node, backend, task, settings, execution target, and
 logical input artifacts when invoking `ts_subagent_compute`. The host owns
 generated paths, filenames, intent ID, expected artifacts, remote root,
 command, submission binding, action tools, and final structured outcome.
 
 Preparation resolves `artifactId` and `inputRole`, verifies SHA-256, and writes
-`ts-calculation-intent/4`. Subsequent operations cite only the bound `intentId`.
+`ts-calculation-intent/5`. Subsequent operations cite only the bound `intentId`.
 Backends prepare and parse program artifacts but never update Claims or produce
 ValidationResults.
 
@@ -259,15 +261,15 @@ The first input in a fresh workspace enters through `ts_structure_seed` or
 `ts_artifact_import`. Structure seeding owns fixed ETKDG parameters, one
 connected SMILES, chemical metadata checks, content-addressed XYZ/provenance,
 and the explicit rule that a generated geometry is not evidence. Import remains
-bounded inline UTF-8 in registered formats. Both require one open Act, mode-0600
+bounded inline UTF-8 in registered formats. Both require one open Node, mode-0600
 files, no caller path, no symlink/overwrite path, and digest-only activity
 requests. Their returned `art_*` is consumed by the ordinary Compute contract.
 
 ### Render and Report
 
-Artifact requests bind an existing Act and logical artifact IDs. Path policy is
+Artifact requests bind an existing Node and logical artifact IDs. Path policy is
 Kernel/host-owned, rejects symlink traversal, and creates no-overwrite outputs.
-Report creation validates the complete v4 workspace and atomically installs a
+Report creation validates the complete v5 workspace and atomically installs a
 manifest-bound package. Optional report images enter through logical artifact
 IDs, are copied into `assets/`, and are indexed by digest. A report is derived
 output, not a canonical writer.
@@ -285,6 +287,19 @@ manifest-listed report attachments. `notifications.toml` is the only recipient
 authority. CLI failures must remain structured through the TypeScript adapter;
 known delivery is idempotent and ambiguous delivery is not automatically
 retried.
+
+### Web projection
+
+`ts_web` is read-only derived state. Keep Phase grouping, Claim/Node association,
+acceptance currentness, operational identity, and file visibility in shared
+projection helpers rather than duplicating policy in browser JavaScript. The
+default UI must remain Phase-first and user-oriented; raw Claim and Node graphs
+belong under advanced inspection.
+
+The Web registry is external state and must never be created inside a source
+workspace. Do not add write routes, implicit workspace repair, cached canonical
+indexes, or arbitrary workspace file reads. New static assets must be added to
+both `package.json.files` and the package/installer runtime checks.
 
 ## Runtime Durability Semantics
 
@@ -429,14 +444,14 @@ policy versions and must be bumped when their expanded meaning changes.
 2. Run focused tests, full pytest, TypeScript typecheck, Pi adapter tests, and
    package checks.
 3. Confirm docs, examples, CLI help, schemas, and registered tools describe one
-   v4 contract.
+   v5 contract.
 4. Commit only intended source changes.
 5. Build from the clean commit and record source commit, release ID, archive,
    size, and SHA-256.
 6. Install into staging or the authorized TSPi root with
    `install_release.py`.
 7. Resolve the selected isolated Python runtime.
-8. Verify `TSPi --help`, fresh v4 bootstrap, tool inventory, and optional
+8. Verify `TSPi --help`, fresh v5 bootstrap, tool inventory, and optional
    read-only remote status.
 9. Restart user sessions only in an authorized maintenance window.
 
@@ -451,7 +466,7 @@ previous pair through the installer, resolving its runtime, and starting a new
 TSPi process. Do not edit installed files or run Git operations inside a
 release directory.
 
-Rollback never converts canonical state. A v4 workspace requires a v4 release;
+Rollback never converts canonical state. A v5 workspace requires a v5 release;
 an older workspace requires its matching release. Any future conversion must be
 a separately authorized design, not compatibility logic hidden in the runtime.
 
@@ -460,7 +475,7 @@ a separately authorized design, not compatibility logic hidden in the runtime.
 - Does each changed rule have one owner?
 - Do schemas, draft normalization, engine behavior, docs, templates, CLI help,
   UI, and tests agree?
-- Did any legacy reader, alias, migration, Node/Evidence record, workflow phase,
+- Did any legacy reader, alias, migration, Node/Evidence record, Phase lifecycle,
   role/layer router, fixed Gate branch, or deterministic child model return?
 - Can a new installer start and resume a fresh workspace from the docs?
 - Can the Root Agent tell reasoning, canonical mutation, deterministic effects,

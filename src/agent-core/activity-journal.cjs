@@ -25,10 +25,10 @@ function beginActivity(workspaceRoot, input) {
   if (!ACTIVITY_ID.test(activityId)) throw new Error("activity_id must be an operational activity ID");
   const kind = requireEnum(input.kind, "kind", KINDS);
   const operation = boundedString(input.operation, "operation", 128);
-  const actRefs = uniqueSafeIds(input.act_refs || [], "act_refs", 32);
-  validateActRefs(root, actRefs);
-  const ownerRef = actRefs.length === 1
-    ? `acts/${actRefs[0]}/activities`
+  const nodeRefs = uniqueSafeIds(input.node_refs || [], "node_refs", 32);
+  validateNodeRefs(root, nodeRefs);
+  const ownerRef = nodeRefs.length === 1
+    ? `nodes/${nodeRefs[0]}/activities`
     : "operations/activities";
   const parent = resolve(root, ...ownerRef.split("/"));
   assertWithin(root, parent);
@@ -50,17 +50,17 @@ function beginActivity(workspaceRoot, input) {
       activity_id: activityId,
       kind,
       operation,
-      act_refs: actRefs,
+      node_refs: nodeRefs,
       request: isPlainObject(input.request) ? input.request : {},
       started_at: startedAt,
     });
-    writeJsonExclusive(resolve(stageDir, "status.json"), statusDocument(activityId, kind, operation, actRefs, "running", startedAt, null, null));
+    writeJsonExclusive(resolve(stageDir, "status.json"), statusDocument(activityId, kind, operation, nodeRefs, "running", startedAt, null, null));
     renameSync(stageDir, activityDir);
   } finally {
     try { closeSync(reservation); } catch (_error) {}
     try { unlinkSync(reservationPath); } catch (_error) {}
   }
-  return { root, activityDir, activityRef, activityId, kind, operation, actRefs, startedAt, finalized: false };
+  return { root, activityDir, activityRef, activityId, kind, operation, nodeRefs, startedAt, finalized: false };
 }
 
 function completeActivity(handle, result) {
@@ -69,7 +69,7 @@ function completeActivity(handle, result) {
   writeJsonExclusive(resolve(handle.activityDir, "result.json"), result);
   replaceJson(
     resolve(handle.activityDir, "status.json"),
-    statusDocument(handle.activityId, handle.kind, handle.operation, handle.actRefs, "completed", handle.startedAt, new Date().toISOString(), null),
+    statusDocument(handle.activityId, handle.kind, handle.operation, handle.nodeRefs, "completed", handle.startedAt, new Date().toISOString(), null),
   );
   handle.finalized = true;
   return handle.activityRef;
@@ -87,7 +87,7 @@ function failActivity(handle, error, result) {
       handle.activityId,
       handle.kind,
       handle.operation,
-      handle.actRefs,
+      handle.nodeRefs,
       "failed",
       handle.startedAt,
       new Date().toISOString(),
@@ -98,13 +98,13 @@ function failActivity(handle, error, result) {
   return handle.activityRef;
 }
 
-function statusDocument(activityId, kind, operation, actRefs, status, startedAt, completedAt, error) {
+function statusDocument(activityId, kind, operation, nodeRefs, status, startedAt, completedAt, error) {
   return {
     schema_version: "ts-deterministic-activity-status/1",
     activity_id: activityId,
     kind,
     operation,
-    act_refs: actRefs,
+    node_refs: nodeRefs,
     status,
     started_at: startedAt,
     completed_at: completedAt,
@@ -112,22 +112,22 @@ function statusDocument(activityId, kind, operation, actRefs, status, startedAt,
   };
 }
 
-function validateActRefs(root, actRefs) {
-  const registryPath = resolve(root, "research_acts.json");
+function validateNodeRefs(root, nodeRefs) {
+  const registryPath = resolve(root, "research_nodes.json");
   if (!existsSync(registryPath) || lstatSync(registryPath).isSymbolicLink()) {
-    throw new Error("v4 ResearchAct registry does not exist");
+    throw new Error("v5 ResearchNode registry does not exist");
   }
   const registry = JSON.parse(readFileSync(registryPath, "utf8"));
-  if (!isPlainObject(registry) || registry.schema_version !== "ts-research-act-registry/3") {
-    throw new Error("deterministic activities require ts-research-act-registry/3");
+  if (!isPlainObject(registry) || registry.schema_version !== "ts-research-node-registry/1") {
+    throw new Error("deterministic activities require ts-research-node-registry/1");
   }
   const known = new Set(
-    Array.isArray(registry.acts)
-      ? registry.acts.filter(isPlainObject).map((act) => act.act_id).filter((value) => typeof value === "string")
+    Array.isArray(registry.nodes)
+      ? registry.nodes.filter(isPlainObject).map((node) => node.node_id).filter((value) => typeof value === "string")
       : [],
   );
-  const unknown = actRefs.filter((value) => !known.has(value));
-  if (unknown.length) throw new Error(`deterministic activity references unknown ResearchAct: ${unknown.join(", ")}`);
+  const unknown = nodeRefs.filter((value) => !known.has(value));
+  if (unknown.length) throw new Error(`deterministic activity references unknown ResearchNode: ${unknown.join(", ")}`);
 }
 
 function writeJsonExclusive(path, value) {

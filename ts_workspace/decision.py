@@ -1,4 +1,4 @@
-"""Draft and validate revision-bound v4 research Decisions."""
+"""Draft and validate revision-bound v5 research Decisions."""
 
 from __future__ import annotations
 
@@ -22,12 +22,13 @@ from .refs import (
     WorkspaceRefError,
     decision_ordinal,
     next_acceptance_ordinal,
-    next_act_ordinal,
     next_claim_ordinal,
     next_claim_relation_ordinal,
     next_decision_ordinal,
     next_finding_ordinal,
+    next_node_ordinal,
     next_observation_ordinal,
+    next_phase_ordinal,
     next_validation_result_ordinal,
     next_validation_spec_ordinal,
 )
@@ -38,7 +39,8 @@ from .state import (
     CLAIM_RELATIONS_FILE,
     OBSERVATIONS_FILE,
     FINDINGS_FILE,
-    RESEARCH_ACTS_FILE,
+    RESEARCH_PHASES_FILE,
+    RESEARCH_NODES_FILE,
     RESEARCH_STATE_FILE,
     VALIDATION_RESULTS_FILE,
     VALIDATION_SPECS_FILE,
@@ -47,9 +49,10 @@ from .transactions import recorded_decision_ids
 
 
 CREATOR_PREFIXES = {
+    "create_phase": "phase",
     "create_claim": "claim",
     "relate_claims": "rel",
-    "start_act": "act",
+    "start_node": "node",
     "record_observation": "obs",
     "record_finding": "fnd",
     "freeze_validation_spec": "gsp",
@@ -59,7 +62,7 @@ CREATOR_PREFIXES = {
 INPUT_OPERATIONS = frozenset({
     *CREATOR_PREFIXES,
     "update_claim",
-    "complete_act",
+    "complete_node",
     "resolve_finding",
     "set_focus",
 })
@@ -93,7 +96,8 @@ def draft_decision(
         raw_operations,
         existing_claim_ids=state.claims,
         existing_claim_relation_ids=state.relations,
-        existing_act_ids=state.acts,
+        existing_phase_ids=state.phases,
+        existing_node_ids=state.nodes,
         existing_observation_ids=state.observations,
         existing_finding_ids=state.findings,
         existing_validation_spec_ids=state.specs,
@@ -122,7 +126,7 @@ def draft_decision(
 
     frontier = compile_context(root_path, mode="frontier")
     decision = {
-        "schema_version": "ts-research-decision/1",
+        "schema_version": "ts-research-decision/2",
         "decision_id": allocated_decision_id,
         "rationale": request["rationale"].strip(),
         "basis_refs": list(request.get("basis_refs", [])),
@@ -177,7 +181,8 @@ def _allocate_aliases(
     *,
     existing_claim_ids: Any,
     existing_claim_relation_ids: Any,
-    existing_act_ids: Any,
+    existing_phase_ids: Any,
+    existing_node_ids: Any,
     existing_observation_ids: Any,
     existing_finding_ids: Any,
     existing_validation_spec_ids: Any,
@@ -187,9 +192,10 @@ def _allocate_aliases(
     allocations: dict[str, str] = {}
     try:
         ordinals = {
+            "phase": next_phase_ordinal(existing_phase_ids),
             "claim": next_claim_ordinal(existing_claim_ids),
             "rel": next_claim_relation_ordinal(existing_claim_relation_ids),
-            "act": next_act_ordinal(existing_act_ids),
+            "node": next_node_ordinal(existing_node_ids),
             "obs": next_observation_ordinal(existing_observation_ids),
             "fnd": next_finding_ordinal(existing_finding_ids),
             "gsp": next_validation_spec_ordinal(existing_validation_spec_ids),
@@ -229,10 +235,23 @@ def _normalize_operation(
     registry: Any,
 ) -> dict[str, Any]:
     name = str(raw["op"])
+    if name == "create_phase":
+        _keys(raw, required={"op", "local_ref", "title", "objective"})
+        return {
+            "op": "append_research_phase",
+            "record": {
+                "schema_version": "ts-research-phase/1",
+                "phase_id": allocations[raw["local_ref"]],
+                "title": _string(raw["title"], "phase title", 300),
+                "objective": _string(raw["objective"], "phase objective", 2000),
+                "created_by_decision": decision_id,
+                "created_at": created_at,
+            },
+        }
     if name == "create_claim":
-        _keys(raw, required={"op", "local_ref", "claimType", "statement"}, optional={"createdByAct", "assumptions", "falsifiers", "tags"})
+        _keys(raw, required={"op", "local_ref", "claimType", "statement"}, optional={"createdByNode", "assumptions", "falsifiers", "tags"})
         record = {
-            "schema_version": "ts-claim/2",
+            "schema_version": "ts-claim/3",
             "claim_id": allocations[raw["local_ref"]],
             "claim_type": _string(raw["claimType"], "claimType", 128),
             "statement": _string(raw["statement"], "statement", 12000),
@@ -240,7 +259,7 @@ def _normalize_operation(
             "assumptions": _strings(raw.get("assumptions", []), "assumptions", 64, 2000),
             "falsifiers": _strings(raw.get("falsifiers", []), "falsifiers", 64, 2000),
             "tags": _unique_strings(raw.get("tags", []), "tags", 64, 128),
-            "created_by_act": _optional_ref(raw.get("createdByAct"), allocations),
+            "created_by_node": _optional_ref(raw.get("createdByNode"), allocations),
             "observation_refs": [],
             "validation_spec_refs": [],
             "validation_result_refs": [],
@@ -264,31 +283,36 @@ def _normalize_operation(
                 "created_at": created_at,
             },
         }
-    if name == "start_act":
+    if name == "start_node":
         _keys(
             raw,
-            required={"op", "local_ref", "title", "objective", "deliverable"},
-            optional={"dependencyRefs", "claimRefs", "hypothesis", "tags"},
+            required={"op", "local_ref", "phaseRef", "title", "objective", "deliverable"},
+            optional={"dependencyRefs", "primaryClaimRef", "claimRefs", "tags"},
         )
-        act_id = allocations[raw["local_ref"]]
+        node_id = allocations[raw["local_ref"]]
+        claim_refs = _refs(raw.get("claimRefs", []), allocations)
+        primary_claim_ref = _optional_ref(raw.get("primaryClaimRef"), allocations)
+        if primary_claim_ref is not None and primary_claim_ref not in claim_refs:
+            raise ContractError("primaryClaimRef must also appear in claimRefs")
         return {
-            "op": "append_research_act",
+            "op": "append_research_node",
             "record": {
-                "schema_version": "ts-research-act/3",
-                "act_id": act_id,
+                "schema_version": "ts-research-node/1",
+                "node_id": node_id,
+                "phase_ref": _ref(raw["phaseRef"], allocations),
                 "title": _string(raw["title"], "title", 300),
                 "objective": _string(raw["objective"], "objective", 8000),
                 "deliverable": _string(raw["deliverable"], "deliverable", 2000),
                 "status": "open",
                 "dependency_refs": _refs(raw.get("dependencyRefs", []), allocations),
-                "claim_refs": _refs(raw.get("claimRefs", []), allocations),
-                "hypothesis": _hypothesis(raw.get("hypothesis")),
+                "primary_claim_ref": primary_claim_ref,
+                "claim_refs": claim_refs,
                 "tags": _unique_strings(raw.get("tags", []), "tags", 64, 128),
                 "observation_refs": [],
                 "finding_refs": [],
                 "validation_spec_refs": [],
                 "validation_result_refs": [],
-                "artifact_root": f"acts/{act_id}",
+                "artifact_root": f"nodes/{node_id}",
                 "result": None,
                 "created_by_decision": decision_id,
                 "created_at": created_at,
@@ -297,7 +321,7 @@ def _normalize_operation(
     if name == "record_observation":
         _keys(
             raw,
-            required={"op", "local_ref", "actRef", "conceptId", "subjectRef", "value", "datatype", "summary", "provenance"},
+            required={"op", "local_ref", "nodeRef", "conceptId", "subjectRef", "value", "datatype", "summary", "provenance"},
             optional={"unit", "qualifiers", "artifacts"},
         )
         provenance = raw["provenance"]
@@ -308,9 +332,9 @@ def _normalize_operation(
         return {
             "op": "append_observation",
             "record": {
-                "schema_version": "ts-observation/1",
+                "schema_version": "ts-observation/2",
                 "observation_id": allocations[raw["local_ref"]],
-                "created_by_act": _ref(raw["actRef"], allocations),
+                "created_by_node": _ref(raw["nodeRef"], allocations),
                 "concept_id": _string(raw["conceptId"], "conceptId", 256),
                 "subject_ref": _string(raw["subjectRef"], "subjectRef", 512),
                 "value": deepcopy(raw["value"]),
@@ -332,19 +356,19 @@ def _normalize_operation(
         _keys(
             raw,
             required={"op", "local_ref", "findingType", "severity", "statement"},
-            optional={"claimRefs", "actRefs", "basisObservationRefs"},
+            optional={"claimRefs", "nodeRefs", "basisObservationRefs"},
         )
         return {
             "op": "append_finding",
             "record": {
-                "schema_version": "ts-finding/1",
+                "schema_version": "ts-finding/2",
                 "finding_id": allocations[raw["local_ref"]],
                 "finding_type": _string(raw["findingType"], "findingType", 128),
                 "severity": raw["severity"],
                 "status": "open",
                 "statement": _string(raw["statement"], "Finding statement", 12000),
                 "claim_refs": _refs(raw.get("claimRefs", []), allocations),
-                "act_refs": _refs(raw.get("actRefs", []), allocations),
+                "node_refs": _refs(raw.get("nodeRefs", []), allocations),
                 "basis_observation_refs": _refs(raw.get("basisObservationRefs", []), allocations),
                 "resolution": None,
                 "created_by_decision": decision_id,
@@ -354,7 +378,7 @@ def _normalize_operation(
     if name == "freeze_validation_spec":
         _keys(
             raw,
-            required={"op", "local_ref", "actRef", "targetClaimRef", "dimension", "title"},
+            required={"op", "local_ref", "nodeRef", "targetClaimRef", "dimension", "title"},
             optional={"template", "definition"},
         )
         request = {
@@ -368,13 +392,13 @@ def _normalize_operation(
             spec_id=allocations[raw["local_ref"]],
             target_claim_ref=_ref(raw["targetClaimRef"], allocations),
             registry=registry,
-            created_by_act=_ref(raw["actRef"], allocations),
+            created_by_node=_ref(raw["nodeRef"], allocations),
             created_by_decision=decision_id,
             frozen_at=created_at,
         )
         return {"op": "append_validation_spec", "record": record}
     if name == "evaluate_validation":
-        _keys(raw, required={"op", "local_ref", "actRef", "specRef", "observationRefs"})
+        _keys(raw, required={"op", "local_ref", "nodeRef", "specRef", "observationRefs"})
         spec_ref = _ref(raw["specRef"], allocations)
         observation_refs = _refs(raw["observationRefs"], allocations)
         spec = state.specs.get(spec_ref)
@@ -387,7 +411,7 @@ def _normalize_operation(
             spec,
             [state.observations[ref] for ref in observation_refs],
             result_id=allocations[raw["local_ref"]],
-            evaluated_by_act=_ref(raw["actRef"], allocations),
+            evaluated_by_node=_ref(raw["nodeRef"], allocations),
             evaluated_by_decision=decision_id,
             registry=registry,
             evaluated_at=created_at,
@@ -404,13 +428,13 @@ def _normalize_operation(
             "validation_result_refs": _refs(raw.get("validationResultRefs", []), allocations),
             "updated_at": created_at,
         }
-    if name == "complete_act":
-        _keys(raw, required={"op", "actRef", "outcome", "summary"}, optional={"openQuestions"})
+    if name == "complete_node":
+        _keys(raw, required={"op", "nodeRef", "outcome", "summary"}, optional={"openQuestions"})
         return {
-            "op": "complete_research_act",
-            "act_ref": _ref(raw["actRef"], allocations),
+            "op": "complete_research_node",
+            "node_ref": _ref(raw["nodeRef"], allocations),
             "outcome": raw["outcome"],
-            "summary": _string(raw["summary"], "Act completion summary", 12000),
+            "summary": _string(raw["summary"], "Node completion summary", 12000),
             "open_questions": _strings(raw.get("openQuestions", []), "openQuestions", 128, 2000),
             "completed_at": created_at,
         }
@@ -425,8 +449,8 @@ def _normalize_operation(
             "resolved_at": created_at,
         }
     if name == "set_focus":
-        _keys(raw, required={"op", "claimRefs", "actRefs"})
-        return {"op": "set_focus", "claim_refs": _refs(raw["claimRefs"], allocations), "act_refs": _refs(raw["actRefs"], allocations)}
+        _keys(raw, required={"op", "claimRefs", "nodeRefs"})
+        return {"op": "set_focus", "claim_refs": _refs(raw["claimRefs"], allocations), "node_refs": _refs(raw["nodeRefs"], allocations)}
     if name == "accept_claim":
         _keys(raw, required={"op", "local_ref", "claimRef", "profile", "summary"})
         claim_ref = _ref(raw["claimRef"], allocations)
@@ -460,7 +484,7 @@ def _normalize_operation(
             raise ContractError("accept_claim policy failed: " + "; ".join(message for _, message in violations))
         latest_result_refs = [str(result["result_id"]) for result in selected_results]
         record = {
-            "schema_version": "ts-acceptance-record/1",
+            "schema_version": "ts-acceptance-record/2",
             "acceptance_id": allocations[raw["local_ref"]],
             "claim_ref": claim_ref,
             "claim_snapshot": deepcopy(claim),
@@ -487,9 +511,10 @@ class _DraftState:
         self,
         *,
         decision_id: str,
+        phases: dict[str, dict[str, Any]],
         claims: dict[str, dict[str, Any]],
         relations: dict[str, dict[str, Any]],
-        acts: dict[str, dict[str, Any]],
+        nodes: dict[str, dict[str, Any]],
         observations: dict[str, dict[str, Any]],
         specs: dict[str, dict[str, Any]],
         results: dict[str, dict[str, Any]],
@@ -497,9 +522,10 @@ class _DraftState:
         acceptances: set[str],
     ) -> None:
         self.decision_id = decision_id
+        self.phases = phases
         self.claims = claims
         self.relations = relations
-        self.acts = acts
+        self.nodes = nodes
         self.observations = observations
         self.specs = specs
         self.results = results
@@ -510,9 +536,10 @@ class _DraftState:
     def load(cls, root: Path, *, decision_id: str) -> "_DraftState":
         return cls(
             decision_id=decision_id,
+            phases=_map(read_json(root / RESEARCH_PHASES_FILE)["phases"], "phase_id"),
             claims=_map(read_json(root / CLAIMS_FILE)["claims"], "claim_id"),
             relations=_map(read_json(root / CLAIM_RELATIONS_FILE)["relations"], "relation_id"),
-            acts=_map(read_json(root / RESEARCH_ACTS_FILE)["acts"], "act_id"),
+            nodes=_map(read_json(root / RESEARCH_NODES_FILE)["nodes"], "node_id"),
             observations=_map(read_json(root / OBSERVATIONS_FILE)["observations"], "observation_id"),
             specs=_map(read_json(root / VALIDATION_SPECS_FILE)["specs"], "spec_id"),
             results=_map(read_json(root / VALIDATION_RESULTS_FILE)["results"], "result_id"),
@@ -526,34 +553,37 @@ class _DraftState:
 
     def apply(self, operation: dict[str, Any]) -> None:
         name = operation["op"]
-        if name == "append_claim":
+        if name == "append_research_phase":
+            record = deepcopy(operation["record"])
+            self.phases[record["phase_id"]] = record
+        elif name == "append_claim":
             record = deepcopy(operation["record"])
             self.claims[record["claim_id"]] = record
         elif name == "append_claim_relation":
             record = deepcopy(operation["record"])
             self.relations[record["relation_id"]] = record
-        elif name == "append_research_act":
+        elif name == "append_research_node":
             record = deepcopy(operation["record"])
-            self.acts[record["act_id"]] = record
+            self.nodes[record["node_id"]] = record
         elif name == "append_observation":
             record = deepcopy(operation["record"])
             self.observations[record["observation_id"]] = record
-            _append_unique(self.acts.get(record["created_by_act"], {}).get("observation_refs"), record["observation_id"])
+            _append_unique(self.nodes.get(record["created_by_node"], {}).get("observation_refs"), record["observation_id"])
         elif name == "append_finding":
             record = deepcopy(operation["record"])
             self.findings[record["finding_id"]] = record
-            for act_ref in record["act_refs"]:
-                _append_unique(self.acts.get(act_ref, {}).get("finding_refs"), record["finding_id"])
+            for node_ref in record["node_refs"]:
+                _append_unique(self.nodes.get(node_ref, {}).get("finding_refs"), record["finding_id"])
         elif name == "append_validation_spec":
             record = deepcopy(operation["record"])
             self.specs[record["spec_id"]] = record
             _append_unique(self.claims.get(record["target_claim_ref"], {}).get("validation_spec_refs"), record["spec_id"])
-            _append_unique(self.acts.get(record["created_by_act"], {}).get("validation_spec_refs"), record["spec_id"])
+            _append_unique(self.nodes.get(record["created_by_node"], {}).get("validation_spec_refs"), record["spec_id"])
         elif name == "append_validation_result":
             record = deepcopy(operation["record"])
             self.results[record["result_id"]] = record
             _append_unique(self.claims.get(record["target_claim_ref"], {}).get("validation_result_refs"), record["result_id"])
-            _append_unique(self.acts.get(record["evaluated_by_act"], {}).get("validation_result_refs"), record["result_id"])
+            _append_unique(self.nodes.get(record["evaluated_by_node"], {}).get("validation_result_refs"), record["result_id"])
         elif name == "accept_claim":
             self.acceptances.add(str(operation["record"]["acceptance_id"]))
         elif name == "update_claim":
@@ -572,10 +602,10 @@ class _DraftState:
                     "decision_id": self.decision_id,
                     "created_at": operation["updated_at"],
                 })
-        elif name == "complete_research_act":
-            act = self.acts.get(operation["act_ref"])
-            if act:
-                act["status"] = operation["outcome"]
+        elif name == "complete_research_node":
+            node = self.nodes.get(operation["node_ref"])
+            if node:
+                node["status"] = operation["outcome"]
         elif name == "resolve_finding":
             finding = self.findings.get(operation["finding_ref"])
             if finding:
@@ -593,7 +623,10 @@ def _created_identifier(operation: dict[str, Any]) -> str | None:
     record = operation.get("record")
     if not isinstance(record, dict):
         return None
-    for key in ("claim_id", "relation_id", "act_id", "observation_id", "finding_id", "spec_id", "result_id", "acceptance_id"):
+    for key in (
+        "phase_id", "claim_id", "relation_id", "node_id", "observation_id",
+        "finding_id", "spec_id", "result_id", "acceptance_id",
+    ):
         if isinstance(record.get(key), str):
             return str(record[key])
     return None
@@ -650,20 +683,6 @@ def _unique_strings(value: Any, label: str, maximum_items: int, maximum_length: 
     if len(values) != len(set(values)):
         raise ContractError(f"{label} contains duplicates")
     return values
-
-
-def _hypothesis(value: Any) -> dict[str, Any] | None:
-    if value is None:
-        return None
-    if not isinstance(value, dict):
-        raise ContractError("hypothesis must be an object or null")
-    _keys(value, required={"statement"}, optional={"assumptions", "predictions", "falsifiers"}, label="hypothesis")
-    return {
-        "statement": _string(value["statement"], "hypothesis statement", 8000),
-        "assumptions": _strings(value.get("assumptions", []), "hypothesis assumptions", 64, 2000),
-        "predictions": _strings(value.get("predictions", []), "hypothesis predictions", 64, 2000),
-        "falsifiers": _strings(value.get("falsifiers", []), "hypothesis falsifiers", 64, 2000),
-    }
 
 
 def _artifact_bindings(value: Any) -> list[dict[str, str]]:

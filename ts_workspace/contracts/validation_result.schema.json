@@ -9,11 +9,11 @@
   "additionalProperties": false,
   "required": [
     "schema_version", "result_id", "spec_ref", "spec_digest", "target_claim_ref", "dimension",
-    "verdict", "observation_refs", "observation_digests", "check_results", "evaluated_by_act",
+    "verdict", "observation_refs", "observation_digests", "check_results", "evaluated_by_node",
     "evaluated_by_decision", "evaluated_at", "result_digest"
   ],
   "properties": {
-    "schema_version": {"const": "ts-validation-result/1"},
+    "schema_version": {"const": "ts-validation-result/2"},
     "result_id": {"$ref": "#/$defs/result_id"},
     "spec_ref": {"$ref": "validation_spec.schema.json#/$defs/spec_id"},
     "spec_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
@@ -44,7 +44,7 @@
         }
       }
     },
-    "evaluated_by_act": {"$ref": "research_act.schema.json#/$defs/act_id"},
+    "evaluated_by_node": {"$ref": "research_node.schema.json#/$defs/node_id"},
     "evaluated_by_decision": {"$ref": "decision.schema.json#/$defs/decision_id"},
     "evaluated_at": {"type": "string", "minLength": 1, "maxLength": 64},
     "result_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}

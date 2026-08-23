@@ -319,7 +319,7 @@ const records = [{{
   task_id: "sub_1",
   operation: "claim_review",
   state: "running",
-  act_refs: ["act_1"],
+  node_refs: ["node_1"],
   claim_refs: ["claim_1"],
   run_ref: "reviews/claim_1/runs/sub_1",
   summary: "Independent review is running.",
@@ -331,7 +331,7 @@ process.stdout.write(JSON.stringify(formatTsSubagentHistoryMarkdown(records)));
     assert markdown.startswith("# TS Subagent History")
     assert "## Review · claim\\_review" in markdown
     assert "`sub_1`" in markdown
-    assert "`act_1`" in markdown
+    assert "`node_1`" in markdown
     assert "> Independent review is running." in markdown
 
 
@@ -369,7 +369,7 @@ await handlers.tool_execution_start({{
   type: "tool_execution_start",
   toolCallId: "render-1",
   toolName: "ts_render",
-  args: {{ operation: "compare", actId: "act_1", outputName: "compare.png" }},
+  args: {{ operation: "compare", nodeId: "node_1", outputName: "compare.png" }},
 }}, ctx);
 const active = widgets.findLast((item) => Array.isArray(item.content));
 await handlers.session_shutdown({{ type: "session_shutdown", reason: "quit" }}, ctx);

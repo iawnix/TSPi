@@ -9,11 +9,11 @@
   "additionalProperties": false,
   "required": [
     "schema_version", "claim_id", "claim_type", "statement", "status", "assumptions",
-    "falsifiers", "tags", "created_by_act", "observation_refs", "validation_spec_refs",
+    "falsifiers", "tags", "created_by_node", "observation_refs", "validation_spec_refs",
     "validation_result_refs", "history", "created_by_decision", "created_at"
   ],
   "properties": {
-    "schema_version": {"const": "ts-claim/2"},
+    "schema_version": {"const": "ts-claim/3"},
     "claim_id": {"$ref": "#/$defs/claim_id"},
     "claim_type": {"type": "string", "minLength": 1, "maxLength": 128},
     "statement": {"type": "string", "minLength": 1, "maxLength": 12000},
@@ -21,7 +21,7 @@
     "assumptions": {"type": "array", "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 2000}},
     "falsifiers": {"type": "array", "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 2000}},
     "tags": {"type": "array", "uniqueItems": true, "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 128}},
-    "created_by_act": {"oneOf": [{"$ref": "research_act.schema.json#/$defs/act_id"}, {"type": "null"}]},
+    "created_by_node": {"oneOf": [{"$ref": "research_node.schema.json#/$defs/node_id"}, {"type": "null"}]},
     "observation_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "observation.schema.json#/$defs/observation_id"}},
     "validation_spec_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "validation_spec.schema.json#/$defs/spec_id"}},
     "validation_result_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "validation_result.schema.json#/$defs/result_id"}},

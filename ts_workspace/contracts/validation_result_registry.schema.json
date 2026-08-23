@@ -5,7 +5,7 @@
   "additionalProperties": false,
   "required": ["schema_version", "results"],
   "properties": {
-    "schema_version": {"const": "ts-validation-result-registry/1"},
+    "schema_version": {"const": "ts-validation-result-registry/2"},
     "results": {"type": "array", "items": {"$ref": "validation_result.schema.json"}}
   }
 }

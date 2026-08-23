@@ -8,7 +8,7 @@
 | Scientific revision | `{{workspace_revision}}` |
 | Operational revision | `{{operational_revision}}` |
 | Focus Claims | `{{focus_claim_refs}}` |
-| Focus ResearchActs | `{{focus_act_refs}}` |
+| Focus ResearchNodes | `{{focus_node_refs}}` |
 | Current acceptance records | `{{current_acceptance_refs_or_none}}` |
 | Historical acceptance records | `{{acceptance_refs_or_none}}` |
 | Generated | {{timestamp}} |
@@ -16,10 +16,24 @@
 **Conclusion.** {{State exactly which Claims are proposed, supported,
 contradicted, inconclusive, or accepted and what remains open.}}
 
-**Next decision.** {{State the Root Agent's next ResearchAct or explicit stop
+**Next decision.** {{State the Root Agent's next ResearchNode or explicit stop
 and cite its basis.}}
 
-## 2. Claims And Relations
+## 2. Research Roadmap
+
+| Phase | Title | Objective | Node count |
+| --- | --- | --- | --- |
+| `{{phase_id}}` | {{phase_title}} | {{phase_objective}} | {{node_count}} |
+
+| ResearchNode | Phase | Dependencies | Status / outcome | Primary Claim | Claim scope | Objective | Deliverable | Derived activities |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| `{{node_id}}` | `{{phase_ref}}` | `{{dependency_refs_or_none}}` | `{{status_or_outcome}}` | `{{primary_claim_ref_or_none}}` | `{{claim_refs_or_none}}` | {{objective}} | {{deliverable}} | `{{activity_refs}}` |
+
+Failed, blocked, inconclusive, stopped, merged, and backtracked work remains
+visible. Phase groups work for human navigation. Node dependencies alone record
+branching, merging, and backtracking; neither field prescribes the next action.
+
+## 3. Scientific Conclusions
 
 | Claim | Type | Status | Statement | Assumptions | Falsifiers | Scientific basis |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -30,15 +44,6 @@ and cite its basis.}}
 | `{{relation_id}}` | `{{source_claim_ref}}` | `{{relation_type}}` | `{{target_claim_ref}}` | {{rationale}} |
 
 Do not infer priority or execution order from relation labels.
-
-## 3. ResearchAct DAG
-
-| ResearchAct | Dependencies | Status / outcome | Objective | Hypothesis | Open questions | Derived activities |
-| --- | --- | --- | --- | --- | --- | --- |
-| `{{act_id}}` | `{{dependency_refs_or_none}}` | `{{status_or_outcome}}` | {{objective}} | {{hypothesis_or_none}} | {{open_questions_or_none}} | `{{activity_refs}}` |
-
-Failed, blocked, inconclusive, stopped, merged, and backtracked work remains
-visible. DAG topology records lineage and does not prescribe the next act.
 
 ## 4. Computational Protocol
 
@@ -114,9 +119,9 @@ frequency scaling, and missing corrections:
 
 ## 10. Findings And Claim Acceptance
 
-| Finding | Severity | Status | Claims / Acts | Statement | Basis / resolution |
+| Finding | Severity | Status | Claims / Nodes | Statement | Basis / resolution |
 | --- | --- | --- | --- | --- | --- |
-| `{{finding_id}}` | `{{severity}}` | `{{finding_status}}` | `{{claim_and_act_refs}}` | {{statement}} | {{basis_or_resolution}} |
+| `{{finding_id}}` | `{{severity}}` | `{{finding_status}}` | `{{claim_and_node_refs}}` | {{statement}} | {{basis_or_resolution}} |
 
 | Acceptance | Claim | Profile | GateSpecs | ValidationResults | Finding snapshot | State / reason | Decision |
 | --- | --- | --- | --- | --- | --- | --- | --- |
