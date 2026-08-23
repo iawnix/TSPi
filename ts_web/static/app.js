@@ -76,6 +76,18 @@ async function loadWorkspaceCatalog() {
 async function loadWorkspace() {
   state.locatorRequest += 1;
   clearTimeout(state.locatorTimer);
+  const catalogRow = state.workspaces.find(row => row.workspace_id === state.workspaceId);
+  if (catalogRow && catalogRow.available === false) {
+    state.view = null;
+    state.graph = null;
+    state.locator = null;
+    state.locatorQuery = null;
+    state.detail = null;
+    closeInspector();
+    try { localStorage.setItem(workspaceStorageKey, state.workspaceId); } catch (_error) {}
+    renderUnavailableWorkspace(catalogRow);
+    return;
+  }
   const base = `/api/workspace/${encodeURIComponent(state.workspaceId)}`;
   const [workspacePayload, graphPayload] = await Promise.all([api(base), api(`${base}/graph`)]);
   state.view = workspacePayload.view;
@@ -113,9 +125,22 @@ async function refreshExplorer() {
 
 function renderWorkspaceOptions() {
   workspaceSelect.innerHTML = state.workspaces.map(row =>
-    `<option value="${escapeHtml(row.workspace_id)}">${escapeHtml(row.label || row.workspace_id)}</option>`
+    `<option value="${escapeHtml(row.workspace_id)}">${escapeHtml(row.label || row.workspace_id)}${row.available === false ? " (incompatible)" : ""}</option>`
   ).join("");
   workspaceSelect.value = state.workspaceId;
+}
+
+function renderUnavailableWorkspace(row) {
+  setHealth("invalid", "Incompatible");
+  for (const name of ["phases", "claims", "validation", "findings", "activity"]) setCount(name, 0);
+  document.getElementById("sidebar-meta").innerHTML = [
+    escapeHtml(row.workspace_id),
+    "ts-research-kernel/5 required",
+  ].join("<br>");
+  content.innerHTML = [
+    renderHeader(row.label || row.workspace_id, "Registered workspace cannot be read by this release."),
+    `<div class="fatal"><strong>Incompatible workspace</strong><br>${escapeHtml(row.load_error || "The workspace is unavailable.")}</div>`,
+  ].join("");
 }
 
 function updateChrome() {

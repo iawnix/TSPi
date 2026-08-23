@@ -138,6 +138,8 @@ def workspace_summary(
         "workspace_id": workspace_id,
         "label": label,
         "source_root": source_root,
+        "available": True,
+        "load_error": None,
         "kernel_protocol": _object(view.get("workspace")).get("kernel_protocol"),
         "workspace_revision": view.get("workspace_revision"),
         "valid": bool(view.get("valid")),

@@ -484,6 +484,8 @@ def test_static_ui_refreshes_registry_and_persists_theme() -> None:
     assert 'refreshButton.addEventListener("click", refreshExplorer)' in script
     assert 'refreshStatus.textContent = "Refreshing workspace"' in script
     assert 'showToast("Workspace refreshed")' in script
+    assert "renderUnavailableWorkspace(catalogRow)" in script
+    assert 'row.available === false ? " (incompatible)" : ""' in script
 
 
 def test_research_files_payload_is_a_read_only_locator_projection(tmp_path: Path) -> None:
@@ -567,6 +569,38 @@ def test_register_workspaces_validates_all_sources_before_writing(tmp_path: Path
     with pytest.raises(ValueError, match="state_dir"):
         register_workspaces([first, second], state, ["A", "B"])
     assert not state.exists()
+
+
+def test_web_catalog_isolates_incompatible_registered_workspace(tmp_path: Path) -> None:
+    incompatible = tmp_path / "v4-workspace"
+    incompatible.mkdir()
+    _write(incompatible / "workspace.json", {"schema_version": "ts-workspace/4"})
+    compatible = tmp_path / "v5-workspace"
+    _make_workspace(compatible)
+    state = tmp_path / "web-state"
+    old_row, new_row = register_workspaces(
+        [incompatible, compatible],
+        state,
+        ["old workspace", "current workspace"],
+    )
+    server = create_server("127.0.0.1", 0, state)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        payload = _get_json(host, port, "/api/workspaces")
+        assert payload["default_workspace"] == new_row["workspace_id"]
+        summaries = {row["workspace_id"]: row for row in payload["workspaces"]}
+        assert summaries[new_row["workspace_id"]]["available"] is True
+        assert summaries[new_row["workspace_id"]]["load_error"] is None
+        assert summaries[old_row["workspace_id"]]["available"] is False
+        assert summaries[old_row["workspace_id"]]["valid"] is False
+        assert "cannot read v5 workspace file" in summaries[old_row["workspace_id"]]["load_error"]
+        assert _get_text(host, port, f"/api/workspace/{old_row['workspace_id']}")[0] == 400
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
 
 
 def test_web_server_is_read_only_v5_and_has_no_legacy_routes(tmp_path: Path) -> None:

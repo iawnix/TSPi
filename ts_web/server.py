@@ -116,12 +116,47 @@ def _make_handler(state_dir: Path):
 
 
 def _workspaces_payload(state_dir: Path) -> dict[str, Any]:
-    summaries = [workspace_summary(row) for row in list_workspaces(state_dir)]
+    summaries = [_workspace_catalog_summary(row) for row in list_workspaces(state_dir)]
+    available = [row for row in summaries if row["available"]]
     return {
         "schema_version": "ts-explorer-workspace-list/1",
-        "default_workspace": summaries[0]["workspace_id"] if len(summaries) == 1 else None,
+        "default_workspace": (
+            available[0]["workspace_id"]
+            if available
+            else summaries[0]["workspace_id"]
+            if summaries
+            else None
+        ),
         "workspaces": summaries,
     }
+
+
+def _workspace_catalog_summary(row: dict[str, Any]) -> dict[str, Any]:
+    try:
+        return workspace_summary(row)
+    except Exception as exc:  # noqa: BLE001 - one bad workspace must not break the catalog
+        source_root = str(row.get("source_root") or "")
+        workspace_id = str(row.get("workspace_id") or "")
+        return {
+            **row,
+            "workspace_id": workspace_id,
+            "label": str(row.get("label") or (Path(source_root).name if source_root else workspace_id)),
+            "source_root": source_root,
+            "available": False,
+            "load_error": str(exc),
+            "kernel_protocol": None,
+            "workspace_revision": None,
+            "valid": False,
+            "claim_count": 0,
+            "phase_count": 0,
+            "node_count": 0,
+            "open_node_count": 0,
+            "open_finding_count": 0,
+            "focus_claim_refs": [],
+            "focus_node_refs": [],
+            "acceptance_record_count": 0,
+            "current_acceptance_count": 0,
+        }
 
 
 def _workspace_row(state_dir: Path, workspace_id: str) -> dict[str, Any]:
