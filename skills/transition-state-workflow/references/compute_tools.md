@@ -88,7 +88,7 @@ Inspect polls one bound intent and may read one declared artifact tail:
   "operation": "inspect",
   "backend": "gaussian",
   "actId": "act_1",
-  "intentId": "calc_...",
+  "intentId": "calc_1",
   "tailArtifact": "gaussian.out",
   "tailLines": 80
 }
@@ -108,9 +108,9 @@ Finalize collects an allowed output set and parses one collected artifact:
   "operation": "finalize",
   "backend": "gaussian",
   "actId": "act_1",
-  "intentId": "calc_...",
+  "intentId": "calc_1",
   "artifacts": ["gaussian.out", "program_status.json"],
-  "artifactRef": "acts/act_1/attempts/calc_.../outputs/remote/gaussian.out"
+  "artifactRef": "acts/act_1/attempts/calc_1/outputs/remote/gaussian.out"
 }
 ```
 
@@ -124,7 +124,7 @@ individual semantic Observations through a Decision.
 Cancel targets one bound remote intent:
 
 ```json
-{"operation":"cancel","backend":"gaussian","actId":"act_1","intentId":"calc_..."}
+{"operation":"cancel","backend":"gaussian","actId":"act_1","intentId":"calc_1"}
 ```
 
 The action is single-use. Known success is idempotent. An ambiguous cancel must
@@ -139,7 +139,7 @@ attempted. Use `attemptKind=recalculation` when settings or purpose change:
 ```json
 {
   "sourceAct": "act_1",
-  "sourceIntentId": "calc_...",
+  "sourceIntentId": "calc_1",
   "changedSettings": ["method"],
   "purpose": "method_robustness"
 }

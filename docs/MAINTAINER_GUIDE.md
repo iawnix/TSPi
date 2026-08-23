@@ -104,9 +104,9 @@ The stable concepts and their owners are:
   status, and cited scientific records.
 - **ClaimRelation**: open scientific relationship between Claims. The Kernel
   checks identity and acyclicity only.
-- **ResearchAct**: bounded act with dependency edges, objective, hypothesis,
-  linked records, and terminal result. The Kernel checks the DAG; it does not
-  choose the successor.
+- **ResearchAct**: bounded act with a short title, one objective, one principal
+  deliverable, dependency edges, hypothesis, linked records, and terminal
+  result. The Kernel checks the DAG; it does not choose the successor.
 - **Observation**: immutable typed semantic value with exact artifact digests
   and provenance.
 - **Finding**: explicit anomaly, limitation, conflict, or open question.
@@ -268,7 +268,9 @@ requests. Their returned `art_*` is consumed by the ordinary Compute contract.
 Artifact requests bind an existing Act and logical artifact IDs. Path policy is
 Kernel/host-owned, rejects symlink traversal, and creates no-overwrite outputs.
 Report creation validates the complete v4 workspace and atomically installs a
-manifest-bound package. A report is derived output, not a canonical writer.
+manifest-bound package. Optional report images enter through logical artifact
+IDs, are copied into `assets/`, and are indexed by digest. A report is derived
+output, not a canonical writer.
 
 ### Remote and notification
 
@@ -279,8 +281,10 @@ history.
 
 Notifications bind a configured fixed recipient and credentials outside the
 workspace. The Root selects only event, subject, bounded summary, and allowed
-report attachments. Known delivery is idempotent; ambiguous delivery is not
-automatically retried.
+manifest-listed report attachments. `notifications.toml` is the only recipient
+authority. CLI failures must remain structured through the TypeScript adapter;
+known delivery is idempotent and ambiguous delivery is not automatically
+retried.
 
 ## Runtime Durability Semantics
 

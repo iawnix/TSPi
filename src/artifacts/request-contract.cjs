@@ -57,19 +57,34 @@ function validateRenderRequest(rootValue, input, resolvedArtifacts) {
   return { operation, actId, artifacts, outputName, outputRef, outputPath };
 }
 
-function validateReportRequest(rootValue, input) {
+function validateReportRequest(rootValue, input, resolvedArtifacts = []) {
   const root = requireWorkspaceRoot(rootValue);
   if (!isPlainObject(input)) throw new Error("report request must be an object");
-  rejectUnknownKeys(input, ["operation", "packageName"], "report request");
+  rejectUnknownKeys(input, ["operation", "packageName", "assetArtifactIds"], "report request");
   if (input.operation !== "build") throw new Error("report operation must be build");
   const packageName = requireString(input.packageName, "packageName", 128);
   if (!OUTPUT_NAME.test(packageName)) throw new Error("packageName contains unsafe characters");
+  const assetArtifactIds = optionalUniqueStrings(input.assetArtifactIds, "assetArtifactIds", 8, ARTIFACT_ID);
+  if (!Array.isArray(resolvedArtifacts) || resolvedArtifacts.length !== assetArtifactIds.length) {
+    throw new Error("report asset resolution does not match the request");
+  }
+  const resolvedById = new Map(resolvedArtifacts.map((item) => [item?.artifact_id, item]));
+  const assets = assetArtifactIds.map((artifactId) => {
+    const artifact = resolvedById.get(artifactId);
+    if (!isPlainObject(artifact) || artifact.artifact_id !== artifactId) {
+      throw new Error(`report asset was not resolved: ${artifactId}`);
+    }
+    if (typeof artifact.path !== "string" || !/\.(?:gif|png)$/i.test(artifact.path)) {
+      throw new Error(`report asset must be a .png or .gif artifact: ${artifactId}`);
+    }
+    return artifact;
+  });
   const packageRef = `reports/${packageName}`;
   const packagePath = resolve(root, "reports", packageName);
   assertWithin(root, packagePath);
   assertNoSymlinkComponents(root, packageRef);
   if (existsSync(packagePath)) throw new Error(`report package already exists: ${packageName}`);
-  return { operation: "build", packageName, packageRef, packagePath };
+  return { operation: "build", packageName, packageRef, packagePath, assetArtifactIds, assets };
 }
 
 function validateCreatedRenderOutput(rootValue, outputRef) {
@@ -175,6 +190,13 @@ function uniqueStrings(value, label, limit, pattern) {
   if (new Set(rows).size !== rows.length) throw new Error(`${label} contains duplicates`);
   if (rows.some((item) => !pattern.test(item))) throw new Error(`${label} contains an invalid ID`);
   return rows;
+}
+
+function optionalUniqueStrings(value, label, limit, pattern) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.length > limit) throw new Error(`${label} must contain at most ${limit} items`);
+  if (!value.length) return [];
+  return uniqueStrings(value, label, limit, pattern);
 }
 
 function requireEnum(value, label, allowed) {

@@ -16,12 +16,12 @@ export default function (pi: ExtensionAPI) {
       const operation = operationForScenario(scenario);
       const intentDigest = `sha256:${"2".repeat(64)}`;
       const binding = {
-        intentId: "calc_probe",
+        intentId: "calc_1",
         intentDigest,
         executionKind: "remote",
       };
       const task = buildComputeTask({
-        runId: `sub_compute-${scenario}`,
+        runId: "sub_1",
         workspaceRoot: ctx.cwd,
         operation,
         backend: "gaussian",
@@ -31,7 +31,7 @@ export default function (pi: ExtensionAPI) {
         tailLines: operation === "inspect" ? 80 : undefined,
         artifacts: operation === "finalize" ? ["gaussian.out"] : undefined,
         artifactRef: operation === "finalize"
-          ? "acts/act_1/attempts/calc_probe/outputs/remote/gaussian.out"
+          ? "acts/act_1/attempts/calc_1/outputs/remote/gaussian.out"
           : undefined,
       });
       const actions: ActionLog = [];
@@ -104,14 +104,14 @@ function resultFor(name: string, scenario: string, intentDigest: string): Record
       }[action] || "completed";
   return {
     schema_version: action === "tail" ? "ts-calculation-tail/1" : "ts-calculation-result/2",
-    intent_id: "calc_probe",
+    intent_id: "calc_1",
     act_id: "act_1",
     state,
     program_status: action === "parse" ? "completed" : action === "status" ? "running" : "not_run",
     error_class: ambiguous ? (action === "submit" ? "submission_ambiguous" : "cancellation_ambiguous") : null,
     exit_status: action === "parse" ? 0 : null,
     artifact_refs: ["collect", "parse"].includes(action)
-      ? ["acts/act_1/attempts/calc_probe/outputs/remote/gaussian.out"]
+      ? ["acts/act_1/attempts/calc_1/outputs/remote/gaussian.out"]
       : [],
     control: ["submit", "cancel"].includes(action)
       ? {

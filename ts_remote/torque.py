@@ -21,6 +21,8 @@ from .models import (
 _JOB_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.\[\]-]{0,255}$")
 _ENV_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _WORKSPACE_ID = re.compile(r"^ws_[0-9a-f]{24}$")
+_ACT_ID = re.compile(r"^act_[1-9][0-9]*$")
+_CALCULATION_ID = re.compile(r"^calc_[1-9][0-9]*$")
 
 
 def validate_job(config: RemoteJobConfig) -> None:
@@ -75,6 +77,10 @@ def validate_job(config: RemoteJobConfig) -> None:
 
 
 def _validate_remote_binding(config: RemoteJobConfig) -> None:
+    if _ACT_ID.fullmatch(config.act_id) is None:
+        raise RemoteConfigurationError("act_id must be a ResearchAct ID")
+    if _CALCULATION_ID.fullmatch(config.intent_id) is None:
+        raise RemoteConfigurationError("intent_id must be a calculation Attempt ID")
     root = PurePosixPath(validate_remote_path(config.profile.remote_root, label="remote_root"))
     remote = PurePosixPath(validate_remote_path(config.remote_dir, label="remote_dir"))
     try:

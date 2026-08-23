@@ -25,12 +25,13 @@ const {
 } = require("./agent-protocol.cjs");
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const CLAIM_ID = /^claim_[1-9][0-9]*$/;
 const MAX_INVALID_REVIEW_RAW_BYTES = 16 * 1024;
 const MAX_AGENT_TASK_BYTES = 64 * 1024;
 const MAX_AGENT_ACTIONS_BYTES = 1024 * 1024;
 const REVIEW_DISPOSITIONS = ["accepted", "partially_accepted", "rejected", "deferred"];
 
-function beginAgentRun(workspaceRoot, packet, { documents = {} } = {}) {
+function beginAgentRun(workspaceRoot, packet, { documents = {}, ownerClaimRef } = {}) {
   const root = requireWorkspaceRoot(workspaceRoot);
   const task = validateAgentTask(packet);
   if (Buffer.byteLength(serializeAgentDocument(task), "utf8") > MAX_AGENT_TASK_BYTES) {
@@ -39,12 +40,7 @@ function beginAgentRun(workspaceRoot, packet, { documents = {} } = {}) {
   const taskId = requireSafeId(task.task_id, "task_id");
   const scope = task.scope;
   const actRefs = Array.isArray(scope.act_refs) ? scope.act_refs.map((value) => requireSafeId(value, "act_ref")) : [];
-  const ownerRef = actRefs.length === 1
-    ? `acts/${actRefs[0]}/agent-runs`
-    : "operations/agent-runs";
-  if (actRefs.length === 1 && !workspaceContainsAct(root, actRefs[0])) {
-    throw new Error(`agent-run owner ResearchAct does not exist: ${actRefs[0]}`);
-  }
+  const ownerRef = agentRunOwnerRef(root, task, actRefs, ownerClaimRef);
 
   const parent = resolve(root, ...ownerRef.split("/"));
   assertWithin(root, parent);
@@ -366,17 +362,55 @@ function requireSafeId(value, label) {
 function requireReviewRunRef(value, taskId) {
   if (typeof value !== "string") throw new Error("review_run_ref must be a string");
   const parts = value.split("/");
-  const actScoped = parts.length === 4
-    && parts[0] === "acts"
-    && SAFE_ID.test(parts[1] || "")
-    && parts[2] === "agent-runs";
-  const workspaceScoped = parts.length === 3
-    && parts[0] === "operations"
-    && parts[1] === "agent-runs";
-  if ((!actScoped && !workspaceScoped) || parts.at(-1) !== taskId) {
-    throw new Error("review_run_ref must identify the matching ResearchAct or workspace agent run");
+  const claimScoped = parts.length === 4
+    && parts[0] === "reviews"
+    && CLAIM_ID.test(parts[1] || "")
+    && parts[2] === "runs";
+  if (!claimScoped || parts.at(-1) !== taskId) {
+    throw new Error("review_run_ref must identify the matching Claim review run");
   }
   return value;
+}
+
+function agentRunOwnerRef(root, task, actRefs, ownerClaimRef) {
+  if (task.role === "compute") {
+    if (actRefs.length !== 1) throw new Error("Compute run requires exactly one owner ResearchAct");
+    const actRef = actRefs[0];
+    if (!workspaceContainsAct(root, actRef)) {
+      throw new Error(`agent-run owner ResearchAct does not exist: ${actRef}`);
+    }
+    const inputs = isPlainObject(task.inputs) ? task.inputs : {};
+    const intentId = requireSafeId(inputs.intent_id, "intent_id");
+    const attemptRef = `acts/${actRef}/attempts/${intentId}`;
+    assertNoSymlinkComponents(root, attemptRef);
+    const attemptDir = resolve(root, ...attemptRef.split("/"));
+    if (!existsSync(attemptDir)) throw new Error(`Compute run owner attempt does not exist: ${intentId}`);
+    const attemptStat = lstatSync(attemptDir);
+    if (!attemptStat.isDirectory() || attemptStat.isSymbolicLink()) {
+      throw new Error(`Compute run owner attempt is invalid: ${intentId}`);
+    }
+    const intent = readBoundJson(attemptDir, "intent.json");
+    if (intent.intent_id !== intentId || intent.act_id !== actRef) {
+      throw new Error(`Compute run owner attempt is not bound to ${actRef}/${intentId}`);
+    }
+    return `${attemptRef}/runs`;
+  }
+  if (task.role === "review") {
+    const claimRefs = Array.isArray(task.scope.claim_refs)
+      ? task.scope.claim_refs.map((value) => requireSafeId(value, "claim_ref"))
+      : [];
+    const claimRef = ownerClaimRef === undefined
+      ? (claimRefs.length === 1 ? claimRefs[0] : null)
+      : requireSafeId(ownerClaimRef, "owner_claim_ref");
+    if (!claimRef || !claimRefs.includes(claimRef)) {
+      throw new Error("Review run requires one target Claim from its scope");
+    }
+    if (!workspaceContainsClaim(root, claimRef)) {
+      throw new Error(`Review run owner Claim does not exist: ${claimRef}`);
+    }
+    return `reviews/${claimRef}/runs`;
+  }
+  throw new Error(`unsupported agent-run role: ${task.role}`);
 }
 
 function workspaceContainsAct(root, actRef) {
@@ -386,6 +420,15 @@ function workspaceContainsAct(root, actRef) {
   return registry.schema_version === "ts-research-act-registry/3"
     && Array.isArray(registry.acts)
     && registry.acts.some((item) => isPlainObject(item) && item.act_id === actRef);
+}
+
+function workspaceContainsClaim(root, claimRef) {
+  const registryPath = resolve(root, "claims.json");
+  if (!existsSync(registryPath) || lstatSync(registryPath).isSymbolicLink()) return false;
+  const registry = JSON.parse(readFileSync(registryPath, "utf8"));
+  return registry.schema_version === "ts-claim-registry/3"
+    && Array.isArray(registry.claims)
+    && registry.claims.some((item) => isPlainObject(item) && item.claim_id === claimRef);
 }
 
 function assertWithin(root, path) {

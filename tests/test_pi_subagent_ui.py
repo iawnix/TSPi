@@ -19,9 +19,9 @@ def test_subagent_status_reporter_is_monotonic_and_supports_both_roles() -> None
     script = f"""
 import {{ createSubagentStatusReporter,isTsSubagentStatus,terminalStateForReport,terminalStatusForError }} from {json.dumps(STATUS.as_uri())};
 const times=[0,1000,2000,3000].map((value)=>new Date(value));let index=0;const updates=[];
-const report=createSubagentStatusReporter({{tool_call_id:"call-1",task_id:"sub_review-1",role:"review",operation:"claim_review",target_ref:"claim_1"}},(value)=>updates.push(value.details),()=>times[index++]);
+const report=createSubagentStatusReporter({{tool_call_id:"call-1",task_id:"sub_1",role:"review",operation:"claim_review",target_ref:"claim_1"}},(value)=>updates.push(value.details),()=>times[index++]);
 const waiting=report("waiting",{{wait_reason:"model_response",act_refs:["act_1"],claim_refs:["claim_1"]}});
-const complete=report("completed",{{run_ref:"acts/act_1/agent-runs/sub_review-1"}});
+const complete=report("completed",{{run_ref:"reviews/claim_1/runs/sub_1"}});
 process.stdout.write(JSON.stringify({{waiting,complete,updates,valid:isTsSubagentStatus(complete),computeValid:isTsSubagentStatus({{...complete,role:"compute"}}),invalidRole:isTsSubagentStatus({{...complete,role:"render"}}),partial:terminalStateForReport({{outcome:"partial"}}),timeout:terminalStatusForError({{code:"TS_SUBAGENT_TIMEOUT"}})}}));
 """
     result = _node_json(script)
@@ -42,13 +42,13 @@ import {{ createTsActivityStore,reduceTsToolActivity,summarizeTsActivities,sorte
 const store=createTsActivityStore();
 const start=(id,name,args,now)=>reduceTsToolActivity(store,{{type:"tool_execution_start",toolCallId:id,toolName:name,args}},now);
 start("review","ts_subagent_review",{{targetClaimRef:"claim_1"}},1000);
-reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_subagent_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:1,tool_call_id:"review",task_id:"sub_review-1",role:"review",operation:"claim_review",state:"waiting",started_at:new Date(1000).toISOString(),updated_at:new Date(2000).toISOString(),act_refs:["act_1"],claim_refs:["claim_1"],wait_reason:"model_response"}}}}}},2000);
+reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_subagent_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:1,tool_call_id:"review",task_id:"sub_1",role:"review",operation:"claim_review",state:"waiting",started_at:new Date(1000).toISOString(),updated_at:new Date(2000).toISOString(),act_refs:["act_1"],claim_refs:["claim_1"],wait_reason:"model_response"}}}}}},2000);
 start("compute","ts_subagent_compute",{{operation:"launch",backend:"gaussian",actId:"act_1"}},3000);
 start("structure","ts_structure_seed",{{operation:"generate",optimization:"uff",actId:"act_1"}},3250);
 start("artifact","ts_artifact_import",{{operation:"import",format:"xyz_structure",actId:"act_1"}},3500);
 start("render","ts_render",{{operation:"compare",actId:"act_1",outputName:"compare.png"}},4000);
 reduceTsToolActivity(store,{{type:"tool_execution_end",toolCallId:"render",toolName:"ts_render",result:{{}},isError:false}},5000);
-const stale=reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_subagent_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:0,tool_call_id:"review",task_id:"sub_review-1",role:"review",operation:"claim_review",state:"running",started_at:new Date(1000).toISOString(),updated_at:new Date(6000).toISOString()}}}}}},6000);
+const stale=reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_subagent_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:0,tool_call_id:"review",task_id:"sub_1",role:"review",operation:"claim_review",state:"running",started_at:new Date(1000).toISOString(),updated_at:new Date(6000).toISOString()}}}}}},6000);
 const before=sortedTsActivities(store);const pruned=pruneTsActivities(store,20001);const after=sortedTsActivities(store);
 process.stdout.write(JSON.stringify({{before,after,summary:summarizeTsActivities(store),stale,pruned}}));
 """
@@ -89,23 +89,23 @@ process.stdout.write(JSON.stringify(widths));
         assert all(len(item["text"]) <= row["width"] for item in row["lines"])
 
 
-def test_subagent_history_merges_live_and_durable_roles_and_uses_act_paths() -> None:
+def test_subagent_history_merges_live_and_durable_roles_with_owner_paths() -> None:
     script = f"""
 import {{ createTsActivityStore,reduceTsToolActivity }} from {json.dumps(STORE.as_uri())};
 import {{ collectTsSubagentRecords,subagentSelectionLabel }} from {json.dumps(DETAILS.as_uri())};
 const store=createTsActivityStore();
 reduceTsToolActivity(store,{{type:"tool_execution_start",toolCallId:"live",toolName:"ts_subagent_review",args:{{targetClaimRef:"claim_1"}}}},1000);
 const report={{agent_runs:[
-  {{task_id:"sub_durable-1",role:"review",authority:"advisory",operation:"claim_review",status:"completed",result_outcome:"success",act_refs:["act_old"],claim_refs:["claim_2"],run_ref:"acts/act_old/agent-runs/sub_durable-1",summary:"Completed review.",finished_at:"2026-08-16T00:00:00Z"}},
-  {{task_id:"sub_compute-1",role:"compute",authority:"operational",operation:"finalize",status:"completed",result_outcome:"success",act_refs:["act_2"],claim_refs:[],run_ref:"acts/act_2/agent-runs/sub_compute-1",summary:"Collected and parsed.",finished_at:"2026-08-16T00:01:00Z"}},
+  {{task_id:"sub_1",role:"review",authority:"advisory",operation:"claim_review",status:"completed",result_outcome:"success",act_refs:["act_1"],claim_refs:["claim_2"],run_ref:"reviews/claim_2/runs/sub_1",summary:"Completed review.",finished_at:"2026-08-16T00:00:00Z"}},
+  {{task_id:"sub_2",role:"compute",authority:"operational",operation:"finalize",status:"completed",result_outcome:"success",act_refs:["act_2"],claim_refs:[],run_ref:"acts/act_2/attempts/calc_1/runs/sub_2",summary:"Collected and parsed.",finished_at:"2026-08-16T00:01:00Z"}},
 ]}};
 const records=collectTsSubagentRecords(store,report);
 process.stdout.write(JSON.stringify({{records,labels:records.map(subagentSelectionLabel)}}));
 """
     result = _node_json(script)
-    assert {item["task_id"] for item in result["records"]} == {"live", "sub_durable-1", "sub_compute-1"}
-    durable = next(item for item in result["records"] if item["task_id"] == "sub_durable-1")
-    assert durable["run_ref"] == "acts/act_old/agent-runs/sub_durable-1"
+    assert {item["task_id"] for item in result["records"]} == {"live", "sub_1", "sub_2"}
+    durable = next(item for item in result["records"] if item["task_id"] == "sub_1")
+    assert durable["run_ref"] == "reviews/claim_2/runs/sub_1"
     assert any("Review" in label for label in result["labels"])
     assert any("Compute" in label for label in result["labels"])
 
@@ -113,7 +113,7 @@ process.stdout.write(JSON.stringify({{records,labels:records.map(subagentSelecti
 def test_review_history_browser_pages_eight_runs_and_opens_details() -> None:
     script = f"""
 import {{ SubagentHistoryBrowser,SUBAGENT_HISTORY_PAGE_SIZE }} from {json.dumps(HISTORY.as_uri())};
-const records=Array.from({{length:10}},(_,i)=>({{task_id:`sub_review-${{i}}`,role:i%2?"compute":"review",authority:i%2?"operational":"advisory",operation:i%2?"inspect":"claim_review",state:i===9?"failed":"completed",act_refs:[`act_${{i}}`],claim_refs:i%2?[]:[`claim_${{i+1}}`],run_ref:`acts/act_${{i}}/agent-runs/sub_review-${{i}}`,live:false}}));
+const records=Array.from({{length:10}},(_,i)=>{{const ordinal=i+1;const compute=i%2===1;return {{task_id:`sub_${{ordinal}}`,role:compute?"compute":"review",authority:compute?"operational":"advisory",operation:compute?"inspect":"claim_review",state:i===9?"failed":"completed",act_refs:[`act_${{ordinal}}`],claim_refs:compute?[]:[`claim_${{ordinal}}`],run_ref:compute?`acts/act_${{ordinal}}/attempts/calc_${{ordinal}}/runs/sub_${{ordinal}}`:`reviews/claim_${{ordinal}}/runs/sub_${{ordinal}}`,live:false}}}});
 let renders=0;let closed=0;const keybindings={{matches:(data,action)=>data===action}};const theme={{fg:(_c,t)=>t,bg:(_c,t)=>t}};
 const browser=new SubagentHistoryBrowser({{records,workspaceRoot:"/tmp/workspace",tui:{{requestRender:()=>renders++}},theme,keybindings,done:()=>closed++,notifyWarning:()=>{{}},readDocuments:()=>({{result:{{summary:"Bounded review."}},run:{{metadata:{{}}}}}})}});
 const first=browser.render(64);browser.handleInput("tui.select.pageDown");const second=browser.render(64);browser.handleInput("tui.select.confirm");const detail=browser.render(64);browser.handleInput("tui.select.cancel");browser.handleInput("tui.select.cancel");

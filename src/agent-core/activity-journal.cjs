@@ -15,12 +15,14 @@ const { randomBytes } = require("node:crypto");
 const { isAbsolute, relative, resolve, sep } = require("node:path");
 
 const SAFE_ID = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
-const KINDS = new Set(["compute", "structure_seed", "artifact_import", "render", "report"]);
+const ACTIVITY_ID = /^op_[1-9][0-9]*$/;
+const KINDS = new Set(["structure_seed", "artifact_import", "render", "report"]);
 
 function beginActivity(workspaceRoot, input) {
   const root = requireWorkspaceRoot(workspaceRoot);
   if (!isPlainObject(input)) throw new Error("deterministic activity request must be an object");
   const activityId = requireSafeId(input.activity_id, "activity_id");
+  if (!ACTIVITY_ID.test(activityId)) throw new Error("activity_id must be an operational activity ID");
   const kind = requireEnum(input.kind, "kind", KINDS);
   const operation = boundedString(input.operation, "operation", 128);
   const actRefs = uniqueSafeIds(input.act_refs || [], "act_refs", 32);

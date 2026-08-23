@@ -31,6 +31,8 @@ def _seed(root: Path) -> dict[str, str]:
                 {
                     "op": "start_act",
                     "local_ref": "search",
+                    "title": "Bounded research act",
+                    "deliverable": "One bounded research result.",
                     "objective": "Search for observations that distinguish the mechanisms.",
                     "claimRefs": ["$concerted", "$stepwise"],
                 },
@@ -76,7 +78,7 @@ def test_context_derives_claim_act_link_from_creator_provenance(tmp_path: Path) 
             "rationale": "Start an exploratory Act before it discovers a Claim.",
             "basis_refs": [],
             "operations": [
-                {"op": "start_act", "local_ref": "exploration", "objective": "Look for an alternative mechanism."}
+                {"op": "start_act", "local_ref": "exploration", "title": "Bounded research act", "deliverable": "One bounded research result.", "objective": "Look for an alternative mechanism."}
             ],
         },
     )

@@ -83,14 +83,15 @@ def test_configured_python_reads_runtime_manifest(tmp_path: Path) -> None:
     package = tmp_path / "skill"
     package.mkdir()
     (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
+    runtime_probe = _runtime_probe()
     manifest_path = write_manifest(
         package,
         {
             "schema_version": "ts-agent-runtime-v2",
             "python_executable": sys.executable,
-            "env_prefix": str(Path(sys.executable).resolve().parent.parent),
+            "env_prefix": str(_probe_common_prefix(runtime_probe)),
             "spec_sha256": spec_sha256(package),
-            "runtime_probe": _runtime_probe(),
+            "runtime_probe": runtime_probe,
         },
     )
 
@@ -130,17 +131,33 @@ def test_configured_python_rejects_unprobed_or_external_modules(tmp_path: Path) 
     package = tmp_path / "skill"
     package.mkdir()
     (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
+    env_prefix = tmp_path / "managed-env"
+    python = env_prefix / "bin" / "python"
+    numpy_origin = env_prefix / "lib" / "numpy.py"
+    rdkit_origin = env_prefix / "lib" / "rdkit.py"
+    for path in (python, numpy_origin, rdkit_origin):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("# test runtime file\n", encoding="utf-8")
     base = {
         "schema_version": "ts-agent-runtime-v2",
-        "python_executable": sys.executable,
-        "env_prefix": str(Path(sys.executable).resolve().parent.parent),
+        "python_executable": str(python),
+        "env_prefix": str(env_prefix),
         "spec_sha256": spec_sha256(package),
     }
     write_manifest(package, {**base, "runtime_probe": {"ok": True}})
     assert configured_python(package) is None
 
     probe = _runtime_probe()
-    probe["modules"]["rdkit"]["origin"] = str(tmp_path / "user-site" / "rdkit.py")
+    probe["python"]["executable"] = str(python)
+    probe["modules"]["numpy"]["origin"] = str(numpy_origin)
+    probe["modules"]["rdkit"]["origin"] = str(rdkit_origin)
+    write_manifest(package, {**base, "runtime_probe": probe})
+    assert configured_python(package) == python
+
+    external_rdkit = tmp_path / "user-site" / "rdkit.py"
+    external_rdkit.parent.mkdir()
+    external_rdkit.write_text("# external test module\n", encoding="utf-8")
+    probe["modules"]["rdkit"]["origin"] = str(external_rdkit)
     write_manifest(package, {**base, "runtime_probe": probe})
     assert configured_python(package) is None
 
@@ -442,3 +459,10 @@ def _runtime_probe() -> dict[str, object]:
             "rdkit_uff_optimize": True,
         },
     }
+
+
+def _probe_common_prefix(probe: dict[str, object]) -> Path:
+    python = probe["python"]
+    modules = probe["modules"]
+    paths = [python["executable"], *(module["origin"] for module in modules.values())]
+    return Path(os.path.commonpath(paths))

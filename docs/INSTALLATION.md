@@ -203,6 +203,10 @@ The configured ClawEmail root must contain its valid Skill, executable manager,
 and private authentication state. The Root Agent may choose a supported research
 event, subject, bounded summary, and existing report attachments, but it cannot
 change the recipient or credentials. Set `enabled=false` to disable delivery.
+Every attachment must be an unchanged member of a generated report package
+manifest. To attach a Render result, pass its logical artifact ID to
+`ts_report.assetArtifactIds`, then pass the returned `reports/.../assets/...`
+reference to `ts_notify_user`; do not attach `acts/...` paths directly.
 
 The installation configuration is persistent authorization for that one target.
 There is no per-message activation token. A mismatch between the user's
@@ -266,6 +270,11 @@ The `current` pointer switch is atomic. A process already running continues to
 use the release and Python environment it started with. Upgrade does not rewrite
 research workspaces or terminate active calculations.
 
+During installation, obsolete `.pi/ts-email-delivery-policy.json` and
+`.pi/ts-email-delivery-authorization.json` files are moved into a private
+`.pi/archive/legacy-notification-state/<timestamp>/` directory. They are kept
+for audit only and are never read as authorization by this release.
+
 ## Rollback
 
 The supported rollback path is to preserve a previous validated archive and
@@ -302,6 +311,8 @@ cannot be opened by a release that does not implement protocol v4.
 | remote `doctor` fails | Inspect scheduler paths, remote root permissions, and each software profile. |
 | `submission_ambiguous` or `cancellation_ambiguous` | Reconcile durable control records; do not replay the action. |
 | notification config permission error | Set mode `0600` and verify the file is a regular non-symlink path. |
+| notification attachment rejected | Build a report package containing the logical image artifact, then attach only unchanged paths listed by that package manifest. |
+| notification delivery state is `unknown` | Inspect the receipt and provider Sent folder; do not replay automatically. |
 | no API key for selected model | Repair Pi's model/auth configuration; TS workspaces do not own provider keys. |
 | Review run remains pending after a crash | Inspect its journal and independent calculation controls; no automatic stale-run resolver exists. |
 

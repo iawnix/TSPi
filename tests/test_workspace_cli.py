@@ -33,6 +33,8 @@ def test_workspace_cli_v4_roundtrip(tmp_path: Path) -> None:
             {
                 "op": "start_act",
                 "local_ref": "act",
+                "title": "Bounded research act",
+                "deliverable": "One bounded research result.",
                 "objective": "Record a deterministic Observation.",
                 "claimRefs": ["$claim"],
                 "tags": ["cli-test"],
@@ -127,6 +129,8 @@ def test_workspace_cli_draft_rejects_unknown_claim_without_mutation(tmp_path: Pa
             {
                 "op": "start_act",
                 "local_ref": "act",
+                "title": "Bounded research act",
+                "deliverable": "One bounded research result.",
                 "objective": "This must not be created.",
                 "claimRefs": ["claim_999"],
             }

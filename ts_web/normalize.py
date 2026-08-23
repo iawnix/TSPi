@@ -10,8 +10,9 @@ from typing import Any
 from ts_workspace.acceptance import project_acceptances
 from ts_workspace.associations import derive_claim_act_links
 from ts_workspace.io import read_json
-from ts_workspace.operational import operational_snapshot
 from ts_workspace.locator import locate_research_files
+from ts_workspace.operational import operational_snapshot
+from ts_workspace.refs import ACTIVITY_ID, CALCULATION_ID, SUBAGENT_RUN_ID
 from ts_workspace.revision import report_id_for_revision, workspace_revision_from_documents
 from ts_workspace.state import (
     CLAIMS_FILE,
@@ -177,6 +178,11 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
             "observation_count": len(_strings(record.get("observation_refs"))),
             "validation_spec_count": len(_strings(record.get("validation_spec_refs"))),
             "validation_result_count": len(_strings(record.get("validation_result_refs"))),
+            "review_run_count": sum(
+                1
+                for run in _objects(view.get("agent_runs"))
+                if run.get("role") == "review" and record.get("claim_id") in _strings(run.get("claim_refs"))
+            ),
         }
         for record in _objects(view.get("claims"))
     ]
@@ -198,7 +204,9 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
         {
             "id": record.get("act_id"),
             "act_id": record.get("act_id"),
+            "title": record.get("title"),
             "objective": record.get("objective"),
+            "deliverable": record.get("deliverable"),
             "status": record.get("status"),
             "tags": _strings(record.get("tags")),
             "claim_refs": _strings(record.get("claim_refs")),
@@ -211,7 +219,7 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
             "focus": record.get("act_id") in focus_acts,
             "outcome": _object(record.get("result")).get("outcome"),
             "activity_count": len(_objects(record.get("activities"))),
-            "agent_run_count": len(_objects(record.get("agent_runs"))),
+            "compute_run_count": int(record.get("compute_run_count") or 0),
             "unresolved_control_count": len(_objects(record.get("unresolved_controls"))),
         }
         for record in _objects(view.get("research_acts"))
@@ -267,7 +275,6 @@ def claim_payload(source_root: str | Path, claim_id: str, *, label: str | None =
         if claim_ref == claim_id
     }
     acts = [row for row in all_acts if row.get("act_id") in related_act_ids]
-    act_ids = {str(row.get("act_id")) for row in acts}
     observation_ids = {
         *_strings(claim.get("observation_refs")),
         *(ref for act in acts for ref in _strings(act.get("observation_refs"))),
@@ -295,10 +302,10 @@ def claim_payload(source_root: str | Path, claim_id: str, *, label: str | None =
         "current_acceptances": [
             row for row in _objects(view.get("current_acceptances")) if row.get("claim_ref") == claim_id
         ],
-        "agent_runs": [
+        "review_runs": [
             row
             for row in _objects(view.get("agent_runs"))
-            if claim_id in _strings(row.get("claim_refs")) or act_ids.intersection(_strings(row.get("act_refs")))
+            if row.get("role") == "review" and claim_id in _strings(row.get("claim_refs"))
         ],
     }
 
@@ -354,6 +361,8 @@ def list_act_files(source_root: str | Path, act_id: str) -> dict[str, Any]:
     for path in sorted(act_dir.rglob("*")):
         if path.is_symlink() or not path.is_file():
             continue
+        if not _is_current_act_file(path.relative_to(act_dir).parts):
+            continue
         stat = path.stat()
         files.append(
             {
@@ -366,6 +375,22 @@ def list_act_files(source_root: str | Path, act_id: str) -> dict[str, Any]:
     return {"act_id": act_id, "files": files}
 
 
+def _is_current_act_file(parts: tuple[str, ...]) -> bool:
+    if not parts:
+        return False
+    if parts[0] == "agent-runs":
+        return False
+    if parts[0] == "activities":
+        return len(parts) >= 3 and ACTIVITY_ID.fullmatch(parts[1]) is not None
+    if parts[0] != "attempts":
+        return True
+    if len(parts) < 3 or CALCULATION_ID.fullmatch(parts[1]) is None:
+        return False
+    if parts[2] != "runs":
+        return True
+    return len(parts) >= 5 and SUBAGENT_RUN_ID.fullmatch(parts[3]) is not None
+
+
 def _normalize_act(
     root: Path,
     record: dict[str, Any],
@@ -375,37 +400,69 @@ def _normalize_act(
     controls: list[dict[str, Any]],
 ) -> dict[str, Any]:
     act_id = str(record.get("act_id") or "")
+    act_runs = [
+        row
+        for row in agent_runs
+        if row.get("role") == "compute" and act_id in _strings(row.get("act_refs"))
+    ]
+    attempts = _calculation_attempts(root, act_id, agent_runs=act_runs)
     return {
         **record,
-        "attempts": _calculation_attempts(root, act_id),
+        "attempts": attempts,
         "activities": [row for row in activities if act_id in _strings(row.get("act_refs"))],
-        "agent_runs": [row for row in agent_runs if act_id in _strings(row.get("act_refs"))],
+        "compute_run_count": sum(len(_objects(attempt.get("runs"))) for attempt in attempts),
         "unresolved_controls": [row for row in controls if row.get("act_id") == act_id],
     }
 
 
-def _calculation_attempts(root: Path, act_id: str) -> list[dict[str, Any]]:
+def _calculation_attempts(
+    root: Path,
+    act_id: str,
+    *,
+    agent_runs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
     if not act_id:
         return []
     attempts: list[dict[str, Any]] = []
-    for attempt_dir in sorted((root / "acts" / act_id / "attempts").glob("*")):
-        if not attempt_dir.is_dir() or attempt_dir.is_symlink():
+    for attempt_dir in sorted(
+        (root / "acts" / act_id / "attempts").glob("*"),
+        key=_calculation_path_sort_key,
+    ):
+        if (
+            not attempt_dir.is_dir()
+            or attempt_dir.is_symlink()
+            or CALCULATION_ID.fullmatch(attempt_dir.name) is None
+        ):
             continue
         result = _read_optional_object(attempt_dir / "outputs" / "calculation_result.json")
         status = _read_optional_object(attempt_dir / "status.json")
         intent = _read_optional_object(attempt_dir / "intent.json")
+        intent_id = attempt_dir.name
+        runs = [
+            row
+            for row in agent_runs
+            if row.get("role") == "compute" and row.get("intent_id") == intent_id
+        ]
         attempts.append(
             {
-                "intent_id": intent.get("intent_id") or status.get("intent_id") or attempt_dir.name,
+                "intent_id": intent_id,
                 "ref": attempt_dir.relative_to(root).as_posix(),
                 "backend": intent.get("backend") or result.get("backend"),
                 "task_type": intent.get("task_type") or result.get("task_type"),
                 "state": result.get("state") or status.get("state"),
                 "program_status": result.get("program_status") or status.get("program_status"),
                 "error_class": result.get("error_class") or status.get("error_class"),
+                "runs": runs,
+                "run_count": len(runs),
             }
         )
     return attempts
+
+
+def _calculation_path_sort_key(path: Path) -> tuple[int, str]:
+    if CALCULATION_ID.fullmatch(path.name):
+        return (int(path.name.removeprefix("calc_")), "")
+    return (2**63 - 1, path.name)
 
 
 def _recent_decisions(path: Path, limit: int = 200) -> list[dict[str, Any]]:

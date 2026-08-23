@@ -52,7 +52,8 @@ without synchronizing duplicate state.
 
 A ResearchAct records one bounded act:
 
-- objective and optional hypothesis, assumptions, predictions, and falsifiers;
+- short title, objective, principal deliverable, and optional hypothesis,
+  assumptions, predictions, and falsifiers;
 - zero or more dependency Acts;
 - related Claims and descriptive tags;
 - produced scientific records; deterministic activities are derived from the

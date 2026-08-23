@@ -13,7 +13,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerCommand("ts-test-review-child", {
     description: "Run one recording-provider v4 Review child session.",
     handler: async (args, ctx) => {
-      const taskId = "sub_review-probe";
+      const taskId = "sub_1";
       const claimId = "claim_1";
       const actId = "act_1";
       const artifactMode = args.trim() === "artifact";

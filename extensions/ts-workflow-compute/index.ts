@@ -5,6 +5,7 @@ import { Text } from "@earendil-works/pi-tui";
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import {
+  allocateOperationalId,
   requireWorkspaceRoot,
   runComputeJson,
   runRemoteDiagnosticJson,
@@ -23,7 +24,6 @@ import { runComputeOperator } from "../../src/agents/compute/runtime.ts";
 
 const require = createRequire(import.meta.url);
 const { toolText } = require("../ts-workflow-control/summary.cjs");
-const { beginActivity, completeActivity, failActivity } = require("../../src/agent-core/activity-journal.cjs");
 const {
   beginAgentRun,
   completeAgentRun,
@@ -77,7 +77,7 @@ const COMPUTE_COMMON_PARAMETERS = {
   }),
   root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
 };
-const INTENT_ID_PARAMETER = Type.String({ minLength: 6, maxLength: 128 });
+const INTENT_ID_PARAMETER = Type.String({ pattern: "^calc_[1-9][0-9]*$", maxLength: 128 });
 const INPUT_ARTIFACTS_PARAMETER = Type.Array(Type.Object({
   inputRole: Type.String({ pattern: "^[A-Za-z][A-Za-z0-9_]*$", maxLength: 64 }),
   artifactId: Type.String({ pattern: "^art_[0-9a-f]{24}$" }),
@@ -110,7 +110,7 @@ const COMPUTE_PARAMETERS = Type.Object({
   attemptKind: Type.Optional(StringEnum(ATTEMPT_KINDS)),
   recalculationRef: Type.Optional(Type.Object({
     sourceAct: Type.String({ pattern: "^act_[1-9][0-9]*$" }),
-    sourceIntentId: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+    sourceIntentId: Type.Optional(INTENT_ID_PARAMETER),
     changedSettings: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { minItems: 1, uniqueItems: true }),
     purpose: StringEnum(RECALCULATION_PURPOSES),
   }, { additionalProperties: false })),
@@ -166,7 +166,6 @@ type ComputeExecutionStage =
   | "preflight"
   | "agent_runtime"
   | "result_journal"
-  | "activity_journal"
   | "result_delivery";
 type RemoteDiagnosticEntryData = {
   mode: RemoteDiagnosticMode;
@@ -245,7 +244,7 @@ export default function (pi: ExtensionAPI) {
           timeoutSeconds: input.timeoutSeconds,
         },
       );
-      const taskId = `sub_${randomUUID()}`;
+      const taskId = await allocateOperationalId(pi, "sub", root, signal);
       const reportStatus = createSubagentStatusReporter({
         tool_call_id: toolCallId,
         task_id: taskId,
@@ -254,19 +253,6 @@ export default function (pi: ExtensionAPI) {
         target_ref: request.intentId,
       }, onUpdate);
       reportStatus("queued", { act_refs: [request.actId] });
-      const activityId = `op_${randomUUID()}`;
-      const activityJournal = beginActivity(root, {
-        activity_id: activityId,
-        kind: "compute",
-        operation: request.operation,
-        act_refs: [request.actId],
-        request: {
-          backend: request.backend,
-          act_id: request.actId,
-          intent_id: request.intentId || null,
-          task_type: request.taskType || null,
-        },
-      });
       const actions: ActionLog = [];
       let agentJournal: ReturnType<typeof beginAgentRun> | undefined;
       let completedRunRef: string | undefined;
@@ -331,16 +317,6 @@ export default function (pi: ExtensionAPI) {
           metadata: executed.metadata,
         });
         const metadata = { ...executed.metadata, run_ref: completedRunRef };
-        const completedActions = compactCompletedActions(actions);
-        executionStage = "activity_journal";
-        completeActivity(activityJournal, {
-          schema_version: "ts-compute-subagent-activity/1",
-          task_id: taskId,
-          run_ref: completedRunRef,
-          result_outcome: executed.result.outcome,
-          action_outcome: actionOutcome(completedActions),
-          actions: completedActions,
-        });
         executionStage = "result_delivery";
         pi.appendEntry("ts-workspace-subagent-run", metadata);
         reportStatus(terminalStateForReport(executed.result), { run_ref: completedRunRef });
@@ -367,26 +343,6 @@ export default function (pi: ExtensionAPI) {
               agent_journal_error: settlement.journal_error,
             };
             secondaryFailures.push({ stage: "agent_journal", error: settlement.journal_error });
-          }
-        }
-        const failedResult = {
-          schema_version: "ts-compute-subagent-activity/1",
-          task_id: taskId,
-          activity_id: activityId,
-          activity_ref: activityJournal.activityRef,
-          operation: request.operation,
-          backend: request.backend,
-          act_id: request.actId,
-          intent_id: request.intentId || null,
-          actions: completedActions,
-          run_ref: runRef || null,
-          ...failure,
-        };
-        if (!activityJournal.finalized) {
-          try {
-            failActivity(activityJournal, error, failedResult);
-          } catch (journalError) {
-            secondaryFailures.push({ stage: "activity_journal", error: sanitizeActionError(journalError) });
           }
         }
         try {
@@ -844,17 +800,15 @@ function classifyComputeFailure(
   actions: ReturnType<typeof compactCompletedActions>,
   stage: ComputeExecutionStage,
 ) {
-  const journalFailure = stage === "result_journal" || stage === "activity_journal";
+  const journalFailure = stage === "result_journal";
   const deliveryFailure = stage === "result_delivery";
   const failureClass = stage === "result_journal"
     ? "compute_result_journal_failed"
-    : stage === "activity_journal"
-      ? "compute_activity_journal_failed"
-      : deliveryFailure
-        ? "compute_result_delivery_failed"
-        : actions.length
-          ? "compute_subagent_failed_after_action"
-          : "compute_subagent_failed_before_action";
+    : deliveryFailure
+      ? "compute_result_delivery_failed"
+      : actions.length
+        ? "compute_subagent_failed_after_action"
+        : "compute_subagent_failed_before_action";
   return {
     failure_class: failureClass,
     failure_stage: stage === "agent_runtime" && actions.length ? "action" : stage,

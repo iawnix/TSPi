@@ -1,11 +1,10 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { requireWorkspaceRoot, runComputeJson, runWorkspaceJson } from "../shared/workspace-cli.ts";
+import { allocateOperationalId, requireWorkspaceRoot, runComputeJson, runWorkspaceJson } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 import {
   createSubagentStatusReporter,
@@ -62,15 +61,6 @@ export default function (pi: ExtensionAPI) {
       timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 180, description: "Host timeout in seconds. Defaults to 90." })),
     }),
     async execute(toolCallId, params, signal, onUpdate, ctx) {
-      const taskId = `sub_${randomUUID()}`;
-      const reportStatus = createSubagentStatusReporter({
-        tool_call_id: toolCallId,
-        task_id: taskId,
-        role: "review",
-        operation: "claim_review",
-        target_ref: params.targetClaimRef,
-      }, onUpdate);
-      reportStatus("queued");
       if (!ctx.model) {
         throw new Error("No parent model is selected for TS subagent delegation");
       }
@@ -81,6 +71,15 @@ export default function (pi: ExtensionAPI) {
         artifactIds: params.artifactIds,
       });
       const root = requireWorkspaceRoot(request.root, ctx.cwd);
+      const taskId = await allocateOperationalId(pi, "sub", root, signal);
+      const reportStatus = createSubagentStatusReporter({
+        tool_call_id: toolCallId,
+        task_id: taskId,
+        role: "review",
+        operation: "claim_review",
+        target_ref: params.targetClaimRef,
+      }, onUpdate);
+      reportStatus("queued");
       const snapshotArgs = ["--target-claim-ref", request.targetClaimRef];
       const reviewSnapshot = await runWorkspaceJson(pi, "build_review_snapshot", root, snapshotArgs, signal);
       const artifactCatalog = request.artifactIds.length
@@ -98,7 +97,10 @@ export default function (pi: ExtensionAPI) {
         act_refs: packet.scope.act_refs,
         claim_refs: packet.scope.claim_refs,
       });
-      const journal = beginAgentRun(root, packet, { documents: bundle.documents });
+      const journal = beginAgentRun(root, packet, {
+        documents: bundle.documents,
+        ownerClaimRef: request.targetClaimRef,
+      });
       const persisted = readAgentRunInputs(journal);
       try {
         const parentAuth = ctx.modelRegistry.isUsingOAuth(ctx.model)

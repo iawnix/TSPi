@@ -52,6 +52,10 @@ FORBIDDEN_RUNTIME_FILES = {
     "scripts/build_release.py",
     "scripts/check_package.py",
 }
+LEGACY_NOTIFICATION_STATE = (
+    "ts-email-delivery-policy.json",
+    "ts-email-delivery-authorization.json",
+)
 
 
 class ReleaseInstallError(RuntimeError):
@@ -123,6 +127,7 @@ def install_release(manifest_path: Path, archive_path: Path | None, install_root
                 remove_staging_tree(staging)
 
     switch_current(package_home, target)
+    archived_notification_state = archive_legacy_notification_state(install_root)
     install_launcher(install_root, package_home)
     installed_manifest = json.loads((target / ".ts-agent-release.json").read_text(encoding="utf-8"))
     state = {
@@ -140,7 +145,41 @@ def install_release(manifest_path: Path, archive_path: Path | None, install_root
         "package_root": str(target),
         "current": str(package_home / "current"),
         "launcher": str(install_root / "TSPi"),
+        "archived_legacy_notification_state": archived_notification_state,
     }
+
+
+def archive_legacy_notification_state(install_root: Path) -> list[str]:
+    """Disable obsolete recipient authorization without deleting its audit history."""
+
+    pi_root = ensure_private_directory(install_root / ".pi")
+    sources = [pi_root / name for name in LEGACY_NOTIFICATION_STATE if (pi_root / name).exists() or (pi_root / name).is_symlink()]
+    if not sources:
+        return []
+    for source in sources:
+        if source.is_symlink() or not source.is_file():
+            raise ReleaseInstallError(f"legacy notification state must be a regular file: {source}")
+    archive_root = ensure_private_directory(pi_root / "archive" / "legacy-notification-state")
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
+    archive_dir = archive_root / stamp
+    archive_dir.mkdir(mode=0o700)
+    archived: list[str] = []
+    for source in sources:
+        target = archive_dir / source.name
+        os.replace(source, target)
+        os.chmod(target, 0o600)
+        archived.append(target.relative_to(install_root).as_posix())
+    atomic_write_json(
+        archive_dir / "archive.json",
+        {
+            "schema_version": "ts-legacy-notification-state-archive/1",
+            "archived_at_utc": datetime.now(timezone.utc).isoformat(),
+            "reason": "notifications.toml is the sole notification recipient authority",
+            "files": archived,
+        },
+        mode=0o600,
+    )
+    return archived
 
 
 def load_manifest(path: Path) -> dict[str, Any]:

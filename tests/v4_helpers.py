@@ -20,7 +20,9 @@ def bootstrap_v4_workspace(root: Path) -> Path:
 def start_research_act(
     root: Path,
     *,
+    title: str = "Bounded research act",
     objective: str = "Run one bounded research operation.",
+    deliverable: str = "One bounded research result.",
     claim_type: str = "test",
     claim_statement: str = "A bounded scientific claim requires evaluation.",
 ) -> dict[str, str]:
@@ -39,7 +41,9 @@ def start_research_act(
                 {
                     "op": "start_act",
                     "local_ref": "act",
+                    "title": title,
                     "objective": objective,
+                    "deliverable": deliverable,
                     "claimRefs": ["$claim"],
                 },
                 {
@@ -65,7 +69,14 @@ def accept_research_claim(root: Path) -> dict[str, str]:
             "basis_refs": [],
             "operations": [
                 {"op": "create_claim", "local_ref": "claim", "claimType": "research", "statement": "A bounded claim is supported."},
-                {"op": "start_act", "local_ref": "act", "objective": "Test the bounded Claim.", "claimRefs": ["$claim"]},
+                {
+                    "op": "start_act",
+                    "local_ref": "act",
+                    "title": "Bounded Claim validation",
+                    "objective": "Test the bounded Claim.",
+                    "deliverable": "One frozen validation result for the Claim.",
+                    "claimRefs": ["$claim"],
+                },
                 {
                     "op": "record_observation",
                     "local_ref": "observation",

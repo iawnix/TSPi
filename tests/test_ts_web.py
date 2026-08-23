@@ -63,6 +63,8 @@ def _make_workspace(root: Path) -> dict[str, str]:
                 {
                     "op": "start_act",
                     "local_ref": "search",
+                    "title": "Bounded research act",
+                    "deliverable": "One bounded research result.",
                     "objective": "Search for observations that distinguish the mechanisms.",
                     "claimRefs": ["$concerted", "$stepwise"],
                     "tags": ["candidate-search"],
@@ -144,6 +146,8 @@ def _make_workspace(root: Path) -> dict[str, str]:
                 {
                     "op": "start_act",
                     "local_ref": "connectivity",
+                    "title": "Bounded research act",
+                    "deliverable": "One bounded research result.",
                     "objective": "Test bidirectional connectivity.",
                     "dependencyRefs": ["$search"],
                     "claimRefs": ["$concerted"],
@@ -160,41 +164,41 @@ def _make_workspace(root: Path) -> dict[str, str]:
     artifact.parent.mkdir(parents=True, exist_ok=True)
     artifact.write_text("{}\n", encoding="utf-8")
     _write(
-        root / "acts" / act_id / "attempts" / "calc_probe" / "intent.json",
+        root / "acts" / act_id / "attempts" / "calc_1" / "intent.json",
         {
-            "intent_id": "calc_probe",
+            "intent_id": "calc_1",
             "act_id": act_id,
             "backend": "gaussian",
             "task_type": "irc",
         },
     )
     _write(
-        root / "acts" / act_id / "attempts" / "calc_probe" / "status.json",
+        root / "acts" / act_id / "attempts" / "calc_1" / "status.json",
         {
-            "intent_id": "calc_probe",
+            "intent_id": "calc_1",
             "state": "completed",
             "program_status": "normal_termination",
         },
     )
     _write(
-        root / "acts" / act_id / "activities" / "activity_probe" / "request.json",
+        root / "acts" / act_id / "activities" / "op_1" / "request.json",
         {
             "schema_version": "ts-deterministic-activity-request/1",
-            "activity_id": "activity_probe",
-            "kind": "compute",
-            "operation": "prepare",
+            "activity_id": "op_1",
+            "kind": "render",
+            "operation": "molecule",
             "act_refs": [act_id],
             "request": {},
             "started_at": "2026-08-16T00:00:00+00:00",
         },
     )
     _write(
-        root / "acts" / act_id / "activities" / "activity_probe" / "status.json",
+        root / "acts" / act_id / "activities" / "op_1" / "status.json",
         {
             "schema_version": "ts-deterministic-activity-status/1",
-            "activity_id": "activity_probe",
-            "kind": "compute",
-            "operation": "prepare",
+            "activity_id": "op_1",
+            "kind": "render",
+            "operation": "molecule",
             "act_refs": [act_id],
             "status": "completed",
             "started_at": "2026-08-16T00:00:00+00:00",
@@ -203,23 +207,24 @@ def _make_workspace(root: Path) -> dict[str, str]:
         },
     )
     _write(
-        root / "acts" / act_id / "activities" / "activity_probe" / "result.json",
-        {"outcome": "success", "summary": "Input prepared."},
+        root / "acts" / act_id / "activities" / "op_1" / "result.json",
+        {"outcome": "success", "summary": "Molecule rendered."},
     )
     _write(
-        root / "acts" / act_id / "agent-runs" / "sub_review" / "task.json",
+        root / "acts" / act_id / "attempts" / "calc_1" / "runs" / "sub_1" / "task.json",
         {
-            "task_id": "sub_review",
-            "role": "review",
-            "authority": "advisory",
-            "operation": "claim_review",
+            "task_id": "sub_1",
+            "role": "compute",
+            "authority": "operational",
+            "operation": "finalize",
             "scope": {"act_refs": [act_id], "claim_refs": [refs["concerted"]]},
+            "inputs": {"act_id": act_id, "intent_id": "calc_1", "backend": "gaussian"},
         },
     )
     _write(
-        root / "acts" / act_id / "agent-runs" / "sub_review" / "run.json",
+        root / "acts" / act_id / "attempts" / "calc_1" / "runs" / "sub_1" / "run.json",
         {
-            "task_id": "sub_review",
+            "task_id": "sub_1",
             "status": "completed",
             "started_at": "2026-08-16T00:02:00+00:00",
             "finished_at": "2026-08-16T00:03:00+00:00",
@@ -227,7 +232,31 @@ def _make_workspace(root: Path) -> dict[str, str]:
         },
     )
     _write(
-        root / "acts" / act_id / "agent-runs" / "sub_review" / "result.json",
+        root / "acts" / act_id / "attempts" / "calc_1" / "runs" / "sub_1" / "result.json",
+        {"outcome": "success", "summary": "Calculation finalized."},
+    )
+    _write(
+        root / "reviews" / refs["concerted"] / "runs" / "sub_2" / "task.json",
+        {
+            "task_id": "sub_2",
+            "role": "review",
+            "authority": "advisory",
+            "operation": "claim_review",
+            "scope": {"act_refs": [act_id], "claim_refs": [refs["concerted"]]},
+        },
+    )
+    _write(
+        root / "reviews" / refs["concerted"] / "runs" / "sub_2" / "run.json",
+        {
+            "task_id": "sub_2",
+            "status": "completed",
+            "started_at": "2026-08-16T00:02:00+00:00",
+            "finished_at": "2026-08-16T00:03:00+00:00",
+            "error": None,
+        },
+    )
+    _write(
+        root / "reviews" / refs["concerted"] / "runs" / "sub_2" / "result.json",
         {"outcome": "success", "summary": "Connectivity remains untested."},
     )
     return refs
@@ -244,9 +273,36 @@ def test_normalize_workspace_projects_v4_scientific_and_operational_state(tmp_pa
     assert view["focus"]["claim_refs"] == [refs["concerted"]]
     assert view["focus"]["act_refs"] == [refs["connectivity"]]
     active = next(row for row in view["research_acts"] if row["act_id"] == refs["connectivity"])
-    assert active["activities"][0]["activity_id"] == "activity_probe"
-    assert active["agent_runs"][0]["task_id"] == "sub_review"
+    assert active["activities"][0]["activity_id"] == "op_1"
+    assert active["attempts"][0]["runs"][0]["task_id"] == "sub_1"
+    assert active["compute_run_count"] == 1
     assert all("node_id" not in row for row in view["research_acts"])
+
+
+def test_web_ignores_legacy_attempt_ids_and_sorts_current_ordinals(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+    act_id = refs["connectivity"]
+    for intent_id in ("calc_10", "calc_2", "calc_legacy"):
+        _write(
+            workspace / "acts" / act_id / "attempts" / intent_id / "intent.json",
+            {"intent_id": intent_id, "act_id": act_id, "backend": "gaussian", "task_type": "sp"},
+        )
+    legacy_activity = "op_019a338f-acaf-43e6-b498-4e3994971399"
+    legacy_run = "sub_028def15-cbb5-42b4-bbfc-cfbd256c4a0b"
+    _write(workspace / "acts" / act_id / "activities" / legacy_activity / "request.json", {})
+    _write(workspace / "acts" / act_id / "agent-runs" / "sub_old" / "task.json", {})
+    _write(workspace / "acts" / act_id / "attempts" / "calc_1" / "runs" / legacy_run / "task.json", {})
+
+    view = normalize_workspace(workspace)
+    detail = act_payload(workspace, act_id)
+
+    active = next(row for row in view["research_acts"] if row["act_id"] == act_id)
+    assert [row["intent_id"] for row in active["attempts"]] == ["calc_1", "calc_2", "calc_10"]
+    paths = {row["path"] for row in detail["files"]["files"]}
+    assert f"acts/{act_id}/attempts/calc_1/runs/sub_1/task.json" in paths
+    assert not any(legacy_activity in path or legacy_run in path or "/agent-runs/" in path for path in paths)
+    assert not any("/attempts/calc_legacy/" in path for path in paths)
 
 
 def test_graph_uses_claim_relations_and_research_act_dependencies(tmp_path: Path) -> None:
@@ -273,8 +329,8 @@ def test_graph_uses_claim_relations_and_research_act_dependencies(tmp_path: Path
             "kind": "depends_on",
         }
     ]
-    assert graph["deterministic_activities"][0]["kind"] == "compute"
-    assert graph["agent_runs"][0]["role"] == "review"
+    assert graph["deterministic_activities"][0]["kind"] == "render"
+    assert {row["role"] for row in graph["agent_runs"]} == {"compute", "review"}
 
 
 def test_claim_and_act_details_follow_graph_references(tmp_path: Path) -> None:
@@ -288,18 +344,20 @@ def test_claim_and_act_details_follow_graph_references(tmp_path: Path) -> None:
     assert {row["act_id"] for row in claim["research_acts"]} == {refs["search"], refs["connectivity"]}
     assert claim["validation_results"][0]["verdict"] == "pass"
     assert active["dependencies"][0]["act_id"] == refs["search"]
-    assert active["research_act"]["activities"][0]["activity_id"] == "activity_probe"
-    assert active["research_act"]["attempts"] == [
-        {
-            "intent_id": "calc_probe",
-            "ref": f"acts/{refs['connectivity']}/attempts/calc_probe",
-            "backend": "gaussian",
-            "task_type": "irc",
-            "state": "completed",
-            "program_status": "normal_termination",
-            "error_class": None,
-        }
-    ]
+    assert active["research_act"]["activities"][0]["activity_id"] == "op_1"
+    assert claim["review_runs"][0]["task_id"] == "sub_2"
+    attempt = active["research_act"]["attempts"][0]
+    assert {key: value for key, value in attempt.items() if key != "runs"} == {
+        "intent_id": "calc_1",
+        "ref": f"acts/{refs['connectivity']}/attempts/calc_1",
+        "backend": "gaussian",
+        "task_type": "irc",
+        "state": "completed",
+        "program_status": "normal_termination",
+        "error_class": None,
+        "run_count": 1,
+    }
+    assert attempt["runs"][0]["task_id"] == "sub_1"
     assert completed["dependents"][0]["act_id"] == refs["connectivity"]
     assert completed["research_act"]["hypothesis"]["falsifiers"] == [
         "The probe is compatible with both mechanisms."
@@ -320,7 +378,7 @@ def test_web_derives_claim_act_link_from_creator_provenance(tmp_path: Path) -> N
             "rationale": "Start an exploratory Act before it discovers a Claim.",
             "basis_refs": [],
             "operations": [
-                {"op": "start_act", "local_ref": "exploration", "objective": "Look for an alternative mechanism."}
+                {"op": "start_act", "local_ref": "exploration", "title": "Bounded research act", "deliverable": "One bounded research result.", "objective": "Look for an alternative mechanism."}
             ],
         },
     )
@@ -363,6 +421,9 @@ def test_static_ui_exposes_v4_dual_graph_without_legacy_routes() -> None:
     assert "ResearchAct DAG" in html
     assert "Lineage and Claims" in html
     assert "Calculation attempts" in html
+    assert "Compute runs" in html
+    assert "Review runs" in html
+    assert "Research contract" in html
     assert "Research Files" in html
     assert "renderResearchFiles" in html
     assert "/files?query=" in html
@@ -482,7 +543,11 @@ def test_web_server_is_read_only_v4_and_has_no_legacy_routes(tmp_path: Path) -> 
         files = _get_json(host, port, f"{base}/files?query={refs['connectivity']}")
         assert files["matches"][0]["ref"] == refs["connectivity"]
         assert _get_json(host, port, f"{base}/files")["query_mode"] == "index"
-        assert _get_json(host, port, f"{base}/activity")["agent_runs"][0]["task_id"] == "sub_review"
+        agent_runs = _get_json(host, port, f"{base}/activity")["agent_runs"]
+        assert {(row["task_id"], row["role"]) for row in agent_runs} == {
+            ("sub_1", "compute"),
+            ("sub_2", "review"),
+        }
         assert _get_json(host, port, f"{base}/claim/{refs['concerted']}")["claim"]["status"] == "supported"
         act = _get_json(host, port, f"{base}/act/{refs['connectivity']}")
         assert act["research_act"]["status"] == "open"

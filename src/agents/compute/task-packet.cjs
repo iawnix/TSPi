@@ -47,10 +47,10 @@ function buildComputeTask({
   const plan = COMPUTE_PLANS[operation];
   if (!plan) throw new Error(`unsupported Compute operation: ${operation}`);
   if (!isPlainObject(binding)) throw new Error("Compute task requires a preflight binding");
-  const taskId = requirePattern(runId, "runId", /^sub_[A-Za-z0-9-]+$/, 128);
+  const taskId = requirePattern(runId, "runId", /^sub_[1-9][0-9]*$/, 128);
   const normalizedActId = requirePattern(actId, "actId", /^act_[1-9][0-9]*$/, 128);
   const normalizedBackend = requireString(backend, "backend", 64);
-  const intentId = requirePattern(binding.intentId, "binding.intentId", /^[A-Za-z0-9][A-Za-z0-9._-]{5,127}$/, 128);
+  const intentId = requirePattern(binding.intentId, "binding.intentId", /^calc_[1-9][0-9]*$/, 128);
   const intentDigest = requirePattern(binding.intentDigest, "binding.intentDigest", /^sha256:[0-9a-f]{64}$/, 71);
   if (binding.executionKind !== "remote") {
     throw new Error(`Compute ${operation} requires a remote execution binding`);

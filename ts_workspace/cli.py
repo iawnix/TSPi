@@ -13,6 +13,7 @@ from .decision import draft_decision
 from .engine import apply_decision, init_workspace, validate_decision_dry_run
 from .errors import ContractError
 from .operational import operational_snapshot
+from .operational_ids import allocate_operational_id
 from .validator import validate_workspace
 
 
@@ -52,6 +53,10 @@ def main(argv: list[str] | None = None) -> int:
 
     command = sub.add_parser("operational", help="project noncanonical activities, Review runs, and controls")
     command.add_argument("--root", required=True)
+
+    command = sub.add_parser("allocate_operational_id", help="reserve one workspace-wide calc, sub, or op ID")
+    command.add_argument("--root", required=True)
+    command.add_argument("--kind", required=True, choices=["calc", "sub", "op"])
 
     command = sub.add_parser("draft_decision", help="allocate IDs and freeze one ts-research-decision/1")
     command.add_argument("--root", required=True)
@@ -121,6 +126,8 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
         return validate_workspace(args.root)
     if args.command == "operational":
         return operational_snapshot(args.root)
+    if args.command == "allocate_operational_id":
+        return allocate_operational_id(args.root, args.kind)
     if args.command == "draft_decision":
         return draft_decision(args.root, _load_object(args.request_file, "decision draft request"))
     decision = _load_object(args.decision_file, "decision file")

@@ -29,6 +29,20 @@ export async function runWorkspaceJson(
   return parseJsonOutput(result);
 }
 
+export async function allocateOperationalId(
+  pi: ExtensionAPI,
+  kind: "calc" | "sub" | "op",
+  root: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const result = await runWorkspaceJson(pi, "allocate_operational_id", root, ["--kind", kind], signal);
+  const identifier = result?.identifier;
+  if (typeof identifier !== "string" || !new RegExp(`^${kind}_[1-9][0-9]*$`).test(identifier)) {
+    throw new Error(`workspace allocator returned an invalid ${kind} ID`);
+  }
+  return identifier;
+}
+
 export async function runWorkspaceDecisionJson(
   pi: ExtensionAPI,
   command: string,
@@ -163,13 +177,20 @@ export async function runReportJson(
   root: string,
   packagePath: string,
   excludeActivityRef: string,
+  assetArtifactIds: string[],
   signal?: AbortSignal,
 ) {
   return runPackageJson(
     pi,
     root,
     REPORT_CLI,
-    ["--root", root, "--package-dir", packagePath, "--exclude-activity-ref", excludeActivityRef, "--json"],
+    [
+      "--root", root,
+      "--package-dir", packagePath,
+      "--exclude-activity-ref", excludeActivityRef,
+      ...assetArtifactIds.flatMap((artifactId) => ["--asset-artifact-id", artifactId]),
+      "--json",
+    ],
     signal,
     300_000,
   );
@@ -185,7 +206,7 @@ export async function runNotifyUserJson(
   const requestFile = join(tempRoot, "request.json");
   try {
     writeFileSync(requestFile, `${JSON.stringify(request, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-    return await runPackageJson(
+    const result = await runPackageJson(
       pi,
       root,
       EMAIL_CLI,
@@ -193,9 +214,27 @@ export async function runNotifyUserJson(
       signal,
       150_000,
     );
+    if (result?.ok === false) throw notificationError(result);
+    return result;
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }
+}
+
+function notificationError(payload: any): Error {
+  const details = payload && typeof payload === "object" ? payload : {};
+  const errorDetails = details.error && typeof details.error === "object" ? details.error : {};
+  const message = typeof errorDetails.message === "string" && errorDetails.message.trim()
+    ? errorDetails.message.trim()
+    : "TS notification failed without a structured message";
+  const error = new Error(message) as Error & Record<string, unknown>;
+  error.name = "NotificationError";
+  error.code = errorDetails.code;
+  error.error_class = errorDetails.class;
+  error.state = details.state;
+  error.retry_disposition = details.retry_disposition;
+  error.receipt_ref = details.receipt_ref;
+  return error;
 }
 
 export function requireWorkspaceRoot(inputRoot: string | undefined, cwd: string): string {

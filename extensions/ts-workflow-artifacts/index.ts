@@ -2,10 +2,11 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { mkdirSync, rmdirSync } from "node:fs";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
 import {
+  allocateOperationalId,
   requireWorkspaceRoot,
   runArtifactImportJson,
   runComputeJson,
@@ -49,6 +50,8 @@ type ReportRequest = {
   packageName: string;
   packageRef: string;
   packagePath: string;
+  assetArtifactIds: string[];
+  assets: ResolvedArtifact[];
 };
 
 const NOTIFICATION_EVENTS = [
@@ -86,7 +89,7 @@ export default function (pi: ExtensionAPI) {
     }, { additionalProperties: false }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
-      const activityId = `op_${randomUUID()}`;
+      const activityId = await allocateOperationalId(pi, "op", root, signal);
       const journal = beginActivity(root, {
         activity_id: activityId,
         kind: "structure_seed",
@@ -158,7 +161,7 @@ export default function (pi: ExtensionAPI) {
     }, { additionalProperties: false }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
-      const activityId = `op_${randomUUID()}`;
+      const activityId = await allocateOperationalId(pi, "op", root, signal);
       const journal = beginActivity(root, {
         activity_id: activityId,
         kind: "artifact_import",
@@ -237,7 +240,7 @@ export default function (pi: ExtensionAPI) {
         inputArtifactIds: params.inputArtifactIds,
         outputName: params.outputName,
       }, resolved) as RenderRequest;
-      const activityId = `op_${randomUUID()}`;
+      const activityId = await allocateOperationalId(pi, "op", root, signal);
       const journal = beginActivity(root, {
         activity_id: activityId,
         kind: "render",
@@ -304,27 +307,43 @@ export default function (pi: ExtensionAPI) {
     parameters: Type.Object({
       operation: Type.Literal("build"),
       packageName: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$" }),
+      assetArtifactIds: Type.Optional(Type.Array(
+        Type.String({ pattern: "^art_[0-9a-f]{24}$" }),
+        { maxItems: 8, uniqueItems: true },
+      )),
       root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
     }, { additionalProperties: false }),
     async execute(_toolCallId, params, signal, onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
+      const assetArtifactIds = params.assetArtifactIds || [];
+      const resolvedAssets = assetArtifactIds.length
+        ? await resolveArtifacts(pi, root, assetArtifactIds, signal)
+        : [];
       const request = validateReportRequest(root, {
         operation: params.operation,
         packageName: params.packageName,
-      }) as ReportRequest;
-      const activityId = `op_${randomUUID()}`;
+        assetArtifactIds,
+      }, resolvedAssets) as ReportRequest;
+      const activityId = await allocateOperationalId(pi, "op", root, signal);
       const journal = beginActivity(root, {
         activity_id: activityId,
         kind: "report",
         operation: "build",
-        act_refs: [],
-        request: { package_name: request.packageName },
+        act_refs: [...new Set(request.assets.map((item) => item.owner_act).filter((item): item is string => typeof item === "string"))],
+        request: { package_name: request.packageName, asset_artifact_ids: request.assetArtifactIds },
       });
       onUpdate?.(toolText(`TS Report build · ${request.packageName}`, {
         activity: { activity_id: activityId, state: "running" },
       }));
       try {
-        const raw = await runReportJson(pi, root, request.packagePath, journal.activityRef, signal);
+        const raw = await runReportJson(
+          pi,
+          root,
+          request.packagePath,
+          journal.activityRef,
+          request.assetArtifactIds,
+          signal,
+        );
         const refs = expectedReportRefs(request.packageRef);
         assertReportBuilderPaths(root, refs, raw);
         const manifestDigest = requireDigest(raw?.manifest_digest, "report manifest digest");
@@ -350,6 +369,8 @@ export default function (pi: ExtensionAPI) {
           workspace_revision: revision,
           operational_revision: operationalRevision,
           file_count: verified.file_count,
+          asset_artifact_ids: request.assetArtifactIds,
+          asset_refs: requireReportAssetRefs(raw?.asset_refs, request.packageRef, request.assetArtifactIds.length),
         };
         completeActivity(journal, result);
         pi.appendEntry("ts-deterministic-activity", result);
@@ -451,6 +472,18 @@ function assertReportBuilderPaths(root: string, refs: ReturnType<typeof expected
       throw new Error(`report builder returned an unexpected ${key}`);
     }
   }
+}
+
+function requireReportAssetRefs(value: unknown, packageRef: string, expectedCount: number): string[] {
+  if (!Array.isArray(value) || value.length !== expectedCount) {
+    throw new Error("report builder returned an invalid asset_refs list");
+  }
+  return value.map((item) => {
+    if (typeof item !== "string" || !item.startsWith(`${packageRef}/assets/`)) {
+      throw new Error("report builder returned an unsafe asset ref");
+    }
+    return item;
+  });
 }
 
 function deterministicFailure(

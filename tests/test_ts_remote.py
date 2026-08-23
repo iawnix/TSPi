@@ -67,13 +67,13 @@ def _job(tmp_path: Path) -> RemoteJobConfig:
     source = tmp_path / "candidate.gjf"
     source.write_text("#P HF/STO-3G\n", encoding="utf-8")
     return RemoteJobConfig(
-        submission_id="tsjob_ws_0123456789abcdef01234567_calc_test_0123456789abcdef",
-        intent_id="calc_test",
+        submission_id="tsjob_ws_0123456789abcdef01234567_calc_1_0123456789abcdef",
+        intent_id="calc_1",
         intent_digest="sha256:" + "a" * 64,
         act_id="act_1",
         backend="gaussian",
         profile=_profile(tmp_path),
-        remote_dir="/remote/ts/workspaces/ws_0123456789abcdef01234567/runs/act_1/calc_test",
+        remote_dir="/remote/ts/workspaces/ws_0123456789abcdef01234567/runs/act_1/calc_1",
         resources=RemoteResources(
             queue="batch",
             nodes=1,
@@ -90,6 +90,17 @@ def _job(tmp_path: Path) -> RemoteJobConfig:
     )
 
 
+def test_remote_job_rejects_legacy_calculation_ids(tmp_path: Path) -> None:
+    legacy = replace(
+        _job(tmp_path),
+        intent_id="calc_test",
+        remote_dir="/remote/ts/workspaces/ws_0123456789abcdef01234567/runs/act_1/calc_test",
+    )
+
+    with pytest.raises(RemoteConfigurationError, match="calculation Attempt ID"):
+        render_job_script(legacy)
+
+
 def _executable_job(
     tmp_path: Path,
     *,
@@ -97,7 +108,7 @@ def _executable_job(
     scratch_root: Path,
 ) -> tuple[RemoteJobConfig, Path]:
     remote_root = tmp_path / "remote"
-    remote_dir = remote_root / "workspaces/ws_0123456789abcdef01234567/runs/act_1/calc_test"
+    remote_dir = remote_root / "workspaces/ws_0123456789abcdef01234567/runs/act_1/calc_1"
     remote_dir.mkdir(parents=True)
     (remote_dir / "candidate.gjf").write_text("#P HF/STO-3G\n", encoding="utf-8")
     activation = tmp_path / "activate.sh"
@@ -316,7 +327,7 @@ def test_generated_gaussian_script_records_unavailable_scratch_root(tmp_path: Pa
 def test_torque_parser_and_terminal_c_do_not_imply_program_failure() -> None:
     records = parse_records(
         """Job Id: 207100.cluster.hpc
-    Job_Name = calc_test
+    Job_Name = calc_1
     job_state = C
     Resource_List.walltime = 04:00:00
 """,
@@ -553,7 +564,7 @@ def test_control_records_accept_versioned_submission_receipt() -> None:
         "\n".join(
             [
                 "schema_version=ts-remote-submission/1",
-                "submission_id=tsjob_ws_0123456789abcdef01234567_calc_test_0123456789abcdef",
+                "submission_id=tsjob_ws_0123456789abcdef01234567_calc_1_0123456789abcdef",
                 "state=accepted",
                 f"script_sha256={'a' * 64}",
                 "qsub_exit=0",

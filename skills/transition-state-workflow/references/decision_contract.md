@@ -73,10 +73,10 @@ derived comparison against later canonical state.
 Completing an Act does not infer Claim status or acceptance. Updating a Claim
 does not complete an Act. Deterministic activities are derived from journaled
 `act_refs`; never add a Decision solely to link an operation. Completion fails
-while an owned activity is running/pending, an owned activity journal is
-inconsistent, or a compute control is pending/unresolved. A terminal failed
-activity can close the Act as `inconclusive`, `blocked`, or `stopped`, but not
-as `completed`. Pure analytical Acts need no activity record.
+while an owned Compute run or deterministic activity is non-terminal, an owned
+activity journal is inconsistent, or a compute control is pending/unresolved. A
+terminal failed activity can close the Act as `inconclusive`, `blocked`, or
+`stopped`, but not as `completed`. Pure analytical Acts need no activity record.
 
 ## Three-Step Commit
 

@@ -197,14 +197,13 @@ def test_intent_paths_ids_and_preflight_are_research_act_bound(tmp_path: Path) -
     first = _create(workspace, act_id)
     second = _create(workspace, act_id)
 
-    prefix = f"calc_{act_id}_gaussian_opt_freq"
     assert first["schema_version"] == "ts-calculation-intent-created/2"
-    assert first["intent_id"] == f"{prefix}_0001"
-    assert second["intent_id"] == f"{prefix}_0002"
-    assert first["intent_ref"] == f"acts/{act_id}/attempts/{prefix}_0001/intent.json"
+    assert first["intent_id"] == "calc_1"
+    assert second["intent_id"] == "calc_2"
+    assert first["intent_ref"] == f"acts/{act_id}/attempts/calc_1/intent.json"
     assert first["input_refs"] == {"gjf": "inputs/candidate.gjf"}
     assert first["expected_artifacts"] == [
-        f"acts/{act_id}/attempts/{prefix}_0001/outputs/gaussian.out"
+        f"acts/{act_id}/attempts/calc_1/outputs/gaussian.out"
     ]
 
     binding = preflight_calculation(
@@ -463,7 +462,7 @@ def test_compute_result_contract_rejects_scientific_verdict_fields() -> None:
     result = {
         "schema_version": "ts-calculation-result/2",
         "job_id": None,
-        "intent_id": "calc_test",
+        "intent_id": "calc_1",
         "act_id": "act_1",
         "state": "prepared",
         "program_status": "not_run",
@@ -480,4 +479,9 @@ def test_compute_result_contract_rejects_scientific_verdict_fields() -> None:
     del result["claim_status"]
     result["parser_facts"] = {"claim_status": "supported"}
     with pytest.raises(ComputeContractError, match="claim_status"):
+        validate_compute_contract("calculation_result.schema.json", result)
+
+    result["parser_facts"] = {}
+    result["intent_id"] = "calc_test"
+    with pytest.raises(ComputeContractError, match="does not match"):
         validate_compute_contract("calculation_result.schema.json", result)

@@ -1,8 +1,8 @@
 """Validated read model for deterministic activity journals.
 
-The activity journal is the authoritative record of Compute, structure seed,
-input import, Render, and Report execution. ResearchAct documents do not duplicate these
-relationships.
+The activity journal is the authoritative record of structure seed, input
+import, Render, and Report execution. ResearchAct documents do not duplicate
+these relationships.
 """
 
 from __future__ import annotations
@@ -12,11 +12,14 @@ from pathlib import Path
 from typing import Any, Iterable
 
 from .io import read_json
+from .refs import ACT_ID, ACTIVITY_ID
 
 
-ACTIVITY_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
-ACT_ID = re.compile(r"^act_[1-9][0-9]*$")
-ACTIVITY_KINDS = frozenset({"compute", "structure_seed", "artifact_import", "render", "report"})
+LEGACY_ACTIVITY_ID = re.compile(
+    r"^op_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
+ACTIVITY_KINDS = frozenset({"structure_seed", "artifact_import", "render", "report"})
 ACTIVITY_STATES = frozenset({"running", "completed", "failed"})
 MAX_DOCUMENT_BYTES = 1024 * 1024
 REQUEST_FIELDS = frozenset({
@@ -73,7 +76,7 @@ def build_activity_index(
         else:
             seen[activity_id] = str(row["activity_ref"])
 
-    rows.sort(key=lambda row: str(row["activity_ref"]))
+    rows.sort(key=_activity_row_sort_key)
     summaries = _activity_summaries(rows, findings, known)
     return {
         "schema_version": "ts-activity-index/1",
@@ -118,6 +121,13 @@ def activity_completion_blockers(
                 "message": f"failed deterministic activity cannot be closed as completed: {ref}",
             })
     return _unique_blockers(blockers)
+
+
+def _activity_row_sort_key(row: dict[str, Any]) -> tuple[int, str]:
+    activity_id = str(row.get("activity_id") or "")
+    match = ACTIVITY_ID.fullmatch(activity_id)
+    ordinal = int(activity_id.removeprefix("op_")) if match else 2**63 - 1
+    return ordinal, str(row.get("activity_ref") or "")
 
 
 def _activity_directories(
@@ -183,6 +193,8 @@ def _scope_activity_dirs(
             _finding(findings, "activity_path_symlink", f"activity entry is a symbolic link: {ref}", ref, owner_refs)
         elif not entry.is_dir():
             _finding(findings, "activity_entry_not_directory", f"activity entry is not a directory: {ref}", ref, owner_refs)
+        elif LEGACY_ACTIVITY_ID.fullmatch(entry.name):
+            continue
         else:
             rows.append((entry, owner_act))
     return rows

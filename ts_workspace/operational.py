@@ -14,6 +14,7 @@ from typing import Any, Iterable
 
 from .activities import activity_completion_blockers, build_activity_index
 from .io import read_json, sha256_json
+from .refs import ACT_ID, ACTIVITY_ID, CALCULATION_ID, CLAIM_ID, SUBAGENT_RUN_ID
 
 
 def operational_snapshot(
@@ -104,6 +105,21 @@ def act_completion_blockers(
         act_id=act_id,
         outcome=outcome,
     )
+    for row in snapshot.get("agent_runs", []):
+        if (
+            not isinstance(row, dict)
+            or row.get("role") != "compute"
+            or act_id not in _string_list(row.get("act_refs"))
+        ):
+            continue
+        state = str(row.get("status") or "pending")
+        if state not in {"completed", "failed"}:
+            ref = str(row.get("run_ref") or row.get("task_id") or act_id)
+            blockers.append({
+                "code": "compute_run_not_terminal",
+                "ref": ref,
+                "message": f"Compute run is still {state}: {ref}",
+            })
     for row in snapshot.get("pending_controls", []):
         if isinstance(row, dict) and row.get("act_id") == act_id:
             ref = str(row.get("guard_ref") or row.get("intent_id") or act_id)
@@ -128,23 +144,40 @@ def agent_run_index(root: str | Path) -> list[dict[str, Any]]:
 
     root_path = Path(root).expanduser().resolve()
     run_dirs = [
-        *root_path.glob("acts/*/agent-runs/*"),
-        *root_path.glob("operations/agent-runs/*"),
+        *root_path.glob("acts/*/attempts/*/runs/*"),
+        *root_path.glob("reviews/*/runs/*"),
     ]
     rows: list[dict[str, Any]] = []
-    for run_dir in sorted(run_dirs, key=lambda path: path.relative_to(root_path).as_posix()):
+    for run_dir in sorted(run_dirs, key=lambda path: _agent_run_path_sort_key(root_path, path)):
         if not run_dir.is_dir() or run_dir.is_symlink():
             continue
+        ownership = _agent_run_ownership(root_path, run_dir)
+        if ownership is None:
+            continue
         task = _read_or_empty(run_dir / "task.json")
+        if task.get("task_id") != run_dir.name:
+            continue
         role = task.get("role")
         authority = task.get("authority")
         if (role, authority) not in {("review", "advisory"), ("compute", "operational")}:
+            continue
+        if role != ownership["role"]:
             continue
         run = _read_or_empty(run_dir / "run.json")
         result = _read_or_empty(run_dir / "result.json")
         disposition = _read_or_empty(run_dir / "root-disposition.json")
         error = run.get("error") if isinstance(run.get("error"), dict) else {}
         scope = task.get("scope") if isinstance(task.get("scope"), dict) else {}
+        act_refs = _string_list(scope.get("act_refs"))
+        claim_refs = _string_list(scope.get("claim_refs"))
+        inputs = task.get("inputs") if isinstance(task.get("inputs"), dict) else {}
+        if role == "compute" and (
+            act_refs != [ownership["act_id"]]
+            or inputs.get("intent_id") != ownership["intent_id"]
+        ):
+            continue
+        if role == "review" and ownership["claim_id"] not in claim_refs:
+            continue
         run_ref = run_dir.relative_to(root_path).as_posix()
         row = {
             "task_id": task.get("task_id") or run_dir.name,
@@ -152,8 +185,8 @@ def agent_run_index(root: str | Path) -> list[dict[str, Any]]:
             "authority": authority,
             "operation": task.get("operation"),
             "status": run.get("status") or "pending",
-            "act_refs": _string_list(scope.get("act_refs")),
-            "claim_refs": _string_list(scope.get("claim_refs")),
+            "act_refs": act_refs,
+            "claim_refs": claim_refs,
             "run_ref": run_ref,
             "started_at": run.get("started_at"),
             "finished_at": run.get("finished_at"),
@@ -161,16 +194,8 @@ def agent_run_index(root: str | Path) -> list[dict[str, Any]]:
             "result_outcome": result.get("outcome"),
             "error_code": error.get("code"),
             "error_message": error.get("message"),
-            "backend": (
-                task.get("inputs", {}).get("backend")
-                if isinstance(task.get("inputs"), dict)
-                else None
-            ),
-            "intent_id": (
-                task.get("inputs", {}).get("intent_id")
-                if isinstance(task.get("inputs"), dict)
-                else None
-            ),
+            "backend": inputs.get("backend"),
+            "intent_id": inputs.get("intent_id"),
         }
         disposition_valid = role == "review" and _valid_review_disposition(disposition, row)
         row.update(
@@ -184,6 +209,35 @@ def agent_run_index(root: str | Path) -> list[dict[str, Any]]:
         )
         rows.append(row)
     return rows
+
+
+def _agent_run_path_sort_key(root: Path, path: Path) -> tuple[int, str]:
+    match = SUBAGENT_RUN_ID.fullmatch(path.name)
+    ordinal = int(path.name.removeprefix("sub_")) if match else 2**63 - 1
+    return ordinal, path.relative_to(root).as_posix()
+
+
+def _agent_run_ownership(root: Path, run_dir: Path) -> dict[str, str] | None:
+    parts = run_dir.relative_to(root).parts
+    if (
+        len(parts) == 6
+        and parts[0] == "acts"
+        and ACT_ID.fullmatch(parts[1])
+        and parts[2] == "attempts"
+        and CALCULATION_ID.fullmatch(parts[3])
+        and parts[4] == "runs"
+        and SUBAGENT_RUN_ID.fullmatch(parts[5])
+    ):
+        return {"role": "compute", "act_id": parts[1], "intent_id": parts[3]}
+    if (
+        len(parts) == 4
+        and parts[0] == "reviews"
+        and CLAIM_ID.fullmatch(parts[1])
+        and parts[2] == "runs"
+        and SUBAGENT_RUN_ID.fullmatch(parts[3])
+    ):
+        return {"role": "review", "claim_id": parts[1]}
+    return None
 
 
 def review_disposition_obligations(agent_runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -231,6 +285,7 @@ def _valid_review_disposition(disposition: dict[str, Any], run: dict[str, Any]) 
 
 def _operational_files(root: Path, *, excluded_activity_refs: set[str]) -> list[Path]:
     patterns = (
+        ".ts-operational-ids.json",
         "acts/*/attempts/*/status.json",
         "acts/*/attempts/*/*_guard.json",
         "acts/*/attempts/*/*_result.json",
@@ -239,8 +294,8 @@ def _operational_files(root: Path, *, excluded_activity_refs: set[str]) -> list[
         "acts/*/attempts/*/outputs/calculation_result.json",
         "acts/*/activities/*/*.json",
         "operations/activities/*/*.json",
-        "acts/*/agent-runs/*/*.json",
-        "operations/agent-runs/*/*.json",
+        "acts/*/attempts/*/runs/*/*.json",
+        "reviews/*/runs/*/*.json",
     )
     files = set()
     for pattern in patterns:
@@ -250,8 +305,34 @@ def _operational_files(root: Path, *, excluded_activity_refs: set[str]) -> list[
             ref = path.relative_to(root).as_posix()
             if any(ref.startswith(f"{activity_ref}/") for activity_ref in excluded_activity_refs):
                 continue
+            if not _is_current_operational_path(path.relative_to(root).parts):
+                continue
             files.add(path)
     return sorted(files, key=lambda path: path.relative_to(root).as_posix())
+
+
+def _is_current_operational_path(parts: tuple[str, ...]) -> bool:
+    if parts == (".ts-operational-ids.json",):
+        return True
+    if len(parts) >= 5 and parts[0] == "acts" and ACT_ID.fullmatch(parts[1]):
+        if parts[2] == "attempts" and CALCULATION_ID.fullmatch(parts[3]):
+            return len(parts) < 6 or parts[4] != "runs" or SUBAGENT_RUN_ID.fullmatch(parts[5]) is not None
+        if parts[2] == "activities" and ACTIVITY_ID.fullmatch(parts[3]):
+            return True
+    if (
+        len(parts) >= 5
+        and parts[0] == "reviews"
+        and CLAIM_ID.fullmatch(parts[1])
+        and parts[2] == "runs"
+        and SUBAGENT_RUN_ID.fullmatch(parts[3])
+    ):
+        return True
+    return bool(
+        len(parts) >= 4
+        and parts[0] == "operations"
+        and parts[1] == "activities"
+        and ACTIVITY_ID.fullmatch(parts[2])
+    )
 
 
 def _pending_controls(root: Path, files: list[Path]) -> list[dict[str, Any]]:

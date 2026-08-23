@@ -316,12 +316,12 @@ def test_rpc_subagent_history_is_bounded_markdown() -> None:
     script = f"""
 import {{ formatTsSubagentHistoryMarkdown }} from {json.dumps(UI.as_uri())};
 const records = [{{
-  task_id: "sub_review-1",
+  task_id: "sub_1",
   operation: "claim_review",
   state: "running",
   act_refs: ["act_1"],
   claim_refs: ["claim_1"],
-  run_ref: "acts/act_1/agent-runs/sub_review-1",
+  run_ref: "reviews/claim_1/runs/sub_1",
   summary: "Independent review is running.",
   live: true,
 }}];
@@ -330,7 +330,7 @@ process.stdout.write(JSON.stringify(formatTsSubagentHistoryMarkdown(records)));
     markdown = _node_json(script)
     assert markdown.startswith("# TS Subagent History")
     assert "## Review · claim\\_review" in markdown
-    assert "`sub_review-1`" in markdown
+    assert "`sub_1`" in markdown
     assert "`act_1`" in markdown
     assert "> Independent review is running." in markdown
 

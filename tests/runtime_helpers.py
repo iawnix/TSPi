@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -13,7 +14,11 @@ def write_test_runtime_manifest(package_root: Path, install_root: Path) -> Path:
     import rdkit
 
     executable = Path(sys.executable).resolve()
-    prefix = executable.parent.parent
+    numpy_origin = Path(numpy.__file__).resolve()
+    rdkit_origin = Path(rdkit.__file__).resolve()
+    # Launcher tests exercise installation/runtime wiring, while
+    # test_runtime_env.py owns the stricter environment-isolation cases.
+    prefix = Path(os.path.commonpath((executable, numpy_origin, rdkit_origin)))
     environment_spec = package_root / "environment.yml"
     runtime_home = install_root / ".agents" / "runtime" / "transition-state-workflow"
     runtime_home.mkdir(parents=True, exist_ok=True)
@@ -32,11 +37,11 @@ def write_test_runtime_manifest(package_root: Path, install_root: Path) -> Path:
             "modules": {
                 "numpy": {
                     "version": numpy.__version__,
-                    "origin": str(Path(numpy.__file__).resolve()),
+                    "origin": str(numpy_origin),
                 },
                 "rdkit": {
                     "version": rdkit.__version__,
-                    "origin": str(Path(rdkit.__file__).resolve()),
+                    "origin": str(rdkit_origin),
                 },
             },
             "capabilities": {

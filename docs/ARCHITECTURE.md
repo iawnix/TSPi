@@ -87,7 +87,8 @@ their union so provenance-only links remain visible without canonical rewrites.
 
 A ResearchAct is one bounded and auditable act. It records:
 
-- an objective and optional hypothesis package;
+- a short human-facing title, one objective, one principal deliverable, and an
+  optional hypothesis package;
 - zero or more dependency Acts;
 - related Claims and descriptive tags;
 - Observations, Findings, GateSpecs, and ValidationResults linked by canonical
@@ -188,9 +189,11 @@ These records determine `workspace_revision`. Direct edits are unsupported.
 Operational or derived state includes:
 
 ```text
-acts/<act_id>/attempts/...
+.ts-operational-ids.json
+acts/<act_id>/attempts/<calc_id>/...
+acts/<act_id>/attempts/<calc_id>/runs/<sub_id>/...
+reviews/<claim_id>/runs/<sub_id>/...
 acts/<act_id>/outputs/...
-operations/agent-runs/...
 acts/<act_id>/activities/...
 operations/activities/...
 reports/...
@@ -201,6 +204,11 @@ notification receipts
 
 Operational state may determine `operational_revision`, but it does not change
 a Claim, Observation, Finding, ValidationResult, or acceptance record.
+Operational IDs are workspace-wide monotonic ordinals: `calc_n` for calculation
+Attempts, `sub_n` for Compute/Review sessions, and `op_n` for deterministic
+activities. Allocation is lock-protected, high-water based, private, and never
+reuses a reserved ordinal. This branch does not index or migrate legacy
+UUID-named operational journals.
 
 ## Decision Transaction
 
@@ -446,23 +454,33 @@ artifact are journaled, never the input body.
 
 `ts_render` validates one Act-owned input set and creates one no-overwrite local
 artifact. `ts_report` validates the workspace, creates a new report directory
-atomically, and verifies the package manifest and file digests. Neither uses a
-model or interprets chemistry.
+atomically, and verifies the package manifest and file digests. Optional logical
+PNG/GIF artifact IDs are re-resolved and copied into the package `assets/`
+directory with an `asset_index.json`; callers never select source paths. Neither
+tool uses a model or interprets chemistry.
 
 ### Notifications
 
 `ts_notify_user` sends a fixed event shape to the installation-owned recipient
 through configured ClawEmail. Recipient and credentials are not model fields.
-Digest-bound receipts make known success idempotent; ambiguous provider effects
-are not replayed automatically.
+`notifications.toml` is the sole recipient authority. Attachments must be exact,
+unchanged members of one `ts-report-package/3` manifest. Digest-bound receipts
+make known success idempotent; structured errors distinguish a delivery that did
+not start from an ambiguous provider effect, which is never replayed
+automatically.
 
 ## Run Journals And Result Delivery
 
-Compute and Review journals live under:
+Compute and Review journals have different scientific owners:
 
 ```text
-acts/<act_id>/agent-runs/<task_id>/
+acts/<act_id>/attempts/<calc_id>/runs/<sub_id>/
+reviews/<claim_id>/runs/<sub_id>/
 ```
+
+A Compute run is part of one immutable Attempt. A Review run is advisory about
+one target Claim. This ownership is enforced before journal creation; Act refs
+inside a Review scope do not make the Review an Act-owned execution.
 
 At creation, `task.json` and its bound snapshot are exclusive-created. Normal
 terminal handling writes actions, optional result, and final run state. A
@@ -480,10 +498,11 @@ do not duplicate activity refs and no Decision is needed to link an operation.
 Compute guards and receipts remain the source for scheduler recovery; a UI or
 agent-run state never proves a remote effect.
 
-An Act cannot become terminal while one of its activities is running or
-pending, its activity journal is inconsistent, or a compute control is pending
-or unresolved. A failed terminal activity may close only as `inconclusive`,
-`blocked`, or `stopped`. An analytical Act with no activity remains valid.
+An Act cannot become terminal while an owned Compute run or deterministic
+activity is non-terminal, its activity journal is inconsistent, or a compute
+control is pending or unresolved. A failed terminal activity may close only as
+`inconclusive`, `blocked`, or `stopped`. An analytical Act with no activity
+remains valid.
 
 The immediate tool return is the current delivery channel into the Root
 conversation. `TS Activity` is presentation state and is cleared with the Pi

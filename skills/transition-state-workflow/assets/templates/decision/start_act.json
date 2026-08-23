@@ -1,7 +1,9 @@
 {
   "op": "start_act",
   "local_ref": "act",
+  "title": "${TITLE}",
   "objective": "${OBJECTIVE}",
+  "deliverable": "${DELIVERABLE}",
   "dependencyRefs": [],
   "claimRefs": ["${CLAIM_REF}"],
   "hypothesis": {

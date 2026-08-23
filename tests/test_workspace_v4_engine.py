@@ -10,7 +10,7 @@ from ts_workspace.acceptance import project_acceptances
 from ts_workspace.decision import draft_decision
 from ts_workspace.engine import apply_decision, init_workspace, validate_decision_dry_run
 from ts_workspace.errors import ContractError
-from ts_workspace.io import read_json
+from ts_workspace.io import read_json, write_json
 from ts_workspace.state import RESEARCH_STATE_FILE, STATE_FILES
 from ts_workspace.validator import validate_workspace
 
@@ -47,12 +47,16 @@ def test_research_act_dag_supports_branch_merge_and_kernel_ids(tmp_path: Path) -
             {
                 "op": "start_act",
                 "local_ref": "intake",
+                "title": "Bounded research act",
+                "deliverable": "One bounded research result.",
                 "objective": "Bind the initial molecular system and assumptions.",
                 "claimRefs": ["$mechanism"],
             },
             {
                 "op": "start_act",
                 "local_ref": "path_a",
+                "title": "Bounded research act",
+                "deliverable": "One bounded research result.",
                 "objective": "Test the concerted pathway.",
                 "dependencyRefs": ["$intake"],
                 "claimRefs": ["$mechanism"],
@@ -65,6 +69,8 @@ def test_research_act_dag_supports_branch_merge_and_kernel_ids(tmp_path: Path) -
             {
                 "op": "start_act",
                 "local_ref": "path_b",
+                "title": "Bounded research act",
+                "deliverable": "One bounded research result.",
                 "objective": "Search for a stepwise alternative.",
                 "dependencyRefs": ["$intake"],
                 "claimRefs": ["$mechanism"],
@@ -72,6 +78,8 @@ def test_research_act_dag_supports_branch_merge_and_kernel_ids(tmp_path: Path) -
             {
                 "op": "start_act",
                 "local_ref": "synthesis",
+                "title": "Bounded research act",
+                "deliverable": "One bounded research result.",
                 "objective": "Compare both searches without discarding either history.",
                 "dependencyRefs": ["$path_a", "$path_b"],
                 "claimRefs": ["$mechanism"],
@@ -101,12 +109,43 @@ def test_research_act_dag_supports_branch_merge_and_kernel_ids(tmp_path: Path) -
     assert validate_workspace(root)["valid"] is True
 
 
+@pytest.mark.parametrize("missing_field", ["title", "deliverable"])
+def test_research_act_schema_requires_human_navigation_fields(
+    tmp_path: Path,
+    missing_field: str,
+) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    _apply(
+        root,
+        [{
+            "op": "start_act",
+            "local_ref": "act",
+            "title": "Candidate generation",
+            "objective": "Generate one bounded transition-state candidate set.",
+            "deliverable": "A ranked candidate set with provenance.",
+        }],
+    )
+    registry = read_json(root / "research_acts.json")
+    registry["acts"][0].pop(missing_field)
+    write_json(root / "research_acts.json", registry)
+
+    validation = validate_workspace(root)
+
+    assert validation["valid"] is False
+    assert any(
+        finding["code"] == "schema_validation_failed"
+        and missing_field in finding["message"]
+        for finding in validation["findings"]
+    )
+
+
 def test_research_act_ids_are_monotonic_and_parallel_decision_collision_must_redraft(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
     first, _ = _apply(
         root,
-        [{"op": "start_act", "local_ref": "first", "objective": "Create the first bounded Act."}],
+        [{"op": "start_act", "local_ref": "first", "title": "Bounded research act", "deliverable": "One bounded research result.", "objective": "Create the first bounded Act."}],
     )
     assert first["allocated_refs"]["first"] == "act_1"
 
@@ -115,7 +154,7 @@ def test_research_act_ids_are_monotonic_and_parallel_decision_collision_must_red
         {
             "rationale": "Draft one branch.",
             "basis_refs": [],
-            "operations": [{"op": "start_act", "local_ref": "left", "objective": "Create the left branch."}],
+            "operations": [{"op": "start_act", "local_ref": "left", "title": "Bounded research act", "deliverable": "One bounded research result.", "objective": "Create the left branch."}],
         },
     )
     right = draft_decision(
@@ -123,7 +162,7 @@ def test_research_act_ids_are_monotonic_and_parallel_decision_collision_must_red
         {
             "rationale": "Draft another branch from the same revision.",
             "basis_refs": [],
-            "operations": [{"op": "start_act", "local_ref": "right", "objective": "Create the right branch."}],
+            "operations": [{"op": "start_act", "local_ref": "right", "title": "Bounded research act", "deliverable": "One bounded research result.", "objective": "Create the right branch."}],
         },
     )
     assert left["allocated_refs"]["left"] == "act_2"
@@ -138,7 +177,7 @@ def test_research_act_ids_are_monotonic_and_parallel_decision_collision_must_red
         {
             "rationale": "Redraft the second branch against the current revision.",
             "basis_refs": [],
-            "operations": [{"op": "start_act", "local_ref": "right", "objective": "Create the right branch."}],
+            "operations": [{"op": "start_act", "local_ref": "right", "title": "Bounded research act", "deliverable": "One bounded research result.", "objective": "Create the right branch."}],
         },
     )
     assert redrafted["allocated_refs"]["right"] == "act_3"
@@ -152,7 +191,7 @@ def test_decision_ids_are_monotonic_and_parallel_drafts_conflict_before_redraft(
         {
             "rationale": "Draft the left branch.",
             "basis_refs": [],
-            "operations": [{"op": "start_act", "local_ref": "left", "objective": "Create the left branch."}],
+            "operations": [{"op": "start_act", "local_ref": "left", "title": "Bounded research act", "deliverable": "One bounded research result.", "objective": "Create the left branch."}],
         },
     )
     right = draft_decision(
@@ -160,7 +199,7 @@ def test_decision_ids_are_monotonic_and_parallel_drafts_conflict_before_redraft(
         {
             "rationale": "Draft the right branch from the same revision.",
             "basis_refs": [],
-            "operations": [{"op": "start_act", "local_ref": "right", "objective": "Create the right branch."}],
+            "operations": [{"op": "start_act", "local_ref": "right", "title": "Bounded research act", "deliverable": "One bounded research result.", "objective": "Create the right branch."}],
         },
     )
     assert left["decision"]["decision_id"] == "dec_1"
@@ -176,7 +215,7 @@ def test_decision_ids_are_monotonic_and_parallel_drafts_conflict_before_redraft(
         {
             "rationale": "Redraft the right branch against the current revision.",
             "basis_refs": [],
-            "operations": [{"op": "start_act", "local_ref": "right", "objective": "Create the right branch."}],
+            "operations": [{"op": "start_act", "local_ref": "right", "title": "Bounded research act", "deliverable": "One bounded research result.", "objective": "Create the right branch."}],
         },
     )
     assert redrafted["decision"]["decision_id"] == "dec_2"
@@ -195,7 +234,7 @@ def test_recorded_aborted_decision_id_is_not_reused(tmp_path: Path) -> None:
         {
             "rationale": "Allocate after an aborted transaction.",
             "basis_refs": [],
-            "operations": [{"op": "start_act", "local_ref": "next", "objective": "Use the next Decision ID."}],
+            "operations": [{"op": "start_act", "local_ref": "next", "title": "Bounded research act", "deliverable": "One bounded research result.", "objective": "Use the next Decision ID."}],
         },
     )
     assert drafted["decision"]["decision_id"] == "dec_2"
@@ -327,7 +366,7 @@ def test_decision_snapshots_preserve_human_readable_utf8(tmp_path: Path) -> None
     rationale = "未能定位连接反应物与产物的一阶鞍点。"
     drafted, _ = _apply(
         root,
-        [{"op": "start_act", "local_ref": "search", "objective": "搜索协同反应路径。"}],
+        [{"op": "start_act", "local_ref": "search", "title": "Bounded research act", "deliverable": "One bounded research result.", "objective": "搜索协同反应路径。"}],
         rationale=rationale,
     )
 
@@ -385,7 +424,7 @@ def test_declarative_specs_observations_and_acceptance_share_one_transaction(tmp
     ]
     operations: list[dict] = [
         {"op": "create_claim", "local_ref": "ts", "claimType": "transition_state", "statement": "The candidate is a connecting transition state."},
-        {"op": "start_act", "local_ref": "validate", "objective": "Validate stationary point, mode, and connectivity.", "claimRefs": ["$ts"]},
+        {"op": "start_act", "local_ref": "validate", "title": "Bounded research act", "deliverable": "One bounded research result.", "objective": "Validate stationary point, mode, and connectivity.", "claimRefs": ["$ts"]},
     ]
     for alias, concept, value, qualifiers in observations:
         datatype = "boolean" if isinstance(value, bool) else "integer" if isinstance(value, int) else "string" if isinstance(value, str) else "json"
@@ -507,7 +546,7 @@ def test_open_blocking_finding_prevents_acceptance(tmp_path: Path) -> None:
         root,
         [
             {"op": "create_claim", "local_ref": "claim", "claimType": "research", "statement": "A bounded claim."},
-            {"op": "start_act", "local_ref": "act", "objective": "Test the claim.", "claimRefs": ["$claim"]},
+            {"op": "start_act", "local_ref": "act", "title": "Bounded research act", "deliverable": "One bounded research result.", "objective": "Test the claim.", "claimRefs": ["$claim"]},
             {
                 "op": "record_observation", "local_ref": "obs", "actRef": "$act", "conceptId": "test.confirmed", "subjectRef": "subject", "value": True,
                 "datatype": "boolean", "summary": "Confirmed.", "provenance": {"producer": "test"}
@@ -545,7 +584,7 @@ def test_acceptance_requires_at_least_one_attached_gate_spec(tmp_path: Path) -> 
                 "basis_refs": [],
                 "operations": [
                     {"op": "create_claim", "local_ref": "claim", "claimType": "research", "statement": "An unvalidated Claim."},
-                    {"op": "start_act", "local_ref": "act", "objective": "Observe one fact without a GateSpec.", "claimRefs": ["$claim"]},
+                    {"op": "start_act", "local_ref": "act", "title": "Bounded research act", "deliverable": "One bounded research result.", "objective": "Observe one fact without a GateSpec.", "claimRefs": ["$claim"]},
                     {
                         "op": "record_observation",
                         "local_ref": "observation",

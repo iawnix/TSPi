@@ -13,6 +13,7 @@ import pytest
 from tests.v4_helpers import bootstrap_v4_workspace, start_research_act
 from ts_compute.artifacts import list_calculation_artifacts
 from ts_email.delivery import notify_user
+from ts_email.errors import NotificationError
 from ts_report import build_report_package
 
 
@@ -262,6 +263,199 @@ def test_notification_rejects_legacy_node_event_and_unsafe_report_ref(
         notify_user(workspace, request)
 
 
+def test_notification_accepts_only_unchanged_manifested_report_members(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    start_research_act(workspace)
+    package = workspace / "reports" / "progress-report"
+    build_report_package(workspace, package)
+    capture = tmp_path / "clawemail-args.json"
+    config = _notification_install(tmp_path, capture=capture)
+    monkeypatch.setenv("TS_NOTIFICATION_CONFIG", str(config))
+    request = tmp_path / "notification.json"
+    request.write_text(json.dumps({
+        "schema_version": "ts-user-notification/1",
+        "event": "progress",
+        "subject": "Research progress",
+        "summary": "A manifest-bound report is attached.",
+        "report_refs": ["reports/progress-report/final_report.md"],
+    }), encoding="utf-8")
+
+    result = notify_user(workspace, request)
+
+    assert result["ok"] is True
+    assert result["attachment_refs"] == ["reports/progress-report/final_report.md"]
+    args = json.loads(capture.read_text(encoding="utf-8"))
+    assert Path(args[args.index("--attach") + 1]).name == "00-final_report.md"
+
+    loose = workspace / "reports" / "loose" / "final_report.md"
+    loose.parent.mkdir()
+    loose.write_text("not packaged\n", encoding="utf-8")
+    request.write_text(json.dumps({
+        "schema_version": "ts-user-notification/1",
+        "event": "progress",
+        "subject": "Unbound report",
+        "summary": "This must be rejected.",
+        "report_refs": ["reports/loose/final_report.md"],
+    }), encoding="utf-8")
+    with pytest.raises(ValueError, match="manifest"):
+        notify_user(workspace, request)
+
+
+def test_notification_cli_json_failure_is_structured(tmp_path: Path) -> None:
+    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    request = tmp_path / "notification.json"
+    request.write_text(json.dumps({
+        "schema_version": "ts-user-notification/1",
+        "event": "progress",
+        "subject": "Progress",
+        "summary": "No notification installation is configured.",
+        "report_refs": [],
+    }), encoding="utf-8")
+    environment = dict(os.environ)
+    environment.pop("TS_NOTIFICATION_CONFIG", None)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "ts_email.py"),
+            "notify",
+            "--root",
+            str(workspace),
+            "--request-file",
+            str(request),
+            "--json",
+        ],
+        cwd=ROOT,
+        env=environment,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 2
+    assert completed.stderr == ""
+    payload = json.loads(completed.stdout)
+    assert payload["schema_version"] == "ts-user-notification-error/1"
+    assert payload["ok"] is False
+    assert payload["retry_disposition"] == "fix_request"
+    assert payload["error"]["code"] == "NOTIFICATION_REQUEST_REJECTED"
+
+
+def test_notification_preserves_bounded_provider_diagnostic_without_retrying(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = bootstrap_v4_workspace(tmp_path / "workspace")
+    start_research_act(workspace)
+    config = _notification_install(tmp_path)
+    manager = tmp_path / "clawemail" / "bin" / "clawemail-manager"
+    manager.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "print('Body: private-preview-text')\n"
+        "print('error: not authorized; token=private-value; Authorization: Bearer bearer-secret; "
+        "url=https://user:password@example.org/send', file=sys.stderr)\n"
+        "raise SystemExit(2)\n",
+        encoding="utf-8",
+    )
+    manager.chmod(0o755)
+    monkeypatch.setenv("TS_NOTIFICATION_CONFIG", str(config))
+    request = tmp_path / "notification.json"
+    request.write_text(json.dumps({
+        "schema_version": "ts-user-notification/1",
+        "event": "progress",
+        "subject": "Progress",
+        "summary": "The provider should reject this test message.",
+        "report_refs": [],
+    }), encoding="utf-8")
+
+    with pytest.raises(NotificationError) as captured:
+        notify_user(workspace, request)
+
+    assert captured.value.error_class == "delivery_ambiguous"
+    assert captured.value.retry_disposition == "reconcile_only"
+    assert "error: not authorized" in str(captured.value)
+    assert "private-value" not in str(captured.value)
+    assert "bearer-secret" not in str(captured.value)
+    assert "user:password" not in str(captured.value)
+    assert "private-preview-text" not in str(captured.value)
+    receipt = json.loads((workspace / str(captured.value.receipt_ref)).read_text(encoding="utf-8"))
+    assert receipt["state"] == "unknown"
+    assert receipt["error_class"] == "delivery_ambiguous"
+    assert "error: not authorized" in receipt["error"]
+    assert "private-value" not in receipt["error"]
+    assert "bearer-secret" not in receipt["error"]
+    assert "user:password" not in receipt["error"]
+    assert "private-preview-text" not in receipt["error"]
+
+
+def test_json_adapter_preserves_plain_command_error_without_syntax_noise() -> None:
+    script = (
+        f"const summary=require({json.dumps(str(ROOT / 'extensions' / 'ts-workflow-control' / 'summary.cjs'))});"
+        "try{summary.parseJsonOutput({stderr:'error: not authorized'});}"
+        "catch(error){process.stdout.write(error.message);process.exitCode=2;}"
+    )
+    completed = subprocess.run(
+        ["node", "-e", script],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert completed.returncode == 2
+    assert completed.stdout == "error: not authorized"
+    assert "Unexpected token" not in completed.stdout
+
+
+def test_notification_adapter_preserves_structured_failure_semantics() -> None:
+    workspace_cli = ROOT / "extensions" / "shared" / "workspace-cli.ts"
+    script = f"""
+import {{ runNotifyUserJson }} from {json.dumps(workspace_cli.as_uri())};
+process.env.TS_AGENT_PYTHON = process.execPath;
+const payload = {{
+  schema_version: "ts-user-notification-error/1",
+  ok: false,
+  state: "failed",
+  retry_disposition: "retry_after_fix",
+  receipt_ref: "reports/email/deliveries/test.json",
+  error: {{
+    code: "NOTIFICATION_DELIVERY_NOT_STARTED",
+    class: "delivery_not_started",
+    message: "email notification was not started: authorization rejected",
+  }},
+}};
+const pi = {{exec: async () => ({{stdout: JSON.stringify(payload)}})}};
+try {{
+  await runNotifyUserJson(pi, "/tmp/workspace", {{schema_version:"ts-user-notification/1"}});
+}} catch (error) {{
+  process.stdout.write(JSON.stringify({{
+    name: error.name,
+    message: error.message,
+    code: error.code,
+    error_class: error.error_class,
+    state: error.state,
+    retry_disposition: error.retry_disposition,
+    receipt_ref: error.receipt_ref,
+  }}));
+}}
+"""
+    result = json.loads(_node_ts(script).stdout)
+    assert result == {
+        "name": "NotificationError",
+        "message": "email notification was not started: authorization rejected",
+        "code": "NOTIFICATION_DELIVERY_NOT_STARTED",
+        "error_class": "delivery_not_started",
+        "state": "failed",
+        "retry_disposition": "retry_after_fix",
+        "receipt_ref": "reports/email/deliveries/test.json",
+    }
+
+
 def _workspace_with_xyz(tmp_path: Path) -> tuple[Path, dict[str, str], list[dict]]:
     workspace = bootstrap_v4_workspace(tmp_path / "workspace")
     refs = start_research_act(workspace)
@@ -295,6 +489,19 @@ def _contract_call(function_name: str, *args: object, check: bool = True) -> obj
     if check:
         assert completed.returncode == 0, completed.stderr
         return json.loads(completed.stdout)
+    return completed
+
+
+def _node_ts(script: str) -> subprocess.CompletedProcess[str]:
+    completed = subprocess.run(
+        ["node", "--experimental-loader", str(TS_LOADER), "--input-type=module", "--eval", script],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
     return completed
 
 

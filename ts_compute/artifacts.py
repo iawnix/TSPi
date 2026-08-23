@@ -17,7 +17,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 from ts_workspace.io import read_json
-from ts_workspace.refs import ACT_ID
+from ts_workspace.refs import ACT_ID, CALCULATION_ID
 from ts_workspace.transactions import workspace_lock
 from ts_structures.seed import StructureSeedError, generate_smiles_seed
 
@@ -31,7 +31,6 @@ IMPORT_RESULT_SCHEMA_VERSION = "ts-artifact-import-result/1"
 STRUCTURE_SEED_REQUEST_SCHEMA_VERSION = "ts-structure-seed-request/1"
 STRUCTURE_SEED_RESULT_SCHEMA_VERSION = "ts-structure-seed-result/1"
 MAX_IMPORT_BYTES = 128 * 1024
-INTENT_ID = re.compile(r"^calc_[A-Za-z0-9_.-]+$")
 IMPORT_FORMATS = {
     "gaussian_input": ".gjf",
     "xyz_structure": ".xyz",
@@ -321,7 +320,7 @@ def _eligible_paths(workspace: Path, known_acts: set[str]) -> Iterable[Path]:
                     if (
                         attempt.is_dir()
                         and not attempt.is_symlink()
-                        and INTENT_ID.fullmatch(attempt.name)
+                        and CALCULATION_ID.fullmatch(attempt.name)
                         and output.is_dir()
                         and not output.is_symlink()
                     ):

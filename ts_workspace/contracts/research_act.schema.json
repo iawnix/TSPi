@@ -8,7 +8,7 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema_version", "act_id", "objective", "status", "dependency_refs", "claim_refs",
+    "schema_version", "act_id", "title", "objective", "deliverable", "status", "dependency_refs", "claim_refs",
     "hypothesis", "tags", "observation_refs", "finding_refs",
     "validation_spec_refs", "validation_result_refs", "artifact_root", "result",
     "created_by_decision", "created_at"
@@ -16,7 +16,9 @@
   "properties": {
     "schema_version": {"const": "ts-research-act/3"},
     "act_id": {"$ref": "#/$defs/act_id"},
+    "title": {"type": "string", "minLength": 1, "maxLength": 300},
     "objective": {"type": "string", "minLength": 1, "maxLength": 8000},
+    "deliverable": {"type": "string", "minLength": 1, "maxLength": 2000},
     "status": {"$ref": "#/$defs/status"},
     "dependency_refs": {"type": "array", "uniqueItems": true, "maxItems": 64, "items": {"$ref": "#/$defs/act_id"}},
     "claim_refs": {"type": "array", "uniqueItems": true, "maxItems": 128, "items": {"$ref": "claim.schema.json#/$defs/claim_id"}},

@@ -5,6 +5,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import re
 import shutil
 import stat
 import subprocess
@@ -19,6 +20,7 @@ from typing import Any
 from ts_workspace.context import compile_context
 
 from .artifacts import bounded_content, bounded_text, sha256_json, sha256_path, workspace_path, workspace_root
+from .errors import NotificationError
 
 CONFIG_ENV = "TS_NOTIFICATION_CONFIG"
 CONFIG_SCHEMA = "ts-notification-config/1"
@@ -133,20 +135,32 @@ def notify_user(root: Path, request_file: Path) -> dict[str, Any]:
                 "error": _safe_error(exc),
             }
             _write_private_json(receipt_path, failed, exclusive=False)
-            raise ValueError(
-                f"email notification was not started: {_safe_error(exc)}; receipt={receipt_ref}"
+            raise NotificationError(
+                f"email notification was not started: {_safe_error(exc)}; receipt={receipt_ref}",
+                code="NOTIFICATION_DELIVERY_NOT_STARTED",
+                error_class="delivery_not_started",
+                state="failed",
+                retry_disposition="retry_after_fix",
+                receipt_ref=receipt_ref,
             ) from exc
         except _DeliveryAmbiguous as exc:
+            diagnostic = _safe_error(exc)
             unknown = {
                 **guard,
                 "state": "unknown",
                 "updated_at": _now(),
                 "error_class": "delivery_ambiguous",
-                "error": _safe_error(exc),
+                "error": diagnostic,
             }
             _write_private_json(receipt_path, unknown, exclusive=False)
-            raise ValueError(
-                f"email notification result is ambiguous; do not retry automatically; receipt={receipt_ref}"
+            raise NotificationError(
+                f"email notification result is ambiguous: {diagnostic}; "
+                f"do not retry automatically; receipt={receipt_ref}",
+                code="NOTIFICATION_DELIVERY_AMBIGUOUS",
+                error_class="delivery_ambiguous",
+                state="unknown",
+                retry_disposition="reconcile_only",
+                receipt_ref=receipt_ref,
             ) from exc
 
         receipt = {
@@ -257,10 +271,48 @@ def _resolve_report_refs(
             raise ValueError("report_refs contains duplicates")
         if not path.is_file() or path.is_symlink():
             raise ValueError(f"report_refs[{index}] must select a regular file")
+        manifest_binding = _report_manifest_binding(workspace, ref, path)
         refs.append(ref)
         paths.append(path)
-        records.append({"ref": ref, "sha256": sha256_path(path), "size_bytes": path.stat().st_size})
+        records.append({
+            "ref": ref,
+            "sha256": sha256_path(path),
+            "size_bytes": path.stat().st_size,
+            **manifest_binding,
+        })
     return refs, paths, records
+
+
+def _report_manifest_binding(workspace: Path, ref: str, path: Path) -> dict[str, Any]:
+    parts = ref.split("/")
+    if len(parts) < 3:
+        raise ValueError("notification attachments must belong to a manifest-bound report package")
+    package_ref = "/".join(parts[:2])
+    member_ref = "/".join(parts[2:])
+    manifest_ref = f"{package_ref}/package_manifest.json"
+    _, manifest_path = workspace_path(workspace, manifest_ref, must_exist=True)
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"report package manifest is invalid: {manifest_ref}") from exc
+    if not isinstance(manifest, dict) or manifest.get("schema_version") != "ts-report-package/3":
+        raise ValueError(f"report package manifest has an unsupported schema: {manifest_ref}")
+    files = manifest.get("files")
+    if not isinstance(files, list):
+        raise ValueError(f"report package manifest has no file index: {manifest_ref}")
+    matches = [item for item in files if isinstance(item, dict) and item.get("ref") == member_ref]
+    if len(matches) != 1:
+        raise ValueError(f"notification attachment is not listed in its report manifest: {ref}")
+    listed = matches[0]
+    current_digest = sha256_path(path)
+    current_size = path.stat().st_size
+    if listed.get("sha256") != current_digest or listed.get("size_bytes") != current_size:
+        raise ValueError(f"notification attachment does not match its report manifest: {ref}")
+    return {
+        "package_ref": package_ref,
+        "manifest_ref": manifest_ref,
+        "manifest_sha256": sha256_path(manifest_path),
+    }
 
 
 def _run_clawemail(
@@ -321,7 +373,9 @@ def _run_clawemail(
     except OSError as exc:
         raise _DeliveryNotStarted(str(exc)) from exc
     if completed.returncode != 0:
-        raise _DeliveryAmbiguous(f"ClawEmail exited with {completed.returncode}")
+        raise _DeliveryAmbiguous(
+            f"ClawEmail exited with {completed.returncode}: {_provider_diagnostic(completed)}"
+        )
     return completed.stdout
 
 
@@ -341,6 +395,10 @@ def _revalidate_notification_inputs(
         ref, path = workspace_path(workspace, record.get("ref"), must_exist=True)
         if sha256_path(path) != record.get("sha256") or path.stat().st_size != record.get("size_bytes"):
             raise ValueError(f"notification report artifact changed after preflight: {ref}")
+        manifest_ref, manifest_path = workspace_path(workspace, record.get("manifest_ref"), must_exist=True)
+        if sha256_path(manifest_path) != record.get("manifest_sha256"):
+            raise ValueError(f"notification report manifest changed after preflight: {manifest_ref}")
+        _report_manifest_binding(workspace, ref, path)
 
 
 def _existing_delivery_result(
@@ -390,6 +448,7 @@ def _delivery_result(
     external_side_effects: bool,
 ) -> dict[str, Any]:
     return {
+        "ok": True,
         "operation": "send",
         "state": state,
         "event": event,
@@ -485,11 +544,31 @@ def _write_private_json(path: Path, value: dict[str, Any], *, exclusive: bool) -
 
 
 def _safe_error(exc: BaseException) -> str:
-    if isinstance(exc, _DeliveryAmbiguous):
-        return "ClawEmail provider result was not confirmed"
-    if isinstance(exc, _DeliveryNotStarted):
-        return "ClawEmail provider process did not start"
     return bounded_text(str(exc) or exc.__class__.__name__, "delivery error", 2000)
+
+
+def _provider_diagnostic(completed: subprocess.CompletedProcess[str]) -> str:
+    # ClawEmail stdout can contain the compose preview, including body text.
+    raw = (completed.stderr or "").strip()
+    if not raw:
+        return "no diagnostic output"
+    normalized = " ".join(raw.split())
+    normalized = re.sub(r"\bBearer\s+[A-Za-z0-9._~+/=-]+", "Bearer [REDACTED]", normalized, flags=re.IGNORECASE)
+    normalized = re.sub(
+        r"([?&](?:token|api[_-]?key|password|secret|authorization)=)[^&\s]+",
+        r"\1[REDACTED]",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(
+        r"\b((?:token|api[_-]?key|password|secret|authorization)\s*[:=]\s*)"
+        r"(?:\"[^\"]*\"|'[^']*'|[^\s,;]+)",
+        r"\1[REDACTED]",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    normalized = re.sub(r"//([^/@\s]+)@", "//[REDACTED]@", normalized)
+    return normalized[:1000]
 
 
 def _now() -> str:

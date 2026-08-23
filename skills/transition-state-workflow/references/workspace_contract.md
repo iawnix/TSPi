@@ -1,5 +1,14 @@
 # Workspace Contract
 
+## Contents
+
+- [Canonical Files](#canonical-files)
+- [Bootstrap](#bootstrap)
+- [Write Boundary](#write-boundary)
+- [Identity And Paths](#identity-and-paths)
+- [Integrity Invariants](#integrity-invariants)
+- [Operational State](#operational-state)
+
 ## Canonical Files
 
 A v4 workspace stores scientific state in:
@@ -67,9 +76,9 @@ are execution mirrors and never become canonical local refs.
 - An open ResearchAct has no terminal result; a terminal Act has one.
 - Activity request/status bindings, IDs, physical ownership, `act_refs`, and
   terminal status/result combinations are consistent.
-- A ResearchAct cannot complete with running/pending activities or
-  pending/unresolved compute controls. Failed activities require a non-success
-  Act outcome.
+- A ResearchAct cannot complete with a non-terminal owned Compute run,
+  running/pending activities, or pending/unresolved compute controls. Failed
+  activities require a non-success Act outcome.
 - Every Observation and Finding is indexed by its producing/referenced Acts.
 - Observation datatype matches its value and artifact digests match files.
 - Every GateSpec is content- and registry-digest bound.
@@ -87,6 +96,20 @@ Calculation intents and attempts, remote guards/receipts, activity journals,
 Review runs/dispositions, report packages, notifications, Pi conversations,
 locks, and UI state are operational or derived. They may be cited as provenance
 only after verified primary artifacts are recorded as semantic Observations.
+
+New operational ownership is explicit:
+
+```text
+acts/<act_id>/attempts/<calc_id>/runs/<sub_id>/  Compute
+reviews/<claim_id>/runs/<sub_id>/                Review
+acts/<act_id>/activities/<op_id>/                deterministic tools
+operations/activities/<op_id>/                   workspace-level deterministic tools
+```
+
+`calc_n`, `sub_n`, and `op_n` are global workspace ordinals used for lookup,
+not scientific meaning. Canonical Claims and Observations remain single
+registries; the Web/locator derives their Claim-Act-Attempt neighborhood instead
+of duplicating records into operational directories.
 
 `TS Activity` is transient presentation state. The Activity Journal, Review
 history, and compute controls are durable but do not mutate Claims by

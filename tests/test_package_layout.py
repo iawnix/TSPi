@@ -193,6 +193,7 @@ max_nodes = 1
     )
     diagnostic = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
     diagnostic.write_text("raise SystemExit('remote probe must not run')\n", encoding="utf-8")
+    write_test_runtime_manifest(_installed_package_root(install_root), install_root)
     fake_pi = _fake_pi(
         tmp_path / "fake-pi.py",
         "import json, os\nprint(json.dumps({'config': os.environ['TS_REMOTE_CONFIG'], 'display': os.environ['TS_REMOTE_DISPLAY_TARGET']}))\n",
@@ -282,6 +283,7 @@ def test_tspi_check_remote_runs_one_strict_diagnostic(tmp_path: Path) -> None:
     )
     diagnostic = _installed_package_root(install_root) / "scripts" / "ts_compute.py"
     diagnostic.write_text("print('{\"ok\": true}')\n", encoding="utf-8")
+    write_test_runtime_manifest(_installed_package_root(install_root), install_root)
 
     completed = _run_tspi(launcher, "--check-remote")
 
@@ -303,6 +305,7 @@ def test_tspi_remote_diagnostic_preserves_structured_failure(tmp_path: Path) -> 
         "print('{\"ok\": false, \"error\": {\"class\": \"ssh_unreachable\"}}')\nraise SystemExit(3)\n",
         encoding="utf-8",
     )
+    write_test_runtime_manifest(_installed_package_root(install_root), install_root)
 
     completed = _run_tspi(launcher, "--check-remote")
 

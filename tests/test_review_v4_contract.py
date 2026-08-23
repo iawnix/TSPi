@@ -27,7 +27,7 @@ def test_review_bundle_uses_dag_objects_and_logical_artifact_ids(tmp_path: Path)
         root,
         [
             {"op": "create_claim", "local_ref": "claim", "claimType": "mechanism", "statement": "The pathway is concerted."},
-            {"op": "start_act", "local_ref": "act", "objective": "Test the concerted pathway.", "claimRefs": ["$claim"]},
+            {"op": "start_act", "local_ref": "act", "title": "Bounded research act", "deliverable": "One bounded research result.", "objective": "Test the concerted pathway.", "claimRefs": ["$claim"]},
         ],
     )
     log = root / "inputs" / "diagnostic.log"
@@ -59,7 +59,7 @@ def test_review_bundle_uses_dag_objects_and_logical_artifact_ids(tmp_path: Path)
     )
     snapshot = build_review_snapshot(root, target_claim_ref=refs["claim"])
     payload = {
-        "runId": "sub_12345678-1234-1234-1234-123456789abc",
+        "runId": "sub_1",
         "workspaceRoot": str(root),
         "request": {
             "targetClaimRef": refs["claim"],

@@ -11,7 +11,7 @@ import {
   type TsActivityStore,
 } from "./activity-store.ts";
 
-const SAFE_RUN_REF = /^(?:acts\/[A-Za-z0-9][A-Za-z0-9._-]*\/agent-runs|operations\/agent-runs)\/[A-Za-z0-9][A-Za-z0-9._-]*$/;
+const SAFE_RUN_REF = /^(?:acts\/act_[1-9][0-9]*\/attempts\/calc_[1-9][0-9]*|reviews\/claim_[1-9][0-9]*)\/runs\/sub_[1-9][0-9]*$/;
 const MAX_DETAIL_FILE_BYTES = 1024 * 1024;
 
 export interface TsSubagentRecord {

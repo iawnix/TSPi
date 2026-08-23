@@ -147,15 +147,24 @@ function parseJsonOutput(result) {
   if (typeof result === "string" && result.trim()) return JSON.parse(result);
   if (result && typeof result === "object" && typeof result.stderr === "string" && result.stderr.trim()) {
     const stderr = result.stderr.trim();
+    let payload;
     try {
-      const payload = JSON.parse(stderr);
-      if (payload && typeof payload.error === "string" && payload.error.trim()) throw new Error(payload.error.trim());
-    } catch (error) {
-      if (error instanceof Error && error.message !== stderr) throw error;
-    }
+      payload = JSON.parse(stderr);
+    } catch (_error) {}
+    const message = structuredErrorMessage(payload);
+    if (message) throw new Error(message);
     throw new Error(stderr);
   }
   throw new Error("command result did not contain JSON stdout");
+}
+
+function structuredErrorMessage(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  if (typeof payload.error === "string" && payload.error.trim()) return payload.error.trim();
+  if (payload.error && typeof payload.error === "object" && typeof payload.error.message === "string") {
+    return payload.error.message.trim();
+  }
+  return "";
 }
 
 function toolText(text, details = {}) {

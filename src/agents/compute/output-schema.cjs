@@ -256,7 +256,7 @@ function actionName(toolName) {
 }
 
 function actionResultRef(task, index) {
-  return `acts/${task.inputs.act_id}/agent-runs/${task.task_id}/actions.json#/actions/${index}/result`;
+  return `acts/${task.inputs.act_id}/attempts/${task.inputs.intent_id}/runs/${task.task_id}/actions.json#/actions/${index}/result`;
 }
 
 function uniqueStrings(values) {

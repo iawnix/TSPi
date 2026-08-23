@@ -52,6 +52,7 @@ from ts_remote.errors import (
 )
 from ts_remote.models import RemoteJobConfig, RemoteResources
 from ts_workspace.io import now_iso, read_json, sha256_json, write_json
+from ts_workspace.operational_ids import allocate_operational_id
 from ts_workspace.identity import WorkspaceIdentityError, workspace_id
 
 from .artifacts import resolve_input_artifacts, verify_input_bindings
@@ -103,11 +104,9 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
         required_inputs,
     )
     attempts_dir = workspace / "acts" / act_id / "attempts"
-    prefix = _intent_id_prefix(act_id, backend, task_type)
-    sequence = _next_intent_sequence(attempts_dir, prefix)
 
-    while sequence <= 9999:
-        intent_id = f"{prefix}_{sequence:04d}"
+    for _ in range(100):
+        intent_id = str(allocate_operational_id(workspace, "calc")["identifier"])
         intent = {
             "schema_version": "ts-calculation-intent/4",
             "intent_id": intent_id,
@@ -143,7 +142,6 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
         try:
             attempt_dir.mkdir(parents=True)
         except FileExistsError:
-            sequence += 1
             continue
         intent_path = workspace / intent_ref
         try:
@@ -173,7 +171,7 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
             "execution_target": intent["execution_target"],
             "intent": intent,
         }
-    raise ComputeContractError(f"calculation intent sequence exhausted for {prefix}")
+    raise ComputeContractError("calculation intent allocation exhausted after repeated path collisions")
 
 
 def preflight_calculation(
@@ -940,29 +938,6 @@ def _validate_backend_request(
     missing = sorted(flag for flag in required_flags if not flags.get(flag))
     if missing:
         raise ComputeContractError(f"Gaussian route does not match task_type {intent['task_type']}: missing {missing}")
-
-
-def _intent_id_prefix(act_id: str, backend: str, task_type: str) -> str:
-    raw = f"calc_{act_id}_{backend}_{task_type}"
-    normalized = "".join(
-        char if char.isalnum() or char in "_.-" else "_"
-        for char in raw
-    )
-    return normalized[:123].rstrip("_.-")
-
-
-def _next_intent_sequence(attempts_dir: Path, prefix: str) -> int:
-    sequences = []
-    marker = f"{prefix}_"
-    if not attempts_dir.is_dir():
-        return 1
-    for path in attempts_dir.iterdir():
-        if not path.is_dir() or not path.name.startswith(marker):
-            continue
-        suffix = path.name[len(marker):]
-        if suffix.isdigit():
-            sequences.append(int(suffix))
-    return max(sequences, default=0) + 1
 
 
 def _materialize_execution_target(

@@ -16,6 +16,7 @@ from typing import Any, Iterable
 from .associations import derive_claim_act_links
 from .errors import ContractError
 from .io import read_json
+from .refs import CALCULATION_ID
 from .revision import workspace_revision_from_documents
 from .state import (
     CLAIMS_FILE,
@@ -33,7 +34,6 @@ EXACT_ARTIFACT_LIMIT = 32
 SEARCH_ARTIFACT_LIMIT = 4
 DIRECTORY_LIMIT = 8
 ATTEMPT_LIMIT = 8
-CALCULATION_ID = re.compile(r"^calc_[A-Za-z0-9_.-]+$")
 KIND_ORDER = {"claim": 0, "act": 1, "observation": 2, "attempt": 3, "artifact": 4}
 
 

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from tests.v4_helpers import accept_research_claim
+from ts_compute.artifacts import list_calculation_artifacts
 from ts_report import build_final_report, build_report_package
 from ts_report.context import collect_report_context
 from ts_workspace.decision import draft_decision
@@ -24,6 +25,8 @@ def _seed(root: Path) -> dict[str, str]:
                 {
                     "op": "start_act",
                     "local_ref": "act",
+                    "title": "Bounded research act",
+                    "deliverable": "One bounded research result.",
                     "objective": "Search for a concerted pathway.",
                     "claimRefs": ["$claim"],
                     "hypothesis": {
@@ -134,6 +137,37 @@ def test_report_rejects_non_reports_output_path(tmp_path: Path) -> None:
     _seed(root)
     with pytest.raises(ValueError, match="reports"):
         build_report_package(root, tmp_path / "outside")
+
+
+def test_report_copies_logical_render_artifacts_into_manifested_assets(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    refs = _seed(root)
+    source = root / "acts" / refs["act"] / "outputs" / "render" / "mechanism overview.png"
+    source.parent.mkdir(parents=True)
+    source.write_bytes(b"PNG report asset")
+    artifact = next(
+        row
+        for row in list_calculation_artifacts(root)["artifacts"]
+        if row["path"] == source.relative_to(root).as_posix()
+    )
+
+    result = build_report_package(
+        root,
+        root / "reports" / "with-assets",
+        asset_artifact_ids=[artifact["artifact_id"]],
+    )
+
+    assert result["asset_artifact_ids"] == [artifact["artifact_id"]]
+    assert result["asset_refs"] == ["reports/with-assets/assets/01-mechanism_overview.png"]
+    copied = root / result["asset_refs"][0]
+    assert copied.read_bytes() == source.read_bytes()
+    asset_index = read_json(root / "reports" / "with-assets" / "asset_index.json")
+    assert asset_index["assets"][0]["source_ref"] == source.relative_to(root).as_posix()
+    manifest = read_json(root / "reports" / "with-assets" / "package_manifest.json")
+    assert result["asset_refs"][0].removeprefix("reports/with-assets/") in {
+        row["ref"] for row in manifest["files"]
+    }
 
 
 def test_report_uses_only_current_acceptance_for_executive_status(tmp_path: Path) -> None:

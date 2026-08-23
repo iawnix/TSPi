@@ -265,14 +265,20 @@ def _normalize_operation(
             },
         }
     if name == "start_act":
-        _keys(raw, required={"op", "local_ref", "objective"}, optional={"dependencyRefs", "claimRefs", "hypothesis", "tags"})
+        _keys(
+            raw,
+            required={"op", "local_ref", "title", "objective", "deliverable"},
+            optional={"dependencyRefs", "claimRefs", "hypothesis", "tags"},
+        )
         act_id = allocations[raw["local_ref"]]
         return {
             "op": "append_research_act",
             "record": {
                 "schema_version": "ts-research-act/3",
                 "act_id": act_id,
+                "title": _string(raw["title"], "title", 300),
                 "objective": _string(raw["objective"], "objective", 8000),
+                "deliverable": _string(raw["deliverable"], "deliverable", 2000),
                 "status": "open",
                 "dependency_refs": _refs(raw.get("dependencyRefs", []), allocations),
                 "claim_refs": _refs(raw.get("claimRefs", []), allocations),

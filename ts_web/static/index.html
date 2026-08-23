@@ -289,8 +289,8 @@
     .muted { color: var(--muted); }
     .nowrap { white-space: nowrap; }
     .truncate { max-width: 440px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .act-table { min-width: 700px; table-layout: fixed; }
-    .act-table th:nth-child(1) { width: 64px; }
+    .act-table { min-width: 900px; table-layout: fixed; }
+    .act-table th:nth-child(1) { width: 220px; }
     .act-table th:nth-child(3) { width: 92px; }
     .act-table th:nth-child(4) { width: 100px; }
     .act-table th:nth-child(5) { width: 190px; }
@@ -378,6 +378,9 @@
     .detail-list li + li { margin-top: 4px; }
     .detail-empty { padding: 8px 0; color: var(--dim); font-size: 11px; }
     .detail-records { border-top: 1px solid var(--line); }
+    .attempt-group { border-bottom: 1px solid var(--line-soft); }
+    .attempt-group > .detail-record { border-bottom: 0; }
+    .attempt-runs { margin: 0 0 10px 18px; padding-left: 12px; border-left: 2px solid var(--line); }
     .detail-record, .detail-link {
       width: 100%;
       min-height: 52px;
@@ -394,8 +397,8 @@
     .detail-link { cursor: pointer; }
     .detail-link:hover .detail-record-title { color: var(--green); }
     .detail-record-main { min-width: 0; }
-    .detail-record-title { line-height: 1.4; overflow-wrap: anywhere; }
-    .detail-record-id { margin-top: 3px; color: var(--dim); font: 10px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
+    .detail-record-title { display: block; line-height: 1.4; overflow-wrap: anywhere; }
+    .detail-record-id { display: block; margin-top: 3px; color: var(--dim); font: 10px/1.3 ui-monospace, SFMono-Regular, Menlo, monospace; overflow-wrap: anywhere; }
     .detail-record-meta { display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 5px; color: var(--dim); font-size: 10px; }
     .detail-arrow { color: var(--dim); font-size: 17px; }
     .audit-details { margin-top: 20px; border-top: 1px solid var(--line); }
@@ -757,7 +760,7 @@
         button.style.top = `${position.y}px`;
         button.dataset.detail = kind;
         button.dataset.id = node.id;
-        const title = kind === "claim" ? node.statement : node.objective;
+        const title = kind === "claim" ? node.statement : (node.title || node.objective);
         button.innerHTML = `<div class="node-top"><span class="node-id">${escapeHtml(shortId(node.id))}</span><span class="node-state">${escapeHtml(status)}</span></div><div class="node-title">${escapeHtml(title || node.id)}</div>`;
         stage.appendChild(button);
       });
@@ -798,11 +801,11 @@
     }
 
     function renderActs() {
-      const rows = filterRows(state.view.research_acts, ["act_id", "objective", "status", "tags", "claim_refs", "related_claim_refs"]);
+      const rows = filterRows(state.view.research_acts, ["act_id", "title", "objective", "deliverable", "status", "tags", "claim_refs", "related_claim_refs"]);
       content.innerHTML = renderHeader("Research Acts", "Dependency-aware research actions owned by the v4 kernel.", true) +
-        table(["Act", "Objective", "Status", "Dependencies", "Records"], rows.map(row => ({
+        table(["Research Act", "Objective", "Status", "Dependencies", "Execution"], rows.map(row => ({
           detail: "act", id: row.act_id,
-          cells: [mono(row.act_id), `<div class="truncate">${escapeHtml(row.objective)}</div>`, badge(row.status), String(row.dependency_refs.length), `${row.attempts.length} calc · ${row.activities.length} ops · ${row.agent_runs.length} agent`],
+          cells: [`<div>${escapeHtml(row.title || row.objective)}</div><div class="mono muted">${escapeHtml(row.act_id)}</div>`, `<div class="truncate">${escapeHtml(row.objective)}</div>`, badge(row.status), String(row.dependency_refs.length), `${row.attempts.length} attempts · ${row.compute_run_count || 0} runs · ${row.activities.length} ops`],
         })), "act-table");
       bindSearch();
     }
@@ -1102,10 +1105,10 @@
         <div class="detail-id">${escapeHtml(claim.claim_id)}</div>
         <div class="detail-title">${escapeHtml(claim.statement)}</div>
         ${detailFields({ type: claim.claim_type, status: claim.status, assumptions: claim.assumptions, falsifiers: claim.falsifiers, tags: claim.tags })}
-        ${relatedSection("Research Acts", payload.research_acts, "act_id", "objective")}
+        ${linkedSection("Research Acts", payload.research_acts, "act", "act_id", "title", "status")}
         ${relatedSection("Validation", payload.validation_results, "result_id", "verdict")}
         ${relatedSection("Findings", payload.findings, "finding_id", "statement")}
-        ${relatedSection("Subagents", payload.agent_runs, "task_id", "summary")}`;
+        ${linkedSection("Review runs", payload.review_runs, "agent", "task_id", "summary", "status")}`;
     }
 
     function renderActDetail(payload) {
@@ -1115,19 +1118,19 @@
       return `
         <div class="detail-hero">
           <div class="detail-id">${escapeHtml(act.act_id)}</div>
-          <div class="detail-title">${escapeHtml(act.objective)}</div>
+          <div class="detail-title">${escapeHtml(act.title || act.objective)}</div>
           <div class="detail-meta">
             ${badge(act.status)}
             ${act.created_at ? `<span>Created ${escapeHtml(formatTime(act.created_at))}</span>` : ""}
             ${tags ? `<span class="ref-list">${tags}</span>` : ""}
           </div>
         </div>
+        ${renderActContract(act)}
         ${renderActOutcome(act, result)}
         ${renderActHypothesis(act.hypothesis)}
         ${renderActLineage(payload)}
         ${renderActExecution(act)}
         ${renderActScience(payload)}
-        ${renderActAgents(act.agent_runs || [])}
         ${filesSection(payload.files?.files || [])}
         ${renderActAudit(act, result)}`;
     }
@@ -1143,6 +1146,17 @@
         </div>
         ${detailBulletGroup("Open questions", result.open_questions || [])}
       </section>`;
+    }
+
+    function renderActContract(act) {
+      const rows = [
+        ["Objective", act.objective],
+        ["Deliverable", act.deliverable],
+      ].filter(([, value]) => value);
+      if (!rows.length) return "";
+      return `<section class="detail-section"><h3>Research contract</h3><dl class="detail-grid">${rows.map(([label, value]) =>
+        `<div class="detail-field"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(value)}</dd></div>`
+      ).join("")}</dl></section>`;
     }
 
     function renderActHypothesis(hypothesis) {
@@ -1166,15 +1180,24 @@
     }
 
     function renderActExecution(act) {
-      const attempts = (act.attempts || []).map(row => detailRecord(
-        compactText([row.backend, row.task_type]) || "Calculation attempt",
-        row.intent_id || row.ref,
-        compactHtml([
-          row.state ? badge(row.state) : "",
-          row.program_status ? badge(row.program_status) : "",
-          row.error_class ? badge(row.error_class) : "",
-        ]),
-      )).join("");
+      const attempts = (act.attempts || []).map(row => {
+        const runs = (row.runs || []).map(run => detailLink(
+          "agent",
+          run.task_id,
+          run.summary || run.operation || "Compute run",
+          compactHtml([badge(run.status), run.result_outcome ? badge(run.result_outcome) : ""]),
+        )).join("");
+        return `<div class="attempt-group">${detailRecord(
+          compactText([row.backend, row.task_type]) || "Calculation attempt",
+          row.intent_id || row.ref,
+          compactHtml([
+            row.state ? badge(row.state) : "",
+            row.program_status ? badge(row.program_status) : "",
+            row.error_class ? badge(row.error_class) : "",
+            `<span>${row.run_count || 0} run(s)</span>`,
+          ]),
+        )}${runs ? `<div class="attempt-runs"><div class="detail-subheading">Compute runs</div><div class="detail-records">${runs}</div></div>` : ""}</div>`;
+      }).join("");
       const activities = (act.activities || []).map(row => detailLink(
         "activity",
         row.activity_id,
@@ -1231,17 +1254,6 @@
         ${detailRecordGroup("Validation results", results)}
         ${detailRecordGroup("Findings", findings)}
       </section>`;
-    }
-
-    function renderActAgents(rows) {
-      if (!rows.length) return "";
-      const records = rows.map(row => detailLink(
-        "agent",
-        row.task_id,
-        row.summary || row.operation || "Subagent run",
-        compactHtml([badge(row.role), badge(row.status), row.result_outcome ? badge(row.result_outcome) : ""]),
-      )).join("");
-      return `<section class="detail-section"><h3>Subagent runs</h3><div class="detail-records">${records}</div></section>`;
     }
 
     function renderActAudit(act, result) {
@@ -1308,6 +1320,17 @@
       return `<section class="detail-section"><h3>${escapeHtml(title)}</h3>${rows.map(row =>
         `<div class="detail-field"><dt class="mono">${escapeHtml(shortId(row[idKey]))}</dt><dd>${escapeHtml(formatValue(row[textKey] || row.status || ""))}</dd></div>`
       ).join("")}</section>`;
+    }
+
+    function linkedSection(title, rows, kind, idKey, textKey, statusKey) {
+      if (!rows || !rows.length) return "";
+      const records = rows.map(row => detailLink(
+        kind,
+        row[idKey],
+        row[textKey] || row.objective || row.operation || row[idKey],
+        row[statusKey] ? badge(row[statusKey]) : "",
+      )).join("");
+      return `<section class="detail-section"><h3>${escapeHtml(title)}</h3><div class="detail-records">${records}</div></section>`;
     }
 
     function filesSection(files) {

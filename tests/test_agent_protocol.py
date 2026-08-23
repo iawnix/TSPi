@@ -24,7 +24,7 @@ def _binding(ref: str, schema_version: str, marker: str) -> dict[str, object]:
 def _task() -> dict[str, object]:
     return {
         "schema_version": "ts-agent-task/2",
-        "task_id": "sub_01234567-89ab-cdef-0123-456789abcdef",
+        "task_id": "sub_1",
         "role": "review",
         "authority": "advisory",
         "operation": "claim_review",
@@ -132,6 +132,16 @@ def test_agent_protocol_accepts_only_review_advisory_role() -> None:
     rejected = _run("validateAgentTask", task)
     assert rejected.returncode == 2
     assert "invalid role: report" in rejected.stderr
+
+
+def test_agent_protocol_rejects_legacy_subagent_run_ids() -> None:
+    task = _task()
+    task["task_id"] = "sub_028def15-cbb5-42b4-bbfc-cfbd256c4a0b"
+
+    rejected = _run("validateAgentTask", task)
+
+    assert rejected.returncode == 2
+    assert "subagent run ID" in rejected.stderr
 
 
 def test_agent_protocol_requires_v2_and_exact_bound_review_documents() -> None:

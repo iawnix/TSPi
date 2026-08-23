@@ -27,6 +27,8 @@ def _open_act(root: Path) -> str:
                 {
                     "op": "start_act",
                     "local_ref": "calculation",
+                    "title": "Bounded research act",
+                    "deliverable": "One bounded research result.",
                     "objective": "Evaluate the candidate with Gaussian.",
                     "claimRefs": ["$claim"],
                 },

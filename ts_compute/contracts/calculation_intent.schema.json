@@ -5,7 +5,7 @@
   "required": ["schema_version", "intent_id", "act_id", "purpose", "attempt_kind", "recalculation_ref", "backend", "task_type", "input_refs", "input_bindings", "settings", "expected_artifacts", "execution_target", "dry_run"],
   "properties": {
     "schema_version": {"const": "ts-calculation-intent/4"},
-    "intent_id": {"type": "string", "pattern": "^calc_[A-Za-z0-9_.-]+$", "maxLength": 128},
+    "intent_id": {"type": "string", "pattern": "^calc_[1-9][0-9]*$", "maxLength": 128},
     "act_id": {"type": "string", "pattern": "^act_[1-9][0-9]*$"},
     "purpose": {"type": "string", "minLength": 1, "maxLength": 2000},
     "attempt_kind": {"enum": ["primary", "retry", "recalculation"]},
@@ -17,7 +17,7 @@
           "required": ["source_act", "source_intent_id", "changed_settings", "purpose"],
           "properties": {
             "source_act": {"type": "string", "pattern": "^act_[1-9][0-9]*$"},
-            "source_intent_id": {"type": ["string", "null"], "maxLength": 128},
+            "source_intent_id": {"type": ["string", "null"], "pattern": "^calc_[1-9][0-9]*$", "maxLength": 128},
             "changed_settings": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"type": "string", "minLength": 1, "maxLength": 256}},
             "purpose": {"enum": ["repair", "refinement", "method_robustness"]}
           },
@@ -42,7 +42,7 @@
           "path": {"type": "string", "minLength": 1, "maxLength": 4096},
           "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
           "owner_act": {"type": ["string", "null"], "pattern": "^act_[1-9][0-9]*$"},
-          "source_intent_id": {"type": ["string", "null"], "pattern": "^calc_[A-Za-z0-9_.-]+$", "maxLength": 128}
+          "source_intent_id": {"type": ["string", "null"], "pattern": "^calc_[1-9][0-9]*$", "maxLength": 128}
         },
         "additionalProperties": false
       }

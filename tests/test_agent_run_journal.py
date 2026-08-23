@@ -20,14 +20,14 @@ COMPUTE_TASK = ROOT / "src" / "agents" / "compute" / "task-packet.cjs"
 COMPUTE_OUTPUT = ROOT / "src" / "agents" / "compute" / "output-schema.cjs"
 
 
-def test_completed_review_is_act_scoped_and_changes_only_operational_state(tmp_path: Path) -> None:
+def test_completed_review_is_claim_scoped_and_changes_only_operational_state(tmp_path: Path) -> None:
     workspace, refs = _workspace_with_act(tmp_path)
-    task, documents = _review_bundle(workspace, refs, "sub_journal-001")
+    task, documents = _review_bundle(workspace, refs, "sub_1")
     before = compile_context(workspace, mode="frontier")
 
     run_ref = _journal(workspace, task, documents, mode="complete")
 
-    assert run_ref == f"acts/{refs['act_id']}/agent-runs/{task['task_id']}"
+    assert run_ref == f"reviews/{refs['claim_id']}/runs/{task['task_id']}"
     run_dir = workspace / run_ref
     assert {path.name for path in run_dir.iterdir()} == {
         "actions.json",
@@ -55,7 +55,7 @@ def test_root_review_disposition_is_write_once_and_unblocks_mutation(
     disposition: str,
 ) -> None:
     workspace, refs = _workspace_with_act(tmp_path)
-    task, documents = _review_bundle(workspace, refs, f"sub_disposition-{disposition.replace('_', '-')}")
+    task, documents = _review_bundle(workspace, refs, "sub_1")
     run_ref = _journal(workspace, task, documents, mode="complete")
     drafted = draft_decision(
         workspace,
@@ -82,7 +82,7 @@ def test_root_review_disposition_is_write_once_and_unblocks_mutation(
 
 def test_invalid_review_output_is_bounded_private_operational_data(tmp_path: Path) -> None:
     workspace, refs = _workspace_with_act(tmp_path)
-    task, documents = _review_bundle(workspace, refs, "sub_invalid-001")
+    task, documents = _review_bundle(workspace, refs, "sub_1")
     script = (
         "const journal=require(process.argv[1]);"
         "const h=journal.beginAgentRun(process.argv[2],JSON.parse(process.argv[3]),{documents:JSON.parse(process.argv[4])});"
@@ -95,7 +95,7 @@ def test_invalid_review_output_is_bounded_private_operational_data(tmp_path: Pat
         cwd=ROOT,
         check=True,
     )
-    invalid = workspace / "acts" / refs["act_id"] / "agent-runs" / task["task_id"] / "invalid-review-output.json"
+    invalid = workspace / "reviews" / refs["claim_id"] / "runs" / task["task_id"] / "invalid-review-output.json"
     value = json.loads(invalid.read_text(encoding="utf-8"))
     assert value["invalid"] is True
     assert value["attempts"][0]["truncated"] is True
@@ -106,14 +106,14 @@ def test_invalid_review_output_is_bounded_private_operational_data(tmp_path: Pat
 
 def test_review_journal_rejects_duplicate_task_and_detects_bound_document_tampering(tmp_path: Path) -> None:
     workspace, refs = _workspace_with_act(tmp_path)
-    task, documents = _review_bundle(workspace, refs, "sub_tamper-001")
+    task, documents = _review_bundle(workspace, refs, "sub_1")
     _journal(workspace, task, documents, mode="complete")
     duplicate = _journal(workspace, task, documents, mode="complete", check=False)
     assert isinstance(duplicate, subprocess.CompletedProcess)
     assert duplicate.returncode == 2
     assert "already exists" in duplicate.stderr
 
-    task2, documents2 = _review_bundle(workspace, refs, "sub_tamper-002")
+    task2, documents2 = _review_bundle(workspace, refs, "sub_2")
     script = (
         "const fs=require('node:fs');const journal=require(process.argv[1]);"
         "const h=journal.beginAgentRun(process.argv[2],JSON.parse(process.argv[3]),{documents:JSON.parse(process.argv[4])});"
@@ -130,9 +130,33 @@ def test_review_journal_rejects_duplicate_task_and_detects_bound_document_tamper
     assert "does not match task binding" in completed.stderr
 
 
-def test_completed_compute_is_act_scoped_private_and_never_requires_review_disposition(tmp_path: Path) -> None:
+def test_agent_journal_rejects_legacy_run_ids_at_its_write_boundary(tmp_path: Path) -> None:
     workspace, refs = _workspace_with_act(tmp_path)
-    bundle = _compute_bundle(workspace, refs["act_id"], "sub_compute-journal-001")
+    task, documents = _review_bundle(workspace, refs, "sub_1")
+    task["task_id"] = "sub_028def15-cbb5-42b4-bbfc-cfbd256c4a0b"
+
+    rejected = _journal(workspace, task, documents, mode="complete", check=False)
+
+    assert isinstance(rejected, subprocess.CompletedProcess)
+    assert rejected.returncode == 2
+    assert "subagent run ID" in rejected.stderr
+
+
+def test_agent_run_index_sorts_workspace_ordinals_numerically(tmp_path: Path) -> None:
+    workspace, refs = _workspace_with_act(tmp_path)
+    task_10, documents_10 = _review_bundle(workspace, refs, "sub_10")
+    task_2, documents_2 = _review_bundle(workspace, refs, "sub_2")
+    _journal(workspace, task_10, documents_10, mode="complete")
+    _journal(workspace, task_2, documents_2, mode="complete")
+
+    snapshot = operational_snapshot(workspace)
+
+    assert [row["task_id"] for row in snapshot["agent_runs"]] == ["sub_2", "sub_10"]
+
+
+def test_completed_compute_is_attempt_scoped_private_and_never_requires_review_disposition(tmp_path: Path) -> None:
+    workspace, refs = _workspace_with_act(tmp_path)
+    bundle = _compute_bundle(workspace, refs["act_id"], "sub_1")
     script = (
         "const journal=require(process.argv[1]);"
         "const h=journal.beginAgentRun(process.argv[2],JSON.parse(process.argv[3]));"
@@ -150,7 +174,7 @@ def test_completed_compute_is_act_scoped_private_and_never_requires_review_dispo
     )
     assert completed.returncode == 0, completed.stderr
     run_ref = completed.stdout
-    assert run_ref == f"acts/{refs['act_id']}/agent-runs/{bundle['task']['task_id']}"
+    assert run_ref == f"acts/{refs['act_id']}/attempts/calc_1/runs/{bundle['task']['task_id']}"
 
     run_dir = workspace / run_ref
     assert stat.S_IMODE(run_dir.stat().st_mode) == 0o700
@@ -164,7 +188,7 @@ def test_completed_compute_is_act_scoped_private_and_never_requires_review_dispo
     assert row["role"] == "compute"
     assert row["authority"] == "operational"
     assert row["backend"] == "gaussian"
-    assert row["intent_id"] == "calc_journal"
+    assert row["intent_id"] == "calc_1"
     assert snapshot["pending_review_dispositions"] == []
 
     disposition = _write_disposition(
@@ -176,11 +200,12 @@ def test_completed_compute_is_act_scoped_private_and_never_requires_review_dispo
     )
     assert isinstance(disposition, subprocess.CompletedProcess)
     assert disposition.returncode == 2
-    assert "not an advisory Review" in disposition.stderr
+    assert "matching Claim review run" in disposition.stderr
 
 
 def test_compute_journal_enforces_task_result_and_action_size_limits(tmp_path: Path) -> None:
     workspace, refs = _workspace_with_act(tmp_path)
+    _write_attempt_intent(workspace, refs["act_id"], "calc_1")
     script = """
 const journal=require(process.argv[1]);
 const taskHelper=require(process.argv[2]);
@@ -189,11 +214,11 @@ const workspace=process.argv[4];
 const actId=process.argv[5];
 const digest="sha256:"+"d".repeat(64);
 const task=taskHelper.buildComputeTask({
-  runId:"sub_compute-limits-001",workspaceRoot:workspace,operation:"cancel",backend:"gaussian",actId,
-  binding:{intentId:"calc_limits",intentDigest:digest,executionKind:"remote"},
+  runId:"sub_1",workspaceRoot:workspace,operation:"cancel",backend:"gaussian",actId,
+  binding:{intentId:"calc_1",intentDigest:digest,executionKind:"remote"},
 });
 const canonical={
-  schema_version:"ts-calculation-result/2",intent_id:"calc_limits",act_id:actId,state:"cancelled",
+  schema_version:"ts-calculation-result/2",intent_id:"calc_1",act_id:actId,state:"cancelled",
   program_status:"not_run",error_class:null,exit_status:null,artifact_refs:[],
   control:{effect_outcome:"succeeded",reconciliation_required:false},
   provenance:{intent_digest:digest},
@@ -245,7 +270,7 @@ process.stdout.write(JSON.stringify({taskError,resultError,actionError,runRef:ha
 
 def test_failed_run_settlement_preserves_partial_journal_as_pending(tmp_path: Path) -> None:
     workspace, refs = _workspace_with_act(tmp_path)
-    bundle = _compute_bundle(workspace, refs["act_id"], "sub_compute-partial-journal-001")
+    bundle = _compute_bundle(workspace, refs["act_id"], "sub_1")
     script = """
 const fs=require("node:fs");
 const path=require("node:path");
@@ -273,7 +298,7 @@ process.stdout.write(JSON.stringify({settled,files:fs.readdirSync(handle.runDir)
     )
     assert completed.returncode == 0, completed.stderr
     result = json.loads(completed.stdout)
-    assert result["settled"]["run_ref"].endswith("/sub_compute-partial-journal-001")
+    assert result["settled"]["run_ref"].endswith("/sub_1")
     assert result["settled"]["journal_error"]["code"] == "EEXIST"
     assert "actions.json" in result["settled"]["journal_error"]["message"]
     assert result["files"] == ["actions.json", "task.json"]
@@ -299,6 +324,7 @@ def _review_bundle(
 
 
 def _compute_bundle(workspace: Path, act_id: str, task_id: str) -> dict[str, object]:
+    _write_attempt_intent(workspace, act_id, "calc_1")
     script = """
 const taskHelper=require(process.argv[1]);
 const resultHelper=require(process.argv[2]);
@@ -308,10 +334,10 @@ const taskId=process.argv[5];
 const digest="sha256:"+"c".repeat(64);
 const task=taskHelper.buildComputeTask({
   runId:taskId,workspaceRoot:workspace,operation:"cancel",backend:"gaussian",actId,
-  binding:{intentId:"calc_journal",intentDigest:digest,executionKind:"remote"},
+  binding:{intentId:"calc_1",intentDigest:digest,executionKind:"remote"},
 });
 const canonical={
-  schema_version:"ts-calculation-result/2",intent_id:"calc_journal",act_id:actId,state:"cancelled",
+  schema_version:"ts-calculation-result/2",intent_id:"calc_1",act_id:actId,state:"cancelled",
   program_status:"not_run",error_class:null,exit_status:null,artifact_refs:[],
   control:{effect_outcome:"succeeded",reconciliation_required:false},
   provenance:{intent_digest:digest},
@@ -331,6 +357,15 @@ process.stdout.write(JSON.stringify({task,actions,result}));
     )
     assert completed.returncode == 0, completed.stderr
     return json.loads(completed.stdout)
+
+
+def _write_attempt_intent(workspace: Path, act_id: str, intent_id: str) -> None:
+    path = workspace / "acts" / act_id / "attempts" / intent_id / "intent.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps({"intent_id": intent_id, "act_id": act_id}) + "\n",
+        encoding="utf-8",
+    )
 
 
 def _review_result(task: dict[str, object]) -> dict[str, object]:

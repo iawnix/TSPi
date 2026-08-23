@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -16,11 +18,15 @@ from ts_workspace.operational import operational_snapshot
 from ts_workspace.validator import validate_workspace
 
 
+ROOT = Path(__file__).resolve().parents[1]
+ACTIVITY_JOURNAL = ROOT / "src" / "agent-core" / "activity-journal.cjs"
+
+
 def _activity_documents(
     root: Path,
     act_id: str,
     *,
-    activity_id: str = "activity_probe",
+    activity_id: str = "op_1",
     state: str = "completed",
     owner_act: str | None = None,
 ) -> Path:
@@ -32,10 +38,10 @@ def _activity_documents(
         {
             "schema_version": "ts-deterministic-activity-request/1",
             "activity_id": activity_id,
-            "kind": "compute",
-            "operation": "prepare",
+            "kind": "render",
+            "operation": "render",
             "act_refs": [act_id],
-            "request": {"intent_id": "calc_probe"},
+            "request": {"input_artifact_ids": []},
             "started_at": started_at,
         },
     )
@@ -45,8 +51,8 @@ def _activity_documents(
         {
             "schema_version": "ts-deterministic-activity-status/1",
             "activity_id": activity_id,
-            "kind": "compute",
-            "operation": "prepare",
+            "kind": "render",
+            "operation": "render",
             "act_refs": [act_id],
             "status": state,
             "started_at": started_at,
@@ -94,6 +100,72 @@ def test_activity_is_derived_for_its_act_without_a_link_decision(tmp_path: Path)
     assert index["activities"][0]["activity_ref"] == activity.relative_to(root).as_posix()
     assert index["activity_summaries"][0]["completed_count"] == 1
     assert validate_workspace(root)["valid"] is True
+
+
+def test_activity_journal_rejects_legacy_activity_ids(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    refs = start_research_act(root)
+    script = (
+        "const journal=require(process.argv[1]);"
+        "const input=JSON.parse(process.argv[3]);"
+        "try{journal.beginActivity(process.argv[2],input);process.exitCode=0;}"
+        "catch(error){process.stderr.write(String(error.message||error));process.exitCode=2;}"
+    )
+
+    rejected = subprocess.run(
+        [
+            "node",
+            "-e",
+            script,
+            str(ACTIVITY_JOURNAL),
+            str(root),
+            json.dumps({
+                "activity_id": "activity_probe",
+                "kind": "render",
+                "operation": "render",
+                "act_refs": [refs["act_id"]],
+                "request": {},
+            }),
+        ],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert rejected.returncode == 2
+    assert "operational activity ID" in rejected.stderr
+
+
+def test_activity_index_ignores_legacy_uuid_journals(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    refs = start_research_act(root)
+    legacy_id = "op_019a338f-acaf-43e6-b498-4e3994971399"
+    activity = _activity_documents(root, refs["act_id"], activity_id=legacy_id)
+    for name in ("request.json", "status.json"):
+        document = read_json(activity / name)
+        document["kind"] = "compute"
+        write_json(activity / name, document)
+
+    index = build_activity_index(root)
+
+    assert index["activities"] == []
+    assert index["integrity_findings"] == []
+
+
+def test_activity_index_sorts_operational_ordinals_numerically(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    refs = start_research_act(root)
+    _activity_documents(root, refs["act_id"], activity_id="op_10")
+    _activity_documents(root, refs["act_id"], activity_id="op_2")
+
+    index = build_activity_index(root)
+
+    assert index["integrity_findings"] == []
+    assert [row["activity_id"] for row in index["activities"]] == ["op_2", "op_10"]
 
 
 def test_artifact_import_is_a_valid_act_owned_activity(tmp_path: Path) -> None:
@@ -146,10 +218,10 @@ def test_activity_integrity_rejects_path_id_and_owner_mismatches(
     refs = start_research_act(root)
     activity = _activity_documents(root, refs["act_id"])
     if mutation == "directory_id":
-        activity.rename(activity.with_name("activity_other"))
+        activity.rename(activity.with_name("op_2"))
     elif mutation == "status_id":
         status = read_json(activity / "status.json")
-        status["activity_id"] = "activity_other"
+        status["activity_id"] = "op_2"
         write_json(activity / "status.json", status)
     else:
         status = read_json(activity / "status.json")
@@ -207,7 +279,7 @@ def test_pending_and_ambiguous_compute_controls_block_completion(
     root = tmp_path / "workspace"
     init_workspace(root)
     refs = start_research_act(root)
-    attempt = root / "acts" / refs["act_id"] / "attempts" / "calc_probe"
+    attempt = root / "acts" / refs["act_id"] / "attempts" / "calc_1"
     write_json(attempt / "submit_guard.json", {"operation": "submit"})
     if records == "ambiguous":
         write_json(
@@ -256,13 +328,13 @@ def test_report_and_frontier_use_compact_derived_activity_projection(tmp_path: P
     init_workspace(root)
     refs = start_research_act(root)
     _activity_documents(root, refs["act_id"], state="completed")
-    report_activity = root / "operations" / "activities" / "activity_report"
+    report_activity = root / "operations" / "activities" / "op_2"
     started_at = "2026-08-16T01:00:00+00:00"
     write_json(
         report_activity / "request.json",
         {
             "schema_version": "ts-deterministic-activity-request/1",
-            "activity_id": "activity_report",
+            "activity_id": "op_2",
             "kind": "report",
             "operation": "build",
             "act_refs": [],
@@ -274,7 +346,7 @@ def test_report_and_frontier_use_compact_derived_activity_projection(tmp_path: P
         report_activity / "status.json",
         {
             "schema_version": "ts-deterministic-activity-status/1",
-            "activity_id": "activity_report",
+            "activity_id": "op_2",
             "kind": "report",
             "operation": "build",
             "act_refs": [],
@@ -289,15 +361,15 @@ def test_report_and_frontier_use_compact_derived_activity_projection(tmp_path: P
     built = build_report_package(
         root,
         root / "reports" / "study",
-        exclude_activity_refs=["operations/activities/activity_report"],
+        exclude_activity_refs=["operations/activities/op_2"],
     )
     activities = read_json(root / "reports" / "study" / "activities.json")
     manifest = read_json(Path(built["manifest"]))
 
     assert frontier["activity_summaries"][0]["completed_count"] == 1
     assert "deterministic_activities" not in frontier
-    assert [row["activity_id"] for row in activities["activities"]] == ["activity_probe"]
-    assert activities["excluded_activity_refs"] == ["operations/activities/activity_report"]
+    assert [row["activity_id"] for row in activities["activities"]] == ["op_1"]
+    assert activities["excluded_activity_refs"] == ["operations/activities/op_2"]
     assert manifest["workspace_revision"] == built["workspace_revision"]
     assert manifest["operational_revision"] == built["operational_revision"]
     assert operational_snapshot(root)["operational_revision"] != built["operational_revision"]

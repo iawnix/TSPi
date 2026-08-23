@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import tempfile
 from pathlib import Path
@@ -12,6 +13,7 @@ from typing import Any, Iterable
 
 from ts_workspace.associations import derive_claim_act_links
 from ts_workspace.refs import act_sort_key, claim_sort_key
+from ts_compute.artifacts import resolve_artifact_ids
 
 from .context import collect_report_context
 
@@ -25,7 +27,8 @@ def build_report_package(
     output_dir: str | Path | None = None,
     *,
     exclude_activity_refs: Iterable[str] = (),
-) -> dict[str, str]:
+    asset_artifact_ids: Iterable[str] = (),
+) -> dict[str, Any]:
     root_path = Path(root).expanduser().resolve()
     package_dir = Path(output_dir).expanduser().resolve() if output_dir is not None else root_path / "reports" / "final-report"
     if package_dir.parent != (root_path / "reports").resolve():
@@ -37,6 +40,11 @@ def build_report_package(
     staging = Path(tempfile.mkdtemp(prefix=f".{package_dir.name}.tmp-", dir=package_dir.parent))
     try:
         (staging / "assets").mkdir()
+        asset_records = _copy_report_assets(root_path, staging / "assets", asset_artifact_ids)
+        _write_json(staging / "asset_index.json", {
+            "schema_version": "ts-report-asset-index/1",
+            "assets": asset_records,
+        })
         _write_json(staging / "report_context.json", context)
         _write_json(staging / "claim_graph.json", {
             "claims": context["claims"],
@@ -82,7 +90,54 @@ def build_report_package(
         "manifest_digest": manifest_digest,
         "workspace_revision": str(context["workspace_revision"]),
         "operational_revision": str(context["operational_revision"]),
+        "asset_artifact_ids": [record["artifact_id"] for record in asset_records],
+        "asset_refs": [f"{package_dir.relative_to(root_path).as_posix()}/{record['ref']}" for record in asset_records],
     }
+
+
+def _copy_report_assets(
+    root: Path,
+    assets_dir: Path,
+    artifact_ids: Iterable[str],
+) -> list[dict[str, Any]]:
+    requested = list(artifact_ids)
+    if len(requested) > 8 or len(set(requested)) != len(requested):
+        raise ValueError("report asset_artifact_ids must contain at most 8 unique IDs")
+    if not requested:
+        return []
+    resolved = resolve_artifact_ids(root, requested)
+    records: list[dict[str, Any]] = []
+    total_bytes = 0
+    for index, artifact in enumerate(resolved, start=1):
+        source = root.joinpath(*str(artifact["path"]).split("/"))
+        suffix = source.suffix.lower()
+        if suffix not in {".gif", ".png"}:
+            raise ValueError(f"report asset must be a .png or .gif artifact: {artifact['artifact_id']}")
+        if source.is_symlink() or not source.is_file():
+            raise ValueError(f"report asset is not a regular file: {artifact['artifact_id']}")
+        size = source.stat().st_size
+        if size < 1 or size > 16 * 1024 * 1024:
+            raise ValueError(f"report asset size is outside the 1 byte to 16 MiB limit: {artifact['artifact_id']}")
+        total_bytes += size
+        if total_bytes > 64 * 1024 * 1024:
+            raise ValueError("report assets exceed the 64 MiB package limit")
+        safe_name = re.sub(r"[^A-Za-z0-9._-]", "_", source.name)[:120]
+        if not safe_name or safe_name.startswith("."):
+            safe_name = f"asset{suffix}"
+        target_name = f"{index:02d}-{safe_name}"
+        target = assets_dir / target_name
+        shutil.copyfile(source, target)
+        copied_digest = _sha256_file(target)
+        if copied_digest != artifact["sha256"] or target.stat().st_size != size:
+            raise ValueError(f"report asset changed while being copied: {artifact['artifact_id']}")
+        records.append({
+            "artifact_id": artifact["artifact_id"],
+            "source_ref": artifact["path"],
+            "ref": f"assets/{target_name}",
+            "sha256": copied_digest,
+            "size_bytes": size,
+        })
+    return records
 
 
 def render_final_report(context: dict[str, Any]) -> str:

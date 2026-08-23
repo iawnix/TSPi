@@ -262,10 +262,14 @@ remote controls, Compute/Review journals, notifications, reports, Pi sessions, a
 activity are operational or derived state.
 
 Report packages are built atomically from a valid workspace. Their manifest
-binds the source scientific revision and every output file by SHA-256. Review
-advice and Compute or deterministic tool results become scientific support only after the
-Root Agent verifies primary artifacts and records normal Observations through a
-Decision.
+binds the source scientific revision and every output file by SHA-256. Logical
+PNG/GIF artifacts can be copied into a package `assets/` directory before
+notification; Notify accepts only unchanged manifest members. Compute runs live
+under their `calc_n` Attempt, Review runs under their target Claim, and new
+operational records use workspace-wide `calc_n`, `sub_n`, and `op_n` ordinals.
+Review advice and Compute or deterministic tool results become scientific
+support only after the Root Agent verifies primary artifacts and records normal
+Observations through a Decision.
 
 ## Validation
 

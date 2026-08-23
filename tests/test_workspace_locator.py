@@ -31,7 +31,7 @@ def _workspace(tmp_path: Path) -> tuple[Path, dict[str, str], dict[str, dict]]:
         claim_type="mechanism",
         claim_statement="The Diels-Alder pathway is concerted.",
     )
-    intent_id = f"calc_{refs['act_id']}_gaussian_opt_freq_0001"
+    intent_id = "calc_1"
     attempt = root / "acts" / refs["act_id"] / "attempts" / intent_id
     input_path = root / "acts" / refs["act_id"] / "inputs" / "candidate.gjf"
     _write(input_path, "%chk=candidate.chk\n# opt freq hf/sto-3g\n\nCandidate\n\n0 1\nH 0 0 0\n\n")

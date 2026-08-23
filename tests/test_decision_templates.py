@@ -45,7 +45,9 @@ def test_representative_templates_compose_through_v4_draft_contract(tmp_path: Pa
         _render("create_claim.json", CLAIM_TYPE="mechanism", CLAIM_STATEMENT="The pathway is concerted."),
         _render(
             "start_act.json",
+            TITLE="Concerted pathway test",
             OBJECTIVE="Test the concerted pathway.",
+            DELIVERABLE="A bounded result for the concerted-pathway hypothesis.",
             CLAIM_REF="$claim",
             HYPOTHESIS="A concerted saddle can be located.",
         ),

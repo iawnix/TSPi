@@ -97,7 +97,11 @@ normal Observations; visual appearance alone is not a validation result.
 Build one new package:
 
 ```json
-{"operation":"build","packageName":"final-study"}
+{
+  "operation":"build",
+  "packageName":"final-study",
+  "assetArtifactIds":["art_..."]
+}
 ```
 
 The host owns `reports/<packageName>`, validates the complete v4 workspace,
@@ -105,6 +109,8 @@ renders the report from canonical records, installs the directory atomically,
 and verifies `package_manifest.json`, scientific and operational revisions,
 file list, and SHA-256. Existing package names are never overwritten. The
 caller's in-flight Report activity is explicitly excluded from its own snapshot.
+Optional logical PNG/GIF artifacts are copied into `assets/`, recorded in
+`asset_index.json`, and returned as report-package refs suitable for Notify.
 
 Reports project state; they cannot repair or complete it. Missing or
 inconclusive science remains visible.
@@ -125,7 +131,9 @@ When fixed-target notifications are enabled:
 
 Allowed events are `progress`, `act_completed`, `calculation_failed`,
 `calculation_ambiguous`, and `study_completed`. Attachments must be existing
-regular files below `reports/`.
+regular files listed by the exact `ts-report-package/3` manifest under
+`reports/<packageName>/`. A Render file below `acts/` must first be included by
+logical artifact ID when building the report package.
 
 The installation owns recipient and credentials. Subject/summary text cannot
 redirect delivery. The host writes a digest-bound receipt. Known success is
@@ -134,7 +142,8 @@ failure has no scientific effect.
 
 ## Activity And Provenance
 
-Compute, Structure Seed, Import, Render, and Report write deterministic activity journals whose
-`act_refs` are the only operation-to-Act link. Notification writes a delivery
+Structure Seed, Import, Render, and Report write deterministic activity journals
+whose `act_refs` are the only operation-to-Act link. Compute instead writes one
+`sub_n` run below its owning `calc_n` Attempt. Notification writes a delivery
 receipt. These records support diagnosis and reporting but do not become
 Observations or acceptance basis automatically.

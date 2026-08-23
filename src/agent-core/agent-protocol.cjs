@@ -54,6 +54,7 @@ function validateAgentTask(value) {
   rejectUnknownKeys(value, TASK_KEYS, "agent task");
   if (value.schema_version !== "ts-agent-task/2") throw new Error("invalid agent task schema_version");
   const taskId = requireString(value.task_id, "task_id", 128);
+  if (!/^sub_[1-9][0-9]*$/.test(taskId)) throw new Error("task_id must be a subagent run ID");
   const role = requireEnum(value.role, "role", ROLES);
   const authority = requireEnum(value.authority, "authority", ["advisory", "operational"]);
   if (authority !== AUTHORITIES[role]) throw new Error(`authority does not match role ${role}`);
@@ -112,8 +113,8 @@ function validateComputeInputs(value) {
   const actId = requireString(value.act_id, "inputs.act_id", 128);
   if (!/^act_[1-9][0-9]*$/.test(actId)) throw new Error("inputs.act_id must be a ResearchAct ID");
   const intentId = requireString(value.intent_id, "inputs.intent_id", 128);
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{5,127}$/.test(intentId)) {
-    throw new Error("inputs.intent_id contains invalid characters");
+  if (!/^calc_[1-9][0-9]*$/.test(intentId)) {
+    throw new Error("inputs.intent_id must be a calculation Attempt ID");
   }
   if (typeof value.intent_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(value.intent_digest)) {
     throw new Error("inputs.intent_digest must be a SHA-256 digest");

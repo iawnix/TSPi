@@ -54,7 +54,7 @@ function buildReviewTaskBundle({ runId, workspaceRoot, request, reviewSnapshot, 
   ]);
   const taskSnapshot = {
     schema_version: "ts-review-task-snapshot/2",
-    task_id: requireId(runId, "runId", /^sub_[A-Za-z0-9-]+$/),
+    task_id: requireId(runId, "runId", /^sub_[1-9][0-9]*$/),
     operation: REVIEW_OPERATION,
     scope,
     workspace_revision: requireDigest(snapshot.workspace_revision, "workspace_revision"),
@@ -224,7 +224,7 @@ function compactClaim(value) {
   return pick(value, ["claim_id", "claim_type", "statement", "status", "assumptions", "falsifiers", "observation_refs", "validation_spec_refs", "validation_result_refs"]);
 }
 function compactRelation(value) { return pick(value, ["relation_id", "source_claim_ref", "target_claim_ref", "relation_type", "rationale"]); }
-function compactAct(value) { return pick(value, ["act_id", "objective", "status", "dependency_refs", "claim_refs", "related_claim_refs", "hypothesis", "observation_refs", "finding_refs", "validation_spec_refs", "validation_result_refs", "result"]); }
+function compactAct(value) { return pick(value, ["act_id", "title", "objective", "deliverable", "status", "dependency_refs", "claim_refs", "related_claim_refs", "hypothesis", "observation_refs", "finding_refs", "validation_spec_refs", "validation_result_refs", "result"]); }
 function compactObservation(value) { return pick(value, ["observation_id", "created_by_act", "concept_id", "subject_ref", "value", "datatype", "unit", "qualifiers", "summary", "artifact_refs"]); }
 function compactSpec(value) { return pick(value, ["spec_id", "target_claim_ref", "dimension", "title", "template_ref", "checks", "success_policy", "spec_digest"]); }
 function compactResult(value) { return pick(value, ["result_id", "spec_ref", "target_claim_ref", "dimension", "verdict", "observation_refs", "check_results", "result_digest"]); }
