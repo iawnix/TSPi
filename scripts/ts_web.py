@@ -5,19 +5,32 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 
+ENTRYPOINT = Path(os.path.abspath(__file__))
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
-from ts_runtime import ensure_runtime_python
+from ts_runtime import (
+    configured_python,
+    ensure_runtime_python,
+    seed_installation_runtime_from_entrypoint,
+)
 
+seed_installation_runtime_from_entrypoint(ENTRYPOINT)
 ensure_runtime_python(ROOT)
 
 from ts_web import list_workspaces, register_workspace, register_workspaces, serve
+from ts_web.reloader import exec_selected_release
 from ts_web.registry import ensure_state_dir
 from ts_workspace.io import read_json, write_json
+
+
+def _release_runtime_ready(entrypoint: Path) -> bool:
+    package_root = entrypoint.parents[1]
+    return configured_python(package_root) is not None
 
 
 def main() -> int:
@@ -55,6 +68,11 @@ def main() -> int:
         default=[],
         help="Display label for the corresponding --source-root (pairs by position).",
     )
+    serve_cmd.add_argument(
+        "--no-watch-release",
+        action="store_true",
+        help="Disable automatic restart when the stable release entrypoint changes.",
+    )
 
     list_cmd = sub.add_parser("list", help="List workspaces currently in the registry.")
     list_cmd.add_argument("--state-dir", required=True)
@@ -75,7 +93,16 @@ def main() -> int:
         except ValueError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 2
-        serve(args.host, args.port, args.state_dir)
+        restart = serve(
+            args.host,
+            args.port,
+            args.state_dir,
+            release_entrypoint=None if args.no_watch_release else ENTRYPOINT,
+            loaded_entrypoint=Path(__file__).resolve(),
+            release_ready=_release_runtime_ready,
+        )
+        if restart:
+            exec_selected_release(ENTRYPOINT, sys.argv[1:])
         return 0
     if args.command == "list":
         rows = list_workspaces(args.state_dir)

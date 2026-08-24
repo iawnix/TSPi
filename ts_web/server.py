@@ -8,19 +8,21 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .normalize import (
-    node_payload,
     claim_payload,
     graph_payload,
     list_node_files,
+    node_payload,
     normalize_workspace,
     research_files_payload,
+    workspace_snapshot,
     workspace_summary,
 )
 from .registry import ensure_state_dir, find_workspace, list_workspaces, register_workspace
+from .reloader import ReleaseWatcher
 
 MAX_TEXT_BYTES = 1_000_000
 STATIC_PACKAGE = __package__ or "ts_web"
@@ -34,12 +36,37 @@ def _static_asset(name: str):
     return files(STATIC_PACKAGE).joinpath("static", name)
 
 
-def serve(host: str, port: int, state_dir: str | Path, *, source_root: str | Path | None = None, label: str | None = None) -> None:
+def serve(
+    host: str,
+    port: int,
+    state_dir: str | Path,
+    *,
+    source_root: str | Path | None = None,
+    label: str | None = None,
+    release_entrypoint: str | Path | None = None,
+    loaded_entrypoint: str | Path | None = None,
+    release_poll_interval: float = 1.0,
+    release_ready: Callable[[Path], bool] | None = None,
+) -> bool:
+    """Serve until stopped, returning true when a selected release changed."""
+
     server = create_server(host, port, state_dir, source_root=source_root, label=label)
+    watcher = None
+    if release_entrypoint is not None:
+        watcher = ReleaseWatcher(
+            release_entrypoint,
+            loaded_entrypoint=loaded_entrypoint,
+            poll_interval=release_poll_interval,
+            ready=release_ready,
+        )
+        watcher.start(server.shutdown)
     try:
         server.serve_forever()
     finally:
         server.server_close()
+        if watcher is not None:
+            watcher.stop()
+    return bool(watcher and watcher.restart_requested)
 
 
 def create_server(
@@ -181,6 +208,12 @@ def _workspace_route(row: dict[str, Any], rest: str, query: dict[str, list[str]]
     if rest == "":
         view = normalize_workspace(source_root, label=label)
         return {"workspace": workspace_summary(row, view=view), "view": view}
+    if rest == "snapshot":
+        return workspace_snapshot(
+            row,
+            since_workspace_revision=_first(query.get("workspace_revision")),
+            since_operational_revision=_first(query.get("operational_revision")),
+        )
     if rest == "graph":
         return graph_payload(source_root, label=label)
     if rest == "claims":

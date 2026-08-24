@@ -12,10 +12,11 @@ from tests.v5_helpers import accept_research_claim
 from ts_web import normalize_workspace, register_workspace
 from ts_web import server as ts_web_server
 from ts_web.normalize import (
-    node_payload,
     claim_payload,
     graph_payload_from_view,
+    node_payload,
     research_files_payload,
+    workspace_snapshot,
 )
 from ts_web.registry import list_workspaces, register_workspaces
 from ts_web.server import create_server
@@ -286,6 +287,78 @@ def test_normalize_workspace_projects_v5_phase_node_and_operational_state(tmp_pa
     assert all(row["phase_ref"] == refs["mechanism"] for row in view["research_nodes"])
 
 
+def test_workspace_snapshot_is_small_when_unchanged_and_coherent_when_changed(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+    row = {
+        "workspace_id": "ws_test",
+        "source_root": str(workspace),
+        "label": "test workspace",
+    }
+
+    initial = workspace_snapshot(row)
+    assert initial["changed"] is True
+    assert initial["scientific_changed"] is True
+    assert initial["operational_changed"] is True
+    assert initial["view"]["workspace_revision"] == initial["workspace_revision"]
+    assert initial["view"]["operational_revision"] == initial["operational_revision"]
+    assert initial["graph"]["workspace_revision"] == initial["workspace_revision"]
+    assert initial["graph"]["operational_revision"] == initial["operational_revision"]
+
+    unchanged = workspace_snapshot(
+        row,
+        since_workspace_revision=initial["workspace_revision"],
+        since_operational_revision=initial["operational_revision"],
+    )
+    assert unchanged == {
+        "schema_version": "ts-explorer-workspace-snapshot/1",
+        "workspace_id": "ws_test",
+        "changed": False,
+        "scientific_changed": False,
+        "operational_changed": False,
+        "workspace_revision": initial["workspace_revision"],
+        "operational_revision": initial["operational_revision"],
+    }
+
+    status_path = workspace / "nodes" / refs["connectivity"] / "attempts" / "calc_1" / "status.json"
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    status["program_status"] = "error_termination"
+    _write(status_path, status)
+    changed = workspace_snapshot(
+        row,
+        since_workspace_revision=initial["workspace_revision"],
+        since_operational_revision=initial["operational_revision"],
+    )
+    assert changed["changed"] is True
+    assert changed["scientific_changed"] is False
+    assert changed["operational_changed"] is True
+    assert changed["workspace_revision"] == initial["workspace_revision"]
+    assert changed["operational_revision"] != initial["operational_revision"]
+    active = next(
+        row
+        for row in changed["view"]["research_nodes"]
+        if row["node_id"] == refs["connectivity"]
+    )
+    assert active["attempts"][0]["program_status"] == "error_termination"
+
+
+def test_workspace_snapshot_normalizes_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    workspace = tmp_path / "workspace"
+    _make_workspace(workspace)
+    row = {"workspace_id": "ws_test", "source_root": str(workspace), "label": "test"}
+    calls = 0
+    original = ts_web_server.normalize_workspace
+
+    def counted(source_root, *, label=None):
+        nonlocal calls
+        calls += 1
+        return original(source_root, label=label)
+
+    monkeypatch.setattr("ts_web.normalize.normalize_workspace", counted)
+    workspace_snapshot(row)
+    assert calls == 1
+
+
 def test_web_control_projection_distinguishes_submit_and_cancel_for_one_attempt(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     refs = _make_workspace(workspace)
@@ -484,6 +557,11 @@ def test_static_ui_refreshes_registry_and_persists_theme() -> None:
     assert 'refreshButton.addEventListener("click", refreshExplorer)' in script
     assert 'refreshStatus.textContent = "Refreshing workspace"' in script
     assert 'showToast("Workspace refreshed")' in script
+    assert "const liveRefreshIntervalMs = 5000" in script
+    assert "async function pollLiveRefresh()" in script
+    assert 'document.addEventListener("visibilitychange"' in script
+    assert 'setHealth("stale", "Stale")' in script
+    assert "/snapshot?${query}" in script
     assert "renderUnavailableWorkspace(catalogRow)" in script
     assert 'row.available === false ? " (incompatible)" : ""' in script
 
@@ -619,6 +697,17 @@ def test_web_server_is_read_only_v5_and_has_no_legacy_routes(tmp_path: Path) -> 
         workspaces = _get_json(host, port, "/api/workspaces")
         assert workspaces["default_workspace"] == row["workspace_id"]
         base = f"/api/workspace/{row['workspace_id']}"
+        snapshot = _get_json(host, port, f"{base}/snapshot")
+        assert snapshot["schema_version"] == "ts-explorer-workspace-snapshot/1"
+        assert snapshot["changed"] is True
+        unchanged_query = (
+            f"workspace_revision={snapshot['workspace_revision']}"
+            f"&operational_revision={snapshot['operational_revision']}"
+        )
+        unchanged = _get_json(host, port, f"{base}/snapshot?{unchanged_query}")
+        assert unchanged["changed"] is False
+        assert "view" not in unchanged
+        assert "graph" not in unchanged
         assert _get_json(host, port, f"{base}/graph")["schema_version"] == "ts-explorer-graph/5"
         assert _get_json(host, port, f"{base}/phases")["research_phases"][0]["phase_id"] == refs["mechanism"]
         assert _get_json(host, port, f"{base}/claims")["claims"][0]["schema_version"] == "ts-claim/3"

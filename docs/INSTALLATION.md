@@ -263,7 +263,8 @@ inputs and Claims. Do not copy legacy canonical JSON into a v5 workspace.
 workspaces and register one or more v5 studies while starting the server:
 
 ```bash
-python3 "$TS_AGENT_SKILL_ROOT/scripts/ts_web.py" serve \
+TS_AGENT_CURRENT=/path/to/TSPi-installation/.pi/packages/ts-agent/current
+python3 "$TS_AGENT_CURRENT/scripts/ts_web.py" serve \
   --state-dir /path/to/TSPi-installation/.pi/ts-web \
   --source-root /path/to/TSPi-installation/workspaces/reaction-a \
   --label "Reaction A" \
@@ -276,6 +277,20 @@ python3 "$TS_AGENT_SKILL_ROOT/scripts/ts_web.py" serve \
 The registry persists, so later starts may omit `--source-root`. Use the same
 script with `register`, `list`, or `remove` to maintain it explicitly. Open
 `http://127.0.0.1:8766/` in a browser.
+
+The visible browser polls a revision-aware snapshot route every five seconds.
+It pauses while hidden, never overlaps a manual refresh, and preserves the
+current view, scroll position, and open inspector when data changes. An
+unchanged response contains no View or Graph. If a check fails, the browser
+keeps the last valid snapshot and marks its live status as stale.
+
+Release watching is enabled by default. It works only when the process is
+invoked through the stable `.../ts-agent/current/scripts/ts_web.py` path. After
+`current` selects another immutable release, the watcher waits until that
+release's managed Python runtime is ready, gracefully closes the HTTP server,
+and executes the same stable command. Pass `--no-watch-release` to disable this
+behavior for diagnosis. The restart has a short connection gap; it is not
+development source reload or zero-downtime socket transfer.
 
 The explorer validates current state on read and exposes no mutation endpoint.
 Its default route is the ResearchPhase roadmap; Claim/Node graphs are advanced
@@ -291,11 +306,14 @@ can inspect the registered research data.
 3. Run `install_release.py` against the same installation root.
 4. Run the newly selected release's `install_env.py`; a changed environment
    spec selects a new hash-addressed prefix.
-5. Stop and restart each TSPi process when ready.
+5. Stop and restart each TSPi Root Agent process when ready. A `ts_web` process
+   started through the stable `current` entrypoint restarts itself after the new
+   managed runtime is ready.
 
 The `current` pointer switch is atomic. A process already running continues to
-use the release and Python environment it started with. Upgrade does not rewrite
-research workspaces or terminate active calculations.
+use the release and Python environment it started with unless it implements the
+explicit Web release watcher above. Upgrade does not rewrite research workspaces
+or terminate active calculations.
 
 During installation, obsolete `.pi/ts-email-delivery-policy.json` and
 `.pi/ts-email-delivery-authorization.json` files are moved into a private

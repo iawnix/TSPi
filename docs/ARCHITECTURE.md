@@ -328,6 +328,13 @@ root. Each request validates the current v5 workspace and rebuilds its view from
 canonical records plus the operational projection; no Web index is canonical or
 written back to the study.
 
+The browser's live path uses one revision-aware snapshot request. The server
+normalizes the workspace once, returns only scientific and operational revision
+identities when unchanged, and returns the View and Graph derived from that same
+normalization pass when changed. Browser polling is presentation state: it pauses
+while hidden, preserves the current interaction, and never writes watcher state
+into a research workspace.
+
 The default navigation is `ResearchPhase -> ResearchNode`. Phase bands summarize
 their current Nodes, while Node details separate conclusions, Evidence, runs,
 files, and Decision history. Claims, acceptance, validation, Findings, and the
@@ -346,6 +353,17 @@ Node-owned files already admitted by the Node file projection, rejects symlinks
 and traversal, and enforces a byte limit. The server has no authentication
 layer; operators must bind it to loopback or expose it only on a trusted,
 firewalled network.
+
+Long-running installed Web processes are invoked through the stable
+`ts-agent/current/scripts/ts_web.py` path. A small lifecycle watcher compares
+that path's resolved target with the entrypoint that loaded the process. Once a
+new selected release and its managed Python runtime are both ready, it shuts
+down the HTTP socket and `exec`s the stable command. The stable installation
+layout supplies the installation-owned runtime manifest and environment roots
+without overriding explicit operator configuration. Python modules are never
+reloaded in process, so one process image cannot mix release implementations.
+Authored-checkout source reload and zero-downtime socket handoff are outside this
+mechanism.
 
 ## TSPi Lifecycle
 

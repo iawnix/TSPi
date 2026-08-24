@@ -11,6 +11,7 @@ from .env import (
     load_manifest,
     require_runtime_python,
     runtime_manifest_path,
+    seed_installation_runtime_from_entrypoint,
     seed_workspace_root_from_argv,
 )
 
@@ -25,5 +26,6 @@ __all__ = [
     "load_manifest",
     "require_runtime_python",
     "runtime_manifest_path",
+    "seed_installation_runtime_from_entrypoint",
     "seed_workspace_root_from_argv",
 ]

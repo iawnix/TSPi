@@ -159,6 +159,41 @@ def graph_payload(source_root: str | Path, *, label: str | None = None) -> dict[
     return graph_payload_from_view(normalize_workspace(source_root, label=label))
 
 
+def workspace_snapshot(
+    row: dict[str, Any],
+    *,
+    since_workspace_revision: str | None = None,
+    since_operational_revision: str | None = None,
+) -> dict[str, Any]:
+    """Return one coherent Web snapshot, or only its unchanged revisions."""
+
+    source_root = str(row.get("source_root") or "")
+    workspace_id = str(row.get("workspace_id") or "")
+    label = str(row.get("label") or (Path(source_root).name if source_root else workspace_id))
+    view = normalize_workspace(source_root, label=label)
+    workspace_revision = str(view["workspace_revision"])
+    operational_revision = str(view["operational_revision"])
+    scientific_changed = since_workspace_revision != workspace_revision
+    operational_changed = since_operational_revision != operational_revision
+    payload = {
+        "schema_version": "ts-explorer-workspace-snapshot/1",
+        "workspace_id": workspace_id,
+        "changed": scientific_changed or operational_changed,
+        "scientific_changed": scientific_changed,
+        "operational_changed": operational_changed,
+        "workspace_revision": workspace_revision,
+        "operational_revision": operational_revision,
+    }
+    if not payload["changed"]:
+        return payload
+    return {
+        **payload,
+        "workspace": workspace_summary(row, view=view),
+        "view": view,
+        "graph": graph_payload_from_view(view),
+    }
+
+
 def research_files_payload(source_root: str | Path, query: str = "") -> dict[str, Any]:
     """Join v5 research records to the authoritative logical artifact catalog."""
 

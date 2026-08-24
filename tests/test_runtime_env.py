@@ -19,6 +19,7 @@ from ts_runtime.env import (
     package_root_from_file,
     require_runtime_python,
     runtime_manifest_path,
+    seed_installation_runtime_from_entrypoint,
     seed_workspace_root_from_argv,
     spec_sha256,
     write_manifest,
@@ -63,6 +64,59 @@ def test_default_env_store_is_package_relative_without_override(tmp_path: Path, 
     store = default_env_store(package)
 
     assert store == tmp_path / ".envs" / "transition-state-workflow"
+
+
+def test_installed_current_entrypoint_seeds_installation_owned_runtime_paths(tmp_path: Path) -> None:
+    installation = tmp_path / "tspi"
+    package_home = installation / ".pi" / "packages" / "ts-agent"
+    release = package_home / "releases" / "release-a"
+    script = release / "scripts" / "ts_web.py"
+    script.parent.mkdir(parents=True)
+    script.write_text("# probe\n", encoding="utf-8")
+    current = package_home / "current"
+    current.symlink_to("releases/release-a", target_is_directory=True)
+    environment: dict[str, str] = {}
+
+    resolved = seed_installation_runtime_from_entrypoint(
+        current / "scripts" / "ts_web.py",
+        environ=environment,
+    )
+
+    runtime_home = installation / ".agents" / "runtime" / "transition-state-workflow"
+    assert resolved == installation
+    assert environment == {
+        "TS_AGENT_RUNTIME_HOME": str(runtime_home),
+        "TS_AGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
+        "TS_AGENT_ENV_ROOT": str(
+            installation / ".agents" / "envs" / "transition-state-workflow"
+        ),
+    }
+
+
+def test_runtime_path_seed_preserves_explicit_configuration_and_ignores_authored_path(
+    tmp_path: Path,
+) -> None:
+    explicit = {
+        "TS_AGENT_RUNTIME_HOME": "/configured/runtime",
+        "TS_AGENT_RUNTIME_MANIFEST": "/configured/env.json",
+        "TS_AGENT_ENV_ROOT": "/configured/envs",
+    }
+    stable = tmp_path / ".pi" / "packages" / "ts-agent" / "current" / "scripts" / "ts_web.py"
+
+    assert seed_installation_runtime_from_entrypoint(stable, environ=explicit) == tmp_path
+    assert explicit == {
+        "TS_AGENT_RUNTIME_HOME": "/configured/runtime",
+        "TS_AGENT_RUNTIME_MANIFEST": "/configured/env.json",
+        "TS_AGENT_ENV_ROOT": "/configured/envs",
+    }
+
+    authored_environment: dict[str, str] = {}
+    authored = tmp_path / "checkout" / "scripts" / "ts_web.py"
+    assert seed_installation_runtime_from_entrypoint(
+        authored,
+        environ=authored_environment,
+    ) is None
+    assert authored_environment == {}
 
 
 def test_workspace_root_owns_runtime_home_and_env_store(tmp_path: Path, monkeypatch) -> None:

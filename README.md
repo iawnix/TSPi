@@ -150,7 +150,8 @@ Claims, validation, Findings, operational runs, files, and advanced graphs stay
 in separate views.
 
 ```bash
-python3 "$TS_AGENT_SKILL_ROOT/scripts/ts_web.py" serve \
+TS_AGENT_CURRENT=/path/to/TSPi-installation/.pi/packages/ts-agent/current
+python3 "$TS_AGENT_CURRENT/scripts/ts_web.py" serve \
   --state-dir /path/to/TSPi-installation/.pi/ts-web \
   --source-root /path/to/TSPi-installation/workspaces/reaction-a \
   --label "Reaction A" \
@@ -163,6 +164,18 @@ registry must remain outside every source workspace. The server has no login;
 use `--host 0.0.0.0` only on a trusted, firewalled LAN. See
 [Installation and Operations](docs/INSTALLATION.md#run-the-research-explorer)
 for registration and exposure details.
+
+While the page is visible, it checks the selected workspace every five seconds.
+An unchanged check returns only revision identities; a changed check replaces
+the View and Graph together while preserving the current view, scroll position,
+and open inspector. A transient refresh failure keeps the last valid snapshot
+and marks it stale.
+
+Starting through the stable `current` path also enables release hot restart.
+After an atomic `current` switch and managed-runtime refresh, the server closes
+its listening socket and executes the same stable command under the new release.
+Use `--no-watch-release` only for diagnostics. This is an orderly short restart,
+not in-process module reload or zero-downtime socket handoff.
 
 ## Public Surface
 

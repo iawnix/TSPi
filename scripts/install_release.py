@@ -50,6 +50,7 @@ REQUIRED_RUNTIME_FILES = {
     "ts_validation/engine.py",
     "ts_runtime/launcher.py",
     "ts_web/normalize.py",
+    "ts_web/reloader.py",
     "ts_web/server.py",
     "ts_web/static/index.html",
     "ts_web/static/app.css",

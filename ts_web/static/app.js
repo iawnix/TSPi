@@ -13,8 +13,12 @@ const state = {
   locatorTimer: null,
   detail: null,
   detailKind: null,
+  detailId: null,
+  filePath: null,
   nodeTab: "overview",
   refreshing: false,
+  liveTimer: null,
+  liveStale: false,
   toastTimer: null,
 };
 
@@ -34,6 +38,7 @@ const inspectorBody = document.getElementById("inspector-body");
 const toast = document.getElementById("toast");
 const themeStorageKey = "ts-explorer-theme";
 const workspaceStorageKey = "ts-explorer-workspace";
+const liveRefreshIntervalMs = 5000;
 
 async function api(path) {
   const response = await fetch(path, { cache: "no-store", headers: { Accept: "application/json" } });
@@ -54,6 +59,7 @@ async function boot() {
   try {
     await loadWorkspaceCatalog();
     await loadWorkspace();
+    scheduleLiveRefresh();
   } catch (error) {
     renderFatal(error);
   }
@@ -73,7 +79,7 @@ async function loadWorkspaceCatalog() {
   renderWorkspaceOptions();
 }
 
-async function loadWorkspace() {
+async function loadWorkspace({ preserveInteraction = false } = {}) {
   state.locatorRequest += 1;
   clearTimeout(state.locatorTimer);
   const catalogRow = state.workspaces.find(row => row.workspace_id === state.workspaceId);
@@ -82,44 +88,148 @@ async function loadWorkspace() {
     state.graph = null;
     state.locator = null;
     state.locatorQuery = null;
-    state.detail = null;
-    closeInspector();
+    clearInspectorState();
     try { localStorage.setItem(workspaceStorageKey, state.workspaceId); } catch (_error) {}
     renderUnavailableWorkspace(catalogRow);
     return;
   }
+  const workspaceId = state.workspaceId;
   const base = `/api/workspace/${encodeURIComponent(state.workspaceId)}`;
-  const [workspacePayload, graphPayload] = await Promise.all([api(base), api(`${base}/graph`)]);
-  state.view = workspacePayload.view;
-  state.graph = graphPayload;
+  const payload = await api(`${base}/snapshot`);
+  if (workspaceId !== state.workspaceId) return;
+  if (!payload.changed || !payload.view || !payload.graph) {
+    throw new Error("Initial workspace snapshot is incomplete.");
+  }
+  state.liveStale = false;
+  await applyWorkspaceSnapshot(payload, { preserveInteraction });
+  try { localStorage.setItem(workspaceStorageKey, state.workspaceId); } catch (_error) {}
+}
+
+async function applyWorkspaceSnapshot(payload, { preserveInteraction = false } = {}) {
+  const interaction = preserveInteraction ? captureInteraction() : null;
+  state.view = payload.view;
+  state.graph = payload.graph;
   state.locator = null;
   state.locatorQuery = null;
-  state.detail = null;
-  closeInspector();
-  try { localStorage.setItem(workspaceStorageKey, state.workspaceId); } catch (_error) {}
+  const workspaceIndex = state.workspaces.findIndex(row => row.workspace_id === state.workspaceId);
+  if (workspaceIndex >= 0 && payload.workspace) state.workspaces[workspaceIndex] = payload.workspace;
+  if (!interaction || !interaction.inspectorOpen) clearInspectorState();
   updateChrome();
-  renderCurrentView();
+  renderCurrentView({ resetScroll: !interaction });
+  if (!interaction) return;
+  workspaceMain.scrollTop = interaction.scrollTop;
+  await restoreInspector(interaction);
 }
 
 async function refreshExplorer() {
   if (state.refreshing) return;
+  clearTimeout(state.liveTimer);
   state.refreshing = true;
   refreshButton.disabled = true;
   refreshButton.classList.add("refreshing");
   refreshStatus.textContent = "Refreshing workspace";
+  const previousWorkspaceId = state.workspaceId;
   try {
     await loadWorkspaceCatalog();
-    await loadWorkspace();
+    await loadWorkspace({ preserveInteraction: previousWorkspaceId === state.workspaceId });
     refreshStatus.textContent = "Workspace refreshed";
     showToast("Workspace refreshed");
   } catch (error) {
     refreshStatus.textContent = "Refresh failed";
     showToast(`Refresh failed: ${error.message || error}`);
-    renderFatal(error);
+    if (state.view) {
+      state.liveStale = true;
+      updateChrome();
+    } else {
+      renderFatal(error);
+    }
   } finally {
     state.refreshing = false;
     refreshButton.disabled = false;
     refreshButton.classList.remove("refreshing");
+    scheduleLiveRefresh();
+  }
+}
+
+async function pollLiveRefresh() {
+  state.liveTimer = null;
+  if (document.hidden || state.refreshing || !state.view || !state.graph) {
+    scheduleLiveRefresh();
+    return;
+  }
+  state.refreshing = true;
+  refreshButton.disabled = true;
+  const workspaceId = state.workspaceId;
+  const query = new URLSearchParams({
+    workspace_revision: state.view.workspace_revision,
+    operational_revision: state.view.operational_revision,
+  });
+  try {
+    const payload = await api(`/api/workspace/${encodeURIComponent(workspaceId)}/snapshot?${query}`);
+    if (workspaceId !== state.workspaceId) return;
+    const wasStale = state.liveStale;
+    state.liveStale = false;
+    if (payload.changed) {
+      if (!payload.view || !payload.graph) throw new Error("Changed workspace snapshot is incomplete.");
+      await applyWorkspaceSnapshot(payload, { preserveInteraction: true });
+      refreshStatus.textContent = "Workspace updated automatically";
+    } else if (wasStale) {
+      updateChrome();
+      refreshStatus.textContent = "Live refresh restored";
+    }
+  } catch (error) {
+    if (workspaceId === state.workspaceId && state.view) {
+      state.liveStale = true;
+      updateChrome();
+      refreshStatus.textContent = "Live refresh unavailable; showing the last valid snapshot";
+    }
+  } finally {
+    state.refreshing = false;
+    refreshButton.disabled = false;
+    scheduleLiveRefresh();
+  }
+}
+
+function scheduleLiveRefresh(delay = liveRefreshIntervalMs) {
+  clearTimeout(state.liveTimer);
+  if (document.hidden) return;
+  state.liveTimer = setTimeout(pollLiveRefresh, delay);
+}
+
+function captureInteraction() {
+  const search = document.activeElement?.id === "search-input" ? document.activeElement : null;
+  return {
+    scrollTop: workspaceMain.scrollTop,
+    inspectorOpen: document.body.classList.contains("inspector-open"),
+    inspectorScrollTop: inspectorBody.scrollTop,
+    detailKind: state.detailKind,
+    detailId: state.detailId,
+    filePath: state.filePath,
+    nodeTab: state.nodeTab,
+    searchFocused: Boolean(search),
+    searchSelectionStart: search?.selectionStart ?? null,
+    searchSelectionEnd: search?.selectionEnd ?? null,
+  };
+}
+
+async function restoreInspector(interaction) {
+  if (interaction.inspectorOpen) {
+    state.nodeTab = interaction.nodeTab;
+    if (interaction.detailKind === "file" && interaction.filePath) {
+      await openFile(interaction.filePath);
+    } else if (interaction.detailKind && interaction.detailId) {
+      await openDetail(interaction.detailKind, interaction.detailId, { preserveNodeTab: true });
+    } else {
+      closeInspector();
+    }
+    inspectorBody.scrollTop = interaction.inspectorScrollTop;
+  }
+  if (interaction.searchFocused) {
+    const search = document.getElementById("search-input");
+    if (search) {
+      search.focus();
+      search.setSelectionRange(interaction.searchSelectionStart, interaction.searchSelectionEnd);
+    }
   }
 }
 
@@ -145,7 +255,11 @@ function renderUnavailableWorkspace(row) {
 
 function updateChrome() {
   const view = state.view;
-  setHealth(view.valid ? "valid" : "invalid", view.valid ? "Valid" : "Invalid");
+  if (state.liveStale) {
+    setHealth("stale", "Stale");
+  } else {
+    setHealth(view.valid ? "valid" : "invalid", view.valid ? "Valid" : "Invalid");
+  }
   setCount("phases", view.research_phases.length);
   setCount("claims", view.claims.length);
   setCount("validation", view.validation_results.length);
@@ -168,7 +282,7 @@ function setCount(name, value) {
   if (target) target.textContent = String(value);
 }
 
-function renderCurrentView() {
+function renderCurrentView({ resetScroll = true } = {}) {
   if (!state.view || !state.graph) return;
   document.querySelectorAll("[data-view]").forEach(button => {
     button.classList.toggle("active", button.dataset.view === state.currentView);
@@ -183,7 +297,7 @@ function renderCurrentView() {
     graphs: renderGraphs,
   };
   (renderers[state.currentView] || renderRoadmap)();
-  workspaceMain.scrollTop = 0;
+  if (resetScroll) workspaceMain.scrollTop = 0;
 }
 
 function renderHeader(title, subtitle, searchable = false, placeholder = "Filter") {
@@ -503,7 +617,12 @@ function roundedRect(context, x, y, width, height, radius) {
   context.roundRect(x, y, width, height, radius);
 }
 
-async function openDetail(kind, id) {
+async function openDetail(kind, id, { preserveNodeTab = false } = {}) {
+  const workspaceId = state.workspaceId;
+  state.detailKind = kind;
+  state.detailId = id;
+  state.filePath = null;
+  if (!preserveNodeTab || kind !== "node") state.nodeTab = "overview";
   inspectorKicker.textContent = labelForKind(kind);
   inspectorTitle.textContent = id;
   inspectorBody.innerHTML = `<div class="empty">Loading details...</div>`;
@@ -516,11 +635,11 @@ async function openDetail(kind, id) {
     } else {
       payload = localRecord(kind, id);
     }
+    if (workspaceId !== state.workspaceId || state.detailKind !== kind || state.detailId !== id) return;
     state.detail = payload;
-    state.detailKind = kind;
-    state.nodeTab = "overview";
     renderInspector();
   } catch (error) {
+    if (workspaceId !== state.workspaceId || state.detailKind !== kind || state.detailId !== id) return;
     inspectorBody.innerHTML = `<div class="fatal">${escapeHtml(error.message || error)}</div>`;
   }
 }
@@ -627,6 +746,11 @@ function renderClaimDetail(payload) {
 }
 
 async function openFile(path) {
+  const workspaceId = state.workspaceId;
+  state.detail = null;
+  state.detailKind = "file";
+  state.detailId = path;
+  state.filePath = path;
   inspectorKicker.textContent = "Research File";
   inspectorTitle.textContent = pathName(path);
   inspectorBody.innerHTML = `<div class="empty">Loading file...</div>`;
@@ -634,8 +758,10 @@ async function openFile(path) {
   inspector.setAttribute("aria-hidden", "false");
   try {
     const payload = await api(`/api/workspace/${encodeURIComponent(state.workspaceId)}/file?path=${encodeURIComponent(path)}`);
+    if (workspaceId !== state.workspaceId || state.filePath !== path) return;
     inspectorBody.innerHTML = `<section class="detail-section"><dl class="detail-grid"><dt>Path</dt><dd class="mono">${escapeHtml(payload.path)}</dd><dt>Size</dt><dd>${escapeHtml(formatBytes(payload.size))}</dd></dl><pre class="file-preview">${escapeHtml(payload.text)}</pre></section>`;
   } catch (error) {
+    if (workspaceId !== state.workspaceId || state.filePath !== path) return;
     inspectorBody.innerHTML = `<div class="fatal">${escapeHtml(error.message || error)}</div>`;
   }
 }
@@ -643,6 +769,15 @@ async function openFile(path) {
 function closeInspector() {
   document.body.classList.remove("inspector-open");
   inspector.setAttribute("aria-hidden", "true");
+}
+
+function clearInspectorState() {
+  state.detail = null;
+  state.detailKind = null;
+  state.detailId = null;
+  state.filePath = null;
+  state.nodeTab = "overview";
+  closeInspector();
 }
 
 function localRecord(kind, id) {
@@ -868,12 +1003,15 @@ inspectorBody.addEventListener("click", event => {
 });
 
 workspaceSelect.addEventListener("change", async event => {
+  clearTimeout(state.liveTimer);
   state.workspaceId = event.target.value;
   state.query = "";
   try {
     await loadWorkspace();
   } catch (error) {
     renderFatal(error);
+  } finally {
+    scheduleLiveRefresh();
   }
 });
 themeButton.addEventListener("click", toggleTheme);
@@ -881,6 +1019,13 @@ refreshButton.addEventListener("click", refreshExplorer);
 document.getElementById("close-inspector").addEventListener("click", closeInspector);
 document.getElementById("inspector-backdrop").addEventListener("click", closeInspector);
 document.addEventListener("keydown", event => { if (event.key === "Escape") closeInspector(); });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    clearTimeout(state.liveTimer);
+  } else {
+    scheduleLiveRefresh(0);
+  }
+});
 window.addEventListener("resize", () => { if (state.currentView === "graphs") requestAnimationFrame(drawAllGraphs); });
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", event => {
   let saved = null;

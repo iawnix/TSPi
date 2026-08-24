@@ -138,6 +138,7 @@ REQUIRED_TARBALL_FILES = {
     "ts_web/static/index.html",
     "ts_web/static/app.css",
     "ts_web/static/app.js",
+    "ts_web/reloader.py",
     "docs/adr/0001-dag-research-kernel-v4.md",
     "docs/adr/0002-phase-node-research-kernel-v5.md",
 }

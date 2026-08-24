@@ -131,6 +131,7 @@ select:focus, .search-input:focus { border-color: var(--focus); box-shadow: 0 0 
 .health-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--dim); }
 .health.valid .health-dot { background: var(--green); box-shadow: 0 0 0 3px var(--green-bg); }
 .health.invalid .health-dot { background: var(--red); box-shadow: 0 0 0 3px var(--red-bg); }
+.health.stale .health-dot { background: var(--amber); box-shadow: 0 0 0 3px var(--amber-bg); }
 
 .app-shell { height: calc(100vh - 58px); display: grid; grid-template-columns: var(--sidebar-width) minmax(0, 1fr); }
 .sidebar {

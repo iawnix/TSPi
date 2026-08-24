@@ -12,6 +12,7 @@ import json
 import os
 import sys
 import tempfile
+from collections.abc import MutableMapping
 from pathlib import Path
 from typing import Any
 
@@ -45,6 +46,38 @@ def package_root_from_file(path: str | Path) -> Path:
         ):
             return parent
     return Path(__file__).resolve().parents[1]
+
+
+def seed_installation_runtime_from_entrypoint(
+    entrypoint: str | Path,
+    *,
+    environ: MutableMapping[str, str] | None = None,
+) -> Path | None:
+    """Bind runtime paths for a script invoked through an installed `current`."""
+
+    stable = Path(os.path.abspath(os.fspath(Path(entrypoint).expanduser())))
+    selected = stable.parent.parent
+    package_home = selected.parent
+    packages_root = package_home.parent
+    pi_root = packages_root.parent
+    if (
+        stable.parent.name != "scripts"
+        or selected.name != "current"
+        or package_home.name != "ts-agent"
+        or packages_root.name != "packages"
+        or pi_root.name != ".pi"
+    ):
+        return None
+    installation_root = pi_root.parent
+    runtime_home = installation_root / ".agents" / "runtime" / SKILL_NAME
+    values = os.environ if environ is None else environ
+    values.setdefault(RUNTIME_HOME_OVERRIDE, str(runtime_home))
+    values.setdefault(RUNTIME_MANIFEST_OVERRIDE, str(runtime_home / "env.json"))
+    values.setdefault(
+        ENV_ROOT_OVERRIDE,
+        str(installation_root / ".agents" / "envs" / SKILL_NAME),
+    )
+    return installation_root
 
 
 def environment_spec_path(package_root: str | Path | None = None) -> Path:

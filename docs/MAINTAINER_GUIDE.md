@@ -301,6 +301,14 @@ workspace. Do not add write routes, implicit workspace repair, cached canonical
 indexes, or arbitrary workspace file reads. New static assets must be added to
 both `package.json.files` and the package/installer runtime checks.
 
+Keep live refresh and release restart separate. Live refresh must use the
+revision-aware snapshot projection, return no View/Graph when unchanged, and
+retain the last valid browser state on transport failure. Release restart must
+watch only the stable installed entrypoint, wait for the selected release's
+managed runtime, close the server cleanly, and replace the process with `exec`.
+Do not add in-process Python reload, workspace-local watcher files, or a hidden
+development file watcher to this production lifecycle.
+
 ## Runtime Durability Semantics
 
 Do not document stronger durability than the implementation provides:
