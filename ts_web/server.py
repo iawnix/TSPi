@@ -117,6 +117,9 @@ def _make_handler(state_dir: Path, workspace_roots: Sequence[Path]):
                 if parsed.path == "/app.js":
                     self._send_static_file("app.js", "text/javascript; charset=utf-8")
                     return
+                if parsed.path == "/research-tree.js":
+                    self._send_static_file("research-tree.js", "text/javascript; charset=utf-8")
+                    return
                 if parsed.path == "/api/health":
                     self._send_json({"ok": True, "protocol": "ts-research-kernel/5", "read_only": True})
                     return

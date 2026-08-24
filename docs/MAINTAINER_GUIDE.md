@@ -297,11 +297,12 @@ retried.
 `ts_web` is read-only derived state. Keep Phase grouping, Claim/Node association,
 acceptance currentness, operational identity, and file visibility in shared
 projection helpers rather than duplicating policy in browser JavaScript. The
-default UI must remain Phase-first and show the Research Trajectory: Node
-opening rationale, question, outcome, and lineage. Atomic Decision operations,
-raw Claim graphs, and Node DAGs belong under detail or advanced inspection.
-Merge the bounded trajectory fields into existing Node payloads; do not return
-a second full Node graph beside the normal Web view and graph payload.
+default UI must remain Node-first and show the Research Trajectory: opening
+rationale, outcome, dependency lineage, branches, and merges. Phase is a
+navigation filter, never a lifecycle lane. Atomic Decision operations and the
+raw Claim graph belong under detail or advanced inspection; do not duplicate the
+Node DAG in Advanced Graphs. Merge bounded trajectory fields into existing Node
+payloads rather than returning a second full graph-shaped Node payload.
 
 The Web registry is external state and must never be created inside a source
 workspace. Do not add write routes, implicit workspace repair, cached canonical

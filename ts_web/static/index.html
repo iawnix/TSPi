@@ -35,6 +35,10 @@
     <symbol id="icon-flask" viewBox="0 0 24 24"><path d="M9 3h6M10 3v6l-5.5 9.5A2 2 0 0 0 6.2 22h11.6a2 2 0 0 0 1.7-3.5L14 9V3"/><path d="M7.5 15h9"/></symbol>
     <symbol id="icon-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
     <symbol id="icon-external" viewBox="0 0 24 24"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></symbol>
+    <symbol id="icon-zoom-in" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3M11 8v6M8 11h6"/></symbol>
+    <symbol id="icon-zoom-out" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3M8 11h6"/></symbol>
+    <symbol id="icon-fit" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+    <symbol id="icon-focus" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M3 12h3M18 12h3M12 3v3M12 18v3"/></symbol>
   </svg>
 
   <header class="topbar">
@@ -62,7 +66,7 @@
   <div class="app-shell">
     <nav class="sidebar" id="sidebar" aria-label="Research workspace">
       <div class="nav-group-label">Research</div>
-      <button class="nav-button active" type="button" data-view="roadmap"><svg class="icon"><use href="#icon-roadmap"/></svg><span>Research Roadmap</span><span class="nav-count" data-count="phases">0</span></button>
+      <button class="nav-button active" type="button" data-view="roadmap"><svg class="icon"><use href="#icon-roadmap"/></svg><span>Research Tree</span><span class="nav-count" data-count="phases">0</span></button>
       <button class="nav-button" type="button" data-view="conclusions"><svg class="icon"><use href="#icon-conclusions"/></svg><span>Scientific Conclusions</span><span class="nav-count" data-count="claims">0</span></button>
       <button class="nav-button" type="button" data-view="files"><svg class="icon"><use href="#icon-files"/></svg><span>Research Files</span></button>
       <div class="nav-group-label">Assurance</div>
@@ -93,6 +97,7 @@
   </aside>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/research-tree.js" defer></script>
   <script src="/app.js" defer></script>
 </body>
 </html>

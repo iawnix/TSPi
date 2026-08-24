@@ -49,6 +49,7 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert "docs/ARCHITECTURE.md" in names
     assert "docs/INSTALLATION.md" in names
     assert "docs/MAINTAINER_GUIDE.md" in names
+    assert "ts_web/static/research-tree.js" in names
     assert "scripts/check_package.py" not in names
     assert "scripts/build_release.py" not in names
     assert not any(name.startswith("tests/") for name in names)
@@ -66,6 +67,7 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert (package_root / "docs" / "ARCHITECTURE.md").is_file()
     assert (package_root / "docs" / "INSTALLATION.md").is_file()
     assert (package_root / "docs" / "MAINTAINER_GUIDE.md").is_file()
+    assert (package_root / "ts_web" / "static" / "research-tree.js").is_file()
     assert stat.S_IMODE(package_root.stat().st_mode) == 0o500
     assert all(stat.S_IMODE(path.stat().st_mode) & 0o222 == 0 for path in package_root.rglob("*"))
     assert (install_root / "TSPi").is_symlink()

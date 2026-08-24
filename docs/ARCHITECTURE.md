@@ -357,12 +357,14 @@ normalization pass when changed. Browser polling is presentation state: it pause
 while hidden, preserves the current interaction, and never writes watcher state
 into a research workspace.
 
-The default navigation is `ResearchPhase -> ResearchNode`. Phase bands summarize
-their current Nodes, while Node details separate conclusions, Evidence, runs,
-files, and Decision history. Claims, acceptance, validation, Findings, and the
-Research Files locator remain separate scientific views. Claim and Node graphs
-are available only as advanced inspection views so graph topology does not
-replace the human roadmap.
+The default navigation is the ResearchNode dependency tree. Each fixed-size Node
+card exposes its opening rationale and outcome; dependency edges retain branch,
+merge, and backtracking lineage. ResearchPhase remains a color and focus filter
+over the tree and carries no lifecycle meaning. The same layout becomes an
+indented outline on narrow screens. Node details separate conclusions,
+Evidence, runs, files, and Decision history. Claims, acceptance, validation,
+Findings, the Research Files locator, and the Claim graph remain separate
+scientific views. The Node DAG is not duplicated in Advanced Graphs.
 
 Operational overlays preserve their actual owners: calculation Attempts belong
 to Nodes, Compute runs belong to Attempts, Review runs belong to Claims, and

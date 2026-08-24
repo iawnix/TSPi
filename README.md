@@ -144,11 +144,14 @@ remote scheduler.
 
 ## Explore Workspaces
 
-The packaged `ts_web` server gives users a Phase-first roadmap without changing
-research state. Its default view presents decision-sized ResearchNodes as a
-trajectory under ResearchPhases, with rationale and outcome visible together;
-Claims, validation, Findings, operational runs, files, and advanced graphs stay
-in separate views.
+The packaged `ts_web` server gives users a Node-first Research Tree without
+changing research state. Its default view renders the ResearchNode dependency
+DAG as decision-sized cards, so opening rationale, outcome, branches, merges,
+and lineage remain visible together. ResearchPhase is a color and focus filter,
+not a lifecycle lane. Desktop users can pan, zoom, fit, and inspect a Node;
+mobile users see the same topology as an indented outline. Claims, validation,
+Findings, operational runs, files, and the advanced Claim graph stay in
+separate views.
 
 ```bash
 TS_AGENT_CURRENT=/path/to/TSPi-installation/.pi/packages/ts-agent/current

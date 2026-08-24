@@ -55,6 +55,7 @@ REQUIRED_RUNTIME_FILES = {
     "ts_web/static/index.html",
     "ts_web/static/app.css",
     "ts_web/static/app.js",
+    "ts_web/static/research-tree.js",
     "docs/adr/0002-phase-node-research-kernel-v5.md",
 }
 FORBIDDEN_PARTS = {".git", ".pytest_cache", "__pycache__", "node_modules", "tests"}

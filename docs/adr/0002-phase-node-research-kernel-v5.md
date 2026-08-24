@@ -88,9 +88,11 @@ demand. Review receives one Claim dossier, not complete workspace files.
 
 `ts_web` is a read-only projection:
 
-- its default view is Phase -> ResearchNode;
+- its default view is the ResearchNode dependency tree, with Phase as a
+  navigation filter;
 - Node details expose Overview, Conclusions, Evidence, Runs, Files, and History;
-- Claim relations and the cross-Phase Node DAG are advanced views;
+- Claim relations are an advanced view; the cross-Phase Node DAG is already the
+  default Research Tree and is not duplicated;
 - it never infers a next action, Phase status, Claim status, validation verdict,
   or acceptance.
 

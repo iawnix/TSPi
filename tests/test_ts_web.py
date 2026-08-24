@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import subprocess
 import threading
 from importlib.resources import files
 from pathlib import Path
@@ -544,28 +545,76 @@ def test_web_derives_claim_node_link_from_creator_provenance(tmp_path: Path) -> 
     assert [row["claim_id"] for row in node_payload(workspace, node_id)["claims"]] == [claim_id]
 
 
-def test_static_ui_exposes_v5_phase_roadmap_and_on_demand_node_details() -> None:
+def test_static_ui_exposes_v5_research_tree_and_on_demand_node_details() -> None:
     html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
     script = (ROOT / "ts_web" / "static" / "app.js").read_text(encoding="utf-8")
+    tree = (ROOT / "ts_web" / "static" / "research-tree.js").read_text(encoding="utf-8")
 
     assert "TS Research Explorer" in html
-    assert "Research Roadmap" in html
+    assert "Research Tree" in html
     assert "Scientific Conclusions" in html
     assert "Research Files" in html
     assert "Advanced Graphs" in html
     assert "app.css" in html
     assert "app.js" in html
-    assert "renderPhaseBand" in script
+    assert "research-tree.js" in html
     assert "renderNodeDetail" in script
-    assert 'class="node-timeline"' in script
-    assert "Research decision" in script
-    assert "opening_decision" in script
+    assert "window.TSResearchTree.mount" in script
+    assert "state.graph.research_node_dag.edges" in script
+    assert "renderPhaseBand" not in script
+    assert "Cross-Phase ResearchNode DAG" not in script
+    assert "computeLayout" in tree
+    assert "computeLineage" in tree
+    assert "research-tree-outline" in tree
+    assert "ResizeObserver" in tree
     assert 'const tabs = ["overview", "conclusions", "evidence", "runs", "files", "history"]' in script
     assert 'control: [state.view.unresolved_controls, "control_id"]' in script
     assert "function renderActDetail" not in script
     assert "/api/node" not in html + script
     assert "/api/gates" not in html + script
     assert "/api/evidence" not in html + script
+
+
+def test_research_tree_layout_handles_branch_merge_and_lineage() -> None:
+    tree_path = (ROOT / "ts_web" / "static" / "research-tree.js").as_uri()
+    probe = f"""
+globalThis.window = globalThis;
+(async () => {{
+  await import({json.dumps(tree_path)});
+  const nodes = [
+    {{node_id: "node_1", phase_ref: "phase_1"}},
+    {{node_id: "node_2", phase_ref: "phase_1"}},
+    {{node_id: "node_3", phase_ref: "phase_1"}},
+    {{node_id: "node_4", phase_ref: "phase_2"}},
+  ];
+  const edges = [
+    {{source: "node_1", target: "node_2"}},
+    {{source: "node_1", target: "node_3"}},
+    {{source: "node_2", target: "node_4"}},
+    {{source: "node_3", target: "node_4"}},
+  ];
+  const layout = TSResearchTree.computeLayout(nodes, edges, new Map([["phase_1", 0], ["phase_2", 1]]));
+  const lineage = TSResearchTree.computeLineage(nodes, edges, "node_2");
+  process.stdout.write(JSON.stringify({{
+    depths: Object.fromEntries(Object.entries(layout.positions).map(([id, row]) => [id, row.depth])),
+    branchRowsDiffer: layout.positions.node_2.y !== layout.positions.node_3.y,
+    ancestors: [...lineage.ancestors].sort(),
+    descendants: [...lineage.descendants].sort(),
+  }}));
+}})().catch(error => {{ console.error(error); process.exit(1); }});
+"""
+    completed = subprocess.run(
+        ["node", "-e", probe],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    result = json.loads(completed.stdout)
+
+    assert result["depths"] == {"node_1": 0, "node_2": 1, "node_3": 1, "node_4": 2}
+    assert result["branchRowsDiffer"] is True
+    assert result["ancestors"] == ["node_1"]
+    assert result["descendants"] == ["node_4"]
 
 
 def test_static_ui_refreshes_registry_and_persists_theme() -> None:
@@ -607,7 +656,7 @@ def test_research_files_payload_is_a_read_only_locator_projection(tmp_path: Path
 
 
 def test_static_asset_resolves_from_current_package() -> None:
-    for name in ("index.html", "app.css", "app.js"):
+    for name in ("index.html", "app.css", "app.js", "research-tree.js"):
         expected = files("ts_web").joinpath("static", name).read_bytes()
         assert ts_web_server._static_asset(name).read_bytes() == expected
 
@@ -835,6 +884,7 @@ def test_web_server_is_read_only_v5_and_has_no_legacy_routes(tmp_path: Path) -> 
         assert "TS Research Explorer" in html
         assert _get_text(host, port, "/app.css")[0] == 200
         assert _get_text(host, port, "/app.js")[0] == 200
+        assert _get_text(host, port, "/research-tree.js")[0] == 200
         for legacy in (f"{base}/tree", f"{base}/gates", f"{base}/evidence", "/api/node/n000"):
             assert _get_text(host, port, legacy)[0] == 404
         assert _get_text(host, port, f"{base}/node/n000")[0] == 400

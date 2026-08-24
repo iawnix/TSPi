@@ -20,6 +20,8 @@ const state = {
   liveTimer: null,
   liveStale: false,
   toastTimer: null,
+  researchTree: null,
+  researchTreeViewport: null,
 };
 
 const content = document.getElementById("content");
@@ -80,6 +82,7 @@ async function loadWorkspaceCatalog() {
 }
 
 async function loadWorkspace({ preserveInteraction = false } = {}) {
+  if (!preserveInteraction) state.researchTreeViewport = null;
   state.locatorRequest += 1;
   clearTimeout(state.locatorTimer);
   const catalogRow = state.workspaces.find(row => row.workspace_id === state.workspaceId);
@@ -241,6 +244,7 @@ function renderWorkspaceOptions() {
 }
 
 function renderUnavailableWorkspace(row) {
+  teardownResearchTree();
   setHealth("invalid", "Incompatible");
   for (const name of ["phases", "claims", "validation", "findings", "activity"]) setCount(name, 0);
   document.getElementById("sidebar-meta").innerHTML = [
@@ -284,6 +288,7 @@ function setCount(name, value) {
 
 function renderCurrentView({ resetScroll = true } = {}) {
   if (!state.view || !state.graph) return;
+  teardownResearchTree();
   document.querySelectorAll("[data-view]").forEach(button => {
     button.classList.toggle("active", button.dataset.view === state.currentView);
   });
@@ -300,6 +305,11 @@ function renderCurrentView({ resetScroll = true } = {}) {
   if (resetScroll) workspaceMain.scrollTop = 0;
 }
 
+function teardownResearchTree() {
+  state.researchTree?.destroy();
+  state.researchTree = null;
+}
+
 function renderHeader(title, subtitle, searchable = false, placeholder = "Filter") {
   return `<div class="view-header">
     <div class="view-heading"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(subtitle)}</p></div>
@@ -314,11 +324,10 @@ function renderRoadmap() {
   const nodes = array(view.research_nodes);
   const query = state.query.trim().toLowerCase();
   const claimById = new Map(view.claims.map(claim => [claim.claim_id, claim]));
-  const phaseHtml = phases.map(phase => {
-    const phaseNodes = nodes.filter(node => node.phase_ref === phase.phase_id && matchesNode(node, phase, claimById, query));
-    if (query && !phaseNodes.length && !matchesText(phase, ["phase_id", "title", "objective"], query)) return "";
-    return renderPhaseBand(phase, phaseNodes, claimById);
-  }).filter(Boolean).join("");
+  const phaseById = new Map(phases.map(phase => [phase.phase_id, phase]));
+  const matchedNodeIds = new Set(nodes
+    .filter(node => matchesNode(node, phaseById.get(node.phase_ref) || {}, claimById, query))
+    .map(node => node.node_id));
   content.innerHTML = [
     renderHeader(view.label, `${view.workspace.kernel_protocol} | ${shortDigest(view.workspace_revision)}`, true, "Filter phases, nodes, or claims"),
     renderNotices(),
@@ -330,8 +339,21 @@ function renderRoadmap() {
       ${summaryItem(summary.open_finding_count, "Open Findings")}
       ${summaryItem(summary.current_acceptance_count, "Current Acceptances")}
     </div>`,
-    phaseHtml || `<div class="empty">No Research Phase matches the current filter.</div>`,
+    `<section class="research-tree-section"><div id="research-tree"></div></section>`,
   ].join("");
+  const root = document.getElementById("research-tree");
+  if (!window.TSResearchTree) throw new Error("Research Tree renderer is unavailable.");
+  state.researchTree = window.TSResearchTree.mount(root, {
+    nodes,
+    edges: state.graph.research_node_dag.edges,
+    phases,
+    focusNodeRefs: view.focus.node_refs,
+    highlightIds: query ? matchedNodeIds : null,
+    selectedId: state.detailKind === "node" ? state.detailId : null,
+    viewport: state.researchTreeViewport,
+    onViewportChange: viewport => { state.researchTreeViewport = viewport; },
+    onSelect: nodeId => openDetail("node", nodeId),
+  });
   bindSearch();
 }
 
@@ -358,33 +380,6 @@ function notice(kind, iconName, message, tail) {
 
 function summaryItem(value, label) {
   return `<div class="summary-item"><div class="summary-value">${escapeHtml(value)}</div><div class="summary-label">${escapeHtml(label)}</div></div>`;
-}
-
-function renderPhaseBand(phase, nodes, claimById) {
-  return `<section class="phase-band" data-phase="${escapeHtml(phase.phase_id)}">
-    <div class="phase-header">
-      <div class="phase-id">${escapeHtml(phase.phase_id)}</div>
-      <div><h2 class="phase-title">${escapeHtml(phase.title)}</h2><p class="phase-objective">${escapeHtml(phase.objective)}</p></div>
-      <div class="phase-count">${nodes.length} node${nodes.length === 1 ? "" : "s"}${phase.focused ? " | focus" : ""}</div>
-    </div>
-    <div class="node-timeline">${nodes.length ? nodes.map(node => renderNodeCard(node, claimById)).join("") : `<div class="empty">No nodes in this phase.</div>`}</div>
-  </section>`;
-}
-
-function renderNodeCard(node, claimById) {
-  const claim = claimById.get(node.primary_claim_ref);
-  const focused = state.view.focus.node_refs.includes(node.node_id);
-  const opening = object(node.opening_decision);
-  const result = object(node.result);
-  const execution = `${node.attempts.length} attempt${node.attempts.length === 1 ? "" : "s"} | ${node.compute_run_count || 0} run${node.compute_run_count === 1 ? "" : "s"}`;
-  const lineage = node.dependency_refs.length ? `from ${node.dependency_refs.join(", ")}` : "entry decision";
-  const successors = array(node.dependent_refs);
-  return `<div class="node-step"><span class="node-step-marker ${tone(node.status)}" aria-hidden="true"></span><button class="node-card ${focused ? "focused" : ""}" type="button" data-detail="node" data-id="${escapeHtml(node.node_id)}">
-    <div class="node-card-head"><div><div class="node-id">${escapeHtml(node.node_id)}</div><div class="node-title">${escapeHtml(node.title)}</div></div>${badge(node.status)}</div>
-    <div class="node-decision"><div class="node-field-label">Research decision</div><p class="node-rationale">${escapeHtml(opening.rationale || node.objective)}</p><div class="node-question">${escapeHtml(node.objective)}</div></div>
-    <div class="node-outcome ${result.summary ? "resolved" : "pending"}"><div class="node-field-label">Outcome</div><p>${result.summary ? escapeHtml(result.summary) : "Pending"}</p></div>
-    <div class="node-meta"><span>${icon("branch")}${escapeHtml(lineage)}</span><span>${escapeHtml(execution)}</span><span>${successors.length ? `${successors.length} successor${successors.length === 1 ? "" : "s"}` : "no successor"}</span>${claim ? `<span>${escapeHtml(claim.claim_id)}</span>` : ""}</div>
-  </button></div>`;
 }
 
 function matchesNode(node, phase, claimById, query) {
@@ -522,9 +517,9 @@ function renderLocatorMatch(match) {
 }
 
 function renderGraphs() {
-  content.innerHTML = renderHeader("Advanced Graphs", "Claim relations and the cross-Phase ResearchNode dependency DAG.")
+  content.innerHTML = renderHeader("Advanced Graphs", "Scientific Claim relations remain separate from the Research Tree.")
     + renderNotices()
-    + `<div class="graph-grid">${graphPanel("Scientific Claim Graph", state.graph.claim_graph, "claim")}${graphPanel("Cross-Phase ResearchNode DAG", state.graph.research_node_dag, "node")}</div>`;
+    + `<div class="graph-grid single">${graphPanel("Scientific Claim Graph", state.graph.claim_graph, "claim")}</div>`;
   requestAnimationFrame(drawAllGraphs);
 }
 
@@ -534,8 +529,7 @@ function graphPanel(title, graph, kind) {
 
 function drawAllGraphs() {
   document.querySelectorAll("[data-graph-kind]").forEach(stage => {
-    const graph = stage.dataset.graphKind === "claim" ? state.graph.claim_graph : state.graph.research_node_dag;
-    drawGraph(stage, graph);
+    drawGraph(stage, state.graph.claim_graph);
   });
 }
 
@@ -968,6 +962,7 @@ function showToast(message) {
 }
 
 function renderFatal(error) {
+  teardownResearchTree();
   content.innerHTML = `<div class="fatal">${escapeHtml(error.message || error)}</div>`;
   setHealth("invalid", "Unavailable");
 }
