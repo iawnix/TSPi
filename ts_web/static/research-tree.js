@@ -30,6 +30,7 @@
     let resizeObserver = null;
 
     root.replaceChildren();
+    root.classList.add("research-tree");
     root.classList.toggle("compact", nodes.length <= 2);
     if (!nodes.length) {
       root.append(element("div", "empty", "No ResearchNodes are recorded."));

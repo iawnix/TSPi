@@ -565,6 +565,7 @@ def test_static_ui_exposes_v5_research_tree_and_on_demand_node_details() -> None
     assert "Cross-Phase ResearchNode DAG" not in script
     assert "computeLayout" in tree
     assert "computeLineage" in tree
+    assert 'root.classList.add("research-tree")' in tree
     assert "research-tree-outline" in tree
     assert "ResizeObserver" in tree
     assert 'const tabs = ["overview", "conclusions", "evidence", "runs", "files", "history"]' in script
