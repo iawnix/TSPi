@@ -91,6 +91,7 @@ def draft_decision(
         raise ContractError(str(exc)) from exc
     created_at = now_iso()
     raw_operations = request["operations"]
+    _validate_research_transition_shape(raw_operations)
     state = _DraftState.load(root_path, decision_id=allocated_decision_id)
     allocations = _allocate_aliases(
         raw_operations,
@@ -144,6 +145,83 @@ def draft_decision(
     return {"decision": decision, "allocated_refs": allocations}
 
 
+def _validate_research_transition_shape(operations: list[Any]) -> None:
+    operation_names = {
+        "phase": {"create_phase", "append_research_phase"},
+        "start": {"start_node", "append_research_node"},
+        "complete": {"complete_node", "complete_research_node"},
+    }
+    counts = {
+        kind: sum(
+            1
+            for operation in operations
+            if isinstance(operation, dict) and operation.get("op") in names
+        )
+        for kind, names in operation_names.items()
+    }
+    labels = {
+        "phase": "create at most one ResearchPhase",
+        "start": "start at most one ResearchNode",
+        "complete": "complete at most one ResearchNode",
+    }
+    for kind, count in counts.items():
+        if count > 1:
+            raise ContractError(
+                f"one research Decision may {labels[kind]}; "
+                "use separate Decisions so each material research transition remains visible"
+            )
+
+    starts = [
+        operation
+        for operation in operations
+        if isinstance(operation, dict) and operation.get("op") in operation_names["start"]
+    ]
+    completions = [
+        operation
+        for operation in operations
+        if isinstance(operation, dict) and operation.get("op") in operation_names["complete"]
+    ]
+    if len(starts) == len(completions) == 1:
+        completed_ref = _completed_node_ref(completions[0])
+        started_ref = _started_node_ref(starts[0])
+        dependency_refs = _started_node_dependencies(starts[0])
+        if (
+            completed_ref is not None
+            and started_ref is not None
+            and completed_ref != started_ref
+            and dependency_refs is not None
+            and completed_ref not in dependency_refs
+        ):
+            raise ContractError(
+                "a Decision that completes one ResearchNode and starts another must make "
+                "the completed Node an explicit dependency of its successor"
+            )
+
+
+def _completed_node_ref(operation: dict[str, Any]) -> str | None:
+    key = "nodeRef" if operation.get("op") == "complete_node" else "node_ref"
+    value = operation.get(key)
+    return value if isinstance(value, str) else None
+
+
+def _started_node_ref(operation: dict[str, Any]) -> str | None:
+    if operation.get("op") == "start_node":
+        local_ref = operation.get("local_ref")
+        return f"${local_ref}" if isinstance(local_ref, str) else None
+    record = operation.get("record")
+    value = record.get("node_id") if isinstance(record, dict) else None
+    return value if isinstance(value, str) else None
+
+
+def _started_node_dependencies(operation: dict[str, Any]) -> list[str] | None:
+    if operation.get("op") == "start_node":
+        value = operation.get("dependencyRefs", [])
+    else:
+        record = operation.get("record")
+        value = record.get("dependency_refs") if isinstance(record, dict) else None
+    return [item for item in value if isinstance(item, str)] if isinstance(value, list) else None
+
+
 def validate_decision(decision: Any) -> dict[str, Any]:
     if not isinstance(decision, dict):
         raise ContractError("decision must be an object")
@@ -151,6 +229,7 @@ def validate_decision(decision: Any) -> dict[str, Any]:
         validate_contract("decision.schema.json", decision)
     except SchemaValidationError as exc:
         raise ContractError(str(exc)) from exc
+    _validate_research_transition_shape(decision["operations"])
     expected_allocations: set[str] = set()
     for operation in decision["operations"]:
         identifier = _created_identifier(operation)

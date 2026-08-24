@@ -78,11 +78,20 @@ checkpoint supports backtracking. Preserve failed, blocked, inconclusive, and
 stopped Nodes; do not rewrite history into a successful line.
 
 Node granularity is semantic, not a fixed attempt count. One Node should own one
-principal scientific question and deliverable. Retries that preserve that
-objective remain calculation Attempts below the Node; a changed objective or
-principal deliverable starts a dependent Node. Hypotheses, assumptions, and
-falsifiers remain on Claims. This guidance preserves
+principal scientific question and deliverable. It is the user-visible decision
+episode that records why the question was selected and what changed. Retries
+that preserve that objective remain calculation Attempts below the Node; a
+changed question, deliverable, hypothesis scope, method branch, backtrack, or
+synthesis goal starts a dependent Node. Hypotheses, assumptions, and falsifiers
+remain on Claims. This guidance preserves
 discoverability without turning Node labels or tags into a workflow policy.
+
+One canonical Decision can open at most one Node and close at most one Node; it
+may start and close that same Node, or close an existing Node and atomically open
+one explicitly dependent successor. A read-only Research Trajectory projection
+joins Node lineage, opening rationale, and outcome for reports and Web without
+adding canonical state. Root context derives only the bounded trajectory summary
+it needs, avoiding a second copy of full Node data.
 
 ResearchNode uses `ts-research-node/1`. It contains no `operation_refs` field.
 The shared Activity Index projects activities from

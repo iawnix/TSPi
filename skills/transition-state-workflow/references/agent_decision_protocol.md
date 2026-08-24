@@ -4,7 +4,7 @@
 
 1. Read a frontier or delta projection.
 2. Name the unresolved question and possible falsifiers.
-3. Select one bounded ResearchNode and explicit dependencies.
+3. Select one decision-sized ResearchNode and explicit dependencies.
 4. Draft, validate, and apply the graph change.
 5. Run deterministic actions, then verify local primary artifacts.
 6. Record semantic Observations and Findings.
@@ -13,6 +13,21 @@
 9. Decide independently whether to branch, merge, backtrack, stop, or continue.
 
 The Kernel validates this record; it does not supply the strategy.
+
+## Node Boundary Test
+
+Start a new Node when the unresolved question, principal deliverable,
+hypothesis scope, method branch, backtrack target, or synthesis goal changes.
+Keep a retry in the current Node only when success would answer the same
+question with the same deliverable. Several tools may serve one question, but
+candidate discovery, stationary-point assessment, connectivity, and final
+synthesis are not one umbrella Node merely because they concern one Claim.
+
+One Decision may start at most one Node and complete at most one Node. When the
+next question follows directly, close the current Node and open its dependent
+successor in the same atomic Decision. The dependency is required; unrelated
+close/open transitions use separate Decisions. Phase changes mark a new
+human-facing question family, not a fixed lifecycle stage.
 
 ## Failed Exploration And Backtracking
 

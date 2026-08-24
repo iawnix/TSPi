@@ -14,3 +14,9 @@ Context projection and workspace revision, and returns a frozen
 
 Pass that exact Decision to `ts_workspace_decision_validate`, then to
 `ts_workspace_decision_apply`. Any change requires a new draft.
+
+One Decision may create at most one Phase, start at most one ResearchNode, and
+complete at most one ResearchNode. It may start and complete that same Node, or
+combine an existing Node completion with one successor start when the successor
+explicitly depends on the completed Node. Use separate Decisions for unrelated
+or parallel transitions.

@@ -50,10 +50,7 @@ def build_report_package(
             "claims": context["claims"],
             "relations": context["claim_relations"],
         })
-        _write_json(staging / "research_roadmap.json", {
-            "phases": context["research_phases"],
-            "nodes": context["research_nodes"],
-        })
+        _write_json(staging / "research_roadmap.json", context["research_trajectory"])
         _write_json(staging / "activities.json", {
             "activities": context["deterministic_activities"],
             "activity_summaries": context["activity_summaries"],
@@ -159,6 +156,10 @@ def render_final_report(context: dict[str, Any]) -> str:
         if isinstance(item, dict) and isinstance(item.get("node_id"), str)
     }
     claim_node_links = derive_claim_node_links(context["claims"], context["research_nodes"])
+    trajectory_nodes = {
+        item["node_id"]: item
+        for item in context["research_trajectory"]["nodes"]
+    }
     related_claim_refs = {
         node["node_id"]: [
             claim_id
@@ -195,19 +196,23 @@ def render_final_report(context: dict[str, Any]) -> str:
             "",
             _escape(phase["objective"]),
             "",
-            "| ResearchNode | Status | Dependencies | Primary Claim | Claim scope | Deliverable |",
-            "| --- | --- | --- | --- | --- | --- |",
+            "| ResearchNode | Research decision | Status / outcome | Dependencies |",
+            "| --- | --- | --- | --- |",
         ])
         phase_nodes = [node for node in context["research_nodes"] if node["phase_ref"] == phase["phase_id"]]
         for node in phase_nodes:
             node_marker = " (focus)" if node["node_id"] in focus_nodes else ""
-            claim_refs = related_claim_refs[node["node_id"]]
+            trajectory_node = trajectory_nodes[node["node_id"]]
+            opening = trajectory_node.get("opening_decision") or {}
+            result = node.get("result") or {}
             lines.append(
-                f"| `{node['node_id']}`{node_marker} | `{node['status']}` | `{', '.join(node['dependency_refs']) or 'none'}` | "
-                f"`{node.get('primary_claim_ref') or 'none'}` | `{', '.join(claim_refs) or 'none'}` | {_escape(node['deliverable'])} |"
+                f"| `{node['node_id']}`{node_marker} - {_escape(node['title'])} | "
+                f"{_escape(opening.get('rationale') or node['objective'])} | "
+                f"`{node['status']}`{': ' + _escape(result['summary']) if result.get('summary') else ''} | "
+                f"`{', '.join(node['dependency_refs']) or 'none'}` |"
             )
         if not phase_nodes:
-            lines.append("| _none_ |  |  |  |  |  |")
+            lines.append("| _none_ |  |  |  |")
 
     lines.extend([
         "",
@@ -237,11 +242,13 @@ def render_final_report(context: dict[str, Any]) -> str:
         activity = activity_summaries.get(node["node_id"], {})
         claim_refs = related_claim_refs[node["node_id"]]
         phase = phase_by_id[node["phase_ref"]]
+        opening = trajectory_nodes[node["node_id"]].get("opening_decision") or {}
         lines.extend([
             f"### `{node['node_id']}` - {_escape(node['title'])}",
             "",
             f"- Phase: `{phase['phase_id']}` ({_escape(phase['title'])}).",
             f"- Status: `{node['status']}`; dependencies: `{', '.join(node['dependency_refs']) or 'none'}`.",
+            f"- Research decision: {_escape(opening.get('rationale') or node['title'])}",
             f"- Objective: {_escape(node['objective'])}",
             f"- Deliverable: {_escape(node['deliverable'])}",
             f"- Primary Claim: `{node.get('primary_claim_ref') or 'none'}`; Claim scope: `{', '.join(claim_refs) or 'none'}`.",

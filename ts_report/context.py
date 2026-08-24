@@ -9,6 +9,7 @@ from ts_workspace.acceptance import project_acceptances
 from ts_workspace.io import read_json
 from ts_workspace.operational import operational_snapshot
 from ts_workspace.revision import report_id_for_revision, workspace_revision_from_documents
+from ts_workspace.trajectory import project_research_trajectory
 from ts_workspace.state import (
     CLAIMS_FILE,
     CLAIM_RELATIONS_FILE,
@@ -51,6 +52,8 @@ def collect_report_context(
     )
     current_acceptances = [item for item in acceptances if item["current"]]
     operations = operational_snapshot(root_path, exclude_activity_refs=exclude_activity_refs)
+    research_phases = list(documents[RESEARCH_PHASES_FILE]["phases"])
+    research_nodes = list(documents[RESEARCH_NODES_FILE]["nodes"])
     return {
         "schema_version": "ts-report-context/5",
         "workspace_root": str(root_path),
@@ -69,8 +72,9 @@ def collect_report_context(
         },
         "claims": list(documents[CLAIMS_FILE]["claims"]),
         "claim_relations": list(documents[CLAIM_RELATIONS_FILE]["relations"]),
-        "research_phases": list(documents[RESEARCH_PHASES_FILE]["phases"]),
-        "research_nodes": list(documents[RESEARCH_NODES_FILE]["nodes"]),
+        "research_phases": research_phases,
+        "research_nodes": research_nodes,
+        "research_trajectory": project_research_trajectory(root_path, research_phases, research_nodes),
         "observations": list(documents[OBSERVATIONS_FILE]["observations"]),
         "validation_specs": list(documents[VALIDATION_SPECS_FILE]["specs"]),
         "validation_results": list(documents[VALIDATION_RESULTS_FILE]["results"]),

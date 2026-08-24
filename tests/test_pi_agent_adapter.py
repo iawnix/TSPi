@@ -136,6 +136,8 @@ def test_workspace_cli_compiles_v5_frontier_and_focused_node(tmp_path: Path) -> 
     node = _workspace_cli("context", "--root", str(workspace), "--mode", "node", "--node-ref", refs["node_id"])
     assert frontier["schema_version"] == "ts-context-projection/2"
     assert frontier["focus"]["node_refs"] == [refs["node_id"]]
+    assert frontier["workspace_brief"]["nodes"][0]["decision_rationale"]
+    assert "research_trajectory" not in frontier
     assert node["research_nodes"][0]["node_id"] == refs["node_id"]
     assert "node_index" not in frontier
     assert "gate_results" not in frontier
@@ -158,6 +160,7 @@ process.stdout.write(JSON.stringify({{details:buildContextDetails(context),summa
     assert operational["agentRunPendingCount"] == 1
     assert "agent_runs=3" in result["summary"]
     assert "agent_failures=1" in result["summary"]
+    assert "trajectory:" in result["summary"]
     assert "reviews=" not in result["summary"]
 
 
@@ -175,7 +178,7 @@ process.stdout.write(JSON.stringify(result));
     assert "TS v5 workspace active" in prompt
     assert "ts_workspace_context" in prompt
     assert "ts_workspace_decision_apply" in prompt
-    assert "start_node" not in prompt
+    assert "Each material change of question" in prompt
     assert "workflow phase" not in prompt.lower()
 
 

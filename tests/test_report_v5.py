@@ -86,6 +86,8 @@ def test_report_projects_v5_roadmap_and_semantic_validation(tmp_path: Path) -> N
 
     assert context["schema_version"] == "ts-report-context/5"
     assert context["focus"]["claim_refs"] == [refs["claim"]]
+    assert context["research_trajectory"]["schema_version"] == "ts-research-trajectory/1"
+    assert context["research_trajectory"]["nodes"][0]["opening_decision"]["rationale"] == "Seed a reportable DAG."
     assert "## Research Roadmap" in text
     assert "## Scientific Conclusions" in text
     assert "## ResearchNode Records" in text
@@ -98,6 +100,7 @@ def test_report_projects_v5_roadmap_and_semantic_validation(tmp_path: Path) -> N
     assert "## Frozen Validation" in text
     assert "## Findings" in text
     assert refs["node"] in text
+    assert "Research decision: Seed a reportable DAG." in text
     assert f"`{refs['claim']}, {refs['discovered']}`" in text
     assert "required_gates" not in text
     assert "node_id" not in text
@@ -132,6 +135,9 @@ def test_report_package_is_revision_and_manifest_bound(tmp_path: Path) -> None:
         path = target / item["ref"]
         assert item["size_bytes"] == path.stat().st_size
         assert item["sha256"] == "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+    roadmap = read_json(target / "research_roadmap.json")
+    assert roadmap["schema_version"] == "ts-research-trajectory/1"
+    assert roadmap["nodes"][0]["opening_decision"]["rationale"] == "Seed a reportable DAG."
     with pytest.raises(ValueError, match="already exists"):
         build_report_package(root, target)
 

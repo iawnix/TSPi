@@ -151,24 +151,36 @@ def _make_workspace(root: Path) -> dict[str, str]:
                     "summary": "The probe completed but did not resolve the mechanism.",
                     "openQuestions": ["Which endpoints are connected?"],
                 },
-                {
-                    "op": "start_node",
-                    "local_ref": "connectivity",
-                    "phaseRef": "$mechanism",
-                    "title": "Bounded research node",
-                    "deliverable": "One bounded research result.",
-                    "objective": "Test bidirectional connectivity.",
-                    "dependencyRefs": ["$search"],
-                    "primaryClaimRef": "$concerted",
-                    "claimRefs": ["$concerted"],
-                    "tags": ["connectivity"],
-                },
-                {"op": "set_focus", "claimRefs": ["$concerted"], "nodeRefs": ["$connectivity"]},
+                {"op": "set_focus", "claimRefs": ["$concerted"], "nodeRefs": ["$search"]},
             ],
         },
     )
     apply_decision(root, drafted["decision"])
-    refs = drafted["allocated_refs"]
+    refs = dict(drafted["allocated_refs"])
+    connectivity = draft_decision(
+        root,
+        {
+            "rationale": "The candidate probe is complete but endpoint identity remains unresolved, so connectivity becomes the next research decision.",
+            "basis_refs": [refs["search"]],
+            "operations": [
+                {
+                    "op": "start_node",
+                    "local_ref": "connectivity",
+                    "phaseRef": refs["mechanism"],
+                    "title": "Resolve bidirectional connectivity",
+                    "deliverable": "One endpoint-connectivity conclusion.",
+                    "objective": "Test bidirectional connectivity.",
+                    "dependencyRefs": [refs["search"]],
+                    "primaryClaimRef": refs["concerted"],
+                    "claimRefs": [refs["concerted"]],
+                    "tags": ["connectivity"],
+                },
+                {"op": "set_focus", "claimRefs": [refs["concerted"]], "nodeRefs": ["$connectivity"]},
+            ],
+        },
+    )
+    apply_decision(root, connectivity["decision"])
+    refs.update(connectivity["allocated_refs"])
     node_id = refs["connectivity"]
     artifact = root / "nodes" / node_id / "outputs" / "probe.json"
     artifact.parent.mkdir(parents=True, exist_ok=True)
@@ -286,9 +298,14 @@ def test_normalize_workspace_projects_v5_phase_node_and_operational_state(tmp_pa
     assert view["focus"]["claim_refs"] == [refs["concerted"]]
     assert view["focus"]["node_refs"] == [refs["connectivity"]]
     active = next(row for row in view["research_nodes"] if row["node_id"] == refs["connectivity"])
+    completed = next(row for row in view["research_nodes"] if row["node_id"] == refs["search"])
     assert active["activities"][0]["activity_id"] == "op_1"
     assert active["attempts"][0]["runs"][0]["task_id"] == "sub_1"
     assert active["compute_run_count"] == 1
+    assert "endpoint identity remains unresolved" in active["opening_decision"]["rationale"]
+    assert completed["dependent_refs"] == [refs["connectivity"]]
+    assert completed["completion_decision"]["decision_id"] == completed["result"]["decision_id"]
+    assert "research_trajectory" not in view
     assert all(row["phase_ref"] == refs["mechanism"] for row in view["research_nodes"])
 
 
@@ -442,6 +459,7 @@ def test_graph_uses_claim_relations_and_research_node_dependencies(tmp_path: Pat
             "kind": "depends_on",
         }
     ]
+    assert "research_trajectory" not in graph
     assert graph["deterministic_activities"][0]["kind"] == "render"
     assert {row["role"] for row in graph["agent_runs"]} == {"compute", "review"}
 
@@ -539,6 +557,9 @@ def test_static_ui_exposes_v5_phase_roadmap_and_on_demand_node_details() -> None
     assert "app.js" in html
     assert "renderPhaseBand" in script
     assert "renderNodeDetail" in script
+    assert 'class="node-timeline"' in script
+    assert "Research decision" in script
+    assert "opening_decision" in script
     assert 'const tabs = ["overview", "conclusions", "evidence", "runs", "files", "history"]' in script
     assert 'control: [state.view.unresolved_controls, "control_id"]' in script
     assert "function renderActDetail" not in script

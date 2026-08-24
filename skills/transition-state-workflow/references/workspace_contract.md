@@ -93,6 +93,10 @@ are execution mirrors and never become canonical local refs.
   record current only while those inputs still match canonical state.
 - Focus refs and acceptance indexes match existing canonical records.
 - Decision replay is idempotent only for identical content.
+- One Decision creates at most one Phase, starts at most one ResearchNode, and
+  completes at most one ResearchNode. Starting and completing that same Node is
+  valid; closing an existing Node and opening its successor in the same
+  transaction requires the successor to depend explicitly on the completed Node.
 
 ## Operational State
 

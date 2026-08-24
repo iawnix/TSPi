@@ -30,6 +30,11 @@ and recoverable Decision transaction IDs are not reused.
 Node dependencies may cite several earlier Nodes. They express provenance, not a
 required order or permission.
 
+One Decision may create at most one Phase, start at most one Node, and complete
+at most one Node. It may start and complete that same Node. If it closes an
+existing Node while opening another, the new Node must explicitly depend on the
+completed Node; unrelated or parallel transitions use separate Decisions.
+
 ## Recording Science
 
 - `record_observation`: producing Node, semantic `conceptId`, `subjectRef`, typed

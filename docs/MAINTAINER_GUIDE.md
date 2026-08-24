@@ -106,9 +106,10 @@ The stable concepts and their owners are:
   status, and cited scientific records.
 - **ClaimRelation**: open scientific relationship between Claims. The Kernel
   checks identity and acyclicity only.
-- **ResearchNode**: bounded node with one Phase, a short title, one objective,
-  one principal deliverable, dependency edges, Claim scope, linked records, and
-  terminal result. The Kernel checks the DAG; it does not choose the successor.
+- **ResearchNode**: one user-visible research decision episode with one Phase,
+  short title, one question, one principal deliverable, dependency edges, Claim
+  scope, linked records, and terminal result. The Kernel checks the DAG; it does
+  not choose the successor.
 - **Observation**: immutable typed semantic value with exact artifact digests
   and provenance.
 - **Finding**: explicit anomaly, limitation, conflict, or open question.
@@ -141,6 +142,9 @@ reasoning and focused documentation, not a Kernel enum.
   prevents Decision ID reuse.
 - A Decision ID is idempotent only for identical canonical content.
 - Any edit to a returned Decision requires a fresh draft.
+- One Decision may create at most one Phase, start at most one Node, and
+  complete at most one Node. It may start and complete that same Node; closing
+  an existing Node and opening another requires an explicit successor edge.
 - The transaction owner writes the Decision snapshot, proposed documents,
   decision log, and committed transaction record in its declared order.
 - Graph edges must be referentially valid and acyclic.
@@ -293,8 +297,11 @@ retried.
 `ts_web` is read-only derived state. Keep Phase grouping, Claim/Node association,
 acceptance currentness, operational identity, and file visibility in shared
 projection helpers rather than duplicating policy in browser JavaScript. The
-default UI must remain Phase-first and user-oriented; raw Claim and Node graphs
-belong under advanced inspection.
+default UI must remain Phase-first and show the Research Trajectory: Node
+opening rationale, question, outcome, and lineage. Atomic Decision operations,
+raw Claim graphs, and Node DAGs belong under detail or advanced inspection.
+Merge the bounded trajectory fields into existing Node payloads; do not return
+a second full Node graph beside the normal Web view and graph payload.
 
 The Web registry is external state and must never be created inside a source
 workspace. Do not add write routes, implicit workspace repair, cached canonical

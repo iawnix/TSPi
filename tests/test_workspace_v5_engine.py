@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 import json
 from pathlib import Path
 
@@ -7,7 +8,7 @@ import pytest
 
 from tests.v5_helpers import accept_research_claim
 from ts_workspace.acceptance import project_acceptances
-from ts_workspace.decision import draft_decision as _kernel_draft_decision
+from ts_workspace.decision import draft_decision as _kernel_draft_decision, validate_decision
 from ts_workspace.engine import apply_decision, init_workspace, validate_decision_dry_run
 from ts_workspace.errors import ContractError
 from ts_workspace.io import read_json, write_json
@@ -57,7 +58,7 @@ def _acceptance_projection(root: Path) -> list[dict]:
 def test_research_node_dag_supports_branch_merge_and_kernel_ids(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
-    drafted, result = _apply(
+    intake_draft, intake_result = _apply(
         root,
         [
             {
@@ -76,61 +77,178 @@ def test_research_node_dag_supports_branch_merge_and_kernel_ids(tmp_path: Path) 
                 "primaryClaimRef": "$mechanism",
                 "claimRefs": ["$mechanism"],
             },
-            {
-                "op": "start_node",
-                "local_ref": "path_a",
-                "title": "Bounded research node",
-                "deliverable": "One bounded research result.",
-                "objective": "Test the concerted pathway.",
-                "dependencyRefs": ["$intake"],
-                "primaryClaimRef": "$mechanism",
-                "claimRefs": ["$mechanism"],
-            },
-            {
-                "op": "start_node",
-                "local_ref": "path_b",
-                "title": "Bounded research node",
-                "deliverable": "One bounded research result.",
-                "objective": "Search for a stepwise alternative.",
-                "dependencyRefs": ["$intake"],
-                "primaryClaimRef": "$mechanism",
-                "claimRefs": ["$mechanism"],
-            },
+            {"op": "set_focus", "claimRefs": ["$mechanism"], "nodeRefs": ["$intake"]},
+        ],
+    )
+    phase_id = intake_draft["allocated_refs"]["phase"]
+    claim_id = intake_draft["allocated_refs"]["mechanism"]
+    intake_id = intake_draft["allocated_refs"]["intake"]
+    path_a_draft, _ = _apply(root, [{
+        "op": "start_node", "local_ref": "path_a", "title": "Concerted-path decision",
+        "deliverable": "One bounded research result.", "objective": "Test the concerted pathway.",
+        "dependencyRefs": [intake_id], "primaryClaimRef": claim_id, "claimRefs": [claim_id],
+    }], rationale="Open the concerted-path research branch.")
+    path_b_draft, _ = _apply(root, [{
+        "op": "start_node", "local_ref": "path_b", "title": "Stepwise-path decision",
+        "deliverable": "One bounded research result.", "objective": "Search for a stepwise alternative.",
+        "dependencyRefs": [intake_id], "primaryClaimRef": claim_id, "claimRefs": [claim_id],
+    }], rationale="Open the competing stepwise-path research branch.")
+    path_a_id = path_a_draft["allocated_refs"]["path_a"]
+    path_b_id = path_b_draft["allocated_refs"]["path_b"]
+    synthesis_draft, synthesis_result = _apply(root, [{
+        "op": "start_node", "local_ref": "synthesis", "title": "Branch synthesis decision",
+        "deliverable": "One bounded comparison of both branches.",
+        "objective": "Compare both searches without discarding either history.",
+        "dependencyRefs": [path_a_id, path_b_id], "primaryClaimRef": claim_id, "claimRefs": [claim_id],
+    }, {"op": "set_focus", "claimRefs": [claim_id], "nodeRefs": ["$synthesis"]}], rationale="Merge both completed research questions for synthesis.")
+    synthesis_id = synthesis_draft["allocated_refs"]["synthesis"]
+
+    assert phase_id == "phase_1"
+    assert claim_id == "claim_1"
+    assert [intake_id, path_a_id, path_b_id, synthesis_id] == ["node_1", "node_2", "node_3", "node_4"]
+    assert intake_result["created_refs"]["nodes"] == [intake_id]
+    assert synthesis_result["created_refs"]["nodes"] == [synthesis_id]
+    nodes = {item["node_id"]: item for item in read_json(root / "research_nodes.json")["nodes"]}
+    assert nodes[synthesis_id]["dependency_refs"] == [path_a_id, path_b_id]
+    assert {node["phase_ref"] for node in nodes.values()} == {phase_id}
+    assert not (root / "nodes" / synthesis_id).exists()
+    assert validate_workspace(root)["valid"] is True
+
+
+@pytest.mark.parametrize("operation", ["create_phase", "start_node", "complete_node"])
+def test_one_research_decision_cannot_open_or_close_multiple_roadmap_records(
+    tmp_path: Path,
+    operation: str,
+) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    operations = [{"op": operation}, {"op": operation}]
+
+    with pytest.raises(ContractError, match="each material research transition remains visible"):
+        _kernel_draft_decision(
+            root,
+            {"rationale": "Reject an opaque multi-Node transition.", "basis_refs": [], "operations": operations},
+        )
+
+
+def test_frozen_decision_cannot_bypass_the_single_node_transition_contract(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    drafted = _kernel_draft_decision(
+        root,
+        {
+            "rationale": "Open one visible research decision.",
+            "basis_refs": [],
+            "operations": [
+                {"op": "create_phase", "local_ref": "phase", "title": "Exploration", "objective": "Test one question."},
+                {
+                    "op": "start_node", "local_ref": "first", "phaseRef": "$phase",
+                    "title": "First decision", "objective": "Test the first question.",
+                    "deliverable": "One first-question result.",
+                },
+            ],
+        },
+    )
+    forged = deepcopy(drafted["decision"])
+    second = deepcopy(next(operation for operation in forged["operations"] if operation["op"] == "append_research_node"))
+    second["record"]["node_id"] = "node_2"
+    second["record"]["artifact_root"] = "nodes/node_2"
+    forged["operations"].append(second)
+    forged["allocations"]["second"] = "node_2"
+
+    with pytest.raises(ContractError, match="each material research transition remains visible"):
+        validate_decision(forged)
+
+
+def test_one_decision_may_close_a_node_and_open_its_successor(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    first, _ = _apply(root, [{
+        "op": "start_node", "local_ref": "first", "title": "Candidate decision",
+        "objective": "Determine whether one candidate is viable.",
+        "deliverable": "One candidate viability result.",
+    }])
+    first_id = first["allocated_refs"]["first"]
+
+    successor, _ = _apply(root, [
+        {"op": "complete_node", "nodeRef": first_id, "outcome": "completed", "summary": "The candidate is viable."},
+        {
+            "op": "start_node", "local_ref": "successor", "title": "Connectivity decision",
+            "objective": "Determine which endpoints this candidate connects.",
+            "deliverable": "One endpoint-connectivity conclusion.", "dependencyRefs": [first_id],
+        },
+    ], rationale="The viable candidate justifies a separate connectivity question.")
+    successor_id = successor["allocated_refs"]["successor"]
+    nodes = {row["node_id"]: row for row in read_json(root / "research_nodes.json")["nodes"]}
+
+    assert nodes[first_id]["status"] == "completed"
+    assert nodes[successor_id]["status"] == "open"
+    assert nodes[successor_id]["dependency_refs"] == [first_id]
+
+
+def test_one_decision_may_start_and_complete_the_same_node(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+
+    drafted, _ = _apply(
+        root,
+        [
             {
                 "op": "start_node",
                 "local_ref": "synthesis",
-                "title": "Bounded research node",
-                "deliverable": "One bounded research result.",
-                "objective": "Compare both searches without discarding either history.",
-                "dependencyRefs": ["$path_a", "$path_b"],
-                "primaryClaimRef": "$mechanism",
-                "claimRefs": ["$mechanism"],
+                "title": "Existing-evidence synthesis",
+                "objective": "Summarize one bounded conclusion from existing evidence.",
+                "deliverable": "One synthesis conclusion.",
             },
-            {"op": "set_focus", "claimRefs": ["$mechanism"], "nodeRefs": ["$synthesis"]},
+            {
+                "op": "complete_node",
+                "nodeRef": "$synthesis",
+                "outcome": "completed",
+                "summary": "The existing evidence supports the bounded conclusion.",
+            },
         ],
+        rationale="Record one fully resolved research decision as a visible Node.",
     )
+    node_id = drafted["allocated_refs"]["synthesis"]
+    node = read_json(root / "research_nodes.json")["nodes"][0]
 
-    allocations = drafted["allocated_refs"]
-    assert set(allocations) == {"phase", "mechanism", "intake", "path_a", "path_b", "synthesis"}
-    assert allocations["phase"] == "phase_1"
-    assert allocations["mechanism"] == "claim_1"
-    assert [allocations[name] for name in ("intake", "path_a", "path_b", "synthesis")] == [
-        "node_1",
-        "node_2",
-        "node_3",
-        "node_4",
-    ]
-    assert result["created_refs"]["nodes"] == [
-        allocations["intake"],
-        allocations["path_a"],
-        allocations["path_b"],
-        allocations["synthesis"],
-    ]
-    nodes = {item["node_id"]: item for item in read_json(root / "research_nodes.json")["nodes"]}
-    assert nodes[allocations["synthesis"]]["dependency_refs"] == [allocations["path_a"], allocations["path_b"]]
-    assert {node["phase_ref"] for node in nodes.values()} == {allocations["phase"]}
-    assert not (root / "nodes" / allocations["synthesis"]).exists()
-    assert validate_workspace(root)["valid"] is True
+    assert node["node_id"] == node_id
+    assert node["status"] == "completed"
+    assert node["result"]["decision_id"] == drafted["decision"]["decision_id"]
+
+
+def test_combined_close_and_open_requires_an_explicit_successor_edge(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    first, _ = _apply(root, [{
+        "op": "start_node", "local_ref": "first", "title": "Candidate decision",
+        "objective": "Determine whether one candidate is viable.",
+        "deliverable": "One candidate viability result.",
+    }])
+
+    with pytest.raises(ContractError, match="explicit dependency of its successor"):
+        _kernel_draft_decision(
+            root,
+            {
+                "rationale": "Do not hide two unrelated research transitions.",
+                "basis_refs": [],
+                "operations": [
+                    {
+                        "op": "complete_node",
+                        "nodeRef": first["allocated_refs"]["first"],
+                        "outcome": "completed",
+                        "summary": "The candidate is viable.",
+                    },
+                    {
+                        "op": "start_node",
+                        "local_ref": "unrelated",
+                        "title": "Unrelated decision",
+                        "objective": "Answer a separate question.",
+                        "deliverable": "One unrelated result.",
+                    },
+                ],
+            },
+        )
 
 
 def test_research_node_requires_an_explicit_phase_reference(tmp_path: Path) -> None:

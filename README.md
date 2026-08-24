@@ -43,9 +43,9 @@ The long-lived scientific vocabulary is:
 - **Claim**: one explicit, versioned scientific statement.
 - **ClaimRelation**: a directed dependency, refinement, conflict, or alternative
   relation between Claims. Relations form a DAG but do not route execution.
-- **ResearchNode**: one bounded research node with zero or more dependencies.
-  Dependency edges form the exploration DAG and support branching, merging,
-  and backtracking without rewriting history.
+- **ResearchNode**: one user-visible research decision episode: why one bounded
+  question is next, what principal result will answer it, and what changed.
+  Dependencies support continuation, branching, merging, and backtracking.
 - **Observation**: one immutable semantic value, concept, subject, artifacts,
   and provenance record.
 - **Finding**: one explicit anomaly, limitation, conflict, or unresolved
@@ -145,7 +145,8 @@ remote scheduler.
 ## Explore Workspaces
 
 The packaged `ts_web` server gives users a Phase-first roadmap without changing
-research state. Its default view groups ResearchNodes under ResearchPhases;
+research state. Its default view presents decision-sized ResearchNodes as a
+trajectory under ResearchPhases, with rationale and outcome visible together;
 Claims, validation, Findings, operational runs, files, and advanced graphs stay
 in separate views.
 
@@ -222,17 +223,26 @@ unified TS Activity projection.
 The Root Agent normally:
 
 1. Reads the frontier or delta context and states one unresolved question.
-2. Creates or reuses a navigation Phase, creates or updates Claims, and starts
-   a bounded ResearchNode with explicit dependencies and Claim scope.
+2. Creates or reuses a navigation Phase and starts one decision-sized
+   ResearchNode with explicit dependencies and Claim scope.
 3. Selects a scientifically justified method and invokes bounded tools.
 4. Verifies local primary artifacts and records semantic Observations.
 5. Records anomalies and unresolved limits as Findings.
 6. Freezes relevant GateSpecs before evaluation, then evaluates them over
    explicitly selected Observations.
-7. Updates Claim status, completes the ResearchNode, and accepts a Claim only
-   when a named profile passes.
-8. Recompiles context and independently chooses a branch, merge, backtrack,
-   new question, explicit stop, or completion.
+7. Updates Claim status and completes the ResearchNode as soon as its one
+   question is answered.
+8. Recompiles context and records the next material decision as a dependent
+   Node or new Phase, or explicitly stops. Acceptance still requires a passing
+   named profile.
+
+A changed question, principal deliverable, hypothesis scope, method branch,
+backtrack, or synthesis goal requires a new Node. Same-objective retries remain
+Attempts. One canonical Decision may open at most one Node, while a transition
+may atomically close the current Node and open one explicitly dependent
+successor. It may also start and complete the same purely analytical Node.
+Registry updates and tool calls remain internal Node History rather than
+roadmap Nodes.
 
 The DAG records what happened; it does not prescribe what must happen next.
 Gaussian is a first-class candidate-generation option when scans, QST, or

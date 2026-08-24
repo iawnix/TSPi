@@ -20,6 +20,7 @@ from ts_workspace.refs import (
     phase_sort_key,
 )
 from ts_workspace.revision import report_id_for_revision, workspace_revision_from_documents
+from ts_workspace.trajectory import project_research_trajectory
 from ts_workspace.state import (
     CLAIMS_FILE,
     CLAIM_RELATIONS_FILE,
@@ -49,10 +50,26 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
     agent_runs = operations["agent_runs"]
     controls = [_normalize_control(record) for record in operations["unresolved_controls"]]
     claims = _objects(documents[CLAIMS_FILE].get("claims"))
+    raw_phases = _objects(documents[RESEARCH_PHASES_FILE].get("phases"))
     nodes = sorted([
         _normalize_node(root, record, activities=activities, agent_runs=agent_runs, controls=controls)
         for record in _objects(documents[RESEARCH_NODES_FILE].get("nodes"))
     ], key=lambda record: node_sort_key(str(record.get("node_id") or "")))
+    trajectory = project_research_trajectory(root, raw_phases, nodes)
+    trajectory_nodes = {
+        str(record.get("node_id")): record
+        for record in _objects(trajectory.get("nodes"))
+        if isinstance(record.get("node_id"), str)
+    }
+    nodes = [
+        {
+            **node,
+            "dependent_refs": _strings(trajectory_nodes.get(str(node.get("node_id")), {}).get("dependent_refs")),
+            "opening_decision": trajectory_nodes.get(str(node.get("node_id")), {}).get("opening_decision"),
+            "completion_decision": trajectory_nodes.get(str(node.get("node_id")), {}).get("completion_decision"),
+        }
+        for node in nodes
+    ]
     claim_node_links = derive_claim_node_links(claims, nodes)
     for node in nodes:
         node["related_claim_refs"] = [
@@ -71,7 +88,7 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
     phases = sorted(
         [
             _normalize_phase(record, nodes=nodes, focused=record.get("phase_id") in focus_phase_refs)
-            for record in _objects(documents[RESEARCH_PHASES_FILE].get("phases"))
+            for record in raw_phases
         ],
         key=lambda record: phase_sort_key(str(record.get("phase_id") or "")),
     )

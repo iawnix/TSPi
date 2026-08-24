@@ -24,19 +24,20 @@ effects, provenance, and validation.
 
 1. Read `frontier`, or `delta` when both prior revisions are known.
 2. State one unresolved question, assumptions, predictions, and falsifiers.
-3. Create or reuse a ResearchPhase, create/update Claims, and start one bounded
-   ResearchNode with dependencies and Claim scope.
+3. Create or reuse a ResearchPhase and start one decision-sized ResearchNode
+   with dependencies and Claim scope.
 4. Select a method from chemistry, uncertainty, cost, and available artifacts.
 5. Run bounded tools with the owning Node; its `node_refs` bind the journal.
 6. Verify local primary outputs; record semantic Observations and Findings.
 7. Freeze and evaluate GateSpecs over explicit Observation refs.
-8. Update Claims; complete the Node after control checks; accept through a
-   passing named profile only.
-9. Recompile context and choose the next question, branch, merge, backtrack,
-   stop, or completion.
+8. Update Claims and complete the Node as soon as its one question is answered.
+9. Recompile context; record the next material decision as a dependent Node or
+   a new Phase, or explicitly stop. Accept through a passing profile only.
 
-One Node owns one principal question and deliverable. Same-objective retries stay
-Attempts; a changed objective or principal deliverable starts a dependent Node.
+One Node is one visible decision. New questions or deliverables start dependent
+Nodes; retries stay Attempts. One Decision may close its new Node, or a prior
+Node while opening one dependent successor. See
+`references/agent_decision_protocol.md` for the boundary test.
 
 Backtrack with a new Node depending on an earlier checkpoint; never erase
 history. Canonical records use readable workspace ordinals (`node_1`, `claim_1`,

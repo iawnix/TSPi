@@ -95,7 +95,8 @@ derived Phase state.
 
 ### ResearchNode DAG
 
-A ResearchNode is one bounded and auditable node. It records:
+A ResearchNode is one bounded, auditable, and user-visible research decision
+episode. It records:
 
 - one Phase, a short human-facing title, one objective, and one principal
   deliverable;
@@ -117,6 +118,14 @@ objective remain Attempts, while a changed objective or principal deliverable
 starts a dependent Node. Scientific hypotheses, assumptions, and falsifiers
 remain on Claims so multiple Nodes can test the same statement without copied
 state. This is authoring guidance, not Phase lifecycle or Kernel permission.
+
+One canonical Decision may start at most one Node and complete at most one
+Node. It may start and complete that same Node; closing an existing Node and
+opening another atomically requires an explicit successor edge. The shared
+read-only Research Trajectory derivation joins each Node to its opening and
+completion Decision summaries. Report uses the complete projection, while
+Context and Web consume bounded fields derived from it; it is not another state
+store.
 
 ### Observation and Finding
 
@@ -311,6 +320,12 @@ scientific nor operational revision.
 
 Every bounded graph projection reports omitted counts and retrieval hints. The
 Pi transcript is conversational state, not a scientific source of truth.
+
+Root context carries the compact Node trajectory in `workspace_brief`; it does
+not repeat the full Research Trajectory projection already derivable from the
+same bounded Nodes and immutable Decision snapshots. Reports and `ts_web` use
+the same derivation for human presentation; Web merges the needed fields into
+its existing Node records instead of returning another duplicate graph.
 
 Claim-Node traversal uses the union of declared Node scope and Claim creator
 provenance. Context, Review, report rendering, and `ts_web` share this derived

@@ -120,6 +120,7 @@ function buildContextSummary(context, options = {}) {
     `- focus: claims=${formatList(details.focusClaimRefs, maxItems)}; nodes=${formatList(details.focusNodeRefs, maxItems)}`,
     `- acceptance: current=${formatList(details.currentAcceptanceRefs, maxItems)}; history=${details.acceptanceRecordRefs.length}; stale=${details.staleAcceptanceRefs.length}`,
     `- phases: ${phases.length ? phases.slice(0, maxItems).map(formatPhase).join("; ") : "(none)"}`,
+    `- trajectory: ${formatTrajectory(nodes, maxItems)}`,
     `- open_nodes: ${openNodes.length ? openNodes.slice(0, maxItems).map(formatNode).join("; ") : "(none)"}`,
     `- claims: ${claims.length ? claims.slice(0, maxItems).map(formatClaim).join("; ") : "(none)"}`,
     `- graph: relations=${details.claimRelations.length}; observations=${details.observations.length}; specs=${details.validationSpecs.length}; results=${details.validationResults.length}; findings=${details.findings.length}`,
@@ -182,7 +183,18 @@ function toolText(text, details = {}) {
 }
 
 function formatNode(node) {
-  return `${node.node_id || "node"}@${node.phase_ref || "phase"}/${node.status || "?"}: ${node.title || node.objective || ""}`;
+  const rationale = truncateText(stringValue(node.decision_rationale), 120);
+  return `${node.node_id || "node"}@${node.phase_ref || "phase"}/${node.status || "?"}: ${node.title || node.objective || ""}${rationale ? ` [${rationale}]` : ""}`;
+}
+
+function formatTrajectory(nodes, maxItems) {
+  if (!nodes.length) return "(none)";
+  const visible = nodes.slice(-maxItems);
+  const prefix = nodes.length > visible.length ? `(+${nodes.length - visible.length} earlier) ` : "";
+  return prefix + visible.map((node) => {
+    const outcome = truncateText(stringValue(node.result_summary), 100);
+    return `${node.node_id || "node"}/${node.status || "?"}: ${node.title || node.objective || ""}${outcome ? ` => ${outcome}` : ""}`;
+  }).join(" -> ");
 }
 
 function formatPhase(phase) {
@@ -234,6 +246,11 @@ function numberOrZero(value) {
 
 function stringValue(value) {
   return typeof value === "string" ? value : "";
+}
+
+function truncateText(value, maximum) {
+  const normalized = String(value || "").replace(/\s+/g, " ").trim();
+  return normalized.length <= maximum ? normalized : `${normalized.slice(0, maximum - 3).trimEnd()}...`;
 }
 
 function main(argv) {

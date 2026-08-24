@@ -367,26 +367,30 @@ function renderPhaseBand(phase, nodes, claimById) {
       <div><h2 class="phase-title">${escapeHtml(phase.title)}</h2><p class="phase-objective">${escapeHtml(phase.objective)}</p></div>
       <div class="phase-count">${nodes.length} node${nodes.length === 1 ? "" : "s"}${phase.focused ? " | focus" : ""}</div>
     </div>
-    <div class="node-grid">${nodes.length ? nodes.map(node => renderNodeCard(node, claimById)).join("") : `<div class="empty">No nodes in this phase.</div>`}</div>
+    <div class="node-timeline">${nodes.length ? nodes.map(node => renderNodeCard(node, claimById)).join("") : `<div class="empty">No nodes in this phase.</div>`}</div>
   </section>`;
 }
 
 function renderNodeCard(node, claimById) {
   const claim = claimById.get(node.primary_claim_ref);
   const focused = state.view.focus.node_refs.includes(node.node_id);
+  const opening = object(node.opening_decision);
+  const result = object(node.result);
   const execution = `${node.attempts.length} attempt${node.attempts.length === 1 ? "" : "s"} | ${node.compute_run_count || 0} run${node.compute_run_count === 1 ? "" : "s"}`;
-  return `<button class="node-card ${focused ? "focused" : ""}" type="button" data-detail="node" data-id="${escapeHtml(node.node_id)}">
+  const lineage = node.dependency_refs.length ? `from ${node.dependency_refs.join(", ")}` : "entry decision";
+  const successors = array(node.dependent_refs);
+  return `<div class="node-step"><span class="node-step-marker ${tone(node.status)}" aria-hidden="true"></span><button class="node-card ${focused ? "focused" : ""}" type="button" data-detail="node" data-id="${escapeHtml(node.node_id)}">
     <div class="node-card-head"><div><div class="node-id">${escapeHtml(node.node_id)}</div><div class="node-title">${escapeHtml(node.title)}</div></div>${badge(node.status)}</div>
-    <p class="node-objective">${escapeHtml(node.objective)}</p>
-    <div class="node-claim"><div class="node-claim-label">Primary Claim</div><div class="node-claim-text">${claim ? escapeHtml(claim.statement) : `<span class="muted">No primary Claim</span>`}</div></div>
-    <div class="node-meta"><span>${node.dependency_refs.length} dependencies</span><span>${escapeHtml(execution)}</span><span>${node.activities.length} operations</span></div>
-  </button>`;
+    <div class="node-decision"><div class="node-field-label">Research decision</div><p class="node-rationale">${escapeHtml(opening.rationale || node.objective)}</p><div class="node-question">${escapeHtml(node.objective)}</div></div>
+    <div class="node-outcome ${result.summary ? "resolved" : "pending"}"><div class="node-field-label">Outcome</div><p>${result.summary ? escapeHtml(result.summary) : "Pending"}</p></div>
+    <div class="node-meta"><span>${icon("branch")}${escapeHtml(lineage)}</span><span>${escapeHtml(execution)}</span><span>${successors.length ? `${successors.length} successor${successors.length === 1 ? "" : "s"}` : "no successor"}</span>${claim ? `<span>${escapeHtml(claim.claim_id)}</span>` : ""}</div>
+  </button></div>`;
 }
 
 function matchesNode(node, phase, claimById, query) {
   if (!query) return true;
   const claims = array(node.related_claim_refs).map(ref => claimById.get(ref)).filter(Boolean);
-  return matchesText(node, ["node_id", "title", "objective", "deliverable", "status", "tags"], query)
+  return matchesText(node, ["node_id", "title", "objective", "deliverable", "status", "tags", "opening_decision", "result"], query)
     || matchesText(phase, ["phase_id", "title", "objective"], query)
     || claims.some(claim => matchesText(claim, ["claim_id", "statement", "claim_type", "status"], query));
 }
@@ -681,7 +685,9 @@ function renderNodeTab(payload, tab) {
 function renderNodeOverview(payload) {
   const node = payload.research_node;
   const result = object(node.result);
-  return `<section class="detail-section"><h3>Research Contract</h3><dl class="detail-grid"><dt>Phase</dt><dd><span class="mono">${escapeHtml(payload.phase.phase_id)}</span> ${escapeHtml(payload.phase.title)}</dd><dt>Objective</dt><dd>${escapeHtml(node.objective)}</dd><dt>Deliverable</dt><dd>${escapeHtml(node.deliverable)}</dd><dt>Primary Claim</dt><dd>${node.primary_claim_ref ? detailButton("claim", node.primary_claim_ref, node.primary_claim_ref) : "none"}</dd></dl></section>
+  const opening = object(node.opening_decision);
+  return `<section class="detail-section"><h3>Research Decision</h3><div class="detail-callout info"><div class="detail-meta"><span class="mono">${escapeHtml(opening.decision_id || node.created_by_decision)}</span><span>${escapeHtml(formatTime(opening.created_at || node.created_at))}</span></div><p class="detail-copy">${escapeHtml(opening.rationale || node.objective)}</p></div></section>
+    <section class="detail-section"><h3>Research Contract</h3><dl class="detail-grid"><dt>Phase</dt><dd><span class="mono">${escapeHtml(payload.phase.phase_id)}</span> ${escapeHtml(payload.phase.title)}</dd><dt>Question</dt><dd>${escapeHtml(node.objective)}</dd><dt>Principal deliverable</dt><dd>${escapeHtml(node.deliverable)}</dd><dt>Primary Claim</dt><dd>${node.primary_claim_ref ? detailButton("claim", node.primary_claim_ref, node.primary_claim_ref) : "none"}</dd></dl></section>
     <section class="detail-section"><h3>Outcome</h3>${result.outcome ? `<div class="detail-callout ${tone(result.outcome)}"><div class="detail-meta">${badge(result.outcome)}<span>${escapeHtml(formatTime(result.completed_at))}</span></div><p class="detail-copy">${escapeHtml(result.summary)}</p>${bulletGroup("Open Questions", result.open_questions)}</div>` : `<div class="detail-empty">No terminal result has been recorded.</div>`}</section>
     <section class="detail-section"><h3>Lineage</h3>${linkedNodeGroup("Depends on", payload.dependencies)}${linkedNodeGroup("Continued by", payload.dependents)}</section>
     <section class="detail-section"><h3>Related Claims</h3>${linkedClaimRows(payload.claims)}</section>`;

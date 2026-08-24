@@ -63,7 +63,7 @@ export default function (pi: ExtensionAPI) {
     const packagePolicy = packageSourceSystemPrompt();
     if (!root) return { systemPrompt: `${event.systemPrompt}\n\n${packagePolicy}` };
     return {
-      systemPrompt: `${event.systemPrompt}\n\n${packagePolicy}\n\nTS v5 workspace active: ${root}. Retrieve a bounded graph projection with ${TS_PUBLIC_TOOL_NAMES.workspaceContext}. Only ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply} mutates canonical scientific state.`,
+      systemPrompt: `${event.systemPrompt}\n\n${packagePolicy}\n\nTS v5 workspace active: ${root}. Retrieve bounded graph context with ${TS_PUBLIC_TOOL_NAMES.workspaceContext}; only ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply} mutates canonical science. Each material change of question, principal deliverable, branch, backtrack, or synthesis goal belongs in a distinct ResearchNode; keep retries and registry updates in its History.`,
     };
   });
 

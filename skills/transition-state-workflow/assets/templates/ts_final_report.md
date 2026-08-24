@@ -25,9 +25,9 @@ and cite its basis.}}
 | --- | --- | --- | --- |
 | `{{phase_id}}` | {{phase_title}} | {{phase_objective}} | {{node_count}} |
 
-| ResearchNode | Phase | Dependencies | Status / outcome | Primary Claim | Claim scope | Objective | Deliverable | Derived activities |
-| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `{{node_id}}` | `{{phase_ref}}` | `{{dependency_refs_or_none}}` | `{{status_or_outcome}}` | `{{primary_claim_ref_or_none}}` | `{{claim_refs_or_none}}` | {{objective}} | {{deliverable}} | `{{activity_refs}}` |
+| ResearchNode | Research decision | Phase | Dependencies | Status / outcome | Principal deliverable |
+| --- | --- | --- | --- | --- | --- |
+| `{{node_id}}` | {{opening_decision_rationale}} | `{{phase_ref}}` | `{{dependency_refs_or_none}}` | `{{status_or_outcome}}` | {{deliverable}} |
 
 Failed, blocked, inconclusive, stopped, merged, and backtracked work remains
 visible. Phase groups work for human navigation. Node dependencies alone record

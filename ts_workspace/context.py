@@ -30,6 +30,7 @@ from .refs import (
     validation_spec_sort_key,
 )
 from .revision import report_id_for_revision, workspace_revision_from_documents
+from .trajectory import project_research_trajectory
 from .state import (
     CLAIMS_FILE,
     CLAIM_RELATIONS_FILE,
@@ -121,6 +122,11 @@ def compile_context(
         item for item in all_acceptances if item.get("claim_ref") in selected_claim_refs
     ]
     bounded, omitted = _bound_selection(selected, {**DEFAULT_LIMITS, **(limits or {})})
+    trajectory = project_research_trajectory(
+        root_path,
+        bounded["research_phases"],
+        bounded["research_nodes"],
+    )
     selected_node_ids = {str(item["node_id"]) for item in bounded["research_nodes"]}
     activity_summaries = [
         item
@@ -135,6 +141,7 @@ def compile_context(
     stale_acceptance_refs = [str(item["ref"]) for item in all_acceptances if not item["current"]]
     workspace_brief = _workspace_brief(
         bounded,
+        trajectory=trajectory,
         activity_summaries=activity_summaries,
         current_acceptances=all_acceptances,
     )
@@ -554,6 +561,7 @@ def _incomplete_validation(specs: list[dict[str, Any]], results: list[dict[str, 
 def _workspace_brief(
     selected: dict[str, list[dict[str, Any]]],
     *,
+    trajectory: dict[str, Any],
     activity_summaries: list[dict[str, Any]],
     current_acceptances: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -569,6 +577,11 @@ def _workspace_brief(
         str(item.get("node_id")): item
         for item in activity_summaries
         if isinstance(item.get("node_id"), str)
+    }
+    trajectory_by_node = {
+        str(item.get("node_id")): item
+        for item in trajectory.get("nodes", [])
+        if isinstance(item, dict) and isinstance(item.get("node_id"), str)
     }
     phase_rows = []
     for phase in selected["research_phases"]:
@@ -594,6 +607,14 @@ def _workspace_brief(
                 "primary_claim_ref": node.get("primary_claim_ref"),
                 "claim_refs": list(node.get("related_claim_refs", node.get("claim_refs", []))),
                 "dependency_refs": list(node.get("dependency_refs", [])),
+                "dependent_refs": list(trajectory_by_node.get(str(node["node_id"]), {}).get("dependent_refs", [])),
+                "decision_rationale": _truncate(
+                    str(
+                        (trajectory_by_node.get(str(node["node_id"]), {}).get("opening_decision") or {}).get("rationale")
+                        or ""
+                    ),
+                    280,
+                ) or None,
                 "result_summary": _truncate(str((node.get("result") or {}).get("summary") or ""), 240) or None,
                 "activity": activity_by_node.get(str(node["node_id"])),
             }

@@ -51,6 +51,15 @@ backtracking. Retries that preserve the objective stay under
 `nodes/<node_id>/attempts/`; a changed question or deliverable starts another
 Node.
 
+The Node is also the user-visible research decision episode. Its opening
+Decision explains why that question is next; its terminal result records what
+changed. One canonical Decision may create at most one Phase, start at most one
+Node, and complete at most one Node. It may start and complete that same Node;
+closing an existing Node and starting another atomically requires the new Node
+to depend explicitly on the completed Node. Evidence registration, validation
+bookkeeping, tool calls, and retries remain inside Node History and do not
+become roadmap Nodes.
+
 ResearchNodes do not duplicate hypothesis text. Hypotheses, assumptions, and
 falsifiers belong to Claims so that several Nodes can test the same statement
 without copied scientific state.
@@ -99,6 +108,7 @@ use its matching release. The active canonical paths are `phases.json`,
 - A primary Claim, when present, is also in the Node Claim scope.
 - Phase metadata never authorizes an operation.
 - Node and Claim DAGs are acyclic and serve different purposes.
+- One Decision cannot hide several Node openings or closures.
 - Files, attempts, activities, and Compute runs have one owning Node.
 - Review runs have one target Claim and advisory authority only.
 - Web, reports, and context are projections, never alternate state stores.
