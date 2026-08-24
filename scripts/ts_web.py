@@ -69,6 +69,16 @@ def main() -> int:
         help="Display label for the corresponding --source-root (pairs by position).",
     )
     serve_cmd.add_argument(
+        "--workspace-root",
+        action="append",
+        default=None,
+        help=(
+            "Managed directory whose direct v5 workspace children are discovered. "
+            "Repeat for multiple roots. Defaults to <installation>/workspaces when "
+            "--state-dir is <installation>/.pi/ts-web."
+        ),
+    )
+    serve_cmd.add_argument(
         "--no-watch-release",
         action="store_true",
         help="Disable automatic restart when the stable release entrypoint changes.",
@@ -97,6 +107,7 @@ def main() -> int:
             args.host,
             args.port,
             args.state_dir,
+            workspace_roots=args.workspace_root,
             release_entrypoint=None if args.no_watch_release else ENTRYPOINT,
             loaded_entrypoint=Path(__file__).resolve(),
             release_ready=_release_runtime_ready,

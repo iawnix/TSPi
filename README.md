@@ -165,6 +165,14 @@ use `--host 0.0.0.0` only on a trusted, firewalled LAN. See
 [Installation and Operations](docs/INSTALLATION.md#run-the-research-explorer)
 for registration and exposure details.
 
+With the standard `<installation>/.pi/ts-web` state directory, the explorer
+also treats `<installation>/workspaces` as a managed discovery root. At startup
+and each catalog refresh it adds direct v5 workspace children and removes rows
+whose managed source directory or `workspace.json` has disappeared. A missing
+or unreadable discovery root is left untouched, and manually registered roots
+outside the managed directory are never pruned. Use `--workspace-root` to
+declare a different managed root.
+
 While the page is visible, it checks the selected workspace every five seconds.
 An unchanged check returns only revision identities; a changed check replaces
 the View and Graph together while preserving the current view, scroll position,

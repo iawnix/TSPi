@@ -301,6 +301,12 @@ workspace. Do not add write routes, implicit workspace repair, cached canonical
 indexes, or arbitrary workspace file reads. New static assets must be added to
 both `package.json.files` and the package/installer runtime checks.
 
+Keep managed workspace discovery in `ts_web.registry`, not the HTTP handler or
+browser. Reconciliation may update only the external registry: discover direct
+v5 children, prune missing entries only when the managed root was readable, and
+preserve manual registrations outside managed roots. Tests must cover discovery,
+stale rows, unavailable roots, and a catalog refresh after server startup.
+
 Keep live refresh and release restart separate. Live refresh must use the
 revision-aware snapshot projection, return no View/Graph when unchanged, and
 retain the last valid browser state on transport failure. Release restart must

@@ -328,6 +328,13 @@ root. Each request validates the current v5 workspace and rebuilds its view from
 canonical records plus the operational projection; no Web index is canonical or
 written back to the study.
 
+An installation-layout registry has one managed discovery root at
+`<installation>/workspaces`. Catalog startup and refresh reconcile only direct
+children: new v5 identities are registered, missing managed sources are
+removed, and external manual registrations are preserved. Discovery-root
+failure is fail-safe and performs no pruning. This mutates only the operational
+Web registry; it never initializes, repairs, or writes a research workspace.
+
 The browser's live path uses one revision-aware snapshot request. The server
 normalizes the workspace once, returns only scientific and operational revision
 identities when unchanged, and returns the View and Graph derived from that same

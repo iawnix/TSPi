@@ -18,7 +18,12 @@ from ts_web.normalize import (
     research_files_payload,
     workspace_snapshot,
 )
-from ts_web.registry import list_workspaces, register_workspaces
+from ts_web.registry import (
+    list_workspaces,
+    reconcile_workspace_registry,
+    register_workspaces,
+    workspace_discovery_roots,
+)
 from ts_web.server import create_server
 from ts_workspace.decision import draft_decision
 from ts_workspace.engine import apply_decision, init_workspace
@@ -647,6 +652,82 @@ def test_register_workspaces_validates_all_sources_before_writing(tmp_path: Path
     with pytest.raises(ValueError, match="state_dir"):
         register_workspaces([first, second], state, ["A", "B"])
     assert not state.exists()
+
+
+def test_workspace_discovery_roots_use_installation_layout_or_explicit_roots(tmp_path: Path) -> None:
+    installation = tmp_path / "installation"
+    state = installation / ".pi" / "ts-web"
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+
+    assert workspace_discovery_roots(state) == [installation / "workspaces"]
+    assert workspace_discovery_roots(tmp_path / "custom-state") == []
+    assert workspace_discovery_roots(state, [first, first, second]) == [first, second]
+
+
+def test_reconcile_workspace_registry_discovers_v5_and_prunes_only_stale_managed_rows(tmp_path: Path) -> None:
+    installation = tmp_path / "installation"
+    managed = installation / "workspaces"
+    current = managed / "ts_001"
+    init_workspace(current)
+    stale = managed / "ts_004"
+    legacy = managed / "legacy"
+    legacy.mkdir()
+    _write(legacy / "workspace.json", {"schema_version": "ts-workspace/4"})
+    external = tmp_path / "external"
+    init_workspace(external)
+    state = installation / ".pi" / "ts-web"
+    register_workspaces(
+        [stale, legacy, external],
+        state,
+        ["stale managed", "registered legacy", "external label"],
+    )
+
+    rows = reconcile_workspace_registry(state, [managed])
+    by_source = {row["source_root"]: row for row in rows}
+
+    assert str(stale.resolve()) not in by_source
+    assert by_source[str(current.resolve())]["label"] == "ts_001"
+    assert by_source[str(legacy.resolve())]["label"] == "registered legacy"
+    assert by_source[str(external.resolve())]["label"] == "external label"
+
+
+def test_reconcile_workspace_registry_does_not_prune_an_unreachable_root(tmp_path: Path) -> None:
+    installation = tmp_path / "installation"
+    managed = installation / "workspaces"
+    stale = managed / "ts_004"
+    state = installation / ".pi" / "ts-web"
+    registered = register_workspace(stale, state, "temporarily unavailable")
+
+    rows = reconcile_workspace_registry(state, [managed])
+
+    assert rows == [registered]
+
+
+def test_web_catalog_reconciles_managed_workspaces_on_start_and_refresh(tmp_path: Path) -> None:
+    installation = tmp_path / "installation"
+    managed = installation / "workspaces"
+    first = managed / "ts_001"
+    init_workspace(first)
+    state = installation / ".pi" / "ts-web"
+    register_workspace(managed / "ts_004", state, "stale")
+    server = create_server("127.0.0.1", 0, state)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        initial = _get_json(host, port, "/api/workspaces")
+        assert [row["label"] for row in initial["workspaces"]] == ["ts_001"]
+        assert initial["workspaces"][0]["available"] is True
+
+        second = managed / "ts_002"
+        init_workspace(second)
+        refreshed = _get_json(host, port, "/api/workspaces")
+        assert [row["label"] for row in refreshed["workspaces"]] == ["ts_001", "ts_002"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
 
 
 def test_web_catalog_isolates_incompatible_registered_workspace(tmp_path: Path) -> None:

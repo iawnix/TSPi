@@ -274,9 +274,16 @@ python3 "$TS_AGENT_CURRENT/scripts/ts_web.py" serve \
   --port 8766
 ```
 
-The registry persists, so later starts may omit `--source-root`. Use the same
-script with `register`, `list`, or `remove` to maintain it explicitly. Open
-`http://127.0.0.1:8766/` in a browser.
+The registry persists, so later starts may omit `--source-root`. When the state
+directory is `<installation>/.pi/ts-web`, the server automatically treats
+`<installation>/workspaces` as a managed discovery root. Startup and each
+browser catalog refresh register direct children whose `workspace.json`
+declares protocol v5, and remove managed rows whose directory or identity file
+has disappeared. A missing or unreadable discovery root is not pruned, and
+manual registrations outside it remain untouched. Pass `--workspace-root`
+repeatedly to override the inferred root. Use `register`, `list`, or `remove`
+for external or specially labeled workspaces. Open `http://127.0.0.1:8766/` in
+a browser.
 
 The visible browser polls a revision-aware snapshot route every five seconds.
 It pauses while hidden, never overlaps a manual refresh, and preserves the

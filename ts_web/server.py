@@ -8,7 +8,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .normalize import (
@@ -21,7 +21,14 @@ from .normalize import (
     workspace_snapshot,
     workspace_summary,
 )
-from .registry import ensure_state_dir, find_workspace, list_workspaces, register_workspace
+from .registry import (
+    ensure_state_dir,
+    find_workspace,
+    list_workspaces,
+    reconcile_workspace_registry,
+    register_workspace,
+    workspace_discovery_roots,
+)
 from .reloader import ReleaseWatcher
 
 MAX_TEXT_BYTES = 1_000_000
@@ -43,6 +50,7 @@ def serve(
     *,
     source_root: str | Path | None = None,
     label: str | None = None,
+    workspace_roots: Sequence[str | Path] | None = None,
     release_entrypoint: str | Path | None = None,
     loaded_entrypoint: str | Path | None = None,
     release_poll_interval: float = 1.0,
@@ -50,7 +58,14 @@ def serve(
 ) -> bool:
     """Serve until stopped, returning true when a selected release changed."""
 
-    server = create_server(host, port, state_dir, source_root=source_root, label=label)
+    server = create_server(
+        host,
+        port,
+        state_dir,
+        source_root=source_root,
+        label=label,
+        workspace_roots=workspace_roots,
+    )
     watcher = None
     if release_entrypoint is not None:
         watcher = ReleaseWatcher(
@@ -76,14 +91,17 @@ def create_server(
     *,
     source_root: str | Path | None = None,
     label: str | None = None,
+    workspace_roots: Sequence[str | Path] | None = None,
 ) -> ThreadingHTTPServer:
     if source_root is not None:
         register_workspace(source_root, state_dir, label)
     state = ensure_state_dir(state_dir, source_root=source_root)
-    return ThreadingHTTPServer((host, port), _make_handler(state))
+    discovery_roots = workspace_discovery_roots(state, workspace_roots)
+    reconcile_workspace_registry(state, discovery_roots)
+    return ThreadingHTTPServer((host, port), _make_handler(state, discovery_roots))
 
 
-def _make_handler(state_dir: Path):
+def _make_handler(state_dir: Path, workspace_roots: Sequence[Path]):
     class ExplorerHandler(BaseHTTPRequestHandler):
         server_version = "TSWeb/5.0"
 
@@ -103,6 +121,7 @@ def _make_handler(state_dir: Path):
                     self._send_json({"ok": True, "protocol": "ts-research-kernel/5", "read_only": True})
                     return
                 if parsed.path == "/api/workspaces":
+                    reconcile_workspace_registry(state_dir, workspace_roots)
                     self._send_json(_workspaces_payload(state_dir))
                     return
                 if parsed.path.startswith("/api/workspace/"):
