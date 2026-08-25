@@ -39,9 +39,10 @@ There are three forms of execution:
    Claim-centered snapshot and returns non-authoritative advice. Compute
    orchestrates one host-bound action plan and has no scientific discretion.
 3. **Deterministic host execution** validates and commits state or performs an
-   explicitly selected side effect. Every compute action, structure seed,
-   Render, Report, remote inspection, artifact import, notification, context,
-   and validation operation is implemented outside the child model.
+   explicitly selected side effect. Every compute action, structure seed or
+   comparison, Render, Report, remote inspection, artifact import,
+   notification, context, and validation operation is implemented outside the
+   child model.
 
 ## Authority Matrix
 
@@ -56,6 +57,7 @@ There are three forms of execution:
 | Compute Agent | Yes | No | Only through bound typed tools | task, actions, deterministic result/failure |
 | Compute kernel | No | No | Local/SSH/Torque action | intent, control record, manifest, parsed artifacts |
 | `ts_structure_seed` | No | No | Bounded local generation | Node-owned XYZ, provenance, and activity |
+| `ts_structure_compare` | No | No | Bounded local analysis | Node-owned JSON, input digests, metrics, and activity |
 | `ts_artifact_import` | No | No | Bounded local file creation | Node-owned content-addressed input and activity |
 | `ts_render` / `ts_report` | No | No | Local file creation | no-overwrite artifact or report package |
 | `ts_remote_inspect` | No | No | Read-only SSH/Torque calls | tool result only |
@@ -434,7 +436,7 @@ full workspace dump.
 | `ts-workflow-control` | context, Decision draft/validate/apply; `/ts-context`, `/ts-validate` | graph projection and sole canonical mutation path |
 | `ts-workflow-review` | `ts_subagent_review`, `ts_review_disposition` | isolated advisory Review and mandatory Root response |
 | `ts-workflow-compute` | `ts_subagent_compute`, `ts_remote_inspect`; `/ts-remote` | isolated operational lifecycle over deterministic compute actions and diagnostics |
-| `ts-workflow-artifacts` | `ts_structure_seed`, `ts_artifact_import`, `ts_render`, `ts_report`, `ts_notify_user` | deterministic local artifacts, reports, and delivery |
+| `ts-workflow-artifacts` | `ts_structure_seed`, `ts_structure_compare`, `ts_artifact_import`, `ts_render`, `ts_report`, `ts_notify_user` | deterministic local artifacts, analyses, reports, and delivery |
 | `ts-workflow-ui` | `/ts-subagent-history` | startup, editor/footer, TS Activity, and Compute/Review history |
 
 `ts-phone-bridge` is optional and loaded only by `TSPi --phone`. It forwards
@@ -522,7 +524,7 @@ pre-effect retryable failure from an ambiguous external effect. Known job IDs
 are retained even if later scheduler inspection fails. Collection follows the
 immutable manifest and does not require queue history.
 
-### Structure Seed And Artifact Import
+### Structure Seed, Comparison, And Artifact Import
 
 `ts_structure_seed` accepts one connected SMILES plus declared charge,
 multiplicity, and `none` or `uff` initialization. The host uses fixed-seed
@@ -539,6 +541,15 @@ file under the Node. Callers cannot provide a path or filename. Repeating
 identical content is idempotent; conflicting or unsafe targets fail closed.
 Only digest, size, format, chemical metadata, and the resulting logical
 artifact are journaled, never the input body.
+
+`ts_structure_compare` accepts exactly two registered XYZ artifact IDs. The
+host resolves their paths and digests, applies optional zero-based atom mapping,
+reaction-center selection, internal-coordinate checks, explicit stereochemical
+checks, and bounded RMSD thresholds, then writes a private content-addressed
+JSON document below `nodes/<node_id>/outputs/analysis/`. The document binds
+inputs, parameters, metrics, diagnostics, verdict, and producer provenance.
+It is operational output only; the Root must register any scientific facts as
+Observations through the Decision pipeline.
 
 ### Render and Report
 
@@ -626,7 +637,7 @@ session. `/ts-subagent-history` reads durable Compute and Review summaries on de
 | --- | --- |
 | Public tool names and execution classes | `extensions/shared/tool-catalog.ts` |
 | Public call schemas | each `extensions/ts-workflow-*/index.ts` |
-| Agent task/result envelopes | `contracts/agent_task.schema.json`, `contracts/agent_result.schema.json` |
+| Agent task/result envelopes | `src/agent-core/agent-protocol.cjs` |
 | Canonical scientific records | `ts_workspace/contracts/*.schema.json` |
 | Decision normalization and ID allocation | `ts_workspace/decision.py` |
 | Transactional mutation and validation | `ts_workspace/engine.py`, `ts_workspace/validator.py` |
@@ -636,7 +647,7 @@ session. `/ts-subagent-history` reads durable Compute and Review summaries on de
 | Compute request, intent, and result | `ts_compute/contracts/*.schema.json` |
 | Backend capabilities and parsers | `ts_compute/capabilities.py`, `ts_backends/` |
 | Remote lifecycle | `ts_remote/` |
-| Artifact import/catalog contract | `ts_compute/artifacts.py`, `ts_compute/cli.py` |
+| Artifact import/catalog/structure-analysis contract | `ts_compute/artifacts.py`, `ts_compute/cli.py`, `ts_structures/` |
 | Render/report request/path contract | `src/artifacts/request-contract.cjs` |
 | Report projection | `ts_report/` |
 | Read-only Web projection and UI | `ts_web/normalize.py`, `ts_web/server.py`, `ts_web/static/` |

@@ -16,7 +16,6 @@ SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
 SKILL = SKILL_ROOT / "SKILL.md"
 REFERENCES = SKILL_ROOT / "references"
 TEMPLATES = SKILL_ROOT / "assets" / "templates"
-FINAL_REPORT = TEMPLATES / "ts_final_report.md"
 
 
 PUBLIC_DOCS = (README, ARCHITECTURE, INSTALLATION, MAINTAINER, ADR)
@@ -43,11 +42,12 @@ def test_readme_routes_each_reader_to_the_public_contracts() -> None:
         "ts_subagent_review",
         "ts_subagent_compute",
         "ts_structure_seed",
+        "ts_structure_compare",
         "ts_artifact_import",
         "ts_render",
         "ts_report",
         "ts_notify_user",
-        "thirteen public tools",
+        "fourteen public tools",
     ]:
         assert phrase in text
 
@@ -229,26 +229,27 @@ def test_compute_reference_uses_the_registered_gaussian_input_role() -> None:
     assert '"inputRole": "structure"' not in compute
 
 
-def test_final_report_template_projects_phase_node_and_scientific_objects() -> None:
-    text = FINAL_REPORT.read_text(encoding="utf-8")
+def test_final_report_builder_projects_phase_node_and_scientific_objects() -> None:
+    text = (ROOT / "ts_report" / "builder.py").read_text(encoding="utf-8")
 
     for phrase in [
         "Research Roadmap",
         "Scientific Conclusions",
+        "ResearchNode Records",
         "Semantic Observations",
         "Frozen Validation",
-        "Findings And Claim Acceptance",
-        "Operational Follow-Up",
-        "{{phase_id}}",
-        "{{claim_id}}",
-        "{{node_id}}",
-        "{{observation_id}}",
-        "{{spec_id}}",
-        "{{result_id}}",
-        "{{finding_id}}",
+        "Claim Acceptance",
+        "Operational Follow-up",
+        "phase['phase_id']",
+        "claim['claim_id']",
+        "node['node_id']",
+        "observation['observation_id']",
+        "spec['spec_id']",
+        "finding['finding_id']",
+        "acceptance['acceptance_id']",
     ]:
         assert phrase in text
-    for removed in ("{{act_id}}", "{{evidence_id}}", "{{gate_result_id}}", "{{required_gates}}"):
+    for removed in ('"act_id"', "evidence_id", "gate_result_id", "required_gates"):
         assert removed not in text
 
 

@@ -1,11 +1,13 @@
 # Deterministic Artifact Tools
 
-Structure Seed, Import, Render, and Report are direct host tools. They start no child model,
-make no scientific decision, and never mutate canonical records.
+Structure Seed, Structure Compare, Import, Render, and Report are direct host
+tools. They start no child model, make no scientific decision, and never mutate
+canonical records.
 
 ## Contents
 
 - [Generate A Structure Seed](#generate-a-structure-seed)
+- [Compare Registered Structures](#compare-registered-structures)
 - [Import An Existing Input](#import-an-existing-input)
 - [Render](#render)
 - [Report](#report)
@@ -38,6 +40,41 @@ choose a reactive encounter geometry.
 This output is only an initial geometry. Neither ETKDG coordinates nor UFF
 energy establishes a stationary point, transition state, mechanism, or
 acceptance fact. Use normal Compute and validation afterward.
+
+## Compare Registered Structures
+
+Compare exactly two registered XYZ artifacts:
+
+```json
+{
+  "operation":"compare",
+  "nodeId":"node_1",
+  "referenceArtifactId":"art_...",
+  "targetArtifactId":"art_...",
+  "parameters":{
+    "atomMapping":[0,1,2],
+    "reactionCenterAtoms":[0,1,2],
+    "keyBonds":[[0,1]],
+    "keyAngles":[[1,0,2]],
+    "keyDihedrals":[],
+    "stereochemicalChecks":[],
+    "rmsdThreshold":0.5,
+    "reactionCenterThreshold":0.25
+  }
+}
+```
+
+All atom indices are zero-based. `parameters` is optional; detailed checks are
+validated by the deterministic Python kernel so their schema does not consume
+every Root turn. Omitted thresholds default to 0.5 and 0.25 angstrom. The host
+binds both input IDs and digests and writes an idempotent private JSON artifact
+under `nodes/<node_id>/outputs/analysis/`. The document includes the expanded
+parameters, verdict, uncertainty, RMSD/internal-coordinate/stereochemical
+metrics, diagnostics, and provenance.
+
+This result is operational. Register any value used in a Claim or GateSpec as a
+semantic Observation through a Decision; do not cite the activity itself as
+scientific evidence.
 
 ## Import An Existing Input
 
@@ -142,8 +179,8 @@ failure has no scientific effect.
 
 ## Activity And Provenance
 
-Structure Seed, Import, Render, and Report write deterministic activity journals
-whose `node_refs` are the only operation-to-Node link. Compute instead writes one
-`sub_n` run below its owning `calc_n` Attempt. Notification writes a delivery
-receipt. These records support diagnosis and reporting but do not become
-Observations or acceptance basis automatically.
+Structure Seed, Structure Compare, Import, Render, and Report write
+deterministic activity journals whose `node_refs` are the only operation-to-Node
+link. Compute instead writes one `sub_n` run below its owning `calc_n` Attempt.
+Notification writes a delivery receipt. These records support diagnosis and
+reporting but do not become Observations or acceptance basis automatically.

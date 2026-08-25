@@ -202,6 +202,22 @@ def test_structure_seed_is_a_valid_node_owned_activity(tmp_path: Path) -> None:
     assert index["activities"][0]["kind"] == "structure_seed"
 
 
+def test_structure_compare_is_a_valid_node_owned_activity(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    refs = start_research_node(root)
+    activity = _activity_documents(root, refs["node_id"])
+    for name in ("request.json", "status.json"):
+        document = read_json(activity / name)
+        document["kind"] = "structure_compare"
+        document["operation"] = "compare"
+        write_json(activity / name, document)
+
+    index = build_activity_index(root)
+    assert index["integrity_findings"] == []
+    assert index["activities"][0]["kind"] == "structure_compare"
+
+
 @pytest.mark.parametrize(
     ("mutation", "code"),
     [

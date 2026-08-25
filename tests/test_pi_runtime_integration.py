@@ -30,6 +30,7 @@ EXPECTED_TOOLS = {
     "ts_subagent_compute",
     "ts_remote_inspect",
     "ts_structure_seed",
+    "ts_structure_compare",
     "ts_artifact_import",
     "ts_render",
     "ts_report",

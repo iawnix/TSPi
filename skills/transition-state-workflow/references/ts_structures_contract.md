@@ -30,3 +30,21 @@ acceptance-critical.
 
 A visually similar render or low global RMSD does not prove endpoint identity,
 especially for fragment permutations, conformers, or stereochemical inversion.
+
+## Deterministic Tool Parameters
+
+`ts_structure_compare` exposes optional `parameters` with camel-case fields:
+
+- `atomMapping`: one target index for every reference atom;
+- `reactionCenterAtoms`: reference atom indices used for local RMSD;
+- `keyBonds`, `keyAngles`, `keyDihedrals`: arrays of 2-, 3-, or 4-index checks;
+- `stereochemicalChecks`: explicit `tetrahedral`, `alkene`, or `dihedral`
+  checks with `retain`/`invert` policy; alkene checks also accept `E` or `Z`;
+- `rmsdThreshold` and `reactionCenterThreshold`: finite values from 0 to 10
+  angstrom.
+
+Tetrahedral checks use `center` and four `neighbors`; alkene checks use two
+`atoms` and two `substituents`; dihedral checks use four `atoms` and may set
+`maxDeltaDegrees` from 0 to 180. The kernel rejects duplicate/out-of-range
+indices, malformed type-specific fields, non-XYZ inputs, changed digests, and
+closed output Nodes.

@@ -41,7 +41,7 @@ prescriptive stage, Node type, scientific role/layer, or next-action router.
 | `extensions/ts-workflow-control/` | context, Decision draft/validate/apply, package-source guard |
 | `extensions/ts-workflow-review/` | advisory Review entrypoint and Root disposition |
 | `extensions/ts-workflow-compute/` | Compute subagent entrypoint, bound action tools, and remote diagnostics |
-| `extensions/ts-workflow-artifacts/` | deterministic structure seed, input import, Render, Report, and notification tools |
+| `extensions/ts-workflow-artifacts/` | deterministic structure seed/comparison, input import, Render, Report, and notification tools |
 | `extensions/ts-workflow-ui/` | startup, editor/footer, TS Activity, Compute/Review history |
 | `extensions/shared/` | public tool inventory and shared UI/path helpers |
 | `src/agent-core/` | shared task/result validation, provider failure propagation, lifecycle, journals |
@@ -82,7 +82,7 @@ Public names describe authority:
 
 - `ts_workspace_*`: deterministic context and canonical Decision pipeline;
 - `ts_subagent_compute`, `ts_subagent_review`: bounded child-model entrypoints;
-- `ts_structure_seed`, `ts_artifact_import`, `ts_render`, `ts_report`: deterministic execution;
+- `ts_structure_seed`, `ts_structure_compare`, `ts_artifact_import`, `ts_render`, `ts_report`: deterministic execution;
 - `ts_remote_inspect`: deterministic read-only infrastructure diagnostics;
 - `ts_review_disposition`: deterministic operational response;
 - `ts_notify_user`: deterministic fixed-target external delivery.
@@ -258,7 +258,7 @@ Keep these states separate:
 Never infer success merely because a deterministic tool returned structured
 JSON.
 
-### Structure seed and artifact import
+### Structure seed, comparison, and artifact import
 
 The first input in a fresh workspace enters through `ts_structure_seed` or
 `ts_artifact_import`. Structure seeding owns fixed ETKDG parameters, one
@@ -267,6 +267,12 @@ and the explicit rule that a generated geometry is not evidence. Import remains
 bounded inline UTF-8 in registered formats. Both require one open Node, mode-0600
 files, no caller path, no symlink/overwrite path, and digest-only activity
 requests. Their returned `art_*` is consumed by the ordinary Compute contract.
+
+Structure comparison takes two registered XYZ IDs and delegates scientific
+geometry logic to `ts_structures`. `ts_compute.artifacts` owns workspace
+resolution, exact input-digest binding, the private no-overwrite
+`outputs/analysis/` artifact, and request validation. The result is operational;
+only a later Decision may register selected values as Observations.
 
 ### Render and Report
 

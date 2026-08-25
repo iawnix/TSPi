@@ -12,6 +12,7 @@ from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_
 from ts_compute import (
     ComputeContractError,
     create_calculation_intent,
+    create_structure_comparison_artifact,
     create_structure_seed_artifact,
     import_calculation_artifact,
     list_calculation_artifacts,
@@ -55,6 +56,25 @@ def _request(
         "settings": {},
         "execution_target": execution_target or {"kind": "local"},
         "dry_run": dry_run,
+    }
+
+
+def _structure_comparison_request(node_id: str, reference_id: str, target_id: str) -> dict:
+    return {
+        "schema_version": "ts-structure-compare-request/1",
+        "node_id": node_id,
+        "reference_artifact_id": reference_id,
+        "target_artifact_id": target_id,
+        "parameters": {
+            "atomMapping": None,
+            "reactionCenterAtoms": [0, 1, 2],
+            "keyBonds": [[0, 1], [0, 2]],
+            "keyAngles": [[1, 0, 2]],
+            "keyDihedrals": [],
+            "stereochemicalChecks": [],
+            "rmsdThreshold": 0.5,
+            "reactionCenterThreshold": 0.25,
+        },
     }
 
 
@@ -222,6 +242,86 @@ def test_structure_seed_rejects_chemical_and_contract_mismatches(tmp_path: Path)
         create_structure_seed_artifact(workspace, {**base, "output_path": "/tmp/seed.xyz"})
     with pytest.raises(StructureSeedError, match="electron-count parity"):
         generate_smiles_seed("CC", charge=0, multiplicity=2, optimization="none")
+
+
+def test_structure_comparison_is_content_addressed_idempotent_and_operational(tmp_path: Path) -> None:
+    workspace, node_id = _workspace(tmp_path)
+    reference = workspace / "inputs" / "reference.xyz"
+    target = workspace / "inputs" / "target.xyz"
+    reference.write_text(
+        "3\nwater reference\nO 0.0 0.0 0.0\nH 0.96 0.0 0.0\nH -0.24 0.93 0.0\n",
+        encoding="utf-8",
+    )
+    target.write_text(
+        "3\nwater target\nO 2.0 -1.0 0.5\nH 2.96 -1.0 0.5\nH 1.76 -0.07 0.5\n",
+        encoding="utf-8",
+    )
+    catalog = list_calculation_artifacts(workspace)
+    reference_id = _artifact(catalog, "inputs/reference.xyz")["artifact_id"]
+    target_id = _artifact(catalog, "inputs/target.xyz")["artifact_id"]
+    request = _structure_comparison_request(node_id, reference_id, target_id)
+
+    first = create_structure_comparison_artifact(workspace, request)
+    second = create_structure_comparison_artifact(workspace, request)
+    artifact = first["comparison_artifact"]
+    output = workspace / artifact["path"]
+    document = json.loads(output.read_text(encoding="utf-8"))
+
+    assert first["schema_version"] == "ts-structure-compare-result/1"
+    assert first["verdict"] == "matched"
+    assert first["created"] is True
+    assert second["created"] is False
+    assert second["comparison_artifact"] == artifact
+    assert artifact["owner_node"] == node_id
+    assert artifact["path"].startswith(f"nodes/{node_id}/outputs/analysis/structure_compare_")
+    assert artifact["input_roles"] == ["config"]
+    assert stat.S_IMODE(output.stat().st_mode) == 0o600
+    assert document["schema_version"] == "ts-structure-comparison/1"
+    assert document["inputs"]["reference"]["artifact_id"] == reference_id
+    assert document["inputs"]["target"]["artifact_id"] == target_id
+    assert document["inputs"]["reference"]["sha256"].startswith("sha256:")
+    assert document["parameters"]["key_bonds"] == [[0, 1], [0, 2]]
+    assert document["units"] == {"angle": "degree", "distance": "angstrom"}
+    assert document["provenance"]["producer"] == "ts_structures.compare_structures"
+    assert document["metrics"]["heavy_atom_rmsd"] == 0.0
+    assert json.loads((workspace / "observations.json").read_text(encoding="utf-8"))["observations"] == []
+
+
+def test_structure_comparison_rejects_unregistered_shapes_and_invalid_parameters(tmp_path: Path) -> None:
+    workspace, node_id = _workspace(tmp_path)
+    xyz = workspace / "inputs" / "source.xyz"
+    config = workspace / "inputs" / "source.json"
+    xyz.write_text("1\nH\nH 0 0 0\n", encoding="utf-8")
+    config.write_text("{}\n", encoding="utf-8")
+    catalog = list_calculation_artifacts(workspace)
+    xyz_id = _artifact(catalog, "inputs/source.xyz")["artifact_id"]
+    config_id = _artifact(catalog, "inputs/source.json")["artifact_id"]
+
+    with pytest.raises(ComputeContractError, match="two distinct artifacts"):
+        create_structure_comparison_artifact(
+            workspace, _structure_comparison_request(node_id, xyz_id, xyz_id)
+        )
+    with pytest.raises(ComputeContractError, match="target artifact must be XYZ"):
+        create_structure_comparison_artifact(
+            workspace, _structure_comparison_request(node_id, xyz_id, config_id)
+        )
+    invalid = _structure_comparison_request(node_id, xyz_id, config_id)
+    invalid["parameters"]["keyBonds"] = [[0, 0]]
+    with pytest.raises(ComputeContractError, match="atom indices must be distinct"):
+        create_structure_comparison_artifact(workspace, invalid)
+    unknown = _structure_comparison_request(node_id, xyz_id, config_id)
+    unknown["parameters"]["rmsd_threshold"] = 0.5
+    with pytest.raises(ComputeContractError, match=r"unexpected=\['rmsd_threshold'\]"):
+        create_structure_comparison_artifact(workspace, unknown)
+    nested_unknown = _structure_comparison_request(node_id, xyz_id, config_id)
+    nested_unknown["parameters"]["stereochemicalChecks"] = [{
+        "type": "dihedral",
+        "atoms": [0, 1, 2, 3],
+        "policy": "retain",
+        "max_delta_degrees": 20,
+    }]
+    with pytest.raises(ComputeContractError, match=r"unexpected=\['max_delta_degrees'\]"):
+        create_structure_comparison_artifact(workspace, nested_unknown)
 
 
 def test_seed_import_rejects_invalid_metadata_content_and_symlink_root(tmp_path: Path) -> None:
@@ -460,6 +560,53 @@ def test_structure_seed_cli_uses_private_bounded_request_file(
     request.chmod(0o644)
     assert compute_cli_main([
         "structure-seed",
+        "--root",
+        str(workspace),
+        "--request-file",
+        str(request),
+    ]) == 2
+    assert "must be private" in capsys.readouterr().err
+
+
+def test_structure_compare_cli_uses_private_bounded_request_file(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    workspace, node_id = _workspace(tmp_path)
+    (workspace / "inputs" / "reference.xyz").write_text(
+        "1\nreference\nH 0 0 0\n", encoding="utf-8"
+    )
+    (workspace / "inputs" / "target.xyz").write_text(
+        "1\ntarget\nH 1 2 3\n", encoding="utf-8"
+    )
+    catalog = list_calculation_artifacts(workspace)
+    request = tmp_path / "structure-compare.json"
+    comparison_request = _structure_comparison_request(
+        node_id,
+        _artifact(catalog, "inputs/reference.xyz")["artifact_id"],
+        _artifact(catalog, "inputs/target.xyz")["artifact_id"],
+    )
+    comparison_request["parameters"].update({
+        "reactionCenterAtoms": [0],
+        "keyBonds": [],
+        "keyAngles": [],
+    })
+    request.write_text(json.dumps(comparison_request), encoding="utf-8")
+    request.chmod(0o600)
+
+    assert compute_cli_main([
+        "structure-compare",
+        "--root",
+        str(workspace),
+        "--request-file",
+        str(request),
+    ]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["comparison_artifact"]["artifact_id"].startswith("art_")
+
+    request.chmod(0o644)
+    assert compute_cli_main([
+        "structure-compare",
         "--root",
         str(workspace),
         "--request-file",

@@ -369,6 +369,7 @@ function foregroundToolLabel(toolName: string): string {
     [TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply]: "applying decision",
     [TS_PUBLIC_TOOL_NAMES.remoteInspect]: "checking remote compute",
     [TS_PUBLIC_TOOL_NAMES.artifactImport]: "importing calculation input",
+    [TS_PUBLIC_TOOL_NAMES.structureCompare]: "comparing molecular structures",
     [TS_PUBLIC_TOOL_NAMES.reviewDisposition]: "recording review response",
     [TS_PUBLIC_TOOL_NAMES.notifyUser]: "sending research update",
   };

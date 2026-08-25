@@ -97,6 +97,10 @@ advice only through verified Decisions, and preserve provider failures as such.
 
 ## Artifacts, Render, Report, And Notify
 
+`ts_structure_compare` writes a deterministic JSON analysis for two registered
+XYZ artifacts. Its result is operational until a Decision records selected
+facts as Observations.
+
 `ts_render` creates one Node-owned no-overwrite visualization; `ts_report`
 creates one atomic package. Both use logical artifacts.
 

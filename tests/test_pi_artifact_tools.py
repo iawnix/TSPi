@@ -123,6 +123,82 @@ process.stdout.write(JSON.stringify({{entries,updates}}));
     assert status["status"] == "completed"
 
 
+def test_public_structure_compare_tool_binds_artifacts_and_journals_analysis(tmp_path: Path) -> None:
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    refs = start_research_node(workspace)
+    (workspace / "inputs" / "reference.xyz").write_text(
+        "2\nreference\nH 0 0 0\nH 0 0 0.74\n", encoding="utf-8"
+    )
+    (workspace / "inputs" / "target.xyz").write_text(
+        "2\ntarget\nH 2 1 0\nH 2 1 0.74\n", encoding="utf-8"
+    )
+    catalog = list_calculation_artifacts(workspace)
+    by_path = {item["path"]: item for item in catalog["artifacts"]}
+    reference_id = by_path["inputs/reference.xyz"]["artifact_id"]
+    target_id = by_path["inputs/target.xyz"]["artifact_id"]
+    script = f"""
+import install from {json.dumps(ARTIFACT_EXTENSION.as_uri())};
+import {{ spawnSync }} from "node:child_process";
+process.env.TS_AGENT_PYTHON={json.dumps(sys.executable)};
+const tools={{}};const entries=[];const updates=[];
+const pi={{
+  registerTool:(tool)=>tools[tool.name]=tool,
+  appendEntry:(type,data)=>entries.push({{type,data}}),
+  exec:async(command,args)=>{{
+    const value=spawnSync(command,args,{{encoding:"utf8",env:process.env}});
+    return {{code:value.status,stdout:value.stdout,stderr:value.stderr}};
+  }},
+}};
+install(pi);
+await tools.ts_structure_compare.execute("call-compare",{{
+  operation:"compare",nodeId:{json.dumps(refs['node_id'])},
+  referenceArtifactId:{json.dumps(reference_id)},targetArtifactId:{json.dumps(target_id)},
+  parameters:{{reactionCenterAtoms:[0,1],keyBonds:[[0,1]]}},
+}},undefined,(value)=>updates.push(value),{{cwd:{json.dumps(str(workspace))}}});
+let rejection="";
+try {{
+  await tools.ts_structure_compare.execute("call-invalid-compare",{{
+    operation:"compare",nodeId:{json.dumps(refs['node_id'])},
+    referenceArtifactId:{json.dumps(reference_id)},targetArtifactId:{json.dumps(target_id)},
+    parameters:{{rmsd_threshold:0.5}},
+  }},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}});
+}} catch (error) {{ rejection=String(error?.message||error); }}
+process.stdout.write(JSON.stringify({{entries,updates,rejection}}));
+"""
+    completed = subprocess.run(
+        ["node", "--experimental-loader", str(TS_LOADER), "--input-type=module", "--eval", script],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=30,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    value = json.loads(completed.stdout)
+    result = value["entries"][0]["data"]
+    assert value["entries"][0]["type"] == "ts-deterministic-activity"
+    assert result["schema_version"] == "ts-structure-compare-result/1"
+    assert result["verdict"] == "matched"
+    assert result["comparison_artifact"]["owner_node"] == refs["node_id"]
+    activity = workspace / result["activity_ref"]
+    request = json.loads((activity / "request.json").read_text(encoding="utf-8"))
+    status = json.loads((activity / "status.json").read_text(encoding="utf-8"))
+    assert request["kind"] == "structure_compare"
+    assert request["request"]["reference_artifact_id"] == reference_id
+    assert request["request"]["target_artifact_id"] == target_id
+    assert status["status"] == "completed"
+    assert "rmsd_threshold" in value["rejection"]
+    failed = value["entries"][1]
+    assert failed["type"] == "ts-deterministic-activity-failed"
+    failed_activity = workspace / failed["data"]["activity_ref"]
+    failed_request = json.loads((failed_activity / "request.json").read_text(encoding="utf-8"))
+    failed_status = json.loads((failed_activity / "status.json").read_text(encoding="utf-8"))
+    assert failed_request["request"]["parameters"] == {"rmsd_threshold": 0.5}
+    assert failed_status["status"] == "failed"
+    assert json.loads((workspace / "observations.json").read_text(encoding="utf-8"))["observations"] == []
+
+
 def test_render_request_resolves_logical_ids_and_host_owns_output_path(tmp_path: Path) -> None:
     workspace, refs, artifacts = _workspace_with_xyz(tmp_path)
     request = {

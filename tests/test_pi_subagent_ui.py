@@ -45,6 +45,7 @@ start("review","ts_subagent_review",{{targetClaimRef:"claim_1"}},1000);
 reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_subagent_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:1,tool_call_id:"review",task_id:"sub_1",role:"review",operation:"claim_review",state:"waiting",started_at:new Date(1000).toISOString(),updated_at:new Date(2000).toISOString(),node_refs:["node_1"],claim_refs:["claim_1"],wait_reason:"model_response"}}}}}},2000);
 start("compute","ts_subagent_compute",{{operation:"launch",backend:"gaussian",nodeId:"node_1"}},3000);
 start("structure","ts_structure_seed",{{operation:"generate",optimization:"uff",nodeId:"node_1"}},3250);
+start("analysis","ts_structure_compare",{{operation:"compare",nodeId:"node_1"}},3375);
 start("artifact","ts_artifact_import",{{operation:"import",format:"xyz_structure",nodeId:"node_1"}},3500);
 start("render","ts_render",{{operation:"compare",nodeId:"node_1",outputName:"compare.png"}},4000);
 reduceTsToolActivity(store,{{type:"tool_execution_end",toolCallId:"render",toolName:"ts_render",result:{{}},isError:false}},5000);
@@ -57,12 +58,13 @@ process.stdout.write(JSON.stringify({{before,after,summary:summarizeTsActivities
     assert by_id["subagent:review"]["status"]["node_refs"] == ["node_1"]
     assert by_id["subagent:compute"]["status"]["operation"] == "launch"
     assert by_id["tool:structure"]["detail"] == "SMILES · uff"
+    assert by_id["tool:analysis"]["detail"] == "XYZ comparison"
     assert by_id["tool:artifact"]["detail"] == "xyz_structure · node_1"
     assert by_id["tool:render"]["detail"] == "compare.png"
     assert result["stale"] is False
     assert result["pruned"] is True
     assert all(item.get("activityKind") != "render" for item in result["after"])
-    assert result["summary"]["active"] == 4
+    assert result["summary"]["active"] == 5
 
 
 def test_activity_panel_renders_compact_review_compute_and_failure_rows() -> None:

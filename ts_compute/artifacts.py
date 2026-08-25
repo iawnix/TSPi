@@ -19,6 +19,7 @@ from typing import Any, Iterable
 from ts_workspace.io import read_json
 from ts_workspace.refs import NODE_ID, CALCULATION_ID
 from ts_workspace.transactions import workspace_lock
+from ts_structures.api import compare_structures
 from ts_structures.seed import StructureSeedError, generate_smiles_seed
 
 from .contracts import ComputeContractError
@@ -30,6 +31,9 @@ IMPORT_REQUEST_SCHEMA_VERSION = "ts-artifact-import-request/1"
 IMPORT_RESULT_SCHEMA_VERSION = "ts-artifact-import-result/1"
 STRUCTURE_SEED_REQUEST_SCHEMA_VERSION = "ts-structure-seed-request/1"
 STRUCTURE_SEED_RESULT_SCHEMA_VERSION = "ts-structure-seed-result/1"
+STRUCTURE_COMPARE_REQUEST_SCHEMA_VERSION = "ts-structure-compare-request/1"
+STRUCTURE_COMPARE_RESULT_SCHEMA_VERSION = "ts-structure-compare-result/1"
+STRUCTURE_COMPARISON_SCHEMA_VERSION = "ts-structure-comparison/1"
 MAX_IMPORT_BYTES = 128 * 1024
 IMPORT_FORMATS = {
     "gaussian_input": ".gjf",
@@ -119,7 +123,7 @@ def import_calculation_artifact(root: str | Path, request: dict[str, Any]) -> di
         filename = f"seed_{digest.removeprefix('sha256:')}{suffix}"
         inputs = _node_inputs_directory(workspace, normalized["node_id"])
         path = inputs / filename
-        created = _write_import_payload(path, payload)
+        created = _write_artifact_payload(path, payload)
         artifact = _artifact_for_path(workspace, path, _node_ids(workspace))
 
     return {
@@ -184,9 +188,9 @@ def create_structure_seed_artifact(root: str | Path, request: dict[str, Any]) ->
         )
         created_paths: list[Path] = []
         try:
-            if _write_import_payload(xyz_path, xyz_payload):
+            if _write_artifact_payload(xyz_path, xyz_payload):
                 created_paths.append(xyz_path)
-            if _write_import_payload(provenance_path, provenance_payload):
+            if _write_artifact_payload(provenance_path, provenance_payload):
                 created_paths.append(provenance_path)
         except Exception:
             for path in reversed(created_paths):
@@ -206,6 +210,91 @@ def create_structure_seed_artifact(root: str | Path, request: dict[str, Any]) ->
         "chemical_metadata": generated["chemical_metadata"],
         "generator": generated["generator"],
         "limitations": generated["limitations"],
+    }
+
+
+def create_structure_comparison_artifact(root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
+    """Compare two registered XYZ artifacts and persist one Node-owned analysis."""
+
+    workspace = _workspace_root(root)
+    normalized = _validate_structure_compare_request(request)
+    input_ids = [normalized["reference_artifact_id"], normalized["target_artifact_id"]]
+    with workspace_lock(workspace):
+        node = _node_record(workspace, normalized["node_id"])
+        if node.get("status") != "open":
+            raise ComputeContractError(
+                f"structure comparison requires an open ResearchNode: {normalized['node_id']}"
+            )
+        artifacts = resolve_artifact_ids(workspace, input_ids)
+        for role, artifact in zip(("reference", "target"), artifacts):
+            if "xyz" not in artifact["input_roles"]:
+                raise ComputeContractError(
+                    f"structure comparison {role} artifact must be XYZ: {artifact['artifact_id']}"
+                )
+        paths = [workspace.joinpath(*PurePosixPath(item["path"]).parts) for item in artifacts]
+        parameters = normalized["parameters"]
+        try:
+            comparison = compare_structures(
+                paths[0],
+                paths[1],
+                atom_mapping=parameters["atom_mapping"],
+                reaction_center_atoms=parameters["reaction_center_atoms"],
+                key_bonds=parameters["key_bonds"],
+                key_angles=parameters["key_angles"],
+                key_dihedrals=parameters["key_dihedrals"],
+                stereochemical_checks=parameters["stereochemical_checks"],
+                rmsd_threshold=parameters["rmsd_threshold"],
+                reaction_center_threshold=parameters["reaction_center_threshold"],
+            )
+        except (IndexError, KeyError, OSError, TypeError, ValueError) as exc:
+            raise ComputeContractError(f"structure comparison failed: {exc}") from exc
+
+        current = resolve_artifact_ids(workspace, input_ids)
+        for before, after in zip(artifacts, current):
+            if before["artifact_id"] != after["artifact_id"] or before["sha256"] != after["sha256"]:
+                raise ComputeContractError(
+                    f"structure comparison input changed while being read: {before['artifact_id']}"
+                )
+        document = {
+            "schema_version": STRUCTURE_COMPARISON_SCHEMA_VERSION,
+            "operation": "compare",
+            "node_id": normalized["node_id"],
+            "inputs": {
+                role: _comparison_input_binding(artifact)
+                for role, artifact in zip(("reference", "target"), artifacts)
+            },
+            "parameters": parameters,
+            "units": {"distance": "angstrom", "angle": "degree"},
+            "verdict": comparison["verdict"],
+            "uncertainty": comparison["uncertainty"],
+            "metrics": comparison["metrics"],
+            "diagnostics": comparison["diagnostics"],
+            "provenance": {
+                "producer": "ts_structures.compare_structures",
+                "producer_version": "1",
+                "input_digests": [item["sha256"] for item in artifacts],
+            },
+        }
+        payload = (json.dumps(document, indent=2, sort_keys=True, ensure_ascii=True) + "\n").encode("utf-8")
+        digest = "sha256:" + hashlib.sha256(payload).hexdigest()
+        output_path = _node_analysis_directory(workspace, normalized["node_id"]) / (
+            f"structure_compare_{digest.removeprefix('sha256:')}.json"
+        )
+        created = _write_artifact_payload(output_path, payload)
+        artifact = _artifact_for_path(workspace, output_path, _node_ids(workspace))
+
+    return {
+        "schema_version": STRUCTURE_COMPARE_RESULT_SCHEMA_VERSION,
+        "operation": "compare",
+        "node_id": normalized["node_id"],
+        "created": created,
+        "input_artifact_ids": input_ids,
+        "comparison_artifact": artifact,
+        "units": document["units"],
+        "verdict": comparison["verdict"],
+        "uncertainty": comparison["uncertainty"],
+        "metrics": comparison["metrics"],
+        "diagnostics": comparison["diagnostics"],
     }
 
 
@@ -454,6 +543,187 @@ def _validate_structure_seed_request(request: dict[str, Any]) -> dict[str, Any]:
     return dict(request)
 
 
+def _validate_structure_compare_request(request: dict[str, Any]) -> dict[str, Any]:
+    if not isinstance(request, dict):
+        raise ComputeContractError("structure comparison request must be an object")
+    required = {
+        "schema_version",
+        "node_id",
+        "reference_artifact_id",
+        "target_artifact_id",
+        "parameters",
+    }
+    missing = sorted(required - set(request))
+    unexpected = sorted(set(request) - required)
+    if missing or unexpected:
+        raise ComputeContractError(
+            f"structure comparison fields are invalid: missing={missing}; unexpected={unexpected}"
+        )
+    if request.get("schema_version") != STRUCTURE_COMPARE_REQUEST_SCHEMA_VERSION:
+        raise ComputeContractError(
+            f"structure comparison schema_version must be {STRUCTURE_COMPARE_REQUEST_SCHEMA_VERSION}"
+        )
+    node_id = request.get("node_id")
+    if not isinstance(node_id, str) or NODE_ID.fullmatch(node_id) is None:
+        raise ComputeContractError("structure comparison node_id is invalid")
+    input_ids = [request.get("reference_artifact_id"), request.get("target_artifact_id")]
+    if any(not isinstance(value, str) or re.fullmatch(r"art_[0-9a-f]{24}", value) is None for value in input_ids):
+        raise ComputeContractError("structure comparison inputs must be logical artifact IDs")
+    if len(set(input_ids)) != 2:
+        raise ComputeContractError("structure comparison requires two distinct artifacts")
+    normalized = dict(request)
+    normalized["parameters"] = _validate_structure_compare_parameters(request.get("parameters"))
+    return normalized
+
+
+def _validate_structure_compare_parameters(value: Any) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ComputeContractError("structure comparison parameters must be an object")
+    fields = {
+        "atomMapping",
+        "reactionCenterAtoms",
+        "keyBonds",
+        "keyAngles",
+        "keyDihedrals",
+        "stereochemicalChecks",
+        "rmsdThreshold",
+        "reactionCenterThreshold",
+    }
+    unexpected = sorted(set(value) - fields)
+    if unexpected:
+        raise ComputeContractError(
+            f"structure comparison parameter fields are invalid: unexpected={unexpected}"
+        )
+    atom_mapping = _optional_index_list(value.get("atomMapping"), "atomMapping", 512)
+    if atom_mapping is not None and len(set(atom_mapping)) != len(atom_mapping):
+        raise ComputeContractError("atomMapping must be a one-to-one target permutation")
+    reaction_center_atoms = _optional_index_list(
+        value.get("reactionCenterAtoms"), "reactionCenterAtoms", 512
+    )
+    if reaction_center_atoms is not None and len(set(reaction_center_atoms)) != len(reaction_center_atoms):
+        raise ComputeContractError("reactionCenterAtoms contains duplicates")
+    rmsd_threshold = _bounded_float(value.get("rmsdThreshold", 0.5), "rmsdThreshold", 0.0, 10.0)
+    center_threshold = _bounded_float(
+        value.get("reactionCenterThreshold", 0.25), "reactionCenterThreshold", 0.0, 10.0
+    )
+    return {
+        "atom_mapping": atom_mapping,
+        "reaction_center_atoms": reaction_center_atoms,
+        "key_bonds": _index_groups(value.get("keyBonds", []), "keyBonds", 2),
+        "key_angles": _index_groups(value.get("keyAngles", []), "keyAngles", 3),
+        "key_dihedrals": _index_groups(value.get("keyDihedrals", []), "keyDihedrals", 4),
+        "stereochemical_checks": _stereochemical_checks(value.get("stereochemicalChecks", [])),
+        "rmsd_threshold": rmsd_threshold,
+        "reaction_center_threshold": center_threshold,
+    }
+
+
+def _optional_index_list(value: Any, label: str, maximum_items: int) -> list[int] | None:
+    if value is None:
+        return None
+    if not isinstance(value, list) or not 1 <= len(value) <= maximum_items:
+        raise ComputeContractError(f"{label} must contain 1 to {maximum_items} atom indices or be null")
+    if any(type(item) is not int or not 0 <= item <= 511 for item in value):
+        raise ComputeContractError(f"{label} atom indices must be integers from 0 to 511")
+    return list(value)
+
+
+def _index_groups(value: Any, label: str, width: int) -> list[tuple[int, ...]]:
+    if not isinstance(value, list) or len(value) > 64:
+        raise ComputeContractError(f"{label} must be an array with at most 64 entries")
+    rows: list[tuple[int, ...]] = []
+    for index, row in enumerate(value):
+        if not isinstance(row, list) or len(row) != width:
+            raise ComputeContractError(f"{label}[{index}] must contain exactly {width} atom indices")
+        if any(type(item) is not int or not 0 <= item <= 511 for item in row):
+            raise ComputeContractError(f"{label}[{index}] atom indices must be integers from 0 to 511")
+        if len(set(row)) != width:
+            raise ComputeContractError(f"{label}[{index}] atom indices must be distinct")
+        rows.append(tuple(row))
+    if len(set(rows)) != len(rows):
+        raise ComputeContractError(f"{label} contains duplicates")
+    return rows
+
+
+def _stereochemical_checks(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or len(value) > 32:
+        raise ComputeContractError("stereochemical_checks must be an array with at most 32 entries")
+    return [_stereochemical_check(item, index) for index, item in enumerate(value)]
+
+
+def _stereochemical_check(value: Any, index: int) -> dict[str, Any]:
+    if not isinstance(value, dict):
+        raise ComputeContractError(f"stereochemical_checks[{index}] must be an object")
+    kind = value.get("type")
+    required = {
+        "tetrahedral": {"type", "center", "neighbors", "policy"},
+        "alkene": {"type", "atoms", "substituents", "policy"},
+        "dihedral": {"type", "atoms", "policy"},
+    }.get(kind)
+    optional = {"maxDeltaDegrees"} if kind == "dihedral" else set()
+    if required is None:
+        raise ComputeContractError(f"stereochemical_checks[{index}].type is invalid")
+    missing = sorted(required - set(value))
+    unexpected = sorted(set(value) - required - optional)
+    if missing or unexpected:
+        raise ComputeContractError(
+            f"stereochemical_checks[{index}] fields are invalid: missing={missing}; unexpected={unexpected}"
+        )
+    policy = value.get("policy")
+    allowed_policies = {"retain", "invert"} if kind != "alkene" else {"retain", "invert", "E", "Z"}
+    if policy not in allowed_policies:
+        raise ComputeContractError(f"stereochemical_checks[{index}].policy is invalid")
+    result = dict(value)
+    if kind == "tetrahedral":
+        center = value.get("center")
+        if type(center) is not int or not 0 <= center <= 511:
+            raise ComputeContractError(f"stereochemical_checks[{index}].center is invalid")
+        neighbors = _exact_index_list(value.get("neighbors"), f"stereochemical_checks[{index}].neighbors", 4)
+        if center in neighbors:
+            raise ComputeContractError(f"stereochemical_checks[{index}] center cannot be a neighbor")
+        result["neighbors"] = neighbors
+    elif kind == "alkene":
+        atoms = _exact_index_list(value.get("atoms"), f"stereochemical_checks[{index}].atoms", 2)
+        substituents = _exact_index_list(
+            value.get("substituents"), f"stereochemical_checks[{index}].substituents", 2
+        )
+        if len(set(atoms + substituents)) != 4:
+            raise ComputeContractError(f"stereochemical_checks[{index}] atom indices must be distinct")
+        result["atoms"] = atoms
+        result["substituents"] = substituents
+    else:
+        result["atoms"] = _exact_index_list(
+            value.get("atoms"), f"stereochemical_checks[{index}].atoms", 4
+        )
+        result["max_delta_degrees"] = _bounded_float(
+            value.get("maxDeltaDegrees", 30.0),
+            f"stereochemical_checks[{index}].maxDeltaDegrees",
+            0.0,
+            180.0,
+        )
+        result.pop("maxDeltaDegrees", None)
+    return result
+
+
+def _exact_index_list(value: Any, label: str, width: int) -> list[int]:
+    if not isinstance(value, list) or len(value) != width:
+        raise ComputeContractError(f"{label} must contain exactly {width} atom indices")
+    if any(type(item) is not int or not 0 <= item <= 511 for item in value):
+        raise ComputeContractError(f"{label} atom indices must be integers from 0 to 511")
+    if len(set(value)) != width:
+        raise ComputeContractError(f"{label} atom indices must be distinct")
+    return list(value)
+
+
+def _bounded_float(value: Any, label: str, minimum: float, maximum: float) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ComputeContractError(f"{label} must be numeric")
+    result = float(value)
+    if not math.isfinite(result) or not minimum <= result <= maximum:
+        raise ComputeContractError(f"{label} must be from {minimum} to {maximum}")
+    return result
+
+
 def _normalize_import_content(content: str) -> str:
     if "\x00" in content:
         raise ComputeContractError("artifact import content cannot contain NUL bytes")
@@ -663,14 +933,38 @@ def _node_inputs_directory(workspace: Path, node_id: str) -> Path:
     return inputs
 
 
-def _write_import_payload(path: Path, payload: bytes) -> bool:
+def _node_analysis_directory(workspace: Path, node_id: str) -> Path:
+    nodes_root = workspace / "nodes"
+    if not nodes_root.is_dir() or nodes_root.is_symlink():
+        raise ComputeContractError("workspace nodes root must be a physical directory")
+    node_root = nodes_root / node_id
+    if node_root.exists():
+        if not node_root.is_dir() or node_root.is_symlink():
+            raise ComputeContractError(f"ResearchNode artifact root is unsafe: {node_id}")
+    else:
+        node_root.mkdir(mode=0o700)
+    outputs = node_root / "outputs"
+    analysis = outputs / "analysis"
+    for path, label in ((outputs, "output"), (analysis, "analysis")):
+        if path.exists():
+            if not path.is_dir() or path.is_symlink():
+                raise ComputeContractError(f"ResearchNode {label} root is unsafe: {node_id}")
+        else:
+            path.mkdir(mode=0o700)
+    expected = workspace / "nodes" / node_id / "outputs" / "analysis"
+    if analysis.resolve(strict=True) != expected.resolve(strict=True):
+        raise ComputeContractError(f"ResearchNode analysis root escapes the workspace: {node_id}")
+    return analysis
+
+
+def _write_artifact_payload(path: Path, payload: bytes) -> bool:
     if path.exists() or path.is_symlink():
         if path.is_symlink() or not path.is_file():
-            raise ComputeContractError("artifact import target is not a regular file")
+            raise ComputeContractError("content-addressed artifact target is not a regular file")
         if path.read_bytes() != payload:
-            raise ComputeContractError("artifact import content-address collision")
+            raise ComputeContractError("content-addressed artifact collision")
         if path.stat().st_mode & 0o077:
-            raise ComputeContractError("existing imported artifact is not private")
+            raise ComputeContractError("existing content-addressed artifact is not private")
         return False
     descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
     try:
@@ -686,6 +980,17 @@ def _write_import_payload(path: Path, payload: bytes) -> bool:
         if descriptor >= 0:
             os.close(descriptor)
     return True
+
+
+def _comparison_input_binding(artifact: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "artifact_id": artifact["artifact_id"],
+        "artifact_ref": artifact["path"],
+        "sha256": artifact["sha256"],
+        "size_bytes": artifact["size_bytes"],
+        "owner_node": artifact["owner_node"],
+        "source_intent_id": artifact["source_intent_id"],
+    }
 
 
 def _node_record(workspace: Path, node_id: str) -> dict[str, Any]:

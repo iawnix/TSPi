@@ -1,11 +1,14 @@
 # Report Contract
 
-Build the standard report from a valid workspace with `ts_report`. Use the
-custom Markdown asset only when an additional narrative is required.
+Build the standard report from a valid workspace with `ts_report`. The
+authoritative renderer is `ts_report/builder.py`; there is no fill-in Markdown
+template with a second, drifting report contract. Add any extra narrative as a
+separate report-package asset.
 
 ## Required Projection
 
-The report must expose:
+The report package must expose, across `final_report.md` and its bound context
+files:
 
 1. workspace identity, scientific revision, focus Claims/Nodes, and explicit
    conclusion boundary;

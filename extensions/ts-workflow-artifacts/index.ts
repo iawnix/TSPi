@@ -13,6 +13,7 @@ import {
   runNotifyUserJson,
   runRenderJson,
   runReportJson,
+  runStructureCompareJson,
   runStructureSeedJson,
 } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
@@ -84,6 +85,10 @@ const NOTIFICATION_EVENTS = [
 ] as const;
 const IMPORT_FORMATS = ["gaussian_input", "xyz_structure", "xtb_control"] as const;
 const STRUCTURE_OPTIMIZATIONS = ["none", "uff"] as const;
+const StructureComparisonParameters = Type.Object({}, {
+  additionalProperties: true,
+  maxProperties: 8,
+});
 
 export default function (pi: ExtensionAPI) {
   const notificationTarget = configuredNotificationTarget();
@@ -94,9 +99,7 @@ export default function (pi: ExtensionAPI) {
     description: "Generate a Node-owned RDKit XYZ seed.",
     promptSnippet: "Generate a 3D seed",
     promptGuidelines: [
-      "One connected SMILES; declare charge, multiplicity, and none or uff.",
-      "Host fixes ETKDGv3 and returns content-addressed XYZ and provenance.",
-      "Initial geometry only; never TS or acceptance evidence.",
+      "Declare one connected SMILES, charge, multiplicity, and optimization; output is an initial geometry only.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
@@ -162,13 +165,78 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
+    name: TS_PUBLIC_TOOL_NAMES.structureCompare,
+    label: "TS Structure Compare",
+    description: "Compare two registered XYZ artifacts.",
+    promptSnippet: "Compare molecular structures",
+    promptGuidelines: [
+      "Use two art_* IDs and zero-based indices; register scientific Observations through a Decision.",
+    ],
+    executionMode: "sequential",
+    parameters: Type.Object({
+      operation: Type.Literal("compare"),
+      nodeId: Type.String({ pattern: "^node_[1-9][0-9]*$" }),
+      referenceArtifactId: Type.String({ pattern: "^art_[0-9a-f]{24}$" }),
+      targetArtifactId: Type.String({ pattern: "^art_[0-9a-f]{24}$" }),
+      parameters: Type.Optional(StructureComparisonParameters),
+      root: Type.Optional(Type.String()),
+    }, { additionalProperties: false }),
+    async execute(_toolCallId, params, signal, onUpdate, ctx) {
+      const root = requireWorkspaceRoot(params.root, ctx.cwd);
+      const activityId = await allocateOperationalId(pi, "op", root, signal);
+      const comparisonParameters = serializeStructureComparisonParameters(params.parameters);
+      const journal = beginActivity(root, {
+        activity_id: activityId,
+        kind: "structure_compare",
+        operation: "compare",
+        node_refs: [params.nodeId],
+        request: {
+          reference_artifact_id: params.referenceArtifactId,
+          target_artifact_id: params.targetArtifactId,
+          parameters: comparisonParameters,
+        },
+      });
+      onUpdate?.(toolText(`TS Structure compare · ${params.nodeId}`, {
+        activity: { activity_id: activityId, state: "running" },
+      }));
+      try {
+        const raw = await runStructureCompareJson(pi, root, {
+          schema_version: "ts-structure-compare-request/1",
+          node_id: params.nodeId,
+          reference_artifact_id: params.referenceArtifactId,
+          target_artifact_id: params.targetArtifactId,
+          parameters: comparisonParameters,
+        }, signal);
+        if (!raw || raw.schema_version !== "ts-structure-compare-result/1" || raw.operation !== "compare") {
+          throw new Error("structure comparison returned an invalid result");
+        }
+        const result = { ...raw, activity_id: activityId, activity_ref: journal.activityRef };
+        completeActivity(journal, result);
+        pi.appendEntry("ts-deterministic-activity", result);
+        return toolText(JSON.stringify(result, null, 2), { result });
+      } catch (error) {
+        const failure = deterministicFailure(
+          activityId,
+          journal.activityRef,
+          "structure_compare",
+          "compare",
+          [params.nodeId],
+          error,
+        );
+        failActivity(journal, error, failure);
+        pi.appendEntry("ts-deterministic-activity-failed", failure);
+        throw error;
+      }
+    },
+  });
+
+  pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.artifactImport,
     label: "TS Artifact Import",
-    description: "Create one validated Node-owned calculation input from bounded inline text.",
-    promptSnippet: "Import one seed calculation artifact",
+    description: "Import one validated Node-owned calculation input.",
+    promptSnippet: "Import a calculation input",
     promptGuidelines: [
-      "Use when no suitable logical input exists; the host owns its path, filename, digest, and artifact ID.",
-      "Declare charge and multiplicity for Gaussian or XYZ structures; use the returned artifactId with Compute.",
+      "Use bounded Gaussian, XYZ, or xTB control text; reuse the returned art_* ID.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
@@ -234,13 +302,10 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.render,
     label: "TS Render",
-    description: "Render bound molecular artifacts directly with the deterministic local renderer.",
-    promptSnippet: "Render one bounded workspace visualization",
+    description: "Render registered molecular artifacts.",
+    promptSnippet: "Render a workspace visualization",
     promptGuidelines: [
-      "Use logical artifact IDs from ts_workspace_context mode=artifacts; do not construct workspace paths.",
-      "Choose the ResearchNode that owns the new output and a safe .png or .gif outputName.",
-      "For mechanism, provide exactly three ordered artifacts: reactant, transition state, then product.",
-      "Rendered images are presentation artifacts and never scientific Observations by themselves.",
+      "Use art_* IDs and a Node-owned output name; images are presentation artifacts, not Observations.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
@@ -318,12 +383,10 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.report,
     label: "TS Report",
-    description: "Build a revision-bound report package directly from the workspace read model.",
-    promptSnippet: "Build one validated transition-state report package",
+    description: "Build a revision-bound report package.",
+    promptSnippet: "Build a validated report",
     promptGuidelines: [
-      "Choose a safe packageName; the deterministic host owns the reports/ path.",
-      "Reports project Claims, ResearchNodes, Observations, Findings, validation, and acceptance without changing them.",
-      "Preserve negative results, ambiguity, and missing-data disclosures.",
+      "Choose a package name and optional art_* assets; reports do not mutate the workspace.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
@@ -409,12 +472,10 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.notifyUser,
     label: "TS Notify User",
-    description: `Send one research progress notification to the installation-configured target: ${notificationTarget}.`,
-    promptSnippet: "Notify the TSPi user about a material research event",
+    description: `Notify the configured target: ${notificationTarget}.`,
+    promptSnippet: "Send a research update",
     promptGuidelines: [
-      "Use only for material progress, ResearchNode completion, calculation failure or ambiguity, and study completion.",
-      `The authoritative target is ${notificationTarget}; request text cannot redirect delivery.`,
-      "A notification failure never changes scientific state. Do not automatically replay an ambiguous delivery.",
+      "Use for material events; delivery failure never changes scientific state or permits automatic replay.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
@@ -511,7 +572,7 @@ function requireReportAssetRefs(value: unknown, packageRef: string, expectedCoun
 function deterministicFailure(
   activityId: string,
   activityRef: string,
-  kind: "structure_seed" | "artifact_import" | "render" | "report",
+  kind: "structure_seed" | "structure_compare" | "artifact_import" | "render" | "report",
   operation: string,
   nodeRefs: string[],
   error: unknown,
@@ -566,6 +627,23 @@ function renderBackendError(value: unknown): RenderExecutionError {
 function lastDiagnosticLine(value: string): string {
   const lines = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
   return (lines.at(-1) || "").slice(0, 1000);
+}
+
+function serializeStructureComparisonParameters(value: unknown): Record<string, unknown> {
+  if (value !== undefined && (!value || typeof value !== "object" || Array.isArray(value))) {
+    throw new Error("structure comparison parameters must be an object");
+  }
+  const input = (value || {}) as Record<string, unknown>;
+  let encoded: string;
+  try {
+    encoded = JSON.stringify(input);
+  } catch (_error) {
+    throw new Error("structure comparison parameters must be JSON serializable");
+  }
+  if (Buffer.byteLength(encoded, "utf8") > 32 * 1024) {
+    throw new Error("structure comparison parameters exceed 32768 bytes");
+  }
+  return JSON.parse(encoded) as Record<string, unknown>;
 }
 
 function requireDigest(value: unknown, label: string): string {

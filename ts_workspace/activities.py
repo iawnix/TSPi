@@ -1,8 +1,8 @@
 """Validated read model for deterministic activity journals.
 
-The activity journal is the authoritative record of structure seed, input
-import, Render, and Report execution. ResearchNode documents do not duplicate
-these relationships.
+The activity journal is the authoritative record of structure seed and
+comparison, input import, Render, and Report execution. ResearchNode documents
+do not duplicate these relationships.
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ UNSUPPORTED_UUID_ACTIVITY_ID = re.compile(
     r"^op_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
     re.IGNORECASE,
 )
-ACTIVITY_KINDS = frozenset({"structure_seed", "artifact_import", "render", "report"})
+ACTIVITY_KINDS = frozenset({"structure_seed", "structure_compare", "artifact_import", "render", "report"})
 ACTIVITY_STATES = frozenset({"running", "completed", "failed"})
 MAX_DOCUMENT_BYTES = 1024 * 1024
 REQUEST_FIELDS = frozenset({

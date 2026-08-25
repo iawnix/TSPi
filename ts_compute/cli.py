@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from .artifacts import (
+    create_structure_comparison_artifact,
     create_structure_seed_artifact,
     import_calculation_artifact,
     list_calculation_artifacts,
@@ -60,6 +61,10 @@ def main(argv: list[str] | None = None) -> int:
     structure_seed = sub.add_parser("structure-seed")
     structure_seed.add_argument("--root", required=True)
     structure_seed.add_argument("--request-file", required=True)
+
+    structure_compare = sub.add_parser("structure-compare")
+    structure_compare.add_argument("--root", required=True)
+    structure_compare.add_argument("--request-file", required=True)
 
     capabilities = sub.add_parser("capabilities")
     capabilities.add_argument("--root")
@@ -131,6 +136,9 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.command == "structure-seed":
         request = _read_private_request(args.request_file, "structure seed", 16 * 1024)
         return create_structure_seed_artifact(args.root, request)
+    if args.command == "structure-compare":
+        request = _read_private_request(args.request_file, "structure comparison", 64 * 1024)
+        return create_structure_comparison_artifact(args.root, request)
     if args.command == "preflight":
         return preflight_calculation(
             args.root,

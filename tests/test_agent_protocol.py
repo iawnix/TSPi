@@ -1,11 +1,8 @@
 from __future__ import annotations
 
-import json
 import subprocess
 from pathlib import Path
-
-from jsonschema import Draft202012Validator
-from referencing import Registry, Resource
+import json
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -167,13 +164,20 @@ def test_agent_protocol_rejects_nested_authoritative_fields() -> None:
     assert "authoritative field" in rejected.stderr
 
 
-def test_public_json_schemas_match_review_runtime_contract() -> None:
-    task_schema = json.loads((ROOT / "contracts" / "agent_task.schema.json").read_text(encoding="utf-8"))
-    result_schema = json.loads((ROOT / "contracts" / "agent_result.schema.json").read_text(encoding="utf-8"))
-    registry = Registry().with_resource(task_schema["$id"], Resource.from_contents(task_schema))
-    assert list(Draft202012Validator(task_schema, registry=registry).iter_errors(_task())) == []
-    assert list(Draft202012Validator(result_schema, registry=registry).iter_errors(_result(_task()))) == []
+def test_runtime_validator_is_the_single_agent_envelope_contract() -> None:
+    task = _task()
+    validated_task = _run("validateAgentTask", task)
+    assert validated_task.returncode == 0, validated_task.stderr
+    assert json.loads(validated_task.stdout) == task
 
-    invalid = _task()
-    invalid["scope"] = {"report_id": None, "node_ids": ["n001"], "claim_refs": []}
-    assert list(Draft202012Validator(task_schema).iter_errors(invalid))
+    invalid_task = _task()
+    invalid_task["scope"] = {"report_id": None, "node_ids": ["node_1"], "claim_refs": []}
+    rejected_task = _run("validateAgentTask", invalid_task)
+    assert rejected_task.returncode == 2
+    assert "scope contains unknown fields" in rejected_task.stderr
+
+    invalid_result = _result(task)
+    invalid_result["facts"][0]["unexpected"] = True
+    rejected_result = _run("validateAgentResult", invalid_result, task)
+    assert rejected_result.returncode == 2
+    assert "facts[0] contains unknown fields" in rejected_result.stderr

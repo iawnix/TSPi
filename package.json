@@ -28,7 +28,6 @@
     "docs/*.md",
     "docs/adr/*.md",
     "environment.yml",
-    "contracts/*.json",
     "extensions/shared/*.ts",
     "extensions/ts-phone-bridge/*.ts",
     "extensions/ts-workflow-artifacts/*.ts",

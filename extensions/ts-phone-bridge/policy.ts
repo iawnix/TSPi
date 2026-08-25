@@ -19,6 +19,7 @@ export const CONFIRMATION_REQUIRED_TOOLS = new Set<string>([
   TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply,
   TS_PUBLIC_TOOL_NAMES.subagentCompute,
   TS_PUBLIC_TOOL_NAMES.structureSeed,
+  TS_PUBLIC_TOOL_NAMES.structureCompare,
   TS_PUBLIC_TOOL_NAMES.artifactImport,
   TS_PUBLIC_TOOL_NAMES.render,
   TS_PUBLIC_TOOL_NAMES.report,

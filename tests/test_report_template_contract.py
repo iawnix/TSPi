@@ -2,25 +2,29 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_node
+from ts_report import build_final_report
+
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
-TEMPLATE = SKILL_ROOT / "assets" / "templates" / "ts_final_report.md"
 CONTRACT = SKILL_ROOT / "references" / "report_template.md"
 
 
-def test_report_template_contains_required_sections() -> None:
-    text = TEMPLATE.read_text(encoding="utf-8")
+def test_report_builder_contains_required_sections(tmp_path: Path) -> None:
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    start_research_node(workspace)
+    text = build_final_report(workspace)
     for phrase in [
         "Executive Status",
         "Research Roadmap",
         "Scientific Conclusions",
-        "Computational Protocol",
+        "ResearchNode Records",
         "Semantic Observations",
         "Frozen Validation",
-        "Connectivity And Endpoints",
-        "Findings And Claim Acceptance",
-        "Operational Follow-Up",
+        "Findings",
+        "Claim Acceptance",
+        "Operational Follow-up",
     ]:
         assert phrase in text
 

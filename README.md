@@ -194,7 +194,7 @@ not in-process module reload or zero-downtime socket handoff.
 
 ## Public Surface
 
-Pi loads one Skill, five extensions, one theme, thirteen public tools, and four
+Pi loads one Skill, five extensions, one theme, fourteen public tools, and four
 slash commands:
 
 - `ts_workspace_context`: bounded graph, artifact, compute-capability, or
@@ -211,6 +211,8 @@ slash commands:
   by the host to one immutable intent.
 - `ts_structure_seed`: deterministic RDKit ETKDGv3 seed generation from one
   connected SMILES, with content-addressed XYZ and provenance.
+- `ts_structure_compare`: deterministic atom-mapped XYZ comparison with a
+  Node-owned, content-addressed JSON analysis.
 - `ts_artifact_import`: bounded, Node-owned bootstrap import for Gaussian, XYZ,
   or xTB control inputs; the host allocates path, filename, digest, and ID.
 - `ts_render`: deterministic local render, comparison, animation, or an ordered
@@ -260,6 +262,10 @@ An empty workspace is not a compute dead end. Start an open ResearchNode. Use
 `ts_structure_seed` for a single-molecule SMILES or `ts_artifact_import` for
 existing Gaussian, XYZ, or xTB control text, then pass the returned logical
 `art_*` to Compute. Neither tool grants path authority or scientific validity.
+Use `ts_structure_compare` for deterministic RMSD, reaction-center, internal
+coordinate, or explicit stereochemical checks between two registered XYZ
+artifacts. Its output remains operational until selected facts are registered
+as Observations through a Decision.
 
 ## Compute And Remote
 

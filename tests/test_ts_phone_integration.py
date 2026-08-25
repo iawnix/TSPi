@@ -160,6 +160,7 @@ process.stdout.write(JSON.stringify({{
   read: DIRECTLY_ALLOWED_TOOLS.has("read"),
   bash: CONFIRMATION_REQUIRED_TOOLS.has("bash"),
   structureSeed: CONFIRMATION_REQUIRED_TOOLS.has("ts_structure_seed"),
+  structureCompare: CONFIRMATION_REQUIRED_TOOLS.has("ts_structure_compare"),
   artifactImport: CONFIRMATION_REQUIRED_TOOLS.has("ts_artifact_import"),
   unknown: DIRECTLY_ALLOWED_TOOLS.has("new_tool") || CONFIRMATION_REQUIRED_TOOLS.has("new_tool"),
   observerRead: OBSERVER_ALLOWED_TOOLS.has("read"),
@@ -171,6 +172,7 @@ process.stdout.write(JSON.stringify({{
     assert result["read"] is True
     assert result["bash"] is True
     assert result["structureSeed"] is True
+    assert result["structureCompare"] is True
     assert result["artifactImport"] is True
     assert result["unknown"] is False
     assert result["observerRead"] is True

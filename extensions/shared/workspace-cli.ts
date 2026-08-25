@@ -110,6 +110,15 @@ export async function runStructureSeedJson(
   return runPrivateComputeRequest(pi, "ts-structure-seed-", "structure-seed", root, request, signal);
 }
 
+export async function runStructureCompareJson(
+  pi: ExtensionAPI,
+  root: string,
+  request: unknown,
+  signal?: AbortSignal,
+) {
+  return runPrivateComputeRequest(pi, "ts-structure-compare-", "structure-compare", root, request, signal);
+}
+
 async function runPrivateComputeRequest(
   pi: ExtensionAPI,
   temporaryPrefix: string,

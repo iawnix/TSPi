@@ -101,10 +101,10 @@ def _run_tspi(
 
 def test_public_skill_uses_nested_pi_skill_layout() -> None:
     assert (SKILL_ROOT / "SKILL.md").is_file()
-    assert (SKILL_ROOT / "agents" / "openai.yaml").is_file()
+    assert not (SKILL_ROOT / "agents").exists()
     assert (SKILL_ROOT / "references" / "state_model.md").is_file()
     assert not (SKILL_ROOT / "references" / "research_node_ontology.md").exists()
-    assert (SKILL_ROOT / "assets" / "templates" / "ts_final_report.md").is_file()
+    assert not (SKILL_ROOT / "assets" / "templates" / "ts_final_report.md").exists()
     assert not (ROOT / "SKILL.md").exists()
     assert not (ROOT / "references").exists()
     assert not (ROOT / "templates").exists()
