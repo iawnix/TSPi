@@ -280,7 +280,7 @@ function requireWorkspaceRoot(value) {
   if (typeof value !== "string" || !path.isAbsolute(value)) throw new Error("workspace root must be absolute");
   const root = fs.realpathSync(value);
   const workspace = JSON.parse(fs.readFileSync(path.resolve(root, "workspace.json"), "utf8"));
-  if (workspace.schema_version !== "ts-workspace/5") throw new Error("Review requires a v5 workspace");
+  if (workspace.schema_version !== "ts-workspace/5") throw new Error("Review requires a supported workspace");
   return root;
 }
 

@@ -123,7 +123,7 @@ when visualization is not required. Use
 `--dry-run` to inspect the selected prefix and command. Use `--force` only when
 the existing hash-addressed environment must be refreshed.
 
-Before writing runtime manifest v2, the installer imports NumPy and RDKit,
+Before writing the runtime manifest, the installer imports NumPy and RDKit,
 parses a SMILES, performs fixed-seed ETKDG embedding, and completes a UFF
 optimization. The manifest records versions, module origins, capabilities,
 selected interpreter, and environment-spec digest outside the immutable
@@ -250,19 +250,18 @@ at the same time.
 At startup:
 
 - a fresh directory is initialized once while unrelated input files remain;
-- a complete v5 workspace is validated without canonical rewrites;
-- partial or invalid v5 state fails closed;
-- legacy canonical markers fail closed.
+- a complete workspace is validated without canonical rewrites;
+- partial or invalid state fails closed;
+- unsupported canonical markers fail closed.
 
-Protocol v5 intentionally has no migration command, legacy reader, or field
-alias. Continue a legacy workspace with the matching old release, or create a
-new workspace name and explicitly re-establish only scientifically verified
-inputs and Claims. Do not copy legacy canonical JSON into a v5 workspace.
+Startup never rewrites an existing workspace or guesses how unsupported state
+should map into the active contract. Create a distinct workspace when the
+existing layout is unsupported.
 
 ## Run The Research Explorer
 
 `ts_web` is an optional read-only process. Keep its registry outside all source
-workspaces and register one or more v5 studies while starting the server:
+workspaces and register one or more studies while starting the server:
 
 ```bash
 TS_AGENT_CURRENT=/path/to/TSPi-installation/.pi/packages/ts-agent/current
@@ -280,7 +279,7 @@ The registry persists, so later starts may omit `--source-root`. When the state
 directory is `<installation>/.pi/ts-web`, the server automatically treats
 `<installation>/workspaces` as a managed discovery root. Startup and each
 browser catalog refresh register direct children whose `workspace.json`
-declares protocol v5, and remove managed rows whose directory or identity file
+declares the supported workspace contract, and remove managed rows whose directory or identity file
 has disappeared. A missing or unreadable discovery root is not pruned, and
 manual registrations outside it remain untouched. Pass `--workspace-root`
 repeatedly to override the inferred root. Use `register`, `list`, or `remove`
@@ -304,7 +303,8 @@ development source reload or zero-downtime socket transfer.
 The explorer validates current state on read and exposes no mutation endpoint.
 Its default route is the ResearchNode dependency tree, with ResearchPhase used
 only for navigation and focus. The Claim graph is an advanced view; the Node DAG
-is not duplicated there. File preview is bounded to current ResearchNode files.
+is not duplicated there. File preview is bounded to current ResearchNode files;
+only UTF-8 text within the configured byte limit is presented as previewable.
 The server does not implement user authentication. Bind `127.0.0.1` by default; bind
 `0.0.0.0` only for a trusted, firewalled LAN and assume every reachable client
 can inspect the registered research data.
@@ -327,7 +327,7 @@ or terminate active calculations.
 
 During installation, obsolete `.pi/ts-email-delivery-policy.json` and
 `.pi/ts-email-delivery-authorization.json` files are moved into a private
-`.pi/archive/legacy-notification-state/<timestamp>/` directory. They are kept
+`.pi/archive/retired-notification-state/<timestamp>/` directory. They are kept
 for audit only and are never read as authorization by this release.
 
 ## Rollback
@@ -348,9 +348,9 @@ release directories are retained for inspection, but retention alone is not a
 substitute for preserving the validated manifest and archive. Do not edit an
 installed release or manually replace files under `current`.
 
-Rollback changes package/runtime code only. It does not downgrade a v5
-workspace or reverse already committed scientific Decisions. A v5 workspace
-cannot be opened by a release that does not implement protocol v5.
+Rollback changes package/runtime code only. It does not rewrite a workspace or
+reverse already committed scientific Decisions. The selected release must
+implement the workspace schemas it opens.
 
 ## Operational Recovery
 
@@ -360,8 +360,8 @@ cannot be opened by a release that does not implement protocol v5.
 | runtime manifest or interpreter unavailable | Run the selected release's `install_env.py`. |
 | managed runtime capability probe fails | Do not fall back to system Python. Recreate the hash-addressed environment and inspect the recorded NumPy/RDKit import error. |
 | `another Root Agent already owns workspace` | Use another workspace or stop the existing process; do not delete the lock to bypass a live owner. |
-| partial or invalid v5 workspace | Preserve the directory, inspect validation findings, and recover through an explicitly designed repair; startup will not guess. |
-| legacy canonical state rejected | Use its matching release or start a separate fresh v5 workspace; this release has no migration path. |
+| partial or invalid workspace | Preserve the directory, inspect validation findings, and recover through an explicitly designed repair; startup will not guess. |
+| unsupported workspace layout | Preserve the source directory and start a separate fresh workspace; startup never rewrites unsupported state. |
 | remote `status` fails | SSH readiness is unavailable; local research remains usable. |
 | remote `doctor` fails | Inspect scheduler paths, remote root permissions, and each software profile. |
 | `submission_ambiguous` or `cancellation_ambiguous` | Reconcile durable control records; do not replay the action. |

@@ -104,7 +104,7 @@ Build one new package:
 }
 ```
 
-The host owns `reports/<packageName>`, validates the complete v5 workspace,
+The host owns `reports/<packageName>`, validates the complete workspace,
 renders the report from canonical records, installs the directory atomically,
 and verifies `package_manifest.json`, scientific and operational revisions,
 file list, and SHA-256. Existing package names are never overwritten. The

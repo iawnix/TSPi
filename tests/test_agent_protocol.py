@@ -134,7 +134,7 @@ def test_agent_protocol_accepts_only_review_advisory_role() -> None:
     assert "invalid role: report" in rejected.stderr
 
 
-def test_agent_protocol_rejects_legacy_subagent_run_ids() -> None:
+def test_agent_protocol_rejects_noncanonical_subagent_run_ids() -> None:
     task = _task()
     task["task_id"] = "sub_028def15-cbb5-42b4-bbfc-cfbd256c4a0b"
 
@@ -144,7 +144,7 @@ def test_agent_protocol_rejects_legacy_subagent_run_ids() -> None:
     assert "subagent run ID" in rejected.stderr
 
 
-def test_agent_protocol_requires_v2_and_exact_bound_review_documents() -> None:
+def test_agent_protocol_requires_current_schema_and_exact_bound_review_documents() -> None:
     task = _task()
     task["schema_version"] = "ts-agent-task/1"
     rejected = _run("validateAgentTask", task)

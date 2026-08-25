@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.v5_helpers import bootstrap_v5_workspace, start_research_node
+from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_node
 from ts_compute import (
     ComputeContractError,
     create_calculation_intent,
@@ -24,7 +24,7 @@ from ts_structures import StructureSeedError, generate_smiles_seed
 
 
 def _workspace(tmp_path: Path) -> tuple[Path, str]:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     refs = start_research_node(
         workspace,
         objective="Exercise deterministic calculation artifact binding.",
@@ -370,7 +370,7 @@ def test_open_research_node_can_run_any_supported_root_selected_task(tmp_path: P
     assert created["intent_ref"].startswith(f"nodes/{node_id}/attempts/")
 
 
-def test_list_artifacts_cli_returns_v3_catalog_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+def test_list_artifacts_cli_returns_catalog_json(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     workspace, node_id = _workspace(tmp_path)
     source = workspace / "nodes" / node_id / "inputs" / "source.xyz"
     source.parent.mkdir(parents=True)

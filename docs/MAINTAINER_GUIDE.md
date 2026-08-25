@@ -1,13 +1,13 @@
 # Maintainer Guide
 
 This guide covers development, validation, release, and documentation ownership
-for `@iawnix/ts-agent` protocol v5. Change the authored Git checkout only.
+for `@iawnix/ts-agent`. Change the authored Git checkout only.
 Installed releases are immutable runtime artifacts and must never be patched in
 place.
 
 Read [Architecture](ARCHITECTURE.md) before changing a cross-module contract,
 [Installation and Operations](INSTALLATION.md) before changing lifecycle or
-configuration, and [ADR 0002](adr/0002-phase-node-research-kernel-v5.md)
+configuration, and [ADR 0001](adr/0001-phase-node-research-kernel.md)
 before changing the research graph or validation architecture.
 
 ## Non-Negotiable Boundary
@@ -48,7 +48,7 @@ prescriptive stage, Node type, scientific role/layer, or next-action router.
 | `src/agents/compute/` | Compute task plan, isolated runtime, result derivation, and private prompt |
 | `src/agents/review/` | Review task projection, prompt, result tool, semantic validation |
 | `src/artifacts/` | deterministic render/report request and path validation |
-| `ts_workspace/` | v5 graph state, bootstrap, Decisions, context, validation, transactions |
+| `ts_workspace/` | graph state, bootstrap, Decisions, context, validation, transactions |
 | `ts_validation/` | GateSpec compiler, predicate registry, templates, acceptance profiles |
 | `ts_compute/` | capabilities, artifact catalog, immutable intents, control, collection |
 | `ts_backends/` | deterministic program preparation and parsing |
@@ -87,16 +87,15 @@ Public names describe authority:
 - `ts_review_disposition`: deterministic operational response;
 - `ts_notify_user`: deterministic fixed-target external delivery.
 
-Do not add old-name aliases, legacy field readers, dual schemas, migration
-scripts, or output shims. Protocol v5 is a clean boundary. Previous releases are
-the only way to operate earlier canonical formats.
+Do not add alternate field readers, dual schemas, implicit state conversion, or
+output shims. The package implements one explicit workspace contract.
 
 The release ships runtime code, public docs, Root Skill, references, schemas,
 templates, theme, and configuration examples. It excludes tests, build/check
 scripts, Git metadata, dependency trees, caches, credentials, conversations,
 workspaces, and generated reports.
 
-## V5 Scientific Model
+## Scientific Model
 
 The stable concepts and their owners are:
 
@@ -130,7 +129,7 @@ reasoning and focused documentation, not a Kernel enum.
   `ts-research-kernel/5` only.
 - Bootstrap initializes fresh state once and otherwise validates without
   canonical rewrites.
-- The Decision draft accepts high-level v5 operations and local aliases; the
+- The Decision draft accepts high-level research operations and local aliases; the
   Kernel allocates all `dec_`, `claim_`, `rel_`, `node_`, `obs_`, `fnd_`, `gsp_`,
   `val_`, and `acc_` identifiers.
 - A draft binds the current frontier projection and workspace revision.
@@ -273,7 +272,7 @@ requests. Their returned `art_*` is consumed by the ordinary Compute contract.
 
 Artifact requests bind an existing Node and logical artifact IDs. Path policy is
 Kernel/host-owned, rejects symlink traversal, and creates no-overwrite outputs.
-Report creation validates the complete v5 workspace and atomically installs a
+Report creation validates the complete workspace and atomically installs a
 manifest-bound package. Optional report images enter through logical artifact
 IDs, are copied into `assets/`, and are indexed by digest. A report is derived
 output, not a canonical writer.
@@ -304,6 +303,13 @@ raw Claim graph belong under detail or advanced inspection; do not duplicate the
 Node DAG in Advanced Graphs. Merge bounded trajectory fields into existing Node
 payloads rather than returning a second full graph-shaped Node payload.
 
+Calculation Attempts remain Node-owned operational records. Project their
+purpose, kind, recalculation lineage, bounded settings, execution request, and
+Compute runs from the immutable calculation intent and journals in
+`ts_web.normalize`; browser code may format or collapse that projection but
+must not parse program outputs, infer scientific meaning, or turn Attempts into
+ResearchNode DAG vertices.
+
 The Web registry is external state and must never be created inside a source
 workspace. Do not add write routes, implicit workspace repair, cached canonical
 indexes, or arbitrary workspace file reads. New static assets must be added to
@@ -311,7 +317,7 @@ both `package.json.files` and the package/installer runtime checks.
 
 Keep managed workspace discovery in `ts_web.registry`, not the HTTP handler or
 browser. Reconciliation may update only the external registry: discover direct
-v5 children, prune missing entries only when the managed root was readable, and
+workspace children, prune missing entries only when the managed root was readable, and
 preserve manual registrations outside managed roots. Tests must cover discovery,
 stale rows, unavailable roots, and a catalog refresh after server startup.
 
@@ -454,7 +460,7 @@ version bump must update and test at least:
 - `package.json` and `package-lock.json`;
 - `extensions/shared/package-profile.ts`;
 - `scripts/check_package.py`;
-- version-specific tests and release fixtures.
+- contract-specific tests and release fixtures.
 
 Schema versions change only when data contracts change, not whenever the
 package version changes. Validation template/profile versions are independent
@@ -466,14 +472,14 @@ policy versions and must be bumped when their expanded meaning changes.
 2. Run focused tests, full pytest, TypeScript typecheck, Pi adapter tests, and
    package checks.
 3. Confirm docs, examples, CLI help, schemas, and registered tools describe one
-   v5 contract.
+   workspace contract.
 4. Commit only intended source changes.
 5. Build from the clean commit and record source commit, release ID, archive,
    size, and SHA-256.
 6. Install into staging or the authorized TSPi root with
    `install_release.py`.
 7. Resolve the selected isolated Python runtime.
-8. Verify `TSPi --help`, fresh v5 bootstrap, tool inventory, and optional
+8. Verify `TSPi --help`, fresh workspace bootstrap, tool inventory, and optional
    read-only remote status.
 9. Restart user sessions only in an authorized maintenance window.
 
@@ -488,16 +494,15 @@ previous pair through the installer, resolving its runtime, and starting a new
 TSPi process. Do not edit installed files or run Git operations inside a
 release directory.
 
-Rollback never converts canonical state. A v5 workspace requires a v5 release;
-an older workspace requires its matching release. Any future conversion must be
-a separately authorized design, not compatibility logic hidden in the runtime.
+Rollback never converts canonical state. The selected release must implement
+the workspace schemas it opens.
 
 ## Review Before Handoff
 
 - Does each changed rule have one owner?
 - Do schemas, draft normalization, engine behavior, docs, templates, CLI help,
   UI, and tests agree?
-- Did any legacy reader, alias, migration, Node/Evidence record, Phase lifecycle,
+- Did any alternate state reader, alias, Node/Evidence record, Phase lifecycle,
   role/layer router, fixed Gate branch, or deterministic child model return?
 - Can a new installer start and resume a fresh workspace from the docs?
 - Can the Root Agent tell reasoning, canonical mutation, deterministic effects,

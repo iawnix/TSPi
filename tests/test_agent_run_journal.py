@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.v5_helpers import bootstrap_v5_workspace, build_review_bundle, start_research_node
+from tests.workspace_helpers import bootstrap_workspace_fixture, build_review_bundle, start_research_node
 from ts_workspace import apply_decision, draft_decision, validate_decision_dry_run
 from ts_workspace.context import compile_context
 from ts_workspace.errors import ContractError
@@ -130,7 +130,7 @@ def test_review_journal_rejects_duplicate_task_and_detects_bound_document_tamper
     assert "does not match task binding" in completed.stderr
 
 
-def test_agent_journal_rejects_legacy_run_ids_at_its_write_boundary(tmp_path: Path) -> None:
+def test_agent_journal_rejects_noncanonical_run_ids_at_its_write_boundary(tmp_path: Path) -> None:
     workspace, refs = _workspace_with_act(tmp_path)
     task, documents = _review_bundle(workspace, refs, "sub_1")
     task["task_id"] = "sub_028def15-cbb5-42b4-bbfc-cfbd256c4a0b"
@@ -309,7 +309,7 @@ process.stdout.write(JSON.stringify({settled,files:fs.readdirSync(handle.runDir)
 
 
 def _workspace_with_act(tmp_path: Path) -> tuple[Path, dict[str, str]]:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     refs = start_research_node(workspace, claim_statement="The proposed pathway is concerted.")
     return workspace, refs
 

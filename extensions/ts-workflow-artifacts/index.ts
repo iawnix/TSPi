@@ -318,7 +318,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.report,
     label: "TS Report",
-    description: "Build a revision-bound report package directly from the v5 workspace read model.",
+    description: "Build a revision-bound report package directly from the workspace read model.",
     promptSnippet: "Build one validated transition-state report package",
     promptGuidelines: [
       "Choose a safe packageName; the deterministic host owns the reports/ path.",

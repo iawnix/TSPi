@@ -115,7 +115,7 @@ function statusDocument(activityId, kind, operation, nodeRefs, status, startedAt
 function validateNodeRefs(root, nodeRefs) {
   const registryPath = resolve(root, "research_nodes.json");
   if (!existsSync(registryPath) || lstatSync(registryPath).isSymbolicLink()) {
-    throw new Error("v5 ResearchNode registry does not exist");
+    throw new Error("ResearchNode registry does not exist");
   }
   const registry = JSON.parse(readFileSync(registryPath, "utf8"));
   if (!isPlainObject(registry) || registry.schema_version !== "ts-research-node-registry/1") {

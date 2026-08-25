@@ -15,7 +15,7 @@ def _write(path: Path, value: dict) -> Path:
     return path
 
 
-def test_workspace_cli_v5_roundtrip(tmp_path: Path) -> None:
+def test_workspace_cli_roundtrip(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     initialized = _run("init_workspace", "--root", str(workspace))
     assert initialized["schema_version"] == "ts-workspace-init-result/5"
@@ -28,7 +28,7 @@ def test_workspace_cli_v5_roundtrip(tmp_path: Path) -> None:
                 "op": "create_phase",
                 "local_ref": "phase",
                 "title": "CLI validation",
-                "objective": "Exercise the complete v5 CLI round trip.",
+                "objective": "Exercise the complete CLI round trip.",
             },
             {
                 "op": "create_claim",
@@ -105,14 +105,14 @@ def test_workspace_cli_v5_roundtrip(tmp_path: Path) -> None:
     assert _run("validate_workspace", "--root", str(workspace))["valid"] is True
 
 
-def test_workspace_cli_rejects_v3_decision_contract(tmp_path: Path) -> None:
+def test_workspace_cli_rejects_unsupported_decision_contract(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     _run("init_workspace", "--root", str(workspace))
-    old = {
-        "schema_version": "ts-decision/3",
-        "decision_id": "dec_old",
+    unsupported = {
+        "schema_version": "ts-decision/unsupported",
+        "decision_id": "dec_removed",
         "action": "start_node",
-        "rationale": "Old routing decision.",
+        "rationale": "Unsupported routing decision.",
         "basis_refs": [],
         "payload": {"node_id": "n001"},
     }
@@ -121,7 +121,7 @@ def test_workspace_cli_rejects_v3_decision_contract(tmp_path: Path) -> None:
         "--root",
         str(workspace),
         "--decision-file",
-        str(_write(tmp_path / "old.json", old)),
+        str(_write(tmp_path / "unsupported.json", unsupported)),
     )
     assert completed.returncode == 2
     assert "decision.schema.json validation failed" in completed.stderr

@@ -1,4 +1,4 @@
-"""Revision identity for canonical v5 scientific state."""
+"""Revision identity for canonical scientific state."""
 
 from __future__ import annotations
 

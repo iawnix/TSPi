@@ -1,4 +1,4 @@
-"""Validated v5 report projection."""
+"""Validated report projection."""
 
 from __future__ import annotations
 

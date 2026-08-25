@@ -7,7 +7,7 @@ dependencies into shared `base`.
 `scripts/install_env.py` binds package root, environment-spec digest,
 interpreter, optional render dependencies, runtime manifest, and environment
 prefix. RDKit and a compatible NumPy range are core dependencies. Before
-writing manifest v2, the installer proves NumPy/RDKit imports, SMILES parsing,
+writing the runtime manifest, the installer proves NumPy/RDKit imports, SMILES parsing,
 fixed-seed ETKDG embedding, and UFF optimization, recording versions and module
 origins. `ts_runtime/launcher.py` verifies that manifest before workflow imports.
 

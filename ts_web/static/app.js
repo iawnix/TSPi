@@ -209,6 +209,9 @@ function captureInteraction() {
     detailId: state.detailId,
     filePath: state.filePath,
     nodeTab: state.nodeTab,
+    openAttemptIds: [...inspectorBody.querySelectorAll("details[data-attempt-id][open]")]
+      .map(row => row.dataset.attemptId)
+      .filter(Boolean),
     searchFocused: Boolean(search),
     searchSelectionStart: search?.selectionStart ?? null,
     searchSelectionEnd: search?.selectionEnd ?? null,
@@ -225,6 +228,7 @@ async function restoreInspector(interaction) {
     } else {
       closeInspector();
     }
+    restoreOpenAttempts(interaction.openAttemptIds);
     inspectorBody.scrollTop = interaction.inspectorScrollTop;
   }
   if (interaction.searchFocused) {
@@ -329,7 +333,7 @@ function renderRoadmap() {
     .filter(node => matchesNode(node, phaseById.get(node.phase_ref) || {}, claimById, query))
     .map(node => node.node_id));
   content.innerHTML = [
-    renderHeader(view.label, `${view.workspace.kernel_protocol} | ${shortDigest(view.workspace_revision)}`, true, "Filter phases, nodes, or claims"),
+    renderHeader(view.label, `${view.workspace.kernel_protocol} | ${shortDigest(view.workspace_revision)}`, true, "Filter phases, nodes, claims, or calculations"),
     renderNotices(),
     `<div class="summary-strip">
       ${summaryItem(summary.phase_count, "Research Phases")}
@@ -386,6 +390,7 @@ function matchesNode(node, phase, claimById, query) {
   if (!query) return true;
   const claims = array(node.related_claim_refs).map(ref => claimById.get(ref)).filter(Boolean);
   return matchesText(node, ["node_id", "title", "objective", "deliverable", "status", "tags", "opening_decision", "result"], query)
+    || matchesText(node, ["attempts"], query)
     || matchesText(phase, ["phase_id", "title", "objective"], query)
     || claims.some(claim => matchesText(claim, ["claim_id", "statement", "claim_type", "status"], query));
 }
@@ -503,8 +508,8 @@ function renderLocatorMatch(match) {
   ].join("");
   const directories = array(match.directories).map(row => pathRow(row.path, row.label || "directory", null)).join("");
   const attempts = array(match.attempts).map(row => `<div class="record-row"><div><div class="record-title mono">${escapeHtml(row.intent_id || row.ref)}</div><div class="record-subtitle">${escapeHtml(compact([row.backend, row.task_type, row.state]))}</div></div>${row.state ? badge(row.state) : ""}</div>`).join("");
-  const artifacts = array(match.artifacts).map(row => pathRow(row.path, compact([row.artifact_id, row.relation, row.sha256 && shortDigest(row.sha256)]), row.path)).join("");
-  const files = array(match.files).map(row => pathRow(row.path, formatBytes(row.size || row.size_bytes || 0), row.path)).join("");
+  const artifacts = array(match.artifacts).map(row => pathRow(row.path, compact([row.artifact_id, row.relation, row.sha256 && shortDigest(row.sha256)]), row.preview)).join("");
+  const files = array(match.files).map(row => pathRow(row.path, formatBytes(row.size || row.size_bytes || 0), row.preview)).join("");
   return `<section class="locator-match">
     <div class="locator-head"><div><strong>${escapeHtml(match.ref || match.label || "Result")}</strong><div class="record-subtitle">${escapeHtml(match.kind || "record")}</div></div>${refs ? `<div class="ref-chips">${refs}</div>` : ""}</div>
     <div class="locator-groups">
@@ -617,6 +622,7 @@ function roundedRect(context, x, y, width, height, radius) {
 
 async function openDetail(kind, id, { preserveNodeTab = false } = {}) {
   const workspaceId = state.workspaceId;
+  state.detail = null;
   state.detailKind = kind;
   state.detailId = id;
   state.filePath = null;
@@ -633,12 +639,14 @@ async function openDetail(kind, id, { preserveNodeTab = false } = {}) {
     } else {
       payload = localRecord(kind, id);
     }
-    if (workspaceId !== state.workspaceId || state.detailKind !== kind || state.detailId !== id) return;
+    if (workspaceId !== state.workspaceId || state.detailKind !== kind || state.detailId !== id) return false;
     state.detail = payload;
     renderInspector();
+    return true;
   } catch (error) {
-    if (workspaceId !== state.workspaceId || state.detailKind !== kind || state.detailId !== id) return;
+    if (workspaceId !== state.workspaceId || state.detailKind !== kind || state.detailId !== id) return false;
     inspectorBody.innerHTML = `<div class="fatal">${escapeHtml(error.message || error)}</div>`;
+    return false;
   }
 }
 
@@ -661,7 +669,7 @@ function renderNodeDetail(payload) {
   inspectorKicker.textContent = `${payload.phase.phase_id} | ${node.node_id}`;
   inspectorTitle.textContent = node.title;
   const tabs = ["overview", "conclusions", "evidence", "runs", "files", "history"];
-  const tabLabels = { overview: "Overview", conclusions: "Conclusions", evidence: "Evidence", runs: "Runs", files: "Files", history: "History" };
+  const tabLabels = { overview: "Overview", conclusions: "Conclusions", evidence: "Evidence", runs: "Activity", files: "Files", history: "History" };
   inspectorBody.innerHTML = `<div class="detail-summary"><div class="detail-meta">${badge(node.status)}<span>${escapeHtml(payload.phase.title)}</span><span>${escapeHtml(node.node_id)}</span></div><p>${escapeHtml(node.objective)}</p></div>
     <div class="tabs" role="tablist">${tabs.map(tab => `<button class="tab-button ${tab === state.nodeTab ? "active" : ""}" type="button" role="tab" data-node-tab="${tab}" aria-selected="${tab === state.nodeTab}">${tabLabels[tab]}</button>`).join("")}</div>
     <div id="node-tab-content">${renderNodeTab(payload, state.nodeTab)}</div>`;
@@ -670,7 +678,7 @@ function renderNodeDetail(payload) {
 function renderNodeTab(payload, tab) {
   if (tab === "conclusions") return renderNodeConclusions(payload);
   if (tab === "evidence") return renderNodeEvidence(payload);
-  if (tab === "runs") return renderNodeRuns(payload);
+  if (tab === "runs") return renderNodeActivity(payload);
   if (tab === "files") return renderNodeFiles(payload);
   if (tab === "history") return renderNodeHistory(payload);
   return renderNodeOverview(payload);
@@ -682,6 +690,7 @@ function renderNodeOverview(payload) {
   const opening = object(node.opening_decision);
   return `<section class="detail-section"><h3>Research Decision</h3><div class="detail-callout info"><div class="detail-meta"><span class="mono">${escapeHtml(opening.decision_id || node.created_by_decision)}</span><span>${escapeHtml(formatTime(opening.created_at || node.created_at))}</span></div><p class="detail-copy">${escapeHtml(opening.rationale || node.objective)}</p></div></section>
     <section class="detail-section"><h3>Research Contract</h3><dl class="detail-grid"><dt>Phase</dt><dd><span class="mono">${escapeHtml(payload.phase.phase_id)}</span> ${escapeHtml(payload.phase.title)}</dd><dt>Question</dt><dd>${escapeHtml(node.objective)}</dd><dt>Principal deliverable</dt><dd>${escapeHtml(node.deliverable)}</dd><dt>Primary Claim</dt><dd>${node.primary_claim_ref ? detailButton("claim", node.primary_claim_ref, node.primary_claim_ref) : "none"}</dd></dl></section>
+    ${renderAttemptHistory(node.attempts)}
     <section class="detail-section"><h3>Outcome</h3>${result.outcome ? `<div class="detail-callout ${tone(result.outcome)}"><div class="detail-meta">${badge(result.outcome)}<span>${escapeHtml(formatTime(result.completed_at))}</span></div><p class="detail-copy">${escapeHtml(result.summary)}</p>${bulletGroup("Open Questions", result.open_questions)}</div>` : `<div class="detail-empty">No terminal result has been recorded.</div>`}</section>
     <section class="detail-section"><h3>Lineage</h3>${linkedNodeGroup("Depends on", payload.dependencies)}${linkedNodeGroup("Continued by", payload.dependents)}</section>
     <section class="detail-section"><h3>Related Claims</h3>${linkedClaimRows(payload.claims)}</section>`;
@@ -701,18 +710,81 @@ function renderNodeEvidence(payload) {
     <section class="detail-section"><h3>Validation Results</h3>${detailRecordRows(payload.validation_results, "validation-result", "result_id", "dimension", "verdict")}</section>`;
 }
 
-function renderNodeRuns(payload) {
+function renderAttemptHistory(value) {
+  const attempts = array(value);
+  if (!attempts.length) {
+    return `<section class="detail-section"><h3>Calculation Attempts</h3><div class="detail-empty">No calculation attempts.</div></section>`;
+  }
+  return `<section class="detail-section"><div class="detail-section-heading"><h3>Calculation Attempts</h3><span>${attempts.length} attempts</span></div><div class="attempt-list">${attempts.map(renderAttempt).join("")}</div></section>`;
+}
+
+function renderAttempt(attempt) {
+  const recalculation = object(attempt.recalculation_ref);
+  const settings = object(attempt.settings);
+  const execution = object(attempt.execution_target);
+  const resources = object(execution.resources);
+  const stateLabel = attemptDisplayState(attempt);
+  const purpose = attempt.purpose || compact([attempt.backend, attempt.task_type]) || "Calculation attempt";
+  const source = recalculation.source_intent_id;
+  const sourceNode = recalculation.source_node;
+  const sourceLabel = [sourceNode, source].filter(Boolean).join(" / ");
+  const sourceField = source && sourceNode
+    ? `<button class="attempt-source" type="button" data-attempt-node="${escapeHtml(sourceNode)}" data-attempt-open="${escapeHtml(source)}">${escapeHtml(sourceLabel)}</button>`
+    : escapeHtml(sourceLabel || "none");
+  const error = attempt.error_class ? `<span class="attempt-error">${badge(attempt.error_class)}</span>` : "";
+  const inputRefs = array(attempt.input_bindings).map(binding => compact([binding.input_role, binding.artifact_id]));
+  const changedSettings = array(recalculation.changed_settings);
+  const runs = array(attempt.runs);
+  return `<details class="attempt-disclosure ${tone(stateLabel)}" data-attempt-id="${escapeHtml(attempt.intent_id)}">
+    <summary>
+      <span class="attempt-icon">${icon("flask")}</span>
+      <span class="attempt-summary-copy"><span class="attempt-summary-title"><span class="mono">${escapeHtml(attempt.intent_id)}</span><span>${escapeHtml(attempt.attempt_kind || "primary")}</span></span><span class="attempt-summary-purpose">${escapeHtml(purpose)}</span></span>
+      <span class="attempt-summary-state">${badge(stateLabel)}${error}</span>
+      <span class="attempt-chevron">${icon("chevron")}</span>
+    </summary>
+    <div class="attempt-body">
+      <dl class="detail-grid attempt-grid">
+        <dt>Backend / task</dt><dd>${escapeHtml(compact([attempt.backend, attempt.task_type]) || "unknown")}</dd>
+        <dt>Method</dt><dd>${escapeHtml(compact([attempt.method, attempt.basis]) || "not recorded")}</dd>
+        <dt>Strategy</dt><dd>${escapeHtml(attempt.candidate_strategy || "not recorded")}</dd>
+        <dt>Attempt kind</dt><dd>${escapeHtml(attempt.attempt_kind || "primary")}</dd>
+        <dt>Recalculates</dt><dd>${sourceField}</dd>
+        <dt>Program state</dt><dd>${escapeHtml(attempt.program_status || "unknown")}</dd>
+        <dt>Execution</dt><dd>${escapeHtml(compact([execution.kind, execution.profile]) || "not recorded")}</dd>
+        <dt>Subagent runs</dt><dd>${runs.length}</dd>
+      </dl>
+      ${renderAttemptRefs("Changed settings", changedSettings)}
+      ${renderAttemptRefs("Input artifacts", inputRefs)}
+      ${renderAttemptRefs("Expected artifacts", attempt.expected_artifacts)}
+      ${Object.keys(settings).length ? `<details class="attempt-technical"><summary>Calculation settings</summary>${detailFields(settings)}</details>` : ""}
+      ${Object.keys(resources).length ? `<details class="attempt-technical"><summary>Remote resources</summary>${detailFields(resources)}</details>` : ""}
+      ${runs.length ? `<div class="attempt-runs"><div class="record-subtitle">Subagent runs</div>${detailRecordRows(runs, "agent", "task_id", "operation", "status")}</div>` : ""}
+    </div>
+  </details>`;
+}
+
+function renderAttemptRefs(label, values) {
+  const rows = array(values).filter(Boolean);
+  if (!rows.length) return "";
+  return `<div class="attempt-refs"><div class="record-subtitle">${escapeHtml(label)}</div><div class="ref-chips">${rows.map(value => `<span class="ref-chip">${escapeHtml(value)}</span>`).join("")}</div></div>`;
+}
+
+function attemptDisplayState(attempt) {
+  const programStatus = String(attempt.program_status || "").toLowerCase();
+  if (["completed", "normal_termination", "failed", "running"].includes(programStatus)) return programStatus;
+  return attempt.state || attempt.program_status || "unknown";
+}
+
+function renderNodeActivity(payload) {
   const node = payload.research_node;
-  const attempts = array(node.attempts).map(row => `<div class="record-row"><div><div class="record-title mono">${escapeHtml(row.intent_id)}</div><div class="record-subtitle">${escapeHtml(compact([row.backend, row.task_type, row.program_status, row.error_class]))}</div></div><div class="record-meta">${badge(row.state || "unknown")}<span class="ref-chip">${row.run_count} runs</span></div></div>`).join("");
-  return `<section class="detail-section"><h3>Calculation Attempts</h3>${attempts || `<div class="detail-empty">No calculation attempts.</div>`}</section>
-    <section class="detail-section"><h3>Deterministic Operations</h3>${detailRecordRows(node.activities, "activity", "activity_id", "operation", "status")}</section>
+  return `<section class="detail-section"><h3>Deterministic Operations</h3>${detailRecordRows(node.activities, "activity", "activity_id", "operation", "status")}</section>
     <section class="detail-section"><h3>Subagent Runs</h3>${detailRecordRows(payload.agent_runs, "agent", "task_id", "operation", "status")}</section>
     <section class="detail-section"><h3>Unresolved Controls</h3>${detailRecordRows(node.unresolved_controls, "control", "control_id", "operation", "state")}</section>`;
 }
 
 function renderNodeFiles(payload) {
   const files = array(payload.files?.files);
-  return `<section class="detail-section"><h3>Node Files</h3>${files.length ? files.map(row => pathRow(row.path, compact([formatBytes(row.size), formatTime(row.modified * 1000)]), row.path)).join("") : `<div class="detail-empty">No current v5 files are present for this Node.</div>`}</section>`;
+  return `<section class="detail-section"><h3>Node Files</h3>${files.length ? files.map(row => pathRow(row.path, compact([formatBytes(row.size), formatTime(row.modified * 1000)]), row.preview)).join("") : `<div class="detail-empty">No current files are present for this Node.</div>`}</section>`;
 }
 
 function renderNodeHistory(payload) {
@@ -769,6 +841,41 @@ async function openFile(path) {
 function closeInspector() {
   document.body.classList.remove("inspector-open");
   inspector.setAttribute("aria-hidden", "true");
+}
+
+function restoreOpenAttempts(attemptIds) {
+  const wanted = new Set(array(attemptIds));
+  inspectorBody.querySelectorAll("details[data-attempt-id]").forEach(row => {
+    row.open = wanted.has(row.dataset.attemptId);
+  });
+}
+
+function revealAttempt(attemptId) {
+  const row = [...inspectorBody.querySelectorAll("details[data-attempt-id]")]
+    .find(candidate => candidate.dataset.attemptId === attemptId);
+  if (!row) return false;
+  row.open = true;
+  row.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  row.querySelector("summary")?.focus({ preventScroll: true });
+  return true;
+}
+
+async function openAttemptSource(sourceNodeId, attemptId) {
+  if (!sourceNodeId || !attemptId) {
+    showToast("Calculation source is unavailable");
+    return;
+  }
+  if (state.detailKind !== "node" || state.detailId !== sourceNodeId) {
+    const opened = await openDetail("node", sourceNodeId);
+    if (!opened) return;
+  }
+  if (state.nodeTab !== "overview") {
+    state.nodeTab = "overview";
+    renderNodeDetail(state.detail);
+  }
+  if (!revealAttempt(attemptId)) {
+    showToast(`Calculation ${attemptId} is not available in ${sourceNodeId}`);
+  }
 }
 
 function clearInspectorState() {
@@ -831,10 +938,14 @@ function detailButton(kind, id, label) {
   return `<button class="record-button mono" type="button" data-detail="${escapeHtml(kind)}" data-id="${escapeHtml(id)}">${escapeHtml(label || id)}</button>`;
 }
 
-function pathRow(path, meta, previewPath) {
+function pathRow(path, meta, preview) {
   if (!path) return "";
-  const label = `<div class="mono">${escapeHtml(path)}</div>${meta ? `<div class="path-meta">${escapeHtml(meta)}</div>` : ""}`;
-  return `<div class="path-row"><div>${previewPath ? `<button class="path-button" type="button" data-file="${escapeHtml(previewPath)}">${label}</button>` : label}</div>${previewPath ? icon("external") : ""}</div>`;
+  const label = `<span class="path-name mono">${escapeHtml(path)}</span>${meta ? `<span class="path-meta">${escapeHtml(meta)}</span>` : ""}`;
+  if (preview?.available) {
+    return `<div class="path-row"><button class="path-button" type="button" data-file="${escapeHtml(path)}" title="Preview ${escapeHtml(path)}"><span class="path-copy">${label}</span>${icon("eye")}</button></div>`;
+  }
+  const reason = preview ? `<div class="path-preview-state">${escapeHtml(preview.reason || "Preview unavailable")}</div>` : "";
+  return `<div class="path-row"><div class="path-copy">${label}${reason}</div></div>`;
 }
 
 function section(title, meta, body) {
@@ -987,11 +1098,16 @@ content.addEventListener("click", event => {
   if (file) openFile(file.dataset.file);
 });
 
-inspectorBody.addEventListener("click", event => {
+inspectorBody.addEventListener("click", async event => {
   const tab = event.target.closest("[data-node-tab]");
   if (tab && state.detailKind === "node") {
     state.nodeTab = tab.dataset.nodeTab;
     renderNodeDetail(state.detail);
+    return;
+  }
+  const attempt = event.target.closest("[data-attempt-open]");
+  if (attempt && state.detailKind === "node") {
+    await openAttemptSource(attempt.dataset.attemptNode, attempt.dataset.attemptOpen);
     return;
   }
   const detail = event.target.closest("[data-detail]");

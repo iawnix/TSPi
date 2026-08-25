@@ -1,6 +1,6 @@
-"""Read-only projection of noncanonical v5 runtime state.
+"""Read-only projection of noncanonical runtime state.
 
-Canonical scientific state lives in the v5 registries.  Calculation attempts,
+Canonical scientific state lives in the workspace registries. Calculation attempts,
 deterministic tool activities, Compute/Review runs, and control receipts are
 durable operational records, but they never become scientific support merely
 because they appear in this projection.
@@ -418,7 +418,7 @@ def _unresolved_controls(root: Path, files: list[Path]) -> list[dict[str, Any]]:
 def _node_id_for_attempt(root: Path, attempt_dir: Path) -> str:
     relative = attempt_dir.relative_to(root)
     if len(relative.parts) != 4 or relative.parts[0] != "nodes" or relative.parts[2] != "attempts":
-        raise ValueError(f"invalid v5 calculation attempt path: {relative.as_posix()}")
+        raise ValueError(f"invalid calculation attempt path: {relative.as_posix()}")
     return relative.parts[1]
 
 

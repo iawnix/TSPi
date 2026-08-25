@@ -5,7 +5,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from tests.v5_helpers import bootstrap_v5_workspace, start_research_node
+from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_node
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -129,8 +129,8 @@ process.stdout.write(JSON.stringify({{rows,total:rows.reduce((sum,row)=>sum+row.
     assert skill_bytes + measured["total"] + measured["systemPromptBytes"] <= 19_800
 
 
-def test_workspace_cli_compiles_v5_frontier_and_focused_node(tmp_path: Path) -> None:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+def test_workspace_cli_compiles_frontier_and_focused_node(tmp_path: Path) -> None:
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     refs = start_research_node(workspace)
     frontier = _workspace_cli("context", "--root", str(workspace), "--mode", "frontier")
     node = _workspace_cli("context", "--root", str(workspace), "--mode", "node", "--node-ref", refs["node_id"])
@@ -164,8 +164,8 @@ process.stdout.write(JSON.stringify({{details:buildContextDetails(context),summa
     assert "reviews=" not in result["summary"]
 
 
-def test_control_prompt_injection_states_v5_authority_without_prescribing_sequence(tmp_path: Path) -> None:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+def test_control_prompt_injection_states_authority_without_prescribing_sequence(tmp_path: Path) -> None:
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     script = f"""
 import install from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
 const handlers={{}};const pi={{registerTool:()=>{{}},registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},on:(name,handler)=>handlers[name]=handler}};
@@ -175,7 +175,7 @@ process.stdout.write(JSON.stringify(result));
 """
     result = _node_json(script)
     prompt = result["systemPrompt"]
-    assert "TS v5 workspace active" in prompt
+    assert "TS workspace active" in prompt
     assert "ts_workspace_context" in prompt
     assert "ts_workspace_decision_apply" in prompt
     assert "Each material change of question" in prompt

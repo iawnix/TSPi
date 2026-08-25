@@ -15,7 +15,7 @@ from .io import read_json
 from .refs import NODE_ID, ACTIVITY_ID
 
 
-LEGACY_ACTIVITY_ID = re.compile(
+UNSUPPORTED_UUID_ACTIVITY_ID = re.compile(
     r"^op_[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
     re.IGNORECASE,
 )
@@ -193,7 +193,7 @@ def _scope_activity_dirs(
             _finding(findings, "activity_path_symlink", f"activity entry is a symbolic link: {ref}", ref, owner_refs)
         elif not entry.is_dir():
             _finding(findings, "activity_entry_not_directory", f"activity entry is not a directory: {ref}", ref, owner_refs)
-        elif LEGACY_ACTIVITY_ID.fullmatch(entry.name):
+        elif UNSUPPORTED_UUID_ACTIVITY_ID.fullmatch(entry.name):
             continue
         else:
             rows.append((entry, owner_node))

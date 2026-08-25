@@ -90,15 +90,15 @@ def _job(tmp_path: Path) -> RemoteJobConfig:
     )
 
 
-def test_remote_job_rejects_legacy_calculation_ids(tmp_path: Path) -> None:
-    legacy = replace(
+def test_remote_job_rejects_noncanonical_calculation_ids(tmp_path: Path) -> None:
+    invalid = replace(
         _job(tmp_path),
         intent_id="calc_test",
         remote_dir="/remote/ts/workspaces/ws_0123456789abcdef01234567/runs/node_1/calc_test",
     )
 
     with pytest.raises(RemoteConfigurationError, match="calculation Attempt ID"):
-        render_job_script(legacy)
+        render_job_script(invalid)
 
 
 def _executable_job(

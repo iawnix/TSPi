@@ -73,7 +73,7 @@ def main() -> int:
         action="append",
         default=None,
         help=(
-            "Managed directory whose direct v5 workspace children are discovered. "
+            "Managed directory whose direct workspace children are discovered. "
             "Repeat for multiple roots. Defaults to <installation>/workspaces when "
             "--state-dir is <installation>/.pi/ts-web."
         ),

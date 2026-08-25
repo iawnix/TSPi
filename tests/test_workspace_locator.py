@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.v5_helpers import start_research_node
+from tests.workspace_helpers import start_research_node
 from ts_compute.artifacts import list_calculation_artifacts
 from ts_workspace.cli import main as workspace_cli
 from ts_workspace.decision import draft_decision

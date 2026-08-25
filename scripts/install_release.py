@@ -56,14 +56,14 @@ REQUIRED_RUNTIME_FILES = {
     "ts_web/static/app.css",
     "ts_web/static/app.js",
     "ts_web/static/research-tree.js",
-    "docs/adr/0002-phase-node-research-kernel-v5.md",
+    "docs/adr/0001-phase-node-research-kernel.md",
 }
 FORBIDDEN_PARTS = {".git", ".pytest_cache", "__pycache__", "node_modules", "tests"}
 FORBIDDEN_RUNTIME_FILES = {
     "scripts/build_release.py",
     "scripts/check_package.py",
 }
-LEGACY_NOTIFICATION_STATE = (
+RETIRED_NOTIFICATION_STATE = (
     "ts-email-delivery-policy.json",
     "ts-email-delivery-authorization.json",
 )
@@ -138,7 +138,7 @@ def install_release(manifest_path: Path, archive_path: Path | None, install_root
                 remove_staging_tree(staging)
 
     switch_current(package_home, target)
-    archived_notification_state = archive_legacy_notification_state(install_root)
+    archived_notification_state = archive_retired_notification_state(install_root)
     install_launcher(install_root, package_home)
     installed_manifest = json.loads((target / ".ts-agent-release.json").read_text(encoding="utf-8"))
     state = {
@@ -156,21 +156,21 @@ def install_release(manifest_path: Path, archive_path: Path | None, install_root
         "package_root": str(target),
         "current": str(package_home / "current"),
         "launcher": str(install_root / "TSPi"),
-        "archived_legacy_notification_state": archived_notification_state,
+        "archived_retired_notification_state": archived_notification_state,
     }
 
 
-def archive_legacy_notification_state(install_root: Path) -> list[str]:
+def archive_retired_notification_state(install_root: Path) -> list[str]:
     """Disable obsolete recipient authorization without deleting its audit history."""
 
     pi_root = ensure_private_directory(install_root / ".pi")
-    sources = [pi_root / name for name in LEGACY_NOTIFICATION_STATE if (pi_root / name).exists() or (pi_root / name).is_symlink()]
+    sources = [pi_root / name for name in RETIRED_NOTIFICATION_STATE if (pi_root / name).exists() or (pi_root / name).is_symlink()]
     if not sources:
         return []
     for source in sources:
         if source.is_symlink() or not source.is_file():
-            raise ReleaseInstallError(f"legacy notification state must be a regular file: {source}")
-    archive_root = ensure_private_directory(pi_root / "archive" / "legacy-notification-state")
+            raise ReleaseInstallError(f"retired notification state must be a regular file: {source}")
+    archive_root = ensure_private_directory(pi_root / "archive" / "retired-notification-state")
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S.%fZ")
     archive_dir = archive_root / stamp
     archive_dir.mkdir(mode=0o700)

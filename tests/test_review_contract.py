@@ -73,7 +73,7 @@ def test_review_bundle_uses_dag_objects_and_logical_artifact_ids(tmp_path: Path)
     request_file = tmp_path / "review-request.json"
     request_file.write_text(json.dumps(payload), encoding="utf-8")
     completed = subprocess.run(
-        ["node", str(REPO / "tests/review_v5_bundle_probe.cjs"), str(request_file)],
+        ["node", str(REPO / "tests/review_bundle_probe.cjs"), str(request_file)],
         cwd=REPO,
         check=True,
         text=True,

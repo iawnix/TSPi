@@ -1,4 +1,4 @@
-"""Cross-document validation for the v5 research Kernel."""
+"""Cross-document validation for the research kernel."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from .state import (
     CLAIM_RELATIONS_FILE,
     OBSERVATIONS_FILE,
     FINDINGS_FILE,
-    LEGACY_MARKERS,
+    UNSUPPORTED_MARKERS,
     RESEARCH_PHASES_FILE,
     RESEARCH_NODES_FILE,
     RESEARCH_STATE_FILE,
@@ -43,13 +43,13 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
         _finding(findings, "error", "missing_workspace", "workspace root does not exist", ".")
         return _result(findings)
 
-    for marker in sorted(LEGACY_MARKERS):
+    for marker in sorted(UNSUPPORTED_MARKERS):
         if (root_path / marker).exists():
             _finding(
                 findings,
                 "error",
-                "legacy_state_present",
-                f"legacy canonical state is unsupported by v5: {marker}",
+                "unsupported_state_present",
+                f"unsupported canonical state is present: {marker}",
                 marker,
             )
     for name in sorted(REQUIRED_FILES):

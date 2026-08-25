@@ -1,4 +1,4 @@
-"""Logical identifier and artifact binding validation for v5."""
+"""Logical identifier and artifact binding validation."""
 
 from __future__ import annotations
 
@@ -36,7 +36,7 @@ ARTIFACT_ID = re.compile(r"^art_[0-9a-f]{24}$")
 
 
 class WorkspaceRefError(ValueError):
-    """Raised when a v5 logical reference is invalid."""
+    """Raised when a logical workspace reference is invalid."""
 
 
 def decision_ordinal(value: str) -> int:

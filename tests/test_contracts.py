@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 
 import pytest
@@ -56,10 +57,10 @@ CANONICAL_JSON = {
 }
 
 
-def test_required_schema_files_are_v5_only() -> None:
+def test_required_schema_files_match_the_active_contract() -> None:
     contract_dir = ROOT / "ts_workspace" / "contracts"
     assert {path.name for path in contract_dir.glob("*.schema.json")} == SCHEMA_FILES
-    assert not any("v2" in name or "v3" in name or "research_act" in name or "evidence" in name for name in SCHEMA_FILES)
+    assert not any(re.search(r"(?:^|[_-])v[0-9]+(?:[._-]|$)", name) or "research_act" in name or "evidence" in name for name in SCHEMA_FILES)
     for name in SCHEMA_FILES:
         assert json.loads((contract_dir / name).read_text(encoding="utf-8"))["type"] == "object"
 
@@ -68,7 +69,7 @@ def test_contract_schemas_are_valid_draft_2020_12() -> None:
     check_all_contract_schemas()
 
 
-def test_init_workspace_creates_only_v5_canonical_state(tmp_path: Path) -> None:
+def test_init_workspace_creates_only_canonical_state(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     result = init_workspace(workspace)
     assert result["schema_version"] == "ts-workspace-init-result/5"
@@ -80,26 +81,26 @@ def test_init_workspace_creates_only_v5_canonical_state(tmp_path: Path) -> None:
     assert validate_workspace(workspace)["valid"] is True
 
 
-def test_v3_decision_and_canonical_markers_fail_closed(tmp_path: Path) -> None:
-    legacy_decision = {
-        "schema_version": "ts-decision/3",
-        "decision_id": "dec_legacy",
+def test_unsupported_decision_and_canonical_markers_fail_closed(tmp_path: Path) -> None:
+    unsupported_decision = {
+        "schema_version": "ts-decision/unsupported",
+        "decision_id": "dec_removed",
         "action": "start_node",
-        "rationale": "Legacy decision.",
+        "rationale": "Unsupported decision.",
         "basis_refs": [],
         "report_ref": None,
         "base_revision": None,
         "payload": {"node_id": "n001"},
     }
     with pytest.raises(ContractError, match="decision.schema.json"):
-        validate_decision(legacy_decision)
+        validate_decision(unsupported_decision)
 
     workspace = tmp_path / "workspace"
     init_workspace(workspace)
     (workspace / "evidence_registry.json").write_text("{}\n", encoding="utf-8")
     validation = validate_workspace(workspace)
     assert validation["valid"] is False
-    assert "legacy_state_present" in {item["code"] for item in validation["findings"]}
+    assert "unsupported_state_present" in {item["code"] for item in validation["findings"]}
 
 
 def test_init_refuses_to_overwrite_existing_canonical_state(tmp_path: Path) -> None:
@@ -183,12 +184,6 @@ def test_context_and_validation_are_pure_reads(tmp_path: Path) -> None:
     assert before == after
 
 
-def test_removed_compatibility_modules_and_schemas_are_absent() -> None:
-    removed = [
-        ROOT / "ts_workspace" / "engine_v3.py",
-        ROOT / "ts_workspace" / "migrate_v2.py",
-        ROOT / "scripts" / "migrate_workspace_v2_to_v3.py",
-        ROOT / "ts_workspace" / "contracts" / "decision_v3.schema.json",
-        ROOT / "ts_workspace" / "contracts" / "node_v3.schema.json",
-    ]
-    assert all(not path.exists() for path in removed)
+def test_state_conversion_modules_and_version_branded_schemas_are_absent() -> None:
+    assert not list((ROOT / "ts_workspace").glob("*_v[0-9]*.py"))
+    assert not list((ROOT / "ts_workspace" / "contracts").glob("*_v[0-9]*.schema.json"))

@@ -1,4 +1,4 @@
-"""Small read-only HTTP server for the v5 research explorer."""
+"""Small read-only HTTP server for the research explorer."""
 
 from __future__ import annotations
 
@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 from urllib.parse import parse_qs, unquote, urlparse
 
+from .file_preview import MAX_TEXT_BYTES, read_text_preview
 from .normalize import (
     claim_payload,
     graph_payload,
@@ -31,7 +32,6 @@ from .registry import (
 )
 from .reloader import ReleaseWatcher
 
-MAX_TEXT_BYTES = 1_000_000
 STATIC_PACKAGE = __package__ or "ts_web"
 
 
@@ -314,13 +314,11 @@ def _read_workspace_file(row: dict[str, Any], rel_path: str) -> dict[str, Any]:
     }
     if normalized not in allowed:
         raise ValueError("file preview is limited to current ResearchNode files")
-    size = path.stat().st_size
-    if size > MAX_TEXT_BYTES:
-        raise ValueError(f"file is larger than {MAX_TEXT_BYTES} bytes")
+    text = read_text_preview(path)
     return {
         "path": path.relative_to(root).as_posix(),
-        "text": path.read_text(encoding="utf-8", errors="replace"),
-        "size": size,
+        "text": text,
+        "size": path.stat().st_size,
     }
 
 

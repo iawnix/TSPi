@@ -1,6 +1,6 @@
 ---
 name: transition-state-workflow
-description: Auditable TS and reaction-path research in TSPi. Use for candidates, optimization/frequency/IRC, mechanisms, connectivity, xTB/CREST/ASE/Gaussian, branching, recovery, or v5 continuation.
+description: Auditable TS research in TSPi. Use for candidates, opt/freq/IRC, mechanisms, connectivity, xTB/CREST/ASE/Gaussian, branching, recovery, or continuation.
 ---
 
 # Transition-State Workflow
@@ -64,8 +64,7 @@ Decision; any change requires a new draft. Operations do not prescribe order.
 Use `mode=validation_capabilities` to discover predicates, templates, and
 acceptance profiles. Use a versioned template or registered predicates only.
 
-Before a template GateSpec, query its exact `templateId` and `templateVersion`;
-the focused result lists parameters and Observation selectors.
+Before a template GateSpec, query its exact `templateId` and `templateVersion`.
 
 The compiler freezes template, registry, content, and Observation digests. Only
 `pass` satisfies a GateSpec. Agent code is forbidden. Acceptance requires

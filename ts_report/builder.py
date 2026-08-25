@@ -1,4 +1,4 @@
-"""Build immutable Markdown packages from the v5 report projection."""
+"""Build immutable Markdown packages from the report projection."""
 
 from __future__ import annotations
 

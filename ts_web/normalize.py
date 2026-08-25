@@ -1,4 +1,4 @@
-"""Read-only v5 workspace projections for the research explorer."""
+"""Read-only workspace projections for the research explorer."""
 
 from __future__ import annotations
 
@@ -36,9 +36,11 @@ from ts_workspace.state import (
 )
 from ts_workspace.validator import validate_workspace
 
+from .file_preview import preview_capability
+
 
 def normalize_workspace(source_root: str | Path, *, label: str | None = None) -> dict[str, Any]:
-    """Project canonical v5 graph state and separate operational overlays."""
+    """Project canonical graph state and separate operational overlays."""
 
     root = Path(source_root).expanduser().resolve()
     documents = {name: _read_object(root / name) for name in STATE_FILES}
@@ -212,12 +214,18 @@ def workspace_snapshot(
 
 
 def research_files_payload(source_root: str | Path, query: str = "") -> dict[str, Any]:
-    """Join v5 research records to the authoritative logical artifact catalog."""
+    """Join research records to the authoritative logical artifact catalog."""
 
     from ts_compute.artifacts import list_calculation_artifacts
 
-    catalog = list_calculation_artifacts(source_root)
-    return locate_research_files(source_root, query, artifacts=catalog["artifacts"])
+    root = Path(source_root).expanduser().resolve()
+    catalog = list_calculation_artifacts(root)
+    payload = locate_research_files(root, query, artifacts=catalog["artifacts"])
+    for match in _objects(payload.get("matches")):
+        for key in ("artifacts", "files"):
+            for row in _objects(match.get(key)):
+                row["preview"] = _workspace_file_preview(root, row.get("path"))
+    return payload
 
 
 def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
@@ -398,6 +406,20 @@ def node_payload(source_root: str | Path, node_id: str, *, label: str | None = N
     root = Path(source_root).expanduser().resolve()
     view = normalize_workspace(root, label=label)
     node = _find(_objects(view.get("research_nodes")), "node_id", node_id, "ResearchNode")
+    compute_runs = [
+        row
+        for row in _objects(view.get("agent_runs"))
+        if row.get("role") == "compute" and node_id in _strings(row.get("node_refs"))
+    ]
+    node = {
+        **node,
+        "attempts": _calculation_attempts(
+            root,
+            node_id,
+            agent_runs=compute_runs,
+            include_details=True,
+        ),
+    }
     dependency_ids = set(_strings(node.get("dependency_refs")))
     all_nodes = _objects(view.get("research_nodes"))
     all_claims = _objects(view.get("claims"))
@@ -467,6 +489,7 @@ def list_node_files(source_root: str | Path, node_id: str) -> dict[str, Any]:
                 "name": path.name,
                 "size": stat.st_size,
                 "modified": int(stat.st_mtime),
+                "preview": preview_capability(path, size=stat.st_size),
             }
         )
     return {"node_id": node_id, "files": files}
@@ -488,6 +511,24 @@ def _is_current_node_file(parts: tuple[str, ...]) -> bool:
     return len(parts) >= 5 and SUBAGENT_RUN_ID.fullmatch(parts[3]) is not None
 
 
+def _workspace_file_preview(root: Path, value: Any) -> dict[str, Any]:
+    if not isinstance(value, str) or not value:
+        return {"available": False, "reason": "File path is unavailable"}
+    parts = Path(value.replace("\\", "/")).parts
+    if (
+        len(parts) < 3
+        or parts[0] != "nodes"
+        or not _is_current_node_file(tuple(parts[2:]))
+        or ".." in parts
+    ):
+        return {"available": False, "reason": "File is outside the ResearchNode preview scope"}
+    candidate = root / value
+    path = candidate.resolve()
+    if root not in path.parents or candidate.is_symlink() or not path.is_file():
+        return {"available": False, "reason": "File is not readable"}
+    return preview_capability(path)
+
+
 def _normalize_node(
     root: Path,
     record: dict[str, Any],
@@ -507,7 +548,10 @@ def _normalize_node(
         **record,
         "attempts": attempts,
         "activities": [row for row in activities if node_id in _strings(row.get("node_refs"))],
-        "compute_run_count": sum(len(_objects(attempt.get("runs"))) for attempt in attempts),
+        "compute_run_count": sum(
+            int(attempt.get("run_count") or 0)
+            for attempt in attempts
+        ),
         "unresolved_controls": [row for row in controls if row.get("node_id") == node_id],
     }
 
@@ -544,6 +588,7 @@ def _calculation_attempts(
     node_id: str,
     *,
     agent_runs: list[dict[str, Any]],
+    include_details: bool = False,
 ) -> list[dict[str, Any]]:
     if not node_id:
         return []
@@ -562,24 +607,57 @@ def _calculation_attempts(
         status = _read_optional_object(attempt_dir / "status.json")
         intent = _read_optional_object(attempt_dir / "intent.json")
         intent_id = attempt_dir.name
+        settings = _object(intent.get("settings"))
+        recalculation_ref = _object(intent.get("recalculation_ref"))
         runs = [
             row
             for row in agent_runs
             if row.get("role") == "compute" and row.get("intent_id") == intent_id
         ]
-        attempts.append(
-            {
-                "intent_id": intent_id,
-                "ref": attempt_dir.relative_to(root).as_posix(),
-                "backend": intent.get("backend") or result.get("backend"),
-                "task_type": intent.get("task_type") or result.get("task_type"),
-                "state": result.get("state") or status.get("state"),
-                "program_status": result.get("program_status") or status.get("program_status"),
-                "error_class": result.get("error_class") or status.get("error_class"),
-                "runs": runs,
-                "run_count": len(runs),
-            }
-        )
+        attempt = {
+            "intent_id": intent_id,
+            "ref": attempt_dir.relative_to(root).as_posix(),
+            "backend": intent.get("backend") or result.get("backend"),
+            "task_type": intent.get("task_type") or result.get("task_type"),
+            "purpose": _optional_string(intent.get("purpose")),
+            "attempt_kind": _optional_string(intent.get("attempt_kind")) or "primary",
+            "recalculation_ref": {
+                "source_node": _optional_string(recalculation_ref.get("source_node")),
+                "source_intent_id": _optional_string(recalculation_ref.get("source_intent_id")),
+                "purpose": _optional_string(recalculation_ref.get("purpose")),
+                "changed_settings": _strings(recalculation_ref.get("changed_settings")),
+            } if recalculation_ref else None,
+            "method": _optional_string(settings.get("method")),
+            "basis": _optional_string(settings.get("basis")),
+            "candidate_strategy": _optional_string(settings.get("candidateStrategy")),
+            "state": result.get("state") or status.get("state"),
+            "program_status": result.get("program_status") or status.get("program_status"),
+            "error_class": result.get("error_class") or status.get("error_class"),
+            "run_count": len(runs),
+        }
+        if include_details:
+            execution_target = _object(intent.get("execution_target"))
+            attempt.update(
+                {
+                    "settings": settings,
+                    "input_bindings": [
+                        {
+                            "input_role": _optional_string(binding.get("input_role")),
+                            "artifact_id": _optional_string(binding.get("artifact_id")),
+                            "source_intent_id": _optional_string(binding.get("source_intent_id")),
+                        }
+                        for binding in _objects(intent.get("input_bindings"))
+                    ],
+                    "expected_artifacts": _strings(intent.get("expected_artifacts")),
+                    "execution_target": {
+                        "kind": _optional_string(execution_target.get("kind")),
+                        "profile": _optional_string(execution_target.get("profile")),
+                        "resources": _object(execution_target.get("resources")),
+                    } if execution_target else None,
+                    "runs": runs,
+                }
+            )
+        attempts.append(attempt)
     return attempts
 
 
@@ -656,9 +734,9 @@ def _read_object(path: Path) -> dict[str, Any]:
     try:
         value = read_json(path)
     except (OSError, ValueError) as exc:
-        raise ValueError(f"cannot read v5 workspace file {path.name}: {exc}") from exc
+        raise ValueError(f"cannot read workspace file {path.name}: {exc}") from exc
     if not isinstance(value, dict):
-        raise ValueError(f"v5 workspace file is not an object: {path.name}")
+        raise ValueError(f"workspace file is not an object: {path.name}")
     return value
 
 
@@ -686,6 +764,10 @@ def _strings(value: Any) -> list[str]:
     if not isinstance(value, list):
         return []
     return [item for item in value if isinstance(item, str)]
+
+
+def _optional_string(value: Any) -> str | None:
+    return value if isinstance(value, str) and value else None
 
 
 def _list(value: Any) -> list[Any]:

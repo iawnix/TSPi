@@ -11,7 +11,7 @@ README = ROOT / "README.md"
 ARCHITECTURE = ROOT / "docs" / "ARCHITECTURE.md"
 INSTALLATION = ROOT / "docs" / "INSTALLATION.md"
 MAINTAINER = ROOT / "docs" / "MAINTAINER_GUIDE.md"
-ADR = ROOT / "docs" / "adr" / "0002-phase-node-research-kernel-v5.md"
+ADR = ROOT / "docs" / "adr" / "0001-phase-node-research-kernel.md"
 SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
 SKILL = SKILL_ROOT / "SKILL.md"
 REFERENCES = SKILL_ROOT / "references"
@@ -22,15 +22,15 @@ FINAL_REPORT = TEMPLATES / "ts_final_report.md"
 PUBLIC_DOCS = (README, ARCHITECTURE, INSTALLATION, MAINTAINER, ADR)
 
 
-def test_readme_routes_each_reader_to_the_v5_public_contracts() -> None:
+def test_readme_routes_each_reader_to_the_public_contracts() -> None:
     text = README.read_text(encoding="utf-8")
 
     for phrase in [
-        "protocol v5",
+        "one workspace contract",
         "docs/INSTALLATION.md",
         "docs/ARCHITECTURE.md",
         "docs/MAINTAINER_GUIDE.md",
-        "docs/adr/0002-phase-node-research-kernel-v5.md",
+        "docs/adr/0001-phase-node-research-kernel.md",
         "scripts/build_release.py",
         "scripts/install_release.py",
         ".pi/packages/ts-agent/current",
@@ -91,7 +91,7 @@ def test_public_document_set_covers_install_architecture_and_maintenance() -> No
 
     maintainer = MAINTAINER.read_text(encoding="utf-8")
     for heading in [
-        "## V5 Scientific Model",
+        "## Scientific Model",
         "## Validation Engine Rules",
         "## Deterministic Tool Contracts",
         "## Documentation Ownership",
@@ -115,7 +115,7 @@ def test_public_markdown_relative_links_resolve_inside_the_package() -> None:
             assert resolved.exists(), (path, target)
 
 
-def test_public_docs_state_the_v5_authority_boundary() -> None:
+def test_public_docs_state_the_authority_boundary() -> None:
     texts = {
         "readme": README.read_text(encoding="utf-8"),
         "architecture": ARCHITECTURE.read_text(encoding="utf-8"),
@@ -134,7 +134,7 @@ def test_public_docs_state_the_v5_authority_boundary() -> None:
     assert "label to a next action" in texts["state"]
 
 
-def test_normal_runtime_docs_expose_only_v5_contracts() -> None:
+def test_normal_runtime_docs_expose_only_current_contracts() -> None:
     paths = [README, ARCHITECTURE, INSTALLATION, MAINTAINER, SKILL, *sorted(REFERENCES.glob("*.md"))]
     forbidden = [
         "ts-research-kernel/4",
@@ -158,7 +158,7 @@ def test_normal_runtime_docs_expose_only_v5_contracts() -> None:
             assert term not in text, (path, term)
 
 
-def test_workspace_docs_match_v5_bootstrap_canonical_file_names() -> None:
+def test_workspace_docs_match_bootstrap_canonical_file_names() -> None:
     architecture = ARCHITECTURE.read_text(encoding="utf-8")
     contract = (REFERENCES / "workspace_contract.md").read_text(encoding="utf-8")
 
@@ -178,8 +178,8 @@ def test_workspace_docs_match_v5_bootstrap_canonical_file_names() -> None:
     for text in (architecture, contract):
         for name in required:
             assert name in text
-    assert "complete v5 workspace is validated without canonical rewrites" in contract
-    assert "There is no legacy reader or migration command" in contract
+    assert "complete workspace is validated without canonical rewrites" in contract
+    assert "Bootstrap does not rewrite unsupported state" in contract
 
 
 def test_skill_routes_details_through_focused_references() -> None:
@@ -229,7 +229,7 @@ def test_compute_reference_uses_the_registered_gaussian_input_role() -> None:
     assert '"inputRole": "structure"' not in compute
 
 
-def test_final_report_template_projects_v5_phase_node_and_scientific_objects() -> None:
+def test_final_report_template_projects_phase_node_and_scientific_objects() -> None:
     text = FINAL_REPORT.read_text(encoding="utf-8")
 
     for phrase in [
@@ -248,11 +248,11 @@ def test_final_report_template_projects_v5_phase_node_and_scientific_objects() -
         "{{finding_id}}",
     ]:
         assert phrase in text
-    for legacy in ("{{act_id}}", "{{evidence_id}}", "{{gate_result_id}}", "{{required_gates}}"):
-        assert legacy not in text
+    for removed in ("{{act_id}}", "{{evidence_id}}", "{{gate_result_id}}", "{{required_gates}}"):
+        assert removed not in text
 
 
-def test_decision_assets_are_generic_v5_operation_examples() -> None:
+def test_decision_assets_are_generic_operation_examples() -> None:
     decision_dir = TEMPLATES / "decision"
     readme = (decision_dir / "README.md").read_text(encoding="utf-8")
     files = {path.name for path in decision_dir.glob("*.json")}

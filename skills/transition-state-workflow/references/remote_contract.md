@@ -1,7 +1,7 @@
 # Remote Execution Contract
 
-`ts_remote` uses OpenSSH/SCP and Torque directly. There is no MCP transport in
-protocol v5.
+`ts_remote` uses OpenSSH/SCP and Torque directly. The package exposes no MCP
+transport.
 
 ## Installation-Owned Policy
 

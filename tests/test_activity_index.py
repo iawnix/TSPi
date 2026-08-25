@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.v5_helpers import start_research_node
+from tests.workspace_helpers import start_research_node
 from ts_report import build_report_package
 from ts_workspace.activities import build_activity_index
 from ts_workspace.context import compile_context
@@ -104,7 +104,7 @@ def test_activity_is_derived_for_its_node_without_a_link_decision(tmp_path: Path
     assert validate_workspace(root)["valid"] is True
 
 
-def test_activity_journal_rejects_legacy_activity_ids(tmp_path: Path) -> None:
+def test_activity_journal_rejects_noncanonical_activity_ids(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
     refs = start_research_node(root)
@@ -140,12 +140,12 @@ def test_activity_journal_rejects_legacy_activity_ids(tmp_path: Path) -> None:
     assert "operational activity ID" in rejected.stderr
 
 
-def test_activity_index_ignores_legacy_uuid_journals(tmp_path: Path) -> None:
+def test_activity_index_ignores_unsupported_uuid_journals(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
     refs = start_research_node(root)
-    legacy_id = "op_019a338f-acaf-43e6-b498-4e3994971399"
-    activity = _activity_documents(root, refs["node_id"], activity_id=legacy_id)
+    unsupported_id = "op_019a338f-acaf-43e6-b498-4e3994971399"
+    activity = _activity_documents(root, refs["node_id"], activity_id=unsupported_id)
     for name in ("request.json", "status.json"):
         document = read_json(activity / name)
         document["kind"] = "compute"

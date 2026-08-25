@@ -1,4 +1,4 @@
-"""CLI for the v5 Research Kernel and Context Compiler."""
+"""CLI for the Research Kernel and Context Compiler."""
 
 from __future__ import annotations
 
@@ -18,10 +18,10 @@ from .validator import validate_workspace
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="ts_workspace", description="TS v5 Claim graph and ResearchNode DAG control plane")
+    parser = argparse.ArgumentParser(prog="ts_workspace", description="TS Claim graph and ResearchNode DAG control plane")
     sub = parser.add_subparsers(dest="command", required=True)
 
-    command = sub.add_parser("init_workspace", help="initialize one fresh v5 workspace")
+    command = sub.add_parser("init_workspace", help="initialize one fresh workspace")
     command.add_argument("--root", required=True)
 
     command = sub.add_parser("context", help="compile one bounded graph projection")
@@ -48,7 +48,7 @@ def main(argv: list[str] | None = None) -> int:
     command.add_argument("--template-id")
     command.add_argument("--template-version")
 
-    command = sub.add_parser("validate_workspace", help="validate all canonical v5 state")
+    command = sub.add_parser("validate_workspace", help="validate all canonical workspace state")
     command.add_argument("--root", required=True)
 
     command = sub.add_parser("operational", help="project noncanonical activities, Review runs, and controls")

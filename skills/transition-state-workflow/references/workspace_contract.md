@@ -11,7 +11,7 @@
 
 ## Canonical Files
 
-A v5 workspace stores scientific state in:
+A workspace stores scientific state in:
 
 ```text
 workspace.json
@@ -40,12 +40,12 @@ navigation and carries no lifecycle or policy. ResearchNode artifacts live below
 
 TSPi bootstraps before starting the Root Agent:
 
-- a fresh workspace receives all v5 documents and required directories once;
-- a complete v5 workspace is validated without canonical rewrites;
-- partial, invalid, symlinked, or legacy canonical state fails closed.
+- a fresh workspace receives all canonical documents and required directories once;
+- a complete workspace is validated without canonical rewrites;
+- partial, invalid, symlinked, or unsupported canonical state fails closed.
 
-There is no legacy reader or migration command. Keep an older workspace with
-its matching release or begin a distinct v5 workspace.
+Bootstrap does not rewrite unsupported state. Begin a distinct workspace when
+the existing layout does not satisfy the active contract.
 
 ## Write Boundary
 

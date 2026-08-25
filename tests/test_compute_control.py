@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.v5_helpers import bootstrap_v5_workspace, start_research_node
+from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_node
 from ts_compute import (
     ComputeContractError,
     calculation_status,
@@ -28,7 +28,7 @@ from ts_workspace.identity import workspace_id
 
 
 def _workspace(tmp_path: Path) -> tuple[Path, str]:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     node_id = start_research_node(
         workspace,
         objective="Run the Root-selected Gaussian validation calculation.",

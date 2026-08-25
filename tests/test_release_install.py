@@ -129,27 +129,27 @@ def test_release_install_archives_obsolete_notification_recipient_state(tmp_path
     install_root = tmp_path / "install"
     pi_root = install_root / ".pi"
     pi_root.mkdir(parents=True)
-    legacy_names = (
+    retired_names = (
         "ts-email-delivery-policy.json",
         "ts-email-delivery-authorization.json",
     )
-    for name in legacy_names:
+    for name in retired_names:
         path = pi_root / name
-        path.write_text('{"legacy": true}\n', encoding="utf-8")
+        path.write_text('{"retired": true}\n', encoding="utf-8")
         path.chmod(0o600)
 
     installed = _install(manifest, install_root)
 
-    assert all(not (pi_root / name).exists() for name in legacy_names)
-    archived = [install_root / ref for ref in installed["archived_legacy_notification_state"]]
-    assert {path.name for path in archived} == set(legacy_names)
-    assert all(path.read_text(encoding="utf-8") == '{"legacy": true}\n' for path in archived)
+    assert all(not (pi_root / name).exists() for name in retired_names)
+    archived = [install_root / ref for ref in installed["archived_retired_notification_state"]]
+    assert {path.name for path in archived} == set(retired_names)
+    assert all(path.read_text(encoding="utf-8") == '{"retired": true}\n' for path in archived)
     assert all(stat.S_IMODE(path.stat().st_mode) == 0o600 for path in archived)
     archive_metadata = archived[0].parent / "archive.json"
     assert json.loads(archive_metadata.read_text(encoding="utf-8"))["schema_version"] == "ts-legacy-notification-state-archive/1"
 
     repeated = _install(manifest, install_root)
-    assert repeated["archived_legacy_notification_state"] == []
+    assert repeated["archived_retired_notification_state"] == []
 
 
 def test_release_install_treats_build_time_as_non_identity_metadata(tmp_path: Path) -> None:

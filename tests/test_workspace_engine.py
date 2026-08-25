@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.v5_helpers import accept_research_claim
+from tests.workspace_helpers import accept_research_claim
 from ts_workspace.acceptance import project_acceptances
 from ts_workspace.decision import draft_decision as _kernel_draft_decision, validate_decision
 from ts_workspace.engine import apply_decision, init_workspace, validate_decision_dry_run
@@ -39,7 +39,7 @@ def draft_decision(root: Path, request: dict, **kwargs: object) -> dict:
     return _kernel_draft_decision(root, {**request, "operations": operations}, **kwargs)
 
 
-def _apply(root: Path, operations: list[dict], *, rationale: str = "Exercise the v5 research Kernel.") -> tuple[dict, dict]:
+def _apply(root: Path, operations: list[dict], *, rationale: str = "Exercise the research kernel.") -> tuple[dict, dict]:
     drafted = draft_decision(
         root,
         {"rationale": rationale, "basis_refs": [], "operations": operations},
@@ -857,10 +857,10 @@ def test_decision_replay_is_idempotent_but_conflicting_parallel_decision_is_reje
         apply_decision(root, stale["decision"])
 
 
-def test_v5_validator_rejects_legacy_canonical_markers(tmp_path: Path) -> None:
+def test_validator_rejects_unsupported_canonical_markers(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
     (root / "gate_results.json").write_text("{}\n", encoding="utf-8")
     validation = validate_workspace(root)
     assert validation["valid"] is False
-    assert "legacy_state_present" in {item["code"] for item in validation["findings"]}
+    assert "unsupported_state_present" in {item["code"] for item in validation["findings"]}

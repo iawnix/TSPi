@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.v5_helpers import accept_research_claim
+from tests.workspace_helpers import accept_research_claim
 from ts_compute.artifacts import list_calculation_artifacts
 from ts_report import build_final_report, build_report_package
 from ts_report.context import collect_report_context
@@ -76,7 +76,7 @@ def _seed(root: Path) -> dict[str, str]:
     return drafted["allocated_refs"]
 
 
-def test_report_projects_v5_roadmap_and_semantic_validation(tmp_path: Path) -> None:
+def test_report_projects_roadmap_and_semantic_validation(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
     refs = _seed(root)

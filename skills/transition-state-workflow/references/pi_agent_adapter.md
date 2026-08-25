@@ -1,6 +1,6 @@
 # Pi Runtime Adapter
 
-TSPi embeds the v5 Research Kernel into Pi. Python modules are deterministic
+TSPi embeds the Research Kernel into Pi. Python modules are deterministic
 services, not a second Agent runtime.
 
 ## Contents

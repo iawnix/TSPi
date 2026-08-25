@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.v5_helpers import accept_research_claim
+from tests.workspace_helpers import accept_research_claim
 from ts_workspace.context import ContextCompileError, build_review_snapshot, compile_context, validation_capabilities
 from ts_workspace.decision import draft_decision
 from ts_workspace.engine import apply_decision, init_workspace

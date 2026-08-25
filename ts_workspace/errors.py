@@ -1,8 +1,8 @@
-"""Workspace v5 error taxonomy."""
+"""Workspace error taxonomy."""
 
 
 class ContractError(ValueError):
-    """Raised when a v5 workspace contract cannot be satisfied."""
+    """Raised when a workspace contract cannot be satisfied."""
 
 
 class WorkspaceValidationError(ContractError):

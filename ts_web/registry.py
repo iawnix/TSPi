@@ -92,7 +92,7 @@ def reconcile_workspace_registry(
     state_dir: str | Path,
     workspace_roots: Sequence[str | Path],
 ) -> list[dict[str, str]]:
-    """Discover v5 workspaces and remove stale rows from reachable managed roots."""
+    """Discover workspaces and remove stale rows from reachable managed roots."""
 
     state = Path(state_dir).resolve()
     roots = _unique_paths(workspace_roots)
@@ -119,7 +119,7 @@ def reconcile_workspace_registry(
             if child.is_symlink() or not child.is_dir():
                 continue
             source = child.resolve()
-            if source.parent != root or not _is_v5_workspace(source):
+            if source.parent != root or not _is_supported_workspace(source):
                 continue
             discovered.append(source)
 
@@ -205,7 +205,7 @@ def _registered_workspace_exists(source: Path) -> bool:
     return source.is_dir() and not source.is_symlink() and identity.is_file() and not identity.is_symlink()
 
 
-def _is_v5_workspace(source: Path) -> bool:
+def _is_supported_workspace(source: Path) -> bool:
     if not _registered_workspace_exists(source):
         return False
     try:

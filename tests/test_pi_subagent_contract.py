@@ -4,7 +4,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from tests.v5_helpers import accept_research_claim, bootstrap_v5_workspace, build_review_bundle, start_research_node
+from tests.workspace_helpers import accept_research_claim, bootstrap_workspace_fixture, build_review_bundle, start_research_node
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -19,8 +19,8 @@ COMPUTE_RUNTIME = ROOT / "src" / "agents" / "compute" / "runtime.ts"
 COMPUTE_TASK_PACKET = ROOT / "src" / "agents" / "compute" / "task-packet.cjs"
 
 
-def test_review_task_v2_is_graph_scoped_bounded_and_advisory(tmp_path: Path) -> None:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+def test_review_task_is_graph_scoped_bounded_and_advisory(tmp_path: Path) -> None:
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     refs = start_research_node(workspace, claim_statement="The pathway is concerted.")
     bundle = build_review_bundle(workspace, refs, "sub_1")
     task = bundle["task"]
@@ -64,7 +64,7 @@ def test_review_request_accepts_only_claim_and_logical_artifact_ids() -> None:
 
 
 def test_review_packet_carries_compact_current_acceptance_state(tmp_path: Path) -> None:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     refs = accept_research_claim(workspace)
     bundle = build_review_bundle(
         workspace,
@@ -80,7 +80,7 @@ def test_review_packet_carries_compact_current_acceptance_state(tmp_path: Path) 
 
 
 def test_review_result_requires_array_risks_and_bound_basis_refs(tmp_path: Path) -> None:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     refs = start_research_node(workspace)
     bundle = build_review_bundle(workspace, refs, "sub_1")
     task = bundle["task"]
@@ -106,7 +106,7 @@ def test_review_result_requires_array_risks_and_bound_basis_refs(tmp_path: Path)
 
 
 def test_review_tool_uses_local_schema_without_provider_strict_mode(tmp_path: Path) -> None:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     refs = start_research_node(workspace)
     bundle = build_review_bundle(workspace, refs, "sub_1")
     input_path = tmp_path / "bundle.json"

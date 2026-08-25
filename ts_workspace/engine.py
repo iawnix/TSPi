@@ -1,4 +1,4 @@
-"""Transactional v5 Phase, ResearchNode DAG, and Claim graph mutation engine."""
+"""Transactional Phase, ResearchNode DAG, and Claim graph mutation engine."""
 
 from __future__ import annotations
 
@@ -78,7 +78,7 @@ def init_workspace(root: str | Path) -> dict[str, Any]:
     (root_path / "transaction_log.jsonl").touch(mode=0o600)
     validation = validate_workspace(root_path)
     if not validation["valid"]:
-        raise ContractError("fresh v5 workspace failed validation: " + _error_messages(validation))
+        raise ContractError("fresh workspace failed validation: " + _error_messages(validation))
     return {
         "schema_version": "ts-workspace-init-result/5",
         "root": str(root_path),
@@ -108,13 +108,13 @@ def validate_decision_dry_run(root: str | Path, decision: dict[str, Any]) -> dic
 
 
 def _validate_decision_dry_run_bound(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
-    with tempfile.TemporaryDirectory(prefix="ts-workspace-v5-dry-run-") as temporary:
+    with tempfile.TemporaryDirectory(prefix="ts-workspace-dry-run-") as temporary:
         target = Path(temporary) / "workspace"
         shutil.copytree(root, target, ignore=_ignore_dry_run_entries, symlinks=True)
         result = _apply_once(target, decision)
         validation = validate_workspace(target)
         if not validation["valid"]:
-            raise ContractError("decision dry run produced an invalid v5 workspace: " + _error_messages(validation))
+            raise ContractError("decision dry run produced an invalid workspace: " + _error_messages(validation))
         created_acceptances = set(result["created_refs"]["acceptances"])
         if created_acceptances:
             documents = {name: read_json(target / name) for name in STATE_FILES}

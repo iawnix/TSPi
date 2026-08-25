@@ -1,6 +1,6 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "TS calculation intent v5",
+  "title": "TS calculation intent",
   "type": "object",
   "required": ["schema_version", "intent_id", "node_id", "purpose", "attempt_kind", "recalculation_ref", "backend", "task_type", "input_refs", "input_bindings", "settings", "expected_artifacts", "execution_target", "dry_run"],
   "properties": {

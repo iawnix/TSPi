@@ -1,7 +1,7 @@
 # Decision Operation Templates
 
 Each JSON file is one operation snippet for the `operations` array accepted by
-`ts_workspace_decision_draft`. The files document the v5 vocabulary; they are
+`ts_workspace_decision_draft`. The files document the Decision vocabulary; they are
 not a prescribed research sequence.
 
 Replace `${PLACEHOLDER}` values, combine only the operations needed for one

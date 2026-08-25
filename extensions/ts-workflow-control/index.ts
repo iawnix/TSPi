@@ -63,7 +63,7 @@ export default function (pi: ExtensionAPI) {
     const packagePolicy = packageSourceSystemPrompt();
     if (!root) return { systemPrompt: `${event.systemPrompt}\n\n${packagePolicy}` };
     return {
-      systemPrompt: `${event.systemPrompt}\n\n${packagePolicy}\n\nTS v5 workspace active: ${root}. Retrieve bounded graph context with ${TS_PUBLIC_TOOL_NAMES.workspaceContext}; only ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply} mutates canonical science. Each material change of question, principal deliverable, branch, backtrack, or synthesis goal belongs in a distinct ResearchNode; keep retries and registry updates in its History.`,
+      systemPrompt: `${event.systemPrompt}\n\n${packagePolicy}\n\nTS workspace active: ${root}. Retrieve bounded graph context with ${TS_PUBLIC_TOOL_NAMES.workspaceContext}; only ${TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply} mutates canonical science. Each material change of question, principal deliverable, branch, backtrack, or synthesis goal belongs in a distinct ResearchNode; keep retries and registry updates in its History.`,
     };
   });
 
@@ -140,7 +140,7 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionDraft,
     label: "TS Decision Draft",
-    description: "Allocate IDs and freeze one non-mutating v5 research Decision.",
+    description: "Allocate IDs and freeze one non-mutating research Decision.",
     promptSnippet: "Draft one revision-bound TS Decision",
     promptGuidelines: [
       "Use local_ref aliases; the Kernel allocates all durable IDs.",
@@ -167,8 +167,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate,
     label: "TS Decision Validate",
-    description: "Dry-run one frozen ts-research-decision/2 against current v5 state without mutation.",
-    promptSnippet: "Validate one frozen v5 TS research Decision without applying it",
+    description: "Dry-run one frozen ts-research-decision/2 against current state without mutation.",
+    promptSnippet: "Validate one frozen TS research Decision without applying it",
     parameters: Type.Object({ decision: Type.Any(), root: Type.Optional(Type.String()) }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
@@ -180,8 +180,8 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply,
     label: "TS Decision Apply",
-    description: "Atomically apply one validated ts-research-decision/2 to canonical v5 state.",
-    promptSnippet: "Atomically apply one validated v5 TS research Decision",
+    description: "Atomically apply one validated ts-research-decision/2 to canonical state.",
+    promptSnippet: "Atomically apply one validated TS research Decision",
     promptGuidelines: ["Apply only the exact Decision returned by the draft tool and accepted by dry-run validation."],
     parameters: Type.Object({ decision: Type.Any(), root: Type.Optional(Type.String()) }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
@@ -193,7 +193,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("ts-context", {
-    description: "Show the active v5 Claim and ResearchNode frontier · read-only · local.",
+    description: "Show the active Claim and ResearchNode frontier · read-only · local.",
     handler: async (args, ctx) => {
       if (String(args || "").trim()) {
         ctx.ui.notify("/ts-context takes no arguments; focused retrieval is available through ts_workspace_context", "warning");
@@ -212,7 +212,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerCommand("ts-validate", {
-    description: "Validate active v5 canonical workspace state · read-only · local.",
+    description: "Validate active canonical workspace state · read-only · local.",
     handler: async (args, ctx) => {
       if (String(args || "").trim()) {
         ctx.ui.notify("/ts-validate takes no arguments; it uses the active TSPi workspace", "warning");

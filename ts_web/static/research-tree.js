@@ -456,8 +456,10 @@
     const result = object(node.result);
     const outcome = element("div", "research-tree-node-copy outcome");
     outcome.append(element("span", "research-tree-node-label", "Outcome"), element("span", "research-tree-node-text", String(result.summary || "Pending")));
-    const attemptCount = records(node.attempts).length;
-    const meta = element("div", "research-tree-node-meta", `${attemptCount} attempts | ${Number(node.compute_run_count || 0)} runs${node.primary_claim_ref ? ` | ${node.primary_claim_ref}` : ""}`);
+    const attempts = records(node.attempts);
+    const latest = attempts.at(-1);
+    const latestText = latest ? ` | ${latest.intent_id} ${attemptState(latest)}` : "";
+    const meta = element("div", "research-tree-node-meta", `${attempts.length} attempts${latestText}`);
     button.append(heading, title, decision, outcome, meta);
     button.title = [node.title, opening.rationale, result.summary].filter(Boolean).join("\n");
     return button;
@@ -478,7 +480,14 @@
     const title = element("div", "research-tree-outline-title", String(node.title || node.objective || identifier(node)));
     const dependencies = records(node.dependency_refs);
     const lineage = element("div", "research-tree-outline-lineage", dependencies.length ? `from ${dependencies.join(", ")}` : "entry decision");
-    button.append(head, title, lineage);
+    const attempts = records(node.attempts);
+    const latest = attempts.at(-1);
+    const attemptMeta = element(
+      "div",
+      "research-tree-outline-attempts",
+      latest ? `${attempts.length} attempts | ${latest.intent_id} ${attemptState(latest)}` : "No calculation attempts",
+    );
+    button.append(head, title, lineage, attemptMeta);
     return button;
   }
 
@@ -506,6 +515,12 @@
     if (["failed", "fail", "error", "blocked", "contradicted", "blocking", "invalid"].includes(normalized)) return "bad";
     if (["inconclusive", "warning", "stopped", "historical", "stale", "submission_ambiguous"].includes(normalized)) return "warn";
     return "info";
+  }
+
+  function attemptState(attempt) {
+    const programStatus = String(attempt?.program_status || "").toLowerCase();
+    if (["completed", "normal_termination", "failed", "running"].includes(programStatus)) return programStatus;
+    return String(attempt?.state || attempt?.program_status || "unknown");
   }
 
   function traverse(adjacency, start) {

@@ -1,4 +1,4 @@
-"""Canonical v5 state document names and initial values."""
+"""Canonical workspace state document names and initial values."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ STATE_FILES = (
 REQUIRED_FILES = frozenset((*STATE_FILES, "decision_log.jsonl", "transaction_log.jsonl"))
 REQUIRED_DIRS = frozenset({"nodes", "acceptances", "decisions"})
 OPTIONAL_DIRS = frozenset({"inputs", "reports", "scratch", "operations"})
-LEGACY_MARKERS = frozenset({
+UNSUPPORTED_MARKERS = frozenset({
     "acts",
     "evidence_registry.json",
     "gate_results.json",

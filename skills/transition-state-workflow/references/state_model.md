@@ -1,6 +1,6 @@
-# V5 State Model
+# State Model
 
-Protocol v5 separates scientific meaning, deterministic execution, and
+The research kernel separates scientific meaning, deterministic execution, and
 presentation. The Root Agent owns interpretation; the Research Kernel owns
 identity, integrity, persistence, and transactions.
 
@@ -173,7 +173,7 @@ to current canonical state is projected as current acceptance.
 
 ## Revisions
 
-`workspace_revision` covers canonical v5 documents. `operational_revision`
+`workspace_revision` covers canonical documents. `operational_revision`
 covers activity such as calculations, Review, and controls. A new operational
 record cannot silently change scientific state.
 

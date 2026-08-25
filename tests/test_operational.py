@@ -11,7 +11,7 @@ def _write(path: Path, value: dict) -> None:
     path.write_text(json.dumps(value), encoding="utf-8")
 
 
-def test_v5_operational_snapshot_separates_activities_reviews_and_controls(tmp_path: Path) -> None:
+def test_operational_snapshot_separates_activities_reviews_and_controls(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     _write(root / "research_nodes.json", {"schema_version": "ts-research-node-registry/1", "nodes": [{"node_id": "node_1"}]})
     activity = root / "nodes" / "node_1" / "activities" / "op_1"
@@ -108,7 +108,7 @@ def test_v5_operational_snapshot_separates_activities_reviews_and_controls(tmp_p
     }
 
 
-def test_operational_snapshot_ignores_legacy_node_paths(tmp_path: Path) -> None:
+def test_operational_snapshot_ignores_unsupported_node_paths(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     _write(root / "nodes" / "n001" / "attempts" / "calc_old" / "submit_guard.json", {})
     _write(root / "nodes" / "n001" / "agent-runs" / "sub_old" / "task.json", {"role": "review"})

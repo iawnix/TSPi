@@ -56,7 +56,7 @@ def _gaussian_input(root: Path) -> Path:
     return path
 
 
-def test_v5_artifact_to_prepared_intent_is_research_node_scoped(tmp_path: Path) -> None:
+def test_artifact_to_prepared_intent_is_research_node_scoped(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
     node_id = _open_node(root)

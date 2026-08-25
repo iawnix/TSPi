@@ -11,7 +11,7 @@ const { buildProviderTaskPacket } = require("../src/agents/review/task-packet.cj
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("ts-test-review-child", {
-    description: "Run one recording-provider v5 Review child session.",
+    description: "Run one recording-provider Review child session.",
     handler: async (args, ctx) => {
       const taskId = "sub_1";
       const claimId = "claim_1";

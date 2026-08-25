@@ -1,17 +1,16 @@
-# ADR 0002: Phase And ResearchNode Kernel V5
+# ADR 0001: Phase And ResearchNode Kernel
 
 - Status: accepted
 - Date: 2026-08-23
 - Branch: `ts-dag`
-- Supersedes: ADR 0001 for the active protocol; ADR 0001 remains the v4 historical record
 
 ## Context
 
-The v4 DAG separated scientific Claims from executable work, but its
-`ResearchAct` object still carried too many user-facing meanings. A user could
-not quickly map a research question to a stable directory, and the primary Web
-view gave the Claim graph and execution graph equal weight. Models also received
-more graph detail than they needed for ordinary decisions.
+The package must separate scientific Claims from executable work without making
+one object carry every user-facing meaning. A user must be able to map a
+research question to a stable directory, and the primary Web view must preserve
+the research narrative without loading the complete Claim graph. Models should
+receive only the graph detail needed for the current decision.
 
 The package needs three distinct answers:
 
@@ -25,7 +24,7 @@ into workflow policy.
 
 ## Decision
 
-Protocol v5 uses three orthogonal layers:
+The research kernel uses three orthogonal layers:
 
 ```text
 ResearchPhase -> human navigation and roadmap grouping
@@ -96,12 +95,8 @@ demand. Review receives one Claim dossier, not complete workspace files.
 - it never infers a next action, Phase status, Claim status, validation verdict,
   or acceptance.
 
-### Compatibility
-
-V5 is intentionally incompatible with v4. It has no `ResearchAct` reader, field
-alias, path alias, automatic migration, or dual-write mode. A v4 workspace must
-use its matching release. The active canonical paths are `phases.json`,
-`research_nodes.json`, and `nodes/<node_id>/...`.
+The canonical paths are `phases.json`, `research_nodes.json`, and
+`nodes/<node_id>/...`.
 
 ## Invariants
 

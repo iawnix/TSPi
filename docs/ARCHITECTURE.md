@@ -1,10 +1,10 @@
 # TSAgentSkill Architecture
 
 This document defines component ownership and runtime boundaries for
-`@iawnix/ts-agent` protocol v5. JSON and TypeBox schemas are authoritative for
+`@iawnix/ts-agent`. JSON and TypeBox schemas are authoritative for
 field-level call shapes. The Root Skill is authoritative for behavior inside a
-research session. [ADR 0002](adr/0002-phase-node-research-kernel-v5.md)
-records why this is an incompatible Phase + ResearchNode design.
+research session. [ADR 0001](adr/0001-phase-node-research-kernel.md) records the
+Phase + ResearchNode design.
 
 ## System Shape
 
@@ -17,7 +17,7 @@ Installation root
        -> Pi process
           -> Root Skill + five extensions + theme
           -> Root Agent
-             -> v5 Research Kernel
+             -> Research Kernel
                 ResearchPhase roadmap + ResearchNode DAG + Claim graph
                 Observation and Finding registries
                 Decision transaction owner
@@ -186,7 +186,7 @@ role/layer, backend priority, or fixed Gate-to-action router.
 
 ## Canonical And Operational State
 
-Canonical v5 state is:
+Canonical state is:
 
 ```text
 workspace.json
@@ -228,8 +228,8 @@ a Claim, Observation, Finding, ValidationResult, or acceptance record.
 Operational IDs are workspace-wide monotonic ordinals: `calc_n` for calculation
 Attempts, `sub_n` for Compute/Review sessions, and `op_n` for deterministic
 activities. Allocation is lock-protected, high-water based, private, and never
-reuses a reserved ordinal. This branch does not index or migrate legacy
-UUID-named operational journals.
+reuses a reserved ordinal. Operational projections index only canonical
+ordinal-named journals and ignore unrecognized entries.
 
 ## Decision Transaction
 
@@ -239,7 +239,7 @@ The only normal mutation sequence is:
 context -> decision draft -> complete dry-run validation -> apply under lock
 ```
 
-`ts_workspace_decision_draft` accepts Root-authored v5 operations and local
+`ts_workspace_decision_draft` accepts Root-authored research operations and local
 aliases. It allocates technical IDs, resolves `$alias` references, compiles any
 GateSpec, evaluates any requested validation against the draft state, binds the
 current frontier projection and scientific revision, and returns a complete
@@ -339,13 +339,13 @@ parameters and expanded Observation selectors before a GateSpec is drafted.
 
 `ts_web` is an external explorer, not another workflow runtime. Its registry is
 stored outside every research workspace and maps a display label to one source
-root. Each request validates the current v5 workspace and rebuilds its view from
+root. Each request validates the current workspace and rebuilds its view from
 canonical records plus the operational projection; no Web index is canonical or
 written back to the study.
 
 An installation-layout registry has one managed discovery root at
 `<installation>/workspaces`. Catalog startup and refresh reconcile only direct
-children: new v5 identities are registered, missing managed sources are
+children: new workspace identities are registered, missing managed sources are
 removed, and external manual registrations are preserved. Discovery-root
 failure is fail-safe and performs no pruning. This mutates only the operational
 Web registry; it never initializes, repairs, or writes a research workspace.
@@ -361,10 +361,17 @@ The default navigation is the ResearchNode dependency tree. Each fixed-size Node
 card exposes its opening rationale and outcome; dependency edges retain branch,
 merge, and backtracking lineage. ResearchPhase remains a color and focus filter
 over the tree and carries no lifecycle meaning. The same layout becomes an
-indented outline on narrow screens. Node details separate conclusions,
-Evidence, runs, files, and Decision history. Claims, acceptance, validation,
-Findings, the Research Files locator, and the Claim graph remain separate
-scientific views. The Node DAG is not duplicated in Advanced Graphs.
+indented outline on narrow screens. Cards and outline rows identify the latest
+calculation state without promoting Attempts into graph vertices. A Node's
+Overview projects each immutable calculation intent as a collapsible second
+level: scientific purpose, primary/recalculation kind, source Attempt, method,
+settings, remote resource request, expected artifacts, state, and bound Compute
+runs. The workspace snapshot carries only the compact Attempt summary; settings,
+bindings, and execution resources are loaded with the selected Node detail.
+Node details otherwise separate conclusions, Evidence, operational activity,
+files, and Decision history. Claims, acceptance, validation, Findings, the
+Research Files locator, and the Claim graph remain separate scientific views.
+The Node DAG is not duplicated in Advanced Graphs.
 
 Operational overlays preserve their actual owners: calculation Attempts belong
 to Nodes, Compute runs belong to Attempts, Review runs belong to Claims, and
@@ -374,7 +381,9 @@ for one calculation cannot collapse into one row.
 
 The HTTP API has no mutation route. File preview is limited to current
 Node-owned files already admitted by the Node file projection, rejects symlinks
-and traversal, and enforces a byte limit. The server has no authentication
+and traversal, and exposes a preview control only for UTF-8 text within the
+byte limit. The server rechecks the same capability when the file is opened.
+The server has no authentication
 layer; operators must bind it to loopback or expose it only on a trusted,
 firewalled network.
 
@@ -401,8 +410,8 @@ mechanism.
    `<installation>/workspaces/<name>`.
 5. Create workspace-local Pi session settings and acquire a nonblocking Root
    Agent lock.
-6. Initialize fresh v5 state once or validate a complete v5 workspace without
-   rewriting it. Partial, invalid, or legacy canonical state fails closed.
+6. Initialize fresh state once or validate a complete workspace without
+   rewriting it. Partial, invalid, or unsupported canonical state fails closed.
 7. Execute Pi with exactly the package Skill, theme, and five extensions.
 
 One workspace has one Root writer process. Different workspaces can run

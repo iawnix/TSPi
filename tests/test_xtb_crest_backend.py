@@ -5,7 +5,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.v5_helpers import bootstrap_v5_workspace, start_research_node
+from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_node
 from ts_backends.base import BackendTask
 from ts_backends.crest import prepare_crest
 from ts_backends.xtb import (
@@ -561,7 +561,7 @@ def test_xtb_scan_prepare_rejects_invalid_bound_control_before_execution(tmp_pat
 
 
 def _workspace(tmp_path: Path) -> Path:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     start_research_node(
         workspace,
         objective="Exercise the typed xTB and CREST adapter task matrix.",

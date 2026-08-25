@@ -140,10 +140,9 @@ REQUIRED_TARBALL_FILES = {
     "ts_web/static/app.js",
     "ts_web/static/research-tree.js",
     "ts_web/reloader.py",
-    "docs/adr/0001-dag-research-kernel-v4.md",
-    "docs/adr/0002-phase-node-research-kernel-v5.md",
+    "docs/adr/0001-phase-node-research-kernel.md",
 }
-LEGACY_PREFIXES = (
+REMOVED_PREFIXES = (
     "agent-core/",
     "agent-skills/",
     "artifact-agent/",
@@ -276,7 +275,7 @@ def validate_tarball(files: set[str]) -> None:
     forbidden: list[str] = []
     for value in sorted(files):
         path = Path(value)
-        if value == "SKILL.md" or value.startswith(LEGACY_PREFIXES):
+        if value == "SKILL.md" or value.startswith(REMOVED_PREFIXES):
             forbidden.append(value)
             continue
         if value in FORBIDDEN_RUNTIME_FILES:

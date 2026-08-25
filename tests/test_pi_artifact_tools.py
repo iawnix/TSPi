@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from tests.v5_helpers import bootstrap_v5_workspace, start_research_node
+from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_node
 from ts_compute.artifacts import list_calculation_artifacts
 from ts_email.delivery import notify_user
 from ts_email.errors import NotificationError
@@ -24,7 +24,7 @@ ARTIFACT_EXTENSION = ROOT / "extensions" / "ts-workflow-artifacts" / "index.ts"
 
 
 def test_public_import_tool_materializes_seed_without_journaling_body(tmp_path: Path) -> None:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     refs = start_research_node(workspace)
     content = "2\nH2\nH 0 0 0\nH 0 0 0.74\n"
     script = f"""
@@ -73,7 +73,7 @@ process.stdout.write(JSON.stringify({{entries,updates}}));
 
 
 def test_public_structure_seed_tool_generates_xyz_without_journaling_smiles(tmp_path: Path) -> None:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     refs = start_research_node(workspace)
     smiles = "C1=CCCCC1"
     script = f"""
@@ -247,7 +247,7 @@ try {{
 
 
 def test_report_package_is_verified_against_manifest_and_workspace_revision(tmp_path: Path) -> None:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     start_research_node(workspace)
     package = workspace / "reports" / "study-report"
     built = build_report_package(workspace, package)
@@ -288,7 +288,7 @@ def test_notification_uses_fixed_installation_recipient_and_is_idempotent(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     start_research_node(workspace)
     capture = tmp_path / "clawemail-args.json"
     config = _notification_install(tmp_path, capture=capture)
@@ -317,11 +317,11 @@ def test_notification_uses_fixed_installation_recipient_and_is_idempotent(
     assert stat.S_IMODE((workspace / first["receipt_ref"]).stat().st_mode) == 0o600
 
 
-def test_notification_rejects_legacy_act_event_and_unsafe_report_ref(
+def test_notification_rejects_removed_act_event_and_unsafe_report_ref(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     config = _notification_install(tmp_path)
     monkeypatch.setenv("TS_NOTIFICATION_CONFIG", str(config))
     request = tmp_path / "notification.json"
@@ -346,7 +346,7 @@ def test_notification_accepts_only_unchanged_manifested_report_members(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     start_research_node(workspace)
     package = workspace / "reports" / "progress-report"
     build_report_package(workspace, package)
@@ -384,7 +384,7 @@ def test_notification_accepts_only_unchanged_manifested_report_members(
 
 
 def test_notification_cli_json_failure_is_structured(tmp_path: Path) -> None:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     request = tmp_path / "notification.json"
     request.write_text(json.dumps({
         "schema_version": "ts-user-notification/1",
@@ -428,7 +428,7 @@ def test_notification_preserves_bounded_provider_diagnostic_without_retrying(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     start_research_node(workspace)
     config = _notification_install(tmp_path)
     manager = tmp_path / "clawemail" / "bin" / "clawemail-manager"
@@ -536,7 +536,7 @@ try {{
 
 
 def _workspace_with_xyz(tmp_path: Path) -> tuple[Path, dict[str, str], list[dict]]:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     refs = start_research_node(workspace)
     inputs = workspace / "inputs"
     inputs.mkdir(exist_ok=True)

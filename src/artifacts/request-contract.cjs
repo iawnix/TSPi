@@ -133,7 +133,7 @@ function validateCreatedReportPackage(rootValue, packageRef, expectedManifestDig
 
 function requireAct(root, value) {
   const nodeId = requireString(value, "nodeId", 128);
-  if (!NODE_ID.test(nodeId)) throw new Error("nodeId must be a v5 ResearchNode ID");
+  if (!NODE_ID.test(nodeId)) throw new Error("nodeId must be a ResearchNode ID");
   const registry = JSON.parse(readFileSync(resolve(root, "research_nodes.json"), "utf8"));
   const matches = Array.isArray(registry.nodes)
     ? registry.nodes.filter((item) => isPlainObject(item) && item.node_id === nodeId)
@@ -146,7 +146,7 @@ function requireWorkspaceRoot(value) {
   if (typeof value !== "string" || !value || !isAbsolute(value)) throw new Error("workspace root must be absolute");
   const root = realpathSync(value);
   const workspace = JSON.parse(readFileSync(resolve(root, "workspace.json"), "utf8"));
-  if (workspace.schema_version !== "ts-workspace/5") throw new Error("artifact tools require a v5 workspace");
+  if (workspace.schema_version !== "ts-workspace/5") throw new Error("artifact tools require a supported workspace");
   return root;
 }
 

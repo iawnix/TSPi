@@ -10,7 +10,7 @@ type ActionLog = { tool: string; result: Record<string, unknown> }[];
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("ts-test-compute-child", {
-    description: "Run one recording-provider v5 Compute child session.",
+    description: "Run one recording-provider Compute child session.",
     handler: async (args, ctx) => {
       const scenario = String(args || "launch").trim() || "launch";
       const operation = operationForScenario(scenario);

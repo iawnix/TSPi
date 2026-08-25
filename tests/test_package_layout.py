@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -18,6 +19,16 @@ SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
 AGENTS_ROOT = ROOT / "src" / "agents"
 THEME_PATH = ROOT / "themes" / "ts-theme.json"
 TSPI_LAUNCHER = ROOT / "TSPi"
+GENERATION_BRAND = re.compile(
+    r"(?i)(?<![A-Za-z0-9])v[2-5](?![A-Za-z0-9])|\b(?:leg" r"acy|migr" r"ation)\b"
+)
+VERSION_BRANDED_PATH = re.compile(r"(?i)(?:^|[_-])v[2-5](?:[._-]|$)")
+TEXT_SUFFIXES = frozenset({".cjs", ".html", ".js", ".json", ".md", ".py", ".toml", ".ts", ".yaml", ".yml"})
+ALLOWED_CONTRACT_OR_THIRD_PARTY_LABELS = (
+    "ts-agent-runtime-" + "v" + "2",
+    "etkdg=" + "v" + "3",
+    "ts-" + "leg" + "acy-notification-state-archive/1",
+)
 
 
 def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
@@ -99,6 +110,38 @@ def test_public_skill_uses_nested_pi_skill_layout() -> None:
     assert not (ROOT / "templates").exists()
 
 
+def test_current_sources_do_not_use_generation_branded_language_or_paths() -> None:
+    roots = [
+        ROOT / "README.md",
+        ROOT / "docs",
+        ROOT / "extensions",
+        ROOT / "scripts",
+        ROOT / "skills",
+        ROOT / "src",
+        ROOT / "tests",
+        *(path for path in ROOT.glob("ts_*") if path.is_dir()),
+    ]
+    files: set[Path] = set()
+    for root in roots:
+        if root.is_file():
+            files.add(root)
+        elif root.is_dir():
+            files.update(path for path in root.rglob("*") if path.is_file() and path.suffix in TEXT_SUFFIXES)
+
+    branded_paths = [path.relative_to(ROOT).as_posix() for path in files if VERSION_BRANDED_PATH.search(path.name)]
+    branded_text: list[tuple[str, str]] = []
+    for path in sorted(files):
+        text = path.read_text(encoding="utf-8")
+        for allowed in ALLOWED_CONTRACT_OR_THIRD_PARTY_LABELS:
+            text = text.replace(allowed, "")
+        match = GENERATION_BRAND.search(text)
+        if match:
+            branded_text.append((path.relative_to(ROOT).as_posix(), match.group(0)))
+
+    assert branded_paths == []
+    assert branded_text == []
+
+
 def test_agent_sources_have_explicit_ownership_boundaries() -> None:
     assert (ROOT / "extensions" / "shared" / "tool-catalog.ts").is_file()
     assert not (ROOT / "extensions" / "ts-workflow-context").exists()
@@ -116,11 +159,10 @@ def test_agent_sources_have_explicit_ownership_boundaries() -> None:
     assert (ROOT / "ts_validation" / "engine.py").is_file()
     assert (ROOT / "ts_workspace" / "bootstrap.py").is_file()
     assert (ROOT / "ts_workspace" / "engine.py").is_file()
-    assert not (ROOT / "ts_workspace" / "engine_v3.py").exists()
-    assert not (ROOT / "ts_workspace" / "migrate_v2.py").exists()
+    assert not list((ROOT / "ts_workspace").glob("*_v[0-9]*.py"))
     assert not list((ROOT / "ts_workspace" / "validators").glob("*.py"))
-    for legacy in ("agent-core", "review-agent", "compute-agent", "artifact-agent", "agent-skills"):
-        assert not (ROOT / legacy).exists()
+    for removed in ("agent-core", "review-agent", "compute-agent", "artifact-agent", "agent-skills"):
+        assert not (ROOT / removed).exists()
 
 
 def test_child_agent_sources_do_not_embed_skills_or_artifact_operators() -> None:

@@ -1,4 +1,4 @@
-"""Draft and validate revision-bound v5 research Decisions."""
+"""Draft and validate revision-bound research Decisions."""
 
 from __future__ import annotations
 

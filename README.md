@@ -6,9 +6,9 @@ typed local or SSH/Torque calculations, semantic scientific observations,
 declarative validation, reproducible reports, optional notifications, a
 session-scoped activity UI, and a read-only multi-workspace research explorer.
 
-This `ts-dag` branch is protocol v5. It intentionally has no v2/v3 reader,
-migrator, field alias, or runtime compatibility path. A legacy study must keep
-using its matching release or start a new v5 workspace.
+This `ts-dag` branch implements one workspace contract centered on
+ResearchPhase, ResearchNode, and Claim. Unsupported layouts fail closed instead
+of being rewritten during startup.
 
 ## Core Boundary
 
@@ -81,8 +81,8 @@ reproducible:
   lifecycle, persistence, validation, context, and result delivery.
 - [Maintainer Guide](docs/MAINTAINER_GUIDE.md): source layout, contract-change
   rules, tests, release discipline, and documentation ownership.
-- [ADR 0002](docs/adr/0002-phase-node-research-kernel-v5.md): the incompatible
-  Phase + ResearchNode v5 kernel and declarative-validation decision.
+- [ADR 0001](docs/adr/0001-phase-node-research-kernel.md): the Phase +
+  ResearchNode kernel and declarative-validation decision.
 - [Root Skill](skills/transition-state-workflow/SKILL.md): concise operating
   policy loaded into each TSPi research session.
 
@@ -137,9 +137,9 @@ workspace names can run concurrently. Normal terminal mode starts a new Pi
 conversation unless Pi's `--continue` is supplied; Phone mode resumes the
 workspace conversation automatically.
 
-Bootstrap is idempotent for a complete v5 workspace: fresh state is created
-once, valid state is checked without canonical rewrites, and partial, invalid,
-or legacy canonical state fails closed. Ordinary startup does not contact the
+Bootstrap is idempotent for a complete workspace: fresh state is created once,
+valid state is checked without canonical rewrites, and partial, invalid, or
+unsupported canonical state fails closed. Ordinary startup does not contact the
 remote scheduler.
 
 ## Explore Workspaces
@@ -149,9 +149,12 @@ changing research state. Its default view renders the ResearchNode dependency
 DAG as decision-sized cards, so opening rationale, outcome, branches, merges,
 and lineage remain visible together. ResearchPhase is a color and focus filter,
 not a lifecycle lane. Desktop users can pan, zoom, fit, and inspect a Node;
-mobile users see the same topology as an indented outline. Claims, validation,
-Findings, operational runs, files, and the advanced Claim graph stay in
-separate views.
+mobile users see the same topology as an indented outline. Node cards identify
+the latest calculation state. Opening a Node reveals its Attempts as a
+collapsible second level with purpose, retry lineage, method, settings, and
+bound Compute runs; Attempts never become peer roadmap Nodes. Claims,
+validation, Findings, operational activity, files, and the advanced Claim graph
+stay in separate views.
 
 ```bash
 TS_AGENT_CURRENT=/path/to/TSPi-installation/.pi/packages/ts-agent/current
@@ -171,7 +174,7 @@ for registration and exposure details.
 
 With the standard `<installation>/.pi/ts-web` state directory, the explorer
 also treats `<installation>/workspaces` as a managed discovery root. At startup
-and each catalog refresh it adds direct v5 workspace children and removes rows
+and each catalog refresh it adds direct workspace children and removes rows
 whose managed source directory or `workspace.json` has disappeared. A missing
 or unreadable discovery root is left untouched, and manually registered roots
 outside the managed directory are never pruned. Use `--workspace-root` to
@@ -316,7 +319,7 @@ recorded.
 
 ## State And Reports
 
-Canonical scientific state consists of v5 Phase, Node, and Claim registries,
+Canonical scientific state consists of Phase, Node, and Claim registries,
 frozen validation,
 acceptance snapshots, Decisions, and transaction logs. Calculation attempts,
 remote controls, Compute/Review journals, notifications, reports, Pi sessions, and UI

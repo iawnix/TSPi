@@ -9,10 +9,10 @@ from ts_workspace.context import build_review_snapshot
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-REVIEW_BUNDLE_PROBE = REPO_ROOT / "tests" / "review_v5_bundle_probe.cjs"
+REVIEW_BUNDLE_PROBE = REPO_ROOT / "tests" / "review_bundle_probe.cjs"
 
 
-def bootstrap_v5_workspace(root: Path) -> Path:
+def bootstrap_workspace_fixture(root: Path) -> Path:
     init_workspace(root)
     return root
 

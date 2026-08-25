@@ -1364,7 +1364,7 @@ def _workspace_root(root: str | Path) -> Path:
     workspace = Path(root).expanduser().resolve()
     workspace_doc = workspace / "workspace.json"
     if not workspace_doc.is_file() or not (workspace / "research_nodes.json").is_file() or not (workspace / "nodes").is_dir():
-        raise ComputeContractError(f"not an initialized v5 TS workspace: {workspace}")
+        raise ComputeContractError(f"not an initialized TS workspace: {workspace}")
     if read_json(workspace_doc).get("schema_version") != "ts-workspace/5":
         raise ComputeContractError(f"unsupported TS workspace protocol: {workspace}")
     return workspace

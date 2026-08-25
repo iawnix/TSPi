@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import ts_remote
-from tests.v5_helpers import bootstrap_v5_workspace, start_research_node
+from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_node
 from ts_backends.base import Backend, BackendTask
 from ts_backends.gaussian import GaussianBackend, prepare_gaussian
 from ts_render import MolVisualizer
@@ -62,7 +62,7 @@ def test_web_registry_rejects_state_dir_inside_source(tmp_path: Path) -> None:
 
 
 def test_web_normalizer_is_read_only(tmp_path: Path) -> None:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     start_research_node(workspace)
     before = {
         path.relative_to(workspace): (path.stat().st_mtime_ns, path.read_bytes())
@@ -80,7 +80,7 @@ def test_web_normalizer_is_read_only(tmp_path: Path) -> None:
 
 
 def test_ts_render_writes_artifact_without_canonical_state_mutation(tmp_path: Path, monkeypatch) -> None:
-    workspace = bootstrap_v5_workspace(tmp_path / "workspace")
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     node_id = start_research_node(workspace)["node_id"]
     xyz = workspace / "inputs" / "reactant.xyz"
     xyz.write_text("1\nreactant\nH 0 0 0\n", encoding="utf-8")

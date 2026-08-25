@@ -1,4 +1,4 @@
 interface:
   display_name: "Transition-State Workflow"
   short_description: "DAG-based, validated transition-state research"
-  default_prompt: "Use $transition-state-workflow to continue this transition-state study from the current v5 workspace graph."
+  default_prompt: "Use $transition-state-workflow to continue this transition-state study from the current workspace graph."

@@ -40,7 +40,7 @@ process.stdout.write(JSON.stringify({{
   physicalPath:check.Check({{...launch,inputArtifacts:[{{inputRole:"gjf",artifactId:"inputs/test.gjf"}}]}}),
   oldNode:check.Check({{...launch,nodeId:undefined,nodeId:"n001"}}),
   inspect:check.Check({{...base,operation:"inspect",intentId:"calc_1"}}),
-  legacyIntent:check.Check({{...base,operation:"inspect",intentId:"calc_probe"}}),
+  noncanonicalIntent:check.Check({{...base,operation:"inspect",intentId:"calc_probe"}}),
   compactSchemaAcceptsCrossOperationField:check.Check(invalidInspect),
   hostError,
 }}));
@@ -51,7 +51,7 @@ process.stdout.write(JSON.stringify({{
         "physicalPath": False,
         "oldNode": False,
         "inspect": True,
-        "legacyIntent": False,
+        "noncanonicalIntent": False,
         "compactSchemaAcceptsCrossOperationField": True,
         "hostError": "inspect does not accept: purpose",
     }

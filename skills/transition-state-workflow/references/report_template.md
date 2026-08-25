@@ -1,6 +1,6 @@
 # Report Contract
 
-Build the standard report from a valid v5 workspace with `ts_report`. Use the
+Build the standard report from a valid workspace with `ts_report`. Use the
 custom Markdown asset only when an additional narrative is required.
 
 ## Required Projection

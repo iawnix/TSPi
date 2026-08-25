@@ -27,7 +27,7 @@ EXPECTED_FILES = {
 }
 
 
-def test_v5_templates_are_composable_operation_snippets() -> None:
+def test_templates_are_composable_operation_snippets() -> None:
     assert {path.name for path in TEMPLATE_DIR.iterdir() if path.is_file()} == EXPECTED_FILES
     for path in sorted(TEMPLATE_DIR.glob("*.json")):
         value = json.loads(path.read_text(encoding="utf-8"))
@@ -39,7 +39,7 @@ def test_v5_templates_are_composable_operation_snippets() -> None:
         assert not any(key.endswith("_id") for key in value if key != "conceptId")
 
 
-def test_representative_templates_compose_through_v5_draft_contract(tmp_path: Path) -> None:
+def test_representative_templates_compose_through_draft_contract(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     init_workspace(workspace)
     operations = [
@@ -78,7 +78,7 @@ def test_representative_templates_compose_through_v5_draft_contract(tmp_path: Pa
     ]
 
 
-def test_templates_are_strategy_neutral_and_have_no_legacy_taxonomy() -> None:
+def test_templates_are_strategy_neutral_and_have_no_removed_taxonomy() -> None:
     rendered = "\n".join(path.read_text(encoding="utf-8") for path in TEMPLATE_DIR.glob("*.json"))
     for forbidden in (
         '"phase_type"',
