@@ -210,8 +210,8 @@ slash commands:
   connected SMILES, with content-addressed XYZ and provenance.
 - `ts_artifact_import`: bounded, Node-owned bootstrap import for Gaussian, XYZ,
   or xTB control inputs; the host allocates path, filename, digest, and ID.
-- `ts_render`: deterministic local render, comparison, animation, or mechanism
-  visualization.
+- `ts_render`: deterministic local render, comparison, animation, or an ordered
+  reactant/transition-state/product mechanism visualization.
 - `ts_report`: deterministic atomic report-package build.
 - `ts_remote_inspect`: read-only SSH/Torque diagnostics.
 - `ts_notify_user`: fixed-target, receipt-bound notification delivery.

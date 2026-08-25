@@ -54,6 +54,27 @@ type ReportRequest = {
   assets: ResolvedArtifact[];
 };
 
+type RenderFailureDetails = {
+  backend: "xyzrender" | "panel_compositor";
+  stage: "environment" | "request" | "xyzrender" | "composition" | "unknown";
+  returncode: number | null;
+  stderr_tail: string;
+  diagnostics: string[];
+  command: string[];
+};
+
+class RenderExecutionError extends Error {
+  readonly backendFailure: RenderFailureDetails;
+
+  constructor(failure: RenderFailureDetails) {
+    const detail = lastDiagnosticLine(failure.stderr_tail) || failure.diagnostics[0] || "no backend diagnostic was returned";
+    const status = failure.returncode === null ? "" : ` (exit ${failure.returncode})`;
+    super(`${failure.backend} failed${status}: ${detail}`);
+    this.name = failure.stage === "composition" ? "RenderCompositionError" : "RenderBackendError";
+    this.backendFailure = failure;
+  }
+}
+
 const NOTIFICATION_EVENTS = [
   "progress",
   "node_completed",
@@ -218,6 +239,7 @@ export default function (pi: ExtensionAPI) {
     promptGuidelines: [
       "Use logical artifact IDs from ts_workspace_context mode=artifacts; do not construct workspace paths.",
       "Choose the ResearchNode that owns the new output and a safe .png or .gif outputName.",
+      "For mechanism, provide exactly three ordered artifacts: reactant, transition state, then product.",
       "Rendered images are presentation artifacts and never scientific Observations by themselves.",
     ],
     executionMode: "sequential",
@@ -264,7 +286,7 @@ export default function (pi: ExtensionAPI) {
           signal,
         );
         if (!raw || typeof raw !== "object" || raw.ok !== true) {
-          throw new Error("render backend did not report success");
+          throw renderBackendError(raw);
         }
         const output = validateCreatedRenderOutput(root, request.outputRef);
         const [artifact] = await resolveArtifactsByRef(pi, root, request.outputRef, signal);
@@ -494,6 +516,9 @@ function deterministicFailure(
   nodeRefs: string[],
   error: unknown,
 ) {
+  const backendFailure = error instanceof RenderExecutionError
+    ? { backend_failure: error.backendFailure }
+    : {};
   return {
     schema_version: "ts-deterministic-activity-failure/1",
     activity_id: activityId,
@@ -503,7 +528,44 @@ function deterministicFailure(
     node_refs: nodeRefs,
     error_class: error instanceof Error ? error.name : "Error",
     message: (error instanceof Error ? error.message : String(error)).slice(0, 4000),
+    ...backendFailure,
   };
+}
+
+function renderBackendError(value: unknown): RenderExecutionError {
+  const raw = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const stage = ["environment", "request", "xyzrender", "composition"].includes(String(raw.failure_stage))
+    ? raw.failure_stage as RenderFailureDetails["stage"]
+    : "unknown";
+  const returncode = typeof raw.returncode === "number" && Number.isInteger(raw.returncode)
+    ? raw.returncode
+    : null;
+  const stderr = typeof raw.stderr === "string" ? raw.stderr.slice(-8192) : "";
+  const diagnostics = Array.isArray(raw.diagnostics)
+    ? raw.diagnostics
+      .filter((item): item is string => typeof item === "string")
+      .slice(0, 16)
+      .map((item) => item.slice(0, 512))
+    : [];
+  const command = Array.isArray(raw.command)
+    ? raw.command
+      .filter((item): item is string => typeof item === "string")
+      .slice(0, 32)
+      .map((item) => item.slice(0, 512))
+    : [];
+  return new RenderExecutionError({
+    backend: stage === "composition" ? "panel_compositor" : "xyzrender",
+    stage,
+    returncode,
+    stderr_tail: stderr,
+    diagnostics,
+    command,
+  });
+}
+
+function lastDiagnosticLine(value: string): string {
+  const lines = value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  return (lines.at(-1) || "").slice(0, 1000);
 }
 
 function requireDigest(value: unknown, label: string): string {

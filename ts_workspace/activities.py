@@ -114,7 +114,7 @@ def activity_completion_blockers(
                 "ref": ref,
                 "message": f"deterministic activity is still {state}: {ref}",
             })
-        elif state == "failed" and outcome == "completed":
+        elif state == "failed" and outcome == "completed" and row.get("kind") != "render":
             blockers.append({
                 "code": "failed_activity_requires_non_success_outcome",
                 "ref": ref,

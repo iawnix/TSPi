@@ -116,8 +116,10 @@ python3 "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
   --json
 ```
 
-RDKit and its compatible NumPy range are core dependencies; `xyzrender` remains
-optional. Omit `--with-render` when visualization is not required. Use
+RDKit, Pillow, and their compatible NumPy range are core dependencies;
+`xyzrender` remains optional. Pillow provides deterministic panel composition
+but does not replace `xyzrender` as the molecular renderer. Omit `--with-render`
+when visualization is not required. Use
 `--dry-run` to inspect the selected prefix and command. Use `--force` only when
 the existing hash-addressed environment must be refreshed.
 

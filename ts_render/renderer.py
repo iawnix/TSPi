@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Iterable
 
 from .config import DEFAULT_RESOLUTION
 from .environment import EnvironmentChecker
+from .panels import compose_panels
 from .results import RenderResult
 
 
@@ -60,34 +62,16 @@ class MolVisualizer:
         resolution: tuple[int, int] | None = None,
     ) -> RenderResult:
         files = [str(path) for path in structure_files]
-        prefix = self._xyzrender_command("compare")
-        if not prefix:
-            return RenderResult.missing_command("xyzrender", ["Set TS_RENDER_XYZRENDER or install the skill runtime env."])
-        if not files:
-            return RenderResult(
-                ok=False,
-                output_path=None,
-                command=[],
-                stderr="compare requires at least one structure file",
-                diagnostics=["no input structures"],
-            )
-        command = [
-            *prefix,
-            files[0],
-            "-o",
-            str(output_file),
-            "-S",
-            _canvas_size(resolution or self.resolution),
-        ]
-        _add_background_args(command, self.background)
-        for overlay in files[1:]:
-            command.extend(["--overlay", overlay])
-        for index, title in enumerate(titles or []):
-            command.extend(["-l", f"{index}:{title}"])
-        for index, style in enumerate(styles or []):
-            if style == "space_fill":
-                command.extend(["--vdw"])
-        return self._run(command, output_file)
+        return self._render_panel_set(
+            "compare",
+            files,
+            output_file,
+            labels=titles or [],
+            layout=layout,
+            show_arrows=False,
+            styles=styles or [],
+            resolution=resolution or self.resolution,
+        )
 
     def compare(self, structure_files: Iterable[str | Path], output: str | Path, **kwargs) -> RenderResult:
         return self.compare_structures(structure_files, output, **kwargs)
@@ -128,32 +112,123 @@ class MolVisualizer:
         layout: str = "horizontal",
         show_arrow: bool = True,
     ) -> RenderResult:
-        prefix = self._xyzrender_command("mechanism")
+        files = [str(path) for path in structure_files]
+        return self._render_panel_set(
+            "mechanism",
+            files,
+            output_file,
+            labels=labels,
+            layout=layout,
+            show_arrows=show_arrow,
+            styles=[],
+            resolution=self.resolution,
+        )
+
+    def _render_panel_set(
+        self,
+        operation: str,
+        files: list[str],
+        output_file: str | Path,
+        *,
+        labels: list[str],
+        layout: str,
+        show_arrows: bool,
+        styles: list[str],
+        resolution: tuple[int, int],
+    ) -> RenderResult:
+        prefix = self._xyzrender_command(operation)
         if not prefix:
             return RenderResult.missing_command("xyzrender", ["Set TS_RENDER_XYZRENDER or install the skill runtime env."])
-        files = [str(path) for path in structure_files]
         if not files:
             return RenderResult(
                 ok=False,
                 output_path=None,
                 command=[],
-                stderr="mechanism requires at least one structure file",
+                stderr=f"{operation} requires at least one structure file",
                 diagnostics=["no input structures"],
+                failure_stage="request",
             )
-        command = [
-            *prefix,
-            files[0],
-            "-o",
-            str(output_file),
-            "-S",
-            _canvas_size(self.resolution),
-        ]
-        _add_background_args(command, self.background)
-        for overlay in files[1:]:
-            command.extend(["--overlay", overlay])
-        for index, label in enumerate(labels):
-            command.extend(["-l", f"{index}:{label}"])
-        return self._run(command, output_file)
+        if labels and len(labels) != len(files):
+            return RenderResult(
+                ok=False,
+                output_path=None,
+                command=[],
+                stderr=f"{operation} labels must match the number of input structures",
+                diagnostics=["label count does not match input count"],
+                failure_stage="request",
+            )
+        if styles and len(styles) > len(files):
+            return RenderResult(
+                ok=False,
+                output_path=None,
+                command=[],
+                stderr="compare styles cannot outnumber input structures",
+                diagnostics=["style count exceeds input count"],
+                failure_stage="request",
+            )
+
+        commands: list[list[str]] = []
+        stdout: list[str] = []
+        stderr: list[str] = []
+        with tempfile.TemporaryDirectory(prefix="ts-render-panels-") as temporary:
+            panel_files: list[Path] = []
+            panel_size = max(256, min(2048, max(resolution)))
+            for index, input_file in enumerate(files):
+                panel_file = Path(temporary) / f"panel-{index + 1}.png"
+                command = [*prefix, input_file, "-o", str(panel_file), "-S", str(panel_size), "-t"]
+                if index < len(styles) and styles[index] == "space_fill":
+                    command.append("--vdw")
+                result = self._run(command, panel_file)
+                commands.append(command)
+                if result.stdout:
+                    stdout.append(result.stdout)
+                if result.stderr:
+                    stderr.append(result.stderr)
+                if not result.ok:
+                    return RenderResult(
+                        ok=False,
+                        output_path=None,
+                        command=command,
+                        returncode=result.returncode,
+                        stdout="\n".join(stdout),
+                        stderr="\n".join(stderr),
+                        diagnostics=[f"{operation} panel {index + 1} failed", *result.diagnostics],
+                        commands=commands,
+                        failure_stage=result.failure_stage or "xyzrender",
+                    )
+                panel_files.append(panel_file)
+            try:
+                compose_panels(
+                    panel_files,
+                    output_file,
+                    resolution=resolution,
+                    layout=layout,
+                    labels=labels,
+                    background=self.background,
+                    show_arrows=show_arrows,
+                )
+            except Exception as exc:
+                return RenderResult(
+                    ok=False,
+                    output_path=None,
+                    command=commands[-1] if commands else [],
+                    stdout="\n".join(stdout),
+                    stderr=f"panel composition failed: {exc}",
+                    diagnostics=[f"{operation} panel composition failed"],
+                    commands=commands,
+                    failure_stage="composition",
+                )
+        return RenderResult(
+            ok=True,
+            output_path=str(output_file),
+            command=commands[-1] if commands else [],
+            returncode=0,
+            stdout="\n".join(stdout),
+            stderr="\n".join(stderr),
+            diagnostics=[],
+            commands=commands,
+            failure_stage=None,
+        )
 
     def _base_command(
         self,
@@ -210,6 +285,8 @@ class MolVisualizer:
             stdout=completed.stdout,
             stderr=completed.stderr,
             diagnostics=diagnostics,
+            commands=[command],
+            failure_stage=None if ok else "xyzrender",
         )
 
 

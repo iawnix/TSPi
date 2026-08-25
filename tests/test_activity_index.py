@@ -29,8 +29,10 @@ def _activity_documents(
     activity_id: str = "op_1",
     state: str = "completed",
     owner_node: str | None = None,
+    kind: str = "render",
 ) -> Path:
     owner = owner_node or node_id
+    operation = "import" if kind == "artifact_import" else "render"
     activity = root / "nodes" / owner / "activities" / activity_id
     started_at = "2026-08-16T00:00:00+00:00"
     write_json(
@@ -38,8 +40,8 @@ def _activity_documents(
         {
             "schema_version": "ts-deterministic-activity-request/1",
             "activity_id": activity_id,
-            "kind": "render",
-            "operation": "render",
+            "kind": kind,
+            "operation": operation,
             "node_refs": [node_id],
             "request": {"input_artifact_ids": []},
             "started_at": started_at,
@@ -51,8 +53,8 @@ def _activity_documents(
         {
             "schema_version": "ts-deterministic-activity-status/1",
             "activity_id": activity_id,
-            "kind": "render",
-            "operation": "render",
+            "kind": kind,
+            "operation": operation,
             "node_refs": [node_id],
             "status": state,
             "started_at": started_at,
@@ -312,10 +314,18 @@ def test_analytical_and_terminal_activity_completion_policy(tmp_path: Path) -> N
     validate_decision_dry_run(successful, successful_decision)
     apply_decision(successful, successful_decision)
 
-    failed = tmp_path / "failed"
+    failed_render = tmp_path / "failed-render"
+    init_workspace(failed_render)
+    failed_render_refs = start_research_node(failed_render)
+    _activity_documents(failed_render, failed_render_refs["node_id"], state="failed")
+    completed = _completion(failed_render, failed_render_refs["node_id"], "completed")
+    validate_decision_dry_run(failed_render, completed)
+    apply_decision(failed_render, completed)
+
+    failed = tmp_path / "failed-input"
     init_workspace(failed)
     failed_refs = start_research_node(failed)
-    _activity_documents(failed, failed_refs["node_id"], state="failed")
+    _activity_documents(failed, failed_refs["node_id"], state="failed", kind="artifact_import")
     with pytest.raises(ContractError, match="failed_activity_requires_non_success_outcome"):
         validate_decision_dry_run(failed, _completion(failed, failed_refs["node_id"], "completed"))
     inconclusive = _completion(failed, failed_refs["node_id"], "inconclusive")

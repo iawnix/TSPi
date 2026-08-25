@@ -15,6 +15,8 @@ class RenderResult:
     stdout: str = ""
     stderr: str = ""
     diagnostics: list[str] = field(default_factory=list)
+    commands: list[list[str]] = field(default_factory=list)
+    failure_stage: str | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -25,6 +27,7 @@ class RenderResult:
             "stdout": self.stdout,
             "stderr": self.stderr,
             "diagnostics": self.diagnostics,
+            "failure_stage": self.failure_stage,
         }
 
     @classmethod
@@ -36,6 +39,8 @@ class RenderResult:
             returncode=None,
             stderr=f"{command_name} command is not available",
             diagnostics=diagnostics or [],
+            commands=[],
+            failure_stage="environment",
         )
 
 

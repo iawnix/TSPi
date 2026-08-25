@@ -534,7 +534,13 @@ artifact are journaled, never the input body.
 ### Render and Report
 
 `ts_render` validates one Node-owned input set and creates one no-overwrite local
-artifact. `ts_report` validates the workspace, creates a new report directory
+artifact. Multi-structure comparison and mechanism outputs render each molecule
+with `xyzrender`, then use a deterministic fixed-canvas compositor for panels,
+captions, and reaction arrows. The public mechanism request is one ordered
+reactant, transition-state, product triple. `xyzrender -l` remains reserved
+for atom and bond annotations. Backend exit status, bounded stderr,
+diagnostics, and command arguments remain visible in failed Activity results. `ts_report` validates the
+workspace, creates a new report directory
 atomically, and verifies the package manifest and file digests. Optional logical
 PNG/GIF artifact IDs are re-resolved and copied into the package `assets/`
 directory with an `asset_index.json`; callers never select source paths. Neither
@@ -581,9 +587,11 @@ agent-run state never proves a remote effect.
 
 A Node cannot become terminal while an owned Compute run or deterministic
 activity is non-terminal, its activity journal is inconsistent, or a compute
-control is pending or unresolved. A failed terminal activity may close only as
-`inconclusive`, `blocked`, or `stopped`. An analytical Node with no activity
-remains valid.
+control is pending or unresolved. A failed terminal scientific-input activity
+may close only as `inconclusive`, `blocked`, or `stopped`. A valid terminal
+`render` failure remains visible operational history but does not downgrade an
+otherwise completed scientific Node. An analytical Node with no activity remains
+valid.
 
 The immediate tool return is the current delivery channel into the Root
 conversation. `TS Activity` is presentation state and is cleared with the Pi

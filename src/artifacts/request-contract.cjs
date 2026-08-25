@@ -23,9 +23,14 @@ function validateRenderRequest(rootValue, input, resolvedArtifacts) {
   const operation = requireEnum(input.operation, "render operation", RENDER_OPERATIONS);
   const nodeId = requireAct(root, input.nodeId);
   const inputArtifactIds = uniqueStrings(input.inputArtifactIds, "inputArtifactIds", 8, ARTIFACT_ID);
-  const required = operation === "render" || operation === "animate" ? 1 : 2;
-  if (inputArtifactIds.length < required || (required === 1 && inputArtifactIds.length !== 1)) {
-    throw new Error(`${operation} requires ${required === 1 ? "exactly one" : "at least two"} input artifacts`);
+  if ((operation === "render" || operation === "animate") && inputArtifactIds.length !== 1) {
+    throw new Error(`${operation} requires exactly one input artifact`);
+  }
+  if (operation === "compare" && inputArtifactIds.length < 2) {
+    throw new Error("compare requires at least two input artifacts");
+  }
+  if (operation === "mechanism" && inputArtifactIds.length !== 3) {
+    throw new Error("mechanism requires exactly three ordered input artifacts: reactant, transition state, product");
   }
   if (!Array.isArray(resolvedArtifacts) || resolvedArtifacts.length !== inputArtifactIds.length) {
     throw new Error("render artifact resolution does not match the request");

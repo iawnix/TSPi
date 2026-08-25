@@ -139,6 +139,30 @@ def test_render_request_resolves_logical_ids_and_host_owns_output_path(tmp_path:
     assert all(Path(item["path"]).is_absolute() for item in result["artifacts"])
 
 
+def test_mechanism_request_requires_ordered_reactant_ts_product(tmp_path: Path) -> None:
+    workspace, refs, artifacts = _workspace_with_xyz(tmp_path)
+    request = {
+        "operation": "mechanism",
+        "nodeId": refs["node_id"],
+        "inputArtifactIds": [item["artifact_id"] for item in artifacts],
+        "outputName": "mechanism.png",
+    }
+
+    result = _contract_call("validateRenderRequest", workspace, request, artifacts)
+    assert len(result["artifacts"]) == 3
+
+    rejected = _contract_call(
+        "validateRenderRequest",
+        workspace,
+        {**request, "inputArtifactIds": request["inputArtifactIds"][:2]},
+        artifacts[:2],
+        check=False,
+    )
+    assert isinstance(rejected, subprocess.CompletedProcess)
+    assert rejected.returncode == 2
+    assert "reactant, transition state, product" in rejected.stderr
+
+
 @pytest.mark.parametrize("output_name", ["../escape.png", "/tmp/escape.png", "result.xyz", "nested/result.png"])
 def test_render_request_rejects_agent_selected_paths(tmp_path: Path, output_name: str) -> None:
     workspace, refs, artifacts = _workspace_with_xyz(tmp_path)
@@ -165,6 +189,61 @@ def test_render_output_must_be_new_nonempty_regular_file(tmp_path: Path) -> None
     result = _contract_call("validateCreatedRenderOutput", workspace, output_ref)
     assert result["size_bytes"] == len(b"PNG payload")
     assert result["sha256"] == "sha256:" + hashlib.sha256(b"PNG payload").hexdigest()
+
+
+def test_render_tool_persists_bounded_backend_failure_details(tmp_path: Path) -> None:
+    workspace, refs, artifacts = _workspace_with_xyz(tmp_path)
+    fake = tmp_path / "xyzrender"
+    fake.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "print('xyzrender: error: deliberate adapter failure', file=sys.stderr)\n"
+        "raise SystemExit(2)\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    script = f"""
+import install from {json.dumps(ARTIFACT_EXTENSION.as_uri())};
+import {{ spawnSync }} from "node:child_process";
+process.env.TS_AGENT_PYTHON={json.dumps(sys.executable)};
+process.env.TS_AGENT_DISABLE_RUNTIME_REEXEC="1";
+process.env.TS_RENDER_XYZRENDER={json.dumps(str(fake))};
+const tools={{}};const entries=[];
+const pi={{
+  registerTool:(tool)=>tools[tool.name]=tool,
+  appendEntry:(type,data)=>entries.push({{type,data}}),
+  exec:async(command,args)=>{{
+    const value=spawnSync(command,args,{{encoding:"utf8",env:process.env}});
+    return {{code:value.status,stdout:value.stdout,stderr:value.stderr}};
+  }},
+}};
+install(pi);
+try {{
+  await tools.ts_render.execute("call-render",{{
+    operation:"compare",nodeId:{json.dumps(refs['node_id'])},
+    inputArtifactIds:{json.dumps([item['artifact_id'] for item in artifacts])},
+    outputName:"failed-comparison.png",
+  }},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}});
+}} catch (error) {{
+  process.stdout.write(JSON.stringify({{name:error.name,message:error.message,entries}}));
+}}
+"""
+
+    completed = _node_ts(script)
+    value = json.loads(completed.stdout)
+    assert value["name"] == "RenderBackendError"
+    assert "exit 2" in value["message"]
+    assert "deliberate adapter failure" in value["message"]
+    activity = workspace / "nodes" / refs["node_id"] / "activities" / "op_1"
+    status = json.loads((activity / "status.json").read_text(encoding="utf-8"))
+    result = json.loads((activity / "result.json").read_text(encoding="utf-8"))
+    assert status["status"] == "failed"
+    assert status["error"]["name"] == "RenderBackendError"
+    assert result["backend_failure"]["backend"] == "xyzrender"
+    assert result["backend_failure"]["stage"] == "xyzrender"
+    assert result["backend_failure"]["returncode"] == 2
+    assert "deliberate adapter failure" in result["backend_failure"]["stderr_tail"]
+    assert len(result["backend_failure"]["stderr_tail"]) <= 8192
 
 
 def test_report_package_is_verified_against_manifest_and_workspace_revision(tmp_path: Path) -> None:
@@ -463,9 +542,19 @@ def _workspace_with_xyz(tmp_path: Path) -> tuple[Path, dict[str, str], list[dict
     inputs.mkdir(exist_ok=True)
     (inputs / "reactant.xyz").write_text("1\nR\nH 0 0 0\n", encoding="utf-8")
     (inputs / "candidate.xyz").write_text("1\nTS\nH 0 0 0.2\n", encoding="utf-8")
+    (inputs / "product.xyz").write_text("1\nP\nH 0 0 0.4\n", encoding="utf-8")
     catalog = list_calculation_artifacts(workspace)["artifacts"]
-    artifacts = [item for item in catalog if item["path"] in {"inputs/reactant.xyz", "inputs/candidate.xyz"}]
-    artifacts.sort(key=lambda item: item["path"])
+    artifacts = [
+        item
+        for item in catalog
+        if item["path"] in {"inputs/reactant.xyz", "inputs/candidate.xyz", "inputs/product.xyz"}
+    ]
+    order = {
+        "inputs/reactant.xyz": 0,
+        "inputs/candidate.xyz": 1,
+        "inputs/product.xyz": 2,
+    }
+    artifacts.sort(key=lambda item: order[item["path"]])
     return workspace, refs, artifacts
 
 
