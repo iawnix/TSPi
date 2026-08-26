@@ -3,17 +3,14 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+from _bootstrap import bootstrap_python_package
 
-from ts_runtime import ensure_runtime_python
+bootstrap_python_package(ROOT)
 
-ensure_runtime_python(ROOT)
-
-from ts_backends.cli import main  # noqa: E402
+from ts_agent.backends.cli import main  # noqa: E402
 
 
 if __name__ == "__main__":

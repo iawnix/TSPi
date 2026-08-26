@@ -3,254 +3,1049 @@ from __future__ import annotations
 import http.client
 import json
 import subprocess
-import sys
 import threading
 from importlib.resources import files
 from pathlib import Path
 
 import pytest
 
-from ts_workspace import end_node, start_node, update_workspace
-from ts_web import normalize_workspace, register_workspace
-from ts_web.normalize import explorer_graph_payload_from_view
-from ts_web.registry import list_workspaces, register_workspaces
-from ts_web import server as ts_web_server
-from ts_web.server import create_server
-from strict_helpers import (
-    HYPOTHESIS_ID,
-    HYPOTHESIS_REF,
-    bootstrap_strict_workspace,
-    gate_artifact_metadata,
-    make_accepted_workspace,
-    make_branch_workspace,
+from tests.workspace_helpers import accept_research_claim
+from ts_agent.web import normalize_workspace, register_workspace
+from ts_agent.web import server as ts_web_server
+from ts_agent.web.file_preview import MAX_TEXT_BYTES, preview_capability, read_text_preview
+from ts_agent.web.normalize import (
+    claim_payload,
+    graph_payload_from_view,
+    list_node_files,
+    node_payload,
+    research_files_payload,
+    workspace_snapshot,
 )
+from ts_agent.web.registry import (
+    list_workspaces,
+    reconcile_workspace_registry,
+    register_workspaces,
+    workspace_discovery_roots,
+)
+from ts_agent.web.server import create_server
+from ts_agent.workspace.decision import draft_decision
+from ts_agent.workspace.engine import apply_decision, init_workspace
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CLI = ROOT / "scripts" / "ts_web.py"
 
 
-def test_normalize_workspace_uses_canonical_branch_events(tmp_path: Path) -> None:
-    workspace = tmp_path / "branch"
-    make_branch_workspace(workspace)
-    tree = json.loads((workspace / "tree.json").read_text(encoding="utf-8"))
-    view = normalize_workspace(workspace)
-    assert view["branch_edges"] == [
+def _write(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value), encoding="utf-8")
+
+
+def _make_workspace(root: Path) -> dict[str, str]:
+    init_workspace(root)
+    drafted = draft_decision(
+        root,
         {
-            "event_id": event.get("event_id"),
-            "event_state": event.get("event_state"),
-            "relation": event.get("relation"),
-            "from_node": event.get("from_node"),
-            "anchor_node": event.get("anchor_node"),
-            "new_node": event.get("new_node"),
-            "parent_node": event.get("parent_node"),
-            "is_rebased": event.get("is_rebased"),
-            "changed_variable": event.get("changed_variable"),
-            "reason_code": event.get("reason_code"),
-            "evidence_refs": event.get("evidence_refs", []),
+            "rationale": "Create a small Claim graph and ResearchNode DAG for the explorer.",
+            "basis_refs": [],
+            "operations": [
+                {
+                    "op": "create_phase",
+                    "local_ref": "mechanism",
+                    "title": "Mechanism search",
+                    "objective": "Distinguish concerted and stepwise pathways.",
+                },
+                {
+                    "op": "create_claim",
+                    "local_ref": "concerted",
+                    "claimType": "mechanism",
+                    "statement": "The pathway is concerted.",
+                    "falsifiers": ["A stable stepwise intermediate is observed."],
+                },
+                {
+                    "op": "create_claim",
+                    "local_ref": "stepwise",
+                    "claimType": "mechanism",
+                    "statement": "The pathway is stepwise.",
+                },
+                {
+                    "op": "relate_claims",
+                    "local_ref": "alternatives",
+                    "sourceClaimRef": "$concerted",
+                    "targetClaimRef": "$stepwise",
+                    "relationType": "alternative_to",
+                    "rationale": "The Claims are competing explanations.",
+                },
+                {
+                    "op": "start_node",
+                    "local_ref": "search",
+                    "phaseRef": "$mechanism",
+                    "title": "Bounded research node",
+                    "deliverable": "One bounded research result.",
+                    "objective": "Search for observations that distinguish the mechanisms.",
+                    "primaryClaimRef": "$concerted",
+                    "claimRefs": ["$concerted", "$stepwise"],
+                    "tags": ["candidate-search"],
+                },
+                {
+                    "op": "record_observation",
+                    "local_ref": "normal",
+                    "nodeRef": "$search",
+                    "conceptId": "program.normal_termination",
+                    "subjectRef": "calc_probe",
+                    "value": True,
+                    "datatype": "boolean",
+                    "summary": "The probe terminated normally.",
+                    "provenance": {"producer": "test-parser"},
+                },
+                {
+                    "op": "freeze_validation_spec",
+                    "local_ref": "spec",
+                    "nodeRef": "$search",
+                    "targetClaimRef": "$concerted",
+                    "dimension": "probe",
+                    "title": "Program completion probe",
+                    "definition": {
+                        "checks": [
+                            {
+                                "check_id": "normal",
+                                "predicate": "observation.equals",
+                                "parameters": {
+                                    "selector": {
+                                        "concept_id": "program.normal_termination",
+                                        "subject_ref": "calc_probe",
+                                    },
+                                    "expected": True,
+                                },
+                                "blocking": True,
+                            }
+                        ],
+                        "success_policy": {"mode": "all_blocking"},
+                    },
+                },
+                {
+                    "op": "evaluate_validation",
+                    "local_ref": "result",
+                    "nodeRef": "$search",
+                    "specRef": "$spec",
+                    "observationRefs": ["$normal"],
+                },
+                {
+                    "op": "update_claim",
+                    "claimRef": "$concerted",
+                    "status": "supported",
+                    "summary": "The bounded probe passed.",
+                    "observationRefs": ["$normal"],
+                    "validationResultRefs": ["$result"],
+                },
+                {
+                    "op": "record_finding",
+                    "local_ref": "ambiguity",
+                    "findingType": "mechanism_ambiguity",
+                    "severity": "warning",
+                    "statement": "Connectivity evidence is still absent.",
+                    "claimRefs": ["$concerted", "$stepwise"],
+                    "nodeRefs": ["$search"],
+                    "basisObservationRefs": ["$normal"],
+                },
+                {
+                    "op": "complete_node",
+                    "nodeRef": "$search",
+                    "outcome": "inconclusive",
+                    "summary": "The probe completed but did not resolve the mechanism.",
+                    "openQuestions": ["Which endpoints are connected?"],
+                },
+                {"op": "set_focus", "claimRefs": ["$concerted"], "nodeRefs": ["$search"]},
+            ],
+        },
+    )
+    apply_decision(root, drafted["decision"])
+    refs = dict(drafted["allocated_refs"])
+    connectivity = draft_decision(
+        root,
+        {
+            "rationale": "The candidate probe is complete but endpoint identity remains unresolved, so connectivity becomes the next research decision.",
+            "basis_refs": [refs["search"]],
+            "operations": [
+                {
+                    "op": "start_node",
+                    "local_ref": "connectivity",
+                    "phaseRef": refs["mechanism"],
+                    "title": "Resolve bidirectional connectivity",
+                    "deliverable": "One endpoint-connectivity conclusion.",
+                    "objective": "Test bidirectional connectivity.",
+                    "dependencyRefs": [refs["search"]],
+                    "primaryClaimRef": refs["concerted"],
+                    "claimRefs": [refs["concerted"]],
+                    "tags": ["connectivity"],
+                },
+                {"op": "set_focus", "claimRefs": [refs["concerted"]], "nodeRefs": ["$connectivity"]},
+            ],
+        },
+    )
+    apply_decision(root, connectivity["decision"])
+    refs.update(connectivity["allocated_refs"])
+    node_id = refs["connectivity"]
+    artifact = root / "nodes" / node_id / "outputs" / "probe.json"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_text("{}\n", encoding="utf-8")
+    _write(
+        root / "nodes" / node_id / "attempts" / "calc_1" / "intent.json",
+        {
+            "intent_id": "calc_1",
+            "node_id": node_id,
+            "backend": "gaussian",
+            "task_type": "irc",
+            "purpose": "Trace both directions from the selected transition-state candidate.",
+            "attempt_kind": "primary",
+            "recalculation_ref": None,
+            "settings": {
+                "method": "M062X",
+                "basis": "6-31+G(d,p)",
+                "candidateStrategy": "bidirectional_irc",
+            },
+            "input_bindings": [
+                {"input_role": "gjf", "artifact_id": "art_test", "source_intent_id": None}
+            ],
+            "expected_artifacts": [f"nodes/{node_id}/attempts/calc_1/outputs/gaussian.out"],
+            "execution_target": {
+                "kind": "remote",
+                "profile": "cluster_1w",
+                "resources": {"queue": "batch", "ncpus": 8},
+            },
+        },
+    )
+    _write(
+        root / "nodes" / node_id / "attempts" / "calc_1" / "status.json",
+        {
+            "intent_id": "calc_1",
+            "state": "completed",
+            "program_status": "normal_termination",
+        },
+    )
+    _write(
+        root / "nodes" / node_id / "activities" / "op_1" / "request.json",
+        {
+            "schema_version": "ts-deterministic-activity-request/1",
+            "activity_id": "op_1",
+            "kind": "render",
+            "operation": "molecule",
+            "node_refs": [node_id],
+            "request": {},
+            "started_at": "2026-08-16T00:00:00+00:00",
+        },
+    )
+    _write(
+        root / "nodes" / node_id / "activities" / "op_1" / "status.json",
+        {
+            "schema_version": "ts-deterministic-activity-status/1",
+            "activity_id": "op_1",
+            "kind": "render",
+            "operation": "molecule",
+            "node_refs": [node_id],
+            "status": "completed",
+            "started_at": "2026-08-16T00:00:00+00:00",
+            "completed_at": "2026-08-16T00:01:00+00:00",
+            "error": None,
+        },
+    )
+    _write(
+        root / "nodes" / node_id / "activities" / "op_1" / "result.json",
+        {"outcome": "success", "summary": "Molecule rendered."},
+    )
+    _write(
+        root / "nodes" / node_id / "attempts" / "calc_1" / "runs" / "sub_1" / "task.json",
+        {
+            "task_id": "sub_1",
+            "role": "compute",
+            "authority": "operational",
+            "operation": "finalize",
+            "scope": {"node_refs": [node_id], "claim_refs": [refs["concerted"]]},
+            "inputs": {"node_id": node_id, "intent_id": "calc_1", "backend": "gaussian"},
+        },
+    )
+    _write(
+        root / "nodes" / node_id / "attempts" / "calc_1" / "runs" / "sub_1" / "run.json",
+        {
+            "task_id": "sub_1",
+            "status": "completed",
+            "started_at": "2026-08-16T00:02:00+00:00",
+            "finished_at": "2026-08-16T00:03:00+00:00",
+            "error": None,
+        },
+    )
+    _write(
+        root / "nodes" / node_id / "attempts" / "calc_1" / "runs" / "sub_1" / "result.json",
+        {"outcome": "success", "summary": "Calculation finalized."},
+    )
+    _write(
+        root / "reviews" / refs["concerted"] / "runs" / "sub_2" / "task.json",
+        {
+            "task_id": "sub_2",
+            "role": "review",
+            "authority": "advisory",
+            "operation": "claim_review",
+            "scope": {"node_refs": [node_id], "claim_refs": [refs["concerted"]]},
+        },
+    )
+    _write(
+        root / "reviews" / refs["concerted"] / "runs" / "sub_2" / "run.json",
+        {
+            "task_id": "sub_2",
+            "status": "completed",
+            "started_at": "2026-08-16T00:02:00+00:00",
+            "finished_at": "2026-08-16T00:03:00+00:00",
+            "error": None,
+        },
+    )
+    _write(
+        root / "reviews" / refs["concerted"] / "runs" / "sub_2" / "result.json",
+        {"outcome": "success", "summary": "Connectivity remains untested."},
+    )
+    return refs
+
+
+def test_normalize_workspace_projects_phase_node_and_operational_state(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+
+    view = normalize_workspace(workspace)
+
+    assert view["schema_version"] == "ts-web-workspace/5"
+    assert view["workspace"]["kernel_protocol"] == "ts-research-kernel/5"
+    assert view["research_phases"][0]["phase_id"] == refs["mechanism"]
+    assert view["research_phases"][0]["node_refs"] == [refs["search"], refs["connectivity"]]
+    assert view["focus"]["phase_refs"] == [refs["mechanism"]]
+    assert view["focus"]["claim_refs"] == [refs["concerted"]]
+    assert view["focus"]["node_refs"] == [refs["connectivity"]]
+    active = next(row for row in view["research_nodes"] if row["node_id"] == refs["connectivity"])
+    completed = next(row for row in view["research_nodes"] if row["node_id"] == refs["search"])
+    assert active["activities"][0]["activity_id"] == "op_1"
+    assert "runs" not in active["attempts"][0]
+    assert active["attempts"][0]["run_count"] == 1
+    assert next(row for row in view["agent_runs"] if row["task_id"] == "sub_1")["intent_id"] == "calc_1"
+    assert active["compute_run_count"] == 1
+    assert "endpoint identity remains unresolved" in active["opening_decision"]["rationale"]
+    assert completed["dependent_refs"] == [refs["connectivity"]]
+    assert completed["completion_decision"]["decision_id"] == completed["result"]["decision_id"]
+    assert "research_trajectory" not in view
+    assert all(row["phase_ref"] == refs["mechanism"] for row in view["research_nodes"])
+
+
+def test_workspace_snapshot_is_small_when_unchanged_and_coherent_when_changed(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+    row = {
+        "workspace_id": "ws_test",
+        "source_root": str(workspace),
+        "label": "test workspace",
+    }
+
+    initial = workspace_snapshot(row)
+    assert initial["changed"] is True
+    assert initial["scientific_changed"] is True
+    assert initial["operational_changed"] is True
+    assert initial["view"]["workspace_revision"] == initial["workspace_revision"]
+    assert initial["view"]["operational_revision"] == initial["operational_revision"]
+    assert initial["graph"]["workspace_revision"] == initial["workspace_revision"]
+    assert initial["graph"]["operational_revision"] == initial["operational_revision"]
+
+    unchanged = workspace_snapshot(
+        row,
+        since_workspace_revision=initial["workspace_revision"],
+        since_operational_revision=initial["operational_revision"],
+    )
+    assert unchanged == {
+        "schema_version": "ts-explorer-workspace-snapshot/1",
+        "workspace_id": "ws_test",
+        "changed": False,
+        "scientific_changed": False,
+        "operational_changed": False,
+        "workspace_revision": initial["workspace_revision"],
+        "operational_revision": initial["operational_revision"],
+    }
+
+    status_path = workspace / "nodes" / refs["connectivity"] / "attempts" / "calc_1" / "status.json"
+    status = json.loads(status_path.read_text(encoding="utf-8"))
+    status["program_status"] = "error_termination"
+    _write(status_path, status)
+    changed = workspace_snapshot(
+        row,
+        since_workspace_revision=initial["workspace_revision"],
+        since_operational_revision=initial["operational_revision"],
+    )
+    assert changed["changed"] is True
+    assert changed["scientific_changed"] is False
+    assert changed["operational_changed"] is True
+    assert changed["workspace_revision"] == initial["workspace_revision"]
+    assert changed["operational_revision"] != initial["operational_revision"]
+    active = next(
+        row
+        for row in changed["view"]["research_nodes"]
+        if row["node_id"] == refs["connectivity"]
+    )
+    assert active["attempts"][0]["program_status"] == "error_termination"
+
+
+def test_workspace_snapshot_normalizes_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    workspace = tmp_path / "workspace"
+    _make_workspace(workspace)
+    row = {"workspace_id": "ws_test", "source_root": str(workspace), "label": "test"}
+    calls = 0
+    original = ts_web_server.normalize_workspace
+
+    def counted(source_root, *, label=None):
+        nonlocal calls
+        calls += 1
+        return original(source_root, label=label)
+
+    monkeypatch.setattr("ts_agent.web.normalize.normalize_workspace", counted)
+    workspace_snapshot(row)
+    assert calls == 1
+
+
+def test_web_control_projection_distinguishes_submit_and_cancel_for_one_attempt(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+    node_id = refs["connectivity"]
+    attempt = workspace / "nodes" / node_id / "attempts" / "calc_1"
+    for operation, error_class in (
+        ("submit", "submission_ambiguous"),
+        ("cancel", "cancellation_ambiguous"),
+    ):
+        _write(attempt / f"{operation}_guard.json", {"operation": operation})
+        _write(
+            attempt / f"{operation}_result.json",
+            {
+                "state": "unknown",
+                "error_class": error_class,
+                "job_id": None,
+                "control": {"effect_outcome": "unknown", "retry_disposition": "reconcile_only"},
+            },
+        )
+
+    view = normalize_workspace(workspace)
+    detail = node_payload(workspace, node_id)
+
+    expected = {"calc_1:submit:1", "calc_1:cancel:1"}
+    assert {row["control_id"] for row in view["unresolved_controls"]} == expected
+    assert {row["control_id"] for row in detail["research_node"]["unresolved_controls"]} == expected
+
+
+def test_web_ignores_noncanonical_attempt_ids_and_sorts_current_ordinals(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+    node_id = refs["connectivity"]
+    for intent_id in ("calc_10", "calc_2", "calc_removed"):
+        _write(
+            workspace / "nodes" / node_id / "attempts" / intent_id / "intent.json",
+            {"intent_id": intent_id, "node_id": node_id, "backend": "gaussian", "task_type": "sp"},
+        )
+    unsupported_activity = "op_019a338f-acaf-43e6-b498-4e3994971399"
+    unsupported_run = "sub_028def15-cbb5-42b4-bbfc-cfbd256c4a0b"
+    _write(workspace / "nodes" / node_id / "activities" / unsupported_activity / "request.json", {})
+    _write(workspace / "nodes" / node_id / "agent-runs" / "sub_old" / "task.json", {})
+    _write(workspace / "nodes" / node_id / "attempts" / "calc_1" / "runs" / unsupported_run / "task.json", {})
+
+    view = normalize_workspace(workspace)
+    detail = node_payload(workspace, node_id)
+
+    active = next(row for row in view["research_nodes"] if row["node_id"] == node_id)
+    assert [row["intent_id"] for row in active["attempts"]] == ["calc_1", "calc_2", "calc_10"]
+    paths = {row["path"] for row in detail["files"]["files"]}
+    assert f"nodes/{node_id}/attempts/calc_1/runs/sub_1/task.json" in paths
+    assert not any(unsupported_activity in path or unsupported_run in path or "/agent-runs/" in path for path in paths)
+    assert not any("/attempts/calc_removed/" in path for path in paths)
+
+
+def test_web_projects_recalculation_purpose_and_lineage(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+    node_id = refs["search"]
+    source_node = refs["connectivity"]
+    _write(
+        workspace / "nodes" / node_id / "attempts" / "calc_2" / "intent.json",
+        {
+            "intent_id": "calc_2",
+            "node_id": node_id,
+            "backend": "gaussian",
+            "task_type": "irc",
+            "purpose": "Repeat the IRC with a smaller integration step after calc_1 stalled.",
+            "attempt_kind": "recalculation",
+            "recalculation_ref": {
+                "source_node": source_node,
+                "source_intent_id": "calc_1",
+                "purpose": "repair",
+                "changed_settings": ["step_size"],
+            },
+            "settings": {
+                "method": "M062X",
+                "basis": "6-31+G(d,p)",
+                "candidateStrategy": "bidirectional_irc",
+                "stepSize": 5,
+            },
+        },
+    )
+
+    attempts = node_payload(workspace, node_id)["research_node"]["attempts"]
+    recalculation = next(row for row in attempts if row["intent_id"] == "calc_2")
+
+    assert recalculation["purpose"].startswith("Repeat the IRC")
+    assert recalculation["attempt_kind"] == "recalculation"
+    assert recalculation["recalculation_ref"] == {
+        "source_node": source_node,
+        "source_intent_id": "calc_1",
+        "purpose": "repair",
+        "changed_settings": ["step_size"],
+    }
+    assert recalculation["candidate_strategy"] == "bidirectional_irc"
+
+
+def test_node_files_publish_the_same_bounded_text_preview_capability(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+    output = workspace / "nodes" / refs["connectivity"] / "outputs"
+    output.mkdir(parents=True, exist_ok=True)
+    text_file = output / "readable.txt"
+    binary_file = output / "image.png"
+    large_file = output / "large.out"
+    boundary_file = output / "utf8-boundary.txt"
+    text_file.write_text("readable\n", encoding="utf-8")
+    binary_file.write_bytes(b"\x89PNG\r\n\x1a\n\x00binary")
+    large_file.write_bytes(b"x" * (MAX_TEXT_BYTES + 1))
+    boundary_file.write_text("a" * 8191 + "é" + "tail", encoding="utf-8")
+
+    rows = {row["name"]: row for row in list_node_files(workspace, refs["connectivity"])["files"]}
+
+    assert rows["readable.txt"]["preview"] == {"available": True, "reason": None}
+    assert rows["image.png"]["preview"]["available"] is False
+    assert "binary" in rows["image.png"]["preview"]["reason"].lower()
+    assert rows["large.out"]["preview"]["available"] is False
+    assert "1 MB" in rows["large.out"]["preview"]["reason"]
+    assert rows["utf8-boundary.txt"]["preview"]["available"] is True
+    assert preview_capability(text_file)["available"] is True
+    assert read_text_preview(text_file) == "readable\n"
+    with pytest.raises(ValueError, match="binary"):
+        read_text_preview(binary_file)
+    with pytest.raises(ValueError, match="1 MB"):
+        read_text_preview(large_file)
+
+
+def test_graph_uses_claim_relations_and_research_node_dependencies(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+
+    graph = graph_payload_from_view(normalize_workspace(workspace))
+
+    assert graph["schema_version"] == "ts-explorer-graph/5"
+    assert graph["claim_graph"]["edges"] == [
+        {
+            "id": refs["alternatives"],
+            "source": refs["concerted"],
+            "target": refs["stepwise"],
+            "kind": "alternative_to",
+            "rationale": "The Claims are competing explanations.",
         }
-        for event in tree["branch_events"]
     ]
-    nodes = {node["node_id"]: node for node in view["nodes"]}
-    assert nodes["n001"]["display"]["claim_verdict"] == "refuted"
-
-
-def test_branch_visual_semantics_are_distinct_from_refuted_status(tmp_path: Path) -> None:
-    workspace = tmp_path / "branch"
-    make_branch_workspace(workspace)
-    graph = explorer_graph_payload_from_view(normalize_workspace(workspace))
-    nodes = {node["id"]: node for node in graph["nodes"]}
-    trigger_edges = [edge for edge in graph["edges"] if edge["kind"] == "branch_trigger"]
-
-    assert nodes["n001"]["node_state"] == "refuted"
-    assert nodes["n001"]["card_color"] == "red"
-    assert nodes["n001"]["branch_badge"]["role"] == "branch_trigger"
-    assert nodes["n001"]["branch_badge"]["label"] == "triggered pathway branch"
-    assert nodes["n001"]["branch_origin"]["role"] == "branch_trigger"
-    assert nodes["n001"]["branch_origin"]["label"] == "triggered pathway branch"
-    assert nodes["n002"]["branch_badge"]["role"] == "generated_from_branch"
-    assert nodes["n002"]["branch_badge"]["label"] == "new pathway branch"
-    assert nodes["n002"]["branch_badge"]["color"] == "purple"
-    assert nodes["n002"]["branch_origin"]["role"] == "generated_from_branch"
-    assert nodes["n002"]["branch_origin"]["label"] == "new pathway branch"
-    assert nodes["n002"]["branch_origin"]["is_anchor_relinked"] is True
-    assert [(edge["source"], edge["target"]) for edge in trigger_edges] == [("n001", "n002")]
-    assert {edge["edge_color"] for edge in trigger_edges} == {"purple"}
-    assert graph["presentation"]["edge_kind"]["branch_trigger"]["color"] == "purple"
-    assert graph["presentation"]["event_role"]["branch_trigger"]["color"] == "purple"
-    assert graph["presentation"]["event_role"]["generated_from_branch"]["color"] == "purple"
-
-
-def test_static_ui_uses_outline_status_chips_and_branch_origin_panel() -> None:
-    html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
-
-    assert ".chip[data-color=\"red\"]" in html
-    assert ".chip[data-color=\"red\"]    { color: var(--red);" in html
-    assert ".chip[data-color=\"red\"]    { background:" not in html
-    assert "Branch Origin" in html
-    assert "Alternative branch relation" in html
-    assert ".branch-badge { fill: none;" not in html
-    assert "symbol-legend" not in html
-    assert "↺" not in html
-    assert "Non-linear branch marker on trigger or generated nodes" not in html
-    assert "triggered rebase" not in html
-    assert "rebased branch" not in html
-
-
-def test_static_ui_has_no_legacy_branch_edge_vocabulary() -> None:
-    html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
-
-    assert "branch_anchor" not in html
-    assert "branch_generated" not in html
-    assert "branch_source" not in html
-    assert 'e.kind.startsWith("branch")' not in html
-    assert "stageInfo(n.stage, n.stage_label)" in html
-    assert 'label: "Report"' not in html
-    assert 'label: "Preflight"' not in html
-
-
-def test_accepted_audit_keeps_its_scientific_stage_label(tmp_path: Path) -> None:
-    workspace = tmp_path / "accepted"
-    make_accepted_workspace(workspace)
-
-    graph = explorer_graph_payload_from_view(normalize_workspace(workspace))
-    accepted_audit = next(node for node in graph["nodes"] if node["stage"] == "accepted_audit")
-
-    assert accepted_audit["stage_label"] == "Accepted Audit"
-    assert accepted_audit["stage_label"] != "Report"
-
-
-def test_static_ui_refresh_without_workspace_renders_empty_state() -> None:
-    html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
-
-    assert "function renderNoWorkspace()" in html
-    assert "renderNoWorkspace();\n      return;" in html
-    assert 'throw new Error("workspace_required")' not in html
-    assert "Select a workspace" in html
-    assert "No workspaces" in html
-
-
-def test_static_asset_resolves_from_current_ts_web_package() -> None:
-    expected = files("ts_web").joinpath("static", "index.html").read_bytes()
-    assert ts_web_server._static_asset("index.html").read_bytes() == expected
-
-    server_source = (ROOT / "ts_web" / "server.py").read_text(encoding="utf-8")
-    assert "STATIC_DIR" not in server_source
-    assert "Path(__file__).resolve().parent / \"static\"" not in server_source
-    assert "files(STATIC_PACKAGE)" in server_source
-
-
-def test_branch_edges_and_events_dedupe_when_target_is_replacement(tmp_path: Path) -> None:
-    workspace = tmp_path / "dedupe-branch"
-    make_branch_workspace(workspace)
-    tree_path = workspace / "tree.json"
-    tree = json.loads(tree_path.read_text(encoding="utf-8"))
-    event = next(item for item in tree["branch_events"] if item["new_node"] == "n002")
-    event_id = event["event_id"]
-    event["anchor_node"] = "n002"
-    tree_path.write_text(json.dumps(tree, indent=2) + "\n", encoding="utf-8")
-
-    graph = explorer_graph_payload_from_view(normalize_workspace(workspace))
-    branch_edges = [edge for edge in graph["edges"] if edge["kind"] == "branch_trigger" and edge.get("event_id") == event_id]
-    n001_events = [
-        event
-        for event in graph["events"]
-        if event["event_id"] == event_id and event["node_id"] == "n001"
+    assert graph["research_node_dag"]["edges"] == [
+        {
+            "id": f"dependency:{refs['search']}:{refs['connectivity']}",
+            "source": refs["search"],
+            "target": refs["connectivity"],
+            "kind": "depends_on",
+        }
     ]
-    n002_events = [
-        event
-        for event in graph["events"]
-        if event["event_id"] == event_id and event["node_id"] == "n002"
-    ]
-    nodes = {node["id"]: node for node in graph["nodes"]}
-
-    assert [(edge["kind"], edge["source"], edge["target"]) for edge in branch_edges] == [
-        ("branch_trigger", "n001", "n002")
-    ]
-    assert [event["event_role"] for event in n001_events] == ["branch_trigger"]
-    assert [event["event_role"] for event in n002_events] == ["generated_from_branch"]
-    assert "branch_anchor_event_ids" not in nodes["n002"]
-    assert nodes["n001"]["branch_trigger_event_ids"] == [event_id]
-    assert nodes["n002"]["generated_from_branch_event_ids"] == [event_id]
-    assert nodes["n002"]["branch_badge"]["role"] == "generated_from_branch"
-    assert nodes["n002"]["branch_origin"]["role"] == "generated_from_branch"
-    assert nodes["n002"]["branch_origin"]["is_anchor_relinked"] is False
+    assert "research_trajectory" not in graph
+    assert graph["deterministic_activities"][0]["kind"] == "render"
+    assert {row["role"] for row in graph["agent_runs"]} == {"compute", "review"}
 
 
-def test_continue_parent_branch_events_do_not_duplicate_lineage_edges(tmp_path: Path) -> None:
-    workspace = tmp_path / "accepted"
-    make_accepted_workspace(workspace)
-    graph = explorer_graph_payload_from_view(normalize_workspace(workspace))
+def test_claim_and_node_details_follow_graph_references(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
 
-    lineage_edges = [edge for edge in graph["edges"] if edge["kind"] == "branch"]
-    assert len(lineage_edges) == len(graph["nodes"]) - 1
-    assert not [edge for edge in graph["edges"] if edge["kind"] == "branch_generated"]
-    assert not [edge for edge in graph["edges"] if edge["kind"] == "branch_trigger"]
-    assert not [edge for edge in graph["edges"] if edge["kind"] == "branch_anchor"]
-    assert not [node for node in graph["nodes"] if node["branch_badge"]]
-    assert not [node for node in graph["nodes"] if node["branch_origin"]]
+    summary = normalize_workspace(workspace)
+    claim = claim_payload(workspace, refs["concerted"])
+    active = node_payload(workspace, refs["connectivity"])
+    completed = node_payload(workspace, refs["search"])
+
+    assert {row["node_id"] for row in claim["research_nodes"]} == {refs["search"], refs["connectivity"]}
+    assert claim["validation_results"][0]["verdict"] == "pass"
+    assert active["dependencies"][0]["node_id"] == refs["search"]
+    assert active["research_node"]["activities"][0]["activity_id"] == "op_1"
+    assert claim["review_runs"][0]["task_id"] == "sub_2"
+    summary_node = next(
+        row for row in summary["research_nodes"] if row["node_id"] == refs["connectivity"]
+    )
+    assert "settings" not in summary_node["attempts"][0]
+    assert "runs" not in summary_node["attempts"][0]
+    attempt = active["research_node"]["attempts"][0]
+    assert {key: value for key, value in attempt.items() if key != "runs"} == {
+        "intent_id": "calc_1",
+        "ref": f"nodes/{refs['connectivity']}/attempts/calc_1",
+        "backend": "gaussian",
+        "task_type": "irc",
+        "purpose": "Trace both directions from the selected transition-state candidate.",
+        "attempt_kind": "primary",
+        "recalculation_ref": None,
+        "method": "M062X",
+        "basis": "6-31+G(d,p)",
+        "candidate_strategy": "bidirectional_irc",
+        "settings": {
+            "method": "M062X",
+            "basis": "6-31+G(d,p)",
+            "candidateStrategy": "bidirectional_irc",
+        },
+        "input_bindings": [
+            {"input_role": "gjf", "artifact_id": "art_test", "source_intent_id": None}
+        ],
+        "expected_artifacts": [
+            f"nodes/{refs['connectivity']}/attempts/calc_1/outputs/gaussian.out"
+        ],
+        "execution_target": {
+            "kind": "remote",
+            "profile": "cluster_1w",
+            "resources": {"queue": "batch", "ncpus": 8},
+        },
+        "state": "completed",
+        "program_status": "normal_termination",
+        "error_class": None,
+        "run_count": 1,
+    }
+    assert attempt["runs"][0]["task_id"] == "sub_1"
+    assert completed["dependents"][0]["node_id"] == refs["connectivity"]
+    assert completed["phase"]["phase_id"] == refs["mechanism"]
+    assert completed["history"][0]["decision_id"] == completed["research_node"]["created_by_decision"]
+    assert {row["claim_id"] for row in completed["claims"]} == {refs["concerted"], refs["stepwise"]}
+    assert completed["validation_specs"][0]["title"] == "Program completion probe"
+    assert f"nodes/{refs['connectivity']}/outputs/probe.json" in {
+        row["path"] for row in active["files"]["files"]
+    }
+
+
+def test_web_derives_claim_node_link_from_creator_provenance(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace)
+    node_draft = draft_decision(
+        workspace,
+        {
+            "rationale": "Start an exploratory Node before it discovers a Claim.",
+            "basis_refs": [],
+            "operations": [
+                {"op": "create_phase", "local_ref": "exploration_phase", "title": "Exploration", "objective": "Look for an alternative mechanism."},
+                {"op": "start_node", "local_ref": "exploration", "phaseRef": "$exploration_phase", "title": "Bounded research node", "deliverable": "One bounded research result.", "objective": "Look for an alternative mechanism."}
+            ],
+        },
+    )
+    apply_decision(workspace, node_draft["decision"])
+    node_id = node_draft["allocated_refs"]["exploration"]
+    claim_draft = draft_decision(
+        workspace,
+        {
+            "rationale": "Record the alternative Claim discovered by the Node.",
+            "basis_refs": [],
+            "operations": [
+                {
+                    "op": "create_claim",
+                    "local_ref": "alternative",
+                    "claimType": "mechanism",
+                    "statement": "An alternative pathway may exist.",
+                    "createdByNode": node_id,
+                }
+            ],
+        },
+    )
+    apply_decision(workspace, claim_draft["decision"])
+    claim_id = claim_draft["allocated_refs"]["alternative"]
+
+    view = normalize_workspace(workspace)
+    node = next(row for row in view["research_nodes"] if row["node_id"] == node_id)
+    graph = graph_payload_from_view(view)
+    assert node["claim_refs"] == []
+    assert node["related_claim_refs"] == [claim_id]
+    assert graph["claim_node_links"] == [{"claim_ref": claim_id, "node_ref": node_id}]
+    assert [row["node_id"] for row in claim_payload(workspace, claim_id)["research_nodes"]] == [node_id]
+    assert [row["claim_id"] for row in node_payload(workspace, node_id)["claims"]] == [claim_id]
+
+
+def test_static_ui_exposes_research_tree_and_on_demand_node_details() -> None:
+    static = ROOT / "python" / "ts_agent" / "web" / "static"
+    html = (static / "index.html").read_text(encoding="utf-8")
+    script = (static / "app.js").read_text(encoding="utf-8")
+    tree = (static / "research-tree.js").read_text(encoding="utf-8")
+
+    assert "TS Research Explorer" in html
+    assert "Research Tree" in html
+    assert "Scientific Conclusions" in html
+    assert "Research Files" in html
+    assert "Advanced Graphs" in html
+    assert "app.css" in html
+    assert "app.js" in html
+    assert "research-tree.js" in html
+    assert "renderNodeDetail" in script
+    assert "window.TSResearchTree.mount" in script
+    assert "state.graph.research_node_dag.edges" in script
+    assert "renderPhaseBand" not in script
+    assert "Cross-Phase ResearchNode DAG" not in script
+    assert "computeLayout" in tree
+    assert "computeLineage" in tree
+    assert 'root.classList.add("research-tree")' in tree
+    assert "research-tree-outline" in tree
+    assert "ResizeObserver" in tree
+    assert 'const tabs = ["overview", "conclusions", "evidence", "runs", "files", "history"]' in script
+    assert "renderAttemptHistory(node.attempts)" in script
+    assert 'details[data-attempt-id]' in script
+    assert 'data-attempt-node="${escapeHtml(sourceNode)}"' in script
+    assert "async function openAttemptSource(sourceNodeId, attemptId)" in script
+    assert 'const opened = await openDetail("node", sourceNodeId)' in script
+    assert 'preview?.available' in script
+    assert 'icon("eye")' in script
+    assert 'icon("external")' not in script
+    assert 'id="icon-eye"' in html
+    assert "${latest.intent_id} ${attemptState(latest)}" in tree
+    assert 'control: [state.view.unresolved_controls, "control_id"]' in script
+    assert "function renderActDetail" not in script
+    assert "/api/node" not in html + script
+    assert "/api/gates" not in html + script
+    assert "/api/evidence" not in html + script
+
+
+def test_research_tree_layout_handles_branch_merge_and_lineage() -> None:
+    tree_path = (ROOT / "python" / "ts_agent" / "web" / "static" / "research-tree.js").as_uri()
+    probe = f"""
+globalThis.window = globalThis;
+(async () => {{
+  await import({json.dumps(tree_path)});
+  const nodes = [
+    {{node_id: "node_1", phase_ref: "phase_1"}},
+    {{node_id: "node_2", phase_ref: "phase_1"}},
+    {{node_id: "node_3", phase_ref: "phase_1"}},
+    {{node_id: "node_4", phase_ref: "phase_2"}},
+  ];
+  const edges = [
+    {{source: "node_1", target: "node_2"}},
+    {{source: "node_1", target: "node_3"}},
+    {{source: "node_2", target: "node_4"}},
+    {{source: "node_3", target: "node_4"}},
+  ];
+  const layout = TSResearchTree.computeLayout(nodes, edges, new Map([["phase_1", 0], ["phase_2", 1]]));
+  const lineage = TSResearchTree.computeLineage(nodes, edges, "node_2");
+  process.stdout.write(JSON.stringify({{
+    depths: Object.fromEntries(Object.entries(layout.positions).map(([id, row]) => [id, row.depth])),
+    branchRowsDiffer: layout.positions.node_2.y !== layout.positions.node_3.y,
+    ancestors: [...lineage.ancestors].sort(),
+    descendants: [...lineage.descendants].sort(),
+  }}));
+}})().catch(error => {{ console.error(error); process.exit(1); }});
+"""
+    completed = subprocess.run(
+        ["node", "-e", probe],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    result = json.loads(completed.stdout)
+
+    assert result["depths"] == {"node_1": 0, "node_2": 1, "node_3": 1, "node_4": 2}
+    assert result["branchRowsDiffer"] is True
+    assert result["ancestors"] == ["node_1"]
+    assert result["descendants"] == ["node_4"]
+
+
+def test_static_ui_refreshes_registry_and_persists_theme() -> None:
+    static = ROOT / "python" / "ts_agent" / "web" / "static"
+    html = (static / "index.html").read_text(encoding="utf-8")
+    css = (static / "app.css").read_text(encoding="utf-8")
+    script = (static / "app.js").read_text(encoding="utf-8")
+
+    assert ':root[data-theme="dark"]' in css
+    assert "body.inspector-open { overflow: hidden; }" in css
+    assert 'id="theme-button"' in html
+    assert 'const themeStorageKey = "ts-explorer-theme"' in script
+    assert 'themeButton.addEventListener("click", toggleTheme)' in script
+    assert "async function loadWorkspaceCatalog()" in script
+    assert 'const payload = await api("/api/workspaces")' in script
+    assert 'refreshButton.addEventListener("click", refreshExplorer)' in script
+    assert 'refreshStatus.textContent = "Refreshing workspace"' in script
+    assert 'showToast("Workspace refreshed")' in script
+    assert "const liveRefreshIntervalMs = 5000" in script
+    assert "async function pollLiveRefresh()" in script
+    assert 'document.addEventListener("visibilitychange"' in script
+    assert 'setHealth("stale", "Stale")' in script
+    assert "/snapshot?${query}" in script
+    assert "renderUnavailableWorkspace(catalogRow)" in script
+    assert 'row.available === false ? " (incompatible)" : ""' in script
+
+
+def test_research_files_payload_is_a_read_only_locator_projection(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+    before = _relative_files(workspace)
+
+    result = research_files_payload(workspace, refs["connectivity"])
+
+    assert result["schema_version"] == "ts-workspace-locator/1"
+    assert result["query_mode"] == "exact"
+    assert result["matches"][0]["kind"] == "node"
+    assert result["matches"][0]["directories"][0]["path"] == f"nodes/{refs['connectivity']}"
+    assert _relative_files(workspace) == before
+
+
+def test_static_asset_resolves_from_current_package() -> None:
+    for name in ("index.html", "app.css", "app.js", "research-tree.js"):
+        expected = files("ts_agent.web").joinpath("static", name).read_bytes()
+        assert ts_web_server._static_asset(name).read_bytes() == expected
+
+
+def test_web_distinguishes_current_from_historical_acceptance(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    init_workspace(workspace)
+    refs = accept_research_claim(workspace)
+
+    current = normalize_workspace(workspace)
+    assert current["current_acceptances"][0]["acceptance_id"] == refs["acceptance"]
+    assert graph_payload_from_view(current)["claim_graph"]["nodes"][0]["acceptance_state"] == "current"
+
+    drafted = draft_decision(
+        workspace,
+        {
+            "rationale": "Add a later limitation that requires reassessment.",
+            "basis_refs": [],
+            "operations": [
+                {
+                    "op": "record_finding",
+                    "local_ref": "limitation",
+                    "findingType": "later_limitation",
+                    "severity": "warning",
+                    "statement": "The earlier assessment does not include this limitation.",
+                    "claimRefs": [refs["claim"]],
+                    "nodeRefs": [refs["node"]],
+                }
+            ],
+        },
+    )
+    apply_decision(workspace, drafted["decision"])
+
+    historical = normalize_workspace(workspace)
+    assert historical["valid"] is True
+    assert historical["current_acceptances"] == []
+    assert historical["acceptances"][0]["current"] is False
+    claim = graph_payload_from_view(historical)["claim_graph"]["nodes"][0]
+    assert claim["accepted"] is False
+    assert claim["acceptance_state"] == "historical"
 
 
 def test_register_workspace_deduplicates_and_rejects_source_pollution(tmp_path: Path) -> None:
     source = tmp_path / "single-step"
-    make_accepted_workspace(source)
+    _make_workspace(source)
     state = tmp_path / "web-state"
     first = register_workspace(source, state, "single")
     second = register_workspace(source, state, "single updated")
-    assert first["workspace_id"] == second["workspace_id"]
-    rows = list_workspaces(state)
-    assert len(rows) == 1
-    assert rows[0]["label"] == "single updated"
 
+    assert first["workspace_id"] == second["workspace_id"]
+    assert [row["label"] for row in list_workspaces(state)] == ["single updated"]
     with pytest.raises(ValueError, match="state_dir"):
         register_workspace(source, source / ".web")
 
 
-def test_web_server_api_is_read_only(tmp_path: Path) -> None:
-    source = tmp_path / "branch"
-    make_branch_workspace(source)
+def test_register_workspaces_validates_all_sources_before_writing(tmp_path: Path) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    _make_workspace(first)
+    _make_workspace(second)
+    state = second / ".web-state"
+
+    with pytest.raises(ValueError, match="state_dir"):
+        register_workspaces([first, second], state, ["A", "B"])
+    assert not state.exists()
+
+
+def test_workspace_discovery_roots_use_installation_layout_or_explicit_roots(tmp_path: Path) -> None:
+    installation = tmp_path / "installation"
+    state = installation / ".pi" / "ts-web"
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+
+    assert workspace_discovery_roots(state) == [installation / "workspaces"]
+    assert workspace_discovery_roots(tmp_path / "custom-state") == []
+    assert workspace_discovery_roots(state, [first, first, second]) == [first, second]
+
+
+def test_reconcile_workspace_registry_discovers_supported_and_prunes_only_stale_managed_rows(tmp_path: Path) -> None:
+    installation = tmp_path / "installation"
+    managed = installation / "workspaces"
+    current = managed / "ts_001"
+    init_workspace(current)
+    stale = managed / "ts_004"
+    unsupported = managed / "unsupported"
+    unsupported.mkdir()
+    _write(unsupported / "workspace.json", {"schema_version": "ts-workspace/unsupported"})
+    external = tmp_path / "external"
+    init_workspace(external)
+    state = installation / ".pi" / "ts-web"
+    register_workspaces(
+        [stale, unsupported, external],
+        state,
+        ["stale managed", "registered unsupported", "external label"],
+    )
+
+    rows = reconcile_workspace_registry(state, [managed])
+    by_source = {row["source_root"]: row for row in rows}
+
+    assert str(stale.resolve()) not in by_source
+    assert by_source[str(current.resolve())]["label"] == "ts_001"
+    assert by_source[str(unsupported.resolve())]["label"] == "registered unsupported"
+    assert by_source[str(external.resolve())]["label"] == "external label"
+
+
+def test_reconcile_workspace_registry_does_not_prune_an_unreachable_root(tmp_path: Path) -> None:
+    installation = tmp_path / "installation"
+    managed = installation / "workspaces"
+    stale = managed / "ts_004"
+    state = installation / ".pi" / "ts-web"
+    registered = register_workspace(stale, state, "temporarily unavailable")
+
+    rows = reconcile_workspace_registry(state, [managed])
+
+    assert rows == [registered]
+
+
+def test_web_catalog_reconciles_managed_workspaces_on_start_and_refresh(tmp_path: Path) -> None:
+    installation = tmp_path / "installation"
+    managed = installation / "workspaces"
+    first = managed / "ts_001"
+    init_workspace(first)
+    state = installation / ".pi" / "ts-web"
+    register_workspace(managed / "ts_004", state, "stale")
+    server = create_server("127.0.0.1", 0, state)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        initial = _get_json(host, port, "/api/workspaces")
+        assert [row["label"] for row in initial["workspaces"]] == ["ts_001"]
+        assert initial["workspaces"][0]["available"] is True
+
+        second = managed / "ts_002"
+        init_workspace(second)
+        refreshed = _get_json(host, port, "/api/workspaces")
+        assert [row["label"] for row in refreshed["workspaces"]] == ["ts_001", "ts_002"]
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_web_catalog_isolates_incompatible_registered_workspace(tmp_path: Path) -> None:
+    incompatible = tmp_path / "unsupported-workspace"
+    incompatible.mkdir()
+    _write(incompatible / "workspace.json", {"schema_version": "ts-workspace/unsupported"})
+    compatible = tmp_path / "supported-workspace"
+    _make_workspace(compatible)
+    state = tmp_path / "web-state"
+    old_row, new_row = register_workspaces(
+        [incompatible, compatible],
+        state,
+        ["old workspace", "current workspace"],
+    )
+    server = create_server("127.0.0.1", 0, state)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        payload = _get_json(host, port, "/api/workspaces")
+        assert payload["default_workspace"] == new_row["workspace_id"]
+        summaries = {row["workspace_id"]: row for row in payload["workspaces"]}
+        assert summaries[new_row["workspace_id"]]["available"] is True
+        assert summaries[new_row["workspace_id"]]["load_error"] is None
+        assert summaries[old_row["workspace_id"]]["available"] is False
+        assert summaries[old_row["workspace_id"]]["valid"] is False
+        assert "cannot read workspace file" in summaries[old_row["workspace_id"]]["load_error"]
+        assert _get_text(host, port, f"/api/workspace/{old_row['workspace_id']}")[0] == 400
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_web_server_is_read_only_and_has_no_removed_routes(tmp_path: Path) -> None:
+    source = tmp_path / "workspace"
+    refs = _make_workspace(source)
+    output = source / "nodes" / refs["connectivity"] / "outputs"
+    binary_path = output / "image.png"
+    large_path = output / "large.out"
+    binary_path.write_bytes(b"\x89PNG\r\n\x1a\n\x00binary")
+    large_path.write_bytes(b"x" * (MAX_TEXT_BYTES + 1))
     before = _relative_files(source)
     state = tmp_path / "web-state"
-    row = register_workspace(source, state, "branch")
+    row = register_workspace(source, state, "workspace")
     server = create_server("127.0.0.1", 0, state)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
     try:
         host, port = server.server_address
         health = _get_json(host, port, "/api/health")
-        assert health == {"ok": True}
+        assert health == {"ok": True, "protocol": "ts-research-kernel/5", "read_only": True}
         workspaces = _get_json(host, port, "/api/workspaces")
-        assert workspaces["workspaces"][0]["workspace_id"] == row["workspace_id"]
-        assert workspaces["workspaces"][0]["id"] == row["workspace_id"]
         assert workspaces["default_workspace"] == row["workspace_id"]
-        payload = _get_json(host, port, f"/api/workspace?id={row['workspace_id']}")
-        assert payload["view"]["label"] == "branch"
-        assert any(edge["new_node"] == "n002" for edge in payload["view"]["branch_edges"])
-        job = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/job")
-        graph_nodes = {node["id"]: node for node in job["graph"]["nodes"]}
-        assert graph_nodes["n001"]["claim_verdict"] == "refuted"
-        assert any(edge["kind"] == "branch_trigger" for edge in job["graph"]["edges"])
-        single_tree = _get_json(host, port, "/api/tree")
-        assert any(edge["kind"] == "branch_trigger" for edge in single_tree["edges"])
-        node = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/node/n001")
-        assert node["node"]["program_status"] == "completed"
-        single_node = _get_json(host, port, "/api/node/n001")
-        assert single_node["node"]["program_status"] == "completed"
-        assert node["markdown"]["decision_card"]
-        assert "## Program" in node["markdown"]["reflection"]
-        assert "Program completed." in node["markdown"]["reflection"]
-        assert "## Mechanism" in node["markdown"]["reflection"]
-        preview = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/file?path=nodes/n001/node.json")
-        assert preview["path"] == "nodes/n001/node.json"
-        html = _get_text(host, port, "/")
-        assert "TS Hypothesis Explorer" in html
-        assert 'id="workspaceList"' in html
-        assert 'id="graphSvg"' in html
-        assert 'id="detail"' in html
-        assert 'id="toggleLeft"' in html
-        assert 'id="toggleRight"' in html
-        assert 'id="zoomReset"' in html
-        assert 'id="minimapSvg"' in html
+        base = f"/api/workspace/{row['workspace_id']}"
+        snapshot = _get_json(host, port, f"{base}/snapshot")
+        assert snapshot["schema_version"] == "ts-explorer-workspace-snapshot/1"
+        assert snapshot["changed"] is True
+        unchanged_query = (
+            f"workspace_revision={snapshot['workspace_revision']}"
+            f"&operational_revision={snapshot['operational_revision']}"
+        )
+        unchanged = _get_json(host, port, f"{base}/snapshot?{unchanged_query}")
+        assert unchanged["changed"] is False
+        assert "view" not in unchanged
+        assert "graph" not in unchanged
+        assert _get_json(host, port, f"{base}/graph")["schema_version"] == "ts-explorer-graph/5"
+        assert _get_json(host, port, f"{base}/phases")["research_phases"][0]["phase_id"] == refs["mechanism"]
+        assert _get_json(host, port, f"{base}/claims")["claims"][0]["schema_version"] == "ts-claim/3"
+        assert _get_json(host, port, f"{base}/nodes")["research_nodes"][0]["schema_version"] == "ts-research-node/1"
+        assert _get_json(host, port, f"{base}/observations")["observations"][0]["schema_version"] == "ts-observation/2"
+        assert _get_json(host, port, f"{base}/validation")["validation_results"][0]["verdict"] == "pass"
+        assert _get_json(host, port, f"{base}/findings")["findings"][0]["status"] == "open"
+        files = _get_json(host, port, f"{base}/files?query={refs['connectivity']}")
+        assert files["matches"][0]["ref"] == refs["connectivity"]
+        assert _get_json(host, port, f"{base}/files")["query_mode"] == "index"
+        agent_runs = _get_json(host, port, f"{base}/activity")["agent_runs"]
+        assert {(row["task_id"], row["role"]) for row in agent_runs} == {
+            ("sub_1", "compute"),
+            ("sub_2", "review"),
+        }
+        assert _get_json(host, port, f"{base}/claim/{refs['concerted']}")["claim"]["status"] == "supported"
+        node = _get_json(host, port, f"{base}/node/{refs['connectivity']}")
+        assert node["research_node"]["status"] == "open"
+        projected_files = {item["name"]: item for item in node["files"]["files"]}
+        assert projected_files["probe.json"]["preview"]["available"] is True
+        assert projected_files["image.png"]["preview"]["available"] is False
+        assert projected_files["large.out"]["preview"]["available"] is False
+        preview = _get_json(host, port, f"{base}/file?path=nodes/{refs['connectivity']}/outputs/probe.json")
+        assert preview["text"] == "{}\n"
+        binary_status, binary_body = _get_text(
+            host,
+            port,
+            f"{base}/file?path=nodes/{refs['connectivity']}/outputs/image.png",
+        )
+        assert binary_status == 400
+        assert "binary" in binary_body.lower()
+        large_status, large_body = _get_text(
+            host,
+            port,
+            f"{base}/file?path=nodes/{refs['connectivity']}/outputs/large.out",
+        )
+        assert large_status == 400
+        assert "1 mb" in large_body.lower()
+        assert _get_text(host, port, f"{base}/file?path=workspace.json")[0] == 400
+        html = _get_text(host, port, "/")[1]
+        assert "TS Research Explorer" in html
+        assert _get_text(host, port, "/app.css")[0] == 200
+        assert _get_text(host, port, "/app.js")[0] == 200
+        assert _get_text(host, port, "/research-tree.js")[0] == 200
+        for removed_route in (f"{base}/tree", f"{base}/gates", f"{base}/evidence", "/api/node/n000"):
+            assert _get_text(host, port, removed_route)[0] == 404
+        assert _get_text(host, port, f"{base}/node/n000")[0] == 400
     finally:
         server.shutdown()
         server.server_close()
@@ -258,672 +1053,21 @@ def test_web_server_api_is_read_only(tmp_path: Path) -> None:
     assert _relative_files(source) == before
 
 
-def test_web_server_accepts_existing_registry_row_shape(tmp_path: Path) -> None:
-    source = tmp_path / "single-step"
-    make_accepted_workspace(source)
-    state = tmp_path / "web-state"
-    state.mkdir()
-    (state / "workspaces.json").write_text(
-        json.dumps({"workspaces": [{}, {"id": "single-step", "name": "single", "source": str(source)}]}),
-        encoding="utf-8",
-    )
-    server = create_server("127.0.0.1", 0, state)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        host, port = server.server_address
-        workspaces = _get_json(host, port, "/api/workspaces")
-        assert len(workspaces["workspaces"]) == 1
-        assert workspaces["workspaces"][0]["id"] == "single-step"
-        assert workspaces["default_workspace"] == "single-step"
-        job = _get_json(host, port, "/api/workspace/single-step/job")
-        assert job["graph"]["nodes"][0]["claim_verdict"] == "supported"
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
-
-
-def test_ts_web_cli_register(tmp_path: Path) -> None:
-    source = tmp_path / "single-step"
-    make_accepted_workspace(source)
-    state = tmp_path / "web-state"
-    completed = subprocess.run(
-        [
-            sys.executable,
-            str(CLI),
-            "register",
-            "--source-root",
-            str(source),
-            "--state-dir",
-            str(state),
-            "--label",
-            "single",
-        ],
-        cwd=ROOT,
-        text=True,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        check=True,
-    )
-    row = json.loads(completed.stdout)
-    assert row["label"] == "single"
-    assert (state / "workspaces.json").exists()
-
-
-def test_ts_web_cli_serve_registers_multiple_source_roots(tmp_path: Path) -> None:
-    """`serve --source-root` uses the same pre-registration helper."""
-    accepted = tmp_path / "accepted"
-    branch = tmp_path / "branch"
-    make_accepted_workspace(accepted)
-    make_branch_workspace(branch)
-    sources = [accepted, branch]
-    state = tmp_path / "web-state"
-    register_workspaces(sources, state, ["A", "B"])
-    rows = json.loads((state / "workspaces.json").read_text(encoding="utf-8"))["workspaces"]
-    labels = sorted(row["label"] for row in rows)
-    assert labels == ["A", "B"]
-
-    with pytest.raises(ValueError, match="more labels"):
-        register_workspaces(sources, state, ["A", "B", "C"])
-
-
-def test_register_workspaces_validates_all_sources_before_writing(tmp_path: Path) -> None:
-    accepted = tmp_path / "accepted"
-    branch = tmp_path / "branch"
-    make_accepted_workspace(accepted)
-    make_branch_workspace(branch)
-    state = branch / ".web-state"
-
-    with pytest.raises(ValueError, match="state_dir"):
-        register_workspaces([accepted, branch], state, ["A", "B"])
-
-    assert not state.exists()
-
-
-def test_ts_web_cli_list_and_remove(tmp_path: Path) -> None:
-    source = tmp_path / "single-step"
-    make_accepted_workspace(source)
-    state = tmp_path / "web-state"
-    register = subprocess.run(
-        [sys.executable, str(CLI), "register", "--source-root", str(source), "--state-dir", str(state), "--label", "x"],
-        cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
-    )
-    workspace_id = json.loads(register.stdout)["workspace_id"]
-
-    listed = subprocess.run(
-        [sys.executable, str(CLI), "list", "--state-dir", str(state)],
-        cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
-    )
-    rows = json.loads(listed.stdout)
-    assert any(row["workspace_id"] == workspace_id for row in rows)
-
-    removed = subprocess.run(
-        [sys.executable, str(CLI), "remove", "--state-dir", str(state), "--workspace-id", workspace_id],
-        cwd=ROOT, text=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True,
-    )
-    assert json.loads(removed.stdout) == {"removed": workspace_id, "remaining": 0}
-
-
-def test_web_server_unknown_workspace_returns_400(tmp_path: Path) -> None:
-    """Unknown workspace id is a client error, not a server error."""
-    source = tmp_path / "single-step"
-    make_accepted_workspace(source)
-    state = tmp_path / "web-state"
-    register_workspace(source, state, "single")
-    server = create_server("127.0.0.1", 0, state)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        host, port = server.server_address
-        status, body = _get_status_text(host, port, "/api/workspace/ws_does_not_exist/job")
-        assert status == 400, body
-        assert "unknown workspace" in body
-        status, body = _get_status_text(host, port, "/api/workspace/ws_does_not_exist/node/n001")
-        assert status == 400, body
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
-
-
-def test_web_claim_state_reflects_pathway_model(tmp_path: Path) -> None:
-    """Workspace claim_state is backend-derived from pathway and accepted TS state."""
-    state = tmp_path / "web-state"
-    accepted = tmp_path / "accepted"
-    hypothesis = tmp_path / "hypothesis"
-    pathway_audited = tmp_path / "pathway-audited"
-    make_accepted_workspace(accepted)
-    make_branch_workspace(hypothesis)
-    report_ref = make_accepted_workspace(pathway_audited)
-    start_node(
-        pathway_audited,
-        {
-            "schema_version": "ts-decision",
-            "action": "start_node",
-            "rationale": "Start accepted pathway audit.",
-            "evidence_refs": ["ev_tsfreq_001", "ev_conn_001"],
-            "report_ref": report_ref,
-            "payload": {
-                "node_id": "n004",
-                "parent_node": "n003",
-                "phase": "pathway_audit",
-                "hypothesis": "The strict pathway is accepted.",
-                "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_pathway_001"]},
-                "branch_context": {"relation": "continue_parent", "from_node": "n003", "anchor_node": "n000"},
-                "expected_evidence": ["pathway_audit_summary"],
-                "pathway_ref": {"pathway_id": "p_single", "step_id": "s1"},
-            },
-        },
-    )
-    update_workspace(
-        pathway_audited,
-        {
-            "schema_version": "ts-decision",
-            "action": "update_workspace",
-            "rationale": "Register accepted pathway audit evidence.",
-            "evidence_refs": [],
-            "report_ref": report_ref,
-            "payload": {
-                "append_evidence": {
-                    "evidence_id": "ev_pathway_accepted",
-                    "kind": "pathway_audit_summary",
-                    "role": "pathway_audit_summary",
-                    "evidence_tier": "local_parse",
-                    "node_id": "n004",
-                    "summary": "The strict pathway is accepted.",
-                    **gate_artifact_metadata("nodes/n004/outputs/pathway_audit.json"),
-                    "quality": {
-                        "hypothesis_id": HYPOTHESIS_ID,
-                        "strict_pathway_supported": True,
-                        "strict_pathway_decision": "accepted",
-                    },
-                    "facts": {"whole_R_to_P_pathway_accepted": True},
-                }
-            },
-        },
-    )
-    end_node(
-        pathway_audited,
-        {
-            "schema_version": "ts-decision",
-            "action": "end_node",
-            "rationale": "Close accepted pathway audit.",
-            "evidence_refs": ["ev_pathway_accepted"],
-            "report_ref": report_ref,
-            "payload": {
-                "node_id": "n004",
-                "closure": {
-                    "program_status": "completed",
-                    "claim_verdict": "supported",
-                    "reason_code": "strict_r_to_p_pathway_accepted",
-                    "program": {"summary": "Audit completed.", "evidence_refs": ["ev_pathway_accepted"]},
-                    "mechanism": {
-                        "summary": "Pathway accepted.",
-                        "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_pathway_001"]},
-                        "evidence_refs": ["ev_pathway_accepted"],
-                    },
-                    "implication": "Report the accepted pathway.",
-                    "open_questions": [],
-                },
-            },
-        },
-    )
-    accepted_row = register_workspace(accepted, state, "accepted")
-    hypothesis_row = register_workspace(hypothesis, state, "hypothesis")
-    pathway_audited_row = register_workspace(pathway_audited, state, "pathway-audited")
-    pathway_complete = tmp_path / "pathway-complete"
-    make_accepted_workspace(pathway_complete)
-    (pathway_complete / "manifest.json").write_text(
-        json.dumps(
-            {
-                "schema_version": "ts-workspace",
-                "accepted_ts_refs": ["accepted/upstream.json", "accepted/downstream.json"],
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    (pathway_complete / "pathway_model.json").write_text(
-        json.dumps(
-            {
-                "schema_version": "ts-pathway",
-                "focus_pathway_id": "p_two_step",
-                "pathways": [
-                    {
-                        "pathway_id": "p_two_step",
-                        "label": "two step",
-                        "status": "supported",
-                        "steps": [
-                            {"step_id": "s_reactant_to_intermediate", "status": "supported"},
-                            {"step_id": "s_intermediate_to_product", "status": "supported"},
-                            {"step_id": "s_full_pathway", "status": "supported"},
-                        ],
-                    }
-                ],
-            },
-            indent=2,
-        )
-        + "\n",
-        encoding="utf-8",
-    )
-    complete_row = register_workspace(pathway_complete, state, "complete")
-    server = create_server("127.0.0.1", 0, state)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        host, port = server.server_address
-        payload = _get_json(host, port, "/api/workspaces")
-        by_id = {row["workspace_id"]: row for row in payload["workspaces"]}
-        assert by_id[accepted_row["workspace_id"]]["claim_state"] == "accepted_ts"
-        assert by_id[hypothesis_row["workspace_id"]]["claim_state"] == "pathway_hypothesis"
-        assert by_id[pathway_audited_row["workspace_id"]]["claim_state"] == "pathway_complete"
-        assert by_id[complete_row["workspace_id"]]["claim_state"] == "pathway_complete"
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
-
-
-def test_web_mechanism_analysis_uses_latest_tree_record(tmp_path: Path) -> None:
-    workspace = tmp_path / "latest-mechanism"
-    make_accepted_workspace(workspace)
-
-    node_id = "n999_pathway_audit"
-    source_node = json.loads((workspace / "nodes" / "n001" / "node.json").read_text(encoding="utf-8"))
-    latest_node = {
-        **source_node,
-        "node_id": node_id,
-        "parent_node": "n001",
-        "branch_context": {"relation": "continue_parent", "from_node": "n001", "anchor_node": "n000"},
-        "phase": "pathway_audit",
-        "hypothesis": "The full route has a latest two-step pathway-level mechanism.",
-        "closure": {
-            **source_node["closure"],
-            "mechanism": {
-                "summary": "Latest mechanism analysis: reactant -> intermediate -> product.",
-                "evidence_refs": ["ev_conn_001", "ev_tsfreq_001"],
-            },
-        },
-    }
-    (workspace / "nodes" / node_id).mkdir()
-    (workspace / "nodes" / node_id / "node.json").write_text(
-        json.dumps(latest_node, indent=2) + "\n",
-        encoding="utf-8",
-    )
-
-    tree = json.loads((workspace / "tree.json").read_text(encoding="utf-8"))
-    tree["nodes"].append(
-        {
-            "node_id": node_id,
-            "parent_node": "n001",
-            "phase": "pathway_audit",
-            "lifecycle": "closed",
-            "program_status": "completed",
-            "claim_verdict": "supported",
-            "hypothesis": latest_node["hypothesis"],
-            "branch_context": latest_node["branch_context"],
-        }
-    )
-    tree["edges"].append({"parent_node": "n001", "child_node": node_id})
-    (workspace / "tree.json").write_text(json.dumps(tree, indent=2) + "\n", encoding="utf-8")
-
-    mechanism = json.loads((workspace / "mechanism_model.json").read_text(encoding="utf-8"))
-    old_record = mechanism["accepted_facts"][0]
-    new_record = {
-        "node_id": node_id,
-        "phase": "pathway_audit",
-        "claim_verdict": "supported",
-        "program_status": "completed",
-        "hypothesis": latest_node["hypothesis"],
-        "mechanism_summary": "Latest mechanism analysis: reactant -> intermediate -> product.",
-        "evidence_refs": ["ev_conn_001", "ev_tsfreq_001"],
-    }
-    mechanism["accepted_facts"] = [new_record, old_record]
-    (workspace / "mechanism_model.json").write_text(json.dumps(mechanism, indent=2) + "\n", encoding="utf-8")
-
-    state = tmp_path / "web-state"
-    row = register_workspace(workspace, state, "latest")
-    server = create_server("127.0.0.1", 0, state)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        host, port = server.server_address
-        job = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/job")
-        latest = job["mechanism"]["latest_analysis"]
-        assert latest[:1] == [
-            "n999_pathway_audit / pathway_audit / supported: "
-            "Latest mechanism analysis: reactant -> intermediate -> product."
-        ]
-        assert any("evidence ev_conn_001 / connectivity_gate" in line for line in latest)
-        assert any("evidence ev_tsfreq_001 / tsfreq_gate" in line for line in latest)
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
-
-
-def test_web_mechanism_analysis_includes_closure_facts_and_evidence_quality(tmp_path: Path) -> None:
-    workspace = tmp_path / "mechanism-evidence"
-    report_ref = bootstrap_strict_workspace(workspace)
-    start_node(
-        workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "start_node",
-            "rationale": "Validate TS/Freq.",
-            "evidence_refs": [],
-            "report_ref": report_ref,
-            "payload": {
-                "node_id": "n001",
-                "parent_node": "n000",
-                "phase": "tsfreq_validation",
-                "hypothesis": "The TS candidate is a first-order saddle.",
-                "hypothesis_ref": HYPOTHESIS_REF,
-                "branch_context": {"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
-                "expected_evidence": ["tsfreq_gate"],
-            },
-        },
-    )
-    update_workspace(
-        workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "update_workspace",
-            "rationale": "Register TS/Freq gate.",
-            "evidence_refs": [],
-            "report_ref": report_ref,
-            "payload": {
-                "append_evidence": {
-                    "evidence_id": "ev_tsfreq_rich",
-                    "kind": "gaussian_tsfreq_validation",
-                    "role": "tsfreq_gate",
-                    "evidence_tier": "local_parse",
-                    "node_id": "n001",
-                    "summary": "One imaginary mode matches the reaction center.",
-                    **gate_artifact_metadata("nodes/n001/outputs/tsfreq_rich.json"),
-                    "quality": {
-                        "hypothesis_id": HYPOTHESIS_ID,
-                        "prediction_ids": ["pred_mode_001"],
-                        "verdict_against_prediction": "supported",
-                        "imaginary_frequency_count": 1,
-                        "imaginary_frequencies_cm-1": [-659.8838],
-                        "mode_verdict": "mode_matches_reaction_center",
-                        "final_reaction_center_distances_A": {"C2-C3": 2.122249, "C2-O6": 1.827943},
-                    },
-                }
-            },
-        },
-    )
-    end_node(
-        workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "end_node",
-            "rationale": "Close TS/Freq.",
-            "evidence_refs": ["ev_tsfreq_rich"],
-            "report_ref": report_ref,
-            "payload": {
-                "node_id": "n001",
-                "closure": {
-                    "program_status": "completed",
-                    "claim_verdict": "supported",
-                    "program": {
-                        "summary": "Gaussian completed.",
-                        "evidence_refs": ["ev_tsfreq_rich"],
-                        "facts": ["Normal Gaussian termination."],
-                    },
-                    "mechanism": {
-                        "summary": "The mode matches C2-C3/C2-O6 exchange.",
-                        "hypothesis_ref": {"hypothesis_id": HYPOTHESIS_ID, "prediction_ids": ["pred_mode_001"]},
-                        "evidence_refs": ["ev_tsfreq_rich"],
-                        "facts": ["C2-C3 elongates while C2-O6 forms."],
-                    },
-                    "implication": "Run IRC next.",
-                    "open_questions": [],
-                },
-            },
-        },
-    )
-
-    view = normalize_workspace(workspace)
-    state = tmp_path / "web-state"
-    row = register_workspace(workspace, state, "mechanism")
-    server = create_server("127.0.0.1", 0, state)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        host, port = server.server_address
-        job = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/job")
-        latest = job["mechanism"]["latest_analysis"]
-        graph = explorer_graph_payload_from_view(view)
-        n001_events = [event for event in graph["events"] if event.get("node_id") == "n001"]
-
-        assert any("mechanism fact: C2-C3 elongates while C2-O6 forms." in line for line in latest)
-        assert any("program fact: Normal Gaussian termination." in line for line in latest)
-        assert any("imaginary_frequency_count=1" in line for line in latest)
-        assert any("mode_verdict=mode_matches_reaction_center" in line for line in latest)
-        assert not any(event["event_type"] == "branch" for event in n001_events)
-        assert [event["decision"] for event in n001_events] == ["start_node", "end_node"]
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
-
-
-def test_web_pathway_audit_not_accepted_is_not_rendered_as_success(tmp_path: Path) -> None:
-    workspace = tmp_path / "negative-pathway-audit"
-    report_ref = bootstrap_strict_workspace(workspace)
-    node_id = "n001_pathway_audit"
-
-    start_node(
-        workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "start_node",
-            "rationale": "Audit a strict pathway after connectivity failures.",
-            "evidence_refs": [],
-            "report_ref": report_ref,
-            "payload": {
-                "node_id": node_id,
-                "parent_node": "n000",
-                "phase": "pathway_audit",
-                "hypothesis": "The current evidence may not support strict R to P connectivity.",
-                "hypothesis_ref": HYPOTHESIS_REF,
-                "branch_context": {"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
-                "expected_evidence": ["pathway_audit_summary"],
-                "pathway_ref": {"pathway_id": "p_r_to_i_to_p", "step_id": "s_i_to_p"},
-            },
-        },
-    )
-    update_workspace(
-        workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "update_workspace",
-            "rationale": "Register a negative strict pathway audit.",
-            "evidence_refs": [],
-            "report_ref": report_ref,
-            "payload": {
-                "append_evidence": {
-                    "evidence_id": "ev_negative_pathway_audit",
-                    "kind": "pathway_audit_summary",
-                    "role": "pathway_audit_summary",
-                    "evidence_tier": "local_parse",
-                    "node_id": node_id,
-                    "summary": "Strict R->P pathway is not accepted because the connectivity gate is missing.",
-                    **gate_artifact_metadata("nodes/n001_pathway_audit/outputs/pathway_audit.json"),
-                    "quality": {
-                        "hypothesis_id": HYPOTHESIS_ID,
-                        "strict_pathway_supported": False,
-                        "strict_pathway_decision": "pathway_not_accepted",
-                        "accepted_ts_available": False,
-                    },
-                    "diagnostics": ["no_accepted_ts", "second_step_connectivity_gate_missing"],
-                }
-            },
-        },
-    )
-    end_node(
-        workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "end_node",
-            "rationale": "Close the negative pathway audit.",
-            "evidence_refs": ["ev_negative_pathway_audit"],
-            "report_ref": report_ref,
-            "payload": {
-                "node_id": node_id,
-                "closure": {
-                    "program_status": "completed",
-                    "claim_verdict": "supported",
-                    "reason_code": "strict_r_to_p_not_accepted_missing_second_step_connectivity",
-                    "program": {"summary": "Audit completed.", "evidence_refs": ["ev_negative_pathway_audit"]},
-                    "mechanism": {
-                        "summary": "The audit supports not accepting the pathway.",
-                        "hypothesis_ref": HYPOTHESIS_REF,
-                        "evidence_refs": ["ev_negative_pathway_audit"],
-                    },
-                    "implication": "Agent decides whether to open a new hypothesis branch.",
-                    "open_questions": [],
-                },
-            },
-        },
-    )
-
-    view = normalize_workspace(workspace)
-    graph = explorer_graph_payload_from_view(view)
-    node = next(item for item in graph["nodes"] if item["id"] == node_id)
-
-    assert view["valid"] is True
-    assert node["claim_verdict"] == "supported"
-    assert node["node_state"] == "pathway_not_accepted"
-    assert node["state_label"] == "pathway not accepted"
-    assert node["card_color"] == "amber"
-    assert graph["presentation"]["node_state"]["pathway_not_accepted"]["color"] == "amber"
-
-    state = tmp_path / "web-state"
-    row = register_workspace(workspace, state, "negative-audit")
-    server = create_server("127.0.0.1", 0, state)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        host, port = server.server_address
-        payload = _get_json(host, port, "/api/workspaces")
-        summary = payload["workspaces"][0]
-        assert summary["workspace_id"] == row["workspace_id"]
-        assert summary["claim_state"] == "pathway_not_accepted"
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
-
-
-def test_web_claim_state_marks_terminal_refute_as_needs_followup(tmp_path: Path) -> None:
-    state = tmp_path / "web-state"
-    workspace = tmp_path / "terminal-refute"
-    _make_refuted_terminal_workspace(workspace)
-    row = register_workspace(workspace, state, "terminal")
-    server = create_server("127.0.0.1", 0, state)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    try:
-        host, port = server.server_address
-        payload = _get_json(host, port, "/api/workspaces")
-        summary = payload["workspaces"][0]
-        assert summary["workspace_id"] == row["workspace_id"]
-        assert summary["claim_state"] == "needs_followup"
-        assert "accepted_ts" not in summary
-        assert "charge" not in summary
-        assert "multiplicity" not in summary
-        job = _get_json(host, port, f"/api/workspace/{row['workspace_id']}/job")
-        assert job["workspace"]["claim_state"] == "needs_followup"
-        assert job["graph"]["presentation"]["workspace_state"]["needs_followup"]["color"] == "amber"
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
-
-
-def _get_json(host: str, port: int, path: str) -> dict:
-    return json.loads(_get_text(host, port, path))
-
-
-def _get_text(host: str, port: int, path: str) -> str:
-    conn = http.client.HTTPConnection(host, port, timeout=5)
-    try:
-        conn.request("GET", path)
-        response = conn.getresponse()
-        body = response.read().decode("utf-8")
-        assert response.status == 200, body
-        return body
-    finally:
-        conn.close()
-
-
-def _get_status_text(host: str, port: int, path: str) -> tuple[int, str]:
-    conn = http.client.HTTPConnection(host, port, timeout=5)
-    try:
-        conn.request("GET", path)
-        response = conn.getresponse()
-        return response.status, response.read().decode("utf-8")
-    finally:
-        conn.close()
-
-
 def _relative_files(root: Path) -> set[str]:
     return {str(path.relative_to(root)) for path in root.rglob("*") if path.is_file()}
 
 
-def _make_refuted_terminal_workspace(workspace: Path) -> None:
-    report_ref = bootstrap_strict_workspace(workspace)
-    start_node(
-        workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "start_node",
-            "rationale": "Start a connectivity validation node.",
-            "evidence_refs": [],
-            "report_ref": report_ref,
-            "payload": {
-                "node_id": "n001",
-                "parent_node": "n000",
-                "phase": "connectivity_validation",
-                "hypothesis": "Candidate connects the expected endpoints.",
-                "hypothesis_ref": HYPOTHESIS_REF,
-                "branch_context": {"relation": "continue_parent", "from_node": "n000", "anchor_node": "n000"},
-                "expected_evidence": [],
-            },
-        },
-    )
-    end_node(
-        workspace,
-        {
-            "schema_version": "ts-decision",
-            "action": "end_node",
-            "rationale": "Close the connectivity validation node as refuted.",
-            "evidence_refs": [],
-            "report_ref": report_ref,
-            "payload": {
-                "node_id": "n001",
-                "closure": {
-                    "program_status": "completed",
-                    "claim_verdict": "refuted",
-                    "program": {"summary": "Connectivity check completed.", "evidence_refs": []},
-                    "mechanism": {
-                        "summary": "Endpoint assignment is not connected.",
-                        "hypothesis_ref": HYPOTHESIS_REF,
-                        "revision": {
-                            "action": "refute_prediction",
-                            "prediction_ids": HYPOTHESIS_REF["prediction_ids"],
-                            "changed_variable": "reaction_center",
-                        },
-                        "evidence_refs": [],
-                    },
-                    "implication": "Open a replacement branch.",
-                    "open_questions": ["Find a different candidate."],
-                },
-            },
-        },
-    )
+def _get_json(host: str, port: int, path: str) -> dict:
+    status, body = _get_text(host, port, path)
+    assert status == 200, body
+    return json.loads(body)
+
+
+def _get_text(host: str, port: int, path: str) -> tuple[int, str]:
+    connection = http.client.HTTPConnection(host, port, timeout=5)
+    try:
+        connection.request("GET", path)
+        response = connection.getresponse()
+        return response.status, response.read().decode("utf-8")
+    finally:
+        connection.close()

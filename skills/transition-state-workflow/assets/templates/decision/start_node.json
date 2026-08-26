@@ -1,0 +1,12 @@
+{
+  "op": "start_node",
+  "local_ref": "node",
+  "phaseRef": "${PHASE_REF}",
+  "title": "${TITLE}",
+  "objective": "${OBJECTIVE}",
+  "deliverable": "${DELIVERABLE}",
+  "dependencyRefs": [],
+  "primaryClaimRef": "${CLAIM_REF}",
+  "claimRefs": ["${CLAIM_REF}"],
+  "tags": []
+}

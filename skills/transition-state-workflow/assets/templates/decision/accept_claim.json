@@ -1,0 +1,10 @@
+{
+  "op": "accept_claim",
+  "local_ref": "acceptance",
+  "claimRef": "${CLAIM_REF}",
+  "profile": {
+    "profileId": "${PROFILE_ID}",
+    "version": "${PROFILE_VERSION}"
+  },
+  "summary": "${ACCEPTANCE_SUMMARY}"
+}

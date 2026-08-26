@@ -1,0 +1,9 @@
+{
+  "op": "create_claim",
+  "local_ref": "claim",
+  "claimType": "${CLAIM_TYPE}",
+  "statement": "${CLAIM_STATEMENT}",
+  "assumptions": [],
+  "falsifiers": [],
+  "tags": []
+}

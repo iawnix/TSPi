@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "decision.schema.json",
+  "$defs": {
+    "decision_id": {"type": "string", "pattern": "^dec_[1-9][0-9]*$"},
+    "operation": {
+      "oneOf": [
+        {"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "append_research_phase"}, "record": {"$ref": "research_phase.schema.json"}}},
+        {"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "append_claim"}, "record": {"$ref": "claim.schema.json"}}},
+        {"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "append_claim_relation"}, "record": {"$ref": "claim_relation.schema.json"}}},
+        {"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "append_research_node"}, "record": {"$ref": "research_node.schema.json"}}},
+        {"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "append_observation"}, "record": {"$ref": "observation.schema.json"}}},
+        {"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "append_finding"}, "record": {"$ref": "finding.schema.json"}}},
+        {"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "append_validation_spec"}, "record": {"$ref": "validation_spec.schema.json"}}},
+        {"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "append_validation_result"}, "record": {"$ref": "validation_result.schema.json"}}},
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["op", "claim_ref", "status", "summary", "observation_refs", "validation_result_refs", "updated_at"],
+          "properties": {
+            "op": {"const": "update_claim"},
+            "claim_ref": {"$ref": "claim.schema.json#/$defs/claim_id"},
+            "status": {"$ref": "claim.schema.json#/$defs/status"},
+            "summary": {"type": "string", "minLength": 1, "maxLength": 8000},
+            "observation_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "observation.schema.json#/$defs/observation_id"}},
+            "validation_result_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "validation_result.schema.json#/$defs/result_id"}},
+            "updated_at": {"type": "string", "minLength": 1, "maxLength": 64}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["op", "node_ref", "outcome", "summary", "open_questions", "completed_at"],
+          "properties": {
+            "op": {"const": "complete_research_node"},
+            "node_ref": {"$ref": "research_node.schema.json#/$defs/node_id"},
+            "outcome": {"enum": ["completed", "inconclusive", "blocked", "stopped"]},
+            "summary": {"type": "string", "minLength": 1, "maxLength": 12000},
+            "open_questions": {"type": "array", "maxItems": 128, "items": {"type": "string", "minLength": 1, "maxLength": 2000}},
+            "completed_at": {"type": "string", "minLength": 1, "maxLength": 64}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["op", "finding_ref", "status", "summary", "basis_observation_refs", "resolved_at"],
+          "properties": {
+            "op": {"const": "resolve_finding"},
+            "finding_ref": {"$ref": "finding.schema.json#/$defs/finding_id"},
+            "status": {"enum": ["resolved", "accepted_risk", "superseded"]},
+            "summary": {"type": "string", "minLength": 1, "maxLength": 8000},
+            "basis_observation_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "observation.schema.json#/$defs/observation_id"}},
+            "resolved_at": {"type": "string", "minLength": 1, "maxLength": 64}
+          }
+        },
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["op", "claim_refs", "node_refs"],
+          "properties": {
+            "op": {"const": "set_focus"},
+            "claim_refs": {"type": "array", "uniqueItems": true, "maxItems": 32, "items": {"$ref": "claim.schema.json#/$defs/claim_id"}},
+            "node_refs": {"type": "array", "uniqueItems": true, "maxItems": 32, "items": {"$ref": "research_node.schema.json#/$defs/node_id"}}
+          }
+        },
+        {"type": "object", "additionalProperties": false, "required": ["op", "record"], "properties": {"op": {"const": "accept_claim"}, "record": {"$ref": "acceptance_record.schema.json"}}}
+      ]
+    }
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "decision_id", "rationale", "basis_refs", "context_ref",
+    "base_revision", "allocations", "operations", "created_at"
+  ],
+  "properties": {
+    "schema_version": {"const": "ts-research-decision/2"},
+    "decision_id": {"$ref": "#/$defs/decision_id"},
+    "rationale": {"type": "string", "minLength": 1, "maxLength": 12000},
+    "basis_refs": {"type": "array", "uniqueItems": true, "maxItems": 256, "items": {"type": "string", "minLength": 1, "maxLength": 512}},
+    "context_ref": {
+      "type": "object", "additionalProperties": false,
+      "required": ["projection_id", "mode", "workspace_revision"],
+      "properties": {
+        "projection_id": {"type": "string", "pattern": "^ctx_[0-9a-f]{24}$"},
+        "mode": {"const": "frontier"},
+        "workspace_revision": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
+      }
+    },
+    "base_revision": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "allocations": {
+      "type": "object",
+      "propertyNames": {"pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,63}$"},
+      "additionalProperties": {
+        "type": "string",
+        "anyOf": [
+          {"pattern": "^phase_[1-9][0-9]*$"},
+          {"pattern": "^claim_[1-9][0-9]*$"},
+          {"pattern": "^(rel|obs|fnd|gsp|val|acc)_[1-9][0-9]*$"},
+          {"pattern": "^node_[1-9][0-9]*$"}
+        ]
+      }
+    },
+    "operations": {"type": "array", "minItems": 1, "maxItems": 128, "items": {"$ref": "#/$defs/operation"}},
+    "created_at": {"type": "string", "minLength": 1, "maxLength": 64}
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "claim.schema.json",
+  "$defs": {
+    "claim_id": {"type": "string", "pattern": "^claim_[1-9][0-9]*$"},
+    "status": {"enum": ["proposed", "supported", "contradicted", "inconclusive", "withdrawn"]}
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "claim_id", "claim_type", "statement", "status", "assumptions",
+    "falsifiers", "tags", "created_by_node", "observation_refs", "validation_spec_refs",
+    "validation_result_refs", "history", "created_by_decision", "created_at"
+  ],
+  "properties": {
+    "schema_version": {"const": "ts-claim/3"},
+    "claim_id": {"$ref": "#/$defs/claim_id"},
+    "claim_type": {"type": "string", "minLength": 1, "maxLength": 128},
+    "statement": {"type": "string", "minLength": 1, "maxLength": 12000},
+    "status": {"$ref": "#/$defs/status"},
+    "assumptions": {"type": "array", "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 2000}},
+    "falsifiers": {"type": "array", "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 2000}},
+    "tags": {"type": "array", "uniqueItems": true, "maxItems": 64, "items": {"type": "string", "minLength": 1, "maxLength": 128}},
+    "created_by_node": {"oneOf": [{"$ref": "research_node.schema.json#/$defs/node_id"}, {"type": "null"}]},
+    "observation_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "observation.schema.json#/$defs/observation_id"}},
+    "validation_spec_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "validation_spec.schema.json#/$defs/spec_id"}},
+    "validation_result_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "validation_result.schema.json#/$defs/result_id"}},
+    "history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["status", "summary", "observation_refs", "validation_result_refs", "decision_id", "created_at"],
+        "properties": {
+          "status": {"$ref": "#/$defs/status"},
+          "summary": {"type": "string", "minLength": 1, "maxLength": 8000},
+          "observation_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "observation.schema.json#/$defs/observation_id"}},
+          "validation_result_refs": {"type": "array", "uniqueItems": true, "items": {"$ref": "validation_result.schema.json#/$defs/result_id"}},
+          "decision_id": {"$ref": "decision.schema.json#/$defs/decision_id"},
+          "created_at": {"type": "string", "minLength": 1, "maxLength": 64}
+        }
+      }
+    },
+    "created_by_decision": {"$ref": "decision.schema.json#/$defs/decision_id"},
+    "created_at": {"type": "string", "minLength": 1, "maxLength": 64}
+  }
+}

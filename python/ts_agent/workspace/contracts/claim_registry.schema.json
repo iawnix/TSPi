@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "claim_registry.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "claims"],
+  "properties": {
+    "schema_version": {"const": "ts-claim-registry/4"},
+    "claims": {"type": "array", "items": {"$ref": "claim.schema.json"}}
+  }
+}

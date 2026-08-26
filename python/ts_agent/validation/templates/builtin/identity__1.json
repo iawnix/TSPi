@@ -1,0 +1,15 @@
+{
+  "schema_version": "ts-gate-template/1",
+  "template_id": "identity",
+  "version": "1",
+  "title": "Chemical identity assignment",
+  "parameters": {
+    "subject_ref": {"type": "string", "required": true}
+  },
+  "definition": {
+    "checks": [
+      {"check_id": "identity_supported", "predicate": "observation.equals", "parameters": {"selector": {"concept_id": "chemical_identity.supported", "subject_ref": "${subject_ref}"}, "expected": true}, "blocking": true}
+    ],
+    "success_policy": {"mode": "all_blocking"}
+  }
+}

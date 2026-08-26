@@ -1,0 +1,379 @@
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { accessSync, constants, existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { dirname, isAbsolute, join, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { fileURLToPath } from "node:url";
+
+const require = createRequire(import.meta.url);
+const { parseJsonOutput, resolveWorkspaceRoot } = require("../ts-workflow-control/summary.cjs");
+
+const SHARED_DIR = dirname(fileURLToPath(import.meta.url));
+export const PACKAGE_ROOT = resolve(SHARED_DIR, "..", "..");
+const WORKSPACE_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_workspace.py");
+const COMPUTE_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_compute.py");
+const RENDER_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_render.py");
+const REPORT_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_report.py");
+const EMAIL_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_email.py");
+const RUNTIME_CLI = resolve(PACKAGE_ROOT, "scripts", "ts_runtime.py");
+
+export async function runWorkspaceJson(
+  pi: ExtensionAPI,
+  command: string,
+  root: string,
+  extraArgs: string[],
+  signal?: AbortSignal,
+) {
+  const python = await resolvePythonExecutable(pi, root, signal);
+  const result = await pi.exec(python, [WORKSPACE_CLI, command, "--root", root, ...extraArgs], { signal });
+  return parseJsonOutput(result);
+}
+
+export async function allocateOperationalId(
+  pi: ExtensionAPI,
+  kind: "calc" | "sub" | "op",
+  root: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const result = await runWorkspaceJson(pi, "allocate_operational_id", root, ["--kind", kind], signal);
+  const identifier = result?.identifier;
+  if (typeof identifier !== "string" || !new RegExp(`^${kind}_[1-9][0-9]*$`).test(identifier)) {
+    throw new Error(`workspace allocator returned an invalid ${kind} ID`);
+  }
+  return identifier;
+}
+
+export async function runWorkspaceDecisionJson(
+  pi: ExtensionAPI,
+  command: string,
+  root: string,
+  decision: unknown,
+  signal?: AbortSignal,
+) {
+  const tempRoot = mkdtempSync(join(tmpdir(), "ts-workspace-decision-"));
+  const decisionFile = join(tempRoot, "decision.json");
+  try {
+    writeFileSync(decisionFile, `${JSON.stringify(decision, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    return await runWorkspaceJson(pi, command, root, ["--decision-file", decisionFile], signal);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+export async function runWorkspaceDraftJson(
+  pi: ExtensionAPI,
+  root: string,
+  request: unknown,
+  signal?: AbortSignal,
+) {
+  const tempRoot = mkdtempSync(join(tmpdir(), "ts-workspace-draft-"));
+  const requestFile = join(tempRoot, "request.json");
+  try {
+    writeFileSync(requestFile, `${JSON.stringify(request, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    return await runWorkspaceJson(pi, "draft_decision", root, ["--request-file", requestFile], signal);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+export async function runComputeJson(
+  pi: ExtensionAPI,
+  command: string,
+  root: string,
+  extraArgs: string[],
+  signal?: AbortSignal,
+  timeoutMs = 60_000,
+) {
+  const python = await resolvePythonExecutable(pi, root, signal);
+  const operationSignal = deadlineSignal(signal, timeoutMs);
+  const result = await pi.exec(python, [COMPUTE_CLI, command, "--root", root, ...extraArgs], {
+    signal: operationSignal,
+  });
+  return parseJsonOutput(result);
+}
+
+export async function runArtifactImportJson(
+  pi: ExtensionAPI,
+  root: string,
+  request: unknown,
+  signal?: AbortSignal,
+) {
+  return runPrivateComputeRequest(pi, "ts-artifact-import-", "import-artifact", root, request, signal);
+}
+
+export async function runStructureSeedJson(
+  pi: ExtensionAPI,
+  root: string,
+  request: unknown,
+  signal?: AbortSignal,
+) {
+  return runPrivateComputeRequest(pi, "ts-structure-seed-", "structure-seed", root, request, signal);
+}
+
+export async function runStructureCompareJson(
+  pi: ExtensionAPI,
+  root: string,
+  request: unknown,
+  signal?: AbortSignal,
+) {
+  return runPrivateComputeRequest(pi, "ts-structure-compare-", "structure-compare", root, request, signal);
+}
+
+async function runPrivateComputeRequest(
+  pi: ExtensionAPI,
+  temporaryPrefix: string,
+  command: string,
+  root: string,
+  request: unknown,
+  signal?: AbortSignal,
+) {
+  const tempRoot = mkdtempSync(join(tmpdir(), temporaryPrefix));
+  const requestFile = join(tempRoot, "request.json");
+  try {
+    writeFileSync(requestFile, `${JSON.stringify(request, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    return await runComputeJson(pi, command, root, ["--request-file", requestFile], signal);
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+export async function runRemoteDiagnosticJson(
+  pi: ExtensionAPI,
+  mode: "status" | "doctor" | "queues" | "nodes",
+  cwd: string,
+  signal?: AbortSignal,
+  timeoutMs = 90_000,
+) {
+  const workspaceRoot = resolveWorkspaceRoot("", cwd) || findRuntimeWorkspaceRoot(cwd);
+  const python = await resolvePythonExecutable(pi, workspaceRoot, signal);
+  const timeoutSignal = AbortSignal.timeout(timeoutMs);
+  const operationSignal = signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal;
+  let result: unknown;
+  try {
+    result = await pi.exec(python, [COMPUTE_CLI, "remote-diagnostic", "--mode", mode], {
+      signal: operationSignal,
+    });
+  } catch (error) {
+    throw classifyRemoteDiagnosticFailure(error, mode, signal, timeoutSignal, timeoutMs);
+  }
+  if (operationSignal.aborted) {
+    throw classifyRemoteDiagnosticFailure(undefined, mode, signal, timeoutSignal, timeoutMs);
+  }
+  try {
+    return parseJsonOutput(result);
+  } catch (error) {
+    throw remoteDiagnosticError(
+      "REMOTE_DIAGNOSTIC_INVALID_OUTPUT",
+      "invalid_output",
+      `ts_remote ${mode} diagnostic returned invalid JSON; no remote action was attempted`,
+      mode,
+      error,
+    );
+  }
+}
+
+export async function runRenderJson(
+  pi: ExtensionAPI,
+  root: string,
+  args: string[],
+  signal?: AbortSignal,
+) {
+  return runPackageJson(pi, root, RENDER_CLI, args, signal, 300_000);
+}
+
+export async function runReportJson(
+  pi: ExtensionAPI,
+  root: string,
+  packagePath: string,
+  excludeActivityRef: string,
+  assetArtifactIds: string[],
+  signal?: AbortSignal,
+) {
+  return runPackageJson(
+    pi,
+    root,
+    REPORT_CLI,
+    [
+      "--root", root,
+      "--package-dir", packagePath,
+      "--exclude-activity-ref", excludeActivityRef,
+      ...assetArtifactIds.flatMap((artifactId) => ["--asset-artifact-id", artifactId]),
+      "--json",
+    ],
+    signal,
+    300_000,
+  );
+}
+
+export async function runNotifyUserJson(
+  pi: ExtensionAPI,
+  root: string,
+  request: unknown,
+  signal?: AbortSignal,
+) {
+  const tempRoot = mkdtempSync(join(tmpdir(), "ts-notify-user-"));
+  const requestFile = join(tempRoot, "request.json");
+  try {
+    writeFileSync(requestFile, `${JSON.stringify(request, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+    const result = await runPackageJson(
+      pi,
+      root,
+      EMAIL_CLI,
+      ["notify", "--root", root, "--request-file", requestFile, "--json"],
+      signal,
+      150_000,
+    );
+    if (result?.ok === false) throw notificationError(result);
+    return result;
+  } finally {
+    rmSync(tempRoot, { recursive: true, force: true });
+  }
+}
+
+function notificationError(payload: any): Error {
+  const details = payload && typeof payload === "object" ? payload : {};
+  const errorDetails = details.error && typeof details.error === "object" ? details.error : {};
+  const message = typeof errorDetails.message === "string" && errorDetails.message.trim()
+    ? errorDetails.message.trim()
+    : "TS notification failed without a structured message";
+  const error = new Error(message) as Error & Record<string, unknown>;
+  error.name = "NotificationError";
+  error.code = errorDetails.code;
+  error.error_class = errorDetails.class;
+  error.state = details.state;
+  error.retry_disposition = details.retry_disposition;
+  error.receipt_ref = details.receipt_ref;
+  return error;
+}
+
+export function requireWorkspaceRoot(inputRoot: string | undefined, cwd: string): string {
+  const root = resolveWorkspaceRoot(inputRoot || "", cwd);
+  if (!root) {
+    throw new Error("No TS workspace root found. Pass root or set TS_WORKSPACE_ROOT.");
+  }
+  return root;
+}
+
+function findRuntimeWorkspaceRoot(start: string): string | undefined {
+  let current = resolve(start);
+  while (true) {
+    const manifest = join(current, ".agents", "runtime", "transition-state-workflow", "env.json");
+    if (existsSync(manifest)) return current;
+    const parent = dirname(current);
+    if (parent === current) return undefined;
+    current = parent;
+  }
+}
+
+async function resolvePythonExecutable(
+  pi: ExtensionAPI,
+  workspaceRoot: string | undefined,
+  signal?: AbortSignal,
+): Promise<string> {
+  if (process.env.TS_AGENT_PYTHON) {
+    const configured = process.env.TS_AGENT_PYTHON;
+    if (!isAbsolute(configured)) {
+      throw new Error("TS_AGENT_PYTHON must be an absolute executable path");
+    }
+    try {
+      accessSync(configured, constants.X_OK);
+    } catch (_error) {
+      throw new Error(`TS_AGENT_PYTHON is not executable: ${configured}`);
+    }
+    return configured;
+  }
+  try {
+    const args = [RUNTIME_CLI, "resolve", "--package-root", PACKAGE_ROOT];
+    if (workspaceRoot) args.push("--workspace-root", workspaceRoot);
+    args.push("--json");
+    const result = await pi.exec(
+      "python3",
+      args,
+      { signal },
+    );
+    const runtime = parseJsonOutput(result);
+    if (
+      runtime
+      && runtime.configured === true
+      && typeof runtime.python_executable === "string"
+      && isAbsolute(runtime.python_executable)
+      && existsSync(runtime.python_executable)
+    ) {
+      return runtime.python_executable;
+    }
+  } catch (error) {
+    const detail = error instanceof Error ? `: ${error.message}` : "";
+    throw new Error(`TS managed Python runtime is unavailable${detail}`);
+  }
+  throw new Error("TS managed Python runtime is unavailable; reinstall it with scripts/install_env.py");
+}
+
+async function runPackageJson(
+  pi: ExtensionAPI,
+  root: string,
+  script: string,
+  args: string[],
+  signal: AbortSignal | undefined,
+  timeoutMs: number,
+) {
+  const python = await resolvePythonExecutable(pi, root, signal);
+  const operationSignal = deadlineSignal(signal, timeoutMs);
+  const result = await pi.exec(python, [script, ...args], { signal: operationSignal });
+  return parseJsonOutput(result);
+}
+
+function deadlineSignal(parent: AbortSignal | undefined, timeoutMs: number): AbortSignal {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  return parent ? AbortSignal.any([parent, timeout]) : timeout;
+}
+
+function classifyRemoteDiagnosticFailure(
+  error: unknown,
+  mode: string,
+  parent: AbortSignal | undefined,
+  timeout: AbortSignal,
+  timeoutMs: number,
+): Error {
+  if (parent?.aborted) {
+    return remoteDiagnosticError(
+      "REMOTE_DIAGNOSTIC_CANCELLED",
+      "cancelled",
+      `ts_remote ${mode} diagnostic was cancelled; no remote action was attempted`,
+      mode,
+      error,
+    );
+  }
+  if (timeout.aborted) {
+    return remoteDiagnosticError(
+      "REMOTE_DIAGNOSTIC_TIMEOUT",
+      "diagnostic_timeout",
+      `ts_remote ${mode} diagnostic timed out after ${Math.ceil(timeoutMs / 1000)} seconds; no remote action was attempted`,
+      mode,
+      error,
+    );
+  }
+  return remoteDiagnosticError(
+    "REMOTE_DIAGNOSTIC_PROCESS_FAILED",
+    "process_failed",
+    `ts_remote ${mode} diagnostic process failed before returning a result; no remote action was attempted`,
+    mode,
+    error,
+  );
+}
+
+function remoteDiagnosticError(
+  code: string,
+  errorClass: string,
+  message: string,
+  mode: string,
+  cause?: unknown,
+): Error {
+  const error = new Error(message) as Error & Record<string, unknown>;
+  error.code = code;
+  error.errorClass = errorClass;
+  error.mode = mode;
+  error.retrySafe = true;
+  error.remoteActionAttempted = false;
+  if (cause !== undefined) error.cause = cause;
+  return error;
+}

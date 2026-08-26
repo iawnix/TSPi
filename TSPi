@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+readonly LAUNCHER_PATH="$(readlink -f -- "${BASH_SOURCE[0]}")"
+readonly PACKAGE_ROOT="$(dirname -- "$LAUNCHER_PATH")"
+readonly LAUNCHER_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly INSTALL_ROOT="${TS_AGENT_INSTALL_ROOT:-$LAUNCHER_DIR}"
+readonly HOST="$PACKAGE_ROOT/scripts/tspi_host.py"
+
+if [[ ! -f "$HOST" ]]; then
+  printf 'TSPi: Python host is missing from the active package: %s\n' "$HOST" >&2
+  exit 1
+fi
+
+exec python3 "$HOST" --install-root "$INSTALL_ROOT" -- "$@"

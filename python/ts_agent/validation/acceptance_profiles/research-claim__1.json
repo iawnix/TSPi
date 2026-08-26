@@ -1,0 +1,9 @@
+{
+  "schema_version": "ts-acceptance-profile/1",
+  "profile_id": "research-claim",
+  "version": "1",
+  "title": "Open scientific claim acceptance",
+  "required_dimensions": [],
+  "require_all_attached_specs": true,
+  "block_on_open_finding_severity": ["blocking"]
+}

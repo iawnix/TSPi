@@ -2,34 +2,45 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_node
+from ts_agent.report import build_final_report
+
 
 ROOT = Path(__file__).resolve().parents[1]
-TEMPLATE = ROOT / "templates" / "ts_final_report.md"
-CONTRACT = ROOT / "references" / "report_template.md"
+SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
+CONTRACT = SKILL_ROOT / "references" / "report_template.md"
 
 
-def test_report_template_contains_required_evidence_layers() -> None:
-    text = TEMPLATE.read_text(encoding="utf-8")
+def test_report_builder_contains_required_sections(tmp_path: Path) -> None:
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    start_research_node(workspace)
+    text = build_final_report(workspace)
     for phrase in [
-        "Executive Verdict",
-        "Reaction And Hypothesis Scope",
-        "Computational Protocol",
-        "Search Tree Summary",
-        "Candidate Generation Evidence",
-        "TS/Freq Validation",
-        "Connectivity / IRC Validation",
-        "Accepted-TS Audit",
-        "Pathway Audit",
-        "Energy Profile",
-        "Artifact And Evidence Appendix",
+        "Executive Status",
+        "Research Roadmap",
+        "Scientific Conclusions",
+        "ResearchNode Records",
+        "Semantic Observations",
+        "Frozen Validation",
+        "Findings",
+        "Claim Acceptance",
+        "Operational Follow-up",
     ]:
         assert phrase in text
 
 
-def test_report_template_contract_keeps_acceptance_gates_explicit() -> None:
+def test_report_contract_keeps_acceptance_and_provenance_explicit() -> None:
     text = CONTRACT.read_text(encoding="utf-8")
-    assert "Minimum Acceptance Gates" in text
-    assert "tsfreq_gate" in text
-    assert "connectivity_gate" in text
-    assert "accepted_audit" in text
-    assert "pathway_not_accepted" in text
+    for phrase in [
+        "acceptance record",
+        "GateSpecs",
+        "passing ValidationResults",
+        "Finding snapshot",
+        "stationary-point",
+        "reaction-coordinate",
+        "connectivity",
+        "registered Observation",
+        "source artifact",
+        "Review opinion",
+    ]:
+        assert phrase in text

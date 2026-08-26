@@ -1,0 +1,43 @@
+# Connectivity Validation
+
+Connectivity asks whether a candidate path reaches the reactant and product
+basins declared by the target Claim. It is distinct from stationary-point and
+imaginary-mode validation.
+
+## Required Observations
+
+The built-in `connectivity@1` template uses semantic concepts for one subject:
+
+- normal program termination;
+- bidirectional path completion;
+- no recorded path program failures;
+- reverse endpoint assignment equals the declared reactant ref;
+- forward endpoint assignment equals the declared product ref.
+
+Endpoint assignments use direction qualifiers. Record the source path and any
+endpoint optimization artifacts with exact digests.
+
+## Finite Paths
+
+A finite IRC endpoint is not automatically a basin assignment. Inspect the last
+geometry/gradient, optimize the endpoint when needed, compare it with reference
+basins using a valid atom map, and expose any short-path or maximum-step limit.
+An assignment with unresolved identity ambiguity should remain inconclusive or
+produce a blocking Finding.
+
+## Deterministic Evaluation
+
+Freeze the connectivity GateSpec against the target Claim and declared
+reactant/product refs before evaluation. Select exact Observation refs. Missing
+direction, missing endpoint, conflicting assignments, or incomplete path must
+not be converted into pass.
+
+Add identity, stereochemistry, state-character, or electronic-structure
+GateSpecs when the Claim needs them. They are additional dimensions under the
+same engine, not workflow branches.
+
+## Acceptance
+
+The built-in `accepted-ts@3` profile requires stationary-point,
+reaction-coordinate, and connectivity dimensions. Acceptance also covers every
+other GateSpec attached to the Claim and rejects open blocking Findings.

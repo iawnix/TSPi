@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "TS calculation result",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "job_id",
+    "intent_id",
+    "node_id",
+    "state",
+    "program_status",
+    "exit_status",
+    "artifact_refs",
+    "parser_facts",
+    "error_class",
+    "provenance"
+  ],
+  "properties": {
+    "schema_version": {"const": "ts-calculation-result/2"},
+    "job_id": {"type": ["string", "null"]},
+    "intent_id": {"type": "string", "pattern": "^calc_[1-9][0-9]*$"},
+    "node_id": {"type": "string", "pattern": "^node_[1-9][0-9]*$"},
+    "state": {
+      "enum": ["prepared", "submitted", "queued", "running", "completed", "failed", "stopped", "collected", "parsed", "missing", "unknown"]
+    },
+    "program_status": {"enum": ["completed", "failed", "stopped", "not_run"]},
+    "exit_status": {"type": ["integer", "null"]},
+    "artifact_refs": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "parser_facts": {
+      "type": "object",
+      "propertyNames": {
+        "not": {
+          "enum": ["acceptance_id", "accepted_ref", "audit", "claim_status", "claim_update", "claim_updates", "focus_claim_refs", "gate_verdict", "study_complete"]
+        }
+      }
+    },
+    "error_class": {"type": ["string", "null"]},
+    "control": {
+      "type": "object",
+      "required": [
+        "schema_version",
+        "operation",
+        "phase",
+        "effect_outcome",
+        "effect_attempted",
+        "retry_disposition",
+        "reconciliation_required",
+        "submission_id",
+        "job_id"
+      ],
+      "properties": {
+        "schema_version": {"const": "ts-control-outcome/1"},
+        "operation": {"enum": ["submit", "cancel"]},
+        "phase": {
+          "enum": [
+            "prepare_staging",
+            "ensure_directory",
+            "upload",
+            "pre_submit_validation",
+            "pre_submit_preparation",
+            "submit_request",
+            "submit_request_started",
+            "scheduler_result_unknown",
+            "scheduler_accept",
+            "receipt_persist",
+            "client_result_unknown",
+            "reconciled",
+            "cancel_request",
+            "cancel_confirmed"
+          ]
+        },
+        "effect_outcome": {"enum": ["succeeded", "failed", "unknown"]},
+        "effect_attempted": {"type": "boolean"},
+        "retry_disposition": {
+          "enum": ["none", "retry_same_submission", "new_intent", "reconcile_only"]
+        },
+        "reconciliation_required": {"type": "boolean"},
+        "submission_id": {"type": ["string", "null"]},
+        "job_id": {"type": ["string", "null"]}
+      },
+      "additionalProperties": false
+    },
+    "provenance": {"type": "object"}
+  },
+  "additionalProperties": false
+}

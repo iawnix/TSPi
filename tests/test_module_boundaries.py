@@ -2,34 +2,61 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ts_structures import compare_structures
-from ts_render import MolVisualizer
-from ts_backends.base import Backend, BackendTask
-from ts_backends.gaussian import GaussianBackend, prepare_gaussian
-from ts_remote.base import Runner
-from ts_remote.ssh import SshRunner
-from ts_web import normalize_workspace, register_workspace
-from strict_helpers import make_accepted_workspace
+from ts_agent import remote as ts_remote
+from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_node
+from ts_agent.backends.base import Backend, BackendTask
+from ts_agent.backends.gaussian import GaussianBackend, prepare_gaussian
+from ts_agent.render import MolVisualizer
+from ts_agent.structures import compare_structures
+from ts_agent.web import normalize_workspace, register_workspace
+from ts_agent.workspace.state import STATE_FILES
+
+
+ROOT = Path(__file__).resolve().parents[1]
+PYTHON_PACKAGE = ROOT / "python" / "ts_agent"
 
 
 def test_backend_prepares_command_without_workspace_write() -> None:
-    task = BackendTask(node_id="n001", work_dir="nodes/n001", inputs={"gjf": "nodes/n001/inputs/ts.gjf"})
+    task = BackendTask(
+        node_id="node_1",
+        task_type="opt_freq",
+        work_dir="nodes/node_1",
+        inputs={"gjf": "inputs/ts.gjf"},
+    )
     prepared = prepare_gaussian(task)
     assert prepared.backend == "gaussian"
-    assert prepared.command == ["g16", "nodes/n001/inputs/ts.gjf"]
-    assert prepared.expected_artifacts == ["nodes/n001/outputs/gaussian.out"]
+    assert prepared.node_id == task.node_id
+    assert prepared.command == ["g16", "inputs/ts.gjf"]
+    assert prepared.expected_artifacts == [
+        "nodes/node_1/outputs/gaussian.out"
+    ]
     assert isinstance(GaussianBackend(), Backend)
 
 
-def test_remote_runner_returns_node_scoped_receipt() -> None:
-    runner = SshRunner()
-    receipt = runner.submit(node_id="n001", host="compute-0-30", remote_dir="/remote/n001", command=["g16", "ts.gjf"])
-    assert isinstance(runner, Runner)
-    assert receipt.node_id == "n001"
-    assert receipt.receipt_path == "/remote/n001/remote_receipt.json"
+def test_remote_boundary_exposes_scheduler_lifecycle_without_raw_runner() -> None:
+    assert callable(ts_remote.submit)
+    assert callable(ts_remote.status)
+    assert callable(ts_remote.collect)
+    assert callable(ts_remote.cancel)
+    assert not hasattr(ts_remote, "Runner")
+    assert not hasattr(ts_remote, "SshRunner")
 
 
-def test_ts_structures_returns_evidence_shaped_result(tmp_path: Path) -> None:
+def test_domain_packages_do_not_reverse_host_dependencies() -> None:
+    workspace_sources = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (PYTHON_PACKAGE / "workspace").glob("*.py")
+    )
+    backend_sources = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (PYTHON_PACKAGE / "backends").glob("*.py")
+    )
+
+    assert "ts_agent.compute" not in workspace_sources
+    assert "ts_agent.workspace" not in backend_sources
+
+
+def test_ts_structures_returns_observation_shaped_measurements(tmp_path: Path) -> None:
     xyz = "2\nh2\nH 0 0 0\nH 0 0 0.74\n"
     ref = tmp_path / "ref.xyz"
     target = tmp_path / "target.xyz"
@@ -53,18 +80,28 @@ def test_web_registry_rejects_state_dir_inside_source(tmp_path: Path) -> None:
 
 
 def test_web_normalizer_is_read_only(tmp_path: Path) -> None:
-    workspace = tmp_path / "workspace"
-    make_accepted_workspace(workspace)
-    before = {str(path.relative_to(workspace)) for path in workspace.rglob("*") if path.is_file()}
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    start_research_node(workspace)
+    before = {
+        path.relative_to(workspace): (path.stat().st_mtime_ns, path.read_bytes())
+        for path in workspace.rglob("*")
+        if path.is_file()
+    }
     view = normalize_workspace(workspace)
-    after = {str(path.relative_to(workspace)) for path in workspace.rglob("*") if path.is_file()}
+    after = {
+        path.relative_to(workspace): (path.stat().st_mtime_ns, path.read_bytes())
+        for path in workspace.rglob("*")
+        if path.is_file()
+    }
     assert view["valid"] is True
     assert after == before
 
 
-def test_ts_render_writes_artifact_without_root_state_mutation(tmp_path: Path, monkeypatch) -> None:
-    workspace = tmp_path / "workspace"
-    make_accepted_workspace(workspace)
+def test_ts_render_writes_artifact_without_canonical_state_mutation(tmp_path: Path, monkeypatch) -> None:
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    node_id = start_research_node(workspace)["node_id"]
+    xyz = workspace / "inputs" / "reactant.xyz"
+    xyz.write_text("1\nreactant\nH 0 0 0\n", encoding="utf-8")
     fake = tmp_path / "xyzrender"
     fake.write_text(
         """#!/usr/bin/env python3
@@ -79,14 +116,12 @@ if "-o" in sys.argv:
     )
     fake.chmod(0o755)
     monkeypatch.setenv("TS_RENDER_XYZRENDER", str(fake))
-    state_files = ["manifest.json", "tree.json", "mechanism_model.json", "pathway_model.json", "evidence_registry.json"]
-    before = {name: (workspace / name).read_text(encoding="utf-8") for name in state_files}
+    before = {name: (workspace / name).read_bytes() for name in STATE_FILES}
 
     result = MolVisualizer().render_molecule(
-        workspace / "inputs" / "reactant.xyz",
-        workspace / "nodes" / "n001" / "outputs" / "render.png",
+        xyz,
+        workspace / "nodes" / node_id / "outputs" / "render.png",
     )
 
-    after = {name: (workspace / name).read_text(encoding="utf-8") for name in state_files}
     assert result.ok is True
-    assert before == after
+    assert before == {name: (workspace / name).read_bytes() for name in STATE_FILES}

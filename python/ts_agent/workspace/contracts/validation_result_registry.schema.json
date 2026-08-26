@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "validation_result_registry.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "results"],
+  "properties": {
+    "schema_version": {"const": "ts-validation-result-registry/2"},
+    "results": {"type": "array", "items": {"$ref": "validation_result.schema.json"}}
+  }
+}

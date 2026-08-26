@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "research_phase.schema.json",
+  "$defs": {
+    "phase_id": {"type": "string", "pattern": "^phase_[1-9][0-9]*$"}
+  },
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "phase_id", "title", "objective", "created_by_decision", "created_at"
+  ],
+  "properties": {
+    "schema_version": {"const": "ts-research-phase/1"},
+    "phase_id": {"$ref": "#/$defs/phase_id"},
+    "title": {"type": "string", "minLength": 1, "maxLength": 300},
+    "objective": {"type": "string", "minLength": 1, "maxLength": 2000},
+    "created_by_decision": {"$ref": "decision.schema.json#/$defs/decision_id"},
+    "created_at": {"type": "string", "minLength": 1, "maxLength": 64}
+  }
+}

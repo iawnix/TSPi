@@ -5,8 +5,12 @@ channels:
 dependencies:
   - python=3.11
   - pip
+  - setuptools>=77
+  - wheel
   - pytest
   - jsonschema
-  - numpy
+  - numpy>=2.0,<3
+  - rdkit>=2025.9,<2027
   - scipy
   - ase
+  - pillow>=10,<13

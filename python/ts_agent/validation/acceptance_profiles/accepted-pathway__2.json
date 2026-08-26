@@ -1,0 +1,9 @@
+{
+  "schema_version": "ts-acceptance-profile/1",
+  "profile_id": "accepted-pathway",
+  "version": "2",
+  "title": "Reaction-pathway acceptance",
+  "required_dimensions": ["pathway_audit"],
+  "require_all_attached_specs": true,
+  "block_on_open_finding_severity": ["blocking"]
+}

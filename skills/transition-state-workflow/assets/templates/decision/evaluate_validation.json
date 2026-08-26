@@ -1,0 +1,7 @@
+{
+  "op": "evaluate_validation",
+  "local_ref": "validation_result",
+  "nodeRef": "${NODE_REF}",
+  "specRef": "${VALIDATION_SPEC_REF}",
+  "observationRefs": ["${OBSERVATION_REF}"]
+}

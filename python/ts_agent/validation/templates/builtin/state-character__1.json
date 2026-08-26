@@ -1,0 +1,15 @@
+{
+  "schema_version": "ts-gate-template/1",
+  "template_id": "state-character",
+  "version": "1",
+  "title": "Electronic-state character",
+  "parameters": {
+    "subject_ref": {"type": "string", "required": true}
+  },
+  "definition": {
+    "checks": [
+      {"check_id": "state_character", "predicate": "observation.equals", "parameters": {"selector": {"concept_id": "electronic_state.character_supported", "subject_ref": "${subject_ref}"}, "expected": true}, "blocking": true}
+    ],
+    "success_policy": {"mode": "all_blocking"}
+  }
+}

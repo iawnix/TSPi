@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import subprocess
 import sys
 from pathlib import Path
 
-from ts_render import MolVisualizer
-from ts_render.config import ENGINES
+from PIL import Image
+
+from ts_agent.render import MolVisualizer
+from ts_agent.render.config import ENGINES
 
 
 def test_ts_render_exposes_only_xyzrender_engine() -> None:
@@ -64,6 +67,88 @@ def test_ts_render_cli_diagnostic_json(tmp_path: Path, monkeypatch) -> None:
     assert "obabel" not in payload
 
 
+def test_mechanism_composes_labeled_arrow_panels_without_xyzrender_annotations(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    fake = _fake_png_xyzrender(tmp_path)
+    monkeypatch.setenv("TS_RENDER_XYZRENDER", str(fake))
+    inputs = []
+    for index in range(3):
+        path = tmp_path / f"structure-{index + 1}.xyz"
+        path.write_text(f"1\nstructure {index + 1}\nH {index} 0 0\n", encoding="utf-8")
+        inputs.append(path)
+    with_arrow = tmp_path / "mechanism.png"
+    without_arrow = tmp_path / "mechanism-no-arrow.png"
+    visualizer = MolVisualizer(resolution=(900, 300))
+
+    result = visualizer.render_reaction_mechanism(
+        inputs,
+        ["Reactant", "Transition state", "Product"],
+        with_arrow,
+    )
+    no_arrow_result = visualizer.render_reaction_mechanism(
+        inputs,
+        ["Reactant", "Transition state", "Product"],
+        without_arrow,
+        show_arrow=False,
+    )
+
+    assert result.ok is True
+    assert no_arrow_result.ok is True
+    assert len(result.commands) == 3
+    assert all("-l" not in command for command in result.commands)
+    assert all("-t" in command for command in result.commands)
+    with Image.open(with_arrow) as image:
+        assert image.size == (900, 300)
+    assert hashlib.sha256(with_arrow.read_bytes()).digest() != hashlib.sha256(without_arrow.read_bytes()).digest()
+
+
+def test_compare_honors_vertical_panel_layout(tmp_path: Path, monkeypatch) -> None:
+    fake = _fake_png_xyzrender(tmp_path)
+    monkeypatch.setenv("TS_RENDER_XYZRENDER", str(fake))
+    inputs = []
+    for index in range(2):
+        path = tmp_path / f"candidate-{index + 1}.xyz"
+        path.write_text(f"1\ncandidate {index + 1}\nH 0 {index} 0\n", encoding="utf-8")
+        inputs.append(path)
+    output = tmp_path / "vertical.png"
+
+    result = MolVisualizer(resolution=(320, 640)).compare_structures(
+        inputs,
+        output,
+        titles=["Candidate A", "Candidate B"],
+        layout="vertical",
+    )
+
+    assert result.ok is True
+    with Image.open(output) as image:
+        assert image.size == (320, 640)
+
+
+def test_panel_render_preserves_xyzrender_failure(tmp_path: Path, monkeypatch) -> None:
+    fake = tmp_path / "xyzrender"
+    fake.write_text(
+        "#!/usr/bin/env python3\n"
+        "import sys\n"
+        "print('xyzrender: error: deliberate panel failure', file=sys.stderr)\n"
+        "raise SystemExit(2)\n",
+        encoding="utf-8",
+    )
+    fake.chmod(0o755)
+    monkeypatch.setenv("TS_RENDER_XYZRENDER", str(fake))
+    inputs = [tmp_path / "a.xyz", tmp_path / "b.xyz"]
+    for path in inputs:
+        path.write_text("1\nprobe\nH 0 0 0\n", encoding="utf-8")
+
+    result = MolVisualizer().compare_structures(inputs, tmp_path / "failed.png")
+
+    assert result.ok is False
+    assert result.returncode == 2
+    assert "deliberate panel failure" in result.stderr
+    assert result.commands == [result.command]
+
+
 def _fake_xyzrender(tmp_path: Path) -> Path:
     script = tmp_path / "xyzrender"
     script.write_text(
@@ -78,6 +163,29 @@ if "-o" in sys.argv:
     output.parent.mkdir(parents=True, exist_ok=True)
     output.write_bytes(b"fake image")
 print("ok")
+""",
+        encoding="utf-8",
+    )
+    script.chmod(0o755)
+    return script
+
+
+def _fake_png_xyzrender(tmp_path: Path) -> Path:
+    script = tmp_path / "xyzrender"
+    script.write_text(
+        """#!/usr/bin/env python3
+import sys
+from pathlib import Path
+from PIL import Image, ImageDraw
+if "-l" in sys.argv:
+    print("unexpected xyzrender annotation", file=sys.stderr)
+    raise SystemExit(2)
+output = Path(sys.argv[sys.argv.index("-o") + 1])
+output.parent.mkdir(parents=True, exist_ok=True)
+image = Image.new("RGBA", (240, 240), (0, 0, 0, 0))
+draw = ImageDraw.Draw(image)
+draw.ellipse((40, 40, 200, 200), fill=(40, 120, 200, 255))
+image.save(output)
 """,
         encoding="utf-8",
     )

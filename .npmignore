@@ -1,9 +1,15 @@
 __pycache__/
+*.egg-info/
+build/
 .pytest_cache/
 .runtime/
 node_modules/
+.npm-cache/
 npm-debug.log*
+tests/
 *.pyc
 *.pyo
 *.tmp
+.pi/remote.toml
 PLAN_*.md
+PLAN-*.md

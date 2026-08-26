@@ -1,0 +1,8 @@
+{
+  "op": "update_claim",
+  "claimRef": "${CLAIM_REF}",
+  "status": "supported",
+  "summary": "${CLAIM_UPDATE_SUMMARY}",
+  "observationRefs": ["${OBSERVATION_REF}"],
+  "validationResultRefs": ["${VALIDATION_RESULT_REF}"]
+}

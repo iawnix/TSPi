@@ -1,0 +1,30 @@
+default_profile = "cluster_1w"
+
+[profiles.cluster_1w]
+ssh_host = "agent.1w"
+ssh_config = "/home/iaw/.ssh/config"
+scheduler = "torque"
+remote_root = "/home/agent/1w-data2/ts-remote-workspaces"
+allowed_queues = ["batch", "fat", "fata"]
+max_nodes = 1
+connect_timeout_seconds = 15
+command_timeout_seconds = 60
+
+[profiles.cluster_1w.commands]
+qsub = "qsub"
+qstat = "qstat"
+qdel = "qdel"
+pbsnodes = "pbsnodes"
+
+[profiles.cluster_1w.software.gaussian]
+command = ["g16"]
+activation_script = "/home/agent/soft/gaussian/activate_gaussian16.sh"
+# Optional. Omit to use the execution node's TMPDIR, falling back to /tmp.
+# scratch_root = "/local/scratch"
+allowed_queues = ["batch", "fat", "fata"]
+requires_gpu = false
+
+[profiles.cluster_1w.software.xtb]
+command = ["/home/agent/soft/xtb/current/bin/xtb"]
+allowed_queues = ["batch", "fat", "fata"]
+requires_gpu = false

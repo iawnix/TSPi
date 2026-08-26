@@ -9,14 +9,12 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+from _bootstrap import bootstrap_python_package
 
-from ts_runtime import ensure_runtime_python
+bootstrap_python_package(ROOT)
 
-ensure_runtime_python(ROOT)
-
-from ts_render import EnvironmentChecker, MolVisualizer  # noqa: E402
-from ts_render.config import CAMERA_PATHS, COLOR_SCHEMES, ENGINES, LAYOUTS, STYLES, parse_resolution  # noqa: E402
+from ts_agent.render import EnvironmentChecker, MolVisualizer  # noqa: E402
+from ts_agent.render.config import CAMERA_PATHS, COLOR_SCHEMES, ENGINES, LAYOUTS, STYLES, parse_resolution  # noqa: E402
 
 
 def main() -> int:
@@ -88,7 +86,7 @@ def main() -> int:
     elif args.command == "animate":
         result = visualizer.animate_trajectory(args.input, args.output, frames=args.frames, fps=args.fps, camera_path=args.camera)
     elif args.command == "mechanism":
-        labels = args.label or [f"Structure {index + 1}" for index, _ in enumerate(args.inputs)]
+        labels = args.label or _default_mechanism_labels(len(args.inputs))
         result = visualizer.render_reaction_mechanism(args.inputs, labels, args.output, layout=args.layout, show_arrow=not args.no_arrow)
     else:
         raise AssertionError(args.command)
@@ -117,6 +115,12 @@ def _print_diagnostic(payload: dict) -> None:
         item = payload[key]
         status = "ok" if item.get("available") else "missing"
         print(f"{key}: {status} {item.get('path') or ''}".rstrip())
+
+
+def _default_mechanism_labels(count: int) -> list[str]:
+    if count == 3:
+        return ["Reactant", "Transition state", "Product"]
+    return [f"Structure {index + 1}" for index in range(count)]
 
 
 if __name__ == "__main__":

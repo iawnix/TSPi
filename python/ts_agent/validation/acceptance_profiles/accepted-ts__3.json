@@ -1,0 +1,9 @@
+{
+  "schema_version": "ts-acceptance-profile/1",
+  "profile_id": "accepted-ts",
+  "version": "3",
+  "title": "Classical transition-state acceptance",
+  "required_dimensions": ["stationary_point", "reaction_coordinate", "connectivity"],
+  "require_all_attached_specs": true,
+  "block_on_open_finding_severity": ["blocking"]
+}

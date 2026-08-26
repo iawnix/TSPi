@@ -1,250 +1,362 @@
-# TSAgentSkill
+# @iawnix/ts-agent
 
-TSAgentSkill is a transition-state search skill for Codex and Pi Agent. It
-keeps the Python workflow kernel authoritative and exposes thin agent adapters
-around the same source tree.
+`@iawnix/ts-agent` is a Pi package for auditable transition-state research. It
+combines one strategy-owning Root Agent with a deterministic research kernel,
+typed local or SSH/Torque calculations, semantic scientific observations,
+declarative validation, reproducible reports, optional notifications, a
+session-scoped activity UI, and a read-only multi-workspace research explorer.
 
-The workflow is evidence-layered: candidate generation, TS/Freq validation,
-connectivity or IRC validation, accepted-TS audit, and pathway audit are
-reported as separate scientific claim layers. A rendered image is only a
-visualization artifact, not chemistry proof.
+This `ts-dag` branch implements one workspace contract centered on
+ResearchPhase, ResearchNode, and Claim. Unsupported layouts fail closed instead
+of being rewritten during startup.
 
-## What Is Included
+## Core Boundary
 
-- `SKILL.md`: Codex skill entrypoint and operating contract.
-- `ts_workspace`: workspace bootstrap, validated decision mutations, reporting,
-  finalizers, and workspace validation.
-- `ts_backends`: local calculation adapters and parsers.
-- `ts_remote`: remote staging, submission, polling, fetch, and kill helpers.
-- `ts_structures`: structure parsing, geometry, RMSD, and stereochemistry helpers.
-- `ts_render`: lightweight molecular rendering through `xyzrender` only.
-- `ts_report`: final report package assembly from validated workspace evidence.
-- `extensions/ts-workflow-context`: Pi Agent extension for workspace context,
-  validation, and decision tools.
-- `templates/decision/`: runtime decision JSON templates for workspace
-  mutations. These are operating examples; files under `tests/` are not.
-- `templates/ts_final_report.md`: fillable final-report template.
-- `docs/MAINTAINER_GUIDE.md`: code-maintenance guide for module boundaries,
-  control-plane invariants, testing, and release sync.
+```text
+Root Agent
+  chooses questions, hypotheses, methods, alternatives, backtracking, and stop
+        |
+        v
+Research Kernel
+  ResearchPhase roadmap + ResearchNode DAG + Claim graph
+  immutable Observations + Findings + frozen Validation
+        |
+        +-- deterministic compute kernel / Render / Report
+        +-- declarative Validation Engine
+        +-- graph Context Compiler
+        +-- isolated operational Compute Agent
+        +-- isolated advisory Review Agent
+```
 
-## Runtime Model
+Only the Research Kernel mutates canonical scientific state. The Root Agent
+selects what to investigate but does not choose paths, filenames, record IDs,
+or validation verdicts. Compute and Review use isolated child model sessions.
+Compute may only execute a fixed host-bound action plan; it cannot choose a
+method or create scientific meaning. Render, Report, remote inspection,
+notifications, workspace control, and every underlying compute action remain
+deterministic host tools.
 
-Python dependencies run in an isolated Conda or Mamba environment. Package
-installation does not create that environment automatically. The user must
-provide an existing Conda/Mamba installation root or executable.
+The long-lived scientific vocabulary is:
 
-Typical install:
+- **ResearchPhase**: a human-readable roadmap group with a title and objective.
+  It organizes Nodes for navigation but has no lifecycle or policy authority.
+- **Claim**: one explicit, versioned scientific statement.
+- **ClaimRelation**: a directed dependency, refinement, conflict, or alternative
+  relation between Claims. Relations form a DAG but do not route execution.
+- **ResearchNode**: one user-visible research decision episode: why one bounded
+  question is next, what principal result will answer it, and what changed.
+  Dependencies support continuation, branching, merging, and backtracking.
+- **Observation**: one immutable semantic value, concept, subject, artifacts,
+  and provenance record.
+- **Finding**: one explicit anomaly, limitation, conflict, or unresolved
+  question, including acceptance-blocking findings.
+- **GateSpec / ValidationResult**: a frozen declarative validation definition
+  and its deterministic result over selected Observations.
+
+There is no prescriptive workflow stage, Node type, Evidence role/layer, fixed
+Gate router, or hard-coded research sequence. ResearchPhase, tags, and relation
+labels are navigation or scientific metadata; they never authorize a next
+action.
+
+## Why This Package
+
+A general model can propose a transition-state search plan. This package adds
+the controls needed to make a long scientific campaign inspectable and
+reproducible:
+
+- canonical Claims, alternatives, hypotheses, failures, and backtracking;
+- immutable artifact and Observation provenance;
+- deterministic local and remote effects with explicit ambiguity handling;
+- validation standards frozen before evaluation and bound by digests;
+- acceptance records that snapshot the Claim, specifications, results, and
+  unresolved Findings;
+- bounded context projections instead of repeatedly dumping the workspace;
+- independent Review whose advice cannot silently change scientific state.
+
+## Documentation
+
+- [Installation and Operations](docs/INSTALLATION.md): release installation,
+  runtime configuration, workspace startup, upgrade, rollback, and recovery.
+- [Architecture](docs/ARCHITECTURE.md): component ownership, state model,
+  lifecycle, persistence, validation, context, and result delivery.
+- [Maintainer Guide](docs/MAINTAINER_GUIDE.md): source layout, contract-change
+  rules, tests, release discipline, and documentation ownership.
+- [ADR 0001](docs/adr/0001-phase-node-research-kernel.md): the Phase +
+  ResearchNode kernel and declarative-validation decision.
+- [Root Skill](skills/transition-state-workflow/SKILL.md): concise operating
+  policy loaded into each TSPi research session.
+
+## Quick Install
+
+Build a content-addressed release from a clean authored checkout and install it
+into a dedicated TSPi root:
 
 ```bash
-git clone https://github.com/iawnix/TSAgentSkill.git
-export TS_AGENT_SKILL_ROOT=$PWD/TSAgentSkill
-export TS_WORKSPACE_ROOT=/path/to/ts-workspace
-python "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
+python3 scripts/check_package.py
+python3 scripts/build_release.py --output-dir dist --json
+python3 scripts/install_release.py \
+  --manifest dist/ts-agent-release.json \
+  --install-root /path/to/TSPi-installation \
+  --json
+
+export TS_AGENT_SKILL_ROOT=/path/to/TSPi-installation/.pi/packages/ts-agent/current
+python3 "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
   --package-root "$TS_AGENT_SKILL_ROOT" \
-  --workspace-root "$TS_WORKSPACE_ROOT" \
+  --runtime-home /path/to/TSPi-installation/.agents/runtime/transition-state-workflow \
+  --env-root /path/to/TSPi-installation/.agents/envs/transition-state-workflow \
   --conda-root /path/to/miniforge3 \
   --with-render \
   --json
 ```
 
-Equivalent environment variables:
-
-```bash
-TS_AGENT_CONDA_ROOT=/path/to/miniforge3 python "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" --package-root "$TS_AGENT_SKILL_ROOT" --workspace-root "$TS_WORKSPACE_ROOT" --with-render --json
-TS_AGENT_CONDA_EXE=/path/to/conda python "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" --package-root "$TS_AGENT_SKILL_ROOT" --workspace-root "$TS_WORKSPACE_ROOT" --with-render --json
-```
-
-Useful runtime overrides:
-
-```bash
-TS_WORKSPACE_ROOT=/path/to/ts-workspace
-TS_AGENT_RUNTIME_HOME=/path/to/runtime-home
-TS_AGENT_RUNTIME_MANIFEST=/path/to/env.json
-TS_AGENT_ENV_ROOT=/path/to/env-store
-TS_AGENT_PYTHON=/path/to/python
-TS_AGENT_DISABLE_RUNTIME_REEXEC=1
-```
-
-The installer writes the runtime manifest outside the package checkout by
-default. With `--workspace-root`, the default is
-`<workspace>/.agents/runtime/transition-state-workflow/env.json` and the Conda
-prefix store is `<workspace>/.agents/envs/transition-state-workflow/`. Public
-Python scripts and the Pi extension prefer the interpreter recorded there. If
-`environment.yml` changes, stale runtime manifests are ignored until the
-environment is refreshed. Legacy `package-root/.runtime/env.json` manifests are
-read only when no explicit workspace root, runtime home, or manifest path is
-supplied.
-
-From a package checkout, the npm helper scripts require `TS_WORKSPACE_ROOT` and
-write the same workspace-owned runtime:
-
-```bash
-cd "$TS_AGENT_SKILL_ROOT"
-TS_WORKSPACE_ROOT=/path/to/ts-workspace npm run install-env
-TS_WORKSPACE_ROOT=/path/to/ts-workspace npm run install-env:core
-```
-
-## Render Dependency Boundary
-
-`ts_render` uses `xyzrender` only.
-
-The skill does not require or probe Blender, FFmpeg, OpenBabel, Mayavi, or
-PyVista. Install render support with:
-
-```bash
-python "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" --package-root "$TS_AGENT_SKILL_ROOT" --workspace-root "$TS_WORKSPACE_ROOT" --conda-root /path/to/miniforge3 --with-render --json
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_render.py" diagnostic --json
-```
-
-If `xyzrender` is unavailable, TS workspace operations, validation, and reports
-still work; only render artifact generation is unavailable.
-
-## Codex Usage
-
-Use this repository as a Codex skill by installing or syncing it under the
-workspace skill directory, for example:
+The release builder creates `ts-agent-kernel` from a temporary source copy and
+embeds the wheel under `python-dist/`. The release installer verifies package
+identity, the outer archive, the wheel metadata and digests, safe members,
+required files, and immutable permissions before atomically selecting
+`.pi/packages/ts-agent/current`. It installs:
 
 ```text
-<workspace>/.agents/skills/transition-state-workflow/
+<installation>/TSPi -> .pi/packages/ts-agent/current/TSPi
 ```
 
-Codex reads `SKILL.md` as the skill entrypoint. Public workspace commands:
+The runtime installer also installs the release's `ts-agent-kernel` wheel into
+the managed Conda prefix and binds its complete payload digest to the runtime
+manifest. TSPi will not combine a newly selected Pi release with stale Python
+modules from an earlier release.
+
+Pi model authentication, SSH/Torque access, and notifications are
+installation-owned configuration and are not stored in a research workspace.
+
+## Start TSPi
+
+The launcher creates and bootstraps a workspace under
+`<installation>/workspaces/`; the user does not create it first:
 
 ```bash
-export TS_AGENT_SKILL_ROOT=<workspace>/.agents/skills/transition-state-workflow
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" init_workspace --root <workspace>
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" report_workspace --root <workspace>
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_decision --root <workspace> --decision-file decision.json
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" start_node --root <workspace> --decision-file decision.json
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" propose_hypothesis --root <workspace> --decision-file decision.json
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" update_workspace --root <workspace> --decision-file decision.json
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" end_node --root <workspace> --decision-file decision.json
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_workspace.py" validate_workspace --root <workspace>
+./TSPi --workspace reaction-a
+./TSPi --workspace reaction-a --continue
+./TSPi --workspace reaction-a --phone
+./TSPi --check-remote
 ```
 
-Run `report_workspace` before choosing or closing a node. Do not edit workspace
-state files by hand.
+One nonblocking lock permits one Root Agent process per workspace. Different
+workspace names can run concurrently. Normal terminal mode starts a new Pi
+conversation unless Pi's `--continue` is supplied; Phone mode resumes the
+workspace conversation automatically.
 
-The active flow is endpoint validation -> `propose_hypothesis` -> first
-evidence node. A proposal mutates `mechanism_model.json` but does not create a
-node. Reporting, monitoring, snapshots, visualization, and report packaging do
-not create nodes either.
+Bootstrap is idempotent for a complete workspace: fresh state is created once,
+valid state is checked without canonical rewrites, and partial, invalid, or
+unsupported canonical state fails closed. Ordinary startup does not contact the
+remote scheduler.
 
-Use `templates/decision/` when preparing runtime decision JSON. Replace the
-`${NAME}` placeholders, run `validate_decision`, then apply the mutation. Do
-not copy decision JSON from `tests/`; tests are fixtures and may intentionally
-omit operating context. The templates constrain state-machine shape and
-evidence provenance only, not a fixed retry policy.
+## Explore Workspaces
 
-## Pi Agent Usage
-
-Install the package project-locally from the TS workspace. For maintained local
-workspaces, prefer registering the installed skill copy so Pi and Codex share
-the same package root:
+The packaged `ts_web` server gives users a Node-first Research Tree without
+changing research state. Its default view renders the ResearchNode dependency
+DAG as decision-sized cards, so opening rationale, outcome, branches, merges,
+and lineage remain visible together. ResearchPhase is a color and focus filter,
+not a lifecycle lane. Desktop users can pan, zoom, fit, and inspect a Node;
+mobile users see the same topology as an indented outline. Node cards identify
+the latest calculation state. Opening a Node reveals its Attempts as a
+collapsible second level with purpose, retry lineage, method, settings, and
+bound Compute runs; Attempts never become peer roadmap Nodes. Claims,
+validation, Findings, operational activity, files, and the advanced Claim graph
+stay in separate views.
 
 ```bash
-cd /path/to/ts-workspace
-pi install -l "$PWD/.agents/skills/transition-state-workflow" --approve
+TS_AGENT_CURRENT=/path/to/TSPi-installation/.pi/packages/ts-agent/current
+python3 "$TS_AGENT_CURRENT/scripts/ts_web.py" serve \
+  --state-dir /path/to/TSPi-installation/.pi/ts-web \
+  --source-root /path/to/TSPi-installation/workspaces/reaction-a \
+  --label "Reaction A" \
+  --host 127.0.0.1 \
+  --port 8766
 ```
 
-Direct GitHub installation is also supported; the package checkout then lives
-under `.pi/git/...`, but runtime state still belongs to the TS workspace when
-`TS_WORKSPACE_ROOT` is set:
+Repeat `--source-root` and `--label` to register several workspaces. The Web
+registry must remain outside every source workspace. The server has no login;
+use `--host 0.0.0.0` only on a trusted, firewalled LAN. See
+[Installation and Operations](docs/INSTALLATION.md#run-the-research-explorer)
+for registration and exposure details.
 
-```bash
-pi install -l https://github.com/iawnix/TSAgentSkill --approve
-```
+With the standard `<installation>/.pi/ts-web` state directory, the explorer
+also treats `<installation>/workspaces` as a managed discovery root. At startup
+and each catalog refresh it adds direct workspace children and removes rows
+whose managed source directory or `workspace.json` has disappeared. A missing
+or unreadable discovery root is left untouched, and manually registered roots
+outside the managed directory are never pruned. Use `--workspace-root` to
+declare a different managed root.
 
-For GitHub installs, use the Pi-managed checkout path as `TS_AGENT_SKILL_ROOT`
-when refreshing the runtime, or run the npm helper from that checkout with
-`TS_WORKSPACE_ROOT` set.
+While the page is visible, it checks the selected workspace every five seconds.
+An unchanged check returns only revision identities; a changed check replaces
+the View and Graph together while preserving the current view, scroll position,
+and open inspector. A transient refresh failure keeps the last valid snapshot
+and marks it stale.
 
-Install or refresh the runtime with an explicit package root and workspace root:
+Starting through the stable `current` path also enables release hot restart.
+After an atomic `current` switch and managed-runtime refresh, the server closes
+its listening socket and executes the same stable command under the new release.
+Use `--no-watch-release` only for diagnostics. This is an orderly short restart,
+not in-process module reload or zero-downtime socket handoff.
 
-```bash
-export TS_AGENT_SKILL_ROOT=/path/to/TSAgentSkill
-export TS_WORKSPACE_ROOT=/path/to/ts-workspace
-python "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" --package-root "$TS_AGENT_SKILL_ROOT" --workspace-root "$TS_WORKSPACE_ROOT" --conda-root /path/to/miniforge3 --with-render --json
-```
+## Public Surface
 
-Start Pi from the TS workspace:
+Pi loads one Skill, five extensions, one theme, fourteen public tools, and four
+slash commands:
 
-```bash
-cd /path/to/ts-workspace
-TS_WORKSPACE_ROOT=$PWD pi --approve --session-dir .pi/sessions
-```
+- `ts_workspace_context`: bounded graph, artifact, compute-capability, or
+  validation-capability projection.
+- `ts_workspace_decision_draft`, `ts_workspace_decision_validate`, and
+  `ts_workspace_decision_apply`: the only canonical mutation pipeline.
+- `ts_subagent_review`: one isolated advisory Review of a target Claim, with an
+  optional one-batch logical-artifact reader instead of preloaded file content.
+- `ts_review_disposition`: one deterministic Root response to a completed
+  Review.
+- `ts_subagent_compute`: one isolated operational lifecycle: `launch`
+  (`prepare -> submit`), `inspect` (`status -> optional tail`), `finalize`
+  (`collect -> parse`), or `cancel`. Every action is a zero-argument tool bound
+  by the host to one immutable intent.
+- `ts_structure_seed`: deterministic RDKit ETKDGv3 seed generation from one
+  connected SMILES, with content-addressed XYZ and provenance.
+- `ts_structure_compare`: deterministic atom-mapped XYZ comparison with a
+  Node-owned, content-addressed JSON analysis.
+- `ts_artifact_import`: bounded, Node-owned bootstrap import for Gaussian, XYZ,
+  or xTB control inputs; the host allocates path, filename, digest, and ID.
+- `ts_render`: deterministic local render, comparison, animation, or an ordered
+  reactant/transition-state/product mechanism visualization.
+- `ts_report`: deterministic atomic report-package build.
+- `ts_remote_inspect`: read-only SSH/Torque diagnostics.
+- `ts_notify_user`: fixed-target, receipt-bound notification delivery.
 
-Pi loads the root skill and `extensions/ts-workflow-context` from
-`package.json`.
+The slash commands are `/ts-context`, `/ts-validate`, `/ts-remote`, and
+`/ts-subagent-history`. The history browser shows durable Compute and Review
+runs; deterministic tool activity is shown through normal tool entries and the
+unified TS Activity projection.
 
-Pi commands:
+## Research Loop
+
+The Root Agent normally:
+
+1. Reads the frontier or delta context and states one unresolved question.
+2. Creates or reuses a navigation Phase and starts one decision-sized
+   ResearchNode with explicit dependencies and Claim scope.
+3. Selects a scientifically justified method and invokes bounded tools.
+4. Verifies local primary artifacts and records semantic Observations.
+5. Records anomalies and unresolved limits as Findings.
+6. Freezes relevant GateSpecs before evaluation, then evaluates them over
+   explicitly selected Observations.
+7. Updates Claim status and completes the ResearchNode as soon as its one
+   question is answered.
+8. Recompiles context and records the next material decision as a dependent
+   Node or new Phase, or explicitly stops. Acceptance still requires a passing
+   named profile.
+
+A changed question, principal deliverable, hypothesis scope, method branch,
+backtrack, or synthesis goal requires a new Node. Same-objective retries remain
+Attempts. One canonical Decision may open at most one Node, while a transition
+may atomically close the current Node and open one explicitly dependent
+successor. It may also start and complete the same purely analytical Node.
+Registry updates and tool calls remain internal Node History rather than
+roadmap Nodes.
+
+The DAG records what happened; it does not prescribe what must happen next.
+Gaussian is a first-class candidate-generation option when scans, QST, or
+direct TS optimization are justified. The adapter catalog is not a method
+priority list. A converged program, candidate geometry, or isolated imaginary
+frequency is never an accepted TS by itself.
+
+An empty workspace is not a compute dead end. Start an open ResearchNode. Use
+`ts_structure_seed` for a single-molecule SMILES or `ts_artifact_import` for
+existing Gaussian, XYZ, or xTB control text, then pass the returned logical
+`art_*` to Compute. Neither tool grants path authority or scientific validity.
+Use `ts_structure_compare` for deterministic RMSD, reaction-center, internal
+coordinate, or explicit stereochemical checks between two registered XYZ
+artifacts. Its output remains operational until selected facts are registered
+as Observations through a Decision.
+
+## Compute And Remote
+
+Preparation accepts `ts-calculation-request/3`, resolves logical `artifactId`
+plus `inputRole` bindings, and writes an immutable
+`ts-calculation-intent/5` under the owning Node. Supported adapter tasks include:
+
+- Gaussian: `sp`, `opt`, `freq`, `opt_freq`, `irc`;
+- xTB: `sp`, `opt`, `freq`, `opt_freq`, `scan`, `md`;
+- CREST: `conformer_search`;
+- ASE: `neb`;
+- QBICS: `dmecp`.
+
+Capability means an adapter can express and validate a task; it does not prove
+that software, storage, SSH, Torque, or a queue is healthy. Remote jobs are
+isolated by workspace ID, Node, and immutable intent. Pre-effect failures may be
+retryable. Ambiguous submit or cancel effects must be reconciled and must never
+be blindly replayed. Collection is manifest-driven and does not depend on
+scheduler history.
+
+The Root supplies the scientific request to `ts_subagent_compute`. Before the
+child starts, the host creates or resolves the intent, verifies its digest, and
+binds the exact action tools. The child receives no Root transcript, Skill,
+filesystem, shell, arbitrary arguments, or recursive delegation. Its result
+tool accepts only a summary and limitations; outcome, program state, artifacts,
+facts, provenance, and reconciliation state are derived from journaled typed
+actions. These operational records are not Observations until Root verifies the
+primary artifacts and applies a Decision.
+
+## Validation And Acceptance
+
+Validation is data-driven:
 
 ```text
-/ts-context [workspace]
-/ts-validate [workspace]
+versioned template + parameters
+  -> fully expanded frozen GateSpec
+  -> registered deterministic predicates
+  -> immutable ValidationResult
 ```
 
-Pi tools:
+The Root Agent may select a packaged template or compose a definition from
+registered predicates. It cannot inject Python, shell, imports, or arbitrary
+expressions. Built-in templates cover common classical TS, reaction-coordinate,
+connectivity, identity, electronic-structure, state-character, robustness,
+thermochemistry, and pathway checks. New scientific domains extend this
+mechanism with maintained templates and predicates instead of adding workflow
+branches.
 
-- `ts_workspace_context`: run `report_workspace` and return a compact summary.
-- `ts_workspace_validate`: run `validate_workspace`.
-- `ts_workspace_decision`: run `validate_decision`, `start_node`,
-  `propose_hypothesis`, `update_workspace`, or `end_node` through a decision
-  JSON.
+Acceptance is separate from Claim status. A supported Claim needs at least one
+attached GateSpec. A profile verifies required dimensions, the latest passing
+result for every attached GateSpec, current digests, and the absence of
+unresolved blocking Findings, then writes an immutable historical record.
+That record is current only while its Claim, attached specifications, latest
+results, profile, and relevant Finding snapshot still match. Later research
+does not erase history; it makes the old record stale until a new assessment is
+recorded.
 
-The Pi extension is a wrapper. Chemistry judgments, accepted-TS logic,
-Gaussian parsing, workspace state transitions, and branch-context rules stay in
-the Python kernel.
+## State And Reports
 
-## Reporting
+Canonical scientific state consists of Phase, Node, and Claim registries,
+frozen validation,
+acceptance snapshots, Decisions, and transaction logs. Calculation attempts,
+remote controls, Compute/Review journals, notifications, reports, Pi sessions, and UI
+activity are operational or derived state.
 
-Use the final report template after the workspace validates:
-
-```text
-templates/ts_final_report.md
-```
-
-Generate a report package when handing off a completed search:
-
-```bash
-python "$TS_AGENT_SKILL_ROOT/scripts/ts_report.py" --root <workspace> --package-dir <workspace>/reports/final_report_package
-```
-
-The package contains `final_report.md`, `report_context.json`, `assets/`, and
-`email_summary.md`. The report should include R-TS-P structure references,
-imaginary-mode/vibration analysis, IRC key-distance evidence, an energy profile
-with electronic, E+ZPE, and available free-energy relative values or explicit
-missing-energy notes, and a mechanism interpretation that separates accepted
-pathway evidence from chemical speculation.
-
-The report must state the highest validated evidence layer reached. Do not call
-a candidate, scan point, NEB image, dMECP structure, or isolated imaginary
-frequency an accepted TS. Accepted-TS language requires TS/Freq and
-connectivity evidence for the same hypothesis plus an accepted-audit artifact.
-
-See:
-
-- `references/report_template.md`
-- `references/runtime_environment.md`
-- `references/render_contract.md`
-- `references/pi_agent_adapter.md`
+Report packages are built atomically from a valid workspace. Their manifest
+binds the source scientific revision and every output file by SHA-256. Logical
+PNG/GIF artifacts can be copied into a package `assets/` directory before
+notification; Notify accepts only unchanged manifest members. Compute runs live
+under their `calc_n` Attempt, Review runs under their target Claim, and new
+operational records use workspace-wide `calc_n`, `sub_n`, and `op_n` ordinals.
+Review advice and Compute or deterministic tool results become scientific
+support only after the Root Agent verifies primary artifacts and records normal
+Observations through a Decision.
 
 ## Validation
 
-Run local tests:
+Run validation from the authored checkout, not an installed release:
 
 ```bash
 PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q
-```
-
-Run tests through the configured runtime:
-
-```bash
-PYTHONDONTWRITEBYTECODE=1 python3 "$TS_AGENT_SKILL_ROOT/scripts/ts_runtime.py" run -m pytest -q
-```
-
-Check Pi package contents:
-
-```bash
-npm pack --dry-run
+npm run typecheck
+npm run test:pi-adapter
+python3 scripts/check_package.py
+NPM_CONFIG_CACHE=/tmp/ts-agent-npm-cache npm pack --dry-run --json
+git diff --check
 ```
