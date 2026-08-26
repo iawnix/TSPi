@@ -48,21 +48,23 @@ prescriptive stage, Node type, scientific role/layer, or next-action router.
 | `src/agents/compute/` | Compute task plan, isolated runtime, result derivation, and private prompt |
 | `src/agents/review/` | Review task projection, prompt, result tool, semantic validation |
 | `src/artifacts/` | deterministic render/report request and path validation |
-| `ts_workspace/` | graph state, bootstrap, Decisions, context, validation, transactions |
-| `ts_validation/` | GateSpec compiler, predicate registry, templates, acceptance profiles |
-| `ts_compute/` | capabilities, artifact catalog, immutable intents, control, collection |
-| `ts_backends/` | deterministic program preparation and parsing |
-| `ts_remote/` | OpenSSH/SCP, Torque, transfer, diagnostics, guards, and receipts |
-| `ts_runtime/` | runtime resolution, capability probe, and TSPi lifecycle host |
-| `ts_render/`, `ts_report/`, `ts_email/` | deterministic artifact and delivery services |
-| `ts_structures/` | molecular comparison plus deterministic RDKit seed generation |
-| `ts_web/` | read-only workspace projection and external UI registry |
-| `contracts/` | shared Review task/result JSON schemas |
+| `pyproject.toml` | `ts-agent-kernel` metadata, dependencies, package discovery, and wheel data |
+| `scripts/_wheel.py` | temporary-copy wheel build, metadata inspection, and release-wheel verification |
+| `python/ts_agent/` | the single import namespace for all deterministic Python code |
+| `python/ts_agent/workspace/` | graph state, bootstrap, Decisions, context, validation, transactions |
+| `python/ts_agent/validation/` | GateSpec compiler, predicate registry, templates, acceptance profiles |
+| `python/ts_agent/compute/` | capabilities, artifact catalog, immutable intents, control, collection |
+| `python/ts_agent/backends/` | deterministic program preparation and parsing |
+| `python/ts_agent/remote/` | OpenSSH/SCP, Torque, transfer, diagnostics, guards, and receipts |
+| `python/ts_agent/runtime/` | runtime resolution, capability probe, and TSPi lifecycle host |
+| `python/ts_agent/render/`, `python/ts_agent/report/`, `python/ts_agent/email/` | deterministic artifact and delivery services |
+| `python/ts_agent/structures/` | molecular comparison plus deterministic RDKit seed generation |
+| `python/ts_agent/web/` | read-only workspace projection and external UI registry |
 | `docs/` | installation, architecture, maintenance, and ADRs |
 | `tests/` | unit, contract, package, and recording-provider regressions |
 
 `TSPi` remains a thin shell shim. Lifecycle logic belongs in
-`scripts/tspi_host.py` and `ts_runtime/launcher.py`; do not move release
+`scripts/tspi_host.py` and `python/ts_agent/runtime/launcher.py`; do not move release
 selection, config, runtime resolution, bootstrap, locking, or Pi arguments into
 shell.
 
@@ -269,7 +271,7 @@ files, no caller path, no symlink/overwrite path, and digest-only activity
 requests. Their returned `art_*` is consumed by the ordinary Compute contract.
 
 Structure comparison takes two registered XYZ IDs and delegates scientific
-geometry logic to `ts_structures`. `ts_compute.artifacts` owns workspace
+geometry logic to `ts_agent.structures`. `ts_agent.compute.artifacts` owns workspace
 resolution, exact input-digest binding, the private no-overwrite
 `outputs/analysis/` artifact, and request validation. The result is operational;
 only a later Decision may register selected values as Observations.
@@ -312,7 +314,7 @@ payloads rather than returning a second full graph-shaped Node payload.
 Calculation Attempts remain Node-owned operational records. Project their
 purpose, kind, recalculation lineage, bounded settings, execution request, and
 Compute runs from the immutable calculation intent and journals in
-`ts_web.normalize`; browser code may format or collapse that projection but
+`ts_agent.web.normalize`; browser code may format or collapse that projection but
 must not parse program outputs, infer scientific meaning, or turn Attempts into
 ResearchNode DAG vertices.
 
@@ -321,7 +323,7 @@ workspace. Do not add write routes, implicit workspace repair, cached canonical
 indexes, or arbitrary workspace file reads. New static assets must be added to
 both `package.json.files` and the package/installer runtime checks.
 
-Keep managed workspace discovery in `ts_web.registry`, not the HTTP handler or
+Keep managed workspace discovery in `ts_agent.web.registry`, not the HTTP handler or
 browser. Reconciliation may update only the external registry: discover direct
 workspace children, prune missing entries only when the managed root was readable, and
 preserve manual registrations outside managed roots. Tests must cover discovery,
@@ -411,7 +413,14 @@ dependencies:
 
 ```bash
 python3 scripts/ts_runtime.py run -m pytest -q
+python3 scripts/build_release.py --allow-dirty --output-dir /tmp/ts-agent-release --json
 ```
+
+The release builder creates the wheel from a temporary source copy, then adds
+it to the final npm archive under `python-dist/`. Do not use the immutable
+release directory itself as a PEP 517 build source; setuptools needs writable
+build-metadata space. The runtime installer consumes the bundled wheel and
+never writes build metadata into authored or installed package roots.
 
 Do not install project dependencies into a shared Conda base. Keep credentials,
 conversations, caches, workspaces, release archives, and generated reports out
@@ -455,6 +464,10 @@ NPM_CONFIG_CACHE=/tmp/ts-agent-npm-cache npm pack --dry-run --json
 python3 scripts/build_release.py --output-dir dist --json
 ```
 
+Inspect `ts-agent-release.json` and confirm its `python_distribution` descriptor
+matches the sole `python-dist/*.whl` member. The outer archive digest binds that
+descriptor and artifact into one content-addressed release.
+
 Release build requires a clean checkout. `--allow-dirty` is only for local
 smoke validation and must not be distributed.
 
@@ -464,6 +477,7 @@ Package version metadata currently appears in multiple maintained surfaces. A
 version bump must update and test at least:
 
 - `package.json` and `package-lock.json`;
+- `pyproject.toml` and `python/ts_agent/_version.py`;
 - `extensions/shared/package-profile.ts`;
 - `scripts/check_package.py`;
 - contract-specific tests and release fixtures.

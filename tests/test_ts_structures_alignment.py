@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from ts_structures import compare_structures
-from ts_structures.internals import mapped_indices
-from ts_structures.rmsd import kabsch_transform, rmsd
+from ts_agent.structures import compare_structures
+from ts_agent.structures.internals import mapped_indices
+from ts_agent.structures.rmsd import kabsch_transform, rmsd
 
 
 def test_compare_structures_kabsch_aligns_mapped_rotation_and_translation(tmp_path: Path) -> None:

@@ -3,19 +3,16 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+from _bootstrap import bootstrap_python_package
 
-from ts_runtime import ensure_runtime_python, seed_workspace_root_from_argv
+bootstrap_python_package(ROOT, workspace_from_argv=True)
 
-seed_workspace_root_from_argv()
-ensure_runtime_python(ROOT)
-
-from ts_workspace.cli import main
+from ts_agent.workspace.cli import main
+from ts_agent.compute.artifacts import list_calculation_artifacts
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(artifact_catalog_loader=list_calculation_artifacts))

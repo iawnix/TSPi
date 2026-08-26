@@ -7,13 +7,13 @@ from pathlib import Path
 import pytest
 
 from tests.workspace_helpers import accept_research_claim
-from ts_workspace.acceptance import project_acceptances
-from ts_workspace.decision import draft_decision as _kernel_draft_decision, validate_decision
-from ts_workspace.engine import apply_decision, init_workspace, validate_decision_dry_run
-from ts_workspace.errors import ContractError
-from ts_workspace.io import read_json, write_json
-from ts_workspace.state import RESEARCH_STATE_FILE, STATE_FILES
-from ts_workspace.validator import validate_workspace
+from ts_agent.workspace.acceptance import project_acceptances
+from ts_agent.workspace.decision import draft_decision as _kernel_draft_decision, validate_decision
+from ts_agent.workspace.engine import apply_decision, init_workspace, validate_decision_dry_run
+from ts_agent.workspace.errors import ContractError
+from ts_agent.io import read_json, write_json
+from ts_agent.workspace.state import RESEARCH_STATE_FILE, STATE_FILES
+from ts_agent.workspace.validator import validate_workspace
 
 
 def draft_decision(root: Path, request: dict, **kwargs: object) -> dict:

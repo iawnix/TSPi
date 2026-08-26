@@ -2,14 +2,18 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import ts_remote
+from ts_agent import remote as ts_remote
 from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_node
-from ts_backends.base import Backend, BackendTask
-from ts_backends.gaussian import GaussianBackend, prepare_gaussian
-from ts_render import MolVisualizer
-from ts_structures import compare_structures
-from ts_web import normalize_workspace, register_workspace
-from ts_workspace.state import STATE_FILES
+from ts_agent.backends.base import Backend, BackendTask
+from ts_agent.backends.gaussian import GaussianBackend, prepare_gaussian
+from ts_agent.render import MolVisualizer
+from ts_agent.structures import compare_structures
+from ts_agent.web import normalize_workspace, register_workspace
+from ts_agent.workspace.state import STATE_FILES
+
+
+ROOT = Path(__file__).resolve().parents[1]
+PYTHON_PACKAGE = ROOT / "python" / "ts_agent"
 
 
 def test_backend_prepares_command_without_workspace_write() -> None:
@@ -36,6 +40,20 @@ def test_remote_boundary_exposes_scheduler_lifecycle_without_raw_runner() -> Non
     assert callable(ts_remote.cancel)
     assert not hasattr(ts_remote, "Runner")
     assert not hasattr(ts_remote, "SshRunner")
+
+
+def test_domain_packages_do_not_reverse_host_dependencies() -> None:
+    workspace_sources = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (PYTHON_PACKAGE / "workspace").glob("*.py")
+    )
+    backend_sources = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in (PYTHON_PACKAGE / "backends").glob("*.py")
+    )
+
+    assert "ts_agent.compute" not in workspace_sources
+    assert "ts_agent.workspace" not in backend_sources
 
 
 def test_ts_structures_returns_observation_shaped_measurements(tmp_path: Path) -> None:

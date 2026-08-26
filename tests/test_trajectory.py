@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ts_workspace.io import write_json
-from ts_workspace.trajectory import project_research_trajectory
+from ts_agent.io import write_json
+from ts_agent.workspace.trajectory import project_research_trajectory
 
 
 def test_research_trajectory_does_not_follow_a_symlinked_decision_directory(tmp_path: Path) -> None:

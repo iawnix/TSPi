@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ts_compute.capabilities import BACKEND_TASK_INPUT_ROLES, calculation_capabilities
+from ts_agent.compute.capabilities import BACKEND_TASK_INPUT_ROLES, calculation_capabilities
 
 
 def test_capability_catalog_keeps_adapter_support_separate_from_readiness() -> None:

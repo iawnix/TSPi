@@ -17,14 +17,32 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+try:
+    from ._wheel import (
+        RELEASE_SCHEMA_VERSION,
+        WheelContractError,
+        inspect_wheel,
+        validate_descriptor,
+        validate_descriptor_match,
+    )
+except ImportError:
+    from _wheel import (
+        RELEASE_SCHEMA_VERSION,
+        WheelContractError,
+        inspect_wheel,
+        validate_descriptor,
+        validate_descriptor_match,
+    )
 
-SCHEMA_VERSION = "ts-agent-release/1"
+
+SCHEMA_VERSION = RELEASE_SCHEMA_VERSION
 INSTALL_SCHEMA_VERSION = "ts-agent-install/1"
 PACKAGE_NAME = "@iawnix/ts-agent"
 RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 SHA256 = re.compile(r"^[0-9a-f]{64}$")
 REQUIRED_RUNTIME_FILES = {
     "package.json",
+    "pyproject.toml",
     "TSPi",
     "docs/ARCHITECTURE.md",
     "docs/INSTALLATION.md",
@@ -32,6 +50,8 @@ REQUIRED_RUNTIME_FILES = {
     "environment.yml",
     "scripts/install_env.py",
     "scripts/install_release.py",
+    "scripts/_bootstrap.py",
+    "scripts/_wheel.py",
     "scripts/tspi_host.py",
     "scripts/ts_compute.py",
     "scripts/ts_web.py",
@@ -42,23 +62,23 @@ REQUIRED_RUNTIME_FILES = {
     "extensions/ts-workflow-review/index.ts",
     "extensions/ts-workflow-compute/index.ts",
     "extensions/ts-workflow-artifacts/index.ts",
-    "ts_workspace/engine.py",
-    "ts_workspace/context.py",
-    "ts_workspace/bootstrap.py",
-    "ts_workspace/contracts/research_phase.schema.json",
-    "ts_workspace/contracts/research_node.schema.json",
-    "ts_validation/engine.py",
-    "ts_runtime/launcher.py",
-    "ts_web/normalize.py",
-    "ts_web/reloader.py",
-    "ts_web/server.py",
-    "ts_web/static/index.html",
-    "ts_web/static/app.css",
-    "ts_web/static/app.js",
-    "ts_web/static/research-tree.js",
+    "python/ts_agent/workspace/engine.py",
+    "python/ts_agent/workspace/context.py",
+    "python/ts_agent/workspace/bootstrap.py",
+    "python/ts_agent/workspace/contracts/research_phase.schema.json",
+    "python/ts_agent/workspace/contracts/research_node.schema.json",
+    "python/ts_agent/validation/engine.py",
+    "python/ts_agent/runtime/launcher.py",
+    "python/ts_agent/web/normalize.py",
+    "python/ts_agent/web/reloader.py",
+    "python/ts_agent/web/server.py",
+    "python/ts_agent/web/static/index.html",
+    "python/ts_agent/web/static/app.css",
+    "python/ts_agent/web/static/app.js",
+    "python/ts_agent/web/static/research-tree.js",
     "docs/adr/0001-phase-node-research-kernel.md",
 }
-FORBIDDEN_PARTS = {".git", ".pytest_cache", "__pycache__", "node_modules", "tests"}
+FORBIDDEN_PARTS = {".git", ".pytest_cache", "__pycache__", "build", "node_modules", "tests"}
 FORBIDDEN_RUNTIME_FILES = {
     "scripts/build_release.py",
     "scripts/check_package.py",
@@ -94,7 +114,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"package_root: {result['package_root']}")
             print(f"launcher: {result['launcher']}")
         return 0
-    except (OSError, ReleaseInstallError, ValueError, json.JSONDecodeError, tarfile.TarError) as error:
+    except (OSError, ReleaseInstallError, ValueError, WheelContractError, json.JSONDecodeError, tarfile.TarError) as error:
         print(f"release install failed: {error}", file=sys.stderr)
         return 1
 
@@ -116,6 +136,12 @@ def install_release(manifest_path: Path, archive_path: Path | None, install_root
     missing = sorted(REQUIRED_RUNTIME_FILES - archive_files)
     if missing:
         raise ReleaseInstallError(f"release archive is missing runtime files: {', '.join(missing)}")
+    wheel_path = manifest["python_distribution"]["path"]
+    if wheel_path not in archive_files:
+        raise ReleaseInstallError(f"release archive is missing the declared Python wheel: {wheel_path}")
+    wheels = sorted(name for name in archive_files if name.startswith("python-dist/") and name.endswith(".whl"))
+    if wheels != [wheel_path]:
+        raise ReleaseInstallError("release archive must contain only the declared Python wheel")
 
     install_root = prepare_install_root(install_root)
     package_home = ensure_private_directory(install_root / ".pi" / "packages" / "ts-agent")
@@ -199,7 +225,15 @@ def load_manifest(path: Path) -> dict[str, Any]:
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict):
         raise ReleaseInstallError("release manifest must contain an object")
-    expected = {"schema_version", "release_id", "package", "archive", "source", "created_at_utc"}
+    expected = {
+        "schema_version",
+        "release_id",
+        "package",
+        "python_distribution",
+        "archive",
+        "source",
+        "created_at_utc",
+    }
     if set(value) != expected or value.get("schema_version") != SCHEMA_VERSION:
         raise ReleaseInstallError("invalid release manifest schema")
     release_id = require_string(value.get("release_id"), "release_id")
@@ -209,6 +243,9 @@ def load_manifest(path: Path) -> dict[str, Any]:
     if package.get("name") != PACKAGE_NAME:
         raise ReleaseInstallError(f"release package name must be {PACKAGE_NAME}")
     version = require_string(package.get("version"), "package.version")
+    distribution = validate_descriptor(value.get("python_distribution"))
+    if distribution["version"] != version:
+        raise ReleaseInstallError("Python distribution version does not match package.version")
     archive = require_object(value.get("archive"), "archive", {"filename", "sha256", "size_bytes"})
     filename = require_string(archive.get("filename"), "archive.filename")
     if Path(filename).name != filename or not filename.endswith(".tgz"):
@@ -256,7 +293,11 @@ def inspect_archive(path: Path) -> tuple[list[tuple[tarfile.TarInfo, PurePosixPa
             seen.add(name)
             if not member.isdir() and not member.isreg():
                 raise ReleaseInstallError(f"archive contains unsupported member type: {name}")
-            if FORBIDDEN_PARTS.intersection(relative.parts) or name in FORBIDDEN_RUNTIME_FILES:
+            if (
+                FORBIDDEN_PARTS.intersection(relative.parts)
+                or any(part.endswith(".egg-info") for part in relative.parts)
+                or name in FORBIDDEN_RUNTIME_FILES
+            ):
                 raise ReleaseInstallError(f"archive contains development-only content: {name}")
             if relative.name.startswith(".env") or relative.suffix in {".pyc", ".pyo"}:
                 raise ReleaseInstallError(f"archive contains forbidden runtime file: {name}")
@@ -297,6 +338,10 @@ def validate_extracted_package(root: Path, manifest: dict[str, Any]) -> None:
     launcher = root / "TSPi"
     if not launcher.is_file() or not os.access(launcher, os.X_OK):
         raise ReleaseInstallError("extracted TSPi launcher is not executable")
+    expected_distribution = manifest["python_distribution"]
+    wheel = root.joinpath(*PurePosixPath(expected_distribution["path"]).parts)
+    actual_distribution = inspect_wheel(wheel)
+    validate_descriptor_match(expected_distribution, actual_distribution)
 
 
 def validate_existing_release(target: Path, manifest: dict[str, Any]) -> None:
@@ -411,6 +456,7 @@ def release_identity(manifest: dict[str, Any]) -> dict[str, Any]:
         "schema_version": manifest.get("schema_version"),
         "release_id": manifest.get("release_id"),
         "package": manifest.get("package"),
+        "python_distribution": manifest.get("python_distribution"),
         "archive": manifest.get("archive"),
         "source": manifest.get("source"),
     }

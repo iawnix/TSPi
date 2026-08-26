@@ -4,8 +4,8 @@ import json
 import re
 from pathlib import Path
 
-from ts_workspace import draft_decision, init_workspace, validate_decision
-from ts_workspace.decision import INPUT_OPERATIONS
+from ts_agent.workspace import draft_decision, init_workspace, validate_decision
+from ts_agent.workspace.decision import INPUT_OPERATIONS
 
 
 ROOT = Path(__file__).resolve().parents[1]

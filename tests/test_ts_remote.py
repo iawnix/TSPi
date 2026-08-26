@@ -10,19 +10,19 @@ from pathlib import Path
 
 import pytest
 
-from ts_remote.client import CommandResult
-from ts_remote.config import load_config
-from ts_remote.diagnostics import MODES, _doctor, diagnose
-from ts_remote.errors import (
+from ts_agent.remote.client import CommandResult
+from ts_agent.remote.config import load_config
+from ts_agent.remote.diagnostics import MODES, _doctor, diagnose
+from ts_agent.remote.errors import (
     RemoteConfigurationError,
     RemoteError,
     RemotePreSubmitError,
     RemoteSubmissionAmbiguous,
 )
-from ts_remote.lifecycle import _parse_record, _submit_script, collect, status, submit
-from ts_remote.models import RemoteJobConfig, RemoteResources, TransferRecord
-from ts_remote.torque import parse_records, render_job_script, scheduler_semantics
-from ts_remote.transfer import upload_verified
+from ts_agent.remote.lifecycle import _parse_record, _submit_script, collect, status, submit
+from ts_agent.remote.models import RemoteJobConfig, RemoteResources, TransferRecord
+from ts_agent.remote.torque import parse_records, render_job_script, scheduler_semantics
+from ts_agent.remote.transfer import upload_verified
 
 
 def test_remote_diagnostic_modes_exclude_redundant_cluster_alias() -> None:
@@ -490,9 +490,9 @@ def test_submit_reconciles_durable_receipt_after_ssh_disconnect(
         def run_script(self, *_args, **_kwargs):
             raise TimeoutError("SSH disconnected after request start")
 
-    monkeypatch.setattr("ts_remote.lifecycle.ensure_directory", lambda *_args: None)
+    monkeypatch.setattr("ts_agent.remote.lifecycle.ensure_directory", lambda *_args: None)
     monkeypatch.setattr(
-        "ts_remote.lifecycle.upload_verified",
+        "ts_agent.remote.lifecycle.upload_verified",
         lambda _client, source, remote_dir, name: TransferRecord(
             remote_path=f"{remote_dir}/{name}",
             size=source.stat().st_size,
@@ -500,7 +500,7 @@ def test_submit_reconciles_durable_receipt_after_ssh_disconnect(
         ),
     )
     monkeypatch.setattr(
-        "ts_remote.lifecycle.read_submission_record",
+        "ts_agent.remote.lifecycle.read_submission_record",
         lambda *_args, **_kwargs: {
             "schema_version": "ts-remote-submission/1",
             "submission_id": config.submission_id,
@@ -527,9 +527,9 @@ def test_submit_disconnect_without_durable_record_is_ambiguous(
         def run_script(self, *_args, **_kwargs):
             raise TimeoutError("SSH disconnected after request start")
 
-    monkeypatch.setattr("ts_remote.lifecycle.ensure_directory", lambda *_args: None)
+    monkeypatch.setattr("ts_agent.remote.lifecycle.ensure_directory", lambda *_args: None)
     monkeypatch.setattr(
-        "ts_remote.lifecycle.upload_verified",
+        "ts_agent.remote.lifecycle.upload_verified",
         lambda _client, source, remote_dir, name: TransferRecord(
             remote_path=f"{remote_dir}/{name}",
             size=source.stat().st_size,
@@ -537,7 +537,7 @@ def test_submit_disconnect_without_durable_record_is_ambiguous(
         ),
     )
     monkeypatch.setattr(
-        "ts_remote.lifecycle.read_submission_record",
+        "ts_agent.remote.lifecycle.read_submission_record",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(FileNotFoundError("record missing")),
     )
 

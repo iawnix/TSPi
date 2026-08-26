@@ -38,6 +38,8 @@ Choose one physical, non-symlink installation root:
     packages/ts-agent/
       current -> releases/<release-id>
       releases/<release-id>/
+        python/ts_agent/             auditable Python source
+        python-dist/*.whl            manifest-bound runtime artifact
       install-state.json
     remote.toml                 optional
     notifications.toml          optional, mode 0600
@@ -71,8 +73,9 @@ dist/ts-agent-<version>-sha256-<digest>.tgz
 dist/ts-agent-release.json
 ```
 
-Keep both files together. The manifest binds the archive name, size, SHA-256,
-package identity, source commit, and dirty state.
+Keep both files together. The `ts-agent-release/2` manifest binds the archive
+name, size, SHA-256, package identity, source commit, dirty state, and the sole
+bundled Python wheel's identity, path, size, SHA-256, and payload digest.
 
 ## Install Or Select A Release
 
@@ -123,11 +126,17 @@ when visualization is not required. Use
 `--dry-run` to inspect the selected prefix and command. Use `--force` only when
 the existing hash-addressed environment must be refreshed.
 
-Before writing the runtime manifest, the installer imports NumPy and RDKit,
-parses a SMILES, performs fixed-seed ETKDG embedding, and completes a UFF
-optimization. The manifest records versions, module origins, capabilities,
-selected interpreter, and environment-spec digest outside the immutable
-release. A failed probe produces no trusted manifest.
+The release already contains `python-dist/ts_agent_kernel-*.whl` plus its
+identity, size, SHA-256, and payload digest in `ts-agent-release/2` metadata.
+Before writing the runtime manifest, the installer revalidates that wheel and
+installs it without resolving duplicate pip dependencies. It never invokes a
+build backend against the read-only release tree. It then imports NumPy and
+RDKit, parses a SMILES, performs fixed-seed ETKDG embedding, and completes a UFF
+optimization. The manifest records the wheel provenance, installed
+distribution version and payload digest, source payload digest, module origins,
+capabilities, selected interpreter, and environment-spec digest outside the
+immutable release. A failed install, digest comparison, or scientific probe
+produces no trusted manifest.
 
 TSPi fails closed when that manifest is missing or stale. After selecting it,
 TSPi places the managed environment first on `PATH`, exports
@@ -156,7 +165,7 @@ state, then edit only installation-owned values:
 
 ```bash
 mkdir -p /path/to/TSPi-installation/.pi
-cp "$TS_AGENT_SKILL_ROOT/ts_remote/config.example.toml" \
+cp "$TS_AGENT_SKILL_ROOT/python/ts_agent/remote/config.example.toml" \
   /path/to/TSPi-installation/.pi/remote.toml
 chmod 600 /path/to/TSPi-installation/.pi/remote.toml
 ```
@@ -315,7 +324,8 @@ can inspect the registered research data.
 2. Preserve its archive and manifest.
 3. Run `install_release.py` against the same installation root.
 4. Run the newly selected release's `install_env.py`; a changed environment
-   spec selects a new hash-addressed prefix.
+   spec selects a new hash-addressed prefix, while an unchanged prefix still
+   receives and verifies the release-bound wheel.
 5. Stop and restart each TSPi Root Agent process when ready. A `ts_web` process
    started through the stable `current` entrypoint restarts itself after the new
    managed runtime is ready.
@@ -359,6 +369,7 @@ implement the workspace schemas it opens.
 | `no installed TS Agent release` | Install a validated archive before startup. |
 | runtime manifest or interpreter unavailable | Run the selected release's `install_env.py`. |
 | managed runtime capability probe fails | Do not fall back to system Python. Recreate the hash-addressed environment and inspect the recorded NumPy/RDKit import error. |
+| Python distribution payload mismatch | Rerun the selected release's `install_env.py`; do not edit the managed site-packages or immutable release in place. |
 | `another Root Agent already owns workspace` | Use another workspace or stop the existing process; do not delete the lock to bypass a live owner. |
 | partial or invalid workspace | Preserve the directory, inspect validation findings, and recover through an explicitly designed repair; startup will not guess. |
 | unsupported workspace layout | Preserve the source directory and start a separate fresh workspace; startup never rewrites unsupported state. |

@@ -3,13 +3,14 @@
 
 from __future__ import annotations
 
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+from _bootstrap import bootstrap_python_package
 
-from ts_email.cli import main  # noqa: E402
+bootstrap_python_package(ROOT)
+
+from ts_agent.email.cli import main  # noqa: E402
 
 
 if __name__ == "__main__":

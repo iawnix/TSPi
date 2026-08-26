@@ -4,7 +4,7 @@ import json
 import subprocess
 from pathlib import Path
 
-from ts_compute.contracts import validate_compute_contract
+from ts_agent.compute.contracts import validate_compute_contract
 
 
 ROOT = Path(__file__).resolve().parents[1]

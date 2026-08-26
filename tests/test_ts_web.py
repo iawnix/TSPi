@@ -10,10 +10,10 @@ from pathlib import Path
 import pytest
 
 from tests.workspace_helpers import accept_research_claim
-from ts_web import normalize_workspace, register_workspace
-from ts_web import server as ts_web_server
-from ts_web.file_preview import MAX_TEXT_BYTES, preview_capability, read_text_preview
-from ts_web.normalize import (
+from ts_agent.web import normalize_workspace, register_workspace
+from ts_agent.web import server as ts_web_server
+from ts_agent.web.file_preview import MAX_TEXT_BYTES, preview_capability, read_text_preview
+from ts_agent.web.normalize import (
     claim_payload,
     graph_payload_from_view,
     list_node_files,
@@ -21,15 +21,15 @@ from ts_web.normalize import (
     research_files_payload,
     workspace_snapshot,
 )
-from ts_web.registry import (
+from ts_agent.web.registry import (
     list_workspaces,
     reconcile_workspace_registry,
     register_workspaces,
     workspace_discovery_roots,
 )
-from ts_web.server import create_server
-from ts_workspace.decision import draft_decision
-from ts_workspace.engine import apply_decision, init_workspace
+from ts_agent.web.server import create_server
+from ts_agent.workspace.decision import draft_decision
+from ts_agent.workspace.engine import apply_decision, init_workspace
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -398,7 +398,7 @@ def test_workspace_snapshot_normalizes_once(tmp_path: Path, monkeypatch: pytest.
         calls += 1
         return original(source_root, label=label)
 
-    monkeypatch.setattr("ts_web.normalize.normalize_workspace", counted)
+    monkeypatch.setattr("ts_agent.web.normalize.normalize_workspace", counted)
     workspace_snapshot(row)
     assert calls == 1
 
@@ -668,9 +668,10 @@ def test_web_derives_claim_node_link_from_creator_provenance(tmp_path: Path) -> 
 
 
 def test_static_ui_exposes_research_tree_and_on_demand_node_details() -> None:
-    html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
-    script = (ROOT / "ts_web" / "static" / "app.js").read_text(encoding="utf-8")
-    tree = (ROOT / "ts_web" / "static" / "research-tree.js").read_text(encoding="utf-8")
+    static = ROOT / "python" / "ts_agent" / "web" / "static"
+    html = (static / "index.html").read_text(encoding="utf-8")
+    script = (static / "app.js").read_text(encoding="utf-8")
+    tree = (static / "research-tree.js").read_text(encoding="utf-8")
 
     assert "TS Research Explorer" in html
     assert "Research Tree" in html
@@ -709,7 +710,7 @@ def test_static_ui_exposes_research_tree_and_on_demand_node_details() -> None:
 
 
 def test_research_tree_layout_handles_branch_merge_and_lineage() -> None:
-    tree_path = (ROOT / "ts_web" / "static" / "research-tree.js").as_uri()
+    tree_path = (ROOT / "python" / "ts_agent" / "web" / "static" / "research-tree.js").as_uri()
     probe = f"""
 globalThis.window = globalThis;
 (async () => {{
@@ -751,9 +752,10 @@ globalThis.window = globalThis;
 
 
 def test_static_ui_refreshes_registry_and_persists_theme() -> None:
-    html = (ROOT / "ts_web" / "static" / "index.html").read_text(encoding="utf-8")
-    css = (ROOT / "ts_web" / "static" / "app.css").read_text(encoding="utf-8")
-    script = (ROOT / "ts_web" / "static" / "app.js").read_text(encoding="utf-8")
+    static = ROOT / "python" / "ts_agent" / "web" / "static"
+    html = (static / "index.html").read_text(encoding="utf-8")
+    css = (static / "app.css").read_text(encoding="utf-8")
+    script = (static / "app.js").read_text(encoding="utf-8")
 
     assert ':root[data-theme="dark"]' in css
     assert "body.inspector-open { overflow: hidden; }" in css
@@ -790,7 +792,7 @@ def test_research_files_payload_is_a_read_only_locator_projection(tmp_path: Path
 
 def test_static_asset_resolves_from_current_package() -> None:
     for name in ("index.html", "app.css", "app.js", "research-tree.js"):
-        expected = files("ts_web").joinpath("static", name).read_bytes()
+        expected = files("ts_agent.web").joinpath("static", name).read_bytes()
         assert ts_web_server._static_asset(name).read_bytes() == expected
 
 

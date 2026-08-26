@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ts_workspace.operational import node_completion_blockers, operational_snapshot
+from ts_agent.workspace.operational import node_completion_blockers, operational_snapshot
 
 
 def _write(path: Path, value: dict) -> None:

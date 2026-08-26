@@ -10,14 +10,34 @@ import os
 import shutil
 import subprocess
 import sys
+import tarfile
 import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+
+try:
+    from ._wheel import (
+        PYTHON_DISTRIBUTION,
+        RELEASE_SCHEMA_VERSION,
+        WHEEL_DIRECTORY,
+        WheelContractError,
+        build_wheel,
+        source_payload_sha256,
+    )
+except ImportError:
+    from _wheel import (
+        PYTHON_DISTRIBUTION,
+        RELEASE_SCHEMA_VERSION,
+        WHEEL_DIRECTORY,
+        WheelContractError,
+        build_wheel,
+        source_payload_sha256,
+    )
 
 
 ROOT = Path(__file__).resolve().parents[1]
 MANIFEST_NAME = "ts-agent-release.json"
-SCHEMA_VERSION = "ts-agent-release/1"
+SCHEMA_VERSION = RELEASE_SCHEMA_VERSION
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -43,25 +63,39 @@ def main(argv: list[str] | None = None) -> int:
         with tempfile.TemporaryDirectory(prefix="ts-agent-pack-") as temporary:
             temporary_dir = Path(temporary)
             cache_dir = temporary_dir / "npm-cache"
+            wheel_dir = temporary_dir / "wheel"
+            wheel_descriptor = build_wheel(ROOT, wheel_dir)
+            if wheel_descriptor["name"] != PYTHON_DISTRIBUTION:
+                raise RuntimeError(f"Python wheel name must be {PYTHON_DISTRIBUTION}")
+            if wheel_descriptor["version"] != package_version:
+                raise RuntimeError("Python wheel version does not match package.json")
+            source_digest = source_payload_sha256(ROOT)
+            if wheel_descriptor["payload_sha256"] != source_digest:
+                raise RuntimeError("Python wheel payload does not match the release source")
+            wheel_path = wheel_dir / wheel_descriptor["filename"]
+            distribution = {
+                "name": wheel_descriptor["name"],
+                "version": wheel_descriptor["version"],
+                "path": f"{WHEEL_DIRECTORY}/{wheel_descriptor['filename']}",
+                "sha256": wheel_descriptor["sha256"],
+                "size_bytes": wheel_descriptor["size_bytes"],
+                "payload_sha256": wheel_descriptor["payload_sha256"],
+            }
+
+            seed_pack_dir = temporary_dir / "seed-pack"
+            seed_pack_dir.mkdir()
+            seed_archive = npm_pack(ROOT, seed_pack_dir, cache_dir)
+            stage = temporary_dir / "stage"
+            extract_npm_package(seed_archive, stage)
+            staged_package = stage / "package"
+            staged_wheel_dir = staged_package / WHEEL_DIRECTORY
+            staged_wheel_dir.mkdir()
+            shutil.copy2(wheel_path, staged_wheel_dir / wheel_path.name)
+
             pack_dir = temporary_dir / "pack"
             pack_dir.mkdir()
-            env = dict(os.environ)
-            env["npm_config_cache"] = str(cache_dir)
-            completed = subprocess.run(
-                ["npm", "pack", "--json", "--pack-destination", str(pack_dir)],
-                cwd=ROOT,
-                env=env,
-                text=True,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=False,
-            )
-            if completed.returncode != 0:
-                detail = completed.stderr.strip() or completed.stdout.strip() or "npm pack failed"
-                raise RuntimeError(detail)
-            payload = json.loads(completed.stdout)
-            packed_name = require_string(payload[0].get("filename"), "npm archive filename")
-            packed_path = pack_dir / packed_name
+            packed_path = npm_pack(staged_package, pack_dir, cache_dir)
+            validate_bundled_wheel(packed_path, distribution)
             digest = sha256_file(packed_path)
             size_bytes = packed_path.stat().st_size
             release_id = f"{package_version}-sha256-{digest[:16]}"
@@ -77,6 +111,7 @@ def main(argv: list[str] | None = None) -> int:
             "schema_version": SCHEMA_VERSION,
             "release_id": release_id,
             "package": {"name": package_name, "version": package_version},
+            "python_distribution": distribution,
             "archive": {
                 "filename": archive_name,
                 "sha256": digest,
@@ -94,6 +129,7 @@ def main(argv: list[str] | None = None) -> int:
             "release_id": release_id,
             "sha256": digest,
             "size_bytes": size_bytes,
+            "python_distribution": distribution,
         }
         if args.json:
             print(json.dumps(result, indent=2, sort_keys=True))
@@ -103,7 +139,16 @@ def main(argv: list[str] | None = None) -> int:
             print(f"manifest: {manifest_path}")
             print(f"sha256: {digest}")
         return 0
-    except (IndexError, KeyError, OSError, RuntimeError, ValueError, json.JSONDecodeError) as error:
+    except (
+        IndexError,
+        KeyError,
+        OSError,
+        RuntimeError,
+        ValueError,
+        WheelContractError,
+        json.JSONDecodeError,
+        tarfile.TarError,
+    ) as error:
         print(f"release build failed: {error}", file=sys.stderr)
         return 1
 
@@ -141,6 +186,73 @@ def validate_package() -> None:
     )
     if completed.returncode != 0:
         raise RuntimeError(completed.stderr.strip() or completed.stdout.strip() or "package validation failed")
+
+
+def npm_pack(package_root: Path, destination: Path, cache_dir: Path) -> Path:
+    environment = dict(os.environ)
+    environment["npm_config_cache"] = str(cache_dir)
+    completed = subprocess.run(
+        ["npm", "pack", "--json", "--pack-destination", str(destination)],
+        cwd=package_root,
+        env=environment,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if completed.returncode != 0:
+        detail = completed.stderr.strip() or completed.stdout.strip() or "npm pack failed"
+        raise RuntimeError(detail)
+    payload = json.loads(completed.stdout)
+    packed_name = require_string(payload[0].get("filename"), "npm archive filename")
+    packed_path = destination / packed_name
+    if not packed_path.is_file() or packed_path.is_symlink():
+        raise RuntimeError(f"npm pack did not create a regular archive: {packed_path}")
+    return packed_path
+
+
+def extract_npm_package(archive_path: Path, destination: Path) -> None:
+    """Extract the locally generated seed package without trusting tar paths."""
+
+    with tarfile.open(archive_path, "r:gz") as archive:
+        for member in archive.getmembers():
+            relative = PurePosixPath(member.name)
+            if relative.is_absolute() or not relative.parts or relative.parts[0] != "package" or ".." in relative.parts:
+                raise RuntimeError(f"npm archive member escapes package root: {member.name}")
+            if not member.isdir() and not member.isreg():
+                raise RuntimeError(f"npm archive contains unsupported member type: {member.name}")
+            target = destination.joinpath(*relative.parts)
+            if member.isdir():
+                target.mkdir(parents=True, exist_ok=True)
+                continue
+            target.parent.mkdir(parents=True, exist_ok=True)
+            source = archive.extractfile(member)
+            if source is None:
+                raise RuntimeError(f"could not read npm archive member: {member.name}")
+            with source, target.open("xb") as handle:
+                shutil.copyfileobj(source, handle)
+            target.chmod(member.mode & 0o777)
+
+
+def validate_bundled_wheel(archive_path: Path, distribution: dict[str, object]) -> None:
+    member_name = f"package/{distribution['path']}"
+    matches: list[tarfile.TarInfo] = []
+    with tarfile.open(archive_path, "r:gz") as archive:
+        for member in archive.getmembers():
+            if member.name == member_name and member.isreg():
+                matches.append(member)
+        if len(matches) != 1:
+            raise RuntimeError("release archive must contain exactly one declared Python wheel")
+        member = matches[0]
+        source = archive.extractfile(member)
+        if source is None:
+            raise RuntimeError("could not read bundled Python wheel")
+        with source:
+            content = source.read()
+    if len(content) != distribution["size_bytes"]:
+        raise RuntimeError("bundled Python wheel size does not match its descriptor")
+    if hashlib.sha256(content).hexdigest() != distribution["sha256"]:
+        raise RuntimeError("bundled Python wheel SHA-256 does not match its descriptor")
 
 
 def sha256_file(path: Path) -> str:

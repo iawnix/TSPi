@@ -8,10 +8,10 @@ from pathlib import Path
 import pytest
 
 from tests.workspace_helpers import bootstrap_workspace_fixture, build_review_bundle, start_research_node
-from ts_workspace import apply_decision, draft_decision, validate_decision_dry_run
-from ts_workspace.context import compile_context
-from ts_workspace.errors import ContractError
-from ts_workspace.operational import operational_snapshot
+from ts_agent.workspace import apply_decision, draft_decision, validate_decision_dry_run
+from ts_agent.workspace.context import compile_context
+from ts_agent.workspace.errors import ContractError
+from ts_agent.workspace.operational import operational_snapshot
 
 
 ROOT = Path(__file__).resolve().parents[1]

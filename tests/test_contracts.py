@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from ts_workspace import (
+from ts_agent.workspace import (
     ContractError,
     apply_decision,
     compile_context,
@@ -15,10 +15,11 @@ from ts_workspace import (
     validate_decision,
     validate_workspace,
 )
-from ts_workspace.schema_validation import check_all_contract_schemas
+from ts_agent.workspace.schema_validation import check_all_contract_schemas
 
 
 ROOT = Path(__file__).resolve().parents[1]
+WORKSPACE_PACKAGE = ROOT / "python" / "ts_agent" / "workspace"
 SCHEMA_FILES = {
     "acceptance_record.schema.json",
     "claim.schema.json",
@@ -58,7 +59,7 @@ CANONICAL_JSON = {
 
 
 def test_required_schema_files_match_the_active_contract() -> None:
-    contract_dir = ROOT / "ts_workspace" / "contracts"
+    contract_dir = WORKSPACE_PACKAGE / "contracts"
     assert {path.name for path in contract_dir.glob("*.schema.json")} == SCHEMA_FILES
     assert not any(re.search(r"(?:^|[_-])v[0-9]+(?:[._-]|$)", name) or "research_act" in name or "evidence" in name for name in SCHEMA_FILES)
     for name in SCHEMA_FILES:
@@ -185,5 +186,5 @@ def test_context_and_validation_are_pure_reads(tmp_path: Path) -> None:
 
 
 def test_state_conversion_modules_and_version_branded_schemas_are_absent() -> None:
-    assert not list((ROOT / "ts_workspace").glob("*_v[0-9]*.py"))
-    assert not list((ROOT / "ts_workspace" / "contracts").glob("*_v[0-9]*.schema.json"))
+    assert not list(WORKSPACE_PACKAGE.glob("*_v[0-9]*.py"))
+    assert not list((WORKSPACE_PACKAGE / "contracts").glob("*_v[0-9]*.schema.json"))

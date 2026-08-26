@@ -4,10 +4,10 @@ import json
 import subprocess
 from pathlib import Path
 
-from ts_compute.artifacts import list_calculation_artifacts
-from ts_workspace.context import build_review_snapshot
-from ts_workspace.decision import draft_decision
-from ts_workspace.engine import apply_decision, init_workspace
+from ts_agent.compute.artifacts import list_calculation_artifacts
+from ts_agent.workspace.context import build_review_snapshot
+from ts_agent.workspace.decision import draft_decision
+from ts_agent.workspace.engine import apply_decision, init_workspace
 
 
 REPO = Path(__file__).resolve().parents[1]

@@ -6,10 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from ts_workspace import ensure_workspace_identity, init_workspace, read_workspace_identity, validate_workspace
-from ts_workspace.identity import IDENTITY_REF, WorkspaceIdentityError
-from ts_workspace.operational import operational_snapshot
-from ts_workspace.revision import workspace_revision
+from ts_agent.workspace import ensure_workspace_identity, init_workspace, read_workspace_identity, validate_workspace
+from ts_agent.workspace.identity import IDENTITY_REF, WorkspaceIdentityError
+from ts_agent.workspace.operational import operational_snapshot
+from ts_agent.workspace.revision import workspace_revision
 
 
 def test_initialized_workspace_has_stable_bound_identity(tmp_path: Path) -> None:

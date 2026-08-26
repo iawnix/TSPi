@@ -5,14 +5,14 @@ from pathlib import Path
 
 import pytest
 
-from ts_workspace import (
+from ts_agent.workspace import (
     WorkspaceBootstrapError,
     WorkspaceBootstrapState,
     bootstrap_workspace,
     classify_workspace,
     init_workspace,
 )
-from ts_workspace.state import REQUIRED_FILES
+from ts_agent.workspace.state import REQUIRED_FILES
 
 
 def test_bootstrap_initializes_fresh_workspace_and_preserves_inputs(tmp_path: Path) -> None:

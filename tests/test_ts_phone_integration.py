@@ -27,7 +27,7 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     (package_root / ".ts-agent-release.json").write_text(
         json.dumps(
             {
-                "schema_version": "ts-agent-release/1",
+                "schema_version": "ts-agent-release/2",
                 "release_id": "test-release",
                 "package": {"name": "@iawnix/ts-agent", "version": "0.10.0"},
             }
@@ -38,13 +38,13 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     shutil.copy2(TSPI, package_root / "TSPi")
     (package_root / "TSPi").chmod(0o755)
     (package_root / "scripts").mkdir()
-    shutil.copy2(ROOT / "scripts" / "tspi_host.py", package_root / "scripts" / "tspi_host.py")
-    for name in ("ts_runtime", "ts_validation", "ts_workspace"):
-        shutil.copytree(
-            ROOT / name,
-            package_root / name,
-            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
-        )
+    for name in ("_bootstrap.py", "tspi_host.py"):
+        shutil.copy2(ROOT / "scripts" / name, package_root / "scripts" / name)
+    shutil.copytree(
+        ROOT / "python",
+        package_root / "python",
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.egg-info"),
+    )
     shutil.copy2(ROOT / "environment.yml", package_root / "environment.yml")
     write_test_runtime_manifest(package_root, install_root)
     (package_home / "current").symlink_to("releases/test-release")

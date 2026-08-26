@@ -6,22 +6,22 @@ from pathlib import Path
 import pytest
 
 from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_node
-from ts_backends.base import BackendTask
-from ts_backends.crest import prepare_crest
-from ts_backends.xtb import (
+from ts_agent.backends.base import BackendTask
+from ts_agent.backends.crest import prepare_crest
+from ts_agent.backends.xtb import (
     parse_vibrational_spectrum,
     parse_xtb_artifacts,
     prepare_xtb,
 )
-from ts_backends.xtb_scan import parse_xtb_scan_control
-from ts_compute import (
+from ts_agent.backends.xtb_scan import parse_xtb_scan_control
+from ts_agent.compute import (
     ComputeContractError,
     create_calculation_intent,
     list_calculation_artifacts,
     parse_calculation,
     prepare_calculation,
 )
-from ts_workspace.io import sha256_json
+from ts_agent.io import sha256_json
 
 
 def test_xtb_prepares_typed_task_matrix() -> None:

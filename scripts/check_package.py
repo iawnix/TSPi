@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import tomllib
 from pathlib import Path
 from typing import Any
 
@@ -27,6 +28,7 @@ EXTENSION_ENTRIES = [
 PACKAGE_FILES = [
     "TSPi",
     "README.md",
+    "pyproject.toml",
     "docs/*.md",
     "docs/adr/*.md",
     "environment.yml",
@@ -41,6 +43,8 @@ PACKAGE_FILES = [
     "extensions/ts-workflow-ui/*.ts",
     "scripts/install_env.py",
     "scripts/install_release.py",
+    "scripts/_bootstrap.py",
+    "scripts/_wheel.py",
     "scripts/tspi_host.py",
     "scripts/ts_backend.py",
     "scripts/ts_compute.py",
@@ -60,29 +64,32 @@ PACKAGE_FILES = [
     "src/agents/review/*.cjs",
     "src/agents/review/prompts/*.md",
     "src/artifacts/*.cjs",
-    "ts_backends/*.py",
-    "ts_compute/*.py",
-    "ts_compute/contracts/*.json",
-    "ts_email/*.py",
-    "ts_remote/*.py",
-    "ts_remote/*.toml",
-    "ts_render/*.py",
-    "ts_report/*.py",
-    "ts_runtime/*.py",
-    "ts_structures/*.py",
-    "ts_validation/*.py",
-    "ts_validation/predicates/*.py",
-    "ts_validation/templates/builtin/*.json",
-    "ts_validation/acceptance_profiles/*.json",
-    "ts_web/*.py",
-    "ts_web/static/*.html",
-    "ts_web/static/*.css",
-    "ts_web/static/*.js",
-    "ts_workspace/*.py",
-    "ts_workspace/contracts/*.json",
+    "python/ts_agent/*.py",
+    "python/ts_agent/backends/*.py",
+    "python/ts_agent/compute/*.py",
+    "python/ts_agent/compute/contracts/*.json",
+    "python/ts_agent/email/*.py",
+    "python/ts_agent/remote/*.py",
+    "python/ts_agent/remote/*.toml",
+    "python/ts_agent/render/*.py",
+    "python/ts_agent/report/*.py",
+    "python/ts_agent/runtime/*.py",
+    "python/ts_agent/structures/*.py",
+    "python/ts_agent/validation/*.py",
+    "python/ts_agent/validation/predicates/*.py",
+    "python/ts_agent/validation/templates/builtin/*.json",
+    "python/ts_agent/validation/acceptance_profiles/*.json",
+    "python/ts_agent/web/*.py",
+    "python/ts_agent/web/static/*.html",
+    "python/ts_agent/web/static/*.css",
+    "python/ts_agent/web/static/*.js",
+    "python/ts_agent/workspace/*.py",
+    "python/ts_agent/workspace/contracts/*.json",
+    "python-dist/*.whl",
 ]
 REQUIRED_TARBALL_FILES = {
     "package.json",
+    "pyproject.toml",
     "TSPi",
     "docs/ARCHITECTURE.md",
     "docs/INSTALLATION.md",
@@ -90,6 +97,8 @@ REQUIRED_TARBALL_FILES = {
     "environment.yml",
     "scripts/install_env.py",
     "scripts/install_release.py",
+    "scripts/_bootstrap.py",
+    "scripts/_wheel.py",
     "scripts/tspi_host.py",
     "skills/transition-state-workflow/SKILL.md",
     "themes/ts-theme.json",
@@ -122,25 +131,25 @@ REQUIRED_TARBALL_FILES = {
     "src/agents/review/runtime.ts",
     "src/agents/review/prompts/core.md",
     "src/artifacts/request-contract.cjs",
-    "ts_compute/artifacts.py",
-    "ts_email/delivery.py",
-    "ts_runtime/probe.py",
-    "ts_structures/api.py",
-    "ts_structures/seed.py",
-    "ts_workspace/engine.py",
-    "ts_workspace/context.py",
-    "ts_workspace/bootstrap.py",
-    "ts_workspace/contracts/research_phase.schema.json",
-    "ts_workspace/contracts/research_phase_registry.schema.json",
-    "ts_workspace/contracts/research_node.schema.json",
-    "ts_validation/engine.py",
-    "ts_validation/templates/builtin/classical-ts__1.json",
-    "ts_validation/acceptance_profiles/accepted-ts__3.json",
-    "ts_web/static/index.html",
-    "ts_web/static/app.css",
-    "ts_web/static/app.js",
-    "ts_web/static/research-tree.js",
-    "ts_web/reloader.py",
+    "python/ts_agent/compute/artifacts.py",
+    "python/ts_agent/email/delivery.py",
+    "python/ts_agent/runtime/probe.py",
+    "python/ts_agent/structures/api.py",
+    "python/ts_agent/structures/seed.py",
+    "python/ts_agent/workspace/engine.py",
+    "python/ts_agent/workspace/context.py",
+    "python/ts_agent/workspace/bootstrap.py",
+    "python/ts_agent/workspace/contracts/research_phase.schema.json",
+    "python/ts_agent/workspace/contracts/research_phase_registry.schema.json",
+    "python/ts_agent/workspace/contracts/research_node.schema.json",
+    "python/ts_agent/validation/engine.py",
+    "python/ts_agent/validation/templates/builtin/classical-ts__1.json",
+    "python/ts_agent/validation/acceptance_profiles/accepted-ts__3.json",
+    "python/ts_agent/web/static/index.html",
+    "python/ts_agent/web/static/app.css",
+    "python/ts_agent/web/static/app.js",
+    "python/ts_agent/web/static/research-tree.js",
+    "python/ts_agent/web/reloader.py",
     "docs/adr/0001-phase-node-research-kernel.md",
 }
 REMOVED_PREFIXES = (
@@ -151,6 +160,17 @@ REMOVED_PREFIXES = (
     "references/",
     "review-agent/",
     "templates/",
+    "ts_backends/",
+    "ts_compute/",
+    "ts_email/",
+    "ts_remote/",
+    "ts_render/",
+    "ts_report/",
+    "ts_runtime/",
+    "ts_structures/",
+    "ts_validation/",
+    "ts_web/",
+    "ts_workspace/",
 )
 FORBIDDEN_PARTS = {
     ".agents",
@@ -187,6 +207,11 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
         errors.append("package must remain private until release is explicitly authorized")
     if manifest.get("files") != PACKAGE_FILES:
         errors.append("package files allowlist does not match the maintained runtime boundary")
+    if manifest.get("dependencies"):
+        errors.append("Pi-provided runtime packages must not be bundled as dependencies")
+    peer_dependencies = manifest.get("peerDependencies")
+    if not isinstance(peer_dependencies, dict) or peer_dependencies.get("typebox") != "*":
+        errors.append("Pi-provided typebox must be declared as peerDependencies.typebox='*'")
 
     pi = manifest.get("pi")
     if not isinstance(pi, dict):
@@ -212,6 +237,29 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
         if not expected.is_file():
             errors.append(f"registered extension entry is missing: {expected.relative_to(ROOT)}")
 
+    if errors:
+        raise PackageCheckError("\n".join(errors))
+
+
+def validate_python_project() -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    metadata = project.get("project")
+    setuptools = project.get("tool", {}).get("setuptools", {})
+    version_source = ROOT / "python" / "ts_agent" / "_version.py"
+    namespace = ROOT / "python" / "ts_agent" / "__init__.py"
+    errors: list[str] = []
+    if not isinstance(metadata, dict) or metadata.get("name") != "ts-agent-kernel":
+        errors.append("pyproject project.name must be ts-agent-kernel")
+    if not isinstance(metadata, dict) or metadata.get("dynamic") != ["version"]:
+        errors.append("pyproject version must be sourced from ts_agent._version")
+    if setuptools.get("package-dir") != {"": "python"}:
+        errors.append("pyproject must use the python/ source root")
+    if not version_source.is_file() or not namespace.is_file():
+        errors.append("Python ts_agent namespace or version source is missing")
+    else:
+        expected = f'__version__ = "{PACKAGE_VERSION}"'
+        if expected not in version_source.read_text(encoding="utf-8"):
+            errors.append("Python distribution version does not match package.json")
     if errors:
         raise PackageCheckError("\n".join(errors))
 
@@ -276,6 +324,9 @@ def validate_tarball(files: set[str]) -> None:
     forbidden: list[str] = []
     for value in sorted(files):
         path = Path(value)
+        if value.startswith("python-dist/"):
+            forbidden.append(value)
+            continue
         if value == "SKILL.md" or value.startswith(REMOVED_PREFIXES):
             forbidden.append(value)
             continue
@@ -297,6 +348,7 @@ def validate_tarball(files: set[str]) -> None:
 def main() -> int:
     try:
         validate_manifest(load_manifest())
+        validate_python_project()
         files = npm_pack_files()
         validate_tarball(files)
     except (OSError, PackageCheckError, json.JSONDecodeError) as error:

@@ -7,15 +7,15 @@ from pathlib import Path
 import pytest
 
 from tests.workspace_helpers import start_research_node
-from ts_report import build_report_package
-from ts_workspace.activities import build_activity_index
-from ts_workspace.context import compile_context
-from ts_workspace.decision import draft_decision
-from ts_workspace.engine import apply_decision, init_workspace, validate_decision_dry_run
-from ts_workspace.errors import ContractError
-from ts_workspace.io import read_json, write_json
-from ts_workspace.operational import operational_snapshot
-from ts_workspace.validator import validate_workspace
+from ts_agent.report import build_report_package
+from ts_agent.workspace.activities import build_activity_index
+from ts_agent.workspace.context import compile_context
+from ts_agent.workspace.decision import draft_decision
+from ts_agent.workspace.engine import apply_decision, init_workspace, validate_decision_dry_run
+from ts_agent.workspace.errors import ContractError
+from ts_agent.io import read_json, write_json
+from ts_agent.workspace.operational import operational_snapshot
+from ts_agent.workspace.validator import validate_workspace
 
 
 ROOT = Path(__file__).resolve().parents[1]

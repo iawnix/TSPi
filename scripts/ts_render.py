@@ -9,14 +9,12 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+from _bootstrap import bootstrap_python_package
 
-from ts_runtime import ensure_runtime_python
+bootstrap_python_package(ROOT)
 
-ensure_runtime_python(ROOT)
-
-from ts_render import EnvironmentChecker, MolVisualizer  # noqa: E402
-from ts_render.config import CAMERA_PATHS, COLOR_SCHEMES, ENGINES, LAYOUTS, STYLES, parse_resolution  # noqa: E402
+from ts_agent.render import EnvironmentChecker, MolVisualizer  # noqa: E402
+from ts_agent.render.config import CAMERA_PATHS, COLOR_SCHEMES, ENGINES, LAYOUTS, STYLES, parse_resolution  # noqa: E402
 
 
 def main() -> int:

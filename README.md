@@ -109,13 +109,20 @@ python3 "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
   --json
 ```
 
-The release installer verifies package identity, archive size, SHA-256, safe
-members, required files, and immutable permissions before atomically selecting
+The release builder creates `ts-agent-kernel` from a temporary source copy and
+embeds the wheel under `python-dist/`. The release installer verifies package
+identity, the outer archive, the wheel metadata and digests, safe members,
+required files, and immutable permissions before atomically selecting
 `.pi/packages/ts-agent/current`. It installs:
 
 ```text
 <installation>/TSPi -> .pi/packages/ts-agent/current/TSPi
 ```
+
+The runtime installer also installs the release's `ts-agent-kernel` wheel into
+the managed Conda prefix and binds its complete payload digest to the runtime
+manifest. TSPi will not combine a newly selected Pi release with stale Python
+modules from an earlier release.
 
 Pi model authentication, SSH/Torque access, and notifications are
 installation-owned configuration and are not stored in a research workspace.

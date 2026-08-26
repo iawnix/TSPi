@@ -42,7 +42,32 @@ There are three forms of execution:
    explicitly selected side effect. Every compute action, structure seed or
    comparison, Render, Report, remote inspection, artifact import,
    notification, context, and validation operation is implemented outside the
-   child model.
+child model.
+
+## Python Distribution Boundary
+
+The Pi package and Python distribution are separate, coordinated boundaries.
+`package.json` selects the Pi resources and immutable release contents.
+`pyproject.toml` builds the deterministic kernel as `ts-agent-kernel` from the
+single `python/ts_agent/` namespace. Stable `scripts/*.py` files remain Pi and
+operator entrypoints; they do not own domain behavior.
+
+`build_release.py` builds the wheel from a temporary writable source copy and
+embeds it under `python-dist/`. Release manifest `ts-agent-release/2` binds the
+wheel name, version, path, size, SHA-256, and expanded package-payload digest to
+the outer npm archive. `install_release.py` verifies both layers before making
+the selected release read-only.
+
+`install_env.py` never builds inside an immutable release. It revalidates and
+installs the bundled wheel into the managed Conda prefix with dependencies
+already supplied by `environment.yml`. From an authored checkout, it builds the
+same wheel in a temporary directory and installs that artifact without creating
+`egg-info` in the checkout. The runtime probe hashes every installed Python
+module and package-data file. The external runtime manifest binds that digest
+to the selected release's source payload, environment specification,
+interpreter, NumPy/RDKit origins, and exercised capabilities. TSPi rejects a
+stale environment even when the package version or Conda dependency set did not
+change.
 
 ## Authority Matrix
 
@@ -403,11 +428,12 @@ mechanism.
 ## TSPi Lifecycle
 
 `TSPi` is a thin shell shim. `scripts/tspi_host.py` and
-`ts_runtime/launcher.py` own lifecycle behavior:
+`python/ts_agent/runtime/launcher.py` own lifecycle behavior:
 
 1. Resolve the physical installation root and immutable selected release.
 2. Resolve installation-owned runtime, remote, notification, and cache paths.
-3. Select the isolated Python interpreter before importing workflow code.
+3. Select the isolated Python interpreter and verify its installed
+   `ts-agent-kernel` payload before importing workflow code.
 4. Validate the workspace name and create or reuse
    `<installation>/workspaces/<name>`.
 5. Create workspace-local Pi session settings and acquire a nonblocking Root
@@ -638,17 +664,19 @@ session. `/ts-subagent-history` reads durable Compute and Review summaries on de
 | Public tool names and execution classes | `extensions/shared/tool-catalog.ts` |
 | Public call schemas | each `extensions/ts-workflow-*/index.ts` |
 | Agent task/result envelopes | `src/agent-core/agent-protocol.cjs` |
-| Canonical scientific records | `ts_workspace/contracts/*.schema.json` |
-| Decision normalization and ID allocation | `ts_workspace/decision.py` |
-| Transactional mutation and validation | `ts_workspace/engine.py`, `ts_workspace/validator.py` |
-| Graph projections and Review snapshot | `ts_workspace/context.py` |
-| Predicate registry and GateSpec compiler | `ts_validation/` |
-| Built-in validation policy | `ts_validation/templates/`, `ts_validation/acceptance_profiles/` |
-| Compute request, intent, and result | `ts_compute/contracts/*.schema.json` |
-| Backend capabilities and parsers | `ts_compute/capabilities.py`, `ts_backends/` |
-| Remote lifecycle | `ts_remote/` |
-| Artifact import/catalog/structure-analysis contract | `ts_compute/artifacts.py`, `ts_compute/cli.py`, `ts_structures/` |
+| Canonical scientific records | `python/ts_agent/workspace/contracts/*.schema.json` |
+| Decision normalization and ID allocation | `python/ts_agent/workspace/decision.py` |
+| Transactional mutation and validation | `python/ts_agent/workspace/engine.py`, `python/ts_agent/workspace/validator.py` |
+| Graph projections and Review snapshot | `python/ts_agent/workspace/context.py` |
+| Predicate registry and GateSpec compiler | `python/ts_agent/validation/` |
+| Built-in validation policy | `python/ts_agent/validation/templates/`, `python/ts_agent/validation/acceptance_profiles/` |
+| Compute request, intent, and result | `python/ts_agent/compute/contracts/*.schema.json` |
+| Backend capabilities and parsers | `python/ts_agent/compute/capabilities.py`, `python/ts_agent/backends/` |
+| Remote lifecycle | `python/ts_agent/remote/` |
+| Artifact import/catalog/structure-analysis contract | `python/ts_agent/compute/artifacts.py`, `python/ts_agent/compute/cli.py`, `python/ts_agent/structures/` |
 | Render/report request/path contract | `src/artifacts/request-contract.cjs` |
-| Report projection | `ts_report/` |
-| Read-only Web projection and UI | `ts_web/normalize.py`, `ts_web/server.py`, `ts_web/static/` |
-| Package/release boundary | `package.json`, `scripts/check_package.py`, installer tests |
+| Report projection | `python/ts_agent/report/` |
+| Read-only Web projection and UI | `python/ts_agent/web/normalize.py`, `python/ts_agent/web/server.py`, `python/ts_agent/web/static/` |
+| Generic atomic file IO | `python/ts_agent/io.py` |
+| Python distribution boundary | `pyproject.toml`, `python/ts_agent/`, `scripts/_wheel.py`, release and runtime payload digests |
+| Pi package/release boundary | `package.json`, `scripts/check_package.py`, installer tests |

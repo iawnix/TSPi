@@ -11,10 +11,10 @@ from pathlib import Path
 import pytest
 
 from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_node
-from ts_compute.artifacts import list_calculation_artifacts
-from ts_email.delivery import notify_user
-from ts_email.errors import NotificationError
-from ts_report import build_report_package
+from ts_agent.compute.artifacts import list_calculation_artifacts
+from ts_agent.email.delivery import notify_user
+from ts_agent.email.errors import NotificationError
+from ts_agent.report import build_report_package
 
 
 ROOT = Path(__file__).resolve().parents[1]

@@ -4,11 +4,11 @@ from pathlib import Path
 
 import pytest
 
-from ts_compute.artifacts import import_calculation_artifact, list_calculation_artifacts, resolve_artifact_ids
-from ts_compute.contracts import ComputeContractError
-from ts_compute.control import create_calculation_intent, prepare_calculation
-from ts_workspace.decision import draft_decision
-from ts_workspace.engine import apply_decision, init_workspace
+from ts_agent.compute.artifacts import import_calculation_artifact, list_calculation_artifacts, resolve_artifact_ids
+from ts_agent.compute.contracts import ComputeContractError
+from ts_agent.compute.control import create_calculation_intent, prepare_calculation
+from ts_agent.workspace.decision import draft_decision
+from ts_agent.workspace.engine import apply_decision, init_workspace
 
 
 def _open_node(root: Path) -> str:

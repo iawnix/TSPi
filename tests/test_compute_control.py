@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_node
-from ts_compute import (
+from ts_agent.compute import (
     ComputeContractError,
     calculation_status,
     calculation_tail,
@@ -20,11 +20,11 @@ from ts_compute import (
     prepare_calculation,
     submit_calculation,
 )
-from ts_compute.contracts import validate_compute_contract
-from ts_remote import lifecycle as remote_lifecycle
-from ts_remote.errors import RemotePreSubmitError, RemoteSubmissionAmbiguous, RemoteSubmissionRejected
-from ts_remote.models import RemoteJobStatus, RemoteReceipt
-from ts_workspace.identity import workspace_id
+from ts_agent.compute.contracts import validate_compute_contract
+from ts_agent.remote import lifecycle as remote_lifecycle
+from ts_agent.remote.errors import RemotePreSubmitError, RemoteSubmissionAmbiguous, RemoteSubmissionRejected
+from ts_agent.remote.models import RemoteJobStatus, RemoteReceipt
+from ts_agent.workspace.identity import workspace_id
 
 
 def _workspace(tmp_path: Path) -> tuple[Path, str]:
@@ -236,7 +236,7 @@ def test_intent_sequence_reservation_is_concurrent_and_failure_atomic(
         path.with_name(f"{path.name}.tmp").write_text("partial", encoding="utf-8")
         raise OSError("simulated intent write failure")
 
-    monkeypatch.setattr("ts_compute.control.write_json", fail_write)
+    monkeypatch.setattr("ts_agent.compute.control.write_json", fail_write)
     with pytest.raises(OSError, match="simulated intent write failure"):
         _create(workspace2, node_id2)
     assert not (workspace2 / "nodes" / node_id2 / "attempts").exists()
@@ -292,11 +292,11 @@ def test_remote_submit_status_tail_collect_and_cancel_are_receipt_bound(
         calls["cancel"] += 1
         return {"state": "accepted", "updated_at": "2026-08-12T00:01:00Z"}
 
-    monkeypatch.setattr("ts_compute.control.remote_lifecycle.submit", fake_submit)
-    monkeypatch.setattr("ts_compute.control.remote_lifecycle.status", fake_status)
-    monkeypatch.setattr("ts_compute.control.remote_lifecycle.tail", lambda *_args: "running\n")
-    monkeypatch.setattr("ts_compute.control.remote_lifecycle.collect", fake_collect)
-    monkeypatch.setattr("ts_compute.control.remote_lifecycle.cancel", fake_cancel)
+    monkeypatch.setattr("ts_agent.compute.control.remote_lifecycle.submit", fake_submit)
+    monkeypatch.setattr("ts_agent.compute.control.remote_lifecycle.status", fake_status)
+    monkeypatch.setattr("ts_agent.compute.control.remote_lifecycle.tail", lambda *_args: "running\n")
+    monkeypatch.setattr("ts_agent.compute.control.remote_lifecycle.collect", fake_collect)
+    monkeypatch.setattr("ts_agent.compute.control.remote_lifecycle.cancel", fake_cancel)
 
     submitted = submit_calculation(workspace, created["intent_id"])
     assert submit_calculation(workspace, created["intent_id"]) == submitted
@@ -326,7 +326,7 @@ def test_pre_submit_failure_is_retryable_but_scheduler_rejection_is_not(
             raise RemotePreSubmitError("upload", OSError("network unavailable"))
         return _receipt_for(config)
 
-    monkeypatch.setattr("ts_compute.control.remote_lifecycle.submit", transient)
+    monkeypatch.setattr("ts_agent.compute.control.remote_lifecycle.submit", transient)
     failed = submit_calculation(workspace, created["intent_id"])
     assert failed["state"] == "failed"
     assert failed["control"]["effect_attempted"] is False
@@ -335,7 +335,7 @@ def test_pre_submit_failure_is_retryable_but_scheduler_rejection_is_not(
 
     workspace2, _node_id2, created2 = _prepared_remote(tmp_path / "rejected", monkeypatch)
     monkeypatch.setattr(
-        "ts_compute.control.remote_lifecycle.submit",
+        "ts_agent.compute.control.remote_lifecycle.submit",
         lambda _config: (_ for _ in ()).throw(
             RemoteSubmissionRejected({"state": "rejected", "error": "queue disabled"})
         ),
@@ -353,7 +353,7 @@ def test_ambiguous_submit_reconciles_only_from_a_matching_durable_record(
 ) -> None:
     workspace, _node_id, created = _prepared_remote(tmp_path, monkeypatch)
     monkeypatch.setattr(
-        "ts_compute.control.remote_lifecycle.submit",
+        "ts_agent.compute.control.remote_lifecycle.submit",
         lambda _config: (_ for _ in ()).throw(
             RemoteSubmissionAmbiguous({"state": "unknown", "phase": "submit_request_started"})
         ),
@@ -379,7 +379,7 @@ def test_ambiguous_submit_reconciles_only_from_a_matching_durable_record(
         }
 
     monkeypatch.setattr(
-        "ts_compute.control.remote_lifecycle.status",
+        "ts_agent.compute.control.remote_lifecycle.status",
         lambda _config, job_id: RemoteJobStatus(
             state="queued",
             program_status="not_run",
@@ -388,14 +388,14 @@ def test_ambiguous_submit_reconciles_only_from_a_matching_durable_record(
         ),
     )
     monkeypatch.setattr(
-        "ts_compute.control.remote_lifecycle.read_submission_record",
+        "ts_agent.compute.control.remote_lifecycle.read_submission_record",
         lambda config: durable(config, valid=False),
     )
     with pytest.raises(ComputeContractError, match="reconciliation record does not match"):
         calculation_status(workspace, created["intent_id"])
 
     monkeypatch.setattr(
-        "ts_compute.control.remote_lifecycle.read_submission_record",
+        "ts_agent.compute.control.remote_lifecycle.read_submission_record",
         lambda config: durable(config, valid=True),
     )
     assert calculation_status(workspace, created["intent_id"])["state"] == "queued"
@@ -407,14 +407,14 @@ def test_failed_collection_leaves_no_partial_output_directory(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     workspace, node_id, created = _prepared_remote(tmp_path, monkeypatch)
-    monkeypatch.setattr("ts_compute.control.remote_lifecycle.submit", _receipt_for)
+    monkeypatch.setattr("ts_agent.compute.control.remote_lifecycle.submit", _receipt_for)
 
     def fail_collect(_config, _artifacts, staging):
         staging.mkdir(parents=True, exist_ok=True)
         (staging / "gaussian.out").write_text("partial\n", encoding="utf-8")
         raise OSError("simulated transfer failure")
 
-    monkeypatch.setattr("ts_compute.control.remote_lifecycle.collect", fail_collect)
+    monkeypatch.setattr("ts_agent.compute.control.remote_lifecycle.collect", fail_collect)
     submit_calculation(workspace, created["intent_id"])
     with pytest.raises(OSError, match="simulated transfer failure"):
         collect_calculation(workspace, created["intent_id"], ["gaussian.out"])

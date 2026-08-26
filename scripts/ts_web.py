@@ -11,26 +11,19 @@ from pathlib import Path
 
 ENTRYPOINT = Path(os.path.abspath(__file__))
 ROOT = Path(__file__).resolve().parents[1]
-sys.path.insert(0, str(ROOT))
+from _bootstrap import bootstrap_python_package
 
-from ts_runtime import (
-    configured_python,
-    ensure_runtime_python,
-    seed_installation_runtime_from_entrypoint,
-)
+runtime_environment = bootstrap_python_package(ROOT, entrypoint=ENTRYPOINT)
 
-seed_installation_runtime_from_entrypoint(ENTRYPOINT)
-ensure_runtime_python(ROOT)
-
-from ts_web import list_workspaces, register_workspace, register_workspaces, serve
-from ts_web.reloader import exec_selected_release
-from ts_web.registry import ensure_state_dir
-from ts_workspace.io import read_json, write_json
+from ts_agent.web import list_workspaces, register_workspace, register_workspaces, serve
+from ts_agent.web.reloader import exec_selected_release
+from ts_agent.web.registry import ensure_state_dir
+from ts_agent.io import read_json, write_json
 
 
 def _release_runtime_ready(entrypoint: Path) -> bool:
     package_root = entrypoint.parents[1]
-    return configured_python(package_root) is not None
+    return runtime_environment.configured_python(package_root) is not None
 
 
 def main() -> int:

@@ -6,12 +6,12 @@ from pathlib import Path
 import pytest
 
 from tests.workspace_helpers import start_research_node
-from ts_compute.artifacts import list_calculation_artifacts
-from ts_workspace.cli import main as workspace_cli
-from ts_workspace.decision import draft_decision
-from ts_workspace.engine import apply_decision, init_workspace
-from ts_workspace.errors import ContractError
-from ts_workspace.locator import locate_research_files
+from ts_agent.compute.artifacts import list_calculation_artifacts
+from ts_agent.workspace.cli import main as workspace_cli
+from ts_agent.workspace.decision import draft_decision
+from ts_agent.workspace.engine import apply_decision, init_workspace
+from ts_agent.workspace.errors import ContractError
+from ts_agent.workspace.locator import locate_research_files
 
 
 def _write(path: Path, value: dict | str) -> None:
@@ -322,13 +322,17 @@ def test_workspace_cli_exposes_locator_and_requires_a_query(
     root, refs, _catalog = _workspace(tmp_path)
 
     assert workspace_cli(
-        ["context", "--root", str(root), "--mode", "locate", "--query", refs["claim_id"]]
+        ["context", "--root", str(root), "--mode", "locate", "--query", refs["claim_id"]],
+        artifact_catalog_loader=list_calculation_artifacts,
     ) == 0
     result = json.loads(capsys.readouterr().out)
     assert result["query_mode"] == "exact"
     assert result["matches"][0]["ref"] == refs["claim_id"]
 
-    assert workspace_cli(["context", "--root", str(root), "--mode", "locate"]) == 2
+    assert workspace_cli(
+        ["context", "--root", str(root), "--mode", "locate"],
+        artifact_catalog_loader=list_calculation_artifacts,
+    ) == 2
     assert "requires a non-empty --query" in capsys.readouterr().err
     assert workspace_cli(
         ["context", "--root", str(root), "--mode", "frontier", "--query", "claim_1"]

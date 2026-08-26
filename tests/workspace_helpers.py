@@ -4,8 +4,8 @@ import json
 import subprocess
 from pathlib import Path
 
-from ts_workspace import apply_decision, draft_decision, init_workspace
-from ts_workspace.context import build_review_snapshot
+from ts_agent.workspace import apply_decision, draft_decision, init_workspace
+from ts_agent.workspace.context import build_review_snapshot
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]

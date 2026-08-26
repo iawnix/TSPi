@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from ts_web import reloader
-from ts_web.reloader import ReleaseWatcher, exec_selected_release
+from ts_agent.web import reloader
+from ts_agent.web.reloader import ReleaseWatcher, exec_selected_release
 
 
 def _release(root: Path, name: str) -> Path:

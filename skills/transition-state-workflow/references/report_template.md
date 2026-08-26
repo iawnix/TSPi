@@ -1,7 +1,7 @@
 # Report Contract
 
 Build the standard report from a valid workspace with `ts_report`. The
-authoritative renderer is `ts_report/builder.py`; there is no fill-in Markdown
+authoritative renderer is `python/ts_agent/report/builder.py`; there is no fill-in Markdown
 template with a second, drifting report contract. Add any extra narrative as a
 separate report-package asset.
 

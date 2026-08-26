@@ -5,6 +5,8 @@ channels:
 dependencies:
   - python=3.11
   - pip
+  - setuptools>=77
+  - wheel
   - pytest
   - jsonschema
   - numpy>=2.0,<3

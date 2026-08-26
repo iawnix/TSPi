@@ -4,7 +4,7 @@ from copy import deepcopy
 
 import pytest
 
-from ts_validation import (
+from ts_agent.validation import (
     GateSpecCompileError,
     PredicateRegistry,
     ValidationEngineError,

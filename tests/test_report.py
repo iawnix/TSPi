@@ -6,12 +6,12 @@ from pathlib import Path
 import pytest
 
 from tests.workspace_helpers import accept_research_claim
-from ts_compute.artifacts import list_calculation_artifacts
-from ts_report import build_final_report, build_report_package
-from ts_report.context import collect_report_context
-from ts_workspace.decision import draft_decision
-from ts_workspace.engine import apply_decision, init_workspace
-from ts_workspace.io import read_json
+from ts_agent.compute.artifacts import list_calculation_artifacts
+from ts_agent.report import build_final_report, build_report_package
+from ts_agent.report.context import collect_report_context
+from ts_agent.workspace.decision import draft_decision
+from ts_agent.workspace.engine import apply_decision, init_workspace
+from ts_agent.io import read_json
 
 
 def _seed(root: Path) -> dict[str, str]:

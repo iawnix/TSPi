@@ -230,7 +230,7 @@ def test_compute_reference_uses_the_registered_gaussian_input_role() -> None:
 
 
 def test_final_report_builder_projects_phase_node_and_scientific_objects() -> None:
-    text = (ROOT / "ts_report" / "builder.py").read_text(encoding="utf-8")
+    text = (ROOT / "python" / "ts_agent" / "report" / "builder.py").read_text(encoding="utf-8")
 
     for phrase in [
         "Research Roadmap",

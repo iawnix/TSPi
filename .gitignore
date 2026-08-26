@@ -1,4 +1,7 @@
 __pycache__/
+*.egg-info/
+build/
+/python-dist/
 .pytest_cache/
 .runtime/
 node_modules/

@@ -6,13 +6,16 @@ import json
 import os
 import stat
 import subprocess
+import sys
 import tarfile
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
 import pytest
 
 from scripts.install_release import REQUIRED_RUNTIME_FILES
+from scripts._wheel import inspect_wheel
 from tests.runtime_helpers import write_test_runtime_manifest
 
 
@@ -45,11 +48,18 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     manifest = Path(build_result["manifest"])
     with tarfile.open(archive, "r:gz") as handle:
         names = {member.name.removeprefix("package/") for member in handle.getmembers()}
+    release_manifest = json.loads(manifest.read_text(encoding="utf-8"))
+    distribution = release_manifest["python_distribution"]
     assert "scripts/install_release.py" in names
     assert "docs/ARCHITECTURE.md" in names
     assert "docs/INSTALLATION.md" in names
     assert "docs/MAINTAINER_GUIDE.md" in names
-    assert "ts_web/static/research-tree.js" in names
+    assert "python/ts_agent/web/static/research-tree.js" in names
+    assert distribution == build_result["python_distribution"]
+    assert distribution["name"] == "ts-agent-kernel"
+    assert distribution["version"] == "0.11.0"
+    assert distribution["path"] in names
+    assert sum(name.startswith("python-dist/") and name.endswith(".whl") for name in names) == 1
     assert "scripts/check_package.py" not in names
     assert "scripts/build_release.py" not in names
     assert not any(name.startswith("tests/") for name in names)
@@ -67,9 +77,57 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert (package_root / "docs" / "ARCHITECTURE.md").is_file()
     assert (package_root / "docs" / "INSTALLATION.md").is_file()
     assert (package_root / "docs" / "MAINTAINER_GUIDE.md").is_file()
-    assert (package_root / "ts_web" / "static" / "research-tree.js").is_file()
+    assert (package_root / "python" / "ts_agent" / "web" / "static" / "research-tree.js").is_file()
+    installed_wheel = package_root / distribution["path"]
+    assert installed_wheel.is_file()
+    assert inspect_wheel(installed_wheel)["payload_sha256"] == distribution["payload_sha256"]
     assert stat.S_IMODE(package_root.stat().st_mode) == 0o500
     assert all(stat.S_IMODE(path.stat().st_mode) & 0o222 == 0 for path in package_root.rglob("*"))
+    wheel_site = tmp_path / "wheel-site"
+    wheel_install = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "pip",
+            "install",
+            "--disable-pip-version-check",
+            "--no-deps",
+            "--no-cache-dir",
+            "--target",
+            str(wheel_site),
+            str(installed_wheel),
+        ],
+        cwd=install_root,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert wheel_install.returncode == 0, wheel_install.stderr
+    assert (wheel_site / "ts_agent" / "__init__.py").is_file()
+    assert not list(package_root.rglob("*.egg-info"))
+    runtime_plan = subprocess.run(
+        [
+            sys.executable,
+            str(package_root / "scripts" / "install_env.py"),
+            "--package-root",
+            str(package_root),
+            "--env-root",
+            str(tmp_path / "envs"),
+            "--dry-run",
+            "--json",
+        ],
+        cwd=install_root,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert runtime_plan.returncode == 0, runtime_plan.stderr
+    runtime_payload = json.loads(runtime_plan.stdout)
+    assert runtime_payload["python_install_source"] == "bundled-release-wheel"
+    assert runtime_payload["python_wheel"]["sha256"] == distribution["sha256"]
     assert (install_root / "TSPi").is_symlink()
     assert (install_root / "TSPi").resolve() == package_root / "TSPi"
     help_result = subprocess.run(
@@ -211,6 +269,28 @@ def test_release_install_rejects_a_release_id_not_bound_to_the_archive(tmp_path:
     assert not install_root.exists()
 
 
+def test_release_install_rejects_an_extra_python_wheel(tmp_path: Path) -> None:
+    manifest_path, _ = _synthetic_release(
+        tmp_path / "release",
+        marker="extra-wheel",
+        extra_files={"package/python-dist/other-0-py3-none-any.whl": b"not a wheel"},
+    )
+    install_root = tmp_path / "install"
+
+    completed = subprocess.run(
+        ["python3", str(INSTALL_RELEASE), "--manifest", str(manifest_path), "--install-root", str(install_root)],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+
+    assert completed.returncode == 1
+    assert "only the declared Python wheel" in completed.stderr
+    assert not (install_root / ".pi").exists()
+
+
 @pytest.mark.parametrize("member_name", ["package/../escape", "package/tests/private_probe.py"])
 def test_release_install_rejects_unsafe_or_development_members(tmp_path: Path, member_name: str) -> None:
     manifest_path, _ = _synthetic_release(
@@ -264,10 +344,21 @@ def _synthetic_release(
 ) -> tuple[Path, str]:
     root.mkdir(parents=True)
     temporary_archive = root / "package.tgz"
+    wheel = _synthetic_wheel(root, version="0.5.0")
+    wheel_descriptor = inspect_wheel(wheel)
+    distribution = {
+        "name": wheel_descriptor["name"],
+        "version": wheel_descriptor["version"],
+        "path": f"python-dist/{wheel.name}",
+        "sha256": wheel_descriptor["sha256"],
+        "size_bytes": wheel_descriptor["size_bytes"],
+        "payload_sha256": wheel_descriptor["payload_sha256"],
+    }
     files = {name: b"\n" for name in REQUIRED_RUNTIME_FILES}
     files["package.json"] = b'{"name":"@iawnix/ts-agent","version":"0.5.0"}\n'
     files["TSPi"] = b"#!/usr/bin/env bash\nexit 0\n"
     files["README.md"] = f"release {marker}\n".encode()
+    files[distribution["path"]] = wheel.read_bytes()
     files.update(extra_files or {})
     with tarfile.open(temporary_archive, "w:gz") as archive:
         package = tarfile.TarInfo("package")
@@ -285,9 +376,10 @@ def _synthetic_release(
     archive_path = root / archive_name
     temporary_archive.rename(archive_path)
     manifest = {
-        "schema_version": "ts-agent-release/1",
+        "schema_version": "ts-agent-release/2",
         "release_id": release_id,
         "package": {"name": "@iawnix/ts-agent", "version": "0.5.0"},
+        "python_distribution": distribution,
         "archive": {
             "filename": archive_name,
             "sha256": digest,
@@ -299,3 +391,18 @@ def _synthetic_release(
     manifest_path = root / "ts-agent-release.json"
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
     return manifest_path, release_id
+
+
+def _synthetic_wheel(root: Path, *, version: str) -> Path:
+    wheel = root / f"ts_agent_kernel-{version}-py3-none-any.whl"
+    package = b'"""synthetic ts_agent"""\n'
+    metadata = f"Metadata-Version: 2.4\nName: ts-agent-kernel\nVersion: {version}\n\n".encode()
+    with zipfile.ZipFile(wheel, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("ts_agent/__init__.py", package)
+        archive.writestr(f"ts_agent_kernel-{version}.dist-info/METADATA", metadata)
+        archive.writestr(
+            f"ts_agent_kernel-{version}.dist-info/WHEEL",
+            "Wheel-Version: 1.0\nGenerator: test\nRoot-Is-Purelib: true\nTag: py3-none-any\n",
+        )
+        archive.writestr(f"ts_agent_kernel-{version}.dist-info/RECORD", "")
+    return wheel

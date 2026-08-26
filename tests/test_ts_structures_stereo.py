@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ts_structures import compare_structures
+from ts_agent.structures import compare_structures
 
 
 def test_compare_structures_matches_declared_tetrahedral_stereochemistry(tmp_path: Path) -> None:

@@ -8,8 +8,8 @@ from pathlib import Path
 
 from PIL import Image
 
-from ts_render import MolVisualizer
-from ts_render.config import ENGINES
+from ts_agent.render import MolVisualizer
+from ts_agent.render.config import ENGINES
 
 
 def test_ts_render_exposes_only_xyzrender_engine() -> None:

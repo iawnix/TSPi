@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from ts_workspace import init_workspace
-from ts_workspace.operational import operational_snapshot
-from ts_workspace.operational_ids import allocate_operational_id
+from ts_agent.workspace import init_workspace
+from ts_agent.workspace.operational import operational_snapshot
+from ts_agent.workspace.operational_ids import allocate_operational_id
 
 
 def test_operational_ids_are_workspace_wide_monotonic_and_private(tmp_path: Path) -> None:

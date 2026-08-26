@@ -17,6 +17,7 @@ from tests.runtime_helpers import write_test_runtime_manifest
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
 AGENTS_ROOT = ROOT / "src" / "agents"
+PYTHON_PACKAGE = ROOT / "python" / "ts_agent"
 THEME_PATH = ROOT / "themes" / "ts-theme.json"
 TSPI_LAUNCHER = ROOT / "TSPi"
 GENERATION_BRAND = re.compile(
@@ -25,7 +26,6 @@ GENERATION_BRAND = re.compile(
 VERSION_BRANDED_PATH = re.compile(r"(?i)(?:^|[_-])v[2-5](?:[._-]|$)")
 TEXT_SUFFIXES = frozenset({".cjs", ".html", ".js", ".json", ".md", ".py", ".toml", ".ts", ".yaml", ".yml"})
 ALLOWED_CONTRACT_OR_THIRD_PARTY_LABELS = (
-    "ts-agent-runtime-" + "v" + "2",
     "etkdg=" + "v" + "3",
     "ts-" + "leg" + "acy-notification-state-archive/1",
 )
@@ -43,7 +43,7 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     (package_root / ".ts-agent-release.json").write_text(
         json.dumps(
             {
-                "schema_version": "ts-agent-release/1",
+                "schema_version": "ts-agent-release/2",
                 "release_id": "test-release",
                 "package": {"name": "@iawnix/ts-agent", "version": "0.10.0"},
             }
@@ -54,14 +54,14 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     shutil.copy2(TSPI_LAUNCHER, package_root / "TSPi")
     (package_root / "TSPi").chmod(0o755)
     (package_root / "scripts").mkdir()
-    for name in ("tspi_host.py", "ts_compute.py"):
+    for name in ("_bootstrap.py", "tspi_host.py", "ts_compute.py"):
         shutil.copy2(ROOT / "scripts" / name, package_root / "scripts" / name)
-    for name in ("ts_runtime", "ts_validation", "ts_workspace"):
-        shutil.copytree(
-            ROOT / name,
-            package_root / name,
-            ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
-        )
+    shutil.copytree(
+        ROOT / "python",
+        package_root / "python",
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.egg-info"),
+    )
+    shutil.copy2(ROOT / "pyproject.toml", package_root / "pyproject.toml")
     shutil.copy2(ROOT / "environment.yml", package_root / "environment.yml")
     write_test_runtime_manifest(package_root, install_root)
     (package_home / "current").symlink_to("releases/test-release")
@@ -119,7 +119,7 @@ def test_current_sources_do_not_use_generation_branded_language_or_paths() -> No
         ROOT / "skills",
         ROOT / "src",
         ROOT / "tests",
-        *(path for path in ROOT.glob("ts_*") if path.is_dir()),
+        ROOT / "python",
     ]
     files: set[Path] = set()
     for root in roots:
@@ -154,13 +154,14 @@ def test_agent_sources_have_explicit_ownership_boundaries() -> None:
     assert (AGENTS_ROOT / "compute" / "prompts" / "core.md").is_file()
     assert {path.name for path in AGENTS_ROOT.iterdir()} == {"compute", "review"}
     assert (ROOT / "src" / "artifacts" / "request-contract.cjs").is_file()
-    assert (ROOT / "ts_runtime" / "probe.py").is_file()
-    assert (ROOT / "ts_structures" / "seed.py").is_file()
-    assert (ROOT / "ts_validation" / "engine.py").is_file()
-    assert (ROOT / "ts_workspace" / "bootstrap.py").is_file()
-    assert (ROOT / "ts_workspace" / "engine.py").is_file()
-    assert not list((ROOT / "ts_workspace").glob("*_v[0-9]*.py"))
-    assert not list((ROOT / "ts_workspace" / "validators").glob("*.py"))
+    assert (PYTHON_PACKAGE / "runtime" / "probe.py").is_file()
+    assert (PYTHON_PACKAGE / "structures" / "seed.py").is_file()
+    assert (PYTHON_PACKAGE / "validation" / "engine.py").is_file()
+    assert (PYTHON_PACKAGE / "workspace" / "bootstrap.py").is_file()
+    assert (PYTHON_PACKAGE / "workspace" / "engine.py").is_file()
+    assert not list((PYTHON_PACKAGE / "workspace").glob("*_v[0-9]*.py"))
+    assert not (PYTHON_PACKAGE / "workspace" / "validators").exists()
+    assert not any(path.is_dir() for path in ROOT.glob("ts_*"))
     for removed in ("agent-core", "review-agent", "compute-agent", "artifact-agent", "agent-skills"):
         assert not (ROOT / removed).exists()
 
@@ -181,8 +182,12 @@ def test_package_manifest_exposes_only_the_public_skill_and_allowlisted_runtime(
     assert manifest["private"] is True
     assert "tests/" not in manifest["files"]
     assert "docs/*.md" in manifest["files"]
-    assert "ts_web/static/*.css" in manifest["files"]
-    assert "ts_web/static/*.js" in manifest["files"]
+    assert "python/ts_agent/web/static/*.css" in manifest["files"]
+    assert "python/ts_agent/web/static/*.js" in manifest["files"]
+    assert "python-dist/*.whl" in manifest["files"]
+    assert "scripts/_wheel.py" in manifest["files"]
+    assert manifest["peerDependencies"]["typebox"] == "*"
+    assert "dependencies" not in manifest
     for name in ("ARCHITECTURE.md", "INSTALLATION.md", "MAINTAINER_GUIDE.md"):
         assert (ROOT / "docs" / name).is_file()
     assert all("src/agents" not in entry for entry in manifest["pi"]["skills"])
@@ -307,8 +312,8 @@ def test_tspi_requires_an_installed_release(tmp_path: Path) -> None:
     shutil.copy2(TSPI_LAUNCHER, launcher)
     launcher.chmod(0o755)
     (install_root / "scripts").mkdir()
-    shutil.copy2(ROOT / "scripts" / "tspi_host.py", install_root / "scripts" / "tspi_host.py")
-    shutil.copytree(ROOT / "ts_runtime", install_root / "ts_runtime", ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+    for name in ("_bootstrap.py", "tspi_host.py"):
+        shutil.copy2(ROOT / "scripts" / name, install_root / "scripts" / name)
 
     completed = _run_tspi(launcher, "--workspace", "release-required")
 
