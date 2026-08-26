@@ -1,6 +1,6 @@
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import { tspiIcon, type TspiIconName, type TspiIconStyle } from "../shared/icons.ts";
-import type { TsSubagentState, TsSubagentStatus } from "../shared/subagent-status.ts";
+import type { TsSubagentState } from "../shared/subagent-status.ts";
 import {
   activityState,
   sortedTsActivities,
@@ -11,6 +11,14 @@ import {
   type TsDeterministicActivity,
   type TsSubagentActivity,
 } from "./activity-store.ts";
+import {
+  formatElapsed,
+  humanizeToken,
+  stateSymbol,
+  subagentActionLabel,
+  subagentOwnerLabel,
+  subagentStateLabel,
+} from "./activity-presentation.ts";
 
 export type TsActivityTone = "muted" | "accent" | "warning" | "success" | "error";
 export interface TsActivityPanelLine { text: string; tone: TsActivityTone }
@@ -38,10 +46,6 @@ export function renderTsActivityPanel(
   return lines;
 }
 
-export function stateSymbol(state: TsSubagentState, style?: TspiIconStyle): string {
-  return tspiIcon(stateIconName(state), style);
-}
-
 export function stateTone(state: TsSubagentState): TsActivityTone {
   if (state === "failed" || state === "cancelled") return "error";
   if (state === "partial" || state === "unknown" || state === "waiting") return "warning";
@@ -50,34 +54,22 @@ export function stateTone(state: TsSubagentState): TsActivityTone {
   return "accent";
 }
 
-export function subagentDetailLabel(status: TsSubagentStatus): string {
-  return compact([status.operation, status.target_ref]);
-}
-
-export function formatElapsed(milliseconds: number): string {
-  const totalSeconds = Math.max(0, Math.floor(milliseconds / 1000));
-  const seconds = totalSeconds % 60;
-  const totalMinutes = Math.floor(totalSeconds / 60);
-  if (totalMinutes < 60) return `${pad(totalMinutes)}:${pad(seconds)}`;
-  return `${pad(Math.floor(totalMinutes / 60))}:${pad(totalMinutes % 60)}:${pad(seconds)}`;
-}
-
 function renderActivity(activity: TsActivity, width: number, now: number, iconStyle?: TspiIconStyle): TsActivityPanelLine[] {
   const state = activityState(activity);
   const tone = stateTone(state);
   const right = rightLabel(activity, now, iconStyle, width >= 72);
   const role = activityLabel(activity);
-  const node = activityNodeRefs(activity)[0];
-  const detail = activityDetail(activity);
+  const owner = activityOwnerLabel(activity);
+  const action = activityActionLabel(activity);
   const statusIcon = stateSymbol(state, iconStyle);
   if (width < 58) {
     return [
-      { text: fitSides(compact([`${statusIcon} ${role}`, node]), right, width), tone },
-      { text: truncateToWidth(`  ${detail}`, width, "..."), tone: "muted" },
+      { text: fitSides(compact([`${statusIcon} ${role}`, owner]), right, width), tone },
+      { text: truncateToWidth(`  ${action}`, width, "..."), tone: "muted" },
     ];
   }
   const identity = `${statusIcon} ${tspiIcon(roleIconName(activity), iconStyle)} ${role}`;
-  return [{ text: fitSides(compact([identity, node, detail]), right, width), tone }];
+  return [{ text: fitSides(compact([identity, owner, action]), right, width), tone }];
 }
 
 function activityLabel(activity: TsActivity): string {
@@ -94,23 +86,23 @@ function activityLabel(activity: TsActivity): string {
   }[activity.activityKind];
 }
 
-function activityNodeRefs(activity: TsActivity): string[] {
-  if (activity.kind === "subagent") return activity.status.node_refs || [];
-  if (activity.kind === "deterministic") return activity.nodeRefs;
-  return [];
+function activityOwnerLabel(activity: TsActivity): string | undefined {
+  if (activity.kind === "subagent") return subagentOwnerLabel(activity.status);
+  if (activity.kind === "deterministic") return activity.nodeRefs[0] || "workspace";
+  return undefined;
 }
 
-function activityDetail(activity: TsActivity): string {
-  if (activity.kind === "subagent") return subagentDetailLabel(activity.status) || activity.status.operation;
+function activityActionLabel(activity: TsActivity): string {
+  if (activity.kind === "subagent") return subagentActionLabel({ ...activity.status, backend: activity.backend });
   if (activity.kind === "remote") return compact([activity.mode, activity.detail]);
-  return compact([activity.operation, activity.detail]);
+  return compact([humanizeToken(activity.operation), activity.detail]);
 }
 
 function formatPanelHeader(summary: TsActivitySummary, width: number, iconStyle?: TspiIconStyle): string {
   const counts = [
     summary.active > 0 ? `${summary.active} active` : undefined,
     summary.attention > 0 ? `${summary.attention} attention` : undefined,
-    summary.done > 0 ? `${summary.done} done` : undefined,
+    summary.active === 0 && summary.attention === 0 && summary.done > 0 ? `${summary.done} recent` : undefined,
   ].filter((value): value is string => Boolean(value));
   const left = `${tspiIcon("activity", iconStyle)} TS Activity`;
   const right = counts.join(" · ");
@@ -121,12 +113,12 @@ function formatPanelHeader(summary: TsActivitySummary, width: number, iconStyle?
 
 function rightLabel(activity: TsActivity, now: number, style: TspiIconStyle | undefined, showIcon: boolean): string {
   const state = activityState(activity);
+  if (activity.kind === "subagent" && state !== "running") return subagentStateLabel(activity.status);
   if (state === "completed") return "done";
   if (state === "partial") return "partial";
-  if (state === "failed") return activity.kind === "subagent" ? activity.status.failure_kind || "failed" : "failed";
+  if (state === "failed") return "failed";
   if (state === "cancelled") return "cancelled";
   if (state === "unknown") return "unknown";
-  if (state === "waiting" && activity.kind === "subagent") return waitReasonLabel(activity.status.wait_reason);
   const elapsed = formatElapsed(Math.max(0, now - activity.startedAt));
   return showIcon ? `${tspiIcon("elapsed", style)} ${elapsed}` : elapsed;
 }
@@ -145,16 +137,6 @@ function roleIconName(activity: TsActivity): TspiIconName {
   }[activity.activityKind] as TspiIconName;
 }
 
-function stateIconName(state: TsSubagentState): TspiIconName { return state === "starting" ? "queued" : state; }
-
-function waitReasonLabel(value?: string): string {
-  return {
-    model_response: "waiting · model",
-    typed_tool: "waiting · result",
-    parent_coordination: "waiting · root",
-  }[value || ""] || "waiting";
-}
-
 function fitSides(left: string, right: string, width: number): string {
   const safeWidth = Math.max(1, width);
   const rightWidth = visibleWidth(right);
@@ -166,6 +148,6 @@ function fitSides(left: string, right: string, width: number): string {
 }
 
 function compact(values: Array<string | undefined>): string { return values.filter((value): value is string => Boolean(value)).join(" · "); }
-function pad(value: number): string { return String(value).padStart(2, "0"); }
 
 export type { TsActivityStore, TsDeterministicActivity, TsSubagentActivity };
+export { formatElapsed, stateSymbol } from "./activity-presentation.ts";

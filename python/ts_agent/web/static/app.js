@@ -251,10 +251,7 @@ function renderUnavailableWorkspace(row) {
   teardownResearchTree();
   setHealth("invalid", "Incompatible");
   for (const name of ["phases", "claims", "validation", "findings", "activity"]) setCount(name, 0);
-  document.getElementById("sidebar-meta").innerHTML = [
-    escapeHtml(row.workspace_id),
-    "ts-research-kernel/5 required",
-  ].join("<br>");
+  document.getElementById("sidebar-meta").textContent = "ts-research-kernel/5 required";
   content.innerHTML = [
     renderHeader(row.label || row.workspace_id, "Registered workspace cannot be read by this release."),
     `<div class="fatal"><strong>Incompatible workspace</strong><br>${escapeHtml(row.load_error || "The workspace is unavailable.")}</div>`,
@@ -273,11 +270,7 @@ function updateChrome() {
   setCount("validation", view.validation_results.length);
   setCount("findings", view.findings.length);
   setCount("activity", view.deterministic_activities.length + view.agent_runs.length);
-  document.getElementById("sidebar-meta").innerHTML = [
-    escapeHtml(view.workspace.workspace_id),
-    escapeHtml(shortDigest(view.workspace_revision)),
-    escapeHtml(shortDigest(view.operational_revision)),
-  ].join("<br>");
+  document.getElementById("sidebar-meta").textContent = view.workspace.kernel_protocol || "Research workspace";
 }
 
 function setHealth(kind, label) {
@@ -333,7 +326,7 @@ function renderRoadmap() {
     .filter(node => matchesNode(node, phaseById.get(node.phase_ref) || {}, claimById, query))
     .map(node => node.node_id));
   content.innerHTML = [
-    renderHeader(view.label, `${view.workspace.kernel_protocol} | ${shortDigest(view.workspace_revision)}`, true, "Filter phases, nodes, claims, or calculations"),
+    renderHeader(view.label, view.workspace.kernel_protocol, true, "Filter phases, nodes, claims, or calculations"),
     renderNotices(),
     `<div class="summary-strip">
       ${summaryItem(summary.phase_count, "Research Phases")}

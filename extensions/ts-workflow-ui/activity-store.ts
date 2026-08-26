@@ -29,6 +29,7 @@ export interface TsSubagentActivity {
   kind: "subagent";
   id: string;
   status: TsSubagentStatus;
+  backend?: string;
   startedAt: number;
   updatedAt: number;
   terminalAt?: number;
@@ -99,6 +100,7 @@ function reduceSubagentActivity(store: TsActivityStore, event: ToolLifecycleEven
       kind: "subagent",
       id,
       status: fallbackSubagentStatus(event, now),
+      backend: stringValue(objectValue(event.args).backend),
       startedAt: now,
       updatedAt: now,
     });
@@ -114,6 +116,7 @@ function reduceSubagentActivity(store: TsActivityStore, event: ToolLifecycleEven
       kind: "subagent",
       id,
       status,
+      backend: current?.kind === "subagent" ? current.backend : undefined,
       startedAt,
       updatedAt: timestamp(status.updated_at) ?? now,
       terminalAt: TERMINAL_STATES.has(status.state) ? now : undefined,
@@ -235,7 +238,7 @@ function operationFor(kind: TsDeterministicKind, args: Record<string, unknown>):
 function detailFor(kind: TsDeterministicKind, args: Record<string, unknown>): string | undefined {
   if (kind === "structure") return compact(["SMILES", stringValue(args.optimization)]);
   if (kind === "analysis") return "XYZ comparison";
-  if (kind === "artifact") return compact([stringValue(args.format), stringValue(args.nodeId)]);
+  if (kind === "artifact") return stringValue(args.format);
   if (kind === "render") return stringValue(args.outputName);
   if (kind === "report") return stringValue(args.packageName);
   if (kind === "notify") return stringValue(args.event);

@@ -10,10 +10,11 @@ import {
 import {
   readTsSubagentRunDocuments,
   renderTsSubagentDetails,
-  subagentSelectionLabel,
+  subagentSelectionParts,
   type TsSubagentRecord,
   type TsSubagentRunDocuments,
 } from "./agent-details.ts";
+import { fitColumns } from "./render-utils.ts";
 
 export const SUBAGENT_HISTORY_PAGE_SIZE = 8;
 export const SUBAGENT_DETAIL_PAGE_SIZE = 14;
@@ -116,7 +117,8 @@ export class SubagentHistoryBrowser implements Component {
         continue;
       }
       const prefix = index === this.selectedIndex ? "→ " : "  ";
-      const text = truncateToWidth(`${prefix}${subagentSelectionLabel(record)}`, safeWidth, "");
+      const fields = subagentSelectionParts(record);
+      const text = fitColumns(`${prefix}${fields.left}`, fields.right, safeWidth);
       lines.push(index === this.selectedIndex
         ? this.theme.bg("selectedBg", this.theme.fg("text", text))
         : this.theme.fg("text", text));

@@ -14,9 +14,17 @@ import {
   tspiIconLabel,
 } from "../shared/icons.ts";
 import {
-  formatElapsed,
   renderTsActivityPanel,
 } from "./activity-panel.ts";
+import {
+  formatElapsed,
+  formatLocalDateTime,
+  subagentActionLabel,
+  subagentElapsedLabel,
+  subagentOwnerLabel,
+  subagentRoleLabel,
+  subagentStateLabel,
+} from "./activity-presentation.ts";
 import {
   clearTsActivityStore,
   createTsActivityStore,
@@ -30,6 +38,7 @@ import {
 } from "./activity-store.ts";
 import {
   collectTsSubagentRecords,
+  subagentRunLabel,
   type TsSubagentRecord,
 } from "./agent-details.ts";
 import { SubagentHistoryBrowser } from "./subagent-history.ts";
@@ -42,15 +51,16 @@ export function formatTsSubagentHistory(
   data: Record<string, unknown>,
   expanded = false,
 ): string[] {
-  const role = stringValue(data.role) === "compute" ? "Compute" : "Review";
+  const role = stringValue(data.role) === "compute" ? "compute" : "review";
   const operation = stringValue(data.operation) || "operation";
   const failed = entryType.endsWith("-failed");
-  const outcome = failed ? "failed" : "completed";
+  const outcome = failed ? "failed" : "done";
   const duration = typeof data.duration_ms === "number" ? ` · ${formatElapsed(data.duration_ms)}` : "";
-  const lines = [`TS ${role} · ${operation} · ${outcome}${duration}`];
+  const action = subagentActionLabel({ role, operation, backend: stringValue(data.backend) });
+  const lines = [`TS ${subagentRoleLabel(role)} · ${action} · ${outcome}${duration}`];
   const context = compact([
+    stringValue(data.task_id),
     Array.isArray(data.node_refs) ? firstString(data.node_refs[0]) : undefined,
-    firstString(data.run_ref),
     failed ? stringValue(data.failure_class) : undefined,
   ]);
   if (context) lines.push(context);
@@ -333,23 +343,28 @@ export function formatTsSubagentHistoryMarkdown(records: TsSubagentRecord[]): st
   const visible = records.slice(0, 100);
   const lines = ["# TS Subagent History", "", `${records.length} recorded subagent run${records.length === 1 ? "" : "s"}.`];
   for (const record of visible) {
-    const role = record.role === "compute" ? "Compute" : "Review";
+    const run = subagentRunLabel(record);
+    const role = subagentRoleLabel(record.role);
+    const state = subagentStateLabel(record);
+    const elapsed = subagentElapsedLabel(record);
+    const updatedSource = record.finished_at || record.updated_at;
+    const updated = updatedSource ? formatLocalDateTime(updatedSource) || updatedSource : undefined;
     lines.push(
       "",
-      `## ${role} · ${markdownText(record.operation)}`,
+      `## \`${inlineCode(run)}\` · ${role} · ${markdownText(state)}`,
       "",
-      `- Status: \`${inlineCode(record.state)}\``,
-      `- Task: \`${inlineCode(record.task_id)}\``,
-      `- Research nodes: ${record.node_refs.length > 0 ? record.node_refs.map((value) => `\`${inlineCode(value)}\``).join(", ") : "workspace"}`,
-      `- Claims: ${record.claim_refs.length > 0 ? record.claim_refs.map((value) => `\`${inlineCode(value)}\``).join(", ") : "(none)"}`,
+      `- Owner: \`${inlineCode(subagentOwnerLabel(record))}\``,
+      `- Action: ${markdownText(subagentActionLabel(record))}`,
     );
-    if (record.run_ref) lines.push(`- Run: \`${inlineCode(record.run_ref)}\``);
-    if (record.updated_at || record.finished_at) {
-      lines.push(`- Updated: ${markdownText(record.finished_at || record.updated_at || "")}`);
-    }
+    if (elapsed) lines.push(`- Elapsed: \`${inlineCode(elapsed)}\``);
+    if (record.node_refs.length > 0) lines.push(`- Node scope: ${record.node_refs.map((value) => `\`${inlineCode(value)}\``).join(", ")}`);
+    if (record.claim_refs.length > 0) lines.push(`- Claim scope: ${record.claim_refs.map((value) => `\`${inlineCode(value)}\``).join(", ")}`);
+    if (updated) lines.push(`- Updated: ${markdownText(updated)}`);
     if (record.summary) {
-      lines.push("", ...record.summary.slice(0, 2_000).split("\n").map((line) => `> ${markdownText(line)}`));
+      lines.push("", "Outcome", "", ...record.summary.slice(0, 2_000).split("\n").map((line) => `> ${markdownText(line)}`));
     }
+    if (record.error_message) lines.push("", "Error", "", `> ${markdownText(compact([record.error_code, record.error_message]))}`);
+    if (record.run_ref) lines.push("", `Audit journal: \`${inlineCode(record.run_ref)}\``);
   }
   if (records.length > visible.length) lines.push("", `_${records.length - visible.length} older runs omitted._`);
   return lines.join("\n");

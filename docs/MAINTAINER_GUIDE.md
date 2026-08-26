@@ -141,6 +141,10 @@ reasoning and focused documentation, not a Kernel enum.
   ordinals; draft allocation has no reservation, and revision binding prevents
   conflicting record allocation. Durable transaction history additionally
   prevents Decision ID reuse.
+- Treat `ws_*`, `ctx_*`, revisions, and digests as opaque machine bindings.
+  Preserve them in schemas, remote ownership, and audit artifacts, but keep
+  routine UI labels and history rows on workspace labels and readable ordinal
+  record IDs.
 - A Decision ID is idempotent only for identical canonical content.
 - Any edit to a returned Decision requires a fresh draft.
 - One Decision may create at most one Phase, start at most one Node, and
@@ -349,7 +353,11 @@ Do not document stronger durability than the implementation provides:
 - immediate tool return is the active conversation delivery channel;
 - deterministic tools keep separate authoritative records;
 - `TS Activity` is transient and cleared with the Pi session;
-- `/ts-subagent-history` reads durable Compute and Review summaries on demand.
+- its normal row contract is kind, semantic owner, action, state, and elapsed
+  time, without run IDs or audit paths;
+- `/ts-subagent-history` reads durable Compute and Review summaries on demand,
+  lists canonical `sub_n` IDs, and orders details as outcome/error, scope,
+  actions/artifacts, then audit metadata.
 
 Remote controls are authoritative for scheduler recovery. Activity or agent
 journal state cannot prove that a remote side effect did or did not happen.

@@ -99,10 +99,12 @@ guards/receipts, not UI state, are authoritative for remote recovery.
 ## UI
 
 `TS Activity` presents current Compute, Review, and deterministic-tool activity
-without gaining authority. It is transient. `/ts-subagent-history` is a
-paginated read-only Compute/Review browser. Pi's normal expand key
-expands/collapses tool details globally; the history browser paginates its own
-list.
+as compact kind, owner, action, state, and elapsed-time rows without gaining
+authority. It omits run IDs and audit paths and is transient.
+`/ts-subagent-history` is a paginated read-only Compute/Review browser: its list
+uses canonical `sub_n` run IDs, while details put outcome and error before scope,
+actions, artifacts, and audit metadata. Pi's normal expand key expands/collapses
+tool details globally; the history browser paginates its own list.
 
 ## Package Sources
 

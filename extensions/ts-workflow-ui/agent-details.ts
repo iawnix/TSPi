@@ -3,15 +3,22 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import { truncateToWidth, wrapTextWithAnsi } from "@earendil-works/pi-tui";
 import type { TsSubagentState } from "../shared/subagent-status.ts";
 import {
-  formatElapsed,
+  formatLocalDateTime,
   stateSymbol,
-} from "./activity-panel.ts";
+  subagentActionLabel,
+  subagentElapsedLabel,
+  subagentOwnerLabel,
+  subagentRoleLabel,
+  subagentRunLabel as presentationRunLabel,
+  subagentStateLabel,
+} from "./activity-presentation.ts";
 import {
   sortedTsSubagentActivities,
   type TsActivityStore,
 } from "./activity-store.ts";
 
 const SAFE_RUN_REF = /^(?:nodes\/node_[1-9][0-9]*\/attempts\/calc_[1-9][0-9]*|reviews\/claim_[1-9][0-9]*)\/runs\/sub_[1-9][0-9]*$/;
+const CANONICAL_TASK_ID = /^sub_[1-9][0-9]*$/;
 const MAX_DETAIL_FILE_BYTES = 1024 * 1024;
 
 export interface TsSubagentRecord {
@@ -19,11 +26,13 @@ export interface TsSubagentRecord {
   role: "review" | "compute";
   authority: "advisory" | "operational";
   operation: string;
+  backend?: string;
   state: TsSubagentState;
   node_refs: string[];
   claim_refs: string[];
   target_ref?: string;
   wait_reason?: string;
+  failure_kind?: string;
   run_ref?: string;
   started_at?: string;
   updated_at?: string;
@@ -31,6 +40,7 @@ export interface TsSubagentRecord {
   summary?: string;
   error_code?: string;
   error_message?: string;
+  task_id_pending?: boolean;
   live: boolean;
 }
 
@@ -58,9 +68,11 @@ export function collectTsSubagentRecords(
       role: subagentRole(value.role),
       authority: value.role === "compute" ? "operational" : "advisory",
       operation: stringValue(value.operation) || "operation",
+      backend: stringValue(value.backend),
       state: durableState(value.status, value.result_outcome),
       node_refs: stringArray(value.node_refs),
       claim_refs: stringArray(value.claim_refs),
+      target_ref: stringValue(value.intent_id),
       run_ref: stringValue(value.run_ref),
       started_at: stringValue(value.started_at),
       updated_at: stringValue(value.finished_at),
@@ -68,6 +80,8 @@ export function collectTsSubagentRecords(
       summary: stringValue(value.summary),
       error_code: stringValue(value.error_code),
       error_message: stringValue(value.error_message),
+      failure_kind: failureKindFromError(value.error_code),
+      task_id_pending: false,
       live: false,
     });
   }
@@ -80,14 +94,17 @@ export function collectTsSubagentRecords(
       role: status.role,
       authority: status.role === "compute" ? "operational" : "advisory",
       operation: status.operation,
+      backend: activity.backend || previous?.backend,
       state: status.state,
       node_refs: status.node_refs || previous?.node_refs || [],
       claim_refs: status.claim_refs || previous?.claim_refs || [],
-      target_ref: status.target_ref,
+      target_ref: status.target_ref || previous?.target_ref,
       wait_reason: status.wait_reason,
+      failure_kind: status.failure_kind || previous?.failure_kind,
       run_ref: status.run_ref || previous?.run_ref,
       started_at: status.started_at,
       updated_at: status.updated_at,
+      task_id_pending: status.task_id === status.tool_call_id && !CANONICAL_TASK_ID.test(status.task_id),
       live: true,
     });
   }
@@ -95,9 +112,23 @@ export function collectTsSubagentRecords(
 }
 
 export function subagentSelectionLabel(record: TsSubagentRecord): string {
-  const node = record.node_refs[0];
-  const identity = [roleLabel(record.role), node, record.operation].filter(Boolean).join(" · ");
-  return `${stateSymbol(record.state)} ${identity} · ${record.state} · ${record.task_id.slice(-8)}`;
+  const parts = subagentSelectionParts(record);
+  return `${parts.left} · ${parts.right}`;
+}
+
+export function subagentSelectionParts(record: TsSubagentRecord, now = Date.now()): { left: string; right: string } {
+  const left = [
+    `${stateSymbol(record.state)} ${subagentRunLabel(record)}`,
+    subagentRoleLabel(record.role),
+    subagentOwnerLabel(record),
+    subagentActionLabel(record),
+  ].join(" · ");
+  const right = compact([subagentStateLabel(record), subagentElapsedLabel(record, now)]);
+  return { left, right };
+}
+
+export function subagentRunLabel(record: TsSubagentRecord): string {
+  return presentationRunLabel(record);
 }
 
 export function readTsSubagentRunDocuments(root: string, runRef?: string): TsSubagentRunDocuments {
@@ -130,43 +161,17 @@ export function renderTsSubagentDetails(
   now = Date.now(),
 ): string[] {
   const safeWidth = Math.max(16, Math.floor(width));
-  const lines = [truncateToWidth("TS Subagent Run Details", safeWidth, "")];
-  lines.push("");
-  addField(lines, "Status", record.state, safeWidth);
-  addField(lines, "Task", record.task_id, safeWidth);
-  addField(lines, "Role", roleLabel(record.role), safeWidth);
-  addField(lines, "Authority", record.authority, safeWidth);
-  addField(lines, "Research nodes", record.node_refs.join(", ") || "workspace", safeWidth);
-  addField(lines, "Claims", record.claim_refs.join(", ") || "(none)", safeWidth);
-  addField(lines, "Operation", record.operation, safeWidth);
-  if (record.wait_reason) addField(lines, "Waiting", record.wait_reason.replaceAll("_", " "), safeWidth);
-  if (record.started_at) addField(lines, "Started", record.started_at, safeWidth);
-  if (record.started_at) {
-    const end = record.finished_at ? Date.parse(record.finished_at) : now;
-    const start = Date.parse(record.started_at);
-    if (Number.isFinite(start) && Number.isFinite(end)) addField(lines, "Elapsed", formatElapsed(end - start), safeWidth);
-  }
-  if (record.run_ref) addField(lines, "Run record", record.run_ref, safeWidth);
-
   const result = documents.result || {};
   const run = documents.run || {};
   const metadata = isPlainObject(run.metadata) ? run.metadata : {};
   const summary = stringValue(result.summary) || record.summary;
-  if (summary) addSection(lines, "Summary", summary, safeWidth);
-
-  for (const [label, key] of [
-    ["Action outcome", "action_outcome"],
-    ["Program status", "program_status"],
-    ["Failure stage", "failure_stage"],
-  ] as const) {
-    const value = findFirstString([metadata, result, documents.actions || {}], key);
-    if (value) addField(lines, label, value, safeWidth);
-  }
-
-  const actions = actionSummaries(documents.actions);
-  if (actions.length > 0) addSection(lines, "Actions", actions.join("\n"), safeWidth);
-  const refs = collectRefs([result, documents.actions || {}]);
-  if (refs.length > 0) addSection(lines, "Artifacts", refs.join("\n"), safeWidth);
+  const title = compact([
+    subagentRunLabel(record),
+    subagentRoleLabel(record.role),
+    subagentStateLabel(record),
+  ]);
+  const lines = [truncateToWidth(title || "TS Subagent Run", safeWidth, "")];
+  if (summary) addSection(lines, "Outcome", summary, safeWidth);
 
   const error = isPlainObject(run.error) ? run.error : {};
   const errorText = stringValue(error.message) || record.error_message;
@@ -174,6 +179,45 @@ export function renderTsSubagentDetails(
     const code = stringValue(error.code) || record.error_code;
     addSection(lines, "Error", code ? `${code}: ${errorText}` : errorText, safeWidth);
   }
+
+  const resultFields: Array<[string, string]> = [];
+  for (const [label, key] of [
+    ["Action outcome", "action_outcome"],
+    ["Program status", "program_status"],
+    ["Failure stage", "failure_stage"],
+  ] as const) {
+    const value = findFirstString([metadata, result, documents.actions || {}], key);
+    if (value) resultFields.push([label, value]);
+  }
+  if (resultFields.length > 0) {
+    lines.push("", "Result");
+    for (const [label, value] of resultFields) addField(lines, label, value, safeWidth);
+  }
+
+  lines.push("", "Scope");
+  const owner = subagentOwnerLabel(record);
+  addField(lines, "Owner", owner, safeWidth);
+  if (record.node_refs.length > 1 || (record.node_refs[0] && record.node_refs[0] !== owner)) {
+    addField(lines, "Node scope", record.node_refs.join(", "), safeWidth);
+  }
+  if (record.claim_refs.length > 1 || (record.claim_refs[0] && record.claim_refs[0] !== owner)) {
+    addField(lines, "Claim scope", record.claim_refs.join(", "), safeWidth);
+  }
+  addField(lines, "Action", subagentActionLabel(record), safeWidth);
+  if (record.role === "compute" && readableCalculationRef(record.target_ref)) {
+    addField(lines, "Calculation", record.target_ref || "", safeWidth);
+  }
+  const started = record.started_at ? formatLocalDateTime(record.started_at) : undefined;
+  const finished = record.finished_at ? formatLocalDateTime(record.finished_at) : undefined;
+  const elapsed = subagentElapsedLabel(record, now);
+  if (started) addField(lines, "Started", started, safeWidth);
+  if (finished) addField(lines, "Finished", finished, safeWidth);
+  if (elapsed) addField(lines, "Elapsed", elapsed, safeWidth);
+
+  const actions = actionSummaries(documents.actions);
+  if (actions.length > 0) addSection(lines, "Actions", actions.join("\n"), safeWidth);
+  const refs = collectRefs([result, documents.actions || {}]);
+  if (refs.length > 0) addSection(lines, "Artifacts", refs.join("\n"), safeWidth);
   const fileNames: Record<keyof TsSubagentRunDocuments, string> = {
     task: "task.json",
     reviewSnapshot: "review-snapshot.json",
@@ -185,7 +229,12 @@ export function renderTsSubagentDetails(
   const files = Object.entries(documents)
     .filter(([, value]) => value)
     .map(([name]) => fileNames[name as keyof TsSubagentRunDocuments]);
-  if (files.length > 0) addField(lines, "Files", files.join(", "), safeWidth);
+  if (record.run_ref || files.length > 0) {
+    lines.push("", "Audit");
+    addField(lines, "Authority", record.authority, safeWidth);
+    if (record.run_ref) addField(lines, "Journal", record.run_ref, safeWidth);
+    if (files.length > 0) addField(lines, "Files", files.join(", "), safeWidth);
+  }
   return lines;
 }
 
@@ -209,6 +258,17 @@ function durableState(status: unknown, outcome: unknown): TsSubagentState {
   if (status === "completed" && outcome === "partial") return "partial";
   if (status === "completed" && ["failure", "not_run"].includes(String(outcome))) return "failed";
   return "unknown";
+}
+
+function failureKindFromError(value: unknown): string | undefined {
+  const code = String(value || "").toUpperCase();
+  if (code.includes("TIMEOUT")) return "timeout";
+  if (code.includes("ABORT")) return "aborted";
+  return undefined;
+}
+
+function readableCalculationRef(value?: string): boolean {
+  return Boolean(value && /^calc_[1-9][0-9]*$/.test(value));
 }
 
 function readBoundJson(runDir: string, name: string): Record<string, unknown> | undefined {
@@ -296,12 +356,12 @@ function stringValue(value: unknown): string | undefined {
   return typeof value === "string" && value ? value : undefined;
 }
 
-function subagentRole(value: unknown): "review" | "compute" {
-  return value === "compute" ? "compute" : "review";
+function compact(values: Array<string | undefined>): string {
+  return values.filter((value): value is string => Boolean(value)).join(" · ");
 }
 
-function roleLabel(role: "review" | "compute"): string {
-  return role === "compute" ? "Compute" : "Review";
+function subagentRole(value: unknown): "review" | "compute" {
+  return value === "compute" ? "compute" : "review";
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

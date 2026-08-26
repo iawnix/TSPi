@@ -151,7 +151,7 @@ def test_context_summary_uses_unified_agent_run_counts() -> None:
     script = f"""
 import summary from {json.dumps((ROOT / 'extensions/ts-workflow-control/summary.cjs').as_uri())};
 const {{buildContextDetails,buildContextSummary}}=summary;
-const context={{valid:true,operational_summary:{{
+const context={{valid:true,mode:"frontier",projection_id:"ctx_0123456789abcdef01234567",workspace_id:"ws_0123456789abcdef01234567",workspace_revision:"sha256:"+"a".repeat(64),operational_revision:"sha256:"+"b".repeat(64),operational_summary:{{
   agent_run_count:3,agent_run_failed_count:1,agent_run_pending_count:1,
   review_disposition_pending_count:1,
 }}}};
@@ -166,6 +166,10 @@ process.stdout.write(JSON.stringify({{details:buildContextDetails(context),summa
     assert "agent_failures=1" in result["summary"]
     assert "trajectory:" in result["summary"]
     assert "reviews=" not in result["summary"]
+    assert "context: mode=frontier; valid=true" in result["summary"]
+    assert "delta_tokens:" in result["summary"]
+    assert "ctx_0123456789abcdef01234567" not in result["summary"]
+    assert "ws_0123456789abcdef01234567" not in result["summary"]
 
 
 def test_control_prompt_injection_states_authority_without_prescribing_sequence(tmp_path: Path) -> None:

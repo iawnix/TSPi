@@ -115,8 +115,8 @@ function buildContextSummary(context, options = {}) {
   const openNodes = nodes.filter((node) => node.status === "open");
   const lines = [
     "TS research context:",
-    `- projection: ${details.projectionId || "(none)"}; mode=${details.mode}; valid=${details.valid}`,
-    `- workspace: ${details.workspaceId || "(missing)"}; scientific_revision=${details.workspaceRevision || "(none)"}; operational_revision=${details.operationalRevision || "(none)"}`,
+    `- context: mode=${details.mode}; valid=${details.valid}`,
+    `- delta_tokens: scientific_revision=${details.workspaceRevision || "(none)"}; operational_revision=${details.operationalRevision || "(none)"}`,
     `- focus: claims=${formatList(details.focusClaimRefs, maxItems)}; nodes=${formatList(details.focusNodeRefs, maxItems)}`,
     `- acceptance: current=${formatList(details.currentAcceptanceRefs, maxItems)}; history=${details.acceptanceRecordRefs.length}; stale=${details.staleAcceptanceRefs.length}`,
     `- phases: ${phases.length ? phases.slice(0, maxItems).map(formatPhase).join("; ") : "(none)"}`,

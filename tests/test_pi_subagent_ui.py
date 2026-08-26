@@ -57,9 +57,10 @@ process.stdout.write(JSON.stringify({{before,after,summary:summarizeTsActivities
     by_id = {item["id"]: item for item in result["before"]}
     assert by_id["subagent:review"]["status"]["node_refs"] == ["node_1"]
     assert by_id["subagent:compute"]["status"]["operation"] == "launch"
+    assert by_id["subagent:compute"]["backend"] == "gaussian"
     assert by_id["tool:structure"]["detail"] == "SMILES · uff"
     assert by_id["tool:analysis"]["detail"] == "XYZ comparison"
-    assert by_id["tool:artifact"]["detail"] == "xyz_structure · node_1"
+    assert by_id["tool:artifact"]["detail"] == "xyz_structure"
     assert by_id["tool:render"]["detail"] == "compare.png"
     assert result["stale"] is False
     assert result["pruned"] is True
@@ -77,6 +78,7 @@ for (const [id,name,args,time] of [
  ["compute","ts_subagent_compute",{{operation:"launch",backend:"gaussian",nodeId:"node_1"}},2000],
  ["report","ts_report",{{operation:"build",packageName:"final"}},3000],
 ]) reduceTsToolActivity(store,{{type:"tool_execution_start",toolCallId:id,toolName:name,args}},time);
+reduceTsToolActivity(store,{{type:"tool_execution_update",toolCallId:"review",toolName:"ts_subagent_review",partialResult:{{details:{{schema_version:"ts-subagent-status/2",seq:1,tool_call_id:"review",task_id:"sub_1",role:"review",operation:"claim_review",state:"waiting",started_at:new Date(1000).toISOString(),updated_at:new Date(3500).toISOString(),claim_refs:["claim_1"],target_ref:"claim_1",wait_reason:"model_response"}}}}}},3500);
 reduceTsToolActivity(store,{{type:"tool_execution_end",toolCallId:"report",toolName:"ts_report",result:{{}},isError:true}},4000);
 const widths=[38,64,100].map((width)=>({{width,lines:renderTsActivityPanel(store,width,5000,4,"ascii")}}));
 process.stdout.write(JSON.stringify(widths));
@@ -89,27 +91,47 @@ process.stdout.write(JSON.stringify(widths));
         assert "Compute" in text
         assert "Report" in text
         assert all(len(item["text"]) <= row["width"] for item in row["lines"])
+    wide = "\n".join(item["text"] for item in rows[-1]["lines"])
+    assert "2 active" in wide
+    assert "1 attention" in wide
+    assert "claim_1" in wide
+    assert "waiting · model" in wide
+    assert "Gaussian launch" in wide
+    assert "workspace" in wide
 
 
 def test_subagent_history_merges_live_and_durable_roles_with_owner_paths() -> None:
     script = f"""
 import {{ createTsActivityStore,reduceTsToolActivity }} from {json.dumps(STORE.as_uri())};
-import {{ collectTsSubagentRecords,subagentSelectionLabel }} from {json.dumps(DETAILS.as_uri())};
+import {{ collectTsSubagentRecords,renderTsSubagentDetails,subagentRunLabel,subagentSelectionLabel,subagentSelectionParts }} from {json.dumps(DETAILS.as_uri())};
 const store=createTsActivityStore();
-reduceTsToolActivity(store,{{type:"tool_execution_start",toolCallId:"live",toolName:"ts_subagent_review",args:{{targetClaimRef:"claim_1"}}}},1000);
+const toolCallId="call_028def15-cbb5-42b4-bbfc-cfbd256c4a0b";
+reduceTsToolActivity(store,{{type:"tool_execution_start",toolCallId,toolName:"ts_subagent_review",args:{{targetClaimRef:"claim_1"}}}},1000);
 const report={{agent_runs:[
-  {{task_id:"sub_1",role:"review",authority:"advisory",operation:"claim_review",status:"completed",result_outcome:"success",node_refs:["node_1"],claim_refs:["claim_2"],run_ref:"reviews/claim_2/runs/sub_1",summary:"Completed review.",finished_at:"2026-08-16T00:00:00Z"}},
-  {{task_id:"sub_2",role:"compute",authority:"operational",operation:"finalize",status:"completed",result_outcome:"success",node_refs:["node_2"],claim_refs:[],run_ref:"nodes/node_2/attempts/calc_1/runs/sub_2",summary:"Collected and parsed.",finished_at:"2026-08-16T00:01:00Z"}},
+  {{task_id:"sub_1",role:"review",authority:"advisory",operation:"claim_review",status:"completed",result_outcome:"success",node_refs:["node_1"],claim_refs:["claim_2"],run_ref:"reviews/claim_2/runs/sub_1",summary:"Completed review.",started_at:"2026-08-16T00:00:00Z",finished_at:"2026-08-16T00:02:14Z"}},
+  {{task_id:"sub_2",role:"compute",authority:"operational",operation:"finalize",backend:"gaussian",intent_id:"calc_1",status:"completed",result_outcome:"success",node_refs:["node_2"],claim_refs:[],run_ref:"nodes/node_2/attempts/calc_1/runs/sub_2",summary:"Collected and parsed.",started_at:"2026-08-16T00:00:53Z",finished_at:"2026-08-16T00:01:00Z"}},
 ]}};
 const records=collectTsSubagentRecords(store,report);
-process.stdout.write(JSON.stringify({{records,labels:records.map(subagentSelectionLabel)}}));
+const pending=records.find((record)=>record.task_id===toolCallId);
+process.stdout.write(JSON.stringify({{records,labels:records.map(subagentSelectionLabel),parts:records.map((record)=>subagentSelectionParts(record,Date.parse("2026-08-16T00:03:00Z"))),pendingLabel:subagentRunLabel(pending),pendingDetails:renderTsSubagentDetails(pending,{{}},80)}}));
 """
     result = _node_json(script)
-    assert {item["task_id"] for item in result["records"]} == {"live", "sub_1", "sub_2"}
+    tool_call_id = "call_028def15-cbb5-42b4-bbfc-cfbd256c4a0b"
+    assert {item["task_id"] for item in result["records"]} == {tool_call_id, "sub_1", "sub_2"}
     durable = next(item for item in result["records"] if item["task_id"] == "sub_1")
     assert durable["run_ref"] == "reviews/claim_2/runs/sub_1"
+    pending = next(item for item in result["records"] if item["task_id"] == tool_call_id)
+    assert pending["task_id_pending"] is True
+    assert result["pendingLabel"] == "ID pending"
+    assert tool_call_id not in "\n".join(result["labels"] + result["pendingDetails"])
+    assert any("ID pending" in value for value in result["labels"])
+    assert any("sub_1" in value for value in result["labels"])
     assert any("Review" in label for label in result["labels"])
     assert any("Compute" in label for label in result["labels"])
+    assert any("claim_2" in label and "claim review" in label for label in result["labels"])
+    assert any("Gaussian collect and parse" in label for label in result["labels"])
+    assert any(part["right"] == "done · 02:14" for part in result["parts"])
+    assert result["pendingDetails"][0] == "ID pending · Review · queued"
 
 
 def test_review_history_browser_pages_eight_runs_and_opens_details() -> None:
@@ -125,8 +147,50 @@ process.stdout.write(JSON.stringify({{pageSize:SUBAGENT_HISTORY_PAGE_SIZE,first,
     assert result["pageSize"] == 8
     assert "Page 1/2" in "\n".join(result["first"])
     assert "Page 2/2" in "\n".join(result["second"])
-    assert "TS Subagent Run Details" in result["detail"][0]
+    assert "sub_9 · Review · done" in result["detail"][0]
     assert result["closed"] == 1
+
+
+def test_subagent_details_prioritize_outcome_and_error_before_scope_and_audit() -> None:
+    script = f"""
+import {{ renderTsSubagentDetails }} from {json.dumps(DETAILS.as_uri())};
+const record={{task_id:"sub_7",role:"compute",authority:"operational",operation:"finalize",backend:"gaussian",state:"failed",node_refs:["node_3"],claim_refs:[],target_ref:"calc_4",run_ref:"nodes/node_3/attempts/calc_4/runs/sub_7",started_at:"2026-08-26T07:42:00Z",finished_at:"2026-08-26T07:42:07Z",summary:"Collection stopped before parsing.",error_code:"PROGRAM_OUTPUT_MISSING",error_message:"gaussian.out was not created",live:false}};
+const documents={{result:{{summary:"Collection stopped before parsing.",artifact_refs:["art_0123456789abcdef01234567"]}},actions:{{actions:[{{tool:"collect",result:{{action_status:"failed"}}}}]}},run:{{error:{{code:"PROGRAM_OUTPUT_MISSING",message:"gaussian.out was not created"}},metadata:{{failure_stage:"collect"}}}}}};
+process.stdout.write(JSON.stringify(renderTsSubagentDetails(record,documents,80)));
+"""
+    lines = _node_json(script)
+    assert lines[0] == "sub_7 · Compute · failed"
+    assert lines.index("Outcome") < lines.index("Error") < lines.index("Scope") < lines.index("Audit")
+    assert any("Gaussian collect and parse" in line for line in lines)
+    assert any("calc_4" in line for line in lines)
+    assert any("PROGRAM_OUTPUT_MISSING" in line for line in lines)
+    assert any("Journal" in line for line in lines)
+
+
+def test_rpc_subagent_history_uses_run_owner_action_and_audit_sections() -> None:
+    script = f"""
+import {{ formatTsSubagentHistoryMarkdown }} from {json.dumps(UI.as_uri())};
+const record={{task_id:"sub_3",role:"review",authority:"advisory",operation:"claim_review",state:"completed",node_refs:["node_2"],claim_refs:["claim_1"],run_ref:"reviews/claim_1/runs/sub_3",started_at:"2026-08-26T07:40:00Z",finished_at:"2026-08-26T07:42:14Z",summary:"The cited observations support the scoped claim.",live:false}};
+process.stdout.write(formatTsSubagentHistoryMarkdown([record]));
+"""
+    completed = subprocess.run(
+        ["node", "--experimental-loader", str(TS_LOADER), "--input-type=module", "--eval", script],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        timeout=30,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    text = completed.stdout
+    assert "## `sub_3` · Review · done" in text
+    assert "- Owner: `claim_1`" in text
+    assert "- Action: claim review" in text
+    assert "- Elapsed: `02:14`" in text
+    assert "Outcome" in text
+    assert "Audit journal: `reviews/claim_1/runs/sub_3`" in text
+    assert "- Task:" not in text
 
 
 def test_ui_tracks_current_tools_and_history_covers_compute_and_review() -> None:

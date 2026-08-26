@@ -231,7 +231,9 @@ slash commands:
 The slash commands are `/ts-context`, `/ts-validate`, `/ts-remote`, and
 `/ts-subagent-history`. The history browser shows durable Compute and Review
 runs; deterministic tool activity is shown through normal tool entries and the
-unified TS Activity projection.
+unified TS Activity projection. TS Activity is a transient live view of kind,
+owner, action, state, and elapsed time. History uses canonical `sub_n` run IDs;
+its detail view leads with outcome or error and keeps journal paths under Audit.
 
 ## Research Loop
 
@@ -344,6 +346,10 @@ PNG/GIF artifacts can be copied into a package `assets/` directory before
 notification; Notify accepts only unchanged manifest members. Compute runs live
 under their `calc_n` Attempt, Review runs under their target Claim, and new
 operational records use workspace-wide `calc_n`, `sub_n`, and `op_n` ordinals.
+Human-facing navigation uses these readable ordinal IDs. Opaque `ws_*`
+workspace identities, `ctx_*` projection bindings, revisions, and digests remain
+machine/audit fields; routine Pi and Web views show workspace labels and semantic
+state instead of presenting those bindings as navigational IDs.
 Review advice and Compute or deterministic tool results become scientific
 support only after the Root Agent verifies primary artifacts and records normal
 Observations through a Decision.

@@ -258,6 +258,13 @@ activities. Allocation is lock-protected, high-water based, private, and never
 reuses a reserved ordinal. Operational projections index only canonical
 ordinal-named journals and ignore unrecognized entries.
 
+The presentation contract distinguishes navigational IDs from technical
+bindings. Canonical and operational records expose readable ordinals such as
+`claim_1`, `node_1`, `calc_1`, `sub_1`, and `op_1`. Immutable `ws_*` workspace
+identities, content-bound `ctx_*` projections, revisions, and digests remain
+opaque protocol and audit values. Normal Pi/Web chrome must show a workspace
+label and semantic state, not use those opaque bindings as user-facing names.
+
 ## Decision Transaction
 
 The only normal mutation sequence is:
@@ -641,7 +648,10 @@ valid.
 
 The immediate tool return is the current delivery channel into the Root
 conversation. `TS Activity` is presentation state and is cleared with the Pi
-session. `/ts-subagent-history` reads durable Compute and Review summaries on demand.
+session. Its rows show only the live kind, semantic owner, action, state, and
+elapsed time. `/ts-subagent-history` reads durable Compute and Review summaries
+on demand, uses `sub_n` as the lookup identity, and moves journal paths and files
+behind the detail view's Audit section.
 
 ## Failure Semantics
 

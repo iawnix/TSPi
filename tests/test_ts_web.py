@@ -774,6 +774,9 @@ def test_static_ui_refreshes_registry_and_persists_theme() -> None:
     assert "/snapshot?${query}" in script
     assert "renderUnavailableWorkspace(catalogRow)" in script
     assert 'row.available === false ? " (incompatible)" : ""' in script
+    assert 'textContent = view.workspace.kernel_protocol || "Research workspace"' in script
+    assert "escapeHtml(view.workspace.workspace_id)" not in script
+    assert "shortDigest(view.workspace_revision)" not in script
 
 
 def test_research_files_payload_is_a_read_only_locator_projection(tmp_path: Path) -> None:
