@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Molecular render CLI for TSAgentSkill."""
+"""Molecular render CLI for TSPi."""
 
 from __future__ import annotations
 

@@ -42,8 +42,10 @@ PACKAGE_FILES = [
     "extensions/ts-workflow-review/*.ts",
     "extensions/ts-workflow-ui/*.ts",
     "scripts/install_env.py",
+    "scripts/install_package.py",
     "scripts/install_release.py",
     "scripts/_bootstrap.py",
+    "scripts/_suite.py",
     "scripts/_wheel.py",
     "scripts/tspi_host.py",
     "scripts/ts_backend.py",
@@ -96,8 +98,10 @@ REQUIRED_TARBALL_FILES = {
     "docs/MAINTAINER_GUIDE.md",
     "environment.yml",
     "scripts/install_env.py",
+    "scripts/install_package.py",
     "scripts/install_release.py",
     "scripts/_bootstrap.py",
+    "scripts/_suite.py",
     "scripts/_wheel.py",
     "scripts/tspi_host.py",
     "skills/transition-state-workflow/SKILL.md",
@@ -184,9 +188,11 @@ FORBIDDEN_PARTS = {
 }
 FORBIDDEN_BASENAMES = {".env", "auth.json", "auth.toml", "config.toml", "models.json"}
 FORBIDDEN_RUNTIME_FILES = {
+    "scripts/build_package.py",
     "scripts/build_release.py",
     "scripts/check_package.py",
 }
+REQUIRED_EXECUTABLE_FILES = {"TSPi", "scripts/ts_web.py"}
 
 
 class PackageCheckError(RuntimeError):
@@ -262,6 +268,16 @@ def validate_python_project() -> None:
             errors.append("Python distribution version does not match package.json")
     if errors:
         raise PackageCheckError("\n".join(errors))
+
+
+def validate_runtime_entrypoints() -> None:
+    invalid = [
+        relative
+        for relative in sorted(REQUIRED_EXECUTABLE_FILES)
+        if not os.access(ROOT / relative, os.X_OK)
+    ]
+    if invalid:
+        raise PackageCheckError(f"runtime entrypoints must be executable: {', '.join(invalid)}")
 
 
 def npm_pack_files() -> set[str]:
@@ -349,6 +365,7 @@ def main() -> int:
     try:
         validate_manifest(load_manifest())
         validate_python_project()
+        validate_runtime_entrypoints()
         files = npm_pack_files()
         validate_tarball(files)
     except (OSError, PackageCheckError, json.JSONDecodeError) as error:

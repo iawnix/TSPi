@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from scripts.check_package import PACKAGE_FILES
-from tests.runtime_helpers import write_test_runtime_manifest
+from tests.runtime_helpers import write_test_runtime_manifest, write_test_suite_manifest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -33,24 +33,15 @@ ALLOWED_CONTRACT_OR_THIRD_PARTY_LABELS = (
 
 def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     install_root = tmp_path / "tspi-install"
-    package_home = install_root / ".pi" / "packages" / "ts-agent"
-    package_root = package_home / "releases" / "test-release"
+    package_home = install_root / ".pi" / "packages" / "tspi"
+    suite_root = package_home / "releases" / "test-suite"
+    package_root = suite_root / "agent"
     package_root.mkdir(parents=True)
     (package_root / "package.json").write_text(
         '{"name":"@iawnix/ts-agent","version":"0.10.0"}\n',
         encoding="utf-8",
     )
-    (package_root / ".ts-agent-release.json").write_text(
-        json.dumps(
-            {
-                "schema_version": "ts-agent-release/2",
-                "release_id": "test-release",
-                "package": {"name": "@iawnix/ts-agent", "version": "0.10.0"},
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    write_test_suite_manifest(suite_root)
     shutil.copy2(TSPI_LAUNCHER, package_root / "TSPi")
     (package_root / "TSPi").chmod(0o755)
     (package_root / "scripts").mkdir()
@@ -64,14 +55,14 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     shutil.copy2(ROOT / "pyproject.toml", package_root / "pyproject.toml")
     shutil.copy2(ROOT / "environment.yml", package_root / "environment.yml")
     write_test_runtime_manifest(package_root, install_root)
-    (package_home / "current").symlink_to("releases/test-release")
+    (package_home / "current").symlink_to("releases/test-suite")
     launcher = install_root / "TSPi"
-    launcher.symlink_to(".pi/packages/ts-agent/current/TSPi")
+    launcher.symlink_to(".pi/packages/tspi/current/agent/TSPi")
     return install_root, launcher
 
 
 def _installed_package_root(install_root: Path) -> Path:
-    return install_root / ".pi" / "packages" / "ts-agent" / "releases" / "test-release"
+    return install_root / ".pi" / "packages" / "tspi" / "releases" / "test-suite" / "agent"
 
 
 def _fake_pi(path: Path, body: str = "raise SystemExit(0)\n") -> Path:
@@ -205,6 +196,7 @@ def test_tspi_shell_is_a_thin_executable_shim() -> None:
     source = TSPI_LAUNCHER.read_text(encoding="utf-8")
     assert completed.returncode == 0, completed.stderr
     assert TSPI_LAUNCHER.stat().st_mode & 0o111
+    assert (ROOT / "scripts" / "ts_web.py").stat().st_mode & 0o111
     assert len(source.splitlines()) <= 20
     assert "scripts/tspi_host.py" in source
     assert "TS_AGENT_INSTALL_ROOT" in source
@@ -318,8 +310,8 @@ def test_tspi_requires_an_installed_release(tmp_path: Path) -> None:
     completed = _run_tspi(launcher, "--workspace", "release-required")
 
     assert completed.returncode == 1
-    assert "no installed TS Agent release" in completed.stderr
-    assert "install a validated release" in completed.stderr
+    assert "no installed Agent component" in completed.stderr
+    assert "install a validated TSPi Package" in completed.stderr
 
 
 def test_tspi_check_remote_runs_one_strict_diagnostic(tmp_path: Path) -> None:

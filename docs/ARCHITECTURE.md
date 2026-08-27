@@ -1,7 +1,7 @@
-# TSAgentSkill Architecture
+# TSPi Package Architecture
 
 This document defines component ownership and runtime boundaries for
-`@iawnix/ts-agent`. JSON and TypeBox schemas are authoritative for
+the complete TSPi Package and its `@iawnix/ts-agent` component. JSON and TypeBox schemas are authoritative for
 field-level call shapes. The Root Skill is authoritative for behavior inside a
 research session. [ADR 0001](adr/0001-phase-node-research-kernel.md) records the
 Phase + ResearchNode design.
@@ -10,6 +10,8 @@ Phase + ResearchNode design.
 
 ```text
 Installation root
+  one selected TSPi Package release
+    Agent + embedded Web + Phone server + signed mobile artifact
   TSPi shell shim
     -> Python lifecycle host
        -> immutable selected release and isolated Python runtime
@@ -42,7 +44,31 @@ There are three forms of execution:
    explicitly selected side effect. Every compute action, structure seed or
    comparison, Render, Report, remote inspection, artifact import,
    notification, context, and validation operation is implemented outside the
-child model.
+   child model.
+
+## Package Release Boundary
+
+Source ownership and release ownership are deliberately different. TSPi and TS
+Phone remain separate Git repositories with independent tests and maintainers.
+`ts_web` remains inside the TSPi repository because it projects the Agent
+kernel's workspace contract. TS Phone produces a deterministic component
+archive; it does not select the installed TSPi version.
+
+The TSPi suite assembler consumes one validated Phone component
+manifest, builds or consumes one Agent component, checks their protocol and
+artifact contracts, and writes `tspi-package-release/1`. The outer Package
+contains the two immutable component archives and records Web as embedded in
+Agent. `install_package.py` verifies every layer and selects exactly one set at:
+
+```text
+<installation>/.pi/packages/tspi/current
+```
+
+Top-level `TSPi`, `TSWeb`, `TSPhoneCtl`, and `TSPhoneServer` symlinks all pass
+through that pointer. Runtime configuration, model credentials, SSH settings,
+notification settings, Phone tokens, Pi sessions, workspaces, and service state
+remain outside releases. Package installation never starts a service or installs
+the Android APK.
 
 ## Python Distribution Boundary
 
@@ -52,11 +78,13 @@ The Pi package and Python distribution are separate, coordinated boundaries.
 single `python/ts_agent/` namespace. Stable `scripts/*.py` files remain Pi and
 operator entrypoints; they do not own domain behavior.
 
-`build_release.py` builds the wheel from a temporary writable source copy and
-embeds it under `python-dist/`. Release manifest `ts-agent-release/2` binds the
-wheel name, version, path, size, SHA-256, and expanded package-payload digest to
-the outer npm archive. `install_release.py` verifies both layers before making
-the selected release read-only.
+`build_release.py` is the internal Agent component builder. It builds the wheel
+from a temporary writable source copy and embeds it under `python-dist/`.
+Component manifest `ts-agent-release/2` binds the wheel name, version, path,
+size, SHA-256, and expanded package-payload digest to the Agent archive.
+`build_package.py` binds that component into the complete Package;
+`install_package.py` is the public installation boundary. `install_release.py`
+remains available for Agent-component development tests, not full deployments.
 
 `install_env.py` never builds inside an immutable release. It revalidates and
 installs the bundled wheel into the managed Conda prefix with dependencies
@@ -422,7 +450,7 @@ layer; operators must bind it to loopback or expose it only on a trusted,
 firewalled network.
 
 Long-running installed Web processes are invoked through the stable
-`ts-agent/current/scripts/ts_web.py` path. A small lifecycle watcher compares
+`<installation>/TSWeb` path. A small lifecycle watcher compares
 that path's resolved target with the entrypoint that loaded the process. Once a
 new selected release and its managed Python runtime are both ready, it shuts
 down the HTTP socket and `exec`s the stable command. The stable installation

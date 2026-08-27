@@ -1,8 +1,9 @@
 # Installation And Operations
 
-This guide installs one validated `@iawnix/ts-agent` release into a dedicated
-TSPi root. It also covers workspace startup, configuration, upgrade, rollback,
-and common recovery paths.
+This guide builds and installs one validated TSPi Package containing the Agent,
+embedded Web explorer, TS Phone server, and signed Android artifact. It also
+covers workspace startup, configuration, upgrade, rollback, and common recovery
+paths.
 
 ## Prerequisites
 
@@ -13,7 +14,7 @@ and common recovery paths.
 | Pi Agent `>=0.81.1 <1.0.0` | Root Agent host and TUI |
 | Python 3.11 or newer | release installer and runtime bootstrap |
 | Conda or Mamba | isolated scientific Python environment |
-| npm | release build and maintainer validation only |
+| npm | component release builds and maintainer validation only |
 
 Configure a working Pi model and authentication before starting TSPi. TSPi
 reuses Pi's model registry and credentials; it does not store an API key in the
@@ -25,7 +26,9 @@ Optional dependencies are:
 - Gaussian, xTB, or other software profiles on the remote execution system;
 - `xyzrender`, installed by `--with-render`, for visualization;
 - a configured ClawEmail installation for email notifications;
-- the separate TS Phone Broker and app for `--phone` mode.
+- TS Phone activation and an Android device when `--phone` is used. The broker
+  and signed arm64 APK are bundled, but activation and device installation are
+  explicit operations.
 
 ## Installation Layout
 
@@ -34,12 +37,21 @@ Choose one physical, non-symlink installation root:
 ```text
 <installation>/
   TSPi
+  TSWeb
+  TSPhoneCtl
+  TSPhoneServer
   .pi/
-    packages/ts-agent/
-      current -> releases/<release-id>
-      releases/<release-id>/
-        python/ts_agent/             auditable Python source
-        python-dist/*.whl            manifest-bound runtime artifact
+    packages/tspi/
+      current -> releases/<suite-release-id>
+      releases/<suite-release-id>/
+        agent/
+          python/ts_agent/           auditable Python source
+          python-dist/*.whl          manifest-bound runtime artifact
+        phone/
+          services/server/dist/      TS Phone server
+          artifacts/*.apk            signed Android artifact
+        components/                  verified nested release archives
+        components.json
       install-state.json
     remote.toml                 optional
     notifications.toml          optional, mode 0600
@@ -51,51 +63,76 @@ Choose one physical, non-symlink installation root:
     <workspace-name>/
 ```
 
+The four top-level entrypoints resolve through the same suite `current` pointer.
 Releases are immutable and shared. Workspaces keep separate Pi sessions,
-canonical state, calculation controls, reports, and Root locks.
+canonical state, calculation controls, reports, and Root locks. Phone tokens,
+service configuration, model credentials, and other runtime state remain
+outside the release.
 
 ## Build A Release
 
-Run this section in a clean authored Git checkout. End users receiving a
-prebuilt archive and manifest can skip it.
+Run this section with clean TS Phone and TSPi source checkouts. End users
+receiving a prebuilt Package archive and manifest can skip it.
 
 ```bash
+cd /path/to/ts-phone
+npm ci
+python3 deploy/build-component-release.py \
+  --output-dir dist/component \
+  --json
+
+cd /path/to/TSPi
 python3 scripts/check_package.py
-python3 scripts/build_release.py --output-dir dist --json
+python3 scripts/build_package.py \
+  --phone-manifest /path/to/ts-phone/dist/component/ts-phone-component-release.json \
+  --output-dir dist/package \
+  --json
 ```
 
-The build fails on a dirty checkout unless `--allow-dirty` is supplied. That
-option is for local validation only and must not be used for a distributed
-release. The output contains:
+The Phone builder runs server typecheck, tests, and build, verifies the arm64
+APK Signature Scheme 2 record, and writes `ts-phone-component-release/1`. The suite builder
+internally builds the Agent component and wheel, verifies both component
+manifests and archives, and writes `tspi-package-release/1`. Each build fails on
+a dirty source unless `--allow-dirty` is supplied. That option is only for local
+validation and must not be used for a distributed release.
+
+The final output contains:
 
 ```text
-dist/ts-agent-<version>-sha256-<digest>.tgz
-dist/ts-agent-release.json
+dist/package/tspi-package-<version>-sha256-<digest>.tgz
+dist/package/tspi-package-release.json
 ```
 
-Keep both files together. The `ts-agent-release/2` manifest binds the archive
-name, size, SHA-256, package identity, source commit, dirty state, and the sole
-bundled Python wheel's identity, path, size, SHA-256, and payload digest.
+Keep both files together. The suite manifest binds the exact Agent and Phone
+release IDs, nested archive paths, sizes and SHA-256 values, Agent wheel,
+protocol set, Phone server entry, signed APK, component source commits, and the
+outer archive identity. `build_release.py` and `install_release.py` remain
+internal Agent-component tools; they do not produce or install a complete TSPi
+deployment.
 
 ## Install Or Select A Release
 
 Use the installer from the matching authored checkout:
 
 ```bash
-python3 scripts/install_release.py \
-  --manifest dist/ts-agent-release.json \
+python3 scripts/install_package.py \
+  --manifest dist/package/tspi-package-release.json \
   --install-root /path/to/TSPi-installation \
   --json
 ```
 
-The installer rejects symlinked roots, unsafe archive members, unexpected
-development files, identity mismatches, size or digest mismatches, and writable
-release contents. It extracts into a private staging directory, finalizes
-read-only permissions, atomically switches `current`, and installs the top-level
-`TSPi` symlink. Reinstalling identical content is idempotent.
+The installer rejects symlinked roots, unsafe members in every archive,
+unexpected development files, component/protocol mismatches, size or digest
+mismatches, and writable release contents. It extracts into a private staging
+directory, validates the expanded Agent, Web, Phone server, and APK, finalizes
+read-only permissions, atomically switches one suite `current`, and installs
+the top-level `TSPi`, `TSWeb`, `TSPhoneCtl`, and `TSPhoneServer` symlinks.
+Reinstalling identical content is idempotent and revalidates retained component
+archives and runtime entrypoints.
 
-The installer does not run Pi, install model credentials, create a research
-workspace, contact a cluster, or create the Python environment.
+The installer does not run Pi, start or restart TS Phone, install the APK onto a
+device, install model credentials, create a research workspace, contact a
+cluster, or create the Python environment.
 
 Each installed release includes `README.md`, the three top-level guides under
 `docs/`, and versioned ADRs under `docs/adr/`. They describe that exact packaged
@@ -108,7 +145,7 @@ Install one environment owned by the TSPi installation so all workspaces reuse
 the same dependency set:
 
 ```bash
-export TS_AGENT_SKILL_ROOT=/path/to/TSPi-installation/.pi/packages/ts-agent/current
+export TS_AGENT_SKILL_ROOT=/path/to/TSPi-installation/.pi/packages/tspi/current/agent
 
 python3 "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
   --package-root "$TS_AGENT_SKILL_ROOT" \
@@ -224,6 +261,34 @@ There is no per-message activation token. A mismatch between the user's
 requested address and the configured target must be reported without sending.
 Ambiguous provider effects are never retried automatically.
 
+## Configure TS Phone
+
+Phone mode is optional. The selected Package includes the compatible broker,
+control CLI, protocol schemas, and signed arm64 APK. It does not own the live
+service or its secrets. Copy the component's example environment into private
+installation state and edit its workspace, state, and socket paths for the
+installation:
+
+```bash
+mkdir -p /path/to/TSPi-installation/.pi/ts-phone
+cp /path/to/TSPi-installation/.pi/packages/tspi/current/phone/deploy/server.env.example \
+  /path/to/TSPi-installation/.pi/ts-phone/server.env
+chmod 600 /path/to/TSPi-installation/.pi/ts-phone/server.env
+```
+
+An operator may run `/path/to/TSPi-installation/TSPhoneServer` under a service
+manager or in a terminal after loading that environment. Service activation,
+restart, FRP, HTTPS, and token handling remain explicit operational actions;
+the Package installer never performs them. `TSPhoneCtl` targets the configured
+state directory. The Android artifact is under the path recorded by
+`components.phone.mobile_artifact.path` in the selected Package manifest and
+must be installed on the device separately.
+
+The `deploy/install-local.sh` and bundled systemd unit in the TS Phone source
+repository are standalone component-development tools. Do not combine their
+`/home/iaw/soft/ts-phone/current` selection with a suite-managed production
+installation.
+
 ## Start And Resume Workspaces
 
 Run from the installation root:
@@ -273,8 +338,7 @@ existing layout is unsupported.
 workspaces and register one or more studies while starting the server:
 
 ```bash
-TS_AGENT_CURRENT=/path/to/TSPi-installation/.pi/packages/ts-agent/current
-python3 "$TS_AGENT_CURRENT/scripts/ts_web.py" serve \
+/path/to/TSPi-installation/TSWeb serve \
   --state-dir /path/to/TSPi-installation/.pi/ts-web \
   --source-root /path/to/TSPi-installation/workspaces/reaction-a \
   --label "Reaction A" \
@@ -302,7 +366,7 @@ unchanged response contains no View or Graph. If a check fails, the browser
 keeps the last valid snapshot and marks its live status as stale.
 
 Release watching is enabled by default. It works only when the process is
-invoked through the stable `.../ts-agent/current/scripts/ts_web.py` path. After
+invoked through the stable `<installation>/TSWeb` path. After
 `current` selects another immutable release, the watcher waits until that
 release's managed Python runtime is ready, gracefully closes the HTTP server,
 and executes the same stable command. Pass `--no-watch-release` to disable this
@@ -320,13 +384,14 @@ can inspect the registered research data.
 
 ## Upgrade
 
-1. Validate and build a clean new release.
+1. Validate and build clean Phone and Agent components into a new Package.
 2. Preserve its archive and manifest.
-3. Run `install_release.py` against the same installation root.
+3. Run `install_package.py` against the same installation root.
 4. Run the newly selected release's `install_env.py`; a changed environment
    spec selects a new hash-addressed prefix, while an unchanged prefix still
    receives and verifies the release-bound wheel.
-5. Stop and restart each TSPi Root Agent process when ready. A `ts_web` process
+5. Stop and restart each TSPi Root Agent process when ready. Restart TS Phone
+   only in an authorized maintenance window. A `TSWeb` process
    started through the stable `current` entrypoint restarts itself after the new
    managed runtime is ready.
 
@@ -346,9 +411,9 @@ The supported rollback path is to preserve a previous validated archive and
 manifest and install it again:
 
 ```bash
-python3 scripts/install_release.py \
-  --manifest /path/to/previous/ts-agent-release.json \
-  --archive /path/to/previous/ts-agent-<release-id>.tgz \
+python3 scripts/install_package.py \
+  --manifest /path/to/previous/tspi-package-release.json \
+  --archive /path/to/previous/tspi-package-<release-id>.tgz \
   --install-root /path/to/TSPi-installation \
   --json
 ```
@@ -366,7 +431,7 @@ implement the workspace schemas it opens.
 
 | Symptom | Meaning and action |
 | --- | --- |
-| `no installed TS Agent release` | Install a validated archive before startup. |
+| no selected TSPi Package release | Install a validated Package archive before startup. |
 | runtime manifest or interpreter unavailable | Run the selected release's `install_env.py`. |
 | managed runtime capability probe fails | Do not fall back to system Python. Recreate the hash-addressed environment and inspect the recorded NumPy/RDKit import error. |
 | Python distribution payload mismatch | Rerun the selected release's `install_env.py`; do not edit the managed site-packages or immutable release in place. |
@@ -387,8 +452,10 @@ implement the workspace schemas it opens.
 After installation, verify without submitting a job:
 
 ```bash
-readlink -f /path/to/TSPi-installation/.pi/packages/ts-agent/current
+readlink -f /path/to/TSPi-installation/.pi/packages/tspi/current
 /path/to/TSPi-installation/TSPi --help
+/path/to/TSPi-installation/TSWeb --help
+/path/to/TSPi-installation/TSPhoneCtl --help
 /path/to/TSPi-installation/TSPi --workspace smoke --continue
 ```
 

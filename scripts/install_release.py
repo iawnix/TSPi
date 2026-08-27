@@ -49,8 +49,10 @@ REQUIRED_RUNTIME_FILES = {
     "docs/MAINTAINER_GUIDE.md",
     "environment.yml",
     "scripts/install_env.py",
+    "scripts/install_package.py",
     "scripts/install_release.py",
     "scripts/_bootstrap.py",
+    "scripts/_suite.py",
     "scripts/_wheel.py",
     "scripts/tspi_host.py",
     "scripts/ts_compute.py",
@@ -80,6 +82,7 @@ REQUIRED_RUNTIME_FILES = {
 }
 FORBIDDEN_PARTS = {".git", ".pytest_cache", "__pycache__", "build", "node_modules", "tests"}
 FORBIDDEN_RUNTIME_FILES = {
+    "scripts/build_package.py",
     "scripts/build_release.py",
     "scripts/check_package.py",
 }

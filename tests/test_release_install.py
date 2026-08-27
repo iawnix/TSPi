@@ -158,10 +158,9 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
         stderr=subprocess.PIPE,
         check=False,
     )
-    assert startup.returncode == 0, startup.stderr
-    startup_result = json.loads(startup.stdout)
-    assert Path(startup_result["package_root"]) == package_root
-    assert (install_root / "workspaces" / "release-smoke").is_dir()
+    assert startup.returncode == 1
+    assert "no selected TSPi Package release" in startup.stderr
+    assert not (install_root / "workspaces" / "release-smoke").exists()
 
 
 def test_release_install_is_idempotent_and_preserves_previous_versions(tmp_path: Path) -> None:
@@ -368,7 +367,7 @@ def _synthetic_release(
         for name, content in sorted(files.items()):
             info = tarfile.TarInfo(name if name.startswith("package/") else f"package/{name}")
             info.size = len(content)
-            info.mode = 0o755 if name == "TSPi" else 0o644
+            info.mode = 0o755 if name in {"TSPi", "scripts/ts_web.py"} else 0o644
             archive.addfile(info, io.BytesIO(content))
     digest = hashlib.sha256(temporary_archive.read_bytes()).hexdigest()
     release_id = f"0.5.0-sha256-{digest[:16]}"

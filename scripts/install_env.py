@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Create or refresh the isolated Conda runtime for TSAgentSkill."""
+"""Create or refresh the isolated Conda runtime for TSPi."""
 
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ write_manifest = runtime_environment.write_manifest
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Install the TSAgentSkill isolated Python environment.")
+    parser = argparse.ArgumentParser(description="Install the TSPi isolated Python environment.")
     parser.add_argument("--package-root", default=str(ROOT))
     parser.add_argument("--workspace-root", help="Workspace root that owns .agents/runtime and .agents/envs.")
     parser.add_argument("--runtime-home", help="Directory that stores the runtime manifest.")

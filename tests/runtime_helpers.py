@@ -9,6 +9,32 @@ from pathlib import Path
 from ts_agent.runtime.env import python_payload_sha256
 
 
+def write_test_suite_manifest(suite_root: Path, *, version: str = "0.10.0") -> Path:
+    """Write the minimal complete suite identity required by launcher tests."""
+
+    release_id = suite_root.name
+    manifest_path = suite_root / ".tspi-package-release.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": "tspi-package-release/1",
+                "release_id": release_id,
+                "package": {"name": "@iawnix/tspi", "version": version},
+                "components": {
+                    "agent": {"release_id": "test-agent", "version": version},
+                    "web": {},
+                    "phone": {},
+                },
+                "archive": {"filename": "test.tgz", "sha256": "0" * 64, "size_bytes": 1},
+                "created_at_utc": "2026-08-27T00:00:00+00:00",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return manifest_path
+
+
 def write_test_runtime_manifest(package_root: Path, install_root: Path) -> Path:
     """Bind a test installation to the interpreter running the test suite."""
 

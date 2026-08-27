@@ -424,7 +424,8 @@ python3 scripts/ts_runtime.py run -m pytest -q
 python3 scripts/build_release.py --allow-dirty --output-dir /tmp/ts-agent-release --json
 ```
 
-The release builder creates the wheel from a temporary source copy, then adds
+This is an Agent-component development probe. The builder creates the wheel
+from a temporary source copy, then adds
 it to the final npm archive under `python-dist/`. Do not use the immutable
 release directory itself as a PEP 517 build source; setuptools needs writable
 build-metadata space. The runtime installer consumes the bundled wheel and
@@ -467,17 +468,30 @@ contacting a production model endpoint.
 ### Package and release
 
 ```bash
+# TS Phone repository
+npm run test:release
+npm run typecheck
+npm test
+npm run build
+python3 deploy/build-component-release.py --output-dir dist/component --json
+
+# TSPi repository
 python3 scripts/check_package.py
 NPM_CONFIG_CACHE=/tmp/ts-agent-npm-cache npm pack --dry-run --json
-python3 scripts/build_release.py --output-dir dist --json
+python3 -m pytest -q tests/test_suite_release.py tests/test_release_install.py
+python3 scripts/build_package.py \
+  --phone-manifest /path/to/ts-phone/dist/component/ts-phone-component-release.json \
+  --output-dir dist/package \
+  --json
 ```
 
-Inspect `ts-agent-release.json` and confirm its `python_distribution` descriptor
-matches the sole `python-dist/*.whl` member. The outer archive digest binds that
-descriptor and artifact into one content-addressed release.
+Inspect `tspi-package-release.json`. Confirm that its Agent descriptor matches
+the sole nested wheel, its Phone descriptor matches the server and signed APK,
+its protocol set is exact, and its nested archive paths and digests match the
+outer archive. One suite release ID must select the entire component set.
 
-Release build requires a clean checkout. `--allow-dirty` is only for local
-smoke validation and must not be distributed.
+Both component builds require clean checkouts. `--allow-dirty` is only for
+local smoke validation and must not be distributed.
 
 ## Version Changes
 
@@ -496,18 +510,21 @@ policy versions and must be bumped when their expanded meaning changes.
 
 ## Release Procedure
 
-1. Inspect `git status` and preserve unrelated changes.
-2. Run focused tests, full pytest, TypeScript typecheck, Pi adapter tests, and
-   package checks.
+1. Inspect `git status` in both source repositories and preserve unrelated
+   changes.
+2. Run focused tests, full Agent pytest, both TypeScript checks, Pi adapter
+   tests, Phone tests/build, and Package checks.
 3. Confirm docs, examples, CLI help, schemas, and registered tools describe one
    workspace contract.
-4. Commit only intended source changes.
-5. Build from the clean commit and record source commit, release ID, archive,
-   size, and SHA-256.
+4. Commit only intended source changes in their owning repositories.
+5. Build the Phone component and complete Package from clean commits. Record
+   both source commits, component IDs, suite release ID, archive size, and
+   SHA-256.
 6. Install into staging or the authorized TSPi root with
-   `install_release.py`.
-7. Resolve the selected isolated Python runtime.
-8. Verify `TSPi --help`, fresh workspace bootstrap, tool inventory, and optional
+   `install_package.py`.
+7. Resolve the selected Agent component's isolated Python runtime.
+8. Verify `TSPi --help`, `TSWeb --help`, `TSPhoneCtl --help`, all launchers'
+   release identity, fresh workspace bootstrap, tool inventory, and optional
    read-only remote status.
 9. Restart user sessions only in an authorized maintenance window.
 
@@ -517,10 +534,11 @@ remote jobs.
 
 ## Rollback Discipline
 
-Preserve every distributed archive and manifest. Roll back by selecting the
-previous pair through the installer, resolving its runtime, and starting a new
-TSPi process. Do not edit installed files or run Git operations inside a
-release directory.
+Preserve every distributed Package archive and manifest. Roll back by selecting
+the previous pair through the suite installer, resolving its Agent runtime, and
+starting new TSPi, Web, and Phone processes as needed. Do not mix independently
+selected component versions, edit installed files, or run Git operations inside
+a release directory.
 
 Rollback never converts canonical state. The selected release must implement
 the workspace schemas it opens.

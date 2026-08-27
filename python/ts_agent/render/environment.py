@@ -1,4 +1,4 @@
-"""Dependency discovery for TSAgentSkill rendering."""
+"""Dependency discovery for TSPi rendering."""
 
 from __future__ import annotations
 

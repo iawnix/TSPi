@@ -1,4 +1,4 @@
-"""Molecular visualization helpers for TSAgentSkill."""
+"""Molecular visualization helpers for TSPi."""
 
 from .environment import EnvironmentChecker
 from .renderer import MolVisualizer, render_molecule

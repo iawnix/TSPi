@@ -6,7 +6,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from tests.runtime_helpers import write_test_runtime_manifest
+from tests.runtime_helpers import write_test_runtime_manifest, write_test_suite_manifest
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,21 +20,12 @@ TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
 
 def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     install_root = tmp_path / "tspi-install"
-    package_home = install_root / ".pi" / "packages" / "ts-agent"
-    package_root = package_home / "releases" / "test-release"
+    package_home = install_root / ".pi" / "packages" / "tspi"
+    suite_root = package_home / "releases" / "test-suite"
+    package_root = suite_root / "agent"
     package_root.mkdir(parents=True)
     (package_root / "package.json").write_text('{"name":"@iawnix/ts-agent","version":"0.10.0"}\n', encoding="utf-8")
-    (package_root / ".ts-agent-release.json").write_text(
-        json.dumps(
-            {
-                "schema_version": "ts-agent-release/2",
-                "release_id": "test-release",
-                "package": {"name": "@iawnix/ts-agent", "version": "0.10.0"},
-            }
-        )
-        + "\n",
-        encoding="utf-8",
-    )
+    write_test_suite_manifest(suite_root)
     shutil.copy2(TSPI, package_root / "TSPi")
     (package_root / "TSPi").chmod(0o755)
     (package_root / "scripts").mkdir()
@@ -47,9 +38,9 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     )
     shutil.copy2(ROOT / "environment.yml", package_root / "environment.yml")
     write_test_runtime_manifest(package_root, install_root)
-    (package_home / "current").symlink_to("releases/test-release")
+    (package_home / "current").symlink_to("releases/test-suite")
     launcher = install_root / "TSPi"
-    launcher.symlink_to(".pi/packages/ts-agent/current/TSPi")
+    launcher.symlink_to(".pi/packages/tspi/current/agent/TSPi")
     return install_root, launcher
 
 

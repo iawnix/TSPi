@@ -15,7 +15,7 @@ from _bootstrap import activate_source_package, bootstrap_python_package
 def main(argv: list[str] | None = None) -> int:
     if not (ROOT / "package.json").is_file():
         print(
-            "TSPi: no installed TS Agent release; install a validated release before starting",
+            "TSPi: no installed Agent component; install a validated TSPi Package before starting",
             file=sys.stderr,
         )
         return 1

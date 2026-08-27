@@ -27,6 +27,7 @@ from .env import (
 
 
 PACKAGE_NAME = "@iawnix/ts-agent"
+SUITE_PACKAGE_NAME = "@iawnix/tspi"
 WORKSPACE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
 NOTIFICATION_FIELDS = {"enabled", "recipient", "clawemail_root"}
 EMAIL_ADDRESS = re.compile(r"^[^@\s]+@[^@\s]+$")
@@ -71,7 +72,7 @@ Remote computation uses the installation-owned .pi/remote.toml profile.
 Phone mode starts the visible TSPi session with the local TS Phone bridge.
 When another Root Agent owns the workspace, phone mode starts a separate
 read-only observer session instead of sharing the writer's Pi session.
-TSPi loads only the validated release selected by .pi/packages/ts-agent/current.
+TSPi loads only the validated Package selected by .pi/packages/tspi/current.
 Package development runs separately in the authored checkout.
 """
 
@@ -119,29 +120,32 @@ def resolve_installation(package_root: str | Path, install_root: str | Path) -> 
     if not requested_install.is_dir():
         raise TSPiHostError(f"installation root is not a directory: {requested_install}")
     root = requested_install.resolve()
-    package_home = root / ".pi" / "packages" / "ts-agent"
+    package_home = root / ".pi" / "packages" / "tspi"
     releases_root = package_home / "releases"
     current = package_home / "current"
     if not current.is_symlink():
         raise TSPiHostError(
-            f"no installed TS Agent release: {current}\n"
-            "TSPi: install a validated release before starting a research workspace"
+            f"no selected TSPi Package release: {current}\n"
+            "TSPi: install a validated Package before starting a research workspace"
         )
     try:
-        active = current.resolve(strict=True)
+        suite_root = current.resolve(strict=True)
         releases = releases_root.resolve(strict=True)
     except OSError as exc:
-        raise TSPiHostError(f"current TS Agent release is unavailable: {current}: {exc}") from exc
-    expected = Path(package_root).expanduser().resolve()
-    if active != expected:
-        raise TSPiHostError(f"launcher package does not match the active release: {expected}")
-    if active.parent != releases:
-        raise TSPiHostError(f"current TS Agent release escaped the release store: {active}")
-    _validate_release_identity(active)
+        raise TSPiHostError(f"selected TSPi Package is unavailable: {current}: {exc}") from exc
+    if suite_root.parent != releases:
+        raise TSPiHostError(f"selected TSPi Package escaped the release store: {suite_root}")
+    expected_agent = Path(package_root).expanduser().resolve()
+    selected_agent = suite_root / "agent"
+    if selected_agent.is_symlink() or not selected_agent.is_dir():
+        raise TSPiHostError(f"selected TSPi Package has no regular Agent component: {selected_agent}")
+    if selected_agent.resolve() != expected_agent:
+        raise TSPiHostError(f"launcher Agent does not match the selected TSPi Package: {expected_agent}")
+    _validate_suite_identity(suite_root, expected_agent)
     runtime_home = root / ".agents" / "runtime" / "transition-state-workflow"
     return Installation(
         root=root,
-        package_root=active,
+        package_root=expected_agent,
         workspaces_root=root / "workspaces",
         remote_config_default=root / ".pi" / "remote.toml",
         notification_config_default=root / ".pi" / "notifications.toml",
@@ -152,27 +156,35 @@ def resolve_installation(package_root: str | Path, install_root: str | Path) -> 
     )
 
 
-def _validate_release_identity(root: Path) -> None:
-    manifest_path = root / ".ts-agent-release.json"
-    package_path = root / "package.json"
-    for path, label in ((manifest_path, "installation manifest"), (package_path, "package manifest")):
+def _validate_suite_identity(suite_root: Path, agent_root: Path) -> None:
+    manifest_path = suite_root / ".tspi-package-release.json"
+    package_path = agent_root / "package.json"
+    for path, label in ((manifest_path, "Package manifest"), (package_path, "Agent package manifest")):
         if path.is_symlink() or not path.is_file():
-            raise TSPiHostError(f"current TS Agent release has no valid {label}: {path}")
+            raise TSPiHostError(f"selected TSPi Package has no valid {label}: {path}")
     try:
         manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
         package = json.loads(package_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
-        raise TSPiHostError(f"current TS Agent release metadata is invalid: {exc}") from exc
-    manifest_package = manifest.get("package") if isinstance(manifest, dict) else None
+        raise TSPiHostError(f"selected TSPi Package metadata is invalid: {exc}") from exc
+    suite_package = manifest.get("package") if isinstance(manifest, dict) else None
+    components = manifest.get("components") if isinstance(manifest, dict) else None
+    agent = components.get("agent") if isinstance(components, dict) else None
     if (
-        manifest.get("schema_version") != "ts-agent-release/2"
-        or manifest.get("release_id") != root.name
-        or not isinstance(manifest_package, dict)
+        not isinstance(manifest, dict)
+        or set(manifest)
+        != {"schema_version", "release_id", "package", "components", "archive", "created_at_utc"}
+        or manifest.get("schema_version") != "tspi-package-release/1"
+        or manifest.get("release_id") != suite_root.name
+        or not isinstance(suite_package, dict)
+        or suite_package.get("name") != SUITE_PACKAGE_NAME
+        or not isinstance(agent, dict)
+        or not isinstance(package, dict)
         or package.get("name") != PACKAGE_NAME
-        or manifest_package.get("name") != package.get("name")
-        or manifest_package.get("version") != package.get("version")
+        or suite_package.get("version") != package.get("version")
+        or agent.get("version") != package.get("version")
     ):
-        raise TSPiHostError(f"current TS Agent release identity is invalid: {root}")
+        raise TSPiHostError(f"selected TSPi Package identity is invalid: {suite_root}")
 
 
 def configure_runtime_environment(installation: Installation) -> None:

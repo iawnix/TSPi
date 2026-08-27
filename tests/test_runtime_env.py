@@ -142,7 +142,7 @@ def test_workspace_root_owns_runtime_home_and_env_store(tmp_path: Path, monkeypa
     monkeypatch.delenv("TS_AGENT_ENV_ROOT", raising=False)
     monkeypatch.delenv("TS_AGENT_RUNTIME_HOME", raising=False)
     workspace = tmp_path / "workspace"
-    package = tmp_path / "pi" / "git" / "github.com" / "iawnix" / "TSAgentSkill"
+    package = tmp_path / "pi" / "git" / "github.com" / "iawnix" / "TSPi"
     workspace.mkdir()
     package.mkdir(parents=True)
     (package / "environment.yml").write_text("name: test\n", encoding="utf-8")

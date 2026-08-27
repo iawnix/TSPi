@@ -1,7 +1,12 @@
-# @iawnix/ts-agent
+# TSPi Package
 
-`@iawnix/ts-agent` is a Pi package for auditable transition-state research. It
-combines one strategy-owning Root Agent with a deterministic research kernel,
+This repository owns the `@iawnix/ts-agent` component, its embedded read-only
+Web explorer, and the assembler for the complete TSPi Package. TS Phone remains
+an independently maintained source repository, but distributed releases bind
+Agent, Web, Phone server, and the signed Android artifact into one
+content-addressed component set with one `current` pointer.
+
+The Agent combines one strategy-owning Root Agent with a deterministic research kernel,
 typed local or SSH/Torque calculations, semantic scientific observations,
 declarative validation, reproducible reports, optional notifications, a
 session-scoped activity UI, and a read-only multi-workspace research explorer.
@@ -88,18 +93,28 @@ reproducible:
 
 ## Quick Install
 
-Build a content-addressed release from a clean authored checkout and install it
-into a dedicated TSPi root:
+Build a validated TS Phone component first, then assemble and install one
+content-addressed Package from clean authored checkouts:
 
 ```bash
+cd /path/to/ts-phone
+npm ci
+python3 deploy/build-component-release.py \
+  --output-dir dist/component \
+  --json
+
+cd /path/to/TSPi
 python3 scripts/check_package.py
-python3 scripts/build_release.py --output-dir dist --json
-python3 scripts/install_release.py \
-  --manifest dist/ts-agent-release.json \
+python3 scripts/build_package.py \
+  --phone-manifest /path/to/ts-phone/dist/component/ts-phone-component-release.json \
+  --output-dir dist/package \
+  --json
+python3 scripts/install_package.py \
+  --manifest dist/package/tspi-package-release.json \
   --install-root /path/to/TSPi-installation \
   --json
 
-export TS_AGENT_SKILL_ROOT=/path/to/TSPi-installation/.pi/packages/ts-agent/current
+export TS_AGENT_SKILL_ROOT=/path/to/TSPi-installation/.pi/packages/tspi/current/agent
 python3 "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
   --package-root "$TS_AGENT_SKILL_ROOT" \
   --runtime-home /path/to/TSPi-installation/.agents/runtime/transition-state-workflow \
@@ -109,15 +124,23 @@ python3 "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
   --json
 ```
 
-The release builder creates `ts-agent-kernel` from a temporary source copy and
-embeds the wheel under `python-dist/`. The release installer verifies package
-identity, the outer archive, the wheel metadata and digests, safe members,
-required files, and immutable permissions before atomically selecting
-`.pi/packages/ts-agent/current`. It installs:
+The suite builder internally creates the Agent component and its
+`ts-agent-kernel` wheel, then binds that archive to the validated TS Phone
+component. The installer verifies the outer Package, both nested archives,
+protocol compatibility, wheel and APK descriptors, safe members, required
+files, and immutable permissions before atomically selecting
+`.pi/packages/tspi/current`. It installs four stable entrypoints into the same
+release:
 
 ```text
-<installation>/TSPi -> .pi/packages/ts-agent/current/TSPi
+<installation>/TSPi          -> .pi/packages/tspi/current/agent/TSPi
+<installation>/TSWeb         -> .pi/packages/tspi/current/agent/scripts/ts_web.py
+<installation>/TSPhoneCtl    -> .pi/packages/tspi/current/phone/bin/ts-phone-ctl
+<installation>/TSPhoneServer -> .pi/packages/tspi/current/phone/bin/ts-phone-server
 ```
+
+Installation selects content only. It does not start or restart TS Phone and
+does not install the bundled APK onto a device.
 
 The runtime installer also installs the release's `ts-agent-kernel` wheel into
 the managed Conda prefix and binds its complete payload digest to the runtime
@@ -164,8 +187,7 @@ validation, Findings, operational activity, files, and the advanced Claim graph
 stay in separate views.
 
 ```bash
-TS_AGENT_CURRENT=/path/to/TSPi-installation/.pi/packages/ts-agent/current
-python3 "$TS_AGENT_CURRENT/scripts/ts_web.py" serve \
+/path/to/TSPi-installation/TSWeb serve \
   --state-dir /path/to/TSPi-installation/.pi/ts-web \
   --source-root /path/to/TSPi-installation/workspaces/reaction-a \
   --label "Reaction A" \
@@ -193,7 +215,7 @@ the View and Graph together while preserving the current view, scroll position,
 and open inspector. A transient refresh failure keeps the last valid snapshot
 and marks it stale.
 
-Starting through the stable `current` path also enables release hot restart.
+Starting through the stable `TSWeb` entrypoint also enables release hot restart.
 After an atomic `current` switch and managed-runtime refresh, the server closes
 its listening socket and executes the same stable command under the new release.
 Use `--no-watch-release` only for diagnostics. This is an orderly short restart,
