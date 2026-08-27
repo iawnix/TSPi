@@ -523,9 +523,9 @@ policy versions and must be bumped when their expanded meaning changes.
 6. Install into staging or the authorized TSPi root with
    `install_package.py`.
 7. Resolve the selected Agent component's isolated Python runtime.
-8. Verify `TSPi --help`, `TSWeb --help`, `TSPhoneCtl --help`, all launchers'
-   release identity, fresh workspace bootstrap, tool inventory, and optional
-   read-only remote status.
+8. Verify `TSPi --help`, `TSWeb --help`, `TSPhoneCtl --help`,
+   `TSPhoneServer --help`, all launchers' release identity, fresh workspace
+   bootstrap, tool inventory, and optional read-only remote status.
 9. Restart user sessions only in an authorized maintenance window.
 
 The installer atomically selects `current`; running processes retain the release

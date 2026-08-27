@@ -456,6 +456,7 @@ readlink -f /path/to/TSPi-installation/.pi/packages/tspi/current
 /path/to/TSPi-installation/TSPi --help
 /path/to/TSPi-installation/TSWeb --help
 /path/to/TSPi-installation/TSPhoneCtl --help
+/path/to/TSPi-installation/TSPhoneServer --help
 /path/to/TSPi-installation/TSPi --workspace smoke --continue
 ```
 
