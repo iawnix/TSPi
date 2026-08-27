@@ -11,7 +11,7 @@ typed local or SSH/Torque calculations, semantic scientific observations,
 declarative validation, reproducible reports, optional notifications, a
 session-scoped activity UI, and a read-only multi-workspace research explorer.
 
-This `ts-dag` branch implements one workspace contract centered on
+This release line implements one workspace contract centered on
 ResearchPhase, ResearchNode, and Claim. Unsupported layouts fail closed instead
 of being rewritten during startup.
 
