@@ -152,33 +152,25 @@ def test_tspi_phone_worker_is_removed(tmp_path: Path) -> None:
     assert "was removed" in rejected.stderr
 
 
-def test_phone_policy_classifies_tools_and_redacts_confirmation() -> None:
+def test_phone_policy_allows_controller_tools_and_restricts_observers() -> None:
     script = f"""
-import {{ CONFIRMATION_REQUIRED_TOOLS, DIRECTLY_ALLOWED_TOOLS, OBSERVER_ALLOWED_TOOLS, formatConfirmation }} from {json.dumps(PHONE_POLICY.as_uri())};
-const preview = formatConfirmation({{ type: "tool_call", toolCallId: "write-1", toolName: "write", input: {{ path: "result.md", token: "secret-value" }} }});
+import {{ authorizeTsPhoneTool }} from {json.dumps(PHONE_POLICY.as_uri())};
 process.stdout.write(JSON.stringify({{
-  read: DIRECTLY_ALLOWED_TOOLS.has("read"),
-  bash: CONFIRMATION_REQUIRED_TOOLS.has("bash"),
-  structureSeed: CONFIRMATION_REQUIRED_TOOLS.has("ts_structure_seed"),
-  structureCompare: CONFIRMATION_REQUIRED_TOOLS.has("ts_structure_compare"),
-  artifactImport: CONFIRMATION_REQUIRED_TOOLS.has("ts_artifact_import"),
-  unknown: DIRECTLY_ALLOWED_TOOLS.has("new_tool") || CONFIRMATION_REQUIRED_TOOLS.has("new_tool"),
-  observerRead: OBSERVER_ALLOWED_TOOLS.has("read"),
-  observerWrite: OBSERVER_ALLOWED_TOOLS.has("write"),
-  preview,
+  controllerBash: authorizeTsPhoneTool("controller", "bash") ?? null,
+  controllerWrite: authorizeTsPhoneTool("controller", "write") ?? null,
+  controllerUnknown: authorizeTsPhoneTool("controller", "new_tool") ?? null,
+  observerRead: authorizeTsPhoneTool("observer", "read") ?? null,
+  observerWrite: authorizeTsPhoneTool("observer", "write") ?? null,
+  observerUnknown: authorizeTsPhoneTool("observer", "new_tool") ?? null,
 }}));
 """
     result = _node_json(script)
-    assert result["read"] is True
-    assert result["bash"] is True
-    assert result["structureSeed"] is True
-    assert result["structureCompare"] is True
-    assert result["artifactImport"] is True
-    assert result["unknown"] is False
-    assert result["observerRead"] is True
-    assert result["observerWrite"] is False
-    assert "secret-value" not in result["preview"]
-    assert "[redacted]" in result["preview"]
+    assert result["controllerBash"] is None
+    assert result["controllerWrite"] is None
+    assert result["controllerUnknown"] is None
+    assert result["observerRead"] is None
+    assert result["observerWrite"]["block"] is True
+    assert result["observerUnknown"]["block"] is True
 
 
 def test_phone_bridge_protocol_rejects_raw_rpc_records() -> None:
@@ -331,9 +323,9 @@ process.stdout.write(JSON.stringify(formatTsSubagentHistoryMarkdown(records)));
 """
     markdown = _node_json(script)
     assert markdown.startswith("# TS Subagent History")
-    assert "## Review · claim\\_review" in markdown
-    assert "`sub_1`" in markdown
-    assert "`node_1`" in markdown
+    assert "## `sub_1` · Review · running" in markdown
+    assert "- Owner: `node_1`" in markdown
+    assert "- Action: claim review" in markdown
     assert "> Independent review is running." in markdown
 
 

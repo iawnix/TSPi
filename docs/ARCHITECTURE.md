@@ -474,6 +474,9 @@ full workspace dump.
 
 `ts-phone-bridge` is optional and loaded only by `TSPi --phone`. It forwards
 messages to the same visible Pi process and never creates a hidden Root Agent.
+A controller gives phone-origin turns the same Tool authority as local TUI
+turns without a separate phone approval. Observer sessions retain their
+read-only Tool allowlist for every turn, including local input.
 
 The shared tool catalog is an inventory and execution classification, not a
 complete capability contract. Registered tool schemas define call fields;

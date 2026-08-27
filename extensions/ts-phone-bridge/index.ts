@@ -4,16 +4,10 @@ import type {
   ExtensionAPI,
   ExtensionContext,
   InputEvent,
-  ToolCallEvent,
 } from "@earendil-works/pi-coding-agent";
 import { TsPhoneBridgeClient } from "./bridge-client.ts";
 import type { BridgeAbortCommand, BridgePromptCommand } from "./protocol.ts";
-import {
-  CONFIRMATION_REQUIRED_TOOLS,
-  DIRECTLY_ALLOWED_TOOLS,
-  OBSERVER_ALLOWED_TOOLS,
-  formatConfirmation,
-} from "./policy.ts";
+import { authorizeTsPhoneTool } from "./policy.ts";
 
 type TurnOrigin =
   | { kind: "local" | "extension" | "unknown"; turnId: string }
@@ -131,7 +125,7 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
     activeOrigin = { kind: "unknown", turnId: nextTurnId() };
     publishSnapshot();
   });
-  pi.on("tool_call", async (event) => authorizePhoneTool(event));
+  pi.on("tool_call", (event) => authorizeTsPhoneTool(accessMode, event.toolName));
 
   async function handleCommand(command: BridgePromptCommand | BridgeAbortCommand): Promise<void> {
     const ctx = context;
@@ -180,26 +174,6 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
       return { kind: "local", turnId: nextTurnId() };
     }
     return { kind: "unknown", turnId: nextTurnId() };
-  }
-
-  async function authorizePhoneTool(event: ToolCallEvent) {
-    if (accessMode === "observer") {
-      if (OBSERVER_ALLOWED_TOOLS.has(event.toolName)) return;
-      return { block: true, reason: `TS Phone observer session blocked write-capable tool: ${event.toolName}` };
-    }
-    if (activeOrigin.kind !== "phone") return;
-    if (DIRECTLY_ALLOWED_TOOLS.has(event.toolName)) return;
-    if (!CONFIRMATION_REQUIRED_TOOLS.has(event.toolName)) {
-      return { block: true, reason: `TS Phone blocked unclassified tool: ${event.toolName}` };
-    }
-    const approved = await bridge.requestApproval({
-      turnId: activeOrigin.turnId,
-      toolCallId: event.toolCallId,
-      toolName: event.toolName,
-      preview: formatConfirmation(event),
-    });
-    if (approved) return;
-    return { block: true, reason: `TS Phone user did not approve tool: ${event.toolName}` };
   }
 
   function publishSnapshot(): void {
