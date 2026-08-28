@@ -31,7 +31,7 @@ import {{ Compile }} from "typebox/compile";
 let compute;const pi={{registerTool:(tool)=>{{if(tool.name==="ts_subagent_compute")compute=tool}},registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},appendEntry:()=>{{}},getThinkingLevel:()=>"off",events:{{emit:()=>{{}}}}}};
 install(pi);const check=Compile(compute.parameters);
 const base={{backend:"gaussian",nodeId:"node_1"}};
-const launch={{...base,operation:"launch",purpose:"Single point",taskType:"sp",inputArtifacts:[{{inputRole:"gjf",artifactId:"art_"+"b".repeat(24)}}],executionTarget:{{kind:"remote",profile:"cluster_1w",resources:{{queue:"batch",nodes:1,ncpus:8,memory:"16gb",walltime:"01:00:00",ngpus:0}}}}}};
+const launch={{...base,operation:"launch",purpose:"Single point",taskType:"sp",attemptKind:"primary",inputArtifacts:[{{inputRole:"gjf",artifactId:"art_"+"b".repeat(24)}}],executionTarget:{{kind:"remote",profile:"cluster_1w",resources:{{queue:"batch",nodes:1,ncpus:8,memory:"16gb",walltime:"01:00:00",ngpus:0}}}}}};
 const invalidInspect={{...base,operation:"inspect",intentId:"calc_1",purpose:"bad"}};
 let hostError="";
 try {{ await compute.execute("call-1",invalidInspect,undefined,()=>{{}},{{cwd:"/tmp"}}); }} catch(error) {{ hostError=error.message; }}

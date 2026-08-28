@@ -45,11 +45,11 @@ def _request(
     execution_target: dict | None = None,
 ) -> dict:
     return {
-        "schema_version": "ts-calculation-request/3",
+        "schema_version": "ts-calculation-request/4",
         "node_id": node_id,
         "purpose": "Exercise deterministic calculation artifact binding.",
         "attempt_kind": "primary",
-        "recalculation_ref": None,
+        "lineage": None,
         "backend": "gaussian",
         "task_type": "sp",
         "input_artifacts": [{"input_role": "gjf", "artifact_id": artifact_id}],

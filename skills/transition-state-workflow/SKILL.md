@@ -76,6 +76,8 @@ Use context `mode=locate` to map a Claim/Node/Observation/Attempt to paths. Befo
 `launch`, read `mode=artifacts` and bind each `artifactId` to its `inputRole`.
 `ts_subagent_compute` runs one host-bound `launch`, `inspect`, `finalize`, or
 `cancel` lifecycle. The host owns identities, paths, arguments, and bindings.
+Non-primary launch cites a same-Node `sourceAttempt`. Retry unchanged bindings,
+recalculate changed bindings; a new question starts a Node.
 
 If no input exists, start a Node; use `ts_structure_seed` for one SMILES or
 `ts_artifact_import` for bounded Gaussian/XYZ/control text. Pass its

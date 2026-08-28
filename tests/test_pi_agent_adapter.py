@@ -141,6 +141,9 @@ def test_workspace_cli_compiles_frontier_and_focused_node(tmp_path: Path) -> Non
     assert frontier["schema_version"] == "ts-context-projection/2"
     assert frontier["focus"]["node_refs"] == [refs["node_id"]]
     assert frontier["workspace_brief"]["nodes"][0]["decision_rationale"]
+    assert frontier["workspace_brief"]["nodes"][0]["objective"]
+    assert frontier["workspace_brief"]["nodes"][0]["deliverable"]
+    assert frontier["workspace_brief"]["nodes"][0]["contract_digest"].startswith("sha256:")
     assert "research_trajectory" not in frontier
     assert node["research_nodes"][0]["node_id"] == refs["node_id"]
     assert "node_index" not in frontier
@@ -154,7 +157,7 @@ const {{buildContextDetails,buildContextSummary}}=summary;
 const context={{valid:true,mode:"frontier",projection_id:"ctx_0123456789abcdef01234567",workspace_id:"ws_0123456789abcdef01234567",workspace_revision:"sha256:"+"a".repeat(64),operational_revision:"sha256:"+"b".repeat(64),operational_summary:{{
   agent_run_count:3,agent_run_failed_count:1,agent_run_pending_count:1,
   review_disposition_pending_count:1,
-}}}};
+}},workspace_brief:{{phases:[],claims:[],open_findings:[],incomplete_validation:[],nodes:[{{node_id:"node_1",phase_ref:"phase_1",status:"open",title:"Locate saddle",objective:"Locate one first-order saddle.",deliverable:"One verified TS candidate."}}]}}}};
 process.stdout.write(JSON.stringify({{details:buildContextDetails(context),summary:buildContextSummary(context)}}));
 """
     result = _node_json(script)
@@ -168,6 +171,8 @@ process.stdout.write(JSON.stringify({{details:buildContextDetails(context),summa
     assert "reviews=" not in result["summary"]
     assert "context: mode=frontier; valid=true" in result["summary"]
     assert "delta_tokens:" in result["summary"]
+    assert "question=Locate one first-order saddle." in result["summary"]
+    assert "deliverable=One verified TS candidate." in result["summary"]
     assert "ctx_0123456789abcdef01234567" not in result["summary"]
     assert "ws_0123456789abcdef01234567" not in result["summary"]
 

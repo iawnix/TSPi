@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import deque
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -547,6 +548,11 @@ def _normalize_node(
     return {
         **record,
         "attempts": attempts,
+        "attempt_summary": {
+            "attempt_count": len(attempts),
+            "family_count": len({str(item.get("family_root_id")) for item in attempts}),
+            "states": _counts(attempts, "display_state"),
+        },
         "activities": [row for row in activities if node_id in _strings(row.get("node_refs"))],
         "compute_run_count": sum(
             int(attempt.get("run_count") or 0)
@@ -608,7 +614,11 @@ def _calculation_attempts(
         intent = _read_optional_object(attempt_dir / "intent.json")
         intent_id = attempt_dir.name
         settings = _object(intent.get("settings"))
-        recalculation_ref = _object(intent.get("recalculation_ref"))
+        lineage = _normalized_attempt_lineage(intent)
+        result_provenance = _object(result.get("provenance"))
+        status_provenance = _object(status.get("provenance"))
+        provenance = status_provenance or result_provenance
+        program_record = _object(provenance.get("program_record"))
         runs = [
             row
             for row in agent_runs
@@ -616,23 +626,29 @@ def _calculation_attempts(
         ]
         attempt = {
             "intent_id": intent_id,
+            "node_id": node_id,
             "ref": attempt_dir.relative_to(root).as_posix(),
             "backend": intent.get("backend") or result.get("backend"),
             "task_type": intent.get("task_type") or result.get("task_type"),
             "purpose": _optional_string(intent.get("purpose")),
             "attempt_kind": _optional_string(intent.get("attempt_kind")) or "primary",
-            "recalculation_ref": {
-                "source_node": _optional_string(recalculation_ref.get("source_node")),
-                "source_intent_id": _optional_string(recalculation_ref.get("source_intent_id")),
-                "purpose": _optional_string(recalculation_ref.get("purpose")),
-                "changed_settings": _strings(recalculation_ref.get("changed_settings")),
-            } if recalculation_ref else None,
+            "lineage": lineage,
             "method": _optional_string(settings.get("method")),
             "basis": _optional_string(settings.get("basis")),
-            "candidate_strategy": _optional_string(settings.get("candidateStrategy")),
+            "candidate_strategy": _optional_string(settings.get("candidateStrategy") or settings.get("candidate_strategy")),
             "state": result.get("state") or status.get("state"),
             "program_status": result.get("program_status") or status.get("program_status"),
             "error_class": result.get("error_class") or status.get("error_class"),
+            "job_id": result.get("job_id") or status.get("job_id"),
+            "started_at": _optional_string(program_record.get("started_at")),
+            "finished_at": _optional_string(program_record.get("finished_at")),
+            "observed_at": _optional_string(provenance.get("observed_at")),
+            "duration_seconds": _duration_seconds(
+                _optional_string(program_record.get("started_at")),
+                _optional_string(program_record.get("finished_at")),
+            ),
+            "node_contract_digest": _optional_string(intent.get("node_contract_digest")),
+            "scientific_intent_digest": _optional_string(intent.get("scientific_intent_digest")),
             "run_count": len(runs),
         }
         if include_details:
@@ -658,7 +674,76 @@ def _calculation_attempts(
                 }
             )
         attempts.append(attempt)
+    return _attach_attempt_families(attempts, node_id)
+
+
+def _normalized_attempt_lineage(intent: dict[str, Any]) -> dict[str, Any] | None:
+    current = _object(intent.get("lineage"))
+    if current:
+        return {
+            "source_node": _optional_string(current.get("source_node")),
+            "source_intent_id": _optional_string(current.get("source_intent_id")),
+            "relation": _optional_string(current.get("relation")),
+            "reason": _optional_string(current.get("reason")),
+            "changed_fields": _strings(current.get("changed_fields")),
+        }
+    previous = _object(intent.get("recalculation_ref"))
+    if not previous:
+        return None
+    return {
+        "source_node": _optional_string(previous.get("source_node")),
+        "source_intent_id": _optional_string(previous.get("source_intent_id")),
+        "relation": "recalculation",
+        "reason": _optional_string(previous.get("purpose")),
+        "changed_fields": _strings(previous.get("changed_settings")),
+    }
+
+
+def _attach_attempt_families(attempts: list[dict[str, Any]], node_id: str) -> list[dict[str, Any]]:
+    by_id = {str(item.get("intent_id")): item for item in attempts}
+    roots: list[str] = []
+    for attempt in attempts:
+        current = attempt
+        visited: set[str] = set()
+        depth = 0
+        while True:
+            current_id = str(current.get("intent_id") or "")
+            if current_id in visited:
+                break
+            visited.add(current_id)
+            lineage = _object(current.get("lineage"))
+            source_id = _optional_string(lineage.get("source_intent_id"))
+            source_node = _optional_string(lineage.get("source_node"))
+            if source_node != node_id or source_id not in by_id:
+                break
+            current = by_id[source_id]
+            depth += 1
+        root_id = str(current.get("intent_id") or attempt.get("intent_id") or "")
+        if root_id not in roots:
+            roots.append(root_id)
+        attempt["family_root_id"] = root_id
+        attempt["family_index"] = roots.index(root_id) + 1
+        attempt["lineage_depth"] = depth
+        attempt["display_state"] = _attempt_display_state(attempt)
     return attempts
+
+
+def _attempt_display_state(attempt: dict[str, Any]) -> str:
+    program_status = str(attempt.get("program_status") or "").lower()
+    if program_status in {"completed", "failed", "stopped"}:
+        return program_status
+    return str(attempt.get("state") or program_status or "unknown")
+
+
+def _duration_seconds(started_at: str | None, finished_at: str | None) -> int | None:
+    if not started_at or not finished_at:
+        return None
+    try:
+        started = datetime.fromisoformat(started_at.replace("Z", "+00:00"))
+        finished = datetime.fromisoformat(finished_at.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return max(0, round((finished - started).total_seconds()))
 
 
 def _calculation_path_sort_key(path: Path) -> tuple[int, str]:

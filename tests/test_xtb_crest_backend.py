@@ -593,11 +593,11 @@ def _intent(workspace: Path, backend: str, task_type: str) -> Path:
         control = by_path[f"inputs/{task_type}.inp"]
         input_artifacts.append({"input_role": "control", "artifact_id": control["artifact_id"]})
     created = create_calculation_intent(workspace, {
-        "schema_version": "ts-calculation-request/3",
+        "schema_version": "ts-calculation-request/4",
         "node_id": node_id,
         "purpose": f"Exercise deterministic {backend} {task_type} parsing.",
         "attempt_kind": "primary",
-        "recalculation_ref": None,
+        "lineage": None,
         "backend": backend,
         "task_type": task_type,
         "input_artifacts": input_artifacts,

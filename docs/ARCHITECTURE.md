@@ -168,8 +168,9 @@ models backtracking. Prior Nodes are never rewritten or deleted to make a later
 path look linear. The DAG records lineage and does not select the next Node.
 
 Node granularity follows scientific purpose, not a fixed number of operations.
-One Node owns one principal question and deliverable; retries with the same
-objective remain Attempts, while a changed objective or principal deliverable
+One Node owns one principal question and deliverable. Exact retries and method
+or setting variations used to answer that same question remain Attempts, while a
+changed objective, independent scientific branch, or principal deliverable
 starts a dependent Node. Scientific hypotheses, assumptions, and falsifiers
 remain on Claims so multiple Nodes can test the same statement without copied
 state. This is authoring guidance, not Phase lifecycle or Kernel permission.
@@ -425,11 +426,13 @@ merge, and backtracking lineage. ResearchPhase remains a color and focus filter
 over the tree and carries no lifecycle meaning. The same layout becomes an
 indented outline on narrow screens. Cards and outline rows identify the latest
 calculation state without promoting Attempts into graph vertices. A Node's
-Overview projects each immutable calculation intent as a collapsible second
-level: scientific purpose, primary/recalculation kind, source Attempt, method,
-settings, remote resource request, expected artifacts, state, and bound Compute
-runs. The workspace snapshot carries only the compact Attempt summary; settings,
-bindings, and execution resources are loaded with the selected Node detail.
+Overview shows only the compact Attempt and family summary. Its Runs tab projects
+immutable calculation intents as family-grouped, filtered, fixed-page records
+with scientific purpose, primary/retry/recalculation kind, source Attempt,
+derived changes, method, settings, remote resource request, job/timing state,
+expected artifacts, and bound Compute runs. The workspace snapshot carries only
+compact Attempt fields; settings, bindings, and execution resources are loaded
+with the selected Node detail.
 Node details otherwise separate conclusions, Evidence, operational activity,
 files, and Decision history. Claims, acceptance, validation, Findings, the
 Research Files locator, and operational activity remain separate views.
@@ -580,10 +583,15 @@ receipts.
 ### Compute
 
 The private compute kernel performs `prepare`, `submit`, `status`, `tail`,
-`collect`, `cancel`, or `parse`. Preparation binds one ResearchNode, logical input artifacts and roles,
-backend/task/settings, execution target, and expected outputs into an immutable
-`ts-calculation-intent/5`. The host allocates paths, filenames, intent ID,
-remote directory, and submission binding.
+`collect`, `cancel`, or `parse`. Preparation binds one ResearchNode, logical
+input artifacts and roles, backend/task/settings, execution target, and expected
+outputs into an immutable `ts-calculation-intent/6`. It binds a stable
+Node-contract digest and a separate scientific-intent digest. Primary Attempts
+have no source; retries preserve the scientific digest; recalculations must
+change it; both source relations remain inside one Node. The Kernel derives the
+exact changed fields. Existing `ts-calculation-intent/5` records remain readable,
+while all new launches use `ts-calculation-intent/6`. The host allocates paths,
+filenames, intent ID, remote directory, and submission binding.
 
 Remote transport uses OpenSSH/SCP and Torque directly. Guards distinguish
 pre-effect retryable failure from an ambiguous external effect. Known job IDs

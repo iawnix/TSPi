@@ -248,9 +248,12 @@ generated paths, filenames, intent ID, expected artifacts, remote root,
 command, submission binding, action tools, and final structured outcome.
 
 Preparation resolves `artifactId` and `inputRole`, verifies SHA-256, and writes
-`ts-calculation-intent/5`. Subsequent operations cite only the bound `intentId`.
-Backends prepare and parse program artifacts but never update Claims or produce
-ValidationResults.
+`ts-calculation-intent/6` for new launches. The intent carries stable Node and
+scientific-input digests plus same-Node Attempt lineage. Keep
+`ts-calculation-intent/5` reading covered for existing workspaces, but emit only
+`ts-calculation-intent/6`. Subsequent operations cite only the bound `intentId`.
+Backends prepare and parse program artifacts but
+never update Claims or produce ValidationResults.
 
 Keep these states separate:
 
@@ -318,8 +321,9 @@ styles into relation policy. Merge bounded trajectory fields into existing Node
 payloads rather than returning a second full graph-shaped Node payload.
 
 Calculation Attempts remain Node-owned operational records. Project their
-purpose, kind, recalculation lineage, bounded settings, execution request, and
-Compute runs from the immutable calculation intent and journals in
+purpose, family, retry/recalculation lineage, derived scientific changes,
+bounded settings, execution request, timing, state, and Compute runs from the
+immutable calculation intent and journals in
 `ts_agent.web.normalize`; browser code may format or collapse that projection but
 must not parse program outputs, infer scientific meaning, or turn Attempts into
 ResearchNode DAG vertices.

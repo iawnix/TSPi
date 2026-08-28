@@ -197,7 +197,7 @@ def _make_workspace(root: Path) -> dict[str, str]:
             "task_type": "irc",
             "purpose": "Trace both directions from the selected transition-state candidate.",
             "attempt_kind": "primary",
-            "recalculation_ref": None,
+            "lineage": None,
             "settings": {
                 "method": "M062X",
                 "basis": "6-31+G(d,p)",
@@ -218,8 +218,16 @@ def _make_workspace(root: Path) -> dict[str, str]:
         root / "nodes" / node_id / "attempts" / "calc_1" / "status.json",
         {
             "intent_id": "calc_1",
+            "job_id": "123.cluster",
             "state": "completed",
             "program_status": "normal_termination",
+            "provenance": {
+                "observed_at": "2026-08-16T00:04:00+00:00",
+                "program_record": {
+                    "started_at": "2026-08-16T00:02:00+00:00",
+                    "finished_at": "2026-08-16T00:03:30+00:00",
+                },
+            },
         },
     )
     _write(
@@ -457,26 +465,29 @@ def test_web_ignores_noncanonical_attempt_ids_and_sorts_current_ordinals(tmp_pat
     assert not any("/attempts/calc_removed/" in path for path in paths)
 
 
-def test_web_projects_recalculation_purpose_and_lineage(tmp_path: Path) -> None:
+def test_web_projects_current_attempt_family_and_lineage(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     refs = _make_workspace(workspace)
-    node_id = refs["search"]
-    source_node = refs["connectivity"]
+    node_id = refs["connectivity"]
     _write(
         workspace / "nodes" / node_id / "attempts" / "calc_2" / "intent.json",
         {
+            "schema_version": "ts-calculation-intent/6",
             "intent_id": "calc_2",
             "node_id": node_id,
             "backend": "gaussian",
             "task_type": "irc",
             "purpose": "Repeat the IRC with a smaller integration step after calc_1 stalled.",
             "attempt_kind": "recalculation",
-            "recalculation_ref": {
-                "source_node": source_node,
+            "lineage": {
+                "source_node": node_id,
                 "source_intent_id": "calc_1",
-                "purpose": "repair",
-                "changed_settings": ["step_size"],
+                "relation": "recalculation",
+                "reason": "Resolve an integration-step sensitivity.",
+                "changed_fields": ["settings.stepSize"],
             },
+            "node_contract_digest": "sha256:" + "a" * 64,
+            "scientific_intent_digest": "sha256:" + "b" * 64,
             "settings": {
                 "method": "M062X",
                 "basis": "6-31+G(d,p)",
@@ -491,12 +502,16 @@ def test_web_projects_recalculation_purpose_and_lineage(tmp_path: Path) -> None:
 
     assert recalculation["purpose"].startswith("Repeat the IRC")
     assert recalculation["attempt_kind"] == "recalculation"
-    assert recalculation["recalculation_ref"] == {
-        "source_node": source_node,
+    assert recalculation["lineage"] == {
+        "source_node": node_id,
         "source_intent_id": "calc_1",
-        "purpose": "repair",
-        "changed_settings": ["step_size"],
+        "relation": "recalculation",
+        "reason": "Resolve an integration-step sensitivity.",
+        "changed_fields": ["settings.stepSize"],
     }
+    assert recalculation["family_root_id"] == "calc_1"
+    assert recalculation["family_index"] == 1
+    assert recalculation["lineage_depth"] == 1
     assert recalculation["candidate_strategy"] == "bidirectional_irc"
 
 
@@ -579,38 +594,18 @@ def test_claim_and_node_details_follow_graph_references(tmp_path: Path) -> None:
     assert "settings" not in summary_node["attempts"][0]
     assert "runs" not in summary_node["attempts"][0]
     attempt = active["research_node"]["attempts"][0]
-    assert {key: value for key, value in attempt.items() if key != "runs"} == {
-        "intent_id": "calc_1",
-        "ref": f"nodes/{refs['connectivity']}/attempts/calc_1",
-        "backend": "gaussian",
-        "task_type": "irc",
-        "purpose": "Trace both directions from the selected transition-state candidate.",
-        "attempt_kind": "primary",
-        "recalculation_ref": None,
-        "method": "M062X",
-        "basis": "6-31+G(d,p)",
-        "candidate_strategy": "bidirectional_irc",
-        "settings": {
-            "method": "M062X",
-            "basis": "6-31+G(d,p)",
-            "candidateStrategy": "bidirectional_irc",
-        },
-        "input_bindings": [
-            {"input_role": "gjf", "artifact_id": "art_test", "source_intent_id": None}
-        ],
-        "expected_artifacts": [
-            f"nodes/{refs['connectivity']}/attempts/calc_1/outputs/gaussian.out"
-        ],
-        "execution_target": {
-            "kind": "remote",
-            "profile": "cluster_1w",
-            "resources": {"queue": "batch", "ncpus": 8},
-        },
-        "state": "completed",
-        "program_status": "normal_termination",
-        "error_class": None,
-        "run_count": 1,
-    }
+    assert attempt["intent_id"] == "calc_1"
+    assert attempt["node_id"] == refs["connectivity"]
+    assert attempt["lineage"] is None
+    assert attempt["family_root_id"] == "calc_1"
+    assert attempt["family_index"] == 1
+    assert attempt["lineage_depth"] == 0
+    assert attempt["display_state"] == "completed"
+    assert attempt["job_id"] == "123.cluster"
+    assert attempt["duration_seconds"] == 90
+    assert attempt["run_count"] == 1
+    assert attempt["settings"]["candidateStrategy"] == "bidirectional_irc"
+    assert attempt["execution_target"]["profile"] == "cluster_1w"
     assert attempt["runs"][0]["task_id"] == "sub_1"
     assert completed["dependents"][0]["node_id"] == refs["connectivity"]
     assert completed["phase"]["phase_id"] == refs["mechanism"]
@@ -673,6 +668,8 @@ def test_static_ui_exposes_research_tree_and_on_demand_node_details() -> None:
     script = (static / "app.js").read_text(encoding="utf-8")
     claim_map = (static / "claim-map.js").read_text(encoding="utf-8")
     tree = (static / "research-tree.js").read_text(encoding="utf-8")
+    attempt_timeline = (static / "attempt-timeline.js").read_text(encoding="utf-8")
+    css = (static / "app.css").read_text(encoding="utf-8")
 
     assert "TS Research Explorer" in html
     assert "Research Tree" in html
@@ -683,6 +680,7 @@ def test_static_ui_exposes_research_tree_and_on_demand_node_details() -> None:
     assert "app.js" in html
     assert "claim-map.js" in html
     assert "research-tree.js" in html
+    assert "attempt-timeline.js" in html
     assert "renderNodeDetail" in script
     assert "window.TSResearchTree.mount" in script
     assert "window.TSClaimMap.mount" in script
@@ -704,7 +702,10 @@ def test_static_ui_exposes_research_tree_and_on_demand_node_details() -> None:
     assert "claim-map-outline" in claim_map
     assert "claim-map-arrow" in claim_map
     assert 'const tabs = ["overview", "conclusions", "evidence", "runs", "files", "history"]' in script
-    assert "renderAttemptHistory(node.attempts)" in script
+    assert "renderAttemptOverview(node)" in script
+    assert "renderAttemptTimeline(node.attempts)" in script
+    assert "TSAttemptTimeline.project" in script
+    assert "pageForAttempt" in attempt_timeline
     assert 'details[data-attempt-id]' in script
     assert 'data-attempt-node="${escapeHtml(sourceNode)}"' in script
     assert "async function openAttemptSource(sourceNodeId, attemptId)" in script
@@ -713,12 +714,53 @@ def test_static_ui_exposes_research_tree_and_on_demand_node_details() -> None:
     assert 'icon("eye")' in script
     assert 'icon("external")' not in script
     assert 'id="icon-eye"' in html
+    assert ".attempt-filter { grid-column: 2; }" in css
     assert "${latest.intent_id} ${attemptState(latest)}" in tree
     assert 'control: [state.view.unresolved_controls, "control_id"]' in script
     assert "function renderActDetail" not in script
     assert "/api/node" not in html + script
     assert "/api/gates" not in html + script
     assert "/api/evidence" not in html + script
+
+
+def test_attempt_timeline_filters_and_paginates_families() -> None:
+    timeline_path = (ROOT / "python" / "ts_agent" / "web" / "static" / "attempt-timeline.js").as_uri()
+    probe = f"""
+globalThis.window = globalThis;
+(async () => {{
+  await import({json.dumps(timeline_path)});
+  const attempts = Array.from({{length: 8}}, (_, index) => {{
+    const ordinal = index + 1;
+    return {{
+      intent_id: `calc_${{ordinal}}`,
+      family_root_id: ordinal < 8 ? "calc_1" : "calc_8",
+      family_index: ordinal < 8 ? 1 : 2,
+      attempt_kind: ordinal === 1 || ordinal === 8 ? "primary" : (ordinal % 2 ? "retry" : "recalculation"),
+      display_state: ordinal === 6 ? "failed" : "completed",
+    }};
+  }});
+  const first = TSAttemptTimeline.project(attempts, {{page: 1}});
+  const second = TSAttemptTimeline.project(attempts, {{page: 2}});
+  const retries = TSAttemptTimeline.project(attempts, {{kind: "retry"}});
+  process.stdout.write(JSON.stringify({{
+    pageCount: first.pageCount,
+    first: first.rows.map(row => row.intent_id),
+    second: second.rows.map(row => row.intent_id),
+    retries: retries.rows.map(row => row.intent_id),
+    pageForSeven: TSAttemptTimeline.pageForAttempt(attempts, {{}}, "calc_7"),
+  }}));
+}})().catch(error => {{ console.error(error); process.exit(1); }});
+"""
+    completed = subprocess.run(["node", "-e", probe], check=True, capture_output=True, text=True)
+    result = json.loads(completed.stdout)
+
+    assert result == {
+        "pageCount": 2,
+        "first": ["calc_1", "calc_2", "calc_3", "calc_4", "calc_5", "calc_6"],
+        "second": ["calc_7", "calc_8"],
+        "retries": ["calc_3", "calc_5", "calc_7"],
+        "pageForSeven": 2,
+    }
 
 
 def test_research_tree_layout_handles_branch_merge_and_lineage() -> None:
@@ -861,7 +903,7 @@ def test_research_files_payload_is_a_read_only_locator_projection(tmp_path: Path
 
 
 def test_static_asset_resolves_from_current_package() -> None:
-    for name in ("index.html", "app.css", "app.js", "claim-map.js", "research-tree.js"):
+    for name in ("index.html", "app.css", "app.js", "attempt-timeline.js", "claim-map.js", "research-tree.js"):
         expected = files("ts_agent.web").joinpath("static", name).read_bytes()
         assert ts_web_server._static_asset(name).read_bytes() == expected
 
@@ -1112,6 +1154,7 @@ def test_web_server_is_read_only_and_has_no_removed_routes(tmp_path: Path) -> No
         assert "TS Research Explorer" in html
         assert _get_text(host, port, "/app.css")[0] == 200
         assert _get_text(host, port, "/app.js")[0] == 200
+        assert _get_text(host, port, "/attempt-timeline.js")[0] == 200
         assert _get_text(host, port, "/claim-map.js")[0] == 200
         assert _get_text(host, port, "/research-tree.js")[0] == 200
         for removed_route in (f"{base}/tree", f"{base}/gates", f"{base}/evidence", "/api/node/n000"):

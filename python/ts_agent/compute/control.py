@@ -54,13 +54,15 @@ from ts_agent.remote.models import RemoteJobConfig, RemoteResources
 from ts_agent.io import now_iso, read_json, sha256_json, write_json
 from ts_agent.workspace.operational_ids import allocate_operational_id
 from ts_agent.workspace.identity import WorkspaceIdentityError, workspace_id
+from ts_agent.workspace.node_contract import node_contract_digest
 
 from .artifacts import resolve_input_artifacts, verify_input_bindings
 from .capabilities import BACKEND_TASK_INPUT_ROLES
 from .contracts import ComputeContractError, validate_compute_contract
 
 
-INTENT_SCHEMA = "calculation_intent.schema.json"
+PREVIOUS_INTENT_SCHEMA = "calculation_intent.schema.json"
+INTENT_SCHEMA = "calculation_intent_v6.schema.json"
 REQUEST_SCHEMA = "calculation_request.schema.json"
 RESULT_SCHEMA = "calculation_result.schema.json"
 MAX_TAIL_BYTES = 32 * 1024
@@ -103,17 +105,34 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
         request["input_artifacts"],
         required_inputs,
     )
+    scientific_payload = _scientific_intent_payload(
+        backend=backend,
+        task_type=task_type,
+        input_bindings=input_bindings,
+        settings=request["settings"],
+    )
+    scientific_digest = sha256_json(scientific_payload)
+    lineage = _materialize_attempt_lineage(
+        workspace,
+        node_id=node_id,
+        attempt_kind=str(request["attempt_kind"]),
+        requested=request.get("lineage"),
+        scientific_payload=scientific_payload,
+        scientific_digest=scientific_digest,
+    )
     attempts_dir = workspace / "nodes" / node_id / "attempts"
 
     for _ in range(100):
         intent_id = str(allocate_operational_id(workspace, "calc")["identifier"])
         intent = {
-            "schema_version": "ts-calculation-intent/5",
+            "schema_version": "ts-calculation-intent/6",
             "intent_id": intent_id,
             "node_id": node_id,
+            "node_contract_digest": node_contract_digest(node),
+            "scientific_intent_digest": scientific_digest,
             "purpose": request["purpose"],
             "attempt_kind": request["attempt_kind"],
-            "recalculation_ref": request["recalculation_ref"],
+            "lineage": lineage,
             "backend": backend,
             "task_type": task_type,
             "input_refs": input_refs,
@@ -158,7 +177,7 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
                 pass
             raise
         return {
-            "schema_version": "ts-calculation-intent-created/3",
+            "schema_version": "ts-calculation-intent-created/4",
             "intent_id": intent_id,
             "intent_ref": intent_ref,
             "intent_digest": sha256_json(intent),
@@ -1436,9 +1455,15 @@ def _load_node(workspace: Path, node_id: str) -> dict[str, Any]:
 
 def _validate_intent(intent: dict[str, Any]) -> None:
     schema_version = intent.get("schema_version")
-    if schema_version != "ts-calculation-intent/5":
+    if schema_version == "ts-calculation-intent/5":
+        validate_compute_contract(PREVIOUS_INTENT_SCHEMA, intent)
+        return
+    if schema_version != "ts-calculation-intent/6":
         raise ComputeContractError(f"unsupported calculation intent schema_version: {schema_version}")
     validate_compute_contract(INTENT_SCHEMA, intent)
+    expected_digest = sha256_json(_scientific_payload_from_intent(intent))
+    if intent.get("scientific_intent_digest") != expected_digest:
+        raise ComputeContractError("calculation intent scientific_intent_digest does not match its bound inputs and settings")
 
 
 def _validate_intent_node_scope(workspace: Path, intent: dict[str, Any], node: dict[str, Any]) -> None:
@@ -1448,6 +1473,12 @@ def _validate_intent_node_scope(workspace: Path, intent: dict[str, Any], node: d
         raise ComputeContractError("calculations require an open ResearchNode")
     if intent.get("node_id") != node.get("node_id"):
         raise ComputeContractError("calculation intent owner does not match its ResearchNode")
+
+    if intent.get("schema_version") == "ts-calculation-intent/6":
+        if intent.get("node_contract_digest") != node_contract_digest(node):
+            raise ComputeContractError("calculation intent is not bound to the current ResearchNode contract")
+        _validate_current_intent_lineage(workspace, intent)
+        return
 
     if intent.get("attempt_kind") != "recalculation":
         return
@@ -1466,6 +1497,156 @@ def _validate_intent_node_scope(workspace: Path, intent: dict[str, Any], node: d
             raise ComputeContractError(
                 f"recalculation_ref.source_intent_id must identify one local source attempt: {source_intent}"
             )
+
+
+def _scientific_intent_payload(
+    *,
+    backend: str,
+    task_type: str,
+    input_bindings: list[dict[str, Any]],
+    settings: dict[str, Any],
+) -> dict[str, Any]:
+    inputs = sorted(
+        (
+            {
+                "input_role": str(binding.get("input_role") or ""),
+                "artifact_id": str(binding.get("artifact_id") or ""),
+                "sha256": str(binding.get("sha256") or ""),
+            }
+            for binding in input_bindings
+        ),
+        key=lambda item: (item["input_role"], item["artifact_id"], item["sha256"]),
+    )
+    return {
+        "schema_version": "ts-scientific-calculation-intent/1",
+        "backend": backend,
+        "task_type": task_type,
+        "input_bindings": inputs,
+        "settings": dict(settings),
+    }
+
+
+def _scientific_payload_from_intent(intent: dict[str, Any]) -> dict[str, Any]:
+    bindings = intent.get("input_bindings")
+    settings = intent.get("settings")
+    if not isinstance(bindings, list) or not isinstance(settings, dict):
+        raise ComputeContractError("calculation intent has invalid scientific bindings")
+    return _scientific_intent_payload(
+        backend=str(intent.get("backend") or ""),
+        task_type=str(intent.get("task_type") or ""),
+        input_bindings=[item for item in bindings if isinstance(item, dict)],
+        settings=settings,
+    )
+
+
+def _materialize_attempt_lineage(
+    workspace: Path,
+    *,
+    node_id: str,
+    attempt_kind: str,
+    requested: Any,
+    scientific_payload: dict[str, Any],
+    scientific_digest: str,
+) -> dict[str, Any] | None:
+    if attempt_kind == "primary":
+        return None
+    if not isinstance(requested, dict):
+        raise ComputeContractError(f"{attempt_kind} calculation requires a source Attempt")
+    source_node = str(requested.get("source_node") or "")
+    source_intent_id = str(requested.get("source_intent_id") or "")
+    if source_node != node_id:
+        raise ComputeContractError(
+            "retry and recalculation sources must belong to the same ResearchNode; "
+            "use Node dependencies and artifact bindings across Nodes"
+        )
+    source = _load_attempt_intent(workspace, source_node, source_intent_id)
+    source_payload = _scientific_payload_from_intent(source)
+    source_digest = sha256_json(source_payload)
+    changed_fields = _scientific_intent_changes(source_payload, scientific_payload)
+    if attempt_kind == "retry" and source_digest != scientific_digest:
+        raise ComputeContractError(
+            "retry must preserve backend, task, input artifacts, and settings; "
+            "use recalculation for a changed scientific intent"
+        )
+    if attempt_kind == "recalculation" and source_digest == scientific_digest:
+        raise ComputeContractError(
+            "recalculation must change a bound backend, task, input artifact, or setting; "
+            "use retry for an unchanged scientific intent"
+        )
+    return {
+        "source_node": source_node,
+        "source_intent_id": source_intent_id,
+        "relation": attempt_kind,
+        "reason": str(requested.get("reason") or ""),
+        "changed_fields": changed_fields,
+    }
+
+
+def _validate_current_intent_lineage(workspace: Path, intent: dict[str, Any]) -> None:
+    attempt_kind = str(intent.get("attempt_kind") or "")
+    lineage = intent.get("lineage")
+    if attempt_kind == "primary":
+        if lineage is not None:
+            raise ComputeContractError("primary calculation intent cannot have Attempt lineage")
+        return
+    if not isinstance(lineage, dict):
+        raise ComputeContractError(f"{attempt_kind} calculation intent requires Attempt lineage")
+    source_node = str(lineage.get("source_node") or "")
+    source_intent_id = str(lineage.get("source_intent_id") or "")
+    if source_node != intent.get("node_id"):
+        raise ComputeContractError("calculation Attempt lineage must remain within one ResearchNode")
+    source = _load_attempt_intent(workspace, source_node, source_intent_id)
+    source_payload = _scientific_payload_from_intent(source)
+    current_payload = _scientific_payload_from_intent(intent)
+    changed_fields = _scientific_intent_changes(source_payload, current_payload)
+    if lineage.get("relation") != attempt_kind:
+        raise ComputeContractError("calculation Attempt lineage relation does not match attempt_kind")
+    if lineage.get("changed_fields") != changed_fields:
+        raise ComputeContractError("calculation Attempt lineage changed_fields do not match the scientific intent diff")
+    if attempt_kind == "retry" and changed_fields:
+        raise ComputeContractError("retry calculation changed its scientific intent")
+    if attempt_kind == "recalculation" and not changed_fields:
+        raise ComputeContractError("recalculation has no scientific intent changes")
+
+
+def _load_attempt_intent(workspace: Path, node_id: str, intent_id: str) -> dict[str, Any]:
+    path = workspace / "nodes" / node_id / "attempts" / intent_id / "intent.json"
+    if not path.is_file() or path.is_symlink():
+        raise ComputeContractError(f"unknown source calculation Attempt: {node_id}/{intent_id}")
+    intent = _read_object(path, "source calculation intent")
+    _validate_intent(intent)
+    if intent.get("node_id") != node_id or intent.get("intent_id") != intent_id:
+        raise ComputeContractError(f"source calculation Attempt identity mismatch: {node_id}/{intent_id}")
+    return intent
+
+
+def _scientific_intent_changes(before: dict[str, Any], after: dict[str, Any]) -> list[str]:
+    changed: list[str] = []
+    for field in ("backend", "task_type", "input_bindings"):
+        if before.get(field) != after.get(field):
+            changed.append(field)
+    before_settings = before.get("settings") if isinstance(before.get("settings"), dict) else {}
+    after_settings = after.get("settings") if isinstance(after.get("settings"), dict) else {}
+    for key in sorted(set(before_settings) | set(after_settings)):
+        if before_settings.get(key) != after_settings.get(key):
+            changed.append(f"settings.{key}")
+    return changed
+
+
+def _result_attempt_lineage(intent: dict[str, Any]) -> dict[str, Any] | None:
+    lineage = intent.get("lineage")
+    if isinstance(lineage, dict):
+        return dict(lineage)
+    previous = intent.get("recalculation_ref")
+    if not isinstance(previous, dict):
+        return None
+    return {
+        "source_node": previous.get("source_node"),
+        "source_intent_id": previous.get("source_intent_id"),
+        "relation": "recalculation",
+        "reason": previous.get("purpose"),
+        "changed_fields": list(previous.get("changed_settings") or []),
+    }
 
 
 def _workspace_ref(workspace: Path, value: str, *, read: bool) -> str:
@@ -1840,7 +2021,7 @@ def _result(
             "intent_digest": sha256_json(intent),
             "intent_schema": intent["schema_version"],
             "attempt_kind": intent["attempt_kind"],
-            "recalculation_ref": intent.get("recalculation_ref"),
+            "attempt_lineage": _result_attempt_lineage(intent),
             "remote_authority": "execution_mirror" if intent.get("execution_target", {}).get("kind") == "remote" else None,
             **(provenance or {}),
         },

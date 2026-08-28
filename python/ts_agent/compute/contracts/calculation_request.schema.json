@@ -7,7 +7,7 @@
     "node_id",
     "purpose",
     "attempt_kind",
-    "recalculation_ref",
+    "lineage",
     "backend",
     "task_type",
     "input_artifacts",
@@ -16,29 +16,24 @@
     "dry_run"
   ],
   "properties": {
-    "schema_version": {"const": "ts-calculation-request/3"},
+    "schema_version": {"const": "ts-calculation-request/4"},
     "node_id": {
       "type": "string",
       "pattern": "^node_[1-9][0-9]*$"
     },
     "purpose": {"type": "string", "minLength": 1, "maxLength": 2000},
     "attempt_kind": {"enum": ["primary", "retry", "recalculation"]},
-    "recalculation_ref": {
+    "lineage": {
       "oneOf": [
         {"type": "null"},
         {
           "type": "object",
-          "required": ["source_node", "source_intent_id", "changed_settings", "purpose"],
+          "required": ["source_node", "source_intent_id", "relation", "reason"],
           "properties": {
             "source_node": {"type": "string", "pattern": "^node_[1-9][0-9]*$"},
-            "source_intent_id": {"type": ["string", "null"], "pattern": "^calc_[1-9][0-9]*$", "maxLength": 128},
-            "changed_settings": {
-              "type": "array",
-              "minItems": 1,
-              "uniqueItems": true,
-              "items": {"type": "string", "minLength": 1, "maxLength": 256}
-            },
-            "purpose": {"enum": ["repair", "refinement", "method_robustness"]}
+            "source_intent_id": {"type": "string", "pattern": "^calc_[1-9][0-9]*$", "maxLength": 128},
+            "relation": {"enum": ["retry", "recalculation"]},
+            "reason": {"type": "string", "minLength": 1, "maxLength": 1000}
           },
           "additionalProperties": false
         }
@@ -84,7 +79,7 @@
           "properties": {
             "kind": {"const": "remote"},
             "profile": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$"},
-            "resources": {"$ref": "calculation_intent.schema.json#/$defs/remote_resources"}
+            "resources": {"$ref": "calculation_intent_v6.schema.json#/$defs/remote_resources"}
           },
           "additionalProperties": false
         }
@@ -94,9 +89,17 @@
   },
   "allOf": [
     {
+      "if": {"properties": {"attempt_kind": {"const": "primary"}}},
+      "then": {"properties": {"lineage": {"type": "null"}}},
+      "else": {"properties": {"lineage": {"type": "object"}}}
+    },
+    {
+      "if": {"properties": {"attempt_kind": {"const": "retry"}}},
+      "then": {"properties": {"lineage": {"properties": {"relation": {"const": "retry"}}}}}
+    },
+    {
       "if": {"properties": {"attempt_kind": {"const": "recalculation"}}},
-      "then": {"properties": {"recalculation_ref": {"type": "object"}}},
-      "else": {"properties": {"recalculation_ref": {"type": "null"}}}
+      "then": {"properties": {"lineage": {"properties": {"relation": {"const": "recalculation"}}}}}
     }
   ],
   "additionalProperties": false

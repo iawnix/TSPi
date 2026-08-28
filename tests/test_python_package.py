@@ -34,6 +34,7 @@ def test_python_payload_digest_covers_code_and_runtime_data() -> None:
         "python/ts_agent/compute/contracts/calculation_request.schema.json",
         "python/ts_agent/validation/templates/builtin/classical-ts__1.json",
         "python/ts_agent/web/static/app.js",
+        "python/ts_agent/web/static/attempt-timeline.js",
         "python/ts_agent/web/static/claim-map.js",
         "python/ts_agent/workspace/contracts/workspace.schema.json",
     }

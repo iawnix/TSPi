@@ -180,9 +180,10 @@ DAG as decision-sized cards, so opening rationale, outcome, branches, merges,
 and lineage remain visible together. ResearchPhase is a color and focus filter,
 not a lifecycle lane. Desktop users can pan, zoom, fit, and inspect a Node;
 mobile users see the same topology as an indented outline. Node cards identify
-the latest calculation state. Opening a Node reveals its Attempts as a
-collapsible second level with purpose, retry lineage, method, settings, and
-bound Compute runs; Attempts never become peer roadmap Nodes. Claims,
+the latest calculation state. Opening a Node exposes a compact run summary in
+Overview and a dedicated Runs tab with Attempt-family filters, fixed pagination,
+purpose, retry/recalculation lineage, method, settings, job state, and bound
+Compute runs; Attempts never become peer roadmap Nodes. Claims,
 validation, Findings, operational activity, and files stay in separate views.
 Scientific Conclusions provides Table and Map modes over the same Claims; the
 interactive Claim Map never duplicates the ResearchNode DAG.
@@ -276,9 +277,10 @@ The Root Agent normally:
    Node or new Phase, or explicitly stops. Acceptance still requires a passing
    named profile.
 
-A changed question, principal deliverable, hypothesis scope, method branch,
-backtrack, or synthesis goal requires a new Node. Same-objective retries remain
-Attempts. One canonical Decision may open at most one Node, while a transition
+A changed question, principal deliverable, hypothesis scope, independent method
+branch, backtrack, or synthesis goal requires a new Node. Same-question retries
+and method variations remain retry or recalculation Attempts. One canonical
+Decision may open at most one Node, while a transition
 may atomically close the current Node and open one explicitly dependent
 successor. It may also start and complete the same purely analytical Node.
 Registry updates and tool calls remain internal Node History rather than
@@ -301,9 +303,13 @@ as Observations through a Decision.
 
 ## Compute And Remote
 
-Preparation accepts `ts-calculation-request/3`, resolves logical `artifactId`
+Preparation accepts `ts-calculation-request/4`, resolves logical `artifactId`
 plus `inputRole` bindings, and writes an immutable
-`ts-calculation-intent/5` under the owning Node. Supported adapter tasks include:
+`ts-calculation-intent/6` under the owning Node. The intent binds the stable Node
+contract, a digest of backend/task/input artifacts/settings, and explicit
+same-Node retry or recalculation lineage. Existing
+`ts-calculation-intent/5` records remain readable.
+Supported adapter tasks include:
 
 - Gaussian: `sp`, `opt`, `freq`, `opt_freq`, `irc`;
 - xTB: `sp`, `opt`, `freq`, `opt_freq`, `scan`, `md`;

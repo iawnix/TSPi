@@ -73,11 +73,13 @@ Launch accepts the complete semantic request and remote execution target:
 }
 ```
 
-Before the child starts, the host creates and validates
-`ts-calculation-intent/5`, resolves paths and digests, allocates expected
-artifacts, and freezes the execution binding. The child then calls prepare and,
-only after known prepare success, submit. Submit is single-use. An unknown
-effect ends the lifecycle with reconciliation required.
+Before the child starts, the host creates and validates a new
+`ts-calculation-intent/6`, binds the current Node contract, resolves paths and
+digests, allocates expected artifacts, and freezes the scientific and execution
+bindings. Existing `ts-calculation-intent/5` records remain readable for their
+already-created lifecycle. The child then calls prepare and, only after known prepare success,
+submit. Submit is single-use. An unknown effect ends the lifecycle with
+reconciliation required.
 
 ## Inspect
 
@@ -132,21 +134,38 @@ be reconciled and is never replayed by the child.
 
 ## Retry And Recalculation
 
-Use `attemptKind=retry` on a new launch only when the same immutable scientific
-intent can be replayed and the prior typed result proves no external effect was
-attempted. Use `attemptKind=recalculation` when settings or purpose change:
+Every launch declares `attemptKind`. `primary` forbids a source. Use
+`attemptKind=retry` for a new Attempt only when backend, task, input artifact
+digests, and settings are unchanged. Use `attemptKind=recalculation` when one of
+those scientific bindings changes but the calculation still answers the same
+Node question and principal deliverable. Both forms cite one source Attempt in
+the same Node:
 
 ```json
 {
-  "sourceNode": "node_1",
-  "sourceIntentId": "calc_1",
-  "changedSettings": ["method"],
-  "purpose": "method_robustness"
+  "operation": "launch",
+  "nodeId": "node_1",
+  "attemptKind": "recalculation",
+  "sourceAttempt": {
+    "intentId": "calc_1",
+    "reason": "Check whether the stationary-point conclusion survives the method change."
+  },
+  "settings": {"method": "wB97XD", "basis": "def2SVP"}
 }
 ```
 
-Preserve the previous attempt. A new method or scientific objective may warrant
-a new ResearchNode rather than only a recalculation record.
+The Kernel derives `changed_fields`; callers do not declare their own diff.
+Preserve the source Attempt. A method variation used to answer the same bounded
+question is a recalculation. An independent method branch, changed hypothesis,
+new endpoint question, or different principal deliverable starts a dependent
+ResearchNode and consumes prior outputs through artifact bindings, never through
+cross-Node Attempt lineage.
+
+Do not confuse a new retry Attempt with a control-action replay. A typed
+pre-effect `retry_same_submission` result permits repeating the same submit
+action on the existing intent and allocates no new `calc_*`. A new
+`attemptKind=retry` represents a separate execution of the unchanged scientific
+intent after that prior lifecycle has ended safely.
 
 ## Result Authority
 

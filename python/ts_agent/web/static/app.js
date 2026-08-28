@@ -16,6 +16,7 @@ const state = {
   detailId: null,
   filePath: null,
   nodeTab: "overview",
+  attemptView: { family: "all", kind: "all", state: "all", page: 1 },
   refreshing: false,
   liveTimer: null,
   liveStale: false,
@@ -568,7 +569,10 @@ async function openDetail(kind, id, { preserveNodeTab = false } = {}) {
   state.detailKind = kind;
   state.detailId = id;
   state.filePath = null;
-  if (!preserveNodeTab || kind !== "node") state.nodeTab = "overview";
+  if (!preserveNodeTab || kind !== "node") {
+    state.nodeTab = "overview";
+    resetAttemptView();
+  }
   inspectorKicker.textContent = labelForKind(kind);
   inspectorTitle.textContent = id;
   inspectorBody.innerHTML = `<div class="empty">Loading details...</div>`;
@@ -615,7 +619,7 @@ function renderNodeDetail(payload) {
   inspectorKicker.textContent = `${payload.phase.phase_id} | ${node.node_id}`;
   inspectorTitle.textContent = node.title;
   const tabs = ["overview", "conclusions", "evidence", "runs", "files", "history"];
-  const tabLabels = { overview: "Overview", conclusions: "Conclusions", evidence: "Evidence", runs: "Activity", files: "Files", history: "History" };
+  const tabLabels = { overview: "Overview", conclusions: "Conclusions", evidence: "Evidence", runs: "Runs", files: "Files", history: "History" };
   inspectorBody.innerHTML = `<div class="detail-summary"><div class="detail-meta">${badge(node.status)}<span>${escapeHtml(payload.phase.title)}</span><span>${escapeHtml(node.node_id)}</span></div><p>${escapeHtml(node.objective)}</p></div>
     <div class="tabs" role="tablist">${tabs.map(tab => `<button class="tab-button ${tab === state.nodeTab ? "active" : ""}" type="button" role="tab" data-node-tab="${tab}" aria-selected="${tab === state.nodeTab}">${tabLabels[tab]}</button>`).join("")}</div>
     <div id="node-tab-content">${renderNodeTab(payload, state.nodeTab)}</div>`;
@@ -624,7 +628,7 @@ function renderNodeDetail(payload) {
 function renderNodeTab(payload, tab) {
   if (tab === "conclusions") return renderNodeConclusions(payload);
   if (tab === "evidence") return renderNodeEvidence(payload);
-  if (tab === "runs") return renderNodeActivity(payload);
+  if (tab === "runs") return renderNodeRuns(payload);
   if (tab === "files") return renderNodeFiles(payload);
   if (tab === "history") return renderNodeHistory(payload);
   return renderNodeOverview(payload);
@@ -636,7 +640,7 @@ function renderNodeOverview(payload) {
   const opening = object(node.opening_decision);
   return `<section class="detail-section"><h3>Research Decision</h3><div class="detail-callout info"><div class="detail-meta"><span class="mono">${escapeHtml(opening.decision_id || node.created_by_decision)}</span><span>${escapeHtml(formatTime(opening.created_at || node.created_at))}</span></div><p class="detail-copy">${escapeHtml(opening.rationale || node.objective)}</p></div></section>
     <section class="detail-section"><h3>Research Contract</h3><dl class="detail-grid"><dt>Phase</dt><dd><span class="mono">${escapeHtml(payload.phase.phase_id)}</span> ${escapeHtml(payload.phase.title)}</dd><dt>Question</dt><dd>${escapeHtml(node.objective)}</dd><dt>Principal deliverable</dt><dd>${escapeHtml(node.deliverable)}</dd><dt>Primary Claim</dt><dd>${node.primary_claim_ref ? detailButton("claim", node.primary_claim_ref, node.primary_claim_ref) : "none"}</dd></dl></section>
-    ${renderAttemptHistory(node.attempts)}
+    ${renderAttemptOverview(node)}
     <section class="detail-section"><h3>Outcome</h3>${result.outcome ? `<div class="detail-callout ${tone(result.outcome)}"><div class="detail-meta">${badge(result.outcome)}<span>${escapeHtml(formatTime(result.completed_at))}</span></div><p class="detail-copy">${escapeHtml(result.summary)}</p>${bulletGroup("Open Questions", result.open_questions)}</div>` : `<div class="detail-empty">No terminal result has been recorded.</div>`}</section>
     <section class="detail-section"><h3>Lineage</h3>${linkedNodeGroup("Depends on", payload.dependencies)}${linkedNodeGroup("Continued by", payload.dependents)}</section>
     <section class="detail-section"><h3>Related Claims</h3>${linkedClaimRows(payload.claims)}</section>`;
@@ -656,30 +660,86 @@ function renderNodeEvidence(payload) {
     <section class="detail-section"><h3>Validation Results</h3>${detailRecordRows(payload.validation_results, "validation-result", "result_id", "dimension", "verdict")}</section>`;
 }
 
-function renderAttemptHistory(value) {
+function renderAttemptOverview(node) {
+  const attempts = array(node.attempts);
+  const summary = object(node.attempt_summary);
+  const latest = attempts.at(-1);
+  if (!attempts.length) {
+    return `<section class="detail-section"><h3>Calculation Runs</h3><div class="detail-empty">No calculation Attempts.</div></section>`;
+  }
+  const states = Object.entries(object(summary.states));
+  return `<section class="detail-section"><div class="detail-section-heading"><h3>Calculation Runs</h3><button class="record-button" type="button" data-node-tab="runs">Open Runs</button></div>
+    <dl class="attempt-overview"><div><dt>Attempts</dt><dd>${Number(summary.attempt_count) || attempts.length}</dd></div><div><dt>Families</dt><dd>${Number(summary.family_count) || 1}</dd></div><div><dt>Latest</dt><dd><span class="mono">${escapeHtml(latest.intent_id)}</span> ${badge(attemptDisplayState(latest))}</dd></div></dl>
+    ${states.length ? `<div class="attempt-state-summary">${states.map(([name, count]) => `${badge(name)}<span>${Number(count) || 0}</span>`).join("")}</div>` : ""}
+  </section>`;
+}
+
+function renderNodeRuns(payload) {
+  const node = payload.research_node;
+  return `${renderAttemptTimeline(node.attempts)}
+    <section class="detail-section"><h3>Deterministic Operations</h3>${detailRecordRows(node.activities, "activity", "activity_id", "operation", "status")}</section>
+    <section class="detail-section"><h3>Subagent Runs</h3>${detailRecordRows(payload.agent_runs, "agent", "task_id", "operation", "status")}</section>
+    <section class="detail-section"><h3>Unresolved Controls</h3>${detailRecordRows(node.unresolved_controls, "control", "control_id", "operation", "state")}</section>`;
+}
+
+function renderAttemptTimeline(value) {
   const attempts = array(value);
   if (!attempts.length) {
-    return `<section class="detail-section"><h3>Calculation Attempts</h3><div class="detail-empty">No calculation attempts.</div></section>`;
+    return `<section class="detail-section"><h3>Attempt Families</h3><div class="detail-empty">No calculation Attempts.</div></section>`;
   }
-  return `<section class="detail-section"><div class="detail-section-heading"><h3>Calculation Attempts</h3><span>${attempts.length} attempts</span></div><div class="attempt-list">${attempts.map(renderAttempt).join("")}</div></section>`;
+  const view = window.TSAttemptTimeline.project(attempts, state.attemptView);
+  state.attemptView = { ...view.filters, page: view.page };
+  const familyOptions = view.choices.families.map(id => {
+    const attempt = attempts.find(row => row.family_root_id === id || row.intent_id === id);
+    return { value: id, label: `Family ${attempt?.family_index || "?"} · ${id}` };
+  });
+  return `<section class="detail-section attempt-timeline-section">
+    <div class="detail-section-heading"><h3>Attempt Families</h3><span>${view.total} of ${attempts.length}</span></div>
+    <div class="attempt-toolbar">${icon("filter")}${attemptFilter("family", "Family", familyOptions, view.filters.family)}${attemptFilter("kind", "Kind", view.choices.kinds.map(value => ({ value, label: value })), view.filters.kind)}${attemptFilter("state", "State", view.choices.states.map(value => ({ value, label: value })), view.filters.state)}</div>
+    ${view.rows.length ? renderAttemptGroups(view.rows) : `<div class="detail-empty">No Attempts match these filters.</div>`}
+    ${renderAttemptPagination(view)}
+  </section>`;
+}
+
+function attemptFilter(name, label, options, selected) {
+  return `<label class="attempt-filter"><span class="sr-only">${escapeHtml(label)}</span><select data-attempt-filter="${escapeHtml(name)}" aria-label="Filter Attempts by ${escapeHtml(label.toLowerCase())}"><option value="all">All ${escapeHtml(label.toLowerCase())}</option>${options.map(option => `<option value="${escapeHtml(option.value)}" ${option.value === selected ? "selected" : ""}>${escapeHtml(option.label)}</option>`).join("")}</select></label>`;
+}
+
+function renderAttemptGroups(rows) {
+  const groups = [];
+  for (const attempt of rows) {
+    const familyId = attempt.family_root_id || attempt.intent_id;
+    let group = groups.find(row => row.id === familyId);
+    if (!group) {
+      group = { id: familyId, index: attempt.family_index, attempts: [] };
+      groups.push(group);
+    }
+    group.attempts.push(attempt);
+  }
+  return `<div class="attempt-family-list">${groups.map(group => `<section class="attempt-family"><div class="attempt-family-heading"><span>${icon("branch")} Family ${escapeHtml(group.index || "?")}</span><span class="mono">${escapeHtml(group.id)}</span></div><div class="attempt-list">${group.attempts.map(renderAttempt).join("")}</div></section>`).join("")}</div>`;
+}
+
+function renderAttemptPagination(view) {
+  if (view.pageCount <= 1) return "";
+  return `<nav class="attempt-pagination" aria-label="Attempt pages"><button class="icon-button" type="button" data-attempt-page="${view.page - 1}" title="Previous Attempt page" aria-label="Previous Attempt page" ${view.page <= 1 ? "disabled" : ""}>${icon("arrow-left")}</button><span>Page ${view.page} of ${view.pageCount}</span><button class="icon-button" type="button" data-attempt-page="${view.page + 1}" title="Next Attempt page" aria-label="Next Attempt page" ${view.page >= view.pageCount ? "disabled" : ""}>${icon("arrow-right")}</button></nav>`;
 }
 
 function renderAttempt(attempt) {
-  const recalculation = object(attempt.recalculation_ref);
+  const lineage = object(attempt.lineage);
   const settings = object(attempt.settings);
   const execution = object(attempt.execution_target);
   const resources = object(execution.resources);
   const stateLabel = attemptDisplayState(attempt);
   const purpose = attempt.purpose || compact([attempt.backend, attempt.task_type]) || "Calculation attempt";
-  const source = recalculation.source_intent_id;
-  const sourceNode = recalculation.source_node;
+  const source = lineage.source_intent_id;
+  const sourceNode = lineage.source_node;
   const sourceLabel = [sourceNode, source].filter(Boolean).join(" / ");
   const sourceField = source && sourceNode
     ? `<button class="attempt-source" type="button" data-attempt-node="${escapeHtml(sourceNode)}" data-attempt-open="${escapeHtml(source)}">${escapeHtml(sourceLabel)}</button>`
     : escapeHtml(sourceLabel || "none");
   const error = attempt.error_class ? `<span class="attempt-error">${badge(attempt.error_class)}</span>` : "";
   const inputRefs = array(attempt.input_bindings).map(binding => compact([binding.input_role, binding.artifact_id]));
-  const changedSettings = array(recalculation.changed_settings);
+  const changedFields = array(lineage.changed_fields);
   const runs = array(attempt.runs);
   return `<details class="attempt-disclosure ${tone(stateLabel)}" data-attempt-id="${escapeHtml(attempt.intent_id)}">
     <summary>
@@ -693,15 +753,20 @@ function renderAttempt(attempt) {
         <dt>Backend / task</dt><dd>${escapeHtml(compact([attempt.backend, attempt.task_type]) || "unknown")}</dd>
         <dt>Method</dt><dd>${escapeHtml(compact([attempt.method, attempt.basis]) || "not recorded")}</dd>
         <dt>Strategy</dt><dd>${escapeHtml(attempt.candidate_strategy || "not recorded")}</dd>
-        <dt>Attempt kind</dt><dd>${escapeHtml(attempt.attempt_kind || "primary")}</dd>
-        <dt>Recalculates</dt><dd>${sourceField}</dd>
+        <dt>Family</dt><dd>Family ${escapeHtml(attempt.family_index || "?")} · <span class="mono">${escapeHtml(attempt.family_root_id || attempt.intent_id)}</span></dd>
+        <dt>Lineage</dt><dd>${escapeHtml(lineage.relation || attempt.attempt_kind || "primary")} · ${sourceField}</dd>
+        <dt>Reason</dt><dd>${escapeHtml(lineage.reason || (attempt.attempt_kind === "primary" ? "primary Attempt" : "not recorded"))}</dd>
         <dt>Program state</dt><dd>${escapeHtml(attempt.program_status || "unknown")}</dd>
         <dt>Execution</dt><dd>${escapeHtml(compact([execution.kind, execution.profile]) || "not recorded")}</dd>
+        <dt>Job</dt><dd>${escapeHtml(attempt.job_id || "not recorded")}</dd>
+        <dt>Duration</dt><dd>${escapeHtml(formatDuration(attempt.duration_seconds))}</dd>
+        <dt>Observed</dt><dd>${escapeHtml(formatTime(attempt.finished_at || attempt.observed_at) || "not recorded")}</dd>
         <dt>Subagent runs</dt><dd>${runs.length}</dd>
       </dl>
-      ${renderAttemptRefs("Changed settings", changedSettings)}
+      ${renderAttemptRefs("Scientific changes", changedFields)}
       ${renderAttemptRefs("Input artifacts", inputRefs)}
       ${renderAttemptRefs("Expected artifacts", attempt.expected_artifacts)}
+      ${attempt.scientific_intent_digest ? `<div class="attempt-digest"><span>Scientific intent</span><code>${escapeHtml(shortDigest(attempt.scientific_intent_digest))}</code></div>` : ""}
       ${Object.keys(settings).length ? `<details class="attempt-technical"><summary>Calculation settings</summary>${detailFields(settings)}</details>` : ""}
       ${Object.keys(resources).length ? `<details class="attempt-technical"><summary>Remote resources</summary>${detailFields(resources)}</details>` : ""}
       ${runs.length ? `<div class="attempt-runs"><div class="record-subtitle">Subagent runs</div>${detailRecordRows(runs, "agent", "task_id", "operation", "status")}</div>` : ""}
@@ -716,16 +781,10 @@ function renderAttemptRefs(label, values) {
 }
 
 function attemptDisplayState(attempt) {
+  if (attempt.display_state) return attempt.display_state;
   const programStatus = String(attempt.program_status || "").toLowerCase();
   if (["completed", "normal_termination", "failed", "running"].includes(programStatus)) return programStatus;
   return attempt.state || attempt.program_status || "unknown";
-}
-
-function renderNodeActivity(payload) {
-  const node = payload.research_node;
-  return `<section class="detail-section"><h3>Deterministic Operations</h3>${detailRecordRows(node.activities, "activity", "activity_id", "operation", "status")}</section>
-    <section class="detail-section"><h3>Subagent Runs</h3>${detailRecordRows(payload.agent_runs, "agent", "task_id", "operation", "status")}</section>
-    <section class="detail-section"><h3>Unresolved Controls</h3>${detailRecordRows(node.unresolved_controls, "control", "control_id", "operation", "state")}</section>`;
 }
 
 function renderNodeFiles(payload) {
@@ -823,10 +882,14 @@ async function openAttemptSource(sourceNodeId, attemptId) {
     const opened = await openDetail("node", sourceNodeId);
     if (!opened) return;
   }
-  if (state.nodeTab !== "overview") {
-    state.nodeTab = "overview";
-    renderNodeDetail(state.detail);
-  }
+  state.nodeTab = "runs";
+  resetAttemptView();
+  state.attemptView.page = window.TSAttemptTimeline.pageForAttempt(
+    state.detail.research_node.attempts,
+    state.attemptView,
+    attemptId,
+  ) || 1;
+  renderNodeDetail(state.detail);
   if (!revealAttempt(attemptId)) {
     showToast(`Calculation ${attemptId} is not available in ${sourceNodeId}`);
   }
@@ -838,7 +901,12 @@ function clearInspectorState() {
   state.detailId = null;
   state.filePath = null;
   state.nodeTab = "overview";
+  resetAttemptView();
   closeInspector();
+}
+
+function resetAttemptView() {
+  state.attemptView = { family: "all", kind: "all", state: "all", page: 1 };
 }
 
 function localRecord(kind, id) {
@@ -994,6 +1062,14 @@ function formatBytes(value) {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KiB`;
   return `${(bytes / 1024 / 1024).toFixed(1)} MiB`;
 }
+function formatDuration(value) {
+  if (value === null || value === undefined || value === "") return "not recorded";
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds < 0) return "not recorded";
+  if (seconds < 60) return `${Math.round(seconds)} s`;
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ${Math.round(seconds % 60)}s`;
+  return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+}
 function pathName(value) { return String(value || "File").split("/").filter(Boolean).pop() || "File"; }
 function shortDigest(value) { const text = String(value || ""); return text.startsWith("sha256:") ? text.slice(7, 19) : text.slice(0, 12); }
 function recordId(record) { return record.claim_id || record.node_id || record.relation_id || record.observation_id || record.spec_id || record.result_id || record.finding_id || record.acceptance_id || record.activity_id || record.task_id || record.control_id || record.intent_id || "Record"; }
@@ -1066,6 +1142,12 @@ inspectorBody.addEventListener("click", async event => {
     renderNodeDetail(state.detail);
     return;
   }
+  const page = event.target.closest("[data-attempt-page]");
+  if (page && state.detailKind === "node") {
+    state.attemptView.page = Number(page.dataset.attemptPage) || 1;
+    renderNodeDetail(state.detail);
+    return;
+  }
   const attempt = event.target.closest("[data-attempt-open]");
   if (attempt && state.detailKind === "node") {
     await openAttemptSource(attempt.dataset.attemptNode, attempt.dataset.attemptOpen);
@@ -1078,6 +1160,16 @@ inspectorBody.addEventListener("click", async event => {
   }
   const file = event.target.closest("[data-file]");
   if (file) openFile(file.dataset.file);
+});
+
+inspectorBody.addEventListener("change", event => {
+  const filter = event.target.closest("[data-attempt-filter]");
+  if (!filter || state.detailKind !== "node") return;
+  const name = filter.dataset.attemptFilter;
+  if (!["family", "kind", "state"].includes(name)) return;
+  state.attemptView[name] = filter.value || "all";
+  state.attemptView.page = 1;
+  renderNodeDetail(state.detail);
 });
 
 workspaceSelect.addEventListener("change", async event => {

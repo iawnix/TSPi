@@ -56,6 +56,7 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert "docs/MAINTAINER_GUIDE.md" in names
     assert "python/ts_agent/web/static/claim-map.js" in names
     assert "python/ts_agent/web/static/research-tree.js" in names
+    assert "python/ts_agent/web/static/attempt-timeline.js" in names
     assert distribution == build_result["python_distribution"]
     assert distribution["name"] == "ts-agent-kernel"
     assert distribution["version"] == "0.11.0"
@@ -80,6 +81,7 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert (package_root / "docs" / "MAINTAINER_GUIDE.md").is_file()
     assert (package_root / "python" / "ts_agent" / "web" / "static" / "claim-map.js").is_file()
     assert (package_root / "python" / "ts_agent" / "web" / "static" / "research-tree.js").is_file()
+    assert (package_root / "python" / "ts_agent" / "web" / "static" / "attempt-timeline.js").is_file()
     installed_wheel = package_root / distribution["path"]
     assert installed_wheel.is_file()
     assert inspect_wheel(installed_wheel)["payload_sha256"] == distribution["payload_sha256"]

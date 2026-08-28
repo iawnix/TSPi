@@ -67,13 +67,12 @@ const REMOTE_DIAGNOSTIC_ACTIVITY = Object.freeze({
   },
 } satisfies Record<RemoteDiagnosticMode, { description: string; detail: string; selector: string }>);
 const ATTEMPT_KINDS = ["primary", "retry", "recalculation"] as const;
-const RECALCULATION_PURPOSES = ["repair", "refinement", "method_robustness"] as const;
 const COMPUTE_COMMON_PARAMETERS = {
   backend: StringEnum(BACKENDS),
   nodeId: Type.String({
     pattern: "^node_[1-9][0-9]*$",
     maxLength: 128,
-    description: "Open ResearchNode that owns this calculation attempt.",
+    description: "Open ResearchNode whose exact question and principal deliverable this calculation advances.",
   }),
   root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
 };
@@ -108,11 +107,9 @@ const COMPUTE_PARAMETERS = Type.Object({
   purpose: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
   taskType: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]*$", maxLength: 64 })),
   attemptKind: Type.Optional(StringEnum(ATTEMPT_KINDS)),
-  recalculationRef: Type.Optional(Type.Object({
-    sourceNode: Type.String({ pattern: "^node_[1-9][0-9]*$" }),
-    sourceIntentId: Type.Optional(INTENT_ID_PARAMETER),
-    changedSettings: Type.Array(Type.String({ minLength: 1, maxLength: 256 }), { minItems: 1, uniqueItems: true }),
-    purpose: StringEnum(RECALCULATION_PURPOSES),
+  sourceAttempt: Type.Optional(Type.Object({
+    intentId: INTENT_ID_PARAMETER,
+    reason: Type.String({ minLength: 1, maxLength: 1000 }),
   }, { additionalProperties: false })),
   inputArtifacts: Type.Optional(INPUT_ARTIFACTS_PARAMETER),
   settings: Type.Optional(SETTINGS_MAP_PARAMETER),
@@ -125,7 +122,7 @@ const COMPUTE_PARAMETERS = Type.Object({
 }, { additionalProperties: false });
 
 const COMPUTE_OPERATION_FIELDS = Object.freeze({
-  launch: ["purpose", "taskType", "attemptKind", "recalculationRef", "inputArtifacts", "settings", "executionTarget", "timeoutSeconds"],
+  launch: ["purpose", "taskType", "attemptKind", "sourceAttempt", "inputArtifacts", "settings", "executionTarget", "timeoutSeconds"],
   inspect: ["intentId", "tailArtifact", "tailLines", "timeoutSeconds"],
   finalize: ["intentId", "artifacts", "artifactRef", "timeoutSeconds"],
   cancel: ["intentId", "timeoutSeconds"],
@@ -141,7 +138,7 @@ type ComputeRequest = {
   purpose?: string;
   taskType?: string;
   attemptKind?: typeof ATTEMPT_KINDS[number];
-  recalculationRef?: Record<string, unknown>;
+  sourceAttempt?: { intentId: string; reason: string };
   inputArtifacts?: Array<{ inputRole: string; artifactId: string }>;
   settings?: Record<string, string>;
   executionTarget?: Record<string, unknown>;
@@ -216,7 +213,9 @@ export default function (pi: ExtensionAPI) {
     description: "Delegate one bounded launch, inspect, finalize, or cancel calculation lifecycle to an isolated operational subagent.",
     promptSnippet: "Run one bound transition-state Compute lifecycle",
     promptGuidelines: [
+      "Before a new launch, retrieve the focused ResearchNode and verify that the calculation advances its exact question and principal deliverable; otherwise start a dependent Node.",
       "Before launch, discover logical inputs with ts_workspace_context mode=artifacts; the host owns paths, hashes, filenames, and IDs.",
+      "Declare attemptKind explicitly. Retry and recalculation must cite one source Attempt in the same Node; cross-Node continuation uses dependencies and artifact bindings.",
       "Use launch for prepare+submit, inspect for status+optional tail, finalize for collect+parse, and cancel only for an already-bound job.",
       "Compute output is operational until verified artifacts are recorded as semantic Observations.",
       "Never replay an ambiguous submit or cancel.",
@@ -620,7 +619,7 @@ async function preflightComputeRequest(
     ], signal, 60_000);
     if (
       !isPlainObject(created)
-      || created.schema_version !== "ts-calculation-intent-created/3"
+      || created.schema_version !== "ts-calculation-intent-created/4"
       || typeof created.intent_ref !== "string"
     ) {
       throw new Error("compute intent creation returned an invalid binding");
@@ -713,7 +712,14 @@ function buildCalculationRequest(request: ComputeRequest): Record<string, unknow
   ) {
     throw new Error("launch requires purpose, taskType, inputArtifacts, and a remote executionTarget");
   }
-  const recalculation = request.recalculationRef;
+  const sourceAttempt = request.sourceAttempt;
+  if (!request.attemptKind) throw new Error("launch requires an explicit attemptKind");
+  if (request.attemptKind === "primary" && sourceAttempt) {
+    throw new Error("primary launch does not accept sourceAttempt");
+  }
+  if (request.attemptKind !== "primary" && (!sourceAttempt?.intentId || !sourceAttempt.reason)) {
+    throw new Error(`${request.attemptKind} launch requires sourceAttempt.intentId and sourceAttempt.reason`);
+  }
   const target = request.executionTarget;
   if (target.kind !== "remote") throw new Error("launch requires executionTarget.kind=remote");
   const resources = isPlainObject(target.resources) ? target.resources : {};
@@ -732,16 +738,16 @@ function buildCalculationRequest(request: ComputeRequest): Record<string, unknow
     },
   };
   return {
-    schema_version: "ts-calculation-request/3",
+    schema_version: "ts-calculation-request/4",
     node_id: request.nodeId,
     purpose: request.purpose,
-    attempt_kind: request.attemptKind || "primary",
-    recalculation_ref: recalculation
+    attempt_kind: request.attemptKind,
+    lineage: sourceAttempt
       ? {
-          source_node: recalculation.sourceNode,
-          source_intent_id: recalculation.sourceIntentId || null,
-          changed_settings: recalculation.changedSettings,
-          purpose: recalculation.purpose,
+          source_node: request.nodeId,
+          source_intent_id: sourceAttempt.intentId,
+          relation: request.attemptKind,
+          reason: sourceAttempt.reason,
         }
       : null,
     backend: request.backend,

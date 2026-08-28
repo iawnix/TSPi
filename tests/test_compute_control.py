@@ -59,11 +59,11 @@ def _request(
     task_type: str = "opt_freq",
 ) -> dict[str, object]:
     return {
-        "schema_version": "ts-calculation-request/3",
+        "schema_version": "ts-calculation-request/4",
         "node_id": node_id,
         "purpose": "Evaluate the selected candidate with a bound calculation.",
         "attempt_kind": "primary",
-        "recalculation_ref": None,
+        "lineage": None,
         "backend": "gaussian",
         "task_type": task_type,
         "input_artifacts": [{"input_role": "gjf", "artifact_id": _artifact_id(workspace)}],
@@ -197,7 +197,7 @@ def test_intent_paths_ids_and_preflight_are_research_node_bound(tmp_path: Path) 
     first = _create(workspace, node_id)
     second = _create(workspace, node_id)
 
-    assert first["schema_version"] == "ts-calculation-intent-created/3"
+    assert first["schema_version"] == "ts-calculation-intent-created/4"
     assert first["intent_id"] == "calc_1"
     assert second["intent_id"] == "calc_2"
     assert first["intent_ref"] == f"nodes/{node_id}/attempts/calc_1/intent.json"
@@ -218,6 +218,41 @@ def test_intent_paths_ids_and_preflight_are_research_node_bound(tmp_path: Path) 
     assert binding["intent_digest"] == first["intent_digest"]
     prepared = prepare_calculation(workspace, first["intent_ref"], first["intent_digest"])
     assert prepared["result"]["state"] == "prepared"
+
+
+def test_existing_intent_remains_readable_for_prepare_and_inspect_preflight(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace, node_id = _workspace(tmp_path)
+    _configure_remote(tmp_path, monkeypatch)
+    created = _create(
+        workspace,
+        node_id,
+        target=_remote_request_target(),
+        dry_run=False,
+    )
+    existing = dict(created["intent"])
+    existing["schema_version"] = "ts-calculation-intent/5"
+    existing.pop("node_contract_digest")
+    existing.pop("scientific_intent_digest")
+    existing.pop("lineage")
+    existing["recalculation_ref"] = None
+    intent_path = workspace / created["intent_ref"]
+    intent_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
+
+    prepared = prepare_calculation(workspace, created["intent_ref"])
+    binding = preflight_calculation(
+        workspace,
+        "inspect",
+        node_id,
+        "gaussian",
+        intent_id=created["intent_id"],
+    )
+
+    assert prepared["result"]["provenance"]["intent_schema"] == "ts-calculation-intent/5"
+    assert prepared["result"]["provenance"]["attempt_lineage"] is None
+    assert binding["intent_id"] == created["intent_id"]
 
 
 def test_intent_sequence_reservation_is_concurrent_and_failure_atomic(

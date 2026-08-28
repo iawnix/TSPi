@@ -17,9 +17,10 @@ The Kernel validates this record; it does not supply the strategy.
 ## Node Boundary Test
 
 Start a new Node when the unresolved question, principal deliverable,
-hypothesis scope, method branch, backtrack target, or synthesis goal changes.
-Keep a retry in the current Node only when success would answer the same
-question with the same deliverable. Several tools may serve one question, but
+hypothesis scope, independent method branch, backtrack target, or synthesis goal
+changes. Keep retries and recalculations in the current Node only when success
+would answer the same question with the same deliverable. Several tools and
+method variations may serve one question, but
 candidate discovery, stationary-point assessment, connectivity, and final
 synthesis are not one umbrella Node merely because they concern one Claim.
 

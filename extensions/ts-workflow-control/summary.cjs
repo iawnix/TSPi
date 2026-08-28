@@ -184,7 +184,11 @@ function toolText(text, details = {}) {
 
 function formatNode(node) {
   const rationale = truncateText(stringValue(node.decision_rationale), 120);
-  return `${node.node_id || "node"}@${node.phase_ref || "phase"}/${node.status || "?"}: ${node.title || node.objective || ""}${rationale ? ` [${rationale}]` : ""}`;
+  const title = truncateText(stringValue(node.title), 100);
+  const objective = truncateText(stringValue(node.objective), 180);
+  const deliverable = truncateText(stringValue(node.deliverable), 180);
+  const identity = `${node.node_id || "node"}@${node.phase_ref || "phase"}/${node.status || "?"}`;
+  return `${identity}: ${title || "Untitled Node"}; question=${objective || "(not recorded)"}; deliverable=${deliverable || "(not recorded)"}${rationale ? ` [decision=${rationale}]` : ""}`;
 }
 
 function formatTrajectory(nodes, maxItems) {

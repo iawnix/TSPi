@@ -18,6 +18,7 @@ from .acceptance import project_acceptances
 from .associations import derive_claim_node_links
 from ts_agent.io import read_json, sha256_json
 from .operational import operational_snapshot
+from .node_contract import node_contract_digest
 from .refs import (
     acceptance_sort_key,
     node_sort_key,
@@ -604,6 +605,8 @@ def _workspace_brief(
                 "title": node["title"],
                 "status": node["status"],
                 "objective": _truncate(str(node["objective"]), 240),
+                "deliverable": _truncate(str(node["deliverable"]), 240),
+                "contract_digest": node_contract_digest(node),
                 "primary_claim_ref": node.get("primary_claim_ref"),
                 "claim_refs": list(node.get("related_claim_refs", node.get("claim_refs", []))),
                 "dependency_refs": list(node.get("dependency_refs", [])),
