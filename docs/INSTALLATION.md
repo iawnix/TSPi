@@ -375,8 +375,9 @@ development source reload or zero-downtime socket transfer.
 
 The explorer validates current state on read and exposes no mutation endpoint.
 Its default route is the ResearchNode dependency tree, with ResearchPhase used
-only for navigation and focus. The Claim graph is an advanced view; the Node DAG
-is not duplicated there. File preview is bounded to current ResearchNode files;
+only for navigation and focus. Scientific Conclusions provides Table and Map
+modes over the Claim graph; the Node DAG is not duplicated there. File preview
+is bounded to current ResearchNode files;
 only UTF-8 text within the configured byte limit is presented as previewable.
 The server does not implement user authentication. Bind `127.0.0.1` by default; bind
 `0.0.0.0` only for a trusted, firewalled LAN and assume every reachable client

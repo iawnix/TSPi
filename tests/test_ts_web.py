@@ -671,19 +671,25 @@ def test_static_ui_exposes_research_tree_and_on_demand_node_details() -> None:
     static = ROOT / "python" / "ts_agent" / "web" / "static"
     html = (static / "index.html").read_text(encoding="utf-8")
     script = (static / "app.js").read_text(encoding="utf-8")
+    claim_map = (static / "claim-map.js").read_text(encoding="utf-8")
     tree = (static / "research-tree.js").read_text(encoding="utf-8")
 
     assert "TS Research Explorer" in html
     assert "Research Tree" in html
     assert "Scientific Conclusions" in html
     assert "Research Files" in html
-    assert "Advanced Graphs" in html
+    assert "Advanced Graphs" not in html + script
     assert "app.css" in html
     assert "app.js" in html
+    assert "claim-map.js" in html
     assert "research-tree.js" in html
     assert "renderNodeDetail" in script
     assert "window.TSResearchTree.mount" in script
+    assert "window.TSClaimMap.mount" in script
     assert "state.graph.research_node_dag.edges" in script
+    assert 'data-conclusions-mode="table"' in script
+    assert 'data-conclusions-mode="map"' in script
+    assert 'onSelectRelation: relationId => openDetail("relation", relationId)' in script
     assert "renderPhaseBand" not in script
     assert "Cross-Phase ResearchNode DAG" not in script
     assert "computeLayout" in tree
@@ -691,6 +697,12 @@ def test_static_ui_exposes_research_tree_and_on_demand_node_details() -> None:
     assert 'root.classList.add("research-tree")' in tree
     assert "research-tree-outline" in tree
     assert "ResizeObserver" in tree
+    assert "computeLayout" in claim_map
+    assert "computeLineage" in claim_map
+    assert "filterNodes" in claim_map
+    assert 'root.classList.add("claim-map")' in claim_map
+    assert "claim-map-outline" in claim_map
+    assert "claim-map-arrow" in claim_map
     assert 'const tabs = ["overview", "conclusions", "evidence", "runs", "files", "history"]' in script
     assert "renderAttemptHistory(node.attempts)" in script
     assert 'details[data-attempt-id]' in script
@@ -751,6 +763,61 @@ globalThis.window = globalThis;
     assert result["descendants"] == ["node_4"]
 
 
+def test_claim_map_layout_filters_and_lineage() -> None:
+    map_path = (ROOT / "python" / "ts_agent" / "web" / "static" / "claim-map.js").as_uri()
+    probe = f"""
+globalThis.window = globalThis;
+(async () => {{
+  await import({json.dumps(map_path)});
+  const nodes = [
+    {{claim_id: "claim_1", status: "proposed", claim_type: "mechanism", acceptance_state: "none"}},
+    {{claim_id: "claim_2", status: "supported", claim_type: "mechanism", acceptance_state: "current"}},
+    {{claim_id: "claim_3", status: "proposed", claim_type: "alternative", acceptance_state: "none"}},
+    {{claim_id: "claim_4", status: "supported", claim_type: "connectivity", acceptance_state: "current"}},
+  ];
+  const edges = [
+    {{id: "rel_1", source: "claim_1", target: "claim_2"}},
+    {{id: "rel_2", source: "claim_1", target: "claim_3"}},
+    {{id: "rel_3", source: "claim_2", target: "claim_4"}},
+    {{id: "rel_4", source: "claim_3", target: "claim_4"}},
+    {{id: "rel_5", source: "claim_1", target: "claim_4"}},
+  ];
+  const layout = TSClaimMap.computeLayout(nodes, edges);
+  const lineage = TSClaimMap.computeLineage(nodes, edges, "claim_2");
+  const filtered = TSClaimMap.filterNodes(nodes, {{status: "supported", acceptance: "current"}});
+  const route = TSClaimMap.computeEdgeRoute(layout.positions.claim_1, layout.positions.claim_4, 0);
+  const relationLabel = TSClaimMap.wrapRelationLabel("candidate_step_for_pathway", 12);
+  process.stdout.write(JSON.stringify({{
+    depths: Object.fromEntries(Object.entries(layout.positions).map(([id, row]) => [id, row.depth])),
+    branchRowsDiffer: layout.positions.claim_2.y !== layout.positions.claim_3.y,
+    ancestors: [...lineage.ancestors].sort(),
+    descendants: [...lineage.descendants].sort(),
+    filtered: filtered.map(row => row.claim_id),
+    sourceY: layout.positions.claim_1.y,
+    route,
+    relationLabel,
+  }}));
+}})().catch(error => {{ console.error(error); process.exit(1); }});
+"""
+    completed = subprocess.run(
+        ["node", "-e", probe],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    result = json.loads(completed.stdout)
+
+    assert result["depths"] == {"claim_1": 0, "claim_2": 1, "claim_3": 1, "claim_4": 2}
+    assert result["branchRowsDiffer"] is True
+    assert result["ancestors"] == ["claim_1"]
+    assert result["descendants"] == ["claim_4"]
+    assert result["filtered"] == ["claim_2", "claim_4"]
+    assert result["route"]["long"] is True
+    assert result["route"]["labelY"] < result["sourceY"]
+    assert " L " in result["route"]["pathData"]
+    assert "".join(result["relationLabel"]) == "candidate_step_for_pathway"
+
+
 def test_static_ui_refreshes_registry_and_persists_theme() -> None:
     static = ROOT / "python" / "ts_agent" / "web" / "static"
     html = (static / "index.html").read_text(encoding="utf-8")
@@ -794,7 +861,7 @@ def test_research_files_payload_is_a_read_only_locator_projection(tmp_path: Path
 
 
 def test_static_asset_resolves_from_current_package() -> None:
-    for name in ("index.html", "app.css", "app.js", "research-tree.js"):
+    for name in ("index.html", "app.css", "app.js", "claim-map.js", "research-tree.js"):
         expected = files("ts_agent.web").joinpath("static", name).read_bytes()
         assert ts_web_server._static_asset(name).read_bytes() == expected
 
@@ -1045,6 +1112,7 @@ def test_web_server_is_read_only_and_has_no_removed_routes(tmp_path: Path) -> No
         assert "TS Research Explorer" in html
         assert _get_text(host, port, "/app.css")[0] == 200
         assert _get_text(host, port, "/app.js")[0] == 200
+        assert _get_text(host, port, "/claim-map.js")[0] == 200
         assert _get_text(host, port, "/research-tree.js")[0] == 200
         for removed_route in (f"{base}/tree", f"{base}/gates", f"{base}/evidence", "/api/node/n000"):
             assert _get_text(host, port, removed_route)[0] == 404

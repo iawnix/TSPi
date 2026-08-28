@@ -183,8 +183,9 @@ mobile users see the same topology as an indented outline. Node cards identify
 the latest calculation state. Opening a Node reveals its Attempts as a
 collapsible second level with purpose, retry lineage, method, settings, and
 bound Compute runs; Attempts never become peer roadmap Nodes. Claims,
-validation, Findings, operational activity, files, and the advanced Claim graph
-stay in separate views.
+validation, Findings, operational activity, and files stay in separate views.
+Scientific Conclusions provides Table and Map modes over the same Claims; the
+interactive Claim Map never duplicates the ResearchNode DAG.
 
 ```bash
 /path/to/TSPi-installation/TSWeb serve \

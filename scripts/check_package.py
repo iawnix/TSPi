@@ -152,6 +152,7 @@ REQUIRED_TARBALL_FILES = {
     "python/ts_agent/web/static/index.html",
     "python/ts_agent/web/static/app.css",
     "python/ts_agent/web/static/app.js",
+    "python/ts_agent/web/static/claim-map.js",
     "python/ts_agent/web/static/research-tree.js",
     "python/ts_agent/web/reloader.py",
     "docs/adr/0001-phase-node-research-kernel.md",

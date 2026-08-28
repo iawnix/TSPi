@@ -90,8 +90,8 @@ demand. Review receives one Claim dossier, not complete workspace files.
 - its default view is the ResearchNode dependency tree, with Phase as a
   navigation filter;
 - Node details expose Overview, Conclusions, Evidence, Runs, Files, and History;
-- Claim relations are an advanced view; the cross-Phase Node DAG is already the
-  default Research Tree and is not duplicated;
+- Scientific Conclusions exposes Claim Table and Map modes; the cross-Phase
+  Node DAG is already the default Research Tree and is not duplicated;
 - it never infers a next action, Phase status, Claim status, validation verdict,
   or acceptance.
 

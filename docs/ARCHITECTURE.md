@@ -432,8 +432,10 @@ runs. The workspace snapshot carries only the compact Attempt summary; settings,
 bindings, and execution resources are loaded with the selected Node detail.
 Node details otherwise separate conclusions, Evidence, operational activity,
 files, and Decision history. Claims, acceptance, validation, Findings, the
-Research Files locator, and the Claim graph remain separate scientific views.
-The Node DAG is not duplicated in Advanced Graphs.
+Research Files locator, and operational activity remain separate views.
+Scientific Conclusions offers Table and Map modes over one Claim projection.
+The Map is an interactive, read-only presentation of ClaimRelation records and
+does not duplicate the ResearchNode DAG or interpret relation labels as policy.
 
 Operational overlays preserve their actual owners: calculation Attempts belong
 to Nodes, Compute runs belong to Attempts, Review runs belong to Claims, and

@@ -22,6 +22,10 @@ const state = {
   toastTimer: null,
   researchTree: null,
   researchTreeViewport: null,
+  claimMap: null,
+  claimMapViewport: null,
+  claimMapFilters: null,
+  conclusionsMode: "table",
 };
 
 const content = document.getElementById("content");
@@ -82,7 +86,11 @@ async function loadWorkspaceCatalog() {
 }
 
 async function loadWorkspace({ preserveInteraction = false } = {}) {
-  if (!preserveInteraction) state.researchTreeViewport = null;
+  if (!preserveInteraction) {
+    state.researchTreeViewport = null;
+    state.claimMapViewport = null;
+    state.claimMapFilters = null;
+  }
   state.locatorRequest += 1;
   clearTimeout(state.locatorTimer);
   const catalogRow = state.workspaces.find(row => row.workspace_id === state.workspaceId);
@@ -248,7 +256,7 @@ function renderWorkspaceOptions() {
 }
 
 function renderUnavailableWorkspace(row) {
-  teardownResearchTree();
+  teardownVisualizations();
   setHealth("invalid", "Incompatible");
   for (const name of ["phases", "claims", "validation", "findings", "activity"]) setCount(name, 0);
   document.getElementById("sidebar-meta").textContent = "ts-research-kernel/5 required";
@@ -285,7 +293,7 @@ function setCount(name, value) {
 
 function renderCurrentView({ resetScroll = true } = {}) {
   if (!state.view || !state.graph) return;
-  teardownResearchTree();
+  teardownVisualizations();
   document.querySelectorAll("[data-view]").forEach(button => {
     button.classList.toggle("active", button.dataset.view === state.currentView);
   });
@@ -296,7 +304,6 @@ function renderCurrentView({ resetScroll = true } = {}) {
     validation: renderValidation,
     findings: renderFindings,
     activity: renderActivity,
-    graphs: renderGraphs,
   };
   (renderers[state.currentView] || renderRoadmap)();
   if (resetScroll) workspaceMain.scrollTop = 0;
@@ -305,6 +312,16 @@ function renderCurrentView({ resetScroll = true } = {}) {
 function teardownResearchTree() {
   state.researchTree?.destroy();
   state.researchTree = null;
+}
+
+function teardownClaimMap() {
+  state.claimMap?.destroy();
+  state.claimMap = null;
+}
+
+function teardownVisualizations() {
+  teardownResearchTree();
+  teardownClaimMap();
 }
 
 function renderHeader(title, subtitle, searchable = false, placeholder = "Filter") {
@@ -391,9 +408,10 @@ function matchesNode(node, phase, claimById, query) {
 function renderConclusions() {
   const graphClaims = new Map(state.graph.claim_graph.nodes.map(row => [row.claim_id, row]));
   const rows = filterRecords(state.view.claims, ["claim_id", "claim_type", "statement", "status", "assumptions", "falsifiers", "tags"]);
-  content.innerHTML = renderHeader("Scientific Conclusions", "Claims remain separate from execution nodes and carry assumptions, falsifiers, validation, and acceptance.", true, "Filter claims")
-    + renderNotices()
-    + section("Claims", `${rows.length}`, table(
+  const mode = state.conclusionsMode === "map" ? "map" : "table";
+  const matchedClaimIds = new Set(rows.map(claim => claim.claim_id));
+  const body = mode === "table"
+    ? section("Claims", `${rows.length}`, table(
       ["Claim", "Statement", "Type", "Status", "Acceptance"],
       rows.map(claim => {
         const projected = graphClaims.get(claim.claim_id) || {};
@@ -405,8 +423,38 @@ function renderConclusions() {
           badge(projected.acceptance_state || "none"),
         ];
       }),
-    ));
+    ))
+    : `<section class="claim-map-section"><div id="claim-map"></div></section>`;
+  content.innerHTML = renderHeader("Scientific Conclusions", "Claims remain separate from execution nodes and carry assumptions, falsifiers, validation, and acceptance.", true, "Filter claims")
+    + renderNotices()
+    + renderConclusionsMode(mode)
+    + body;
+  if (mode === "map") {
+    const root = document.getElementById("claim-map");
+    if (!window.TSClaimMap) throw new Error("Claim Map renderer is unavailable.");
+    state.claimMap = window.TSClaimMap.mount(root, {
+      nodes: state.graph.claim_graph.nodes,
+      edges: state.graph.claim_graph.edges,
+      focusClaimRefs: state.view.focus.claim_refs,
+      highlightIds: state.query.trim() ? matchedClaimIds : null,
+      selectedId: state.detailKind === "claim" ? state.detailId : null,
+      selectedRelationId: state.detailKind === "relation" ? state.detailId : null,
+      filters: state.claimMapFilters,
+      viewport: state.claimMapViewport,
+      onFiltersChange: filters => { state.claimMapFilters = filters; },
+      onViewportChange: viewport => { state.claimMapViewport = viewport; },
+      onSelectClaim: claimId => openDetail("claim", claimId),
+      onSelectRelation: relationId => openDetail("relation", relationId),
+    });
+  }
   bindSearch();
+}
+
+function renderConclusionsMode(mode) {
+  return `<div class="view-mode-bar"><div class="segmented-control" role="tablist" aria-label="Scientific Conclusions view">
+    <button class="mode-button ${mode === "table" ? "active" : ""}" type="button" role="tab" data-conclusions-mode="table" aria-selected="${mode === "table"}">${icon("conclusions")}<span>Table</span></button>
+    <button class="mode-button ${mode === "map" ? "active" : ""}" type="button" role="tab" data-conclusions-mode="map" aria-selected="${mode === "map"}">${icon("graphs")}<span>Map</span></button>
+  </div></div>`;
 }
 
 function renderValidation() {
@@ -514,105 +562,6 @@ function renderLocatorMatch(match) {
   </section>`;
 }
 
-function renderGraphs() {
-  content.innerHTML = renderHeader("Advanced Graphs", "Scientific Claim relations remain separate from the Research Tree.")
-    + renderNotices()
-    + `<div class="graph-grid single">${graphPanel("Scientific Claim Graph", state.graph.claim_graph, "claim")}</div>`;
-  requestAnimationFrame(drawAllGraphs);
-}
-
-function graphPanel(title, graph, kind) {
-  return `<section class="graph-panel"><div class="section-header"><h2>${escapeHtml(title)}</h2><span class="section-meta">${array(graph.nodes).length} records | ${array(graph.edges).length} edges</span></div><div class="graph-stage" data-graph-kind="${kind}">${array(graph.nodes).length ? `<canvas></canvas>` : `<div class="graph-empty">No graph records.</div>`}</div></section>`;
-}
-
-function drawAllGraphs() {
-  document.querySelectorAll("[data-graph-kind]").forEach(stage => {
-    drawGraph(stage, state.graph.claim_graph);
-  });
-}
-
-function drawGraph(stage, graph) {
-  const canvas = stage.querySelector("canvas");
-  if (!canvas) return;
-  const width = Math.max(320, stage.clientWidth);
-  const height = Math.max(260, stage.clientHeight);
-  const ratio = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = Math.round(width * ratio);
-  canvas.height = Math.round(height * ratio);
-  const context = canvas.getContext("2d");
-  context.scale(ratio, ratio);
-  const styles = getComputedStyle(document.documentElement);
-  const nodes = array(graph.nodes);
-  const edges = array(graph.edges).filter(edge => nodes.some(node => node.id === edge.source) && nodes.some(node => node.id === edge.target));
-  const depth = graphDepths(nodes, edges);
-  const columns = new Map();
-  nodes.forEach(node => {
-    const value = depth.get(node.id) || 0;
-    if (!columns.has(value)) columns.set(value, []);
-    columns.get(value).push(node);
-  });
-  const maxDepth = Math.max(...columns.keys(), 0);
-  const positions = new Map();
-  const boxWidth = Math.min(180, Math.max(118, (width - 52) / Math.max(maxDepth + 1, 1) - 24));
-  const boxHeight = 54;
-  for (const [column, rows] of columns.entries()) {
-    rows.forEach((node, index) => {
-      const x = maxDepth ? 26 + column * ((width - 52 - boxWidth) / maxDepth) : (width - boxWidth) / 2;
-      const y = 26 + index * ((height - 52 - boxHeight) / Math.max(rows.length - 1, 1));
-      positions.set(node.id, { x, y });
-    });
-  }
-  context.clearRect(0, 0, width, height);
-  context.strokeStyle = styles.getPropertyValue("--line-strong").trim();
-  context.lineWidth = 1.2;
-  edges.forEach(edge => {
-    const source = positions.get(edge.source);
-    const target = positions.get(edge.target);
-    if (!source || !target) return;
-    context.beginPath();
-    context.moveTo(source.x + boxWidth, source.y + boxHeight / 2);
-    context.lineTo(target.x, target.y + boxHeight / 2);
-    context.stroke();
-  });
-  nodes.forEach(node => {
-    const position = positions.get(node.id);
-    if (!position) return;
-    context.fillStyle = styles.getPropertyValue("--surface-raised").trim();
-    context.strokeStyle = node.focus ? styles.getPropertyValue("--green").trim() : styles.getPropertyValue("--line-strong").trim();
-    roundedRect(context, position.x, position.y, boxWidth, boxHeight, 5);
-    context.fill();
-    context.stroke();
-    context.fillStyle = styles.getPropertyValue("--text").trim();
-    context.font = "600 11px ui-monospace, monospace";
-    context.fillText(String(node.id || "record").slice(0, 24), position.x + 9, position.y + 20, boxWidth - 18);
-    context.fillStyle = styles.getPropertyValue("--muted").trim();
-    context.font = "11px system-ui, sans-serif";
-    context.fillText(String(node.title || node.statement || node.status || "").slice(0, 26), position.x + 9, position.y + 39, boxWidth - 18);
-  });
-}
-
-function graphDepths(nodes, edges) {
-  const incoming = new Map(nodes.map(node => [node.id, []]));
-  edges.forEach(edge => incoming.get(edge.target)?.push(edge.source));
-  const memo = new Map();
-  function visit(id, stack = new Set()) {
-    if (memo.has(id)) return memo.get(id);
-    if (stack.has(id)) return 0;
-    stack.add(id);
-    const parents = incoming.get(id) || [];
-    const value = parents.length ? 1 + Math.max(...parents.map(parent => visit(parent, new Set(stack)))) : 0;
-    memo.set(id, value);
-    return value;
-  }
-  nodes.forEach(node => visit(node.id));
-  return memo;
-}
-
-function roundedRect(context, x, y, width, height, radius) {
-  context.beginPath();
-  context.roundRect(x, y, width, height, radius);
-}
-
 async function openDetail(kind, id, { preserveNodeTab = false } = {}) {
   const workspaceId = state.workspaceId;
   state.detail = null;
@@ -650,6 +599,10 @@ function renderInspector() {
   }
   if (state.detailKind === "claim") {
     renderClaimDetail(state.detail);
+    return;
+  }
+  if (state.detailKind === "relation") {
+    renderRelationDetail(state.detail);
     return;
   }
   const record = state.detail || {};
@@ -810,6 +763,14 @@ function renderClaimDetail(payload) {
     <section class="detail-section"><h3>Review Runs</h3>${detailRecordRows(payload.review_runs, "agent", "task_id", "summary", "status")}</section>`;
 }
 
+function renderRelationDetail(relation) {
+  inspectorKicker.textContent = `${relation.relation_type} | ${relation.relation_id}`;
+  inspectorTitle.textContent = `${relation.source_claim_ref} to ${relation.target_claim_ref}`;
+  inspectorBody.innerHTML = `<div class="detail-summary"><div class="detail-meta"><span class="mono">${escapeHtml(relation.relation_id)}</span><span>${escapeHtml(relation.relation_type)}</span></div><p>${escapeHtml(relation.rationale)}</p></div>
+    <section class="detail-section"><h3>Claim Relation</h3><dl class="detail-grid"><dt>Source</dt><dd>${detailButton("claim", relation.source_claim_ref, relation.source_claim_ref)}</dd><dt>Target</dt><dd>${detailButton("claim", relation.target_claim_ref, relation.target_claim_ref)}</dd><dt>Relation</dt><dd><span class="mono">${escapeHtml(relation.relation_type)}</span></dd></dl></section>
+    <section class="detail-section"><h3>Audit</h3><dl class="detail-grid"><dt>Decision</dt><dd><span class="mono">${escapeHtml(relation.created_by_decision)}</span></dd><dt>Created</dt><dd>${escapeHtml(formatTime(relation.created_at))}</dd></dl></section>`;
+}
+
 async function openFile(path) {
   const workspaceId = state.workspaceId;
   state.detail = null;
@@ -887,6 +848,7 @@ function localRecord(kind, id) {
     "validation-result": [state.view.validation_results, "result_id"],
     finding: [state.view.findings, "finding_id"],
     acceptance: [state.view.acceptances, "acceptance_id"],
+    relation: [state.view.claim_relations, "relation_id"],
     activity: [state.view.deterministic_activities, "activity_id"],
     agent: [state.view.agent_runs, "task_id"],
     control: [state.view.unresolved_controls, "control_id"],
@@ -982,6 +944,7 @@ function bindSearch() {
       if (target) target.innerHTML = `<div class="empty">Searching research index...</div>`;
       scheduleLocator(state.query.trim());
     } else {
+      if (state.currentView === "conclusions" && state.conclusionsMode === "map") state.claimMapViewport = null;
       renderCurrentView();
       const next = document.getElementById("search-input");
       if (next) {
@@ -1033,9 +996,9 @@ function formatBytes(value) {
 }
 function pathName(value) { return String(value || "File").split("/").filter(Boolean).pop() || "File"; }
 function shortDigest(value) { const text = String(value || ""); return text.startsWith("sha256:") ? text.slice(7, 19) : text.slice(0, 12); }
-function recordId(record) { return record.claim_id || record.node_id || record.observation_id || record.spec_id || record.result_id || record.finding_id || record.acceptance_id || record.activity_id || record.task_id || record.control_id || record.intent_id || "Record"; }
+function recordId(record) { return record.claim_id || record.node_id || record.relation_id || record.observation_id || record.spec_id || record.result_id || record.finding_id || record.acceptance_id || record.activity_id || record.task_id || record.control_id || record.intent_id || "Record"; }
 function labelForKind(kind) {
-  return ({ node: "ResearchNode", claim: "Claim", observation: "Observation", "validation-spec": "GateSpec", "validation-result": "Validation Result", finding: "Finding", acceptance: "Acceptance", activity: "Deterministic Operation", agent: "Subagent Run", control: "Remote Control" })[kind] || "Details";
+  return ({ node: "ResearchNode", claim: "Claim", relation: "Claim Relation", observation: "Observation", "validation-spec": "GateSpec", "validation-result": "Validation Result", finding: "Finding", acceptance: "Acceptance", activity: "Deterministic Operation", agent: "Subagent Run", control: "Remote Control" })[kind] || "Details";
 }
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);
@@ -1055,7 +1018,6 @@ function toggleTheme() {
   document.documentElement.dataset.theme = next;
   try { localStorage.setItem(themeStorageKey, next); } catch (_error) {}
   updateThemeControl();
-  if (state.currentView === "graphs") requestAnimationFrame(drawAllGraphs);
 }
 
 function showToast(message) {
@@ -1066,7 +1028,7 @@ function showToast(message) {
 }
 
 function renderFatal(error) {
-  teardownResearchTree();
+  teardownVisualizations();
   content.innerHTML = `<div class="fatal">${escapeHtml(error.message || error)}</div>`;
   setHealth("invalid", "Unavailable");
 }
@@ -1082,6 +1044,12 @@ document.getElementById("sidebar").addEventListener("click", event => {
 });
 
 content.addEventListener("click", event => {
+  const mode = event.target.closest("[data-conclusions-mode]");
+  if (mode) {
+    state.conclusionsMode = mode.dataset.conclusionsMode === "map" ? "map" : "table";
+    renderCurrentView({ resetScroll: false });
+    return;
+  }
   const detail = event.target.closest("[data-detail]");
   if (detail) {
     openDetail(detail.dataset.detail, detail.dataset.id);
@@ -1136,7 +1104,6 @@ document.addEventListener("visibilitychange", () => {
     scheduleLiveRefresh(0);
   }
 });
-window.addEventListener("resize", () => { if (state.currentView === "graphs") requestAnimationFrame(drawAllGraphs); });
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", event => {
   let saved = null;
   try { saved = localStorage.getItem(themeStorageKey); } catch (_error) {}

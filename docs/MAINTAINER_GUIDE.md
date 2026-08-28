@@ -311,8 +311,10 @@ projection helpers rather than duplicating policy in browser JavaScript. The
 default UI must remain Node-first and show the Research Trajectory: opening
 rationale, outcome, dependency lineage, branches, and merges. Phase is a
 navigation filter, never a lifecycle lane. Atomic Decision operations and the
-raw Claim graph belong under detail or advanced inspection; do not duplicate the
-Node DAG in Advanced Graphs. Merge bounded trajectory fields into existing Node
+raw Claim graph belong under Scientific Conclusions detail or Map inspection;
+do not duplicate the Node DAG in the Claim Map. Keep the Map renderer a thin
+client over the open ClaimRelation projection, and never turn presentation
+styles into relation policy. Merge bounded trajectory fields into existing Node
 payloads rather than returning a second full graph-shaped Node payload.
 
 Calculation Attempts remain Node-owned operational records. Project their
