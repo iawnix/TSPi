@@ -14,6 +14,7 @@ TSPI = ROOT / "TSPi"
 PHONE_POLICY = ROOT / "extensions" / "ts-phone-bridge" / "policy.ts"
 PHONE_PROTOCOL = ROOT / "extensions" / "ts-phone-bridge" / "protocol.ts"
 PHONE_CLIENT = ROOT / "extensions" / "ts-phone-bridge" / "bridge-client.ts"
+PHONE_EXTENSION = ROOT / "extensions" / "ts-phone-bridge" / "index.ts"
 UI = ROOT / "extensions" / "ts-workflow-ui" / "index.ts"
 TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
 
@@ -186,6 +187,54 @@ process.stdout.write(JSON.stringify({{ rawRpcError, command }}));
     result = _node_json(script)
     assert result["rawRpcError"]
     assert result["command"]["message"] == "hello"
+
+
+def test_phone_bridge_snapshot_exposes_stable_message_cursors() -> None:
+    script = f"""
+import {{ buildSnapshotMessagePage }} from {json.dumps(PHONE_EXTENSION.as_uri())};
+const entries = Array.from({{ length: 510 }}, (_, index) => ({{
+  type: "message",
+  id: index.toString(16).padStart(8, "0"),
+  message: {{
+    role: "assistant",
+    content: [{{ type: "text", text: `message-${{index}}` }}],
+    timestamp: index,
+  }},
+}}));
+const page = buildSnapshotMessagePage(entries);
+const oversized = buildSnapshotMessagePage([{{
+  type: "message",
+  id: "ffffffff",
+  message: {{
+    role: "assistant",
+    content: [{{
+      type: "toolCall",
+      name: "large-tool",
+      arguments: {{ payload: "x".repeat(6 * 1024 * 1024) }},
+    }}],
+    timestamp: 1,
+  }},
+}}]);
+process.stdout.write(JSON.stringify({{
+  count: page.messages.length,
+  firstId: page.messageIds[0],
+  lastId: page.messageIds.at(-1),
+  hasMore: page.hasMore,
+  nextBefore: page.nextBefore,
+  firstMessage: page.messages[0],
+  oversizedCount: oversized.messages.length,
+  oversizedHasMore: oversized.hasMore,
+}}));
+"""
+    result = _node_json(script)
+    assert result["count"] == 500
+    assert result["firstId"] == "0000000a"
+    assert result["lastId"] == "000001fd"
+    assert result["hasMore"] is True
+    assert result["nextBefore"] == "0000000a"
+    assert "message-10" in json.dumps(result["firstMessage"])
+    assert result["oversizedCount"] == 0
+    assert result["oversizedHasMore"] is False
 
 
 def test_phone_bridge_client_exchanges_events_commands_and_approval(tmp_path: Path) -> None:

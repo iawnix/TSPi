@@ -186,20 +186,8 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
       model,
       thinkingLevel: ctx.thinkingLevel,
       isStreaming: !ctx.isIdle(),
-      messages: snapshotMessages(ctx),
+      ...buildSnapshotMessagePage(ctx.sessionManager.getBranch()),
     });
-  }
-
-  function snapshotMessages(ctx: ExtensionContext): unknown[] {
-    const projected = ctx.sessionManager.getBranch()
-      .filter((entry) => entry.type === "message")
-      .map((entry) => projectMessage(entry.message))
-      .filter((message) => message !== undefined)
-      .slice(-MAX_SNAPSHOT_MESSAGES);
-    while (projected.length > 1 && Buffer.byteLength(JSON.stringify(projected)) > MAX_SNAPSHOT_BYTES) {
-      projected.shift();
-    }
-    return projected;
   }
 
   function rememberClientMessageId(id: string): void {
@@ -215,6 +203,40 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
     turnSequence += 1;
     return `turn-${sessionGeneration}-${turnSequence}`;
   }
+}
+
+export function buildSnapshotMessagePage(entries: readonly unknown[]): {
+  messages: unknown[];
+  messageIds: string[];
+  hasMore: boolean;
+  nextBefore?: string;
+} {
+  const projected = entries.flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || Array.isArray(entry)) return [];
+    const candidate = entry as { type?: unknown; id?: unknown; message?: unknown };
+    if (candidate.type !== "message" || typeof candidate.id !== "string") return [];
+    const message = projectMessage(candidate.message);
+    return message === undefined ? [] : [{ id: candidate.id, message }];
+  });
+  const earliest = Math.max(0, projected.length - MAX_SNAPSHOT_MESSAGES);
+  let start = projected.length;
+  let serializedBytes = 2; // JSON array brackets.
+  while (start > earliest) {
+    const entry = projected[start - 1]!;
+    const messageBytes = Buffer.byteLength(JSON.stringify(entry.message) ?? "null");
+    const nextBytes = serializedBytes + messageBytes + (start < projected.length ? 1 : 0);
+    if (nextBytes > MAX_SNAPSHOT_BYTES) break;
+    serializedBytes = nextBytes;
+    start -= 1;
+  }
+  const bounded = projected.slice(start);
+  const hasMore = bounded.length > 0 && bounded.length < projected.length;
+  return {
+    messages: bounded.map((entry) => entry.message),
+    messageIds: bounded.map((entry) => entry.id),
+    hasMore,
+    ...(hasMore && bounded[0] ? { nextBefore: bounded[0].id } : {}),
+  };
 }
 
 function requireAccessMode(value: string | undefined): "controller" | "observer" {
