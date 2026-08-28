@@ -81,9 +81,20 @@ def seed_installation_runtime_from_entrypoint(
     *,
     environ: MutableMapping[str, str] | None = None,
 ) -> Path | None:
-    """Bind runtime paths for a script invoked through an installed `current`."""
+    """Bind runtime paths for a script invoked through an installed release."""
 
     stable = Path(os.path.abspath(os.fspath(Path(entrypoint).expanduser())))
+    installation_root = _legacy_installation_root(stable)
+    if installation_root is None:
+        installation_root = _suite_installation_root(stable)
+    if installation_root is None:
+        return None
+    return seed_installation_runtime(installation_root, environ=environ)
+
+
+def _legacy_installation_root(stable: Path) -> Path | None:
+    """Recognize the former ``packages/ts-agent/current`` entrypoint shape."""
+
     selected = stable.parent.parent
     package_home = selected.parent
     packages_root = package_home.parent
@@ -96,7 +107,64 @@ def seed_installation_runtime_from_entrypoint(
         or pi_root.name != ".pi"
     ):
         return None
-    return seed_installation_runtime(pi_root.parent, environ=environ)
+    return pi_root.parent
+
+
+def _suite_installation_root(stable: Path) -> Path | None:
+    """Recognize a validated unified-suite ``TSWeb`` entrypoint."""
+
+    if stable.name == "TSWeb":
+        installation_root = stable.parent
+        selected = (
+            installation_root
+            / ".pi"
+            / "packages"
+            / "tspi"
+            / "current"
+            / "agent"
+            / "scripts"
+            / "ts_web.py"
+        )
+        try:
+            if stable.resolve(strict=True) != selected.resolve(strict=True):
+                return None
+        except OSError:
+            return None
+    else:
+        scripts = stable.parent
+        agent = scripts.parent
+        selected_release = agent.parent
+        package_home = selected_release.parent
+        packages_root = package_home.parent
+        pi_root = packages_root.parent
+        if (
+            stable.name != "ts_web.py"
+            or scripts.name != "scripts"
+            or agent.name != "agent"
+            or selected_release.name != "current"
+            or package_home.name != "tspi"
+            or packages_root.name != "packages"
+            or pi_root.name != ".pi"
+        ):
+            return None
+        installation_root = pi_root.parent
+
+    try:
+        resolved = stable.resolve(strict=True)
+    except OSError:
+        return None
+    releases_root = installation_root / ".pi" / "packages" / "tspi" / "releases"
+    try:
+        relative = resolved.relative_to(releases_root)
+    except ValueError:
+        return None
+    if len(relative.parts) != 4 or relative.parts[1:] != (
+        "agent",
+        "scripts",
+        "ts_web.py",
+    ):
+        return None
+    return installation_root
 
 
 def environment_spec_path(package_root: str | Path | None = None) -> Path:
