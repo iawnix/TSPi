@@ -347,7 +347,17 @@ def _synthetic_release(
 ) -> tuple[Path, str]:
     root.mkdir(parents=True)
     temporary_archive = root / "package.tgz"
-    wheel = _synthetic_wheel(root, version="0.5.0")
+    files = {name: b"\n" for name in REQUIRED_RUNTIME_FILES}
+    files["package.json"] = b'{"name":"@iawnix/ts-agent","version":"0.5.0"}\n'
+    files["TSPi"] = b"#!/usr/bin/env bash\nexit 0\n"
+    files["README.md"] = f"release {marker}\n".encode()
+    files.update(extra_files or {})
+    python_payload = {
+        normalized.removeprefix("python/"): content
+        for name, content in files.items()
+        if (normalized := name.removeprefix("package/")).startswith("python/ts_agent/")
+    }
+    wheel = _synthetic_wheel(root, version="0.5.0", package_files=python_payload)
     wheel_descriptor = inspect_wheel(wheel)
     distribution = {
         "name": wheel_descriptor["name"],
@@ -357,12 +367,7 @@ def _synthetic_release(
         "size_bytes": wheel_descriptor["size_bytes"],
         "payload_sha256": wheel_descriptor["payload_sha256"],
     }
-    files = {name: b"\n" for name in REQUIRED_RUNTIME_FILES}
-    files["package.json"] = b'{"name":"@iawnix/ts-agent","version":"0.5.0"}\n'
-    files["TSPi"] = b"#!/usr/bin/env bash\nexit 0\n"
-    files["README.md"] = f"release {marker}\n".encode()
     files[distribution["path"]] = wheel.read_bytes()
-    files.update(extra_files or {})
     with tarfile.open(temporary_archive, "w:gz") as archive:
         package = tarfile.TarInfo("package")
         package.type = tarfile.DIRTYPE
@@ -396,12 +401,12 @@ def _synthetic_release(
     return manifest_path, release_id
 
 
-def _synthetic_wheel(root: Path, *, version: str) -> Path:
+def _synthetic_wheel(root: Path, *, version: str, package_files: dict[str, bytes]) -> Path:
     wheel = root / f"ts_agent_kernel-{version}-py3-none-any.whl"
-    package = b'"""synthetic ts_agent"""\n'
     metadata = f"Metadata-Version: 2.4\nName: ts-agent-kernel\nVersion: {version}\n\n".encode()
     with zipfile.ZipFile(wheel, "w", compression=zipfile.ZIP_DEFLATED) as archive:
-        archive.writestr("ts_agent/__init__.py", package)
+        for name, content in sorted(package_files.items()):
+            archive.writestr(name, content)
         archive.writestr(f"ts_agent_kernel-{version}.dist-info/METADATA", metadata)
         archive.writestr(
             f"ts_agent_kernel-{version}.dist-info/WHEEL",

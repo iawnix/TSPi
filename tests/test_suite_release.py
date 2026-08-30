@@ -23,6 +23,7 @@ from scripts._suite import (
 )
 from scripts.build_package import build_package
 from scripts.install_package import install_package
+from scripts._wheel import release_wheel
 from tests.test_release_install import _synthetic_release
 
 
@@ -61,6 +62,12 @@ def test_suite_build_is_deterministic_and_installs_one_component_set(tmp_path: P
     assert (suite_home / "current").resolve() == release_root
     assert not (install_root / ".pi" / "packages" / "ts-agent").exists()
     assert (release_root / "agent" / "TSPi").is_file()
+    agent_release_manifest = release_root / "agent" / ".ts-agent-release.json"
+    assert agent_release_manifest.is_file()
+    bundled = release_wheel(release_root / "agent")
+    assert bundled is not None
+    assert bundled[1]["source"] == "bundled-release-wheel"
+    assert bundled[1]["sha256"] == first["components"]["agent"]["python_distribution"]["sha256"]
     assert (release_root / "agent" / "scripts" / "ts_web.py").is_file()
     assert (release_root / "phone" / "bin" / "ts-phone-server").is_file()
     assert (release_root / "phone" / "artifacts" / "ts-phone-v0.8.5-build27-arm64-v8a-release.apk").is_file()
@@ -191,6 +198,28 @@ def test_reinstall_revalidates_ts_web_entrypoint(tmp_path: Path) -> None:
     web.chmod(0o400)
 
     with pytest.raises(SuiteReleaseError, match="TS Web entrypoint"):
+        install_package(Path(built["manifest"]), None, install_root)
+
+
+def test_reinstall_rejects_missing_agent_wheel_contract(tmp_path: Path) -> None:
+    agent_manifest, _ = _synthetic_release(tmp_path / "agent", marker="reinstall-wheel-contract")
+    phone_manifest = _synthetic_phone_release(tmp_path / "phone", marker="reinstall-wheel-contract")
+    built = build_package(
+        phone_manifest_path=phone_manifest,
+        output_dir=tmp_path / "package",
+        agent_manifest_path=agent_manifest,
+        allow_dirty=False,
+    )
+    install_root = tmp_path / "install"
+    installed = install_package(Path(built["manifest"]), None, install_root)
+    agent_root = Path(installed["package_root"]) / "agent"
+    contract = agent_root / ".ts-agent-release.json"
+    agent_root.chmod(0o700)
+    contract.chmod(0o600)
+    contract.unlink()
+    agent_root.chmod(0o500)
+
+    with pytest.raises(SuiteReleaseError, match="wheel contract"):
         install_package(Path(built["manifest"]), None, install_root)
 
 

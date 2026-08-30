@@ -39,13 +39,21 @@ try:
         extract_archive,
         finalize_release_permissions,
         inspect_archive,
+        load_manifest as load_agent_manifest,
         prepare_install_root,
+        release_identity,
         remove_staging_tree,
         switch_current,
         validate_extracted_package,
         validate_release_permissions,
     )
-    from ._wheel import WHEEL_DIRECTORY, WheelContractError
+    from ._wheel import (
+        RELEASE_MANIFEST,
+        RELEASE_SCHEMA_VERSION,
+        WHEEL_DIRECTORY,
+        WheelContractError,
+        release_wheel,
+    )
 except ImportError:
     from _suite import (
         SUITE_COMPONENTS_SCHEMA_VERSION,
@@ -71,13 +79,21 @@ except ImportError:
         extract_archive,
         finalize_release_permissions,
         inspect_archive,
+        load_manifest as load_agent_manifest,
         prepare_install_root,
+        release_identity,
         remove_staging_tree,
         switch_current,
         validate_extracted_package,
         validate_release_permissions,
     )
-    from _wheel import WHEEL_DIRECTORY, WheelContractError
+    from _wheel import (
+        RELEASE_MANIFEST,
+        RELEASE_SCHEMA_VERSION,
+        WHEEL_DIRECTORY,
+        WheelContractError,
+        release_wheel,
+    )
 
 
 INSTALLED_MANIFEST = ".tspi-package-release.json"
@@ -201,11 +217,10 @@ def validate_extracted_suite(root: Path, manifest: dict[str, Any]) -> None:
     agent_root = root / "agent"
     agent_root.mkdir(mode=0o700)
     extract_archive(agent_archive, agent_members, agent_root)
-    agent_manifest = {
-        "package": {"name": "@iawnix/ts-agent", "version": agent_descriptor["version"]},
-        "python_distribution": agent_descriptor["python_distribution"],
-    }
+    agent_manifest = agent_release_manifest(agent_descriptor, manifest["created_at_utc"])
     validate_agent_runtime(agent_root, agent_manifest)
+    atomic_write_json(agent_root / RELEASE_MANIFEST, agent_manifest)
+    validate_agent_release_contract(agent_root, agent_manifest)
     if not os.access(agent_root / "scripts" / "ts_web.py", os.X_OK):
         raise SuiteReleaseError("installed TS Web entrypoint is not executable")
 
@@ -236,13 +251,9 @@ def validate_installed_suite(root: Path, manifest: dict[str, Any]) -> None:
         raise SuiteReleaseError("installed suite components do not match the release manifest")
     inspect_embedded_agent(root, manifest["components"]["agent"])
     inspect_embedded_phone(root, manifest["components"]["phone"])
-    validate_agent_runtime(
-        root / "agent",
-        {
-            "package": {"name": "@iawnix/ts-agent", "version": manifest["components"]["agent"]["version"]},
-            "python_distribution": manifest["components"]["agent"]["python_distribution"],
-        },
-    )
+    agent_manifest = agent_release_manifest(manifest["components"]["agent"], manifest["created_at_utc"])
+    validate_agent_runtime(root / "agent", agent_manifest)
+    validate_agent_release_contract(root / "agent", agent_manifest)
     if not os.access(root / "agent" / "scripts" / "ts_web.py", os.X_OK):
         raise SuiteReleaseError("installed TS Web entrypoint is not executable")
     validate_phone_runtime(root / "phone", manifest["components"]["phone"])
@@ -290,6 +301,35 @@ def validate_agent_runtime(root: Path, manifest: dict[str, Any]) -> None:
         validate_extracted_package(root, manifest)
     except (ReleaseInstallError, WheelContractError) as error:
         raise SuiteReleaseError(f"installed Agent component is invalid: {error}") from error
+
+
+def agent_release_manifest(descriptor: dict[str, Any], created_at_utc: str) -> dict[str, Any]:
+    archive = descriptor["archive"]
+    return {
+        "schema_version": RELEASE_SCHEMA_VERSION,
+        "release_id": descriptor["release_id"],
+        "package": {"name": "@iawnix/ts-agent", "version": descriptor["version"]},
+        "python_distribution": descriptor["python_distribution"],
+        "archive": {
+            "filename": PurePosixPath(archive["path"]).name,
+            "sha256": archive["sha256"],
+            "size_bytes": archive["size_bytes"],
+        },
+        "source": descriptor["source"],
+        "created_at_utc": created_at_utc,
+    }
+
+
+def validate_agent_release_contract(root: Path, expected: dict[str, Any]) -> None:
+    try:
+        installed = load_agent_manifest(root / RELEASE_MANIFEST)
+        if release_identity(installed) != release_identity(expected):
+            raise SuiteReleaseError("installed Agent release manifest does not match the suite component")
+        bundled = release_wheel(root)
+    except (ReleaseInstallError, WheelContractError) as error:
+        raise SuiteReleaseError(f"installed Agent wheel contract is invalid: {error}") from error
+    if bundled is None:
+        raise SuiteReleaseError("installed Agent release has no trusted wheel contract")
 
 
 def install_launchers(install_root: Path, package_home: Path) -> dict[str, str]:
