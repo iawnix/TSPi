@@ -237,6 +237,41 @@ process.stdout.write(JSON.stringify({{
     assert result["oversizedHasMore"] is False
 
 
+def test_phone_bridge_runtime_snapshot_uses_pi_context_usage() -> None:
+    script = f"""
+import {{ buildSessionRuntimeSnapshot }} from {json.dumps(PHONE_EXTENSION.as_uri())};
+const model = {{ provider: "cpa", id: "gpt-5.6-sol" }};
+const measured = buildSessionRuntimeSnapshot(
+  model,
+  {{ tokens: 78214, contextWindow: 128000, percent: 61.1046875 }},
+  "2026-08-31T06:32:18.000Z",
+);
+const afterCompaction = buildSessionRuntimeSnapshot(
+  model,
+  {{ tokens: null, contextWindow: 128000, percent: null }},
+  "2026-08-31T06:33:18.000Z",
+);
+process.stdout.write(JSON.stringify({{
+  measured,
+  afterCompaction,
+  missingModel: buildSessionRuntimeSnapshot(undefined, undefined) ?? null,
+}}));
+"""
+    result = _node_json(script)
+    assert result["measured"] == {
+        "schemaVersion": "ts-phone-session-runtime/1",
+        "model": {"provider": "cpa", "id": "gpt-5.6-sol"},
+        "context": {
+            "usedTokens": 78214,
+            "limitTokens": 128000,
+            "measurement": "pi_estimate",
+        },
+        "updatedAt": "2026-08-31T06:32:18.000Z",
+    }
+    assert result["afterCompaction"]["context"]["usedTokens"] is None
+    assert result["missingModel"] is None
+
+
 def test_phone_bridge_client_exchanges_events_commands_and_approval(tmp_path: Path) -> None:
     socket_path = tmp_path / "bridge.sock"
     secret_path = tmp_path / "bridge.secret"

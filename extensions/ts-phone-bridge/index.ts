@@ -23,6 +23,20 @@ const MAX_SEEN_MESSAGE_IDS = 1_000;
 const MAX_SNAPSHOT_MESSAGES = 500;
 const MAX_SNAPSHOT_BYTES = 6 * 1024 * 1024;
 
+interface SessionRuntimeSnapshot {
+  schemaVersion: "ts-phone-session-runtime/1";
+  model: {
+    provider: string;
+    id: string;
+  };
+  context?: {
+    usedTokens: number | null;
+    limitTokens: number;
+    measurement: "pi_estimate";
+  };
+  updatedAt: string;
+}
+
 export default function installTsPhoneBridge(pi: ExtensionAPI) {
   if (process.env.TS_PHONE_MODE !== "bridge") return;
   const workspaceId = requireWorkspaceId(process.env.TS_PHONE_WORKSPACE_ID);
@@ -180,10 +194,15 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
     const ctx = context;
     if (!ctx || sessionGeneration <= 0) return;
     const model = ctx.model ? `${ctx.model.provider}/${ctx.model.id}` : undefined;
+    const runtime = buildSessionRuntimeSnapshot(
+      ctx.model,
+      ctx.getContextUsage(),
+    );
     bridge.publishSnapshot({
       sessionId: ctx.sessionManager.getSessionId(),
       sessionName: ctx.sessionManager.getSessionName(),
       model,
+      ...(runtime ? { runtime } : {}),
       thinkingLevel: ctx.thinkingLevel,
       isStreaming: !ctx.isIdle(),
       ...buildSnapshotMessagePage(ctx.sessionManager.getBranch()),
@@ -203,6 +222,30 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
     turnSequence += 1;
     return `turn-${sessionGeneration}-${turnSequence}`;
   }
+}
+
+export function buildSessionRuntimeSnapshot(
+  model: ExtensionContext["model"],
+  usage: ReturnType<ExtensionContext["getContextUsage"]>,
+  updatedAt = new Date().toISOString(),
+): SessionRuntimeSnapshot | undefined {
+  if (!model) return undefined;
+  const runtime: SessionRuntimeSnapshot = {
+    schemaVersion: "ts-phone-session-runtime/1",
+    model: {
+      provider: model.provider,
+      id: model.id,
+    },
+    updatedAt,
+  };
+  if (usage && Number.isSafeInteger(usage.contextWindow) && usage.contextWindow > 0) {
+    runtime.context = {
+      usedTokens: usage.tokens,
+      limitTokens: usage.contextWindow,
+      measurement: "pi_estimate",
+    };
+  }
+  return runtime;
 }
 
 export function buildSnapshotMessagePage(entries: readonly unknown[]): {

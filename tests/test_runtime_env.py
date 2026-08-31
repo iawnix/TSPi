@@ -291,7 +291,7 @@ def test_configured_python_rejects_unprobed_or_external_modules(tmp_path: Path) 
     probe["distribution"]["version"] = "0.10.0"
     write_manifest(package, {**base, "runtime_probe": probe})
     assert configured_python(package) is None
-    probe["distribution"]["version"] = "0.11.0"
+    probe["distribution"]["version"] = "0.11.1"
 
     external_rdkit = tmp_path / "user-site" / "rdkit.py"
     external_rdkit.parent.mkdir()
@@ -596,7 +596,7 @@ def _runtime_probe(*, payload_sha256: str | None = None) -> dict[str, object]:
         "distribution": {
             "name": "ts-agent-kernel",
             "installed": True,
-            "version": "0.11.0",
+            "version": "0.11.1",
             "root": str(prefix),
             "payload_sha256": payload_sha256 or python_payload_sha256(ROOT),
         },
@@ -617,7 +617,7 @@ def _write_test_python_payload(package: Path) -> str:
     source.mkdir(parents=True)
     (source / "__init__.py").write_text('"""test payload"""\n', encoding="utf-8")
     (package / "package.json").write_text(
-        '{"name":"@iawnix/ts-agent","version":"0.11.0"}\n',
+        '{"name":"@iawnix/ts-agent","version":"0.11.1"}\n',
         encoding="utf-8",
     )
     return python_payload_sha256(package)

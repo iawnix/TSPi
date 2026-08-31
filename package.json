@@ -1,6 +1,6 @@
 {
   "name": "@iawnix/ts-agent",
-  "version": "0.11.0",
+  "version": "0.11.1",
   "private": true,
   "type": "module",
   "description": "Pi package for Phase-guided transition-state research with a ResearchNode DAG, deterministic validation, and bounded Compute and Review subagents.",

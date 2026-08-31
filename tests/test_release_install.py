@@ -59,7 +59,7 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert "python/ts_agent/web/static/attempt-timeline.js" in names
     assert distribution == build_result["python_distribution"]
     assert distribution["name"] == "ts-agent-kernel"
-    assert distribution["version"] == "0.11.0"
+    assert distribution["version"] == "0.11.1"
     assert distribution["path"] in names
     assert sum(name.startswith("python-dist/") and name.endswith(".whl") for name in names) == 1
     assert "scripts/check_package.py" not in names
