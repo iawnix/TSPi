@@ -52,6 +52,7 @@ REQUIRED_RUNTIME_FILES = {
     "scripts/install_package.py",
     "scripts/install_release.py",
     "scripts/_bootstrap.py",
+    "scripts/_runtime_install.py",
     "scripts/_suite.py",
     "scripts/_wheel.py",
     "scripts/tspi_host.py",

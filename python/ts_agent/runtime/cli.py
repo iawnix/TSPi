@@ -17,6 +17,7 @@ from .env import (
     WORKSPACE_ROOT_OVERRIDE,
     configured_python,
     default_env_prefix,
+    default_kernel_prefix,
     default_runtime_home,
     package_root_from_file,
     runtime_manifest_path,
@@ -91,11 +92,13 @@ def resolve_runtime(package_root: Path, argv: list[str]) -> int:
     )
     manifest_path = runtime_manifest_path(root, args.runtime_home, args.workspace_root, args.manifest_path)
     env_prefix = default_env_prefix(root, args.env_root, args.workspace_root)
+    kernel_env_prefix = default_kernel_prefix(root, args.env_root, args.workspace_root)
     payload = {
         "package_root": str(root),
         "runtime_home": str(runtime_home),
         "manifest_path": str(manifest_path),
         "env_prefix": str(env_prefix),
+        "kernel_env_prefix": str(kernel_env_prefix),
         "python_executable": str(python),
         "configured": configured is not None,
     }

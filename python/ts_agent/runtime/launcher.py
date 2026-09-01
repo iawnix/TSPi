@@ -19,6 +19,7 @@ from typing import NoReturn
 from .env import (
     DISABLE_REEXEC,
     ENV_OVERRIDE,
+    PACKAGE_ROOT_OVERRIDE,
     RuntimeEnvironmentError,
     bind_runtime_process_environment,
     ensure_runtime_python,
@@ -356,7 +357,7 @@ def check_remote(installation: Installation) -> int:
 
 
 def configure_process_environment(installation: Installation, workspace: Path, workspace_name: str) -> None:
-    os.environ["TS_PACKAGE_ROOT"] = str(installation.package_root)
+    os.environ[PACKAGE_ROOT_OVERRIDE] = str(installation.package_root)
     os.environ["TS_WORKSPACE_ROOT"] = str(workspace)
     python_cache = installation.process_cache_root / "python" / workspace_name
     pytest_cache = installation.process_cache_root / "pytest" / workspace_name

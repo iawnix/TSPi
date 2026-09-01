@@ -58,7 +58,9 @@ Choose one physical, non-symlink installation root:
     runtime-cache/
   .agents/
     runtime/transition-state-workflow/env.json
-    envs/transition-state-workflow/<spec-hash>/
+    envs/transition-state-workflow/
+      base/<spec-hash>/             shared scientific dependencies
+      kernels/<payload-hash>/       exact release ts-agent-kernel
   workspaces/
     <workspace-name>/
 ```
@@ -82,7 +84,6 @@ python3 deploy/build-component-release.py \
   --json
 
 cd /path/to/TSPi
-python3 scripts/check_package.py
 python3 scripts/build_package.py \
   --phone-manifest /path/to/ts-phone/dist/component/ts-phone-component-release.json \
   --output-dir dist/package \
@@ -118,31 +119,35 @@ Use the installer from the matching authored checkout:
 python3 scripts/install_package.py \
   --manifest dist/package/tspi-package-release.json \
   --install-root /path/to/TSPi-installation \
+  --conda-root /path/to/miniforge3 \
+  --with-render \
   --json
 ```
 
 The installer rejects symlinked roots, unsafe members in every archive,
 unexpected development files, component/protocol mismatches, size or digest
 mismatches, and writable release contents. It extracts into a private staging
-directory, validates the expanded Agent, Web, Phone server, and APK, finalizes
-read-only permissions, atomically switches one suite `current`, and installs
-the top-level `TSPi`, `TSWeb`, `TSPhoneCtl`, and `TSPhoneServer` symlinks.
-Reinstalling identical content is idempotent and revalidates retained component
-archives and runtime entrypoints.
+directory, validates the expanded Agent, Web, Phone server, and APK, and
+finalizes read-only permissions. Before activation it prepares the target
+release runtime and runs the NumPy/RDKit capability probe. Only a healthy
+runtime may publish its manifest and atomically switch the suite `current`.
+Activation failure restores the prior manifest, pointer, install state, and
+entrypoint links. Reinstalling identical content is idempotent and revalidates
+retained component archives and runtime entrypoints.
 
-The installer does not run Pi, start or restart TS Phone, install the APK onto a
-device, install model credentials, create a research workspace, contact a
-cluster, or create the Python environment.
+The installer creates or reuses the managed Python runtime, but it does not run
+Pi, start or restart TS Phone, install the APK onto a device, install model
+credentials, create a research workspace, or contact a cluster.
 
 Each installed release includes `README.md`, the three top-level guides under
 `docs/`, and versioned ADRs under `docs/adr/`. They describe that exact packaged
 version and remain readable under the selected `current` release; do not edit
 them in place.
 
-## Install The Python Runtime
+## Managed Python Runtime
 
-Install one environment owned by the TSPi installation so all workspaces reuse
-the same dependency set:
+Normal Package installation prepares this runtime before activation. The
+standalone runtime command remains available for diagnosis or explicit repair:
 
 ```bash
 export TS_AGENT_SKILL_ROOT=/path/to/TSPi-installation/.pi/packages/tspi/current/agent
@@ -156,20 +161,23 @@ python3 "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
   --json
 ```
 
-RDKit, Pillow, and their compatible NumPy range are core dependencies;
-`xyzrender` remains optional. Pillow provides deterministic panel composition
-but does not replace `xyzrender` as the molecular renderer. Omit `--with-render`
-when visualization is not required. Use
-`--dry-run` to inspect the selected prefix and command. Use `--force` only when
-the existing hash-addressed environment must be refreshed.
+The runtime has two layers. `base/<spec-hash>` is a shared Conda environment
+containing RDKit, NumPy, SciPy, Pillow, pytest, and optional `xyzrender`.
+`kernels/<payload-hash>` is a venv with system site packages enabled and only
+the exact release wheel installed. An unchanged dependency spec therefore
+reuses the heavy scientific base, while each distinct Python payload receives
+its own small overlay. Omit `--with-render` when visualization is not required.
+Use `--dry-run` to inspect both paths. Use `--force` only to refresh the selected
+base and recreate the exact target overlay; unrelated overlays are retained.
 
 The release already contains `python-dist/ts_agent_kernel-*.whl` plus its
 identity, size, SHA-256, and payload digest in `ts-agent-release/2` metadata.
 Before writing the runtime manifest, the installer revalidates that wheel and
-installs it without resolving duplicate pip dependencies. It never invokes a
-build backend against the read-only release tree. It then imports NumPy and
-RDKit, parses a SMILES, performs fixed-seed ETKDG embedding, and completes a UFF
-optimization. The manifest records the wheel provenance, installed
+installs it into the overlay without resolving duplicate pip dependencies. It
+never invokes a build backend against the read-only release tree. It then
+imports NumPy and RDKit from the base, imports `ts-agent-kernel` from the
+overlay, parses a SMILES, performs fixed-seed ETKDG embedding, and completes a
+UFF optimization. The manifest records the wheel provenance, installed
 distribution version and payload digest, source payload digest, module origins,
 capabilities, selected interpreter, and environment-spec digest outside the
 immutable release. A failed install, digest comparison, or scientific probe
@@ -387,11 +395,9 @@ can inspect the registered research data.
 
 1. Validate and build clean Phone and Agent components into a new Package.
 2. Preserve its archive and manifest.
-3. Run `install_package.py` against the same installation root.
-4. Run the newly selected release's `install_env.py`; a changed environment
-   spec selects a new hash-addressed prefix, while an unchanged prefix still
-   receives and verifies the release-bound wheel.
-5. Stop and restart each TSPi Root Agent process when ready. Restart TS Phone
+3. Run `install_package.py` against the same installation root and Conda root;
+   it prepares and probes the target runtime before selecting the release.
+4. Stop and restart each TSPi Root Agent process when ready. Restart TS Phone
    only in an authorized maintenance window. A `TSWeb` process
    started through the stable `current` entrypoint restarts itself after the new
    managed runtime is ready.
@@ -416,13 +422,16 @@ python3 scripts/install_package.py \
   --manifest /path/to/previous/tspi-package-release.json \
   --archive /path/to/previous/tspi-package-<release-id>.tgz \
   --install-root /path/to/TSPi-installation \
+  --conda-root /path/to/miniforge3 \
+  --with-render \
   --json
 ```
 
-Then run that selected release's `install_env.py` and restart TSPi. Existing
-release directories are retained for inspection, but retention alone is not a
-substitute for preserving the validated manifest and archive. Do not edit an
-installed release or manually replace files under `current`.
+The installer reuses the previous payload overlay when it still passes its
+probe, then selects the previous release. Existing release directories and
+overlays are retained for inspection, but retention alone is not a substitute
+for preserving the validated manifest and archive. Do not edit an installed
+release or manually replace files under `current`.
 
 Rollback changes package/runtime code only. It does not rewrite a workspace or
 reverse already committed scientific Decisions. The selected release must
@@ -433,9 +442,9 @@ implement the workspace schemas it opens.
 | Symptom | Meaning and action |
 | --- | --- |
 | no selected TSPi Package release | Install a validated Package archive before startup. |
-| runtime manifest or interpreter unavailable | Run the selected release's `install_env.py`. |
-| managed runtime capability probe fails | Do not fall back to system Python. Recreate the hash-addressed environment and inspect the recorded NumPy/RDKit import error. |
-| Python distribution payload mismatch | Rerun the selected release's `install_env.py`; do not edit the managed site-packages or immutable release in place. |
+| runtime manifest or interpreter unavailable | Reinstall the selected Package, or run its `install_env.py` as an explicit repair. |
+| managed runtime capability probe fails | Do not fall back to system Python. Refresh the shared base or recreate only the target overlay with `--force`, then inspect the NumPy/RDKit probe error. |
+| Python distribution payload mismatch | Reinstall the Package or recreate its payload-addressed overlay; do not edit managed site-packages or immutable release files in place. |
 | `another Root Agent already owns workspace` | Use another workspace or stop the existing process; do not delete the lock to bypass a live owner. |
 | partial or invalid workspace | Preserve the directory, inspect validation findings, and recover through an explicitly designed repair; startup will not guess. |
 | unsupported workspace layout | Preserve the source directory and start a separate fresh workspace; startup never rewrites unsupported state. |

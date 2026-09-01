@@ -10,15 +10,18 @@ from pathlib import Path
 import pytest
 
 from ts_agent.runtime.env import (
+    PACKAGE_ROOT_OVERRIDE,
     RuntimeEnvironmentError,
     bind_runtime_process_environment,
     configured_python,
     default_env_prefix,
     default_env_store,
+    default_kernel_prefix,
     default_runtime_home,
     package_root_from_file,
     python_payload_sha256,
     require_runtime_python,
+    resolve_package_root,
     runtime_manifest_path,
     seed_installation_runtime,
     seed_installation_runtime_from_entrypoint,
@@ -28,8 +31,25 @@ from ts_agent.runtime.env import (
 )
 from ts_agent.runtime.probe import probe_runtime_capabilities
 import ts_agent.runtime.cli as runtime_cli
+from scripts._bootstrap import bootstrap_python_package
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def test_resolve_package_root_honors_process_binding(monkeypatch, tmp_path: Path) -> None:
+    package = tmp_path / "package"
+    monkeypatch.setenv(PACKAGE_ROOT_OVERRIDE, str(package))
+
+    assert resolve_package_root() == package.resolve()
+
+
+def test_package_bootstrap_replaces_an_inherited_package_root(monkeypatch) -> None:
+    monkeypatch.setenv(PACKAGE_ROOT_OVERRIDE, "/tmp/other-tspi-release")
+    monkeypatch.setenv("TS_AGENT_DISABLE_RUNTIME_REEXEC", "1")
+
+    bootstrap_python_package(ROOT)
+
+    assert os.environ[PACKAGE_ROOT_OVERRIDE] == str(ROOT)
 
 
 def test_package_root_detection_uses_package_markers_with_nested_skill(tmp_path: Path) -> None:
@@ -53,8 +73,20 @@ def test_default_env_prefix_is_spec_hash_scoped(tmp_path: Path) -> None:
 
     prefix = default_env_prefix(package, tmp_path / "envs")
 
-    assert prefix.parent == tmp_path / "envs"
+    assert prefix.parent == tmp_path / "envs" / "base"
     assert prefix.name == spec_sha256(package)[:12]
+
+
+def test_default_kernel_prefix_is_python_payload_scoped(tmp_path: Path) -> None:
+    package = tmp_path / "skill"
+    package.mkdir()
+    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
+    payload_sha256 = _write_test_python_payload(package)
+
+    prefix = default_kernel_prefix(package, tmp_path / "envs")
+
+    assert prefix.parent == tmp_path / "envs" / "kernels"
+    assert prefix.name == payload_sha256[:16]
 
 
 def test_default_env_store_is_package_relative_without_override(tmp_path: Path, monkeypatch) -> None:
@@ -214,12 +246,16 @@ def test_configured_python_reads_runtime_manifest(tmp_path: Path) -> None:
     (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
     payload_sha256 = _write_test_python_payload(package)
     runtime_probe = _runtime_probe(payload_sha256=payload_sha256)
+    base_prefix = Path(sys.base_prefix).resolve()
+    kernel_prefix = Path(sys.prefix).resolve()
     manifest_path = write_manifest(
         package,
         {
-            "schema_version": "ts-agent-runtime/1",
+            "schema_version": "ts-agent-runtime/2",
             "python_executable": sys.executable,
-            "env_prefix": str(_probe_common_prefix(runtime_probe)),
+            "env_prefix": str(base_prefix),
+            "base_python_executable": str(Path(sys._base_executable).resolve()),
+            "kernel_env_prefix": str(kernel_prefix),
             "spec_sha256": spec_sha256(package),
             "python_payload_sha256": payload_sha256,
             "runtime_probe": runtime_probe,
@@ -249,10 +285,32 @@ def test_configured_python_ignores_stale_runtime_manifest(tmp_path: Path) -> Non
     write_manifest(
         package,
         {
-            "schema_version": "ts-agent-runtime/1",
+            "schema_version": "ts-agent-runtime/2",
             "python_executable": sys.executable,
             "spec_sha256": "stale",
         },
+    )
+
+    assert configured_python(package) is None
+
+
+def test_runtime_one_manifest_is_rejected(tmp_path: Path) -> None:
+    package = tmp_path / "skill"
+    package.mkdir()
+    (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
+    _write_test_python_payload(package)
+    manifest = runtime_manifest_path(package)
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": "ts-agent-runtime/1",
+                "env_prefix": str(tmp_path / "previous-runtime"),
+                "python_executable": sys.executable,
+            }
+        )
+        + "\n",
+        encoding="utf-8",
     )
 
     assert configured_python(package) is None
@@ -263,17 +321,21 @@ def test_configured_python_rejects_unprobed_or_external_modules(tmp_path: Path) 
     package.mkdir()
     (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
     payload_sha256 = _write_test_python_payload(package)
-    env_prefix = tmp_path / "managed-env"
-    python = env_prefix / "bin" / "python"
+    env_prefix = tmp_path / "managed-base"
+    kernel_prefix = tmp_path / "managed-kernel"
+    base_python = env_prefix / "bin" / "python"
+    python = kernel_prefix / "bin" / "python"
     numpy_origin = env_prefix / "lib" / "numpy.py"
     rdkit_origin = env_prefix / "lib" / "rdkit.py"
-    for path in (python, numpy_origin, rdkit_origin):
+    for path in (base_python, python, numpy_origin, rdkit_origin):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("# test runtime file\n", encoding="utf-8")
     base = {
-        "schema_version": "ts-agent-runtime/1",
+        "schema_version": "ts-agent-runtime/2",
         "python_executable": str(python),
         "env_prefix": str(env_prefix),
+        "base_python_executable": str(base_python),
+        "kernel_env_prefix": str(kernel_prefix),
         "spec_sha256": spec_sha256(package),
         "python_payload_sha256": payload_sha256,
     }
@@ -284,7 +346,7 @@ def test_configured_python_rejects_unprobed_or_external_modules(tmp_path: Path) 
     probe["python"]["executable"] = str(python)
     probe["modules"]["numpy"]["origin"] = str(numpy_origin)
     probe["modules"]["rdkit"]["origin"] = str(rdkit_origin)
-    probe["distribution"]["root"] = str(env_prefix)
+    probe["distribution"]["root"] = str(kernel_prefix)
     write_manifest(package, {**base, "runtime_probe": probe})
     assert configured_python(package) == python
 
@@ -308,7 +370,7 @@ def test_required_runtime_fails_closed_for_stale_manifest(tmp_path: Path) -> Non
     write_manifest(
         package,
         {
-            "schema_version": "ts-agent-runtime/1",
+            "schema_version": "ts-agent-runtime/2",
             "python_executable": sys.executable,
             "spec_sha256": "stale",
         },
@@ -368,8 +430,11 @@ def test_install_env_dry_run_reports_hashed_prefix(tmp_path: Path) -> None:
     payload = json.loads(completed.stdout)
 
     assert payload["action"] == "create"
+    assert payload["base_action"] == "create"
+    assert payload["kernel_action"] == "create"
     assert payload["dry_run"] is True
-    assert payload["env_prefix"].startswith(str(tmp_path / "envs"))
+    assert payload["env_prefix"].startswith(str(tmp_path / "envs" / "base"))
+    assert payload["kernel_env_prefix"].startswith(str(tmp_path / "envs" / "kernels"))
     assert payload["manifest_path"].endswith("/.runtime/transition-state-workflow/env.json")
     assert payload["python_executable"].endswith("/bin/python")
     assert payload["python_distribution"] == "ts-agent-kernel"
@@ -400,7 +465,8 @@ def test_install_env_dry_run_accepts_workspace_runtime_home(tmp_path: Path) -> N
 
     assert payload["runtime_home"] == str(workspace / ".agents" / "runtime" / "transition-state-workflow")
     assert payload["manifest_path"] == str(workspace / ".agents" / "runtime" / "transition-state-workflow" / "env.json")
-    assert payload["env_prefix"].startswith(str(workspace / ".agents" / "envs" / "transition-state-workflow"))
+    assert payload["env_prefix"].startswith(str(workspace / ".agents" / "envs" / "transition-state-workflow" / "base"))
+    assert payload["kernel_env_prefix"].startswith(str(workspace / ".agents" / "envs" / "transition-state-workflow" / "kernels"))
 
 
 def test_install_env_accepts_user_conda_root(tmp_path: Path) -> None:
@@ -434,6 +500,63 @@ def test_install_env_accepts_user_conda_root(tmp_path: Path) -> None:
 
     assert payload["conda_root"] == str(conda_root)
     assert payload["conda_executable"] == str(conda)
+
+
+def test_install_env_reuses_scientific_base_and_isolates_kernel_overlay(tmp_path: Path) -> None:
+    import numpy
+    import rdkit
+
+    base_prefix = Path(sys.base_prefix).resolve()
+    assert Path(numpy.__file__).resolve().is_relative_to(base_prefix)
+    assert Path(rdkit.__file__).resolve().is_relative_to(base_prefix)
+    env_root = tmp_path / "envs"
+    managed_base = env_root / "base" / spec_sha256(ROOT)[:12]
+    managed_base.parent.mkdir(parents=True)
+    managed_base.symlink_to(base_prefix, target_is_directory=True)
+    runtime_home = tmp_path / "runtime"
+    command = [
+        sys.executable,
+        str(ROOT / "scripts" / "install_env.py"),
+        "--package-root",
+        str(ROOT),
+        "--env-root",
+        str(env_root),
+        "--runtime-home",
+        str(runtime_home),
+        "--json",
+    ]
+
+    first = subprocess.run(
+        command,
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    second = subprocess.run(
+        command,
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=True,
+    )
+    created = json.loads(first.stdout)
+    reused = json.loads(second.stdout)
+    manifest = json.loads((runtime_home / "env.json").read_text(encoding="utf-8"))
+
+    kernel_prefix = Path(created["kernel_env_prefix"])
+    assert created["base_action"] == "reuse"
+    assert created["kernel_action"] == "create"
+    assert reused["base_action"] == "reuse"
+    assert reused["kernel_action"] == "reuse"
+    assert kernel_prefix.parent == env_root / "kernels"
+    assert Path(created["python_executable"]).is_relative_to(kernel_prefix)
+    assert manifest["schema_version"] == "ts-agent-runtime/2"
+    assert Path(manifest["runtime_probe"]["distribution"]["root"]).is_relative_to(kernel_prefix)
+    for name in ("numpy", "rdkit"):
+        assert Path(manifest["runtime_probe"]["modules"][name]["origin"]).is_relative_to(base_prefix)
 
 
 def test_ts_runtime_run_preserves_pythonpath_without_source_injection(monkeypatch) -> None:
@@ -493,9 +616,11 @@ def test_ts_runtime_isolated_run_cannot_modify_workspace_manifest(tmp_path: Path
     manifest = write_manifest(
         ROOT,
         {
-            "schema_version": "ts-agent-runtime/1",
+            "schema_version": "ts-agent-runtime/2",
             "python_executable": sys.executable,
-            "env_prefix": str(Path(sys.executable).resolve().parent.parent),
+            "env_prefix": str(Path(sys.base_prefix).resolve()),
+            "base_python_executable": str(Path(sys._base_executable).resolve()),
+            "kernel_env_prefix": str(Path(sys.prefix).resolve()),
             "spec_sha256": spec_sha256(ROOT),
             "python_payload_sha256": python_payload_sha256(ROOT),
             "runtime_probe": _runtime_probe(payload_sha256=python_payload_sha256(ROOT)),
@@ -578,7 +703,8 @@ def test_ts_runtime_resolve_reports_external_manifest_path(tmp_path: Path) -> No
 
     assert payload["configured"] is False
     assert payload["manifest_path"] == str(workspace / ".agents" / "runtime" / "transition-state-workflow" / "env.json")
-    assert payload["env_prefix"].startswith(str(workspace / ".agents" / "envs" / "transition-state-workflow"))
+    assert payload["env_prefix"].startswith(str(workspace / ".agents" / "envs" / "transition-state-workflow" / "base"))
+    assert payload["kernel_env_prefix"].startswith(str(workspace / ".agents" / "envs" / "transition-state-workflow" / "kernels"))
 
 
 def _runtime_probe(*, payload_sha256: str | None = None) -> dict[str, object]:
@@ -588,7 +714,7 @@ def _runtime_probe(*, payload_sha256: str | None = None) -> dict[str, object]:
     executable = Path(sys.executable).resolve()
     numpy_origin = Path(numpy.__file__).resolve()
     rdkit_origin = Path(rdkit.__file__).resolve()
-    prefix = Path(os.path.commonpath((executable, numpy_origin, rdkit_origin)))
+    kernel_prefix = Path(sys.prefix).resolve()
     return {
         "schema_version": "ts-runtime-probe/2",
         "ok": True,
@@ -597,7 +723,7 @@ def _runtime_probe(*, payload_sha256: str | None = None) -> dict[str, object]:
             "name": "ts-agent-kernel",
             "installed": True,
             "version": "0.11.1",
-            "root": str(prefix),
+            "root": str(kernel_prefix),
             "payload_sha256": payload_sha256 or python_payload_sha256(ROOT),
         },
         "modules": {
@@ -621,10 +747,3 @@ def _write_test_python_payload(package: Path) -> str:
         encoding="utf-8",
     )
     return python_payload_sha256(package)
-
-
-def _probe_common_prefix(probe: dict[str, object]) -> Path:
-    python = probe["python"]
-    modules = probe["modules"]
-    paths = [python["executable"], *(module["origin"] for module in modules.values())]
-    return Path(os.path.commonpath(paths))

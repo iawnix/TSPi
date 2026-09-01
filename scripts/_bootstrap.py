@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import importlib.util
+import os
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -39,6 +40,7 @@ def bootstrap_python_package(
 
     root = Path(package_root).expanduser().resolve()
     runtime = load_runtime_environment(root)
+    os.environ[runtime.PACKAGE_ROOT_OVERRIDE] = str(root)
     if workspace_from_argv:
         runtime.seed_workspace_root_from_argv()
     if entrypoint is not None:

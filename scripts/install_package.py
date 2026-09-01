@@ -12,7 +12,7 @@ import tarfile
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Callable
 
 try:
     from ._suite import (
@@ -54,6 +54,12 @@ try:
         WheelContractError,
         release_wheel,
     )
+    from ._runtime_install import (
+        PreparedRuntime,
+        RuntimeInstallError,
+        prepare_runtime,
+        publish_runtime,
+    )
 except ImportError:
     from _suite import (
         SUITE_COMPONENTS_SCHEMA_VERSION,
@@ -94,6 +100,12 @@ except ImportError:
         WheelContractError,
         release_wheel,
     )
+    from _runtime_install import (
+        PreparedRuntime,
+        RuntimeInstallError,
+        prepare_runtime,
+        publish_runtime,
+    )
 
 
 INSTALLED_MANIFEST = ".tspi-package-release.json"
@@ -110,6 +122,14 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--manifest", required=True, help="Path to tspi-package-release.json.")
     parser.add_argument("--archive", help="Package archive; defaults to the manifest archive filename.")
     parser.add_argument("--install-root", required=True, help="TSPi installation root.")
+    parser.add_argument("--conda", help="Path to conda or mamba executable.")
+    parser.add_argument("--conda-root", help="Root directory of an existing Conda or Mamba installation.")
+    parser.add_argument("--with-render", action="store_true", help="Install xyzrender into the shared scientific base.")
+    parser.add_argument(
+        "--force-runtime",
+        action="store_true",
+        help="Refresh the base and recreate only the target release kernel overlay.",
+    )
     parser.add_argument("--json", action="store_true", help="Print machine-readable output.")
     args = parser.parse_args(argv)
     manifest_path = Path(args.manifest).expanduser().resolve()
@@ -118,10 +138,15 @@ def main(argv: list[str] | None = None) -> int:
             manifest_path,
             Path(args.archive).expanduser().resolve() if args.archive else None,
             Path(args.install_root).expanduser(),
+            conda=args.conda,
+            conda_root=args.conda_root,
+            with_render=args.with_render,
+            force_runtime=args.force_runtime,
         )
     except (
         SuiteReleaseError,
         ReleaseInstallError,
+        RuntimeInstallError,
         WheelContractError,
         json.JSONDecodeError,
         OSError,
@@ -139,7 +164,18 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-def install_package(manifest_path: Path, archive_path: Path | None, install_root: Path) -> dict[str, Any]:
+def install_package(
+    manifest_path: Path,
+    archive_path: Path | None,
+    install_root: Path,
+    *,
+    conda: str | None = None,
+    conda_root: str | Path | None = None,
+    with_render: bool = False,
+    force_runtime: bool = False,
+    runtime_preparer: Callable[..., PreparedRuntime] | None = None,
+    runtime_publisher: Callable[[PreparedRuntime], Path] | None = None,
+) -> dict[str, Any]:
     manifest = validate_suite_manifest(read_json_object(manifest_path, "TSPi Package manifest"))
     archive_descriptor = manifest["archive"]
     resolved_archive = archive_path or (manifest_path.parent / archive_descriptor["filename"])
@@ -176,8 +212,17 @@ def install_package(manifest_path: Path, archive_path: Path | None, install_root
             if staging.exists():
                 remove_staging_tree(staging)
 
-    switch_current(package_home, target)
-    launchers = install_launchers(install_root, package_home)
+    prepare = runtime_preparer or prepare_runtime
+    publish = runtime_publisher or publish_runtime
+    prepared_runtime = prepare(
+        target / "agent",
+        runtime_home=install_root / ".agents" / "runtime" / "transition-state-workflow",
+        env_root=install_root / ".agents" / "envs" / "transition-state-workflow",
+        conda=conda,
+        conda_root=conda_root,
+        force=force_runtime,
+        with_render=with_render,
+    )
     archived_notification_state = archive_retired_notification_state(install_root)
     installed_manifest = read_json_object(target / INSTALLED_MANIFEST, "installed TSPi Package manifest")
     state = {
@@ -185,10 +230,19 @@ def install_package(manifest_path: Path, archive_path: Path | None, install_root
         "current_release_id": manifest["release_id"],
         "package_root": str(target),
         "manifest_sha256": hashlib.sha256(canonical_json(installed_manifest)).hexdigest(),
+        "runtime_manifest": str(prepared_runtime.manifest_path),
+        "python_payload_sha256": prepared_runtime.result["python_payload_sha256"],
         "installed_at_utc": datetime.now(timezone.utc).isoformat(),
         "services_activated": False,
     }
-    atomic_write_json(package_home / "install-state.json", state)
+    launchers = _activate_release(
+        install_root,
+        package_home,
+        target,
+        prepared_runtime,
+        state,
+        publish,
+    )
     return {
         "ok": True,
         "created": created,
@@ -197,9 +251,96 @@ def install_package(manifest_path: Path, archive_path: Path | None, install_root
         "current": str(package_home / "current"),
         "launcher": launchers["TSPi"],
         "launchers": launchers,
+        "runtime": dict(prepared_runtime.result),
         "services_activated": False,
         "archived_retired_notification_state": archived_notification_state,
     }
+
+
+def _activate_release(
+    install_root: Path,
+    package_home: Path,
+    target: Path,
+    prepared_runtime: PreparedRuntime,
+    state: dict[str, Any],
+    publisher: Callable[[PreparedRuntime], Path],
+) -> dict[str, str]:
+    """Publish runtime and content selection as one recoverable activation step."""
+
+    current = package_home / "current"
+    state_path = package_home / "install-state.json"
+    launcher_paths = [install_root / name for name in LAUNCHER_PATHS]
+    current_before = _snapshot_symlink(current, "current package pointer")
+    launchers_before = {
+        path: _snapshot_symlink(path, "package entrypoint") for path in launcher_paths
+    }
+    manifest_before = _snapshot_json(prepared_runtime.manifest_path, "runtime manifest")
+    state_before = _snapshot_json(state_path, "package install state")
+    try:
+        launchers = install_launchers(install_root, package_home)
+        published = publisher(prepared_runtime)
+        if published != prepared_runtime.manifest_path:
+            raise SuiteReleaseError("runtime publisher returned an unexpected manifest path")
+        switch_current(package_home, target)
+        atomic_write_json(state_path, state)
+        return launchers
+    except Exception as error:
+        try:
+            _restore_json(state_path, state_before)
+            _restore_symlink(current, current_before)
+            _restore_json(prepared_runtime.manifest_path, manifest_before)
+            for path, snapshot in launchers_before.items():
+                _restore_symlink(path, snapshot)
+        except Exception as rollback_error:
+            raise SuiteReleaseError(
+                f"release activation failed ({error}); rollback also failed: {rollback_error}"
+            ) from error
+        raise
+
+
+def _snapshot_symlink(path: Path, label: str) -> str | None:
+    if path.is_symlink():
+        return os.readlink(path)
+    if path.exists():
+        raise SuiteReleaseError(f"{label} must be a symbolic link: {path}")
+    return None
+
+
+def _restore_symlink(path: Path, target: str | None) -> None:
+    if target is None:
+        if path.is_symlink():
+            path.unlink()
+        elif path.exists():
+            raise SuiteReleaseError(f"cannot remove non-symlink during rollback: {path}")
+        return
+    temporary = path.parent / f".{path.name}.rollback.{os.getpid()}"
+    if temporary.exists() or temporary.is_symlink():
+        temporary.unlink()
+    try:
+        temporary.symlink_to(target)
+        os.replace(temporary, path)
+    finally:
+        if temporary.exists() or temporary.is_symlink():
+            temporary.unlink()
+
+
+def _snapshot_json(path: Path, label: str) -> dict[str, Any] | None:
+    if path.is_symlink():
+        raise SuiteReleaseError(f"{label} cannot be a symbolic link: {path}")
+    if not path.exists():
+        return None
+    return read_json_object(path, label)
+
+
+def _restore_json(path: Path, value: dict[str, Any] | None) -> None:
+    if value is None:
+        if path.is_symlink():
+            raise SuiteReleaseError(f"cannot remove symlink during rollback: {path}")
+        if path.exists():
+            path.unlink()
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    atomic_write_json(path, value)
 
 
 def validate_extracted_suite(root: Path, manifest: dict[str, Any]) -> None:

@@ -58,7 +58,8 @@ The TSPi suite assembler consumes one validated Phone component
 manifest, builds or consumes one Agent component, checks their protocol and
 artifact contracts, and writes `tspi-package-release/1`. The outer Package
 contains the two immutable component archives and records Web as embedded in
-Agent. `install_package.py` verifies every layer and selects exactly one set at:
+Agent. `install_package.py` verifies every layer, prepares and probes the
+release-bound Python runtime, and only then selects exactly one set at:
 
 ```text
 <installation>/.pi/packages/tspi/current
@@ -86,16 +87,30 @@ size, SHA-256, and expanded package-payload digest to the Agent archive.
 `install_package.py` is the public installation boundary. `install_release.py`
 remains available for Agent-component development tests, not full deployments.
 
-`install_env.py` never builds inside an immutable release. It revalidates and
-installs the bundled wheel into the managed Conda prefix with dependencies
-already supplied by `environment.yml`. From an authored checkout, it builds the
-same wheel in a temporary directory and installs that artifact without creating
-`egg-info` in the checkout. The runtime probe hashes every installed Python
-module and package-data file. The external runtime manifest binds that digest
-to the selected release's source payload, environment specification,
-interpreter, NumPy/RDKit origins, and exercised capabilities. TSPi rejects a
-stale environment even when the package version or Conda dependency set did not
-change.
+The runtime store has two content-addressed layers. `base/<spec-hash>` is a
+shared Conda environment that owns scientific and rendering dependencies.
+`kernels/<payload-hash>` is a small `--system-site-packages` venv that owns the
+exact `ts-agent-kernel` wheel for one Python payload. A dependency-only change
+creates a new base; a kernel-only change creates a new overlay without solving
+or reinstalling RDKit.
+
+`install_env.py` is only the command-line boundary; `_runtime_install.py` owns
+the reusable preparation and publication mechanism. It never builds inside an
+immutable release. It revalidates the bundled wheel and installs it into the
+overlay without dependency resolution. From an authored checkout, it builds
+the same wheel in a temporary directory and installs that artifact without
+creating `egg-info` in the checkout. The runtime probe hashes every installed
+Python module and package-data file, asserts NumPy/RDKit origins are inside the
+base, and asserts the distribution is inside the overlay. The external
+`ts-agent-runtime/2` manifest binds those origins and capabilities to both
+content digests. Version 1 manifests are stale by definition and are not
+silently converted.
+
+Package activation is prepare, probe, then publish. A failed preparation leaves
+the old `current` and runtime manifest untouched. A failure while publishing the
+manifest, pointer, install state, or stable links restores their previous
+values. Prepared immutable releases and overlays remain available for diagnosis
+and retry; service restart remains a separate operator action.
 
 ## Authority Matrix
 
@@ -483,7 +498,8 @@ mechanism.
 7. Execute Pi with exactly the package Skill, theme, and five extensions.
 
 One workspace has one Root writer process. Different workspaces can run
-concurrently while sharing immutable code and the Python environment. They do
+concurrently while sharing immutable code, a scientific base, and the selected
+release overlay. They do
 not share Pi conversations, graph state, calculations, reports, or locks.
 
 A Pi conversation may contain many user/assistant turns. ResearchNode completion

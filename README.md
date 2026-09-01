@@ -104,7 +104,6 @@ python3 deploy/build-component-release.py \
   --json
 
 cd /path/to/TSPi
-python3 scripts/check_package.py
 python3 scripts/build_package.py \
   --phone-manifest /path/to/ts-phone/dist/component/ts-phone-component-release.json \
   --output-dir dist/package \
@@ -112,13 +111,6 @@ python3 scripts/build_package.py \
 python3 scripts/install_package.py \
   --manifest dist/package/tspi-package-release.json \
   --install-root /path/to/TSPi-installation \
-  --json
-
-export TS_AGENT_SKILL_ROOT=/path/to/TSPi-installation/.pi/packages/tspi/current/agent
-python3 "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
-  --package-root "$TS_AGENT_SKILL_ROOT" \
-  --runtime-home /path/to/TSPi-installation/.agents/runtime/transition-state-workflow \
-  --env-root /path/to/TSPi-installation/.agents/envs/transition-state-workflow \
   --conda-root /path/to/miniforge3 \
   --with-render \
   --json
@@ -128,9 +120,10 @@ The suite builder internally creates the Agent component and its
 `ts-agent-kernel` wheel, then binds that archive to the validated TS Phone
 component. The installer verifies the outer Package, both nested archives,
 protocol compatibility, wheel and APK descriptors, safe members, required
-files, and immutable permissions before atomically selecting
-`.pi/packages/tspi/current`. It installs four stable entrypoints into the same
-release:
+files, and immutable permissions. It then prepares and probes the target
+release's Python runtime before atomically selecting
+`.pi/packages/tspi/current`. An invalid runtime cannot activate a release. The
+installer creates four stable entrypoints into the same release:
 
 ```text
 <installation>/TSPi          -> .pi/packages/tspi/current/agent/TSPi
@@ -142,10 +135,11 @@ release:
 Installation selects content only. It does not start or restart TS Phone and
 does not install the bundled APK onto a device.
 
-The runtime installer also installs the release's `ts-agent-kernel` wheel into
-the managed Conda prefix and binds its complete payload digest to the runtime
-manifest. TSPi will not combine a newly selected Pi release with stale Python
-modules from an earlier release.
+The managed runtime separates a shared, environment-spec-addressed Conda base
+containing NumPy, RDKit, SciPy, and optional `xyzrender` from a
+payload-addressed venv containing only the exact release's `ts-agent-kernel`
+wheel. TSPi will not combine a selected Pi release with stale Python modules
+from another release.
 
 Pi model authentication, SSH/Torque access, and notifications are
 installation-owned configuration and are not stored in a research workspace.
@@ -388,7 +382,7 @@ Observations through a Decision.
 Run validation from the authored checkout, not an installed release:
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q
+python3 scripts/test_source.py --conda-root /path/to/miniforge3 --with-render -- -q
 npm run typecheck
 npm run test:pi-adapter
 python3 scripts/check_package.py

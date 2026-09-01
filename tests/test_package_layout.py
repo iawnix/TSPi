@@ -176,6 +176,7 @@ def test_package_manifest_exposes_only_the_public_skill_and_allowlisted_runtime(
     assert "python/ts_agent/web/static/*.css" in manifest["files"]
     assert "python/ts_agent/web/static/*.js" in manifest["files"]
     assert "python-dist/*.whl" in manifest["files"]
+    assert "scripts/_runtime_install.py" in manifest["files"]
     assert "scripts/_wheel.py" in manifest["files"]
     assert manifest["peerDependencies"]["typebox"] == "*"
     assert "dependencies" not in manifest
@@ -424,7 +425,7 @@ print(json.dumps({
     assert result["env_root"] == str(install_root / ".agents" / "envs" / "transition-state-workflow")
     assert result["managed_python"] == str(Path(sys.executable).resolve())
     assert Path(result["path_python"]).resolve() == Path(sys.executable).resolve()
-    assert Path(result["path_python3"]).resolve() == Path(sys.executable).resolve()
+    assert Path(result["path_python3"]).resolve().parent == Path(sys.executable).resolve().parent
     assert result["no_user_site"] == "1"
     assert result["python_cache"] == str(install_root / ".pi" / "runtime-cache" / "python" / "reaction-a")
     assert result["pytest_options"].endswith(

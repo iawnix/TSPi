@@ -50,6 +50,8 @@ prescriptive stage, Node type, scientific role/layer, or next-action router.
 | `src/artifacts/` | deterministic render/report request and path validation |
 | `pyproject.toml` | `ts-agent-kernel` metadata, dependencies, package discovery, and wheel data |
 | `scripts/_wheel.py` | temporary-copy wheel build, metadata inspection, and release-wheel verification |
+| `scripts/_runtime_install.py` | shared base/overlay preparation, probe, and manifest publication mechanism |
+| `scripts/install_env.py` | thin command-line entrypoint for the managed runtime mechanism |
 | `python/ts_agent/` | the single import namespace for all deterministic Python code |
 | `python/ts_agent/workspace/` | graph state, bootstrap, Decisions, context, validation, transactions |
 | `python/ts_agent/validation/` | GateSpec compiler, predicate registry, templates, acceptance profiles |
@@ -415,18 +417,20 @@ From the authored checkout:
 
 ```bash
 npm ci
-python3 scripts/install_env.py \
-  --package-root . \
+python3 scripts/test_source.py \
   --conda-root /path/to/miniforge3 \
   --with-render \
-  --json
+  -- -q
 ```
 
-Use the package runtime wrapper if the host interpreter lacks declared
-dependencies:
+The test entrypoint creates or reuses the spec-addressed scientific base,
+builds the current source wheel, installs it into a temporary overlay, clears
+ambient Python path and user-site state, and runs pytest against that installed
+wheel. Its machine-readable record is written under `.runtime/test-results/`.
+Use the standalone installer only to prepare a persistent development runtime:
 
 ```bash
-python3 scripts/ts_runtime.py run -m pytest -q
+python3 scripts/install_env.py --package-root . --conda-root /path/to/miniforge3 --with-render --json
 python3 scripts/build_release.py --allow-dirty --output-dir /tmp/ts-agent-release --json
 ```
 
@@ -437,9 +441,11 @@ release directory itself as a PEP 517 build source; setuptools needs writable
 build-metadata space. The runtime installer consumes the bundled wheel and
 never writes build metadata into authored or installed package roots.
 
-Do not install project dependencies into a shared Conda base. Keep credentials,
-conversations, caches, workspaces, release archives, and generated reports out
-of tracked source.
+Do not install project dependencies into Conda `base` or another shared system
+environment. TSPi's own spec-addressed scientific base and payload-addressed
+kernel overlays are managed runtime state. Keep credentials, conversations,
+caches, workspaces, release archives, and generated reports out of tracked
+source.
 
 ## Validation Tiers
 
@@ -449,7 +455,7 @@ cross-module changes.
 ### Documentation or Skill
 
 ```bash
-python3 -m pytest -q tests/test_readme_contract.py tests/test_report_template_contract.py tests/test_decision_templates.py
+python3 scripts/test_source.py --conda-root /path/to/miniforge3 -- -q tests/test_readme_contract.py tests/test_report_template_contract.py tests/test_decision_templates.py
 python3 scripts/check_package.py
 git diff --check
 ```
@@ -457,7 +463,7 @@ git diff --check
 ### Python kernel or deterministic service
 
 ```bash
-PYTHONDONTWRITEBYTECODE=1 python3 -m pytest -q
+python3 scripts/test_source.py --conda-root /path/to/miniforge3 --with-render -- -q
 ```
 
 ### Pi extension or Review runtime
@@ -476,15 +482,12 @@ contacting a production model endpoint.
 ```bash
 # TS Phone repository
 npm run test:release
-npm run typecheck
-npm test
-npm run build
+# Run Flutter format/analyze/test and build the signed APK first.
 python3 deploy/build-component-release.py --output-dir dist/component --json
 
 # TSPi repository
-python3 scripts/check_package.py
-NPM_CONFIG_CACHE=/tmp/ts-agent-npm-cache npm pack --dry-run --json
-python3 -m pytest -q tests/test_suite_release.py tests/test_release_install.py
+python3 scripts/test_source.py --conda-root /path/to/miniforge3 --with-render -- -q
+npm run typecheck
 python3 scripts/build_package.py \
   --phone-manifest /path/to/ts-phone/dist/component/ts-phone-component-release.json \
   --output-dir dist/package \
@@ -518,21 +521,20 @@ policy versions and must be bumped when their expanded meaning changes.
 
 1. Inspect `git status` in both source repositories and preserve unrelated
    changes.
-2. Run focused tests, full Agent pytest, both TypeScript checks, Pi adapter
-   tests, Phone tests/build, and Package checks.
+2. Run focused tests, the managed full Agent test, TSPi TypeScript typecheck,
+   Phone release tests, Flutter checks/build, and both component builders.
 3. Confirm docs, examples, CLI help, schemas, and registered tools describe one
    workspace contract.
 4. Commit only intended source changes in their owning repositories.
 5. Build the Phone component and complete Package from clean commits. Record
    both source commits, component IDs, suite release ID, archive size, and
    SHA-256.
-6. Install into staging or the authorized TSPi root with
-   `install_package.py`.
-7. Resolve the selected Agent component's isolated Python runtime.
-8. Verify `TSPi --help`, `TSWeb --help`, `TSPhoneCtl --help`,
+6. Install into staging or the authorized TSPi root with `install_package.py`;
+   the installer must prepare and probe the target runtime before activation.
+7. Verify `TSPi --help`, `TSWeb --help`, `TSPhoneCtl --help`,
    `TSPhoneServer --help`, all launchers' release identity, fresh workspace
    bootstrap, tool inventory, and optional read-only remote status.
-9. Restart user sessions only in an authorized maintenance window.
+8. Restart user sessions only in an authorized maintenance window.
 
 The installer atomically selects `current`; running processes retain the release
 and runtime with which they started. Installation does not modify workspaces or
@@ -541,8 +543,9 @@ remote jobs.
 ## Rollback Discipline
 
 Preserve every distributed Package archive and manifest. Roll back by selecting
-the previous pair through the suite installer, resolving its Agent runtime, and
-starting new TSPi, Web, and Phone processes as needed. Do not mix independently
+the previous pair through the suite installer, which reuses or prepares its
+bound runtime before activation, and start new TSPi, Web, and Phone processes as
+needed. Do not mix independently
 selected component versions, edit installed files, or run Git operations inside
 a release directory.
 

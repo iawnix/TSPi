@@ -62,7 +62,7 @@ def test_public_document_set_covers_install_architecture_and_maintenance() -> No
     for heading in [
         "## Prerequisites",
         "## Install Or Select A Release",
-        "## Install The Python Runtime",
+        "## Managed Python Runtime",
         "## Configure Remote Execution",
         "## Configure Notifications",
         "## Start And Resume Workspaces",

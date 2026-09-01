@@ -4,10 +4,12 @@ import copy
 import gzip
 import io
 import json
+import os
 import stat
 import tarfile
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
 
 import pytest
 
@@ -22,9 +24,49 @@ from scripts._suite import (
     write_deterministic_archive,
 )
 from scripts.build_package import build_package
+import scripts.install_package as install_package_module
+from scripts._runtime_install import PreparedRuntime, RuntimeInstallError
 from scripts.install_package import install_package
 from scripts._wheel import release_wheel
 from tests.test_release_install import _synthetic_release
+
+
+@pytest.fixture(autouse=True)
+def _stub_managed_runtime(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Suite archive tests do not create a real Conda base for each install."""
+
+    def prepare(package_root: Path, **options: object) -> PreparedRuntime:
+        bundled = release_wheel(package_root)
+        assert bundled is not None
+        runtime_home = Path(str(options["runtime_home"]))
+        manifest_path = runtime_home / "env.json"
+        payload_sha256 = bundled[1]["payload_sha256"]
+        return PreparedRuntime(
+            package_root=Path(package_root),
+            manifest_path=manifest_path,
+            manifest={
+                "schema_version": "ts-agent-runtime/2",
+                "package_root": str(package_root),
+                "python_payload_sha256": payload_sha256,
+            },
+            result={
+                "python_payload_sha256": payload_sha256,
+                "manifest_path": str(manifest_path),
+            },
+            runtime_environment=SimpleNamespace(),
+        )
+
+    def publish(prepared: PreparedRuntime) -> Path:
+        prepared.manifest_path.parent.mkdir(parents=True, exist_ok=True)
+        prepared.manifest_path.write_text(
+            json.dumps(prepared.manifest, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+        prepared.manifest_path.chmod(0o600)
+        return prepared.manifest_path
+
+    monkeypatch.setattr(install_package_module, "prepare_runtime", prepare)
+    monkeypatch.setattr(install_package_module, "publish_runtime", publish)
 
 
 def test_suite_build_is_deterministic_and_installs_one_component_set(tmp_path: Path) -> None:
@@ -96,6 +138,91 @@ def test_suite_install_rejects_modified_outer_archive_before_state_creation(tmp_
     with pytest.raises(SuiteReleaseError, match="SHA-256"):
         install_package(Path(built["manifest"]), None, tmp_path / "install")
     assert not (tmp_path / "install").exists()
+
+
+def test_runtime_prepare_failure_does_not_select_the_new_release(tmp_path: Path) -> None:
+    first_agent, _ = _synthetic_release(tmp_path / "agent-a", marker="runtime-a")
+    first_phone = _synthetic_phone_release(tmp_path / "phone-a", marker="runtime-a")
+    first = build_package(
+        phone_manifest_path=first_phone,
+        output_dir=tmp_path / "package-a",
+        agent_manifest_path=first_agent,
+        allow_dirty=False,
+    )
+    install_root = tmp_path / "install"
+    installed = install_package(Path(first["manifest"]), None, install_root)
+    current = install_root / ".pi" / "packages" / "tspi" / "current"
+    runtime_manifest = install_root / ".agents" / "runtime" / "transition-state-workflow" / "env.json"
+    manifest_before = json.loads(runtime_manifest.read_text(encoding="utf-8"))
+
+    second_agent, _ = _synthetic_release(tmp_path / "agent-b", marker="runtime-b")
+    second_phone = _synthetic_phone_release(tmp_path / "phone-b", marker="runtime-b")
+    second = build_package(
+        phone_manifest_path=second_phone,
+        output_dir=tmp_path / "package-b",
+        agent_manifest_path=second_agent,
+        allow_dirty=False,
+    )
+
+    def fail_prepare(*_args: object, **_kwargs: object) -> PreparedRuntime:
+        raise RuntimeInstallError("simulated runtime probe failure")
+
+    with pytest.raises(RuntimeInstallError, match="simulated runtime probe failure"):
+        install_package(
+            Path(second["manifest"]),
+            None,
+            install_root,
+            runtime_preparer=fail_prepare,
+        )
+
+    assert current.resolve() == Path(installed["package_root"])
+    assert json.loads(runtime_manifest.read_text(encoding="utf-8")) == manifest_before
+
+
+def test_activation_failure_restores_current_runtime_and_launchers(tmp_path: Path) -> None:
+    first_agent, _ = _synthetic_release(tmp_path / "agent-a", marker="activate-a")
+    first_phone = _synthetic_phone_release(tmp_path / "phone-a", marker="activate-a")
+    first = build_package(
+        phone_manifest_path=first_phone,
+        output_dir=tmp_path / "package-a",
+        agent_manifest_path=first_agent,
+        allow_dirty=False,
+    )
+    install_root = tmp_path / "install"
+    installed = install_package(Path(first["manifest"]), None, install_root)
+    current = install_root / ".pi" / "packages" / "tspi" / "current"
+    runtime_manifest = install_root / ".agents" / "runtime" / "transition-state-workflow" / "env.json"
+    manifest_before = json.loads(runtime_manifest.read_text(encoding="utf-8"))
+    launchers_before = {
+        name: os.readlink(install_root / name) for name in install_package_module.LAUNCHER_PATHS
+    }
+
+    second_agent, _ = _synthetic_release(tmp_path / "agent-b", marker="activate-b")
+    second_phone = _synthetic_phone_release(tmp_path / "phone-b", marker="activate-b")
+    second = build_package(
+        phone_manifest_path=second_phone,
+        output_dir=tmp_path / "package-b",
+        agent_manifest_path=second_agent,
+        allow_dirty=False,
+    )
+
+    def fail_publish(prepared: PreparedRuntime) -> Path:
+        prepared.manifest_path.write_text('{"partial":true}\n', encoding="utf-8")
+        raise RuntimeInstallError("simulated manifest publish failure")
+
+    with pytest.raises(RuntimeInstallError, match="simulated manifest publish failure"):
+        install_package(
+            Path(second["manifest"]),
+            None,
+            install_root,
+            runtime_publisher=fail_publish,
+        )
+
+    assert current.resolve() == Path(installed["package_root"])
+    assert json.loads(runtime_manifest.read_text(encoding="utf-8")) == manifest_before
+    assert {
+        name: os.readlink(install_root / name) for name in install_package_module.LAUNCHER_PATHS
+    } == launchers_before
 
 
 def test_suite_install_rejects_launcher_conflict_before_selecting_release(tmp_path: Path) -> None:

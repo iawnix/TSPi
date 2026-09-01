@@ -21,10 +21,13 @@ DISABLE_REEXEC = "TS_AGENT_DISABLE_RUNTIME_REEXEC"
 ENV_ROOT_OVERRIDE = "TS_AGENT_ENV_ROOT"
 RUNTIME_HOME_OVERRIDE = "TS_AGENT_RUNTIME_HOME"
 RUNTIME_MANIFEST_OVERRIDE = "TS_AGENT_RUNTIME_MANIFEST"
+PACKAGE_ROOT_OVERRIDE = "TS_PACKAGE_ROOT"
 WORKSPACE_ROOT_OVERRIDE = "TS_WORKSPACE_ROOT"
-MANIFEST_VERSION = "ts-agent-runtime/1"
+MANIFEST_VERSION = "ts-agent-runtime/2"
 RUNTIME_PROBE_VERSION = "ts-runtime-probe/2"
 SKILL_NAME = "transition-state-workflow"
+BASE_ENV_DIRECTORY = "base"
+KERNEL_ENV_DIRECTORY = "kernels"
 PACKAGE_SKILL_PATH = Path("skills") / SKILL_NAME / "SKILL.md"
 PYTHON_DISTRIBUTION = "ts-agent-kernel"
 PYTHON_SOURCE_ROOT = Path("python")
@@ -168,7 +171,7 @@ def _suite_installation_root(stable: Path) -> Path | None:
 
 
 def environment_spec_path(package_root: str | Path | None = None) -> Path:
-    root = _resolved_package_root(package_root)
+    root = resolve_package_root(package_root)
     return root / "environment.yml"
 
 
@@ -178,7 +181,7 @@ def spec_sha256(package_root: str | Path | None = None) -> str:
 
 
 def package_version(package_root: str | Path | None = None) -> str:
-    path = _resolved_package_root(package_root) / "package.json"
+    path = resolve_package_root(package_root) / "package.json"
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
@@ -192,7 +195,7 @@ def package_version(package_root: str | Path | None = None) -> str:
 def python_payload_sha256(package_root: str | Path | None = None) -> str:
     """Hash the source files that are installed into the Python distribution."""
 
-    root = _resolved_package_root(package_root) / PYTHON_SOURCE_ROOT
+    root = resolve_package_root(package_root) / PYTHON_SOURCE_ROOT
     if not root.is_dir():
         raise RuntimeEnvironmentError(f"Python source root is missing: {root}")
     records = []
@@ -229,12 +232,11 @@ def _is_python_payload_path(path: PurePosixPath) -> bool:
     )
 
 
-def _resolved_package_root(package_root: str | Path | None = None) -> Path:
-    return (
-        Path(package_root).expanduser().resolve()
-        if package_root
-        else package_root_from_file(__file__)
-    )
+def resolve_package_root(package_root: str | Path | None = None) -> Path:
+    """Resolve an explicit or process-bound Pi Package root."""
+
+    root = package_root or os.environ.get(PACKAGE_ROOT_OVERRIDE)
+    return Path(root).expanduser().resolve() if root else package_root_from_file(__file__)
 
 
 def _workspace_root(workspace_root: str | Path | None = None) -> Path | None:
@@ -256,7 +258,7 @@ def default_runtime_home(
     if workspace is not None:
         return workspace / ".agents" / "runtime" / SKILL_NAME
 
-    root = _resolved_package_root(package_root)
+    root = resolve_package_root(package_root)
     parts = root.parts
     if ".agents" in parts:
         index = parts.index(".agents")
@@ -291,7 +293,7 @@ def default_env_store(
     if workspace is not None:
         return workspace / ".agents" / "envs" / SKILL_NAME
 
-    root = _resolved_package_root(package_root)
+    root = resolve_package_root(package_root)
     parts = root.parts
     if ".agents" in parts:
         index = parts.index(".agents")
@@ -308,9 +310,25 @@ def default_env_prefix(
     env_root: str | Path | None = None,
     workspace_root: str | Path | None = None,
 ) -> Path:
-    root = _resolved_package_root(package_root)
+    root = resolve_package_root(package_root)
     store = Path(env_root).expanduser().resolve() if env_root else default_env_store(root, workspace_root)
-    return store / spec_sha256(root)[:12]
+    return store / BASE_ENV_DIRECTORY / spec_sha256(root)[:12]
+
+
+def default_kernel_prefix(
+    package_root: str | Path | None = None,
+    env_root: str | Path | None = None,
+    workspace_root: str | Path | None = None,
+    payload_sha256: str | None = None,
+) -> Path:
+    """Return the release overlay path for one exact Python payload."""
+
+    root = resolve_package_root(package_root)
+    store = Path(env_root).expanduser().resolve() if env_root else default_env_store(root, workspace_root)
+    digest = payload_sha256 or python_payload_sha256(root)
+    if len(digest) != 64 or any(character not in "0123456789abcdef" for character in digest):
+        raise RuntimeEnvironmentError("Python payload digest is not a lowercase SHA-256 value")
+    return store / KERNEL_ENV_DIRECTORY / digest[:16]
 
 
 def env_python(env_prefix: str | Path) -> Path:
@@ -452,20 +470,37 @@ def _manifest_matches_spec(package_root: str | Path | None, manifest: dict[str, 
     ):
         return False
     env_prefix = manifest.get("env_prefix")
+    kernel_env_prefix = manifest.get("kernel_env_prefix")
+    base_python_executable = manifest.get("base_python_executable")
     python_executable = manifest.get("python_executable")
     probe_python = probe.get("python")
     modules = probe.get("modules")
     distribution = probe.get("distribution")
-    if not all(isinstance(value, str) and value for value in (env_prefix, python_executable)):
+    if not all(
+        isinstance(value, str) and value
+        for value in (
+            env_prefix,
+            kernel_env_prefix,
+            base_python_executable,
+            python_executable,
+        )
+    ):
         return False
     if not isinstance(probe_python, dict) or not isinstance(probe_python.get("executable"), str):
         return False
     prefix = Path(str(env_prefix)).expanduser().resolve()
+    kernel_prefix = Path(str(kernel_env_prefix)).expanduser().resolve()
+    base_python = Path(str(base_python_executable)).expanduser().resolve()
     executable = Path(str(python_executable)).expanduser().resolve()
     if Path(str(probe_python["executable"])).expanduser().resolve() != executable:
         return False
     if (
-        not executable.is_relative_to(prefix)
+        prefix == kernel_prefix
+        or kernel_prefix.is_relative_to(prefix)
+        or prefix.is_relative_to(kernel_prefix)
+        or not base_python.is_file()
+        or not base_python.is_relative_to(prefix)
+        or not executable.is_relative_to(kernel_prefix)
         or not isinstance(modules, dict)
         or not isinstance(distribution, dict)
     ):
@@ -480,7 +515,7 @@ def _manifest_matches_spec(package_root: str | Path | None, manifest: dict[str, 
     distribution_root = distribution.get("root")
     if not isinstance(distribution_root, str):
         return False
-    if not Path(distribution_root).expanduser().resolve().is_relative_to(prefix):
+    if not Path(distribution_root).expanduser().resolve().is_relative_to(kernel_prefix):
         return False
     for name in ("numpy", "rdkit"):
         module = modules.get(name)

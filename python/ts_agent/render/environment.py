@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from ts_agent.runtime import load_manifest
-from ts_agent.runtime.env import package_root_from_file
+from ts_agent.runtime import resolve_package_root
 
 XYZRENDER_OVERRIDE = "TS_RENDER_XYZRENDER"
 
@@ -19,11 +19,7 @@ class EnvironmentChecker:
     """Discover render dependencies without mutating the workspace."""
 
     def __init__(self, package_root: str | Path | None = None):
-        self.package_root = (
-            Path(package_root).resolve()
-            if package_root
-            else package_root_from_file(__file__)
-        )
+        self.package_root = resolve_package_root(package_root)
 
     def xyzrender_path(self) -> str | None:
         override = os.environ.get(XYZRENDER_OVERRIDE)

@@ -45,6 +45,7 @@ PACKAGE_FILES = [
     "scripts/install_package.py",
     "scripts/install_release.py",
     "scripts/_bootstrap.py",
+    "scripts/_runtime_install.py",
     "scripts/_suite.py",
     "scripts/_wheel.py",
     "scripts/tspi_host.py",
@@ -101,6 +102,7 @@ REQUIRED_TARBALL_FILES = {
     "scripts/install_package.py",
     "scripts/install_release.py",
     "scripts/_bootstrap.py",
+    "scripts/_runtime_install.py",
     "scripts/_suite.py",
     "scripts/_wheel.py",
     "scripts/tspi_host.py",
@@ -193,6 +195,7 @@ FORBIDDEN_RUNTIME_FILES = {
     "scripts/build_package.py",
     "scripts/build_release.py",
     "scripts/check_package.py",
+    "scripts/test_source.py",
 }
 REQUIRED_EXECUTABLE_FILES = {"TSPi", "scripts/ts_web.py"}
 
