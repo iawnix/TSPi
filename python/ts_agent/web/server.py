@@ -103,7 +103,7 @@ def create_server(
 
 def _make_handler(state_dir: Path, workspace_roots: Sequence[Path]):
     class ExplorerHandler(BaseHTTPRequestHandler):
-        server_version = "TSWeb/5.0"
+        server_version = "TSWeb/6.0"
 
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
@@ -119,6 +119,9 @@ def _make_handler(state_dir: Path, workspace_roots: Sequence[Path]):
                     return
                 if parsed.path == "/research-tree.js":
                     self._send_static_file("research-tree.js", "text/javascript; charset=utf-8")
+                    return
+                if parsed.path == "/research-map.js":
+                    self._send_static_file("research-map.js", "text/javascript; charset=utf-8")
                     return
                 if parsed.path == "/claim-map.js":
                     self._send_static_file("claim-map.js", "text/javascript; charset=utf-8")
@@ -151,21 +154,23 @@ def _make_handler(state_dir: Path, workspace_roots: Sequence[Path]):
 
         def _send_json(self, payload: Any, *, status: HTTPStatus = HTTPStatus.OK) -> None:
             body = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
-            self.send_response(status)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(body)
+            self._send_body(body, status=status, content_type="application/json; charset=utf-8")
 
         def _send_static_file(self, name: str, content_type: str) -> None:
             body = _static_asset(name).read_bytes()
-            self.send_response(HTTPStatus.OK)
-            self.send_header("Content-Type", content_type)
-            self.send_header("Content-Length", str(len(body)))
-            self.send_header("Cache-Control", "no-store")
-            self.end_headers()
-            self.wfile.write(body)
+            self._send_body(body, status=HTTPStatus.OK, content_type=content_type)
+
+        def _send_body(self, body: bytes, *, status: HTTPStatus, content_type: str) -> None:
+            try:
+                self.send_response(status)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(body)))
+                self.send_header("Cache-Control", "no-store")
+                self.end_headers()
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                # A polling browser may close while a projection is still being serialized.
+                return
 
     return ExplorerHandler
 
@@ -286,6 +291,7 @@ def _workspace_route(row: dict[str, Any], rest: str, query: dict[str, list[str]]
             "pending_review_dispositions": view["pending_review_dispositions"],
             "pending_controls": view["pending_controls"],
             "unresolved_controls": view["unresolved_controls"],
+            "retryable_controls": view["retryable_controls"],
         }
     if rest == "file":
         return _read_workspace_file(row, _first(query.get("path")) or "")

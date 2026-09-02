@@ -21,6 +21,7 @@ from ts_agent.web.normalize import (
     research_files_payload,
     workspace_snapshot,
 )
+from ts_agent.web.research_map import project_research_map
 from ts_agent.web.registry import (
     list_workspaces,
     reconcile_workspace_registry,
@@ -318,7 +319,7 @@ def test_normalize_workspace_projects_phase_node_and_operational_state(tmp_path:
 
     view = normalize_workspace(workspace)
 
-    assert view["schema_version"] == "ts-web-workspace/5"
+    assert view["schema_version"] == "ts-web-workspace/6"
     assert view["workspace"]["kernel_protocol"] == "ts-research-kernel/5"
     assert view["research_phases"][0]["phase_id"] == refs["mechanism"]
     assert view["research_phases"][0]["node_refs"] == [refs["search"], refs["connectivity"]]
@@ -439,6 +440,42 @@ def test_web_control_projection_distinguishes_submit_and_cancel_for_one_attempt(
     assert {row["control_id"] for row in detail["research_node"]["unresolved_controls"]} == expected
 
 
+def test_web_projects_safe_pre_submit_retry_separately_from_reconciliation(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+    node_id = refs["connectivity"]
+    attempt = workspace / "nodes" / node_id / "attempts" / "calc_2"
+    _write(attempt / "intent.json", {
+        "intent_id": "calc_2",
+        "node_id": node_id,
+        "backend": "crest",
+        "task_type": "conformer_search",
+    })
+    _write(attempt / "submit_guard.json", {"operation": "submit"})
+    _write(attempt / "submit_result.json", {
+        "state": "failed",
+        "error_class": "remote_staging_failed",
+        "job_id": None,
+        "control": {
+            "effect_outcome": "failed",
+            "effect_attempted": False,
+            "retry_disposition": "retry_same_submission",
+            "reconciliation_required": False,
+        },
+    })
+
+    view = normalize_workspace(workspace)
+    detail = node_payload(workspace, node_id)
+    graph = graph_payload_from_view(view)
+
+    assert view["unresolved_controls"] == []
+    assert view["retryable_controls"][0]["control_id"] == "calc_2:submit:1"
+    assert detail["research_node"]["unresolved_controls"] == []
+    assert detail["research_node"]["retryable_controls"][0]["error_class"] == "remote_staging_failed"
+    assert graph["unresolved_controls"] == []
+    assert graph["retryable_controls"][0]["retry_disposition"] == "retry_same_submission"
+
+
 def test_web_ignores_noncanonical_attempt_ids_and_sorts_current_ordinals(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     refs = _make_workspace(workspace)
@@ -551,7 +588,7 @@ def test_graph_uses_claim_relations_and_research_node_dependencies(tmp_path: Pat
 
     graph = graph_payload_from_view(normalize_workspace(workspace))
 
-    assert graph["schema_version"] == "ts-explorer-graph/5"
+    assert graph["schema_version"] == "ts-explorer-graph/6"
     assert graph["claim_graph"]["edges"] == [
         {
             "id": refs["alternatives"],
@@ -572,6 +609,98 @@ def test_graph_uses_claim_relations_and_research_node_dependencies(tmp_path: Pat
     assert "research_trajectory" not in graph
     assert graph["deterministic_activities"][0]["kind"] == "render"
     assert {row["role"] for row in graph["agent_runs"]} == {"compute", "review"}
+
+
+def test_research_map_separates_shared_work_hypotheses_and_connectivity() -> None:
+    phases = [{"phase_id": "phase_1", "title": "Mechanism", "objective": "Compare pathways."}]
+    claims = [
+        {"claim_id": "claim_1", "claim_type": "mechanism", "statement": "Concerted.", "status": "proposed"},
+        {"claim_id": "claim_2", "claim_type": "mechanism", "statement": "Stepwise.", "status": "supported"},
+    ]
+    nodes = [
+        {
+            "node_id": "node_1", "phase_ref": "phase_1", "title": "Endpoints", "objective": "Prepare shared endpoints.",
+            "status": "completed", "dependency_refs": [], "primary_claim_ref": "claim_1", "claim_refs": ["claim_1", "claim_2"],
+            "observation_refs": ["obs_7"], "attempts": [],
+        },
+        {
+            "node_id": "node_2", "phase_ref": "phase_1", "title": "Concerted TS", "objective": "Test one step.",
+            "status": "open", "dependency_refs": ["node_1"], "primary_claim_ref": "claim_1", "claim_refs": ["claim_1"],
+            "observation_refs": ["obs_3", "obs_4"], "attempts": [{"intent_id": "calc_1", "backend": "gaussian", "task_type": "irc", "display_state": "completed", "program_status": "normal_termination"}],
+        },
+        {
+            "node_id": "node_3", "phase_ref": "phase_1", "title": "Stepwise TS", "objective": "Test two steps.",
+            "status": "open", "dependency_refs": ["node_1"], "primary_claim_ref": "claim_2", "claim_refs": ["claim_2"],
+            "observation_refs": ["obs_1", "obs_2"], "attempts": [],
+        },
+    ]
+    observations = [
+        {"observation_id": "obs_1", "concept_id": "reaction_path.endpoint_assignment", "created_by_node": "node_3", "subject_ref": "closure TS", "value": {"forward": "product", "reverse": "intermediate"}, "qualifiers": {}, "summary": "Connectivity."},
+        {"observation_id": "obs_2", "concept_id": "reaction_path.endpoint_assignment", "created_by_node": "node_3", "subject_ref": "closure TS", "value": {"forward": "product", "reverse": "intermediate"}, "qualifiers": {}, "summary": "Duplicate connectivity."},
+        {"observation_id": "obs_3", "concept_id": "reaction_path.endpoint_assignment", "created_by_node": "node_2", "subject_ref": "concerted TS", "value": "reactants", "qualifiers": {"direction": "reverse"}, "summary": "Reverse endpoint."},
+        {"observation_id": "obs_4", "concept_id": "reaction_path.endpoint_assignment", "created_by_node": "node_2", "subject_ref": "concerted TS", "value": "product", "qualifiers": {"direction": "forward"}, "summary": "Forward endpoint."},
+    ]
+    relations = [{
+        "relation_id": "rel_1", "source_claim_ref": "claim_1", "target_claim_ref": "claim_2",
+        "relation_type": "competing_alternative", "rationale": "Competing mechanisms.",
+    }]
+
+    result = project_research_map(phases, nodes, claims, relations, observations)
+
+    assert result["schema_version"] == "ts-research-map/1"
+    phase = result["phases"][0]
+    assert phase["shared_node_refs"] == ["node_1"]
+    assert phase["claim_relations"][0]["relation_type"] == "competing_alternative"
+    lanes = {row["claim_ref"]: row for row in phase["lanes"]}
+    assert lanes["claim_1"]["node_refs"] == ["node_2"]
+    assert lanes["claim_2"]["node_refs"] == ["node_3"]
+    assert set((lanes["claim_1"]["connectivity_segments"][0]["endpoint_a"], lanes["claim_1"]["connectivity_segments"][0]["endpoint_b"])) == {"reactants", "product"}
+    stepwise = lanes["claim_2"]["connectivity_segments"]
+    assert len(stepwise) == 1
+    assert stepwise[0]["observation_refs"] == ["obs_1", "obs_2"]
+    assert stepwise[0]["direction"] == "undirected"
+    node = next(row for row in result["nodes"] if row["node_ref"] == "node_2")
+    assert node["latest_calculation"]["intent_id"] == "calc_1"
+    assert node["upstream_dependencies"][0]["observation_count"] == 1
+
+
+def test_research_map_uses_only_explicit_connectivity_direction() -> None:
+    result = project_research_map(
+        [{"phase_id": "phase_1", "title": "Path", "objective": "Trace endpoints."}],
+        [{
+            "node_id": "node_1",
+            "phase_ref": "phase_1",
+            "title": "IRC",
+            "objective": "Trace both directions.",
+            "status": "completed",
+            "dependency_refs": [],
+            "primary_claim_ref": "claim_1",
+            "claim_refs": ["claim_1"],
+            "observation_refs": ["obs_1"],
+            "attempts": [],
+        }],
+        [{
+            "claim_id": "claim_1",
+            "claim_type": "mechanism",
+            "statement": "One pathway.",
+            "status": "supported",
+        }],
+        [],
+        [{
+            "observation_id": "obs_1",
+            "concept_id": "reaction_path.endpoint_assignment",
+            "created_by_node": "node_1",
+            "subject_ref": "TS",
+            "value": {"forward": "product", "reverse": "reactants"},
+            "qualifiers": {"connectivity_direction": "reverse_to_forward"},
+            "summary": "Directed connectivity.",
+        }],
+    )
+
+    segment = result["connectivity_segments"][0]
+    assert segment["endpoint_a"] == "reactants"
+    assert segment["endpoint_b"] == "product"
+    assert segment["direction"] == "reverse_to_forward"
 
 
 def test_claim_and_node_details_follow_graph_references(tmp_path: Path) -> None:
@@ -662,17 +791,18 @@ def test_web_derives_claim_node_link_from_creator_provenance(tmp_path: Path) -> 
     assert [row["claim_id"] for row in node_payload(workspace, node_id)["claims"]] == [claim_id]
 
 
-def test_static_ui_exposes_research_tree_and_on_demand_node_details() -> None:
+def test_static_ui_exposes_research_map_dependency_dag_and_node_details() -> None:
     static = ROOT / "python" / "ts_agent" / "web" / "static"
     html = (static / "index.html").read_text(encoding="utf-8")
     script = (static / "app.js").read_text(encoding="utf-8")
     claim_map = (static / "claim-map.js").read_text(encoding="utf-8")
     tree = (static / "research-tree.js").read_text(encoding="utf-8")
+    research_map = (static / "research-map.js").read_text(encoding="utf-8")
     attempt_timeline = (static / "attempt-timeline.js").read_text(encoding="utf-8")
     css = (static / "app.css").read_text(encoding="utf-8")
 
     assert "TS Research Explorer" in html
-    assert "Research Tree" in html
+    assert "Research Map" in html
     assert "Scientific Conclusions" in html
     assert "Research Files" in html
     assert "Advanced Graphs" not in html + script
@@ -680,13 +810,17 @@ def test_static_ui_exposes_research_tree_and_on_demand_node_details() -> None:
     assert "app.js" in html
     assert "claim-map.js" in html
     assert "research-tree.js" in html
+    assert "research-map.js" in html
     assert "attempt-timeline.js" in html
     assert "renderNodeDetail" in script
     assert "window.TSResearchTree.mount" in script
+    assert "window.TSResearchMap.mount" in script
     assert "window.TSClaimMap.mount" in script
     assert "state.graph.research_node_dag.edges" in script
     assert 'data-conclusions-mode="table"' in script
     assert 'data-conclusions-mode="map"' in script
+    assert 'data-roadmap-mode="map"' in script
+    assert 'data-roadmap-mode="dag"' in script
     assert 'onSelectRelation: relationId => openDetail("relation", relationId)' in script
     assert "renderPhaseBand" not in script
     assert "Cross-Phase ResearchNode DAG" not in script
@@ -695,6 +829,9 @@ def test_static_ui_exposes_research_tree_and_on_demand_node_details() -> None:
     assert 'root.classList.add("research-tree")' in tree
     assert "research-tree-outline" in tree
     assert "ResizeObserver" in tree
+    assert 'global.TSResearchMap = { mount }' in research_map
+    assert "Connectivity evidence" in research_map
+    assert "Shared foundation" in research_map
     assert "computeLayout" in claim_map
     assert "computeLineage" in claim_map
     assert "filterNodes" in claim_map
@@ -716,7 +853,9 @@ def test_static_ui_exposes_research_tree_and_on_demand_node_details() -> None:
     assert 'id="icon-eye"' in html
     assert ".attempt-filter { grid-column: 2; }" in css
     assert "${latest.intent_id} ${attemptState(latest)}" in tree
-    assert 'control: [state.view.unresolved_controls, "control_id"]' in script
+    assert "...array(state.view.retryable_controls)" in script
+    assert "intentIds[0]" in script
+    assert "Fix remote configuration, then retry" in script
     assert "function renderActDetail" not in script
     assert "/api/node" not in html + script
     assert "/api/gates" not in html + script
@@ -903,7 +1042,7 @@ def test_research_files_payload_is_a_read_only_locator_projection(tmp_path: Path
 
 
 def test_static_asset_resolves_from_current_package() -> None:
-    for name in ("index.html", "app.css", "app.js", "attempt-timeline.js", "claim-map.js", "research-tree.js"):
+    for name in ("index.html", "app.css", "app.js", "attempt-timeline.js", "claim-map.js", "research-map.js", "research-tree.js"):
         expected = files("ts_agent.web").joinpath("static", name).read_bytes()
         assert ts_web_server._static_asset(name).read_bytes() == expected
 
@@ -1079,6 +1218,20 @@ def test_web_catalog_isolates_incompatible_registered_workspace(tmp_path: Path) 
         thread.join(timeout=2)
 
 
+def test_web_response_ignores_client_disconnect(tmp_path: Path) -> None:
+    server = create_server("127.0.0.1", 0, tmp_path / "web-state")
+    handler = object.__new__(server.RequestHandlerClass)
+
+    def disconnected(*_args: object, **_kwargs: object) -> None:
+        raise BrokenPipeError
+
+    handler.send_response = disconnected
+    try:
+        handler._send_json({"ok": True})
+    finally:
+        server.server_close()
+
+
 def test_web_server_is_read_only_and_has_no_removed_routes(tmp_path: Path) -> None:
     source = tmp_path / "workspace"
     refs = _make_workspace(source)
@@ -1111,7 +1264,7 @@ def test_web_server_is_read_only_and_has_no_removed_routes(tmp_path: Path) -> No
         assert unchanged["changed"] is False
         assert "view" not in unchanged
         assert "graph" not in unchanged
-        assert _get_json(host, port, f"{base}/graph")["schema_version"] == "ts-explorer-graph/5"
+        assert _get_json(host, port, f"{base}/graph")["schema_version"] == "ts-explorer-graph/6"
         assert _get_json(host, port, f"{base}/phases")["research_phases"][0]["phase_id"] == refs["mechanism"]
         assert _get_json(host, port, f"{base}/claims")["claims"][0]["schema_version"] == "ts-claim/3"
         assert _get_json(host, port, f"{base}/nodes")["research_nodes"][0]["schema_version"] == "ts-research-node/1"
@@ -1156,6 +1309,7 @@ def test_web_server_is_read_only_and_has_no_removed_routes(tmp_path: Path) -> No
         assert _get_text(host, port, "/app.js")[0] == 200
         assert _get_text(host, port, "/attempt-timeline.js")[0] == 200
         assert _get_text(host, port, "/claim-map.js")[0] == 200
+        assert _get_text(host, port, "/research-map.js")[0] == 200
         assert _get_text(host, port, "/research-tree.js")[0] == 200
         for removed_route in (f"{base}/tree", f"{base}/gates", f"{base}/evidence", "/api/node/n000"):
             assert _get_text(host, port, removed_route)[0] == 404

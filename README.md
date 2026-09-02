@@ -168,19 +168,24 @@ remote scheduler.
 
 ## Explore Workspaces
 
-The packaged `ts_web` server gives users a Node-first Research Tree without
-changing research state. Its default view renders the ResearchNode dependency
-DAG as decision-sized cards, so opening rationale, outcome, branches, merges,
-and lineage remain visible together. ResearchPhase is a color and focus filter,
-not a lifecycle lane. Desktop users can pan, zoom, fit, and inspect a Node;
-mobile users see the same topology as an indented outline. Node cards identify
-the latest calculation state. Opening a Node exposes a compact run summary in
-Overview and a dedicated Runs tab with Attempt-family filters, fixed pagination,
-purpose, retry/recalculation lineage, method, settings, job state, and bound
-Compute runs; Attempts never become peer roadmap Nodes. Claims,
-validation, Findings, operational activity, and files stay in separate views.
-Scientific Conclusions provides Table and Map modes over the same Claims; the
-interactive Claim Map never duplicates the ResearchNode DAG.
+The packaged `ts_web` server gives users a Node-first Research Map without
+changing research state. Its default view groups each Phase into a shared
+foundation and Claim-owned hypothesis lanes. Node rows expose the bounded
+objective, upstream Evidence dependencies, Attempt count, and latest
+calculation state. Structured `reaction_path.endpoint_assignment` Observations
+appear as deduplicated connectivity evidence inside the owning lane; this
+display does not imply that a connectivity Gate passed, and the Web does not
+infer reaction direction from endpoint names. The exact cross-Phase
+ResearchNode dependency DAG remains available as the secondary audit mode with
+pan, zoom, fit, branch, merge, and backtracking lineage.
+
+Opening a Node exposes a compact run summary in Overview and a dedicated Runs
+tab with Attempt-family filters, fixed pagination, purpose,
+retry/recalculation lineage, method, settings, job state, and bound Compute
+runs; Attempts never become peer roadmap Nodes. Claims, validation, Findings,
+operational activity, and files stay in separate views. Scientific Conclusions
+provides Table and Map modes over the same Claims; the interactive Claim Map
+does not duplicate either Research Map mode.
 
 ```bash
 /path/to/TSPi-installation/TSWeb serve \
@@ -314,9 +319,10 @@ Supported adapter tasks include:
 Capability means an adapter can express and validate a task; it does not prove
 that software, storage, SSH, Torque, or a queue is healthy. Remote jobs are
 isolated by workspace ID, Node, and immutable intent. Pre-effect failures may be
-retryable. Ambiguous submit or cancel effects must be reconciled and must never
-be blindly replayed. Collection is manifest-driven and does not depend on
-scheduler history.
+retryable and are reported separately from unresolved controls. They do not
+require reconciliation or block Node completion. Ambiguous submit or cancel
+effects must be reconciled and must never be blindly replayed. Collection is
+manifest-driven and does not depend on scheduler history.
 
 The Root supplies the scientific request to `ts_subagent_compute`. Before the
 child starts, the host creates or resolves the intent, verifies its digest, and

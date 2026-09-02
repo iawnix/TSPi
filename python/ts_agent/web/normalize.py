@@ -38,6 +38,7 @@ from ts_agent.workspace.state import (
 from ts_agent.workspace.validator import validate_workspace
 
 from .file_preview import preview_capability
+from .research_map import project_research_map
 
 
 def normalize_workspace(source_root: str | Path, *, label: str | None = None) -> dict[str, Any]:
@@ -51,11 +52,20 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
     operations = operational_snapshot(root)
     activities = operations["deterministic_activities"]
     agent_runs = operations["agent_runs"]
-    controls = [_normalize_control(record) for record in operations["unresolved_controls"]]
+    unresolved_controls = [_normalize_control(record) for record in operations["unresolved_controls"]]
+    retryable_controls = [_normalize_control(record) for record in operations["retryable_controls"]]
     claims = _objects(documents[CLAIMS_FILE].get("claims"))
+    observations = _objects(documents[OBSERVATIONS_FILE].get("observations"))
     raw_phases = _objects(documents[RESEARCH_PHASES_FILE].get("phases"))
     nodes = sorted([
-        _normalize_node(root, record, activities=activities, agent_runs=agent_runs, controls=controls)
+        _normalize_node(
+            root,
+            record,
+            activities=activities,
+            agent_runs=agent_runs,
+            unresolved_controls=unresolved_controls,
+            retryable_controls=retryable_controls,
+        )
         for record in _objects(documents[RESEARCH_NODES_FILE].get("nodes"))
     ], key=lambda record: node_sort_key(str(record.get("node_id") or "")))
     trajectory = project_research_trajectory(root, raw_phases, nodes)
@@ -95,9 +105,16 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         ],
         key=lambda record: phase_sort_key(str(record.get("phase_id") or "")),
     )
+    research_map = project_research_map(
+        phases,
+        nodes,
+        claims,
+        _objects(documents[CLAIM_RELATIONS_FILE].get("relations")),
+        observations,
+    )
 
     return {
-        "schema_version": "ts-web-workspace/5",
+        "schema_version": "ts-web-workspace/6",
         "label": label or root.name,
         "source_root": str(root),
         "workspace": documents[WORKSPACE_FILE],
@@ -119,7 +136,8 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         "claim_relations": _objects(documents[CLAIM_RELATIONS_FILE].get("relations")),
         "research_phases": phases,
         "research_nodes": nodes,
-        "observations": _objects(documents[OBSERVATIONS_FILE].get("observations")),
+        "research_map": research_map,
+        "observations": observations,
         "validation_specs": _objects(documents[VALIDATION_SPECS_FILE].get("specs")),
         "validation_results": _objects(documents[VALIDATION_RESULTS_FILE].get("results")),
         "findings": _objects(documents[FINDINGS_FILE].get("findings")),
@@ -134,7 +152,8 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         "agent_runs": agent_runs,
         "pending_review_dispositions": operations["pending_review_dispositions"],
         "pending_controls": operations["pending_controls"],
-        "unresolved_controls": controls,
+        "unresolved_controls": unresolved_controls,
+        "retryable_controls": retryable_controls,
     }
 
 
@@ -310,6 +329,7 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
             "activity_count": len(_objects(record.get("activities"))),
             "compute_run_count": int(record.get("compute_run_count") or 0),
             "unresolved_control_count": len(_objects(record.get("unresolved_controls"))),
+            "retryable_control_count": len(_objects(record.get("retryable_controls"))),
         }
         for record in _objects(view.get("research_nodes"))
     ]
@@ -328,7 +348,7 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
         for claim_ref, node_ref in claim_node_pairs
     ]
     return {
-        "schema_version": "ts-explorer-graph/5",
+        "schema_version": "ts-explorer-graph/6",
         "workspace": view.get("workspace"),
         "workspace_revision": view.get("workspace_revision"),
         "operational_revision": view.get("operational_revision"),
@@ -339,6 +359,7 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
             "phases": _objects(view.get("research_phases")),
             "nodes": nodes,
         },
+        "research_map": _object(view.get("research_map")),
         "claim_graph": {"nodes": claims, "edges": relations},
         "research_node_dag": {"nodes": nodes, "edges": node_edges},
         "claim_node_links": claim_node_links,
@@ -349,6 +370,7 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
         "activity_integrity_findings": _list(view.get("activity_integrity_findings")),
         "agent_runs": _objects(view.get("agent_runs")),
         "unresolved_controls": _objects(view.get("unresolved_controls")),
+        "retryable_controls": _objects(view.get("retryable_controls")),
     }
 
 
@@ -536,7 +558,8 @@ def _normalize_node(
     *,
     activities: list[dict[str, Any]],
     agent_runs: list[dict[str, Any]],
-    controls: list[dict[str, Any]],
+    unresolved_controls: list[dict[str, Any]],
+    retryable_controls: list[dict[str, Any]],
 ) -> dict[str, Any]:
     node_id = str(record.get("node_id") or "")
     node_runs = [
@@ -558,7 +581,12 @@ def _normalize_node(
             int(attempt.get("run_count") or 0)
             for attempt in attempts
         ),
-        "unresolved_controls": [row for row in controls if row.get("node_id") == node_id],
+        "unresolved_controls": [
+            row for row in unresolved_controls if row.get("node_id") == node_id
+        ],
+        "retryable_controls": [
+            row for row in retryable_controls if row.get("node_id") == node_id
+        ],
     }
 
 

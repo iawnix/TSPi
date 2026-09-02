@@ -157,6 +157,8 @@ REQUIRED_TARBALL_FILES = {
     "python/ts_agent/web/static/attempt-timeline.js",
     "python/ts_agent/web/static/claim-map.js",
     "python/ts_agent/web/static/research-tree.js",
+    "python/ts_agent/web/static/research-map.js",
+    "python/ts_agent/web/research_map.py",
     "python/ts_agent/web/reloader.py",
     "docs/adr/0001-phase-node-research-kernel.md",
 }

@@ -55,6 +55,7 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert "docs/INSTALLATION.md" in names
     assert "docs/MAINTAINER_GUIDE.md" in names
     assert "python/ts_agent/web/static/claim-map.js" in names
+    assert "python/ts_agent/web/static/research-map.js" in names
     assert "python/ts_agent/web/static/research-tree.js" in names
     assert "python/ts_agent/web/static/attempt-timeline.js" in names
     assert distribution == build_result["python_distribution"]
@@ -80,6 +81,7 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert (package_root / "docs" / "INSTALLATION.md").is_file()
     assert (package_root / "docs" / "MAINTAINER_GUIDE.md").is_file()
     assert (package_root / "python" / "ts_agent" / "web" / "static" / "claim-map.js").is_file()
+    assert (package_root / "python" / "ts_agent" / "web" / "static" / "research-map.js").is_file()
     assert (package_root / "python" / "ts_agent" / "web" / "static" / "research-tree.js").is_file()
     assert (package_root / "python" / "ts_agent" / "web" / "static" / "attempt-timeline.js").is_file()
     installed_wheel = package_root / distribution["path"]

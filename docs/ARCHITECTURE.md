@@ -435,13 +435,25 @@ normalization pass when changed. Browser polling is presentation state: it pause
 while hidden, preserves the current interaction, and never writes watcher state
 into a research workspace.
 
-The default navigation is the ResearchNode dependency tree. Each fixed-size Node
-card exposes its opening rationale and outcome; dependency edges retain branch,
-merge, and backtracking lineage. ResearchPhase remains a color and focus filter
-over the tree and carries no lifecycle meaning. The same layout becomes an
-indented outline on narrow screens. Cards and outline rows identify the latest
-calculation state without promoting Attempts into graph vertices. A Node's
-Overview shows only the compact Attempt and family summary. Its Runs tab projects
+The default navigation is a derived Research Map. Within each ResearchPhase it
+separates dependency-free work shared by several Claims from Claim-owned
+hypothesis lanes. Lane assignment uses the Node's primary Claim, then a sole
+derived Claim association, and otherwise an explicit unassigned lane. This
+grouping is presentation only: ResearchPhase still carries no lifecycle or
+policy meaning, and a lane never mutates Claim or Node ownership.
+
+Structured endpoint-assignment Observations are deduplicated into connectivity
+evidence under the lane owning their creating Node. Their presence does not
+project a validation verdict. They are displayed as undirected unless an
+explicit `connectivity_direction` qualifier exists; labels such as reactant,
+product, forward, or reverse are never interpreted as chemical direction. The
+secondary Dependency DAG mode retains the exact cross-Phase
+Node dependencies, branches, merges, and backtracking lineage with pan, zoom,
+fit, and a narrow-screen outline.
+
+Both modes identify the latest calculation state without promoting Attempts
+into graph vertices. A Node's Overview shows only the compact Attempt and family
+summary. Its Runs tab projects
 immutable calculation intents as family-grouped, filtered, fixed-page records
 with scientific purpose, primary/retry/recalculation kind, source Attempt,
 derived changes, method, settings, remote resource request, job/timing state,
@@ -459,7 +471,9 @@ Operational overlays preserve their actual owners: calculation Attempts belong
 to Nodes, Compute runs belong to Attempts, Review runs belong to Claims, and
 deterministic activities cite their Node scope. A projected unresolved control
 uses intent, operation, and control-attempt identity so submit and cancel effects
-for one calculation cannot collapse into one row.
+for one calculation cannot collapse into one row. A known pre-effect failure
+with `retry_same_submission` is projected separately as retryable: it requires a
+configuration fix, not reconciliation, and it does not block Node completion.
 
 The HTTP API has no mutation route. File preview is limited to current
 Node-owned files already admitted by the Node file projection, rejects symlinks
@@ -713,7 +727,8 @@ behind the detail view's Audit section.
 ## Failure Semantics
 
 - A schema, binding, or staging failure before an external effect is not an
-  ambiguous submission.
+  ambiguous submission. A typed `retry_same_submission` outcome is retryable,
+  not unresolved, and does not require reconciliation.
 - A missing scheduler reply after effect initiation is unknown until durable
   records or declared outputs reconcile it.
 - Program failure is not automatically scientific contradiction.
@@ -743,7 +758,7 @@ behind the detail view's Audit section.
 | Artifact import/catalog/structure-analysis contract | `python/ts_agent/compute/artifacts.py`, `python/ts_agent/compute/cli.py`, `python/ts_agent/structures/` |
 | Render/report request/path contract | `src/artifacts/request-contract.cjs` |
 | Report projection | `python/ts_agent/report/` |
-| Read-only Web projection and UI | `python/ts_agent/web/normalize.py`, `python/ts_agent/web/server.py`, `python/ts_agent/web/static/` |
+| Read-only Web projection and UI | `python/ts_agent/web/normalize.py`, `python/ts_agent/web/research_map.py`, `python/ts_agent/web/server.py`, `python/ts_agent/web/static/` |
 | Generic atomic file IO | `python/ts_agent/io.py` |
 | Python distribution boundary | `pyproject.toml`, `python/ts_agent/`, `scripts/_wheel.py`, release and runtime payload digests |
 | Pi package/release boundary | `package.json`, `scripts/check_package.py`, installer tests |

@@ -87,13 +87,15 @@ demand. Review receives one Claim dossier, not complete workspace files.
 
 `ts_web` is a read-only projection:
 
-- its default view is the ResearchNode dependency tree, with Phase as a
-  navigation filter;
+- its default Research Map groups each Phase into shared foundation work and
+  Claim-owned hypothesis lanes;
+- structured endpoint Observations may be displayed as deduplicated,
+  non-authoritative connectivity evidence without implying a Gate verdict;
+- the exact ResearchNode dependency DAG remains a secondary audit view;
 - Node details expose Overview, Conclusions, Evidence, Runs, Files, and History;
-- Scientific Conclusions exposes Claim Table and Map modes; the cross-Phase
-  Node DAG is already the default Research Tree and is not duplicated;
+- Scientific Conclusions exposes Claim Table and Map modes;
 - it never infers a next action, Phase status, Claim status, validation verdict,
-  or acceptance.
+  acceptance, or chemical direction from labels.
 
 The canonical paths are `phases.json`, `research_nodes.json`, and
 `nodes/<node_id>/...`.

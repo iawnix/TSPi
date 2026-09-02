@@ -382,10 +382,12 @@ behavior for diagnosis. The restart has a short connection gap; it is not
 development source reload or zero-downtime socket transfer.
 
 The explorer validates current state on read and exposes no mutation endpoint.
-Its default route is the ResearchNode dependency tree, with ResearchPhase used
-only for navigation and focus. Scientific Conclusions provides Table and Map
-modes over the Claim graph; the Node DAG is not duplicated there. File preview
-is bounded to current ResearchNode files;
+Its default Research Map groups each Phase into shared work and hypothesis
+lanes, with recorded connectivity evidence derived only from structured
+endpoint Observations. This evidence display is not a validation verdict. The
+secondary Dependency DAG mode preserves the exact Node
+topology for audit. Scientific Conclusions provides Table and Map modes over the
+Claim graph. File preview is bounded to current ResearchNode files;
 only UTF-8 text within the configured byte limit is presented as previewable.
 The server does not implement user authentication. Bind `127.0.0.1` by default; bind
 `0.0.0.0` only for a trusted, firewalled LAN and assume every reachable client

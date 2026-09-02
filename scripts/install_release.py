@@ -73,6 +73,7 @@ REQUIRED_RUNTIME_FILES = {
     "python/ts_agent/validation/engine.py",
     "python/ts_agent/runtime/launcher.py",
     "python/ts_agent/web/normalize.py",
+    "python/ts_agent/web/research_map.py",
     "python/ts_agent/web/reloader.py",
     "python/ts_agent/web/server.py",
     "python/ts_agent/web/static/index.html",
@@ -81,6 +82,7 @@ REQUIRED_RUNTIME_FILES = {
     "python/ts_agent/web/static/attempt-timeline.js",
     "python/ts_agent/web/static/claim-map.js",
     "python/ts_agent/web/static/research-tree.js",
+    "python/ts_agent/web/static/research-map.js",
     "docs/adr/0001-phase-node-research-kernel.md",
 }
 FORBIDDEN_PARTS = {".git", ".pytest_cache", "__pycache__", "build", "node_modules", "tests"}

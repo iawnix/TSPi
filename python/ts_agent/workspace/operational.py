@@ -34,16 +34,15 @@ def operational_snapshot(
     pending_review_dispositions = review_disposition_obligations(agent_runs)
     review_disposition_count = sum(1 for row in agent_runs if row.get("root_disposition"))
     pending_controls = _pending_controls(root_path, files)
-    unresolved_controls = _unresolved_controls(root_path, files)
+    control_effects = _control_effects(root_path, files)
+    unresolved_controls = [row for row in control_effects if row["classification"] == "unresolved"]
     ambiguous_submissions = [
         row for row in unresolved_controls if row.get("error_class") == "submission_ambiguous"
     ]
     ambiguous_cancellations = [
         row for row in unresolved_controls if row.get("error_class") == "cancellation_ambiguous"
     ]
-    retryable_controls = [
-        row for row in unresolved_controls if row.get("retry_disposition") == "retry_same_submission"
-    ]
+    retryable_controls = [row for row in control_effects if row["classification"] == "retryable"]
     return {
         "operational_revision": sha256_json(
             {
@@ -362,7 +361,9 @@ def _pending_controls(root: Path, files: list[Path]) -> list[dict[str, Any]]:
     return pending
 
 
-def _unresolved_controls(root: Path, files: list[Path]) -> list[dict[str, Any]]:
+def _control_effects(root: Path, files: list[Path]) -> list[dict[str, Any]]:
+    """Project only controls that require reconciliation or permit a safe replay."""
+
     latest_attempts: dict[tuple[Path, str], int] = {}
     for path in files:
         kind = "guard" if path.name.endswith("_guard.json") else "result"
@@ -373,7 +374,7 @@ def _unresolved_controls(root: Path, files: list[Path]) -> list[dict[str, Any]]:
         key = (path.parent, operation)
         latest_attempts[key] = max(attempt, latest_attempts.get(key, 0))
 
-    unresolved: list[dict[str, Any]] = []
+    effects: list[dict[str, Any]] = []
     for result_path in files:
         if not result_path.name.endswith("_result.json"):
             continue
@@ -391,14 +392,29 @@ def _unresolved_controls(root: Path, files: list[Path]) -> list[dict[str, Any]]:
         state = result.get("state")
         error_class = result.get("error_class")
         effect_outcome = control.get("effect_outcome")
+        effect_attempted = control.get("effect_attempted")
         retry_disposition = control.get("retry_disposition")
-        unresolved_state = effect_outcome == "unknown" or state == "unknown"
-        retryable_failure = retry_disposition == "retry_same_submission"
+        reconciliation_required = control.get("reconciliation_required")
         ambiguous_error = error_class in {"submission_ambiguous", "cancellation_ambiguous"}
-        if not (unresolved_state or retryable_failure or ambiguous_error):
+        retry_requested = retry_disposition == "retry_same_submission"
+        retryable_failure = (
+            effect_outcome == "failed"
+            and effect_attempted is False
+            and retry_requested
+            and reconciliation_required is False
+        )
+        unresolved_state = (
+            reconciliation_required is True
+            or effect_outcome == "unknown"
+            or state == "unknown"
+            or ambiguous_error
+            or (retry_requested and not retryable_failure)
+        )
+        if not (unresolved_state or retryable_failure):
             continue
-        unresolved.append(
+        effects.append(
             {
+                "classification": "unresolved" if unresolved_state else "retryable",
                 "operation": operation,
                 "node_id": _node_id_for_attempt(root, result_path.parent),
                 "intent_id": result_path.parent.name,
@@ -407,12 +423,14 @@ def _unresolved_controls(root: Path, files: list[Path]) -> list[dict[str, Any]]:
                 "state": state,
                 "error_class": error_class,
                 "effect_outcome": effect_outcome or ("unknown" if unresolved_state else "failed"),
+                "effect_attempted": effect_attempted,
                 "retry_disposition": retry_disposition
                 or ("reconcile_only" if unresolved_state or ambiguous_error else None),
+                "reconciliation_required": reconciliation_required,
                 "job_id": result.get("job_id"),
             }
         )
-    return unresolved
+    return effects
 
 
 def _node_id_for_attempt(root: Path, attempt_dir: Path) -> str:

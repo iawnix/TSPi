@@ -38,8 +38,8 @@ EXPECTED_PHONE_PROTOCOLS = {
 WEB_COMPONENT = {
     "embedded_in": "agent",
     "kernel_protocol": "ts-research-kernel/5",
-    "projection_protocol": "ts-web-workspace/5",
-    "graph_protocol": "ts-explorer-graph/5",
+    "projection_protocol": "ts-web-workspace/6",
+    "graph_protocol": "ts-explorer-graph/6",
 }
 PHONE_REQUIRED_FILES = {
     "VERSION",

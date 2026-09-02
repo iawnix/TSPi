@@ -23,6 +23,8 @@ const state = {
   toastTimer: null,
   researchTree: null,
   researchTreeViewport: null,
+  researchMap: null,
+  roadmapMode: "map",
   claimMap: null,
   claimMapViewport: null,
   claimMapFilters: null,
@@ -315,12 +317,18 @@ function teardownResearchTree() {
   state.researchTree = null;
 }
 
+function teardownResearchMap() {
+  state.researchMap?.destroy();
+  state.researchMap = null;
+}
+
 function teardownClaimMap() {
   state.claimMap?.destroy();
   state.claimMap = null;
 }
 
 function teardownVisualizations() {
+  teardownResearchMap();
   teardownResearchTree();
   teardownClaimMap();
 }
@@ -343,8 +351,9 @@ function renderRoadmap() {
   const matchedNodeIds = new Set(nodes
     .filter(node => matchesNode(node, phaseById.get(node.phase_ref) || {}, claimById, query))
     .map(node => node.node_id));
+  const mode = state.roadmapMode === "dag" ? "dag" : "map";
   content.innerHTML = [
-    renderHeader(view.label, view.workspace.kernel_protocol, true, "Filter phases, nodes, claims, or calculations"),
+    renderHeader(view.label, "Phases, shared foundations, hypothesis branches, and recorded connectivity.", true, "Filter phases, nodes, claims, or calculations"),
     renderNotices(),
     `<div class="summary-strip">
       ${summaryItem(summary.phase_count, "Research Phases")}
@@ -354,22 +363,46 @@ function renderRoadmap() {
       ${summaryItem(summary.open_finding_count, "Open Findings")}
       ${summaryItem(summary.current_acceptance_count, "Current Acceptances")}
     </div>`,
-    `<section class="research-tree-section"><div id="research-tree"></div></section>`,
+    renderRoadmapMode(mode),
+    mode === "map"
+      ? `<section class="research-map-section"><div id="research-map"></div></section>`
+      : `<section class="research-tree-section"><div id="research-tree"></div></section>`,
   ].join("");
-  const root = document.getElementById("research-tree");
-  if (!window.TSResearchTree) throw new Error("Research Tree renderer is unavailable.");
-  state.researchTree = window.TSResearchTree.mount(root, {
-    nodes,
-    edges: state.graph.research_node_dag.edges,
-    phases,
-    focusNodeRefs: view.focus.node_refs,
-    highlightIds: query ? matchedNodeIds : null,
-    selectedId: state.detailKind === "node" ? state.detailId : null,
-    viewport: state.researchTreeViewport,
-    onViewportChange: viewport => { state.researchTreeViewport = viewport; },
-    onSelect: nodeId => openDetail("node", nodeId),
-  });
+  if (mode === "map") {
+    const root = document.getElementById("research-map");
+    if (!window.TSResearchMap) throw new Error("Research Map renderer is unavailable.");
+    state.researchMap = window.TSResearchMap.mount(root, {
+      projection: state.graph.research_map,
+      focusNodeRefs: view.focus.node_refs,
+      highlightIds: query ? matchedNodeIds : null,
+      selectedId: state.detailKind === "node" ? state.detailId : null,
+      onSelectNode: nodeId => openDetail("node", nodeId),
+      onSelectClaim: claimId => openDetail("claim", claimId),
+      onSelectRelation: relationId => openDetail("relation", relationId),
+    });
+  } else {
+    const root = document.getElementById("research-tree");
+    if (!window.TSResearchTree) throw new Error("Dependency DAG renderer is unavailable.");
+    state.researchTree = window.TSResearchTree.mount(root, {
+      nodes,
+      edges: state.graph.research_node_dag.edges,
+      phases,
+      focusNodeRefs: view.focus.node_refs,
+      highlightIds: query ? matchedNodeIds : null,
+      selectedId: state.detailKind === "node" ? state.detailId : null,
+      viewport: state.researchTreeViewport,
+      onViewportChange: viewport => { state.researchTreeViewport = viewport; },
+      onSelect: nodeId => openDetail("node", nodeId),
+    });
+  }
   bindSearch();
+}
+
+function renderRoadmapMode(mode) {
+  return `<div class="view-mode-bar"><div class="segmented-control" role="tablist" aria-label="Research Map view">
+    <button class="mode-button ${mode === "map" ? "active" : ""}" type="button" role="tab" data-roadmap-mode="map" aria-selected="${mode === "map"}">${icon("roadmap")}<span>Research Map</span></button>
+    <button class="mode-button ${mode === "dag" ? "active" : ""}" type="button" role="tab" data-roadmap-mode="dag" aria-selected="${mode === "dag"}">${icon("branch")}<span>Dependency DAG</span></button>
+  </div></div>`;
 }
 
 function renderNotices() {
@@ -379,6 +412,16 @@ function renderNotices() {
   }
   if (state.view.unresolved_controls.length) {
     rows.push(notice("error", "activity", `${state.view.unresolved_controls.length} unresolved remote control effect(s)`, "Reconcile before replay"));
+  }
+  if (state.view.retryable_controls.length) {
+    const count = state.view.retryable_controls.length;
+    const intentIds = [...new Set(state.view.retryable_controls
+      .map(row => row.intent_id)
+      .filter(Boolean))];
+    const subject = count === 1 && intentIds.length === 1
+      ? `${intentIds[0]} remote submission did not start`
+      : `${count} remote submissions did not start`;
+    rows.push(notice("warning", "activity", subject, "Fix remote configuration, then retry"));
   }
   if (state.view.pending_review_dispositions.length) {
     rows.push(notice("info", "conclusions", `${state.view.pending_review_dispositions.length} Review response(s) pending Root disposition`, "Advisory only"));
@@ -679,7 +722,8 @@ function renderNodeRuns(payload) {
   return `${renderAttemptTimeline(node.attempts)}
     <section class="detail-section"><h3>Deterministic Operations</h3>${detailRecordRows(node.activities, "activity", "activity_id", "operation", "status")}</section>
     <section class="detail-section"><h3>Subagent Runs</h3>${detailRecordRows(payload.agent_runs, "agent", "task_id", "operation", "status")}</section>
-    <section class="detail-section"><h3>Unresolved Controls</h3>${detailRecordRows(node.unresolved_controls, "control", "control_id", "operation", "state")}</section>`;
+    <section class="detail-section"><h3>Unresolved Controls</h3>${detailRecordRows(node.unresolved_controls, "control", "control_id", "operation", "state")}</section>
+    <section class="detail-section"><h3>Retryable Controls</h3>${detailRecordRows(node.retryable_controls, "control", "control_id", "operation", "error_class")}</section>`;
 }
 
 function renderAttemptTimeline(value) {
@@ -919,7 +963,7 @@ function localRecord(kind, id) {
     relation: [state.view.claim_relations, "relation_id"],
     activity: [state.view.deterministic_activities, "activity_id"],
     agent: [state.view.agent_runs, "task_id"],
-    control: [state.view.unresolved_controls, "control_id"],
+    control: [[...array(state.view.unresolved_controls), ...array(state.view.retryable_controls)], "control_id"],
   };
   const [records, key] = sources[kind] || [[], "id"];
   const record = array(records).find(row => String(row[key]) === String(id));
@@ -1120,6 +1164,12 @@ document.getElementById("sidebar").addEventListener("click", event => {
 });
 
 content.addEventListener("click", event => {
+  const roadmapMode = event.target.closest("[data-roadmap-mode]");
+  if (roadmapMode) {
+    state.roadmapMode = roadmapMode.dataset.roadmapMode === "dag" ? "dag" : "map";
+    renderCurrentView({ resetScroll: false });
+    return;
+  }
   const mode = event.target.closest("[data-conclusions-mode]");
   if (mode) {
     state.conclusionsMode = mode.dataset.conclusionsMode === "map" ? "map" : "table";
