@@ -8,13 +8,14 @@ from ts_agent.compute.artifacts import import_calculation_artifact, list_calcula
 from ts_agent.compute.contracts import ComputeContractError
 from ts_agent.compute.control import create_calculation_intent, prepare_calculation
 from ts_agent.io import read_json, write_json
-from ts_agent.workspace.decision import draft_decision
-from ts_agent.workspace.engine import apply_decision, init_workspace
+from tests.kernel_helpers import compile_change
+from ts_agent.workspace.engine import init_workspace
+from tests.kernel_helpers import apply_compiled_change
 from ts_agent.workspace.node_contract import node_contract_digest, node_contract_snapshot
 
 
 def _open_node(root: Path) -> str:
-    drafted = draft_decision(
+    drafted = compile_change(
         root,
         {
             "rationale": "Create one bounded calculation node.",
@@ -45,7 +46,7 @@ def _open_node(root: Path) -> str:
             ],
         },
     )
-    apply_decision(root, drafted["decision"])
+    apply_compiled_change(root, drafted["decision"])
     return drafted["allocated_refs"]["calculation"]
 
 
@@ -72,21 +73,22 @@ def test_artifact_to_prepared_intent_is_research_node_scoped(tmp_path: Path) -> 
     created = create_calculation_intent(
         root,
         {
-            "schema_version": "ts-calculation-request/4",
+            "schema_version": "ts-calculation-request/5",
             "node_id": node_id,
             "purpose": "Run a bounded Gaussian single point.",
             "attempt_kind": "primary",
             "lineage": None,
-            "backend": "gaussian",
-            "task_type": "sp",
+            "capability": "gaussian.sp",
+            "capability_version": "1",
             "input_artifacts": [{"input_role": "gjf", "artifact_id": artifact["artifact_id"]}],
-            "settings": {},
+            "parameters": {},
             "execution_target": {"kind": "local"},
             "dry_run": True,
         },
     )
     assert created["schema_version"] == "ts-calculation-intent-created/4"
-    assert created["intent"]["schema_version"] == "ts-calculation-intent/6"
+    assert created["intent"]["schema_version"] == "ts-calculation-intent/7"
+    assert created["intent"]["capability"] == "gaussian.sp"
     assert created["node_id"] == node_id
     assert created["intent_ref"].startswith(f"nodes/{node_id}/attempts/")
     assert created["input_bindings"][0]["artifact_id"] == artifact["artifact_id"]
@@ -99,7 +101,7 @@ def test_artifact_to_prepared_intent_is_research_node_scoped(tmp_path: Path) -> 
 
 def test_node_contract_digest_tracks_scope_but_not_runtime_state() -> None:
     node = {
-        "schema_version": "ts-research-node/1",
+        "schema_version": "ts-research-node/2",
         "node_id": "node_1",
         "phase_ref": "phase_1",
         "title": "Locate one saddle",
@@ -133,10 +135,20 @@ def test_attempt_lineage_distinguishes_exact_retry_from_recalculation(tmp_path: 
     node_id = _open_node(root)
     _gaussian_input(root)
     artifact_id = list_calculation_artifacts(root)["artifacts"][0]["artifact_id"]
+    alternative_path = root / "inputs" / "alternative.gjf"
+    alternative_path.write_text(
+        "%nprocshared=2\n#p hf/sto-3g sp\n\nH2 alternative\n\n0 1\nH 0 0 0\nH 0 0 0.75\n\n",
+        encoding="utf-8",
+    )
+    alternative_id = next(
+        item["artifact_id"]
+        for item in list_calculation_artifacts(root)["artifacts"]
+        if item["path"] == "inputs/alternative.gjf"
+    )
 
-    def request(kind: str, *, source: str | None = None, settings: dict[str, str] | None = None) -> dict:
+    def request(kind: str, *, source: str | None = None, input_artifact_id: str = artifact_id) -> dict:
         return {
-            "schema_version": "ts-calculation-request/4",
+            "schema_version": "ts-calculation-request/5",
             "node_id": node_id,
             "purpose": f"Run the {kind} candidate calculation.",
             "attempt_kind": kind,
@@ -146,10 +158,10 @@ def test_attempt_lineage_distinguishes_exact_retry_from_recalculation(tmp_path: 
                 "relation": kind,
                 "reason": "Verify deterministic Attempt lineage.",
             },
-            "backend": "gaussian",
-            "task_type": "sp",
-            "input_artifacts": [{"input_role": "gjf", "artifact_id": artifact_id}],
-            "settings": settings or {},
+            "capability": "gaussian.sp",
+            "capability_version": "1",
+            "input_artifacts": [{"input_role": "gjf", "artifact_id": input_artifact_id}],
+            "parameters": {},
             "execution_target": {"kind": "local"},
             "dry_run": True,
         }
@@ -162,16 +174,16 @@ def test_attempt_lineage_distinguishes_exact_retry_from_recalculation(tmp_path: 
     with pytest.raises(ComputeContractError, match="retry must preserve"):
         create_calculation_intent(
             root,
-            request("retry", source=primary["intent_id"], settings={"method": "B3LYP"}),
+            request("retry", source=primary["intent_id"], input_artifact_id=alternative_id),
         )
     with pytest.raises(ComputeContractError, match="recalculation must change"):
         create_calculation_intent(root, request("recalculation", source=primary["intent_id"]))
 
     recalculation = create_calculation_intent(
         root,
-        request("recalculation", source=primary["intent_id"], settings={"method": "B3LYP"}),
+        request("recalculation", source=primary["intent_id"], input_artifact_id=alternative_id),
     )
-    assert recalculation["intent"]["lineage"]["changed_fields"] == ["settings.method"]
+    assert recalculation["intent"]["lineage"]["changed_fields"] == ["input_bindings"]
 
 
 def test_current_intent_rejects_scientific_or_node_contract_drift(tmp_path: Path) -> None:
@@ -181,22 +193,22 @@ def test_current_intent_rejects_scientific_or_node_contract_drift(tmp_path: Path
     _gaussian_input(root)
     artifact_id = list_calculation_artifacts(root)["artifacts"][0]["artifact_id"]
     request = {
-        "schema_version": "ts-calculation-request/4",
+        "schema_version": "ts-calculation-request/5",
         "node_id": node_id,
         "purpose": "Bind one immutable calculation.",
         "attempt_kind": "primary",
         "lineage": None,
-        "backend": "gaussian",
-        "task_type": "sp",
+        "capability": "gaussian.sp",
+        "capability_version": "1",
         "input_artifacts": [{"input_role": "gjf", "artifact_id": artifact_id}],
-        "settings": {},
+        "parameters": {},
         "execution_target": {"kind": "local"},
         "dry_run": True,
     }
     created = create_calculation_intent(root, request)
     intent_path = root / created["intent_ref"]
     intent = read_json(intent_path)
-    intent["settings"] = {"method": "B3LYP"}
+    intent["input_bindings"][0]["sha256"] = "sha256:" + "0" * 64
     write_json(intent_path, intent)
     with pytest.raises(ComputeContractError, match="scientific_intent_digest"):
         prepare_calculation(root, created["intent_ref"])
@@ -219,15 +231,15 @@ def test_attempt_lineage_cannot_cross_research_nodes(tmp_path: Path) -> None:
     primary = create_calculation_intent(
         root,
         {
-            "schema_version": "ts-calculation-request/4",
+            "schema_version": "ts-calculation-request/5",
             "node_id": first_node,
             "purpose": "Create the source Attempt.",
             "attempt_kind": "primary",
             "lineage": None,
-            "backend": "gaussian",
-            "task_type": "sp",
+            "capability": "gaussian.sp",
+            "capability_version": "1",
             "input_artifacts": [{"input_role": "gjf", "artifact_id": artifact_id}],
-            "settings": {},
+            "parameters": {},
             "execution_target": {"kind": "local"},
             "dry_run": True,
         },
@@ -237,7 +249,7 @@ def test_attempt_lineage_cannot_cross_research_nodes(tmp_path: Path) -> None:
         create_calculation_intent(
             root,
             {
-                "schema_version": "ts-calculation-request/4",
+                "schema_version": "ts-calculation-request/5",
                 "node_id": second_node,
                 "purpose": "This must be a primary Attempt in the successor Node.",
                 "attempt_kind": "retry",
@@ -247,10 +259,10 @@ def test_attempt_lineage_cannot_cross_research_nodes(tmp_path: Path) -> None:
                     "relation": "retry",
                     "reason": "Invalid cross-Node retry.",
                 },
-                "backend": "gaussian",
-                "task_type": "sp",
+                "capability": "gaussian.sp",
+                "capability_version": "1",
                 "input_artifacts": [{"input_role": "gjf", "artifact_id": artifact_id}],
-                "settings": {},
+                "parameters": {},
                 "execution_target": {"kind": "local"},
                 "dry_run": True,
             },
@@ -281,15 +293,15 @@ def test_fresh_workspace_imports_first_artifact_before_compute_prepare(tmp_path:
     created = create_calculation_intent(
         root,
         {
-            "schema_version": "ts-calculation-request/4",
+            "schema_version": "ts-calculation-request/5",
             "node_id": node_id,
             "purpose": "Verify first-artifact bootstrap.",
             "attempt_kind": "primary",
             "lineage": None,
-            "backend": "gaussian",
-            "task_type": "sp",
+            "capability": "gaussian.sp",
+            "capability_version": "1",
             "input_artifacts": [{"input_role": "gjf", "artifact_id": artifact_id}],
-            "settings": {},
+            "parameters": {},
             "execution_target": {"kind": "local"},
             "dry_run": True,
         },
@@ -302,7 +314,7 @@ def test_closed_research_node_cannot_create_a_calculation(tmp_path: Path) -> Non
     root = tmp_path / "workspace"
     init_workspace(root)
     node_id = _open_node(root)
-    drafted = draft_decision(
+    drafted = compile_change(
         root,
         {
             "rationale": "Close the bounded node.",
@@ -317,22 +329,22 @@ def test_closed_research_node_cannot_create_a_calculation(tmp_path: Path) -> Non
             ],
         },
     )
-    apply_decision(root, drafted["decision"])
+    apply_compiled_change(root, drafted["decision"])
     _gaussian_input(root)
     artifact = list_calculation_artifacts(root)["artifacts"][0]
     with pytest.raises(ComputeContractError, match="open ResearchNode"):
         create_calculation_intent(
             root,
             {
-                "schema_version": "ts-calculation-request/4",
+                "schema_version": "ts-calculation-request/5",
                 "node_id": node_id,
                 "purpose": "This should be rejected.",
                 "attempt_kind": "primary",
                 "lineage": None,
-                "backend": "gaussian",
-                "task_type": "sp",
+                "capability": "gaussian.sp",
+                "capability_version": "1",
                 "input_artifacts": [{"input_role": "gjf", "artifact_id": artifact["artifact_id"]}],
-                "settings": {},
+                "parameters": {},
                 "execution_target": {"kind": "local"},
                 "dry_run": True,
             },

@@ -451,9 +451,9 @@ def _load_known_nodes(root: Path, findings: list[dict[str, Any]], required: bool
         if required:
             _finding(findings, "activity_registry_unavailable", "ResearchNode registry is not valid JSON", "research_nodes.json", [])
         return set()
-    if not isinstance(registry, dict) or registry.get("schema_version") != "ts-research-node-registry/1":
+    if not isinstance(registry, dict) or registry.get("schema_version") != "ts-research-node-registry/2":
         if required:
-            _finding(findings, "activity_registry_unavailable", "ResearchNode registry does not use ts-research-node-registry/1", "research_nodes.json", [])
+            _finding(findings, "activity_registry_unavailable", "ResearchNode registry does not use ts-research-node-registry/2", "research_nodes.json", [])
         return set()
     return {
         str(row["node_id"])

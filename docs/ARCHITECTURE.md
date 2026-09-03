@@ -26,7 +26,7 @@ Installation root
              -> deterministic execution plane
                 compute kernel + Render + Report + remote + notification
              -> Validation Engine
-                frozen GateSpecs + registered predicates + acceptance profiles
+                frozen ProofSpecs + registered predicates + acceptance profiles
              -> graph Context Compiler
              -> isolated operational Compute Agent
              -> isolated advisory Review Agent
@@ -117,22 +117,22 @@ and retry; service restart remains a separate operator action.
 | Component | Uses a model | Writes canonical science | External effect | Durable output |
 | --- | --- | --- | --- | --- |
 | TSPi lifecycle host | No | Bootstrap only | Starts Pi | release/config selection, identity, Root lock |
-| Root Agent | Yes | Only through Decision apply | Selects bounded tools | Pi conversation and applied Decisions |
+| Root Agent | Yes | Only through `ts_change` | Selects bounded tools | Pi conversation and applied Decisions |
 | Research Kernel | No | Yes, exclusively | No | graph registries, acceptance, Decisions, transactions |
 | Context Compiler | No | No | No | revision-bound read projection |
-| Validation Engine | No | Through Kernel apply | No | frozen GateSpecs and ValidationResults |
+| Validation Engine | No | Through Kernel apply | No | frozen ProofSpecs and ValidationResults |
 | Review Agent | Yes | No | No | task, snapshot, result/failure, Root disposition |
 | Compute Agent | Yes | No | Only through bound typed tools | task, actions, deterministic result/failure |
-| Compute kernel | No | No | Local/SSH/Torque action | intent, control record, manifest, parsed artifacts |
-| `ts_structure_seed` | No | No | Bounded local generation | Node-owned XYZ, provenance, and activity |
-| `ts_structure_compare` | No | No | Bounded local analysis | Node-owned JSON, input digests, metrics, and activity |
-| `ts_artifact_import` | No | No | Bounded local file creation | Node-owned content-addressed input and activity |
+| Compute kernel | No | No | Local preparation/parsing or SSH/Torque action | intent, control record, manifest, parsed artifacts |
+| `ts_seed` | No | No | Bounded local generation | Node-owned XYZ, provenance, and activity |
+| `ts_compare` | No | No | Bounded local analysis | Node-owned JSON, input digests, metrics, and activity |
+| `ts_import` | No | No | Bounded local file creation | Node-owned content-addressed input and activity |
 | `ts_render` / `ts_report` | No | No | Local file creation | no-overwrite artifact or report package |
-| `ts_remote_inspect` | No | No | Read-only SSH/Torque calls | tool result only |
-| `ts_notify_user` | No | No | Fixed-target ClawEmail delivery | digest-addressed receipt |
+| `ts_remote` | No | No | Read-only SSH/Torque calls | tool result only |
+| `ts_notify` | No | No | Fixed-target ClawEmail delivery | digest-addressed receipt |
 | TSPi UI and `ts_web` | No | No | Read-only projection | transient UI or explicit UI registry |
 
-Only `ts_workspace_decision_apply` may mutate canonical scientific state after
+Only `ts_change` may mutate canonical scientific state after
 bootstrap. No extension, Review result, backend, parser, scheduler, renderer,
 report builder, notification, UI event, or Agent prose may bypass that owner.
 
@@ -172,7 +172,7 @@ episode. It records:
   deliverable;
 - zero or more dependency Nodes;
 - one optional primary Claim, additional related Claims, and descriptive tags;
-- Observations, Findings, GateSpecs, and ValidationResults linked by canonical
+- Observations, Findings, ProofSpecs, and ValidationResults linked by canonical
   scientific refs;
 - one terminal result or an open status;
 - the Kernel-owned artifact root `nodes/<node_id>`.
@@ -216,13 +216,13 @@ Finding IDs are readable workspace-local ordinals (`fnd_1`, `fnd_2`, ...).
 
 ### Validation and acceptance
 
-A GateSpec is a fully expanded, frozen declarative check set. It records the
+A ProofSpec is a fully expanded, frozen declarative check set. It records the
 target Claim, dimension, template digest when applicable, predicate-registry
 digest, checks, success policy, creator Node, and content digest. A
 ValidationResult records selected Observation refs and digests, each predicate
 outcome, the aggregate verdict, and a result digest.
-GateSpec and ValidationResult IDs are likewise readable creation ordinals
-(`gsp_1`, `gsp_2`, ... and `val_1`, `val_2`, ...).
+ProofSpec and ValidationResult IDs are likewise readable creation ordinals
+(`proof_1`, `proof_2`, ... and `result_1`, `result_2`, ...).
 
 The four verdicts are distinct:
 
@@ -236,10 +236,10 @@ a passing result.
 
 Claim status is an explicit Root interpretation; acceptance is a separate
 immutable assessment snapshot. A versioned acceptance profile checks a
-supported Claim, at least one GateSpec, required dimensions, coverage of all
-attached GateSpecs, the latest passing result per specification, content
+supported Claim, at least one ProofSpec, required dimensions, coverage of all
+attached ProofSpecs, the latest passing result per specification, content
 digests, and blocking Findings. Historical records remain canonical. Their
-currentness is derived by comparing the frozen Claim, profile, GateSpecs,
+currentness is derived by comparing the frozen Claim, profile, ProofSpecs,
 latest results, and relevant Findings with current canonical state. The entire
 acceptance record is also self-bound by `acceptance_digest`.
 Acceptance IDs and filenames use readable ordinals (`acc_1`, `acc_2`, ...).
@@ -267,7 +267,7 @@ claims.json
 claim_relations.json
 research_nodes.json
 observations.json
-validation_specs.json
+proof_specs.json
 validation_results.json
 findings.json
 acceptances/<acceptance_id>.json
@@ -311,28 +311,23 @@ label and semantic state, not use those opaque bindings as user-facing names.
 
 ## Decision Transaction
 
-The only normal mutation sequence is:
+The only normal mutation boundary is:
 
 ```text
-context -> decision draft -> complete dry-run validation -> apply under lock
+ts_state -> Root decision -> ts_change (compile, validate, apply under one lock)
 ```
 
-`ts_workspace_decision_draft` accepts Root-authored research operations and local
-aliases. It allocates technical IDs, resolves `$alias` references, compiles any
-GateSpec, evaluates any requested validation against the draft state, binds the
-current frontier projection and scientific revision, and returns a complete
-`ts-research-decision/2`.
+`ts_change` accepts Root-authored research operations and local aliases. The
+Kernel privately allocates technical IDs, resolves `$alias` references, compiles
+any ProofSpec, evaluates requested validation against the proposed state, binds
+the current scientific revision, and commits one complete `ts-research-decision/3`
+without exposing an intermediate Decision to the caller.
 
-Validation applies the exact Decision to an isolated copy of canonical state
-and validates the complete post-state. Apply repeats binding and post-state
-validation while holding the workspace lock, then commits through one
-transaction path. A Decision is idempotent only when its ID and full canonical
-digest match. Decision IDs are workspace-local monotonic ordinals (`dec_1`,
-`dec_2`, ...), used only as immutable identity. Drafting does not reserve an
-ordinal: parallel drafts may receive the same next ID, the first committed
-content owns it, and a conflicting draft must be redrafted. Committed, aborted,
-and recoverable transaction IDs are never reused. Any edit after draft requires
-a new draft.
+The Kernel applies the proposed change to an isolated copy and validates the
+complete post-state before committing while holding the workspace lock. A
+replayed change is idempotent only when its full request digest matches the
+recorded transaction. Decision IDs are workspace-local monotonic ordinals used
+only as immutable audit identity; callers never reserve or patch them.
 
 Supported draft operations are:
 
@@ -340,7 +335,7 @@ Supported draft operations are:
 create_phase            create_claim            relate_claims
 start_node               complete_node
 record_observation      record_finding      resolve_finding
-freeze_validation_spec evaluate_validation
+freeze_proof_spec evaluate_proof
 update_claim            accept_claim
 set_focus
 ```
@@ -353,9 +348,9 @@ contain multiple ordered operations and refer to new records with local aliases.
 The engine separates mechanism from policy:
 
 ```text
-Gate template + typed parameters
+Proof template + typed parameters
   -> compiler expands every check
-  -> frozen GateSpec with template and registry digests
+  -> frozen ProofSpec with template and registry digests
   -> registry invokes maintained deterministic predicates
   -> ValidationResult with selected Observation digests
 
@@ -381,13 +376,13 @@ files. Graph modes are:
 
 - `frontier`: focus Claims/Nodes, direct alternatives/dependencies, open
   Findings, incomplete validation, and recent object-level changes;
-- `claim`, `node`, `finding`, and `validation`: one focused object and bounded
+- `claim`, `node`, `finding`, and `proof`: one focused object and bounded
   neighborhood;
 - `subgraph`: caller-seeded Claim/Node graph to a bounded depth;
 - `delta`: changes since known scientific and operational revisions.
 
-The same read-only public tool exposes `locate`, `artifacts`,
-`compute_capabilities`, and `validation_capabilities`. `locate` accepts one
+The same read-only public tool exposes `locate`, `artifacts`, and
+`capabilities`. `locate` accepts one
 exact ID or text query and joins Claims, Nodes, Observations, Attempts, and the
 authoritative artifact catalog to bounded current paths. An Attempt result
 distinguishes the frozen input bindings from the output artifacts it produced.
@@ -409,9 +404,9 @@ Claim-Node traversal uses the union of declared Node scope and Claim creator
 provenance. Context, Review, report rendering, and `ts_web` share this derived
 relationship; none mutates the underlying Claim or ResearchNode records.
 
-Validation capability discovery is progressive: the catalog is compact, while
-an exact `templateId` plus `templateVersion` returns that template's accepted
-parameters and expanded Observation selectors before a GateSpec is drafted.
+Capability discovery is progressive: the catalog is compact, while an exact
+proof `templateId` plus `templateVersion` returns that template's accepted
+parameters and expanded Observation selectors before a ProofSpec is drafted.
 
 ## Read-Only Web Projection
 
@@ -456,9 +451,9 @@ into graph vertices. A Node's Overview shows only the compact Attempt and family
 summary. Its Runs tab projects
 immutable calculation intents as family-grouped, filtered, fixed-page records
 with scientific purpose, primary/retry/recalculation kind, source Attempt,
-derived changes, method, settings, remote resource request, job/timing state,
+derived changes, method, parameters, remote resource request, job/timing state,
 expected artifacts, and bound Compute runs. The workspace snapshot carries only
-compact Attempt fields; settings, bindings, and execution resources are loaded
+compact Attempt fields; parameters, bindings, and execution resources are loaded
 with the selected Node detail.
 Node details otherwise separate conclusions, Evidence, operational activity,
 files, and Decision history. Claims, acceptance, validation, Findings, the
@@ -529,11 +524,11 @@ full workspace dump.
 
 | Extension | Public tools and commands | Responsibility |
 | --- | --- | --- |
-| `ts-workflow-control` | context, Decision draft/validate/apply; `/ts-context`, `/ts-validate` | graph projection and sole canonical mutation path |
-| `ts-workflow-review` | `ts_subagent_review`, `ts_review_disposition` | isolated advisory Review and mandatory Root response |
-| `ts-workflow-compute` | `ts_subagent_compute`, `ts_remote_inspect`; `/ts-remote` | isolated operational lifecycle over deterministic compute actions and diagnostics |
-| `ts-workflow-artifacts` | `ts_structure_seed`, `ts_structure_compare`, `ts_artifact_import`, `ts_render`, `ts_report`, `ts_notify_user` | deterministic local artifacts, analyses, reports, and delivery |
-| `ts-workflow-ui` | `/ts-subagent-history` | startup, editor/footer, TS Activity, and Compute/Review history |
+| `ts-workflow-control` | `ts_state`, `ts_change`; `/ts`, `/ts-check` | bounded graph projection and sole canonical mutation boundary |
+| `ts-workflow-review` | `ts_review`, `ts_reply` | isolated advisory Review and mandatory Root response |
+| `ts-workflow-compute` | `ts_calc`, `ts_remote`; `/ts-remote` | isolated operational lifecycle over deterministic compute actions and diagnostics |
+| `ts-workflow-artifacts` | `ts_seed`, `ts_compare`, `ts_import`, `ts_render`, `ts_report`, `ts_notify` | deterministic local artifacts, analyses, reports, and delivery |
+| `ts-workflow-ui` | `/ts-runs` | startup, editor/footer, TS Activity, and Compute/Review history |
 
 `ts-phone-bridge` is optional and loaded only by `TSPi --phone`. It forwards
 messages to the same visible Pi process and never creates a hidden Root Agent.
@@ -563,7 +558,7 @@ The host:
 1. selects one target Claim and asks the Context Compiler for its dependency
    snapshot;
 2. creates a bounded `ts-agent-task/2` containing compact Claim, relation, Node,
-   Observation, Finding, GateSpec, ValidationResult, and a logical artifact
+   Observation, Finding, ProofSpec, ValidationResult, and a logical artifact
    manifest without paths or file contents;
 3. starts a fresh Pi child session with no parent transcript, Skills,
    extensions, direct filesystem, shell, compute, mutation, or delegation;
@@ -582,12 +577,12 @@ validation remain authoritative. Review cannot mutate state, create scientific
 Observations, perform external effects, or accept a Claim.
 
 Every successful Review requires exactly one deterministic
-`ts_review_disposition` before the next scientific mutation. Accepting advice
+`ts_reply` before the next scientific mutation. Accepting advice
 still requires primary artifacts and a normal Decision.
 
 ### Compute
 
-`ts_subagent_compute` receives one `ts-agent-task/2` with
+`ts_calc` receives one `ts-agent-task/2` with
 `role=compute`, `authority=operational`, one Node, one immutable intent digest,
 and one of four closed plans:
 
@@ -614,14 +609,23 @@ receipts.
 
 The private compute kernel performs `prepare`, `submit`, `status`, `tail`,
 `collect`, `cancel`, or `parse`. Preparation binds one ResearchNode, logical
-input artifacts and roles, backend/task/settings, execution target, and expected
-outputs into an immutable `ts-calculation-intent/6`. It binds a stable
+input artifacts and roles, backend/task/parameters, execution target, and expected
+outputs into an immutable `ts-calculation-intent/7`. It binds a stable
 Node-contract digest and a separate scientific-intent digest. Primary Attempts
 have no source; retries preserve the scientific digest; recalculations must
 change it; both source relations remain inside one Node. The Kernel derives the
-exact changed fields. Existing `ts-calculation-intent/5` records remain readable,
-while all new launches use `ts-calculation-intent/6`. The host allocates paths,
+exact changed fields. All launches use `ts-calculation-intent/7`; older intent
+schemas are unsupported and are not converted by bootstrap. The host allocates paths,
 filenames, intent ID, remote directory, and submission binding.
+
+The `local` execution target is deliberately a preparation/parsing mode: it is
+valid only for `dry_run=true`, writes deterministic prepared metadata, and may
+parse output files that are already present in the workspace. The kernel does
+not start a local Gaussian, xTB, or scheduler process. `submit`, `status`,
+`tail`, `collect`, and `cancel` require a prepared `remote` target bound to the
+installation's `ts_remote` profile. This explicit split prevents a request
+from appearing launchable and failing only after a model turn or a partial
+side effect.
 
 Remote transport uses OpenSSH/SCP and Torque directly. Guards distinguish
 pre-effect retryable failure from an ambiguous external effect. Known job IDs
@@ -630,7 +634,7 @@ immutable manifest and does not require queue history.
 
 ### Structure Seed, Comparison, And Artifact Import
 
-`ts_structure_seed` accepts one connected SMILES plus declared charge,
+`ts_seed` accepts one connected SMILES plus declared charge,
 multiplicity, and `none` or `uff` initialization. The host uses fixed-seed
 RDKit ETKDGv3, explicit hydrogens, charge/electron-parity checks, and optional
 UFF optimization. It writes private, content-addressed XYZ and provenance files
@@ -638,7 +642,7 @@ under one open ResearchNode. The request journal stores the submitted digest,
 not the SMILES body. The resulting geometry and any UFF energy are initialization
 diagnostics, never stationary-point, TS, or acceptance evidence.
 
-`ts_artifact_import` closes the empty-workspace bootstrap boundary. It accepts
+`ts_import` closes the empty-workspace bootstrap boundary. It accepts
 bounded inline Gaussian, XYZ, or xTB control text for one open ResearchNode,
 checks structure metadata and format, and writes a private content-addressed
 file under the Node. Callers cannot provide a path or filename. Repeating
@@ -646,7 +650,7 @@ identical content is idempotent; conflicting or unsafe targets fail closed.
 Only digest, size, format, chemical metadata, and the resulting logical
 artifact are journaled, never the input body.
 
-`ts_structure_compare` accepts exactly two registered XYZ artifact IDs. The
+`ts_compare` accepts exactly two registered XYZ artifact IDs. The
 host resolves their paths and digests, applies optional zero-based atom mapping,
 reaction-center selection, internal-coordinate checks, explicit stereochemical
 checks, and bounded RMSD thresholds, then writes a private content-addressed
@@ -672,7 +676,7 @@ tool uses a model or interprets chemistry.
 
 ### Notifications
 
-`ts_notify_user` sends a fixed event shape to the installation-owned recipient
+`ts_notify` sends a fixed event shape to the installation-owned recipient
 through configured ClawEmail. Recipient and credentials are not model fields.
 `notifications.toml` is the sole recipient authority. Attachments must be exact,
 unchanged members of one `ts-report-package/4` manifest. Digest-bound receipts
@@ -720,7 +724,7 @@ valid.
 The immediate tool return is the current delivery channel into the Root
 conversation. `TS Activity` is presentation state and is cleared with the Pi
 session. Its rows show only the live kind, semantic owner, action, state, and
-elapsed time. `/ts-subagent-history` reads durable Compute and Review summaries
+elapsed time. `/ts-runs` reads durable Compute and Review summaries
 on demand, uses `sub_n` as the lookup identity, and moves journal paths and files
 behind the detail view's Audit section.
 
@@ -750,7 +754,7 @@ behind the detail view's Audit section.
 | Decision normalization and ID allocation | `python/ts_agent/workspace/decision.py` |
 | Transactional mutation and validation | `python/ts_agent/workspace/engine.py`, `python/ts_agent/workspace/validator.py` |
 | Graph projections and Review snapshot | `python/ts_agent/workspace/context.py` |
-| Predicate registry and GateSpec compiler | `python/ts_agent/validation/` |
+| Predicate registry and ProofSpec compiler | `python/ts_agent/validation/` |
 | Built-in validation policy | `python/ts_agent/validation/templates/`, `python/ts_agent/validation/acceptance_profiles/` |
 | Compute request, intent, and result | `python/ts_agent/compute/contracts/*.schema.json` |
 | Backend capabilities and parsers | `python/ts_agent/compute/capabilities.py`, `python/ts_agent/backends/` |

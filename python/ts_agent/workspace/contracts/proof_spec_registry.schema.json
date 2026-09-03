@@ -1,0 +1,11 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "proof_spec_registry.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "proofs"],
+  "properties": {
+    "schema_version": {"const": "ts-proof-spec-registry/1"},
+    "proofs": {"type": "array", "items": {"$ref": "proof_spec.schema.json"}}
+  }
+}

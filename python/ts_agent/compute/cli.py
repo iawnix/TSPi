@@ -16,7 +16,7 @@ from .artifacts import (
     list_calculation_artifacts,
     resolve_artifact_ids,
 )
-from .capabilities import calculation_capabilities
+from .capabilities import CapabilityGapError, calculation_capabilities, resolve_capability_result
 from .contracts import ComputeContractError
 from .control import (
     cancel_calculation,
@@ -69,6 +69,11 @@ def main(argv: list[str] | None = None) -> int:
     capabilities = sub.add_parser("capabilities")
     capabilities.add_argument("--root")
 
+    resolve_capability = sub.add_parser("resolve-capability")
+    resolve_capability.add_argument("--root")
+    resolve_capability.add_argument("--capability", required=True)
+    resolve_capability.add_argument("--version", default="1")
+
     preflight = sub.add_parser("preflight")
     preflight.add_argument("--root", required=True)
     preflight.add_argument(
@@ -77,7 +82,8 @@ def main(argv: list[str] | None = None) -> int:
         choices=("prepare", "submit", "inspect", "collect", "cancel", "parse"),
     )
     preflight.add_argument("--node-id", required=True)
-    preflight.add_argument("--backend", required=True)
+    preflight.add_argument("--capability")
+    preflight.add_argument("--capability-version")
     preflight.add_argument("--intent-file")
     preflight.add_argument("--intent-id")
     preflight.add_argument("--artifact-ref")
@@ -104,16 +110,35 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     try:
         result = _dispatch(args)
-    except (ComputeContractError, RemoteError, OSError, ValueError, json.JSONDecodeError) as exc:
+    except CapabilityGapError as exc:
+        print(json.dumps(_capability_gap_payload(exc), indent=2, sort_keys=True))
+        return 0
+    except ComputeContractError as exc:
+        # Control APIs deliberately normalize catalog failures to their public
+        # contract error. Preserve the machine-readable capability-gap result
+        # at the CLI boundary without leaking the catalog exception type from
+        # direct Python callers.
+        if isinstance(exc.__cause__, CapabilityGapError):
+            print(json.dumps(_capability_gap_payload(exc.__cause__), indent=2, sort_keys=True))
+            return 0
+        print(json.dumps({"ok": False, "error": str(exc)}, indent=2, sort_keys=True), file=sys.stderr)
+        return 2
+    except (RemoteError, OSError, ValueError, json.JSONDecodeError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, indent=2, sort_keys=True), file=sys.stderr)
         return 2
     print(json.dumps(result, indent=2, sort_keys=True))
     return 0
 
 
+def _capability_gap_payload(error: CapabilityGapError) -> dict[str, Any]:
+    return {"schema_version": "ts-capability-gap/1", "ok": False, **error.payload}
+
+
 def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
     if args.command == "capabilities":
         return calculation_capabilities()
+    if args.command == "resolve-capability":
+        return resolve_capability_result(args.capability, args.version)
     if args.command == "remote-diagnostic":
         return diagnose_remote(args.mode, profile_name=args.profile)
     if args.command == "create-intent":
@@ -144,7 +169,8 @@ def _dispatch(args: argparse.Namespace) -> dict[str, Any]:
             args.root,
             args.operation,
             args.node_id,
-            args.backend,
+            capability=args.capability,
+            capability_version=args.capability_version,
             intent_file=args.intent_file,
             intent_id=args.intent_id,
             artifact_ref=args.artifact_ref,

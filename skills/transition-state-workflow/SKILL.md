@@ -10,14 +10,14 @@ effects, provenance, and validation.
 
 ## Non-Negotiable Boundaries
 
-- Mutate canonical science only through `ts_workspace_decision_apply`.
+- Mutate canonical science only through `ts_change`.
 - Root chooses questions, hypotheses, methods, branches, stopping, and
   interpretation. Graph edges and validation never choose the next action.
 - Treat Claim relations, Node dependencies, and tags as recorded context only.
 - Tool results stay operational until verified artifacts support Observations.
 - Record anomalies, conflicts, limitations, and unresolved questions as
   Findings. Never hide an acceptance blocker in prose.
-- Freeze GateSpecs before evaluation. Review, UI, reports, and historical
+- Freeze ProofSpecs before evaluation. Review, UI, reports, and historical
   acceptance records remain read-only or advisory.
 
 ## Operating Loop
@@ -28,8 +28,9 @@ effects, provenance, and validation.
    with dependencies and Claim scope.
 4. Select a method from chemistry, uncertainty, cost, and available artifacts.
 5. Run bounded tools with the owning Node; its `node_refs` bind the journal.
-6. Verify local primary outputs; record semantic Observations and Findings.
-7. Freeze and evaluate GateSpecs over explicit Observation refs.
+6. Inspect parser candidates, verify local primary outputs, and use `ts_change`
+   to promote selected values into semantic Observations and Findings.
+7. Freeze and evaluate ProofSpecs over explicit Observation refs.
 8. Update Claims and complete the Node as soon as its one question is answered.
 9. Recompile context; record the next material decision as a dependent Node or
    a new Phase, or explicitly stop. Accept through a passing profile only.
@@ -41,46 +42,46 @@ Node while opening one dependent successor. See
 
 Backtrack with a new Node depending on an earlier checkpoint; never erase
 history. Canonical records use readable workspace ordinals (`node_1`, `claim_1`,
-`obs_1`, `fnd_1`, `gsp_1`, `val_1`); ordinals are identity, not Phase or rank.
+`obs_1`, `fnd_1`, `proof_1`, `result_1`); ordinals are identity, not Phase or rank.
 
 Do not impose a universal low-cost-, Gaussian-, or QST-first sequence. Gaussian
 may generate candidates when justified. Before QST2/QST3, require compatible
 endpoints, mapping, conformations, and an elementary-step rationale.
 
-## Decisions
+## State And Change
 
-Use the control tools in this order:
+Use two control tools:
 
-1. `ts_workspace_context` for the current bounded projection.
-2. `ts_workspace_decision_draft` for Root-authored operations and local aliases.
-3. `ts_workspace_decision_validate` for a complete non-mutating dry run.
-4. `ts_workspace_decision_apply` for the locked transactional commit.
+1. `ts_state` for a bounded projection, artifact catalog, or capability catalog.
+2. `ts_change` for one Root-authored atomic change using local aliases.
 
-The draft allocates IDs and resolves `$alias`. Never invent IDs or edit its
-Decision; any change requires a new draft. Operations do not prescribe order.
+The Kernel privately allocates IDs, resolves `$alias`, compiles, dry-runs, and
+commits under one lock. Never invent IDs, paths, receipts, or generated
+Decisions. Operations record one decision; they do not prescribe the next one.
 
 ## Validation
 
-Use `mode=validation_capabilities` to discover predicates, templates, and
-acceptance profiles. Use a versioned template or registered predicates only.
+Use `ts_state mode=capabilities capabilityKind=proof` to discover predicates,
+templates, and acceptance profiles. Use a versioned template or registered
+predicates only.
 
-Before a template GateSpec, query its exact `templateId` and `templateVersion`.
+Before a template ProofSpec, query its exact `templateId` and `templateVersion`.
 
 The compiler freezes template, registry, content, and Observation digests. Only
-`pass` satisfies a GateSpec. Agent code is forbidden. Acceptance requires
+`pass` satisfies a ProofSpec. Agent code is forbidden. Acceptance requires
 current passing coverage and no applicable open blocking Finding.
 
 ## Compute
 
 Use context `mode=locate` to map a Claim/Node/Observation/Attempt to paths. Before
 `launch`, read `mode=artifacts` and bind each `artifactId` to its `inputRole`.
-`ts_subagent_compute` runs one host-bound `launch`, `inspect`, `finalize`, or
+`ts_calc` runs one host-bound `launch`, `inspect`, `finalize`, or
 `cancel` lifecycle. The host owns identities, paths, arguments, and bindings.
 Non-primary launch cites a same-Node `sourceAttempt`. Retry unchanged bindings,
 recalculate changed bindings; a new question starts a Node.
 
-If no input exists, start a Node; use `ts_structure_seed` for one SMILES or
-`ts_artifact_import` for bounded Gaussian/XYZ/control text. Pass its
+If no input exists, start a Node; use `ts_seed` for one SMILES or
+`ts_import` for bounded Gaussian/XYZ/control text. Pass its
 `artifactId`, never a path.
 
 Do not poll unchanged work. Retry only when a typed result proves no external
@@ -89,24 +90,24 @@ expressibility, not live infrastructure health.
 
 ## Review
 
-`ts_subagent_review` independently assesses one Claim from a bounded graph and
+`ts_review` independently assesses one Claim from a bounded graph and
 one logical artifact batch, without parent transcript, Skill, raw filesystem,
 compute, mutation, or delegation. Compute gets a fixed plan and no scientific
 or method authority.
 
-After success, call `ts_review_disposition` before scientific mutation. Apply
-advice only through verified Decisions, and preserve provider failures as such.
+After success, call `ts_reply` before scientific mutation. Apply advice only
+through verified `ts_change` requests, and preserve provider failures as such.
 
 ## Artifacts, Render, Report, And Notify
 
-`ts_structure_compare` writes a deterministic JSON analysis for two registered
-XYZ artifacts. Its result is operational until a Decision records selected
-facts as Observations.
+`ts_compare` writes a deterministic JSON analysis for two registered XYZ
+artifacts. Its result is operational until `ts_change` records selected facts
+as Observations.
 
 `ts_render` creates one Node-owned no-overwrite visualization; `ts_report`
 creates one atomic package. Both use logical artifacts.
 
-Use `ts_notify_user` only for configured material events. The host owns the
+Use `ts_notify` only for configured material events. The host owns the
 recipient and credentials; text cannot redirect them. Never retry ambiguous
 delivery.
 

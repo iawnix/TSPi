@@ -13,7 +13,7 @@ def _write(path: Path, value: dict) -> None:
 
 def test_operational_snapshot_separates_activities_reviews_and_controls(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
-    _write(root / "research_nodes.json", {"schema_version": "ts-research-node-registry/1", "nodes": [{"node_id": "node_1"}]})
+    _write(root / "research_nodes.json", {"schema_version": "ts-research-node-registry/2", "nodes": [{"node_id": "node_1"}]})
     activity = root / "nodes" / "node_1" / "activities" / "op_1"
     _write(
         activity / "request.json",
@@ -141,7 +141,7 @@ def test_operational_snapshot_ignores_unsupported_node_paths(tmp_path: Path) -> 
 def test_pending_compute_run_blocks_node_completion_without_duplicate_activity(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     _write(root / "research_nodes.json", {
-        "schema_version": "ts-research-node-registry/1",
+        "schema_version": "ts-research-node-registry/2",
         "nodes": [{"node_id": "node_1"}],
     })
     run = root / "nodes" / "node_1" / "attempts" / "calc_1" / "runs" / "sub_1"
@@ -174,7 +174,7 @@ def test_pending_compute_run_blocks_node_completion_without_duplicate_activity(t
 def test_retryable_pre_submit_failure_is_not_an_unresolved_control(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     _write(root / "research_nodes.json", {
-        "schema_version": "ts-research-node-registry/1",
+        "schema_version": "ts-research-node-registry/2",
         "nodes": [{"node_id": "node_1"}, {"node_id": "node_2"}],
     })
     retryable = root / "nodes" / "node_1" / "attempts" / "calc_1"
@@ -219,7 +219,7 @@ def test_retryable_pre_submit_failure_is_not_an_unresolved_control(tmp_path: Pat
 def test_incomplete_retry_receipt_fails_closed_as_unresolved(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     _write(root / "research_nodes.json", {
-        "schema_version": "ts-research-node-registry/1",
+        "schema_version": "ts-research-node-registry/2",
         "nodes": [{"node_id": "node_1"}],
     })
     attempt = root / "nodes" / "node_1" / "attempts" / "calc_1"

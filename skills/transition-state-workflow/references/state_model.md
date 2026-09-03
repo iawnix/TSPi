@@ -12,7 +12,7 @@ identity, integrity, persistence, and transactions.
 - ResearchNode DAG
 - Observation
 - Finding
-- GateSpec And ValidationResult
+- ProofSpec And ValidationResult
 - Acceptance
 - Revisions
 
@@ -40,7 +40,7 @@ label to a next action.
 ClaimRelation IDs use workspace-local creation ordinals (`rel_1`, `rel_2`, ...).
 
 The Kernel allocates workspace-local Claim IDs in creation order (`claim_1`,
-`claim_2`, ...). Claim uses `ts-claim/3`; its ordinal is identity only, not
+`claim_2`, ...). Claim uses `ts-claim/4`; its ordinal is identity only, not
 confidence, priority, hierarchy, or a ResearchPhase.
 
 `ResearchNode.claim_refs` is declared research scope. `Claim.created_by_node` is
@@ -95,7 +95,7 @@ joins Node lineage, opening rationale, and outcome for reports and Web without
 adding canonical state. Root context derives only the bounded trajectory summary
 it needs, avoiding a second copy of full Node data.
 
-ResearchNode uses `ts-research-node/1`. It contains no `operation_refs` field.
+ResearchNode uses `ts-research-node/2`. It contains no `operation_refs` field.
 The shared Activity Index projects activities from
 `nodes/<node_id>/activities/*` and `operations/activities/*`, validates journal
 integrity, and supplies completion guards, reports, and UI views.
@@ -132,13 +132,13 @@ It cites applicable Claims, Nodes, and Observations and has severity
 with a cited explanation. Open blocking Findings prevent acceptance.
 Finding IDs use workspace-local creation ordinals (`fnd_1`, `fnd_2`, ...).
 
-## GateSpec And ValidationResult
+## ProofSpec And ValidationResult
 
-A GateSpec is a fully expanded validation specification bound to one Claim and
+A ProofSpec is a fully expanded validation specification bound to one Claim and
 one validation dimension. It freezes checks, success policy, template digest,
 predicate-registry digest, and content digest.
 
-A ValidationResult binds a GateSpec digest and selected Observation digests,
+A ValidationResult binds a ProofSpec digest and selected Observation digests,
 then records every deterministic predicate result and aggregate verdict:
 
 ```text
@@ -147,8 +147,8 @@ pass | fail | inconclusive | error
 
 Validation does not update Claim status or choose another Node.
 
-GateSpecs and ValidationResults use workspace-local creation ordinals
-(`gsp_1`, `gsp_2`, ... and `val_1`, `val_2`, ...). Their dimensions, titles,
+ProofSpecs and ValidationResults use workspace-local creation ordinals
+(`proof_1`, `proof_2`, ... and `result_1`, `result_2`, ...). Their dimensions, titles,
 checks, and verdicts carry meaning; the ordinal does not rank scientific value.
 
 ## Acceptance
@@ -157,17 +157,17 @@ Claim status and acceptance are separate. An acceptance record snapshots:
 
 - the Claim and digest;
 - the versioned acceptance profile and digest;
-- all attached GateSpecs and one passing result per specification;
+- all attached ProofSpecs and one passing result per specification;
 - applicable Findings;
 - the creating Decision and summary.
 
 `acceptance_digest` binds the complete record; component digests bind the
-Claim, profile, GateSpecs, ValidationResults, and Finding snapshot separately.
+Claim, profile, ProofSpecs, ValidationResults, and Finding snapshot separately.
 
 Acceptance records use workspace-local creation ordinals (`acc_1`, `acc_2`,
 ...) in both their IDs and canonical filenames.
 
-Acceptance requires a supported Claim, at least one GateSpec, and the latest
+Acceptance requires a supported Claim, at least one ProofSpec, and the latest
 passing result for every attached specification. Changing the Claim,
 specifications, latest results, profile, or any relevant Finding requires a new
 assessment. Existing records remain immutable history, but only an exact match

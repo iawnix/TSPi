@@ -71,7 +71,7 @@ def locate_research_files(
 
     root_path = Path(root).expanduser().resolve()
     documents = {name: read_json(root_path / name) for name in STATE_FILES}
-    if documents[WORKSPACE_FILE].get("schema_version") != "ts-workspace/5":
+    if documents[WORKSPACE_FILE].get("schema_version") != "ts-workspace/6":
         raise ContractError(f"not an initialized TS workspace: {root_path}")
     index = _build_index(root_path, documents, artifacts)
     entities = _entities(index)

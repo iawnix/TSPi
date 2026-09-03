@@ -64,7 +64,9 @@ export interface ComputeRunResult {
     run_id: string;
     role: "compute";
     operation: string;
-    backend: string;
+    capability: string;
+    capability_version: string;
+    expected_output_roles: string[];
     intent_id: string;
     node_refs: string[];
     action_names: string[];
@@ -196,7 +198,11 @@ export async function runComputeOperator(options: ComputeRunOptions): Promise<Co
             run_id: String(packet.task_id),
             role: "compute",
             operation: String(packet.operation),
-            backend: String(inputs.backend),
+            capability: String(inputs.capability),
+            capability_version: String(inputs.capability_version),
+            expected_output_roles: Array.isArray(inputs.expected_output_roles)
+              ? inputs.expected_output_roles.map(String)
+              : [],
             intent_id: String(inputs.intent_id),
             node_refs: Array.isArray(scope.node_refs) ? scope.node_refs.map(String) : [],
             action_names: options.actions.map((action) => action.tool),

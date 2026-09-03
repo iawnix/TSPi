@@ -5,14 +5,15 @@ from pathlib import Path
 import pytest
 
 from tests.workspace_helpers import accept_research_claim
-from ts_agent.workspace.context import ContextCompileError, build_review_snapshot, compile_context, validation_capabilities
-from ts_agent.workspace.decision import draft_decision
-from ts_agent.workspace.engine import apply_decision, init_workspace
+from ts_agent.workspace.context import ContextCompileError, build_review_snapshot, compile_context, proof_capabilities
+from tests.kernel_helpers import compile_change
+from ts_agent.workspace.engine import init_workspace
+from tests.kernel_helpers import apply_compiled_change
 from ts_agent.io import read_json
 
 
 def _seed(root: Path) -> dict[str, str]:
-    drafted = draft_decision(
+    drafted = compile_change(
         root,
         {
             "rationale": "Create competing Claims and one open frontier Node.",
@@ -57,7 +58,7 @@ def _seed(root: Path) -> dict[str, str]:
             ],
         },
     )
-    apply_decision(root, drafted["decision"])
+    apply_compiled_change(root, drafted["decision"])
     return drafted["allocated_refs"]
 
 
@@ -68,7 +69,7 @@ def test_frontier_projection_includes_competing_claim_and_open_finding(tmp_path:
 
     context = compile_context(root, mode="frontier")
 
-    assert context["schema_version"] == "ts-context-projection/2"
+    assert context["schema_version"] == "ts-context-projection/3"
     assert context["projection_id"].startswith("ctx_")
     assert {item["claim_id"] for item in context["claims"]} == {refs["concerted"], refs["stepwise"]}
     assert [item["relation_id"] for item in context["claim_relations"]] == [refs["alternatives"]]
@@ -80,7 +81,7 @@ def test_frontier_projection_includes_competing_claim_and_open_finding(tmp_path:
 def test_context_derives_claim_node_link_from_creator_provenance(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
-    node_draft = draft_decision(
+    node_draft = compile_change(
         root,
         {
             "rationale": "Start an exploratory Node before it discovers a Claim.",
@@ -96,9 +97,9 @@ def test_context_derives_claim_node_link_from_creator_provenance(tmp_path: Path)
             ],
         },
     )
-    apply_decision(root, node_draft["decision"])
+    apply_compiled_change(root, node_draft["decision"])
     node_id = node_draft["allocated_refs"]["exploration"]
-    claim_draft = draft_decision(
+    claim_draft = compile_change(
         root,
         {
             "rationale": "Record the alternative Claim discovered by the Node.",
@@ -114,7 +115,7 @@ def test_context_derives_claim_node_link_from_creator_provenance(tmp_path: Path)
             ],
         },
     )
-    apply_decision(root, claim_draft["decision"])
+    apply_compiled_change(root, claim_draft["decision"])
     claim_id = claim_draft["allocated_refs"]["alternative"]
 
     canonical_node = read_json(root / "research_nodes.json")["nodes"][0]
@@ -159,15 +160,15 @@ def test_claim_review_snapshot_uses_graph_dependencies_not_evidence_roles(tmp_pa
 
 
 def test_validation_capabilities_are_data_driven() -> None:
-    capabilities = validation_capabilities()
+    capabilities = proof_capabilities()
 
-    assert capabilities["schema_version"] == "ts-validation-capabilities/2"
+    assert capabilities["schema_version"] == "ts-proof-capabilities/1"
     assert capabilities["agent_supplied_executable_code"] is False
     assert "observation.equals" in {item["name"] for item in capabilities["predicates"]}
     assert "classical-ts" in {item["template_id"] for item in capabilities["templates"]}
     assert "accepted-ts" in {item["profile_id"] for item in capabilities["acceptance_profiles"]}
 
-    focused = validation_capabilities(template_id="reaction-coordinate", template_version="1")
+    focused = proof_capabilities(template_id="reaction-coordinate", template_version="1")
     template = focused["selected_template"]
     assert template["parameters"] == {"subject_ref": {"type": "string", "required": True}}
     assert template["definition"]["checks"][0]["parameters"]["selector"]["concept_id"] == (
@@ -179,7 +180,7 @@ def test_validation_capabilities_are_data_driven() -> None:
 def test_claim_projection_uses_numeric_id_order(tmp_path: Path) -> None:
     root = tmp_path / "workspace"
     init_workspace(root)
-    drafted = draft_decision(
+    drafted = compile_change(
         root,
         {
             "rationale": "Create enough Claims to exercise numeric ordering.",
@@ -195,7 +196,7 @@ def test_claim_projection_uses_numeric_id_order(tmp_path: Path) -> None:
             ],
         },
     )
-    apply_decision(root, drafted["decision"])
+    apply_compiled_change(root, drafted["decision"])
     refs = [drafted["allocated_refs"][f"claim{index}"] for index in range(1, 11)]
 
     context = compile_context(root, mode="subgraph", claim_refs=list(reversed(refs)))
@@ -205,9 +206,9 @@ def test_claim_projection_uses_numeric_id_order(tmp_path: Path) -> None:
 
 def test_focused_validation_capabilities_require_a_complete_registered_ref() -> None:
     with pytest.raises(ContextCompileError, match="template_id and template_version together"):
-        validation_capabilities(template_id="reaction-coordinate")
+        proof_capabilities(template_id="reaction-coordinate")
     with pytest.raises(ContextCompileError, match="does not exist"):
-        validation_capabilities(template_id="reaction-coordinate", template_version="999")
+        proof_capabilities(template_id="reaction-coordinate", template_version="999")
 
 
 def test_context_and_review_snapshot_expose_derived_acceptance_state(tmp_path: Path) -> None:

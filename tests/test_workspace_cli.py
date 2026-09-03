@@ -18,9 +18,10 @@ def _write(path: Path, value: dict) -> Path:
 def test_workspace_cli_roundtrip(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     initialized = _run("init_workspace", "--root", str(workspace))
-    assert initialized["schema_version"] == "ts-workspace-init-result/5"
+    assert initialized["schema_version"] == "ts-workspace-init-result/6"
 
     request = {
+        "schema_version": "ts-change-request/1",
         "rationale": "Create and evaluate one bounded research assertion.",
         "basis_refs": [],
         "operations": [
@@ -30,12 +31,17 @@ def test_workspace_cli_roundtrip(tmp_path: Path) -> None:
                 "title": "CLI validation",
                 "objective": "Exercise the complete CLI round trip.",
             },
-            {
-                "op": "create_claim",
-                "local_ref": "claim",
-                "claimType": "test",
-                "statement": "The bounded assertion is true.",
-            },
+                {
+                    "op": "create_claim",
+                    "local_ref": "claim",
+                    "claimType": "test",
+                    "statement": "The bounded assertion is true.",
+                    "question": "Does the bounded observation confirm the assertion?",
+                    "scope": "The deterministic CLI fixture only.",
+                    "uncertainty": "The assertion is uncertain until the observation is recorded.",
+                    "predictions": ["The test.confirmed observation is true."],
+                    "falsifiers": ["The test.confirmed observation is false."],
+                },
             {
                 "op": "start_node",
                 "local_ref": "node",
@@ -74,38 +80,20 @@ def test_workspace_cli_roundtrip(tmp_path: Path) -> None:
             {"op": "set_focus", "claimRefs": ["$claim"], "nodeRefs": []},
         ],
     }
-    drafted = _run(
-        "draft_decision",
+    changed = _run(
+        "change",
         "--root",
         str(workspace),
         "--request-file",
         str(_write(tmp_path / "request.json", request)),
     )
-    decision_path = _write(tmp_path / "decision.json", drafted["decision"])
-    preflight = _run(
-        "validate_decision",
-        "--root",
-        str(workspace),
-        "--decision-file",
-        str(decision_path),
-    )
-    assert preflight["valid"] is True
-    assert not json.loads((workspace / "claims.json").read_text(encoding="utf-8"))["claims"]
-
-    applied = _run(
-        "apply_decision",
-        "--root",
-        str(workspace),
-        "--decision-file",
-        str(decision_path),
-    )
-    assert applied["operation_count"] == 7
+    assert changed["operation_count"] == 7
     context = _run("context", "--root", str(workspace), "--mode", "frontier")
-    assert [item["claim_id"] for item in context["claims"]] == [drafted["allocated_refs"]["claim"]]
+    assert [item["claim_id"] for item in context["claims"]] == [changed["allocated_refs"]["claim"]]
     assert _run("validate_workspace", "--root", str(workspace))["valid"] is True
 
 
-def test_workspace_cli_rejects_unsupported_decision_contract(tmp_path: Path) -> None:
+def test_workspace_cli_rejects_unsupported_change_contract(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     _run("init_workspace", "--root", str(workspace))
     unsupported = {
@@ -117,20 +105,21 @@ def test_workspace_cli_rejects_unsupported_decision_contract(tmp_path: Path) -> 
         "payload": {"node_id": "n001"},
     }
     completed = _run_raw(
-        "validate_decision",
+        "change",
         "--root",
         str(workspace),
-        "--decision-file",
+        "--request-file",
         str(_write(tmp_path / "unsupported.json", unsupported)),
     )
     assert completed.returncode == 2
-    assert "decision.schema.json validation failed" in completed.stderr
+    assert "change_request.schema.json validation failed" in completed.stderr
 
 
-def test_workspace_cli_draft_rejects_unknown_claim_without_mutation(tmp_path: Path) -> None:
+def test_workspace_cli_change_rejects_unknown_claim_without_mutation(tmp_path: Path) -> None:
     workspace = tmp_path / "ws"
     _run("init_workspace", "--root", str(workspace))
     request = {
+        "schema_version": "ts-change-request/1",
         "rationale": "Try to bind an unavailable Claim.",
         "basis_refs": [],
         "operations": [
@@ -151,19 +140,12 @@ def test_workspace_cli_draft_rejects_unknown_claim_without_mutation(tmp_path: Pa
             }
         ],
     }
-    drafted = _run(
-        "draft_decision",
+    completed = _run_raw(
+        "change",
         "--root",
         str(workspace),
         "--request-file",
         str(_write(tmp_path / "unknown.json", request)),
-    )
-    completed = _run_raw(
-        "validate_decision",
-        "--root",
-        str(workspace),
-        "--decision-file",
-        str(_write(tmp_path / "unknown-decision.json", drafted["decision"])),
     )
     assert completed.returncode == 2
     assert "ResearchNode claim_refs contains unknown refs: claim_999" in completed.stderr
@@ -171,13 +153,13 @@ def test_workspace_cli_draft_rejects_unknown_claim_without_mutation(tmp_path: Pa
 
 
 def test_workspace_cli_exposes_validation_capabilities(tmp_path: Path) -> None:
-    capabilities = _run("validation_capabilities")
-    assert capabilities["schema_version"] == "ts-validation-capabilities/2"
+    capabilities = _run("proof_capabilities")
+    assert capabilities["schema_version"] == "ts-proof-capabilities/1"
     assert capabilities["agent_supplied_executable_code"] is False
     assert "classical-ts" in {item["template_id"] for item in capabilities["templates"]}
 
     focused = _run(
-        "validation_capabilities",
+        "proof_capabilities",
         "--template-id",
         "classical-ts",
         "--template-version",
@@ -197,9 +179,8 @@ def test_workspace_cli_help_uses_claim_and_research_node_vocabulary() -> None:
     completed = _run_raw("--help")
     assert completed.returncode == 0
     help_text = " ".join(completed.stdout.split())
-    assert "Claim graph and ResearchNode DAG" in help_text
-    assert "dry-run one bound Decision against the complete resulting state" in help_text
-    assert "atomically apply one validated Decision under the workspace lock" in help_text
+    assert "TSPi hypothesis-proof research kernel" in help_text
+    assert "compile, dry-run, and atomically apply one change" in help_text
     assert "start_node" not in help_text
     assert "report_workspace" not in help_text
 

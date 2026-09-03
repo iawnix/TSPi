@@ -437,7 +437,7 @@ print(json.dumps({
     assert result["argv"][session_index + 1] == str(workspace / ".pi" / "sessions")
     assert (workspace / ".pi" / "root-agent.lock").is_file()
     assert json.loads((workspace / ".pi" / "settings.json").read_text(encoding="utf-8")) == {"quietStartup": True}
-    assert json.loads((workspace / "research_state.json").read_text(encoding="utf-8"))["schema_version"] == "ts-research-state/5"
+    assert json.loads((workspace / "research_state.json").read_text(encoding="utf-8"))["schema_version"] == "ts-research-state/6"
     assert (workspace / ".agents" / "workspace-identity.json").is_file()
 
 

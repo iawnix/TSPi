@@ -227,17 +227,17 @@ Keep SSH keys and authentication in OpenSSH configuration, not in
 `remote.toml`. A calculation request cannot override the host, remote root,
 scheduler commands, activation scripts, or arbitrary environment values.
 
-Check only SSH reachability:
+The launcher flag below is the command-line form of the same read-only
+connectivity check exposed in Pi as `/ts-remote status`:
 
 ```bash
 cd /path/to/TSPi-installation
 ./TSPi --check-remote
 ```
 
-Inside TSPi, `/ts-remote status` checks SSH, `doctor` checks SSH, scheduler,
-remote storage, and registered software, while `queues` and `nodes` return their
-bounded scheduler views. These commands are read-only. Ordinary startup does
-not run any remote probe.
+Use `/ts-remote doctor` for the full SSH, scheduler, storage, and registered
+software chain; `queues` and `nodes` return bounded scheduler views. All four
+diagnostics are read-only. Ordinary startup does not run a remote probe.
 
 ## Configure Notifications
 
@@ -262,7 +262,7 @@ change the recipient or credentials. Set `enabled=false` to disable delivery.
 Every attachment must be an unchanged member of a generated report package
 manifest. To attach a Render result, pass its logical artifact ID to
 `ts_report.assetArtifactIds`, then pass the returned `reports/.../assets/...`
-reference to `ts_notify_user`; do not attach `nodes/...` paths directly.
+reference to `ts_notify`; do not attach `nodes/...` paths directly.
 
 The installation configuration is persistent authorization for that one target.
 There is no per-message activation token. A mismatch between the user's
@@ -472,6 +472,6 @@ readlink -f /path/to/TSPi-installation/.pi/packages/tspi/current
 /path/to/TSPi-installation/TSPi --workspace smoke --continue
 ```
 
-Use `--check-remote` only when a remote profile is configured and a strict SSH
-probe is intended. Scientific validation and real program submission require
-separate, explicit tests.
+The remote check above is optional and only tests transport reachability;
+scientific validation and real program submission require separate, explicit
+tests.

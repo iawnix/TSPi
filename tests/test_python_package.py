@@ -37,6 +37,12 @@ def test_python_payload_digest_covers_code_and_runtime_data() -> None:
         "python/ts_agent/web/static/attempt-timeline.js",
         "python/ts_agent/web/static/claim-map.js",
         "python/ts_agent/web/static/research-map.js",
+        "python/ts_agent/workspace/artifacts.py",
+        "python/ts_agent/workspace/candidates.py",
+        "python/ts_agent/workspace/claims.py",
+        "python/ts_agent/workspace/contracts/change_request.schema.json",
+        "python/ts_agent/workspace/contracts/observation_candidates.schema.json",
+        "python/ts_agent/workspace/contracts/proof_spec.schema.json",
         "python/ts_agent/workspace/contracts/workspace.schema.json",
     }
 
@@ -94,6 +100,8 @@ def test_built_wheel_installs_as_a_self_contained_kernel(tmp_path: Path) -> None
                 "root=Path(ts_agent.__file__).resolve().parent; "
                 "print(json.dumps({'version': importlib.metadata.version('ts-agent-kernel'), "
                 "'schema': (root/'compute/contracts/calculation_request.schema.json').is_file(), "
+                "'candidate_schema': (root/'workspace/contracts/observation_candidates.schema.json').is_file(), "
+                "'candidate_module': (root/'workspace/candidates.py').is_file(), "
                 "'web': (root/'web/static/app.js').is_file()}))"
             ),
         ],
@@ -108,5 +116,7 @@ def test_built_wheel_installs_as_a_self_contained_kernel(tmp_path: Path) -> None
     assert json.loads(probe.stdout) == {
         "version": PACKAGE_VERSION,
         "schema": True,
+        "candidate_schema": True,
+        "candidate_module": True,
         "web": True,
     }

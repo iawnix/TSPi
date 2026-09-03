@@ -41,7 +41,7 @@ const pi={{
   }},
 }};
 install(pi);
-await tools.ts_artifact_import.execute("call-import",{{
+await tools.ts_import.execute("call-import",{{
   operation:"import",nodeId:{json.dumps(refs['node_id'])},format:"xyz_structure",
   content:{json.dumps(content)},charge:0,multiplicity:1,
 }},undefined,(value)=>updates.push(value),{{cwd:{json.dumps(str(workspace))}}});
@@ -90,7 +90,7 @@ const pi={{
   }},
 }};
 install(pi);
-await tools.ts_structure_seed.execute("call-seed",{{
+await tools.ts_seed.execute("call-seed",{{
   operation:"generate",nodeId:{json.dumps(refs['node_id'])},smiles:{json.dumps(smiles)},
   charge:0,multiplicity:1,optimization:"uff",
 }},undefined,(value)=>updates.push(value),{{cwd:{json.dumps(str(workspace))}}});
@@ -150,14 +150,14 @@ const pi={{
   }},
 }};
 install(pi);
-await tools.ts_structure_compare.execute("call-compare",{{
+await tools.ts_compare.execute("call-compare",{{
   operation:"compare",nodeId:{json.dumps(refs['node_id'])},
   referenceArtifactId:{json.dumps(reference_id)},targetArtifactId:{json.dumps(target_id)},
   parameters:{{reactionCenterAtoms:[0,1],keyBonds:[[0,1]]}},
 }},undefined,(value)=>updates.push(value),{{cwd:{json.dumps(str(workspace))}}});
 let rejection="";
 try {{
-  await tools.ts_structure_compare.execute("call-invalid-compare",{{
+  await tools.ts_compare.execute("call-invalid-compare",{{
     operation:"compare",nodeId:{json.dumps(refs['node_id'])},
     referenceArtifactId:{json.dumps(reference_id)},targetArtifactId:{json.dumps(target_id)},
     parameters:{{rmsd_threshold:0.5}},

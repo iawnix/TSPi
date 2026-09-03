@@ -5,11 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from ts_agent.validation import builtin_predicate_registry, evaluate_gate_spec, load_acceptance_profile
+from ts_agent.validation import builtin_predicate_registry, evaluate_proof_spec, load_acceptance_profile
 from ts_agent.validation.digests import sha256_json
 
 from .acceptance import AcceptanceError, acceptance_currentness, acceptance_path, acceptance_policy_violations
 from .activities import build_activity_index
+from .claims import claim_is_testable, claim_preregistration_digest
 from .identity import WorkspaceIdentityError, read_workspace_identity
 from ts_agent.io import read_json
 from .refs import WorkspaceRefError, validate_artifact_bindings
@@ -28,7 +29,7 @@ from .state import (
     STATE_FILES,
     STATE_SCHEMAS,
     VALIDATION_RESULTS_FILE,
-    VALIDATION_SPECS_FILE,
+    PROOF_SPECS_FILE,
     WORKSPACE_FILE,
 )
 
@@ -90,7 +91,7 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
     relations = _unique_map(documents[CLAIM_RELATIONS_FILE].get("relations"), "relation_id", CLAIM_RELATIONS_FILE, findings)
     nodes = _unique_map(documents[RESEARCH_NODES_FILE].get("nodes"), "node_id", RESEARCH_NODES_FILE, findings)
     observations = _unique_map(documents[OBSERVATIONS_FILE].get("observations"), "observation_id", OBSERVATIONS_FILE, findings)
-    specs = _unique_map(documents[VALIDATION_SPECS_FILE].get("specs"), "spec_id", VALIDATION_SPECS_FILE, findings)
+    specs = _unique_map(documents[PROOF_SPECS_FILE].get("proofs"), "proof_id", PROOF_SPECS_FILE, findings)
     results = _unique_map(documents[VALIDATION_RESULTS_FILE].get("results"), "result_id", VALIDATION_RESULTS_FILE, findings)
     finding_map = _unique_map(documents[FINDINGS_FILE].get("findings"), "finding_id", FINDINGS_FILE, findings)
 
@@ -99,7 +100,7 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
     _validate_claims(claims, nodes, observations, specs, results, findings)
     _validate_claim_relations(relations, claims, findings)
     _validate_nodes(nodes, phases, claims, observations, specs, results, finding_map, findings)
-    _validate_observations(observations, nodes, findings)
+    _validate_observations(root_path, observations, nodes, findings)
     _validate_findings(finding_map, claims, nodes, observations, findings)
     _validate_specs_and_results(specs, results, claims, nodes, observations, findings)
     _validate_acceptance(root_path, documents, claims, specs, results, finding_map, findings)
@@ -120,8 +121,24 @@ def _validate_claims(
         node_ref = claim.get("created_by_node")
         if node_ref is not None and node_ref not in nodes:
             _finding(findings, "error", "unknown_claim_creator", f"Claim {claim_id} references unknown creator Node", CLAIMS_FILE)
+        if claim.get("preregistration_digest") != claim_preregistration_digest(claim):
+            _finding(
+                findings,
+                "error",
+                "claim_preregistration_digest_mismatch",
+                f"Claim {claim_id} pre-registration content changed",
+                CLAIMS_FILE,
+            )
+        if claim.get("status") in {"supported", "contradicted", "inconclusive"} and not claim_is_testable(claim):
+            _finding(
+                findings,
+                "error",
+                "claim_not_preregistered",
+                f"Claim {claim_id} reached a tested state without predictions and falsifiers",
+                CLAIMS_FILE,
+            )
         _require_refs(claim.get("observation_refs"), observations, f"Claim {claim_id} observation_refs", CLAIMS_FILE, findings)
-        _require_refs(claim.get("validation_spec_refs"), specs, f"Claim {claim_id} validation_spec_refs", CLAIMS_FILE, findings)
+        _require_refs(claim.get("proof_spec_refs"), specs, f"Claim {claim_id} proof_spec_refs", CLAIMS_FILE, findings)
         _require_refs(claim.get("validation_result_refs"), results, f"Claim {claim_id} validation_result_refs", CLAIMS_FILE, findings)
         for history in claim.get("history", []):
             if not isinstance(history, dict):
@@ -176,7 +193,7 @@ def _validate_nodes(
             _finding(findings, "error", "node_primary_claim_scope_mismatch", f"ResearchNode {node_id} primary Claim is outside claim_refs", RESEARCH_NODES_FILE)
         _require_refs(node.get("observation_refs"), observations, f"ResearchNode {node_id} observation_refs", RESEARCH_NODES_FILE, findings)
         _require_refs(node.get("finding_refs"), finding_map, f"ResearchNode {node_id} finding_refs", RESEARCH_NODES_FILE, findings)
-        _require_refs(node.get("validation_spec_refs"), specs, f"ResearchNode {node_id} validation_spec_refs", RESEARCH_NODES_FILE, findings)
+        _require_refs(node.get("proof_spec_refs"), specs, f"ResearchNode {node_id} proof_spec_refs", RESEARCH_NODES_FILE, findings)
         _require_refs(node.get("validation_result_refs"), results, f"ResearchNode {node_id} validation_result_refs", RESEARCH_NODES_FILE, findings)
         state = node.get("status")
         if (state == "open") != (node.get("result") is None):
@@ -187,6 +204,7 @@ def _validate_nodes(
 
 
 def _validate_observations(
+    root: Path,
     observations: dict[str, dict[str, Any]],
     nodes: dict[str, dict[str, Any]],
     findings: list[dict[str, str]],
@@ -201,6 +219,19 @@ def _validate_observations(
             validate_artifact_bindings(observation)
         except WorkspaceRefError as exc:
             _finding(findings, "error", "invalid_observation_artifacts", f"Observation {observation_id}: {exc}", OBSERVATIONS_FILE)
+        if observation.get("candidate_ref") is not None:
+            try:
+                from .candidates import validate_promoted_candidate
+
+                validate_promoted_candidate(root, observation)
+            except (ValueError, OSError) as exc:
+                _finding(
+                    findings,
+                    "error",
+                    "invalid_observation_candidate",
+                    f"Observation {observation_id}: {exc}",
+                    OBSERVATIONS_FILE,
+                )
         if not _datatype_matches(observation.get("datatype"), observation.get("value")):
             _finding(findings, "error", "observation_datatype_mismatch", f"Observation {observation_id} value does not match datatype", OBSERVATIONS_FILE)
 
@@ -235,23 +266,31 @@ def _validate_specs_and_results(
     findings: list[dict[str, str]],
 ) -> None:
     registry = builtin_predicate_registry()
-    for spec_id, spec in specs.items():
+    for proof_id, spec in specs.items():
         target = spec.get("target_claim_ref")
         creator = spec.get("created_by_node")
         if target not in claims or creator not in nodes:
-            _finding(findings, "error", "unknown_validation_spec_ref", f"GateSpec {spec_id} has an unknown target or creator", VALIDATION_SPECS_FILE)
+            _finding(findings, "error", "unknown_proof_spec_ref", f"ProofSpec {proof_id} has an unknown target or creator", PROOF_SPECS_FILE)
             continue
-        if spec_id not in claims[target].get("validation_spec_refs", []) or spec_id not in nodes[creator].get("validation_spec_refs", []):
-            _finding(findings, "error", "validation_spec_index_mismatch", f"GateSpec {spec_id} is missing from target indexes", VALIDATION_SPECS_FILE)
+        if proof_id not in claims[target].get("proof_spec_refs", []) or proof_id not in nodes[creator].get("proof_spec_refs", []):
+            _finding(findings, "error", "proof_spec_index_mismatch", f"ProofSpec {proof_id} is missing from target indexes", PROOF_SPECS_FILE)
+        if spec.get("claim_preregistration_digest") != claims[target].get("preregistration_digest"):
+            _finding(
+                findings,
+                "error",
+                "proof_claim_snapshot_mismatch",
+                f"ProofSpec {proof_id} is not bound to the target Claim pre-registration",
+                PROOF_SPECS_FILE,
+            )
         expected = dict(spec)
-        digest = expected.pop("spec_digest", None)
+        digest = expected.pop("proof_digest", None)
         if digest != sha256_json(expected):
-            _finding(findings, "error", "validation_spec_digest_mismatch", f"GateSpec {spec_id} digest differs from content", VALIDATION_SPECS_FILE)
+            _finding(findings, "error", "proof_spec_digest_mismatch", f"ProofSpec {proof_id} digest differs from content", PROOF_SPECS_FILE)
         if spec.get("predicate_registry_digest") != registry.digest:
-            _finding(findings, "error", "validation_registry_mismatch", f"GateSpec {spec_id} uses a different predicate registry", VALIDATION_SPECS_FILE)
+            _finding(findings, "error", "validation_registry_mismatch", f"ProofSpec {proof_id} uses a different predicate registry", PROOF_SPECS_FILE)
 
     for result_id, result in results.items():
-        spec = specs.get(str(result.get("spec_ref") or ""))
+        spec = specs.get(str(result.get("proof_ref") or ""))
         creator = nodes.get(str(result.get("evaluated_by_node") or ""))
         target = claims.get(str(result.get("target_claim_ref") or ""))
         selected = [observations[ref] for ref in result.get("observation_refs", []) if ref in observations]
@@ -261,7 +300,7 @@ def _validate_specs_and_results(
         if result_id not in creator.get("validation_result_refs", []) or result_id not in target.get("validation_result_refs", []):
             _finding(findings, "error", "validation_result_index_mismatch", f"ValidationResult {result_id} is missing from target indexes", VALIDATION_RESULTS_FILE)
         try:
-            expected = evaluate_gate_spec(
+            expected = evaluate_proof_spec(
                 spec,
                 selected,
                 result_id=result_id,
@@ -354,16 +393,16 @@ def _validate_acceptance_record(
         return
     if record.get("profile_digest") != sha256_json(profile):
         _finding(findings, "error", "acceptance_profile_digest_mismatch", "acceptance profile digest changed", ref)
-    selected_specs = set(record.get("validation_spec_refs", []))
-    snapshot_specs = set(claim_snapshot.get("validation_spec_refs", []))
+    selected_specs = set(record.get("proof_spec_refs", []))
+    snapshot_specs = set(claim_snapshot.get("proof_spec_refs", []))
     if profile.get("require_all_attached_specs") is True and selected_specs != snapshot_specs:
-        _finding(findings, "error", "acceptance_spec_coverage", "acceptance does not cover every GateSpec attached in the Claim snapshot", ref)
-    spec_digests = record.get("validation_spec_digests", {})
-    if set(spec_digests) != selected_specs or any(
-        spec_id not in specs or spec_digests[spec_id] != sha256_json(specs[spec_id])
-        for spec_id in selected_specs
+        _finding(findings, "error", "acceptance_spec_coverage", "acceptance does not cover every ProofSpec attached in the Claim snapshot", ref)
+    proof_digests = record.get("proof_spec_digests", {})
+    if set(proof_digests) != selected_specs or any(
+        proof_id not in specs or proof_digests[proof_id] != sha256_json(specs[proof_id])
+        for proof_id in selected_specs
     ):
-        _finding(findings, "error", "acceptance_spec_digest_mismatch", "acceptance GateSpec snapshot is invalid", ref)
+        _finding(findings, "error", "acceptance_proof_digest_mismatch", "acceptance ProofSpec snapshot is invalid", ref)
     selected_results = [results.get(result_id) for result_id in record.get("validation_result_refs", [])]
     if any(result is None for result in selected_results):
         _finding(findings, "error", "acceptance_unknown_result", "acceptance references an unknown ValidationResult", ref)
@@ -384,7 +423,7 @@ def _validate_acceptance_record(
         _finding(findings, "error", "acceptance_finding_snapshot_mismatch", "acceptance Finding snapshot has duplicate or unrelated records", ref)
     if record.get("finding_snapshot_digest") != sha256_json(snapshot_findings):
         _finding(findings, "error", "acceptance_finding_digest_mismatch", "acceptance Finding snapshot digest is invalid", ref)
-    selected_spec_records = [specs[spec_id] for spec_id in record.get("validation_spec_refs", []) if spec_id in specs]
+    selected_spec_records = [specs[proof_id] for proof_id in record.get("proof_spec_refs", []) if proof_id in specs]
     for code, message in acceptance_policy_violations(
         claim_snapshot=claim_snapshot,
         profile=profile,
@@ -487,7 +526,7 @@ def _finding(findings: list[dict[str, str]], severity: str, code: str, message: 
 
 def _result(findings: list[dict[str, str]]) -> dict[str, Any]:
     return {
-        "schema_version": "ts-workspace-validation/5",
+        "schema_version": "ts-workspace-validation/6",
         "valid": not any(item["severity"] == "error" for item in findings),
         "findings": findings,
     }

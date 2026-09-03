@@ -10,8 +10,8 @@ from ts_agent.validation.registry import (
     RegistryError,
     builtin_predicate_registry,
     list_acceptance_profiles,
-    list_gate_templates,
-    load_gate_template,
+    list_proof_templates,
+    load_proof_template,
 )
 
 from .acceptance import project_acceptances
@@ -28,7 +28,7 @@ from .refs import (
     observation_sort_key,
     phase_sort_key,
     validation_result_sort_key,
-    validation_spec_sort_key,
+    proof_spec_sort_key,
 )
 from .revision import report_id_for_revision, workspace_revision_from_documents
 from .trajectory import project_research_trajectory
@@ -42,13 +42,13 @@ from .state import (
     RESEARCH_STATE_FILE,
     STATE_FILES,
     VALIDATION_RESULTS_FILE,
-    VALIDATION_SPECS_FILE,
+    PROOF_SPECS_FILE,
     WORKSPACE_FILE,
 )
 from .validator import validate_workspace
 
 
-CONTEXT_MODES = frozenset({"frontier", "claim", "node", "subgraph", "finding", "validation", "delta"})
+CONTEXT_MODES = frozenset({"frontier", "claim", "node", "subgraph", "finding", "proof", "delta"})
 DEFAULT_LIMITS = {
     "phases": 12,
     "claims": 12,
@@ -74,7 +74,7 @@ def compile_context(
     claim_ref: str | None = None,
     node_ref: str | None = None,
     finding_ref: str | None = None,
-    validation_ref: str | None = None,
+    proof_ref: str | None = None,
     claim_refs: list[str] | None = None,
     node_refs: list[str] | None = None,
     depth: int = 1,
@@ -93,7 +93,7 @@ def compile_context(
 
     if mode == "delta" and since_revision == revision and since_operational_revision == operations["operational_revision"]:
         return {
-            "schema_version": "ts-context-projection/2",
+            "schema_version": "ts-context-projection/3",
             "mode": "delta",
             "changed": False,
             "scientific_changed": False,
@@ -111,7 +111,7 @@ def compile_context(
         claim_ref=claim_ref,
         node_ref=node_ref,
         finding_ref=finding_ref,
-        validation_ref=validation_ref,
+        proof_ref=proof_ref,
         claim_refs=claim_refs or [],
         node_refs=node_refs or [],
         depth=depth,
@@ -147,7 +147,7 @@ def compile_context(
         current_acceptances=all_acceptances,
     )
     payload = {
-        "schema_version": "ts-context-projection/2",
+        "schema_version": "ts-context-projection/3",
         "mode": mode,
         "changed": True if mode == "delta" else None,
         "scientific_changed": (since_revision != revision) if mode == "delta" else None,
@@ -174,7 +174,7 @@ def compile_context(
         "workspace_brief": workspace_brief,
         **bounded,
         "open_findings": [item for item in bounded["findings"] if item.get("status") == "open"],
-        "incomplete_validation": _incomplete_validation(bounded["validation_specs"], bounded["validation_results"]),
+        "incomplete_proof": _incomplete_proof(bounded["proof_specs"], bounded["validation_results"]),
         "unresolved_controls": operations["unresolved_controls"],
         "pending_review_dispositions": operations["pending_review_dispositions"],
         "activity_summaries": activity_summaries,
@@ -197,7 +197,7 @@ def compile_context(
             "claim_relations",
             "research_nodes",
             "observations",
-            "validation_specs",
+            "proof_specs",
             "validation_results",
             "findings",
             "acceptances",
@@ -209,7 +209,7 @@ def compile_context(
     return payload
 
 
-def validation_capabilities(
+def proof_capabilities(
     *,
     template_id: str | None = None,
     template_version: str | None = None,
@@ -218,16 +218,16 @@ def validation_capabilities(
         raise ContextCompileError("focused validation capabilities require template_id and template_version together")
     registry = builtin_predicate_registry()
     payload = {
-        "schema_version": "ts-validation-capabilities/2",
+        "schema_version": "ts-proof-capabilities/1",
         "predicates": registry.capabilities,
         "predicate_registry_digest": registry.digest,
-        "templates": list_gate_templates(),
+        "templates": list_proof_templates(),
         "acceptance_profiles": list_acceptance_profiles(),
         "agent_supplied_executable_code": False,
     }
     if template_id is not None and template_version is not None:
         try:
-            template = load_gate_template(template_id, template_version)
+            template = load_proof_template(template_id, template_version)
         except RegistryError as exc:
             raise ContextCompileError(str(exc)) from exc
         payload["selected_template"] = {
@@ -270,9 +270,9 @@ def build_review_snapshot(root: str | Path, *, target_claim_ref: str, depth: int
             (str(item["observation_id"]) for item in projection["observations"]),
             key=observation_sort_key,
         ),
-        "validation_spec_refs": sorted(
-            (str(item["spec_id"]) for item in projection["validation_specs"]),
-            key=validation_spec_sort_key,
+        "proof_spec_refs": sorted(
+            (str(item["proof_id"]) for item in projection["proof_specs"]),
+            key=proof_spec_sort_key,
         ),
         "validation_result_refs": sorted(
             (str(item["result_id"]) for item in projection["validation_results"]),
@@ -298,7 +298,7 @@ def build_review_snapshot(root: str | Path, *, target_claim_ref: str, depth: int
         "claim_relations": projection["claim_relations"],
         "research_nodes": projection["research_nodes"],
         "observations": projection["observations"],
-        "validation_specs": projection["validation_specs"],
+        "proof_specs": projection["proof_specs"],
         "validation_results": projection["validation_results"],
         "findings": projection["findings"],
         "acceptances": projection["acceptances"],
@@ -314,7 +314,7 @@ def _select_graph(
     claim_ref: str | None,
     node_ref: str | None,
     finding_ref: str | None,
-    validation_ref: str | None,
+    proof_ref: str | None,
     claim_refs: list[str],
     node_refs: list[str],
     depth: int,
@@ -324,7 +324,7 @@ def _select_graph(
     relations = _map(documents[CLAIM_RELATIONS_FILE]["relations"], "relation_id")
     nodes = _map(documents[RESEARCH_NODES_FILE]["nodes"], "node_id")
     observations = _map(documents[OBSERVATIONS_FILE]["observations"], "observation_id")
-    specs = _map(documents[VALIDATION_SPECS_FILE]["specs"], "spec_id")
+    specs = _map(documents[PROOF_SPECS_FILE]["proofs"], "proof_id")
     results = _map(documents[VALIDATION_RESULTS_FILE]["results"], "result_id")
     findings = _map(documents[FINDINGS_FILE]["findings"], "finding_id")
     state = documents[RESEARCH_STATE_FILE]
@@ -367,13 +367,13 @@ def _select_graph(
         record = findings[str(finding_ref)]
         selected_claims.update(str(ref) for ref in record.get("claim_refs", []))
         selected_nodes.update(str(ref) for ref in record.get("node_refs", []))
-    elif mode == "validation":
-        spec = specs.get(str(validation_ref))
-        result = results.get(str(validation_ref))
+    elif mode == "proof":
+        spec = specs.get(str(proof_ref))
+        result = results.get(str(proof_ref))
         if spec is None and result is None:
-            raise ContextCompileError(f"unknown validation ref: {validation_ref}")
+            raise ContextCompileError(f"unknown proof ref: {proof_ref}")
         if result is not None:
-            spec = specs.get(str(result.get("spec_ref")))
+            spec = specs.get(str(result.get("proof_ref")))
             selected_nodes.add(str(result.get("evaluated_by_node")))
         if spec is not None:
             selected_claims.add(str(spec.get("target_claim_ref")))
@@ -398,8 +398,8 @@ def _select_graph(
         if relation.get("source_claim_ref") in selected_claims and relation.get("target_claim_ref") in selected_claims
     ]
     selected_specs = [spec for spec in specs.values() if spec.get("target_claim_ref") in selected_claims]
-    selected_spec_refs = {str(spec["spec_id"]) for spec in selected_specs}
-    selected_results = [result for result in results.values() if result.get("spec_ref") in selected_spec_refs]
+    selected_proof_refs = {str(spec["proof_id"]) for spec in selected_specs}
+    selected_results = [result for result in results.values() if result.get("proof_ref") in selected_proof_refs]
     selected_observation_refs = {
         str(ref)
         for node_id in selected_nodes
@@ -451,9 +451,9 @@ def _select_graph(
             for ref in sorted(selected_observation_refs, key=observation_sort_key)
             if ref in observations
         ],
-        "validation_specs": sorted(
+        "proof_specs": sorted(
             selected_specs,
-            key=lambda value: validation_spec_sort_key(str(value["spec_id"])),
+            key=lambda value: proof_spec_sort_key(str(value["proof_id"])),
         ),
         "validation_results": sorted(
             selected_results,
@@ -514,7 +514,7 @@ def _bound_selection(
         "claim_relations": "relations",
         "research_nodes": "nodes",
         "observations": "observations",
-        "validation_specs": "specs",
+        "proof_specs": "specs",
         "validation_results": "results",
         "findings": "findings",
         "acceptances": "acceptances",
@@ -545,17 +545,17 @@ def _recent_decisions(root: Path, limit: int) -> tuple[list[dict[str, Any]], int
     return rows[-limit:], max(0, len(rows) - limit)
 
 
-def _incomplete_validation(specs: list[dict[str, Any]], results: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    latest = {str(result.get("spec_ref")): result for result in results}
+def _incomplete_proof(specs: list[dict[str, Any]], results: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    latest = {str(result.get("proof_ref")): result for result in results}
     return [
         {
-            "spec_ref": spec["spec_id"],
+            "proof_ref": spec["proof_id"],
             "target_claim_ref": spec["target_claim_ref"],
             "dimension": spec["dimension"],
-            "latest_verdict": latest.get(str(spec["spec_id"]), {}).get("verdict", "not_evaluated"),
+            "latest_verdict": latest.get(str(spec["proof_id"]), {}).get("verdict", "not_evaluated"),
         }
         for spec in specs
-        if latest.get(str(spec["spec_id"]), {}).get("verdict") != "pass"
+        if latest.get(str(spec["proof_id"]), {}).get("verdict") != "pass"
     ]
 
 
@@ -645,8 +645,8 @@ def _workspace_brief(
             for finding in findings
             if finding.get("status") == "open"
         ],
-        "incomplete_validation": _incomplete_validation(
-            selected["validation_specs"],
+        "incomplete_proof": _incomplete_proof(
+            selected["proof_specs"],
             selected["validation_results"],
         ),
     }
@@ -664,10 +664,10 @@ def _retrieval_hints(mode: str, selected: dict[str, list[dict[str, Any]]], omitt
         "claim": [str(item["claim_id"]) for item in selected["claims"][:8]],
         "node": [str(item["node_id"]) for item in selected["research_nodes"][:8]],
         "finding": [str(item["finding_id"]) for item in selected["findings"][:8]],
-        "validation": [str(item["spec_id"]) for item in selected["validation_specs"][:8]],
+        "proof": [str(item["proof_id"]) for item in selected["proof_specs"][:8]],
     }
     return {
-        "next_modes": [value for value in ("claim", "node", "finding", "validation", "subgraph") if value != mode],
+        "next_modes": [value for value in ("claim", "node", "finding", "proof", "subgraph") if value != mode],
         "visible_refs": refs,
         "has_more": any(value > 0 for value in omitted.values()),
     }

@@ -10,7 +10,7 @@ resource ceilings, software commands, activation, scratch policy, and server
 environment. A calculation request selects only a named profile and bounded
 resources; it cannot inject host paths, commands, activation, or arbitrary env.
 
-Use `ts_remote_inspect` for read-only diagnostics:
+Use `ts_remote` for read-only diagnostics:
 
 - `status`: SSH connectivity only;
 - `doctor`: SSH, scheduler, storage, and registered software;

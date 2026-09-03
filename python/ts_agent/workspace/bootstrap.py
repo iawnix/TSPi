@@ -14,7 +14,7 @@ from .state import OPTIONAL_DIRS, REQUIRED_DIRS, REQUIRED_FILES, UNSUPPORTED_MAR
 from .validator import validate_workspace
 
 
-BOOTSTRAP_SCHEMA = "ts-workspace-bootstrap/3"
+BOOTSTRAP_SCHEMA = "ts-workspace-bootstrap/4"
 
 
 class WorkspaceBootstrapState(str, Enum):
@@ -146,8 +146,8 @@ def _unsafe_workspace_paths(root: Path) -> list[str]:
 def _unsupported_layout_details(root: Path) -> list[str]:
     details = [f"unsupported marker exists: {name}" for name in sorted(UNSUPPORTED_MARKERS) if (root / name).exists()]
     expected_schemas = {
-        WORKSPACE_FILE: "ts-workspace/5",
-        "research_state.json": "ts-research-state/5",
+        WORKSPACE_FILE: "ts-workspace/6",
+        "research_state.json": "ts-research-state/6",
     }
     for name in (WORKSPACE_FILE, "research_state.json"):
         path = root / name

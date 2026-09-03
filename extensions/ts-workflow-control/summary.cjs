@@ -11,7 +11,7 @@ const WORKSPACE_MARKERS = [
   "claim_relations.json",
   "research_nodes.json",
   "observations.json",
-  "validation_specs.json",
+  "proof_specs.json",
   "validation_results.json",
   "findings.json",
 ];
@@ -25,7 +25,7 @@ function isWorkspaceRoot(root) {
   if (!root || !WORKSPACE_MARKERS.every((name) => fs.existsSync(path.join(root, name)))) return false;
   try {
     const workspace = JSON.parse(fs.readFileSync(path.join(root, "workspace.json"), "utf8"));
-    return workspace.schema_version === "ts-workspace/5" && workspace.kernel_protocol === "ts-research-kernel/5";
+    return workspace.schema_version === "ts-workspace/6" && workspace.kernel_protocol === "ts-research-kernel/6";
   } catch (_error) {
     return false;
   }
@@ -73,7 +73,7 @@ function buildContextDetails(context) {
     claimRelations: arrayOfObjects(context.claim_relations),
     researchNodes: arrayOfObjects(context.research_nodes),
     observations: arrayOfObjects(context.observations),
-    validationSpecs: arrayOfObjects(context.validation_specs),
+    validationSpecs: arrayOfObjects(context.proof_specs),
     validationResults: arrayOfObjects(context.validation_results),
     findings: arrayOfObjects(context.findings),
     acceptances: arrayOfObjects(context.acceptances),
@@ -145,7 +145,7 @@ function buildContextSummary(context, options = {}) {
     lines.push(`- omitted: ${formatCounts(details.omitted)}; retrieve a claim, node, finding, validation, or bounded subgraph explicitly.`);
   }
   lines.push("- authority: the Root Agent chooses research strategy; Claims hold hypotheses and falsifiers; the kernel validates and atomically commits explicit operations.");
-  lines.push("- contract: draft, validate, and apply one ts-research-decision/2; never edit canonical registries directly.");
+  lines.push("- contract: draft, validate, and apply one ts-research-decision/3; never edit canonical registries directly.");
   return lines.join("\n");
 }
 
@@ -210,7 +210,7 @@ function formatClaim(claim) {
 }
 
 function formatValidationGap(item) {
-  return `${item.spec_id || item.spec_ref || "spec"}:${item.dimension || item.status || "unevaluated"}`;
+  return `${item.proof_id || item.proof_ref || "spec"}:${item.dimension || item.status || "unevaluated"}`;
 }
 
 function formatFinding(item) {

@@ -58,15 +58,15 @@ Observations and a normal Decision.
 
 Before `accept_claim`:
 
-1. confirm the Claim status is `supported` and at least one GateSpec is attached;
-2. confirm the latest ValidationResult for each attached GateSpec passes;
+1. confirm the Claim status is `supported` and at least one ProofSpec is attached;
+2. confirm the latest ValidationResult for each attached ProofSpec passes;
 3. confirm the profile's foundational dimensions are present;
 4. resolve every applicable blocking Finding;
 5. ensure the Claim statement, assumptions, and cited artifacts still match;
 6. describe residual scientific limitations in the acceptance summary.
 
 An existing record is historical, not current, after any accepted Claim,
-GateSpec, latest result, profile, or relevant Finding snapshot changes.
+ProofSpec, latest result, profile, or relevant Finding snapshot changes.
 
 Negative, inconclusive, and error verdicts are durable boundaries. They do not
 automatically prescribe retry or abandonment.

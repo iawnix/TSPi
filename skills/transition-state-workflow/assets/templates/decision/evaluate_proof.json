@@ -1,7 +1,7 @@
 {
-  "op": "evaluate_validation",
+  "op": "evaluate_proof",
   "local_ref": "validation_result",
   "nodeRef": "${NODE_REF}",
-  "specRef": "${VALIDATION_SPEC_REF}",
+  "proofRef": "${PROOF_SPEC_REF}",
   "observationRefs": ["${OBSERVATION_REF}"]
 }

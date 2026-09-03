@@ -262,7 +262,7 @@ function renderUnavailableWorkspace(row) {
   teardownVisualizations();
   setHealth("invalid", "Incompatible");
   for (const name of ["phases", "claims", "validation", "findings", "activity"]) setCount(name, 0);
-  document.getElementById("sidebar-meta").textContent = "ts-research-kernel/5 required";
+  document.getElementById("sidebar-meta").textContent = "ts-research-kernel/6 required";
   content.innerHTML = [
     renderHeader(row.label || row.workspace_id, "Registered workspace cannot be read by this release."),
     `<div class="fatal"><strong>Incompatible workspace</strong><br>${escapeHtml(row.load_error || "The workspace is unavailable.")}</div>`,
@@ -502,13 +502,13 @@ function renderConclusionsMode(mode) {
 }
 
 function renderValidation() {
-  const specs = filterRecords(state.view.validation_specs, ["spec_id", "title", "dimension", "target_claim_ref", "template_ref"]);
-  const results = filterRecords(state.view.validation_results, ["result_id", "dimension", "verdict", "target_claim_ref", "spec_ref"]);
+  const specs = filterRecords(state.view.proof_specs, ["proof_id", "title", "dimension", "target_claim_ref", "template_ref"]);
+  const results = filterRecords(state.view.validation_results, ["result_id", "dimension", "verdict", "target_claim_ref", "proof_ref"]);
   const acceptances = filterRecords(state.view.acceptances, ["acceptance_id", "claim_ref", "profile_id", "current", "stale_reasons"]);
-  content.innerHTML = renderHeader("Validation", "Frozen GateSpecs, deterministic results, and revision-bound acceptance records.", true, "Filter validation records")
+  content.innerHTML = renderHeader("Validation", "Frozen ProofSpecs, deterministic results, and revision-bound acceptance records.", true, "Filter validation records")
     + renderNotices()
-    + section("GateSpecs", `${specs.length}`, table(["GateSpec", "Title", "Dimension", "Target Claim"], specs.map(row => [detailButton("validation-spec", row.spec_id, row.spec_id), escapeHtml(row.title), mono(row.dimension), detailButton("claim", row.target_claim_ref, row.target_claim_ref)])))
-    + section("Validation Results", `${results.length}`, table(["Result", "Dimension", "Verdict", "Target Claim", "GateSpec"], results.map(row => [detailButton("validation-result", row.result_id, row.result_id), mono(row.dimension), badge(row.verdict), detailButton("claim", row.target_claim_ref, row.target_claim_ref), mono(row.spec_ref)])))
+    + section("ProofSpecs", `${specs.length}`, table(["ProofSpec", "Title", "Dimension", "Target Claim"], specs.map(row => [detailButton("validation-spec", row.proof_id, row.proof_id), escapeHtml(row.title), mono(row.dimension), detailButton("claim", row.target_claim_ref, row.target_claim_ref)])))
+    + section("Validation Results", `${results.length}`, table(["Result", "Dimension", "Verdict", "Target Claim", "ProofSpec"], results.map(row => [detailButton("validation-result", row.result_id, row.result_id), mono(row.dimension), badge(row.verdict), detailButton("claim", row.target_claim_ref, row.target_claim_ref), mono(row.proof_ref)])))
     + section("Acceptance Records", `${acceptances.length}`, table(["Acceptance", "Claim", "Profile", "State"], acceptances.map(row => [detailButton("acceptance", row.acceptance_id, row.acceptance_id), detailButton("claim", row.claim_ref, row.claim_ref), mono(row.profile_id || "profile"), badge(row.current ? "current" : "historical")])))
     ;
   bindSearch();
@@ -592,7 +592,7 @@ function renderLocatorMatch(match) {
     ...array(match.observation_refs).map(ref => `<span class="ref-chip">Observation ${escapeHtml(ref)}</span>`),
   ].join("");
   const directories = array(match.directories).map(row => pathRow(row.path, row.label || "directory", null)).join("");
-  const attempts = array(match.attempts).map(row => `<div class="record-row"><div><div class="record-title mono">${escapeHtml(row.intent_id || row.ref)}</div><div class="record-subtitle">${escapeHtml(compact([row.backend, row.task_type, row.state]))}</div></div>${row.state ? badge(row.state) : ""}</div>`).join("");
+  const attempts = array(match.attempts).map(row => `<div class="record-row"><div><div class="record-title mono">${escapeHtml(row.intent_id || row.ref)}</div><div class="record-subtitle">${escapeHtml(compact([capabilityLabel(row), row.state]))}</div></div>${row.state ? badge(row.state) : ""}</div>`).join("");
   const artifacts = array(match.artifacts).map(row => pathRow(row.path, compact([row.artifact_id, row.relation, row.sha256 && shortDigest(row.sha256)]), row.preview)).join("");
   const files = array(match.files).map(row => pathRow(row.path, formatBytes(row.size || row.size_bytes || 0), row.preview)).join("");
   return `<section class="locator-match">
@@ -699,7 +699,7 @@ function renderNodeConclusions(payload) {
 
 function renderNodeEvidence(payload) {
   return `<section class="detail-section"><h3>Observations</h3>${detailRecordRows(payload.observations, "observation", "observation_id", "summary", "concept_id")}</section>
-    <section class="detail-section"><h3>Frozen GateSpecs</h3>${detailRecordRows(payload.validation_specs, "validation-spec", "spec_id", "title", "dimension")}</section>
+    <section class="detail-section"><h3>Frozen ProofSpecs</h3>${detailRecordRows(payload.proof_specs, "validation-spec", "proof_id", "title", "dimension")}</section>
     <section class="detail-section"><h3>Validation Results</h3>${detailRecordRows(payload.validation_results, "validation-result", "result_id", "dimension", "verdict")}</section>`;
 }
 
@@ -770,11 +770,12 @@ function renderAttemptPagination(view) {
 
 function renderAttempt(attempt) {
   const lineage = object(attempt.lineage);
-  const settings = object(attempt.settings);
+  const parameters = object(attempt.parameters);
+  const executor = object(attempt.executor);
   const execution = object(attempt.execution_target);
   const resources = object(execution.resources);
   const stateLabel = attemptDisplayState(attempt);
-  const purpose = attempt.purpose || compact([attempt.backend, attempt.task_type]) || "Calculation attempt";
+  const purpose = attempt.purpose || capabilityLabel(attempt) || "Calculation attempt";
   const source = lineage.source_intent_id;
   const sourceNode = lineage.source_node;
   const sourceLabel = [sourceNode, source].filter(Boolean).join(" / ");
@@ -794,9 +795,10 @@ function renderAttempt(attempt) {
     </summary>
     <div class="attempt-body">
       <dl class="detail-grid attempt-grid">
-        <dt>Backend / task</dt><dd>${escapeHtml(compact([attempt.backend, attempt.task_type]) || "unknown")}</dd>
+        <dt>Capability</dt><dd>${escapeHtml(capabilityLabel(attempt) || "unknown")}</dd>
+        <dt>Executor</dt><dd>${escapeHtml(compact([executor.backend, executor.task_type]) || "not shown")}</dd>
         <dt>Method</dt><dd>${escapeHtml(compact([attempt.method, attempt.basis]) || "not recorded")}</dd>
-        <dt>Strategy</dt><dd>${escapeHtml(attempt.candidate_strategy || "not recorded")}</dd>
+        <dt>Expected outputs</dt><dd>${escapeHtml(array(attempt.expected_output_roles).join(", ") || "not recorded")}</dd>
         <dt>Family</dt><dd>Family ${escapeHtml(attempt.family_index || "?")} · <span class="mono">${escapeHtml(attempt.family_root_id || attempt.intent_id)}</span></dd>
         <dt>Lineage</dt><dd>${escapeHtml(lineage.relation || attempt.attempt_kind || "primary")} · ${sourceField}</dd>
         <dt>Reason</dt><dd>${escapeHtml(lineage.reason || (attempt.attempt_kind === "primary" ? "primary Attempt" : "not recorded"))}</dd>
@@ -810,12 +812,53 @@ function renderAttempt(attempt) {
       ${renderAttemptRefs("Scientific changes", changedFields)}
       ${renderAttemptRefs("Input artifacts", inputRefs)}
       ${renderAttemptRefs("Expected artifacts", attempt.expected_artifacts)}
+      ${renderObservationCandidates(attempt.observation_candidates)}
       ${attempt.scientific_intent_digest ? `<div class="attempt-digest"><span>Scientific intent</span><code>${escapeHtml(shortDigest(attempt.scientific_intent_digest))}</code></div>` : ""}
-      ${Object.keys(settings).length ? `<details class="attempt-technical"><summary>Calculation settings</summary>${detailFields(settings)}</details>` : ""}
+      ${Object.keys(parameters).length ? `<details class="attempt-technical"><summary>Capability parameters</summary>${detailFields(parameters)}</details>` : ""}
       ${Object.keys(resources).length ? `<details class="attempt-technical"><summary>Remote resources</summary>${detailFields(resources)}</details>` : ""}
       ${runs.length ? `<div class="attempt-runs"><div class="record-subtitle">Subagent runs</div>${detailRecordRows(runs, "agent", "task_id", "operation", "status")}</div>` : ""}
     </div>
   </details>`;
+}
+
+function renderObservationCandidates(projection) {
+  if (!projection || typeof projection !== "object") return "";
+  const status = String(projection.status || "invalid");
+  const candidates = array(projection.candidates);
+  const pending = Boolean(projection.pending_interpretation);
+  const subtitle = pending
+    ? "Parser output · pending Root interpretation"
+    : status === "interpreted"
+      ? "Parser output · promoted to canonical Observations"
+      : status === "empty"
+        ? "Parser output · no semantic candidates"
+        : "Parser output · requires diagnosis";
+  const error = projection.error
+    ? `<div class="observation-candidate-error">${escapeHtml(projection.error)}</div>`
+    : "";
+  const rows = candidates.map(candidate => {
+    const stateLabel = String(candidate.state || "pending_interpretation");
+    const value = formatValue(candidate.value);
+    const unit = candidate.unit ? ` ${candidate.unit}` : "";
+    const promoted = array(candidate.observation_refs);
+    return `<article class="observation-candidate ${tone(stateLabel)}">
+      <div class="observation-candidate-head"><span class="mono">${escapeHtml(candidate.candidate_id || "candidate")}</span><span class="observation-candidate-concept">${escapeHtml(candidate.concept_id || "unknown concept")}</span>${badge(stateLabel)}</div>
+      <div class="observation-candidate-value"><code>${escapeHtml(value)}${escapeHtml(unit)}</code></div>
+      ${candidate.summary ? `<div class="observation-candidate-summary">${escapeHtml(candidate.summary)}</div>` : ""}
+      ${promoted.length ? `<div class="observation-candidate-promotion">Observation ${escapeHtml(promoted.join(", "))}</div>` : ""}
+    </article>`;
+  }).join("");
+  const diagnostics = array(projection.diagnostics);
+  const count = Number(projection.candidate_count) || candidates.length;
+  const shown = candidates.length;
+  const countLabel = shown < count ? `${shown} of ${count}` : `${count}`;
+  return `<section class="observation-candidates ${tone(status)}">
+    <div class="observation-candidates-heading"><div><h4>Observation Candidates</h4><p>${escapeHtml(subtitle)}</p></div><div class="observation-candidates-meta">${badge(status)}<span>${escapeHtml(countLabel)}</span></div></div>
+    ${error}
+    ${rows ? `<div class="observation-candidate-list">${rows}</div>` : ""}
+    ${diagnostics.length ? `<div class="observation-candidate-diagnostics"><span>Parser diagnostics</span>${diagnostics.map(item => `<div>${escapeHtml(item)}</div>`).join("")}</div>` : ""}
+    ${projection.ref ? `<div class="observation-candidate-ref mono">${escapeHtml(projection.ref)}</div>` : ""}
+  </section>`;
 }
 
 function renderAttemptRefs(label, values) {
@@ -845,7 +888,7 @@ function renderNodeHistory(payload) {
     artifact_root: node.artifact_root,
     observation_refs: node.observation_refs,
     finding_refs: node.finding_refs,
-    validation_spec_refs: node.validation_spec_refs,
+    proof_spec_refs: node.proof_spec_refs,
     validation_result_refs: node.validation_result_refs,
   };
   const decisions = array(payload.history).map(row => `<div class="record-row"><div><div class="record-title mono">${escapeHtml(row.decision_id || "Decision")}</div><div class="record-subtitle">${escapeHtml(row.rationale || "Canonical mutation")}</div></div><div class="record-meta"><span>${escapeHtml(formatTime(row.created_at))}</span></div></div>`).join("");
@@ -956,7 +999,7 @@ function resetAttemptView() {
 function localRecord(kind, id) {
   const sources = {
     observation: [state.view.observations, "observation_id"],
-    "validation-spec": [state.view.validation_specs, "spec_id"],
+    "validation-spec": [state.view.proof_specs, "proof_id"],
     "validation-result": [state.view.validation_results, "result_id"],
     finding: [state.view.findings, "finding_id"],
     acceptance: [state.view.acceptances, "acceptance_id"],
@@ -1089,6 +1132,12 @@ function mono(value) { return `<span class="mono">${escapeHtml(value ?? "")}</sp
 function array(value) { return Array.isArray(value) ? value : []; }
 function object(value) { return value && typeof value === "object" && !Array.isArray(value) ? value : {}; }
 function compact(values) { return array(values).filter(value => value !== null && value !== undefined && String(value).trim()).join(" | "); }
+function capabilityLabel(record) {
+  const capability = String(record?.capability || "");
+  if (!capability) return "";
+  const version = record?.capability_version ? `@${record.capability_version}` : "";
+  return `${capability}${version}`;
+}
 function formatValue(value) {
   if (value === null || value === undefined) return "";
   if (typeof value === "string") return value;
@@ -1116,9 +1165,9 @@ function formatDuration(value) {
 }
 function pathName(value) { return String(value || "File").split("/").filter(Boolean).pop() || "File"; }
 function shortDigest(value) { const text = String(value || ""); return text.startsWith("sha256:") ? text.slice(7, 19) : text.slice(0, 12); }
-function recordId(record) { return record.claim_id || record.node_id || record.relation_id || record.observation_id || record.spec_id || record.result_id || record.finding_id || record.acceptance_id || record.activity_id || record.task_id || record.control_id || record.intent_id || "Record"; }
+function recordId(record) { return record.claim_id || record.node_id || record.relation_id || record.observation_id || record.proof_id || record.result_id || record.finding_id || record.acceptance_id || record.activity_id || record.task_id || record.control_id || record.intent_id || "Record"; }
 function labelForKind(kind) {
-  return ({ node: "ResearchNode", claim: "Claim", relation: "Claim Relation", observation: "Observation", "validation-spec": "GateSpec", "validation-result": "Validation Result", finding: "Finding", acceptance: "Acceptance", activity: "Deterministic Operation", agent: "Subagent Run", control: "Remote Control" })[kind] || "Details";
+  return ({ node: "ResearchNode", claim: "Claim", relation: "Claim Relation", observation: "Observation", "validation-spec": "ProofSpec", "validation-result": "Validation Result", finding: "Finding", acceptance: "Acceptance", activity: "Deterministic Operation", agent: "Subagent Run", control: "Remote Control" })[kind] || "Details";
 }
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>'"]/g, character => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", "'": "&#39;", '"': "&quot;" })[character]);

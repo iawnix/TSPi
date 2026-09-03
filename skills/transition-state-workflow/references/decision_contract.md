@@ -1,21 +1,20 @@
 # Decision Contract
 
-`ts_workspace_decision_draft` accepts one object with `rationale`, unique
-`basis_refs`, and an ordered non-empty `operations` array. It returns a complete
-revision-bound `ts-research-decision/2` plus `allocated_refs`.
+`ts_change` accepts one object with `rationale`, unique `basisRefs`, and an
+ordered non-empty `operations` array. The Kernel privately compiles a
+revision-bound `ts-research-decision/3`, validates the complete post-state, and
+returns allocated refs only after atomic commit.
 
-The draft endpoint allocates every technical ID. Decision IDs are
+The change compiler allocates every technical ID. Decision IDs are
 workspace-local monotonic ordinals (`dec_1`, `dec_2`, ...). Each creating
 operation needs a unique `local_ref`; later operations in the same draft refer
 to it as `$local_ref`.
 
 All canonical research records use workspace-local monotonic ordinals:
-`phase_1`, `claim_1`, `rel_1`, `node_1`, `obs_1`, `fnd_1`, `gsp_1`, `val_1`, `acc_1`, and
-so on. Concurrent drafts from the same revision can propose the same next IDs.
-Drafting does not reserve them. The first Decision to commit owns its Decision
-ID and canonical changes; exact content can replay idempotently, while
-conflicting content or stale allocations must be redrafted. Committed, aborted,
-and recoverable Decision transaction IDs are not reused.
+`phase_1`, `claim_1`, `rel_1`, `node_1`, `obs_1`, `fnd_1`, `proof_1`, `result_1`, `acc_1`, and
+so on. Allocation, dry-run validation, and commit share one workspace lock, so
+callers never hold or copy an uncommitted Decision. Committed, aborted, and
+recoverable Decision transaction IDs are not reused.
 
 ## Creating Graph Records
 
@@ -51,20 +50,20 @@ has no file source.
 
 ## Validation And Acceptance
 
-- `freeze_validation_spec`: producing Node, target Claim, open dimension, title,
+- `freeze_proof_spec`: producing Node, target Claim, open dimension, title,
   and exactly one packaged template binding or declarative definition.
-- `evaluate_validation`: producing Node, frozen spec ref, and explicit selected
+- `evaluate_proof`: producing Node, frozen spec ref, and explicit selected
   Observation refs.
 - `accept_claim`: target Claim, versioned profile, summary, and a local ref for
   the acceptance record.
 
-Compilation expands templates and freezes digests during draft. Evaluation is
-deterministic against the draft state, so a Decision may record Observations,
+Compilation expands templates and freezes digests before commit. Evaluation is
+deterministic against the proposed state, so one change may record Observations,
 freeze a specification, and evaluate it using local aliases in one atomic
 request.
 
-Acceptance requires a supported Claim and at least one attached GateSpec. It
-uses all attached GateSpecs and the latest result for each, then fails if
+Acceptance requires a supported Claim and at least one attached ProofSpec. It
+uses all attached ProofSpecs and the latest result for each, then fails if
 coverage, required dimensions, passing verdicts, digests, or blocking Finding
 policy do not hold. The resulting file is immutable history; currentness is a
 derived comparison against later canonical state.
@@ -85,15 +84,16 @@ activity journal is inconsistent, or a compute control is pending/unresolved. A
 terminal failed activity can close the Node as `inconclusive`, `blocked`, or
 `stopped`, but not as `completed`. Pure analytical Nodes need no activity record.
 
-## Three-Step Commit
+## Atomic Change
 
-1. Draft once and retain the returned Decision unchanged.
-2. Validate the exact Decision with `ts_workspace_decision_validate`.
-3. Apply that exact Decision with `ts_workspace_decision_apply`.
+1. Read the smallest useful `ts_state` projection.
+2. Submit one complete `ts_change` request with rationale and local aliases.
+3. Use returned allocated refs or read a fresh delta/frontier projection.
 
-Apply repeats revision binding and complete post-state validation under the
-workspace lock. A successful Review awaiting Root disposition blocks mutation.
-A stale Decision must be redrafted, not patched.
+The Kernel compiles, checks revision binding, applies to an isolated copy,
+validates the complete post-state, and commits while holding one workspace lock.
+A successful Review awaiting Root response blocks mutation. A failed change
+does not expose a partially compiled Decision or mutate canonical state.
 
 Examples under `assets/templates/decision/` are individual operation snippets
-for the draft `operations` array. They are not a prescribed research sequence.
+for the `ts_change.operations` array. They are not a prescribed research sequence.

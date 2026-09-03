@@ -5,7 +5,7 @@
 Use sources in this order:
 
 1. registered public tool schemas for exact call fields;
-2. `ts_workspace_context` for live graph, artifacts, and capability catalogs;
+2. `ts_state` for live graph, artifacts, and capability catalogs;
 3. `SKILL.md` for high-frequency policy;
 4. one focused `references/*.md` file when its topic is active;
 5. reusable files under `assets/` for Decision snippets or custom reports.

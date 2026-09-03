@@ -18,5 +18,5 @@ construction, missing conformers, or a false Claim; keep those possibilities
 separate until the artifacts decide.
 
 Review may propose a new validation dimension or counterexample. Record the
-Root response, then create normal Claims, Findings, Observations, and GateSpecs
+Root response, then create normal Claims, Findings, Observations, and ProofSpecs
 as warranted. Review prose is never direct scientific support.

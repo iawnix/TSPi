@@ -16,8 +16,8 @@ services, not a second Agent runtime.
 
 ## Loaded Surface
 
-Normal startup loads one Root Skill, five extensions, one theme, thirteen public
-tools, and four slash commands. `ts_subagent_compute` and `ts_subagent_review`
+Normal startup loads one Root Skill, five extensions, one theme, twelve public
+tools, and four slash commands. `ts_calc` and `ts_review`
 create isolated child sessions. All underlying compute actions, structure seed,
 input import, Render, Report, remote inspection, workspace control, Review
 disposition, and notification remain deterministic host calls.
@@ -36,8 +36,8 @@ workspace.
 ## Context
 
 Use graph modes `frontier`, `claim`, `node`, `subgraph`, `finding`,
-`validation`, or `delta`. Use catalog modes `artifacts`,
-`compute_capabilities`, and `validation_capabilities`. Every bounded graph
+`proof`, or `delta`. Use catalog modes `artifacts`, `compute`, and `proof` via
+`ts_state`. Every bounded graph
 projection reports its scientific/operational revisions and omitted counts.
 The validation catalog stays compact; query one exact `templateId` and
 `templateVersion` to retrieve its parameters and Observation selectors.
@@ -101,7 +101,7 @@ guards/receipts, not UI state, are authoritative for remote recovery.
 `TS Activity` presents current Compute, Review, and deterministic-tool activity
 as compact kind, owner, action, state, and elapsed-time rows without gaining
 authority. It omits run IDs and audit paths and is transient.
-`/ts-subagent-history` is a paginated read-only Compute/Review browser: its list
+`/ts-runs` is a paginated read-only Compute/Review browser: its list
 uses canonical `sub_n` run IDs, while details put outcome and error before scope,
 actions, artifacts, and audit metadata. Pi's normal expand key expands/collapses
 tool details globally; the history browser paginates its own list.

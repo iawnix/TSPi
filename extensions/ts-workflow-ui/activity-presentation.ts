@@ -14,7 +14,8 @@ export interface TsSubagentPresentationSource {
   task_id_pending?: boolean;
   role: "review" | "compute";
   operation: string;
-  backend?: string;
+  capability?: string;
+  capability_version?: string;
   state: TsSubagentState;
   node_refs?: readonly string[];
   claim_refs?: readonly string[];
@@ -43,20 +44,20 @@ export function subagentOwnerLabel(value: TsSubagentPresentationSource): string 
 }
 
 export function subagentActionLabel(
-  value: Pick<TsSubagentPresentationSource, "role" | "operation" | "backend">,
+  value: Pick<TsSubagentPresentationSource, "role" | "operation" | "capability">,
 ): string {
   if (value.operation === "claim_review") return "claim review";
   if (value.role === "review") return humanizeToken(value.operation || "review");
   const known = {
-    launch: { backend: "launch", generic: "launch calculation" },
-    inspect: { backend: "inspect", generic: "inspect calculation" },
-    finalize: { backend: "collect and parse", generic: "collect and parse" },
-    cancel: { backend: "cancel", generic: "cancel calculation" },
+    launch: { capability: "launch", generic: "launch calculation" },
+    inspect: { capability: "inspect", generic: "inspect calculation" },
+    finalize: { capability: "collect and parse", generic: "collect and parse" },
+    cancel: { capability: "cancel", generic: "cancel calculation" },
   }[value.operation];
-  const backend = backendLabel(value.backend);
-  if (known) return backend ? `${backend} ${known.backend}` : known.generic;
+  const capability = capabilityFamilyLabel(value.capability);
+  if (known) return capability ? `${capability} ${known.capability}` : known.generic;
   const operation = humanizeToken(value.operation || `${value.role} operation`);
-  return backend ? `${backend} ${operation}` : operation;
+  return capability ? `${capability} ${operation}` : operation;
 }
 
 export function subagentStateLabel(
@@ -128,14 +129,29 @@ function waitReasonLabel(value?: string): string {
   }[value || ""] || "waiting";
 }
 
-function backendLabel(value?: string): string | undefined {
+function capabilityLabel(value?: string): string | undefined {
   if (!value) return undefined;
+  const [family, action] = value.split(".", 2);
+  const familyLabel = {
+    gaussian: "Gaussian",
+    xtb: "xTB",
+    crest: "CREST",
+    ase: "ASE",
+    qbics: "Qbics",
+  }[family?.toLowerCase() || ""] || humanizeToken(family || value);
+  return action ? `${familyLabel} ${humanizeToken(action)}` : familyLabel;
+}
+
+function capabilityFamilyLabel(value?: string): string | undefined {
+  if (!value) return undefined;
+  const family = value.split(".", 1)[0];
   return {
     gaussian: "Gaussian",
     xtb: "xTB",
     crest: "CREST",
     ase: "ASE",
-  }[value.toLowerCase()] || humanizeToken(value);
+    qbics: "Qbics",
+  }[family.toLowerCase()] || humanizeToken(family);
 }
 
 function pad(value: number): string {

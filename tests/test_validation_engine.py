@@ -5,12 +5,12 @@ from copy import deepcopy
 import pytest
 
 from ts_agent.validation import (
-    GateSpecCompileError,
+    ProofSpecCompileError,
     PredicateRegistry,
     ValidationEngineError,
     builtin_predicate_registry,
-    compile_gate_spec,
-    evaluate_gate_spec,
+    compile_proof_spec,
+    evaluate_proof_spec,
 )
 
 
@@ -46,7 +46,7 @@ def _observation(
 
 def _compile_classical_ts() -> dict:
     registry = builtin_predicate_registry()
-    return compile_gate_spec(
+    return compile_proof_spec(
         {
             "dimension": "stationary_point",
             "title": "Validate candidate",
@@ -56,8 +56,9 @@ def _compile_classical_ts() -> dict:
                 "parameters": {"subject_ref": "calc_001"},
             },
         },
-        spec_id="gsp_1",
+        proof_id="proof_1",
         target_claim_ref="claim_1",
+        claim_preregistration_digest="sha256:" + "c" * 64,
         registry=registry,
         created_by_node="node_1",
         created_by_decision="dec_1",
@@ -68,10 +69,10 @@ def _compile_classical_ts() -> dict:
 def test_template_compilation_is_expanded_and_digest_bound() -> None:
     spec = _compile_classical_ts()
 
-    assert spec["schema_version"] == "ts-gate-spec/2"
+    assert spec["schema_version"] == "ts-proof-spec/1"
     assert spec["template_ref"] == {"template_id": "classical-ts", "version": "1"}
     assert spec["template_digest"].startswith("sha256:")
-    assert spec["spec_digest"].startswith("sha256:")
+    assert spec["proof_digest"].startswith("sha256:")
     assert all("${" not in repr(check) for check in spec["checks"])
     assert {check["predicate"] for check in spec["checks"]} == {"observation.equals"}
 
@@ -87,10 +88,10 @@ def test_gate_evaluation_passes_from_exact_semantic_observations() -> None:
         _observation("obs_5", "calculation.method_matches_intent", True),
     ]
 
-    result = evaluate_gate_spec(
+    result = evaluate_proof_spec(
         spec,
         observations,
-        result_id="val_1",
+        result_id="result_1",
         evaluated_by_node="node_1",
         evaluated_by_decision="dec_2",
         registry=registry,
@@ -99,7 +100,7 @@ def test_gate_evaluation_passes_from_exact_semantic_observations() -> None:
 
     assert result["verdict"] == "pass"
     assert {item["verdict"] for item in result["check_results"]} == {"pass"}
-    assert result["spec_digest"] == spec["spec_digest"]
+    assert result["proof_digest"] == spec["proof_digest"]
     assert result["observation_refs"] == [f"obs_{index}" for index in range(1, 6)]
     assert result["result_digest"].startswith("sha256:")
 
@@ -115,7 +116,7 @@ def test_observation_refs_sort_by_readable_ordinal_not_lexically() -> None:
             "message": "Selected every bounded observation.",
         },
     )
-    spec = compile_gate_spec(
+    spec = compile_proof_spec(
         {
             "dimension": "ordering",
             "title": "Readable ordinal ordering",
@@ -131,20 +132,21 @@ def test_observation_refs_sort_by_readable_ordinal_not_lexically() -> None:
                 "success_policy": {"mode": "all"},
             },
         },
-        spec_id="gsp_1",
+        proof_id="proof_1",
         target_claim_ref="claim_1",
+        claim_preregistration_digest="sha256:" + "c" * 64,
         registry=registry,
         created_by_node="node_1",
         created_by_decision="dec_1",
     )
-    result = evaluate_gate_spec(
+    result = evaluate_proof_spec(
         spec,
         [
             _observation("obs_10", "test.value", True),
             _observation("obs_2", "test.value", True),
             _observation("obs_1", "test.value", True),
         ],
-        result_id="val_1",
+        result_id="result_1",
         evaluated_by_node="node_1",
         evaluated_by_decision="dec_2",
         registry=registry,
@@ -161,10 +163,10 @@ def test_missing_observation_is_inconclusive_and_false_observation_fails() -> No
         _observation("obs_1", "program.normal_termination", True),
         _observation("obs_2", "stationary_point.confirmed", True),
     ]
-    inconclusive = evaluate_gate_spec(
+    inconclusive = evaluate_proof_spec(
         spec,
         incomplete,
-        result_id="val_1",
+        result_id="result_1",
         evaluated_by_node="node_1",
         evaluated_by_decision="dec_2",
         registry=registry,
@@ -176,10 +178,10 @@ def test_missing_observation_is_inconclusive_and_false_observation_fails() -> No
         _observation("obs_4", "vibration.imaginary_frequency_count", 1),
         _observation("obs_5", "calculation.method_matches_intent", True),
     ]
-    failed = evaluate_gate_spec(
+    failed = evaluate_proof_spec(
         spec,
         complete,
-        result_id="val_2",
+        result_id="result_2",
         evaluated_by_node="node_1",
         evaluated_by_decision="dec_3",
         registry=registry,
@@ -198,7 +200,7 @@ def test_predicate_cannot_cite_observation_outside_selected_snapshot() -> None:
             "message": "Improperly cited an unselected record.",
         },
     )
-    spec = compile_gate_spec(
+    spec = compile_proof_spec(
         {
             "dimension": "scope_integrity",
             "title": "Reject predicate refs outside the selected snapshot",
@@ -214,17 +216,18 @@ def test_predicate_cannot_cite_observation_outside_selected_snapshot() -> None:
                 "success_policy": {"mode": "all"},
             },
         },
-        spec_id="gsp_1",
+        proof_id="proof_1",
         target_claim_ref="claim_1",
+        claim_preregistration_digest="sha256:" + "c" * 64,
         registry=registry,
         created_by_node="node_1",
         created_by_decision="dec_1",
     )
 
-    result = evaluate_gate_spec(
+    result = evaluate_proof_spec(
         spec,
         [_observation("obs_1", "test.value", True)],
-        result_id="val_1",
+        result_id="result_1",
         evaluated_by_node="node_1",
         evaluated_by_decision="dec_2",
         registry=registry,
@@ -237,8 +240,8 @@ def test_predicate_cannot_cite_observation_outside_selected_snapshot() -> None:
 
 def test_unknown_predicate_and_executable_fields_are_rejected() -> None:
     registry = builtin_predicate_registry()
-    with pytest.raises(GateSpecCompileError, match="not registered"):
-        compile_gate_spec(
+    with pytest.raises(ProofSpecCompileError, match="not registered"):
+        compile_proof_spec(
             {
                 "dimension": "invented",
                 "title": "Unsupported code",
@@ -254,8 +257,9 @@ def test_unknown_predicate_and_executable_fields_are_rejected() -> None:
                     "success_policy": {"mode": "all"},
                 },
             },
-            spec_id="gsp_1",
+            proof_id="proof_1",
             target_claim_ref="claim_1",
+            claim_preregistration_digest="sha256:" + "c" * 64,
             registry=registry,
             created_by_node="node_1",
             created_by_decision="dec_1",
@@ -267,10 +271,10 @@ def test_spec_or_observation_tampering_is_detected() -> None:
     spec = deepcopy(_compile_classical_ts())
     spec["checks"][0]["parameters"]["expected"] = False
     with pytest.raises(ValidationEngineError, match="digest"):
-        evaluate_gate_spec(
+        evaluate_proof_spec(
             spec,
             [],
-            result_id="val_1",
+            result_id="result_1",
             evaluated_by_node="node_1",
             evaluated_by_decision="dec_2",
             registry=registry,
@@ -284,22 +288,24 @@ def test_template_rejects_missing_and_unknown_parameters() -> None:
         "title": "Validate candidate",
         "template": {"template_id": "classical-ts", "version": "1", "parameters": {}},
     }
-    with pytest.raises(GateSpecCompileError, match="missing template parameters"):
-        compile_gate_spec(
+    with pytest.raises(ProofSpecCompileError, match="missing template parameters"):
+        compile_proof_spec(
             base,
-            spec_id="gsp_1",
+            proof_id="proof_1",
             target_claim_ref="claim_1",
+            claim_preregistration_digest="sha256:" + "c" * 64,
             registry=registry,
             created_by_node="node_1",
             created_by_decision="dec_1",
         )
 
     base["template"]["parameters"] = {"subject_ref": "calc_001", "code": "bad"}
-    with pytest.raises(GateSpecCompileError, match="unknown template parameters"):
-        compile_gate_spec(
+    with pytest.raises(ProofSpecCompileError, match="unknown template parameters"):
+        compile_proof_spec(
             base,
-            spec_id="gsp_1",
+            proof_id="proof_1",
             target_claim_ref="claim_1",
+            claim_preregistration_digest="sha256:" + "c" * 64,
             registry=registry,
             created_by_node="node_1",
             created_by_decision="dec_1",

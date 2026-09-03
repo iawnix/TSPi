@@ -38,17 +38,19 @@ def test_readme_routes_each_reader_to_the_public_contracts() -> None:
         "./TSPi --workspace reaction-a --continue",
         "scripts/ts_web.py",
         "ResearchPhase roadmap",
-        "/ts-subagent-history",
-        "ts_workspace_decision_apply",
-        "ts_subagent_review",
-        "ts_subagent_compute",
-        "ts_structure_seed",
-        "ts_structure_compare",
-        "ts_artifact_import",
+        "/ts-runs",
+        "ts_state",
+        "ts_change",
+        "ts_review",
+        "ts_reply",
+        "ts_calc",
+        "ts_seed",
+        "ts_compare",
+        "ts_import",
         "ts_render",
         "ts_report",
-        "ts_notify_user",
-        "fourteen public tools",
+        "ts_notify",
+        "twelve public tools",
     ]:
         assert phrase in text
 
@@ -127,7 +129,7 @@ def test_public_docs_state_the_authority_boundary() -> None:
 
     assert "The DAG records what happened; it does not prescribe what must happen next" in texts["readme"]
     assert "Compute and Review use isolated child model sessions" in texts["readme"]
-    assert "Only `ts_workspace_decision_apply` may mutate canonical scientific state" in texts["architecture"]
+    assert "Only `ts_change` may mutate canonical scientific state" in texts["architecture"]
     assert "Every compute action, structure seed" in texts["architecture"]
     assert "Treat Claim relations, Node dependencies, and tags as recorded context only" in texts["skill"]
     assert "Compute may orchestrate only its closed" in texts["maintainer"]
@@ -171,7 +173,7 @@ def test_workspace_docs_match_bootstrap_canonical_file_names() -> None:
         "claim_relations.json",
         "research_nodes.json",
         "observations.json",
-        "validation_specs.json",
+        "proof_specs.json",
         "validation_results.json",
         "findings.json",
         "acceptances/<acceptance_id>.json",
@@ -245,7 +247,7 @@ def test_final_report_builder_projects_phase_node_and_scientific_objects() -> No
         "claim['claim_id']",
         "node['node_id']",
         "observation['observation_id']",
-        "spec['spec_id']",
+        "spec['proof_id']",
         "finding['finding_id']",
         "acceptance['acceptance_id']",
     ]:
@@ -266,8 +268,8 @@ def test_decision_assets_are_generic_operation_examples() -> None:
         "complete_node.json",
         "create_phase.json",
         "create_claim.json",
-        "evaluate_validation.json",
-        "freeze_validation_spec.json",
+        "evaluate_proof.json",
+        "freeze_proof_spec.json",
         "record_finding.json",
         "record_observation.json",
         "relate_claims.json",

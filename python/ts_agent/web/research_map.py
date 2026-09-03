@@ -207,13 +207,23 @@ def _project_node(node: dict[str, Any], node_by_id: dict[str, dict[str, Any]]) -
         "dependency_refs": _strings(node.get("dependency_refs")),
         "upstream_dependencies": dependencies,
         "attempt_count": len(attempts),
+        "observation_candidate_count": sum(
+            int(_object(attempt.get("observation_candidates")).get("candidate_count") or 0)
+            for attempt in attempts
+        ),
+        "pending_observation_candidate_count": sum(
+            int(_object(attempt.get("observation_candidates")).get("pending_count") or 0)
+            for attempt in attempts
+        ),
         "latest_calculation": (
             {
                 "intent_id": latest.get("intent_id"),
-                "backend": latest.get("backend"),
-                "task_type": latest.get("task_type"),
+                "capability": latest.get("capability"),
+                "capability_version": latest.get("capability_version"),
+                "expected_output_roles": _strings(latest.get("expected_output_roles")),
                 "state": latest.get("display_state"),
                 "program_status": latest.get("program_status"),
+                "observation_candidates": _object(latest.get("observation_candidates")).get("status"),
             }
             if latest is not None
             else None
@@ -349,6 +359,10 @@ def _sorted_records(
 
 def _objects(value: Any) -> list[dict[str, Any]]:
     return [row for row in value if isinstance(row, dict)] if isinstance(value, list) else []
+
+
+def _object(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
 
 
 def _strings(value: Any) -> list[str]:

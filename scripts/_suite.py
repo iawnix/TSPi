@@ -37,7 +37,7 @@ EXPECTED_PHONE_PROTOCOLS = {
 }
 WEB_COMPONENT = {
     "embedded_in": "agent",
-    "kernel_protocol": "ts-research-kernel/5",
+    "kernel_protocol": "ts-research-kernel/6",
     "projection_protocol": "ts-web-workspace/6",
     "graph_protocol": "ts-explorer-graph/6",
 }

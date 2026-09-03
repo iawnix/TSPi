@@ -6,8 +6,9 @@ from .artifacts import (
     create_structure_seed_artifact,
     import_calculation_artifact,
     list_calculation_artifacts,
+    resolve_artifact_ref,
 )
-from .capabilities import calculation_capabilities
+from .capabilities import calculation_capabilities, resolve_capability_result
 from .control import (
     cancel_calculation,
     calculation_status,
@@ -26,12 +27,14 @@ __all__ = [
     "calculation_status",
     "calculation_tail",
     "calculation_capabilities",
+    "resolve_capability_result",
     "collect_calculation",
     "create_calculation_intent",
     "create_structure_comparison_artifact",
     "create_structure_seed_artifact",
     "import_calculation_artifact",
     "list_calculation_artifacts",
+    "resolve_artifact_ref",
     "parse_calculation",
     "preflight_calculation",
     "prepare_calculation",

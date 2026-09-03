@@ -4,8 +4,9 @@ import json
 import re
 from pathlib import Path
 
-from ts_agent.workspace import draft_decision, init_workspace, validate_decision
-from ts_agent.workspace.decision import INPUT_OPERATIONS
+from ts_agent.workspace import init_workspace
+from ts_agent.workspace.decision import INPUT_OPERATIONS, validate_decision
+from tests.kernel_helpers import compile_change
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -17,8 +18,8 @@ EXPECTED_FILES = {
     "complete_node.json",
     "create_phase.json",
     "create_claim.json",
-    "evaluate_validation.json",
-    "freeze_validation_spec.json",
+    "evaluate_proof.json",
+    "freeze_proof_spec.json",
     "record_finding.json",
     "record_observation.json",
     "relate_claims.json",
@@ -62,12 +63,12 @@ def test_representative_templates_compose_through_draft_contract(tmp_path: Path)
         ),
         _render("complete_node.json", NODE_REF="$node", RESULT_SUMMARY="The bounded search completed."),
     ]
-    drafted = draft_decision(
+    drafted = compile_change(
         workspace,
         {"rationale": "Compose one atomic research Decision.", "basis_refs": [], "operations": operations},
     )
     decision = validate_decision(drafted["decision"])
-    assert decision["schema_version"] == "ts-research-decision/2"
+    assert decision["schema_version"] == "ts-research-decision/3"
     assert set(drafted["allocated_refs"]) == {"phase", "claim", "node", "finding"}
     assert [operation["op"] for operation in decision["operations"]] == [
         "append_research_phase",

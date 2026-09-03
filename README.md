@@ -7,7 +7,8 @@ Agent, Web, Phone server, and the signed Android artifact into one
 content-addressed component set with one `current` pointer.
 
 The Agent combines one strategy-owning Root Agent with a deterministic research kernel,
-typed local or SSH/Torque calculations, semantic scientific observations,
+typed SSH/Torque calculations with deterministic local preparation and parsing,
+semantic scientific observations,
 declarative validation, reproducible reports, optional notifications, a
 session-scoped activity UI, and a read-only multi-workspace research explorer.
 
@@ -24,7 +25,7 @@ Root Agent
         v
 Research Kernel
   ResearchPhase roadmap + ResearchNode DAG + Claim graph
-  immutable Observations + Findings + frozen Validation
+  parser candidates + immutable Observations + Findings + frozen ProofSpecs
         |
         +-- deterministic compute kernel / Render / Report
         +-- declarative Validation Engine
@@ -55,7 +56,7 @@ The long-lived scientific vocabulary is:
   and provenance record.
 - **Finding**: one explicit anomaly, limitation, conflict, or unresolved
   question, including acceptance-blocking findings.
-- **GateSpec / ValidationResult**: a frozen declarative validation definition
+- **ProofSpec / ValidationResult**: a frozen declarative validation definition
   and its deterministic result over selected Observations.
 
 There is no prescriptive workflow stage, Node type, Evidence role/layer, fixed
@@ -71,7 +72,8 @@ reproducible:
 
 - canonical Claims, alternatives, hypotheses, failures, and backtracking;
 - immutable artifact and Observation provenance;
-- deterministic local and remote effects with explicit ambiguity handling;
+- deterministic local preparation/parsing and remote effects with explicit
+  ambiguity handling;
 - validation standards frozen before evaluation and bound by digests;
 - acceptance records that snapshot the Claim, specifications, results, and
   unresolved Findings;
@@ -181,7 +183,7 @@ pan, zoom, fit, branch, merge, and backtracking lineage.
 
 Opening a Node exposes a compact run summary in Overview and a dedicated Runs
 tab with Attempt-family filters, fixed pagination, purpose,
-retry/recalculation lineage, method, settings, job state, and bound Compute
+retry/recalculation lineage, method, parameters, job state, and bound Compute
 runs; Attempts never become peer roadmap Nodes. Claims, validation, Findings,
 operational activity, and files stay in separate views. Scientific Conclusions
 provides Table and Map modes over the same Claims; the interactive Claim Map
@@ -224,35 +226,36 @@ not in-process module reload or zero-downtime socket handoff.
 
 ## Public Surface
 
-Pi loads one Skill, five extensions, one theme, fourteen public tools, and four
+Pi loads one Skill, five extensions, one theme, twelve public tools, and four
 slash commands:
 
-- `ts_workspace_context`: bounded graph, artifact, compute-capability, or
-  validation-capability projection.
-- `ts_workspace_decision_draft`, `ts_workspace_decision_validate`, and
-  `ts_workspace_decision_apply`: the only canonical mutation pipeline.
-- `ts_subagent_review`: one isolated advisory Review of a target Claim, with an
+- `ts_state`: bounded graph, artifact, compute-capability, or proof-capability
+  projection.
+- `ts_change`: the only canonical mutation entrypoint. The kernel privately
+  compiles, dry-runs, and atomically commits one Root-authored change under one
+  workspace lock.
+- `ts_review`: one isolated advisory Review of a target Claim, with an
   optional one-batch logical-artifact reader instead of preloaded file content.
-- `ts_review_disposition`: one deterministic Root response to a completed
+- `ts_reply`: one deterministic Root response to a completed
   Review.
-- `ts_subagent_compute`: one isolated operational lifecycle: `launch`
+- `ts_calc`: one isolated operational lifecycle: `launch`
   (`prepare -> submit`), `inspect` (`status -> optional tail`), `finalize`
   (`collect -> parse`), or `cancel`. Every action is a zero-argument tool bound
   by the host to one immutable intent.
-- `ts_structure_seed`: deterministic RDKit ETKDGv3 seed generation from one
+- `ts_seed`: deterministic RDKit ETKDGv3 seed generation from one
   connected SMILES, with content-addressed XYZ and provenance.
-- `ts_structure_compare`: deterministic atom-mapped XYZ comparison with a
+- `ts_compare`: deterministic atom-mapped XYZ comparison with a
   Node-owned, content-addressed JSON analysis.
-- `ts_artifact_import`: bounded, Node-owned bootstrap import for Gaussian, XYZ,
+- `ts_import`: bounded, Node-owned bootstrap import for Gaussian, XYZ,
   or xTB control inputs; the host allocates path, filename, digest, and ID.
 - `ts_render`: deterministic local render, comparison, animation, or an ordered
   reactant/transition-state/product mechanism visualization.
 - `ts_report`: deterministic atomic report-package build.
-- `ts_remote_inspect`: read-only SSH/Torque diagnostics.
-- `ts_notify_user`: fixed-target, receipt-bound notification delivery.
+- `ts_remote`: read-only SSH/Torque diagnostics.
+- `ts_notify`: configured-target, receipt-bound notification delivery.
 
-The slash commands are `/ts-context`, `/ts-validate`, `/ts-remote`, and
-`/ts-subagent-history`. The history browser shows durable Compute and Review
+The slash commands are `/ts`, `/ts-check`, `/ts-remote`, and `/ts-runs`.
+The run browser shows durable Compute and Review
 runs; deterministic tool activity is shown through normal tool entries and the
 unified TS Activity projection. TS Activity is a transient live view of kind,
 owner, action, state, and elapsed time. History uses canonical `sub_n` run IDs;
@@ -265,10 +268,12 @@ The Root Agent normally:
 1. Reads the frontier or delta context and states one unresolved question.
 2. Creates or reuses a navigation Phase and starts one decision-sized
    ResearchNode with explicit dependencies and Claim scope.
-3. Selects a scientifically justified method and invokes bounded tools.
-4. Verifies local primary artifacts and records semantic Observations.
+3. Selects a scientifically justified capability and invokes bounded tools.
+4. Inspects parser-produced ObservationCandidates, verifies their primary
+   artifacts, and promotes selected values into semantic Observations with
+   `ts_change`.
 5. Records anomalies and unresolved limits as Findings.
-6. Freezes relevant GateSpecs before evaluation, then evaluates them over
+6. Freezes relevant ProofSpecs before evaluation, then evaluates them over
    explicitly selected Observations.
 7. Updates Claim status and completes the ResearchNode as soon as its one
    question is answered.
@@ -292,23 +297,21 @@ priority list. A converged program, candidate geometry, or isolated imaginary
 frequency is never an accepted TS by itself.
 
 An empty workspace is not a compute dead end. Start an open ResearchNode. Use
-`ts_structure_seed` for a single-molecule SMILES or `ts_artifact_import` for
+`ts_seed` for a single-molecule SMILES or `ts_import` for
 existing Gaussian, XYZ, or xTB control text, then pass the returned logical
 `art_*` to Compute. Neither tool grants path authority or scientific validity.
-Use `ts_structure_compare` for deterministic RMSD, reaction-center, internal
+Use `ts_compare` for deterministic RMSD, reaction-center, internal
 coordinate, or explicit stereochemical checks between two registered XYZ
 artifacts. Its output remains operational until selected facts are registered
-as Observations through a Decision.
+as Observations through `ts_change`.
 
 ## Compute And Remote
 
-Preparation accepts `ts-calculation-request/4`, resolves logical `artifactId`
+Preparation accepts `ts-calculation-request/5`, resolves logical `artifactId`
 plus `inputRole` bindings, and writes an immutable
-`ts-calculation-intent/6` under the owning Node. The intent binds the stable Node
-contract, a digest of backend/task/input artifacts/settings, and explicit
-same-Node retry or recalculation lineage. Existing
-`ts-calculation-intent/5` records remain readable.
-Supported adapter tasks include:
+`ts-calculation-intent/7` under the owning Node. The intent binds the stable Node
+contract, a digest of capability parameters and input artifacts, and explicit
+same-Node retry or recalculation lineage. Supported capabilities include:
 
 - Gaussian: `sp`, `opt`, `freq`, `opt_freq`, `irc`;
 - xTB: `sp`, `opt`, `freq`, `opt_freq`, `scan`, `md`;
@@ -317,21 +320,25 @@ Supported adapter tasks include:
 - QBICS: `dmecp`.
 
 Capability means an adapter can express and validate a task; it does not prove
-that software, storage, SSH, Torque, or a queue is healthy. Remote jobs are
+that software, storage, SSH, Torque, or a queue is healthy. A `local` execution
+target is intentionally limited to dry-run preparation and parsing of outputs
+that already exist in the workspace; it does not start a local Gaussian/xTB
+process. Use a configured `remote` target for submit, status, tail, collect, or
+cancel. Remote jobs are
 isolated by workspace ID, Node, and immutable intent. Pre-effect failures may be
 retryable and are reported separately from unresolved controls. They do not
 require reconciliation or block Node completion. Ambiguous submit or cancel
 effects must be reconciled and must never be blindly replayed. Collection is
 manifest-driven and does not depend on scheduler history.
 
-The Root supplies the scientific request to `ts_subagent_compute`. Before the
+The Root supplies the scientific request to `ts_calc`. Before the
 child starts, the host creates or resolves the intent, verifies its digest, and
 binds the exact action tools. The child receives no Root transcript, Skill,
 filesystem, shell, arbitrary arguments, or recursive delegation. Its result
 tool accepts only a summary and limitations; outcome, program state, artifacts,
 facts, provenance, and reconciliation state are derived from journaled typed
 actions. These operational records are not Observations until Root verifies the
-primary artifacts and applies a Decision.
+primary artifacts and promotes selected parser candidates through `ts_change`.
 
 ## Validation And Acceptance
 
@@ -339,7 +346,7 @@ Validation is data-driven:
 
 ```text
 versioned template + parameters
-  -> fully expanded frozen GateSpec
+  -> fully expanded frozen ProofSpec
   -> registered deterministic predicates
   -> immutable ValidationResult
 ```
@@ -353,8 +360,8 @@ mechanism with maintained templates and predicates instead of adding workflow
 branches.
 
 Acceptance is separate from Claim status. A supported Claim needs at least one
-attached GateSpec. A profile verifies required dimensions, the latest passing
-result for every attached GateSpec, current digests, and the absence of
+attached ProofSpec. A profile verifies required dimensions, the latest passing
+result for every attached ProofSpec, current digests, and the absence of
 unresolved blocking Findings, then writes an immutable historical record.
 That record is current only while its Claim, attached specifications, latest
 results, profile, and relevant Finding snapshot still match. Later research
@@ -364,7 +371,7 @@ recorded.
 ## State And Reports
 
 Canonical scientific state consists of Phase, Node, and Claim registries,
-frozen validation,
+frozen ProofSpecs and ValidationResults,
 acceptance snapshots, Decisions, and transaction logs. Calculation attempts,
 remote controls, Compute/Review journals, notifications, reports, Pi sessions, and UI
 activity are operational or derived state.

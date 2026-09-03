@@ -52,6 +52,9 @@ function failAction(action, error, context) {
     exit_status: null,
     intent_id: nullableString(context && context.intentId),
     node_id: nullableString(context && context.nodeId),
+    capability: nullableString(context && context.capability),
+    capability_version: nullableString(context && context.capabilityVersion),
+    expected_output_roles: stringArray(context && context.outputRoles),
     artifact_refs: [],
     parser_facts: {},
     control: controlOperation
@@ -69,6 +72,9 @@ function failAction(action, error, context) {
       : undefined,
     provenance: {
       backend: nullableString(context && context.backend),
+      capability: nullableString(context && context.capability),
+      capability_version: nullableString(context && context.capabilityVersion),
+      capability_descriptor_digest: nullableString(context && context.capabilityDescriptorDigest),
       intent_digest: nullableString(context && context.intentDigest),
       diagnostic,
     },
@@ -119,6 +125,10 @@ function redactSecrets(message) {
 
 function nullableString(value) {
   return typeof value === "string" && value ? value : null;
+}
+
+function stringArray(value) {
+  return Array.isArray(value) ? value.filter((item) => typeof item === "string" && item) : [];
 }
 
 function isPlainObject(value) {

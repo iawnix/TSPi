@@ -35,7 +35,9 @@ function buildComputeTask({
   runId,
   workspaceRoot,
   operation,
-  backend,
+  capability,
+  capabilityVersion,
+  capabilityDescriptor,
   nodeId,
   binding,
   tailArtifact,
@@ -49,7 +51,29 @@ function buildComputeTask({
   if (!isPlainObject(binding)) throw new Error("Compute task requires a preflight binding");
   const taskId = requirePattern(runId, "runId", /^sub_[1-9][0-9]*$/, 128);
   const normalizedNodeId = requirePattern(nodeId, "nodeId", /^node_[1-9][0-9]*$/, 128);
-  const normalizedBackend = requireString(backend, "backend", 64);
+  const normalizedCapability = requirePattern(
+    capability,
+    "capability",
+    /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/,
+    128,
+  );
+  const normalizedCapabilityVersion = requirePattern(
+    capabilityVersion,
+    "capabilityVersion",
+    /^[1-9][0-9]*$/,
+    16,
+  );
+  const descriptor = normalizeCapabilityDescriptor(
+    capabilityDescriptor,
+    normalizedCapability,
+    normalizedCapabilityVersion,
+  );
+  const descriptorDigest = requirePattern(
+    binding.capabilityDescriptorDigest || binding.capability_descriptor_digest,
+    "binding.capabilityDescriptorDigest",
+    /^sha256:[0-9a-f]{64}$/,
+    71,
+  );
   const intentId = requirePattern(binding.intentId, "binding.intentId", /^calc_[1-9][0-9]*$/, 128);
   const intentDigest = requirePattern(binding.intentDigest, "binding.intentDigest", /^sha256:[0-9a-f]{64}$/, 71);
   if (binding.executionKind !== "remote") {
@@ -62,7 +86,11 @@ function buildComputeTask({
     ? requireString(artifactRef, "artifactRef", 4096)
     : null;
   const inputs = {
-    backend: normalizedBackend,
+    capability: normalizedCapability,
+    capability_version: normalizedCapabilityVersion,
+    capability_descriptor_digest: descriptorDigest,
+    capability_descriptor: descriptor,
+    expected_output_roles: [...descriptor.output_roles],
     node_id: normalizedNodeId,
     intent_id: intentId,
     intent_digest: intentDigest,
@@ -126,6 +154,28 @@ function validateComputeTask(value) {
     throw new Error(`Compute task exceeds ${MAX_COMPUTE_TASK_BYTES} bytes`);
   }
   return task;
+}
+
+function normalizeCapabilityDescriptor(value, capability, version) {
+  if (!isPlainObject(value)) throw new Error("Compute task requires a capability descriptor summary");
+  const allowed = ["capability", "version", "input_roles", "output_roles", "parsers"];
+  const unknown = Object.keys(value).filter((key) => !allowed.includes(key));
+  if (unknown.length) throw new Error(`capability descriptor contains unknown fields: ${unknown.join(", ")}`);
+  if (value.capability !== capability || value.version !== version) {
+    throw new Error("capability descriptor does not match the requested capability");
+  }
+  return {
+    capability: requirePattern(
+      value.capability,
+      "capabilityDescriptor.capability",
+      /^[a-z][a-z0-9_]*(?:\.[a-z][a-z0-9_]*)+$/,
+      128,
+    ),
+    version: requirePattern(value.version, "capabilityDescriptor.version", /^[1-9][0-9]*$/, 16),
+    input_roles: uniqueStrings(value.input_roles, "capabilityDescriptor.input_roles", 32, 64),
+    output_roles: uniqueStrings(value.output_roles, "capabilityDescriptor.output_roles", 32, 64),
+    parsers: uniqueStrings(value.parsers, "capabilityDescriptor.parsers", 16, 128),
+  };
 }
 
 function requireWorkspaceRoot(value) {

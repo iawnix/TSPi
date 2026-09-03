@@ -11,22 +11,20 @@ from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_
 ROOT = Path(__file__).resolve().parents[1]
 TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
 EXPECTED_TOOLS = {
-    "ts_workspace_context",
-    "ts_workspace_decision_draft",
-    "ts_workspace_decision_validate",
-    "ts_workspace_decision_apply",
-    "ts_remote_inspect",
-    "ts_subagent_review",
-    "ts_review_disposition",
-    "ts_subagent_compute",
-    "ts_structure_seed",
-    "ts_structure_compare",
-    "ts_artifact_import",
+    "ts_state",
+    "ts_change",
+    "ts_remote",
+    "ts_review",
+    "ts_reply",
+    "ts_calc",
+    "ts_seed",
+    "ts_compare",
+    "ts_import",
     "ts_render",
     "ts_report",
-    "ts_notify_user",
+    "ts_notify",
 }
-EXPECTED_COMMANDS = {"ts-context", "ts-validate", "ts-remote", "ts-subagent-history"}
+EXPECTED_COMMANDS = {"ts", "ts-check", "ts-remote", "ts-runs"}
 
 
 def test_package_manifest_and_profile_expose_one_skill_five_extensions_one_theme() -> None:
@@ -64,15 +62,16 @@ process.stdout.write(JSON.stringify({{
     assert {item["name"] for item in result["tools"]} == EXPECTED_TOOLS
     assert set(result["commands"]) == EXPECTED_COMMANDS
     assert {name for name, mode in result["execution"].items() if mode == "child_agent"} == {
-        "ts_subagent_review", "ts_subagent_compute"
+        "ts_review", "ts_calc"
     }
-    assert result["execution"]["ts_structure_seed"] == "deterministic_artifact"
-    assert result["execution"]["ts_structure_compare"] == "deterministic_artifact"
-    assert result["execution"]["ts_artifact_import"] == "deterministic_artifact"
+    assert result["execution"]["ts_seed"] == "deterministic_artifact"
+    assert result["execution"]["ts_compare"] == "deterministic_artifact"
+    assert result["execution"]["ts_import"] == "deterministic_artifact"
     assert result["execution"]["ts_render"] == "deterministic_artifact"
     assert result["execution"]["ts_report"] == "deterministic_artifact"
-    context = next(item for item in result["tools"] if item["name"] == "ts_workspace_context")
+    context = next(item for item in result["tools"] if item["name"] == "ts_state")
     assert "query" in context["properties"]
+    assert not any(name.startswith("ts_workspace_") or name.startswith("ts_subagent_") for name in EXPECTED_TOOLS)
 
 
 def test_public_parameters_use_research_node_and_logical_artifact_vocabulary() -> None:
@@ -90,17 +89,17 @@ function propertyKeys(schema, found=new Set()) {{
 process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(tools).map(([name,tool])=>[name,propertyKeys(tool.parameters)]))));
 """
     schemas = _node_json(script)
-    assert "nodeId" in schemas["ts_subagent_compute"]
-    assert "smiles" in schemas["ts_structure_seed"]
-    assert "optimization" in schemas["ts_structure_seed"]
-    assert "referenceArtifactId" in schemas["ts_structure_compare"]
-    assert "targetArtifactId" in schemas["ts_structure_compare"]
-    assert "nodeId" in schemas["ts_artifact_import"]
-    assert "content" in schemas["ts_artifact_import"]
+    assert "nodeId" in schemas["ts_calc"]
+    assert "smiles" in schemas["ts_seed"]
+    assert "optimization" in schemas["ts_seed"]
+    assert "referenceArtifactId" in schemas["ts_compare"]
+    assert "targetArtifactId" in schemas["ts_compare"]
+    assert "nodeId" in schemas["ts_import"]
+    assert "content" in schemas["ts_import"]
     assert "nodeId" in schemas["ts_render"]
     assert "inputArtifactIds" in schemas["ts_render"]
     assert "packageName" in schemas["ts_report"]
-    assert "targetClaimRef" in schemas["ts_subagent_review"]
+    assert "targetClaimRef" in schemas["ts_review"]
     public_fields = {field for fields in schemas.values() for field in fields}
     assert "actId" not in public_fields
     assert "inputRefs" not in public_fields
@@ -128,7 +127,7 @@ process.stdout.write(JSON.stringify({{rows,total:rows.reduce((sum,row)=>sum+row.
     by_name = {row["name"]: row for row in measured["rows"]}
 
     assert skill_bytes <= 7_000
-    assert by_name["ts_subagent_compute"]["schema"] <= 4_500
+    assert by_name["ts_calc"]["schema"] <= 4_500
     assert measured["total"] <= 13_000
     assert skill_bytes + measured["total"] + measured["systemPromptBytes"] <= 19_800
 
@@ -138,7 +137,7 @@ def test_workspace_cli_compiles_frontier_and_focused_node(tmp_path: Path) -> Non
     refs = start_research_node(workspace)
     frontier = _workspace_cli("context", "--root", str(workspace), "--mode", "frontier")
     node = _workspace_cli("context", "--root", str(workspace), "--mode", "node", "--node-ref", refs["node_id"])
-    assert frontier["schema_version"] == "ts-context-projection/2"
+    assert frontier["schema_version"] == "ts-context-projection/3"
     assert frontier["focus"]["node_refs"] == [refs["node_id"]]
     assert frontier["workspace_brief"]["nodes"][0]["decision_rationale"]
     assert frontier["workspace_brief"]["nodes"][0]["objective"]
@@ -189,9 +188,9 @@ process.stdout.write(JSON.stringify(result));
     result = _node_json(script)
     prompt = result["systemPrompt"]
     assert "TS workspace active" in prompt
-    assert "ts_workspace_context" in prompt
-    assert "ts_workspace_decision_apply" in prompt
-    assert "Each material change of question" in prompt
+    assert "ts_state" in prompt
+    assert "ts_change" in prompt
+    assert "Give each changed question" in prompt
     assert "workflow phase" not in prompt.lower()
 
 

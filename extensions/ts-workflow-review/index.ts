@@ -35,13 +35,13 @@ const ROOT_DISPOSITIONS = ["accepted", "partially_accepted", "rejected", "deferr
 
 export default function (pi: ExtensionAPI) {
   pi.registerTool({
-    name: TS_PUBLIC_TOOL_NAMES.subagentReview,
+    name: TS_PUBLIC_TOOL_NAMES.review,
     label: "TS Review Subagent",
     description: "Run one isolated advisory Review of a target Claim.",
     promptSnippet: "Review one TS Claim independently",
     promptGuidelines: [
       "Use at ambiguity, failure analysis, branch selection, or final audit; advice is not evidence or acceptance.",
-      `After success, call ${TS_PUBLIC_TOOL_NAMES.reviewDisposition} before scientific mutation.`,
+      `After success, call ${TS_PUBLIC_TOOL_NAMES.reply} before scientific mutation.`,
       "Select one Claim; optional artifact IDs must already be cited in its derived graph. Paths are forbidden.",
     ],
     renderShell: "self",
@@ -131,7 +131,7 @@ export default function (pi: ExtensionAPI) {
           required: true,
           task_id: packet.task_id,
           review_run_ref: runRef,
-          tool: TS_PUBLIC_TOOL_NAMES.reviewDisposition,
+          tool: TS_PUBLIC_TOOL_NAMES.reply,
           allowed_dispositions: ROOT_DISPOSITIONS,
         };
         return toolText(
@@ -182,18 +182,18 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: TS_PUBLIC_TOOL_NAMES.reviewDisposition,
+    name: TS_PUBLIC_TOOL_NAMES.reply,
     label: "TS Review Response",
     description: "Record Root's write-once response to a completed Review.",
     promptSnippet: "Record a TS Review disposition",
     promptGuidelines: [
-      `Call after every successful ${TS_PUBLIC_TOOL_NAMES.subagentReview} and before scientific mutation.`,
+      `Call after every successful ${TS_PUBLIC_TOOL_NAMES.review} and before scientific mutation.`,
       "State what is adopted, rejected, or deferred and why; this response is not evidence.",
     ],
     executionMode: "sequential",
     parameters: Type.Object({
-      taskId: Type.String({ minLength: 1, maxLength: 160, description: "Exact task_id returned by ts_subagent_review." }),
-      reviewRunRef: Type.String({ minLength: 1, maxLength: 512, description: "Exact review_run_ref returned by ts_subagent_review." }),
+      taskId: Type.String({ minLength: 1, maxLength: 160, description: "Exact task_id returned by ts_review." }),
+      reviewRunRef: Type.String({ minLength: 1, maxLength: 512, description: "Exact review_run_ref returned by ts_review." }),
       disposition: StringEnum(ROOT_DISPOSITIONS),
       response: Type.String({ minLength: 1, maxLength: 4000, description: "Concise Root assessment of the advisory Review." }),
       nextSteps: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 1000 }), { maxItems: 8 })),

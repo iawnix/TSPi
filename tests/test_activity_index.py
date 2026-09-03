@@ -10,8 +10,9 @@ from tests.workspace_helpers import start_research_node
 from ts_agent.report import build_report_package
 from ts_agent.workspace.activities import build_activity_index
 from ts_agent.workspace.context import compile_context
-from ts_agent.workspace.decision import draft_decision
-from ts_agent.workspace.engine import apply_decision, init_workspace, validate_decision_dry_run
+from tests.kernel_helpers import compile_change
+from ts_agent.workspace.engine import init_workspace
+from tests.kernel_helpers import apply_compiled_change, validate_compiled_change
 from ts_agent.workspace.errors import ContractError
 from ts_agent.io import read_json, write_json
 from ts_agent.workspace.operational import operational_snapshot
@@ -70,7 +71,7 @@ def _activity_documents(
 
 
 def _completion(root: Path, node_id: str, outcome: str) -> dict:
-    return draft_decision(
+    return compile_change(
         root,
         {
             "rationale": "Close the bounded ResearchNode after checking operational state.",
@@ -96,7 +97,7 @@ def test_activity_is_derived_for_its_node_without_a_link_decision(tmp_path: Path
     index = build_activity_index(root)
     node = read_json(root / "research_nodes.json")["nodes"][0]
 
-    assert node["schema_version"] == "ts-research-node/1"
+    assert node["schema_version"] == "ts-research-node/2"
     assert "operation_refs" not in node
     assert index["integrity_findings"] == []
     assert index["activities"][0]["activity_ref"] == activity.relative_to(root).as_posix()
@@ -265,7 +266,7 @@ def test_activity_integrity_detects_missing_documents_and_symlinks(tmp_path: Pat
     assert "activity_document_symlink" in codes
     assert "invalid_activity_status_schema" in codes
     with pytest.raises(ContractError, match="activity_integrity_error"):
-        validate_decision_dry_run(root, _completion(root, refs["node_id"], "blocked"))
+        validate_compiled_change(root, _completion(root, refs["node_id"], "blocked"))
 
 
 def test_running_activity_blocks_dry_run_and_apply(tmp_path: Path) -> None:
@@ -276,9 +277,9 @@ def test_running_activity_blocks_dry_run_and_apply(tmp_path: Path) -> None:
     decision = _completion(root, refs["node_id"], "completed")
 
     with pytest.raises(ContractError, match="activity_not_terminal"):
-        validate_decision_dry_run(root, decision)
+        validate_compiled_change(root, decision)
     with pytest.raises(ContractError, match="activity_not_terminal"):
-        apply_decision(root, decision)
+        apply_compiled_change(root, decision)
     assert read_json(root / "research_nodes.json")["nodes"][0]["status"] == "open"
 
 
@@ -311,7 +312,7 @@ def test_pending_and_ambiguous_compute_controls_block_completion(
         )
 
     with pytest.raises(ContractError, match=expected):
-        validate_decision_dry_run(root, _completion(root, refs["node_id"], "blocked"))
+        validate_compiled_change(root, _completion(root, refs["node_id"], "blocked"))
 
 
 def test_analytical_and_terminal_activity_completion_policy(tmp_path: Path) -> None:
@@ -319,34 +320,34 @@ def test_analytical_and_terminal_activity_completion_policy(tmp_path: Path) -> N
     init_workspace(analytical)
     analytical_refs = start_research_node(analytical)
     analytical_decision = _completion(analytical, analytical_refs["node_id"], "completed")
-    validate_decision_dry_run(analytical, analytical_decision)
-    apply_decision(analytical, analytical_decision)
+    validate_compiled_change(analytical, analytical_decision)
+    apply_compiled_change(analytical, analytical_decision)
 
     successful = tmp_path / "successful"
     init_workspace(successful)
     successful_refs = start_research_node(successful)
     _activity_documents(successful, successful_refs["node_id"], state="completed")
     successful_decision = _completion(successful, successful_refs["node_id"], "completed")
-    validate_decision_dry_run(successful, successful_decision)
-    apply_decision(successful, successful_decision)
+    validate_compiled_change(successful, successful_decision)
+    apply_compiled_change(successful, successful_decision)
 
     failed_render = tmp_path / "failed-render"
     init_workspace(failed_render)
     failed_render_refs = start_research_node(failed_render)
     _activity_documents(failed_render, failed_render_refs["node_id"], state="failed")
     completed = _completion(failed_render, failed_render_refs["node_id"], "completed")
-    validate_decision_dry_run(failed_render, completed)
-    apply_decision(failed_render, completed)
+    validate_compiled_change(failed_render, completed)
+    apply_compiled_change(failed_render, completed)
 
     failed = tmp_path / "failed-input"
     init_workspace(failed)
     failed_refs = start_research_node(failed)
     _activity_documents(failed, failed_refs["node_id"], state="failed", kind="artifact_import")
     with pytest.raises(ContractError, match="failed_activity_requires_non_success_outcome"):
-        validate_decision_dry_run(failed, _completion(failed, failed_refs["node_id"], "completed"))
+        validate_compiled_change(failed, _completion(failed, failed_refs["node_id"], "completed"))
     inconclusive = _completion(failed, failed_refs["node_id"], "inconclusive")
-    validate_decision_dry_run(failed, inconclusive)
-    apply_decision(failed, inconclusive)
+    validate_compiled_change(failed, inconclusive)
+    apply_compiled_change(failed, inconclusive)
 
 
 def test_report_and_frontier_use_compact_derived_activity_projection(tmp_path: Path) -> None:

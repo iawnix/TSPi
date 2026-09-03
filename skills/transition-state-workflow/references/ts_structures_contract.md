@@ -25,7 +25,7 @@ identity after alignment.
 
 Record mapping method, reference structure, selected atoms, RMSD, key internal
 coordinates, stereochemical verdict, and source artifact digests as semantic
-Observations. Use identity or stereochemical GateSpecs when these values are
+Observations. Use identity or stereochemical ProofSpecs when these values are
 acceptance-critical.
 
 A visually similar render or low global RMSD does not prove endpoint identity,
@@ -33,7 +33,7 @@ especially for fragment permutations, conformers, or stereochemical inversion.
 
 ## Deterministic Tool Parameters
 
-`ts_structure_compare` exposes optional `parameters` with camel-case fields:
+`ts_compare` exposes optional `parameters` with camel-case fields:
 
 - `atomMapping`: one target index for every reference atom;
 - `reactionCenterAtoms`: reference atom indices used for local RMSD;

@@ -1,4 +1,4 @@
-"""Registered predicates, Gate templates, and acceptance profiles."""
+"""Registered predicates, Proof templates, and acceptance profiles."""
 
 from __future__ import annotations
 
@@ -71,12 +71,12 @@ def builtin_predicate_registry() -> PredicateRegistry:
     return registry
 
 
-def load_gate_template(template_id: str, version: str) -> dict[str, Any]:
+def load_proof_template(template_id: str, version: str) -> dict[str, Any]:
     return _load_versioned_document(
         TEMPLATE_ROOT,
         template_id,
         version,
-        schema_version="ts-gate-template/1",
+        schema_version="ts-proof-template/1",
         id_field="template_id",
     )
 
@@ -93,8 +93,8 @@ def load_acceptance_profile(profile_id: str, version: str) -> dict[str, Any]:
     return value
 
 
-def list_gate_templates() -> list[dict[str, str]]:
-    return _list_versioned_documents(TEMPLATE_ROOT, "ts-gate-template/1", "template_id")
+def list_proof_templates() -> list[dict[str, str]]:
+    return _list_versioned_documents(TEMPLATE_ROOT, "ts-proof-template/1", "template_id")
 
 
 def list_acceptance_profiles() -> list[dict[str, str]]:

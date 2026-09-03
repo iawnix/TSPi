@@ -29,7 +29,13 @@ def main(argv: list[str] | None = None) -> int:
     if any(argument in {"-h", "--help"} for argument in forwarded):
         activate_source_package(ROOT)
     else:
-        bootstrap_python_package(ROOT, required=True, install_root=args.install_root)
+        # Load the lightweight launcher before selecting the managed Python
+        # runtime.  The launcher owns the authoritative suite-release check;
+        # doing that check first keeps an old standalone Agent installation
+        # from being misreported as a stale runtime.  Once a valid suite is
+        # selected, ``launcher.launch`` fails closed if its runtime manifest
+        # is missing or stale.
+        bootstrap_python_package(ROOT, required=False, install_root=args.install_root)
     from ts_agent.runtime.launcher import main as launcher_main
 
     return launcher_main(forwarded, package_root=ROOT, install_root=args.install_root)

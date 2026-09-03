@@ -8,8 +8,9 @@ import pytest
 from tests.workspace_helpers import start_research_node
 from ts_agent.compute.artifacts import list_calculation_artifacts
 from ts_agent.workspace.cli import main as workspace_cli
-from ts_agent.workspace.decision import draft_decision
-from ts_agent.workspace.engine import apply_decision, init_workspace
+from tests.kernel_helpers import compile_change
+from ts_agent.workspace.engine import init_workspace
+from tests.kernel_helpers import apply_compiled_change
 from ts_agent.workspace.errors import ContractError
 from ts_agent.workspace.locator import locate_research_files
 
@@ -75,7 +76,7 @@ def _workspace(tmp_path: Path) -> tuple[Path, dict[str, str], dict[str, dict]]:
     gaussian = by_path[
         f"nodes/{refs['node_id']}/attempts/{intent_id}/outputs/remote/gaussian.out"
     ]
-    drafted = draft_decision(
+    drafted = compile_change(
         root,
         {
             "rationale": "Bind one parsed observation to the exact Gaussian output.",
@@ -119,7 +120,7 @@ def _workspace(tmp_path: Path) -> tuple[Path, dict[str, str], dict[str, dict]]:
             ],
         },
     )
-    apply_decision(root, drafted["decision"])
+    apply_compiled_change(root, drafted["decision"])
     refs = {
         **refs,
         "observation_id": drafted["allocated_refs"]["frequency"],

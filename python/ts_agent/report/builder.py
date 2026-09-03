@@ -13,7 +13,7 @@ from typing import Any, Iterable
 
 from ts_agent.workspace.associations import derive_claim_node_links
 from ts_agent.workspace.refs import node_sort_key, claim_sort_key
-from ts_agent.compute.artifacts import resolve_artifact_ids
+from ts_agent.workspace.artifacts import resolve_workspace_artifact_ids
 
 from .context import collect_report_context
 
@@ -59,7 +59,7 @@ def build_report_package(
         })
         _write_json(staging / "observation_index.json", {"observations": context["observations"]})
         _write_json(staging / "validation.json", {
-            "specs": context["validation_specs"],
+            "specs": context["proof_specs"],
             "results": context["validation_results"],
         })
         _write_json(staging / "findings.json", {"findings": context["findings"]})
@@ -105,7 +105,7 @@ def _copy_report_assets(
         raise ValueError("report asset_artifact_ids must contain at most 8 unique IDs")
     if not requested:
         return []
-    resolved = resolve_artifact_ids(root, requested)
+    resolved = resolve_workspace_artifact_ids(root, requested)
     records: list[dict[str, Any]] = []
     total_bytes = 0
     for index, artifact in enumerate(resolved, start=1):
@@ -258,7 +258,7 @@ def render_final_report(context: dict[str, Any]) -> str:
             f"{activity.get('completed_count', 0)} completed, {activity.get('failed_count', 0)} failed, "
             f"{activity.get('running_count', 0)} running, {activity.get('pending_count', 0)} pending.",
             f"- Scientific records: {len(node['observation_refs'])} Observations, "
-            f"{len(node['finding_refs'])} Findings, {len(node['validation_spec_refs'])} GateSpecs, "
+            f"{len(node['finding_refs'])} Findings, {len(node['proof_spec_refs'])} ProofSpecs, "
             f"{len(node['validation_result_refs'])} ValidationResults.",
             "",
         ])
@@ -272,15 +272,15 @@ def render_final_report(context: dict[str, Any]) -> str:
             f"`{', '.join(observation['artifact_refs']) or 'none'}` |"
         )
 
-    lines.extend(["", "## Frozen Validation", "", "| GateSpec | Dimension | Target Claim | Checks | Latest Verdict |", "| --- | --- | --- | --- | --- |"])
+    lines.extend(["", "## Frozen Validation", "", "| ProofSpec | Dimension | Target Claim | Checks | Latest Verdict |", "| --- | --- | --- | --- | --- |"])
     results_by_spec: dict[str, list[dict[str, Any]]] = {}
     for result in context["validation_results"]:
-        results_by_spec.setdefault(result["spec_ref"], []).append(result)
-    for spec in context["validation_specs"]:
-        rows = results_by_spec.get(spec["spec_id"], [])
+        results_by_spec.setdefault(result["proof_ref"], []).append(result)
+    for spec in context["proof_specs"]:
+        rows = results_by_spec.get(spec["proof_id"], [])
         latest = rows[-1]["verdict"] if rows else "not evaluated"
         lines.append(
-            f"| `{spec['spec_id']}` | `{spec['dimension']}` | `{spec['target_claim_ref']}` | "
+            f"| `{spec['proof_id']}` | `{spec['dimension']}` | `{spec['target_claim_ref']}` | "
             f"{len(spec['checks'])} | `{latest}` |"
         )
 

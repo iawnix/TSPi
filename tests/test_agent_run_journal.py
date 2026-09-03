@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from tests.workspace_helpers import bootstrap_workspace_fixture, build_review_bundle, start_research_node
-from ts_agent.workspace import apply_decision, draft_decision, validate_decision_dry_run
+from tests.kernel_helpers import apply_compiled_change, compile_change, validate_compiled_change
 from ts_agent.workspace.context import compile_context
 from ts_agent.workspace.errors import ContractError
 from ts_agent.workspace.operational import operational_snapshot
@@ -57,7 +57,7 @@ def test_root_review_disposition_is_write_once_and_unblocks_mutation(
     workspace, refs = _workspace_with_act(tmp_path)
     task, documents = _review_bundle(workspace, refs, "sub_1")
     run_ref = _journal(workspace, task, documents, mode="complete")
-    drafted = draft_decision(
+    drafted = compile_change(
         workspace,
         {
             "rationale": "Record a post-review research note.",
@@ -66,13 +66,13 @@ def test_root_review_disposition_is_write_once_and_unblocks_mutation(
         },
     )
     with pytest.raises(ContractError, match="requires a Root response"):
-        validate_decision_dry_run(workspace, drafted["decision"])
+        validate_compiled_change(workspace, drafted["decision"])
 
     document = _write_disposition(workspace, task["task_id"], run_ref, disposition)
     assert document["schema_version"] == "ts-review-root-disposition/1"
     assert stat.S_IMODE((workspace / run_ref / "root-disposition.json").stat().st_mode) == 0o600
-    assert validate_decision_dry_run(workspace, drafted["decision"])["valid"] is True
-    apply_decision(workspace, drafted["decision"])
+    assert validate_compiled_change(workspace, drafted["decision"])["valid"] is True
+    apply_compiled_change(workspace, drafted["decision"])
     assert operational_snapshot(workspace)["pending_review_dispositions"] == []
 
     repeated = _write_disposition(workspace, task["task_id"], run_ref, disposition, check=False)
@@ -187,7 +187,8 @@ def test_completed_compute_is_attempt_scoped_private_and_never_requires_review_d
     row = snapshot["agent_runs"][0]
     assert row["role"] == "compute"
     assert row["authority"] == "operational"
-    assert row["backend"] == "gaussian"
+    assert row["capability"] == "gaussian.opt_freq"
+    assert row["capability_version"] == "1"
     assert row["intent_id"] == "calc_1"
     assert snapshot["pending_review_dispositions"] == []
 
@@ -213,15 +214,18 @@ const resultHelper=require(process.argv[3]);
 const workspace=process.argv[4];
 const nodeId=process.argv[5];
 const digest="sha256:"+"d".repeat(64);
+const descriptorDigest="sha256:"+"e".repeat(64);
+const descriptor={capability:"gaussian.opt_freq",version:"1",input_roles:["gjf"],output_roles:["program_output","optimized_geometry","frequencies"],parsers:["gaussian.log/1"]};
 const task=taskHelper.buildComputeTask({
-  runId:"sub_1",workspaceRoot:workspace,operation:"cancel",backend:"gaussian",nodeId,
-  binding:{intentId:"calc_1",intentDigest:digest,executionKind:"remote"},
+  runId:"sub_1",workspaceRoot:workspace,operation:"cancel",capability:"gaussian.opt_freq",capabilityVersion:"1",capabilityDescriptor:descriptor,nodeId,
+  binding:{intentId:"calc_1",intentDigest:digest,executionKind:"remote",capabilityDescriptorDigest:descriptorDigest},
 });
 const canonical={
-  schema_version:"ts-calculation-result/2",intent_id:"calc_1",node_id:nodeId,state:"cancelled",
-  program_status:"not_run",error_class:null,exit_status:null,artifact_refs:[],
+  schema_version:"ts-calculation-result/2",intent_id:"calc_1",node_id:nodeId,state:"stopped",
+  capability:"gaussian.opt_freq",capability_version:"1",expected_output_roles:descriptor.output_roles,
+  program_status:"not_run",error_class:null,exit_status:null,artifact_refs:[],parser_facts:{},
   control:{effect_outcome:"succeeded",reconciliation_required:false},
-  provenance:{intent_digest:digest},
+  provenance:{intent_digest:digest,capability:"gaussian.opt_freq",capability_version:"1",capability_descriptor_digest:descriptorDigest},
 };
 const actions=[{tool:"ts_workspace_compute_cancel",result:{action_status:"completed",result:canonical}}];
 const result=resultHelper.buildComputeResult({summary:"Cancellation completed.",limitations:[]},task,actions);
@@ -332,15 +336,18 @@ const workspace=process.argv[3];
 const nodeId=process.argv[4];
 const taskId=process.argv[5];
 const digest="sha256:"+"c".repeat(64);
+const descriptorDigest="sha256:"+"e".repeat(64);
+const descriptor={capability:"gaussian.opt_freq",version:"1",input_roles:["gjf"],output_roles:["program_output","optimized_geometry","frequencies"],parsers:["gaussian.log/1"]};
 const task=taskHelper.buildComputeTask({
-  runId:taskId,workspaceRoot:workspace,operation:"cancel",backend:"gaussian",nodeId,
-  binding:{intentId:"calc_1",intentDigest:digest,executionKind:"remote"},
+  runId:taskId,workspaceRoot:workspace,operation:"cancel",capability:"gaussian.opt_freq",capabilityVersion:"1",capabilityDescriptor:descriptor,nodeId,
+  binding:{intentId:"calc_1",intentDigest:digest,executionKind:"remote",capabilityDescriptorDigest:descriptorDigest},
 });
 const canonical={
-  schema_version:"ts-calculation-result/2",intent_id:"calc_1",node_id:nodeId,state:"cancelled",
-  program_status:"not_run",error_class:null,exit_status:null,artifact_refs:[],
+  schema_version:"ts-calculation-result/2",intent_id:"calc_1",node_id:nodeId,state:"stopped",
+  capability:"gaussian.opt_freq",capability_version:"1",expected_output_roles:descriptor.output_roles,
+  program_status:"not_run",error_class:null,exit_status:null,artifact_refs:[],parser_facts:{},
   control:{effect_outcome:"succeeded",reconciliation_required:false},
-  provenance:{intent_digest:digest},
+  provenance:{intent_digest:digest,capability:"gaussian.opt_freq",capability_version:"1",capability_descriptor_digest:descriptorDigest},
 };
 const actions=[{tool:"ts_workspace_compute_cancel",result:{action_status:"completed",result:canonical}}];
 const result=resultHelper.buildComputeResult({summary:"Cancellation completed.",limitations:[]},task,actions);

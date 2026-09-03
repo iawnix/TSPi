@@ -29,8 +29,9 @@ from ts_agent.web.registry import (
     workspace_discovery_roots,
 )
 from ts_agent.web.server import create_server
-from ts_agent.workspace.decision import draft_decision
-from ts_agent.workspace.engine import apply_decision, init_workspace
+from tests.kernel_helpers import compile_change
+from ts_agent.workspace.engine import init_workspace
+from tests.kernel_helpers import apply_compiled_change
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -43,7 +44,7 @@ def _write(path: Path, value: dict) -> None:
 
 def _make_workspace(root: Path) -> dict[str, str]:
     init_workspace(root)
-    drafted = draft_decision(
+    drafted = compile_change(
         root,
         {
             "rationale": "Create a small Claim graph and ResearchNode DAG for the explorer.",
@@ -99,7 +100,7 @@ def _make_workspace(root: Path) -> dict[str, str]:
                     "provenance": {"producer": "test-parser"},
                 },
                 {
-                    "op": "freeze_validation_spec",
+                    "op": "freeze_proof_spec",
                     "local_ref": "spec",
                     "nodeRef": "$search",
                     "targetClaimRef": "$concerted",
@@ -124,10 +125,10 @@ def _make_workspace(root: Path) -> dict[str, str]:
                     },
                 },
                 {
-                    "op": "evaluate_validation",
+                    "op": "evaluate_proof",
                     "local_ref": "result",
                     "nodeRef": "$search",
-                    "specRef": "$spec",
+                    "proofRef": "$spec",
                     "observationRefs": ["$normal"],
                 },
                 {
@@ -159,9 +160,9 @@ def _make_workspace(root: Path) -> dict[str, str]:
             ],
         },
     )
-    apply_decision(root, drafted["decision"])
+    apply_compiled_change(root, drafted["decision"])
     refs = dict(drafted["allocated_refs"])
-    connectivity = draft_decision(
+    connectivity = compile_change(
         root,
         {
             "rationale": "The candidate probe is complete but endpoint identity remains unresolved, so connectivity becomes the next research decision.",
@@ -183,36 +184,67 @@ def _make_workspace(root: Path) -> dict[str, str]:
             ],
         },
     )
-    apply_decision(root, connectivity["decision"])
+    apply_compiled_change(root, connectivity["decision"])
     refs.update(connectivity["allocated_refs"])
     node_id = refs["connectivity"]
     artifact = root / "nodes" / node_id / "outputs" / "probe.json"
     artifact.parent.mkdir(parents=True, exist_ok=True)
     artifact.write_text("{}\n", encoding="utf-8")
+    workspace_identity = json.loads(
+        (root / ".agents" / "workspace-identity.json").read_text(encoding="utf-8")
+    )["workspace_id"]
     _write(
         root / "nodes" / node_id / "attempts" / "calc_1" / "intent.json",
         {
+            "schema_version": "ts-calculation-intent/7",
             "intent_id": "calc_1",
             "node_id": node_id,
+            "node_contract_digest": "sha256:" + "a" * 64,
+            "scientific_intent_digest": "sha256:" + "b" * 64,
+            "capability": "gaussian.irc",
+            "capability_version": "1",
+            "capability_descriptor_digest": "sha256:" + "c" * 64,
+            "expected_output_roles": ["program_output", "reaction_path"],
             "backend": "gaussian",
             "task_type": "irc",
             "purpose": "Trace both directions from the selected transition-state candidate.",
             "attempt_kind": "primary",
             "lineage": None,
-            "settings": {
+            "input_refs": {"gjf": f"nodes/{node_id}/inputs/candidate.gjf"},
+            "input_bindings": [
+                {
+                    "input_role": "gjf",
+                    "artifact_id": "art_" + "0" * 24,
+                    "path": f"nodes/{node_id}/inputs/candidate.gjf",
+                    "sha256": "sha256:" + "d" * 64,
+                    "owner_node": node_id,
+                    "source_intent_id": None,
+                }
+            ],
+            "parameters": {
                 "method": "M062X",
                 "basis": "6-31+G(d,p)",
                 "candidateStrategy": "bidirectional_irc",
             },
-            "input_bindings": [
-                {"input_role": "gjf", "artifact_id": "art_test", "source_intent_id": None}
-            ],
             "expected_artifacts": [f"nodes/{node_id}/attempts/calc_1/outputs/gaussian.out"],
             "execution_target": {
                 "kind": "remote",
+                "authority": "execution_mirror",
                 "profile": "cluster_1w",
-                "resources": {"queue": "batch", "ncpus": 8},
+                "workspace_id": workspace_identity,
+                "remote_dir": f"/remote/ts/workspaces/{workspace_identity}/runs/{node_id}/calc_1",
+                "resources": {
+                    "queue": "batch",
+                    "nodes": 1,
+                    "ncpus": 8,
+                    "memory": "1gb",
+                    "walltime": "01:00:00",
+                    "ngpus": 0,
+                    "mpiprocs": None,
+                    "ompthreads": None,
+                },
             },
+            "dry_run": False,
         },
     )
     _write(
@@ -320,7 +352,7 @@ def test_normalize_workspace_projects_phase_node_and_operational_state(tmp_path:
     view = normalize_workspace(workspace)
 
     assert view["schema_version"] == "ts-web-workspace/6"
-    assert view["workspace"]["kernel_protocol"] == "ts-research-kernel/5"
+    assert view["workspace"]["kernel_protocol"] == "ts-research-kernel/6"
     assert view["research_phases"][0]["phase_id"] == refs["mechanism"]
     assert view["research_phases"][0]["node_refs"] == [refs["search"], refs["connectivity"]]
     assert view["focus"]["phase_refs"] == [refs["mechanism"]]
@@ -506,14 +538,19 @@ def test_web_projects_current_attempt_family_and_lineage(tmp_path: Path) -> None
     workspace = tmp_path / "workspace"
     refs = _make_workspace(workspace)
     node_id = refs["connectivity"]
-    _write(
-        workspace / "nodes" / node_id / "attempts" / "calc_2" / "intent.json",
+    primary_intent = json.loads(
+        (
+            workspace
+            / "nodes"
+            / node_id
+            / "attempts"
+            / "calc_1"
+            / "intent.json"
+        ).read_text(encoding="utf-8")
+    )
+    primary_intent.update(
         {
-            "schema_version": "ts-calculation-intent/6",
             "intent_id": "calc_2",
-            "node_id": node_id,
-            "backend": "gaussian",
-            "task_type": "irc",
             "purpose": "Repeat the IRC with a smaller integration step after calc_1 stalled.",
             "attempt_kind": "recalculation",
             "lineage": {
@@ -521,17 +558,23 @@ def test_web_projects_current_attempt_family_and_lineage(tmp_path: Path) -> None
                 "source_intent_id": "calc_1",
                 "relation": "recalculation",
                 "reason": "Resolve an integration-step sensitivity.",
-                "changed_fields": ["settings.stepSize"],
+                "changed_fields": ["parameters.stepSize"],
             },
-            "node_contract_digest": "sha256:" + "a" * 64,
-            "scientific_intent_digest": "sha256:" + "b" * 64,
-            "settings": {
+            "scientific_intent_digest": "sha256:" + "e" * 64,
+            "parameters": {
                 "method": "M062X",
                 "basis": "6-31+G(d,p)",
                 "candidateStrategy": "bidirectional_irc",
                 "stepSize": 5,
             },
-        },
+            "expected_artifacts": [
+                f"nodes/{node_id}/attempts/calc_2/outputs/gaussian.out"
+            ],
+        }
+    )
+    _write(
+        workspace / "nodes" / node_id / "attempts" / "calc_2" / "intent.json",
+        primary_intent,
     )
 
     attempts = node_payload(workspace, node_id)["research_node"]["attempts"]
@@ -544,12 +587,63 @@ def test_web_projects_current_attempt_family_and_lineage(tmp_path: Path) -> None
         "source_intent_id": "calc_1",
         "relation": "recalculation",
         "reason": "Resolve an integration-step sensitivity.",
-        "changed_fields": ["settings.stepSize"],
+        "changed_fields": ["parameters.stepSize"],
     }
     assert recalculation["family_root_id"] == "calc_1"
     assert recalculation["family_index"] == 1
     assert recalculation["lineage_depth"] == 1
-    assert recalculation["candidate_strategy"] == "bidirectional_irc"
+    assert recalculation["parameters"]["candidateStrategy"] == "bidirectional_irc"
+
+
+def test_web_marks_retired_or_incomplete_intents_without_aliasing_fields(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+    node_id = refs["connectivity"]
+    attempts_root = workspace / "nodes" / node_id / "attempts"
+
+    _write(
+        attempts_root / "calc_3" / "intent.json",
+        {
+            "schema_version": "ts-calculation-intent/6",
+            "intent_id": "calc_3",
+            "node_id": node_id,
+            "backend": "gaussian",
+            "task_type": "irc",
+            "settings": {"method": "retired-method"},
+            "recalculation_ref": {
+                "source_node": node_id,
+                "source_intent_id": "calc_1",
+                "purpose": "retired lineage",
+                "changed_settings": ["settings.stepSize"],
+            },
+        },
+    )
+    _write(
+        attempts_root / "calc_3" / "status.json",
+        {"state": "completed", "program_status": "normal_termination"},
+    )
+
+    incomplete = json.loads(
+        (
+            attempts_root / "calc_1" / "intent.json"
+        ).read_text(encoding="utf-8")
+    )
+    incomplete.pop("parameters")
+    _write(attempts_root / "calc_4" / "intent.json", incomplete)
+
+    attempts = node_payload(workspace, node_id)["research_node"]["attempts"]
+    retired = next(row for row in attempts if row["intent_id"] == "calc_3")
+    malformed = next(row for row in attempts if row["intent_id"] == "calc_4")
+
+    assert retired["intent_status"] == "unsupported"
+    assert retired["display_state"] == "unsupported"
+    assert retired["parameters"] == {}
+    assert retired["lineage"] is None
+    assert "ts-calculation-intent/7" in retired["intent_error"]
+    assert malformed["intent_status"] == "invalid"
+    assert malformed["display_state"] == "invalid"
+    assert malformed["parameters"] == {}
+    assert "parameters" in malformed["intent_error"]
 
 
 def test_node_files_publish_the_same_bounded_text_preview_capability(tmp_path: Path) -> None:
@@ -733,14 +827,14 @@ def test_claim_and_node_details_follow_graph_references(tmp_path: Path) -> None:
     assert attempt["job_id"] == "123.cluster"
     assert attempt["duration_seconds"] == 90
     assert attempt["run_count"] == 1
-    assert attempt["settings"]["candidateStrategy"] == "bidirectional_irc"
+    assert attempt["parameters"]["candidateStrategy"] == "bidirectional_irc"
     assert attempt["execution_target"]["profile"] == "cluster_1w"
     assert attempt["runs"][0]["task_id"] == "sub_1"
     assert completed["dependents"][0]["node_id"] == refs["connectivity"]
     assert completed["phase"]["phase_id"] == refs["mechanism"]
     assert completed["history"][0]["decision_id"] == completed["research_node"]["created_by_decision"]
     assert {row["claim_id"] for row in completed["claims"]} == {refs["concerted"], refs["stepwise"]}
-    assert completed["validation_specs"][0]["title"] == "Program completion probe"
+    assert completed["proof_specs"][0]["title"] == "Program completion probe"
     assert f"nodes/{refs['connectivity']}/outputs/probe.json" in {
         row["path"] for row in active["files"]["files"]
     }
@@ -749,7 +843,7 @@ def test_claim_and_node_details_follow_graph_references(tmp_path: Path) -> None:
 def test_web_derives_claim_node_link_from_creator_provenance(tmp_path: Path) -> None:
     workspace = tmp_path / "workspace"
     init_workspace(workspace)
-    node_draft = draft_decision(
+    node_draft = compile_change(
         workspace,
         {
             "rationale": "Start an exploratory Node before it discovers a Claim.",
@@ -760,9 +854,9 @@ def test_web_derives_claim_node_link_from_creator_provenance(tmp_path: Path) -> 
             ],
         },
     )
-    apply_decision(workspace, node_draft["decision"])
+    apply_compiled_change(workspace, node_draft["decision"])
     node_id = node_draft["allocated_refs"]["exploration"]
-    claim_draft = draft_decision(
+    claim_draft = compile_change(
         workspace,
         {
             "rationale": "Record the alternative Claim discovered by the Node.",
@@ -778,7 +872,7 @@ def test_web_derives_claim_node_link_from_creator_provenance(tmp_path: Path) -> 
             ],
         },
     )
-    apply_decision(workspace, claim_draft["decision"])
+    apply_compiled_change(workspace, claim_draft["decision"])
     claim_id = claim_draft["allocated_refs"]["alternative"]
 
     view = normalize_workspace(workspace)
@@ -1056,7 +1150,7 @@ def test_web_distinguishes_current_from_historical_acceptance(tmp_path: Path) ->
     assert current["current_acceptances"][0]["acceptance_id"] == refs["acceptance"]
     assert graph_payload_from_view(current)["claim_graph"]["nodes"][0]["acceptance_state"] == "current"
 
-    drafted = draft_decision(
+    drafted = compile_change(
         workspace,
         {
             "rationale": "Add a later limitation that requires reassessment.",
@@ -1074,7 +1168,7 @@ def test_web_distinguishes_current_from_historical_acceptance(tmp_path: Path) ->
             ],
         },
     )
-    apply_decision(workspace, drafted["decision"])
+    apply_compiled_change(workspace, drafted["decision"])
 
     historical = normalize_workspace(workspace)
     assert historical["valid"] is True
@@ -1249,7 +1343,7 @@ def test_web_server_is_read_only_and_has_no_removed_routes(tmp_path: Path) -> No
     try:
         host, port = server.server_address
         health = _get_json(host, port, "/api/health")
-        assert health == {"ok": True, "protocol": "ts-research-kernel/5", "read_only": True}
+        assert health == {"ok": True, "protocol": "ts-research-kernel/6", "read_only": True}
         workspaces = _get_json(host, port, "/api/workspaces")
         assert workspaces["default_workspace"] == row["workspace_id"]
         base = f"/api/workspace/{row['workspace_id']}"
@@ -1266,8 +1360,8 @@ def test_web_server_is_read_only_and_has_no_removed_routes(tmp_path: Path) -> No
         assert "graph" not in unchanged
         assert _get_json(host, port, f"{base}/graph")["schema_version"] == "ts-explorer-graph/6"
         assert _get_json(host, port, f"{base}/phases")["research_phases"][0]["phase_id"] == refs["mechanism"]
-        assert _get_json(host, port, f"{base}/claims")["claims"][0]["schema_version"] == "ts-claim/3"
-        assert _get_json(host, port, f"{base}/nodes")["research_nodes"][0]["schema_version"] == "ts-research-node/1"
+        assert _get_json(host, port, f"{base}/claims")["claims"][0]["schema_version"] == "ts-claim/4"
+        assert _get_json(host, port, f"{base}/nodes")["research_nodes"][0]["schema_version"] == "ts-research-node/2"
         assert _get_json(host, port, f"{base}/observations")["observations"][0]["schema_version"] == "ts-observation/2"
         assert _get_json(host, port, f"{base}/validation")["validation_results"][0]["verdict"] == "pass"
         assert _get_json(host, port, f"{base}/findings")["findings"][0]["status"] == "open"

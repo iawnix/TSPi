@@ -130,7 +130,7 @@ def _make_handler(state_dir: Path, workspace_roots: Sequence[Path]):
                     self._send_static_file("attempt-timeline.js", "text/javascript; charset=utf-8")
                     return
                 if parsed.path == "/api/health":
-                    self._send_json({"ok": True, "protocol": "ts-research-kernel/5", "read_only": True})
+                    self._send_json({"ok": True, "protocol": "ts-research-kernel/6", "read_only": True})
                     return
                 if parsed.path == "/api/workspaces":
                     reconcile_workspace_registry(state_dir, workspace_roots)
@@ -269,7 +269,7 @@ def _workspace_route(row: dict[str, Any], rest: str, query: dict[str, list[str]]
         view = normalize_workspace(source_root, label=label)
         return {
             "schema_version": "ts-explorer-validation/1",
-            "validation_specs": view["validation_specs"],
+            "proof_specs": view["proof_specs"],
             "validation_results": view["validation_results"],
             "acceptances": view["acceptances"],
             "current_acceptances": view["current_acceptances"],

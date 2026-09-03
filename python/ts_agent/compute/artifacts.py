@@ -11,13 +11,22 @@ import hashlib
 import json
 import math
 import os
-import posixpath
 import re
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 from ts_agent.io import read_json
-from ts_agent.workspace.refs import NODE_ID, CALCULATION_ID
+from ts_agent.workspace.artifacts import (
+    WorkspaceArtifactError,
+    artifact_for_path as workspace_artifact_for_path,
+    artifact_for_ref as workspace_artifact_for_ref,
+    artifact_id as workspace_artifact_id,
+    list_workspace_artifacts,
+    sha256_file as workspace_sha256_file,
+    workspace_node_ids,
+    workspace_root,
+)
+from ts_agent.workspace.refs import NODE_ID
 from ts_agent.workspace.transactions import workspace_lock
 from ts_agent.structures.api import compare_structures
 from ts_agent.structures.seed import StructureSeedError, generate_smiles_seed
@@ -26,7 +35,6 @@ from .contracts import ComputeContractError
 
 
 CATALOG_SCHEMA_VERSION = "ts-artifact-catalog/3"
-ARTIFACT_ID_SCHEMA_VERSION = "ts-artifact-id/2"
 IMPORT_REQUEST_SCHEMA_VERSION = "ts-artifact-import-request/1"
 IMPORT_RESULT_SCHEMA_VERSION = "ts-artifact-import-result/1"
 STRUCTURE_SEED_REQUEST_SCHEMA_VERSION = "ts-structure-seed-request/1"
@@ -48,11 +56,6 @@ ROLE_SUFFIXES = {
     "reactant": frozenset({".xyz"}),
     "product": frozenset({".xyz"}),
 }
-ELIGIBLE_SUFFIXES = frozenset({
-    ".com", ".gif", ".gjf", ".inp", ".json", ".log", ".out", ".png", ".txt", ".xyz",
-})
-
-
 def list_calculation_artifacts(
     root: str | Path,
     *,
@@ -93,6 +96,13 @@ def resolve_artifact_ids(
     if missing:
         raise ComputeContractError("unknown artifact_id: " + ", ".join(missing))
     return [catalog[artifact_id] for artifact_id in requested]
+
+
+def resolve_artifact_ref(root: str | Path, artifact_ref: str) -> dict[str, Any]:
+    """Resolve one logical workspace path to its current catalog binding."""
+
+    workspace = _workspace_root(root)
+    return _artifact_for_ref(workspace, artifact_ref, _node_ids(workspace))
 
 
 def import_calculation_artifact(root: str | Path, request: dict[str, Any]) -> dict[str, Any]:
@@ -380,91 +390,40 @@ def verify_input_bindings(workspace: Path, intent: dict[str, Any]) -> None:
 
 
 def _catalog_items(workspace: Path, known_nodes: set[str]) -> list[dict[str, Any]]:
-    artifacts = [
-        _artifact_for_path(workspace, path, known_nodes)
-        for path in _eligible_paths(workspace, known_nodes)
-    ]
-    artifacts.sort(key=lambda item: str(item["path"]))
-    return artifacts
-
-
-def _eligible_paths(workspace: Path, known_nodes: set[str]) -> Iterable[Path]:
-    roots: list[Path] = []
-    inputs = workspace / "inputs"
-    if inputs.is_dir() and not inputs.is_symlink():
-        roots.append(inputs)
-    nodes_root = workspace / "nodes"
-    if nodes_root.is_dir() and not nodes_root.is_symlink():
-        for node_dir in sorted(nodes_root.iterdir()):
-            if not node_dir.is_dir() or node_dir.is_symlink() or node_dir.name not in known_nodes:
-                continue
-            for name in ("inputs", "outputs"):
-                candidate = node_dir / name
-                if candidate.is_dir() and not candidate.is_symlink():
-                    roots.append(candidate)
-            attempts = node_dir / "attempts"
-            if attempts.is_dir() and not attempts.is_symlink():
-                for attempt in sorted(attempts.iterdir()):
-                    output = attempt / "outputs"
-                    if (
-                        attempt.is_dir()
-                        and not attempt.is_symlink()
-                        and CALCULATION_ID.fullmatch(attempt.name)
-                        and output.is_dir()
-                        and not output.is_symlink()
-                    ):
-                        roots.append(output)
-    seen: set[str] = set()
-    for root in roots:
-        for current, dirnames, filenames in os.walk(root, followlinks=False):
-            current_path = Path(current)
-            dirnames[:] = sorted(
-                name for name in dirnames if not (current_path / name).is_symlink()
-            )
-            for name in sorted(filenames):
-                path = current_path / name
-                if path.suffix.lower() not in ELIGIBLE_SUFFIXES or path.is_symlink():
-                    continue
-                ref = path.relative_to(workspace).as_posix()
-                if ref in seen:
-                    continue
-                try:
-                    _safe_existing_path(workspace, ref, known_nodes)
-                except ComputeContractError:
-                    continue
-                seen.add(ref)
-                yield path
+    del known_nodes
+    return [_with_input_roles(item) for item in list_workspace_artifacts(workspace)]
 
 
 def _artifact_for_path(workspace: Path, path: Path, known_nodes: set[str]) -> dict[str, Any]:
-    return _artifact_for_ref(workspace, path.relative_to(workspace).as_posix(), known_nodes)
+    try:
+        return _with_input_roles(
+            workspace_artifact_for_path(workspace, path, known_nodes=known_nodes)
+        )
+    except WorkspaceArtifactError as exc:
+        raise ComputeContractError(str(exc)) from exc
 
 
 def _artifact_for_ref(workspace: Path, ref: str, known_nodes: set[str]) -> dict[str, Any]:
-    normalized, path = _safe_existing_path(workspace, ref, known_nodes)
-    owner_node, source_intent_id = _ownership(normalized)
-    roles = sorted(
-        role for role, suffixes in ROLE_SUFFIXES.items() if path.suffix.lower() in suffixes
-    )
-    digest = _sha256_file(path)
-    return {
-        "artifact_id": _artifact_id(normalized, digest),
-        "path": normalized,
-        "owner_node": owner_node,
-        "source_intent_id": source_intent_id,
-        "size_bytes": path.stat().st_size,
-        "sha256": digest,
-        "input_roles": roles,
-    }
+    try:
+        return _with_input_roles(
+            workspace_artifact_for_ref(workspace, ref, known_nodes=known_nodes)
+        )
+    except WorkspaceArtifactError as exc:
+        raise ComputeContractError(str(exc)) from exc
 
 
 def _artifact_id(path: str, digest: str) -> str:
-    material = json.dumps(
-        {"schema_version": ARTIFACT_ID_SCHEMA_VERSION, "path": path, "sha256": digest},
-        sort_keys=True,
-        separators=(",", ":"),
-    ).encode("utf-8")
-    return "art_" + hashlib.sha256(material).hexdigest()[:24]
+    return workspace_artifact_id(path, digest)
+
+
+def _with_input_roles(record: dict[str, Any]) -> dict[str, Any]:
+    suffix = Path(str(record["path"])).suffix.lower()
+    return {
+        **record,
+        "input_roles": sorted(
+            role for role, suffixes in ROLE_SUFFIXES.items() if suffix in suffixes
+        ),
+    }
 
 
 def _validate_import_request(request: dict[str, Any]) -> dict[str, Any]:
@@ -1005,71 +964,19 @@ def _node_record(workspace: Path, node_id: str) -> dict[str, Any]:
     return matches[0]
 
 
-def _ownership(ref: str) -> tuple[str | None, str | None]:
-    parts = PurePosixPath(ref).parts
-    if len(parts) >= 2 and parts[0] == "inputs":
-        return None, None
-    if len(parts) >= 4 and parts[0] == "nodes" and parts[2] in {"inputs", "outputs"}:
-        return parts[1], None
-    if len(parts) >= 6 and parts[0] == "nodes" and parts[2] == "attempts" and parts[4] == "outputs":
-        return parts[1], parts[3]
-    raise ComputeContractError(
-        "calculation artifacts must come from workspace inputs or ResearchNode inputs/outputs"
-    )
-
-
-def _safe_existing_path(
-    workspace: Path,
-    value: str,
-    known_nodes: set[str],
-) -> tuple[str, Path]:
-    text = str(value).replace("\\", "/").lstrip("@")
-    if PurePosixPath(text).is_absolute():
-        raise ComputeContractError(f"workspace path must be relative: {value}")
-    normalized = posixpath.normpath(text)
-    if normalized in {"", ".", ".."} or normalized.startswith("../"):
-        raise ComputeContractError(f"invalid workspace path: {value}")
-    owner_node, _ = _ownership(normalized)
-    if owner_node is not None and owner_node not in known_nodes:
-        raise ComputeContractError(f"calculation artifact owner ResearchNode does not exist: {owner_node}")
-    path = workspace.joinpath(*PurePosixPath(normalized).parts)
-    if not path.is_file() or path.is_symlink():
-        raise ComputeContractError(f"workspace calculation artifact does not exist: {normalized}")
-    workspace_real = workspace.resolve(strict=True)
-    expected = workspace_real.joinpath(*PurePosixPath(normalized).parts)
-    if path.resolve(strict=True) != expected:
-        raise ComputeContractError(f"workspace calculation artifact uses a symlink: {normalized}")
-    return normalized, path
-
-
 def _workspace_root(root: str | Path) -> Path:
-    workspace = Path(root).expanduser().resolve()
-    workspace_doc = workspace / "workspace.json"
-    acts_doc = workspace / "research_nodes.json"
-    if not workspace_doc.is_file() or not acts_doc.is_file() or not (workspace / "nodes").is_dir():
-        raise ComputeContractError(f"not an initialized TS workspace: {workspace}")
-    if read_json(workspace_doc).get("schema_version") != "ts-workspace/5":
-        raise ComputeContractError(f"unsupported workspace protocol: {workspace}")
-    return workspace
+    try:
+        return workspace_root(root)
+    except WorkspaceArtifactError as exc:
+        raise ComputeContractError(str(exc)) from exc
 
 
 def _node_ids(workspace: Path) -> set[str]:
-    registry = read_json(workspace / "research_nodes.json")
-    if registry.get("schema_version") != "ts-research-node-registry/1":
-        raise ComputeContractError("invalid ResearchNode registry")
-    ids = {
-        item.get("node_id")
-        for item in registry.get("nodes", [])
-        if isinstance(item, dict) and isinstance(item.get("node_id"), str)
-    }
-    if any(NODE_ID.fullmatch(value) is None for value in ids):
-        raise ComputeContractError("ResearchNode registry contains an invalid node_id")
-    return ids
+    try:
+        return workspace_node_ids(workspace)
+    except WorkspaceArtifactError as exc:
+        raise ComputeContractError(str(exc)) from exc
 
 
 def _sha256_file(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return "sha256:" + digest.hexdigest()
+    return workspace_sha256_file(path)

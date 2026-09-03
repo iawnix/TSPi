@@ -33,7 +33,7 @@ def test_report_contract_keeps_acceptance_and_provenance_explicit() -> None:
     text = CONTRACT.read_text(encoding="utf-8")
     for phrase in [
         "acceptance record",
-        "GateSpecs",
+        "ProofSpecs",
         "passing ValidationResults",
         "Finding snapshot",
         "stationary-point",

@@ -16,20 +16,20 @@ const ACTIVE_STATES = new Set<TsSubagentState>(["queued", "starting", "running",
 export type TsDeterministicKind = "structure" | "analysis" | "artifact" | "render" | "report" | "notify" | "remote";
 
 const DETERMINISTIC_TOOLS = new Map<string, TsDeterministicKind>([
-  [TS_PUBLIC_TOOL_NAMES.structureSeed, "structure"],
-  [TS_PUBLIC_TOOL_NAMES.structureCompare, "analysis"],
-  [TS_PUBLIC_TOOL_NAMES.artifactImport, "artifact"],
+  [TS_PUBLIC_TOOL_NAMES.seed, "structure"],
+  [TS_PUBLIC_TOOL_NAMES.compare, "analysis"],
+  [TS_PUBLIC_TOOL_NAMES.importArtifact, "artifact"],
   [TS_PUBLIC_TOOL_NAMES.render, "render"],
   [TS_PUBLIC_TOOL_NAMES.report, "report"],
-  [TS_PUBLIC_TOOL_NAMES.notifyUser, "notify"],
-  [TS_PUBLIC_TOOL_NAMES.remoteInspect, "remote"],
+  [TS_PUBLIC_TOOL_NAMES.notify, "notify"],
+  [TS_PUBLIC_TOOL_NAMES.remote, "remote"],
 ]);
 
 export interface TsSubagentActivity {
   kind: "subagent";
   id: string;
   status: TsSubagentStatus;
-  backend?: string;
+  capability?: string;
   startedAt: number;
   updatedAt: number;
   terminalAt?: number;
@@ -100,7 +100,7 @@ function reduceSubagentActivity(store: TsActivityStore, event: ToolLifecycleEven
       kind: "subagent",
       id,
       status: fallbackSubagentStatus(event, now),
-      backend: stringValue(objectValue(event.args).backend),
+      capability: stringValue(objectValue(event.args).capability),
       startedAt: now,
       updatedAt: now,
     });
@@ -116,7 +116,7 @@ function reduceSubagentActivity(store: TsActivityStore, event: ToolLifecycleEven
       kind: "subagent",
       id,
       status,
-      backend: current?.kind === "subagent" ? current.backend : undefined,
+      capability: current?.kind === "subagent" ? current.capability : undefined,
       startedAt,
       updatedAt: timestamp(status.updated_at) ?? now,
       terminalAt: TERMINAL_STATES.has(status.state) ? now : undefined,
@@ -197,8 +197,8 @@ export function activityState(activity: TsActivity): TsSubagentState {
 }
 
 export function isSubagentTool(toolName: string): boolean {
-  return toolName === TS_PUBLIC_TOOL_NAMES.subagentReview
-    || toolName === TS_PUBLIC_TOOL_NAMES.subagentCompute;
+  return toolName === TS_PUBLIC_TOOL_NAMES.review
+    || toolName === TS_PUBLIC_TOOL_NAMES.compute;
 }
 export function isTrackedActivityTool(toolName: string): boolean {
   return isSubagentTool(toolName) || DETERMINISTIC_TOOLS.has(toolName);
@@ -214,7 +214,7 @@ function statePriority(state: TsSubagentState): number {
 function fallbackSubagentStatus(event: ToolExecutionStartEvent, now: number): TsSubagentStatus {
   const args = objectValue(event.args);
   const timestampValue = new Date(now).toISOString();
-  const role = event.toolName === TS_PUBLIC_TOOL_NAMES.subagentCompute ? "compute" : "review";
+  const role = event.toolName === TS_PUBLIC_TOOL_NAMES.compute ? "compute" : "review";
   const nodeId = stringValue(args.nodeId);
   return {
     schema_version: TS_SUBAGENT_STATUS_SCHEMA,

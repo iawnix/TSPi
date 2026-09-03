@@ -58,6 +58,16 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert "python/ts_agent/web/static/research-map.js" in names
     assert "python/ts_agent/web/static/research-tree.js" in names
     assert "python/ts_agent/web/static/attempt-timeline.js" in names
+    assert "python/ts_agent/workspace/artifacts.py" in names
+    assert "python/ts_agent/workspace/candidates.py" in names
+    assert "python/ts_agent/workspace/claims.py" in names
+    assert "python/ts_agent/workspace/contracts/change_request.schema.json" in names
+    assert "python/ts_agent/workspace/contracts/observation_candidates.schema.json" in names
+    assert "python/ts_agent/workspace/contracts/proof_spec.schema.json" in names
+    assert "python/ts_agent/workspace/contracts/proof_spec_registry.schema.json" in names
+    assert "python/ts_agent/compute/capabilities.py" in names
+    assert "python/ts_agent/validation/templates/builtin/classical-ts__1.json" in names
+    assert "python/ts_agent/validation/acceptance_profiles/accepted-ts__3.json" in names
     assert distribution == build_result["python_distribution"]
     assert distribution["name"] == "ts-agent-kernel"
     assert distribution["version"] == "0.11.1"
@@ -84,6 +94,11 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert (package_root / "python" / "ts_agent" / "web" / "static" / "research-map.js").is_file()
     assert (package_root / "python" / "ts_agent" / "web" / "static" / "research-tree.js").is_file()
     assert (package_root / "python" / "ts_agent" / "web" / "static" / "attempt-timeline.js").is_file()
+    assert (package_root / "python" / "ts_agent" / "workspace" / "artifacts.py").is_file()
+    assert (package_root / "python" / "ts_agent" / "workspace" / "candidates.py").is_file()
+    assert (package_root / "python" / "ts_agent" / "workspace" / "claims.py").is_file()
+    assert (package_root / "python" / "ts_agent" / "workspace" / "contracts" / "observation_candidates.schema.json").is_file()
+    assert (package_root / "python" / "ts_agent" / "workspace" / "contracts" / "proof_spec.schema.json").is_file()
     installed_wheel = package_root / distribution["path"]
     assert installed_wheel.is_file()
     assert inspect_wheel(installed_wheel)["payload_sha256"] == distribution["payload_sha256"]

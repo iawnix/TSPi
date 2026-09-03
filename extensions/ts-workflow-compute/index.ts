@@ -41,7 +41,6 @@ const {
   sanitizeActionError,
 } = require("./action-log.cjs");
 const OPERATIONS = ["launch", "inspect", "finalize", "cancel"] as const;
-const BACKENDS = ["gaussian", "ase_neb", "xtb", "crest", "qbics_dmecp"] as const;
 const REMOTE_DIAGNOSTIC_MODES = ["status", "doctor", "queues", "nodes"] as const;
 type RemoteDiagnosticMode = typeof REMOTE_DIAGNOSTIC_MODES[number];
 const REMOTE_DIAGNOSTIC_ACTIVITY = Object.freeze({
@@ -68,7 +67,6 @@ const REMOTE_DIAGNOSTIC_ACTIVITY = Object.freeze({
 } satisfies Record<RemoteDiagnosticMode, { description: string; detail: string; selector: string }>);
 const ATTEMPT_KINDS = ["primary", "retry", "recalculation"] as const;
 const COMPUTE_COMMON_PARAMETERS = {
-  backend: StringEnum(BACKENDS),
   nodeId: Type.String({
     pattern: "^node_[1-9][0-9]*$",
     maxLength: 128,
@@ -81,9 +79,13 @@ const INPUT_ARTIFACTS_PARAMETER = Type.Array(Type.Object({
   inputRole: Type.String({ pattern: "^[A-Za-z][A-Za-z0-9_]*$", maxLength: 64 }),
   artifactId: Type.String({ pattern: "^art_[0-9a-f]{24}$" }),
 }, { additionalProperties: false }), { minItems: 1, maxItems: 8 });
-const SETTINGS_MAP_PARAMETER = Type.Record(
+const CAPABILITY_PARAMETER_MAP = Type.Record(
   Type.String({ pattern: "^[A-Za-z][A-Za-z0-9_]*$" }),
-  Type.String({ maxLength: 4096 }),
+  Type.Union([
+    Type.String({ maxLength: 4096 }),
+    Type.Number(),
+    Type.Boolean(),
+  ]),
 );
 const REMOTE_RESOURCES_PARAMETER = Type.Object({
   queue: Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$" }),
@@ -105,14 +107,18 @@ const COMPUTE_PARAMETERS = Type.Object({
   operation: StringEnum(OPERATIONS),
   intentId: Type.Optional(INTENT_ID_PARAMETER),
   purpose: Type.Optional(Type.String({ minLength: 1, maxLength: 2000 })),
-  taskType: Type.Optional(Type.String({ pattern: "^[A-Za-z0-9][A-Za-z0-9_.-]*$", maxLength: 64 })),
+  capability: Type.Optional(Type.String({
+    pattern: "^[a-z][a-z0-9_]*(?:[.][a-z][a-z0-9_]*)+$",
+    maxLength: 128,
+  })),
+  capabilityVersion: Type.Optional(Type.String({ pattern: "^[1-9][0-9]*$", maxLength: 16 })),
   attemptKind: Type.Optional(StringEnum(ATTEMPT_KINDS)),
   sourceAttempt: Type.Optional(Type.Object({
     intentId: INTENT_ID_PARAMETER,
     reason: Type.String({ minLength: 1, maxLength: 1000 }),
   }, { additionalProperties: false })),
   inputArtifacts: Type.Optional(INPUT_ARTIFACTS_PARAMETER),
-  settings: Type.Optional(SETTINGS_MAP_PARAMETER),
+  parameters: Type.Optional(CAPABILITY_PARAMETER_MAP),
   executionTarget: Type.Optional(EXECUTION_TARGET_PARAMETER),
   tailArtifact: Type.Optional(Type.String({ minLength: 1, maxLength: 255 })),
   tailLines: Type.Optional(Type.Integer({ minimum: 1, maximum: 500 })),
@@ -122,7 +128,7 @@ const COMPUTE_PARAMETERS = Type.Object({
 }, { additionalProperties: false });
 
 const COMPUTE_OPERATION_FIELDS = Object.freeze({
-  launch: ["purpose", "taskType", "attemptKind", "sourceAttempt", "inputArtifacts", "settings", "executionTarget", "timeoutSeconds"],
+  launch: ["purpose", "capability", "capabilityVersion", "attemptKind", "sourceAttempt", "inputArtifacts", "parameters", "executionTarget", "timeoutSeconds"],
   inspect: ["intentId", "tailArtifact", "tailLines", "timeoutSeconds"],
   finalize: ["intentId", "artifacts", "artifactRef", "timeoutSeconds"],
   cancel: ["intentId", "timeoutSeconds"],
@@ -130,17 +136,17 @@ const COMPUTE_OPERATION_FIELDS = Object.freeze({
 
 type ComputeRequest = {
   operation: typeof OPERATIONS[number];
-  backend: typeof BACKENDS[number];
   nodeId: string;
   intentFile?: string;
   intentRequest?: Record<string, unknown>;
   intentId?: string;
   purpose?: string;
-  taskType?: string;
+  capability?: string;
+  capabilityVersion?: string;
   attemptKind?: typeof ATTEMPT_KINDS[number];
   sourceAttempt?: { intentId: string; reason: string };
   inputArtifacts?: Array<{ inputRole: string; artifactId: string }>;
-  settings?: Record<string, string>;
+  parameters?: Record<string, string | number | boolean>;
   executionTarget?: Record<string, unknown>;
   tailArtifact?: string;
   tailLines?: number;
@@ -153,6 +159,10 @@ type ComputeRequest = {
   remoteDir?: string;
   jobId?: string;
   executionSummary?: Record<string, unknown>;
+  capabilityDescriptorDigest?: string;
+  backend?: string;
+  outputRoles?: string[];
+  capabilityDescriptor?: Record<string, unknown>;
   timeoutSeconds?: number;
 };
 
@@ -188,7 +198,7 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: TS_PUBLIC_TOOL_NAMES.remoteInspect,
+    name: TS_PUBLIC_TOOL_NAMES.remote,
     label: "TS Remote Inspect",
     description: "Run one read-only SSH/Torque readiness probe.",
     promptSnippet: "Inspect TS remote readiness",
@@ -208,13 +218,13 @@ export default function (pi: ExtensionAPI) {
   });
 
   pi.registerTool({
-    name: TS_PUBLIC_TOOL_NAMES.subagentCompute,
+    name: TS_PUBLIC_TOOL_NAMES.compute,
     label: "TS Compute Subagent",
     description: "Delegate one bounded launch, inspect, finalize, or cancel calculation lifecycle to an isolated operational subagent.",
     promptSnippet: "Run one bound transition-state Compute lifecycle",
     promptGuidelines: [
       "Before a new launch, retrieve the focused ResearchNode and verify that the calculation advances its exact question and principal deliverable; otherwise start a dependent Node.",
-      "Before launch, discover logical inputs with ts_workspace_context mode=artifacts; the host owns paths, hashes, filenames, and IDs.",
+      "Before launch, discover logical inputs and the exact capability descriptor with ts_state; the host owns paths, hashes, filenames, and IDs.",
       "Declare attemptKind explicitly. Retry and recalculation must cite one source Attempt in the same Node; cross-Node continuation uses dependencies and artifact bindings.",
       "Use launch for prepare+submit, inspect for status+optional tail, finalize for collect+parse, and cancel only for an already-bound job.",
       "Compute output is operational until verified artifacts are recorded as semantic Observations.",
@@ -230,10 +240,11 @@ export default function (pi: ExtensionAPI) {
       const request = validateComputeRequest(
         {
           operation: input.operation,
-          backend: input.backend,
           nodeId: input.nodeId,
           purpose: input.purpose,
-          taskType: input.taskType,
+          capability: input.capability,
+          capabilityVersion: input.capabilityVersion,
+          parameters: input.parameters,
           intentRequest: input.operation === "launch" ? buildCalculationRequest(input) : undefined,
           intentId: input.intentId,
           tailArtifact: input.tailArtifact,
@@ -277,7 +288,9 @@ export default function (pi: ExtensionAPI) {
           runId: taskId,
           workspaceRoot: root,
           operation: request.operation,
-          backend: request.backend,
+          capability: binding.capability,
+          capabilityVersion: binding.capabilityVersion,
+          capabilityDescriptor: binding.capabilityDescriptor,
           nodeId: request.nodeId,
           binding,
           tailArtifact: request.tailArtifact,
@@ -617,6 +630,12 @@ async function preflightComputeRequest(
     const created = await runComputeJson(pi, "create-intent", root, [
       "--request-json", JSON.stringify(request.intentRequest),
     ], signal, 60_000);
+    if (isPlainObject(created) && created.schema_version === "ts-capability-gap/1") {
+      const error = new Error(`compute capability gap: ${JSON.stringify(created)}`) as Error & Record<string, unknown>;
+      error.code = "CAPABILITY_UNAVAILABLE";
+      error.capabilityGap = created;
+      throw error;
+    }
     if (
       !isPlainObject(created)
       || created.schema_version !== "ts-calculation-intent-created/4"
@@ -636,9 +655,10 @@ async function preflightComputeRequest(
   const args = [
     "--operation", preflightOperation,
     "--node-id", request.nodeId,
-    "--backend", request.backend,
   ];
   if (request.operation === "launch") {
+    args.push("--capability", request.capability as string);
+    args.push("--capability-version", request.capabilityVersion as string);
     args.push("--intent-file", request.intentFile as string);
   } else {
     args.push("--intent-id", request.intentId as string);
@@ -647,12 +667,31 @@ async function preflightComputeRequest(
   if (!raw || typeof raw !== "object" || raw.schema_version !== "ts-compute-binding/1") {
     throw new Error("compute preflight returned an invalid binding");
   }
-  if (raw.operation !== preflightOperation || raw.node_id !== request.nodeId || raw.backend !== request.backend) {
+  if (raw.operation !== preflightOperation || raw.node_id !== request.nodeId) {
     throw new Error("compute preflight binding does not match the requested operation scope");
   }
   for (const key of ["intent_id", "intent_ref", "intent_digest"] as const) {
     if (typeof raw[key] !== "string" || !raw[key]) throw new Error(`compute preflight has no ${key}`);
   }
+  const descriptor = isPlainObject(raw.capability_descriptor) ? raw.capability_descriptor : undefined;
+  if (!descriptor || descriptor.capability !== raw.capability || descriptor.version !== raw.capability_version) {
+    throw new Error("compute preflight has no matching capability descriptor");
+  }
+  if (typeof raw.capability_descriptor_digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(raw.capability_descriptor_digest)) {
+    throw new Error("compute preflight has no capability descriptor digest");
+  }
+  request.capability = requireBindingString(raw.capability, "capability");
+  request.capabilityVersion = requireBindingString(raw.capability_version, "capability_version");
+  request.capabilityDescriptorDigest = raw.capability_descriptor_digest;
+  request.backend = requireBindingString(raw.backend, "backend");
+  request.outputRoles = Array.isArray(raw.expected_output_roles)
+    ? raw.expected_output_roles.filter((item: unknown): item is string => typeof item === "string" && Boolean(item))
+    : [];
+  const descriptorSummary = summarizeCapabilityDescriptor(descriptor);
+  if (JSON.stringify(descriptorSummary.output_roles) !== JSON.stringify(request.outputRoles)) {
+    throw new Error("compute preflight capability descriptor output roles do not match the bound intent");
+  }
+  request.capabilityDescriptor = descriptorSummary;
   return {
     intentId: raw.intent_id as string,
     intentRef: raw.intent_ref as string,
@@ -662,12 +701,15 @@ async function preflightComputeRequest(
     remoteDir: typeof raw.remote_dir === "string" ? raw.remote_dir : undefined,
     jobId: typeof raw.job_id === "string" ? raw.job_id : undefined,
     executionSummary: isPlainObject(raw.execution_summary) ? raw.execution_summary : {},
+    capability: request.capability,
+    capabilityVersion: request.capabilityVersion,
+    capabilityDescriptor: descriptorSummary,
+    capabilityDescriptorDigest: request.capabilityDescriptorDigest,
   };
 }
 
 function validateComputeRequest(request: ComputeRequest): ComputeRequest {
   if (!OPERATIONS.includes(request.operation)) throw new Error(`unsupported compute operation: ${request.operation}`);
-  if (!BACKENDS.includes(request.backend)) throw new Error(`unsupported compute backend: ${request.backend}`);
   if (typeof request.nodeId !== "string" || !request.nodeId.trim()) throw new Error("compute operation requires nodeId");
   const supplied = (key: keyof ComputeRequest) => request[key] !== undefined;
   if (request.operation === "launch") {
@@ -696,7 +738,7 @@ function validateComputeRequest(request: ComputeRequest): ComputeRequest {
 
 function validatePublicComputeParameters(input: ComputeRequest & { root?: string }): void {
   if (!OPERATIONS.includes(input.operation)) throw new Error(`unsupported compute operation: ${input.operation}`);
-  const allowed = new Set(["operation", "backend", "nodeId", "root", ...COMPUTE_OPERATION_FIELDS[input.operation]]);
+  const allowed = new Set(["operation", "nodeId", "root", ...COMPUTE_OPERATION_FIELDS[input.operation]]);
   const unexpected = Object.keys(input).filter((key) => !allowed.has(key));
   if (unexpected.length) {
     throw new Error(`${input.operation} does not accept: ${unexpected.sort().join(", ")}`);
@@ -706,11 +748,12 @@ function validatePublicComputeParameters(input: ComputeRequest & { root?: string
 function buildCalculationRequest(request: ComputeRequest): Record<string, unknown> {
   if (
     !request.purpose
-    || !request.taskType
+    || !request.capability
+    || !request.capabilityVersion
     || !request.executionTarget
     || !request.inputArtifacts?.length
   ) {
-    throw new Error("launch requires purpose, taskType, inputArtifacts, and a remote executionTarget");
+    throw new Error("launch requires purpose, capability, capabilityVersion, inputArtifacts, and a remote executionTarget");
   }
   const sourceAttempt = request.sourceAttempt;
   if (!request.attemptKind) throw new Error("launch requires an explicit attemptKind");
@@ -738,7 +781,7 @@ function buildCalculationRequest(request: ComputeRequest): Record<string, unknow
     },
   };
   return {
-    schema_version: "ts-calculation-request/4",
+    schema_version: "ts-calculation-request/5",
     node_id: request.nodeId,
     purpose: request.purpose,
     attempt_kind: request.attemptKind,
@@ -750,13 +793,13 @@ function buildCalculationRequest(request: ComputeRequest): Record<string, unknow
           reason: sourceAttempt.reason,
         }
       : null,
-    backend: request.backend,
-    task_type: request.taskType,
+    capability: request.capability,
+    capability_version: request.capabilityVersion,
     input_artifacts: (request.inputArtifacts || []).map((item) => ({
       input_role: item.inputRole,
       artifact_id: item.artifactId,
     })),
-    settings: request.settings || {},
+    parameters: request.parameters || {},
     execution_target: executionTarget,
     dry_run: false,
   };
@@ -765,6 +808,27 @@ function buildCalculationRequest(request: ComputeRequest): Record<string, unknow
 function requireBindingString(value: unknown, label: string): string {
   if (typeof value !== "string" || !value) throw new Error(`compute preflight has no ${label}`);
   return value;
+}
+
+function summarizeCapabilityDescriptor(value: Record<string, unknown>): Record<string, unknown> {
+  return {
+    capability: requireBindingString(value.capability, "capability_descriptor.capability"),
+    version: requireBindingString(value.version, "capability_descriptor.version"),
+    input_roles: requireBindingStringArray(value.input_roles, "capability_descriptor.input_roles"),
+    output_roles: requireBindingStringArray(value.output_roles, "capability_descriptor.output_roles"),
+    parsers: requireBindingStringArray(value.parsers, "capability_descriptor.parsers"),
+  };
+}
+
+function requireBindingStringArray(value: unknown, label: string): string[] {
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string" || !item)) {
+    throw new Error(`compute preflight has no valid ${label}`);
+  }
+  const result = value as string[];
+  if (new Set(result).size !== result.length) {
+    throw new Error(`compute preflight ${label} contains duplicates`);
+  }
+  return [...result];
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

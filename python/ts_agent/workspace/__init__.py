@@ -1,30 +1,48 @@
 """Deterministic research kernel for transition-state workspaces."""
 
 from .bootstrap import WorkspaceBootstrapError, WorkspaceBootstrapState, bootstrap_workspace, classify_workspace
-from .context import build_review_snapshot, compile_context, validation_capabilities
-from .decision import draft_decision, validate_decision
-from .engine import apply_decision, init_workspace, validate_decision_dry_run
+from .artifacts import (
+    WorkspaceArtifactError,
+    list_workspace_artifacts,
+    resolve_workspace_artifact_ids,
+    resolve_workspace_artifact_ref,
+)
+from .candidates import (
+    ObservationCandidateError,
+    build_observation_candidates,
+    load_observation_candidate,
+    validate_observation_candidates,
+    validate_promoted_candidate,
+)
+from .context import build_review_snapshot, compile_context, proof_capabilities
+from .engine import change_workspace, init_workspace
 from .errors import ContractError, WorkspaceValidationError
 from .identity import ensure_workspace_identity, read_workspace_identity, workspace_id
 from .validator import validate_workspace
 
 __all__ = [
     "ContractError",
+    "ObservationCandidateError",
+    "WorkspaceArtifactError",
     "WorkspaceBootstrapError",
     "WorkspaceBootstrapState",
     "WorkspaceValidationError",
-    "apply_decision",
+    "change_workspace",
     "bootstrap_workspace",
+    "build_observation_candidates",
     "build_review_snapshot",
     "classify_workspace",
     "compile_context",
-    "draft_decision",
     "ensure_workspace_identity",
     "init_workspace",
+    "list_workspace_artifacts",
+    "load_observation_candidate",
     "read_workspace_identity",
-    "validate_decision",
-    "validate_decision_dry_run",
+    "resolve_workspace_artifact_ids",
+    "resolve_workspace_artifact_ref",
+    "validate_observation_candidates",
+    "validate_promoted_candidate",
     "validate_workspace",
-    "validation_capabilities",
+    "proof_capabilities",
     "workspace_id",
 ]

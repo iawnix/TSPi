@@ -10,7 +10,7 @@ the study produced results, not chemical connectivity.
 
 For a pathway audit, record semantic Observations covering the ordered step
 refs, endpoint/intermediate identity, shared species consistency, charge/spin or
-state continuity, and any unresolved branching. Freeze a pathway GateSpec, such
+state continuity, and any unresolved branching. Freeze a pathway ProofSpec, such
 as `pathway-audit@1`, against the pathway Claim.
 
 The `accepted-pathway@2` profile requires its declared pathway dimension and all
@@ -19,4 +19,4 @@ constituent accepted Claim remains independently cited and digest-bound.
 
 Preserve alternative pathways as separate Claims. Energetic preference,
 kinetic accessibility, and structural connectivity are distinct questions and
-may require separate GateSpecs.
+may require separate ProofSpecs.

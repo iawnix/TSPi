@@ -56,18 +56,21 @@ def _request(
     *,
     target: dict[str, object] | None = None,
     dry_run: bool = True,
-    task_type: str = "opt_freq",
+    capability: str = "gaussian.opt_freq",
 ) -> dict[str, object]:
+    if capability == "gaussian.sp":
+        route = "%chk=candidate.chk\n#P B3LYP/6-31G(d) sp\n\nTS\n\n0 1\nH 0 0 0\n\n"
+        (workspace / "inputs" / "candidate.gjf").write_text(route, encoding="utf-8")
     return {
-        "schema_version": "ts-calculation-request/4",
+        "schema_version": "ts-calculation-request/5",
         "node_id": node_id,
         "purpose": "Evaluate the selected candidate with a bound calculation.",
         "attempt_kind": "primary",
         "lineage": None,
-        "backend": "gaussian",
-        "task_type": task_type,
+        "capability": capability,
+        "capability_version": "1",
         "input_artifacts": [{"input_role": "gjf", "artifact_id": _artifact_id(workspace)}],
-        "settings": {},
+        "parameters": {},
         "execution_target": target or {"kind": "local"},
         "dry_run": dry_run,
     }
@@ -79,11 +82,11 @@ def _create(
     *,
     target: dict[str, object] | None = None,
     dry_run: bool = True,
-    task_type: str = "opt_freq",
+    capability: str = "gaussian.opt_freq",
 ) -> dict:
     return create_calculation_intent(
         workspace,
-        _request(workspace, node_id, target=target, dry_run=dry_run, task_type=task_type),
+        _request(workspace, node_id, target=target, dry_run=dry_run, capability=capability),
     )
 
 
@@ -192,6 +195,25 @@ def _prepared_remote(
     return workspace, node_id, created
 
 
+def test_local_non_dry_run_is_rejected_before_creating_an_attempt(tmp_path: Path) -> None:
+    workspace, node_id = _workspace(tmp_path)
+
+    with pytest.raises(ComputeContractError, match="dry_run.*expected|local execution is currently preparation/parsing only"):
+        _create(workspace, node_id, dry_run=False)
+
+    assert not (workspace / "nodes" / node_id / "attempts").exists()
+
+
+def test_unavailable_capability_fails_without_implicit_substitution_or_attempt(tmp_path: Path) -> None:
+    workspace, node_id = _workspace(tmp_path)
+
+    with pytest.raises(ComputeContractError, match="capability unavailable"):
+        _create(workspace, node_id, capability="photochemistry.surface_hop")
+
+    attempts = workspace / "nodes" / node_id / "attempts"
+    assert not attempts.exists()
+
+
 def test_intent_paths_ids_and_preflight_are_research_node_bound(tmp_path: Path) -> None:
     workspace, node_id = _workspace(tmp_path)
     first = _create(workspace, node_id)
@@ -210,7 +232,8 @@ def test_intent_paths_ids_and_preflight_are_research_node_bound(tmp_path: Path) 
         workspace,
         "prepare",
         node_id,
-        "gaussian",
+        capability="gaussian.opt_freq",
+        capability_version="1",
         intent_file=first["intent_ref"],
     )
     assert binding["schema_version"] == "ts-compute-binding/1"
@@ -220,7 +243,7 @@ def test_intent_paths_ids_and_preflight_are_research_node_bound(tmp_path: Path) 
     assert prepared["result"]["state"] == "prepared"
 
 
-def test_existing_intent_remains_readable_for_prepare_and_inspect_preflight(
+def test_existing_intent_rejects_retired_intent_schema(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -233,26 +256,12 @@ def test_existing_intent_remains_readable_for_prepare_and_inspect_preflight(
         dry_run=False,
     )
     existing = dict(created["intent"])
-    existing["schema_version"] = "ts-calculation-intent/5"
-    existing.pop("node_contract_digest")
-    existing.pop("scientific_intent_digest")
-    existing.pop("lineage")
-    existing["recalculation_ref"] = None
+    existing["schema_version"] = "ts-calculation-intent/6"
     intent_path = workspace / created["intent_ref"]
     intent_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
 
-    prepared = prepare_calculation(workspace, created["intent_ref"])
-    binding = preflight_calculation(
-        workspace,
-        "inspect",
-        node_id,
-        "gaussian",
-        intent_id=created["intent_id"],
-    )
-
-    assert prepared["result"]["provenance"]["intent_schema"] == "ts-calculation-intent/5"
-    assert prepared["result"]["provenance"]["attempt_lineage"] is None
-    assert binding["intent_id"] == created["intent_id"]
+    with pytest.raises(ComputeContractError, match="unsupported calculation intent"):
+        prepare_calculation(workspace, created["intent_ref"])
 
 
 def test_intent_sequence_reservation_is_concurrent_and_failure_atomic(
@@ -499,6 +508,9 @@ def test_compute_result_contract_rejects_scientific_verdict_fields() -> None:
         "job_id": None,
         "intent_id": "calc_1",
         "node_id": "node_1",
+        "capability": "gaussian.opt_freq",
+        "capability_version": "1",
+        "expected_output_roles": ["program_output", "optimized_geometry", "frequencies"],
         "state": "prepared",
         "program_status": "not_run",
         "exit_status": None,

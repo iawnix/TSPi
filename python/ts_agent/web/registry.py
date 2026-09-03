@@ -214,6 +214,6 @@ def _is_supported_workspace(source: Path) -> bool:
         return False
     return (
         isinstance(identity, dict)
-        and identity.get("schema_version") == "ts-workspace/5"
-        and identity.get("kernel_protocol") == "ts-research-kernel/5"
+        and identity.get("schema_version") == "ts-workspace/6"
+        and identity.get("kernel_protocol") == "ts-research-kernel/6"
     )

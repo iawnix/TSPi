@@ -20,7 +20,7 @@ from ts_agent.workspace.state import (
     RESEARCH_STATE_FILE,
     STATE_FILES,
     VALIDATION_RESULTS_FILE,
-    VALIDATION_SPECS_FILE,
+    PROOF_SPECS_FILE,
     WORKSPACE_FILE,
 )
 from ts_agent.workspace.validator import validate_workspace
@@ -76,7 +76,7 @@ def collect_report_context(
         "research_nodes": research_nodes,
         "research_trajectory": project_research_trajectory(root_path, research_phases, research_nodes),
         "observations": list(documents[OBSERVATIONS_FILE]["observations"]),
-        "validation_specs": list(documents[VALIDATION_SPECS_FILE]["specs"]),
+        "proof_specs": list(documents[PROOF_SPECS_FILE]["proofs"]),
         "validation_results": list(documents[VALIDATION_RESULTS_FILE]["results"]),
         "findings": list(documents[FINDINGS_FILE]["findings"]),
         "acceptances": acceptances,

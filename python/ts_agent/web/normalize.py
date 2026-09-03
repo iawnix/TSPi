@@ -10,6 +10,14 @@ from typing import Any
 
 from ts_agent.workspace.acceptance import project_acceptances
 from ts_agent.workspace.associations import derive_claim_node_links
+from ts_agent.compute.contracts import ComputeContractError, validate_compute_contract
+from ts_agent.workspace.artifacts import WorkspaceArtifactError, resolve_workspace_artifact_ref
+from ts_agent.workspace.candidates import (
+    CANDIDATE_FILE_NAME,
+    MAX_CANDIDATE_BYTES,
+    ObservationCandidateError,
+    validate_observation_candidates,
+)
 from ts_agent.io import read_json
 from ts_agent.workspace.locator import locate_research_files
 from ts_agent.workspace.operational import operational_snapshot
@@ -32,7 +40,7 @@ from ts_agent.workspace.state import (
     RESEARCH_STATE_FILE,
     STATE_FILES,
     VALIDATION_RESULTS_FILE,
-    VALIDATION_SPECS_FILE,
+    PROOF_SPECS_FILE,
     WORKSPACE_FILE,
 )
 from ts_agent.workspace.validator import validate_workspace
@@ -61,6 +69,7 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         _normalize_node(
             root,
             record,
+            observations=observations,
             activities=activities,
             agent_runs=agent_runs,
             unresolved_controls=unresolved_controls,
@@ -138,7 +147,7 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         "research_nodes": nodes,
         "research_map": research_map,
         "observations": observations,
-        "validation_specs": _objects(documents[VALIDATION_SPECS_FILE].get("specs")),
+        "proof_specs": _objects(documents[PROOF_SPECS_FILE].get("proofs")),
         "validation_results": _objects(documents[VALIDATION_RESULTS_FILE].get("results")),
         "findings": _objects(documents[FINDINGS_FILE].get("findings")),
         "acceptances": acceptances,
@@ -282,7 +291,7 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
                 else "none"
             ),
             "observation_count": len(_strings(record.get("observation_refs"))),
-            "validation_spec_count": len(_strings(record.get("validation_spec_refs"))),
+            "proof_spec_count": len(_strings(record.get("proof_spec_refs"))),
             "validation_result_count": len(_strings(record.get("validation_result_refs"))),
             "review_run_count": sum(
                 1
@@ -402,8 +411,8 @@ def claim_payload(source_root: str | Path, claim_id: str, *, label: str | None =
         "observations": [
             row for row in _objects(view.get("observations")) if row.get("observation_id") in observation_ids
         ],
-        "validation_specs": [
-            row for row in _objects(view.get("validation_specs")) if row.get("target_claim_ref") == claim_id
+        "proof_specs": [
+            row for row in _objects(view.get("proof_specs")) if row.get("target_claim_ref") == claim_id
         ],
         "validation_results": [
             row for row in _objects(view.get("validation_results")) if row.get("target_claim_ref") == claim_id
@@ -440,6 +449,7 @@ def node_payload(source_root: str | Path, node_id: str, *, label: str | None = N
             root,
             node_id,
             agent_runs=compute_runs,
+            observations=_objects(view.get("observations")),
             include_details=True,
         ),
     }
@@ -471,10 +481,10 @@ def node_payload(source_root: str | Path, node_id: str, *, label: str | None = N
             for row in _objects(view.get("observations"))
             if row.get("created_by_node") == node_id or row.get("observation_id") in _strings(node.get("observation_refs"))
         ],
-        "validation_specs": [
+        "proof_specs": [
             row
-            for row in _objects(view.get("validation_specs"))
-            if row.get("created_by_node") == node_id or row.get("spec_id") in _strings(node.get("validation_spec_refs"))
+            for row in _objects(view.get("proof_specs"))
+            if row.get("created_by_node") == node_id or row.get("proof_id") in _strings(node.get("proof_spec_refs"))
         ],
         "validation_results": [
             row
@@ -556,6 +566,7 @@ def _normalize_node(
     root: Path,
     record: dict[str, Any],
     *,
+    observations: list[dict[str, Any]],
     activities: list[dict[str, Any]],
     agent_runs: list[dict[str, Any]],
     unresolved_controls: list[dict[str, Any]],
@@ -567,7 +578,12 @@ def _normalize_node(
         for row in agent_runs
         if row.get("role") == "compute" and node_id in _strings(row.get("node_refs"))
     ]
-    attempts = _calculation_attempts(root, node_id, agent_runs=node_runs)
+    attempts = _calculation_attempts(
+        root,
+        node_id,
+        agent_runs=node_runs,
+        observations=observations,
+    )
     return {
         **record,
         "attempts": attempts,
@@ -622,6 +638,7 @@ def _calculation_attempts(
     node_id: str,
     *,
     agent_runs: list[dict[str, Any]],
+    observations: list[dict[str, Any]],
     include_details: bool = False,
 ) -> list[dict[str, Any]]:
     if not node_id:
@@ -641,8 +658,14 @@ def _calculation_attempts(
         status = _read_optional_object(attempt_dir / "status.json")
         intent = _read_optional_object(attempt_dir / "intent.json")
         intent_id = attempt_dir.name
-        settings = _object(intent.get("settings"))
-        lineage = _normalized_attempt_lineage(intent)
+        intent_status, intent_error = _calculation_intent_status(intent)
+        # The explorer has one public calculation contract.  In particular, it
+        # must not silently translate retired ``settings`` or
+        # ``recalculation_ref`` fields into the current names.  Keeping those
+        # records visible with an explicit status is useful for diagnosis while
+        # avoiding a misleading claim that the old record is executable.
+        parameters = _object(intent.get("parameters")) if intent_status == "valid" else {}
+        lineage = _normalized_attempt_lineage(intent) if intent_status == "valid" else None
         result_provenance = _object(result.get("provenance"))
         status_provenance = _object(status.get("provenance"))
         provenance = status_provenance or result_provenance
@@ -656,14 +679,17 @@ def _calculation_attempts(
             "intent_id": intent_id,
             "node_id": node_id,
             "ref": attempt_dir.relative_to(root).as_posix(),
-            "backend": intent.get("backend") or result.get("backend"),
-            "task_type": intent.get("task_type") or result.get("task_type"),
+            "intent_schema_version": _optional_string(intent.get("schema_version")),
+            "intent_status": intent_status,
+            "intent_error": intent_error,
+            "capability": _optional_string(intent.get("capability")),
+            "capability_version": _optional_string(intent.get("capability_version")),
+            "expected_output_roles": _strings(intent.get("expected_output_roles")),
             "purpose": _optional_string(intent.get("purpose")),
             "attempt_kind": _optional_string(intent.get("attempt_kind")) or "primary",
             "lineage": lineage,
-            "method": _optional_string(settings.get("method")),
-            "basis": _optional_string(settings.get("basis")),
-            "candidate_strategy": _optional_string(settings.get("candidateStrategy") or settings.get("candidate_strategy")),
+            "method": _optional_string(parameters.get("method")),
+            "basis": _optional_string(parameters.get("basis")),
             "state": result.get("state") or status.get("state"),
             "program_status": result.get("program_status") or status.get("program_status"),
             "error_class": result.get("error_class") or status.get("error_class"),
@@ -679,11 +705,24 @@ def _calculation_attempts(
             "scientific_intent_digest": _optional_string(intent.get("scientific_intent_digest")),
             "run_count": len(runs),
         }
+        candidate_projection = _observation_candidate_projection(
+            root,
+            attempt_dir,
+            intent=intent,
+            result=result,
+            observations=observations,
+        )
+        if candidate_projection is not None:
+            attempt["observation_candidates"] = candidate_projection
         if include_details:
             execution_target = _object(intent.get("execution_target"))
             attempt.update(
                 {
-                    "settings": settings,
+                    "parameters": parameters,
+                    "executor": {
+                        "backend": _optional_string(intent.get("backend")),
+                        "task_type": _optional_string(intent.get("task_type")),
+                    },
                     "input_bindings": [
                         {
                             "input_role": _optional_string(binding.get("input_role")),
@@ -705,6 +744,153 @@ def _calculation_attempts(
     return _attach_attempt_families(attempts, node_id)
 
 
+def _observation_candidate_projection(
+    root: Path,
+    attempt_dir: Path,
+    *,
+    intent: dict[str, Any],
+    result: dict[str, Any],
+    observations: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Expose bounded parser candidates without promoting them to science."""
+
+    candidate_path = attempt_dir / "outputs" / "parsed" / CANDIDATE_FILE_NAME
+    if not candidate_path.exists():
+        # Older or failed Attempts have no candidate stream to display.
+        return None
+    ref = candidate_path.relative_to(root).as_posix()
+    projection: dict[str, Any] = {
+        "status": "invalid",
+        "source": "parser",
+        "pending_interpretation": True,
+        "ref": ref,
+        "candidate_count": 0,
+        "candidates": [],
+        "diagnostics": [],
+    }
+    if candidate_path.is_symlink() or not candidate_path.is_file():
+        projection["error"] = "candidate output is not a regular file"
+        return projection
+    try:
+        if candidate_path.stat().st_size > MAX_CANDIDATE_BYTES:
+            raise ObservationCandidateError(
+                f"candidate output exceeds {MAX_CANDIDATE_BYTES} bytes"
+            )
+        artifact = resolve_workspace_artifact_ref(root, ref)
+        document = read_json(candidate_path)
+        validate_observation_candidates(document)
+    except (OSError, ValueError, WorkspaceArtifactError, ObservationCandidateError) as exc:
+        projection["error"] = str(exc)
+        return projection
+
+    expected_ref = _optional_string(_object(result.get("provenance")).get("observation_candidates_ref"))
+    expected_digest = _optional_string(_object(result.get("provenance")).get("observation_candidates_sha256"))
+    if expected_ref != ref or expected_digest != artifact["sha256"]:
+        projection["error"] = "candidate output is not bound by the calculation result"
+        projection["artifact_id"] = artifact["artifact_id"]
+        projection["sha256"] = artifact["sha256"]
+        return projection
+    if (
+        document.get("intent_id") != intent.get("intent_id")
+        or document.get("node_id") != intent.get("node_id")
+        or document.get("capability") != intent.get("capability")
+        or document.get("capability_version") != intent.get("capability_version")
+    ):
+        projection["error"] = "candidate output binding differs from the calculation intent"
+        projection["artifact_id"] = artifact["artifact_id"]
+        projection["sha256"] = artifact["sha256"]
+        return projection
+
+    candidates = _objects(document.get("candidates"))
+    promoted = _candidate_promotions(observations, str(artifact["artifact_id"]))
+    candidate_summaries = [
+        _candidate_summary(candidate, promoted.get(str(candidate.get("candidate_id") or ""), []))
+        for candidate in candidates[:32]
+    ]
+    promoted_count = sum(1 for candidate in candidates if str(candidate.get("candidate_id") or "") in promoted)
+    candidate_status = (
+        "empty"
+        if not candidates
+        else "pending_interpretation"
+        if promoted_count < len(candidates)
+        else "interpreted"
+    )
+    projection.update(
+        {
+            "status": candidate_status,
+            "pending_interpretation": promoted_count < len(candidates),
+            "artifact_id": artifact["artifact_id"],
+            "sha256": artifact["sha256"],
+            "intent_id": document.get("intent_id"),
+            "node_id": document.get("node_id"),
+            "capability": document.get("capability"),
+            "capability_version": document.get("capability_version"),
+            "parser": _object(document.get("parser")),
+            "candidate_count": len(candidates),
+            "promoted_count": promoted_count,
+            "pending_count": len(candidates) - promoted_count,
+            "diagnostics": _bounded_strings(document.get("diagnostics"), 8, 300),
+            "candidates": candidate_summaries,
+        }
+    )
+    return projection
+
+
+def _candidate_promotions(
+    observations: list[dict[str, Any]],
+    artifact_id: str,
+) -> dict[str, list[str]]:
+    promoted: dict[str, list[str]] = {}
+    for observation in observations:
+        binding = _object(observation.get("candidate_ref"))
+        candidate_id = _optional_string(binding.get("candidate_id"))
+        observation_id = _optional_string(observation.get("observation_id"))
+        if binding.get("artifact_id") != artifact_id or not candidate_id or not observation_id:
+            continue
+        promoted.setdefault(candidate_id, []).append(observation_id)
+    return promoted
+
+
+def _candidate_summary(
+    candidate: dict[str, Any],
+    observation_refs: list[str],
+) -> dict[str, Any]:
+    """Keep Web candidate rows useful while bounding parser-controlled values."""
+
+    summary = {
+        "candidate_id": candidate.get("candidate_id"),
+        "concept_id": candidate.get("concept_id"),
+        "subject_ref": str(candidate.get("subject_ref") or "")[:256],
+        "datatype": candidate.get("datatype"),
+        "unit": candidate.get("unit"),
+        "summary": str(candidate.get("summary") or "")[:300],
+        "value": _candidate_value_preview(candidate.get("value")),
+        "state": "promoted" if observation_refs else "pending_interpretation",
+        "observation_refs": observation_refs,
+    }
+    return summary
+
+
+def _candidate_value_preview(value: Any) -> Any:
+    if isinstance(value, (bool, int, float)) or value is None:
+        return value
+    if isinstance(value, str):
+        return value[:512]
+    try:
+        encoded = json.dumps(value, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    except (TypeError, ValueError):
+        return "<unserializable>"
+    if len(encoded) <= 512:
+        return value
+    return encoded[:509] + "..."
+
+
+def _bounded_strings(value: Any, max_items: int, max_length: int) -> list[str]:
+    if not isinstance(value, list):
+        return []
+    return [item[:max_length] for item in value if isinstance(item, str) and item][:max_items]
+
+
 def _normalized_attempt_lineage(intent: dict[str, Any]) -> dict[str, Any] | None:
     current = _object(intent.get("lineage"))
     if current:
@@ -715,16 +901,33 @@ def _normalized_attempt_lineage(intent: dict[str, Any]) -> dict[str, Any] | None
             "reason": _optional_string(current.get("reason")),
             "changed_fields": _strings(current.get("changed_fields")),
         }
-    previous = _object(intent.get("recalculation_ref"))
-    if not previous:
-        return None
-    return {
-        "source_node": _optional_string(previous.get("source_node")),
-        "source_intent_id": _optional_string(previous.get("source_intent_id")),
-        "relation": "recalculation",
-        "reason": _optional_string(previous.get("purpose")),
-        "changed_fields": _strings(previous.get("changed_settings")),
-    }
+    return None
+
+
+def _calculation_intent_status(intent: dict[str, Any]) -> tuple[str, str | None]:
+    """Classify one Attempt intent without translating retired contracts.
+
+    Web is a read-only projection, but it still needs a trustworthy boundary:
+    only the current ``ts-calculation-intent/7`` schema is projected as a
+    normal Attempt.  Retired schema versions are ``unsupported`` and malformed
+    or incomplete current records are ``invalid``.  The error is deliberately
+    bounded because intent files are operator-controlled input.
+    """
+
+    if not intent:
+        return "invalid", "intent.json is missing, unreadable, or not a JSON object"
+    schema_version = intent.get("schema_version")
+    if schema_version != "ts-calculation-intent/7":
+        return (
+            "unsupported",
+            f"unsupported calculation intent schema_version: {schema_version!r}; expected 'ts-calculation-intent/7'",
+        )
+    try:
+        validate_compute_contract("calculation_intent.schema.json", intent)
+    except ComputeContractError as exc:
+        message = str(exc)
+        return "invalid", message[:1000]
+    return "valid", None
 
 
 def _attach_attempt_families(attempts: list[dict[str, Any]], node_id: str) -> list[dict[str, Any]]:
@@ -757,6 +960,9 @@ def _attach_attempt_families(attempts: list[dict[str, Any]], node_id: str) -> li
 
 
 def _attempt_display_state(attempt: dict[str, Any]) -> str:
+    intent_status = str(attempt.get("intent_status") or "").lower()
+    if intent_status in {"unsupported", "invalid"}:
+        return intent_status
     program_status = str(attempt.get("program_status") or "").lower()
     if program_status in {"completed", "failed", "stopped"}:
         return program_status
@@ -808,7 +1014,7 @@ def _semantic_summary(view: dict[str, Any]) -> dict[str, Any]:
         "node_count": len(nodes),
         "node_statuses": _counts(nodes, "status"),
         "observation_count": len(_objects(view.get("observations"))),
-        "validation_spec_count": len(_objects(view.get("validation_specs"))),
+        "proof_spec_count": len(_objects(view.get("proof_specs"))),
         "validation_result_count": len(results),
         "validation_verdicts": _counts(results, "verdict"),
         "finding_count": len(findings),

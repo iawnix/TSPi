@@ -19,12 +19,21 @@ export default function (pi: ExtensionAPI) {
         intentId: "calc_1",
         intentDigest,
         executionKind: "remote",
+        capabilityDescriptorDigest: `sha256:${"3".repeat(64)}`,
       };
       const task = buildComputeTask({
         runId: "sub_1",
         workspaceRoot: ctx.cwd,
         operation,
-        backend: "gaussian",
+        capability: "gaussian.opt_freq",
+        capabilityVersion: "1",
+        capabilityDescriptor: {
+          capability: "gaussian.opt_freq",
+          version: "1",
+          input_roles: ["gjf"],
+          output_roles: ["program_output", "optimized_geometry", "frequencies"],
+          parsers: ["gaussian.log/1"],
+        },
         nodeId: "node_1",
         binding,
         tailArtifact: operation === "inspect" ? "gaussian.out" : undefined,
@@ -106,6 +115,9 @@ function resultFor(name: string, scenario: string, intentDigest: string): Record
     schema_version: action === "tail" ? "ts-calculation-tail/1" : "ts-calculation-result/2",
     intent_id: "calc_1",
     node_id: "node_1",
+    capability: "gaussian.opt_freq",
+    capability_version: "1",
+    expected_output_roles: ["program_output", "optimized_geometry", "frequencies"],
     state,
     program_status: action === "parse" ? "completed" : action === "status" ? "running" : "not_run",
     error_class: ambiguous ? (action === "submit" ? "submission_ambiguous" : "cancellation_ambiguous") : null,
@@ -120,7 +132,12 @@ function resultFor(name: string, scenario: string, intentDigest: string): Record
           reconciliation_required: ambiguous,
         }
       : undefined,
-    provenance: { intent_digest: intentDigest },
+    provenance: {
+      intent_digest: intentDigest,
+      capability: "gaussian.opt_freq",
+      capability_version: "1",
+      capability_descriptor_digest: `sha256:${"3".repeat(64)}`,
+    },
   };
 }
 

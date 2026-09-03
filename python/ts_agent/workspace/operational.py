@@ -193,7 +193,9 @@ def agent_run_index(root: str | Path) -> list[dict[str, Any]]:
             "result_outcome": result.get("outcome"),
             "error_code": error.get("code"),
             "error_message": error.get("message"),
-            "backend": inputs.get("backend"),
+            "capability": inputs.get("capability"),
+            "capability_version": inputs.get("capability_version"),
+            "expected_output_roles": _string_list(inputs.get("expected_output_roles")),
             "intent_id": inputs.get("intent_id"),
         }
         disposition_valid = role == "review" and _valid_review_disposition(disposition, row)

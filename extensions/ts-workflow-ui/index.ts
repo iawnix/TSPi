@@ -56,7 +56,7 @@ export function formatTsSubagentHistory(
   const failed = entryType.endsWith("-failed");
   const outcome = failed ? "failed" : "done";
   const duration = typeof data.duration_ms === "number" ? ` · ${formatElapsed(data.duration_ms)}` : "";
-  const action = subagentActionLabel({ role, operation, backend: stringValue(data.backend) });
+  const action = subagentActionLabel({ role, operation, capability: stringValue(data.capability) });
   const lines = [`TS ${subagentRoleLabel(role)} · ${action} · ${outcome}${duration}`];
   const context = compact([
     stringValue(data.task_id),
@@ -283,11 +283,11 @@ export default function (pi: ExtensionAPI) {
     latestContext = undefined;
   });
 
-  pi.registerCommand("ts-subagent-history", {
+  pi.registerCommand("ts-runs", {
     description: "Browse active and recorded Compute and Review subagent runs · read-only · local.",
     handler: async (args, ctx) => {
       if (String(args || "").trim()) {
-        ctx.ui.notify("/ts-subagent-history does not accept arguments", "warning");
+        ctx.ui.notify("/ts-runs does not accept arguments", "warning");
         return;
       }
       let root = process.env.TS_WORKSPACE_ROOT || ctx.cwd;
@@ -378,15 +378,13 @@ function contextText(ctx: ExtensionContext): string {
 
 function foregroundToolLabel(toolName: string): string {
   const labels: Record<string, string> = {
-    [TS_PUBLIC_TOOL_NAMES.workspaceContext]: "reading workspace context",
-    [TS_PUBLIC_TOOL_NAMES.workspaceDecisionDraft]: "drafting decision",
-    [TS_PUBLIC_TOOL_NAMES.workspaceDecisionValidate]: "validating workspace",
-    [TS_PUBLIC_TOOL_NAMES.workspaceDecisionApply]: "applying decision",
-    [TS_PUBLIC_TOOL_NAMES.remoteInspect]: "checking remote compute",
-    [TS_PUBLIC_TOOL_NAMES.artifactImport]: "importing calculation input",
-    [TS_PUBLIC_TOOL_NAMES.structureCompare]: "comparing molecular structures",
-    [TS_PUBLIC_TOOL_NAMES.reviewDisposition]: "recording review response",
-    [TS_PUBLIC_TOOL_NAMES.notifyUser]: "sending research update",
+    [TS_PUBLIC_TOOL_NAMES.state]: "reading research state",
+    [TS_PUBLIC_TOOL_NAMES.change]: "applying research change",
+    [TS_PUBLIC_TOOL_NAMES.remote]: "checking remote compute",
+    [TS_PUBLIC_TOOL_NAMES.importArtifact]: "importing calculation input",
+    [TS_PUBLIC_TOOL_NAMES.compare]: "comparing molecular structures",
+    [TS_PUBLIC_TOOL_NAMES.reply]: "recording review response",
+    [TS_PUBLIC_TOOL_NAMES.notify]: "sending research update",
   };
   return labels[toolName] || `running ${toolName}`;
 }

@@ -3,13 +3,19 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 
-from ts_agent.workspace import apply_decision, draft_decision, init_workspace
+from ts_agent.workspace import change_workspace, init_workspace
 from ts_agent.workspace.context import build_review_snapshot
+from tests.kernel_helpers import complete_request
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REVIEW_BUNDLE_PROBE = REPO_ROOT / "tests" / "review_bundle_probe.cjs"
+
+
+def apply_change(root: Path, request: dict[str, Any]) -> dict[str, Any]:
+    return change_workspace(root, complete_request(request))
 
 
 def bootstrap_workspace_fixture(root: Path) -> Path:
@@ -26,7 +32,7 @@ def start_research_node(
     claim_type: str = "test",
     claim_statement: str = "A bounded scientific claim requires evaluation.",
 ) -> dict[str, str]:
-    drafted = draft_decision(
+    changed = apply_change(
         root,
         {
             "rationale": "Create one Claim and one open ResearchNode for a test.",
@@ -62,16 +68,15 @@ def start_research_node(
             ],
         },
     )
-    apply_decision(root, drafted["decision"])
     return {
-        "phase_id": drafted["allocated_refs"]["phase"],
-        "claim_id": drafted["allocated_refs"]["claim"],
-        "node_id": drafted["allocated_refs"]["node"],
+        "phase_id": changed["allocated_refs"]["phase"],
+        "claim_id": changed["allocated_refs"]["claim"],
+        "node_id": changed["allocated_refs"]["node"],
     }
 
 
 def accept_research_claim(root: Path) -> dict[str, str]:
-    drafted = draft_decision(
+    changed = apply_change(
         root,
         {
             "rationale": "Create and accept one deterministically validated Claim.",
@@ -83,7 +88,17 @@ def accept_research_claim(root: Path) -> dict[str, str]:
                     "title": "Validation phase",
                     "objective": "Validate and accept one bounded scientific Claim.",
                 },
-                {"op": "create_claim", "local_ref": "claim", "claimType": "research", "statement": "A bounded claim is supported."},
+                {
+                    "op": "create_claim",
+                    "local_ref": "claim",
+                    "question": "Does the bounded observation support this Claim?",
+                    "claimType": "research",
+                    "statement": "A bounded claim is supported.",
+                    "scope": "The single deterministic test observation.",
+                    "uncertainty": "The observation has not yet been evaluated.",
+                    "predictions": ["test.confirmed is true."],
+                    "falsifiers": ["test.confirmed is false or unavailable."],
+                },
                 {
                     "op": "start_node",
                     "local_ref": "node",
@@ -106,7 +121,7 @@ def accept_research_claim(root: Path) -> dict[str, str]:
                     "provenance": {"producer": "test"},
                 },
                 {
-                    "op": "freeze_validation_spec",
+                    "op": "freeze_proof_spec",
                     "local_ref": "spec",
                     "nodeRef": "$node",
                     "targetClaimRef": "$claim",
@@ -127,7 +142,7 @@ def accept_research_claim(root: Path) -> dict[str, str]:
                         "success_policy": {"mode": "all_blocking"},
                     },
                 },
-                {"op": "evaluate_validation", "local_ref": "result", "nodeRef": "$node", "specRef": "$spec", "observationRefs": ["$observation"]},
+                {"op": "evaluate_proof", "local_ref": "result", "nodeRef": "$node", "proofRef": "$spec", "observationRefs": ["$observation"]},
                 {
                     "op": "update_claim",
                     "claimRef": "$claim",
@@ -147,8 +162,7 @@ def accept_research_claim(root: Path) -> dict[str, str]:
             ],
         },
     )
-    apply_decision(root, drafted["decision"])
-    return drafted["allocated_refs"]
+    return changed["allocated_refs"]
 
 
 def build_review_bundle(

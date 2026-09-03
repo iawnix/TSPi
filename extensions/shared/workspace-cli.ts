@@ -43,34 +43,17 @@ export async function allocateOperationalId(
   return identifier;
 }
 
-export async function runWorkspaceDecisionJson(
-  pi: ExtensionAPI,
-  command: string,
-  root: string,
-  decision: unknown,
-  signal?: AbortSignal,
-) {
-  const tempRoot = mkdtempSync(join(tmpdir(), "ts-workspace-decision-"));
-  const decisionFile = join(tempRoot, "decision.json");
-  try {
-    writeFileSync(decisionFile, `${JSON.stringify(decision, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-    return await runWorkspaceJson(pi, command, root, ["--decision-file", decisionFile], signal);
-  } finally {
-    rmSync(tempRoot, { recursive: true, force: true });
-  }
-}
-
-export async function runWorkspaceDraftJson(
+export async function runWorkspaceChangeJson(
   pi: ExtensionAPI,
   root: string,
   request: unknown,
   signal?: AbortSignal,
 ) {
-  const tempRoot = mkdtempSync(join(tmpdir(), "ts-workspace-draft-"));
+  const tempRoot = mkdtempSync(join(tmpdir(), "ts-workspace-change-"));
   const requestFile = join(tempRoot, "request.json");
   try {
     writeFileSync(requestFile, `${JSON.stringify(request, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
-    return await runWorkspaceJson(pi, "draft_decision", root, ["--request-file", requestFile], signal);
+    return await runWorkspaceJson(pi, "change", root, ["--request-file", requestFile], signal);
   } finally {
     rmSync(tempRoot, { recursive: true, force: true });
   }

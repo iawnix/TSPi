@@ -39,7 +39,7 @@ export function guardPackageSourceRead(
     block: true,
     reason: [
       "TS package implementation and tests are not usage documentation in the installed research runtime.",
-      "Use the registered tool schema, ts_workspace_context mode=artifacts or mode=capabilities,",
+      "Use the registered tool schema, ts_state mode=artifacts or mode=capabilities,",
       "or skills/transition-state-workflow references. Diagnose or change package implementation",
       "from the separate authored checkout, then build and install a validated release.",
     ].join(" "),

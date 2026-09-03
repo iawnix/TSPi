@@ -22,7 +22,7 @@ Tool plane       deterministic compute kernel, artifacts, remote, and delivery e
 UI/web           read-only projection
 ```
 
-Only `ts_workspace_decision_apply` writes canonical scientific state. Compute
+Only `ts_change` writes canonical scientific state. Compute
 and Review are the only child models. Compute may orchestrate only its closed,
 host-bound lifecycle; it cannot choose chemistry, arguments, paths, outcome, or
 provenance. Render and Report remain direct deterministic tools.
@@ -38,7 +38,7 @@ prescriptive stage, Node type, scientific role/layer, or next-action router.
 | Path | Owner and purpose |
 | --- | --- |
 | `skills/transition-state-workflow/` | public Root Skill, focused references, and examples |
-| `extensions/ts-workflow-control/` | context, Decision draft/validate/apply, package-source guard |
+| `extensions/ts-workflow-control/` | bounded state projection, atomic `ts_change`, package-source guard |
 | `extensions/ts-workflow-review/` | advisory Review entrypoint and Root disposition |
 | `extensions/ts-workflow-compute/` | Compute subagent entrypoint, bound action tools, and remote diagnostics |
 | `extensions/ts-workflow-artifacts/` | deterministic structure seed/comparison, input import, Render, Report, and notification tools |
@@ -54,7 +54,7 @@ prescriptive stage, Node type, scientific role/layer, or next-action router.
 | `scripts/install_env.py` | thin command-line entrypoint for the managed runtime mechanism |
 | `python/ts_agent/` | the single import namespace for all deterministic Python code |
 | `python/ts_agent/workspace/` | graph state, bootstrap, Decisions, context, validation, transactions |
-| `python/ts_agent/validation/` | GateSpec compiler, predicate registry, templates, acceptance profiles |
+| `python/ts_agent/validation/` | ProofSpec compiler, predicate registry, templates, acceptance profiles |
 | `python/ts_agent/compute/` | capabilities, artifact catalog, immutable intents, control, collection |
 | `python/ts_agent/backends/` | deterministic program preparation and parsing |
 | `python/ts_agent/remote/` | OpenSSH/SCP, Torque, transfer, diagnostics, guards, and receipts |
@@ -84,12 +84,12 @@ material, not discoverable Skills.
 
 Public names describe authority:
 
-- `ts_workspace_*`: deterministic context and canonical Decision pipeline;
-- `ts_subagent_compute`, `ts_subagent_review`: bounded child-model entrypoints;
-- `ts_structure_seed`, `ts_structure_compare`, `ts_artifact_import`, `ts_render`, `ts_report`: deterministic execution;
-- `ts_remote_inspect`: deterministic read-only infrastructure diagnostics;
-- `ts_review_disposition`: deterministic operational response;
-- `ts_notify_user`: deterministic fixed-target external delivery.
+- `ts_state`, `ts_change`: bounded context and the atomic canonical mutation boundary;
+- `ts_calc`, `ts_review`: bounded child-model entrypoints;
+- `ts_seed`, `ts_compare`, `ts_import`, `ts_render`, `ts_report`: deterministic execution;
+- `ts_remote`: deterministic read-only infrastructure diagnostics;
+- `ts_reply`: deterministic operational response;
+- `ts_notify`: deterministic fixed-target external delivery.
 
 Do not add alternate field readers, dual schemas, implicit state conversion, or
 output shims. The package implements one explicit workspace contract.
@@ -116,7 +116,7 @@ The stable concepts and their owners are:
 - **Observation**: immutable typed semantic value with exact artifact digests
   and provenance.
 - **Finding**: explicit anomaly, limitation, conflict, or open question.
-- **GateSpec**: frozen expanded validation policy with registry and content
+- **ProofSpec**: frozen expanded validation policy with registry and content
   digests.
 - **ValidationResult**: deterministic predicate outcomes over selected,
   digest-bound Observations.
@@ -129,13 +129,13 @@ reasoning and focused documentation, not a Kernel enum.
 
 ## Mutation Invariants
 
-- New canonical state uses `ts-workspace/5` and
-  `ts-research-kernel/5` only.
+- New canonical state uses `ts-workspace/6` and
+  `ts-research-kernel/6` only.
 - Bootstrap initializes fresh state once and otherwise validates without
   canonical rewrites.
 - The Decision draft accepts high-level research operations and local aliases; the
-  Kernel allocates all `dec_`, `claim_`, `rel_`, `node_`, `obs_`, `fnd_`, `gsp_`,
-  `val_`, and `acc_` identifiers.
+  Kernel allocates all `dec_`, `claim_`, `rel_`, `node_`, `obs_`, `fnd_`, `proof_`,
+  `result_`, and `acc_` identifiers.
 - A draft binds the current frontier projection and workspace revision.
 - Dry-run validation applies the full Decision to an isolated post-state.
 - Apply repeats binding and post-state validation under the lock.
@@ -169,12 +169,12 @@ Keep reusable mechanism in the engine and scientific policy in data:
 - templates are versioned parameterized prototypes;
 - compilation fully expands a template and freezes its digest;
 - predicates are registered deterministic code with one registry digest;
-- a GateSpec may use a template or an explicit declarative check list;
+- a ProofSpec may use a template or an explicit declarative check list;
 - Agent-supplied executable code, shell, imports, and expressions are rejected;
 - evaluation selects explicit Observation refs and binds their digests;
 - predicate output refs must be a subset of that selected Observation snapshot;
 - acceptance profiles declare required dimensions and coverage rules;
-- acceptance requires a supported Claim and at least one passing GateSpec;
+- acceptance requires a supported Claim and at least one passing ProofSpec;
 - open blocking Findings prevent acceptance;
 - historical acceptance remains immutable, while currentness is one shared
   derived projection used by Context, Report, and Web.
@@ -185,7 +185,7 @@ check. Add a template when a reusable scientific policy exists. Add or revise
 an acceptance profile only when the acceptance standard changes.
 
 Templates must be frozen before evaluating the selected data. Never lower a
-GateSpec after seeing a result; create a new specification and preserve the
+ProofSpec after seeing a result; create a new specification and preserve the
 previous result.
 
 ## Agent Contracts
@@ -199,7 +199,7 @@ validators own their distinct input, capability, action, and result rules.
 
 Every Review uses `ts-agent-task/2` and returns `ts-agent-result/1`. Its scope is
 one target Claim and a bounded graph snapshot. It cannot set Claim status,
-create Observations, evaluate a GateSpec, accept a Claim, perform compute, or
+create Observations, evaluate a ProofSpec, accept a Claim, perform compute, or
 write canonical state.
 
 The runtime must preserve these invariants:
@@ -227,7 +227,8 @@ explicit refs, not role or layer taxonomies.
 
 ### Compute
 
-The Compute task binds one Node, backend, intent ID/digest, remote execution, and
+The Compute task binds one Node, capability, intent ID/digest, and an execution
+target (local preparation/parsing or remote lifecycle),
 one exact plan: `launch`, `inspect`, `finalize`, or `cancel`. The child must have
 only the zero-argument action tools for that plan plus `ts_compute_result`.
 Dependent actions require a completed prerequisite, every action is single-use,
@@ -244,16 +245,18 @@ disabled; local TypeBox and semantic validators are authoritative.
 
 ### Compute
 
-The Root selects purpose, Node, backend, task, settings, execution target, and
-logical input artifacts when invoking `ts_subagent_compute`. The host owns
+The Root selects purpose, Node, capability, parameters, execution target, and
+logical input artifacts when invoking `ts_calc`. The host owns
 generated paths, filenames, intent ID, expected artifacts, remote root,
 command, submission binding, action tools, and final structured outcome.
 
 Preparation resolves `artifactId` and `inputRole`, verifies SHA-256, and writes
-`ts-calculation-intent/6` for new launches. The intent carries stable Node and
-scientific-input digests plus same-Node Attempt lineage. Keep
-`ts-calculation-intent/5` reading covered for existing workspaces, but emit only
-`ts-calculation-intent/6`. Subsequent operations cite only the bound `intentId`.
+`ts-calculation-intent/7` for every launch. The intent carries stable Node and
+scientific-input digests plus same-Node Attempt lineage. Older intent schemas are
+unsupported and are not converted. A local target is valid only with
+`dry_run=true` and is limited to preparation or parsing an existing output;
+submit, status, tail, collect, and cancel require a configured remote target.
+Subsequent operations cite only the bound `intentId`.
 Backends prepare and parse program artifacts but
 never update Claims or produce ValidationResults.
 
@@ -271,8 +274,8 @@ JSON.
 
 ### Structure seed, comparison, and artifact import
 
-The first input in a fresh workspace enters through `ts_structure_seed` or
-`ts_artifact_import`. Structure seeding owns fixed ETKDG parameters, one
+The first input in a fresh workspace enters through `ts_seed` or
+`ts_import`. Structure seeding owns fixed ETKDG parameters, one
 connected SMILES, chemical metadata checks, content-addressed XYZ/provenance,
 and the explicit rule that a generated geometry is not evidence. Import remains
 bounded inline UTF-8 in registered formats. Both require one open Node, mode-0600
@@ -324,7 +327,7 @@ payloads rather than returning a second full graph-shaped Node payload.
 
 Calculation Attempts remain Node-owned operational records. Project their
 purpose, family, retry/recalculation lineage, derived scientific changes,
-bounded settings, execution request, timing, state, and Compute runs from the
+bounded parameters, execution request, timing, state, and Compute runs from the
 immutable calculation intent and journals in
 `ts_agent.web.normalize`; browser code may format or collapse that projection but
 must not parse program outputs, infer scientific meaning, or turn Attempts into
@@ -363,7 +366,7 @@ Do not document stronger durability than the implementation provides:
 - `TS Activity` is transient and cleared with the Pi session;
 - its normal row contract is kind, semantic owner, action, state, and elapsed
   time, without run IDs or audit paths;
-- `/ts-subagent-history` reads durable Compute and Review summaries on demand,
+- `/ts-runs` reads durable Compute and Review summaries on demand,
   lists canonical `sub_n` IDs, and orders details as outcome/error, scope,
   actions/artifacts, then audit metadata.
 

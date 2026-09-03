@@ -6,11 +6,11 @@
   "additionalProperties": false,
   "required": [
     "schema_version", "acceptance_id", "claim_ref", "claim_snapshot", "claim_digest", "profile_ref", "profile_digest",
-    "validation_spec_refs", "validation_spec_digests", "validation_result_refs", "validation_result_digests",
+    "proof_spec_refs", "proof_spec_digests", "validation_result_refs", "validation_result_digests",
     "finding_snapshot", "finding_snapshot_digest", "summary", "decision_id", "accepted_at", "acceptance_digest"
   ],
   "properties": {
-    "schema_version": {"const": "ts-acceptance-record/2"},
+    "schema_version": {"const": "ts-acceptance-record/3"},
     "acceptance_id": {"$ref": "#/$defs/acceptance_id"},
     "claim_ref": {"$ref": "claim.schema.json#/$defs/claim_id"},
     "claim_snapshot": {"$ref": "claim.schema.json"},
@@ -25,16 +25,16 @@
       }
     },
     "profile_digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
-    "validation_spec_refs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "validation_spec.schema.json#/$defs/spec_id"}},
-    "validation_spec_digests": {
+    "proof_spec_refs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "proof_spec.schema.json#/$defs/proof_id"}},
+    "proof_spec_digests": {
       "type": "object",
-      "propertyNames": {"pattern": "^gsp_[1-9][0-9]*$"},
+      "propertyNames": {"pattern": "^proof_[1-9][0-9]*$"},
       "additionalProperties": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
     },
     "validation_result_refs": {"type": "array", "minItems": 1, "uniqueItems": true, "items": {"$ref": "validation_result.schema.json#/$defs/result_id"}},
     "validation_result_digests": {
       "type": "object",
-      "propertyNames": {"pattern": "^val_[1-9][0-9]*$"},
+      "propertyNames": {"pattern": "^result_[1-9][0-9]*$"},
       "additionalProperties": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}
     },
     "finding_snapshot": {"type": "array", "items": {"$ref": "finding.schema.json"}},

@@ -146,7 +146,7 @@ function requireWorkspaceRoot(value) {
   if (typeof value !== "string" || !value || !isAbsolute(value)) throw new Error("workspace root must be absolute");
   const root = realpathSync(value);
   const workspace = JSON.parse(readFileSync(resolve(root, "workspace.json"), "utf8"));
-  if (workspace.schema_version !== "ts-workspace/5") throw new Error("artifact tools require a supported workspace");
+  if (workspace.schema_version !== "ts-workspace/6") throw new Error("artifact tools require a supported workspace");
   return root;
 }
 

@@ -9,13 +9,14 @@ from tests.workspace_helpers import accept_research_claim
 from ts_agent.compute.artifacts import list_calculation_artifacts
 from ts_agent.report import build_final_report, build_report_package
 from ts_agent.report.context import collect_report_context
-from ts_agent.workspace.decision import draft_decision
-from ts_agent.workspace.engine import apply_decision, init_workspace
+from tests.kernel_helpers import compile_change
+from ts_agent.workspace.engine import init_workspace
+from tests.kernel_helpers import apply_compiled_change
 from ts_agent.io import read_json
 
 
 def _seed(root: Path) -> dict[str, str]:
-    drafted = draft_decision(
+    drafted = compile_change(
         root,
         {
             "rationale": "Seed a reportable DAG.",
@@ -72,7 +73,7 @@ def _seed(root: Path) -> dict[str, str]:
             ],
         },
     )
-    apply_decision(root, drafted["decision"])
+    apply_compiled_change(root, drafted["decision"])
     return drafted["allocated_refs"]
 
 
@@ -190,7 +191,7 @@ def test_report_uses_only_current_acceptance_for_executive_status(tmp_path: Path
     assert [item["acceptance_id"] for item in current["current_acceptances"]] == [refs["acceptance"]]
     assert "current, immutable acceptance snapshots" in build_final_report(root)
 
-    drafted = draft_decision(
+    drafted = compile_change(
         root,
         {
             "rationale": "Record a later limitation without erasing acceptance history.",
@@ -208,7 +209,7 @@ def test_report_uses_only_current_acceptance_for_executive_status(tmp_path: Path
             ],
         },
     )
-    apply_decision(root, drafted["decision"])
+    apply_compiled_change(root, drafted["decision"])
 
     stale = collect_report_context(root)
     assert stale["current_acceptances"] == []
