@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from pathlib import Path
 
 from ts_agent import remote as ts_remote
@@ -54,6 +57,53 @@ def test_domain_packages_do_not_reverse_host_dependencies() -> None:
 
     assert "ts_agent.compute" not in workspace_sources
     assert "ts_agent.workspace" not in backend_sources
+
+
+def test_compute_contract_import_does_not_eagerly_load_scientific_backends() -> None:
+    """Workspace readers can validate Attempts without NumPy/RDKit imports."""
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; import ts_agent.compute.contracts; "
+            "print('ts_agent.structures' in sys.modules)",
+        ],
+        cwd=ROOT,
+        env={**os.environ, "PYTHONPATH": str(ROOT / "python")},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.strip() == "False"
+
+
+def test_workspace_script_does_not_load_compute_catalog_for_kernel_entrypoint() -> None:
+    """The workspace wrapper opts into Compute only for locate mode."""
+
+    script = ROOT / "scripts" / "ts_workspace.py"
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import runpy, sys; "
+                f"runpy.run_path({str(script)!r}, run_name='ts_workspace_probe'); "
+                "print('ts_agent.compute.artifacts' in sys.modules); "
+                "print('ts_agent.structures' in sys.modules)"
+            ),
+        ],
+        cwd=ROOT,
+        env={**os.environ, "PYTHONPATH": f"{ROOT / 'python'}:{ROOT / 'scripts'}"},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert completed.stdout.splitlines() == ["False", "False"]
 
 
 def test_ts_structures_returns_observation_shaped_measurements(tmp_path: Path) -> None:

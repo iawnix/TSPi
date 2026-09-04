@@ -1,9 +1,13 @@
 {
   "op": "create_claim",
   "local_ref": "claim",
+  "question": "${CLAIM_QUESTION}",
   "claimType": "${CLAIM_TYPE}",
   "statement": "${CLAIM_STATEMENT}",
+  "scope": "${CLAIM_SCOPE}",
+  "uncertainty": "${CLAIM_UNCERTAINTY}",
   "assumptions": [],
-  "falsifiers": [],
+  "predictions": ["${CLAIM_PREDICTION}"],
+  "falsifiers": ["${CLAIM_FALSIFIER}"],
   "tags": []
 }

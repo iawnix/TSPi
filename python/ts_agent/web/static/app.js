@@ -423,6 +423,14 @@ function renderNotices() {
       : `${count} remote submissions did not start`;
     rows.push(notice("warning", "activity", subject, "Fix remote configuration, then retry"));
   }
+  if (array(state.view.calculation_attempt_integrity_findings).length) {
+    rows.push(notice(
+      "error",
+      "activity",
+      `${array(state.view.calculation_attempt_integrity_findings).length} calculation Attempt integrity finding(s)`,
+      "Inspect the affected Node before continuing",
+    ));
+  }
   if (state.view.pending_review_dispositions.length) {
     rows.push(notice("info", "conclusions", `${state.view.pending_review_dispositions.length} Review response(s) pending Root disposition`, "Advisory only"));
   }
@@ -531,6 +539,7 @@ function renderFindings() {
 function renderActivity() {
   const activities = filterRecords(state.view.deterministic_activities, ["activity_id", "kind", "operation", "status", "summary", "node_refs"]);
   const runs = filterRecords(state.view.agent_runs, ["task_id", "role", "operation", "status", "summary", "claim_refs", "node_refs"]);
+  const attemptFindings = filterRecords(state.view.calculation_attempt_integrity_findings, ["scope", "path", "message", "node_refs", "intent_id"]);
   content.innerHTML = renderHeader("Activity", "Deterministic host operations and isolated Compute or Review runs.", true, "Filter operations and runs")
     + renderNotices()
     + section("Deterministic Operations", `${activities.length}`, recordList(activities.map(row => ({
@@ -546,6 +555,13 @@ function renderActivity() {
       title: compact([row.role, row.operation]) || "Subagent run",
       subtitle: row.summary || compact([...array(row.claim_refs), ...array(row.node_refs)]),
       status: row.status,
+    }))))
+    + section("Attempt Integrity", `${attemptFindings.length}`, recordList(attemptFindings.map(row => ({
+      kind: "finding",
+      id: row.path,
+      title: compact([row.scope, row.intent_id]) || "Attempt path",
+      subtitle: compact([row.path, ...array(row.node_refs), row.message]),
+      status: "invalid",
     }))));
   bindSearch();
 }
@@ -720,10 +736,17 @@ function renderAttemptOverview(node) {
 function renderNodeRuns(payload) {
   const node = payload.research_node;
   return `${renderAttemptTimeline(node.attempts)}
+    ${renderAttemptIntegrityFindings(payload.calculation_attempt_integrity_findings)}
     <section class="detail-section"><h3>Deterministic Operations</h3>${detailRecordRows(node.activities, "activity", "activity_id", "operation", "status")}</section>
     <section class="detail-section"><h3>Subagent Runs</h3>${detailRecordRows(payload.agent_runs, "agent", "task_id", "operation", "status")}</section>
     <section class="detail-section"><h3>Unresolved Controls</h3>${detailRecordRows(node.unresolved_controls, "control", "control_id", "operation", "state")}</section>
     <section class="detail-section"><h3>Retryable Controls</h3>${detailRecordRows(node.retryable_controls, "control", "control_id", "operation", "error_class")}</section>`;
+}
+
+function renderAttemptIntegrityFindings(value) {
+  const findings = array(value);
+  if (!findings.length) return "";
+  return `<section class="detail-section"><h3>Attempt Integrity</h3><div class="detail-callout error"><div class="detail-copy">${escapeHtml(findings.length === 1 ? "One Attempt path requires inspection." : `${findings.length} Attempt paths require inspection.`)}</div>${findings.map(row => `<div class="record-row"><div><div class="record-title mono">${escapeHtml(row.path || "Attempt parent")}</div><div class="record-subtitle">${escapeHtml(row.message || "Integrity check failed")}</div></div>${badge("invalid")}</div>`).join("")}</div></section>`;
 }
 
 function renderAttemptTimeline(value) {

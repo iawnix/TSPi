@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import stat
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
@@ -16,6 +17,8 @@ from typing import Any, Iterable
 from .associations import derive_claim_node_links
 from .errors import ContractError
 from ts_agent.io import read_json
+from .operational import calculation_attempt_index
+from .path_safety import has_symlink_component, lexical_path, path_has_symlink
 from .refs import CALCULATION_ID
 from .revision import workspace_revision_from_documents
 from .state import (
@@ -49,6 +52,7 @@ class _LocatorIndex:
     node_to_claims: dict[str, set[str]]
     observation_to_claims: dict[str, set[str]]
     artifact_to_observations: dict[str, set[str]]
+    integrity_findings: list[dict[str, Any]]
 
 
 def locate_research_files(
@@ -69,8 +73,10 @@ def locate_research_files(
     if len(normalized_query) > MAX_QUERY_CHARS:
         raise ContractError(f"research file query exceeds {MAX_QUERY_CHARS} characters")
 
-    root_path = Path(root).expanduser().resolve()
-    documents = {name: read_json(root_path / name) for name in STATE_FILES}
+    root_path = lexical_path(root)
+    if path_has_symlink(root_path):
+        raise ContractError(f"workspace root contains a symbolic link: {root_path}")
+    documents = _read_state_documents(root_path)
     if documents[WORKSPACE_FILE].get("schema_version") != "ts-workspace/6":
         raise ContractError(f"not an initialized TS workspace: {root_path}")
     index = _build_index(root_path, documents, artifacts)
@@ -112,6 +118,7 @@ def locate_research_files(
         "match_count": match_count,
         "returned_match_count": len(matches),
         "omitted_matches": omitted_matches,
+        "integrity_findings": index.integrity_findings,
         "matches": matches,
     }
 
@@ -125,6 +132,7 @@ def _build_index(
     nodes = _record_map(documents[RESEARCH_NODES_FILE].get("nodes"), "node_id")
     observations = _record_map(documents[OBSERVATIONS_FILE].get("observations"), "observation_id")
     artifacts: dict[str, dict[str, Any]] = {}
+    artifact_rows = list(artifact_rows)
     for raw in artifact_rows:
         if not isinstance(raw, dict):
             raise ContractError("artifact catalog entries must be objects")
@@ -153,7 +161,7 @@ def _build_index(
         for artifact_id in _strings(observation.get("artifact_refs")):
             artifact_to_observations.setdefault(artifact_id, set()).add(observation_id)
 
-    attempts = _read_attempts(root, nodes, artifacts)
+    attempts, integrity_findings = _read_attempts(root, nodes, artifacts)
     return _LocatorIndex(
         root=root,
         claims=claims,
@@ -165,6 +173,7 @@ def _build_index(
         node_to_claims=node_to_claims,
         observation_to_claims=observation_to_claims,
         artifact_to_observations=artifact_to_observations,
+        integrity_findings=integrity_findings,
     )
 
 
@@ -449,51 +458,117 @@ def _directories(
 
 
 def _directory(root: Path, path: str, purpose: str) -> dict[str, Any]:
-    candidate = root.joinpath(*PurePosixPath(path).parts)
-    return {
+    relative = _safe_relative_path(path)
+    if relative is None:
+        return {
+            "path": path,
+            "purpose": purpose,
+            "exists": False,
+            "integrity_error": "directory path is not workspace-relative",
+        }
+    candidate = root.joinpath(*relative.parts)
+    result = {
         "path": path,
         "purpose": purpose,
-        "exists": candidate.is_dir() and not candidate.is_symlink(),
+        "exists": False,
     }
+    if has_symlink_component(root, candidate):
+        result["integrity_error"] = "directory path contains a symbolic-link component"
+        return result
+    try:
+        result["exists"] = candidate.is_dir() and not candidate.is_symlink()
+    except OSError as exc:
+        result["integrity_error"] = f"cannot inspect directory: {exc}"
+    return result
 
 
 def _read_attempts(
     root: Path,
     nodes: dict[str, dict[str, Any]],
     artifacts: dict[str, dict[str, Any]],
-) -> dict[tuple[str, str], dict[str, Any]]:
+) -> tuple[dict[tuple[str, str], dict[str, Any]], list[dict[str, Any]]]:
+    """Project the shared lifecycle index and join it to artifact metadata.
+
+    The operational kernel owns Attempt discovery, status interpretation, and
+    fail-closed path checks.  The locator only adds navigation metadata (input
+    and output artifact IDs); it never reinterprets a lifecycle document or
+    follows a physical path that the kernel rejected.
+    """
+
     attempts: dict[tuple[str, str], dict[str, Any]] = {}
-    for node_id in nodes:
-        attempts_root = root / "nodes" / node_id / "attempts"
-        if not attempts_root.is_dir() or attempts_root.is_symlink():
+    integrity_findings: list[dict[str, Any]] = []
+    known_nodes = set(nodes)
+    lifecycle_rows = calculation_attempt_index(root)
+    integrity_findings.extend(_attempt_parent_integrity_findings(root, known_nodes))
+    for lifecycle in lifecycle_rows:
+        if not isinstance(lifecycle, dict):
             continue
-        for attempt_dir in sorted(attempts_root.iterdir()):
-            if (
-                not attempt_dir.is_dir()
-                or attempt_dir.is_symlink()
-                or CALCULATION_ID.fullmatch(attempt_dir.name) is None
-            ):
-                continue
-            intent = _read_optional_object(attempt_dir / "intent.json")
-            status = _read_optional_object(attempt_dir / "status.json")
-            result = _read_optional_object(attempt_dir / "outputs" / "calculation_result.json")
-            key = (node_id, attempt_dir.name)
-            attempts[key] = {
-                "intent_id": attempt_dir.name,
-                "owner_node": node_id,
-                "path": attempt_dir.relative_to(root).as_posix(),
-                "backend": intent.get("backend") or result.get("backend"),
-                "task_type": intent.get("task_type") or result.get("task_type"),
-                "state": result.get("state") or status.get("state"),
-                "program_status": result.get("program_status") or status.get("program_status"),
-                "error_class": result.get("error_class") or status.get("error_class"),
-                "input_artifact_ids": _input_artifact_ids(intent),
-                "output_artifact_ids": [],
-            }
+        node_id = lifecycle.get("node_id")
+        intent_id = lifecycle.get("intent_id")
+        path_text = lifecycle.get("path")
+        if not isinstance(node_id, str) or node_id not in known_nodes:
+            continue
+        if isinstance(lifecycle.get("integrity_error"), str) and lifecycle["integrity_error"]:
+            integrity_findings.append({
+                "code": "calculation_attempt_integrity",
+                "path": str(path_text or f"nodes/{node_id}/attempts"),
+                "node_refs": [node_id],
+                "message": lifecycle["integrity_error"],
+            })
+        if not isinstance(intent_id, str) or CALCULATION_ID.fullmatch(intent_id) is None:
+            # A parent-scope integrity row (for example a symlinked
+            # ``attempts/`` directory) has no concrete Attempt entity, but its
+            # diagnostic remains visible at the locator top level.
+            continue
+        relative = _safe_relative_path(path_text)
+        if relative is None:
+            integrity_findings.append({
+                "code": "calculation_attempt_integrity",
+                "path": str(path_text or intent_id),
+                "node_refs": [node_id],
+                "message": "Attempt path is not a workspace-relative path",
+            })
+            continue
+        attempt_dir = root.joinpath(*relative.parts)
+        unsafe = has_symlink_component(root, attempt_dir)
+        intent = _read_optional_object(attempt_dir / "intent.json", root=root) if not unsafe else {}
+        status = _read_optional_object(attempt_dir / "status.json", root=root) if not unsafe else {}
+        result = (
+            _read_optional_object(attempt_dir / "outputs" / "calculation_result.json", root=root)
+            if not unsafe
+            else {}
+        )
+        key = (node_id, intent_id)
+        attempts[key] = {
+            "intent_id": intent_id,
+            "owner_node": node_id,
+            "path": relative.as_posix(),
+            "backend": intent.get("backend") or result.get("backend"),
+            "task_type": intent.get("task_type") or result.get("task_type"),
+            # State and integrity are authoritative in the shared lifecycle
+            # row.  The local documents are only used for descriptive fields.
+            "state": lifecycle.get("state"),
+            "program_status": lifecycle.get("program_status"),
+            "error_class": result.get("error_class") or status.get("error_class"),
+            "input_artifact_ids": _input_artifact_ids(intent),
+            "output_artifact_ids": [],
+            "terminal": lifecycle.get("terminal") is True,
+            "blocks_completion": lifecycle.get("blocks_completion") is True,
+            "integrity_error": lifecycle.get("integrity_error"),
+        }
+
+    # A catalog row can outlive an Attempt directory (for example while a
+    # recovery process is being inspected).  Keep that relationship visible,
+    # but do not invent lifecycle state; the shared index remains authoritative.
     for artifact_id, artifact in artifacts.items():
         node_id = artifact.get("owner_node")
         intent_id = artifact.get("source_intent_id")
-        if not isinstance(node_id, str) or not isinstance(intent_id, str):
+        if (
+            not isinstance(node_id, str)
+            or node_id not in known_nodes
+            or not isinstance(intent_id, str)
+            or CALCULATION_ID.fullmatch(intent_id) is None
+        ):
             continue
         key = (node_id, intent_id)
         attempts.setdefault(
@@ -509,6 +584,9 @@ def _read_attempts(
                 "error_class": None,
                 "input_artifact_ids": [],
                 "output_artifact_ids": [],
+                "terminal": False,
+                "blocks_completion": True,
+                "integrity_error": "Attempt directory is missing from the lifecycle index",
             },
         )["output_artifact_ids"].append(artifact_id)
     for attempt in attempts.values():
@@ -525,7 +603,57 @@ def _read_attempts(
         attempt["input_artifact_count"] = len(attempt["input_artifact_ids"])
         attempt["output_artifact_count"] = len(attempt["output_artifact_ids"])
         attempt["artifact_count"] = len(attempt["artifact_ids"])
-    return attempts
+    integrity_findings = _unique_integrity_findings(integrity_findings)
+    integrity_findings.sort(key=lambda row: (str(row.get("path") or ""), str(row.get("message") or "")))
+    return attempts, integrity_findings
+
+
+def _attempt_parent_integrity_findings(
+    root: Path,
+    node_ids: set[str],
+) -> list[dict[str, Any]]:
+    """Report an unsafe or unreadable ``attempts/`` parent even when empty."""
+
+    findings: list[dict[str, Any]] = []
+    for node_id in sorted(node_ids):
+        parent = root / "nodes" / node_id / "attempts"
+        try:
+            mode = parent.lstat().st_mode
+        except FileNotFoundError:
+            continue
+        except OSError as exc:
+            findings.append({
+                "code": "calculation_attempt_integrity",
+                "path": parent.relative_to(root).as_posix(),
+                "node_refs": [node_id],
+                "message": f"cannot inspect Attempt parent: {exc}",
+            })
+            continue
+        if stat.S_ISLNK(mode):
+            findings.append({
+                "code": "calculation_attempt_integrity",
+                "path": parent.relative_to(root).as_posix(),
+                "node_refs": [node_id],
+                "message": "Attempt parent path contains a symbolic-link component",
+            })
+        elif not stat.S_ISDIR(mode):
+            findings.append({
+                "code": "calculation_attempt_integrity",
+                "path": parent.relative_to(root).as_posix(),
+                "node_refs": [node_id],
+                "message": "Attempt parent path is not a directory",
+            })
+    return findings
+
+
+def _unique_integrity_findings(rows: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
+    unique: dict[tuple[str, str], dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        key = (str(row.get("path") or ""), str(row.get("message") or ""))
+        unique.setdefault(key, row)
+    return list(unique.values())
 
 
 def _record_map(value: Any, key: str) -> dict[str, dict[str, Any]]:
@@ -542,14 +670,48 @@ def _record_map(value: Any, key: str) -> dict[str, dict[str, Any]]:
     return records
 
 
-def _read_optional_object(path: Path) -> dict[str, Any]:
-    if not path.is_file() or path.is_symlink():
+def _read_optional_object(path: Path, *, root: Path) -> dict[str, Any]:
+    if has_symlink_component(root, path):
+        return {}
+    try:
+        if not path.is_file() or path.is_symlink():
+            return {}
+    except OSError:
         return {}
     try:
         value = read_json(path)
     except (OSError, ValueError):
         return {}
     return value if isinstance(value, dict) else {}
+
+
+def _read_state_documents(root: Path) -> dict[str, dict[str, Any]]:
+    """Read canonical locator inputs without crossing a symbolic link."""
+
+    documents: dict[str, dict[str, Any]] = {}
+    for name in STATE_FILES:
+        path = root / name
+        if has_symlink_component(root, path) or path.is_symlink():
+            raise ContractError(f"workspace file contains a symbolic link: {name}")
+        try:
+            value = read_json(path)
+        except (OSError, ValueError) as exc:
+            raise ContractError(f"cannot read workspace file {name}: {exc}") from exc
+        if not isinstance(value, dict):
+            raise ContractError(f"workspace file is not an object: {name}")
+        documents[name] = value
+    return documents
+
+
+def _safe_relative_path(value: Any) -> PurePosixPath | None:
+    """Normalize a path supplied by a registry without allowing traversal."""
+
+    if not isinstance(value, str) or not value:
+        return None
+    relative = PurePosixPath(value.replace("\\", "/"))
+    if relative.is_absolute() or not relative.parts or ".." in relative.parts:
+        return None
+    return relative
 
 
 def _input_artifact_ids(intent: dict[str, Any]) -> list[str]:

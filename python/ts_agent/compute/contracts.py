@@ -1,17 +1,19 @@
-"""JSON contracts for calculation intents and operational results."""
+"""JSON contracts for calculation intents and operational results.
+
+The dependency-neutral implementation lives in :mod:`ts_agent.calculation_contracts`;
+this module preserves the historical Compute-specific exception type and API.
+"""
 
 from __future__ import annotations
 
-import json
-from functools import lru_cache
-from pathlib import Path
 from typing import Any
 
-from jsonschema import Draft202012Validator
-from referencing import Registry, Resource
-
-
-CONTRACT_DIR = Path(__file__).resolve().parent / "contracts"
+from ts_agent.calculation_contracts import (
+    CalculationContractError,
+    CONTRACT_DIR,
+    validate_calculation_contract,
+    validate_calculation_result_binding as _validate_result_binding,
+)
 
 
 class ComputeContractError(ValueError):
@@ -19,42 +21,21 @@ class ComputeContractError(ValueError):
 
 
 def validate_compute_contract(schema_name: str, instance: Any) -> None:
-    errors = sorted(
-        _validator(schema_name).iter_errors(instance),
-        key=lambda error: tuple(str(part) for part in error.path),
-    )
-    if not errors:
-        return
-    shown = []
-    for error in errors[:3]:
-        location = "$" + "".join(f"[{part!r}]" for part in error.path)
-        shown.append(f"{location}: {error.message}")
-    if len(errors) > 3:
-        shown.append(f"... {len(errors) - 3} more schema error(s)")
-    raise ComputeContractError(f"{schema_name} validation failed; " + "; ".join(shown))
+    try:
+        validate_calculation_contract(schema_name, instance)
+    except CalculationContractError as exc:
+        raise ComputeContractError(str(exc)) from exc
 
 
-@lru_cache(maxsize=None)
-def _validator(schema_name: str) -> Draft202012Validator:
-    schema = _schema(schema_name)
-    Draft202012Validator.check_schema(schema)
-    return Draft202012Validator(schema, registry=_registry())
+def validate_calculation_result_binding(
+    intent: dict[str, Any],
+    result: dict[str, Any],
+    *,
+    label: str = "calculation result",
+) -> None:
+    """Validate one result and bind it to its immutable calculation intent."""
 
-
-@lru_cache(maxsize=None)
-def _schema(schema_name: str) -> dict[str, Any]:
-    path = CONTRACT_DIR / schema_name
-    if not path.exists():
-        raise ComputeContractError(f"unknown compute contract: {schema_name}")
-    value = json.loads(path.read_text(encoding="utf-8"))
-    if not isinstance(value, dict):
-        raise ComputeContractError(f"compute contract must be an object: {schema_name}")
-    return value
-
-
-@lru_cache(maxsize=1)
-def _registry() -> Registry:
-    registry = Registry()
-    for path in sorted(CONTRACT_DIR.glob("*.schema.json")):
-        registry = registry.with_resource(path.name, Resource.from_contents(_schema(path.name)))
-    return registry
+    try:
+        _validate_result_binding(intent, result, label=label)
+    except CalculationContractError as exc:
+        raise ComputeContractError(str(exc)) from exc

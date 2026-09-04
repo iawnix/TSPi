@@ -1,6 +1,6 @@
 ---
 name: transition-state-workflow
-description: Auditable TS research in TSPi. Use for candidates, opt/freq/IRC, mechanisms, connectivity, xTB/CREST/ASE/Gaussian, branching, recovery, or continuation.
+description: Auditable TSPi research for TS candidates, opt/freq/IRC, mechanisms, connectivity, branching, recovery, and continuation.
 ---
 
 # Transition-State Workflow
@@ -25,13 +25,17 @@ effects, provenance, and validation.
 1. Read `frontier`, or `delta` when both prior revisions are known.
 2. State one unresolved question, assumptions, predictions, and falsifiers.
 3. Create or reuse a ResearchPhase and start one decision-sized ResearchNode
-   with dependencies and Claim scope.
+   with dependencies and Claim scope. When that Node is the active work item,
+   include `set_focus` in the same Decision (or immediately after it) using
+   the exact `claimRefs`/`nodeRefs` contract; preserve an existing focus only
+   when that is intentional and stated in the rationale.
 4. Select a method from chemistry, uncertainty, cost, and available artifacts.
 5. Run bounded tools with the owning Node; its `node_refs` bind the journal.
 6. Inspect parser candidates, verify local primary outputs, and use `ts_change`
    to promote selected values into semantic Observations and Findings.
 7. Freeze and evaluate ProofSpecs over explicit Observation refs.
-8. Update Claims and complete the Node as soon as its one question is answered.
+8. After every owned Attempt is stable and interpreted as needed, update Claims
+   and complete the Node as soon as its one question is answered.
 9. Recompile context; record the next material decision as a dependent Node or
    a new Phase, or explicitly stop. Accept through a passing profile only.
 
@@ -44,28 +48,24 @@ Backtrack with a new Node depending on an earlier checkpoint; never erase
 history. Canonical records use readable workspace ordinals (`node_1`, `claim_1`,
 `obs_1`, `fnd_1`, `proof_1`, `result_1`); ordinals are identity, not Phase or rank.
 
-Do not impose a universal low-cost-, Gaussian-, or QST-first sequence. Gaussian
-may generate candidates when justified. Before QST2/QST3, require compatible
-endpoints, mapping, conformations, and an elementary-step rationale.
+Do not impose a universal backend or search sequence.
 
 ## State And Change
 
-Use two control tools:
+Use `ts_state` for bounded reads and `ts_change` for one Root-authored atomic
+change using local aliases.
 
-1. `ts_state` for a bounded projection, artifact catalog, or capability catalog.
-2. `ts_change` for one Root-authored atomic change using local aliases.
+Before using an unfamiliar change operation, query
+`ts_state mode=change_contract operation=<op>` and follow its exact fields. Do
+not infer a field from another operation.
 
-The Kernel privately allocates IDs, resolves `$alias`, compiles, dry-runs, and
-commits under one lock. Never invent IDs, paths, receipts, or generated
-Decisions. Operations record one decision; they do not prescribe the next one.
+The Kernel owns IDs, `$alias` resolution, validation, and atomic commit. Never
+invent IDs, paths, receipts, or generated Decisions.
 
 ## Validation
 
-Use `ts_state mode=capabilities capabilityKind=proof` to discover predicates,
-templates, and acceptance profiles. Use a versioned template or registered
-predicates only.
-
-Before a template ProofSpec, query its exact `templateId` and `templateVersion`.
+Use `ts_state mode=capabilities capabilityKind=proof`; bind an exact versioned
+template or registered predicates only.
 
 The compiler freezes template, registry, content, and Observation digests. Only
 `pass` satisfies a ProofSpec. Agent code is forbidden. Acceptance requires
@@ -88,6 +88,9 @@ Do not poll unchanged work. Retry only when a typed result proves no external
 effect; never replay ambiguous submit or cancel. Capability means
 expressibility, not live infrastructure health.
 
+Keep the owning Node open through interpretation. Remote `completed` still
+requires finalize; any unsettled or invalid Attempt blocks Node completion.
+
 ## Review
 
 `ts_review` independently assesses one Claim from a bounded graph and
@@ -100,12 +103,8 @@ through verified `ts_change` requests, and preserve provider failures as such.
 
 ## Artifacts, Render, Report, And Notify
 
-`ts_compare` writes a deterministic JSON analysis for two registered XYZ
-artifacts. Its result is operational until `ts_change` records selected facts
-as Observations.
-
-`ts_render` creates one Node-owned no-overwrite visualization; `ts_report`
-creates one atomic package. Both use logical artifacts.
+Compare, render, and report outputs stay operational until `ts_change` records
+verified facts. All use logical artifacts.
 
 Use `ts_notify` only for configured material events. The host owns the
 recipient and credentials; text cannot redirect them. Never retry ambiguous

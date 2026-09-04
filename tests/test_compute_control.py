@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -88,6 +89,29 @@ def _create(
         workspace,
         _request(workspace, node_id, target=target, dry_run=dry_run, capability=capability),
     )
+
+
+def test_create_intent_rejects_symlinked_research_node_attempt_root(tmp_path: Path) -> None:
+    workspace, node_id = _workspace(tmp_path)
+    node_dir = workspace / "nodes" / node_id
+    outside = tmp_path / "outside-node"
+    node_dir.mkdir(parents=True)
+    shutil.move(str(node_dir), str(outside))
+    node_dir.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ComputeContractError, match="ResearchNode path contains a symbolic link"):
+        _create(workspace, node_id)
+
+
+def test_load_prepared_rejects_symlinked_nodes_root(tmp_path: Path) -> None:
+    workspace, _node_id = _workspace(tmp_path)
+    nodes = workspace / "nodes"
+    outside = tmp_path / "outside-nodes"
+    nodes.rename(outside)
+    nodes.symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(ComputeContractError, match="workspace canonical paths cannot contain symbolic links"):
+        preflight_calculation(workspace, "inspect", "node_1", intent_id="calc_1")
 
 
 def _remote_resources() -> dict[str, object]:

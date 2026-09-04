@@ -420,6 +420,36 @@ def test_catalog_uses_workspace_and_research_node_ownership(tmp_path: Path) -> N
     assert list_calculation_artifacts(workspace, node_id=node_id)["artifacts"] == [owned]
 
 
+@pytest.mark.parametrize(
+    "nodes_value, message",
+    [
+        ({"schema_version": "ts-research-node-registry/2", "nodes": {}}, "nodes must be an array"),
+        ({"schema_version": "ts-research-node-registry/2", "nodes": ["node_1"]}, "invalid node record"),
+        ({"schema_version": "ts-research-node-registry/2", "nodes": [{"node_id": 1}]}, "invalid node record"),
+        (
+            {
+                "schema_version": "ts-research-node-registry/2",
+                "nodes": [{"node_id": "node_1"}, {"node_id": "node_1"}],
+            },
+            "duplicate node_id",
+        ),
+    ],
+)
+def test_catalog_rejects_malformed_research_node_registry_without_type_errors(
+    tmp_path: Path,
+    nodes_value: dict[str, object],
+    message: str,
+) -> None:
+    workspace, _node_id = _workspace(tmp_path)
+    (workspace / "research_nodes.json").write_text(
+        json.dumps(nodes_value) + "\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ComputeContractError, match=message):
+        list_calculation_artifacts(workspace)
+
+
 def test_binding_rejects_unknown_incompatible_and_incomplete_roles(tmp_path: Path) -> None:
     workspace, node_id = _workspace(tmp_path)
     gjf = workspace / "inputs" / "source.gjf"

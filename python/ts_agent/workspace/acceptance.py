@@ -10,6 +10,7 @@ from typing import Any, Iterable, Mapping
 from ts_agent.validation.registry import load_acceptance_profile
 
 from ts_agent.io import read_json, sha256_json
+from .path_safety import has_symlink_component, lexical_path, path_has_symlink
 from .refs import finding_sort_key, proof_spec_sort_key
 from .state import (
     CLAIMS_FILE,
@@ -203,7 +204,9 @@ def project_acceptances(
 ) -> list[dict[str, Any]]:
     """Read acceptance history and attach derived currentness without mutating it."""
 
-    root_path = Path(root).expanduser().resolve()
+    root_path = lexical_path(root)
+    if path_has_symlink(root_path):
+        raise AcceptanceError("workspace root contains a symbolic link")
     claims = _record_map(documents[CLAIMS_FILE].get("claims"), "claim_id")
     specs = _record_map(documents[PROOF_SPECS_FILE].get("proofs"), "proof_id")
     result_rows = _records(documents[VALIDATION_RESULTS_FILE].get("results"))
@@ -254,14 +257,20 @@ def acceptance_path(root: Path, ref: Any) -> Path:
 
     if not isinstance(ref, str) or re.fullmatch(r"acceptances/acc_[1-9][0-9]*\.json", ref) is None:
         raise AcceptanceError(f"invalid acceptance ref: {ref!r}")
+    root = lexical_path(root)
     expected_parent = root / "acceptances"
     candidate = root / ref
-    if expected_parent.is_symlink() or candidate.is_symlink() or not candidate.is_file():
+    if (
+        path_has_symlink(root)
+        or has_symlink_component(root, expected_parent)
+        or has_symlink_component(root, candidate)
+        or candidate.is_symlink()
+        or not candidate.is_file()
+    ):
         raise AcceptanceError(f"invalid acceptance artifact: {ref}")
-    path = candidate.resolve()
-    if path.parent != expected_parent.resolve():
+    if candidate.parent != expected_parent:
         raise AcceptanceError(f"invalid acceptance artifact: {ref}")
-    return path
+    return candidate
 
 
 def _record_map(value: Any, key: str) -> dict[str, dict[str, Any]]:

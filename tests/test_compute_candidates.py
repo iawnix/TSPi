@@ -210,6 +210,20 @@ def test_web_reports_candidate_digest_drift_without_ingesting_invalid_output(tmp
     assert payload["observations"] == []
 
 
+def test_web_reports_dangling_candidate_link_instead_of_treating_it_as_missing(tmp_path: Path) -> None:
+    workspace, node_id, intent_id, candidate_path, _result = _parsed_workspace(tmp_path)
+    candidate_path.unlink()
+    candidate_path.symlink_to(tmp_path / "missing-candidate.json")
+
+    payload = node_payload(workspace, node_id)
+    attempt = next(row for row in payload["research_node"]["attempts"] if row["intent_id"] == intent_id)
+    projection = attempt["observation_candidates"]
+
+    assert projection["status"] == "invalid"
+    assert projection["error"] == "candidate output is not a regular file"
+    assert payload["observations"] == []
+
+
 def test_candidate_promotion_rejects_candidate_or_source_digest_drift(tmp_path: Path) -> None:
     workspace, node_id, _intent_id, candidate_path, _result = _parsed_workspace(tmp_path)
     binding, _candidate = _candidate_binding(workspace, candidate_path, "normal_termination")
@@ -231,6 +245,15 @@ def test_candidate_promotion_rejects_candidate_or_source_digest_drift(tmp_path: 
     source.write_text(source.read_text(encoding="utf-8") + "\nchanged\n", encoding="utf-8")
     with pytest.raises(ContractError, match="source artifact changed"):
         _promote(workspace2, node_id2, binding2)
+
+
+def test_candidate_promotion_requires_prepared_attempt_binding(tmp_path: Path) -> None:
+    workspace, node_id, intent_id, candidate_path, _result = _parsed_workspace(tmp_path)
+    binding, _candidate = _candidate_binding(workspace, candidate_path, "normal_termination")
+    (workspace / "nodes" / node_id / "attempts" / intent_id / "prepared.json").unlink()
+
+    with pytest.raises(ContractError, match="missing: prepared.json"):
+        _promote(workspace, node_id, binding)
 
 
 def test_candidate_promotion_rejects_cross_node_unknown_candidate_and_owned_overrides(tmp_path: Path) -> None:

@@ -19,6 +19,10 @@ from .claims import claim_is_testable, claim_preregistration_digest
 from .errors import ContractError
 from ts_agent.io import now_iso, read_json, sha256_json
 from .operational import operational_snapshot
+from .operation_registry import (
+    input_operation_names,
+    validate_input_operation_keys,
+)
 from .refs import (
     WorkspaceRefError,
     decision_ordinal,
@@ -47,6 +51,7 @@ from .state import (
     PROOF_SPECS_FILE,
 )
 from .transactions import recorded_decision_ids
+from .path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
 CREATOR_PREFIXES = {
@@ -60,13 +65,7 @@ CREATOR_PREFIXES = {
     "evaluate_proof": "result",
     "accept_claim": "acc",
 }
-INPUT_OPERATIONS = frozenset({
-    *CREATOR_PREFIXES,
-    "update_claim",
-    "complete_node",
-    "resolve_finding",
-    "set_focus",
-})
+INPUT_OPERATIONS = input_operation_names()
 
 
 def _compile_change(
@@ -81,7 +80,9 @@ def _compile_change(
         validate_contract("change_request.schema.json", request)
     except SchemaValidationError as exc:
         raise ContractError(str(exc)) from exc
-    root_path = Path(root).expanduser().resolve()
+    root_path = lexical_path(root)
+    if path_has_symlink(root_path):
+        raise ContractError(f"workspace root contains a symbolic link: {root_path}")
     try:
         if decision_id is None:
             allocated_decision_id = f"dec_{next_decision_ordinal(recorded_decision_ids(root_path))}"
@@ -244,7 +245,9 @@ def validate_decision(decision: Any) -> dict[str, Any]:
 
 def validate_decision_binding(root: str | Path, decision: dict[str, Any]) -> None:
     value = validate_decision(decision)
-    root_path = Path(root).expanduser().resolve()
+    root_path = lexical_path(root)
+    if path_has_symlink(root_path):
+        raise ContractError(f"workspace root contains a symbolic link: {root_path}")
     current_revision = workspace_revision(root_path)
     if value["base_revision"] != current_revision or value["context_ref"]["workspace_revision"] != current_revision:
         raise ContractError("decision base_revision is stale")
@@ -317,8 +320,14 @@ def _normalize_operation(
     root: Path,
 ) -> dict[str, Any]:
     name = str(raw["op"])
+    # Validate the public operation envelope once from the registry.  The
+    # branch-specific code below handles values and cross-record semantics;
+    # it must not maintain a second required/optional key list.
+    validate_input_operation_keys(
+        raw,
+        operation=("record_observation_candidate" if name == "record_observation" and "candidate" in raw else name),
+    )
     if name == "create_phase":
-        _keys(raw, required={"op", "local_ref", "title", "objective"})
         return {
             "op": "append_research_phase",
             "record": {
@@ -331,14 +340,6 @@ def _normalize_operation(
             },
         }
     if name == "create_claim":
-        _keys(
-            raw,
-            required={
-                "op", "local_ref", "question", "claimType", "statement", "scope",
-                "uncertainty", "predictions", "falsifiers",
-            },
-            optional={"createdByNode", "assumptions", "tags"},
-        )
         record = {
             "schema_version": "ts-claim/4",
             "claim_id": allocations[raw["local_ref"]],
@@ -365,7 +366,6 @@ def _normalize_operation(
         record["preregistration_digest"] = claim_preregistration_digest(record)
         return {"op": "append_claim", "record": record}
     if name == "relate_claims":
-        _keys(raw, required={"op", "local_ref", "sourceClaimRef", "targetClaimRef", "relationType", "rationale"})
         return {
             "op": "append_claim_relation",
             "record": {
@@ -380,11 +380,6 @@ def _normalize_operation(
             },
         }
     if name == "start_node":
-        _keys(
-            raw,
-            required={"op", "local_ref", "phaseRef", "title", "objective", "deliverable"},
-            optional={"dependencyRefs", "primaryClaimRef", "claimRefs", "tags"},
-        )
         node_id = allocations[raw["local_ref"]]
         claim_refs = _refs(raw.get("claimRefs", []), allocations)
         primary_claim_ref = _optional_ref(raw.get("primaryClaimRef"), allocations)
@@ -423,11 +418,6 @@ def _normalize_operation(
                 created_at=created_at,
                 root=root,
             )
-        _keys(
-            raw,
-            required={"op", "local_ref", "nodeRef", "conceptId", "subjectRef", "value", "datatype", "summary", "provenance"},
-            optional={"unit", "qualifiers", "artifacts"},
-        )
         provenance = raw["provenance"]
         if not isinstance(provenance, dict):
             raise ContractError("Observation provenance must be an object")
@@ -457,11 +447,6 @@ def _normalize_operation(
             },
         }
     if name == "record_finding":
-        _keys(
-            raw,
-            required={"op", "local_ref", "findingType", "severity", "statement"},
-            optional={"claimRefs", "nodeRefs", "basisObservationRefs"},
-        )
         return {
             "op": "append_finding",
             "record": {
@@ -480,11 +465,6 @@ def _normalize_operation(
             },
         }
     if name == "freeze_proof_spec":
-        _keys(
-            raw,
-            required={"op", "local_ref", "nodeRef", "targetClaimRef", "dimension", "title"},
-            optional={"template", "definition"},
-        )
         target_claim_ref = _ref(raw["targetClaimRef"], allocations)
         target_claim = state.claims.get(target_claim_ref)
         if target_claim is None:
@@ -509,7 +489,6 @@ def _normalize_operation(
         )
         return {"op": "append_proof_spec", "record": record}
     if name == "evaluate_proof":
-        _keys(raw, required={"op", "local_ref", "nodeRef", "proofRef", "observationRefs"})
         proof_ref = _ref(raw["proofRef"], allocations)
         observation_refs = _refs(raw["observationRefs"], allocations)
         spec = state.specs.get(proof_ref)
@@ -529,7 +508,6 @@ def _normalize_operation(
         )
         return {"op": "append_validation_result", "record": record}
     if name == "update_claim":
-        _keys(raw, required={"op", "claimRef", "status", "summary"}, optional={"observationRefs", "validationResultRefs"})
         return {
             "op": "update_claim",
             "claim_ref": _ref(raw["claimRef"], allocations),
@@ -540,7 +518,6 @@ def _normalize_operation(
             "updated_at": created_at,
         }
     if name == "complete_node":
-        _keys(raw, required={"op", "nodeRef", "outcome", "summary"}, optional={"openQuestions"})
         return {
             "op": "complete_research_node",
             "node_ref": _ref(raw["nodeRef"], allocations),
@@ -550,7 +527,6 @@ def _normalize_operation(
             "completed_at": created_at,
         }
     if name == "resolve_finding":
-        _keys(raw, required={"op", "findingRef", "status", "summary"}, optional={"basisObservationRefs"})
         return {
             "op": "resolve_finding",
             "finding_ref": _ref(raw["findingRef"], allocations),
@@ -560,10 +536,8 @@ def _normalize_operation(
             "resolved_at": created_at,
         }
     if name == "set_focus":
-        _keys(raw, required={"op", "claimRefs", "nodeRefs"})
         return {"op": "set_focus", "claim_refs": _refs(raw["claimRefs"], allocations), "node_refs": _refs(raw["nodeRefs"], allocations)}
     if name == "accept_claim":
-        _keys(raw, required={"op", "local_ref", "claimRef", "profile", "summary"})
         claim_ref = _ref(raw["claimRef"], allocations)
         claim = state.claims.get(claim_ref)
         if claim is None:
@@ -625,11 +599,6 @@ def _normalize_candidate_observation(
     created_at: str,
     root: Path,
 ) -> dict[str, Any]:
-    _keys(
-        raw,
-        required={"op", "local_ref", "nodeRef", "candidate", "conceptId", "subjectRef", "summary"},
-        optional={"qualifiers"},
-    )
     binding = raw["candidate"]
     if not isinstance(binding, dict):
         raise ContractError("Observation candidate binding must be an object")
@@ -722,19 +691,41 @@ class _DraftState:
 
     @classmethod
     def load(cls, root: Path, *, decision_id: str) -> "_DraftState":
+        documents: dict[str, dict[str, Any]] = {}
+        for name in (
+            RESEARCH_PHASES_FILE,
+            CLAIMS_FILE,
+            CLAIM_RELATIONS_FILE,
+            RESEARCH_NODES_FILE,
+            OBSERVATIONS_FILE,
+            PROOF_SPECS_FILE,
+            VALIDATION_RESULTS_FILE,
+            FINDINGS_FILE,
+            RESEARCH_STATE_FILE,
+        ):
+            path = root / name
+            if has_symlink_component(root, path) or path.is_symlink():
+                raise ContractError(f"workspace file contains a symbolic link: {name}")
+            try:
+                value = read_json(path)
+            except (OSError, ValueError) as exc:
+                raise ContractError(f"cannot read workspace file {name}: {exc}") from exc
+            if not isinstance(value, dict):
+                raise ContractError(f"workspace file is not an object: {name}")
+            documents[name] = value
         return cls(
             decision_id=decision_id,
-            phases=_map(read_json(root / RESEARCH_PHASES_FILE)["phases"], "phase_id"),
-            claims=_map(read_json(root / CLAIMS_FILE)["claims"], "claim_id"),
-            relations=_map(read_json(root / CLAIM_RELATIONS_FILE)["relations"], "relation_id"),
-            nodes=_map(read_json(root / RESEARCH_NODES_FILE)["nodes"], "node_id"),
-            observations=_map(read_json(root / OBSERVATIONS_FILE)["observations"], "observation_id"),
-            specs=_map(read_json(root / PROOF_SPECS_FILE)["proofs"], "proof_id"),
-            results=_map(read_json(root / VALIDATION_RESULTS_FILE)["results"], "result_id"),
-            findings=_map(read_json(root / FINDINGS_FILE)["findings"], "finding_id"),
+            phases=_map(documents[RESEARCH_PHASES_FILE]["phases"], "phase_id"),
+            claims=_map(documents[CLAIMS_FILE]["claims"], "claim_id"),
+            relations=_map(documents[CLAIM_RELATIONS_FILE]["relations"], "relation_id"),
+            nodes=_map(documents[RESEARCH_NODES_FILE]["nodes"], "node_id"),
+            observations=_map(documents[OBSERVATIONS_FILE]["observations"], "observation_id"),
+            specs=_map(documents[PROOF_SPECS_FILE]["proofs"], "proof_id"),
+            results=_map(documents[VALIDATION_RESULTS_FILE]["results"], "result_id"),
+            findings=_map(documents[FINDINGS_FILE]["findings"], "finding_id"),
             acceptances={
                 Path(ref).stem
-                for ref in read_json(root / RESEARCH_STATE_FILE)["acceptance_refs"]
+                for ref in documents[RESEARCH_STATE_FILE]["acceptance_refs"]
                 if isinstance(ref, str)
             },
         )

@@ -13,6 +13,14 @@ Context projection and workspace revision, and returns a frozen
 `ts-research-decision/3`. Compile, dry-run, and commit are private Kernel stages;
 the caller submits one `ts_change` and never copies a generated Decision.
 
+`record_observation.json` is the direct, caller-supplied value variant.
+`record_observation_candidate.json` is the parser-owned candidate variant: it
+accepts only a candidate artifact/candidate ID and lets the Kernel copy the
+validated candidate value and provenance. Both snippets intentionally use the
+public operation name `record_observation`; query
+`ts_state mode=change_contract operation=record_observation` to see the exact
+variant fields and template references.
+
 One Decision may create at most one Phase, start at most one ResearchNode, and
 complete at most one ResearchNode. It may start and complete that same Node, or
 combine an existing Node completion with one successor start when the successor

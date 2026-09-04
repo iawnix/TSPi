@@ -71,6 +71,7 @@ process.stdout.write(JSON.stringify({{
     assert result["execution"]["ts_report"] == "deterministic_artifact"
     context = next(item for item in result["tools"] if item["name"] == "ts_state")
     assert "query" in context["properties"]
+    assert "operation" in context["properties"]
     assert not any(name.startswith("ts_workspace_") or name.startswith("ts_subagent_") for name in EXPECTED_TOOLS)
 
 
@@ -155,8 +156,9 @@ import summary from {json.dumps((ROOT / 'extensions/ts-workflow-control/summary.
 const {{buildContextDetails,buildContextSummary}}=summary;
 const context={{valid:true,mode:"frontier",projection_id:"ctx_0123456789abcdef01234567",workspace_id:"ws_0123456789abcdef01234567",workspace_revision:"sha256:"+"a".repeat(64),operational_revision:"sha256:"+"b".repeat(64),operational_summary:{{
   agent_run_count:3,agent_run_failed_count:1,agent_run_pending_count:1,
-  review_disposition_pending_count:1,
-}},workspace_brief:{{phases:[],claims:[],open_findings:[],incomplete_validation:[],nodes:[{{node_id:"node_1",phase_ref:"phase_1",status:"open",title:"Locate saddle",objective:"Locate one first-order saddle.",deliverable:"One verified TS candidate."}}]}}}};
+  review_disposition_pending_count:1,calculation_attempt_count:1,
+  calculation_attempt_blocking_count:1,
+}},calculation_attempts:[{{node_id:"node_1",intent_id:"calc_1",state:"queued",program_status:"not_run",blocks_completion:true}}],workspace_brief:{{phases:[],claims:[],open_findings:[],incomplete_validation:[],nodes:[{{node_id:"node_1",phase_ref:"phase_1",status:"open",title:"Locate saddle",objective:"Locate one first-order saddle.",deliverable:"One verified TS candidate.",attempts:[{{intent_id:"calc_1",state:"queued",program_status:"not_run",blocks_completion:true}}]}}]}}}};
 process.stdout.write(JSON.stringify({{details:buildContextDetails(context),summary:buildContextSummary(context)}}));
 """
     result = _node_json(script)
@@ -166,6 +168,8 @@ process.stdout.write(JSON.stringify({{details:buildContextDetails(context),summa
     assert operational["agentRunPendingCount"] == 1
     assert "agent_runs=3" in result["summary"]
     assert "agent_failures=1" in result["summary"]
+    assert "attempts=1" in result["summary"]
+    assert "calc_1/queued!" in result["summary"]
     assert "trajectory:" in result["summary"]
     assert "reviews=" not in result["summary"]
     assert "context: mode=frontier; valid=true" in result["summary"]
@@ -191,7 +195,79 @@ process.stdout.write(JSON.stringify(result));
     assert "ts_state" in prompt
     assert "ts_change" in prompt
     assert "Give each changed question" in prompt
+    assert "include set_focus with exact claimRefs/nodeRefs" in prompt
     assert "workflow phase" not in prompt.lower()
+
+
+def test_state_change_contract_routes_to_the_kernel_without_leaking_other_selectors(tmp_path: Path) -> None:
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    script = f"""
+import control from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
+const calls=[];
+const pi={{
+  registerTool:(tool)=>{{ if (tool.name === "ts_state") globalThis.stateTool=tool; }},
+  registerCommand:()=>{{}}, registerEntryRenderer:()=>{{}}, on:()=>{{}}, appendEntry:()=>{{}},
+  exec:async (command,args)=>{{
+    calls.push([command,args]);
+    if (args[0].endsWith("ts_runtime.py")) return {{stdout:JSON.stringify({{configured:true,python_executable:{json.dumps(sys.executable)}}})}};
+    if (args[0].endsWith("ts_workspace.py") && args[1] === "change_contract") return {{stdout:JSON.stringify({{schema_version:"ts-change-operation-catalog/1",selected_operation:"set_focus",operations:[]}})}};
+    throw new Error("unexpected command");
+  }},
+}};
+control(pi);
+const result=await globalThis.stateTool.execute("tool-1", {{mode:"change_contract",operation:"set_focus",root:{json.dumps(str(workspace))}}}, undefined, undefined, {{cwd:{json.dumps(str(workspace))}}});
+let rejected=false;
+try {{ await globalThis.stateTool.execute("tool-2", {{mode:"change_contract",operation:"set_focus",root:{json.dumps(str(workspace))},capabilityKind:"compute"}}, undefined, undefined, {{cwd:{json.dumps(str(workspace))}}}); }}
+catch (error) {{ rejected=String(error.message).includes("does not accept capability selectors"); }}
+process.stdout.write(JSON.stringify({{result,calls,rejected}}));
+"""
+    result = _node_json(script)
+    assert result["result"]["details"]["contract"]["selected_operation"] == "set_focus"
+    workspace_calls = [args for command, args in result["calls"] if args and args[0].endswith("ts_workspace.py")]
+    assert workspace_calls and workspace_calls[-1][1:4] == ["change_contract", "--root", str(workspace)]
+    assert "--operation" in workspace_calls[-1]
+    assert workspace_calls[-1][workspace_calls[-1].index("--operation") + 1] == "set_focus"
+    assert result["rejected"] is True
+
+
+def test_ts_change_forwards_unknown_operation_to_kernel_for_explicit_registry_error(tmp_path: Path) -> None:
+    """The public envelope stays open; the Python registry owns support errors."""
+
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    script = f"""
+import {{ readFileSync }} from "node:fs";
+import {{ spawnSync }} from "node:child_process";
+import control from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
+process.env.TS_AGENT_PYTHON = {json.dumps(sys.executable)};
+const calls=[]; let changeTool;
+const pi={{
+  registerTool:(tool)=>{{ if (tool.name === "ts_change") changeTool=tool; }},
+  registerCommand:()=>{{}}, registerEntryRenderer:()=>{{}}, on:()=>{{}}, appendEntry:()=>{{}},
+  exec:async (command,args)=>{{
+    const requestFlag=args.indexOf("--request-file");
+    const request=requestFlag >= 0 ? JSON.parse(readFileSync(args[requestFlag+1],"utf8")) : null;
+    calls.push({{command,args,request}});
+    const result=spawnSync(command,args,{{encoding:"utf8"}});
+    return {{code:result.status,stdout:result.stdout,stderr:result.stderr}};
+  }},
+}};
+control(pi);
+let error="";
+try {{ await changeTool.execute("tool-1",{{root:{json.dumps(str(workspace))},rationale:"Probe registry ownership.",operations:[{{op:"future_science_operation",payload:"kept"}}]}},undefined,undefined,{{cwd:{json.dumps(str(workspace))}}}); }}
+catch (caught) {{ error=String(caught.message||caught); }}
+process.stdout.write(JSON.stringify({{error,calls}}));
+"""
+    result = _node_json(script)
+
+    assert "unsupported change operation: future_science_operation" in result["error"]
+    workspace_calls = [
+        call for call in result["calls"]
+        if call["args"] and call["args"][0].endswith("ts_workspace.py")
+    ]
+    assert len(workspace_calls) == 1
+    assert workspace_calls[0]["args"][1] == "change"
+    assert workspace_calls[0]["request"]["operations"][0]["op"] == "future_science_operation"
+    assert workspace_calls[0]["request"]["operations"][0]["payload"] == "kept"
 
 
 def test_review_fallback_failure_uses_review_runtime_taxonomy() -> None:

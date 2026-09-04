@@ -9,7 +9,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.workspace_helpers import accept_research_claim
+from tests.workspace_helpers import (
+    accept_research_claim,
+    calculation_prepared_fixture,
+    calculation_result_fixture,
+)
 from ts_agent.web import normalize_workspace, register_workspace
 from ts_agent.web import server as ts_web_server
 from ts_agent.web.file_preview import MAX_TEXT_BYTES, preview_capability, read_text_preview
@@ -247,22 +251,36 @@ def _make_workspace(root: Path) -> dict[str, str]:
             "dry_run": False,
         },
     )
-    _write(
-        root / "nodes" / node_id / "attempts" / "calc_1" / "status.json",
-        {
-            "intent_id": "calc_1",
-            "job_id": "123.cluster",
-            "state": "completed",
-            "program_status": "normal_termination",
-            "provenance": {
-                "observed_at": "2026-08-16T00:04:00+00:00",
-                "program_record": {
-                    "started_at": "2026-08-16T00:02:00+00:00",
-                    "finished_at": "2026-08-16T00:03:30+00:00",
-                },
-            },
-        },
+    status = calculation_result_fixture(
+        json.loads(
+            (root / "nodes" / node_id / "attempts" / "calc_1" / "intent.json").read_text(
+                encoding="utf-8"
+            )
+        ),
+        state="completed",
+        program_status="completed",
+        job_id="123.cluster",
     )
+    status["provenance"].update(
+        {
+            "observed_at": "2026-08-16T00:04:00+00:00",
+            "program_record": {
+                "started_at": "2026-08-16T00:02:00+00:00",
+                "finished_at": "2026-08-16T00:03:30+00:00",
+            },
+        }
+    )
+    _write(
+        root / "nodes" / node_id / "attempts" / "calc_1" / "prepared.json",
+        calculation_prepared_fixture(
+            json.loads(
+                (root / "nodes" / node_id / "attempts" / "calc_1" / "intent.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+        ),
+    )
+    _write(root / "nodes" / node_id / "attempts" / "calc_1" / "status.json", status)
     _write(
         root / "nodes" / node_id / "activities" / "op_1" / "request.json",
         {
@@ -644,6 +662,72 @@ def test_web_marks_retired_or_incomplete_intents_without_aliasing_fields(tmp_pat
     assert malformed["display_state"] == "invalid"
     assert malformed["parameters"] == {}
     assert "parameters" in malformed["intent_error"]
+
+
+def test_web_attempt_projection_reuses_fail_closed_index_for_symlinked_outputs(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+    node_id = refs["connectivity"]
+    attempt = workspace / "nodes" / node_id / "attempts" / "calc_1"
+    outside = tmp_path / "outside-outputs"
+    intent = json.loads((attempt / "intent.json").read_text(encoding="utf-8"))
+    _write(
+        outside / "calculation_result.json",
+        calculation_result_fixture(
+            intent,
+            state="parsed",
+            program_status="completed",
+            job_id="outside.job",
+        ),
+    )
+    (attempt / "outputs").symlink_to(outside, target_is_directory=True)
+
+    projected = next(
+        row
+        for row in node_payload(workspace, node_id)["research_node"]["attempts"]
+        if row["intent_id"] == "calc_1"
+    )
+
+    assert projected["integrity_error"] == "symbolic link is not allowed"
+    assert projected["display_state"] == "invalid"
+    assert projected["job_id"] == "123.cluster"
+    assert projected.get("observation_candidates") is None
+
+
+def test_web_attempt_projection_does_not_traverse_symlinked_attempt_parent(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    refs = _make_workspace(workspace)
+    node_id = refs["connectivity"]
+    attempts = workspace / "nodes" / node_id / "attempts"
+    outside = tmp_path / "outside-attempts"
+    intent = json.loads(
+        (attempts / "calc_1" / "intent.json").read_text(encoding="utf-8")
+    )
+    _write(outside / "calc_2" / "intent.json", {**intent, "intent_id": "calc_2"})
+    attempts.rename(workspace / "nodes" / node_id / "attempts-real")
+    attempts.symlink_to(outside, target_is_directory=True)
+
+    payload = node_payload(workspace, node_id)
+    projected = [
+        row
+        for row in payload["research_node"]["attempts"]
+        if row["intent_id"] == "calc_2"
+    ]
+
+    # A symlinked parent is never enumerated, so an outside calc directory
+    # cannot be mistaken for a workspace Attempt.  The parent-level finding is
+    # still visible in the Node detail projection.
+    assert projected == []
+    assert payload["calculation_attempt_integrity_findings"] == [{
+        "code": "calculation_attempt_integrity",
+        "scope": "attempt_parent",
+        "path": f"nodes/{node_id}/attempts",
+        "node_refs": [node_id],
+        "message": "Attempt parent path contains a symbolic-link component",
+    }]
+    assert payload["research_node"]["attempt_integrity_findings"] == payload[
+        "calculation_attempt_integrity_findings"
+    ]
 
 
 def test_node_files_publish_the_same_bounded_text_preview_capability(tmp_path: Path) -> None:
@@ -1413,6 +1497,92 @@ def test_web_server_is_read_only_and_has_no_removed_routes(tmp_path: Path) -> No
         server.server_close()
         thread.join(timeout=2)
     assert _relative_files(source) == before
+
+
+def test_web_file_preview_never_follows_external_symlink_paths(tmp_path: Path) -> None:
+    """The HTTP file endpoint must share the same physical boundary as the index."""
+
+    source = tmp_path / "workspace"
+    refs = _make_workspace(source)
+    output = source / "nodes" / refs["connectivity"] / "outputs"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    secret = outside / "secret.txt"
+    secret.write_text("this must stay outside the workspace\n", encoding="utf-8")
+
+    linked_file = output / "linked.txt"
+    linked_file.symlink_to(secret)
+    linked_dir = output / "linked-dir"
+    linked_dir.symlink_to(outside, target_is_directory=True)
+
+    state = tmp_path / "web-state"
+    row = register_workspace(source, state, "workspace")
+    server = create_server("127.0.0.1", 0, state)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        host, port = server.server_address
+        base = f"/api/workspace/{row['workspace_id']}/file"
+        status, body = _get_text(
+            host,
+            port,
+            f"{base}?path=nodes/{refs['connectivity']}/outputs/linked.txt",
+        )
+        assert status == 400
+        assert "symbolic link" in body.lower()
+        assert "this must stay outside" not in body
+
+        status, body = _get_text(
+            host,
+            port,
+            f"{base}?path=nodes/{refs['connectivity']}/outputs/linked-dir/secret.txt",
+        )
+        assert status == 400
+        assert "symbolic link" in body.lower()
+        assert "this must stay outside" not in body
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
+def test_web_registry_rejects_symlinked_source_and_state_roots(tmp_path: Path) -> None:
+    physical = tmp_path / "workspace"
+    _make_workspace(physical)
+    source_link = tmp_path / "workspace-link"
+    source_link.symlink_to(physical, target_is_directory=True)
+    state = tmp_path / "web-state"
+
+    with pytest.raises(ValueError, match="symbolic link"):
+        register_workspace(source_link, state)
+
+    real_state = tmp_path / "real-state"
+    real_state.mkdir()
+    state_link = tmp_path / "state-link"
+    state_link.symlink_to(real_state, target_is_directory=True)
+    with pytest.raises(ValueError, match="symbolic link"):
+        register_workspace(physical, state_link)
+
+
+def test_web_normalizer_does_not_ingest_symlinked_canonical_documents(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    _make_workspace(workspace)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    # This is deliberately shaped like a canonical document so a plain
+    # ``read_json`` would silently import it into the Web projection.
+    (outside / "claims.json").write_text(
+        json.dumps({
+            "schema_version": "ts-claim-registry/4",
+            "claims": [{"claim_id": "claim_external", "statement": "secret"}],
+        }),
+        encoding="utf-8",
+    )
+    (workspace / "claims.json").unlink()
+    (workspace / "claims.json").symlink_to(outside / "claims.json")
+
+    with pytest.raises(ValueError, match="symbolic link"):
+        normalize_workspace(workspace)
 
 
 def _relative_files(root: Path) -> set[str]:

@@ -16,29 +16,20 @@ const require = createRequire(import.meta.url);
 const { buildContextSummary, resolveWorkspaceRoot, toolText } = require("./summary.cjs");
 
 const GRAPH_CONTEXT_MODES = ["frontier", "claim", "node", "subgraph", "finding", "proof", "delta"] as const;
-const CONTEXT_MODES = [...GRAPH_CONTEXT_MODES, "locate", "artifacts", "capabilities"] as const;
+const CONTEXT_MODES = [...GRAPH_CONTEXT_MODES, "locate", "artifacts", "capabilities", "change_contract"] as const;
 const CAPABILITY_KINDS = ["compute", "proof"] as const;
 // Keep the public envelope small and stable. Detailed field and cross-record
-// validation remains in the Python kernel; duplicating its full operation
-// union here would inflate model schemas and drift from the authoritative
-// compiler.
-const CHANGE_OPERATIONS = [
-  "create_phase",
-  "create_claim",
-  "relate_claims",
-  "start_node",
-  "record_observation",
-  "record_finding",
-  "freeze_proof_spec",
-  "evaluate_proof",
-  "accept_claim",
-  "update_claim",
-  "complete_node",
-  "resolve_finding",
-  "set_focus",
-] as const;
+// validation remains in the Python kernel.  Operation names intentionally use
+// a constrained string instead of a copied enum: the on-demand
+// ``change_contract`` projection is the discoverable list, and the registry is
+// the final authority when a new operation is added.
+const CHANGE_OPERATION_NAME = Type.String({
+  minLength: 1,
+  maxLength: 64,
+  pattern: "^[a-z][a-z0-9_]*$",
+});
 const CHANGE_OPERATION_PARAMETER = Type.Object(
-  { op: StringEnum(CHANGE_OPERATIONS) },
+  { op: CHANGE_OPERATION_NAME },
   {
     additionalProperties: true,
     maxProperties: 24,
@@ -90,7 +81,7 @@ export default function (pi: ExtensionAPI) {
     const packagePolicy = packageSourceSystemPrompt();
     if (!root) return { systemPrompt: `${event.systemPrompt}\n\n${packagePolicy}` };
     return {
-      systemPrompt: `${event.systemPrompt}\n\n${packagePolicy}\n\nTS workspace active: ${root}. Use ${TS_PUBLIC_TOOL_NAMES.state} for bounded context; only ${TS_PUBLIC_TOOL_NAMES.change} mutates canonical science. Root owns questions, hypotheses, capability choice, interpretation, and the next step; the kernel validates but never routes science. Register predictions and falsifiers before interpreting results. Give each changed question, principal deliverable, branch, backtrack, or synthesis goal a distinct ResearchNode; keep same-question retries inside that Node. Parser output is only a candidate until Root explicitly records an Observation.`,
+      systemPrompt: `${event.systemPrompt}\n\n${packagePolicy}\n\nTS workspace active: ${root}. Use ${TS_PUBLIC_TOOL_NAMES.state} for bounded context; only ${TS_PUBLIC_TOOL_NAMES.change} mutates canonical science. Root owns questions, hypotheses, capability choice, interpretation, and the next step; the kernel validates but never routes science. Register predictions and falsifiers before interpreting results. Give each changed question, principal deliverable, branch, backtrack, or synthesis goal a distinct ResearchNode; keep same-question retries inside that Node. When opening the active Node, include set_focus with exact claimRefs/nodeRefs (query the change contract first); never guess claimRef/nodeRef. Parser output is only a candidate until Root explicitly records an Observation. Query ${TS_PUBLIC_TOOL_NAMES.state} mode=change_contract before using an unfamiliar change operation; never guess its fields.`,
     };
   });
 
@@ -99,12 +90,12 @@ export default function (pi: ExtensionAPI) {
   pi.registerTool({
     name: TS_PUBLIC_TOOL_NAMES.state,
     label: "TS State",
-    description: "Read bounded research state, file locations, artifacts, or capability descriptors.",
+    description: "Read bounded state, artifacts, capabilities, or a change contract.",
     promptSnippet: "Read bounded TS research state",
     promptGuidelines: [
-      "Start with frontier or revision-bound delta; retrieve focused graph objects only when needed.",
-      "Use mode=locate with one exact ID or keyword query to find related Nodes, attempts, and physical artifact paths.",
-      "Artifact IDs are logical and capability catalogs do not prove runtime or scheduler readiness.",
+      "Start with frontier/delta; fetch focused graph objects only as needed.",
+      "Use locate with an ID or keyword to find Nodes, Attempts, and artifact paths.",
+      "Artifact IDs are logical; capability catalogs do not prove runtime readiness.",
     ],
     parameters: Type.Object({
       mode: Type.Optional(StringEnum(CONTEXT_MODES)),
@@ -122,6 +113,7 @@ export default function (pi: ExtensionAPI) {
       templateId: Type.Optional(Type.String()),
       templateVersion: Type.Optional(Type.String()),
       capabilityKind: Type.Optional(StringEnum(CAPABILITY_KINDS)),
+      operation: Type.Optional(CHANGE_OPERATION_NAME),
     }, { additionalProperties: false }),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const root = requireWorkspaceRoot(params.root, ctx.cwd);
@@ -165,8 +157,19 @@ export default function (pi: ExtensionAPI) {
         const capabilities = await runWorkspaceJson(pi, "proof_capabilities", root, args, signal);
         return toolText(JSON.stringify(capabilities, null, 2), { capabilities });
       }
+      if (mode === "change_contract") {
+        if (params.capabilityKind !== undefined || params.templateId !== undefined || params.templateVersion !== undefined) {
+          throw new Error("change_contract does not accept capability selectors");
+        }
+        const args = params.operation === undefined ? [] : ["--operation", params.operation as string];
+        const contract = await runWorkspaceJson(pi, "change_contract", root, args, signal);
+        return toolText(JSON.stringify(contract, null, 2), { contract });
+      }
       if (params.capabilityKind !== undefined || params.templateId !== undefined || params.templateVersion !== undefined) {
         throw new Error("capability selectors are only valid with mode=capabilities");
+      }
+      if (params.operation !== undefined) {
+        throw new Error("operation is only valid with mode=change_contract");
       }
       const projection = await runWorkspaceJson(pi, "context", root, contextArgs(mode, params), signal);
       return toolText(buildContextSummary(projection), { projection });
@@ -179,9 +182,9 @@ export default function (pi: ExtensionAPI) {
     description: "Compile, validate, and atomically apply one Root-authored canonical research change.",
     promptSnippet: "Apply one auditable TS research change",
     promptGuidelines: [
-      "Use local_ref aliases; the Kernel allocates all durable IDs.",
-      "State scientific strategy in rationale and typed operations; never invent IDs, paths, receipts, or edit registries.",
-      "One call is the complete mutation boundary: private compile, dry-run, and atomic apply happen under one lock.",
+      "Use local_ref aliases; the Kernel allocates durable IDs.",
+      "Put strategy in rationale/typed operations; never invent IDs, paths, receipts, or edit registries.",
+      "One call privately compiles, dry-runs, and atomically applies under one lock.",
     ],
     parameters: Type.Object({
       rationale: Type.String({ minLength: 1, maxLength: 12000 }),

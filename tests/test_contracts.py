@@ -21,6 +21,8 @@ ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE_PACKAGE = ROOT / "python" / "ts_agent" / "workspace"
 SCHEMA_FILES = {
     "acceptance_record.schema.json",
+    "attempt_intent_projection.schema.json",
+    "attempt_result_projection.schema.json",
     "claim.schema.json",
     "claim_registry.schema.json",
     "claim_relation.schema.json",

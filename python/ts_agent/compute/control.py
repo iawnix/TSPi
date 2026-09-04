@@ -56,6 +56,7 @@ from ts_agent.io import now_iso, read_json, sha256_json, write_json
 from ts_agent.workspace.operational_ids import allocate_operational_id
 from ts_agent.workspace.identity import WorkspaceIdentityError, workspace_id
 from ts_agent.workspace.node_contract import node_contract_digest
+from ts_agent.workspace.path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 from .artifacts import resolve_artifact_ref, resolve_input_artifacts, verify_input_bindings
 from ts_agent.workspace.candidates import CANDIDATE_FILE_NAME, build_observation_candidates
@@ -67,7 +68,11 @@ from .capabilities import (
     resolve_capability,
     validate_capability_parameters,
 )
-from .contracts import ComputeContractError, validate_compute_contract
+from .contracts import (
+    ComputeContractError,
+    validate_calculation_result_binding,
+    validate_compute_contract,
+)
 
 
 INTENT_SCHEMA = "calculation_intent.schema.json"
@@ -135,6 +140,8 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
         scientific_digest=scientific_digest,
     )
     attempts_dir = workspace / "nodes" / node_id / "attempts"
+    _require_physical_compute_directory(workspace, workspace / "nodes" / node_id, "ResearchNode")
+    _require_physical_compute_directory(workspace, attempts_dir, "calculation Attempt")
 
     for _ in range(100):
         intent_id = str(allocate_operational_id(workspace, "calc")["identifier"])
@@ -176,11 +183,13 @@ def create_calculation_intent(root: str | Path, request: dict[str, Any]) -> dict
 
         intent_ref, _ = _record_refs(node_id, intent_id)
         attempt_dir = workspace / "nodes" / node_id / "attempts" / intent_id
+        _require_physical_compute_directory(workspace, attempt_dir, "calculation Attempt")
         try:
             attempt_dir.mkdir(parents=True)
         except FileExistsError:
             continue
         intent_path = workspace / intent_ref
+        _require_physical_compute_path(workspace, intent_path, "calculation intent")
         try:
             write_json(intent_path, intent)
         except Exception:
@@ -336,6 +345,8 @@ def prepare_calculation(
     intent_ref, prepared_ref = _record_refs(node_id, str(intent["intent_id"]))
     intent_path = workspace / intent_ref
     prepared_path = workspace / prepared_ref
+    _require_physical_compute_path(workspace, intent_path, "calculation intent")
+    _require_physical_compute_path(workspace, prepared_path, "prepared calculation")
     _write_once(intent_path, intent, "intent_id")
     prepared_record = {
         "schema_version": "ts-compute-prepared/1",
@@ -356,6 +367,7 @@ def prepare_calculation(
             raise ComputeContractError(f"intent_id already has different prepared metadata: {intent['intent_id']}")
         prepared_record = existing
     else:
+        _require_physical_compute_path(workspace, prepared_path, "prepared calculation")
         write_json(prepared_path, prepared_record)
 
     result = _result(
@@ -475,6 +487,7 @@ def submit_calculation(
         return result
 
     receipt_ref = _receipt_ref(intent)
+    _require_physical_compute_path(workspace, workspace / receipt_ref, "remote receipt")
     _write_bound_record(
         workspace / receipt_ref,
         remote_lifecycle.receipt_dict(receipt),
@@ -622,7 +635,7 @@ def collect_calculation(
     program_status = _collection_program_status(workspace, intent, prepared, policy)
     output_dir = _remote_output_dir(workspace, intent)
     for path in (output_dir.parent, output_dir):
-        if path.is_symlink() or (path.exists() and not path.is_dir()):
+        if has_symlink_component(workspace, path) or path.is_symlink() or (path.exists() and not path.is_dir()):
             raise ComputeContractError(f"calculation output path is not a physical directory: {path}")
     existing = [name for name in selected if (output_dir / Path(name).name).exists()]
     if existing:
@@ -662,10 +675,15 @@ def collect_calculation(
                 except OSError:
                     pass
             raise
-    artifact_refs = [
-        (output_dir / Path(name).name).resolve().relative_to(workspace).as_posix()
-        for name in downloaded
-    ]
+    artifact_refs = []
+    for name in downloaded:
+        destination = output_dir / Path(name).name
+        if has_symlink_component(workspace, destination) or destination.is_symlink():
+            raise ComputeContractError(f"collected artifact path is not physical: {destination}")
+        try:
+            artifact_refs.append(destination.relative_to(workspace).as_posix())
+        except ValueError as exc:
+            raise ComputeContractError(f"collected artifact escapes workspace: {destination}") from exc
     result = _result(
         intent,
         state="collected",
@@ -820,6 +838,8 @@ def parse_calculation(
 
     _, _, output_ref = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]))
     result_path = workspace / output_ref / "calculation_result.json"
+    if has_symlink_component(workspace, result_path) or result_path.is_symlink():
+        raise ComputeContractError("calculation result path contains a symbolic link")
     source_sha256 = _sha256_file(source)
     previous: dict[str, Any] | None = None
     if result_path.is_file():
@@ -855,6 +875,10 @@ def parse_calculation(
     if not isinstance(summary, dict):
         raise ComputeContractError(f"{backend} parser returned an invalid summary")
     parse_dir = workspace / output_ref / "parsed"
+    if has_symlink_component(workspace, parse_dir) or parse_dir.is_symlink():
+        raise ComputeContractError("parse output directory contains a symbolic link")
+    if parse_dir.exists() and not parse_dir.is_dir():
+        raise ComputeContractError("parse output path is not a directory")
     if parse_dir.exists() and any(parse_dir.iterdir()):
         raise ComputeContractError("parse output directory is non-empty without a matching calculation result")
     parser_name = _parser_name(backend, is_irc)
@@ -872,7 +896,7 @@ def parse_calculation(
         parser_output_refs = sorted(
             path.relative_to(workspace).as_posix()
             for path in parse_dir.glob("*")
-            if path.is_file()
+            if not has_symlink_component(workspace, path) and path.is_file() and not path.is_symlink()
         )
         raw_refs = sorted(ref for ref, _ in parse_inputs.values())
         source_artifacts = [
@@ -887,13 +911,14 @@ def parse_calculation(
             source_artifacts=source_artifacts,
         )
         candidate_path = parse_dir / CANDIDATE_FILE_NAME
+        _require_physical_compute_path(workspace, candidate_path, "observation candidate")
         write_json(candidate_path, candidates)
         candidate_ref = candidate_path.relative_to(workspace).as_posix()
         candidate_sha256 = _sha256_file(candidate_path)
         parsed_refs = sorted(
             path.relative_to(workspace).as_posix()
             for path in parse_dir.glob("*")
-            if path.is_file()
+            if not has_symlink_component(workspace, path) and path.is_file() and not path.is_symlink()
         )
         program_status, error_class = _parsed_program_outcome(backend, summary)
         result = _result(
@@ -936,9 +961,12 @@ def _bound_parse_artifacts(
         candidate = source.parent / name
         if not candidate.exists():
             continue
-        if candidate.is_symlink() or not candidate.is_file():
+        if has_symlink_component(workspace, candidate) or candidate.is_symlink() or not candidate.is_file():
             raise ComputeContractError(f"parse artifact is not a regular file: {candidate}")
-        ref = candidate.resolve().relative_to(workspace).as_posix()
+        try:
+            ref = candidate.relative_to(workspace).as_posix()
+        except ValueError as exc:
+            raise ComputeContractError(f"parse artifact escapes workspace: {candidate}") from exc
         _require_calculation_output_ref(intent, ref)
         artifacts[name] = (ref, candidate)
     if source.name not in artifacts:
@@ -1397,6 +1425,7 @@ def _reconcile_remote_submit(
     job_id = receipt_value.scheduler_id
     receipt_ref = _receipt_ref(intent)
     receipt = remote_lifecycle.receipt_dict(receipt_value)
+    _require_physical_compute_path(workspace, workspace / receipt_ref, "reconciled remote receipt")
     _write_bound_record(workspace / receipt_ref, receipt, "reconciled remote receipt")
     result = _result(
         intent,
@@ -1434,7 +1463,42 @@ def _load_prepared(
     if not intent_id.startswith("calc_") or any(char not in "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.-" for char in intent_id[5:]):
         raise ComputeContractError("invalid intent_id")
     workspace = _workspace_root(root)
-    matches = list((workspace / "nodes").glob(f"*/attempts/{intent_id}/prepared.json"))
+    matches: list[Path] = []
+    nodes_root = workspace / "nodes"
+    if has_symlink_component(workspace, nodes_root) or nodes_root.is_symlink():
+        raise ComputeContractError(
+            f"prepared calculation path contains a symbolic link: {nodes_root}"
+        )
+    if not nodes_root.is_dir():
+        raise ComputeContractError("workspace ResearchNode root is not a directory")
+    try:
+        node_dirs = list(nodes_root.iterdir())
+    except OSError as exc:
+        raise ComputeContractError(f"cannot inspect workspace ResearchNode directories: {exc}") from exc
+    for node_dir in node_dirs:
+        if has_symlink_component(workspace, node_dir) or node_dir.is_symlink():
+            # A symlinked Node directory could hide a prepared calculation
+            # outside the workspace.  Do not enumerate or silently ignore it.
+            raise ComputeContractError(
+                f"prepared calculation path contains a symbolic link: {node_dir}"
+            )
+        if not node_dir.is_dir():
+            continue
+        attempts_root = node_dir / "attempts"
+        if has_symlink_component(workspace, attempts_root) or attempts_root.is_symlink():
+            raise ComputeContractError(
+                f"prepared calculation path contains a symbolic link: {attempts_root}"
+            )
+        if not attempts_root.is_dir():
+            continue
+        attempt_dir = attempts_root / intent_id
+        prepared_path = attempt_dir / "prepared.json"
+        if has_symlink_component(workspace, prepared_path) or prepared_path.is_symlink():
+            raise ComputeContractError(
+                f"prepared calculation path contains a symbolic link: {prepared_path}"
+            )
+        if prepared_path.is_file():
+            matches.append(prepared_path)
     if len(matches) != 1:
         raise ComputeContractError(f"expected exactly one prepared calculation for {intent_id}; found {len(matches)}")
     prepared = _read_object(matches[0], "prepared calculation")
@@ -1465,11 +1529,23 @@ def _load_prepared(
 
 
 def _workspace_root(root: str | Path) -> Path:
-    workspace = Path(root).expanduser().resolve()
+    workspace = lexical_path(root)
+    if path_has_symlink(workspace):
+        raise ComputeContractError(f"workspace root cannot contain a symbolic link: {workspace}")
     workspace_doc = workspace / "workspace.json"
-    if not workspace_doc.is_file() or not (workspace / "research_nodes.json").is_file() or not (workspace / "nodes").is_dir():
+    nodes_doc = workspace / "research_nodes.json"
+    nodes_root = workspace / "nodes"
+    if any(has_symlink_component(workspace, path) for path in (workspace_doc, nodes_doc, nodes_root)):
+        raise ComputeContractError("workspace canonical paths cannot contain symbolic links")
+    if not workspace_doc.is_file() or not nodes_doc.is_file() or not nodes_root.is_dir():
         raise ComputeContractError(f"not an initialized TS workspace: {workspace}")
-    if read_json(workspace_doc).get("schema_version") != "ts-workspace/6":
+    try:
+        workspace_record = read_json(workspace_doc)
+    except (OSError, ValueError) as exc:
+        raise ComputeContractError(f"cannot read workspace identity: {workspace_doc}") from exc
+    if not isinstance(workspace_record, dict):
+        raise ComputeContractError("workspace.json must contain an object")
+    if workspace_record.get("schema_version") != "ts-workspace/6":
         raise ComputeContractError(f"unsupported TS workspace protocol: {workspace}")
     return workspace
 
@@ -1479,17 +1555,13 @@ def _intent_source(workspace: Path, value: str | Path) -> tuple[Path, str]:
     if source.is_absolute():
         lexical = Path(os.path.abspath(source))
         try:
-            ref = lexical.relative_to(workspace.resolve(strict=True)).as_posix()
+            ref = lexical.relative_to(workspace).as_posix()
         except (OSError, ValueError) as exc:
             raise ComputeContractError("calculation intent file must be inside the TS workspace") from exc
-        resolved = lexical.resolve(strict=True)
-        try:
-            resolved.relative_to(workspace.resolve(strict=True))
-        except ValueError as exc:
-            raise ComputeContractError("calculation intent file must be inside the TS workspace") from exc
+        resolved = lexical
     else:
         ref = _workspace_ref(workspace, source.as_posix(), read=True)
-        resolved = (workspace / ref).resolve(strict=True)
+        resolved = workspace / ref
     parts = PurePosixPath(ref).parts
     generated_source = (
         len(parts) == 5
@@ -1500,11 +1572,8 @@ def _intent_source(workspace: Path, value: str | Path) -> tuple[Path, str]:
     )
     if not generated_source:
         raise ComputeContractError("calculation intent file must be a Kernel-generated ResearchNode attempt intent")
-    current = workspace
-    for part in parts:
-        current = current / part
-        if current.is_symlink():
-            raise ComputeContractError(f"calculation intent path contains a symbolic link: {ref}")
+    if has_symlink_component(workspace, resolved) or resolved.is_symlink():
+        raise ComputeContractError(f"calculation intent path contains a symbolic link: {ref}")
     return resolved, ref
 
 
@@ -1554,9 +1623,12 @@ def _load_node(workspace: Path, node_id: str) -> dict[str, Any]:
     registry = _read_object(workspace / "research_nodes.json", "ResearchNode registry")
     if registry.get("schema_version") != "ts-research-node-registry/2":
         raise ComputeContractError("invalid ResearchNode registry")
+    raw_nodes = registry.get("nodes")
+    if not isinstance(raw_nodes, list):
+        raise ComputeContractError("ResearchNode registry nodes must be an array")
     matches = [
         item
-        for item in registry.get("nodes", [])
+        for item in raw_nodes
         if isinstance(item, dict) and item.get("node_id") == node_id
     ]
     if len(matches) != 1:
@@ -1718,7 +1790,7 @@ def _validate_current_intent_lineage(workspace: Path, intent: dict[str, Any]) ->
 
 def _load_attempt_intent(workspace: Path, node_id: str, intent_id: str) -> dict[str, Any]:
     path = workspace / "nodes" / node_id / "attempts" / intent_id / "intent.json"
-    if not path.is_file() or path.is_symlink():
+    if has_symlink_component(workspace, path) or not path.is_file() or path.is_symlink():
         raise ComputeContractError(f"unknown source calculation Attempt: {node_id}/{intent_id}")
     intent = _read_object(path, "source calculation intent")
     _validate_intent(intent)
@@ -1752,19 +1824,31 @@ def _workspace_ref(workspace: Path, value: str, *, read: bool) -> str:
     normalized = posixpath.normpath(text)
     if normalized in {"", ".", ".."} or normalized.startswith("../"):
         raise ComputeContractError(f"invalid workspace path: {value}")
-    path = (workspace / normalized).resolve()
-    try:
-        path.relative_to(workspace)
-    except ValueError as exc:
-        raise ComputeContractError(f"workspace path escapes root: {value}") from exc
+    path = workspace / normalized
+    if has_symlink_component(workspace, path):
+        raise ComputeContractError(f"workspace path contains a symbolic link: {value}")
     if read:
-        if not path.is_file():
+        if not path.is_file() or path.is_symlink():
             raise ComputeContractError(f"workspace input does not exist: {normalized}")
-        try:
-            path.resolve(strict=True).relative_to(workspace.resolve(strict=True))
-        except ValueError as exc:
-            raise ComputeContractError(f"workspace input symlink escapes root: {normalized}") from exc
     return normalized
+
+
+def _require_physical_compute_path(workspace: Path, path: Path, label: str) -> None:
+    """Reject a compute record path before creating or opening it."""
+
+    if has_symlink_component(workspace, path) or path.is_symlink():
+        raise ComputeContractError(f"{label} path contains a symbolic link: {path}")
+
+
+def _require_physical_compute_directory(workspace: Path, path: Path, label: str) -> None:
+    """Reject a directory target that could redirect compute records."""
+
+    _require_physical_compute_path(workspace, path, label)
+    try:
+        if path.exists() and not path.is_dir():
+            raise ComputeContractError(f"{label} path is not a directory: {path}")
+    except OSError as exc:
+        raise ComputeContractError(f"cannot inspect {label} path: {path}") from exc
 
 
 def _require_attempt_output_ref(node_id: str, intent_id: str, ref: str) -> None:
@@ -1840,30 +1924,50 @@ def _control_reconciliation_ref(intent: dict[str, Any], operation: str) -> str:
 
 
 def _write_once(path: Path, value: dict[str, Any], identity: str) -> None:
+    if path_has_symlink(path) or path.is_symlink():
+        raise ComputeContractError(f"{identity} path contains a symbolic link: {path}")
     if path.exists():
         if _read_object(path, identity) != value:
             raise ComputeContractError(f"{identity} already exists with different content: {value.get(identity)}")
         return
+    temporary = path.with_name(f"{path.name}.tmp")
+    if path_has_symlink(temporary) or temporary.is_symlink():
+        raise ComputeContractError(f"{identity} temporary path contains a symbolic link: {temporary}")
     write_json(path, value)
+    if path_has_symlink(path) or path.is_symlink():
+        raise ComputeContractError(f"{identity} path contains a symbolic link: {path}")
 
 
 def _write_text_once(path: Path, value: str, label: str) -> None:
+    if path_has_symlink(path) or path.is_symlink():
+        raise ComputeContractError(f"{label} path contains a symbolic link: {path}")
     if path.exists() or path.is_symlink():
         if not path.is_file() or path.is_symlink() or path.read_text(encoding="utf-8") != value:
             raise ComputeContractError(f"{label} already exists with different content: {path}")
         return
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f"{path.name}.tmp")
+    if path_has_symlink(temporary) or temporary.is_symlink():
+        raise ComputeContractError(f"{label} temporary path contains a symbolic link: {temporary}")
     temporary.write_text(value, encoding="utf-8")
+    if path_has_symlink(path) or path.is_symlink():
+        raise ComputeContractError(f"{label} path contains a symbolic link: {path}")
     temporary.replace(path)
 
 
 def _write_bound_record(path: Path, value: dict[str, Any], label: str) -> None:
+    if path_has_symlink(path) or path.is_symlink():
+        raise ComputeContractError(f"{label} path contains a symbolic link: {path}")
     if path.exists() or path.is_symlink():
         if path.is_symlink() or _read_object(path, label) != value:
             raise ComputeContractError(f"{label} already exists with different content: {path}")
         return
+    temporary = path.with_name(f"{path.name}.tmp")
+    if path_has_symlink(temporary) or temporary.is_symlink():
+        raise ComputeContractError(f"{label} temporary path contains a symbolic link: {temporary}")
     write_json(path, value)
+    if path_has_symlink(path) or path.is_symlink():
+        raise ComputeContractError(f"{label} path contains a symbolic link: {path}")
 
 
 def _read_local_status(workspace: Path, intent: dict[str, Any]) -> dict[str, Any] | None:
@@ -1872,7 +1976,7 @@ def _read_local_status(workspace: Path, intent: dict[str, Any]) -> dict[str, Any
         str(intent["intent_id"]),
     )
     path = workspace / status_ref
-    if path.is_symlink():
+    if has_symlink_component(workspace, path) or path.is_symlink():
         raise ComputeContractError("calculation status cannot be a symbolic link")
     if not path.is_file():
         return None
@@ -1887,7 +1991,9 @@ def _write_status(workspace: Path, intent: dict[str, Any], result: dict[str, Any
         str(intent["node_id"]),
         str(intent["intent_id"]),
     )
-    write_json(workspace / status_ref, result)
+    path = workspace / status_ref
+    _require_physical_compute_path(workspace, path, "calculation status")
+    write_json(path, result)
 
 
 def _read_control_result(
@@ -1896,7 +2002,7 @@ def _read_control_result(
     operation: str,
 ) -> dict[str, Any] | None:
     reconciliation_path = workspace / _control_reconciliation_ref(intent, operation)
-    if reconciliation_path.is_symlink():
+    if has_symlink_component(workspace, reconciliation_path) or reconciliation_path.is_symlink():
         raise ComputeContractError(f"{operation} reconciliation cannot be a symbolic link")
     if reconciliation_path.is_file():
         result = _read_object(reconciliation_path, f"{operation} reconciliation")
@@ -1906,7 +2012,7 @@ def _read_control_result(
     if attempt is None:
         return None
     path = workspace / _control_result_ref(intent, operation, attempt)
-    if path.is_symlink():
+    if has_symlink_component(workspace, path) or path.is_symlink():
         raise ComputeContractError(f"{operation} control result cannot be a symbolic link")
     if not path.is_file():
         return None
@@ -1924,7 +2030,7 @@ def _read_control_guard(
     if attempt is None:
         return None
     path = workspace / _control_guard_ref(intent, operation, attempt)
-    if path.is_symlink():
+    if has_symlink_component(workspace, path) or path.is_symlink():
         raise ComputeContractError(f"{operation} control guard cannot be a symbolic link")
     if not path.is_file():
         return None
@@ -1952,6 +2058,7 @@ def _claim_control(workspace: Path, intent: dict[str, Any], operation: str) -> i
             )
     attempt = 1 if latest is None else latest + 1
     path = workspace / _control_guard_ref(intent, operation, attempt)
+    _require_physical_compute_path(workspace, path, f"{operation} control guard")
     path.parent.mkdir(parents=True, exist_ok=True)
     guard = {
         "schema_version": "ts-compute-control-guard/1",
@@ -1997,8 +2104,10 @@ def _write_control_result(
     attempt: int = 1,
 ) -> None:
     _validate_bound_result(intent, result, f"{operation} control result")
+    path = workspace / _control_result_ref(intent, operation, attempt)
+    _require_physical_compute_path(workspace, path, f"{operation} control result")
     _write_bound_record(
-        workspace / _control_result_ref(intent, operation, attempt),
+        path,
         result,
         f"{operation} control result",
     )
@@ -2011,8 +2120,10 @@ def _write_control_reconciliation(
     result: dict[str, Any],
 ) -> None:
     _validate_bound_result(intent, result, f"{operation} reconciliation")
+    path = workspace / _control_reconciliation_ref(intent, operation)
+    _require_physical_compute_path(workspace, path, f"{operation} reconciliation")
     _write_bound_record(
-        workspace / _control_reconciliation_ref(intent, operation),
+        path,
         result,
         f"{operation} reconciliation",
     )
@@ -2031,11 +2142,15 @@ def _latest_control_attempt(
     attempts: set[int] = set()
     for kind in ("guard", "result"):
         initial = root / f"{operation}_{kind}.json"
+        if has_symlink_component(workspace, initial):
+            raise ComputeContractError(f"{operation} control path contains a symbolic link: {initial}")
         if initial.exists() or initial.is_symlink():
             attempts.add(1)
         prefix = f"{operation}_attempt_"
         suffix = f"_{kind}.json"
         for path in root.glob(f"{prefix}*{suffix}"):
+            if has_symlink_component(workspace, path):
+                raise ComputeContractError(f"{operation} control path contains a symbolic link: {path}")
             token = path.name.removeprefix(prefix).removesuffix(suffix)
             if len(token) != 4 or not token.isdigit() or int(token) < 2:
                 raise ComputeContractError(f"invalid {operation} control attempt path: {path}")
@@ -2071,26 +2186,15 @@ def _control_allows_same_submission_retry(result: dict[str, Any]) -> bool:
 
 
 def _validate_bound_result(intent: dict[str, Any], result: dict[str, Any], label: str) -> None:
-    validate_compute_contract(RESULT_SCHEMA, result)
-    provenance = result.get("provenance")
-    if (
-        result.get("intent_id") != intent.get("intent_id")
-        or result.get("node_id") != intent.get("node_id")
-        or result.get("capability") != intent.get("capability")
-        or result.get("capability_version") != intent.get("capability_version")
-        or result.get("expected_output_roles") != intent.get("expected_output_roles")
-        or not isinstance(provenance, dict)
-        or provenance.get("intent_digest") != sha256_json(intent)
-        or provenance.get("capability") != intent.get("capability")
-        or provenance.get("capability_version") != intent.get("capability_version")
-        or provenance.get("capability_descriptor_digest") != intent.get("capability_descriptor_digest")
-    ):
-        raise ComputeContractError(f"{label} is not bound to the prepared calculation intent")
+    validate_calculation_result_binding(intent, result, label=label)
 
 
 def _write_result(workspace: Path, intent: dict[str, Any], result: dict[str, Any]) -> None:
     _, _, output_ref = _runtime_refs(str(intent["node_id"]), str(intent["intent_id"]))
-    write_json(workspace / output_ref / "calculation_result.json", result)
+    path = workspace / output_ref / "calculation_result.json"
+    _require_physical_compute_path(workspace, path, "calculation result")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    write_json(path, result)
 
 
 def _result(
@@ -2208,7 +2312,7 @@ def _collection_program_status(
     if provenance.get("receipt_ref") != receipt_ref or receipt_ref not in submitted.get("artifact_refs", []):
         raise ComputeContractError("collect submit result is not bound to its durable receipt")
     receipt_path = workspace / receipt_ref
-    if receipt_path.is_symlink():
+    if has_symlink_component(workspace, receipt_path) or receipt_path.is_symlink():
         raise ComputeContractError("collect receipt cannot be a symbolic link")
     receipt = _read_object(receipt_path, "remote receipt")
     remote_config = _remote_job_config(workspace, intent, prepared)
@@ -2254,7 +2358,7 @@ def _require_unique_remote_basenames(refs: list[str]) -> None:
 
 
 def _read_object(path: Path, label: str) -> dict[str, Any]:
-    if not path.is_file():
+    if path.is_symlink() or not path.is_file():
         raise ComputeContractError(f"{label} file does not exist: {path}")
     value = read_json(path)
     if not isinstance(value, dict):

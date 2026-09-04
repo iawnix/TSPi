@@ -272,7 +272,10 @@ def test_decision_assets_are_generic_operation_examples() -> None:
         "freeze_proof_spec.json",
         "record_finding.json",
         "record_observation.json",
+        "record_observation_candidate.json",
         "relate_claims.json",
+        "resolve_finding.json",
+        "set_focus.json",
         "start_node.json",
         "update_claim.json",
     }

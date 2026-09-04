@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
 
-from tests.workspace_helpers import accept_research_claim
+from tests.workspace_helpers import (
+    accept_research_claim,
+    calculation_prepared_fixture,
+    calculation_intent_fixture,
+    calculation_result_fixture,
+)
 from ts_agent.workspace.context import ContextCompileError, build_review_snapshot, compile_context, proof_capabilities
 from tests.kernel_helpers import compile_change
 from ts_agent.workspace.engine import init_workspace
@@ -143,6 +149,138 @@ def test_delta_avoids_repeating_unchanged_context(tmp_path: Path) -> None:
 
     assert delta["changed"] is False
     assert "claims" not in delta
+
+
+def test_frontier_exposes_compact_attempt_lifecycle_for_root_decisions(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    refs = _seed(root)
+    intent = calculation_intent_fixture(refs["search"], "calc_1")
+    attempt = root / "nodes" / refs["search"] / "attempts" / "calc_1"
+    attempt.mkdir(parents=True)
+    (attempt / "intent.json").write_text(json.dumps(intent), encoding="utf-8")
+    (attempt / "prepared.json").write_text(
+        json.dumps(calculation_prepared_fixture(intent)),
+        encoding="utf-8",
+    )
+    (attempt / "status.json").write_text(
+        json.dumps(
+            calculation_result_fixture(
+                intent,
+                state="queued",
+                program_status="not_run",
+                job_id="208319.cluster",
+            )
+        ),
+        encoding="utf-8",
+    )
+
+    context = compile_context(root, mode="frontier")
+
+    assert context["calculation_attempts"] == [{
+        "node_id": refs["search"],
+        "intent_id": "calc_1",
+        "path": f"nodes/{refs['search']}/attempts/calc_1",
+        "state": "queued",
+        "program_status": "not_run",
+        "job_id": "208319.cluster",
+        "terminal": False,
+        "blocks_completion": True,
+        "integrity_error": None,
+    }]
+    brief_node = next(
+        item for item in context["workspace_brief"]["nodes"]
+        if item["node_id"] == refs["search"]
+    )
+    assert brief_node["attempts"] == [{
+        "intent_id": "calc_1",
+        "state": "queued",
+        "program_status": "not_run",
+        "blocks_completion": True,
+        "integrity_error": None,
+    }]
+
+
+def test_attempt_status_changes_do_not_change_scientific_projection_identity(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    refs = _seed(root)
+    intent = calculation_intent_fixture(refs["search"], "calc_1")
+    attempt = root / "nodes" / refs["search"] / "attempts" / "calc_1"
+    attempt.mkdir(parents=True)
+    (attempt / "intent.json").write_text(json.dumps(intent), encoding="utf-8")
+    (attempt / "prepared.json").write_text(
+        json.dumps(calculation_prepared_fixture(intent)),
+        encoding="utf-8",
+    )
+    status = calculation_result_fixture(
+        intent,
+        state="queued",
+        program_status="not_run",
+        job_id="208319.cluster",
+    )
+    (attempt / "status.json").write_text(json.dumps(status), encoding="utf-8")
+
+    before = compile_context(root, mode="frontier")
+    status["state"] = "running"
+    (attempt / "status.json").write_text(json.dumps(status), encoding="utf-8")
+    after = compile_context(root, mode="frontier")
+
+    assert before["workspace_revision"] == after["workspace_revision"]
+    assert before["operational_revision"] != after["operational_revision"]
+    assert before["projection_id"] == after["projection_id"]
+    assert after["workspace_brief"]["nodes"][0]["attempts"][0]["state"] == "running"
+
+
+def test_context_exposes_attempt_parent_integrity_without_fake_attempt(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    refs = _seed(root)
+    outside = tmp_path / "outside-attempts"
+    (outside / "calc_99").mkdir(parents=True)
+    attempts = root / "nodes" / refs["search"] / "attempts"
+    attempts.mkdir(parents=True, exist_ok=True)
+    attempts.rename(root / "nodes" / refs["search"] / "attempts-real")
+    attempts.symlink_to(outside, target_is_directory=True)
+
+    context = compile_context(root, mode="frontier")
+
+    assert context["calculation_attempts"] == []
+    assert context["calculation_attempt_integrity_findings"] == [{
+        "code": "calculation_attempt_integrity",
+        "scope": "attempt_parent",
+        "path": f"nodes/{refs['search']}/attempts",
+        "node_refs": [refs["search"]],
+        "intent_id": None,
+        "message": "Attempt parent path contains a symbolic-link component",
+    }]
+    brief = next(
+        row for row in context["workspace_brief"]["nodes"]
+        if row["node_id"] == refs["search"]
+    )
+    assert brief["attempts"] == []
+    assert brief["attempt_integrity_findings"] == [{
+        "scope": "attempt_parent",
+        "path": f"nodes/{refs['search']}/attempts",
+        "intent_id": None,
+        "message": "Attempt parent path contains a symbolic-link component",
+    }]
+
+
+def test_context_does_not_follow_symlinked_canonical_document(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "claims.json").write_text(
+        json.dumps({"schema_version": "ts-claim-registry/5", "claims": []}) + "\n",
+        encoding="utf-8",
+    )
+    (root / "claims.json").unlink()
+    (root / "claims.json").symlink_to(outside / "claims.json")
+
+    with pytest.raises(ContextCompileError, match="symbolic link"):
+        compile_context(root, mode="frontier")
 
 
 def test_claim_review_snapshot_uses_graph_dependencies_not_evidence_roles(tmp_path: Path) -> None:

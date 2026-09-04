@@ -5,7 +5,11 @@ from pathlib import Path
 
 import pytest
 
-from tests.workspace_helpers import start_research_node
+from tests.workspace_helpers import (
+    calculation_intent_fixture,
+    calculation_prepared_fixture,
+    start_research_node,
+)
 from ts_agent.compute.artifacts import list_calculation_artifacts
 from ts_agent.workspace.cli import main as workspace_cli
 from tests.kernel_helpers import compile_change
@@ -60,6 +64,8 @@ def _workspace(tmp_path: Path) -> tuple[Path, dict[str, str], dict[str, dict]]:
             ],
         },
     )
+    intent_document = json.loads((attempt / "intent.json").read_text(encoding="utf-8"))
+    _write(attempt / "prepared.json", calculation_prepared_fixture(intent_document))
     _write(
         attempt / "status.json",
         {
@@ -339,3 +345,71 @@ def test_workspace_cli_exposes_locator_and_requires_a_query(
         ["context", "--root", str(root), "--mode", "frontier", "--query", "claim_1"]
     ) == 2
     assert "only valid with mode=locate" in capsys.readouterr().err
+
+
+def test_locator_reports_symlinked_attempt_parent_without_reading_target(tmp_path: Path) -> None:
+    root, refs, _catalog = _workspace(tmp_path)
+    attempts = root / "nodes" / refs["node_id"] / "attempts"
+    outside = tmp_path / "outside-attempts"
+    attempts.rename(outside)
+    attempts.symlink_to(outside, target_is_directory=True)
+
+    result = _locate(root, refs["node_id"], {})
+
+    assert any(
+        item["path"] == f"nodes/{refs['node_id']}/attempts"
+        and "symbolic-link" in item["message"]
+        for item in result["integrity_findings"]
+    )
+
+
+def test_locator_does_not_follow_symlinked_canonical_document(tmp_path: Path) -> None:
+    root, _refs, catalog = _workspace(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "claims.json").write_text(
+        '{"schema_version":"ts-claim-registry/5","claims":[]}',
+        encoding="utf-8",
+    )
+    (root / "claims.json").unlink()
+    (root / "claims.json").symlink_to(outside / "claims.json")
+
+    with pytest.raises(ContractError, match="symbolic link"):
+        _locate(root, "", catalog)
+
+
+def test_locator_reports_empty_attempt_and_symlinked_outputs(tmp_path: Path) -> None:
+    root, refs, _catalog = _workspace(tmp_path)
+    attempts = root / "nodes" / refs["node_id"] / "attempts"
+    empty = attempts / "calc_2"
+    empty.mkdir(parents=True)
+    linked = attempts / "calc_3"
+    _write(linked / "intent.json", calculation_intent_fixture(refs["node_id"], "calc_3"))
+    outside = tmp_path / "outside-outputs"
+    outside.mkdir()
+    (linked / "outputs").symlink_to(outside, target_is_directory=True)
+
+    result = _locate(root, refs["node_id"], {})
+    messages = {
+        item["path"]: item["message"]
+        for item in result["integrity_findings"]
+    }
+
+    assert messages[f"nodes/{refs['node_id']}/attempts/calc_2"] == "intent.json is missing"
+    assert messages[f"nodes/{refs['node_id']}/attempts/calc_3"] == "symbolic link is not allowed"
+
+
+def test_locator_preserves_parse_failures_as_integrity_findings(tmp_path: Path) -> None:
+    root, refs, _catalog = _workspace(tmp_path)
+    attempt = root / "nodes" / refs["node_id"] / "attempts" / "calc_2"
+    _write(attempt / "intent.json", calculation_intent_fixture(refs["node_id"], "calc_2"))
+    (attempt / "status.json").write_text("not-json", encoding="utf-8")
+
+    result = _locate(root, refs["node_id"], {})
+    finding = next(
+        item
+        for item in result["integrity_findings"]
+        if item["path"].endswith("calc_2")
+    )
+
+    assert "cannot parse JSON" in finding["message"]

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import stat
 from collections import deque
 from datetime import datetime
 from pathlib import Path
@@ -10,7 +11,10 @@ from typing import Any
 
 from ts_agent.workspace.acceptance import project_acceptances
 from ts_agent.workspace.associations import derive_claim_node_links
-from ts_agent.compute.contracts import ComputeContractError, validate_compute_contract
+from ts_agent.calculation_contracts import (
+    CalculationContractError,
+    validate_calculation_contract,
+)
 from ts_agent.workspace.artifacts import WorkspaceArtifactError, resolve_workspace_artifact_ref
 from ts_agent.workspace.candidates import (
     CANDIDATE_FILE_NAME,
@@ -21,6 +25,7 @@ from ts_agent.workspace.candidates import (
 from ts_agent.io import read_json
 from ts_agent.workspace.locator import locate_research_files
 from ts_agent.workspace.operational import operational_snapshot
+from ts_agent.workspace.path_safety import has_symlink_component, lexical_path, path_has_symlink
 from ts_agent.workspace.refs import (
     ACTIVITY_ID,
     CALCULATION_ID,
@@ -52,14 +57,18 @@ from .research_map import project_research_map
 def normalize_workspace(source_root: str | Path, *, label: str | None = None) -> dict[str, Any]:
     """Project canonical graph state and separate operational overlays."""
 
-    root = Path(source_root).expanduser().resolve()
-    documents = {name: _read_object(root / name) for name in STATE_FILES}
+    root = lexical_path(source_root)
+    if path_has_symlink(root):
+        raise ValueError(f"workspace root contains a symbolic link: {root}")
+    documents = {name: _read_object(root / name, root=root) for name in STATE_FILES}
     validation = validate_workspace(root)
     revision = workspace_revision_from_documents(documents)
     state = documents[RESEARCH_STATE_FILE]
     operations = operational_snapshot(root)
     activities = operations["deterministic_activities"]
     agent_runs = operations["agent_runs"]
+    attempt_integrity_findings = operations["calculation_attempt_integrity_findings"]
+    operational_integrity_findings = operations.get("operational_integrity_findings", [])
     unresolved_controls = [_normalize_control(record) for record in operations["unresolved_controls"]]
     retryable_controls = [_normalize_control(record) for record in operations["retryable_controls"]]
     claims = _objects(documents[CLAIMS_FILE].get("claims"))
@@ -72,6 +81,9 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
             observations=observations,
             activities=activities,
             agent_runs=agent_runs,
+            calculation_attempts=operations["calculation_attempts"],
+            calculation_attempt_integrity_findings=attempt_integrity_findings,
+            operational_integrity_findings=operational_integrity_findings,
             unresolved_controls=unresolved_controls,
             retryable_controls=retryable_controls,
         )
@@ -158,7 +170,10 @@ def normalize_workspace(source_root: str | Path, *, label: str | None = None) ->
         "deterministic_activities": activities,
         "activity_summaries": operations["activity_summaries"],
         "activity_integrity_findings": operations["activity_integrity_findings"],
+        "operational_integrity_findings": operational_integrity_findings,
         "agent_runs": agent_runs,
+        "calculation_attempts": operations["calculation_attempts"],
+        "calculation_attempt_integrity_findings": attempt_integrity_findings,
         "pending_review_dispositions": operations["pending_review_dispositions"],
         "pending_controls": operations["pending_controls"],
         "unresolved_controls": unresolved_controls,
@@ -247,7 +262,9 @@ def research_files_payload(source_root: str | Path, query: str = "") -> dict[str
 
     from ts_agent.compute.artifacts import list_calculation_artifacts
 
-    root = Path(source_root).expanduser().resolve()
+    root = lexical_path(source_root)
+    if path_has_symlink(root):
+        raise ValueError(f"workspace root contains a symbolic link: {root}")
     catalog = list_calculation_artifacts(root)
     payload = locate_research_files(root, query, artifacts=catalog["artifacts"])
     for match in _objects(payload.get("matches")):
@@ -336,6 +353,7 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
             "focus": record.get("node_id") in focus_nodes,
             "outcome": _object(record.get("result")).get("outcome"),
             "activity_count": len(_objects(record.get("activities"))),
+            "attempt_integrity_error_count": len(_objects(record.get("attempt_integrity_findings"))),
             "compute_run_count": int(record.get("compute_run_count") or 0),
             "unresolved_control_count": len(_objects(record.get("unresolved_controls"))),
             "retryable_control_count": len(_objects(record.get("retryable_controls"))),
@@ -377,6 +395,8 @@ def graph_payload_from_view(view: dict[str, Any]) -> dict[str, Any]:
         "deterministic_activities": _objects(view.get("deterministic_activities")),
         "activity_summaries": _objects(view.get("activity_summaries")),
         "activity_integrity_findings": _list(view.get("activity_integrity_findings")),
+        "operational_integrity_findings": _list(view.get("operational_integrity_findings")),
+        "calculation_attempt_integrity_findings": _list(view.get("calculation_attempt_integrity_findings")),
         "agent_runs": _objects(view.get("agent_runs")),
         "unresolved_controls": _objects(view.get("unresolved_controls")),
         "retryable_controls": _objects(view.get("retryable_controls")),
@@ -435,7 +455,9 @@ def claim_payload(source_root: str | Path, claim_id: str, *, label: str | None =
 
 
 def node_payload(source_root: str | Path, node_id: str, *, label: str | None = None) -> dict[str, Any]:
-    root = Path(source_root).expanduser().resolve()
+    root = lexical_path(source_root)
+    if path_has_symlink(root):
+        raise ValueError(f"workspace root contains a symbolic link: {root}")
     view = normalize_workspace(root, label=label)
     node = _find(_objects(view.get("research_nodes")), "node_id", node_id, "ResearchNode")
     compute_runs = [
@@ -450,6 +472,7 @@ def node_payload(source_root: str | Path, node_id: str, *, label: str | None = N
             node_id,
             agent_runs=compute_runs,
             observations=_objects(view.get("observations")),
+            indexed_attempts=_objects(view.get("calculation_attempts")),
             include_details=True,
         ),
     }
@@ -497,6 +520,11 @@ def node_payload(source_root: str | Path, node_id: str, *, label: str | None = N
         "agent_runs": [
             row for row in _objects(view.get("agent_runs")) if node_id in _strings(row.get("node_refs"))
         ],
+        "calculation_attempt_integrity_findings": [
+            row
+            for row in _objects(view.get("calculation_attempt_integrity_findings"))
+            if node_id in _strings(row.get("node_refs"))
+        ],
         "history": [
             row for row in _objects(view.get("decisions")) if _contains_ref(row, node_id)
         ],
@@ -505,13 +533,19 @@ def node_payload(source_root: str | Path, node_id: str, *, label: str | None = N
 
 
 def list_node_files(source_root: str | Path, node_id: str) -> dict[str, Any]:
-    root = Path(source_root).expanduser().resolve()
+    root = lexical_path(source_root)
+    if path_has_symlink(root):
+        return {
+            "node_id": node_id,
+            "files": [],
+            "integrity_error": "workspace root contains a symbolic link",
+        }
     node_dir = root / "nodes" / node_id
-    if not node_dir.is_dir() or node_dir.is_symlink():
+    if has_symlink_component(root, node_dir) or not node_dir.is_dir() or node_dir.is_symlink():
         return {"node_id": node_id, "files": []}
     files: list[dict[str, Any]] = []
     for path in sorted(node_dir.rglob("*")):
-        if path.is_symlink() or not path.is_file():
+        if has_symlink_component(root, path) or path.is_symlink() or not path.is_file():
             continue
         if not _is_current_node_file(path.relative_to(node_dir).parts):
             continue
@@ -556,8 +590,15 @@ def _workspace_file_preview(root: Path, value: Any) -> dict[str, Any]:
     ):
         return {"available": False, "reason": "File is outside the ResearchNode preview scope"}
     candidate = root / value
-    path = candidate.resolve()
-    if root not in path.parents or candidate.is_symlink() or not path.is_file():
+    if has_symlink_component(root, candidate) or candidate.is_symlink():
+        return {"available": False, "reason": "File is not readable"}
+    path = candidate
+    if (
+        root not in path.parents
+        or has_symlink_component(root, candidate)
+        or candidate.is_symlink()
+        or not path.is_file()
+    ):
         return {"available": False, "reason": "File is not readable"}
     return preview_capability(path)
 
@@ -569,6 +610,9 @@ def _normalize_node(
     observations: list[dict[str, Any]],
     activities: list[dict[str, Any]],
     agent_runs: list[dict[str, Any]],
+    calculation_attempts: list[dict[str, Any]],
+    calculation_attempt_integrity_findings: list[dict[str, Any]],
+    operational_integrity_findings: list[dict[str, Any]],
     unresolved_controls: list[dict[str, Any]],
     retryable_controls: list[dict[str, Any]],
 ) -> dict[str, Any]:
@@ -583,10 +627,21 @@ def _normalize_node(
         node_id,
         agent_runs=node_runs,
         observations=observations,
+        indexed_attempts=calculation_attempts,
     )
     return {
         **record,
         "attempts": attempts,
+        "attempt_integrity_findings": [
+            row
+            for row in calculation_attempt_integrity_findings
+            if node_id in _strings(row.get("node_refs"))
+        ],
+        "operational_integrity_findings": [
+            row
+            for row in operational_integrity_findings
+            if node_id in _strings(row.get("node_refs"))
+        ],
         "attempt_summary": {
             "attempt_count": len(attempts),
             "family_count": len({str(item.get("family_root_id")) for item in attempts}),
@@ -639,25 +694,49 @@ def _calculation_attempts(
     *,
     agent_runs: list[dict[str, Any]],
     observations: list[dict[str, Any]],
+    indexed_attempts: list[dict[str, Any]] | None = None,
     include_details: bool = False,
 ) -> list[dict[str, Any]]:
     if not node_id:
         return []
+    if indexed_attempts is None:
+        indexed_attempts = _objects(operational_snapshot(root).get("calculation_attempts"))
+    node_rows = [
+        row
+        for row in indexed_attempts
+        if row.get("node_id") == node_id
+        and CALCULATION_ID.fullmatch(str(row.get("intent_id") or "")) is not None
+    ]
     attempts: list[dict[str, Any]] = []
-    for attempt_dir in sorted(
-        (root / "nodes" / node_id / "attempts").glob("*"),
-        key=_calculation_path_sort_key,
+    for indexed in sorted(
+        node_rows,
+        key=lambda row: _calculation_path_sort_key(Path(str(row.get("intent_id") or ""))),
     ):
-        if (
-            not attempt_dir.is_dir()
-            or attempt_dir.is_symlink()
-            or CALCULATION_ID.fullmatch(attempt_dir.name) is None
-        ):
-            continue
-        result = _read_optional_object(attempt_dir / "outputs" / "calculation_result.json")
-        status = _read_optional_object(attempt_dir / "status.json")
-        intent = _read_optional_object(attempt_dir / "intent.json")
-        intent_id = attempt_dir.name
+        intent_id = str(indexed["intent_id"])
+        attempt_dir = root / "nodes" / node_id / "attempts" / intent_id
+        physical_attempt = (
+            attempt_dir.is_dir()
+            and not attempt_dir.is_symlink()
+            and not has_symlink_component(root, attempt_dir)
+        )
+        result = (
+            _read_optional_object(
+                attempt_dir / "outputs" / "calculation_result.json",
+                root=root,
+            )
+            if physical_attempt
+            else {}
+        )
+        status = (
+            _read_optional_object(attempt_dir / "status.json", root=root)
+            if physical_attempt
+            else {}
+        )
+        intent = (
+            _read_optional_object(attempt_dir / "intent.json", root=root)
+            if physical_attempt
+            else {}
+        )
         intent_status, intent_error = _calculation_intent_status(intent)
         # The explorer has one public calculation contract.  In particular, it
         # must not silently translate retired ``settings`` or
@@ -690,10 +769,13 @@ def _calculation_attempts(
             "lineage": lineage,
             "method": _optional_string(parameters.get("method")),
             "basis": _optional_string(parameters.get("basis")),
-            "state": result.get("state") or status.get("state"),
-            "program_status": result.get("program_status") or status.get("program_status"),
+            "state": indexed.get("state"),
+            "program_status": indexed.get("program_status"),
             "error_class": result.get("error_class") or status.get("error_class"),
-            "job_id": result.get("job_id") or status.get("job_id"),
+            "job_id": indexed.get("job_id"),
+            "terminal": indexed.get("terminal") is True,
+            "blocks_completion": indexed.get("blocks_completion") is True,
+            "integrity_error": _optional_string(indexed.get("integrity_error")),
             "started_at": _optional_string(program_record.get("started_at")),
             "finished_at": _optional_string(program_record.get("finished_at")),
             "observed_at": _optional_string(provenance.get("observed_at")),
@@ -705,15 +787,16 @@ def _calculation_attempts(
             "scientific_intent_digest": _optional_string(intent.get("scientific_intent_digest")),
             "run_count": len(runs),
         }
-        candidate_projection = _observation_candidate_projection(
-            root,
-            attempt_dir,
-            intent=intent,
-            result=result,
-            observations=observations,
-        )
-        if candidate_projection is not None:
-            attempt["observation_candidates"] = candidate_projection
+        if intent_status == "valid" and not attempt["integrity_error"]:
+            candidate_projection = _observation_candidate_projection(
+                root,
+                attempt_dir,
+                intent=intent,
+                result=result,
+                observations=observations,
+            )
+            if candidate_projection is not None:
+                attempt["observation_candidates"] = candidate_projection
         if include_details:
             execution_target = _object(intent.get("execution_target"))
             attempt.update(
@@ -755,9 +838,6 @@ def _observation_candidate_projection(
     """Expose bounded parser candidates without promoting them to science."""
 
     candidate_path = attempt_dir / "outputs" / "parsed" / CANDIDATE_FILE_NAME
-    if not candidate_path.exists():
-        # Older or failed Attempts have no candidate stream to display.
-        return None
     ref = candidate_path.relative_to(root).as_posix()
     projection: dict[str, Any] = {
         "status": "invalid",
@@ -768,7 +848,18 @@ def _observation_candidate_projection(
         "candidates": [],
         "diagnostics": [],
     }
-    if candidate_path.is_symlink() or not candidate_path.is_file():
+    try:
+        candidate_mode = candidate_path.lstat().st_mode
+    except FileNotFoundError:
+        # Older or failed Attempts have no candidate stream to display.
+        return None
+    except OSError as exc:
+        projection["error"] = f"cannot inspect candidate output: {exc}"
+        return projection
+    if has_symlink_component(root, candidate_path) or stat.S_ISLNK(candidate_mode):
+        projection["error"] = "candidate output is not a regular file"
+        return projection
+    if not stat.S_ISREG(candidate_mode):
         projection["error"] = "candidate output is not a regular file"
         return projection
     try:
@@ -923,8 +1014,8 @@ def _calculation_intent_status(intent: dict[str, Any]) -> tuple[str, str | None]
             f"unsupported calculation intent schema_version: {schema_version!r}; expected 'ts-calculation-intent/7'",
         )
     try:
-        validate_compute_contract("calculation_intent.schema.json", intent)
-    except ComputeContractError as exc:
+        validate_calculation_contract("calculation_intent.schema.json", intent)
+    except CalculationContractError as exc:
         message = str(exc)
         return "invalid", message[:1000]
     return "valid", None
@@ -963,6 +1054,8 @@ def _attempt_display_state(attempt: dict[str, Any]) -> str:
     intent_status = str(attempt.get("intent_status") or "").lower()
     if intent_status in {"unsupported", "invalid"}:
         return intent_status
+    if attempt.get("integrity_error"):
+        return "invalid"
     program_status = str(attempt.get("program_status") or "").lower()
     if program_status in {"completed", "failed", "stopped"}:
         return program_status
@@ -1049,7 +1142,9 @@ def _find(records: list[dict[str, Any]], key: str, value: str, label: str) -> di
     return record
 
 
-def _read_object(path: Path) -> dict[str, Any]:
+def _read_object(path: Path, *, root: Path | None = None) -> dict[str, Any]:
+    if root is not None and (has_symlink_component(root, path) or path.is_symlink()):
+        raise ValueError(f"workspace file contains a symbolic link: {path.name}")
     try:
         value = read_json(path)
     except (OSError, ValueError) as exc:
@@ -1059,8 +1154,12 @@ def _read_object(path: Path) -> dict[str, Any]:
     return value
 
 
-def _read_optional_object(path: Path) -> dict[str, Any]:
-    if not path.is_file() or path.is_symlink():
+def _read_optional_object(path: Path, *, root: Path | None = None) -> dict[str, Any]:
+    if (
+        (root is not None and has_symlink_component(root, path))
+        or not path.is_file()
+        or path.is_symlink()
+    ):
         return {}
     try:
         value = read_json(path)

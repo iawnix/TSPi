@@ -7,21 +7,28 @@ from pathlib import Path
 from typing import Sequence
 
 from ts_agent.io import now_iso, read_json, write_json
+from ts_agent.workspace.path_safety import lexical_path, path_has_symlink
 
 
 def ensure_state_dir(state_dir: str | Path, *, source_root: str | Path | None = None) -> Path:
-    state = Path(state_dir).resolve()
+    state = lexical_path(state_dir)
+    _require_physical(state, "web state_dir", directory=True)
     if source_root is not None:
-        _reject_state_inside_source(state, Path(source_root).resolve())
+        _reject_state_inside_source(state, lexical_path(source_root))
     state.mkdir(parents=True, exist_ok=True)
+    _require_physical(state, "web state_dir", directory=True)
     return state
 
 
 def register_workspace(source_root: str | Path, state_dir: str | Path, label: str | None = None) -> dict[str, str]:
-    source = Path(source_root).resolve()
+    source = lexical_path(source_root)
+    # A missing source is retained as an unavailable registry row so callers
+    # can register a workspace before it is mounted.  If it already exists,
+    # however, it must be a physical directory and never a link.
+    _require_physical(source, "workspace source_root", directory=True)
     state = ensure_state_dir(state_dir, source_root=source)
     registry_path = state / "workspaces.json"
-    registry = read_json(registry_path) if registry_path.exists() else {"workspaces": []}
+    registry = _read_registry(registry_path)
     row = _new_workspace_row(source, label)
     rows = registry.setdefault("workspaces", [])
     if not isinstance(rows, list):
@@ -41,14 +48,17 @@ def register_workspaces(
     labels = labels or []
     if len(labels) > len(source_roots):
         raise ValueError("more labels than source roots")
-    state = Path(state_dir).resolve()
-    sources = [Path(source).resolve() for source in source_roots]
+    state = lexical_path(state_dir)
+    _require_physical(state, "web state_dir", directory=True)
+    sources = [lexical_path(source) for source in source_roots]
+    for source in sources:
+        _require_physical(source, "workspace source_root", directory=True)
     for source in sources:
         _reject_state_inside_source(state, source)
 
     state.mkdir(parents=True, exist_ok=True)
     registry_path = state / "workspaces.json"
-    registry = read_json(registry_path) if registry_path.exists() else {"workspaces": []}
+    registry = _read_registry(registry_path)
     rows = registry.setdefault("workspaces", [])
     if not isinstance(rows, list):
         rows = []
@@ -67,7 +77,7 @@ def register_workspaces(
 def list_workspaces(state_dir: str | Path) -> list[dict[str, str]]:
     state = ensure_state_dir(state_dir)
     registry_path = state / "workspaces.json"
-    registry = read_json(registry_path) if registry_path.exists() else {"workspaces": []}
+    registry = _read_registry(registry_path)
     rows = registry.get("workspaces", [])
     if not isinstance(rows, list):
         return []
@@ -82,9 +92,10 @@ def workspace_discovery_roots(
 
     if configured_roots is not None:
         return _unique_paths(configured_roots)
-    state = Path(state_dir).resolve()
+    state = lexical_path(state_dir)
+    _require_physical(state, "web state_dir", directory=True)
     if state.name == "ts-web" and state.parent.name == ".pi":
-        return [state.parent.parent / "workspaces"]
+        return [lexical_path(state.parent.parent / "workspaces")]
     return []
 
 
@@ -94,14 +105,15 @@ def reconcile_workspace_registry(
 ) -> list[dict[str, str]]:
     """Discover workspaces and remove stale rows from reachable managed roots."""
 
-    state = Path(state_dir).resolve()
+    state = lexical_path(state_dir)
+    _require_physical(state, "web state_dir", directory=True)
     roots = _unique_paths(workspace_roots)
     for root in roots:
         _reject_state_inside_source(state, root)
     state.mkdir(parents=True, exist_ok=True)
 
     registry_path = state / "workspaces.json"
-    registry = read_json(registry_path) if registry_path.exists() else {"workspaces": []}
+    registry = _read_registry(registry_path)
     raw_rows = registry.get("workspaces", []) if isinstance(registry, dict) else []
     rows = [row for row in raw_rows if _valid_workspace_row(row)] if isinstance(raw_rows, list) else []
 
@@ -118,8 +130,8 @@ def reconcile_workspace_registry(
         for child in children:
             if child.is_symlink() or not child.is_dir():
                 continue
-            source = child.resolve()
-            if source.parent != root or not _is_supported_workspace(source):
+            source = child
+            if source.parent != root or path_has_symlink(source) or not _is_supported_workspace(source):
                 continue
             discovered.append(source)
 
@@ -152,11 +164,13 @@ def find_workspace(state_dir: str | Path, workspace_id: str) -> dict[str, str] |
 
 
 def workspace_id_for(source_root: str | Path) -> str:
-    source = str(Path(source_root).resolve()).encode("utf-8")
+    source = str(lexical_path(source_root)).encode("utf-8")
     return "ws_" + hashlib.sha256(source).hexdigest()[:12]
 
 
 def _reject_state_inside_source(state: Path, source: Path) -> None:
+    state = lexical_path(state)
+    source = lexical_path(source)
     if state == source or source in state.parents:
         raise ValueError("web state_dir must not be inside the source workspace")
 
@@ -175,7 +189,7 @@ def _valid_workspace_row(row: object) -> bool:
         return False
     workspace_id = row.get("workspace_id") or row.get("id")
     source_root = row.get("source_root") or row.get("source")
-    return bool(workspace_id and source_root)
+    return isinstance(workspace_id, str) and isinstance(source_root, str) and bool(workspace_id and source_root)
 
 
 def _same_workspace_row(existing: dict[str, str], new: dict[str, str]) -> bool:
@@ -190,19 +204,27 @@ def _same_workspace_row(existing: dict[str, str], new: dict[str, str]) -> bool:
 def _unique_paths(paths: Sequence[str | Path]) -> list[Path]:
     unique: list[Path] = []
     for value in paths:
-        path = Path(value).resolve()
+        path = lexical_path(value)
+        _require_physical(path, "workspace discovery root", directory=True)
         if path not in unique:
             unique.append(path)
     return unique
 
 
 def _row_source(row: dict[str, str]) -> Path:
-    return Path(row.get("source_root") or row.get("source") or "").resolve()
+    return lexical_path(row.get("source_root") or row.get("source") or "")
 
 
 def _registered_workspace_exists(source: Path) -> bool:
     identity = source / "workspace.json"
-    return source.is_dir() and not source.is_symlink() and identity.is_file() and not identity.is_symlink()
+    return (
+        not path_has_symlink(source)
+        and source.is_dir()
+        and not source.is_symlink()
+        and not path_has_symlink(identity)
+        and identity.is_file()
+        and not identity.is_symlink()
+    )
 
 
 def _is_supported_workspace(source: Path) -> bool:
@@ -217,3 +239,28 @@ def _is_supported_workspace(source: Path) -> bool:
         and identity.get("schema_version") == "ts-workspace/6"
         and identity.get("kernel_protocol") == "ts-research-kernel/6"
     )
+
+
+def _require_physical(path: Path, label: str, *, directory: bool = False) -> None:
+    """Reject a managed root before any operation can follow it."""
+
+    if path_has_symlink(path):
+        raise ValueError(f"{label} cannot contain a symbolic link: {path}")
+    if directory and path.exists() and not path.is_dir():
+        raise ValueError(f"{label} must be a directory: {path}")
+
+
+def _read_registry(path: Path) -> dict[str, object]:
+    if path_has_symlink(path):
+        raise ValueError(f"web registry cannot contain a symbolic link: {path}")
+    if not path.exists():
+        return {"workspaces": []}
+    if not path.is_file() or path.is_symlink():
+        raise ValueError(f"web registry must be a regular file: {path}")
+    try:
+        value = read_json(path)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"cannot read web registry: {path}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise ValueError(f"web registry must contain an object: {path}")
+    return value

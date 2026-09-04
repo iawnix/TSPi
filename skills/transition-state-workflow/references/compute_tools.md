@@ -82,6 +82,12 @@ child then calls prepare and, only after known prepare success, submit. Submit
 is single-use. An unknown effect ends the lifecycle with reconciliation
 required.
 
+Keep the owning ResearchNode open until the Attempt reaches `parsed`, `failed`,
+or `stopped` and Root has recorded any needed scientific interpretation.
+`completed` only says the scheduler/program ended; collection and parsing are
+still pending. `collected` still requires parsing. A created or prepared intent
+has made no external change and does not by itself prevent abandoning the Node.
+
 The public launch path requires a configured `remote` execution target. A
 `local` target is available only to the deterministic kernel for `dry_run=true`
 preparation and parsing of an output that already exists; it never starts a
@@ -125,6 +131,12 @@ Parse runs only after collection completes. Collection verifies the immutable
 remote manifest and does not depend on Torque history. Parser facts are
 operational output. Root must verify the primary artifacts before recording
 individual semantic Observations through a Decision.
+
+For a Node that was closed prematurely by an older runtime, continue inspect and
+finalize with the original `nodeId` and `intentId`. Never move or duplicate the
+Attempt. Use an open dependent recovery Node to record directly verified
+Observations with the original artifacts and digests; the parser-candidate
+shortcut intentionally remains restricted to its owning Node.
 
 ## Cancel
 

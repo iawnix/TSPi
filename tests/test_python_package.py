@@ -32,6 +32,7 @@ def test_python_payload_digest_covers_code_and_runtime_data() -> None:
     expected_paths = {
         "python/ts_agent/__init__.py",
         "python/ts_agent/compute/contracts/calculation_request.schema.json",
+        "python/ts_agent/path_safety.py",
         "python/ts_agent/validation/templates/builtin/classical-ts__1.json",
         "python/ts_agent/web/static/app.js",
         "python/ts_agent/web/static/attempt-timeline.js",
@@ -41,9 +42,14 @@ def test_python_payload_digest_covers_code_and_runtime_data() -> None:
         "python/ts_agent/workspace/candidates.py",
         "python/ts_agent/workspace/claims.py",
         "python/ts_agent/workspace/contracts/change_request.schema.json",
+        "python/ts_agent/workspace/contracts/attempt_intent_projection.schema.json",
+        "python/ts_agent/workspace/contracts/attempt_result_projection.schema.json",
         "python/ts_agent/workspace/contracts/observation_candidates.schema.json",
         "python/ts_agent/workspace/contracts/proof_spec.schema.json",
         "python/ts_agent/workspace/contracts/workspace.schema.json",
+        "python/ts_agent/workspace/operational.py",
+        "python/ts_agent/workspace/operation_registry.py",
+        "python/ts_agent/workspace/path_safety.py",
     }
 
     assert all((ROOT / path).is_file() for path in expected_paths)

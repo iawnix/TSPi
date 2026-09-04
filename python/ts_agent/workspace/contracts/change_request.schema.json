@@ -22,21 +22,10 @@
         "required": ["op"],
         "properties": {
           "op": {
-            "enum": [
-              "create_phase",
-              "create_claim",
-              "relate_claims",
-              "start_node",
-              "record_observation",
-              "record_finding",
-              "freeze_proof_spec",
-              "evaluate_proof",
-              "accept_claim",
-              "update_claim",
-              "complete_node",
-              "resolve_finding",
-              "set_focus"
-            ]
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9_]*$"
           }
         },
         "additionalProperties": true

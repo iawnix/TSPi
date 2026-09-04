@@ -29,9 +29,10 @@ Completed in this branch:
 - Python kernel wheel packaging and release/package checks.
 
 Validation already performed from the authored checkout includes the complete
-Python suite (`475 passed`), TypeScript typecheck, package completeness check,
-Python bytecode compilation, and `git diff --check`. These checks validate the
-current source snapshot; they do not publish or install a release.
+Python suite (`546 passed` in the latest managed source run), TypeScript
+typecheck, package completeness check, Python bytecode compilation, and
+`git diff --check`. These checks validate the current source snapshot; they do
+not publish or install a release.
 
 The authored redesign is now internally consistent. The remaining delivery
 step is to run the clean component/package build and runtime/Phone integration

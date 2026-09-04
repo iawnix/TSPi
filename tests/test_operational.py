@@ -3,6 +3,11 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from tests.workspace_helpers import (
+    calculation_intent_fixture,
+    calculation_prepared_fixture,
+    calculation_result_fixture,
+)
 from ts_agent.workspace.operational import node_completion_blockers, operational_snapshot
 
 
@@ -105,6 +110,9 @@ def test_operational_snapshot_separates_activities_reviews_and_controls(tmp_path
         "ambiguous_submission_count": 1,
         "ambiguous_cancellation_count": 0,
         "control_retryable_count": 0,
+        "calculation_attempt_count": 0,
+        "calculation_attempt_blocking_count": 0,
+        "calculation_attempt_integrity_error_count": 0,
     }
 
 
@@ -239,3 +247,472 @@ def test_incomplete_retry_receipt_fails_closed_as_unresolved(tmp_path: Path) -> 
     assert snapshot["retryable_controls"] == []
     assert snapshot["unresolved_controls"][0]["intent_id"] == "calc_1"
     assert snapshot["unresolved_controls"][0]["classification"] == "unresolved"
+
+
+def test_nonterminal_calculation_attempt_blocks_node_completion(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    _write(root / "research_nodes.json", {
+        "schema_version": "ts-research-node-registry/2",
+        "nodes": [{"node_id": "node_1"}],
+    })
+    attempt = root / "nodes" / "node_1" / "attempts" / "calc_1"
+    intent = calculation_intent_fixture("node_1", "calc_1")
+    _write(attempt / "intent.json", intent)
+    _write(attempt / "prepared.json", calculation_prepared_fixture(intent))
+    _write(
+        attempt / "status.json",
+        calculation_result_fixture(
+            intent,
+            state="queued",
+            program_status="not_run",
+            job_id="208319.cluster.hpc",
+        ),
+    )
+
+    snapshot = operational_snapshot(root)
+
+    assert snapshot["calculation_attempts"] == [{
+        "node_id": "node_1",
+        "intent_id": "calc_1",
+        "path": "nodes/node_1/attempts/calc_1",
+        "state": "queued",
+        "program_status": "not_run",
+        "job_id": "208319.cluster.hpc",
+        "terminal": False,
+        "blocks_completion": True,
+        "integrity_error": None,
+    }]
+    assert node_completion_blockers(snapshot, node_id="node_1", outcome="inconclusive") == [{
+        "code": "calculation_attempt_not_terminal",
+        "ref": "nodes/node_1/attempts/calc_1",
+        "message": "calculation Attempt is still queued: nodes/node_1/attempts/calc_1",
+    }]
+
+
+def test_parsed_calculation_attempt_releases_node_completion_guard(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    _write(root / "research_nodes.json", {
+        "schema_version": "ts-research-node-registry/2",
+        "nodes": [{"node_id": "node_1"}],
+    })
+    attempt = root / "nodes" / "node_1" / "attempts" / "calc_1"
+    intent = calculation_intent_fixture("node_1", "calc_1")
+    _write(attempt / "intent.json", intent)
+    _write(attempt / "prepared.json", calculation_prepared_fixture(intent))
+    _write(
+        attempt / "outputs" / "calculation_result.json",
+        calculation_result_fixture(
+            intent,
+            state="parsed",
+            program_status="completed",
+            job_id="208319.cluster.hpc",
+        ),
+    )
+
+    snapshot = operational_snapshot(root)
+
+    assert snapshot["calculation_attempts"][0]["terminal"] is True
+    assert snapshot["calculation_attempts"][0]["blocks_completion"] is False
+    assert node_completion_blockers(snapshot, node_id="node_1", outcome="completed") == []
+
+
+def test_executed_calculation_attempt_without_prepared_binding_fails_closed(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    _write(root / "research_nodes.json", {
+        "schema_version": "ts-research-node-registry/2",
+        "nodes": [{"node_id": "node_1"}],
+    })
+    attempt = root / "nodes" / "node_1" / "attempts" / "calc_1"
+    intent = calculation_intent_fixture("node_1", "calc_1")
+    _write(attempt / "intent.json", intent)
+    _write(
+        attempt / "outputs" / "calculation_result.json",
+        calculation_result_fixture(
+            intent,
+            state="parsed",
+            program_status="completed",
+            job_id="208319.cluster.hpc",
+        ),
+    )
+
+    snapshot = operational_snapshot(root)
+
+    row = snapshot["calculation_attempts"][0]
+    assert row["terminal"] is False
+    assert row["blocks_completion"] is True
+    assert row["integrity_error"] == "prepared.json is missing for an executed Attempt"
+    assert node_completion_blockers(snapshot, node_id="node_1", outcome="completed")[0] == {
+        "code": "calculation_attempt_invalid",
+        "ref": "nodes/node_1/attempts/calc_1",
+        "message": "calculation Attempt status is invalid: nodes/node_1/attempts/calc_1",
+    }
+
+
+def test_prepared_attempt_without_external_effect_does_not_block_completion(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    _write(root / "research_nodes.json", {
+        "schema_version": "ts-research-node-registry/2",
+        "nodes": [{"node_id": "node_1"}],
+    })
+    attempt = root / "nodes" / "node_1" / "attempts" / "calc_1"
+    _write(attempt / "intent.json", calculation_intent_fixture("node_1", "calc_1"))
+
+    snapshot = operational_snapshot(root)
+
+    assert snapshot["calculation_attempts"][0]["state"] == "prepared"
+    assert snapshot["calculation_attempts"][0]["terminal"] is False
+    assert snapshot["calculation_attempts"][0]["blocks_completion"] is False
+    assert node_completion_blockers(snapshot, node_id="node_1", outcome="inconclusive") == []
+
+
+def test_empty_calculation_attempt_directory_is_visible_and_blocks_completion(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    _write(root / "research_nodes.json", {
+        "schema_version": "ts-research-node-registry/2",
+        "nodes": [{"node_id": "node_1"}],
+    })
+    (root / "nodes" / "node_1" / "attempts" / "calc_1").mkdir(parents=True)
+
+    snapshot = operational_snapshot(root)
+
+    assert snapshot["calculation_attempts"] == [{
+        "node_id": "node_1",
+        "intent_id": "calc_1",
+        "path": "nodes/node_1/attempts/calc_1",
+        "state": "unknown",
+        "program_status": "not_run",
+        "job_id": None,
+        "terminal": False,
+        "blocks_completion": True,
+        "integrity_error": "intent.json is missing",
+    }]
+    assert node_completion_blockers(
+        snapshot,
+        node_id="node_1",
+        outcome="inconclusive",
+    )[0]["code"] == "calculation_attempt_invalid"
+
+
+def test_calculation_attempt_intent_uses_authoritative_compute_contract(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    _write(root / "research_nodes.json", {
+        "schema_version": "ts-research-node-registry/2",
+        "nodes": [{"node_id": "node_1"}],
+    })
+    attempt = root / "nodes" / "node_1" / "attempts" / "calc_1"
+    intent = calculation_intent_fixture("node_1", "calc_1")
+    intent["retired_field"] = "must be rejected"
+    _write(attempt / "intent.json", intent)
+
+    snapshot = operational_snapshot(root)
+
+    row = snapshot["calculation_attempts"][0]
+    assert row["blocks_completion"] is True
+    assert "calculation_intent.schema.json validation failed" in row["integrity_error"]
+
+
+def test_malformed_calculation_attempt_status_fails_closed(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    _write(root / "research_nodes.json", {
+        "schema_version": "ts-research-node-registry/2",
+        "nodes": [{"node_id": "node_1"}],
+    })
+    attempt = root / "nodes" / "node_1" / "attempts" / "calc_1"
+    _write(attempt / "intent.json", calculation_intent_fixture("node_1", "calc_1"))
+    (attempt / "status.json").parent.mkdir(parents=True, exist_ok=True)
+    (attempt / "status.json").write_text("not-json", encoding="utf-8")
+
+    snapshot = operational_snapshot(root)
+
+    row = snapshot["calculation_attempts"][0]
+    assert row["terminal"] is False
+    assert row["integrity_error"]
+    assert node_completion_blockers(snapshot, node_id="node_1", outcome="inconclusive")[0]["code"] == "calculation_attempt_invalid"
+
+
+def test_incomplete_terminal_result_cannot_release_completion_guard(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    _write(root / "research_nodes.json", {
+        "schema_version": "ts-research-node-registry/2",
+        "nodes": [{"node_id": "node_1"}],
+    })
+    attempt = root / "nodes" / "node_1" / "attempts" / "calc_1"
+    _write(attempt / "intent.json", calculation_intent_fixture("node_1", "calc_1"))
+    _write(attempt / "outputs" / "calculation_result.json", {
+        "schema_version": "ts-calculation-result/2",
+        "intent_id": "calc_1",
+        "node_id": "node_1",
+        "state": "parsed",
+        "program_status": "completed",
+    })
+
+    snapshot = operational_snapshot(root)
+
+    row = snapshot["calculation_attempts"][0]
+    assert row["state"] == "parsed"
+    assert row["terminal"] is False
+    assert row["blocks_completion"] is True
+    assert "attempt_result_projection.schema.json validation failed" in row["integrity_error"]
+
+
+def test_invalid_prepared_binding_blocks_node_completion(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    _write(root / "research_nodes.json", {
+        "schema_version": "ts-research-node-registry/2",
+        "nodes": [{"node_id": "node_1"}],
+    })
+    attempt = root / "nodes" / "node_1" / "attempts" / "calc_1"
+    _write(attempt / "intent.json", calculation_intent_fixture("node_1", "calc_1"))
+    _write(attempt / "prepared.json", {
+        "schema_version": "ts-compute-prepared/1",
+        "intent_id": "calc_1",
+        "node_id": "node_1",
+        "intent_ref": "nodes/node_1/attempts/calc_1/intent.json",
+        "intent_digest": "sha256:" + "0" * 64,
+        "prepared_task": {},
+        "execution_policy": {"kind": "local"},
+    })
+
+    snapshot = operational_snapshot(root)
+
+    assert "intent_digest does not match" in snapshot["calculation_attempts"][0]["integrity_error"]
+    assert node_completion_blockers(
+        snapshot,
+        node_id="node_1",
+        outcome="inconclusive",
+    )[0]["code"] == "calculation_attempt_invalid"
+
+
+def test_symlinked_attempt_directory_fails_closed(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    _write(root / "research_nodes.json", {
+        "schema_version": "ts-research-node-registry/2",
+        "nodes": [{"node_id": "node_1"}],
+    })
+    target = tmp_path / "outside-attempt"
+    _write(target / "intent.json", calculation_intent_fixture("node_1", "calc_1"))
+    attempt = root / "nodes" / "node_1" / "attempts" / "calc_1"
+    attempt.parent.mkdir(parents=True, exist_ok=True)
+    attempt.symlink_to(target, target_is_directory=True)
+
+    snapshot = operational_snapshot(root)
+
+    assert snapshot["calculation_attempts"][0]["integrity_error"] == (
+        "Attempt path must be a physical directory"
+    )
+    assert snapshot["operational_summary"]["calculation_attempt_integrity_error_count"] == 1
+
+
+def test_symlinked_attempt_parent_fails_closed(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    _write(root / "research_nodes.json", {
+        "schema_version": "ts-research-node-registry/2",
+        "nodes": [{"node_id": "node_1"}],
+    })
+    outside_attempts = tmp_path / "outside-attempts"
+    intent = calculation_intent_fixture("node_1", "calc_1")
+    _write(outside_attempts / "calc_1" / "intent.json", intent)
+    attempts = root / "nodes" / "node_1" / "attempts"
+    attempts.parent.mkdir(parents=True, exist_ok=True)
+    attempts.symlink_to(outside_attempts, target_is_directory=True)
+
+    snapshot = operational_snapshot(root)
+
+    assert snapshot["calculation_attempts"][0]["integrity_error"] == (
+        "Attempt parent path contains a symbolic-link component"
+    )
+    # The parent diagnostic is not a synthetic calc entity in the public
+    # Attempt count, but it remains visible through the dedicated stream.
+    assert snapshot["calculation_attempts"][0]["intent_id"] is None
+    assert snapshot["operational_summary"]["calculation_attempt_count"] == 0
+    assert snapshot["calculation_attempt_integrity_findings"] == [{
+        "code": "calculation_attempt_integrity",
+        "scope": "attempt_parent",
+        "path": "nodes/node_1/attempts",
+        "node_refs": ["node_1"],
+        "message": "Attempt parent path contains a symbolic-link component",
+    }]
+    assert node_completion_blockers(
+        snapshot,
+        node_id="node_1",
+        outcome="inconclusive",
+    )[0]["code"] == "calculation_attempt_invalid"
+
+
+def test_symlinked_attempt_output_is_not_read_as_workspace_state(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    _write(root / "research_nodes.json", {
+        "schema_version": "ts-research-node-registry/2",
+        "nodes": [{"node_id": "node_1"}],
+    })
+    attempt = root / "nodes" / "node_1" / "attempts" / "calc_1"
+    intent = calculation_intent_fixture("node_1", "calc_1")
+    _write(attempt / "intent.json", intent)
+    _write(attempt / "prepared.json", calculation_prepared_fixture(intent))
+    outside_outputs = tmp_path / "outside-outputs"
+    _write(
+        outside_outputs / "calculation_result.json",
+        calculation_result_fixture(
+            intent,
+            state="parsed",
+            program_status="completed",
+            job_id="outside.job",
+        ),
+    )
+    (attempt / "outputs").symlink_to(outside_outputs, target_is_directory=True)
+
+    snapshot = operational_snapshot(root)
+
+    row = snapshot["calculation_attempts"][0]
+    assert row["state"] == "unknown"
+    assert row["blocks_completion"] is True
+    assert row["integrity_error"] == "symbolic link is not allowed"
+
+
+def test_agent_run_index_does_not_read_run_through_symlinked_attempt_parent(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    _write(root / "research_nodes.json", {
+        "schema_version": "ts-research-node-registry/2",
+        "nodes": [{"node_id": "node_1"}],
+    })
+    outside = tmp_path / "outside-attempts" / "calc_1" / "runs" / "sub_1"
+    _write(
+        outside / "task.json",
+        {
+            "task_id": "sub_1",
+            "role": "compute",
+            "authority": "operational",
+            "scope": {"node_refs": ["node_1"], "claim_refs": []},
+            "inputs": {"intent_id": "calc_1"},
+        },
+    )
+    attempts = root / "nodes" / "node_1" / "attempts"
+    attempts.parent.mkdir(parents=True, exist_ok=True)
+    attempts.symlink_to(tmp_path / "outside-attempts", target_is_directory=True)
+
+    snapshot = operational_snapshot(root)
+
+    assert snapshot["agent_runs"] == []
+    assert snapshot["calculation_attempts"][0]["intent_id"] is None
+    assert snapshot["calculation_attempt_integrity_findings"][0]["scope"] == "attempt_parent"
+
+
+def test_agent_run_index_reports_symlinked_review_runs_parent(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    _write(root / "research_nodes.json", {
+        "schema_version": "ts-research-node-registry/2",
+        "nodes": [{"node_id": "node_1"}],
+    })
+    outside = tmp_path / "outside-review-runs"
+    _write(
+        outside / "sub_1" / "task.json",
+        {
+            "task_id": "sub_1",
+            "role": "review",
+            "authority": "advisory",
+            "scope": {"node_refs": ["node_1"], "claim_refs": ["claim_1"]},
+        },
+    )
+    runs = root / "reviews" / "claim_1" / "runs"
+    runs.parent.mkdir(parents=True, exist_ok=True)
+    runs.symlink_to(outside, target_is_directory=True)
+
+    snapshot = operational_snapshot(root)
+
+    assert snapshot["agent_runs"] == []
+    assert {
+        finding["path"] for finding in snapshot["operational_integrity_findings"]
+    } >= {"reviews/claim_1/runs"}
+
+
+def test_unresolved_control_suppresses_duplicate_attempt_state_blocker(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    _write(root / "research_nodes.json", {
+        "schema_version": "ts-research-node-registry/2",
+        "nodes": [{"node_id": "node_1"}],
+    })
+    attempt = root / "nodes" / "node_1" / "attempts" / "calc_1"
+    intent = calculation_intent_fixture("node_1", "calc_1")
+    _write(attempt / "intent.json", intent)
+    _write(attempt / "prepared.json", calculation_prepared_fixture(intent))
+    _write(
+        attempt / "status.json",
+        calculation_result_fixture(
+            intent,
+            state="unknown",
+            program_status="not_run",
+        ),
+    )
+    _write(attempt / "submit_guard.json", {"operation": "submit"})
+    _write(attempt / "submit_result.json", {
+        "state": "unknown",
+        "error_class": "submission_ambiguous",
+        "job_id": None,
+        "control": {
+            "effect_outcome": "unknown",
+            "effect_attempted": True,
+            "retry_disposition": "reconcile_only",
+            "reconciliation_required": True,
+        },
+    })
+
+    blockers = node_completion_blockers(
+        operational_snapshot(root),
+        node_id="node_1",
+        outcome="blocked",
+    )
+
+    assert [item["code"] for item in blockers] == ["unresolved_compute_control"]
+
+
+def test_symlinked_control_result_is_visible_and_blocks_node_completion(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    _write(root / "research_nodes.json", {
+        "schema_version": "ts-research-node-registry/2",
+        "nodes": [{"node_id": "node_1"}],
+    })
+    attempt = root / "nodes" / "node_1" / "attempts" / "calc_1"
+    intent = calculation_intent_fixture("node_1", "calc_1")
+    _write(attempt / "intent.json", intent)
+    _write(attempt / "prepared.json", calculation_prepared_fixture(intent))
+    outside = tmp_path / "outside-result.json"
+    outside.write_text(json.dumps({"state": "submitted"}), encoding="utf-8")
+    (attempt / "submit_result.json").symlink_to(outside)
+
+    snapshot = operational_snapshot(root)
+
+    assert snapshot["unresolved_controls"] == []
+    assert snapshot["operational_integrity_findings"] == [{
+        "code": "operational_path_integrity",
+        "path": "nodes/node_1/attempts/calc_1/submit_result.json",
+        "node_refs": ["node_1"],
+        "message": "operational path contains a symbolic-link component",
+    }]
+    assert node_completion_blockers(
+        snapshot,
+        node_id="node_1",
+        outcome="completed",
+    )[0]["code"] == "operational_integrity_error"
+
+
+def test_malformed_control_result_is_not_treated_as_absent(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    _write(root / "research_nodes.json", {
+        "schema_version": "ts-research-node-registry/2",
+        "nodes": [{"node_id": "node_1"}],
+    })
+    result = root / "nodes" / "node_1" / "attempts" / "calc_1" / "submit_result.json"
+    result.parent.mkdir(parents=True, exist_ok=True)
+    result.write_text("not-json", encoding="utf-8")
+
+    snapshot = operational_snapshot(root)
+
+    assert snapshot["unresolved_controls"] == []
+    assert snapshot["operational_integrity_findings"][0]["path"] == (
+        "nodes/node_1/attempts/calc_1/submit_result.json"
+    )
+    assert node_completion_blockers(
+        snapshot,
+        node_id="node_1",
+        outcome="inconclusive",
+    )[0]["code"] == "operational_integrity_error"

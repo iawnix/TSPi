@@ -5,6 +5,7 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
+from ts_agent.io import sha256_json
 from ts_agent.workspace import change_workspace, init_workspace
 from ts_agent.workspace.context import build_review_snapshot
 from tests.kernel_helpers import complete_request
@@ -12,6 +13,8 @@ from tests.kernel_helpers import complete_request
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 REVIEW_BUNDLE_PROBE = REPO_ROOT / "tests" / "review_bundle_probe.cjs"
+_DIGEST_A = "sha256:" + "a" * 64
+_DIGEST_B = "sha256:" + "b" * 64
 
 
 def apply_change(root: Path, request: dict[str, Any]) -> dict[str, Any]:
@@ -21,6 +24,90 @@ def apply_change(root: Path, request: dict[str, Any]) -> dict[str, Any]:
 def bootstrap_workspace_fixture(root: Path) -> Path:
     init_workspace(root)
     return root
+
+
+def calculation_intent_fixture(node_id: str, intent_id: str) -> dict[str, Any]:
+    """Return one schema-valid local Attempt intent for lifecycle tests."""
+
+    return {
+        "schema_version": "ts-calculation-intent/7",
+        "intent_id": intent_id,
+        "node_id": node_id,
+        "node_contract_digest": _DIGEST_A,
+        "scientific_intent_digest": _DIGEST_B,
+        "purpose": "Exercise one bounded calculation Attempt lifecycle.",
+        "attempt_kind": "primary",
+        "lineage": None,
+        "capability": "gaussian.opt_freq",
+        "capability_version": "1",
+        "capability_descriptor_digest": _DIGEST_A,
+        "expected_output_roles": ["program_log"],
+        "backend": "gaussian",
+        "task_type": "opt_freq",
+        "input_refs": {"gjf": "inputs/candidate.gjf"},
+        "input_bindings": [{
+            "input_role": "gjf",
+            "artifact_id": "art_" + "a" * 24,
+            "path": "inputs/candidate.gjf",
+            "sha256": _DIGEST_B,
+            "owner_node": node_id,
+            "source_intent_id": None,
+        }],
+        "parameters": {},
+        "expected_artifacts": [
+            f"nodes/{node_id}/attempts/{intent_id}/outputs/gaussian.out",
+        ],
+        "execution_target": {"kind": "local"},
+        "dry_run": True,
+    }
+
+
+def calculation_result_fixture(
+    intent: dict[str, Any],
+    *,
+    state: str,
+    program_status: str,
+    job_id: str | None = None,
+) -> dict[str, Any]:
+    """Return one schema-valid result bound to ``calculation_intent_fixture``."""
+
+    return {
+        "schema_version": "ts-calculation-result/2",
+        "job_id": job_id,
+        "intent_id": intent["intent_id"],
+        "node_id": intent["node_id"],
+        "capability": intent["capability"],
+        "capability_version": intent["capability_version"],
+        "expected_output_roles": list(intent["expected_output_roles"]),
+        "state": state,
+        "program_status": program_status,
+        "exit_status": None,
+        "artifact_refs": [],
+        "parser_facts": {},
+        "error_class": None,
+        "provenance": {
+            "intent_digest": sha256_json(intent),
+            "capability": intent["capability"],
+            "capability_version": intent["capability_version"],
+            "capability_descriptor_digest": intent["capability_descriptor_digest"],
+        },
+    }
+
+
+def calculation_prepared_fixture(intent: dict[str, Any]) -> dict[str, Any]:
+    """Return the smallest valid preparation binding for lifecycle fixtures."""
+
+    return {
+        "schema_version": "ts-compute-prepared/1",
+        "intent_id": intent["intent_id"],
+        "node_id": intent["node_id"],
+        "intent_ref": (
+            f"nodes/{intent['node_id']}/attempts/{intent['intent_id']}/intent.json"
+        ),
+        "intent_digest": sha256_json(intent),
+        "prepared_task": {},
+        "execution_policy": {"kind": "local"},
+    }
 
 
 def start_research_node(

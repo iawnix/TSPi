@@ -6,7 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from tests.workspace_helpers import accept_research_claim
+from tests.workspace_helpers import (
+    accept_research_claim,
+    calculation_prepared_fixture,
+    calculation_intent_fixture,
+    calculation_result_fixture,
+)
 from ts_agent.workspace.acceptance import project_acceptances
 from tests.kernel_helpers import compile_change as _kernel_compile_change
 from ts_agent.workspace.decision import validate_decision
@@ -61,7 +66,7 @@ def _acceptance_projection(root: Path) -> list[dict]:
     ("operation", "message"),
     [
         ({}, "'op' is a required property"),
-        ({"op": "not_a_kernel_operation"}, "is not one of"),
+        ({"op": "not_a_kernel_operation"}, "unsupported change operation"),
         (
             {"op": "set_focus", **{f"extra_{index}": index for index in range(24)}},
             "has too many properties",
@@ -271,6 +276,56 @@ def test_one_decision_may_close_a_node_and_open_its_successor(tmp_path: Path) ->
     assert nodes[first_id]["status"] == "completed"
     assert nodes[successor_id]["status"] == "open"
     assert nodes[successor_id]["dependency_refs"] == [first_id]
+
+
+def test_node_completion_rejects_a_queued_calculation_attempt(tmp_path: Path) -> None:
+    root = tmp_path / "workspace"
+    init_workspace(root)
+    started, _ = _apply(root, [{
+        "op": "start_node",
+        "local_ref": "node",
+        "title": "Wait for calculation",
+        "objective": "Keep the research episode open until its calculation settles.",
+        "deliverable": "A terminal calculation outcome.",
+    }])
+    node_id = started["allocated_refs"]["node"]
+    attempt = root / "nodes" / node_id / "attempts" / "calc_1"
+    intent = calculation_intent_fixture(node_id, "calc_1")
+    write_json(attempt / "intent.json", intent)
+    write_json(attempt / "prepared.json", calculation_prepared_fixture(intent))
+    write_json(
+        attempt / "status.json",
+        calculation_result_fixture(
+            intent,
+            state="queued",
+            program_status="not_run",
+            job_id="208319.cluster.hpc",
+        ),
+    )
+
+    with pytest.raises(ContractError, match="calculation Attempt is still queued"):
+        _apply(root, [{
+            "op": "complete_node",
+            "nodeRef": node_id,
+            "outcome": "inconclusive",
+            "summary": "The calculation has not reached a terminal state.",
+        }])
+
+    write_json(
+        attempt / "outputs" / "calculation_result.json",
+        calculation_result_fixture(
+            intent,
+            state="parsed",
+            program_status="completed",
+            job_id="208319.cluster.hpc",
+        ),
+    )
+    _apply(root, [{
+        "op": "complete_node",
+        "nodeRef": node_id,
+        "outcome": "completed",
+        "summary": "The parsed calculation is now terminal.",
+    }])
 
 
 def test_one_decision_may_start_and_complete_the_same_node(tmp_path: Path) -> None:

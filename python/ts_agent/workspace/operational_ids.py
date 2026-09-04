@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from .refs import ACTIVITY_ID, CALCULATION_ID, SUBAGENT_RUN_ID
+from .path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
 STATE_SCHEMA = "ts-operational-id-state/1"
@@ -79,10 +80,10 @@ def allocate_operational_id(root: str | Path, kind: str) -> dict[str, Any]:
 
 
 def _workspace_root(root: str | Path) -> Path:
-    candidate = Path(root).expanduser()
-    if candidate.is_symlink():
+    candidate = lexical_path(root)
+    if path_has_symlink(candidate):
         raise ValueError("workspace root must not be a symbolic link")
-    workspace = candidate.resolve(strict=True)
+    workspace = candidate
     if not workspace.is_dir() or not (workspace / "workspace.json").is_file():
         raise ValueError("operational IDs require an initialized TS workspace")
     return workspace
@@ -92,7 +93,7 @@ def _load_state(workspace: Path) -> dict[str, Any]:
     path = workspace / STATE_FILE
     if not path.exists():
         return {"schema_version": STATE_SCHEMA, "high_water": {}}
-    if path.is_symlink() or not path.is_file():
+    if has_symlink_component(workspace, path) or path.is_symlink() or not path.is_file():
         raise ValueError("operational ID state must be a regular file")
     value = json.loads(path.read_text(encoding="utf-8"))
     if not isinstance(value, dict) or set(value) != {"schema_version", "high_water"}:
@@ -113,7 +114,7 @@ def _observed_high_water(workspace: Path, kind: str) -> int:
     ordinals: list[int] = []
     for glob_pattern in _SCAN_PATTERNS[kind]:
         for path in workspace.glob(glob_pattern):
-            if path.is_symlink() or not path.is_dir():
+            if has_symlink_component(workspace, path) or path.is_symlink() or not path.is_dir():
                 continue
             if pattern.fullmatch(path.name):
                 ordinals.append(int(path.name.split("_", 1)[1]))
@@ -121,6 +122,8 @@ def _observed_high_water(workspace: Path, kind: str) -> int:
 
 
 def _write_state(path: Path, value: dict[str, Any]) -> None:
+    if path_has_symlink(path.parent) or path.is_symlink():
+        raise ValueError("operational ID state path cannot contain a symbolic link")
     descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", suffix=".tmp", dir=path.parent)
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as handle:

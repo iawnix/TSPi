@@ -18,6 +18,7 @@ from .context import build_review_snapshot, compile_context, proof_capabilities
 from .engine import change_workspace, init_workspace
 from .errors import ContractError, WorkspaceValidationError
 from .identity import ensure_workspace_identity, read_workspace_identity, workspace_id
+from .operational import calculation_attempt_index
 from .validator import validate_workspace
 
 __all__ = [
@@ -28,6 +29,7 @@ __all__ = [
     "WorkspaceBootstrapState",
     "WorkspaceValidationError",
     "change_workspace",
+    "calculation_attempt_index",
     "bootstrap_workspace",
     "build_observation_candidates",
     "build_review_snapshot",

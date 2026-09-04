@@ -12,6 +12,7 @@ from .engine import init_workspace
 from .identity import IDENTITY_REF, read_workspace_identity
 from .state import OPTIONAL_DIRS, REQUIRED_DIRS, REQUIRED_FILES, UNSUPPORTED_MARKERS, WORKSPACE_FILE
 from .validator import validate_workspace
+from .path_safety import lexical_path, path_has_symlink
 
 
 BOOTSTRAP_SCHEMA = "ts-workspace-bootstrap/4"
@@ -41,12 +42,12 @@ class WorkspaceBootstrapError(ValueError):
 
 
 def classify_workspace(root: str | Path) -> WorkspaceClassification:
-    requested = Path(root).expanduser()
-    if requested.is_symlink():
+    requested = lexical_path(root)
+    if path_has_symlink(requested):
         return WorkspaceClassification(requested.absolute(), WorkspaceBootstrapState.INVALID, ("workspace root is a symbolic link",))
     if requested.exists() and not requested.is_dir():
         return WorkspaceClassification(requested.absolute(), WorkspaceBootstrapState.INVALID, ("workspace root is not a directory",))
-    root_path = requested.resolve()
+    root_path = requested
     if not root_path.exists():
         return WorkspaceClassification(root_path, WorkspaceBootstrapState.FRESH)
 

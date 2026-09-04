@@ -81,8 +81,9 @@ are execution mirrors and never become canonical local refs.
 - Activity request/status bindings, IDs, physical ownership, `node_refs`, and
   terminal status/result combinations are consistent.
 - A ResearchNode cannot complete with a non-terminal owned Compute run,
-  running/pending activities, or pending/unresolved compute controls. Failed
-  activities require a non-success Node outcome.
+  running/pending activities, pending/unresolved compute controls, or an owned
+  calculation Attempt awaiting submission resolution, execution, collection,
+  or parsing. Failed activities require a non-success Node outcome.
 - Every Observation and Finding is indexed by its producing/referenced Nodes.
 - Observation datatype matches its value and artifact digests match files.
 - Every ProofSpec is content- and registry-digest bound.

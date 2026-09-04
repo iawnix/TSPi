@@ -137,6 +137,18 @@ reasoning and focused documentation, not a Kernel enum.
   Kernel allocates all `dec_`, `claim_`, `rel_`, `node_`, `obs_`, `fnd_`, `proof_`,
   `result_`, and `acc_` identifiers.
 - A draft binds the current frontier projection and workspace revision.
+- Public operation field lists have one owner in
+  `workspace/operation_registry.py`; update compiler behavior, the on-demand
+  `change_contract` projection, templates, and tests together.
+- Attempt lifecycle status is owned by `workspace/operational.py` and its
+  dependency-neutral binding checks in `calculation_contracts.py`; Web and
+  Research Files projections must consume that index rather than reading
+  `intent.json`/`status.json` independently.
+- `calculation_attempt_index()` requires a valid `prepared.json` binding for
+  every status, result, control, Compute-run, or output record. An unsafe
+  `attempts/` parent is emitted as a bounded `attempt_parent` integrity finding,
+  never as a fabricated `calc_*` row. Keep these diagnostics operational and
+  out of scientific context digests.
 - Dry-run validation applies the full Decision to an isolated post-state.
 - Apply repeats binding and post-state validation under the lock.
 - All canonical research record IDs are readable workspace-local monotonic
@@ -372,6 +384,11 @@ Do not document stronger durability than the implementation provides:
 
 Remote controls are authoritative for scheduler recovery. Activity or agent
 journal state cannot prove that a remote side effect did or did not happen.
+Node completion also reads the durable Attempt intent/status/result contract:
+remote `completed` is not settled until collection and parsing finish. Keep this
+lifecycle policy in the operational kernel and expose only its projection to
+clients; Web and extensions must not independently decide whether a Node may
+close.
 
 ## Documentation Ownership
 

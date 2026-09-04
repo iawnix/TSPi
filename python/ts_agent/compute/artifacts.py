@@ -24,9 +24,11 @@ from ts_agent.workspace.artifacts import (
     list_workspace_artifacts,
     sha256_file as workspace_sha256_file,
     workspace_node_ids,
+    workspace_node_records,
     workspace_root,
 )
 from ts_agent.workspace.refs import NODE_ID
+from ts_agent.workspace.path_safety import has_symlink_component
 from ts_agent.workspace.transactions import workspace_lock
 from ts_agent.structures.api import compare_structures
 from ts_agent.structures.seed import StructureSeedError, generate_smiles_seed
@@ -872,31 +874,37 @@ def _gaussian_cartesian_structure(
 
 def _node_inputs_directory(workspace: Path, node_id: str) -> Path:
     nodes_root = workspace / "nodes"
-    if not nodes_root.is_dir() or nodes_root.is_symlink():
+    if has_symlink_component(workspace, nodes_root) or not nodes_root.is_dir() or nodes_root.is_symlink():
         raise ComputeContractError("workspace nodes root must be a physical directory")
     node_root = nodes_root / node_id
+    if has_symlink_component(workspace, node_root):
+        raise ComputeContractError(f"ResearchNode artifact root is unsafe: {node_id}")
     if node_root.exists():
         if not node_root.is_dir() or node_root.is_symlink():
             raise ComputeContractError(f"ResearchNode artifact root is unsafe: {node_id}")
     else:
         node_root.mkdir(mode=0o700)
     inputs = node_root / "inputs"
+    if has_symlink_component(workspace, inputs):
+        raise ComputeContractError(f"ResearchNode input root is unsafe: {node_id}")
     if inputs.exists():
         if not inputs.is_dir() or inputs.is_symlink():
             raise ComputeContractError(f"ResearchNode input root is unsafe: {node_id}")
     else:
         inputs.mkdir(mode=0o700)
     expected = workspace / "nodes" / node_id / "inputs"
-    if inputs.resolve(strict=True) != expected.resolve(strict=True):
+    if inputs != expected:
         raise ComputeContractError(f"ResearchNode input root escapes the workspace: {node_id}")
     return inputs
 
 
 def _node_analysis_directory(workspace: Path, node_id: str) -> Path:
     nodes_root = workspace / "nodes"
-    if not nodes_root.is_dir() or nodes_root.is_symlink():
+    if has_symlink_component(workspace, nodes_root) or not nodes_root.is_dir() or nodes_root.is_symlink():
         raise ComputeContractError("workspace nodes root must be a physical directory")
     node_root = nodes_root / node_id
+    if has_symlink_component(workspace, node_root):
+        raise ComputeContractError(f"ResearchNode artifact root is unsafe: {node_id}")
     if node_root.exists():
         if not node_root.is_dir() or node_root.is_symlink():
             raise ComputeContractError(f"ResearchNode artifact root is unsafe: {node_id}")
@@ -904,6 +912,8 @@ def _node_analysis_directory(workspace: Path, node_id: str) -> Path:
         node_root.mkdir(mode=0o700)
     outputs = node_root / "outputs"
     analysis = outputs / "analysis"
+    if has_symlink_component(workspace, outputs) or has_symlink_component(workspace, analysis):
+        raise ComputeContractError(f"ResearchNode output root is unsafe: {node_id}")
     for path, label in ((outputs, "output"), (analysis, "analysis")):
         if path.exists():
             if not path.is_dir() or path.is_symlink():
@@ -911,7 +921,7 @@ def _node_analysis_directory(workspace: Path, node_id: str) -> Path:
         else:
             path.mkdir(mode=0o700)
     expected = workspace / "nodes" / node_id / "outputs" / "analysis"
-    if analysis.resolve(strict=True) != expected.resolve(strict=True):
+    if analysis != expected:
         raise ComputeContractError(f"ResearchNode analysis root escapes the workspace: {node_id}")
     return analysis
 
@@ -953,12 +963,11 @@ def _comparison_input_binding(artifact: dict[str, Any]) -> dict[str, Any]:
 
 
 def _node_record(workspace: Path, node_id: str) -> dict[str, Any]:
-    registry = read_json(workspace / "research_nodes.json")
-    matches = [
-        item
-        for item in registry.get("nodes", [])
-        if isinstance(item, dict) and item.get("node_id") == node_id
-    ]
+    try:
+        records = workspace_node_records(workspace)
+    except WorkspaceArtifactError as exc:
+        raise ComputeContractError(str(exc)) from exc
+    matches = [item for item in records if item.get("node_id") == node_id]
     if len(matches) != 1:
         raise ComputeContractError(f"unknown ResearchNode: {node_id}")
     return matches[0]

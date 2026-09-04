@@ -1,9 +1,26 @@
 # Decision Contract
 
+## Contents
+
+- [Creating Graph Records](#creating-graph-records)
+- [Recording Science](#recording-science)
+- [Validation And Acceptance](#validation-and-acceptance)
+- [Updating And Completing](#updating-and-completing)
+- [Atomic Change](#atomic-change)
+
 `ts_change` accepts one object with `rationale`, unique `basisRefs`, and an
 ordered non-empty `operations` array. The Kernel privately compiles a
 revision-bound `ts-research-decision/3`, validates the complete post-state, and
 returns allocated refs only after atomic commit.
+
+For exact fields, first query
+`ts_state mode=change_contract operation=<operation>`. This on-demand catalog is
+generated from the same registry used by the compiler, so the always-present
+tool schema can remain small without making callers guess operation fields.
+When an operation has variants, the catalog lists each variant's required and
+optional fields and its matching snippet. In particular, use the
+`record_observation_candidate.json` snippet for parser-owned candidates rather
+than copying parser output into the direct observation form.
 
 The change compiler allocates every technical ID. Decision IDs are
 workspace-local monotonic ordinals (`dec_1`, `dec_2`, ...). Each creating
@@ -20,8 +37,10 @@ recoverable Decision transaction IDs are not reused.
 
 - `create_phase`: human-facing title and objective. It groups Nodes but carries
   no lifecycle or policy.
-- `create_claim`: `claimType`, `statement`, optional assumptions, falsifiers,
-  tags, and optional creator Node.
+- `create_claim`: `question`, `claimType`, `statement`, `scope`,
+  `uncertainty`, `predictions`, and `falsifiers`; optional assumptions, tags,
+  and creator Node. Predictions and falsifiers are required pre-registration,
+  not fields to be inferred after a result is observed.
 - `relate_claims`: source/target Claim refs, open relation type, and rationale.
 - `start_node`: required Phase, title, objective, deliverable, optional
   dependency refs, primary/additional Claim refs, and tags.
@@ -74,15 +93,29 @@ derived comparison against later canonical state.
   ValidationResult refs.
 - `complete_node`: target, outcome `completed|inconclusive|blocked|stopped`,
   summary, and open questions.
-- `set_focus`: current focus Claim and Node refs.
+- `set_focus`: current focus Claim and Node refs. When a newly opened Node is
+  the active work item, include this operation in the same Decision (unless the
+  rationale explicitly preserves another focus).
 
 Completing a Node does not infer Claim status or acceptance. Updating a Claim
 does not complete a Node. Deterministic activities are derived from journaled
 `node_refs`; never add a Decision solely to link an operation. Completion fails
 while an owned Compute run or deterministic activity is non-terminal, an owned
-activity journal is inconsistent, or a compute control is pending/unresolved. A
+activity journal is inconsistent, a compute control is pending/unresolved, or
+an owned calculation Attempt has not settled. `submitted`, `queued`, `running`,
+`completed`, `collected`, `missing`, `unknown`, and invalid Attempt records block
+completion; `completed` is a scheduler/program outcome, not a parsed result.
+Created/prepared intents have no external effect and may be abandoned. A
 terminal failed activity can close the Node as `inconclusive`, `blocked`, or
 `stopped`, but not as `completed`. Pure analytical Nodes need no activity record.
+
+If an older release already closed a Node before its Attempt settled, preserve
+that history. Continue `inspect`/`finalize` with the Attempt's original Node and
+intent identity; do not move the Attempt or reopen the Node. Record the verified
+scientific result from an open dependent recovery Node using normal artifact
+ID/SHA-256 bindings. Parser-candidate promotion is same-Node only, so a recovery
+Node records the independently verified value directly rather than rebinding a
+candidate generated under the closed Node.
 
 ## Atomic Change
 

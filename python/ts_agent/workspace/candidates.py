@@ -13,13 +13,18 @@ from copy import deepcopy
 from pathlib import Path, PurePosixPath
 from typing import Any
 
-from ts_agent.io import read_json
+from ts_agent.calculation_contracts import (
+    CalculationContractError,
+    validate_calculation_result_binding,
+)
+from ts_agent.io import read_json, sha256_json
 
 from .artifacts import (
     WorkspaceArtifactError,
     resolve_workspace_artifact_ids,
 )
 from .errors import ContractError
+from .path_safety import has_symlink_component, lexical_path, path_has_symlink
 from .schema_validation import SchemaValidationError, validate_contract
 
 
@@ -186,8 +191,14 @@ def load_observation_candidate(
         or parts[6] != CANDIDATE_FILE_NAME
     ):
         raise ObservationCandidateError("ObservationCandidate artifact is outside an Attempt parsed output")
+    workspace = lexical_path(root)
+    if path_has_symlink(workspace):
+        raise ObservationCandidateError("ObservationCandidate workspace root uses a symbolic link")
+    candidate_file = workspace / path
+    if has_symlink_component(workspace, candidate_file) or candidate_file.is_symlink():
+        raise ObservationCandidateError("ObservationCandidate artifact uses a symbolic link")
     try:
-        document = read_json(Path(root).expanduser().resolve() / path)
+        document = read_json(candidate_file)
     except (OSError, ValueError) as exc:
         raise ObservationCandidateError(f"cannot read ObservationCandidate artifact: {path}") from exc
     validate_observation_candidates(document)
@@ -196,16 +207,43 @@ def load_observation_candidate(
     intent_id = str(document.get("intent_id") or "")
     if intent_id != parts[3]:
         raise ObservationCandidateError("ObservationCandidate Attempt binding changed")
-    attempt_root = Path(root).expanduser().resolve() / "nodes" / node_id / "attempts" / intent_id
+    attempt_root = workspace / "nodes" / node_id / "attempts" / intent_id
+    if has_symlink_component(workspace, attempt_root):
+        raise ObservationCandidateError("ObservationCandidate Attempt path uses a symbolic link")
     try:
-        intent = read_json(attempt_root / "intent.json")
-        result = read_json(attempt_root / "outputs" / "calculation_result.json")
+        intent = _read_bound_attempt_object(attempt_root / "intent.json", workspace)
+        prepared = _read_bound_attempt_object(attempt_root / "prepared.json", workspace)
+        result = _read_bound_attempt_object(
+            attempt_root / "outputs" / "calculation_result.json", workspace
+        )
+    except ObservationCandidateError:
+        raise
     except (OSError, ValueError) as exc:
         raise ObservationCandidateError("ObservationCandidate has no valid bound calculation record") from exc
     if not isinstance(intent, dict) or intent.get("schema_version") != "ts-calculation-intent/7":
         raise ObservationCandidateError("ObservationCandidate has no valid bound calculation intent")
+    if not isinstance(prepared, dict) or prepared.get("schema_version") != "ts-compute-prepared/1":
+        raise ObservationCandidateError("ObservationCandidate has no valid prepared calculation binding")
+    if (
+        prepared.get("intent_id") != intent_id
+        or prepared.get("node_id") != node_id
+        or prepared.get("intent_ref")
+        != f"nodes/{node_id}/attempts/{intent_id}/intent.json"
+        or prepared.get("intent_digest") != sha256_json(intent)
+        or not isinstance(prepared.get("prepared_task"), dict)
+        or not isinstance(prepared.get("execution_policy"), dict)
+    ):
+        raise ObservationCandidateError("ObservationCandidate prepared calculation binding changed")
     if not isinstance(result, dict) or result.get("schema_version") != "ts-calculation-result/2":
         raise ObservationCandidateError("ObservationCandidate has no valid bound calculation result")
+    try:
+        validate_calculation_result_binding(
+            intent,
+            result,
+            label="ObservationCandidate calculation result",
+        )
+    except CalculationContractError as exc:
+        raise ObservationCandidateError(str(exc)) from exc
     if (
         result.get("state") != "parsed"
         or result.get("intent_id") != intent_id
@@ -293,6 +331,25 @@ def validate_promoted_candidate(root: str | Path, observation: dict[str, Any]) -
     parser = loaded["document"]["parser"]
     if provenance.get("producer") != parser["name"] or provenance.get("producer_version") != parser["contract"]:
         raise ObservationCandidateError("promoted Observation parser provenance does not match its candidate")
+
+
+def _read_bound_attempt_object(path: Path, workspace: Path) -> dict[str, Any]:
+    """Read one Attempt document without following links or external paths."""
+
+    if has_symlink_component(workspace, path) or path.is_symlink():
+        raise ObservationCandidateError(
+            "ObservationCandidate Attempt document uses a symbolic link"
+        )
+    if not path.is_file():
+        raise ObservationCandidateError(
+            f"ObservationCandidate Attempt document is missing: {path.name}"
+        )
+    value = read_json(path)
+    if not isinstance(value, dict):
+        raise ObservationCandidateError(
+            f"ObservationCandidate Attempt document is not an object: {path.name}"
+        )
+    return value
 
 
 def _source_binding(value: dict[str, Any]) -> dict[str, Any]:

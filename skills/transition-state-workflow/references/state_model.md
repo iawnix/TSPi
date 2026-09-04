@@ -105,6 +105,19 @@ artifact, and calculation-intent identities to their current paths. Attempt
 results distinguish frozen inputs from produced outputs. The projection is
 rebuilt from canonical records and the artifact catalog, creates no new state,
 and never treats every file owned by a related Node as evidence for a Claim.
+Unsafe, empty, unreadable, or symlinked Attempt paths are returned as bounded
+`integrity_findings`; they are never silently omitted or followed outside the
+workspace.
+
+The shared lifecycle projection is `calculation_attempt_index()`. An
+intent-only Attempt is the pre-effect state; once `status.json`,
+`calculation_result.json`, a control receipt/guard, a Compute run, or an output
+directory exists, `prepared.json` is mandatory and must be digest-bound to the
+intent. Missing or malformed preparation therefore blocks Node completion even
+if a result claims to be terminal. A symlinked or unreadable `attempts/` parent
+produces a separate `scope=attempt_parent` integrity finding and is never
+enumerated. Context, Web, API, and Research Files consume the same projection;
+it is operational only and does not enter the scientific context digest.
 
 ## Observation
 

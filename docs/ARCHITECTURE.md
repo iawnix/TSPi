@@ -309,6 +309,18 @@ identities, content-bound `ctx_*` projections, revisions, and digests remain
 opaque protocol and audit values. Normal Pi/Web chrome must show a workspace
 label and semantic state, not use those opaque bindings as user-facing names.
 
+`workspace.operational.calculation_attempt_index()` is the single interpreter
+for the durable Attempt lifecycle. It validates the immutable
+`intent.json`/`prepared.json` binding and any status/result documents, then
+publishes two read-only streams: bounded `calculation_attempts` rows and
+`calculation_attempt_integrity_findings`. A finding with
+`scope=attempt_parent` describes an unsafe or unreadable `attempts/` parent; it
+is never a synthetic `calc_*` Attempt and is excluded from the Attempt count.
+All Attempt, Compute-run, Research Files, Context, API, and Web projections use
+this index. Symbolic-link components are fail-closed: they are reported, never
+enumerated or read outside the workspace. These operational diagnostics are
+not scientific evidence and are excluded from the scientific `projection_id`.
+
 ## Decision Transaction
 
 The only normal mutation boundary is:
@@ -322,6 +334,17 @@ Kernel privately allocates technical IDs, resolves `$alias` references, compiles
 any ProofSpec, evaluates requested validation against the proposed state, binds
 the current scientific revision, and commits one complete `ts-research-decision/3`
 without exposing an intermediate Decision to the caller.
+
+The always-present tool schema carries only the stable operation envelope. For
+an unfamiliar operation, Root requests
+`ts_state mode=change_contract operation=<op>`; the Kernel builds that field
+catalog from the same registry used by the compiler. This avoids both a copied
+TypeScript union and repeated field guessing.
+
+When a newly opened ResearchNode is the active work item, Root normally includes
+the `set_focus` operation in that same Decision. Focus is navigation metadata,
+not a scientific verdict; intentionally preserving another focus is allowed but
+should be explicit in the Decision rationale.
 
 The Kernel applies the proposed change to an isolated copy and validates the
 complete post-state before committing while holding the workspace lock. A
@@ -714,12 +737,25 @@ Compute guards and receipts remain the source for scheduler recovery; a UI or
 agent-run state never proves a remote effect.
 
 A Node cannot become terminal while an owned Compute run or deterministic
-activity is non-terminal, its activity journal is inconsistent, or a compute
-control is pending or unresolved. A failed terminal scientific-input activity
+activity is non-terminal, its activity journal is inconsistent, a compute
+control is pending or unresolved, or a durable calculation Attempt is awaiting
+execution, collection, or parsing. The Workspace-owned lifecycle projection
+contract and identity bindings are checked fail-closed without importing the
+Compute host. A failed terminal scientific-input activity
 may close only as `inconclusive`, `blocked`, or `stopped`. A valid terminal
 `render` failure remains visible operational history but does not downgrade an
 otherwise completed scientific Node. An analytical Node with no activity remains
 valid.
+
+The Attempt guard treats an intent-only or fully prepared Attempt as safe to
+abandon because no external effect occurred. Every status, result, control,
+Compute-run, or output record must have a valid `prepared.json` binding; a
+missing or malformed preparation document is an integrity error even when a
+result claims `parsed`. `failed`, `stopped`, and `parsed` are settled;
+`submitted`, `queued`, `running`, `completed`, `collected`, `missing`, `unknown`,
+and invalid records block completion. A control-specific pending or unresolved
+record suppresses only the duplicate non-terminal state blocker; it does not
+hide an independent integrity error.
 
 The immediate tool return is the current delivery channel into the Root
 conversation. `TS Activity` is presentation state and is cleared with the Pi
@@ -753,6 +789,9 @@ behind the detail view's Audit section.
 | Canonical scientific records | `python/ts_agent/workspace/contracts/*.schema.json` |
 | Decision normalization and ID allocation | `python/ts_agent/workspace/decision.py` |
 | Transactional mutation and validation | `python/ts_agent/workspace/engine.py`, `python/ts_agent/workspace/validator.py` |
+| Calculation intent/result binding (dependency-neutral) | `python/ts_agent/calculation_contracts.py` |
+| Attempt lifecycle projection and completion guard | `python/ts_agent/workspace/operational.py` |
+| Public `ts_change` operation vocabulary | `python/ts_agent/workspace/operation_registry.py` |
 | Graph projections and Review snapshot | `python/ts_agent/workspace/context.py` |
 | Predicate registry and ProofSpec compiler | `python/ts_agent/validation/` |
 | Built-in validation policy | `python/ts_agent/validation/templates/`, `python/ts_agent/validation/acceptance_profiles/` |

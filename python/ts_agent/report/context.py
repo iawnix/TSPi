@@ -24,6 +24,7 @@ from ts_agent.workspace.state import (
     WORKSPACE_FILE,
 )
 from ts_agent.workspace.validator import validate_workspace
+from ts_agent.workspace.path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
 def collect_report_context(
@@ -31,7 +32,9 @@ def collect_report_context(
     *,
     exclude_activity_refs: Iterable[str] = (),
 ) -> dict[str, Any]:
-    root_path = Path(root).expanduser().resolve()
+    root_path = lexical_path(root)
+    if path_has_symlink(root_path):
+        raise ValueError(f"workspace root contains a symbolic link: {root_path}")
     validation = validate_workspace(root_path)
     if not validation["valid"]:
         messages = "; ".join(
@@ -40,7 +43,7 @@ def collect_report_context(
             if item.get("severity") == "error"
         )
         raise ValueError(f"workspace is invalid: {messages or 'unknown validation failure'}")
-    documents = {name: read_json(root_path / name) for name in STATE_FILES}
+    documents = _read_state_documents(root_path)
     revision = workspace_revision_from_documents(documents)
     state = documents[RESEARCH_STATE_FILE]
     acceptance_refs = list(state["acceptance_refs"])
@@ -84,9 +87,37 @@ def collect_report_context(
         "deterministic_activities": operations["deterministic_activities"],
         "activity_summaries": operations["activity_summaries"],
         "activity_integrity_findings": operations["activity_integrity_findings"],
+        "operational_integrity_findings": operations.get("operational_integrity_findings", []),
+        "calculation_attempt_integrity_findings": operations.get(
+            "calculation_attempt_integrity_findings", []
+        ),
         "excluded_activity_refs": operations["excluded_activity_refs"],
         "operational_summary": operations["operational_summary"],
         "unresolved_controls": operations["unresolved_controls"],
         "pending_review_dispositions": operations["pending_review_dispositions"],
         "validation_findings": validation["findings"],
     }
+
+
+def _read_state_documents(root: Path) -> dict[str, dict[str, Any]]:
+    """Read the canonical report inputs without following symbolic links.
+
+    ``validate_workspace`` checks the same paths first, but a report build is
+    still a separate read boundary.  Re-checking immediately before loading
+    the documents prevents a linked canonical file from being silently
+    imported if the workspace changes between validation and projection.
+    """
+
+    documents: dict[str, dict[str, Any]] = {}
+    for name in STATE_FILES:
+        path = root / name
+        if has_symlink_component(root, path) or path.is_symlink():
+            raise ValueError(f"workspace file contains a symbolic link: {name}")
+        try:
+            value = read_json(path)
+        except (OSError, ValueError) as exc:
+            raise ValueError(f"cannot read workspace file {name}: {exc}") from exc
+        if not isinstance(value, dict):
+            raise ValueError(f"workspace file is not an object: {name}")
+        documents[name] = value
+    return documents

@@ -11,12 +11,14 @@ import hashlib
 import json
 import os
 import posixpath
+import stat
 from pathlib import Path, PurePosixPath
 from typing import Any, Iterable
 
 from ts_agent.io import read_json
 
 from .errors import ContractError
+from .path_safety import has_symlink_component, lexical_path, path_has_symlink
 from .refs import CALCULATION_ID, NODE_ID
 
 
@@ -78,11 +80,11 @@ def artifact_for_path(
 ) -> dict[str, Any]:
     """Build an artifact record for one existing path under a workspace."""
 
-    return artifact_for_ref(
-        workspace,
-        path.relative_to(workspace).as_posix(),
-        known_nodes=known_nodes,
-    )
+    try:
+        relative = path.relative_to(workspace).as_posix()
+    except ValueError as exc:
+        raise WorkspaceArtifactError("artifact path is outside the workspace") from exc
+    return artifact_for_ref(workspace, relative, known_nodes=known_nodes)
 
 
 def artifact_for_ref(
@@ -154,24 +156,48 @@ def safe_existing_artifact_path(
             f"artifact owner ResearchNode does not exist: {owner_node}"
         )
     path = workspace.joinpath(*PurePosixPath(normalized).parts)
-    if not path.is_file() or path.is_symlink():
-        raise WorkspaceArtifactError(f"workspace artifact does not exist: {normalized}")
-    workspace_real = workspace.resolve(strict=True)
-    expected = workspace_real.joinpath(*PurePosixPath(normalized).parts)
-    if path.resolve(strict=True) != expected:
+    if has_symlink_component(workspace, path):
         raise WorkspaceArtifactError(f"workspace artifact uses a symlink: {normalized}")
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError as exc:
+        raise WorkspaceArtifactError(f"workspace artifact does not exist: {normalized}") from exc
+    except OSError as exc:
+        raise WorkspaceArtifactError(f"cannot inspect workspace artifact: {normalized}") from exc
+    if not stat.S_ISREG(mode):
+        raise WorkspaceArtifactError(f"workspace artifact does not exist: {normalized}")
+    # ``has_symlink_component`` above is the ownership check.  Keep a final
+    # lexical-relative assertion so a concurrent rename cannot turn an
+    # absolute path into an out-of-tree reference between checks.
+    try:
+        path.relative_to(workspace)
+    except ValueError as exc:
+        raise WorkspaceArtifactError(f"workspace artifact escapes the workspace: {normalized}") from exc
     return normalized, path
 
 
 def workspace_root(root: str | Path) -> Path:
     """Resolve and minimally verify a current research workspace."""
 
-    workspace = Path(root).expanduser().resolve()
+    workspace = lexical_path(root)
+    if path_has_symlink(workspace):
+        raise WorkspaceArtifactError(f"workspace root cannot contain a symbolic link: {workspace}")
     workspace_doc = workspace / "workspace.json"
     nodes_doc = workspace / "research_nodes.json"
-    if not workspace_doc.is_file() or not nodes_doc.is_file() or not (workspace / "nodes").is_dir():
+    if not workspace.is_dir() or workspace.is_symlink():
         raise WorkspaceArtifactError(f"not an initialized TS workspace: {workspace}")
-    if read_json(workspace_doc).get("schema_version") != "ts-workspace/6":
+    for path in (workspace_doc, nodes_doc, workspace / "nodes"):
+        if has_symlink_component(workspace, path):
+            raise WorkspaceArtifactError(f"workspace canonical path uses a symbolic link: {path.relative_to(workspace)}")
+    if not workspace_doc.is_file() or workspace_doc.is_symlink() or not nodes_doc.is_file() or nodes_doc.is_symlink() or not (workspace / "nodes").is_dir():
+        raise WorkspaceArtifactError(f"not an initialized TS workspace: {workspace}")
+    try:
+        identity = read_json(workspace_doc)
+    except (OSError, ValueError) as exc:
+        raise WorkspaceArtifactError(
+            f"cannot read workspace identity: {workspace_doc}"
+        ) from exc
+    if not isinstance(identity, dict) or identity.get("schema_version") != "ts-workspace/6":
         raise WorkspaceArtifactError(f"unsupported workspace protocol: {workspace}")
     return workspace
 
@@ -179,17 +205,50 @@ def workspace_root(root: str | Path) -> Path:
 def workspace_node_ids(workspace: Path) -> set[str]:
     """Return validated ResearchNode identifiers from the canonical registry."""
 
-    registry = read_json(workspace / "research_nodes.json")
+    return {str(item["node_id"]) for item in workspace_node_records(workspace)}
+
+
+def workspace_node_records(workspace: Path) -> list[dict[str, Any]]:
+    """Return validated ResearchNode records from the canonical registry.
+
+    Artifact and Compute callers often need the Node status as well as its ID.
+    Keep registry shape/identity checks in one place so malformed or duplicate
+    records fail closed consistently instead of surfacing as ``AttributeError``
+    or silently collapsing into a set.
+    """
+
+    workspace = lexical_path(workspace)
+    registry_path = workspace / "research_nodes.json"
+    if path_has_symlink(workspace) or has_symlink_component(workspace, registry_path):
+        raise WorkspaceArtifactError("ResearchNode registry cannot contain a symbolic link")
+    try:
+        if not registry_path.is_file() or registry_path.is_symlink():
+            raise WorkspaceArtifactError("ResearchNode registry is not a regular file")
+        registry = read_json(registry_path)
+    except WorkspaceArtifactError:
+        raise
+    except (OSError, ValueError) as exc:
+        raise WorkspaceArtifactError("cannot read ResearchNode registry") from exc
+    if not isinstance(registry, dict):
+        raise WorkspaceArtifactError("ResearchNode registry must contain an object")
     if registry.get("schema_version") != "ts-research-node-registry/2":
         raise WorkspaceArtifactError("invalid ResearchNode registry")
-    ids = {
-        item.get("node_id")
-        for item in registry.get("nodes", [])
-        if isinstance(item, dict) and isinstance(item.get("node_id"), str)
-    }
-    if any(NODE_ID.fullmatch(value) is None for value in ids):
-        raise WorkspaceArtifactError("ResearchNode registry contains an invalid node_id")
-    return ids
+    raw_nodes = registry.get("nodes")
+    if not isinstance(raw_nodes, list):
+        raise WorkspaceArtifactError("ResearchNode registry nodes must be an array")
+    records: list[dict[str, Any]] = []
+    ids: set[str] = set()
+    for item in raw_nodes:
+        if not isinstance(item, dict) or not isinstance(item.get("node_id"), str):
+            raise WorkspaceArtifactError("ResearchNode registry contains an invalid node record")
+        node_id = item["node_id"]
+        if NODE_ID.fullmatch(node_id) is None:
+            raise WorkspaceArtifactError("ResearchNode registry contains an invalid node_id")
+        if node_id in ids:
+            raise WorkspaceArtifactError(f"ResearchNode registry contains duplicate node_id: {node_id}")
+        ids.add(node_id)
+        records.append(item)
+    return records
 
 
 def sha256_file(path: Path) -> str:
@@ -264,5 +323,6 @@ __all__ = [
     "safe_existing_artifact_path",
     "sha256_file",
     "workspace_node_ids",
+    "workspace_node_records",
     "workspace_root",
 ]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import posixpath
+import stat
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from importlib.resources import files
@@ -31,6 +32,7 @@ from .registry import (
     workspace_discovery_roots,
 )
 from .reloader import ReleaseWatcher
+from ts_agent.workspace.path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 STATIC_PACKAGE = __package__ or "ts_agent.web"
 
@@ -287,6 +289,10 @@ def _workspace_route(row: dict[str, Any], rest: str, query: dict[str, list[str]]
             "operational_revision": view["operational_revision"],
             "operational_summary": view["operational_summary"],
             "deterministic_activities": view["deterministic_activities"],
+            "activity_summaries": view["activity_summaries"],
+            "activity_integrity_findings": view["activity_integrity_findings"],
+            "operational_integrity_findings": view.get("operational_integrity_findings", []),
+            "calculation_attempt_integrity_findings": view["calculation_attempt_integrity_findings"],
             "agent_runs": view["agent_runs"],
             "pending_review_dispositions": view["pending_review_dispositions"],
             "pending_controls": view["pending_controls"],
@@ -307,14 +313,26 @@ def _workspace_route(row: dict[str, Any], rest: str, query: dict[str, list[str]]
 def _read_workspace_file(row: dict[str, Any], rel_path: str) -> dict[str, Any]:
     if not rel_path:
         raise ValueError("missing path")
-    root = Path(row["source_root"]).resolve()
+    # Keep the registry path lexical until the physical-boundary check has
+    # completed.  Resolving first would make a symlinked source root or a
+    # symlinked file look like an ordinary in-workspace path and could expose
+    # content outside the registered workspace.
+    root = lexical_path(row["source_root"])
+    if path_has_symlink(root) or not root.is_dir():
+        raise ValueError("workspace root is not a readable physical directory")
     normalized = posixpath.normpath(unquote(rel_path).replace("\\", "/"))
     if normalized == ".." or normalized.startswith("../") or normalized.startswith("/"):
         raise ValueError(f"unsafe path: {rel_path!r}")
-    path = (root / normalized).resolve()
-    if path != root and root not in path.parents:
-        raise ValueError(f"path escapes workspace: {rel_path!r}")
-    if not path.exists() or not path.is_file() or path.is_symlink():
+    path = root / normalized
+    if has_symlink_component(root, path):
+        raise ValueError(f"path contains a symbolic link: {rel_path!r}")
+    try:
+        mode = path.lstat().st_mode
+    except FileNotFoundError as exc:
+        raise ValueError(f"file not found: {rel_path}") from exc
+    except OSError as exc:
+        raise ValueError(f"cannot inspect file: {rel_path}") from exc
+    if not stat.S_ISREG(mode):
         raise ValueError(f"file not found: {rel_path}")
     parts = Path(normalized).parts
     if len(parts) < 3 or parts[0] != "nodes":

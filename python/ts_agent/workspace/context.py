@@ -46,6 +46,7 @@ from .state import (
     WORKSPACE_FILE,
 )
 from .validator import validate_workspace
+from .path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
 CONTEXT_MODES = frozenset({"frontier", "claim", "node", "subgraph", "finding", "proof", "delta"})
@@ -61,6 +62,10 @@ DEFAULT_LIMITS = {
     "acceptances": 16,
     "decisions": 8,
 }
+MAX_CONTEXT_CALCULATION_ATTEMPTS = 32
+MAX_CONTEXT_ATTEMPT_INTEGRITY_FINDINGS = 24
+MAX_CONTEXT_OPERATIONAL_INTEGRITY_FINDINGS = 24
+MAX_BRIEF_ATTEMPTS_PER_NODE = 8
 
 
 class ContextCompileError(ValueError):
@@ -86,8 +91,10 @@ def compile_context(
         raise ContextCompileError(f"unsupported context mode: {mode}")
     if not isinstance(depth, int) or isinstance(depth, bool) or not 0 <= depth <= 4:
         raise ContextCompileError("context depth must be between 0 and 4")
-    root_path = Path(root).expanduser().resolve()
-    documents = {name: read_json(root_path / name) for name in STATE_FILES}
+    root_path = lexical_path(root)
+    if path_has_symlink(root_path):
+        raise ContextCompileError(f"workspace root contains a symbolic link: {root_path}")
+    documents = _read_state_documents(root_path)
     revision = workspace_revision_from_documents(documents)
     operations = operational_snapshot(root_path)
 
@@ -129,6 +136,24 @@ def compile_context(
         bounded["research_nodes"],
     )
     selected_node_ids = {str(item["node_id"]) for item in bounded["research_nodes"]}
+    compact_attempts, omitted_attempts = _compact_calculation_attempts(
+        operations["calculation_attempts"],
+        selected_node_ids,
+        limit=MAX_CONTEXT_CALCULATION_ATTEMPTS,
+    )
+    omitted["calculation_attempts"] = omitted_attempts
+    attempt_integrity_findings, omitted_attempt_integrity = _compact_attempt_integrity_findings(
+        operations["calculation_attempt_integrity_findings"],
+        selected_node_ids,
+        limit=MAX_CONTEXT_ATTEMPT_INTEGRITY_FINDINGS,
+    )
+    omitted["calculation_attempt_integrity_findings"] = omitted_attempt_integrity
+    operational_integrity_findings, omitted_operational_integrity = _compact_operational_integrity_findings(
+        operations.get("operational_integrity_findings", []),
+        selected_node_ids,
+        limit=MAX_CONTEXT_OPERATIONAL_INTEGRITY_FINDINGS,
+    )
+    omitted["operational_integrity_findings"] = omitted_operational_integrity
     activity_summaries = [
         item
         for item in operations["activity_summaries"]
@@ -144,6 +169,8 @@ def compile_context(
         bounded,
         trajectory=trajectory,
         activity_summaries=activity_summaries,
+        calculation_attempts=compact_attempts,
+        calculation_attempt_integrity_findings=attempt_integrity_findings,
         current_acceptances=all_acceptances,
     )
     payload = {
@@ -178,32 +205,52 @@ def compile_context(
         "unresolved_controls": operations["unresolved_controls"],
         "pending_review_dispositions": operations["pending_review_dispositions"],
         "activity_summaries": activity_summaries,
+        # This is an operational, bounded projection.  It is intentionally
+        # excluded from ``scientific_binding`` so scheduler churn does not
+        # invalidate the scientific context projection ID.
+        "calculation_attempts": compact_attempts,
+        "calculation_attempt_integrity_findings": attempt_integrity_findings,
+        "operational_integrity_findings": operational_integrity_findings,
         "operational_summary": operations["operational_summary"],
         "recent_decisions": recent_decisions,
         "omitted": omitted,
         "retrieval": _retrieval_hints(mode, bounded, omitted),
     }
     payload = {key: value for key, value in payload.items() if value is not None}
+    # ``workspace_brief`` is intentionally a mixed projection: its Node rows
+    # carry both canonical navigation fields and operational activity/Attempt
+    # summaries for the Root.  Only the canonical portion belongs in the
+    # scientific projection binding.  Otherwise a queued->running scheduler
+    # update would invalidate a Decision context even though no scientific
+    # record changed.  Keep the complete mixed brief in the returned payload;
+    # strip only operational fields while computing the content identity.
+    scientific_brief = _scientific_workspace_brief(workspace_brief)
+    scientific_omitted = {
+        key: value
+        for key, value in omitted.items()
+        if key not in {
+            "calculation_attempts",
+            "calculation_attempt_integrity_findings",
+            "operational_integrity_findings",
+        }
+    }
     scientific_binding = {
-        key: payload[key]
-        for key in (
-            "mode",
-            "workspace_revision",
-            "focus",
-            "acceptance_summary",
-            "workspace_brief",
-            "research_phases",
-            "claims",
-            "claim_relations",
-            "research_nodes",
-            "observations",
-            "proof_specs",
-            "validation_results",
-            "findings",
-            "acceptances",
-            "recent_decisions",
-            "omitted",
-        )
+        "mode": payload["mode"],
+        "workspace_revision": payload["workspace_revision"],
+        "focus": payload["focus"],
+        "acceptance_summary": payload["acceptance_summary"],
+        "workspace_brief": scientific_brief,
+        "research_phases": payload["research_phases"],
+        "claims": payload["claims"],
+        "claim_relations": payload["claim_relations"],
+        "research_nodes": payload["research_nodes"],
+        "observations": payload["observations"],
+        "proof_specs": payload["proof_specs"],
+        "validation_results": payload["validation_results"],
+        "findings": payload["findings"],
+        "acceptances": payload["acceptances"],
+        "recent_decisions": payload["recent_decisions"],
+        "omitted": scientific_omitted,
     }
     payload["projection_id"] = _projection_id(scientific_binding)
     return payload
@@ -532,6 +579,8 @@ def _bound_selection(
 
 def _recent_decisions(root: Path, limit: int) -> tuple[list[dict[str, Any]], int]:
     path = root / "decision_log.jsonl"
+    if has_symlink_component(root, path) or path.is_symlink():
+        return [], 0
     rows: list[dict[str, Any]] = []
     for line in path.read_text(encoding="utf-8").splitlines() if path.is_file() else []:
         try:
@@ -543,6 +592,30 @@ def _recent_decisions(root: Path, limit: int) -> tuple[list[dict[str, Any]], int
     if limit <= 0:
         return [], len(rows)
     return rows[-limit:], max(0, len(rows) - limit)
+
+
+def _read_state_documents(root: Path) -> dict[str, dict[str, Any]]:
+    """Read canonical documents only when every path remains physical.
+
+    Context is a read-only projection, but it is still an input boundary.  A
+    symlinked canonical file must not be followed merely because the workspace
+    directory itself is physical; otherwise external JSON could become part of
+    a Claim/Observation projection and its digest.
+    """
+
+    documents: dict[str, dict[str, Any]] = {}
+    for name in STATE_FILES:
+        path = root / name
+        if has_symlink_component(root, path) or path.is_symlink():
+            raise ContextCompileError(f"workspace file contains a symbolic link: {name}")
+        try:
+            value = read_json(path)
+        except (OSError, ValueError) as exc:
+            raise ContextCompileError(f"cannot read workspace file {name}: {exc}") from exc
+        if not isinstance(value, dict):
+            raise ContextCompileError(f"workspace file is not an object: {name}")
+        documents[name] = value
+    return documents
 
 
 def _incomplete_proof(specs: list[dict[str, Any]], results: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -564,6 +637,8 @@ def _workspace_brief(
     *,
     trajectory: dict[str, Any],
     activity_summaries: list[dict[str, Any]],
+    calculation_attempts: list[dict[str, Any]],
+    calculation_attempt_integrity_findings: list[dict[str, Any]],
     current_acceptances: list[dict[str, Any]],
 ) -> dict[str, Any]:
     nodes = selected["research_nodes"]
@@ -579,6 +654,27 @@ def _workspace_brief(
         for item in activity_summaries
         if isinstance(item.get("node_id"), str)
     }
+    attempts_by_node: dict[str, list[dict[str, Any]]] = {}
+    for item in calculation_attempts:
+        node_id = item.get("node_id")
+        if not isinstance(node_id, str):
+            continue
+        attempts_by_node.setdefault(node_id, []).append({
+            "intent_id": item.get("intent_id"),
+            "state": item.get("state"),
+            "program_status": item.get("program_status"),
+            "blocks_completion": item.get("blocks_completion") is True,
+            "integrity_error": _truncate(str(item.get("integrity_error") or ""), 180) or None,
+        })
+    attempt_integrity_by_node: dict[str, list[dict[str, Any]]] = {}
+    for finding in calculation_attempt_integrity_findings:
+        for node_id in _string_list(finding.get("node_refs")):
+            attempt_integrity_by_node.setdefault(node_id, []).append({
+                "scope": finding.get("scope") or "attempt",
+                "path": finding.get("path"),
+                "intent_id": finding.get("intent_id"),
+                "message": _truncate(str(finding.get("message") or ""), 180),
+            })
     trajectory_by_node = {
         str(item.get("node_id")): item
         for item in trajectory.get("nodes", [])
@@ -620,6 +716,8 @@ def _workspace_brief(
                 ) or None,
                 "result_summary": _truncate(str((node.get("result") or {}).get("summary") or ""), 240) or None,
                 "activity": activity_by_node.get(str(node["node_id"])),
+                "attempts": attempts_by_node.get(str(node["node_id"]), [])[:MAX_BRIEF_ATTEMPTS_PER_NODE],
+                "attempt_integrity_findings": attempt_integrity_by_node.get(str(node["node_id"]), []),
             }
             for node in nodes
         ],
@@ -652,6 +750,154 @@ def _workspace_brief(
     }
 
 
+def _compact_calculation_attempts(
+    rows: Any,
+    selected_node_ids: set[str],
+    *,
+    limit: int,
+) -> tuple[list[dict[str, Any]], int]:
+    """Keep lifecycle visibility useful without copying full Attempt records."""
+
+    if not isinstance(rows, list):
+        return [], 0
+    selected = [
+        row
+        for row in rows
+        if isinstance(row, dict)
+        and row.get("node_id") in selected_node_ids
+        and isinstance(row.get("intent_id"), str)
+    ]
+    selected.sort(
+        key=lambda row: (
+            str(row.get("node_id") or ""),
+            _attempt_ordinal(str(row.get("intent_id") or "")),
+            str(row.get("intent_id") or ""),
+        )
+    )
+    compact = [
+        {
+            "node_id": row.get("node_id"),
+            "intent_id": row.get("intent_id"),
+            "path": row.get("path"),
+            "state": row.get("state") or "unknown",
+            "program_status": row.get("program_status") or "not_run",
+            "job_id": row.get("job_id"),
+            "terminal": row.get("terminal") is True,
+            "blocks_completion": row.get("blocks_completion") is True,
+            "integrity_error": _truncate(str(row.get("integrity_error") or ""), 240) or None,
+        }
+        for row in selected[:max(0, limit)]
+    ]
+    return compact, max(0, len(selected) - len(compact))
+
+
+def _compact_attempt_integrity_findings(
+    rows: Any,
+    selected_node_ids: set[str],
+    *,
+    limit: int,
+) -> tuple[list[dict[str, Any]], int]:
+    """Bound Attempt diagnostics while preserving parent scope explicitly."""
+
+    if not isinstance(rows, list):
+        return [], 0
+    selected = [
+        row
+        for row in rows
+        if isinstance(row, dict)
+        and bool(set(_string_list(row.get("node_refs"))).intersection(selected_node_ids))
+    ]
+    selected.sort(
+        key=lambda row: (
+            str(row.get("path") or ""),
+            str(row.get("message") or ""),
+        )
+    )
+    compact = [
+        {
+            "code": row.get("code") or "calculation_attempt_integrity",
+            "scope": row.get("scope") or "attempt",
+            "path": row.get("path"),
+            "node_refs": _string_list(row.get("node_refs")),
+            "intent_id": row.get("intent_id"),
+            "message": _truncate(str(row.get("message") or ""), 240),
+        }
+        for row in selected[:max(0, limit)]
+    ]
+    return compact, max(0, len(selected) - len(compact))
+
+
+def _compact_operational_integrity_findings(
+    rows: Any,
+    selected_node_ids: set[str],
+    *,
+    limit: int,
+) -> tuple[list[dict[str, Any]], int]:
+    """Bound path-integrity diagnostics before they enter Root context."""
+
+    if not isinstance(rows, list):
+        return [], 0
+    selected = [
+        row
+        for row in rows
+        if isinstance(row, dict)
+        and (
+            not selected_node_ids
+            or bool(set(_string_list(row.get("node_refs"))).intersection(selected_node_ids))
+        )
+    ]
+    selected.sort(
+        key=lambda row: (
+            str(row.get("path") or ""),
+            str(row.get("message") or ""),
+        )
+    )
+    compact = [
+        {
+            "code": row.get("code") or "operational_path_integrity",
+            "path": row.get("path"),
+            "node_refs": _string_list(row.get("node_refs")),
+            "message": _truncate(str(row.get("message") or ""), 240),
+        }
+        for row in selected[:max(0, limit)]
+    ]
+    return compact, max(0, len(selected) - len(compact))
+
+
+def _scientific_workspace_brief(brief: dict[str, Any]) -> dict[str, Any]:
+    """Remove operational overlays before hashing a scientific context.
+
+    The user-facing brief deliberately co-locates live activity and Attempt
+    status with each Node.  Those fields are useful for navigation, but they
+    are not canonical science and must not become part of ``projection_id``.
+    Keep this boundary explicit so adding another operational overlay cannot
+    accidentally alter Decision freshness semantics.
+    """
+
+    return {
+        key: (
+            [
+                {
+                    nested_key: nested_value
+                    for nested_key, nested_value in node.items()
+                    if nested_key not in {"activity", "attempts", "attempt_integrity_findings"}
+                }
+                for node in value
+                if isinstance(node, dict)
+            ]
+            if key == "nodes" and isinstance(value, list)
+            else value
+        )
+        for key, value in brief.items()
+    }
+
+
+def _attempt_ordinal(value: str) -> int:
+    if value.startswith("calc_") and value.removeprefix("calc_").isdigit():
+        return int(value.removeprefix("calc_"))
+    return 2**63 - 1
+
+
 def _truncate(value: str, maximum: int) -> str:
     normalized = " ".join(value.split())
     if len(normalized) <= maximum:
@@ -679,3 +925,11 @@ def _projection_id(value: Any) -> str:
 
 def _map(rows: list[dict[str, Any]], key: str) -> dict[str, dict[str, Any]]:
     return {str(row[key]): row for row in rows if isinstance(row, dict) and isinstance(row.get(key), str)}
+
+
+def _string_list(value: Any) -> list[str]:
+    """Return only string members from a projected reference list."""
+
+    if not isinstance(value, list):
+        return []
+    return [item for item in value if isinstance(item, str)]

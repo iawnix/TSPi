@@ -7,6 +7,7 @@ from typing import Any, Iterable
 
 from ts_agent.io import read_json
 from .refs import DECISION_ID, node_sort_key, phase_sort_key
+from .path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
 def project_research_trajectory(
@@ -16,7 +17,7 @@ def project_research_trajectory(
 ) -> dict[str, Any]:
     """Join Nodes to their opening and completion Decisions without mutating state."""
 
-    root_path = Path(root).expanduser().resolve()
+    root_path = lexical_path(root)
     phase_rows = sorted(
         (dict(row) for row in phases if isinstance(row, dict)),
         key=lambda row: phase_sort_key(str(row.get("phase_id") or "")),
@@ -110,10 +111,10 @@ def _decision_summary(root: Path, decision_ref: str) -> dict[str, Any] | None:
     if DECISION_ID.fullmatch(decision_ref) is None:
         return None
     decisions_root = root / "decisions"
-    if decisions_root.is_symlink() or not decisions_root.is_dir():
+    if path_has_symlink(root) or has_symlink_component(root, decisions_root) or not decisions_root.is_dir():
         return None
     path = decisions_root / f"{decision_ref}.json"
-    if path.is_symlink() or not path.is_file():
+    if has_symlink_component(root, path) or path.is_symlink() or not path.is_file():
         return None
     try:
         decision = read_json(path)

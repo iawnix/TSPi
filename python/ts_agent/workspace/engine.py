@@ -44,6 +44,7 @@ from .transactions import (
     workspace_lock,
 )
 from .validator import validate_workspace
+from .path_safety import has_symlink_component, lexical_path, path_has_symlink
 
 
 DRY_RUN_EXCLUDED_DIRS = frozenset({
@@ -60,9 +61,13 @@ DRY_RUN_EXCLUDED_DIRS = frozenset({
 
 
 def init_workspace(root: str | Path) -> dict[str, Any]:
-    root_path = Path(root).expanduser().resolve()
-    if root_path.is_symlink():
+    root_path = lexical_path(root)
+    if path_has_symlink(root_path):
         raise ContractError("workspace root cannot be a symbolic link")
+    for name in REQUIRED_FILES | REQUIRED_DIRS:
+        path = root_path / name
+        if has_symlink_component(root_path, path) or path.is_symlink():
+            raise ContractError(f"workspace path contains a symbolic link: {name}")
     existing = [name for name in REQUIRED_FILES if (root_path / name).exists()]
     if existing:
         raise ContractError("workspace already contains canonical state: " + ", ".join(sorted(existing)))
@@ -91,7 +96,9 @@ def init_workspace(root: str | Path) -> dict[str, Any]:
 
 
 def _apply_decision(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
-    root_path = Path(root).expanduser().resolve()
+    root_path = lexical_path(root)
+    if path_has_symlink(root_path):
+        raise ContractError("workspace root cannot contain a symbolic link")
     validate_decision(decision)
     with workspace_lock(root_path):
         recover_incomplete_transactions(root_path)
@@ -115,7 +122,9 @@ def change_workspace(
     kernel is the revision that is changed.
     """
 
-    root_path = Path(root).expanduser().resolve()
+    root_path = lexical_path(root)
+    if path_has_symlink(root_path):
+        raise ContractError("workspace root cannot contain a symbolic link")
     with workspace_lock(root_path):
         recover_incomplete_transactions(root_path)
         compiled = _compile_change(root_path, request)
@@ -134,7 +143,9 @@ def change_workspace(
 
 
 def _validate_decision_dry_run(root: str | Path, decision: dict[str, Any]) -> dict[str, Any]:
-    root_path = Path(root).expanduser().resolve()
+    root_path = lexical_path(root)
+    if path_has_symlink(root_path):
+        raise ContractError("workspace root cannot contain a symbolic link")
     validate_decision_binding(root_path, decision)
     return _validate_decision_dry_run_bound(root_path, decision)
 
@@ -172,7 +183,18 @@ def _validate_decision_dry_run_bound(root: Path, decision: dict[str, Any]) -> di
 
 
 def _apply_once(root: Path, decision: dict[str, Any]) -> dict[str, Any]:
-    documents = {name: deepcopy(read_json(root / name)) for name in STATE_FILES}
+    documents: dict[str, dict[str, Any]] = {}
+    for name in STATE_FILES:
+        path = root / name
+        if has_symlink_component(root, path) or path.is_symlink():
+            raise ContractError(f"workspace file contains a symbolic link: {name}")
+        try:
+            value = read_json(path)
+        except (OSError, ValueError) as exc:
+            raise ContractError(f"cannot read workspace file {name}: {exc}") from exc
+        if not isinstance(value, dict):
+            raise ContractError(f"workspace file is not an object: {name}")
+        documents[name] = deepcopy(value)
     phases = _map(documents[RESEARCH_PHASES_FILE]["phases"], "phase_id")
     claims = _map(documents[CLAIMS_FILE]["claims"], "claim_id")
     relations = _map(documents[CLAIM_RELATIONS_FILE]["relations"], "relation_id")

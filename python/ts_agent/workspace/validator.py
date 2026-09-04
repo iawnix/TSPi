@@ -12,6 +12,7 @@ from .acceptance import AcceptanceError, acceptance_currentness, acceptance_path
 from .activities import build_activity_index
 from .claims import claim_is_testable, claim_preregistration_digest
 from .identity import WorkspaceIdentityError, read_workspace_identity
+from .path_safety import has_symlink_component, lexical_path, path_has_symlink
 from ts_agent.io import read_json
 from .refs import WorkspaceRefError, validate_artifact_bindings
 from .schema_validation import schema_findings
@@ -35,9 +36,9 @@ from .state import (
 
 
 def validate_workspace(root: str | Path) -> dict[str, Any]:
-    root_path = Path(root).expanduser().resolve()
+    root_path = lexical_path(root)
     findings: list[dict[str, str]] = []
-    if root_path.is_symlink():
+    if path_has_symlink(root_path):
         _finding(findings, "error", "symlinked_workspace", "workspace root cannot be a symbolic link", ".")
         return _result(findings)
     if not root_path.is_dir():
@@ -55,11 +56,11 @@ def validate_workspace(root: str | Path) -> dict[str, Any]:
             )
     for name in sorted(REQUIRED_FILES):
         path = root_path / name
-        if not path.is_file() or path.is_symlink():
+        if has_symlink_component(root_path, path) or not path.is_file() or path.is_symlink():
             _finding(findings, "error", "missing_required_file", f"required file is missing: {name}", name)
     for name in sorted(REQUIRED_DIRS):
         path = root_path / name
-        if not path.is_dir() or path.is_symlink():
+        if has_symlink_component(root_path, path) or not path.is_dir() or path.is_symlink():
             _finding(findings, "error", "missing_required_directory", f"required directory is missing: {name}", name)
     if findings:
         return _result(findings)
@@ -326,10 +327,11 @@ def _validate_acceptance(
     findings: list[dict[str, str]],
 ) -> None:
     refs = documents[RESEARCH_STATE_FILE].get("acceptance_refs", [])
+    acceptance_root = root / "acceptances"
     acceptance_files = {
         path.relative_to(root).as_posix()
-        for path in (root / "acceptances").glob("acc_*.json")
-        if path.is_file() and not path.is_symlink()
+        for path in acceptance_root.glob("acc_*.json")
+        if not has_symlink_component(root, path) and path.is_file() and not path.is_symlink()
     }
     if set(refs) != acceptance_files:
         _finding(findings, "error", "acceptance_index_mismatch", "research_state acceptance_refs does not match acceptance artifacts", RESEARCH_STATE_FILE)

@@ -13,6 +13,7 @@ from .engine import change_workspace, init_workspace
 from .errors import ContractError
 from .operational import operational_snapshot
 from .operational_ids import allocate_operational_id
+from .operation_registry import operation_catalog
 from .validator import validate_workspace
 
 
@@ -53,6 +54,10 @@ def main(
     command.add_argument("--root", required=False)
     command.add_argument("--template-id")
     command.add_argument("--template-version")
+
+    command = sub.add_parser("change_contract", help="read exact public ts_change operation fields")
+    command.add_argument("--root", required=False)
+    command.add_argument("--operation")
 
     command = sub.add_parser("validate_workspace", help="validate all canonical workspace state")
     command.add_argument("--root", required=True)
@@ -123,6 +128,8 @@ def _dispatch(
             template_id=args.template_id,
             template_version=args.template_version,
         )
+    if args.command == "change_contract":
+        return operation_catalog(args.operation)
     if args.command == "validate_workspace":
         return validate_workspace(args.root)
     if args.command == "operational":

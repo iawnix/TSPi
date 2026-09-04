@@ -31,17 +31,17 @@ def test_workspace_cli_roundtrip(tmp_path: Path) -> None:
                 "title": "CLI validation",
                 "objective": "Exercise the complete CLI round trip.",
             },
-                {
-                    "op": "create_claim",
-                    "local_ref": "claim",
-                    "claimType": "test",
-                    "statement": "The bounded assertion is true.",
-                    "question": "Does the bounded observation confirm the assertion?",
-                    "scope": "The deterministic CLI fixture only.",
-                    "uncertainty": "The assertion is uncertain until the observation is recorded.",
-                    "predictions": ["The test.confirmed observation is true."],
-                    "falsifiers": ["The test.confirmed observation is false."],
-                },
+            {
+                "op": "create_claim",
+                "local_ref": "claim",
+                "claimType": "test",
+                "statement": "The bounded assertion is true.",
+                "question": "Does the bounded observation confirm the assertion?",
+                "scope": "The deterministic CLI fixture only.",
+                "uncertainty": "The assertion is uncertain until the observation is recorded.",
+                "predictions": ["The test.confirmed observation is true."],
+                "falsifiers": ["The test.confirmed observation is false."],
+            },
             {
                 "op": "start_node",
                 "local_ref": "node",
@@ -173,6 +173,23 @@ def test_workspace_cli_exposes_validation_capabilities(tmp_path: Path) -> None:
         "vibration.imaginary_frequency_count",
         "calculation.method_matches_intent",
     }
+
+
+def test_workspace_cli_exposes_one_exact_change_operation_contract() -> None:
+    contract = _run("change_contract", "--operation", "set_focus")
+
+    assert contract["schema_version"] == "ts-change-operation-catalog/1"
+    assert contract["selected_operation"] == "set_focus"
+    assert contract["operations"] == [{
+        "op": "set_focus",
+        "template_ref": "skills/transition-state-workflow/assets/templates/decision/set_focus.json",
+        "variants": [{
+            "variant": "default",
+            "template_ref": "skills/transition-state-workflow/assets/templates/decision/set_focus.json",
+            "required_fields": ["claimRefs", "nodeRefs", "op"],
+            "optional_fields": [],
+        }],
+    }]
 
 
 def test_workspace_cli_help_uses_claim_and_research_node_vocabulary() -> None:
