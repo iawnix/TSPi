@@ -16,7 +16,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_NAME = "@iawnix/ts-agent"
-PACKAGE_VERSION = "0.12.0"
+PACKAGE_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 SKILL_ENTRY = "./skills/transition-state-workflow"
 THEME_ENTRIES = ["./themes/ts-theme.json"]
 EXTENSION_ENTRIES = [
@@ -233,6 +233,10 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
         errors.append(f"package name must be {PACKAGE_NAME}")
     if manifest.get("version") != PACKAGE_VERSION:
         errors.append(f"package version must be {PACKAGE_VERSION}")
+    if not isinstance(manifest.get("version"), str) or not re.fullmatch(
+        r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)", manifest["version"]
+    ):
+        errors.append("package version must be a numeric major.minor.patch release")
     if manifest.get("private") is not True:
         errors.append("package must remain private until release is explicitly authorized")
     if manifest.get("files") != PACKAGE_FILES:

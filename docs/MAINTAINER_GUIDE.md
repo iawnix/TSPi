@@ -78,7 +78,8 @@ shell.
 - five normal extensions: control, UI, Review, compute, and artifacts;
 - one theme: `themes/ts-theme.json`.
 
-`ts-phone-bridge` is packaged but loaded only by `TSPi --phone`. Files under
+`ts-phone-bridge` is packaged but loaded only by `TSPi --phone` or a Host-owned
+Phone Worker. Files under
 `src/agents/compute/` and `src/agents/review/` are private child-runtime
 material, not discoverable Skills.
 
@@ -427,6 +428,7 @@ tests are maintenance material and are blocked by the package-source guard.
 | Remote behavior | config/model, lifecycle/transfer, compute mapping, installation/remote docs, recovery tests |
 | Release contents | `package.json.files`, package checker, installer allow/deny lists, tests, installation docs |
 | Startup behavior | Python host, launcher tests, installation docs, architecture lifecycle, launch smoke |
+| Phone-managed project/session lifecycle | Python private Worker/preflight contract, Bridge policy, TS Phone API/schema/UI, deletion compensation tests, security/recovery/deployment docs |
 
 Documentation tests should assert entrypoints and architectural invariants, not
 freeze cosmetic wording.
@@ -539,10 +541,13 @@ Package version metadata currently appears in multiple maintained surfaces. A
 version bump must update and test at least:
 
 - `package.json` and `package-lock.json`;
-- `pyproject.toml` and `python/ts_agent/_version.py`;
+- `python/ts_agent/_version.py` (`pyproject.toml` reads this version dynamically);
 - `extensions/shared/package-profile.ts`;
-- `scripts/check_package.py`;
 - contract-specific tests and release fixtures.
+
+`scripts/check_package.py` reads the expected version from `package.json` and
+checks the Python version, lockfile, and package profile. Tests should compare
+these maintained surfaces rather than duplicate a release-number literal.
 
 Schema versions change only when data contracts change, not whenever the
 package version changes. Validation template/profile versions are independent

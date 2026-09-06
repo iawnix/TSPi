@@ -311,6 +311,20 @@ cp /path/to/TSPi-installation/.pi/packages/tspi/current/phone/deploy/server.env.
 chmod 600 /path/to/TSPi-installation/.pi/ts-phone/server.env
 ```
 
+The Host requires these bindings to create and activate managed sessions:
+
+```dotenv
+TS_PHONE_TSPI=/path/to/TSPi-installation/TSPi
+TS_PHONE_WORKSPACES=/path/to/TSPi-installation/workspaces
+```
+
+`TS_PHONE_TSPI` must be an absolute executable path. Without it, the server may
+browse validated persisted sessions but cannot start a controller or observer.
+The app's project and conversation names, model/access preferences, and
+active/archive/trash state live in owner-only
+`TS_PHONE_STATE_DIR/management.json`; scientific state and conversation text
+remain in their existing TSPi workspace and Pi JSONL owners.
+
 An operator may run `/path/to/TSPi-installation/TSPhoneServer` under a service
 manager or in a terminal after loading that environment. Service activation,
 restart, FRP, HTTPS, and token handling remain explicit operational actions;
@@ -323,6 +337,13 @@ The `deploy/install-local.sh` and bundled systemd unit in the TS Phone source
 repository are standalone component-development tools. Do not combine their
 `/home/iaw/soft/ts-phone/current` selection with a suite-managed production
 installation.
+
+If the Host runs with `ProtectHome=read-only`, its service sandbox also applies
+to child TSPi Workers. Add narrowly scoped `ReadWritePaths` for the configured
+workspace root, `.pi/runtime-cache`, `.agents/runtime`, and `.agents/envs` under
+the TSPi installation. Keep the rest of Home read-only. A notification provider
+that refreshes credentials needs a separate drop-in for only its private state
+directory.
 
 ## Start And Resume Workspaces
 
@@ -349,6 +370,12 @@ additional Pi arguments and always uses `--continue`:
 ```bash
 ./TSPi --workspace reaction-a --phone
 ```
+
+The phone app can instead create a managed project/conversation and ask the Host
+to activate it. Host-only `--phone-worker`, `--lifecycle-preflight`, and
+`--lifecycle-guard` syntax is not a supported manual interface. Worker mode
+binds an exact session ID and access mode; preflight is a read-only, fail-closed
+check. Guard mode retains the Root Agent lock while the Host deletes data.
 
 One process owns one workspace through a nonblocking lock. Starting a second
 Root Agent for the same workspace fails immediately; another workspace can run
@@ -484,6 +511,8 @@ implement the workspace schemas it opens.
 | notification attachment rejected | Build a report package containing the logical image artifact, then attach only unchanged paths listed by that package manifest. |
 | notification delivery state is `unknown` | Inspect the receipt and provider Sent folder; do not replay automatically. |
 | no API key for selected model | Repair Pi's model/auth configuration; TS workspaces do not own provider keys. |
+| Phone session cannot activate | Verify `TS_PHONE_TSPI`, service sandbox write paths, Bridge socket/secret ownership, and the selected model's Pi authentication. |
+| Phone project deletion is blocked | Finish or reconcile Workers, remote calculations, approvals, and unresolved remote effects. Do not bypass a failed lifecycle preflight. |
 | Review run remains pending after a crash | Inspect its journal and independent calculation controls; no automatic stale-run resolver exists. |
 
 ## Installation Verification

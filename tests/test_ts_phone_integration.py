@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import shutil
+import select
 import subprocess
 from pathlib import Path
+
+import pytest
 
 from tests.runtime_helpers import write_test_runtime_manifest, write_test_suite_manifest
 
@@ -17,6 +21,7 @@ PHONE_CLIENT = ROOT / "extensions" / "ts-phone-bridge" / "bridge-client.ts"
 PHONE_EXTENSION = ROOT / "extensions" / "ts-phone-bridge" / "index.ts"
 UI = ROOT / "extensions" / "ts-workflow-ui" / "index.ts"
 TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
+PACKAGE_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
 
 
 def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
@@ -25,8 +30,11 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     suite_root = package_home / "releases" / "test-suite"
     package_root = suite_root / "agent"
     package_root.mkdir(parents=True)
-    (package_root / "package.json").write_text('{"name":"@iawnix/ts-agent","version":"0.10.0"}\n', encoding="utf-8")
-    write_test_suite_manifest(suite_root)
+    (package_root / "package.json").write_text(
+        json.dumps({"name": "@iawnix/ts-agent", "version": PACKAGE_VERSION}) + "\n",
+        encoding="utf-8",
+    )
+    write_test_suite_manifest(suite_root, version=PACKAGE_VERSION)
     shutil.copy2(TSPI, package_root / "TSPi")
     (package_root / "TSPi").chmod(0o755)
     (package_root / "scripts").mkdir()
@@ -129,7 +137,76 @@ def test_second_phone_session_is_a_new_read_only_observer(tmp_path: Path) -> Non
         holder.communicate(timeout=5)
 
 
-def test_tspi_phone_worker_is_removed(tmp_path: Path) -> None:
+def test_tspi_phone_worker_starts_exact_rpc_session(tmp_path: Path) -> None:
+    install_root, launcher = _copy_launcher(tmp_path)
+    fake_pi = tmp_path / "fake-worker-pi.py"
+    fake_pi.write_text(
+        "#!/usr/bin/env python3\n"
+        "import json,os,sys\n"
+        "print(json.dumps({'args': sys.argv[1:], 'mode': os.environ.get('TS_PHONE_MODE'), "
+        "'access': os.environ.get('TS_PHONE_ACCESS_MODE')}))\n",
+        encoding="utf-8",
+    )
+    fake_pi.chmod(0o755)
+
+    completed = subprocess.run(
+        [
+            str(launcher),
+            "--workspace", "reaction-phone",
+            "--phone-worker",
+            "--session-id", "session_4",
+            "--phone-access", "controller",
+            "--name", "IRC follow-up",
+            "--model", "cpa/gpt-5.6-sol",
+        ],
+        cwd=install_root,
+        env={**os.environ, "PI_BIN": str(fake_pi)},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    result = json.loads(completed.stdout)
+    assert result["mode"] == "bridge"
+    assert result["access"] == "controller"
+    assert result["args"][result["args"].index("--mode") + 1] == "rpc"
+    assert result["args"][result["args"].index("--session-id") + 1] == "session_4"
+    assert result["args"][result["args"].index("--name") + 1] == "IRC follow-up"
+    assert result["args"][result["args"].index("--model") + 1] == "cpa/gpt-5.6-sol"
+    assert "--continue" not in result["args"]
+    assert (install_root / "workspaces" / "reaction-phone" / "workspace.json").is_file()
+
+
+def test_tspi_phone_observer_cannot_initialize_a_workspace(tmp_path: Path) -> None:
+    install_root, launcher = _copy_launcher(tmp_path)
+    workspace = install_root / "workspaces" / "reaction-phone"
+    workspace.mkdir(parents=True)
+    fake_pi = tmp_path / "unexpected-pi.py"
+    fake_pi.write_text("#!/usr/bin/env python3\nraise SystemExit(99)\n", encoding="utf-8")
+    fake_pi.chmod(0o755)
+
+    completed = subprocess.run(
+        [
+            str(launcher),
+            "--workspace", "reaction-phone",
+            "--phone-worker",
+            "--session-id", "session_2",
+            "--phone-access", "observer",
+        ],
+        cwd=install_root,
+        env={**os.environ, "PI_BIN": str(fake_pi)},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert completed.returncode == 1
+    assert "controller is still preparing this workspace" in completed.stderr
+    assert list(workspace.iterdir()) == []
+
+
+def test_tspi_phone_worker_rejects_incomplete_internal_contract(tmp_path: Path) -> None:
     install_root, launcher = _copy_launcher(tmp_path)
     rejected = subprocess.run(
         [str(launcher), "--workspace", "reaction-phone", "--phone-worker"],
@@ -141,7 +218,130 @@ def test_tspi_phone_worker_is_removed(tmp_path: Path) -> None:
         check=False,
     )
     assert rejected.returncode == 2
-    assert "was removed" in rejected.stderr
+    assert "requires a valid --session-id" in rejected.stderr
+
+
+def test_tspi_lifecycle_preflight_is_read_only_and_structured(tmp_path: Path) -> None:
+    install_root, launcher = _copy_launcher(tmp_path)
+    workspace = install_root / "workspaces" / "reaction-phone"
+    workspace.mkdir(parents=True)
+
+    completed = subprocess.run(
+        [str(launcher), "--workspace", "reaction-phone", "--lifecycle-preflight"],
+        cwd=install_root,
+        env=os.environ,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(completed.stdout) == {
+        "schema_version": "ts-phone-project-preflight/2",
+        "workspace_root": str(workspace),
+        "root_agent_active": False,
+        "remote_calculations": 0,
+        "unresolved_remote_effects": 0,
+    }
+    assert list(workspace.iterdir()) == []
+
+
+@pytest.mark.parametrize("occupied", [False, True])
+def test_lifecycle_preflight_checks_kernel_lock_not_stale_pid(tmp_path: Path, occupied: bool) -> None:
+    install_root, launcher = _copy_launcher(tmp_path)
+    workspace = install_root / "workspaces" / "reaction-phone"
+    (workspace / ".pi").mkdir(parents=True)
+    lock = workspace / ".pi" / "root-agent.lock"
+    lock.write_text("pid=999999999\n", encoding="utf-8")
+    with lock.open("r+") as holder:
+        if occupied:
+            fcntl.flock(holder, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        result = subprocess.run(
+            [str(launcher), "--workspace", "reaction-phone", "--lifecycle-preflight"],
+            cwd=install_root, capture_output=True, text=True, timeout=10,
+        )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout)["root_agent_active"] is occupied
+    assert lock.read_text(encoding="utf-8") == "pid=999999999\n"
+
+
+@pytest.mark.parametrize("unsafe_path", ["lock_symlink", "pi_symlink", "fifo"])
+def test_lifecycle_preflight_rejects_unsafe_lock_paths(tmp_path: Path, unsafe_path: str) -> None:
+    install_root, launcher = _copy_launcher(tmp_path)
+    workspace = install_root / "workspaces" / "reaction-phone"
+    (workspace / ".pi").mkdir(parents=True)
+    lock = workspace / ".pi" / "root-agent.lock"
+    if unsafe_path == "lock_symlink":
+        lock.symlink_to(tmp_path / "absent-lock")
+    elif unsafe_path == "pi_symlink":
+        (workspace / ".pi").rmdir()
+        (workspace / ".pi").symlink_to(tmp_path / "absent-pi")
+    else:
+        os.mkfifo(lock)
+    result = subprocess.run(
+        [str(launcher), "--workspace", "reaction-phone", "--lifecycle-preflight"],
+        cwd=install_root, capture_output=True, text=True, timeout=10,
+    )
+    assert result.returncode == 1
+    assert result.stdout == ""
+
+
+def test_lifecycle_guard_holds_writer_lock_until_host_closes_stdin(tmp_path: Path) -> None:
+    install_root, launcher = _copy_launcher(tmp_path)
+    workspace = install_root / "workspaces" / "reaction-phone"
+    workspace.mkdir(parents=True)
+    guard = subprocess.Popen(
+        [str(launcher), "--workspace", "reaction-phone", "--lifecycle-guard"],
+        cwd=install_root, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+    )
+    try:
+        assert guard.stdout is not None
+        assert select.select([guard.stdout], [], [], 10)[0], "guard did not acknowledge"
+        reply = json.loads(guard.stdout.readline())
+        assert reply["schema_version"] == "ts-phone-project-guard/1"
+        assert reply["guard_acquired"] is True
+        assert reply["root_agent_active"] is False
+        assert not (workspace / "workspace.json").exists()
+        with (workspace / ".pi" / "root-agent.lock").open("r+") as handle:
+            with pytest.raises(BlockingIOError):
+                fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            blocked = subprocess.run(
+                [str(launcher), "--workspace", "reaction-phone"],
+                cwd=install_root, capture_output=True, text=True, timeout=10,
+            )
+            assert blocked.returncode == 1
+            assert "another Root Agent already owns" in blocked.stderr
+            assert not (workspace / "workspace.json").exists()
+            guard.communicate(timeout=5)
+            assert guard.returncode == 0
+            fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    finally:
+        if guard.poll() is None:
+            guard.kill()
+            guard.communicate(timeout=5)
+
+
+def test_tspi_lifecycle_preflight_fails_closed_on_operational_integrity_error(
+    tmp_path: Path,
+) -> None:
+    install_root, launcher = _copy_launcher(tmp_path)
+    workspace = install_root / "workspaces" / "reaction-phone"
+    workspace.mkdir(parents=True)
+    outside = tmp_path / "outside-nodes"
+    outside.mkdir()
+    (workspace / "nodes").symlink_to(outside, target_is_directory=True)
+
+    completed = subprocess.run(
+        [str(launcher), "--workspace", "reaction-phone", "--lifecycle-preflight"],
+        cwd=install_root,
+        env={**os.environ, "TS_REMOTE_CONFIG": str(tmp_path / "not-present.toml")},
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert completed.returncode == 1
+    assert "operational state cannot be verified for deletion" in completed.stderr
 
 
 def test_phone_policy_allows_controller_tools_and_restricts_observers() -> None:

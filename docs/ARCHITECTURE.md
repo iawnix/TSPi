@@ -535,6 +535,24 @@ mechanism.
    rewriting it. Partial, invalid, or unsupported canonical state fails closed.
 7. Execute Pi with exactly the package Skill, theme, and five extensions.
 
+The TS Phone Host uses two additional private launcher operations. A
+`--phone-worker` controller follows the same bootstrap and one-writer lock path,
+then opens the requested Pi session ID in RPC mode; an observer resolves an
+existing workspace without creating `.pi` or acquiring the writer lock.
+`--lifecycle-preflight` resolves an existing workspace and returns its absolute
+path, actual Root Agent lock occupancy, and bounded counts of non-terminal remote
+calculations and unresolved remote effects (`ts-phone-project-preflight/2`). It
+does not load remote configuration, contact a scheduler, mutate canonical
+state, or create missing workspace files. Operational-integrity uncertainty
+fails the preflight closed.
+
+Host-only `--lifecycle-guard` acquires that same writer lock before inspecting
+the workspace, returns `ts-phone-project-guard/1`, and retains ownership until
+its stdin closes. It may create `.pi/root-agent.lock` but never bootstraps
+scientific state or starts Pi. Phone holds this process through project trash
+and permanent project/session deletion; failed acquisition blocks the action.
+An old PID in an unlocked file does not count as an active Root Agent.
+
 One workspace has one Root writer process. Different workspaces can run
 concurrently while sharing immutable code, a scientific base, and the selected
 release overlay. They do
@@ -559,11 +577,20 @@ full workspace dump.
 | `ts-workflow-artifacts` | `ts_seed`, `ts_compare`, `ts_import`, `ts_render`, `ts_report`, `ts_notify` | deterministic local artifacts, analyses, reports, and delivery |
 | `ts-workflow-ui` | `/ts-runs` | startup, editor/footer, TS Activity, and Compute/Review history |
 
-`ts-phone-bridge` is optional and loaded only by `TSPi --phone`. It forwards
-messages to the same visible Pi process and never creates a hidden Root Agent.
-A controller gives phone-origin turns the same Tool authority as local TUI
-turns without a separate phone approval. Observer sessions retain their
-read-only Tool allowlist for every turn, including local input.
+`ts-phone-bridge` is optional and loaded by `TSPi --phone` or a Host-owned Phone
+Worker. It forwards messages to the same Pi session and never becomes a second
+scientific authority. A controller gives phone-origin turns the same Tool
+authority as local TUI turns without a separate phone approval. Observer
+sessions retain their read-only Tool allowlist for every turn, including local
+input.
+
+TS Phone owns only display names, model/access preferences, lifecycle state,
+and management revisions in its installation-state `management.json`. TSPi
+continues to own scientific workspace files and Pi owns conversation JSONL.
+Before project deletion, the Host must call TSPi's lifecycle preflight and hold
+its lifecycle guard through the mutation. Unknown integrity, an occupied Root
+Agent lock, active remote work, and unresolved controls block deletion. A
+preflight reply is bound to the Host's resolved workspace path.
 
 The shared tool catalog is an inventory and execution classification, not a
 complete capability contract. Registered tool schemas define call fields;

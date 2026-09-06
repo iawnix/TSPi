@@ -167,6 +167,16 @@ workspace names can run concurrently. Normal terminal mode starts a new Pi
 conversation unless Pi's `--continue` is supplied; Phone mode resumes the
 workspace conversation automatically.
 
+When the TS Phone Host is configured with this installation's `TSPi`
+entrypoint, the app can create projects and independent conversations and start
+their headless Pi RPC Workers. The Host's `--phone-worker` and
+`--lifecycle-preflight` flags are private integration operations, not user CLI
+commands. A Worker controller acquires the same Root Agent lock and may
+bootstrap the workspace; an observer is strictly read-only and requires an
+existing workspace. The Host keeps display names and archive/trash state in its
+own owner-only `management.json`. It does not add those fields to scientific
+workspace state.
+
 Bootstrap is idempotent for a complete workspace: fresh state is created once,
 valid state is checked without canonical rewrites, and partial, invalid, or
 unsupported canonical state fails closed. Ordinary startup does not contact the

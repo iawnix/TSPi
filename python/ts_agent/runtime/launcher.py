@@ -30,6 +30,8 @@ from .env import (
 PACKAGE_NAME = "@iawnix/ts-agent"
 SUITE_PACKAGE_NAME = "@iawnix/tspi"
 WORKSPACE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
+SESSION_ID = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,158}[A-Za-z0-9])?$")
+MODEL_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$")
 NOTIFICATION_FIELDS = {"enabled", "recipient", "clawemail_root"}
 EMAIL_ADDRESS = re.compile(r"^[^@\s]+@[^@\s]+$")
 
@@ -45,6 +47,13 @@ class LaunchRequest:
     workspace_name: str | None
     check_remote: bool
     phone_mode: bool
+    phone_worker: bool
+    lifecycle_preflight: bool
+    lifecycle_guard: bool
+    session_id: str | None
+    session_name: str | None
+    model: str | None
+    phone_access: str | None
     show_help: bool
     pi_args: tuple[str, ...]
 
@@ -81,8 +90,15 @@ Package development runs separately in the authored checkout.
 def parse_launch_request(argv: list[str]) -> LaunchRequest:
     check_remote = False
     phone_mode = False
+    phone_worker = "--phone-worker" in argv
+    lifecycle_preflight = "--lifecycle-preflight" in argv
+    lifecycle_guard = "--lifecycle-guard" in argv
     show_help = False
     workspace_name: str | None = None
+    session_id: str | None = None
+    session_name: str | None = None
+    model: str | None = None
+    phone_access: str | None = None
     pi_args: list[str] = []
     index = 0
     while index < len(argv):
@@ -95,10 +111,11 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
         elif value == "--phone":
             phone_mode = True
         elif value == "--phone-worker":
-            raise TSPiHostError(
-                "--phone-worker was removed; use --phone to start the visible bridged TUI",
-                exit_code=2,
-            )
+            phone_worker = True
+        elif value == "--lifecycle-preflight":
+            lifecycle_preflight = True
+        elif value == "--lifecycle-guard":
+            lifecycle_guard = True
         elif value == "--workspace":
             index += 1
             if index >= len(argv) or not argv[index]:
@@ -106,12 +123,45 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
             workspace_name = argv[index]
         elif value.startswith("--workspace="):
             workspace_name = value.removeprefix("--workspace=")
+        elif phone_worker and value in {"--session-id", "--name", "--model", "--phone-access"}:
+            index += 1
+            if index >= len(argv) or not argv[index]:
+                raise TSPiHostError(f"{value} requires a value", exit_code=2)
+            if value == "--session-id":
+                session_id = argv[index]
+            elif value == "--name":
+                session_name = argv[index]
+            elif value == "--model":
+                model = argv[index]
+            else:
+                phone_access = argv[index]
+        elif phone_worker and value.startswith("--session-id="):
+            session_id = value.removeprefix("--session-id=")
+        elif phone_worker and value.startswith("--name="):
+            session_name = value.removeprefix("--name=")
+        elif phone_worker and value.startswith("--model="):
+            model = value.removeprefix("--model=")
+        elif phone_worker and value.startswith("--phone-access="):
+            phone_access = value.removeprefix("--phone-access=")
         elif value in {"-h", "--help"}:
             show_help = True
         else:
             pi_args.append(value)
         index += 1
-    return LaunchRequest(workspace_name, check_remote, phone_mode, show_help, tuple(pi_args))
+    return LaunchRequest(
+        workspace_name=workspace_name,
+        check_remote=check_remote,
+        phone_mode=phone_mode,
+        phone_worker=phone_worker,
+        lifecycle_preflight=lifecycle_preflight,
+        lifecycle_guard=lifecycle_guard,
+        session_id=session_id,
+        session_name=session_name,
+        model=model,
+        phone_access=phone_access,
+        show_help=show_help,
+        pi_args=tuple(pi_args),
+    )
 
 
 def resolve_installation(package_root: str | Path, install_root: str | Path) -> Installation:
@@ -226,6 +276,66 @@ def prepare_workspace(installation: Installation, workspace_name: str) -> Path:
     sessions.chmod(0o700)
     _configure_workspace_pi_settings(pi_root / "settings.json")
     return workspace
+
+
+def resolve_existing_workspace(installation: Installation, workspace_name: str) -> Path:
+    if not WORKSPACE_NAME.fullmatch(workspace_name):
+        raise TSPiHostError(f"invalid workspace name: {workspace_name}", exit_code=2)
+    container = installation.workspaces_root
+    requested = container / workspace_name
+    if container.is_symlink() or requested.is_symlink() or not requested.is_dir():
+        raise TSPiHostError(f"workspace is unavailable: {requested}")
+    workspace = requested.resolve()
+    if workspace.parent != container.resolve():
+        raise TSPiHostError(f"resolved workspace escaped the installation workspace container: {workspace}")
+    return workspace
+
+
+def lifecycle_preflight(
+    workspace: Path,
+    *,
+    root_agent_active: bool | None = None,
+) -> dict[str, object]:
+    from ts_agent.workspace.operational import operational_snapshot
+
+    if root_agent_active is None:
+        root_agent_active = inspect_root_agent_lock(workspace)
+    snapshot = operational_snapshot(workspace)
+    integrity_sections = [
+        key
+        for key in (
+            "activity_integrity_findings",
+            "operational_integrity_findings",
+            "calculation_attempt_integrity_findings",
+        )
+        if snapshot.get(key)
+    ]
+    if integrity_sections:
+        raise TSPiHostError(
+            "workspace operational state cannot be verified for deletion: "
+            + ", ".join(integrity_sections)
+        )
+    attempts = snapshot.get("calculation_attempts", [])
+    remote_calculations = sum(
+        1
+        for row in attempts
+        if isinstance(row, dict)
+        and isinstance(row.get("job_id"), str)
+        and bool(row["job_id"])
+        and row.get("terminal") is not True
+    )
+    pending = snapshot.get("pending_controls", [])
+    unresolved = snapshot.get("unresolved_controls", [])
+    return {
+        "schema_version": "ts-phone-project-preflight/2",
+        "workspace_root": str(workspace),
+        "root_agent_active": root_agent_active,
+        "remote_calculations": remote_calculations,
+        "unresolved_remote_effects": sum(
+            len(value) if isinstance(value, list) else 1
+            for value in (pending, unresolved)
+        ),
+    }
 
 
 def _configure_workspace_pi_settings(path: Path) -> None:
@@ -370,17 +480,61 @@ def configure_process_environment(installation: Installation, workspace: Path, w
     os.environ["PYTEST_ADDOPTS"] = f"{existing} {cache_option}".strip()
 
 
-def acquire_root_agent_lock(workspace: Path, *, observer_on_contention: bool = False) -> int | None:
-    lock_path = workspace / ".pi" / "root-agent.lock"
+def inspect_root_agent_lock(workspace: Path) -> bool:
+    """Report lock ownership without creating or modifying the lock file."""
+
+    pi_root = workspace / ".pi"
+    if pi_root.is_symlink():
+        raise TSPiHostError(f"workspace Pi state path cannot be a symbolic link: {pi_root}")
+    lock_path = pi_root / "root-agent.lock"
     if lock_path.is_symlink():
         raise TSPiHostError(f"Root Agent lock cannot be a symbolic link: {lock_path}")
-    flags = os.O_RDWR | os.O_CREAT
+    flags = os.O_RDONLY | os.O_NONBLOCK
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
-    descriptor = os.open(lock_path, flags, 0o600)
     try:
-        if not stat.S_ISREG(os.fstat(descriptor).st_mode):
-            raise TSPiHostError(f"Root Agent lock must be a regular file: {lock_path}")
+        descriptor = os.open(lock_path, flags)
+    except FileNotFoundError:
+        return False
+    try:
+        _validate_root_agent_lock(descriptor, lock_path)
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            return True
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        return False
+    finally:
+        os.close(descriptor)
+
+
+def acquire_lifecycle_guard(workspace: Path) -> int | None:
+    """Hold the Root Agent lock while the Phone Host performs a mutation."""
+
+    pi_root = workspace / ".pi"
+    if pi_root.is_symlink():
+        raise TSPiHostError(f"workspace Pi state path cannot be a symbolic link: {pi_root}")
+    pi_root.mkdir(mode=0o700, exist_ok=True)
+    if not pi_root.is_dir():
+        raise TSPiHostError(f"workspace Pi state path is not a directory: {pi_root}")
+    descriptor = _open_root_agent_lock(pi_root / "root-agent.lock")
+    try:
+        try:
+            fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            os.close(descriptor)
+            return None
+        _validate_root_agent_lock(descriptor, pi_root / "root-agent.lock")
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def acquire_root_agent_lock(workspace: Path, *, observer_on_contention: bool = False) -> int | None:
+    lock_path = workspace / ".pi" / "root-agent.lock"
+    descriptor = _open_root_agent_lock(lock_path)
+    try:
         try:
             fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
         except BlockingIOError as exc:
@@ -391,6 +545,7 @@ def acquire_root_agent_lock(workspace: Path, *, observer_on_contention: bool = F
                 f"another Root Agent already owns workspace {workspace}\n"
                 "TSPi: choose another --workspace name or stop the existing Root Agent"
             ) from exc
+        _validate_root_agent_lock(descriptor, lock_path)
         payload = f"pid={os.getpid()}\nstarted_at={_local_timestamp()}\n".encode("ascii")
         os.ftruncate(descriptor, 0)
         os.lseek(descriptor, 0, os.SEEK_SET)
@@ -401,6 +556,30 @@ def acquire_root_agent_lock(workspace: Path, *, observer_on_contention: bool = F
     except BaseException:
         os.close(descriptor)
         raise
+
+
+def _open_root_agent_lock(lock_path: Path) -> int:
+    if lock_path.is_symlink():
+        raise TSPiHostError(f"Root Agent lock cannot be a symbolic link: {lock_path}")
+    flags = os.O_RDWR | os.O_CREAT | os.O_NONBLOCK
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    descriptor = os.open(lock_path, flags, 0o600)
+    try:
+        _validate_root_agent_lock(descriptor, lock_path)
+        return descriptor
+    except BaseException:
+        os.close(descriptor)
+        raise
+
+
+def _validate_root_agent_lock(descriptor: int, lock_path: Path) -> None:
+    opened = os.fstat(descriptor)
+    if not stat.S_ISREG(opened.st_mode):
+        raise TSPiHostError(f"Root Agent lock must be a regular file: {lock_path}")
+    current = lock_path.lstat()
+    if lock_path.parent.is_symlink() or (opened.st_dev, opened.st_ino) != (current.st_dev, current.st_ino):
+        raise TSPiHostError(f"Root Agent lock changed while opening: {lock_path}")
 
 
 def _local_timestamp() -> str:
@@ -427,11 +606,18 @@ def build_pi_command(
 ) -> list[str]:
     pi_args = list(request.pi_args)
     phone_extension: list[str] = []
-    if request.phone_mode:
+    if request.phone_mode or request.phone_worker:
         os.environ["TS_PHONE_MODE"] = "bridge"
         os.environ["TS_PHONE_WORKSPACE_ID"] = str(request.workspace_name)
         phone_extension = ["-e", str(installation.package_root / "extensions" / "ts-phone-bridge" / "index.ts")]
-        pi_args = ["--continue"] if os.environ.get("TS_PHONE_ACCESS_MODE") == "controller" else []
+        if request.phone_worker:
+            pi_args = ["--mode", "rpc", "--session-id", str(request.session_id)]
+            if request.session_name:
+                pi_args.extend(["--name", request.session_name])
+            if request.model:
+                pi_args.extend(["--model", request.model])
+        else:
+            pi_args = ["--continue"] if os.environ.get("TS_PHONE_ACCESS_MODE") == "controller" else []
     package = installation.package_root
     return [
         str(_resolve_pi_binary()),
@@ -471,10 +657,30 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
     if request.show_help:
         print(USAGE, end="")
         return 0
-    if request.check_remote and request.phone_mode:
+    if request.phone_mode and request.phone_worker:
+        raise TSPiHostError("--phone and --phone-worker cannot be combined", exit_code=2)
+    lifecycle_operation = request.lifecycle_preflight or request.lifecycle_guard
+    if request.lifecycle_preflight and request.lifecycle_guard:
+        raise TSPiHostError("lifecycle preflight and guard modes cannot be combined", exit_code=2)
+    if lifecycle_operation and (request.check_remote or request.phone_mode or request.phone_worker or request.pi_args):
+        raise TSPiHostError("a lifecycle operation cannot be combined with another operation", exit_code=2)
+    if request.check_remote and (request.phone_mode or request.phone_worker):
         raise TSPiHostError("--check-remote cannot be combined with phone mode", exit_code=2)
-    if request.phone_mode and request.pi_args:
-        raise TSPiHostError("--phone does not accept Pi arguments", exit_code=2)
+    if (request.phone_mode or request.phone_worker) and request.pi_args:
+        raise TSPiHostError("phone mode does not accept additional Pi arguments", exit_code=2)
+    if request.phone_worker:
+        if not request.session_id or not SESSION_ID.fullmatch(request.session_id):
+            raise TSPiHostError("--phone-worker requires a valid --session-id", exit_code=2)
+        if request.phone_access not in {"controller", "observer"}:
+            raise TSPiHostError("--phone-worker requires --phone-access controller or observer", exit_code=2)
+        if request.session_name is not None and (
+            not 1 <= len(request.session_name) <= 120
+            or request.session_name.strip() != request.session_name
+            or any(ord(character) < 32 or ord(character) == 127 for character in request.session_name)
+        ):
+            raise TSPiHostError("--name is invalid", exit_code=2)
+        if request.model is not None and not MODEL_ID.fullmatch(request.model):
+            raise TSPiHostError("--model is invalid", exit_code=2)
     installation = resolve_installation(package_root, install_root)
     configure_runtime_environment(installation)
     try:
@@ -484,15 +690,45 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         bind_runtime_process_environment(python)
     except RuntimeEnvironmentError as exc:
         raise TSPiHostError(str(exc)) from exc
+    if lifecycle_operation:
+        if not request.workspace_name:
+            raise TSPiHostError(f"a research workspace is required\n{USAGE}", exit_code=2)
+        workspace = resolve_existing_workspace(installation, request.workspace_name)
+        guard_descriptor = acquire_lifecycle_guard(workspace) if request.lifecycle_guard else None
+        try:
+            preflight = lifecycle_preflight(
+                workspace,
+                root_agent_active=(guard_descriptor is None) if request.lifecycle_guard else None,
+            )
+            if request.lifecycle_guard:
+                preflight = {
+                    **preflight,
+                    "schema_version": "ts-phone-project-guard/1",
+                    "guard_acquired": guard_descriptor is not None,
+                }
+            print(json.dumps(preflight, sort_keys=True), flush=True)
+            if guard_descriptor is not None:
+                sys.stdin.buffer.read(1)
+        finally:
+            if guard_descriptor is not None:
+                os.close(guard_descriptor)
+        return 0
     configure_remote(installation)
     if request.check_remote:
         return check_remote(installation)
     if not request.workspace_name:
         raise TSPiHostError(f"a research workspace is required\n{USAGE}", exit_code=2)
     configure_notifications(installation)
-    workspace = prepare_workspace(installation, request.workspace_name)
+    workspace = (
+        resolve_existing_workspace(installation, request.workspace_name)
+        if request.phone_worker and request.phone_access == "observer"
+        else prepare_workspace(installation, request.workspace_name)
+    )
     configure_process_environment(installation, workspace, request.workspace_name)
-    _lock_descriptor = acquire_root_agent_lock(workspace, observer_on_contention=request.phone_mode)
+    if request.phone_worker and request.phone_access == "observer":
+        _lock_descriptor = None
+    else:
+        _lock_descriptor = acquire_root_agent_lock(workspace, observer_on_contention=request.phone_mode)
     if _lock_descriptor is None:
         workspace_manifest = workspace / "workspace.json"
         if workspace_manifest.is_symlink() or not workspace_manifest.is_file():
@@ -500,12 +736,13 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
                 "the controller is still preparing this workspace; retry the phone observer after it starts"
             )
         os.environ["TS_PHONE_ACCESS_MODE"] = "observer"
-        print(
-            f"TSPi: workspace {request.workspace_name} is already controlled; starting a read-only phone observer",
-            file=sys.stderr,
-        )
-    else:
         if request.phone_mode:
+            print(
+                f"TSPi: workspace {request.workspace_name} is already controlled; starting a read-only phone observer",
+                file=sys.stderr,
+            )
+    else:
+        if request.phone_mode or request.phone_worker:
             os.environ["TS_PHONE_ACCESS_MODE"] = "controller"
         from ts_agent.workspace.bootstrap import WorkspaceBootstrapError, bootstrap_workspace
 
