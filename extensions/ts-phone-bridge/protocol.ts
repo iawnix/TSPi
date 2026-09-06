@@ -1,4 +1,4 @@
-export const BRIDGE_PROTOCOL_VERSION = "ts-phone-bridge/2" as const;
+export const BRIDGE_PROTOCOL_VERSION = "ts-phone-bridge/3" as const;
 
 export interface BridgeIdentity {
   workspaceId: string;
@@ -27,6 +27,7 @@ export interface BridgeAbortCommand extends BridgeIdentity {
   protocolVersion: typeof BRIDGE_PROTOCOL_VERSION;
   type: "command.abort";
   requestId: string;
+  agentRunId: string;
 }
 
 export interface BridgeApprovalResponse extends BridgeIdentity {
@@ -69,7 +70,12 @@ export function parseBridgeServerRecord(value: unknown): BridgeServerRecord {
     };
   }
   if (type === "command.abort") {
-    return { ...identity, type, requestId: requiredId(record.requestId, "requestId") };
+    return {
+      ...identity,
+      type,
+      requestId: requiredId(record.requestId, "requestId"),
+      agentRunId: requiredId(record.agentRunId, "agentRunId"),
+    };
   }
   if (type === "approval.respond") {
     if (typeof record.approved !== "boolean") throw new Error("approved must be boolean");

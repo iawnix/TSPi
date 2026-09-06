@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -15,7 +16,7 @@ from typing import Any
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_NAME = "@iawnix/ts-agent"
-PACKAGE_VERSION = "0.11.1"
+PACKAGE_VERSION = "0.12.0"
 SKILL_ENTRY = "./skills/transition-state-workflow"
 THEME_ENTRIES = ["./themes/ts-theme.json"]
 EXTENSION_ENTRIES = [
@@ -209,6 +210,7 @@ FORBIDDEN_PARTS = {
 }
 FORBIDDEN_BASENAMES = {".env", "auth.json", "auth.toml", "config.toml", "models.json"}
 FORBIDDEN_RUNTIME_FILES = {
+    "scripts/_source_capture.py",
     "scripts/build_package.py",
     "scripts/build_release.py",
     "scripts/check_package.py",
@@ -288,6 +290,26 @@ def validate_python_project() -> None:
         expected = f'__version__ = "{PACKAGE_VERSION}"'
         if expected not in version_source.read_text(encoding="utf-8"):
             errors.append("Python distribution version does not match package.json")
+    if errors:
+        raise PackageCheckError("\n".join(errors))
+
+
+def validate_version_surfaces() -> None:
+    lock = json.loads((ROOT / "package-lock.json").read_text(encoding="utf-8"))
+    profile_text = (ROOT / "extensions" / "shared" / "package-profile.ts").read_text(
+        encoding="utf-8"
+    )
+    profile_match = re.search(r'(?m)^\s*version:\s*"([^"]+)",\s*$', profile_text)
+    errors: list[str] = []
+    if lock.get("version") != PACKAGE_VERSION:
+        errors.append("package-lock version does not match the package release")
+    packages = lock.get("packages")
+    if not isinstance(packages, dict) or not isinstance(packages.get(""), dict):
+        errors.append("package-lock root package metadata is missing")
+    elif packages[""].get("version") != PACKAGE_VERSION:
+        errors.append("package-lock root package version does not match the package release")
+    if profile_match is None or profile_match.group(1) != PACKAGE_VERSION:
+        errors.append("package profile version does not match the package release")
     if errors:
         raise PackageCheckError("\n".join(errors))
 
@@ -387,6 +409,7 @@ def main() -> int:
     try:
         validate_manifest(load_manifest())
         validate_python_project()
+        validate_version_surfaces()
         validate_runtime_entrypoints()
         files = npm_pack_files()
         validate_tarball(files)

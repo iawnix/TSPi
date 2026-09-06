@@ -9,7 +9,11 @@ from pathlib import Path
 
 import ts_agent
 
-from scripts.check_package import PACKAGE_VERSION, validate_python_project
+from scripts.check_package import (
+    PACKAGE_VERSION,
+    validate_python_project,
+    validate_version_surfaces,
+)
 from scripts._wheel import build_wheel, inspect_wheel, source_payload_sha256 as wheel_source_payload_sha256
 from ts_agent.runtime.env import python_payload_sha256
 
@@ -22,6 +26,7 @@ def test_python_distribution_metadata_matches_pi_release() -> None:
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
 
     validate_python_project()
+    validate_version_surfaces()
     assert project["project"]["name"] == "ts-agent-kernel"
     assert project["tool"]["setuptools"]["package-dir"] == {"": "python"}
     assert ts_agent.__version__ == package["version"] == PACKAGE_VERSION

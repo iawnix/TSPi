@@ -14,6 +14,7 @@ paths.
 | Pi Agent `>=0.81.1 <1.0.0` | Root Agent host and TUI |
 | Python 3.11 or newer | release installer and runtime bootstrap |
 | Conda or Mamba | isolated scientific Python environment |
+| Android SDK build-tools with `apksigner` and `aapt` | independent APK verification during Package build and install |
 | npm | component release builds and maintainer validation only |
 
 Configure a working Pi model and authentication before starting TSPi. TSPi
@@ -50,6 +51,7 @@ Choose one physical, non-symlink installation root:
         phone/
           services/server/dist/      TS Phone server
           artifacts/*.apk            signed Android artifact
+          artifacts/*.attestation.json  source/build binding
         components/                  verified nested release archives
         components.json
       install-state.json
@@ -79,23 +81,37 @@ receiving a prebuilt Package archive and manifest can skip it.
 ```bash
 cd /path/to/ts-phone
 npm ci
+apps/mobile/tool/build_release_android.sh
 python3 deploy/build-component-release.py \
   --output-dir dist/component \
   --json
 
 cd /path/to/TSPi
+export TSPI_ANDROID_BUILD_TOOLS=/path/to/android-sdk/build-tools/<version>
 python3 scripts/build_package.py \
   --phone-manifest /path/to/ts-phone/dist/component/ts-phone-component-release.json \
   --output-dir dist/package \
   --json
 ```
 
-The Phone builder runs server typecheck, tests, and build, verifies the arm64
-APK Signature Scheme 2 record, and writes `ts-phone-component-release/1`. The suite builder
-internally builds the Agent component and wheel, verifies both component
-manifests and archives, and writes `tspi-package-release/1`. Each build fails on
-a dirty source unless `--allow-dirty` is supplied. That option is only for local
-validation and must not be used for a distributed release.
+The Phone build runs from a private source capture and embeds its source
+snapshot into each signed Android artifact. The component builder runs server
+typecheck, tests, and build from the same capture, verifies the arm64
+APK Signature Scheme v2 record, pinned certificate, package metadata, build
+attestation, and writes `ts-phone-component-release/2`. Android artifacts are
+published as one content-addressed set behind `dist/android-current`. The suite
+builder independently repeats the Phone checks, builds the Agent component and wheel
+from one private Git-visible source capture,
+and writes `tspi-package-release/2`. Each build fails on a dirty source unless
+`--allow-dirty` is supplied. That option is only for local validation and must
+not be used for a distributed release.
+
+The complete Package contains the arm64 APK, not the store AAB. TS Phone checks
+the AAB signature, sole pinned signer, source identity, and attestation, but a
+pinned `bundletool` metadata check is still required before store upload. Its
+Android build also records source provenance rather than content identities for
+the Flutter, Android SDK, and JDK toolchain, so the current contract does not
+claim bit-for-bit reproducibility across build hosts.
 
 The final output contains:
 
@@ -106,8 +122,9 @@ dist/package/tspi-package-release.json
 
 Keep both files together. The suite manifest binds the exact Agent and Phone
 release IDs, nested archive paths, sizes and SHA-256 values, Agent wheel,
-protocol set, Phone server entry, signed APK, component source commits, and the
-outer archive identity. `build_release.py` and `install_release.py` remain
+protocol set, Phone server entry, signed APK, embedded source snapshot, mobile
+build attestation, component source identities, and the outer archive identity.
+`build_release.py` and `install_release.py` remain
 internal Agent-component tools; they do not produce or install a complete TSPi
 deployment.
 
@@ -124,14 +141,24 @@ python3 scripts/install_package.py \
   --json
 ```
 
+Set `TSPI_ANDROID_BUILD_TOOLS` to the Android SDK build-tools directory that
+contains `apksigner` and `aapt`. If it is unset, TSPi searches
+`ANDROID_SDK_ROOT`, `ANDROID_HOME`, and then `PATH`. Verification fails closed
+when the tools are unavailable. The installer rejects dirty-source components
+by default; `--allow-dirty` is an explicit local-validation override.
+
 The installer rejects symlinked roots, unsafe members in every archive,
 unexpected development files, component/protocol mismatches, size or digest
-mismatches, and writable release contents. It extracts into a private staging
-directory, validates the expanded Agent, Web, Phone server, and APK, and
-finalizes read-only permissions. Before activation it prepares the target
+mismatches, untrusted or misidentified APKs, and writable release contents. It
+captures the outer archive once into private staging, validates and extracts
+that same byte sequence, then validates the expanded Agent, Web, Phone server,
+APK, embedded source identity, and attestation before finalizing read-only
+permissions. Before activation it prepares the target
 release runtime and runs the NumPy/RDKit capability probe. Only a healthy
 runtime may publish its manifest and atomically switch the suite `current`.
-Activation failure restores the prior manifest, pointer, install state, and
+On reinstall, every expanded Phone file and its executable class is compared
+with the retained, digest-bound component archive. Activation failure restores
+the prior manifest, pointer, install state, and
 entrypoint links. Reinstalling identical content is idempotent and revalidates
 retained component archives and runtime entrypoints.
 

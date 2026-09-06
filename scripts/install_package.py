@@ -21,11 +21,13 @@ try:
         SuiteReleaseError,
         atomic_write_json,
         canonical_json,
+        copy_verified_file_snapshot,
         extract_rooted_archive,
         inspect_rooted_archive,
         read_json_object,
         sha256_file,
         validate_components,
+        validate_extracted_phone_matches_archive,
         validate_phone_archive_files,
         validate_phone_runtime,
         validate_suite_manifest,
@@ -67,11 +69,13 @@ except ImportError:
         SuiteReleaseError,
         atomic_write_json,
         canonical_json,
+        copy_verified_file_snapshot,
         extract_rooted_archive,
         inspect_rooted_archive,
         read_json_object,
         sha256_file,
         validate_components,
+        validate_extracted_phone_matches_archive,
         validate_phone_archive_files,
         validate_phone_runtime,
         validate_suite_manifest,
@@ -130,6 +134,11 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Refresh the base and recreate only the target release kernel overlay.",
     )
+    parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help="Allow installation of local-validation components built from dirty source.",
+    )
     parser.add_argument("--json", action="store_true", help="Print machine-readable output.")
     args = parser.parse_args(argv)
     manifest_path = Path(args.manifest).expanduser().resolve()
@@ -142,6 +151,7 @@ def main(argv: list[str] | None = None) -> int:
             conda_root=args.conda_root,
             with_render=args.with_render,
             force_runtime=args.force_runtime,
+            allow_dirty=args.allow_dirty,
         )
     except (
         SuiteReleaseError,
@@ -173,16 +183,66 @@ def install_package(
     conda_root: str | Path | None = None,
     with_render: bool = False,
     force_runtime: bool = False,
+    allow_dirty: bool = False,
     runtime_preparer: Callable[..., PreparedRuntime] | None = None,
     runtime_publisher: Callable[[PreparedRuntime], Path] | None = None,
 ) -> dict[str, Any]:
     manifest = validate_suite_manifest(read_json_object(manifest_path, "TSPi Package manifest"))
+    if not allow_dirty:
+        dirty_components = [
+            label
+            for label, component in (
+                ("Agent", manifest["components"]["agent"]),
+                ("Phone", manifest["components"]["phone"]),
+            )
+            if component["source"]["dirty"]
+        ]
+        if dirty_components:
+            raise SuiteReleaseError(
+                "refusing to install components built from dirty source: "
+                + ", ".join(dirty_components)
+                + "; use --allow-dirty only for local validation"
+            )
     archive_descriptor = manifest["archive"]
     resolved_archive = archive_path or (manifest_path.parent / archive_descriptor["filename"])
     if resolved_archive.name != archive_descriptor["filename"]:
         raise SuiteReleaseError("TSPi Package archive filename does not match the manifest")
-    verify_archive_descriptor(resolved_archive, archive_descriptor, "TSPi Package archive")
-    suite_members, suite_files = inspect_rooted_archive(resolved_archive, "package")
+    with tempfile.TemporaryDirectory(prefix="tspi-package-input-") as input_directory:
+        input_root = Path(input_directory)
+        input_root.chmod(0o700)
+        captured_archive = copy_verified_file_snapshot(
+            resolved_archive,
+            input_root / archive_descriptor["filename"],
+            archive_descriptor,
+            "TSPi Package archive",
+        )
+        return _install_captured_package(
+            manifest,
+            captured_archive,
+            install_root,
+            conda=conda,
+            conda_root=conda_root,
+            with_render=with_render,
+            force_runtime=force_runtime,
+            runtime_preparer=runtime_preparer,
+            runtime_publisher=runtime_publisher,
+        )
+
+
+def _install_captured_package(
+    manifest: dict[str, Any],
+    captured_archive: Path,
+    install_root: Path,
+    *,
+    conda: str | None,
+    conda_root: str | Path | None,
+    with_render: bool,
+    force_runtime: bool,
+    runtime_preparer: Callable[..., PreparedRuntime] | None,
+    runtime_publisher: Callable[[PreparedRuntime], Path] | None,
+) -> dict[str, Any]:
+    """Install only from the private archive snapshot verified by the public entrypoint."""
+    suite_members, suite_files = inspect_rooted_archive(captured_archive, "package")
     expected_suite_files = {
         "components.json",
         manifest["components"]["agent"]["archive"]["path"],
@@ -202,7 +262,7 @@ def install_package(
     else:
         staging = Path(tempfile.mkdtemp(prefix=".install-", dir=releases_root))
         try:
-            extract_rooted_archive(resolved_archive, suite_members, staging)
+            extract_rooted_archive(captured_archive, suite_members, staging)
             validate_extracted_suite(staging, manifest)
             atomic_write_json(staging / INSTALLED_MANIFEST, manifest)
             finalize_release_permissions(staging)
@@ -371,6 +431,7 @@ def validate_extracted_suite(root: Path, manifest: dict[str, Any]) -> None:
     phone_root.mkdir(mode=0o700)
     extract_rooted_archive(phone_archive, phone_members, phone_root)
     validate_phone_runtime(phone_root, phone_descriptor)
+    validate_extracted_phone_matches_archive(phone_root, phone_archive, phone_members)
 
 
 def validate_existing_suite(target: Path, manifest: dict[str, Any]) -> None:
@@ -391,13 +452,14 @@ def validate_installed_suite(root: Path, manifest: dict[str, Any]) -> None:
     }:
         raise SuiteReleaseError("installed suite components do not match the release manifest")
     inspect_embedded_agent(root, manifest["components"]["agent"])
-    inspect_embedded_phone(root, manifest["components"]["phone"])
+    phone_archive, phone_members = inspect_embedded_phone(root, manifest["components"]["phone"])
     agent_manifest = agent_release_manifest(manifest["components"]["agent"], manifest["created_at_utc"])
     validate_agent_runtime(root / "agent", agent_manifest)
     validate_agent_release_contract(root / "agent", agent_manifest)
     if not os.access(root / "agent" / "scripts" / "ts_web.py", os.X_OK):
         raise SuiteReleaseError("installed TS Web entrypoint is not executable")
     validate_phone_runtime(root / "phone", manifest["components"]["phone"])
+    validate_extracted_phone_matches_archive(root / "phone", phone_archive, phone_members)
 
 
 def inspect_embedded_agent(

@@ -101,11 +101,13 @@ content-addressed Package from clean authored checkouts:
 ```bash
 cd /path/to/ts-phone
 npm ci
+apps/mobile/tool/build_release_android.sh
 python3 deploy/build-component-release.py \
   --output-dir dist/component \
   --json
 
 cd /path/to/TSPi
+export TSPI_ANDROID_BUILD_TOOLS=/path/to/android-sdk/build-tools/<version>
 python3 scripts/build_package.py \
   --phone-manifest /path/to/ts-phone/dist/component/ts-phone-component-release.json \
   --output-dir dist/package \
@@ -120,10 +122,12 @@ python3 scripts/install_package.py \
 
 The suite builder internally creates the Agent component and its
 `ts-agent-kernel` wheel, then binds that archive to the validated TS Phone
-component. The installer verifies the outer Package, both nested archives,
-protocol compatibility, wheel and APK descriptors, safe members, required
-files, and immutable permissions. It then prepares and probes the target
-release's Python runtime before atomically selecting
+component. The builder and installer independently verify the pinned APK
+signer, package metadata, embedded source snapshot, and build attestation.
+They also verify the outer Package, both nested archives, protocol
+compatibility, wheel descriptors, safe members, required files, and immutable
+permissions. The installer then prepares and probes the target release's
+Python runtime before atomically selecting
 `.pi/packages/tspi/current`. An invalid runtime cannot activate a release. The
 installer creates four stable entrypoints into the same release:
 

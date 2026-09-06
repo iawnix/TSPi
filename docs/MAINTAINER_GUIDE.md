@@ -454,9 +454,10 @@ python3 scripts/install_env.py --package-root . --conda-root /path/to/miniforge3
 python3 scripts/build_release.py --allow-dirty --output-dir /tmp/ts-agent-release --json
 ```
 
-This is an Agent-component development probe. The builder creates the wheel
-from a temporary source copy, then adds
-it to the final npm archive under `python-dist/`. Do not use the immutable
+This is an Agent-component development probe. The builder first captures one
+Git-visible source tree in private staging, then runs package validation, wheel
+creation, source hashing, and npm packing only against that capture. It adds the
+wheel to the final npm archive under `python-dist/`. Do not use the immutable
 release directory itself as a PEP 517 build source; setuptools needs writable
 build-metadata space. The runtime installer consumes the bundled wheel and
 never writes build metadata into authored or installed package roots.
@@ -502,12 +503,14 @@ contacting a production model endpoint.
 ```bash
 # TS Phone repository
 npm run test:release
-# Run Flutter format/analyze/test and build the signed APK first.
+# Run Flutter format/analyze/test, then build the signed APK and attestation.
+apps/mobile/tool/build_release_android.sh
 python3 deploy/build-component-release.py --output-dir dist/component --json
 
 # TSPi repository
 python3 scripts/test_source.py --conda-root /path/to/miniforge3 --with-render -- -q
 npm run typecheck
+export TSPI_ANDROID_BUILD_TOOLS=/path/to/android-sdk/build-tools/<version>
 python3 scripts/build_package.py \
   --phone-manifest /path/to/ts-phone/dist/component/ts-phone-component-release.json \
   --output-dir dist/package \
@@ -515,12 +518,20 @@ python3 scripts/build_package.py \
 ```
 
 Inspect `tspi-package-release.json`. Confirm that its Agent descriptor matches
-the sole nested wheel, its Phone descriptor matches the server and signed APK,
-its protocol set is exact, and its nested archive paths and digests match the
-outer archive. One suite release ID must select the entire component set.
+the sole nested wheel, its Phone descriptor matches the server, signed APK,
+source snapshot, and build attestation, its protocol set is exact, and its
+nested archive paths and digests match the outer archive. Package assembly and
+installation both require `apksigner` and `aapt` so neither boundary trusts
+producer-declared APK identity. Assembly parses the shipped protocol documents
+and verifies their version identities, closed lifecycle payloads, event
+bindings, running snapshot identity, and fenced Abort contract. It also applies
+the same Phone metadata and entrypoint checks used at install time; reinstall
+compares the complete expanded Phone tree with its retained archive.
+One suite release ID must select the entire
+component set.
 
-Both component builds require clean checkouts. `--allow-dirty` is only for
-local smoke validation and must not be distributed.
+Both component builds and normal installation require clean source identities.
+`--allow-dirty` is only for local smoke validation and must not be distributed.
 
 ## Version Changes
 

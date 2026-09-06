@@ -29,7 +29,7 @@ EXPECTED_COMMANDS = {"ts", "ts-check", "ts-remote", "ts-runs"}
 
 def test_package_manifest_and_profile_expose_one_skill_five_extensions_one_theme() -> None:
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert package["version"] == "0.11.1"
+    assert package["version"] == "0.12.0"
     assert package["pi"]["skills"] == ["./skills/transition-state-workflow"]
     assert len(package["pi"]["extensions"]) == 5
     assert package["pi"]["themes"] == ["./themes/ts-theme.json"]

@@ -47,6 +47,8 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
   let context: ExtensionContext | undefined;
   let sessionGeneration = 0;
   let turnSequence = 0;
+  let agentRunSequence = 0;
+  let activeAgentRunId: string | undefined;
   let activeOrigin: TurnOrigin = { kind: "unknown", turnId: "turn-0" };
   const pendingOrigins: TurnOrigin[] = [];
   const pendingPhoneInputs: PendingPhoneInput[] = [];
@@ -71,6 +73,8 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
   pi.on("session_start", (_event, ctx) => {
     context = ctx;
     sessionGeneration += 1;
+    agentRunSequence = 0;
+    activeAgentRunId = undefined;
     pendingOrigins.length = 0;
     pendingPhoneInputs.length = 0;
     activeOrigin = { kind: "unknown", turnId: nextTurnId() };
@@ -80,6 +84,7 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
   pi.on("session_shutdown", () => {
     context?.ui.setStatus("ts-phone", undefined);
     context = undefined;
+    activeAgentRunId = undefined;
     bridge.stop();
   });
   pi.on("session_info_changed", () => publishSnapshot());
@@ -105,7 +110,15 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
   });
   pi.on("agent_start", (event) => {
     activeOrigin = pendingOrigins.shift() || { kind: "unknown", turnId: nextTurnId() };
-    bridge.publishEvent("agent_start", { ...event, origin: activeOrigin.kind, turnId: activeOrigin.turnId });
+    agentRunSequence += 1;
+    activeAgentRunId = buildAgentRunId(sessionGeneration, agentRunSequence);
+    bridge.publishEvent("agent_start", {
+      type: event.type,
+      origin: activeOrigin.kind,
+      turnId: activeOrigin.turnId,
+      agentRunId: activeAgentRunId,
+    });
+    publishSnapshot();
   });
   pi.on("message_start", (event) => {
     bridge.publishEvent("message_start", { type: event.type, message: projectMessage(event.message) });
@@ -135,7 +148,13 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
     });
   });
   pi.on("agent_settled", (event) => {
-    bridge.publishEvent("agent_settled", { ...event, origin: activeOrigin.kind, turnId: activeOrigin.turnId });
+    bridge.publishEvent("agent_settled", {
+      type: event.type,
+      origin: activeOrigin.kind,
+      turnId: activeOrigin.turnId,
+      agentRunId: activeAgentRunId,
+    });
+    activeAgentRunId = undefined;
     activeOrigin = { kind: "unknown", turnId: nextTurnId() };
     publishSnapshot();
   });
@@ -149,6 +168,8 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
       throw new Error("stale_session");
     }
     if (command.type === "command.abort") {
+      const rejection = abortCommandRejection(ctx.isIdle(), activeAgentRunId, command.agentRunId);
+      if (rejection) throw new Error(rejection);
       ctx.abort();
       return;
     }
@@ -204,7 +225,8 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
       model,
       ...(runtime ? { runtime } : {}),
       thinkingLevel: ctx.thinkingLevel,
-      isStreaming: !ctx.isIdle(),
+      isStreaming: activeAgentRunId !== undefined,
+      ...(activeAgentRunId ? { agentRunId: activeAgentRunId } : {}),
       ...buildSnapshotMessagePage(ctx.sessionManager.getBranch()),
     });
   }
@@ -222,6 +244,26 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
     turnSequence += 1;
     return `turn-${sessionGeneration}-${turnSequence}`;
   }
+}
+
+export function buildAgentRunId(sessionGeneration: number, sequence: number): string {
+  if (!Number.isSafeInteger(sessionGeneration) || sessionGeneration <= 0) {
+    throw new Error("sessionGeneration must be a positive integer");
+  }
+  if (!Number.isSafeInteger(sequence) || sequence <= 0) {
+    throw new Error("agent run sequence must be a positive integer");
+  }
+  return `run-${sessionGeneration}-${sequence}`;
+}
+
+export function abortCommandRejection(
+  isIdle: boolean,
+  activeAgentRunId: string | undefined,
+  commandAgentRunId: string,
+): "agent_not_running" | "agent_run_stale" | undefined {
+  if (isIdle || !activeAgentRunId) return "agent_not_running";
+  if (commandAgentRunId !== activeAgentRunId) return "agent_run_stale";
+  return undefined;
 }
 
 export function buildSessionRuntimeSnapshot(

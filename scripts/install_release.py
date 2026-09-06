@@ -132,6 +132,7 @@ REQUIRED_RUNTIME_FILES = {
 }
 FORBIDDEN_PARTS = {".git", ".pytest_cache", "__pycache__", "build", "node_modules", "tests"}
 FORBIDDEN_RUNTIME_FILES = {
+    "scripts/_source_capture.py",
     "scripts/build_package.py",
     "scripts/build_release.py",
     "scripts/check_package.py",

@@ -169,10 +169,10 @@ def test_phone_bridge_protocol_rejects_raw_rpc_records() -> None:
     script = f"""
 import {{ parseBridgeServerRecord }} from {json.dumps(PHONE_PROTOCOL.as_uri())};
 let rawRpcError;
-try {{ parseBridgeServerRecord({{ protocolVersion: "ts-phone-bridge/2", type: "prompt", message: "x" }}); }}
+try {{ parseBridgeServerRecord({{ protocolVersion: "ts-phone-bridge/3", type: "prompt", message: "x" }}); }}
 catch (error) {{ rawRpcError = error.message; }}
 const command = parseBridgeServerRecord({{
-  protocolVersion: "ts-phone-bridge/2",
+  protocolVersion: "ts-phone-bridge/3",
   type: "command.prompt",
   workspaceId: "ts_006",
   sessionId: "session-1",
@@ -182,11 +182,221 @@ const command = parseBridgeServerRecord({{
   clientMessageId: "client-1",
   message: "hello",
 }});
-process.stdout.write(JSON.stringify({{ rawRpcError, command }}));
+let missingAgentRunIdError;
+try {{
+  parseBridgeServerRecord({{
+    protocolVersion: "ts-phone-bridge/3",
+    type: "command.abort",
+    workspaceId: "ts_006",
+    sessionId: "session-1",
+    instanceEpoch: "epoch-1",
+    sessionGeneration: 2,
+    requestId: "abort-request-1",
+  }});
+}} catch (error) {{ missingAgentRunIdError = error.message; }}
+const abortCommand = parseBridgeServerRecord({{
+  protocolVersion: "ts-phone-bridge/3",
+  type: "command.abort",
+  workspaceId: "ts_006",
+  sessionId: "session-1",
+  instanceEpoch: "epoch-1",
+  sessionGeneration: 2,
+  requestId: "abort-request-2",
+  agentRunId: "run-2-4",
+}});
+process.stdout.write(JSON.stringify({{
+  rawRpcError,
+  command,
+  missingAgentRunIdError,
+  abortCommand,
+}}));
 """
     result = _node_json(script)
     assert result["rawRpcError"]
     assert result["command"]["message"] == "hello"
+    assert "agentRunId" in result["missingAgentRunIdError"]
+    assert result["abortCommand"]["agentRunId"] == "run-2-4"
+
+
+def test_phone_bridge_abort_guard_binds_the_active_agent_run() -> None:
+    script = f"""
+import {{ abortCommandRejection, buildAgentRunId }} from {json.dumps(PHONE_EXTENSION.as_uri())};
+const active = buildAgentRunId(3, 7);
+process.stdout.write(JSON.stringify({{
+  active,
+  accepted: abortCommandRejection(false, active, active) ?? null,
+  idle: abortCommandRejection(true, active, active),
+  missing: abortCommandRejection(false, undefined, active),
+  stale: abortCommandRejection(false, active, "run-3-6"),
+}}));
+"""
+    result = _node_json(script)
+    assert result == {
+        "active": "run-3-7",
+        "accepted": None,
+        "idle": "agent_not_running",
+        "missing": "agent_not_running",
+        "stale": "agent_run_stale",
+    }
+
+
+def test_phone_bridge_lifecycle_exposes_and_enforces_agent_run_id(tmp_path: Path) -> None:
+    socket_path = tmp_path / "lifecycle-bridge.sock"
+    secret_path = tmp_path / "lifecycle-bridge.secret"
+    secret_path.write_text("B" * 43 + "\n", encoding="utf-8")
+    secret_path.chmod(0o600)
+    script = f"""
+import {{ createServer }} from "node:net";
+import {{ unlink }} from "node:fs/promises";
+import installTsPhoneBridge from {json.dumps(PHONE_EXTENSION.as_uri())};
+const socketPath = {json.dumps(str(socket_path))};
+const received = [];
+let peer;
+const server = createServer((socket) => {{
+  peer = socket;
+  let buffer = "";
+  socket.setEncoding("utf8");
+  socket.on("data", (chunk) => {{
+    buffer += chunk;
+    while (true) {{
+      const newline = buffer.indexOf("\\n");
+      if (newline < 0) break;
+      const line = buffer.slice(0, newline);
+      buffer = buffer.slice(newline + 1);
+      if (!line) continue;
+      const record = JSON.parse(line);
+      received.push(record);
+      if (record.type === "bridge.register") {{
+        socket.write(JSON.stringify({{
+          protocolVersion: "ts-phone-bridge/3",
+          type: "bridge.registered",
+          workspaceId: "ts_006",
+          sessionId: "session-1",
+          instanceEpoch: record.instanceEpoch,
+        }}) + "\\n");
+      }}
+    }}
+  }});
+}});
+await new Promise((resolve, reject) => {{ server.once("error", reject); server.listen(socketPath, resolve); }});
+process.env.TS_PHONE_MODE = "bridge";
+process.env.TS_PHONE_WORKSPACE_ID = "ts_006";
+process.env.TS_PHONE_ACCESS_MODE = "controller";
+process.env.TS_PHONE_BRIDGE_SOCKET = socketPath;
+process.env.TS_PHONE_BRIDGE_SECRET_FILE = {json.dumps(str(secret_path))};
+const handlers = {{}};
+const pi = {{
+  on: (name, handler) => {{ handlers[name] = handler; }},
+  sendUserMessage: () => {{}},
+}};
+installTsPhoneBridge(pi);
+let idle = true;
+let abortCount = 0;
+const ctx = {{
+  sessionManager: {{
+    getSessionId: () => "session-1",
+    getSessionName: () => "TS 006",
+    getBranch: () => [],
+  }},
+  ui: {{ setStatus: () => {{}} }},
+  model: undefined,
+  getContextUsage: () => undefined,
+  thinkingLevel: "off",
+  isIdle: () => idle,
+  abort: () => {{ abortCount += 1; }},
+}};
+await handlers.session_start({{ type: "session_start", reason: "startup" }}, ctx);
+async function waitFor(predicate) {{
+  const deadline = Date.now() + 5000;
+  while (!predicate()) {{
+    if (Date.now() >= deadline) throw new Error("timeout");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }}
+}}
+await waitFor(() => received.some((record) => record.type === "session.snapshot"));
+idle = false;
+await handlers.agent_start({{ type: "agent_start" }}, ctx);
+await waitFor(() => received.filter((record) => record.type === "session.snapshot").length >= 2);
+const startEvent = received.find((record) =>
+  record.type === "event.publish" && record.eventType === "agent_start");
+const runningSnapshot = received.findLast((record) =>
+  record.type === "session.snapshot" && record.snapshot.agentRunId);
+const agentRunId = startEvent.payload.agentRunId;
+const commandBase = {{
+  protocolVersion: "ts-phone-bridge/3",
+  workspaceId: "ts_006",
+  sessionId: "session-1",
+  instanceEpoch: received.find((record) => record.type === "bridge.register").instanceEpoch,
+  sessionGeneration: 1,
+  type: "command.abort",
+}};
+peer.write(JSON.stringify({{
+  ...commandBase,
+  requestId: "abort-stale",
+  agentRunId: "run-1-99",
+}}) + "\\n");
+await waitFor(() => received.some((record) => record.type === "command.ack" && record.requestId === "abort-stale"));
+peer.write(JSON.stringify({{
+  ...commandBase,
+  requestId: "abort-active",
+  agentRunId,
+}}) + "\\n");
+await waitFor(() => received.some((record) => record.type === "command.ack" && record.requestId === "abort-active"));
+idle = true;
+await handlers.agent_settled({{ type: "agent_settled" }}, ctx);
+await waitFor(() => received.filter((record) => record.type === "session.snapshot").length >= 3);
+peer.write(JSON.stringify({{
+  ...commandBase,
+  requestId: "abort-idle",
+  agentRunId,
+}}) + "\\n");
+await waitFor(() => received.some((record) => record.type === "command.ack" && record.requestId === "abort-idle"));
+const settledEvent = received.find((record) =>
+  record.type === "event.publish" && record.eventType === "agent_settled");
+const settledSnapshot = received.filter((record) => record.type === "session.snapshot").at(-1);
+const ack = (requestId) => received.find((record) =>
+  record.type === "command.ack" && record.requestId === requestId);
+await handlers.session_shutdown({{ type: "session_shutdown", reason: "quit" }}, ctx);
+await new Promise((resolve) => server.close(resolve));
+await unlink(socketPath).catch(() => {{}});
+process.stdout.write(JSON.stringify({{
+  agentRunId,
+  startPayload: startEvent.payload,
+  runningSnapshotIsStreaming: runningSnapshot.snapshot.isStreaming,
+  runningSnapshotAgentRunId: runningSnapshot.snapshot.agentRunId,
+  settledPayload: settledEvent.payload,
+  settledSnapshotIsStreaming: settledSnapshot.snapshot.isStreaming,
+  settledSnapshotHasAgentRunId: Object.hasOwn(settledSnapshot.snapshot, "agentRunId"),
+  staleAck: ack("abort-stale"),
+  activeAck: ack("abort-active"),
+  idleAck: ack("abort-idle"),
+  abortCount,
+}}));
+"""
+    result = _node_json(script)
+    assert result["agentRunId"] == "run-1-1"
+    assert result["startPayload"] == {
+        "type": "agent_start",
+        "origin": "unknown",
+        "turnId": "turn-1-2",
+        "agentRunId": result["agentRunId"],
+    }
+    assert result["runningSnapshotIsStreaming"] is True
+    assert result["runningSnapshotAgentRunId"] == result["agentRunId"]
+    assert result["settledPayload"] == {
+        "type": "agent_settled",
+        "origin": "unknown",
+        "turnId": "turn-1-2",
+        "agentRunId": result["agentRunId"],
+    }
+    assert result["settledSnapshotIsStreaming"] is False
+    assert result["settledSnapshotHasAgentRunId"] is False
+    assert result["staleAck"]["ok"] is False
+    assert result["staleAck"]["errorCode"] == "agent_run_stale"
+    assert result["activeAck"]["ok"] is True
+    assert result["idleAck"]["ok"] is False
+    assert result["idleAck"]["errorCode"] == "agent_not_running"
+    assert result["abortCount"] == 1
 
 
 def test_phone_bridge_snapshot_exposes_stable_message_cursors() -> None:
@@ -304,7 +514,7 @@ const server = createServer((socket) => {{
       const record = JSON.parse(line);
       received.push(record);
       const base = {{
-        protocolVersion: "ts-phone-bridge/2",
+        protocolVersion: "ts-phone-bridge/3",
         workspaceId: "ts_006",
         sessionId: "session-1",
         instanceEpoch: record.instanceEpoch,
@@ -461,7 +671,7 @@ def _node_json(script: str):
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        timeout=20,
+        timeout=30,
         check=False,
     )
     assert completed.returncode == 0, completed.stderr

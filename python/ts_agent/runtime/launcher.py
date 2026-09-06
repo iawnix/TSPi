@@ -175,7 +175,7 @@ def _validate_suite_identity(suite_root: Path, agent_root: Path) -> None:
         not isinstance(manifest, dict)
         or set(manifest)
         != {"schema_version", "release_id", "package", "components", "archive", "created_at_utc"}
-        or manifest.get("schema_version") != "tspi-package-release/1"
+        or manifest.get("schema_version") != "tspi-package-release/2"
         or manifest.get("release_id") != suite_root.name
         or not isinstance(suite_package, dict)
         or suite_package.get("name") != SUITE_PACKAGE_NAME

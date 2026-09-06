@@ -28,6 +28,11 @@ TEXT_SUFFIXES = frozenset({".cjs", ".html", ".js", ".json", ".md", ".py", ".toml
 ALLOWED_CONTRACT_OR_THIRD_PARTY_LABELS = (
     "etkdg=" + "v" + "3",
     "ts-" + "leg" + "acy-notification-state-archive/1",
+    "APK Signature Scheme " + "v" + "2",
+    "Verified using " + "v" + "2" + " scheme",
+    "https://tsphone.iawnix.xyz/schema/bridge-" + "v" + "3.json",
+    "https://tsphone.iawnix.xyz/schema/events-" + "v" + "3.json",
+    "/api/" + "v" + "4/version",
 )
 
 
