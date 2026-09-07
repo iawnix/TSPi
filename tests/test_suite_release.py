@@ -143,6 +143,9 @@ def test_suite_build_is_deterministic_and_installs_one_component_set(tmp_path: P
     assert installed["created"] is True
     assert repeated["created"] is False
     assert installed["services_activated"] is False
+    session_host = install_root / ".pi" / "session-host"
+    assert session_host.is_dir()
+    assert stat.S_IMODE(session_host.stat().st_mode) == 0o700
     suite_home = install_root / ".pi" / "packages" / "tspi"
     release_root = suite_home / "releases" / first["release_id"]
     assert (suite_home / "current").resolve() == release_root

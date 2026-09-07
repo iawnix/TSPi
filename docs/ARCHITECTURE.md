@@ -527,31 +527,46 @@ mechanism.
 2. Resolve installation-owned runtime, remote, notification, and cache paths.
 3. Select the isolated Python interpreter and verify its installed
    `ts-agent-kernel` payload before importing workflow code.
-4. Validate the workspace name and create or reuse
+4. Validate the workspace name, hold the session-directory guard, and create or reuse
    `<installation>/workspaces/<name>`.
 5. Create workspace-local Pi session settings and acquire a nonblocking Root
    Agent lock.
 6. Initialize fresh state once or validate a complete workspace without
    rewriting it. Partial, invalid, or unsupported canonical state fails closed.
-7. Execute Pi with exactly the package Skill, theme, and five extensions.
+7. Resolve an exact Pi session ID, acquire its writer guard, and execute Pi
+   with exactly the package Skill, theme, and five extensions.
 
-The TS Phone Host uses two additional private launcher operations. A
+The TS Phone Host uses private launcher operations. A
 `--phone-worker` controller follows the same bootstrap and one-writer lock path,
 then opens the requested Pi session ID in RPC mode; an observer resolves an
-existing workspace without creating `.pi` or acquiring the writer lock.
+existing workspace without acquiring the scientific Root lock. Both modes
+hold a shared directory guard and an exclusive session writer guard before Pi
+opens JSONL. These owner-only OS guard files live under installation
+`.pi/session-host/guards/`, keyed by workspace path and session ID. They remain
+outside directories that lifecycle operations may quarantine. Descriptors
+survive exec and stay held for the Pi process lifetime.
 `--lifecycle-preflight` resolves an existing workspace and returns its absolute
-path, actual Root Agent lock occupancy, and bounded counts of non-terminal remote
+path, actual Root/session-writer occupancy, and bounded counts of non-terminal remote
 calculations and unresolved remote effects (`ts-phone-project-preflight/2`). It
 does not load remote configuration, contact a scheduler, mutate canonical
 state, or create missing workspace files. Operational-integrity uncertainty
 fails the preflight closed.
 
-Host-only `--lifecycle-guard` acquires that same writer lock before inspecting
+Host-only `--lifecycle-guard` acquires the directory guard exclusively, then the
+Root lock before inspecting
 the workspace, returns `ts-phone-project-guard/1`, and retains ownership until
 its stdin closes. It may create `.pi/root-agent.lock` but never bootstraps
 scientific state or starts Pi. Phone holds this process through project trash
 and permanent project/session deletion; failed acquisition blocks the action.
 An old PID in an unlocked file does not count as an active Root Agent.
+
+`--session-host-capabilities` advertises `tspi-session-guard/1` to the Host.
+`--session-writer-check` verifies a Bridge PID against the held directory,
+session, and (for Controller) Root flock descriptors in Linux `/proc`. A
+configured Host refuses writers without that proof. Startup and lifecycle
+preflight reject already-running unguarded TSPi processes in the workspace.
+Raw Pi and archived launchers bypassing the selected installation are outside
+this cooperative guard boundary.
 
 One workspace has one Root writer process. Different workspaces can run
 concurrently while sharing immutable code, a scientific base, and the selected
@@ -561,7 +576,11 @@ not share Pi conversations, graph state, calculations, reports, or locks.
 A Pi conversation may contain many user/assistant turns. ResearchNode completion
 changes the workspace, not the transcript. A later turn learns the change from
 the tool result already in context or a new context projection. Terminal mode
-resumes only when `--continue` is supplied; Phone mode supplies it automatically.
+resumes with `--continue` or an exact `--session-id`; Phone mode selects the most
+recent session by default. The launcher resolves selection before Pi opens it.
+Managed in-process session replacement and fork are cancelled by Pi's
+`session_before_switch` and `session_before_fork` hooks. Stop/reopen is required;
+changing the active branch within the same file remains Pi's operation.
 
 Before each Root run, the control extension appends a short package-source and
 active-workspace reminder to Pi's native system prompt. It does not inject a
@@ -604,6 +623,17 @@ Before project deletion, the Host must call TSPi's lifecycle preflight and hold
 its lifecycle guard through the mutation. Unknown integrity, an occupied Root
 Agent lock, active remote work, and unresolved controls block deletion. A
 preflight reply is bound to the Host's resolved workspace path.
+
+The Host coordinates activation without holding its global metadata queue
+through process startup. A workspace reservation binds the requested mode and
+one launch identity; only its initialized model-ready snapshot completes
+startup. Preferences are saved at that point, not inferred as live authority.
+An explicit source revision is required to stop an idle Host-owned runtime.
+Pending prompt acknowledgements, not-yet-started inputs, tools, approvals, and
+running or uncertain state block switching. Startup failure cleans up only the
+owned launch. Unknown launch identities cannot reattach as external CLIs.
+No prompt is automatically sent or replayed by activation. Phone event/command
+receipts remain bounded and in memory; durable crash recovery is not claimed.
 
 The shared tool catalog is an inventory and execution classification, not a
 complete capability contract. Registered tool schemas define call fields;

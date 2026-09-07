@@ -429,6 +429,7 @@ tests are maintenance material and are blocked by the package-source guard.
 | Release contents | `package.json.files`, package checker, installer allow/deny lists, tests, installation docs |
 | Startup behavior | Python host, launcher tests, installation docs, architecture lifecycle, launch smoke |
 | Phone-managed project/session lifecycle | Python private Worker/preflight contract, Bridge policy, TS Phone API/schema/UI, deletion compensation tests, security/recovery/deployment docs |
+| Session Host activation | Exact-session pre-open guards, guard-aware CLI admission, mode/readiness/launch fences, queued-input conflicts, mobile state and draft retention, API/events/Bridge schema checks |
 
 Documentation tests should assert entrypoints and architectural invariants, not
 freeze cosmetic wording.

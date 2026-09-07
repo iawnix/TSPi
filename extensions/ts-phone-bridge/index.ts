@@ -60,6 +60,8 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
     workspaceId,
     workspaceRoot: process.cwd(),
     accessMode,
+    ...(process.env.TS_PHONE_WORKER === "1" && process.env.TS_PHONE_LAUNCH_ID
+      ? { launchId: process.env.TS_PHONE_LAUNCH_ID } : {}),
     socketPath,
     secretPath,
     getSessionId: () => context?.sessionManager.getSessionId() || "",

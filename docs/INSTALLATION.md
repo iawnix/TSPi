@@ -340,7 +340,7 @@ installation.
 
 If the Host runs with `ProtectHome=read-only`, its service sandbox also applies
 to child TSPi Workers. Add narrowly scoped `ReadWritePaths` for the configured
-workspace root, `.pi/runtime-cache`, `.agents/runtime`, and `.agents/envs` under
+workspace root, `.pi/runtime-cache`, `.pi/session-host`, `.agents/runtime`, and `.agents/envs` under
 the TSPi installation. Keep the rest of Home read-only. A notification provider
 that refreshes credentials needs a separate drop-in for only its private state
 directory.
@@ -364,18 +364,44 @@ To resume the latest Pi conversation for the same workspace:
 ./TSPi --workspace reaction-a --continue
 ```
 
-Other Pi arguments may follow the workspace selection. `--phone` accepts no
-additional Pi arguments and always uses `--continue`:
+Other Pi arguments may follow the workspace selection. `--phone` resumes the
+latest session by default; an exact session can be selected explicitly:
 
 ```bash
 ./TSPi --workspace reaction-a --phone
+./TSPi --workspace reaction-a --phone --session-id <session-id>
+./TSPi --workspace reaction-a --phone --phone-access observer
 ```
 
 The phone app can instead create a managed project/conversation and ask the Host
 to activate it. Host-only `--phone-worker`, `--lifecycle-preflight`, and
-`--lifecycle-guard` syntax is not a supported manual interface. Worker mode
+`--lifecycle-guard`, `--session-host-capabilities`, and `--session-writer-check`
+syntax is not a supported manual interface. Worker mode
 binds an exact session ID and access mode; preflight is a read-only, fail-closed
-check. Guard mode retains the Root Agent lock while the Host deletes data.
+check. Guard mode excludes every session writer, including Observer, while the
+Host deletes data. Guard files are under installation `.pi/session-host/guards/`;
+allow this operational state path in the service sandbox, but never remove an
+occupied lock file to force access.
+
+The phone's Continue research action explicitly requests Controller and keeps
+the original session ID and context; it does not require a visible terminal.
+Read-only assistant is a separate menu action. A matching live runtime is
+reused. Switching an idle Host-owned runtime requires confirmation; running,
+queued, uncertain, or external CLI runtimes are not stopped. Activation alone
+never submits the local draft. Model authentication is configured on the TSPi
+host, separately from the phone connection token.
+
+Before enabling Session Host after an update, exit all unguarded TSPi writers
+after their turns finish, including Observer CLIs. New launchers check their
+presence and the Host verifies guard compatibility before starting a Worker.
+Downgrading to a suite without these guards requires stopping every affected
+writer first. It restores that suite's limited behavior, not the new guarantees.
+
+Guarded TSPi supports a new conversation, `--continue`/`-c`, `--session-id`,
+and an existing workspace-local `--session` file. Interactive `--resume`,
+`--fork`, `--no-session`, session-directory overrides, and in-process new/fork/
+resume are rejected; exit and reopen the desired session instead. Raw Pi
+launches outside TSPi are not protected by this contract.
 
 One process owns one workspace through a nonblocking lock. Starting a second
 Root Agent for the same workspace fails immediately; another workspace can run

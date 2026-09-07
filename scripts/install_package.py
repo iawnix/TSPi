@@ -284,6 +284,7 @@ def _install_captured_package(
         with_render=with_render,
     )
     archived_notification_state = archive_retired_notification_state(install_root)
+    ensure_private_directory(install_root / ".pi" / "session-host")
     installed_manifest = read_json_object(target / INSTALLED_MANIFEST, "installed TSPi Package manifest")
     state = {
         "schema_version": SUITE_INSTALL_SCHEMA_VERSION,

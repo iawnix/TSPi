@@ -11,6 +11,7 @@ import {
 } from "../shared/workspace-cli.ts";
 import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 import { guardPackageSourceRead, packageSourceSystemPrompt } from "../shared/package-source-policy.ts";
+import { registerSessionGuard } from "../shared/session-guard.ts";
 
 const require = createRequire(import.meta.url);
 const { buildContextSummary, resolveWorkspaceRoot, toolText } = require("./summary.cjs");
@@ -49,6 +50,7 @@ type WorkspaceContextEntryData = {
 type WorkspaceValidationEntryData = { validation: Record<string, unknown> };
 
 export default function (pi: ExtensionAPI) {
+  registerSessionGuard(pi);
   pi.registerEntryRenderer<WorkspaceContextEntryData>(CONTEXT_ENTRY_TYPE, (entry, { expanded }, theme) => {
     const data = entry.data;
     const status = data?.valid === true ? "valid" : "invalid";

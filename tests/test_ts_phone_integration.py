@@ -81,13 +81,14 @@ def test_tspi_phone_starts_visible_bridged_tui(tmp_path: Path) -> None:
     assert result["mode"] == "bridge"
     assert result["workspace"] == "reaction-phone"
     assert result["access"] == "controller"
-    assert "--continue" in result["args"]
+    assert "--session-id" in result["args"]
+    assert "--continue" not in result["args"]
     assert "--mode" not in result["args"]
     assert any(value.endswith("/extensions/ts-phone-bridge/index.ts") for value in result["args"])
     assert (install_root / "workspaces" / "reaction-phone" / ".pi" / "settings.json").is_file()
 
 
-def test_second_phone_session_is_a_new_read_only_observer(tmp_path: Path) -> None:
+def test_second_phone_session_requires_explicit_observer_mode(tmp_path: Path) -> None:
     install_root, launcher = _copy_launcher(tmp_path)
     controller_pi = tmp_path / "controller-pi.py"
     controller_pi.write_text(
@@ -116,7 +117,7 @@ def test_second_phone_session_is_a_new_read_only_observer(tmp_path: Path) -> Non
     try:
         assert holder.stdout is not None
         assert holder.stdout.readline().strip() == "ready"
-        observer = subprocess.run(
+        conflict = subprocess.run(
             [str(launcher), "--workspace", "shared-phone", "--phone"],
             cwd=install_root,
             env={**os.environ, "PI_BIN": str(observer_pi)},
@@ -125,11 +126,18 @@ def test_second_phone_session_is_a_new_read_only_observer(tmp_path: Path) -> Non
             stderr=subprocess.PIPE,
             check=False,
         )
+        assert conflict.returncode == 1
+        assert "another Root Agent already owns" in conflict.stderr
+        observer = subprocess.run(
+            [str(launcher), "--workspace", "shared-phone", "--phone", "--phone-access", "observer"],
+            cwd=install_root, env={**os.environ, "PI_BIN": str(observer_pi)},
+            capture_output=True, text=True, timeout=10,
+        )
         assert observer.returncode == 0, observer.stderr
         result = json.loads(observer.stdout)
         assert result["access"] == "observer"
         assert "--continue" not in result["args"]
-        assert "read-only phone observer" in observer.stderr
+        assert "--session-id" in result["args"]
     finally:
         assert holder.stdin is not None
         holder.stdin.write("release\n")
@@ -202,7 +210,7 @@ def test_tspi_phone_observer_cannot_initialize_a_workspace(tmp_path: Path) -> No
         check=False,
     )
     assert completed.returncode == 1
-    assert "controller is still preparing this workspace" in completed.stderr
+    assert "workspace bootstrap must finish" in completed.stderr
     assert list(workspace.iterdir()) == []
 
 
@@ -240,6 +248,8 @@ def test_tspi_lifecycle_preflight_is_read_only_and_structured(tmp_path: Path) ->
         "schema_version": "ts-phone-project-preflight/2",
         "workspace_root": str(workspace),
         "root_agent_active": False,
+        "session_writers_active": False,
+        "session_guard_contract": "tspi-session-guard/1",
         "remote_calculations": 0,
         "unresolved_remote_effects": 0,
     }
@@ -310,7 +320,7 @@ def test_lifecycle_guard_holds_writer_lock_until_host_closes_stdin(tmp_path: Pat
                 cwd=install_root, capture_output=True, text=True, timeout=10,
             )
             assert blocked.returncode == 1
-            assert "another Root Agent already owns" in blocked.stderr
+            assert "session writer or lifecycle operation is active" in blocked.stderr
             assert not (workspace / "workspace.json").exists()
             guard.communicate(timeout=5)
             assert guard.returncode == 0

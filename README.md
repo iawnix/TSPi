@@ -165,17 +165,26 @@ The launcher creates and bootstraps a workspace under
 One nonblocking lock permits one Root Agent process per workspace. Different
 workspace names can run concurrently. Normal terminal mode starts a new Pi
 conversation unless Pi's `--continue` is supplied; Phone mode resumes the
-workspace conversation automatically.
+latest workspace conversation by default. `--session-id <id>` selects an exact
+conversation. A session writer lock also prevents two processes from opening
+the same history, including read-only assistants.
 
 When the TS Phone Host is configured with this installation's `TSPi`
-entrypoint, the app can create projects and independent conversations and start
-their headless Pi RPC Workers. The Host's `--phone-worker` and
+entrypoint, the app can create projects and independent conversations. Its
+**Continue research** action starts or rejoins the original session without an
+open terminal; browsing history starts nothing. **Read-only assistant** is an
+explicit alternative. Switching an idle Host-owned runtime needs confirmation;
+a busy or external CLI is never stopped automatically. The Host's `--phone-worker` and
 `--lifecycle-preflight` flags are private integration operations, not user CLI
 commands. A Worker controller acquires the same Root Agent lock and may
 bootstrap the workspace; an observer is strictly read-only and requires an
 existing workspace. The Host keeps display names and archive/trash state in its
 own owner-only `management.json`. It does not add those fields to scientific
 workspace state.
+
+For a manual read-only assistant use `--phone --phone-access observer` with a
+different session. Lock contention does not silently downgrade permissions.
+In-process new/resume/fork is blocked in guarded TSPi; exit and reopen instead.
 
 Bootstrap is idempotent for a complete workspace: fresh state is created once,
 valid state is checked without canonical rewrites, and partial, invalid, or
