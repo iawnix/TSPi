@@ -584,6 +584,19 @@ authority as local TUI turns without a separate phone approval. Observer
 sessions retain their read-only Tool allowlist for every turn, including local
 input.
 
+A Phone Worker restores an unresolved model only from the session's explicit
+model selection, or the configured default for a new session, after awaiting
+the Pi model registry refresh. It never selects an arbitrary available model.
+Snapshots report a local `promptProblem` when model selection or authentication
+is unavailable; a connected Bridge is not proof of model readiness.
+
+Host-owned Workers accept messages through native Pi RPC. The Host waits for
+the request-correlated prompt preflight response and consumes safe extension
+error summaries from stdout. Manual TUI sessions keep the extension dispatch
+path. In either mode, assistant failure and abortion remain explicit in the
+Phone projection, without forwarding raw provider error bodies. This changes
+neither Controller/Observer authority nor scientific workspace state.
+
 TS Phone owns only display names, model/access preferences, lifecycle state,
 and management revisions in its installation-state `management.json`. TSPi
 continues to own scientific workspace files and Pi owns conversation JSONL.

@@ -11,7 +11,7 @@ import { authorizeTsPhoneTool } from "./policy.ts";
 
 type TurnOrigin =
   | { kind: "local" | "extension" | "unknown"; turnId: string }
-  | { kind: "phone"; turnId: string; requestId: string; clientMessageId: string };
+  | { kind: "phone"; turnId: string; requestId?: string; clientMessageId?: string };
 
 interface PendingPhoneInput {
   requestId: string;
@@ -22,6 +22,7 @@ interface PendingPhoneInput {
 const MAX_SEEN_MESSAGE_IDS = 1_000;
 const MAX_SNAPSHOT_MESSAGES = 500;
 const MAX_SNAPSHOT_BYTES = 6 * 1024 * 1024;
+type PromptProblem = "model_unavailable" | "model_auth_missing" | "model_check_failed";
 
 interface SessionRuntimeSnapshot {
   schemaVersion: "ts-phone-session-runtime/1";
@@ -45,6 +46,7 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
   const secretPath = process.env.TS_PHONE_BRIDGE_SECRET_FILE
     || resolve(homedir(), ".local/state/ts-phone/bridge.secret");
   let context: ExtensionContext | undefined;
+  let promptProblem: PromptProblem | undefined = "model_unavailable";
   let sessionGeneration = 0;
   let turnSequence = 0;
   let agentRunSequence = 0;
@@ -70,7 +72,7 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
     },
   });
 
-  pi.on("session_start", (_event, ctx) => {
+  pi.on("session_start", async (_event, ctx) => {
     context = ctx;
     sessionGeneration += 1;
     agentRunSequence = 0;
@@ -78,6 +80,14 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
     pendingOrigins.length = 0;
     pendingPhoneInputs.length = 0;
     activeOrigin = { kind: "unknown", turnId: nextTurnId() };
+    if (process.env.TS_PHONE_WORKER === "1") {
+      await restorePhoneModel(pi, ctx, async () => {
+        const { SettingsManager } = await import("@earendil-works/pi-coding-agent");
+        const settings = SettingsManager.create(ctx.cwd);
+        return { provider: settings.getDefaultProvider(), modelId: settings.getDefaultModel() };
+      });
+    }
+    promptProblem = phonePromptProblem(ctx);
     bridge.start();
     if (bridge.connected) publishSnapshot();
   });
@@ -89,6 +99,7 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
   });
   pi.on("session_info_changed", () => publishSnapshot());
   pi.on("model_select", (event) => {
+    if (context) promptProblem = phonePromptProblem(context);
     bridge.publishEvent("model_select", {
       type: event.type,
       model: { provider: event.model.provider, id: event.model.id },
@@ -174,6 +185,11 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
       return;
     }
     if (seenClientMessageIds.has(command.clientMessageId)) return;
+    promptProblem = phonePromptProblem(ctx);
+    if (promptProblem) {
+      publishSnapshot();
+      throw new Error(promptProblem);
+    }
     rememberClientMessageId(command.clientMessageId);
     const pending = {
       requestId: command.requestId,
@@ -205,6 +221,9 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
       }
       return { kind: "extension", turnId: nextTurnId() };
     }
+    if (event.source === "rpc" && process.env.TS_PHONE_WORKER === "1") {
+      return { kind: "phone", turnId: nextTurnId() };
+    }
     if (event.source === "interactive" || event.source === "rpc") {
       return { kind: "local", turnId: nextTurnId() };
     }
@@ -223,6 +242,7 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
       sessionId: ctx.sessionManager.getSessionId(),
       sessionName: ctx.sessionManager.getSessionName(),
       model,
+      ...(promptProblem ? { promptProblem } : {}),
       ...(runtime ? { runtime } : {}),
       thinkingLevel: ctx.thinkingLevel,
       isStreaming: activeAgentRunId !== undefined,
@@ -244,6 +264,32 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
     turnSequence += 1;
     return `turn-${sessionGeneration}-${turnSequence}`;
   }
+}
+
+export function phonePromptProblem(ctx: Pick<ExtensionContext, "model" | "modelRegistry">): PromptProblem | undefined {
+  if (!ctx.model || ctx.model.id === "unknown" || ctx.model.provider === "unknown") return "model_unavailable";
+  try {
+    if (!ctx.modelRegistry.hasConfiguredAuth(ctx.model)) return "model_auth_missing";
+  } catch { return "model_check_failed"; }
+  return undefined;
+}
+
+export async function restorePhoneModel(
+  pi: Pick<ExtensionAPI, "setModel">,
+  ctx: Pick<ExtensionContext, "model" | "modelRegistry" | "sessionManager">,
+  defaults: () => Promise<{ provider?: string; modelId?: string }>,
+): Promise<void> {
+  if (ctx.model && ctx.model.id !== "unknown" && ctx.model.provider !== "unknown") return;
+  try {
+    await ctx.modelRegistry.refresh();
+    const saved = ctx.sessionManager.getBranch().filter((entry) => entry.type === "model_change").at(-1);
+    // Restore only an explicit saved selection, or the configured default for
+    // a new session. Never silently route a prompt to an arbitrary model.
+    const selected = saved?.type === "model_change" ? saved : await defaults();
+    if (!selected.provider || !selected.modelId) return;
+    const model = ctx.modelRegistry.find(selected.provider, selected.modelId);
+    if (model && ctx.modelRegistry.hasConfiguredAuth(model)) await pi.setModel(model);
+  } catch { /* Readiness remains unavailable; no prompt is dispatched. */ }
 }
 
 export function buildAgentRunId(sessionGeneration: number, sequence: number): string {
@@ -271,7 +317,7 @@ export function buildSessionRuntimeSnapshot(
   usage: ReturnType<ExtensionContext["getContextUsage"]>,
   updatedAt = new Date().toISOString(),
 ): SessionRuntimeSnapshot | undefined {
-  if (!model) return undefined;
+  if (!model || model.id === "unknown" || model.provider === "unknown") return undefined;
   const runtime: SessionRuntimeSnapshot = {
     schemaVersion: "ts-phone-session-runtime/1",
     model: {
@@ -353,7 +399,9 @@ export function projectMessage(message: unknown): unknown {
         content.push({ type: "toolCall", name: block.name, arguments: block.arguments });
       }
     }
-    return { role: candidate.role, content, timestamp: candidate.timestamp };
+    const outputState = candidate.stopReason === "error" ? "failed"
+      : candidate.stopReason === "aborted" ? "aborted" : undefined;
+    return { role: candidate.role, content, timestamp: candidate.timestamp, ...(outputState ? { outputState } : {}) };
   }
   if (candidate.role === "toolResult") {
     return {

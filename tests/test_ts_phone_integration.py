@@ -682,6 +682,54 @@ process.stdout.write(JSON.stringify({{
     assert result["missingModel"] is None
 
 
+def test_phone_model_recovery_waits_for_registry_and_preserves_explicit_selection() -> None:
+    script = f"""
+import {{ restorePhoneModel, phonePromptProblem, projectMessage, buildSessionRuntimeSnapshot }} from {json.dumps(PHONE_EXTENSION.as_uri())};
+const log = [];
+const ctx = {{
+  model: {{ id: "unknown", provider: "unknown" }},
+  sessionManager: {{ getBranch: () => [{{ type: "model_change", provider: "cpa", modelId: "saved" }}] }},
+  modelRegistry: {{
+    async refresh() {{ await new Promise(r => setTimeout(r, 5)); log.push("refreshed"); }},
+    find(provider, id) {{ log.push("find:" + id); return {{ provider, id }}; }},
+    hasConfiguredAuth() {{ return true; }},
+  }},
+}};
+let defaultReads = 0;
+const defaults = async () => {{ defaultReads++; return {{ provider: "cpa", modelId: "default" }}; }};
+const pi = {{ async setModel(model) {{ ctx.model = model; log.push("selected:" + model.id); return true; }} }};
+await restorePhoneModel(pi, ctx, defaults);
+const saved = {{ log: [...log], model: ctx.model, defaultReads, problem: phonePromptProblem(ctx) ?? null }};
+ctx.model = {{ id: "unknown", provider: "unknown" }};
+ctx.sessionManager.getBranch = () => [];
+await restorePhoneModel(pi, ctx, defaults);
+const fresh = {{ model: ctx.model, defaultReads }};
+ctx.model = {{ id: "unknown", provider: "unknown" }};
+ctx.sessionManager.getBranch = () => [{{ type: "model_change", provider: "cpa", modelId: "removed" }}];
+ctx.modelRegistry.find = () => undefined;
+await restorePhoneModel(pi, ctx, defaults);
+const missing = {{ model: ctx.model, defaultReads, problem: phonePromptProblem(ctx) }};
+ctx.model = {{ id: "saved", provider: "cpa" }};
+ctx.modelRegistry.hasConfiguredAuth = () => false;
+const noAuth = phonePromptProblem(ctx);
+const failed = projectMessage({{ role: "assistant", content: [], stopReason: "error", errorMessage: "private credential" }});
+process.stdout.write(JSON.stringify({{ saved, fresh, missing, noAuth, failed,
+  unknownRuntime: buildSessionRuntimeSnapshot({{ provider: "unknown", id: "unknown" }}, undefined) ?? null,
+}}));
+"""
+    result = _node_json(script)
+    assert result["saved"]["log"] == ["refreshed", "find:saved", "selected:saved"]
+    assert result["saved"]["defaultReads"] == 0
+    assert result["saved"]["problem"] is None
+    assert result["fresh"]["model"]["id"] == "default"
+    assert result["missing"]["defaultReads"] == 1
+    assert result["missing"]["problem"] == "model_unavailable"
+    assert result["noAuth"] == "model_auth_missing"
+    assert result["failed"]["outputState"] == "failed"
+    assert "private credential" not in json.dumps(result)
+    assert result["unknownRuntime"] is None
+
+
 def test_phone_bridge_client_exchanges_events_commands_and_approval(tmp_path: Path) -> None:
     socket_path = tmp_path / "bridge.sock"
     secret_path = tmp_path / "bridge.secret"
