@@ -21,6 +21,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--install-root", required=True)
+    parser.add_argument("--entrypoint", choices=("agent", "phone-server", "phone-ctl"), default="agent")
     parser.add_argument("arguments", nargs=argparse.REMAINDER)
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
     forwarded = list(args.arguments)
@@ -30,7 +31,14 @@ def main(argv: list[str] | None = None) -> int:
     # execution mode. A thin UI must not initialize the scientific environment.
     # Native Pi, Worker, and lifecycle paths still require it inside launch().
     activate_source_package(ROOT)
-    from ts_agent.runtime.launcher import main as launcher_main
+    from ts_agent.runtime.launcher import main as launcher_main, launch_phone_entrypoint, TSPiHostError
+
+    if args.entrypoint != "agent":
+        try:
+            launch_phone_entrypoint(ROOT, Path(args.install_root), args.entrypoint, forwarded)
+        except (TSPiHostError, OSError, ValueError) as exc:
+            print(f"TSPi: {exc}", file=sys.stderr)
+            return 1
 
     return launcher_main(forwarded, package_root=ROOT, install_root=args.install_root)
 

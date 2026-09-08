@@ -25,7 +25,8 @@ the first Controller activation bootstraps research deterministically.
 
 The client reads the installation's private `.pi/ts-phone/server.env` without
 executing it. Exported `TS_PHONE_HOST`, `TS_PHONE_PORT`, and `TS_PHONE_STATE_DIR`
-take precedence. The Host must use the same settings. Only `127.0.0.1` or `::1`
+take precedence. Installed `TSPhoneServer` and `TSPhoneCtl` use this same reader;
+manual environment loading is unnecessary. Only `127.0.0.1` or `::1`
 is allowed. The token is read from `TS_PHONE_STATE_DIR/auth.token` and is never
 printed or passed as a process argument. It does not read `~/.pi/agent`;
 provider credentials stay with the Host Worker.

@@ -7,6 +7,8 @@ import argparse
 import hashlib
 import json
 import os
+import stat
+import subprocess
 import sys
 import tarfile
 import tempfile
@@ -116,9 +118,17 @@ INSTALLED_MANIFEST = ".tspi-package-release.json"
 LAUNCHER_PATHS = {
     "TSPi": ("agent", "TSPi"),
     "TSWeb": ("agent", "scripts", "ts_web.py"),
-    "TSPhoneCtl": ("phone", "bin", "ts-phone-ctl"),
-    "TSPhoneServer": ("phone", "bin", "ts-phone-server"),
+    "TSPhoneCtl": ("agent", "TSPi"),
+    "TSPhoneServer": ("agent", "TSPi"),
 }
+
+# Installer control code is standard-library-only and must precede runtime activation.
+try:
+    from ._bootstrap import activate_source_package
+except ImportError:
+    from _bootstrap import activate_source_package
+activate_source_package(Path(__file__).resolve().parents[1])
+from ts_agent.runtime.session_guard import CONTRACT, SessionGuardError, guard_installation_upgrade
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -157,6 +167,7 @@ def main(argv: list[str] | None = None) -> int:
         SuiteReleaseError,
         ReleaseInstallError,
         RuntimeInstallError,
+        SessionGuardError,
         WheelContractError,
         json.JSONDecodeError,
         OSError,
@@ -288,6 +299,7 @@ def _install_captured_package(
     # Host browsing precedes the first Worker and must work on a fresh install.
     ensure_private_directory(install_root / "workspaces")
     installed_manifest = read_json_object(target / INSTALLED_MANIFEST, "installed TSPi Package manifest")
+    service_template = prepare_phone_service(install_root, target)
     state = {
         "schema_version": SUITE_INSTALL_SCHEMA_VERSION,
         "current_release_id": manifest["release_id"],
@@ -297,15 +309,17 @@ def _install_captured_package(
         "python_payload_sha256": prepared_runtime.result["python_payload_sha256"],
         "installed_at_utc": datetime.now(timezone.utc).isoformat(),
         "services_activated": False,
+        "session_guard_contract": CONTRACT,
     }
-    launchers = _activate_release(
-        install_root,
-        package_home,
-        target,
-        prepared_runtime,
-        state,
-        publish,
-    )
+    with guard_installation_upgrade(install_root):
+        launchers = _activate_release(
+            install_root,
+            package_home,
+            target,
+            prepared_runtime,
+            state,
+            publish,
+        )
     return {
         "ok": True,
         "created": created,
@@ -317,7 +331,31 @@ def _install_captured_package(
         "runtime": dict(prepared_runtime.result),
         "services_activated": False,
         "archived_retired_notification_state": archived_notification_state,
+        "phone_service_template": str(service_template),
     }
+
+
+def prepare_phone_service(install_root: Path, target: Path) -> Path:
+    directory = ensure_private_directory(install_root / ".pi" / "ts-phone")
+    destination = directory / "ts-phone.service"
+    if destination.exists() or destination.is_symlink():
+        info = destination.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_nlink != 1:
+            raise SuiteReleaseError("existing Phone service template must be an owner-only regular file")
+        return destination
+    try:
+        completed = subprocess.run(
+            ["node", str(target / "agent" / "src" / "host" / "service.mjs"), "--install-root", str(install_root)],
+            capture_output=True, text=True, timeout=10, check=False,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise SuiteReleaseError("Phone service template generation timed out") from exc
+    if completed.returncode != 0 or not completed.stdout.startswith("[Unit]\n"):
+        raise SuiteReleaseError("cannot generate Phone service template; check the private installation configuration")
+    descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+        handle.write(completed.stdout)
+    return destination
 
 
 def _activate_release(

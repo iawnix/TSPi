@@ -9,6 +9,8 @@ import os
 import re
 import stat
 import uuid
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 
 CONTRACT = "tspi-session-guard/1"
@@ -21,6 +23,77 @@ class SessionGuardError(RuntimeError):
     def __init__(self, message: str, *, code: str = "session_guard_invalid"):
         super().__init__(message)
         self.code = code
+
+
+def installation_is_guarded(installation: Path) -> bool:
+    path = installation / ".pi" / "packages" / "tspi" / "install-state.json"
+    try:
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise SessionGuardError("cannot read installation guard state") from exc
+    try:
+        with os.fdopen(descriptor, "rb") as handle:
+            info = os.fstat(handle.fileno())
+            if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid()
+                    or info.st_mode & 0o077 or info.st_nlink != 1 or info.st_size > HEADER_LIMIT):
+                raise SessionGuardError("installation guard state is not an owner-only regular file")
+            value = json.loads(handle.read(HEADER_LIMIT + 1))
+        if not isinstance(value, dict) or value.get("session_guard_contract") != CONTRACT:
+            return False
+        package_root = value.get("package_root")
+        if (value.get("schema_version") != "tspi-package-install/1"
+                or not isinstance(package_root, str)
+                or Path(package_root).parent != installation.resolve() / ".pi/packages/tspi/releases"
+                or Path(package_root).name != value.get("current_release_id")):
+            raise SessionGuardError("installation guard state does not match this installation")
+        return True
+    except (OSError, ValueError) as exc:
+        raise SessionGuardError("invalid installation guard state") from exc
+
+
+def require_guarded_installation(installation: Path) -> None:
+    if not installation_is_guarded(installation):
+        raise SessionGuardError(
+            "installation guard upgrade is incomplete; run the Package installer after closing old TSPi writers",
+            code="session_guard_upgrade_required",
+        )
+
+
+@contextmanager
+def guard_installation_upgrade(installation: Path) -> Iterator[None]:
+    """Inspect unguarded writers once, while holding the affected directories closed."""
+    if installation_is_guarded(installation):
+        yield
+        return
+    from .launcher import WORKSPACE_NAME, TSPiHostError, acquire_lifecycle_guard
+
+    container = installation / "workspaces"
+    if container.is_symlink():
+        raise SessionGuardError("workspace container cannot be a symbolic link")
+    with ExitStack() as guards:
+        for workspace in sorted(container.iterdir()) if container.exists() else []:
+            if not WORKSPACE_NAME.fullmatch(workspace.name):
+                continue
+            if workspace.is_symlink():
+                raise SessionGuardError("workspace cannot be a symbolic link during guard upgrade")
+            if not workspace.is_dir():
+                continue
+            directory = acquire_directory_guard(installation, workspace, exclusive=True)
+            guards.callback(os.close, directory)
+            try:
+                root = acquire_lifecycle_guard(workspace)
+            except TSPiHostError as exc:
+                raise SessionGuardError(f"cannot verify Root lock in {workspace.name} during guard upgrade") from exc
+            if root is None:
+                raise SessionGuardError(
+                    f"old TSPi writer is active in {workspace.name}; close it before upgrading",
+                    code="session_writer_active",
+                )
+            guards.callback(os.close, root)
+            assert_no_unguarded_writers(workspace)
+        yield
 
 
 def guard_directory(installation: Path, workspace: Path) -> Path:
@@ -96,7 +169,7 @@ def _acquire(path: Path, *, exclusive: bool) -> int:
 
 
 def assert_no_unguarded_writers(workspace: Path) -> None:
-    """Fail closed on old TSPi writers before enabling shared session guards."""
+    """Installer-only process inspection; never used for normal session startup."""
     try:
         processes = list(_PROC_ROOT.iterdir())
     except OSError as exc:

@@ -307,8 +307,8 @@ Ambiguous provider effects are never retried automatically.
 Phone mode is optional. The selected Package includes the compatible broker,
 control CLI, protocol schemas, and signed arm64 APK. It does not own the live
 service or its secrets. Copy the component's example environment into private
-installation state and edit its workspace, state, and socket paths for the
-installation:
+installation state. Paths are inferred by the installed entrypoints; uncomment
+only the overrides this installation needs:
 
 ```bash
 mkdir -p /path/to/TSPi-installation/.pi/ts-phone
@@ -317,22 +317,30 @@ cp /path/to/TSPi-installation/.pi/packages/tspi/current/phone/deploy/server.env.
 chmod 600 /path/to/TSPi-installation/.pi/ts-phone/server.env
 ```
 
-The Host requires these bindings to create and activate managed sessions:
+The installed terminal client, Host, and control CLI read this owner-only file
+as dotenv data, without executing it. Explicit environment variables take precedence. In a
+unified installation these bindings default to the invoked installation root:
 
 ```dotenv
 TS_PHONE_TSPI=/path/to/TSPi-installation/TSPi
 TS_PHONE_WORKSPACES=/path/to/TSPi-installation/workspaces
 ```
 
-`TS_PHONE_TSPI` must be an absolute executable path. Without it, the server may
-browse validated persisted sessions but cannot start a controller or observer.
+`TS_PHONE_TSPI` must be an absolute executable path. Unified entrypoints reject
+bindings to another installation; the standalone Phone development server still
+requires an explicit launcher to activate sessions.
 The app's project and conversation names, model/access preferences, and
 active/archive/trash state live in owner-only
 `TS_PHONE_STATE_DIR/management.json`; scientific state and conversation text
 remain in their existing TSPi workspace and Pi JSONL owners.
 
 An operator may run `/path/to/TSPi-installation/TSPhoneServer` under a service
-manager or in a terminal after loading that environment. Service activation,
+manager or directly in a terminal; both load the same installation configuration.
+The Package installer creates `.pi/ts-phone/ts-phone.service` only if absent,
+using the configured paths and retaining the narrow sandbox. Existing templates
+and live service registrations are not overwritten. Inspect an updated template
+without starting anything with `TSPhoneServer --print-service`.
+Service activation,
 restart, FRP, HTTPS, and token handling remain explicit operational actions;
 the Package installer never performs them. `TSPhoneCtl` targets the configured
 state directory. The Android artifact is under the path recorded by
@@ -423,9 +431,15 @@ queued, uncertain, or external CLI runtimes are not stopped. Activation alone
 never submits the local draft. Model authentication is configured on the TSPi
 host, separately from the phone connection token.
 
-Before enabling Session Host after an update, exit all unguarded TSPi writers
-after their turns finish, including Observer CLIs. New launchers check their
-presence and the Host verifies guard compatibility before starting a Worker.
+The first install enabling the guard activation record requires old TSPi writers
+to exit after their turns finish, including Observer CLIs. Run the installer as
+the installation owner, not inside the Host sandbox. It verifies unguarded writers
+and holds affected workspace locks before publishing `session_guard_contract`
+in the existing install-state record. A failed check does not select the new
+release or mark the upgrade complete. Never create that record by hand.
+Later same-contract updates do not repeat global process inspection. Normal
+startup uses only the installation record and actual workspace/session locks;
+unrelated Pi processes with private `/proc` state do not block it.
 Downgrading to a suite without these guards requires stopping every affected
 writer first. It restores that suite's limited behavior, not the new guarantees.
 

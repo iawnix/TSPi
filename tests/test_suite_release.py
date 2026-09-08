@@ -7,6 +7,7 @@ import io
 import json
 import os
 import stat
+import subprocess
 import tarfile
 import zipfile
 from datetime import datetime, timezone
@@ -173,7 +174,13 @@ def test_suite_build_is_deterministic_and_installs_one_component_set(tmp_path: P
     assert not (release_root / "phone" / "deploy" / "systemd" / "ts-phone.service").exists()
     assert Path(installed["launchers"]["TSPi"]).resolve() == release_root / "agent" / "TSPi"
     assert Path(installed["launchers"]["TSWeb"]).resolve() == release_root / "agent" / "scripts" / "ts_web.py"
-    assert Path(installed["launchers"]["TSPhoneServer"]).resolve() == release_root / "phone" / "bin" / "ts-phone-server"
+    assert Path(installed["launchers"]["TSPhoneServer"]).resolve() == release_root / "agent" / "TSPi"
+    assert Path(installed["launchers"]["TSPhoneCtl"]).resolve() == release_root / "agent" / "TSPi"
+    service = Path(installed["phone_service_template"]).read_text()
+    assert f'ExecStart="{install_root}/TSPhoneServer"' in service
+    assert "ProtectHome=read-only" in service
+    state = json.loads((suite_home / "install-state.json").read_text())
+    assert state["session_guard_contract"] == "tspi-session-guard/1"
     assert stat.S_IMODE(release_root.stat().st_mode) == 0o500
     assert all(stat.S_IMODE(path.stat().st_mode) & 0o222 == 0 for path in release_root.rglob("*"))
 
@@ -195,6 +202,55 @@ def test_suite_install_rejects_modified_outer_archive_before_state_creation(tmp_
     with pytest.raises(SuiteReleaseError, match="SHA-256"):
         install_package(Path(built["manifest"]), None, tmp_path / "install")
     assert not (tmp_path / "install").exists()
+
+
+def test_failed_guard_upgrade_does_not_publish_release_or_completion(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from ts_agent.runtime import session_guard
+
+    agent, _ = _synthetic_release(tmp_path / "agent", marker="guard-upgrade")
+    phone = _synthetic_phone_release(tmp_path / "phone", marker="guard-upgrade")
+    built = build_package(phone_manifest_path=phone, output_dir=tmp_path / "package", agent_manifest_path=agent, allow_dirty=False)
+    installation = tmp_path / "install"
+    (installation / "workspaces/ts_old").mkdir(parents=True)
+
+    def fail(_workspace: Path) -> None:
+        raise session_guard.SessionGuardError("unverifiable unguarded writer", code="session_writer_inspection_failed")
+
+    monkeypatch.setattr(session_guard, "assert_no_unguarded_writers", fail)
+    with pytest.raises(session_guard.SessionGuardError, match="unverifiable"):
+        install_package(Path(built["manifest"]), None, installation)
+    assert not (installation / ".pi/packages/tspi/current").exists()
+    assert not (installation / ".pi/packages/tspi/install-state.json").exists()
+    assert not (installation / ".agents/runtime/transition-state-workflow/env.json").exists()
+
+
+def test_service_template_timeout_is_reported_without_partial_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    installation = tmp_path / "install"
+    installation.mkdir()
+
+    def timeout(*args: object, **kwargs: object) -> None:
+        raise subprocess.TimeoutExpired("node", 10)
+
+    monkeypatch.setattr(install_package_module.subprocess, "run", timeout)
+    with pytest.raises(SuiteReleaseError, match="template generation timed out"):
+        install_package_module.prepare_phone_service(installation, tmp_path / "release")
+    assert not (installation / ".pi/ts-phone/ts-phone.service").exists()
+
+
+def test_existing_private_service_template_is_preserved(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    installation = tmp_path / "install"
+    destination = installation / ".pi/ts-phone/ts-phone.service"
+    destination.parent.mkdir(parents=True)
+    content = "[Unit]\nDescription=Locally configured TSPi\n"
+    destination.write_text(content)
+    destination.chmod(0o600)
+
+    def unexpected(*args: object, **kwargs: object) -> None:
+        pytest.fail("existing service templates must not be regenerated")
+
+    monkeypatch.setattr(install_package_module.subprocess, "run", unexpected)
+    assert install_package_module.prepare_phone_service(installation, tmp_path / "release") == destination
+    assert destination.read_text() == content
 
 
 def test_runtime_prepare_failure_does_not_select_the_new_release(tmp_path: Path) -> None:

@@ -365,6 +365,8 @@ def _synthetic_release(
     root.mkdir(parents=True)
     temporary_archive = root / "package.tgz"
     files = {name: b"\n" for name in REQUIRED_RUNTIME_FILES}
+    for name in ("src/host/environment.mjs", "src/host/service.mjs"):
+        files[name] = (ROOT / name).read_bytes()
     files["package.json"] = b'{"name":"@iawnix/ts-agent","version":"0.5.0"}\n'
     files["TSPi"] = b"#!/usr/bin/env bash\nexit 0\n"
     files["README.md"] = f"release {marker}\n".encode()

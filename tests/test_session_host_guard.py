@@ -12,8 +12,117 @@ from ts_agent.runtime import session_guard
 from ts_agent.runtime.session_guard import (
     SessionGuardError, acquire_directory_guard, acquire_session_guard,
     assert_no_unguarded_writers, select_session, verify_session_writer,
+    guard_installation_upgrade, installation_is_guarded, require_guarded_installation,
 )
 from tests.test_ts_phone_integration import ROOT, TS_LOADER, _copy_launcher
+
+
+def test_daily_launcher_does_not_inspect_global_processes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from ts_agent.runtime import launcher as host
+
+    installation, executable = _copy_launcher(tmp_path)
+    package = executable.resolve().parent
+    monkeypatch.setattr(os, "environ", os.environ.copy())
+    monkeypatch.setattr(session_guard, "_PROC_ROOT", tmp_path / "unreadable-proc")
+    launched = []
+
+    class Started(Exception):
+        pass
+
+    def capture(command: list[str], workspace: Path) -> None:
+        launched.append(workspace.name)
+        raise Started
+
+    monkeypatch.setattr(host, "exec_pi", capture)
+    with pytest.raises(Started):
+        host.launch(["--standalone", "--workspace", "ts_001"], package_root=package, install_root=installation)
+    assert launched == ["ts_001"]
+    assert host.launch(["--workspace", "ts_001", "--lifecycle-preflight"],
+        package_root=package, install_root=installation) == 0
+
+
+def test_guard_upgrade_requires_a_private_record_and_does_not_run_during_startup(tmp_path: Path) -> None:
+    installation, executable = _copy_launcher(tmp_path)
+    state = installation / ".pi/packages/tspi/install-state.json"
+    assert installation_is_guarded(installation)
+    state.unlink()
+    result = subprocess.run([str(executable), "--workspace", "ts_001", "--phone-worker",
+        "--session-id", "session-1", "--phone-access", "controller"], capture_output=True, text=True, timeout=10)
+    assert result.returncode == 1
+    assert json.loads(result.stderr.splitlines()[-1])["code"] == "session_guard_upgrade_required"
+    assert not (installation / "workspaces").exists()
+    with pytest.raises(SessionGuardError) as error:
+        require_guarded_installation(installation)
+    assert error.value.code == "session_guard_upgrade_required"
+    state.write_text(json.dumps({"session_guard_contract": session_guard.CONTRACT}))
+    state.chmod(0o644)
+    with pytest.raises(SessionGuardError, match="owner-only"):
+        installation_is_guarded(installation)
+
+
+def test_upgrade_holds_workspace_locks_and_subsequent_upgrades_skip_inspection(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workspace = tmp_path / "workspaces/ts_001"
+    workspace.mkdir(parents=True)
+    inspected = []
+    monkeypatch.setattr(session_guard, "assert_no_unguarded_writers", lambda root: inspected.append(root))
+    with guard_installation_upgrade(tmp_path):
+        with pytest.raises(SessionGuardError) as error:
+            acquire_directory_guard(tmp_path, workspace)
+        assert error.value.code == "session_writer_active"
+    assert inspected == [workspace]
+    state = tmp_path / ".pi/packages/tspi/install-state.json"
+    state.parent.mkdir(parents=True)
+    state.write_text(json.dumps({
+        "schema_version": "tspi-package-install/1", "current_release_id": "guarded-release",
+        "package_root": str(state.parent / "releases/guarded-release"),
+        "session_guard_contract": session_guard.CONTRACT,
+    }))
+    state.chmod(0o600)
+    descriptor = acquire_directory_guard(tmp_path, workspace)
+    try:
+        with guard_installation_upgrade(tmp_path):
+            pass
+        assert inspected == [workspace]
+    finally:
+        os.close(descriptor)
+
+
+@pytest.mark.parametrize("change", [
+    {"schema_version": "not-an-installation"}, {"current_release_id": "other-release"},
+    {"package_root": "/another-installation/.pi/packages/tspi/releases/test"},
+])
+def test_guard_upgrade_record_cannot_be_reused_for_another_installation(tmp_path: Path, change: dict) -> None:
+    installation, executable = _copy_launcher(tmp_path)
+    state = installation / ".pi/packages/tspi/install-state.json"
+    state.write_text(json.dumps({**json.loads(state.read_text()), **change}))
+    with pytest.raises(SessionGuardError, match="does not match this installation"):
+        installation_is_guarded(installation)
+    result = subprocess.run([str(executable), "--session-host-capabilities"],
+        capture_output=True, text=True, timeout=10)
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert json.loads(result.stderr.splitlines()[-1])["code"] == "session_guard_invalid"
+
+
+def test_guard_corruption_is_not_reported_as_an_active_writer(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from ts_agent.runtime import launcher as host
+
+    installation, executable = _copy_launcher(tmp_path)
+    monkeypatch.setattr(os, "environ", os.environ.copy())
+    workspace = installation / "workspaces/ts_001"
+    workspace.mkdir(parents=True)
+    descriptor = acquire_directory_guard(installation, workspace)
+    os.close(descriptor)
+    (session_guard.guard_directory(installation, workspace) / "directory.lock").chmod(0o644)
+    assert host.main(["--workspace", "ts_001", "--lifecycle-preflight"],
+        package_root=executable.resolve().parent, install_root=installation) == 1
+    output = capsys.readouterr()
+    assert output.out == ""
+    assert json.loads(output.err.splitlines()[-1])["code"] == "session_guard_invalid"
 
 
 @pytest.fixture

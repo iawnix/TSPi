@@ -134,12 +134,15 @@ installer creates four stable entrypoints into the same release:
 ```text
 <installation>/TSPi          -> .pi/packages/tspi/current/agent/TSPi
 <installation>/TSWeb         -> .pi/packages/tspi/current/agent/scripts/ts_web.py
-<installation>/TSPhoneCtl    -> .pi/packages/tspi/current/phone/bin/ts-phone-ctl
-<installation>/TSPhoneServer -> .pi/packages/tspi/current/phone/bin/ts-phone-server
+<installation>/TSPhoneCtl    -> .pi/packages/tspi/current/agent/TSPi (control CLI)
+<installation>/TSPhoneServer -> .pi/packages/tspi/current/agent/TSPi (Host)
 ```
 
 Installation selects content only. It does not start or restart TS Phone and
 does not install the bundled APK onto a device.
+The shared launcher reads installation `.pi/ts-phone/server.env` as data and
+dispatches to the selected Phone component. The installer supplies an
+installation-scoped `.pi/ts-phone/ts-phone.service` template without registering it.
 
 The managed runtime separates a shared, environment-spec-addressed Conda base
 containing NumPy, RDKit, SciPy, and optional `xyzrender` from a

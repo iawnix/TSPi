@@ -31,7 +31,7 @@ from .session_guard import (
     SessionGuardError,
     acquire_directory_guard,
     acquire_session_guard,
-    assert_no_unguarded_writers,
+    require_guarded_installation,
     select_session,
     verify_session_writer,
 )
@@ -267,6 +267,16 @@ def configure_runtime_environment(installation: Installation) -> None:
     os.environ["TS_AGENT_RUNTIME_HOME"] = str(installation.runtime_home)
     os.environ["TS_AGENT_RUNTIME_MANIFEST"] = str(installation.runtime_manifest)
     os.environ["TS_AGENT_ENV_ROOT"] = str(installation.env_root)
+
+
+def launch_phone_entrypoint(package_root: Path, install_root: Path, entrypoint: str, arguments: list[str]) -> NoReturn:
+    installation = resolve_installation(package_root, install_root)
+    node = shutil.which("node")
+    if node is None:
+        raise TSPiHostError("Node.js is required to start the Phone Host or control CLI")
+    program = installation.package_root / "src" / "host" / "entrypoint.mjs"
+    command = [node, str(program), "--install-root", str(installation.root), "--entrypoint", entrypoint, "--", *arguments]
+    os.execve(node, command, dict(os.environ))
 
 
 def prepare_workspace(installation: Installation, workspace_name: str) -> Path:
@@ -731,15 +741,20 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         installation = resolve_installation(package_root, install_root)
         workspace = resolve_existing_workspace(installation, options.workspace)
         try:
+            require_guarded_installation(installation.root)
             verify_session_writer(installation.root, workspace, options.session_id, options.phone_access, options.writer_pid)
         except SessionGuardError as exc:
-            raise TSPiHostError(str(exc)) from exc
+            raise TSPiHostError(str(exc), code=exc.code) from exc
         print(json.dumps({"session_guard_contract": SESSION_GUARD_CONTRACT, "verified": True,
             "workspace_root": str(workspace), "session_id": options.session_id,
             "access_mode": options.phone_access, "pid": options.writer_pid}))
         return 0
     if argv == ["--session-host-capabilities"]:
-        resolve_installation(package_root, install_root)
+        installation = resolve_installation(package_root, install_root)
+        try:
+            require_guarded_installation(installation.root)
+        except SessionGuardError as exc:
+            raise TSPiHostError(str(exc), code=exc.code) from exc
         print(json.dumps({"session_guard_contract": SESSION_GUARD_CONTRACT}))
         return 0
     if argv == ["--phone-models"]:
@@ -784,6 +799,11 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
     installation = resolve_installation(package_root, install_root)
     if not (request.standalone or request.phone_worker or lifecycle_operation or request.check_remote):
         launch_terminal(installation, request)
+    if not request.check_remote:
+        try:
+            require_guarded_installation(installation.root)
+        except SessionGuardError as exc:
+            raise TSPiHostError(str(exc), code=exc.code) from exc
     configure_runtime_environment(installation)
     try:
         python = ensure_runtime_python(installation.package_root, required=True)
@@ -802,10 +822,11 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         try:
             try:
                 directory_descriptor = acquire_directory_guard(installation.root, workspace, exclusive=True)
-                assert_no_unguarded_writers(workspace)
                 if request.lifecycle_guard:
                     guard_descriptor = acquire_lifecycle_guard(workspace)
-            except SessionGuardError:
+            except SessionGuardError as exc:
+                if exc.code != "session_writer_active":
+                    raise TSPiHostError(str(exc), code=exc.code) from exc
                 writers_active = True
             preflight = lifecycle_preflight(
                 workspace,
@@ -846,7 +867,6 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
             else prepare_workspace(installation, request.workspace_name)
         )
         configure_process_environment(installation, workspace, request.workspace_name)
-        assert_no_unguarded_writers(workspace)
         if mode == "controller":
             descriptors.append(acquire_root_agent_lock(workspace))
             from ts_agent.workspace.bootstrap import WorkspaceBootstrapError, bootstrap_workspace
@@ -899,7 +919,10 @@ def main(
         return launch(arguments, package_root=package, install_root=install_root)
     except TSPiHostError as exc:
         print(f"TSPi: {exc}", file=sys.stderr)
-        if "--phone-worker" in arguments and exc.code is not None:
+        if exc.code is not None and any(mode in arguments for mode in (
+            "--phone-worker", "--lifecycle-preflight", "--lifecycle-guard",
+            "--session-host-capabilities", "--session-writer-check",
+        )):
             print(json.dumps({"type": "tspi.startup_error", "code": exc.code}), file=sys.stderr, flush=True)
         return exc.exit_code
     except (OSError, ValueError) as exc:

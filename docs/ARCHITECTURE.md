@@ -72,7 +72,13 @@ release-bound Python runtime, and only then selects exactly one set at:
 ```
 
 Top-level `TSPi`, `TSWeb`, `TSPhoneCtl`, and `TSPhoneServer` symlinks all pass
-through that pointer. Runtime configuration, model credentials, SSH settings,
+through that pointer. The three conversation entrypoints share `agent/TSPi`;
+their invoked name selects terminal, Host, or control CLI. Python validates the
+selected suite before `src/host/entrypoint.mjs` imports its Phone component.
+`src/host/environment.mjs` is the shared private dotenv reader for all three:
+explicit environment overrides installation configuration, then defaults.
+No shell evaluation, scientific bootstrap, global Pi changes, or credential
+copies occur while starting a UI or the Host. Runtime configuration, model credentials, SSH settings,
 notification settings, Phone tokens, Pi sessions, workspaces, and service state
 remain outside releases. Package installation never starts a service or installs
 the Android APK.
@@ -582,27 +588,35 @@ scientific state or starts Pi. Phone holds this process through project trash
 and permanent project/session deletion; failed acquisition blocks the action.
 An old PID in an unlocked file does not count as an active Root Agent.
 
-`--session-host-capabilities` advertises `tspi-session-guard/1` to the Host.
+`--session-host-capabilities` advertises `tspi-session-guard/1` to the Host only
+after the installer has recorded the same contract in owner-only
+`.pi/packages/tspi/install-state.json`. A missing record blocks Worker/native
+startup and destructive lifecycle operations, but not browsing or model catalog reads.
 `--session-writer-check` verifies a Bridge PID against the held directory,
 session, and (for Controller) Root flock descriptors in Linux `/proc`. A
-configured Host refuses writers without that proof. Startup and lifecycle
-preflight reject already-running unguarded TSPi processes in the workspace.
-The preflight first reads the process command line and matches TSPi's explicit
-`--session-dir` binding. Pi later replaces its argv with the `pi` process title;
-those candidates are scoped by `TS_WORKSPACE_ROOT` in their environment.
-Only these candidates need environment inspection; a current directory is
-needed only for a relative session directory. An
-unrelated user service with protected `cwd` or `environ` does not block startup.
-Unreadable command lines or unverifiable matching writers still fail closed.
-This does not exempt processes by executable name or replace the OS locks.
+configured Host refuses writers without that proof and binds managed Bridge
+registrations to the exact spawned child PID and launch ID.
+Normal startup and lifecycle preflight acquire actual workspace/session guards;
+they never scan other Pi processes, their cwd, or their environment. A corrupt
+guard is an error, not evidence of an active writer. PID files are descriptive;
+only held OS locks grant ownership.
+
+Process inspection runs once in the Package installer, before publishing
+the installation guard record. It holds each affected workspace's directory and
+Root locks across inspection and release activation. Run this upgrade as the
+installation owner after old TSPi writers have exited; an unverifiable unguarded
+candidate blocks the upgrade, not every future session startup. Subsequent
+installs with the same guard contract skip process inspection. No process is killed.
 Raw Pi and archived launchers bypassing the selected installation are outside
 this cooperative guard boundary.
 
 Before Pi starts, a failed `--phone-worker` guard check also emits one private
 stderr JSON line: `{"type":"tspi.startup_error","code":"..."}`. The fixed codes
-are `session_writer_active`, `session_writer_inspection_failed`, and
+are `session_writer_active`, `session_writer_inspection_failed`, `session_guard_upgrade_required`, and
 `session_guard_invalid`. The Host maps only these codes to safe errors; human
 launcher diagnostics, environment values, and provider stderr stay private.
+Capability, writer-proof, and lifecycle failures use the same fixed-code record; their errors
+are not collapsed into `session_writers_active=true` or forwarded as raw stderr.
 
 One workspace has one Root writer process. Different workspaces can run
 concurrently while sharing immutable code, a scientific base, and the selected

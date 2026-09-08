@@ -74,6 +74,7 @@
     "src/agents/review/prompts/*.md",
     "src/artifacts/*.cjs",
     "src/terminal/*.mjs",
+    "src/host/*.mjs",
     "python/ts_agent/*.py",
     "python/ts_agent/backends/*.py",
     "python/ts_agent/compute/*.py",

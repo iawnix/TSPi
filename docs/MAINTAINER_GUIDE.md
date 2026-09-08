@@ -429,7 +429,7 @@ tests are maintenance material and are blocked by the package-source guard.
 | Release contents | `package.json.files`, package checker, installer allow/deny lists, tests, installation docs |
 | Startup behavior | Python host, launcher tests, installation docs, architecture lifecycle, launch smoke |
 | Phone-managed project/session lifecycle | Python private Worker/preflight contract, Bridge policy, TS Phone API/schema/UI, deletion compensation tests, security/recovery/deployment docs |
-| Session Host activation | Exact-session pre-open guards, guard-aware CLI admission, mode/readiness/launch fences, queued-input conflicts, mobile state and draft retention, API/events/Bridge schema checks |
+| Session Host activation | Exact-session pre-open guards, one-time installer enrollment, no daily global Pi inspection, PID/launch fences, shared entrypoint configuration, queued-input conflicts, mobile state and draft retention, API/events/Bridge schema checks |
 
 Documentation tests should assert entrypoints and architectural invariants, not
 freeze cosmetic wording.
@@ -500,6 +500,27 @@ npm run test:pi-adapter
 The recording-provider suite covers public inventory, Review isolation,
 provider failure propagation, result repair, journals, and UI lifecycle without
 contacting a production model endpoint.
+
+### Session Host and entrypoints
+
+```bash
+python3 scripts/test_source.py --conda-root /path/to/miniforge3 -- -q tests/test_session_host_guard.py tests/test_phone_entrypoints.py tests/test_terminal_launcher.py tests/test_suite_release.py
+npm run test:terminal
+TS_PHONE_SOURCE=/path/to/ts-phone npm run test:terminal-host
+```
+
+Run the paired Phone server tests and mobile API/conversation tests as well.
+On Linux with a user systemd manager, explicitly enable the sandbox regression:
+
+```bash
+TSPI_TEST_SYSTEMD=1 python3 scripts/test_source.py --conda-root /path/to/miniforge3 -- -q tests/test_session_guard_systemd.py
+```
+
+This test uses a disposable unit and fake Pi executable. It checks an unreadable
+unrelated process, real writer flocks, duplicate rejection, concurrent workspaces,
+and exact history reopening. It does not call a model, use research workspaces,
+or restart installed services. The entrypoint suite also checks the generated
+service syntax with `systemd-analyze` when available.
 
 ### Package and release
 

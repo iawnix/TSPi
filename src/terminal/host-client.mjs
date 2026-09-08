@@ -1,8 +1,5 @@
-import { constants } from "node:fs";
-import { open } from "node:fs/promises";
-import { homedir } from "node:os";
-import { isAbsolute, join } from "node:path";
-import { parseEnv } from "node:util";
+import { join } from "node:path";
+import { hostEnvironment, privateFile } from "../host/environment.mjs";
 
 const MAX_RESPONSE = 8 * 1024 * 1024;
 
@@ -14,32 +11,15 @@ export class HostError extends Error {
   }
 }
 
-async function privateFile(path) {
-  const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-  try {
-    const info = await file.stat();
-    if (!info.isFile() || info.size > 64 * 1024 || (info.mode & 0o077)
-      || (process.getuid && info.uid !== process.getuid())) {
-      throw new HostError("unsafe_config", "Host configuration must be a user-owned private regular file (0600).");
-    }
-    return await file.readFile("utf8");
-  } finally { await file.close(); }
-}
-
 export async function hostConnection(installRoot, env = process.env) {
-  let config = {};
-  try {
-    config = parseEnv(await privateFile(join(installRoot, ".pi", "ts-phone", "server.env")));
-  } catch (error) { if (error.code !== "ENOENT") throw error; }
-  const setting = (name, fallback) => env[name] ?? config[name] ?? fallback;
-  const host = setting("TS_PHONE_HOST", "127.0.0.1");
-  const port = setting("TS_PHONE_PORT", "22113");
+  const config = await hostEnvironment(installRoot, env);
+  const host = config.TS_PHONE_HOST;
+  const port = config.TS_PHONE_PORT;
   if (!["127.0.0.1", "::1"].includes(host) || !/^[0-9]+$/.test(port)
     || Number(port) < 1 || Number(port) > 65535) {
     throw new HostError("invalid_host", "The terminal requires a loopback TS_PHONE_HOST and valid TS_PHONE_PORT.");
   }
-  const state = setting("TS_PHONE_STATE_DIR", join(env.XDG_STATE_HOME || join(homedir(), ".local", "state"), "ts-phone"));
-  if (!isAbsolute(state)) throw new HostError("invalid_config", "TS_PHONE_STATE_DIR must be absolute.");
+  const state = config.TS_PHONE_STATE_DIR;
   let token;
   try { token = (await privateFile(join(state, "auth.token"))).trim(); }
   catch (error) {

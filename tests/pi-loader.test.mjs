@@ -17,6 +17,7 @@ test("installed terminal and model catalog load without checkout dependencies or
   await mkdir(join(root, "agent-profile"));
   await cp(resolve("scripts/pi-loader.mjs"), join(root, "scripts/pi-loader.mjs"));
   await cp(resolve("src/terminal"), join(root, "src/terminal"), { recursive: true });
+  await cp(resolve("src/host"), join(root, "src/host"), { recursive: true });
   await cp(resolve("extensions/ts-phone-bridge/runtime.mjs"), join(root, "runtime.mjs"));
   const args = ["--import", join(root, "scripts/pi-loader.mjs")];
   const options = { cwd: root, timeout: 20_000,
