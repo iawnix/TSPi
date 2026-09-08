@@ -146,6 +146,10 @@ def test_suite_build_is_deterministic_and_installs_one_component_set(tmp_path: P
     session_host = install_root / ".pi" / "session-host"
     assert session_host.is_dir()
     assert stat.S_IMODE(session_host.stat().st_mode) == 0o700
+    workspaces = install_root / "workspaces"
+    assert workspaces.is_dir()
+    assert list(workspaces.iterdir()) == []
+    assert stat.S_IMODE(workspaces.stat().st_mode) == 0o700
     suite_home = install_root / ".pi" / "packages" / "tspi"
     release_root = suite_home / "releases" / first["release_id"]
     assert (suite_home / "current").resolve() == release_root
@@ -908,7 +912,7 @@ def _phone_protocol_files() -> dict[str, bytes]:
         "required": ["type", "origin", "turnId", "agentRunId"],
         "properties": {
             "type": {"enum": ["agent_start", "agent_settled"]},
-            "origin": {"enum": ["local", "extension", "phone", "unknown"]},
+            "origin": {"enum": ["local", "extension", "phone", "terminal", "host", "unknown"]},
             "turnId": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,160}$"},
             "agentRunId": {"type": "string", "pattern": "^[A-Za-z0-9._:-]{1,160}$"},
         },

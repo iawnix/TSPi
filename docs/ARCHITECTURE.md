@@ -523,6 +523,14 @@ mechanism.
 `TSPi` is a thin shell shim. `scripts/tspi_host.py` and
 `python/ts_agent/runtime/launcher.py` own lifecycle behavior:
 
+The default user route resolves the selected package and executes
+`src/terminal/index.mjs`. This route does not select scientific Python, load
+Skills or model credentials, bootstrap a workspace, or acquire writer locks.
+The terminal uses the existing authenticated Host API and Pi TUI components.
+`--phone` aliases this route. `--standalone` explicitly selects native Pi.
+
+The following lifecycle applies only to native Pi and Host-managed Workers:
+
 1. Resolve the physical installation root and immutable selected release.
 2. Resolve installation-owned runtime, remote, notification, and cache paths.
 3. Select the isolated Python interpreter and verify its installed
@@ -545,6 +553,20 @@ opens JSONL. These owner-only OS guard files live under installation
 `.pi/session-host/guards/`, keyed by workspace path and session ID. They remain
 outside directories that lifecycle operations may quarantine. Descriptors
 survive exec and stay held for the Pi process lifetime.
+
+Managed Workers enter official Pi SDK/RPC through
+`extensions/ts-phone-bridge/runtime.mjs`; normal TUI launch still uses Pi CLI.
+The SDK Worker loads the same explicit package extension/Skill/theme inventory,
+preserves the exact session ID and history, and merges global/project settings
+into an in-memory preference store. A model switch changes this conversation's
+Pi history, never shared defaults. `PI_CODING_AGENT_DIR` (default `~/.pi/agent`)
+still owns credentials and the model registry. Saved history takes precedence
+over a startup model preference; missing models fail without arbitrary fallback.
+The private `--phone-models` entrypoint returns only available model identities,
+names and context limits without bootstrap. The Bridge advertises model control
+only for these session-local Workers. Host requires an idle Controller and an
+exact RPC receipt before accepting a switch; external TUI settings are not changed.
+
 `--lifecycle-preflight` resolves an existing workspace and returns its absolute
 path, actual Root/session-writer occupancy, and bounded counts of non-terminal remote
 calculations and unresolved remote effects (`ts-phone-project-preflight/2`). It
@@ -610,7 +632,7 @@ full workspace dump.
 | `ts-workflow-artifacts` | `ts_seed`, `ts_compare`, `ts_import`, `ts_render`, `ts_report`, `ts_notify` | deterministic local artifacts, analyses, reports, and delivery |
 | `ts-workflow-ui` | `/ts-runs` | startup, editor/footer, TS Activity, and Compute/Review history |
 
-`ts-phone-bridge` is optional and loaded by `TSPi --phone` or a Host-owned Phone
+`ts-phone-bridge` is optional and loaded by `TSPi --standalone --phone` or a Host-owned
 Worker. It forwards messages to the same Pi session and never becomes a second
 scientific authority. A controller gives phone-origin turns the same Tool
 authority as local TUI turns without a separate phone approval. Observer

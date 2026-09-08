@@ -285,6 +285,8 @@ def _install_captured_package(
     )
     archived_notification_state = archive_retired_notification_state(install_root)
     ensure_private_directory(install_root / ".pi" / "session-host")
+    # Host browsing precedes the first Worker and must work on a fresh install.
+    ensure_private_directory(install_root / "workspaces")
     installed_manifest = read_json_object(target / INSTALLED_MANIFEST, "installed TSPi Package manifest")
     state = {
         "schema_version": SUITE_INSTALL_SCHEMA_VERSION,

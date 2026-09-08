@@ -53,7 +53,7 @@ EXPECTED_PHONE_PROTOCOL_SCHEMA_IDS = {
     "events": "https://tsphone.iawnix.xyz/schema/events-v3.json",
 }
 PHONE_LIFECYCLE_EVENT_TYPES = frozenset({"agent_start", "agent_settled"})
-PHONE_LIFECYCLE_ORIGINS = frozenset({"local", "extension", "phone", "unknown"})
+PHONE_LIFECYCLE_ORIGINS = frozenset({"local", "extension", "phone", "terminal", "host", "unknown"})
 PHONE_LIFECYCLE_FIELDS = frozenset({"type", "origin", "turnId", "agentRunId"})
 PHONE_BOUNDED_ID_PATTERN = "^[A-Za-z0-9._:-]{1,160}$"
 PHONE_EVENT_ENVELOPE_FIELDS = frozenset(

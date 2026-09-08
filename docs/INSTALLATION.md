@@ -27,9 +27,15 @@ Optional dependencies are:
 - Gaussian, xTB, or other software profiles on the remote execution system;
 - `xyzrender`, installed by `--with-render`, for visualization;
 - a configured ClawEmail installation for email notifications;
-- TS Phone activation and an Android device when `--phone` is used. The broker
-  and signed arm64 APK are bundled, but activation and device installation are
-  explicit operations.
+- an Android device for the Phone UI. The Host and signed arm64 APK are bundled,
+  but service activation and device installation are explicit operations.
+
+The default terminal client requires the configured Host to be running. It
+does not require an Android device. Native Pi remains available with
+`--standalone`.
+The installer prepares an empty private `workspaces/` root so Host can list
+projects before the first Worker runs. It does not bootstrap scientific state
+or activate services during installation.
 
 ## Installation Layout
 
@@ -368,9 +374,12 @@ Run from the installation root:
 ./TSPi --workspace reaction-b
 ```
 
-The workspace name must contain 1 to 80 letters, digits, dots, underscores, or
-hyphens and begin with a letter or digit. The launcher creates the directory;
-the user does not create it manually.
+The terminal connects to the configured Host. An existing live Controller is
+selected first; otherwise choose a conversation. Opening history starts no
+Worker. An unknown workspace name prompts for project creation through Host;
+the user does not create directories manually. Names contain 1 to 80 letters,
+digits, dots, underscores, or hyphens, beginning with a letter or digit.
+Without `--workspace`, the project selector is the first screen.
 
 To resume the latest Pi conversation for the same workspace:
 
@@ -378,14 +387,23 @@ To resume the latest Pi conversation for the same workspace:
 ./TSPi --workspace reaction-a --continue
 ```
 
-Other Pi arguments may follow the workspace selection. `--phone` resumes the
-latest session by default; an exact session can be selected explicitly:
+`--phone` aliases the shared terminal. Select an exact conversation or use
+explicit native Pi mode when native commands are needed:
 
 ```bash
 ./TSPi --workspace reaction-a --phone
 ./TSPi --workspace reaction-a --phone --session-id <session-id>
-./TSPi --workspace reaction-a --phone --phone-access observer
+./TSPi --standalone --workspace reaction-a
+./TSPi --standalone --workspace reaction-a --phone --phone-access observer
 ```
+
+The client reads `<installation>/.pi/ts-phone/server.env` as data, never as a
+shell script; exported `TS_PHONE_HOST`, `TS_PHONE_PORT`, and `TS_PHONE_STATE_DIR`
+override it. The default state directory is `${XDG_STATE_HOME:-~/.local/state}/ts-phone`.
+It accepts only loopback HTTP and a user-owned 0600 `auth.token`. This is the
+Host connection credential, not Pi's model authentication. Host unavailability
+is reported without falling back to a second Pi process. See [Terminal](TERMINAL.md)
+for client commands, limitations, and integration checks.
 
 The phone app can instead create a managed project/conversation and ask the Host
 to activate it. Host-only `--phone-worker`, `--lifecycle-preflight`, and
@@ -411,15 +429,18 @@ presence and the Host verifies guard compatibility before starting a Worker.
 Downgrading to a suite without these guards requires stopping every affected
 writer first. It restores that suite's limited behavior, not the new guarantees.
 
-Guarded TSPi supports a new conversation, `--continue`/`-c`, `--session-id`,
+Native guarded TSPi supports a new conversation, `--continue`/`-c`, `--session-id`,
 and an existing workspace-local `--session` file. Interactive `--resume`,
 `--fork`, `--no-session`, session-directory overrides, and in-process new/fork/
 resume are rejected; exit and reopen the desired session instead. Raw Pi
 launches outside TSPi are not protected by this contract.
 
-One process owns one workspace through a nonblocking lock. Starting a second
-Root Agent for the same workspace fails immediately; another workspace can run
-at the same time.
+One Worker owns a workspace through a nonblocking lock. Multiple terminal and
+Phone clients attach without acquiring locks. Terminal exit only detaches;
+`/abort` stops generation without canceling remote calculations. A second
+native Root Agent still fails immediately. An existing native Pi process
+cannot be adopted by PID: exit it normally before Host restores its exact
+conversation. Another workspace can run at the same time.
 
 ## Workspace Bootstrap
 
@@ -541,7 +562,7 @@ implement the workspace schemas it opens.
 | runtime manifest or interpreter unavailable | Reinstall the selected Package, or run its `install_env.py` as an explicit repair. |
 | managed runtime capability probe fails | Do not fall back to system Python. Refresh the shared base or recreate only the target overlay with `--force`, then inspect the NumPy/RDKit probe error. |
 | Python distribution payload mismatch | Reinstall the Package or recreate its payload-addressed overlay; do not edit managed site-packages or immutable release files in place. |
-| `another Root Agent already owns workspace` | Use another workspace or stop the existing process; do not delete the lock to bypass a live owner. |
+| `another Root Agent already owns workspace` | Attach with the default terminal instead of `--standalone`. A native/external owner must exit normally before Host can restore its session; never delete a live owner's lock. |
 | partial or invalid workspace | Preserve the directory, inspect validation findings, and recover through an explicitly designed repair; startup will not guess. |
 | unsupported workspace layout | Preserve the source directory and start a separate fresh workspace; startup never rewrites unsupported state. |
 | remote `status` fails | SSH readiness is unavailable; local research remains usable. |

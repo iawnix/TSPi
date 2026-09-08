@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-from _bootstrap import activate_source_package, bootstrap_python_package
+from _bootstrap import activate_source_package
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -26,16 +26,10 @@ def main(argv: list[str] | None = None) -> int:
     forwarded = list(args.arguments)
     if forwarded[:1] == ["--"]:
         forwarded.pop(0)
-    if any(argument in {"-h", "--help"} for argument in forwarded):
-        activate_source_package(ROOT)
-    else:
-        # Load the lightweight launcher before selecting the managed Python
-        # runtime.  The launcher owns the authoritative suite-release check;
-        # doing that check first keeps an old standalone Agent installation
-        # from being misreported as a stale runtime.  Once a valid suite is
-        # selected, ``launcher.launch`` fails closed if its runtime manifest
-        # is missing or stale.
-        bootstrap_python_package(ROOT, required=False, install_root=args.install_root)
+    # The launcher uses only the standard library until it has selected an
+    # execution mode. A thin UI must not initialize the scientific environment.
+    # Native Pi, Worker, and lifecycle paths still require it inside launch().
+    activate_source_package(ROOT)
     from ts_agent.runtime.launcher import main as launcher_main
 
     return launcher_main(forwarded, package_root=ROOT, install_root=args.install_root)

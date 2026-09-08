@@ -67,6 +67,7 @@ class LaunchRequest:
     phone_access: str | None
     show_help: bool
     pi_args: tuple[str, ...]
+    standalone: bool = False
 
 
 @dataclass(frozen=True)
@@ -83,18 +84,23 @@ class Installation:
 
 
 USAGE = """Usage:
-  ./TSPi --workspace <name> [Pi arguments...]
+  ./TSPi [--workspace <name>] [--session-id <id> | -c]
   ./TSPi --workspace <name> --phone
+  ./TSPi --standalone --workspace <name> [Pi arguments...]
   ./TSPi --check-remote
 
-Each workspace name creates or reuses an isolated research directory under
-./workspaces/. Only one Root Agent may write one workspace at a time.
+The terminal and Phone connect to the same Host-managed conversation.
+Opening history does not start a Worker. Sending or /continue activates it.
+Exit detaches the terminal; /abort stops generation, not remote calculations.
+Start the configured TSPhoneServer first. Host failure never starts native Pi.
+Without --workspace, choose a project; a new project requires confirmation.
+--phone is an alias for the shared terminal connection.
+Only --standalone starts a native Pi process and acquires workspace locks.
+Use --standalone --phone --phone-access observer for a native read-only assistant.
 Remote computation uses the installation-owned .pi/remote.toml profile.
-Phone mode starts the visible TSPi session with the local TS Phone bridge.
-Use --phone --phone-access observer explicitly for a separate read-only assistant.
 Continue an exact conversation with --session-id <id>, or the latest with -c.
 An occupied workspace/session is a conflict, never an automatic mode downgrade.
-Managed sessions cannot switch, resume, or fork in-process; exit and reopen.
+Native managed sessions cannot switch, resume, or fork in-process; exit and reopen.
 TSPi loads only the validated Package selected by .pi/packages/tspi/current.
 Package development runs separately in the authored checkout.
 """
@@ -113,6 +119,7 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
     model: str | None = None
     phone_access: str | None = None
     pi_args: list[str] = []
+    standalone = False
     index = 0
     while index < len(argv):
         value = argv[index]
@@ -121,6 +128,8 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
             break
         if value == "--check-remote":
             check_remote = True
+        elif value == "--standalone":
+            standalone = True
         elif value == "--phone":
             phone_mode = True
         elif value == "--phone-worker":
@@ -174,6 +183,7 @@ def parse_launch_request(argv: list[str]) -> LaunchRequest:
         phone_access=phone_access,
         show_help=show_help,
         pi_args=tuple(pi_args),
+        standalone=standalone,
     )
 
 
@@ -643,8 +653,10 @@ def build_pi_command(
     if session_args is not None:
         pi_args = session_args
     package = installation.package_root
+    entry = ([shutil.which("node") or "node", str(package / "extensions" / "ts-phone-bridge" / "runtime.mjs")]
+             if request.phone_worker else [str(_resolve_pi_binary())])
     return [
-        str(_resolve_pi_binary()),
+        *entry,
         "--no-extensions",
         "--no-skills",
         "--skill",
@@ -676,6 +688,32 @@ def exec_pi(command: list[str], workspace: Path) -> NoReturn:
     os.execve(command[0], command, dict(os.environ))
 
 
+def launch_terminal(installation: Installation, request: LaunchRequest) -> NoReturn:
+    """Connect a UI without bootstrapping research, loading credentials, or locking."""
+    if request.phone_access is not None:
+        raise TSPiHostError("select an existing conversation's access mode in Host; native access flags require --standalone", exit_code=2)
+    if any(argument not in {"-c", "--continue"} for argument in request.pi_args):
+        raise TSPiHostError("the thin terminal accepts -c/--continue; native Pi arguments require --standalone", exit_code=2)
+    if request.workspace_name and not WORKSPACE_NAME.fullmatch(request.workspace_name):
+        raise TSPiHostError("invalid workspace name", exit_code=2)
+    if request.session_id and (not request.workspace_name or not SESSION_ID.fullmatch(request.session_id)):
+        raise TSPiHostError("--session-id requires a workspace and a valid session identity", exit_code=2)
+    entry = installation.package_root / "src" / "terminal" / "index.mjs"
+    if not entry.is_file():
+        raise TSPiHostError("selected Package has no terminal client; reinstall the complete TSPi Package")
+    node = shutil.which("node")
+    if not node:
+        raise TSPiHostError("Node.js executable not found", exit_code=127)
+    command = [node, str(entry), "--install-root", str(installation.root)]
+    if request.workspace_name:
+        command.extend(["--workspace", request.workspace_name])
+    if request.session_id:
+        command.extend(["--session-id", request.session_id])
+    if request.pi_args:
+        command.append("--latest")
+    exec_pi(command, installation.root)
+
+
 def launch(argv: list[str], *, package_root: str | Path, install_root: str | Path) -> int:
     if "--session-writer-check" in argv:
         parser = argparse.ArgumentParser(add_help=False)
@@ -699,12 +737,18 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         resolve_installation(package_root, install_root)
         print(json.dumps({"session_guard_contract": SESSION_GUARD_CONTRACT}))
         return 0
+    if argv == ["--phone-models"]:
+        installation = resolve_installation(package_root, install_root)
+        runtime = installation.package_root / "extensions" / "ts-phone-bridge" / "runtime.mjs"
+        return subprocess.run([shutil.which("node") or "node", str(runtime), "--catalog"], check=False).returncode
     request = parse_launch_request(argv)
     if request.show_help:
         print(USAGE, end="")
         return 0
     if request.phone_mode and request.phone_worker:
         raise TSPiHostError("--phone and --phone-worker cannot be combined", exit_code=2)
+    if request.standalone and request.phone_worker:
+        raise TSPiHostError("--standalone and --phone-worker cannot be combined", exit_code=2)
     lifecycle_operation = request.lifecycle_preflight or request.lifecycle_guard
     if request.lifecycle_preflight and request.lifecycle_guard:
         raise TSPiHostError("lifecycle preflight and guard modes cannot be combined", exit_code=2)
@@ -733,6 +777,8 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         if request.model is not None and not MODEL_ID.fullmatch(request.model):
             raise TSPiHostError("--model is invalid", exit_code=2)
     installation = resolve_installation(package_root, install_root)
+    if not (request.standalone or request.phone_worker or lifecycle_operation or request.check_remote):
+        launch_terminal(installation, request)
     configure_runtime_environment(installation)
     try:
         python = ensure_runtime_python(installation.package_root, required=True)

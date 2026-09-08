@@ -20,6 +20,7 @@ export interface BridgePromptCommand extends BridgeIdentity {
   type: "command.prompt";
   requestId: string;
   clientMessageId: string;
+  clientKind?: "phone" | "terminal";
   message: string;
 }
 
@@ -61,11 +62,15 @@ export function parseBridgeServerRecord(value: unknown): BridgeServerRecord {
     sessionGeneration: positiveInteger(record.sessionGeneration, "sessionGeneration"),
   };
   if (type === "command.prompt") {
+    if (record.clientKind !== undefined && record.clientKind !== "phone" && record.clientKind !== "terminal") {
+      throw new Error("clientKind must be phone or terminal");
+    }
     return {
       ...identity,
       type,
       requestId: requiredId(record.requestId, "requestId"),
       clientMessageId: requiredId(record.clientMessageId, "clientMessageId"),
+      ...(record.clientKind === "terminal" ? { clientKind: "terminal" as const } : {}),
       message: requiredString(record.message, "message", 65_536),
     };
   }

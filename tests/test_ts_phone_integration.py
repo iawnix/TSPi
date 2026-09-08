@@ -53,7 +53,7 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     return install_root, launcher
 
 
-def test_tspi_phone_starts_visible_bridged_tui(tmp_path: Path) -> None:
+def test_standalone_phone_starts_visible_bridged_tui(tmp_path: Path) -> None:
     install_root, launcher = _copy_launcher(tmp_path)
     fake_pi = tmp_path / "fake-pi.py"
     fake_pi.write_text(
@@ -67,7 +67,7 @@ def test_tspi_phone_starts_visible_bridged_tui(tmp_path: Path) -> None:
     fake_pi.chmod(0o755)
 
     completed = subprocess.run(
-        [str(launcher), "--workspace", "reaction-phone", "--phone"],
+        [str(launcher), "--standalone", "--workspace", "reaction-phone", "--phone"],
         cwd=install_root,
         env={**os.environ, "PI_BIN": str(fake_pi)},
         text=True,
@@ -106,7 +106,7 @@ def test_second_phone_session_requires_explicit_observer_mode(tmp_path: Path) ->
     observer_pi.chmod(0o755)
 
     holder = subprocess.Popen(
-        [str(launcher), "--workspace", "shared-phone"],
+        [str(launcher), "--standalone", "--workspace", "shared-phone"],
         cwd=install_root,
         env={**os.environ, "PI_BIN": str(controller_pi)},
         text=True,
@@ -118,7 +118,7 @@ def test_second_phone_session_requires_explicit_observer_mode(tmp_path: Path) ->
         assert holder.stdout is not None
         assert holder.stdout.readline().strip() == "ready"
         conflict = subprocess.run(
-            [str(launcher), "--workspace", "shared-phone", "--phone"],
+            [str(launcher), "--standalone", "--workspace", "shared-phone", "--phone"],
             cwd=install_root,
             env={**os.environ, "PI_BIN": str(observer_pi)},
             text=True,
@@ -129,7 +129,7 @@ def test_second_phone_session_requires_explicit_observer_mode(tmp_path: Path) ->
         assert conflict.returncode == 1
         assert "another Root Agent already owns" in conflict.stderr
         observer = subprocess.run(
-            [str(launcher), "--workspace", "shared-phone", "--phone", "--phone-access", "observer"],
+            [str(launcher), "--standalone", "--workspace", "shared-phone", "--phone", "--phone-access", "observer"],
             cwd=install_root, env={**os.environ, "PI_BIN": str(observer_pi)},
             capture_output=True, text=True, timeout=10,
         )
@@ -147,7 +147,7 @@ def test_second_phone_session_requires_explicit_observer_mode(tmp_path: Path) ->
 
 def test_tspi_phone_worker_starts_exact_rpc_session(tmp_path: Path) -> None:
     install_root, launcher = _copy_launcher(tmp_path)
-    fake_pi = tmp_path / "fake-worker-pi.py"
+    fake_pi = tmp_path / "node"
     fake_pi.write_text(
         "#!/usr/bin/env python3\n"
         "import json,os,sys\n"
@@ -168,7 +168,7 @@ def test_tspi_phone_worker_starts_exact_rpc_session(tmp_path: Path) -> None:
             "--model", "cpa/gpt-5.6-sol",
         ],
         cwd=install_root,
-        env={**os.environ, "PI_BIN": str(fake_pi)},
+        env={**os.environ, "PATH": str(tmp_path) + os.pathsep + os.environ.get("PATH", "")},
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -317,7 +317,7 @@ def test_lifecycle_guard_holds_writer_lock_until_host_closes_stdin(tmp_path: Pat
             with pytest.raises(BlockingIOError):
                 fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
             blocked = subprocess.run(
-                [str(launcher), "--workspace", "reaction-phone"],
+                [str(launcher), "--standalone", "--workspace", "reaction-phone"],
                 cwd=install_root, capture_output=True, text=True, timeout=10,
             )
             assert blocked.returncode == 1
@@ -1003,6 +1003,14 @@ process.stdout.write(JSON.stringify(active));
     assert all(isinstance(line, str) for line in widget["content"])
     assert "TS Activity" in widget["content"][0]
     assert "Render" in "\n".join(widget["content"])
+
+
+def test_phone_sdk_runtime_preserves_session_local_models() -> None:
+    result = subprocess.run(
+        ["node", "tests/phone-runtime.test.mjs"],
+        cwd=ROOT, capture_output=True, text=True, timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def _node_json(script: str):

@@ -84,7 +84,7 @@ def _run_tspi(
     input_text: str | None = None,
 ) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
-        [str(launcher), *args],
+        [str(launcher), "--standalone", *args],
         cwd=launcher.parent,
         env={**os.environ, "PI_BIN": str(pi_bin), **(env or {})},
         input=input_text,
@@ -539,7 +539,7 @@ def test_tspi_root_lock_rejects_a_second_writer(tmp_path: Path) -> None:
         tmp_path / "blocking-pi.py",
         "print('ready', flush=True)\ninput()\n",
     )
-    command = [str(launcher), "--workspace", "lock-test"]
+    command = [str(launcher), "--standalone", "--workspace", "lock-test"]
     env = {**os.environ, "PI_BIN": str(blocking_pi)}
     holder = subprocess.Popen(
         command,
@@ -566,7 +566,7 @@ def test_tspi_root_lock_rejects_a_second_writer(tmp_path: Path) -> None:
         assert contender.returncode == 1
         assert "another Root Agent already owns workspace" in contender.stderr
         independent = subprocess.run(
-            [str(launcher), "--workspace", "independent-test"],
+            [str(launcher), "--standalone", "--workspace", "independent-test"],
             cwd=install_root,
             env=env,
             input="release\n",

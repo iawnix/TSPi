@@ -256,10 +256,10 @@ def test_observer_blocks_same_session_and_lifecycle_until_exit(tmp_path: Path, r
     )
     fake.chmod(0o700)
     environment = {**os.environ, "PI_BIN": str(fake)}
-    bootstrap = subprocess.run([str(launcher), "--workspace", "ts_001"], input="\n", text=True,
+    bootstrap = subprocess.run([str(launcher), "--standalone", "--workspace", "ts_001"], input="\n", text=True,
         capture_output=True, env=environment, timeout=15)
     assert bootstrap.returncode == 0, bootstrap.stderr
-    command = [str(launcher), "--workspace", "ts_001", "--phone", "--phone-access", "observer", "--session-id", "history-1"]
+    command = [str(launcher), "--standalone", "--workspace", "ts_001", "--phone", "--phone-access", "observer", "--session-id", "history-1"]
     holder = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         text=True, env=environment)
     try:

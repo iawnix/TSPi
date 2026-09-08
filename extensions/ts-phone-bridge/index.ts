@@ -11,13 +11,14 @@ import { authorizeTsPhoneTool } from "./policy.ts";
 import { modelReadinessFailure, type ModelReadinessProblem } from "../shared/model-readiness.ts";
 
 type TurnOrigin =
-  | { kind: "local" | "extension" | "unknown"; turnId: string }
-  | { kind: "phone"; turnId: string; requestId?: string; clientMessageId?: string };
+  | { kind: "local" | "extension" | "unknown" | "host"; turnId: string }
+  | { kind: "phone" | "terminal"; turnId: string; requestId?: string; clientMessageId?: string };
 
 interface PendingPhoneInput {
   requestId: string;
   clientMessageId: string;
   text: string;
+  clientKind: "phone" | "terminal";
 }
 
 const MAX_SEEN_MESSAGE_IDS = 1_000;
@@ -120,7 +121,7 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
       streamingBehavior: event.streamingBehavior,
       origin: origin.kind,
       turnId: origin.turnId,
-      ...(origin.kind === "phone" ? { clientMessageId: origin.clientMessageId } : {}),
+      ...(origin.kind === "phone" || origin.kind === "terminal" ? { clientMessageId: origin.clientMessageId } : {}),
     });
   });
   pi.on("agent_start", (event) => {
@@ -199,6 +200,7 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
       requestId: command.requestId,
       clientMessageId: command.clientMessageId,
       text: command.message,
+      clientKind: command.clientKind ?? "phone",
     };
     pendingPhoneInputs.push(pending);
     try {
@@ -217,7 +219,7 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
       if (index >= 0) {
         const pending = pendingPhoneInputs.splice(index, 1)[0]!;
         return {
-          kind: "phone",
+          kind: pending.clientKind,
           turnId: nextTurnId(),
           requestId: pending.requestId,
           clientMessageId: pending.clientMessageId,
@@ -226,7 +228,9 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
       return { kind: "extension", turnId: nextTurnId() };
     }
     if (event.source === "rpc" && process.env.TS_PHONE_WORKER === "1") {
-      return { kind: "phone", turnId: nextTurnId() };
+      // The Host publishes the acknowledged client's origin. RPC itself does
+      // not identify which attached UI submitted a turn.
+      return { kind: "host", turnId: nextTurnId() };
     }
     if (event.source === "interactive" || event.source === "rpc") {
       return { kind: "local", turnId: nextTurnId() };
@@ -246,6 +250,7 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
       sessionId: ctx.sessionManager.getSessionId(),
       sessionName: ctx.sessionManager.getSessionName(),
       model,
+      modelControl: process.env.TS_PHONE_SESSION_SETTINGS === "memory",
       ...(promptProblem ? { promptProblem } : {}),
       ...(runtime ? { runtime } : {}),
       thinkingLevel: ctx.thinkingLevel,

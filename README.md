@@ -152,8 +152,8 @@ installation-owned configuration and are not stored in a research workspace.
 
 ## Start TSPi
 
-The launcher creates and bootstraps a workspace under
-`<installation>/workspaces/`; the user does not create it first:
+Start the configured Host (`TSPhoneServer`), then open a terminal client.
+Projects live under `<installation>/workspaces/`:
 
 ```bash
 ./TSPi --workspace reaction-a
@@ -162,12 +162,17 @@ The launcher creates and bootstraps a workspace under
 ./TSPi --check-remote
 ```
 
-One nonblocking lock permits one Root Agent process per workspace. Different
-workspace names can run concurrently. Normal terminal mode starts a new Pi
-conversation unless Pi's `--continue` is supplied; Phone mode resumes the
-latest workspace conversation by default. `--session-id <id>` selects an exact
-conversation. A session writer lock also prevents two processes from opening
-the same history, including read-only assistants.
+Terminal and Phone share a Host-managed Worker and its original Pi history.
+Opening a conversation reads history only; sending a message or `/continue`
+starts an offline Worker. Terminal exit detaches without stopping research.
+`--phone` is an alias for this shared connection. `--session-id <id>` selects
+an exact conversation; `-c` selects the latest when no Controller is live.
+With no workspace argument, the terminal opens the project selector.
+New projects require confirmation. See [Terminal](docs/TERMINAL.md).
+
+Only a Worker owns the research/session writer locks. Multiple attached UIs
+do not acquire them. Different workspaces can run concurrently. An explicit
+`--standalone` starts native Pi instead, preserving its exclusive writer guards.
 
 When the TS Phone Host is configured with this installation's `TSPi`
 entrypoint, the app can create projects and independent conversations. Its
@@ -182,9 +187,9 @@ existing workspace. The Host keeps display names and archive/trash state in its
 own owner-only `management.json`. It does not add those fields to scientific
 workspace state.
 
-For a manual read-only assistant use `--phone --phone-access observer` with a
+For a native read-only assistant use `--standalone --phone --phone-access observer` with a
 different session. Lock contention does not silently downgrade permissions.
-In-process new/resume/fork is blocked in guarded TSPi; exit and reopen instead.
+In-process new/resume/fork is blocked in native guarded Pi; exit and reopen instead.
 
 Bootstrap is idempotent for a complete workspace: fresh state is created once,
 valid state is checked without canonical rewrites, and partial, invalid, or
