@@ -8,6 +8,7 @@ import type {
 import { TsPhoneBridgeClient } from "./bridge-client.ts";
 import type { BridgeAbortCommand, BridgePromptCommand } from "./protocol.ts";
 import { authorizeTsPhoneTool } from "./policy.ts";
+import { modelReadinessFailure, type ModelReadinessProblem } from "../shared/model-readiness.ts";
 
 type TurnOrigin =
   | { kind: "local" | "extension" | "unknown"; turnId: string }
@@ -22,7 +23,7 @@ interface PendingPhoneInput {
 const MAX_SEEN_MESSAGE_IDS = 1_000;
 const MAX_SNAPSHOT_MESSAGES = 500;
 const MAX_SNAPSHOT_BYTES = 6 * 1024 * 1024;
-type PromptProblem = "model_unavailable" | "model_auth_missing" | "model_check_failed";
+type PromptProblem = ModelReadinessProblem;
 
 interface SessionRuntimeSnapshot {
   schemaVersion: "ts-phone-session-runtime/1";
@@ -83,13 +84,14 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
     pendingPhoneInputs.length = 0;
     activeOrigin = { kind: "unknown", turnId: nextTurnId() };
     if (process.env.TS_PHONE_WORKER === "1") {
-      await restorePhoneModel(pi, ctx, async () => {
+      promptProblem = await restorePhoneModel(pi, ctx, async () => {
         const { SettingsManager } = await import("@earendil-works/pi-coding-agent");
         const settings = SettingsManager.create(ctx.cwd);
         return { provider: settings.getDefaultProvider(), modelId: settings.getDefaultModel() };
       });
+    } else {
+      promptProblem = phonePromptProblem(ctx);
     }
-    promptProblem = phonePromptProblem(ctx);
     bridge.start();
     if (bridge.connected) publishSnapshot();
   });
@@ -187,7 +189,7 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
       return;
     }
     if (seenClientMessageIds.has(command.clientMessageId)) return;
-    promptProblem = phonePromptProblem(ctx);
+    promptProblem = phonePromptProblem(ctx, promptProblem);
     if (promptProblem) {
       publishSnapshot();
       throw new Error(promptProblem);
@@ -268,30 +270,50 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
   }
 }
 
-export function phonePromptProblem(ctx: Pick<ExtensionContext, "model" | "modelRegistry">): PromptProblem | undefined {
-  if (!ctx.model || ctx.model.id === "unknown" || ctx.model.provider === "unknown") return "model_unavailable";
+export function phonePromptProblem(
+  ctx: Pick<ExtensionContext, "model" | "modelRegistry">,
+  recoveryProblem?: PromptProblem,
+): PromptProblem | undefined {
   try {
-    if (!ctx.modelRegistry.hasConfiguredAuth(ctx.model)) return "model_auth_missing";
-  } catch { return "model_check_failed"; }
-  return undefined;
+    const model = ctx.model;
+    const selected = model && model.id !== "unknown" && model.provider !== "unknown";
+    if (selected && ctx.modelRegistry.hasConfiguredAuth(model)) return undefined;
+    const error = ctx.modelRegistry.getError();
+    if (error) return modelReadinessFailure(error);
+    return selected ? "model_auth_missing" : recoveryProblem ?? "model_unavailable";
+  } catch (error) { return modelReadinessFailure(error); }
 }
 
 export async function restorePhoneModel(
   pi: Pick<ExtensionAPI, "setModel">,
   ctx: Pick<ExtensionContext, "model" | "modelRegistry" | "sessionManager">,
   defaults: () => Promise<{ provider?: string; modelId?: string }>,
-): Promise<void> {
-  if (ctx.model && ctx.model.id !== "unknown" && ctx.model.provider !== "unknown") return;
+): Promise<PromptProblem | undefined> {
+  if (ctx.model && ctx.model.id !== "unknown" && ctx.model.provider !== "unknown") return phonePromptProblem(ctx);
+  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
-    await ctx.modelRegistry.refresh();
+    // Managed Workers disable catalog network access. Bound local lock waits too.
+    await Promise.race([
+      ctx.modelRegistry.refresh(),
+      new Promise<never>((_, reject) => { timer = setTimeout(() => reject(new Error("Model readiness timed out")), 5_000); }),
+    ]);
     const saved = ctx.sessionManager.getBranch().filter((entry) => entry.type === "model_change").at(-1);
     // Restore only an explicit saved selection, or the configured default for
     // a new session. Never silently route a prompt to an arbitrary model.
     const selected = saved?.type === "model_change" ? saved : await defaults();
-    if (!selected.provider || !selected.modelId) return;
+    if (!selected.provider || !selected.modelId) return phonePromptProblem(ctx);
     const model = ctx.modelRegistry.find(selected.provider, selected.modelId);
-    if (model && ctx.modelRegistry.hasConfiguredAuth(model)) await pi.setModel(model);
-  } catch { /* Readiness remains unavailable; no prompt is dispatched. */ }
+    if (!model || !ctx.modelRegistry.hasConfiguredAuth(model)) {
+      const error = ctx.modelRegistry.getError();
+      return error ? modelReadinessFailure(error) : model ? "model_auth_missing" : "model_unavailable";
+    }
+    if (!await pi.setModel(model)) return "model_check_failed";
+    return phonePromptProblem(ctx);
+  } catch (error) {
+    return modelReadinessFailure(error);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }
 
 export function buildAgentRunId(sessionGeneration: number, sequence: number): string {

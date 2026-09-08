@@ -345,6 +345,16 @@ the TSPi installation. Keep the rest of Home read-only. A notification provider
 that refreshes credentials needs a separate drop-in for only its private state
 directory.
 
+Pi's selected agent directory must also be writable: credential and model-cache
+reads acquire filesystem locks. For the standard profile add
+`ReadWritePaths=-/home/iaw/.pi/agent`; a custom `PI_CODING_AGENT_DIR` needs its own
+matching entry. Preserve the same profile for TUI, Phone Workers and subagents,
+including OAuth write-back, rather than making per-workspace credential copies.
+Do not disable `ProtectHome` or grant access to all of Home. Managed Workers
+disable startup catalog/package downloads with `PI_OFFLINE=1`; this does not
+disable model requests. Verify model readiness under the actual Host service
+permissions: `/healthz` alone does not exercise Pi's storage or selected model.
+
 ## Start And Resume Workspaces
 
 Run from the installation root:

@@ -631,6 +631,8 @@ def build_pi_command(
         phone_extension = ["-e", str(installation.package_root / "extensions" / "ts-phone-bridge" / "index.ts")]
         if request.phone_worker:
             os.environ["TS_PHONE_WORKER"] = "1"
+            # Use the installed model catalog; prompts and OAuth remain online.
+            os.environ["PI_OFFLINE"] = "1"
             pi_args = ["--mode", "rpc", "--session-id", str(request.session_id)]
             if request.session_name:
                 pi_args.extend(["--name", request.session_name])

@@ -114,6 +114,7 @@ REQUIRED_TARBALL_FILES = {
     "extensions/shared/activity-events.ts",
     "extensions/shared/icons.ts",
     "extensions/shared/review-tool-presentation.ts",
+    "extensions/shared/model-readiness.ts",
     "extensions/ts-phone-bridge/index.ts",
     "extensions/ts-phone-bridge/bridge-client.ts",
     "extensions/ts-phone-bridge/policy.ts",

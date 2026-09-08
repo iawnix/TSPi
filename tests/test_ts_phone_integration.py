@@ -152,7 +152,7 @@ def test_tspi_phone_worker_starts_exact_rpc_session(tmp_path: Path) -> None:
         "#!/usr/bin/env python3\n"
         "import json,os,sys\n"
         "print(json.dumps({'args': sys.argv[1:], 'mode': os.environ.get('TS_PHONE_MODE'), "
-        "'access': os.environ.get('TS_PHONE_ACCESS_MODE')}))\n",
+        "'access': os.environ.get('TS_PHONE_ACCESS_MODE'), 'offline': os.environ.get('PI_OFFLINE')}))\n",
         encoding="utf-8",
     )
     fake_pi.chmod(0o755)
@@ -178,6 +178,7 @@ def test_tspi_phone_worker_starts_exact_rpc_session(tmp_path: Path) -> None:
     result = json.loads(completed.stdout)
     assert result["mode"] == "bridge"
     assert result["access"] == "controller"
+    assert result["offline"] == "1"
     assert result["args"][result["args"].index("--mode") + 1] == "rpc"
     assert result["args"][result["args"].index("--session-id") + 1] == "session_4"
     assert result["args"][result["args"].index("--name") + 1] == "IRC follow-up"
@@ -701,6 +702,7 @@ const ctx = {{
   sessionManager: {{ getBranch: () => [{{ type: "model_change", provider: "cpa", modelId: "saved" }}] }},
   modelRegistry: {{
     async refresh() {{ await new Promise(r => setTimeout(r, 5)); log.push("refreshed"); }},
+    getError() {{ return undefined; }},
     find(provider, id) {{ log.push("find:" + id); return {{ provider, id }}; }},
     hasConfiguredAuth() {{ return true; }},
   }},
@@ -738,6 +740,87 @@ process.stdout.write(JSON.stringify({{ saved, fresh, missing, noAuth, failed,
     assert result["failed"]["outputState"] == "failed"
     assert "private credential" not in json.dumps(result)
     assert result["unknownRuntime"] is None
+
+
+def test_phone_model_readiness_preserves_storage_errors_without_leaking_details() -> None:
+    script = f"""
+import {{ restorePhoneModel, phonePromptProblem }} from {json.dumps(PHONE_EXTENSION.as_uri())};
+const model = {{ provider: "cpa", id: "configured" }};
+let error = "Availability refresh: EROFS auth.json.lock private-test-key";
+let selected = 0;
+const ctx = {{
+  model: undefined,
+  sessionManager: {{ getBranch: () => [] }},
+  modelRegistry: {{
+    async refresh() {{}},
+    getError: () => error,
+    find: () => model,
+    hasConfiguredAuth: () => false,
+  }},
+}};
+const pi = {{ async setModel() {{ selected++; return true; }} }};
+const defaults = async () => ({{ provider: "cpa", modelId: "configured" }});
+const storage = await restorePhoneModel(pi, ctx, defaults);
+const snapshot = phonePromptProblem(ctx);
+ctx.modelRegistry.refresh = async () => {{ throw Object.assign(new Error("private-test-key"), {{ code: "EACCES" }}); }};
+const thrown = await restorePhoneModel(pi, ctx, defaults);
+ctx.modelRegistry.refresh = async () => {{}};
+error = undefined;
+const missingAuth = await restorePhoneModel(pi, ctx, defaults);
+ctx.modelRegistry.hasConfiguredAuth = () => true;
+pi.setModel = async () => false;
+const rejectedSelection = await restorePhoneModel(pi, ctx, defaults);
+ctx.model = model;
+error = "An unrelated provider has invalid configuration";
+const healthySelection = phonePromptProblem(ctx);
+process.stdout.write(JSON.stringify({{ storage, snapshot, thrown, missingAuth, rejectedSelection, selected,
+  healthySelection: healthySelection ?? null }}));
+"""
+    result = _node_json(script)
+    assert result["storage"] == "model_storage_unavailable"
+    assert result["snapshot"] == "model_storage_unavailable"
+    assert result["thrown"] == "model_storage_unavailable"
+    assert result["missingAuth"] == "model_auth_missing"
+    assert result["rejectedSelection"] == "model_check_failed"
+    assert result["selected"] == 0
+    assert result["healthySelection"] is None
+    assert "private-test-key" not in json.dumps(result)
+
+
+def test_child_model_readiness_uses_the_same_safe_diagnostics() -> None:
+    helper = ROOT / "extensions" / "shared" / "model-readiness.ts"
+    script = f"""
+import {{ requireRuntimeModel }} from {json.dumps(helper.as_uri())};
+const selected = {{ provider: "recording", id: "test-model" }};
+const storageError = new Error("private-test-key", {{ cause: {{ code: "EROFS" }} }});
+const results = {{}};
+for (const mode of ["healthy", "unavailable", "auth", "storage", "thrown", "other"]) {{
+  const runtime = {{
+    getModel() {{ return mode === "unavailable" ? undefined : selected; }},
+    hasConfiguredAuth() {{
+      if (mode === "thrown") throw storageError;
+      return mode === "healthy";
+    }},
+    getError() {{
+      return mode === "storage" ? storageError : mode === "other" ? "private-test-key" : undefined;
+    }},
+  }};
+  try {{ results[mode] = requireRuntimeModel(runtime, selected); }}
+  catch (error) {{ results[mode] = error.message; }}
+}}
+process.stdout.write(JSON.stringify(results));
+"""
+    result = _node_json(script)
+    assert result["healthy"] == {"provider": "recording", "id": "test-model"}
+    for mode, code in {
+        "unavailable": "model_unavailable",
+        "auth": "model_auth_missing",
+        "storage": "model_storage_unavailable",
+        "thrown": "model_storage_unavailable",
+        "other": "model_check_failed",
+    }.items():
+        assert result[mode].startswith(code + ": ")
+    assert "private-test-key" not in json.dumps(result)
 
 
 def test_phone_bridge_client_exchanges_events_commands_and_approval(tmp_path: Path) -> None:
