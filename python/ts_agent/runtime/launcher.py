@@ -47,9 +47,10 @@ EMAIL_ADDRESS = re.compile(r"^[^@\s]+@[^@\s]+$")
 
 
 class TSPiHostError(RuntimeError):
-    def __init__(self, message: str, *, exit_code: int = 1):
+    def __init__(self, message: str, *, exit_code: int = 1, code: str | None = None):
         super().__init__(message)
         self.exit_code = exit_code
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -558,7 +559,8 @@ def acquire_root_agent_lock(workspace: Path, *, observer_on_contention: bool = F
                 return None
             raise TSPiHostError(
                 f"another Root Agent already owns workspace {workspace}\n"
-                "TSPi: choose another --workspace name or stop the existing Root Agent"
+                "TSPi: choose another --workspace name or stop the existing Root Agent",
+                code="session_writer_active",
             ) from exc
         _validate_root_agent_lock(descriptor, lock_path)
         payload = f"pid={os.getpid()}\nstarted_at={_local_timestamp()}\n".encode("ascii")
@@ -826,7 +828,7 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
         command = build_pi_command(installation, workspace, request, session_args=arguments)
         exec_pi(command, workspace)
     except SessionGuardError as exc:
-        raise TSPiHostError(str(exc)) from exc
+        raise TSPiHostError(str(exc), code=exc.code) from exc
     finally:
         for descriptor in reversed(descriptors):
             os.close(descriptor)
@@ -839,10 +841,13 @@ def main(
     install_root: str | Path,
 ) -> int:
     package = Path(package_root).resolve() if package_root else package_root_from_file(__file__)
+    arguments = list(sys.argv[1:] if argv is None else argv)
     try:
-        return launch(list(sys.argv[1:] if argv is None else argv), package_root=package, install_root=install_root)
+        return launch(arguments, package_root=package, install_root=install_root)
     except TSPiHostError as exc:
         print(f"TSPi: {exc}", file=sys.stderr)
+        if "--phone-worker" in arguments and exc.code is not None:
+            print(json.dumps({"type": "tspi.startup_error", "code": exc.code}), file=sys.stderr, flush=True)
         return exc.exit_code
     except (OSError, ValueError) as exc:
         print(f"TSPi: startup failed: {exc}", file=sys.stderr)

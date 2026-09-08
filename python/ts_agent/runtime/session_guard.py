@@ -14,10 +14,13 @@ from pathlib import Path
 CONTRACT = "tspi-session-guard/1"
 SESSION_ID = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,158}[A-Za-z0-9])?$")
 HEADER_LIMIT = 64 * 1024
+_PROC_ROOT = Path("/proc")
 
 
 class SessionGuardError(RuntimeError):
-    pass
+    def __init__(self, message: str, *, code: str = "session_guard_invalid"):
+        super().__init__(message)
+        self.code = code
 
 
 def guard_directory(installation: Path, workspace: Path) -> Path:
@@ -82,7 +85,8 @@ def _acquire(path: Path, *, exclusive: bool) -> int:
             fcntl.flock(descriptor, (fcntl.LOCK_EX if exclusive else fcntl.LOCK_SH) | fcntl.LOCK_NB)
         except BlockingIOError as exc:
             raise SessionGuardError(
-                "session writer or lifecycle operation is active; close its runtime before reopening"
+                "session writer or lifecycle operation is active; close its runtime before reopening",
+                code="session_writer_active",
             ) from exc
         os.set_inheritable(descriptor, True)
         return descriptor
@@ -93,30 +97,67 @@ def _acquire(path: Path, *, exclusive: bool) -> int:
 
 def assert_no_unguarded_writers(workspace: Path) -> None:
     """Fail closed on old TSPi writers before enabling shared session guards."""
-    proc = Path("/proc")
-    if not proc.is_dir():
-        raise SessionGuardError("session writer inspection requires Linux /proc")
-    for process in proc.iterdir():
+    try:
+        processes = list(_PROC_ROOT.iterdir())
+    except OSError as exc:
+        raise SessionGuardError(
+            "session writer inspection requires readable Linux /proc", code="session_writer_inspection_failed"
+        ) from exc
+    for process in processes:
         if not process.name.isdecimal() or int(process.name) == os.getpid():
             continue
         try:
             if process.stat().st_uid != os.getuid():
                 continue
-            if (process / "cwd").resolve() != workspace:
+            arguments = (process / "cmdline").read_bytes().split(b"\0")
+            bound_to_workspace = _uses_workspace_sessions(process, workspace, arguments)
+            # Pi replaces its original argv with this process title after startup.
+            if not bound_to_workspace and arguments[0] != b"pi":
                 continue
             environment = (process / "environ").read_bytes().split(b"\0")
             values = dict(item.split(b"=", 1) for item in environment if b"=" in item)
-            if values.get(b"TS_WORKSPACE_ROOT") != os.fsencode(workspace):
+            if not bound_to_workspace and values.get(b"TS_WORKSPACE_ROOT") != os.fsencode(workspace):
                 continue
-            if values.get(b"TS_SESSION_GUARD") == CONTRACT.encode():
+            if (values.get(b"TS_WORKSPACE_ROOT") == os.fsencode(workspace)
+                    and values.get(b"TS_SESSION_GUARD") == CONTRACT.encode()):
                 continue
             raise SessionGuardError(
-                f"unguarded TSPi writer pid {process.name} is still open; exit it before using Session Host"
+                f"unguarded TSPi writer pid {process.name} is still open; exit it before using Session Host",
+                code="session_writer_active",
             )
         except (FileNotFoundError, ProcessLookupError):
             continue
-        except PermissionError as exc:
-            raise SessionGuardError("cannot verify existing workspace writers") from exc
+        except SessionGuardError:
+            raise
+        except (OSError, ValueError, RuntimeError) as exc:
+            raise SessionGuardError(
+                f"cannot verify existing workspace writers (pid {process.name})",
+                code="session_writer_inspection_failed",
+            ) from exc
+
+
+def _uses_workspace_sessions(process: Path, workspace: Path, arguments: list[bytes]) -> bool:
+    # TSPi always binds Pi with --session-dir. Inspect that public binding before
+    # cwd/environ: unrelated privileged user services may deny those reads.
+    expected = workspace / ".pi" / "sessions"
+    for index, argument in enumerate(arguments):
+        if argument == b"--session-dir":
+            value = arguments[index + 1] if index + 1 < len(arguments) else b""
+        elif argument.startswith(b"--session-dir="):
+            value = argument.removeprefix(b"--session-dir=")
+        else:
+            continue
+        if not value:
+            raise SessionGuardError(
+                f"cannot verify session directory of pid {process.name}",
+                code="session_writer_inspection_failed",
+            )
+        directory = Path(os.fsdecode(value))
+        if not directory.is_absolute():
+            directory = (process / "cwd").resolve(strict=True) / directory
+        if directory.resolve() == expected:
+            return True
+    return False
 
 
 def verify_session_writer(installation: Path, workspace: Path, session_id: str, mode: str, pid: int) -> None:

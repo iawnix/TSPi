@@ -8,11 +8,183 @@ from pathlib import Path
 
 import pytest
 
+from ts_agent.runtime import session_guard
 from ts_agent.runtime.session_guard import (
     SessionGuardError, acquire_directory_guard, acquire_session_guard,
-    select_session, verify_session_writer,
+    assert_no_unguarded_writers, select_session, verify_session_writer,
 )
 from tests.test_ts_phone_integration import ROOT, TS_LOADER, _copy_launcher
+
+
+@pytest.fixture
+def process_snapshot(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
+    proc = tmp_path / "proc"
+    process = proc / str(os.getpid() + 1)
+    process.mkdir(parents=True)
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (process / "cwd").symlink_to(workspace)
+    (process / "cmdline").write_bytes(
+        b"node\0pi/cli.js\0--session-dir\0" + os.fsencode(workspace / ".pi" / "sessions") + b"\0"
+    )
+    (process / "environ").write_bytes(b"TS_WORKSPACE_ROOT=" + os.fsencode(workspace) + b"\0")
+    monkeypatch.setattr(session_guard, "_PROC_ROOT", proc)
+    return process, workspace
+
+
+@pytest.mark.parametrize("command", [b"/usr/lib/systemd/systemd\0--user\0", b"ssh-agent\0", b""])
+def test_unrelated_process_private_state_is_never_read(
+    process_snapshot: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, command: bytes,
+) -> None:
+    process, workspace = process_snapshot
+    (process / "cmdline").write_bytes(command)
+    read_bytes = Path.read_bytes
+    resolve = Path.resolve
+
+    def protected_read(path: Path) -> bytes:
+        if path == process / "environ":
+            pytest.fail("unrelated process environment must not be read")
+        return read_bytes(path)
+
+    def protected_resolve(path: Path, **kwargs: object) -> Path:
+        if path == process / "cwd":
+            raise PermissionError("unrelated privileged user service")
+        return resolve(path, **kwargs)
+
+    monkeypatch.setattr(Path, "read_bytes", protected_read)
+    monkeypatch.setattr(Path, "resolve", protected_resolve)
+    assert_no_unguarded_writers(workspace)
+
+
+@pytest.mark.parametrize("binding", ["absolute", "inline", "relative", "different-cwd", "systemd-name", "pi-title"])
+def test_unguarded_writer_is_rejected_by_session_directory(
+    process_snapshot: tuple[Path, Path], binding: str,
+) -> None:
+    process, workspace = process_snapshot
+    directory = os.fsencode(workspace / ".pi" / "sessions")
+    if binding == "inline":
+        (process / "cmdline").write_bytes(b"node\0--session-dir=" + directory + b"\0")
+    elif binding == "relative":
+        (process / "cmdline").write_bytes(b"node\0--session-dir\0.pi/sessions\0")
+    elif binding == "different-cwd":
+        (process / "cwd").unlink()
+        (process / "cwd").symlink_to(workspace.parent)
+    elif binding == "systemd-name":
+        (process / "cmdline").write_bytes(b"systemd\0--session-dir\0" + directory + b"\0")
+    elif binding == "pi-title":
+        (process / "cmdline").write_bytes(b"pi\0\0\0")
+    with pytest.raises(SessionGuardError, match="unguarded TSPi writer") as error:
+        assert_no_unguarded_writers(workspace)
+    assert error.value.code == "session_writer_active"
+
+
+def test_other_workspace_writer_does_not_require_private_environment(
+    process_snapshot: tuple[Path, Path],
+) -> None:
+    process, workspace = process_snapshot
+    (process / "cmdline").write_bytes(b"node\0--session-dir\0/another/workspace/.pi/sessions\0")
+    (process / "environ").unlink()
+    assert_no_unguarded_writers(workspace)
+
+
+@pytest.mark.parametrize("retitled", [False, True])
+def test_guarded_writer_must_also_match_workspace(process_snapshot: tuple[Path, Path], retitled: bool) -> None:
+    process, workspace = process_snapshot
+    if retitled:
+        (process / "cmdline").write_bytes(b"pi\0\0")
+    (process / "environ").write_bytes(
+        b"TS_WORKSPACE_ROOT=" + os.fsencode(workspace) + b"\0TS_SESSION_GUARD=" + session_guard.CONTRACT.encode() + b"\0"
+    )
+    assert_no_unguarded_writers(workspace)
+    (process / "environ").write_bytes(b"TS_SESSION_GUARD=" + session_guard.CONTRACT.encode() + b"\0")
+    if retitled:
+        assert_no_unguarded_writers(workspace)
+        return
+    with pytest.raises(SessionGuardError) as error:
+        assert_no_unguarded_writers(workspace)
+    assert error.value.code == "session_writer_active"
+
+
+def test_retitled_pi_from_another_workspace_is_not_a_conflict(process_snapshot: tuple[Path, Path]) -> None:
+    process, workspace = process_snapshot
+    (process / "cmdline").write_bytes(b"pi\0")
+    (process / "environ").write_bytes(b"TS_WORKSPACE_ROOT=/another/workspace\0")
+    assert_no_unguarded_writers(workspace)
+
+
+@pytest.mark.parametrize(("private_file", "retitled"), [("cmdline", False), ("environ", False), ("environ", True)])
+def test_unverifiable_candidate_fails_closed_with_specific_code(
+    process_snapshot: tuple[Path, Path], monkeypatch: pytest.MonkeyPatch, private_file: str, retitled: bool,
+) -> None:
+    process, workspace = process_snapshot
+    if retitled:
+        (process / "cmdline").write_bytes(b"pi\0")
+    read_bytes = Path.read_bytes
+
+    def protected_read(path: Path) -> bytes:
+        if path == process / private_file:
+            raise PermissionError("private diagnostic")
+        return read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", protected_read)
+    with pytest.raises(SessionGuardError, match=process.name) as error:
+        assert_no_unguarded_writers(workspace)
+    assert error.value.code == "session_writer_inspection_failed"
+    assert "private diagnostic" not in str(error.value)
+
+
+def test_exited_process_does_not_block_startup(process_snapshot: tuple[Path, Path]) -> None:
+    process, workspace = process_snapshot
+    (process / "cmdline").unlink()
+    assert_no_unguarded_writers(workspace)
+
+
+def test_missing_proc_fails_closed(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(session_guard, "_PROC_ROOT", tmp_path / "missing-proc")
+    with pytest.raises(SessionGuardError) as error:
+        assert_no_unguarded_writers(tmp_path / "workspace")
+    assert error.value.code == "session_writer_inspection_failed"
+
+
+def test_real_retitled_unguarded_pi_is_detected_without_relying_on_cwd(tmp_path: Path) -> None:
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    environment = {key: value for key, value in os.environ.items() if key != "TS_SESSION_GUARD"}
+    environment["TS_WORKSPACE_ROOT"] = str(workspace)
+    child = subprocess.Popen([
+        "node", "--input-type=module", "-e",
+        "process.title='pi'; console.log('ready'); process.stdin.resume(); process.stdin.on('end',()=>process.exit(0));",
+    ], cwd=tmp_path, env=environment, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        assert select.select([child.stdout], [], [], 10)[0]
+        assert child.stdout.readline().strip() == "ready"
+        assert (Path("/proc") / str(child.pid) / "cmdline").read_bytes().split(b"\0")[0] == b"pi"
+        with pytest.raises(SessionGuardError, match=str(child.pid)) as error:
+            assert_no_unguarded_writers(workspace)
+        assert error.value.code == "session_writer_active"
+    finally:
+        child.communicate("", timeout=10)
+    assert_no_unguarded_writers(workspace)
+
+
+def test_phone_worker_emits_structured_guard_failure_before_pi(tmp_path: Path) -> None:
+    installation, launcher = _copy_launcher(tmp_path)
+    sessions = installation / "workspaces" / "ts_001" / ".pi" / "sessions"
+    sessions.mkdir(parents=True)
+    original = '{"type":"invalid-history-header"}\n'
+    history = sessions / "history.jsonl"
+    history.write_text(original)
+    completed = subprocess.run([
+        str(launcher), "--workspace", "ts_001", "--phone-worker", "--phone-access", "controller",
+        "--session-id", "history-1",
+    ], input="", text=True, capture_output=True, timeout=15)
+    assert completed.returncode == 1, completed.stderr
+    assert completed.stdout == ""
+    assert json.loads(completed.stderr.splitlines()[-1]) == {
+        "type": "tspi.startup_error", "code": "session_guard_invalid",
+    }
+    assert history.read_text() == original
+    assert list(sessions.iterdir()) == [history]
 
 
 def test_shared_directory_and_exclusive_history_guards(tmp_path: Path) -> None:
@@ -78,7 +250,7 @@ def test_observer_blocks_same_session_and_lifecycle_until_exit(tmp_path: Path, r
     fake.write_text(
         "#!/usr/bin/env python3\nimport os,json\nprint(json.dumps({'pid':os.getpid(), 'session':os.environ['TS_SESSION_ID']}),flush=True)\ninput()\n"
         if runtime == "python" else
-        "#!/usr/bin/env node\nimport {createInterface} from 'node:readline';\n"
+        "#!/usr/bin/env node\nimport {createInterface} from 'node:readline';\nprocess.title='pi';\n"
         "console.log(JSON.stringify({pid:process.pid,session:process.env.TS_SESSION_ID}));\n"
         "createInterface({input:process.stdin}).once('line',()=>process.exit(0));\n"
     )
