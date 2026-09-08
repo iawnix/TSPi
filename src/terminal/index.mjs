@@ -1,5 +1,5 @@
 import { parseArgs } from "node:util";
-import { ProcessTerminal, TUI } from "@earendil-works/pi-tui";
+import * as PiTui from "@earendil-works/pi-tui";
 import { HostClient, hostConnection } from "./host-client.mjs";
 import { TerminalController } from "./controller.mjs";
 import { TerminalView, safeText } from "./view.mjs";
@@ -16,8 +16,11 @@ async function main() {
   if (!version.capabilities?.includes("terminal.attach")) {
     throw new Error("This Host does not support terminal attachment. Synchronize the complete TSPi package and restart Host.");
   }
-  const terminal = new ProcessTerminal();
-  const tui = new TUI(terminal, true);
+  const terminal = new PiTui.ProcessTerminal();
+  // Pi 0.85 names the existing main-screen renderer TuiMainScreen.
+  const Renderer = PiTui.TuiMainScreen ?? PiTui.TUI;
+  if (!Renderer) throw new Error("The selected Pi installation has no supported terminal renderer.");
+  const tui = new Renderer(terminal, true);
   const controller = new TerminalController(client);
   let quit;
   const done = new Promise((resolve) => { quit = resolve; });

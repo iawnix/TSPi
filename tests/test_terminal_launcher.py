@@ -23,11 +23,11 @@ def test_thin_launcher_does_not_require_scientific_runtime_or_create_workspace(t
     node.write_text("#!/usr/bin/env python3\nimport json,sys\nprint(json.dumps(sys.argv[1:]))\n", encoding="utf-8")
     node.chmod(0o755)
     result = subprocess.run([str(launcher), *arguments], cwd=installation,
-        env={**os.environ, "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"},
+        env={**os.environ, "PI_BIN": str(node), "PATH": f"{tmp_path}{os.pathsep}{os.environ['PATH']}"},
         capture_output=True, text=True, timeout=10)
     assert result.returncode == 0, result.stderr
     forwarded = json.loads(result.stdout)
-    assert forwarded[:3] == [str(terminal), "--install-root", str(installation)]
+    assert forwarded[:5] == ["--import", str(package / "scripts/pi-loader.mjs"), str(terminal), "--install-root", str(installation)]
     assert ("--latest" in forwarded) == ("-c" in arguments)
     assert not (installation / "workspaces").exists()
     assert not (installation / ".pi/remote.toml").exists()

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import "./pi-loader.test.mjs";
 import test from "node:test";
 import { createServer } from "node:http";
 import { randomUUID } from "node:crypto";

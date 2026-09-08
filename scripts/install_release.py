@@ -56,6 +56,7 @@ REQUIRED_RUNTIME_FILES = {
     "scripts/_suite.py",
     "scripts/_wheel.py",
     "scripts/tspi_host.py",
+    "scripts/pi-loader.mjs",
     "scripts/ts_compute.py",
     "scripts/ts_web.py",
     "skills/transition-state-workflow/SKILL.md",

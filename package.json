@@ -54,6 +54,7 @@
     "scripts/_suite.py",
     "scripts/_wheel.py",
     "scripts/tspi_host.py",
+    "scripts/pi-loader.mjs",
     "scripts/ts_backend.py",
     "scripts/ts_compute.py",
     "scripts/ts_email.py",

@@ -30,6 +30,12 @@ is allowed. The token is read from `TS_PHONE_STATE_DIR/auth.token` and is never
 printed or passed as a process argument. It does not read `~/.pi/agent`;
 provider credentials stay with the Host Worker.
 
+The launcher resolves the SDK and terminal components from the Node-based Pi
+installation selected by `PI_BIN` (default `~/.npm-global/bin/pi`). Releases do
+not rely on source-checkout `node_modules`, install npm packages on startup, or
+copy credentials. Pi 0.83 and 0.85 renderer exports are supported. A standalone
+Pi binary without the Node SDK requires a separate Node-based Pi installation.
+
 ## Controls
 
 Enter sends; Shift+Enter inserts a line break using Pi's editor. Ctrl+K opens

@@ -616,7 +616,7 @@ def _local_timestamp() -> str:
 
 
 def _resolve_pi_binary() -> Path:
-    requested = os.environ.get("PI_BIN", "/home/iaw/.npm-global/bin/pi")
+    requested = os.environ.get("PI_BIN", str(Path.home() / ".npm-global/bin/pi"))
     candidate = shutil.which(requested) if not Path(requested).is_absolute() else requested
     if not candidate:
         raise TSPiHostError(f"Pi executable not found: {requested}", exit_code=127)
@@ -624,6 +624,14 @@ def _resolve_pi_binary() -> Path:
     if not path.is_file() or not os.access(path, os.X_OK):
         raise TSPiHostError(f"Pi executable not found: {requested}", exit_code=127)
     return path
+
+
+def _node_runtime_command(package: Path, entry: Path) -> list[str]:
+    node = shutil.which("node")
+    if not node:
+        raise TSPiHostError("Node.js executable not found", exit_code=127)
+    os.environ["TS_PI_EXECUTABLE"] = str(_resolve_pi_binary())
+    return [node, "--import", str(package / "scripts/pi-loader.mjs"), str(entry)]
 
 
 def build_pi_command(
@@ -653,7 +661,7 @@ def build_pi_command(
     if session_args is not None:
         pi_args = session_args
     package = installation.package_root
-    entry = ([shutil.which("node") or "node", str(package / "extensions" / "ts-phone-bridge" / "runtime.mjs")]
+    entry = (_node_runtime_command(package, package / "extensions/ts-phone-bridge/runtime.mjs")
              if request.phone_worker else [str(_resolve_pi_binary())])
     return [
         *entry,
@@ -701,10 +709,7 @@ def launch_terminal(installation: Installation, request: LaunchRequest) -> NoRet
     entry = installation.package_root / "src" / "terminal" / "index.mjs"
     if not entry.is_file():
         raise TSPiHostError("selected Package has no terminal client; reinstall the complete TSPi Package")
-    node = shutil.which("node")
-    if not node:
-        raise TSPiHostError("Node.js executable not found", exit_code=127)
-    command = [node, str(entry), "--install-root", str(installation.root)]
+    command = [*_node_runtime_command(installation.package_root, entry), "--install-root", str(installation.root)]
     if request.workspace_name:
         command.extend(["--workspace", request.workspace_name])
     if request.session_id:
@@ -740,7 +745,7 @@ def launch(argv: list[str], *, package_root: str | Path, install_root: str | Pat
     if argv == ["--phone-models"]:
         installation = resolve_installation(package_root, install_root)
         runtime = installation.package_root / "extensions" / "ts-phone-bridge" / "runtime.mjs"
-        return subprocess.run([shutil.which("node") or "node", str(runtime), "--catalog"], check=False).returncode
+        return subprocess.run([*_node_runtime_command(installation.package_root, runtime), "--catalog"], check=False).returncode
     request = parse_launch_request(argv)
     if request.show_help:
         print(USAGE, end="")

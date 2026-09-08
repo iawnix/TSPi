@@ -38,7 +38,7 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     shutil.copy2(TSPI, package_root / "TSPi")
     (package_root / "TSPi").chmod(0o755)
     (package_root / "scripts").mkdir()
-    for name in ("_bootstrap.py", "tspi_host.py"):
+    for name in ("_bootstrap.py", "tspi_host.py", "pi-loader.mjs"):
         shutil.copy2(ROOT / "scripts" / name, package_root / "scripts" / name)
     shutil.copytree(
         ROOT / "python",
@@ -168,7 +168,7 @@ def test_tspi_phone_worker_starts_exact_rpc_session(tmp_path: Path) -> None:
             "--model", "cpa/gpt-5.6-sol",
         ],
         cwd=install_root,
-        env={**os.environ, "PATH": str(tmp_path) + os.pathsep + os.environ.get("PATH", "")},
+        env={**os.environ, "PI_BIN": str(fake_pi), "PATH": str(tmp_path) + os.pathsep + os.environ.get("PATH", "")},
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
