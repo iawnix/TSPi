@@ -346,9 +346,13 @@ that refreshes credentials needs a separate drop-in for only its private state
 directory.
 
 Pi's selected agent directory must also be writable: credential and model-cache
-reads acquire filesystem locks. For the standard profile add
-`ReadWritePaths=-/home/iaw/.pi/agent`; a custom `PI_CODING_AGENT_DIR` needs its own
-matching entry. Preserve the same profile for TUI, Phone Workers and subagents,
+reads acquire filesystem locks. The standard profile is `~/.pi/agent` for the
+user running the Host. In a user service add `ReadWritePaths=-%h/.pi/agent`:
+systemd expands `%h` to that user's Home, but does not expand shell `~` or
+`$HOME` in this directive. A custom `PI_CODING_AGENT_DIR` needs an explicit
+matching absolute path instead; the environment variable does not change the
+service's filesystem allowlist. Preserve the same profile for TUI, Phone Workers
+and subagents,
 including OAuth write-back, rather than making per-workspace credential copies.
 Do not disable `ProtectHome` or grant access to all of Home. Managed Workers
 disable startup catalog/package downloads with `PI_OFFLINE=1`; this does not
