@@ -24,7 +24,7 @@ test("two real terminal controllers, Phone, and a PTY share exactly one isolated
     bridgeMaxRecordBytes: 1024 * 1024, maxBodyBytes: 128 * 1024, eventJournalSize: 100, eventJournalMaxBytes: 1024 * 1024,
   };
   await mkdir(config.workspaceRoot);
-  await writeFakeTspi(config.tspiPath, config.workspaceRoot, false, { bridge: true, modelControl: true });
+  await writeFakeTspi(config.tspiPath, config.workspaceRoot, false, { bridge: true, modelControl: true, turnDelayMs: 100 });
   const app = await createTsPhoneHttpServer(config);
   const address = await app.listen();
   const connection = { baseUrl: `http://127.0.0.1:${address.port}`, token: (await readFile(join(config.stateDir, "auth.token"), "utf8")).trim() };
@@ -36,11 +36,17 @@ test("two real terminal controllers, Phone, and a PTY share exactly one isolated
     await second.open(created.workspace.id, created.session.sessionId);
     await assert.rejects(readFile(`${config.tspiPath}.starts`), { code: "ENOENT" });
     await Promise.all([first.continue(), second.continue()]);
-    assert.equal(first.session.canPrompt, true);
-    assert.equal(second.session.canPrompt, true);
+    assert.ok(first.session.capabilities.includes("command.queue"));
+    assert.ok(second.session.capabilities.includes("command.queue"));
+    await assert.rejects(readFile(`${config.tspiPath}.starts`), { code: "ENOENT" });
     await first.send("Terminal fixture request");
+    const deadline = Date.now() + 8000;
+    while (app.hub.commandQueue.hasPending(created.workspace.id)) {
+      if (Date.now() > deadline) throw new Error("Queued terminal request did not settle");
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
     const active = (await app.hub.listSessions(created.workspace.id))[0];
-    await app.hub.prompt(created.workspace.id, active.sessionId, { sessionRevision: active.sessionRevision,
+    await app.hub.enqueue(created.workspace.id, active.sessionId, { sessionRevision: active.sessionRevision,
       clientMessageId: "phone-fixture", clientKind: "phone", message: "Phone fixture request" });
     await second.close();
     await first.refresh();

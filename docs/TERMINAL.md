@@ -48,18 +48,21 @@ selector. Ctrl+C, Ctrl+D, and `/quit` detach, never terminate the Worker.
 | --- | --- |
 | `/projects`, `/sessions` | Browse existing projects and conversations |
 | `/new` | Name a new conversation in this project |
-| `/continue` | Start or join this conversation without sending the draft |
-| `/model` | Choose a model for a ready, idle Host Controller |
+| `/continue` | Refresh this conversation; Hosts without queue support activate without sending the draft |
+| `/model` | Choose the model for future messages, including while a turn is running |
+| `/queue` | Inspect workspace requests, cancel waiting work, or acknowledge an inspected uncertain outcome |
 | `/abort` | Stop the exact displayed generation; remote jobs are unchanged |
 | `/refresh`, `/latest` | Reload the latest bounded history and reconnect |
 | `/start`, `/older`, `/newer` | Seek to the beginning or page through history |
 | `/approvals` | Read and answer unexpired structured confirmation requests |
 | `/receipt` | Reconcile an unconfirmed message, without resending it |
 
-If a different idle Host Worker owns the workspace, `/continue` asks for an
-explicit switch bound to that Worker's session revision. Busy, uncertain, or
-external processes are not stopped. An external/native Pi process cannot be
-adopted: exit it normally, then select its unchanged history in Host.
+With `command.queue`, sending persists a request and Host transfers execution
+when the workspace is idle. Viewing or changing conversations never switches
+the running Agent. Multiple clients may view and enqueue; only one turn runs
+per workspace. Busy, uncertain, or external processes are not stopped.
+An external/native Pi process cannot be adopted: exit it normally, then select
+its unchanged history in Host. Hosts without queue support retain explicit idle switching.
 
 ## Delivery And Recovery
 
@@ -76,10 +79,24 @@ replays commands. Drafts and pending client state are in memory, not another
 conversation database. After closing with an unknown receipt, inspect the
 canonical history and Host state before re-entering the message.
 
-Host receipts are currently in-memory and bounded. This is not a durable
-exactly-once delivery guarantee across Host restart. Terminal disconnect,
+Queue receipts are durable and bounded. Their model choice is frozen when each
+request is admitted. Pi retries and continuations retain one run identity until
+settled. Exhausted model-service errors become failed receipts; they do not
+mean delivery is unknown. Stopping also retains already executed tool actions.
+A Host restart preserves never-started requests but marks
+in-flight execution unknown and pauses later work in that workspace. After
+inspecting history/outputs and stopping the uncertain Worker, `/queue` can
+acknowledge it without replaying or claiming success. Direct receipts
+remain in memory. Neither path claims exactly-once execution across crashes.
+Terminal disconnect,
 generation abort, Worker shutdown, and cancellation of a remote calculation
 are separate operations.
+
+The Host event stream is a bounded delivery cache. A first connection, or a
+cursor that is too old to replay contiguously, begins with the current session
+snapshot and then continues with newer events. The terminal replaces its live
+view from that snapshot and never treats a missing cursor range as permission
+to resend a prompt.
 
 ## Native Pi Boundary
 

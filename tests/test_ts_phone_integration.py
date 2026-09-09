@@ -533,6 +533,9 @@ const startEvent = received.find((record) =>
 const runningSnapshot = received.findLast((record) =>
   record.type === "session.snapshot" && record.snapshot.agentRunId);
 const agentRunId = startEvent.payload.agentRunId;
+await handlers.agent_start({{ type: "agent_start" }}, ctx);
+await waitFor(() => received.filter((record) => record.eventType === "agent_start").length === 2);
+const retryEvent = received.findLast((record) => record.eventType === "agent_start");
 const commandBase = {{
   protocolVersion: "ts-phone-bridge/3",
   workspaceId: "ts_006",
@@ -555,7 +558,7 @@ peer.write(JSON.stringify({{
 await waitFor(() => received.some((record) => record.type === "command.ack" && record.requestId === "abort-active"));
 idle = true;
 await handlers.agent_settled({{ type: "agent_settled" }}, ctx);
-await waitFor(() => received.filter((record) => record.type === "session.snapshot").length >= 3);
+await waitFor(() => received.findLast((record) => record.type === "session.snapshot")?.snapshot.isStreaming === false);
 peer.write(JSON.stringify({{
   ...commandBase,
   requestId: "abort-idle",
@@ -573,6 +576,7 @@ await unlink(socketPath).catch(() => {{}});
 process.stdout.write(JSON.stringify({{
   agentRunId,
   startPayload: startEvent.payload,
+  retryPayload: retryEvent.payload,
   runningSnapshotIsStreaming: runningSnapshot.snapshot.isStreaming,
   runningSnapshotAgentRunId: runningSnapshot.snapshot.agentRunId,
   settledPayload: settledEvent.payload,
@@ -591,7 +595,9 @@ process.stdout.write(JSON.stringify({{
         "origin": "unknown",
         "turnId": "turn-1-2",
         "agentRunId": result["agentRunId"],
+        "attempt": 1,
     }
+    assert result["retryPayload"] == {**result["startPayload"], "attempt": 2}
     assert result["runningSnapshotIsStreaming"] is True
     assert result["runningSnapshotAgentRunId"] == result["agentRunId"]
     assert result["settledPayload"] == {
@@ -599,6 +605,8 @@ process.stdout.write(JSON.stringify({{
         "origin": "unknown",
         "turnId": "turn-1-2",
         "agentRunId": result["agentRunId"],
+        "attempt": 2,
+        "outcome": {"status": "cancelled"},
     }
     assert result["settledSnapshotIsStreaming"] is False
     assert result["settledSnapshotHasAgentRunId"] is False

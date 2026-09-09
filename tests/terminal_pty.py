@@ -34,7 +34,7 @@ def main() -> None:
     try:
         expect(b"fake-model")
         os.write(master, b"PTY fixture request\r")
-        expect(b"Message accepted by Host.")
+        expect(b"Request saved in the workspace queue.")
         fcntl.ioctl(master, termios.TIOCSWINSZ, struct.pack("HHHH", 32, 90, 0, 0))
         process.send_signal(signal.SIGWINCH)
         os.write(master, b"\x0b")

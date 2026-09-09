@@ -535,6 +535,17 @@ Skills or model credentials, bootstrap a workspace, or acquire writer locks.
 The terminal uses the existing authenticated Host API and Pi TUI components.
 `--phone` aliases this route. `--standalone` explicitly selects native Pi.
 
+The Host is the session broker for Phone and terminal clients. A conversation
+is addressed by `workspaceId + sessionId`; attached clients share its Worker,
+event journal, model state and command receipts. Browsing never activates Pi.
+Normal sends are persisted before acknowledgement and enter one FIFO execution
+lane per workspace. Concurrent starts share one in-flight launch, and repeated
+client message IDs return their stored receipt. An interrupted execution stays
+unknown until inspected; it is never replayed to repair a missing HTTP response.
+SSE provides the latest snapshot plus newer events when a reconnect cursor is
+too old. TS Web remains a read-only projection of the scientific workspace,
+not another Agent or conversation writer.
+
 The following lifecycle applies only to native Pi and Host-managed Workers:
 
 1. Resolve the physical installation root and immutable selected release.
@@ -570,8 +581,11 @@ still owns credentials and the model registry. Saved history takes precedence
 over a startup model preference; missing models fail without arbitrary fallback.
 The private `--phone-models` entrypoint returns only available model identities,
 names and context limits without bootstrap. The Bridge advertises model control
-only for these session-local Workers. Host requires an idle Controller and an
-exact RPC receipt before accepting a switch; external TUI settings are not changed.
+only for these session-local Workers. Queue-capable clients select the model for
+future sends; each admitted request freezes that selection. The Host applies
+it to an idle Worker and requires an exact RPC receipt before dispatch. Direct
+selection also requires an idle Worker. External TUI settings are
+not changed.
 
 `--lifecycle-preflight` resolves an existing workspace and returns its absolute
 path, actual Root/session-writer occupancy, and bounded counts of non-terminal remote

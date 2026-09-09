@@ -31,6 +31,7 @@ export class TerminalController {
   get draft() { return this.drafts.get(this.key) ?? ""; }
   set draft(text) { this.drafts.set(this.key, text); }
   get unconfirmed() { return this.pending.get(this.key); }
+  get queuedExecution() { return this.session?.capabilities?.includes("command.queue") === true; }
 
   async open(workspaceId, sessionId) {
     if (this.busy) throw new HostError("busy", "Wait for the current command receipt before switching.");
@@ -227,7 +228,12 @@ export class TerminalController {
     finally { this.busy = false; this.change(); }
   }
 
-  async continue(switchFrom) { return this.run(() => this.#activate(switchFrom)); }
+  async continue(switchFrom) {
+    return this.run(async () => {
+      await this.#summary();
+      return this.queuedExecution ? this.session : this.#activate(switchFrom);
+    });
+  }
 
   async send(text) {
     if (!text.trim()) return;
@@ -235,13 +241,18 @@ export class TerminalController {
     this.draft = text;
     if (this.historyPage) await this.refresh();
     return this.run(async () => {
-      const session = await this.#activate();
+      await this.#summary();
+      const queued = this.queuedExecution;
+      const session = queued ? this.session : await this.#activate();
       const key = this.key;
       const pending = { clientMessageId: randomUUID(), sessionRevision: session.sessionRevision, text, confirmed: false };
       this.pending.set(key, pending);
       try {
-        await this.client.request(`${this.path}/messages`, { message: text,
+        const receipt = await this.client.request(`${this.path}/${queued ? "commands" : "messages"}`, { message: text,
           clientMessageId: pending.clientMessageId, sessionRevision: pending.sessionRevision, clientKind: "terminal" });
+        if (queued && receipt?.clientMessageId !== pending.clientMessageId) {
+          throw new HostError("command_ambiguous", "Host returned an unrelated command receipt.", true);
+        }
         this.#confirm(key, pending);
       } catch (error) {
         if (pending.confirmed) return;
@@ -256,7 +267,7 @@ export class TerminalController {
     pending.confirmed = true;
     this.pending.delete(key);
     if (this.drafts.get(key) === pending.text) this.drafts.delete(key);
-    this.notice = "Message accepted by Host.";
+    this.notice = this.queuedExecution ? "Request saved in the workspace queue." : "Message accepted by Host.";
     this.change();
   }
 
@@ -265,7 +276,13 @@ export class TerminalController {
     const pending = this.unconfirmed;
     if (!pending) return;
     const receipt = await this.client.request(`${this.path}/commands/${encodeURIComponent(pending.clientMessageId)}?sessionRevision=${encodeURIComponent(pending.sessionRevision)}`);
-    if (receipt.status === "accepted") this.#confirm(key, pending);
+    if (receipt?.clientMessageId !== pending.clientMessageId
+      || (receipt.durable !== true && receipt.sessionRevision !== pending.sessionRevision)) {
+      this.notice = "Receipt does not match this request. Draft retained; nothing has been resent.";
+      this.change();
+      return receipt;
+    }
+    if (receipt.status === "accepted" || receipt.durable === true) this.#confirm(key, pending);
     else if (receipt.status === "rejected") {
       this.pending.delete(key);
       this.notice = "Host rejected the message. Draft retained.";
@@ -287,6 +304,7 @@ export class TerminalController {
     return this.run(async () => {
       this.session = await this.client.request(`${this.path}/model`, {
         sessionRevision: this.session.sessionRevision, provider: model.provider, modelId: model.id,
+        ...(this.queuedExecution ? {nextTurn: true} : {}),
       });
     });
   }
@@ -299,6 +317,16 @@ export class TerminalController {
         sessionRevision: approval.sessionRevision, approved,
       });
       this.approvals.delete(id);
+    });
+  }
+
+  async commandAction(command, action) {
+    if (action !== "cancel" && action !== "acknowledge") throw new Error("Unknown queue action");
+    return this.run(async () => {
+      const path = sessionPath(this.workspaceId, command.sessionId ?? this.session.sessionId);
+      await this.client.request(`${path}/commands/${encodeURIComponent(command.clientMessageId)}/${action}`,
+        action === "acknowledge" ? {confirmation: command.clientMessageId} : {});
+      await this.#summary();
     });
   }
 

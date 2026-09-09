@@ -767,8 +767,19 @@ def validate_phone_lifecycle_definition(document: dict[str, Any], label: str) ->
     if phone_schema_required(lifecycle) != PHONE_LIFECYCLE_FIELDS:
         raise SuiteReleaseError(f"installed phone {label} schema does not bind lifecycle event identity")
     properties = lifecycle.get("properties")
-    if not isinstance(properties, dict) or set(properties) != PHONE_LIFECYCLE_FIELDS:
+    if not isinstance(properties, dict) or not PHONE_LIFECYCLE_FIELDS <= set(properties) <= PHONE_LIFECYCLE_FIELDS | {"attempt", "outcome"}:
         raise SuiteReleaseError(f"installed phone {label} schema has invalid lifecycle event fields")
+    if "attempt" in properties and properties["attempt"] != {"type": "integer", "minimum": 1}:
+        raise SuiteReleaseError(f"installed phone {label} lifecycle payload has invalid attempt metadata")
+    if "outcome" in properties and properties["outcome"] != {
+        "type": "object", "required": ["status"], "additionalProperties": False,
+        "properties": {
+            "status": {"enum": ["completed", "failed", "cancelled"]},
+            "problem": {"enum": ["provider_unavailable", "provider_rate_limited", "provider_auth_failed", "provider_error", "generation_incomplete"]},
+            "httpStatus": {"type": "integer", "minimum": 400, "maximum": 599},
+        },
+    }:
+        raise SuiteReleaseError(f"installed phone {label} lifecycle payload has invalid outcome metadata")
     if lifecycle.get("additionalProperties") is not False:
         raise SuiteReleaseError(f"installed phone {label} lifecycle payload must reject unknown fields")
     type_schema = properties.get("type")

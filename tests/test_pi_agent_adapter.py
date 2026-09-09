@@ -200,6 +200,46 @@ process.stdout.write(JSON.stringify(result));
     assert "workflow phase" not in prompt.lower()
 
 
+def test_host_turn_refreshes_bounded_science_without_appending_history(tmp_path: Path) -> None:
+    workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
+    script = f"""
+import install from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
+const handlers={{}}; let reads=0; let unavailable=false;
+const pi={{registerTool:()=>{{}},registerCommand:()=>{{}},registerEntryRenderer:()=>{{}},
+  on:(name,handler)=>handlers[name]=handler,
+  exec:async (command,args)=>{{
+    if (args[0].endsWith("ts_runtime.py")) return {{stdout:JSON.stringify({{configured:true,python_executable:{json.dumps(sys.executable)}}})}};
+    if (args[0].endsWith("ts_workspace.py") && args[1] === "context") {{
+      if (unavailable) throw new Error("private diagnostic");
+      reads++;
+      return {{stdout:JSON.stringify({{mode:"frontier",valid:true,workspace_revision:"revision-"+reads,
+        workspace_brief:{{nodes:[{{node_id:"node_"+reads,title:"Current research",status:"open"}}]}}}})}};
+    }}
+    throw new Error("unexpected command");
+  }},
+}};
+install(pi);
+process.env.TS_PHONE_WORKER="1";
+const first=await handlers.before_agent_start({{systemPrompt:"BASE"}},{{cwd:{json.dumps(str(workspace))}}});
+const second=await handlers.before_agent_start({{systemPrompt:"BASE"}},{{cwd:{json.dumps(str(workspace))}}});
+unavailable=true;
+const failed=await handlers.before_agent_start({{systemPrompt:"BASE"}},{{cwd:{json.dumps(str(workspace))}}});
+delete process.env.TS_PHONE_WORKER;
+const standalone=await handlers.before_agent_start({{systemPrompt:"BASE"}},{{cwd:{json.dumps(str(workspace))}}});
+process.stdout.write(JSON.stringify({{first,second,failed,standalone,reads}}));
+"""
+    result = _node_json(script)
+    assert result["reads"] == 2
+    assert "revision-1" in result["first"]["systemPrompt"]
+    assert "revision-2" in result["second"]["systemPrompt"]
+    assert "revision-1" not in result["second"]["systemPrompt"]
+    assert "node_2" in result["second"]["systemPrompt"]
+    assert "Current workspace snapshot is unavailable" in result["failed"]["systemPrompt"]
+    assert "private diagnostic" not in result["failed"]["systemPrompt"]
+    assert "workspace snapshot" not in result["standalone"]["systemPrompt"]
+    assert all(set(result[key]) == {"systemPrompt"} for key in ["first", "second", "failed", "standalone"])
+
+
 def test_state_change_contract_routes_to_the_kernel_without_leaking_other_selectors(tmp_path: Path) -> None:
     workspace = bootstrap_workspace_fixture(tmp_path / "workspace")
     script = f"""

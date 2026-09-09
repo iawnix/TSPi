@@ -413,8 +413,9 @@ Host connection credential, not Pi's model authentication. Host unavailability
 is reported without falling back to a second Pi process. See [Terminal](TERMINAL.md)
 for client commands, limitations, and integration checks.
 
-The phone app can instead create a managed project/conversation and ask the Host
-to activate it. Host-only `--phone-worker`, `--lifecycle-preflight`, and
+The phone app can instead create a managed project/conversation and send a
+message. The Host persists the request, then starts or reuses the exact session
+when that workspace is idle. Host-only `--phone-worker`, `--lifecycle-preflight`, and
 `--lifecycle-guard`, `--session-host-capabilities`, and `--session-writer-check`
 syntax is not a supported manual interface. Worker mode
 binds an exact session ID and access mode; preflight is a read-only, fail-closed
@@ -423,13 +424,13 @@ Host deletes data. Guard files are under installation `.pi/session-host/guards/`
 allow this operational state path in the service sandbox, but never remove an
 occupied lock file to force access.
 
-The phone's Continue research action explicitly requests Controller and keeps
-the original session ID and context; it does not require a visible terminal.
-Read-only assistant is a separate menu action. A matching live runtime is
-reused. Switching an idle Host-owned runtime requires confirmation; running,
-queued, uncertain, or external CLI runtimes are not stopped. Activation alone
-never submits the local draft. Model authentication is configured on the TSPi
-host, separately from the phone connection token.
+Normal Phone and terminal conversations use the same workspace queue, without
+a Continue research or read-only-assistant choice. Several clients may read and
+submit messages; only one turn runs per workspace. The Host reuses the matching
+runtime or transfers an idle Host-owned runtime to the next queued session.
+Running, uncertain, or external CLI runtimes are not stopped. Compatibility activation
+is retained for standalone diagnostics and clients without queue support. Model authentication
+is configured on the TSPi host, separately from the phone connection token.
 
 The first install enabling the guard activation record requires old TSPi writers
 to exit after their turns finish, including Observer CLIs. Run the installer as

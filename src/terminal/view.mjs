@@ -8,7 +8,7 @@ const listTheme = { selectedPrefix: accent, selectedText: bold, description: dim
 const markdownTheme = { heading: bold, link: accent, linkUrl: dim, code: accent, codeBlock: (s) => s,
   codeBlockBorder: dim, quote: dim, quoteBorder: dim, hr: dim, listBullet: dim, bold,
   italic: style(3), strikethrough: style(9), underline: style(4) };
-const COMMANDS = ["sessions", "projects", "new", "model", "continue", "abort", "refresh", "receipt",
+const COMMANDS = ["sessions", "projects", "new", "model", "queue", "continue", "abort", "refresh", "receipt",
   "older", "newer", "start", "latest", "approvals", "quit"];
 
 // Host/model text is untrusted terminal content. Only this view may emit ANSI.
@@ -176,10 +176,27 @@ export class TerminalView {
       if (!c.workspaceId) return this.projects();
       this.ask("Conversation name", (name) => this.createSession(c.workspaceId, name));
     } else if (command === "model") {
-      if (!c.session?.capabilities?.includes("command.model")) throw new Error("Model selection requires a ready, idle Host Controller. Continue the conversation first.");
+      if (!c.queuedExecution && !c.session?.capabilities?.includes("command.model")) throw new Error("This Host cannot select the conversation model yet.");
       const models = await c.client.request("/models");
       this.choose("Model", models.map((m, index) => ({ value: String(index), label: m.name,
         description: `${m.provider}/${m.id}` })), (index) => c.setModel(models[Number(index)]));
+    } else if (command === "queue") {
+      const commands = c.session?.commands ?? [];
+      if (!commands.length) { c.notice = "No pending requests."; c.change(); return; }
+      this.choose("Workspace requests", commands.map((item, index) => ({value: String(index),
+        label: `${item.status}${item.position ? ` #${item.position}` : ""}: ${item.preview ?? item.clientMessageId}`,
+        description: `${item.sessionId ?? c.session.sessionId}${item.model ? ` | ${item.model}` : ""}${item.problem ? ` | ${item.problem}` : ""}`,
+      })), (index) => {
+        const item = commands[Number(index)];
+        if (item.status === "queued") this.choose("Cancel this waiting request?", [
+          {value: "no", label: "Keep waiting"}, {value: "yes", label: "Cancel request"},
+        ], (value) => value === "yes" ? c.commandAction(item, "cancel") : undefined);
+        else if (item.status === "unknown") this.choose("History and outputs reviewed; uncertain Worker stopped? This will not replay the request.", [
+          {value: "no", label: "Keep blocked"}, {value: "yes", label: "Confirm review and release later requests"},
+        ], (value) => value === "yes" ? c.commandAction(item, "acknowledge") : undefined);
+      });
+    } else if (command === "continue" && c.queuedExecution) {
+      await c.continue();
     } else if (command === "continue") {
       const conflict = c.session?.activation?.conflict;
       if (conflict?.switchable) {
@@ -240,10 +257,11 @@ export class TerminalView {
     this.tooSmall = rows < 14 || width < 24;
     if (this.tooSmall) return [clip("Enlarge terminal (24x14 min).")];
     const session = c.session;
-    const model = session?.model || "Model not selected";
+    const model = session?.model || session?.nextModel || "Host default model";
     const context = session?.runtime?.context;
     const heading = `${c.workspaceId ?? "TSPi"}  /  ${session?.sessionName || session?.sessionId || "Projects"}`;
-    const metadata = `${session?.runtimeState ?? "browse"} | ${model}${context ? ` | context ~${context.usedTokens ?? "?"}/${context.limitTokens}` : ""}`;
+    const state = c.queuedExecution && session?.runtimeState === "offline" ? "ready" : session?.runtimeState ?? "browse";
+    const metadata = `${state} | ${model}${session?.nextModel && session.nextModel !== session.model ? ` | next: ${session.nextModel}` : ""}${context ? ` | context ~${context.usedTokens ?? "?"}/${context.limitTokens}` : ""}${session?.commands?.length ? ` | requests: ${session.commands.length}` : ""}`;
     const header = [clip(bold(safeText(heading))), clip(dim(safeText(metadata))), ""];
     const status = `${c.busy ? "Waiting for receipt" : c.connected ? "Connected" : "Disconnected"}${c.unconfirmed ? " | Delivery unconfirmed" : ""}${c.historyPage ? " | History" : ""}`;
     const footer = [clip(dim(status)), clip(safeText(c.notice))];

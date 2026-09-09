@@ -8,6 +8,7 @@ import type {
 import { TsPhoneBridgeClient } from "./bridge-client.ts";
 import type { BridgeAbortCommand, BridgePromptCommand } from "./protocol.ts";
 import { authorizeTsPhoneTool } from "./policy.ts";
+import { assistantOutcome, type RunOutcome } from "./run-outcome.ts";
 import { modelReadinessFailure, type ModelReadinessProblem } from "../shared/model-readiness.ts";
 
 type TurnOrigin =
@@ -53,6 +54,9 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
   let turnSequence = 0;
   let agentRunSequence = 0;
   let activeAgentRunId: string | undefined;
+  let attempt = 0;
+  let outcome: RunOutcome | undefined;
+  let abortRequested = false;
   let activeOrigin: TurnOrigin = { kind: "unknown", turnId: "turn-0" };
   const pendingOrigins: TurnOrigin[] = [];
   const pendingPhoneInputs: PendingPhoneInput[] = [];
@@ -125,14 +129,23 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
     });
   });
   pi.on("agent_start", (event) => {
-    activeOrigin = pendingOrigins.shift() || { kind: "unknown", turnId: nextTurnId() };
-    agentRunSequence += 1;
-    activeAgentRunId = buildAgentRunId(sessionGeneration, agentRunSequence);
+    // Pi also emits agent_start for retries, compaction and continuations.
+    // Only agent_settled releases the identity of the outer request.
+    if (!activeAgentRunId) {
+      activeOrigin = pendingOrigins.shift() || { kind: "unknown", turnId: nextTurnId() };
+      agentRunSequence += 1;
+      activeAgentRunId = buildAgentRunId(sessionGeneration, agentRunSequence);
+      attempt = 0;
+      abortRequested = false;
+    }
+    attempt += 1;
+    outcome = undefined;
     bridge.publishEvent("agent_start", {
       type: event.type,
       origin: activeOrigin.kind,
       turnId: activeOrigin.turnId,
       agentRunId: activeAgentRunId,
+      attempt,
     });
     publishSnapshot();
   });
@@ -146,6 +159,7 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
     });
   });
   pi.on("message_end", (event) => {
+    if (activeAgentRunId && event.message.role === "assistant") outcome = assistantOutcome(event.message);
     bridge.publishEvent("message_end", { type: event.type, message: projectMessage(event.message) });
   });
   pi.on("tool_execution_start", (event) => {
@@ -164,11 +178,15 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
     });
   });
   pi.on("agent_settled", (event) => {
+    if (!activeAgentRunId) return;
     bridge.publishEvent("agent_settled", {
       type: event.type,
       origin: activeOrigin.kind,
       turnId: activeOrigin.turnId,
       agentRunId: activeAgentRunId,
+      attempt,
+      outcome: abortRequested ? { status: "cancelled" }
+        : outcome ?? { status: "failed", problem: "generation_incomplete" },
     });
     activeAgentRunId = undefined;
     activeOrigin = { kind: "unknown", turnId: nextTurnId() };
@@ -186,6 +204,7 @@ export default function installTsPhoneBridge(pi: ExtensionAPI) {
     if (command.type === "command.abort") {
       const rejection = abortCommandRejection(ctx.isIdle(), activeAgentRunId, command.agentRunId);
       if (rejection) throw new Error(rejection);
+      abortRequested = true;
       ctx.abort();
       return;
     }

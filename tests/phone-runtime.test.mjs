@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { resolve } from "node:path";
 import { createInterface } from "node:readline";
 import { createServer } from "node:net";
+import { createServer as createHttpServer } from "node:http";
 import { once } from "node:events";
 import test from "node:test";
 import { SettingsManager, SessionManager } from "@earendil-works/pi-coding-agent";
@@ -12,15 +13,16 @@ import { sessionSettings } from "../extensions/ts-phone-bridge/runtime.mjs";
 
 const runtimePath = resolve("extensions/ts-phone-bridge/runtime.mjs");
 
-async function fixture() {
+async function fixture(baseUrl = "http://127.0.0.1:9/v1") {
   const root = await mkdtemp(resolve(tmpdir(), "tspi-model-runtime-"));
   const agent = resolve(root, "agent");
   const workspace = resolve(root, "workspace");
   await mkdir(agent); await mkdir(workspace);
-  const settings = { defaultProvider: "fixture", defaultModel: "first", defaultThinkingLevel: "off" };
+  const settings = { defaultProvider: "fixture", defaultModel: "first", defaultThinkingLevel: "off",
+    retry: { enabled: true, maxRetries: 2, baseDelayMs: 150 }, compaction: { enabled: false } };
   await writeFile(resolve(agent, "settings.json"), JSON.stringify(settings));
   await writeFile(resolve(agent, "models.json"), JSON.stringify({ providers: { fixture: {
-    baseUrl: "http://127.0.0.1:9/v1", api: "openai-completions", apiKey: "not-a-real-key",
+    baseUrl, api: "openai-completions", apiKey: "not-a-real-key",
     models: ["first", "second"].map((id) => ({ id, name: id, reasoning: false, input: ["text"],
       contextWindow: 16000, maxTokens: 2000, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 } })),
   } } }));
@@ -41,8 +43,26 @@ test("session preferences preserve Pi merge rules without changing global or pro
   assert.equal(JSON.parse(await readFile(resolve(f.workspace, ".pi/settings.json"), "utf8")).defaultModel, undefined);
 });
 
-test("official RPC restores exact history and switches models without changing another session", async () => {
-  const f = await fixture();
+test("official RPC restores models and keeps one bridge run through native retries and abort", async (t) => {
+  let requestCount = 0;
+  let failures = 0;
+  const provider = createHttpServer(async (request, response) => {
+    for await (const _chunk of request) { /* consume the isolated prompt */ }
+    requestCount += 1;
+    if (requestCount <= failures) {
+      response.writeHead(503, {"content-type": "application/json"});
+      response.end(JSON.stringify({error: {message: "Our servers are currently overloaded. private-fixture-body", type: "server_error"}}));
+      return;
+    }
+    response.writeHead(200, {"content-type": "text/event-stream"});
+    const chunk = (delta, finish_reason) => ({id: "fixture", object: "chat.completion.chunk",
+      created: 1, model: "first", choices: [{index: 0, delta, finish_reason}]});
+    response.write(`data: ${JSON.stringify(chunk({role: "assistant", content: "isolated answer"}, null))}\n\n`);
+    response.end(`data: ${JSON.stringify(chunk({}, "stop"))}\n\ndata: [DONE]\n\n`);
+  });
+  await new Promise((done) => provider.listen(0, "127.0.0.1", done));
+  t.after(() => new Promise((done) => { provider.closeAllConnections(); provider.close(done); }));
+  const f = await fixture(`http://127.0.0.1:${provider.address().port}/v1`);
   const sessionDir = resolve(f.workspace, ".pi/sessions");
   const previous = SessionManager.create(f.workspace, sessionDir, {id: "session_1"});
   previous.appendModelChange("fixture", "second");
@@ -55,12 +75,16 @@ test("official RPC restores exact history and switches models without changing a
   const socketPath = resolve(f.root, "bridge.sock");
   await writeFile(secretFile, "fixture".repeat(8), {mode: 0o600});
   const snapshots = [];
+  const records = [];
+  let peer;
   const bridge = createServer((socket) => {
+    peer = socket;
     socket.on("error", (error) => { if (error.code !== "ECONNRESET") throw error; });
     createInterface({input: socket}).on("error", (error) => {
       if (error.code !== "ECONNRESET") throw error;
     }).on("line", (line) => {
       const record = JSON.parse(line);
+      records.push(record);
       if (record.type === "bridge.register") {
         socket.write(JSON.stringify({protocolVersion: record.protocolVersion, type: "bridge.registered",
           workspaceId: record.workspaceId, sessionId: record.sessionId, instanceEpoch: record.instanceEpoch}) + "\n");
@@ -124,6 +148,49 @@ test("official RPC restores exact history and switches models without changing a
     }
     assert.equal(snapshots.at(-1)?.modelControl, true);
     assert.equal(snapshots.at(-1)?.model, "fixture/first");
+    const waitFor = async (check) => {
+      const deadline = Date.now() + 15000;
+      while (!check()) {
+        if (Date.now() > deadline) throw new Error(`Native retry lifecycle timed out: ${diagnostic}`);
+        await new Promise((done) => setTimeout(done, 10));
+      }
+    };
+    let previousRunId;
+    for (const scenario of ["retry-success", "exhausted", "abort-backoff", "next-request"]) {
+      requestCount = 0;
+      failures = scenario === "retry-success" ? 1 : scenario === "next-request" ? 0 : Infinity;
+      const offset = records.length;
+      const events = () => records.slice(offset).filter((r) => r.type === "event.publish");
+      assert.equal((await request({type: "prompt", message: `Isolated lifecycle fixture: ${scenario}`})).success, true);
+      if (scenario === "abort-backoff") {
+        await waitFor(() => events().some((r) => r.eventType === "message_end" && r.payload.message?.outputState === "failed"));
+        const registration = records.find((r) => r.type === "bridge.register");
+        const runId = events().find((r) => r.eventType === "agent_start").payload.agentRunId;
+        peer.write(JSON.stringify({protocolVersion: registration.protocolVersion, type: "command.abort",
+          workspaceId: registration.workspaceId, sessionId: registration.sessionId,
+          instanceEpoch: registration.instanceEpoch, sessionGeneration: registration.sessionGeneration,
+          requestId: "abort-backoff", agentRunId: runId}) + "\n");
+      }
+      await waitFor(() => events().some((r) => r.eventType === "agent_settled"));
+      const starts = events().filter((r) => r.eventType === "agent_start").map((r) => r.payload);
+      const settlements = events().filter((r) => r.eventType === "agent_settled").map((r) => r.payload);
+      assert.equal(settlements.length, 1, scenario);
+      assert.equal(new Set(starts.map((p) => p.agentRunId)).size, 1, scenario);
+      assert.equal(new Set(starts.map((p) => p.turnId)).size, 1, scenario);
+      assert.ok(starts.every((p) => p.origin === "host"), scenario);
+      assert.deepEqual(starts.map((p) => p.attempt), starts.map((_, i) => i + 1), scenario);
+      assert.equal(settlements[0].agentRunId, starts[0].agentRunId);
+      assert.notEqual(settlements[0].agentRunId, previousRunId);
+      previousRunId = settlements[0].agentRunId;
+      assert.equal(requestCount, scenario === "retry-success" ? 2 : scenario === "exhausted" ? 3 : 1, scenario);
+      assert.deepEqual(settlements[0].outcome, scenario === "exhausted"
+        ? {status: "failed", problem: "provider_unavailable", httpStatus: 503}
+        : {status: scenario === "abort-backoff" ? "cancelled" : "completed"}, scenario);
+      assert.doesNotMatch(JSON.stringify(settlements), /private-fixture-body/);
+      const beforeSettled = records.slice(offset, records.indexOf(records.findLast((r) => r.eventType === "agent_settled")));
+      assert.ok(beforeSettled.filter((r) => r.type === "session.snapshot").every((r) => r.snapshot.isStreaming), scenario);
+      await waitFor(() => snapshots.at(-1)?.isStreaming === false);
+    }
     assert.deepEqual(extensionErrors, []);
   } finally {
     child.stdin.end();

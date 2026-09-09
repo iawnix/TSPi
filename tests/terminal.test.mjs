@@ -29,7 +29,15 @@ class FixtureClient {
       this.summary.runtimeState = "idle";
       return structuredClone(this.summary);
     }
-    if (path.includes("/commands/")) return { status: this.receipt };
+    if (path.includes("/commands/")) return {
+      status: this.receipt, ...(this.durable ? {durable: true} : {}),
+      clientMessageId: this.receiptId ?? decodeURIComponent(new URL(path, "http://host").pathname.split("/").at(-1)),
+      sessionRevision: this.receiptRevision ?? this.summary.sessionRevision,
+    };
+    if (path.endsWith("/commands")) {
+      if (this.sendError) throw this.sendError;
+      return {status: "queued", clientMessageId: this.receiptId ?? body.clientMessageId};
+    }
     if (path.endsWith("/messages")) {
       if (this.sendError) throw this.sendError;
       return { accepted: true };
@@ -69,6 +77,49 @@ test("sending activates offline session once and binds revision and terminal ori
   assert.equal(send.body.sessionRevision, client.summary.sessionRevision);
   assert.equal(send.body.clientKind, "terminal");
   assert.equal(controller.draft, "");
+});
+
+test("queue-capable terminal sends without activating or changing session mode", async (t) => {
+  const { client, controller } = await fixture(t);
+  client.summary.capabilities = ["command.queue"];
+  await controller.send("queued research question");
+  await controller.send("next question");
+  assert.equal(client.calls.filter((c) => c.path.endsWith("/activate")).length, 0);
+  const sends = client.calls.filter((c) => c.path.endsWith("/commands"));
+  assert.equal(sends.length, 2);
+  assert.equal(sends[0].body.clientKind, "terminal");
+  await controller.setModel({provider: "test", id: "model"});
+  assert.equal(client.calls.at(-1).body.nextTurn, true);
+});
+
+test("durable unknown receipt confirms queue ownership without replaying execution", async (t) => {
+  const { client, controller } = await fixture(t);
+  client.summary.capabilities = ["command.queue"];
+  client.sendError = new HostError("host_unreachable", "No response", true);
+  await assert.rejects(controller.send("only once"));
+  client.durable = true;
+  await controller.reconcile();
+  assert.equal(controller.unconfirmed, undefined);
+  assert.equal(client.calls.filter((c) => c.path.endsWith("/commands")).length, 1);
+});
+
+test("unrelated admission and lookup receipts never clear the terminal draft", async (t) => {
+  const { client, controller } = await fixture(t);
+  client.summary.capabilities = ["command.queue"];
+  client.receiptId = "another-request";
+  await assert.rejects(controller.send("keep this draft"), {code: "command_ambiguous"});
+  const id = controller.unconfirmed.clientMessageId;
+  client.durable = true;
+  await controller.reconcile();
+  assert.equal(controller.unconfirmed.clientMessageId, id);
+  client.receiptId = id;
+  client.durable = false;
+  client.receipt = "accepted";
+  client.receiptRevision = randomUUID();
+  await controller.reconcile();
+  assert.equal(controller.unconfirmed.clientMessageId, id);
+  assert.equal(controller.draft, "keep this draft");
+  assert.equal(client.calls.filter((c) => c.path.endsWith("/commands")).length, 1);
 });
 
 test("uncertain prompt preserves draft, forbids replay, reconciles only an accepted receipt", async (t) => {
