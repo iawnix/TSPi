@@ -1,12 +1,19 @@
 export const TS_PACKAGE_PROFILE = Object.freeze({
   displayName: "TSPi",
-  version: "0.15.0",
-  title: "Transition-state workflow",
+  version: "0.16.0",
+  title: "TSPi research orchestration",
   description: "Phase-guided TS research with a ResearchNode DAG and deterministic validation.",
-  skill: Object.freeze({
-    name: "transition-state-workflow",
-    path: "./skills/transition-state-workflow",
-  }),
+  skills: Object.freeze([
+    Object.freeze({ name: "tspi-orchestration", path: "./skills/tspi-orchestration" }),
+    Object.freeze({ name: "tspi-transition-state-search", path: "./skills/tspi-transition-state-search" }),
+    Object.freeze({ name: "tspi-xtb", path: "./skills/tspi-xtb" }),
+    Object.freeze({ name: "tspi-gaussian", path: "./skills/tspi-gaussian" }),
+    Object.freeze({ name: "tspi-qbics", path: "./skills/tspi-qbics" }),
+    Object.freeze({ name: "tspi-connectivity", path: "./skills/tspi-connectivity" }),
+    Object.freeze({ name: "tspi-render", path: "./skills/tspi-render" }),
+    Object.freeze({ name: "tspi-report", path: "./skills/tspi-report" }),
+    Object.freeze({ name: "tspi-email", path: "./skills/tspi-email" }),
+  ]),
   extensions: Object.freeze([
     Object.freeze({ name: "control", path: "./extensions/ts-workflow-control" }),
     Object.freeze({ name: "ui", path: "./extensions/ts-workflow-ui/index.ts" }),

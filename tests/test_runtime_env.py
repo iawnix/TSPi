@@ -58,9 +58,9 @@ def test_package_root_detection_uses_package_markers_with_nested_skill(tmp_path:
     source_file.parent.mkdir(parents=True)
     source_file.write_text("export {};\n", encoding="utf-8")
     (package / "scripts").mkdir()
-    skill = package / "skills" / "transition-state-workflow" / "SKILL.md"
+    skill = package / "skills" / "tspi-orchestration" / "SKILL.md"
     skill.parent.mkdir(parents=True)
-    skill.write_text("---\nname: transition-state-workflow\ndescription: test\n---\n", encoding="utf-8")
+    skill.write_text("---\nname: tspi-orchestration\ndescription: test\n---\n", encoding="utf-8")
     (package / "package.json").write_text("{}\n", encoding="utf-8")
 
     assert package_root_from_file(source_file) == package
@@ -97,7 +97,7 @@ def test_default_env_store_is_package_relative_without_override(tmp_path: Path, 
 
     store = default_env_store(package)
 
-    assert store == tmp_path / ".envs" / "transition-state-workflow"
+    assert store == tmp_path / ".envs" / "tspi"
 
 
 def test_installed_current_entrypoint_seeds_installation_owned_runtime_paths(tmp_path: Path) -> None:
@@ -116,13 +116,13 @@ def test_installed_current_entrypoint_seeds_installation_owned_runtime_paths(tmp
         environ=environment,
     )
 
-    runtime_home = installation / ".agents" / "runtime" / "transition-state-workflow"
+    runtime_home = installation / ".agents" / "runtime" / "tspi"
     assert resolved == installation
     assert environment == {
         "TS_AGENT_RUNTIME_HOME": str(runtime_home),
         "TS_AGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
         "TS_AGENT_ENV_ROOT": str(
-            installation / ".agents" / "envs" / "transition-state-workflow"
+            installation / ".agents" / "envs" / "tspi"
         ),
     }
 
@@ -154,13 +154,13 @@ def test_unified_suite_entrypoint_seeds_installation_owned_runtime_paths(
         environ=environment,
     )
 
-    runtime_home = installation / ".agents" / "runtime" / "transition-state-workflow"
+    runtime_home = installation / ".agents" / "runtime" / "tspi"
     assert resolved == installation
     assert environment == {
         "TS_AGENT_RUNTIME_HOME": str(runtime_home),
         "TS_AGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
         "TS_AGENT_ENV_ROOT": str(
-            installation / ".agents" / "envs" / "transition-state-workflow"
+            installation / ".agents" / "envs" / "tspi"
         ),
     }
 
@@ -218,11 +218,11 @@ def test_authoritative_installation_seed_replaces_stale_runtime_paths(tmp_path: 
 
     seed_installation_runtime(tmp_path, environ=environment, authoritative=True)
 
-    runtime_home = tmp_path / ".agents" / "runtime" / "transition-state-workflow"
+    runtime_home = tmp_path / ".agents" / "runtime" / "tspi"
     assert environment == {
         "TS_AGENT_RUNTIME_HOME": str(runtime_home),
         "TS_AGENT_RUNTIME_MANIFEST": str(runtime_home / "env.json"),
-        "TS_AGENT_ENV_ROOT": str(tmp_path / ".agents" / "envs" / "transition-state-workflow"),
+        "TS_AGENT_ENV_ROOT": str(tmp_path / ".agents" / "envs" / "tspi"),
     }
 
 
@@ -235,9 +235,9 @@ def test_workspace_root_owns_runtime_home_and_env_store(tmp_path: Path, monkeypa
     package.mkdir(parents=True)
     (package / "environment.yml").write_text("name: test\n", encoding="utf-8")
 
-    assert default_runtime_home(package, workspace) == workspace / ".agents" / "runtime" / "transition-state-workflow"
-    assert default_env_store(package, workspace) == workspace / ".agents" / "envs" / "transition-state-workflow"
-    assert runtime_manifest_path(package, workspace_root=workspace) == workspace / ".agents" / "runtime" / "transition-state-workflow" / "env.json"
+    assert default_runtime_home(package, workspace) == workspace / ".agents" / "runtime" / "tspi"
+    assert default_env_store(package, workspace) == workspace / ".agents" / "envs" / "tspi"
+    assert runtime_manifest_path(package, workspace_root=workspace) == workspace / ".agents" / "runtime" / "tspi" / "env.json"
 
 
 def test_configured_python_reads_runtime_manifest(tmp_path: Path) -> None:
@@ -450,7 +450,7 @@ def test_install_env_dry_run_reports_hashed_prefix(tmp_path: Path) -> None:
     assert payload["dry_run"] is True
     assert payload["env_prefix"].startswith(str(tmp_path / "envs" / "base"))
     assert payload["kernel_env_prefix"].startswith(str(tmp_path / "envs" / "kernels"))
-    assert payload["manifest_path"].endswith("/.runtime/transition-state-workflow/env.json")
+    assert payload["manifest_path"].endswith("/.runtime/tspi/env.json")
     assert payload["python_executable"].endswith("/bin/python")
     assert payload["python_distribution"] == "ts-agent-kernel"
     assert payload["python_payload_sha256"] == python_payload_sha256(ROOT)
@@ -478,10 +478,10 @@ def test_install_env_dry_run_accepts_workspace_runtime_home(tmp_path: Path) -> N
     )
     payload = json.loads(completed.stdout)
 
-    assert payload["runtime_home"] == str(workspace / ".agents" / "runtime" / "transition-state-workflow")
-    assert payload["manifest_path"] == str(workspace / ".agents" / "runtime" / "transition-state-workflow" / "env.json")
-    assert payload["env_prefix"].startswith(str(workspace / ".agents" / "envs" / "transition-state-workflow" / "base"))
-    assert payload["kernel_env_prefix"].startswith(str(workspace / ".agents" / "envs" / "transition-state-workflow" / "kernels"))
+    assert payload["runtime_home"] == str(workspace / ".agents" / "runtime" / "tspi")
+    assert payload["manifest_path"] == str(workspace / ".agents" / "runtime" / "tspi" / "env.json")
+    assert payload["env_prefix"].startswith(str(workspace / ".agents" / "envs" / "tspi" / "base"))
+    assert payload["kernel_env_prefix"].startswith(str(workspace / ".agents" / "envs" / "tspi" / "kernels"))
 
 
 def test_install_env_accepts_user_conda_root(tmp_path: Path) -> None:
@@ -717,9 +717,9 @@ def test_ts_runtime_resolve_reports_external_manifest_path(tmp_path: Path) -> No
     payload = json.loads(completed.stdout)
 
     assert payload["configured"] is False
-    assert payload["manifest_path"] == str(workspace / ".agents" / "runtime" / "transition-state-workflow" / "env.json")
-    assert payload["env_prefix"].startswith(str(workspace / ".agents" / "envs" / "transition-state-workflow" / "base"))
-    assert payload["kernel_env_prefix"].startswith(str(workspace / ".agents" / "envs" / "transition-state-workflow" / "kernels"))
+    assert payload["manifest_path"] == str(workspace / ".agents" / "runtime" / "tspi" / "env.json")
+    assert payload["env_prefix"].startswith(str(workspace / ".agents" / "envs" / "tspi" / "base"))
+    assert payload["kernel_env_prefix"].startswith(str(workspace / ".agents" / "envs" / "tspi" / "kernels"))
 
 
 def _runtime_probe(*, payload_sha256: str | None = None) -> dict[str, object]:

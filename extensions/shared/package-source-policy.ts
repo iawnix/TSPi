@@ -11,7 +11,6 @@ export const PACKAGE_USAGE_GUIDELINE =
 const PUBLIC_KNOWLEDGE_ROOT = resolve(
   PACKAGE_ROOT,
   "skills",
-  "transition-state-workflow",
 );
 
 export function packageSourceSystemPrompt(): string {
@@ -40,7 +39,7 @@ export function guardPackageSourceRead(
     reason: [
       "TS package implementation and tests are not usage documentation in the installed research runtime.",
       "Use the registered tool schema, ts_state mode=artifacts or mode=capabilities,",
-      "or skills/transition-state-workflow references. Diagnose or change package implementation",
+      "or the public skills/ references. Diagnose or change package implementation",
       "from the separate authored checkout, then build and install a validated release.",
     ].join(" "),
   };

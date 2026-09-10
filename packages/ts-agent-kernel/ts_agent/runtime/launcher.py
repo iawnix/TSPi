@@ -216,7 +216,7 @@ def resolve_installation(package_root: str | Path, install_root: str | Path) -> 
     if selected_agent.resolve() != expected_agent:
         raise TSPiHostError(f"launcher Agent does not match the selected TSPi Package: {expected_agent}")
     _validate_suite_identity(suite_root, expected_agent)
-    runtime_home = root / ".agents" / "runtime" / "transition-state-workflow"
+    runtime_home = root / ".agents" / "runtime" / "tspi"
     return Installation(
         root=root,
         package_root=expected_agent,
@@ -225,7 +225,7 @@ def resolve_installation(package_root: str | Path, install_root: str | Path) -> 
         notification_config_default=root / ".pi" / "notifications.toml",
         runtime_home=runtime_home,
         runtime_manifest=runtime_home / "env.json",
-        env_root=root / ".agents" / "envs" / "transition-state-workflow",
+        env_root=root / ".agents" / "envs" / "tspi",
         process_cache_root=root / ".pi" / "runtime-cache",
     )
 
@@ -678,7 +678,7 @@ def build_pi_command(
         "--no-extensions",
         "--no-skills",
         "--skill",
-        str(package / "skills" / "transition-state-workflow"),
+        str(package / "skills"),
         "--no-themes",
         "--theme",
         str(package / "themes" / "ts-theme.json"),

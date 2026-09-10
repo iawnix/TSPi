@@ -25,10 +25,11 @@ PACKAGE_ROOT_OVERRIDE = "TS_PACKAGE_ROOT"
 WORKSPACE_ROOT_OVERRIDE = "TS_WORKSPACE_ROOT"
 MANIFEST_VERSION = "ts-agent-runtime/2"
 RUNTIME_PROBE_VERSION = "ts-runtime-probe/2"
-SKILL_NAME = "transition-state-workflow"
+PACKAGE_NAMESPACE = "tspi"
+CORE_SKILL_NAME = "tspi-orchestration"
 BASE_ENV_DIRECTORY = "base"
 KERNEL_ENV_DIRECTORY = "kernels"
-PACKAGE_SKILL_PATH = Path("skills") / SKILL_NAME / "SKILL.md"
+PACKAGE_SKILL_PATH = Path("skills") / CORE_SKILL_NAME / "SKILL.md"
 PYTHON_DISTRIBUTION = "ts-agent-kernel"
 PYTHON_SOURCE_ROOT = Path("packages") / "ts-agent-kernel"
 PYTHON_PACKAGE_NAME = "ts_agent"
@@ -64,12 +65,12 @@ def seed_installation_runtime(
     """Bind runtime paths owned by one TSPi installation root."""
 
     root = Path(installation_root).expanduser().resolve()
-    runtime_home = root / ".agents" / "runtime" / SKILL_NAME
+    runtime_home = root / ".agents" / "runtime" / PACKAGE_NAMESPACE
     values = os.environ if environ is None else environ
     bindings = {
         RUNTIME_HOME_OVERRIDE: str(runtime_home),
         RUNTIME_MANIFEST_OVERRIDE: str(runtime_home / "env.json"),
-        ENV_ROOT_OVERRIDE: str(root / ".agents" / "envs" / SKILL_NAME),
+        ENV_ROOT_OVERRIDE: str(root / ".agents" / "envs" / PACKAGE_NAMESPACE),
     }
     for name, value in bindings.items():
         if authoritative:
@@ -256,16 +257,16 @@ def default_runtime_home(
 
     workspace = _workspace_root(workspace_root)
     if workspace is not None:
-        return workspace / ".agents" / "runtime" / SKILL_NAME
+        return workspace / ".agents" / "runtime" / PACKAGE_NAMESPACE
 
     root = resolve_package_root(package_root)
     parts = root.parts
     if ".agents" in parts:
         index = parts.index(".agents")
         agents_root = Path(*parts[: index + 1])
-        return agents_root / "runtime" / SKILL_NAME
+        return agents_root / "runtime" / PACKAGE_NAMESPACE
 
-    return root.parent / ".runtime" / SKILL_NAME
+    return root.parent / ".runtime" / PACKAGE_NAMESPACE
 
 
 def runtime_manifest_path(
@@ -291,7 +292,7 @@ def default_env_store(
 
     workspace = _workspace_root(workspace_root)
     if workspace is not None:
-        return workspace / ".agents" / "envs" / SKILL_NAME
+        return workspace / ".agents" / "envs" / PACKAGE_NAMESPACE
 
     root = resolve_package_root(package_root)
     parts = root.parts
@@ -299,10 +300,10 @@ def default_env_store(
         index = parts.index(".agents")
         agents_root = Path(*parts[: index + 1])
         if os.access(agents_root, os.W_OK):
-            return agents_root / "envs" / SKILL_NAME
-        return agents_root.parent / ".envs" / SKILL_NAME
+            return agents_root / "envs" / PACKAGE_NAMESPACE
+        return agents_root.parent / ".envs" / PACKAGE_NAMESPACE
 
-    return root.parent / ".envs" / SKILL_NAME
+    return root.parent / ".envs" / PACKAGE_NAMESPACE
 
 
 def default_env_prefix(

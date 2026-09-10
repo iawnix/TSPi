@@ -95,10 +95,32 @@ reproducible:
 - [ADR 0002](docs/adr/0002-repository-and-component-boundaries.md): TSPi core,
   optional Phone/Web components, protocol ownership, repository topology, and
   implementation sequence.
-- [Root Skill](skills/transition-state-workflow/SKILL.md): concise operating
+- [Root Skill](skills/tspi-orchestration/SKILL.md): concise operating
   policy loaded into each TSPi research session.
-- [Public Glossary](skills/transition-state-workflow/references/glossary.md):
+- [Public Glossary](skills/tspi-orchestration/references/glossary.md):
   stable research, execution, and Review terminology.
+- [Skill Catalog](skills/README.md): orchestration, search-method, xTB, Gaussian,
+  QBICS, connectivity, rendering, reporting, and email Skills with their
+  loading boundaries.
+
+## Skill Family
+
+The package exposes one orchestration Skill, five scientific-method Skills, and
+three output/delivery Skills. The orchestration Skill owns cross-cutting
+contracts and task management; focused Skills are loaded when a question needs
+their method or delivery capability.
+
+| Skill | Scope |
+| --- | --- |
+| `tspi-orchestration` | workspace, Decision, evidence, validation, subagents, and recovery contracts |
+| `tspi-transition-state-search` | candidate construction and transition-state search strategy |
+| `tspi-xtb` | xTB and CREST calculations and result interpretation |
+| `tspi-gaussian` | Gaussian input and output validation |
+| `tspi-qbics` | QBICS/DMECP electronic-state crossings |
+| `tspi-connectivity` | reaction-path endpoints and molecular structure identity |
+| `tspi-render` | deterministic visual artifacts |
+| `tspi-report` | evidence-bound report packages |
+| `tspi-email` | fixed-target notification delivery |
 
 ## Repository Layout
 
@@ -285,8 +307,9 @@ not in-process module reload or zero-downtime socket handoff.
 
 ## Public Surface
 
-Pi loads one Skill, five extensions, one theme, twelve public tools, and four
-slash commands:
+Pi registers nine Skills, five extensions, one theme, twelve public tools, and
+four slash commands. Skill bodies are loaded on demand after the matching
+domain is identified.
 
 - `ts_state`: bounded graph, artifact, compute-capability, or proof-capability
   projection.

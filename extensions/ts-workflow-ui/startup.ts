@@ -165,7 +165,7 @@ function renderStartup(
   ];
 
   const divider = palette.accent("─".repeat(Math.max(8, Math.min(22, rightWidth))));
-  const packageSummary = `1 skill · ${profile.extensions.length} extensions`;
+  const packageSummary = `${profile.skills.length} skills · ${profile.extensions.length} extensions`;
   const rightLines = [
     "",
     palette.accent(palette.bold(details.remoteConfigured ? "Remote configured" : "Remote")),

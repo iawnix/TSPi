@@ -34,7 +34,7 @@ Research Kernel
 | --- | --- |
 | `contracts/` | Phone、Web 和组件清单的版本化协议与 fixture |
 | `packages/ts-agent-kernel/ts_agent/` | TSPi 的 Python 研究内核和确定性服务 |
-| `src/` | Pi 运行时、Host、Terminal、Compute 和 Review 的 TypeScript 代码 |
+| `apps/` | Host 和 Terminal 进程入口 |
 | `extensions/` | Pi 扩展和 Phone 适配策略 |
 | `skills/` | 面向模型的公开 Skill 与参考资料 |
 | `scripts/` | 稳定入口和兼容性包装器；发布机制逐步迁移到命名工具目录 |
@@ -48,6 +48,26 @@ Research Kernel
 Python 包的源码目录和 Python 导入命名空间是两个概念：源码位于
 `packages/ts-agent-kernel/`，导入仍使用 `ts_agent`。这样既能表达包的责任，
 也不会破坏 Python API。
+
+## Skill 体系
+
+package 内包含一个编排 Skill、五个科学方法 Skill 和三个输出/交付 Skill。
+编排 Skill 负责跨领域合同和任务管理；其他 Skill 只在当前问题需要相应方法
+或交付能力时加载。
+
+| Skill | 范围 |
+| --- | --- |
+| `tspi-orchestration` | 工作区、Decision、证据、验证、子代理和恢复合同 |
+| `tspi-transition-state-search` | 候选构造和过渡态搜索策略 |
+| `tspi-xtb` | xTB、CREST 计算和结果解释 |
+| `tspi-gaussian` | Gaussian 输入和输出验证 |
+| `tspi-qbics` | QBICS/DMECP 电子态交叉 |
+| `tspi-connectivity` | 反应路径端点和分子结构身份 |
+| `tspi-render` | 确定性可视化产物 |
+| `tspi-report` | 由证据绑定的报告包 |
+| `tspi-email` | 固定目标通知投递 |
+
+完整目录见 [Skill Catalog](skills/README.zh-CN.md)。
 
 ## 安装
 
@@ -114,7 +134,7 @@ ResearchNode、Claim、Attempt、Finding 和验证结果，不直接导入 Web �
 - `ProofSpec` / `ValidationResult`：冻结的验证定义及其确定性结果。
 - `Decision`：由 Root Agent 发起、由内核校验并提交的原子变更。
 
-完整术语见 [中英术语表](skills/transition-state-workflow/references/glossary.zh-CN.md)。
+完整术语见 [中英术语表](skills/tspi-orchestration/references/glossary.zh-CN.md)。
 
 ## 开发验证
 

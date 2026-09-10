@@ -1,6 +1,6 @@
 {
   "name": "@iawnix/ts-agent",
-  "version": "0.15.0",
+  "version": "0.16.0",
   "private": true,
   "type": "module",
   "description": "Pi package for Phase-guided transition-state research with a ResearchNode DAG, deterministic validation, and bounded Compute and Review subagents.",
@@ -134,7 +134,15 @@
   },
   "pi": {
     "skills": [
-      "./skills/transition-state-workflow"
+      "./skills/tspi-orchestration",
+      "./skills/tspi-transition-state-search",
+      "./skills/tspi-xtb",
+      "./skills/tspi-gaussian",
+      "./skills/tspi-qbics",
+      "./skills/tspi-connectivity",
+      "./skills/tspi-render",
+      "./skills/tspi-report",
+      "./skills/tspi-email"
     ],
     "themes": [
       "./themes/ts-theme.json"

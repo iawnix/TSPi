@@ -39,7 +39,15 @@ prescriptive stage, Node type, scientific role/layer, or next-action router.
 
 | Path | Owner and purpose |
 | --- | --- |
-| `skills/transition-state-workflow/` | public Root Skill, focused references, and examples |
+| `skills/tspi-orchestration/` | public task orchestration and cross-cutting contracts |
+| `skills/tspi-transition-state-search/` | candidate generation and transition-state search strategy |
+| `skills/tspi-xtb/` | xTB and CREST method guidance |
+| `skills/tspi-gaussian/` | Gaussian method and output guidance |
+| `skills/tspi-qbics/` | QBICS/DMECP state-crossing guidance |
+| `skills/tspi-connectivity/` | endpoint and molecular-structure evidence guidance |
+| `skills/tspi-render/` | deterministic visual-artifact guidance |
+| `skills/tspi-report/` | evidence-bound report-package guidance |
+| `skills/tspi-email/` | fixed-target notification-delivery guidance |
 | `extensions/ts-workflow-control/` | bounded state projection, atomic `ts_change`, package-source guard |
 | `extensions/ts-workflow-review/` | advisory Review entrypoint and Root disposition |
 | `extensions/ts-workflow-compute/` | Compute subagent entrypoint, bound action tools, and remote diagnostics |
@@ -97,7 +105,7 @@ the existing wrapper while callers migrate.
 
 `package.json` registers exactly:
 
-- one Skill: `skills/transition-state-workflow/`;
+- nine Skills: one orchestration Skill, five scientific-method Skills, and three output/delivery Skills under `skills/`;
 - five normal extensions: control, UI, Review, compute, and artifacts;
 - one theme: `themes/ts-theme.json`.
 
@@ -105,6 +113,11 @@ the existing wrapper while callers migrate.
 Phone Worker. Files under
 `packages/ts-agent-runtime/agents/compute/` and `packages/ts-agent-runtime/agents/review/` are private child-runtime
 material, not discoverable Skills.
+
+The orchestration Skill owns cross-cutting contracts and decision templates.
+Focused Skills own method- or output-specific guidance and link back to the orchestration
+contracts instead of copying them. Keep each `SKILL.md` concise; move
+conditional detail into that Skill's `references/` directory.
 
 Public names describe authority:
 
@@ -422,8 +435,8 @@ close.
 | `docs/INSTALLATION.md` | installation operator | prerequisites, configuration, startup, upgrade, rollback, recovery |
 | `docs/ARCHITECTURE.md` | maintainer/advanced operator | ownership, lifecycle, persistence, context, validation, delivery |
 | `docs/MAINTAINER_GUIDE.md` | contributor/releaser | source workflow, change matrix, validation, release discipline |
-| Root `SKILL.md` | Root Agent | concise authority rules and operating loop |
-| Skill `references/*.md` | Root Agent on demand | one focused scientific or tool topic |
+| `skills/*/SKILL.md` | Root Agent | concise Skill purpose, boundary, and routing |
+| `skills/*/references/*.md` | Root Agent on demand | one focused contract or method topic |
 | `packages/ts-agent-runtime/agents/compute/**/*.md` | Compute runtime | minimum private operational policy |
 | `packages/ts-agent-runtime/agents/review/**/*.md` | Review runtime | minimum private Review policy |
 | JSON/TypeBox schemas | callers and validators | exact fields, enums, limits, identity |

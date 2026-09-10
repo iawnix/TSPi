@@ -16,8 +16,10 @@ services, not a second Agent runtime.
 
 ## Loaded Surface
 
-Normal startup loads one Root Skill, five extensions, one theme, twelve public
-tools, and four slash commands. `ts_calc` and `ts_review`
+Normal startup registers nine Skills, five extensions, one theme, twelve public
+tools, and four slash commands. The orchestration Skill is the cross-cutting
+contract; domain Skill bodies are loaded when the active question matches.
+`ts_calc` and `ts_review`
 create isolated child sessions. All underlying compute actions, structure seed,
 input import, Render, Report, remote inspection, workspace control, Review
 disposition, and notification remain deterministic host calls.
@@ -108,7 +110,7 @@ tool details globally; the history browser paginates its own list.
 
 ## Package Sources
 
-Registered schemas, live catalogs, the Root Skill, and references are the
+Registered schemas, live catalogs, the Skill family, and references are the
 research interface. Implementation source, tests, and maintainer docs are not
 runtime examples. The package-source guard routes attempted source inspection
 back to public contracts; it is not a general filesystem sandbox.

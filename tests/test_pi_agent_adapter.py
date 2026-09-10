@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from tests.workspace_helpers import bootstrap_workspace_fixture, start_research_node
-from scripts.check_package import validate_version_surfaces
+from scripts.check_package import SKILL_ENTRIES, validate_version_surfaces
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -28,10 +28,10 @@ EXPECTED_TOOLS = {
 EXPECTED_COMMANDS = {"ts", "ts-check", "ts-remote", "ts-runs"}
 
 
-def test_package_manifest_and_profile_expose_one_skill_five_extensions_one_theme() -> None:
+def test_package_manifest_and_profile_expose_skill_family_five_extensions_one_theme() -> None:
     package = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
     validate_version_surfaces()
-    assert package["pi"]["skills"] == ["./skills/transition-state-workflow"]
+    assert package["pi"]["skills"] == SKILL_ENTRIES
     assert len(package["pi"]["extensions"]) == 5
     assert package["pi"]["themes"] == ["./themes/ts-theme.json"]
     assert any("packages/ts-agent-runtime/agents/compute" in item for item in package["files"])
@@ -109,7 +109,7 @@ process.stdout.write(JSON.stringify(Object.fromEntries(Object.entries(tools).map
 
 
 def test_root_skill_and_public_tool_contracts_stay_within_context_budget() -> None:
-    skill_bytes = len((ROOT / "skills/transition-state-workflow/SKILL.md").read_bytes())
+    skill_bytes = len((ROOT / "skills/tspi-orchestration/SKILL.md").read_bytes())
     script = f"""
 import control from {json.dumps((ROOT / 'extensions/ts-workflow-control/index.ts').as_uri())};
 import review from {json.dumps((ROOT / 'extensions/ts-workflow-review/index.ts').as_uri())};

@@ -18,7 +18,7 @@ def test_thin_launcher_does_not_require_scientific_runtime_or_create_workspace(t
     terminal = package / "apps/terminal/index.mjs"
     terminal.parent.mkdir(parents=True)
     terminal.write_text("// fixture entry\n", encoding="utf-8")
-    (installation / ".agents/runtime/transition-state-workflow/env.json").unlink()
+    (installation / ".agents/runtime/tspi/env.json").unlink()
     node = tmp_path / "node"
     node.write_text("#!/usr/bin/env python3\nimport json,sys\nprint(json.dumps(sys.argv[1:]))\n", encoding="utf-8")
     node.chmod(0o755)

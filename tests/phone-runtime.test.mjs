@@ -97,7 +97,7 @@ test("official RPC restores models and keeps one bridge run through native retri
     .flatMap((path) => ["-e", resolve(path)]);
   const child = spawn(process.execPath, [runtimePath, "--mode", "rpc", "--session-id", "session_1",
     "--session-dir", sessionDir, "--model", "fixture/first", ...resources,
-    "--skill", resolve("skills/transition-state-workflow"), "--theme", resolve("themes/ts-theme.json")], {cwd: f.workspace,
+    "--skill", resolve("skills"), "--theme", resolve("themes/ts-theme.json")], {cwd: f.workspace,
     env: {...process.env, PI_CODING_AGENT_DIR: f.agent, TS_PHONE_WORKER: "1", TS_SESSION_ID: "session_1",
       TS_PHONE_MODE: "bridge", TS_PHONE_WORKSPACE_ID: "ts_fixture", TS_PHONE_ACCESS_MODE: "controller",
       TS_PHONE_BRIDGE_SOCKET: socketPath, TS_PHONE_BRIDGE_SECRET_FILE: secretFile},

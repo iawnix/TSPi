@@ -2,8 +2,8 @@
 
 This document defines component ownership and runtime boundaries for
 the complete TSPi Package and its `@iawnix/ts-agent` component. JSON and TypeBox schemas are authoritative for
-field-level call shapes. The Root Skill is authoritative for behavior inside a
-research session. [ADR 0001](adr/0001-phase-node-research-kernel.md) records the
+field-level call shapes. `tspi-orchestration` is authoritative for task and
+contract behavior; focused Skills provide scientific-method and output/delivery guidance. [ADR 0001](adr/0001-phase-node-research-kernel.md) records the
 Phase + ResearchNode design.
 
 ## System Shape
@@ -17,13 +17,13 @@ Installation root
        -> immutable selected release and isolated Python runtime
        -> workspace bootstrap and one-writer Root lock
        -> Pi process
-          -> Root Skill + five extensions + theme
+          -> orchestration Skill + focused Skills + five extensions + theme
           -> Root Agent
              -> Research Kernel
                 ResearchPhase roadmap + ResearchNode DAG + Claim graph
                 Observation and Finding registries
                 Decision transaction owner
-             -> deterministic execution plane
+          -> deterministic execution plane
                 compute kernel + Render + Report + remote + notification
              -> Validation Engine
                 frozen ProofSpecs + registered predicates + acceptance profiles
@@ -559,7 +559,8 @@ The following lifecycle applies only to native Pi and Host-managed Workers:
 6. Initialize fresh state once or validate a complete workspace without
    rewriting it. Partial, invalid, or unsupported canonical state fails closed.
 7. Resolve an exact Pi session ID, acquire its writer guard, and execute Pi
-   with exactly the package Skill, theme, and five extensions.
+   with the package Skill family, theme, and five extensions. Skill bodies are
+   loaded on demand; the orchestration Skill remains the cross-cutting contract.
 
 The TS Phone Host uses private launcher operations. A
 `--phone-worker` controller follows the same bootstrap and one-writer lock path,

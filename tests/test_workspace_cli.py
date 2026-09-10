@@ -182,10 +182,10 @@ def test_workspace_cli_exposes_one_exact_change_operation_contract() -> None:
     assert contract["selected_operation"] == "set_focus"
     assert contract["operations"] == [{
         "op": "set_focus",
-        "template_ref": "skills/transition-state-workflow/assets/templates/decision/set_focus.json",
+        "template_ref": "skills/tspi-orchestration/assets/templates/decision/set_focus.json",
         "variants": [{
             "variant": "default",
-            "template_ref": "skills/transition-state-workflow/assets/templates/decision/set_focus.json",
+            "template_ref": "skills/tspi-orchestration/assets/templates/decision/set_focus.json",
             "required_fields": ["claimRefs", "nodeRefs", "op"],
             "optional_fields": [],
         }],

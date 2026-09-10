@@ -23,8 +23,9 @@ const call = (toolName, path) => ({{ type: "tool_call", toolCallId: `${{toolName
 const cwd = {json.dumps(str(tmp_path))};
 const decision = (toolName, path) => guardPackageSourceRead(call(toolName, path), cwd) ?? null;
 process.stdout.write(JSON.stringify({{
-  skill: decision("read", {json.dumps(str(ROOT / 'skills' / 'transition-state-workflow' / 'SKILL.md'))}),
-  reference: decision("grep", {json.dumps(str(ROOT / 'skills' / 'transition-state-workflow' / 'references'))}),
+  skill: decision("read", {json.dumps(str(ROOT / 'skills' / 'tspi-orchestration' / 'SKILL.md'))}),
+  reference: decision("grep", {json.dumps(str(ROOT / 'skills' / 'tspi-orchestration' / 'references'))}),
+  domain: decision("read", {json.dumps(str(ROOT / 'skills' / 'tspi-xtb' / 'SKILL.md'))}),
   workspace: decision("find", {json.dumps(str(tmp_path / 'workspace'))}),
   tests: decision("read", {json.dumps(str(ROOT / 'tests' / 'test_pi_runtime_integration.py'))}),
   extension: decision("ls", {json.dumps(str(ROOT / 'extensions'))}),
@@ -36,6 +37,7 @@ process.stdout.write(JSON.stringify({{
 
     assert result["skill"] is None
     assert result["reference"] is None
+    assert result["domain"] is None
     assert result["workspace"] is None
     for key in ("tests", "extension", "symlink"):
         assert result[key]["block"] is True

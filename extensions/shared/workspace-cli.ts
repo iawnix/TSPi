@@ -240,7 +240,7 @@ export function requireWorkspaceRoot(inputRoot: string | undefined, cwd: string)
 function findRuntimeWorkspaceRoot(start: string): string | undefined {
   let current = resolve(start);
   while (true) {
-    const manifest = join(current, ".agents", "runtime", "transition-state-workflow", "env.json");
+    const manifest = join(current, ".agents", "runtime", "tspi", "env.json");
     if (existsSync(manifest)) return current;
     const parent = dirname(current);
     if (parent === current) return undefined;

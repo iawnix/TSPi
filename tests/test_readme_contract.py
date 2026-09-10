@@ -12,10 +12,20 @@ ARCHITECTURE = ROOT / "docs" / "ARCHITECTURE.md"
 INSTALLATION = ROOT / "docs" / "INSTALLATION.md"
 MAINTAINER = ROOT / "docs" / "MAINTAINER_GUIDE.md"
 ADR = ROOT / "docs" / "adr" / "0001-phase-node-research-kernel.md"
-SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
+SKILL_ROOT = ROOT / "skills" / "tspi-orchestration"
 SKILL = SKILL_ROOT / "SKILL.md"
 REFERENCES = SKILL_ROOT / "references"
 TEMPLATES = SKILL_ROOT / "assets" / "templates"
+FOCUSED_SKILLS = {
+    "tspi-transition-state-search": ROOT / "skills" / "tspi-transition-state-search",
+    "tspi-xtb": ROOT / "skills" / "tspi-xtb",
+    "tspi-gaussian": ROOT / "skills" / "tspi-gaussian",
+    "tspi-qbics": ROOT / "skills" / "tspi-qbics",
+    "tspi-connectivity": ROOT / "skills" / "tspi-connectivity",
+    "tspi-render": ROOT / "skills" / "tspi-render",
+    "tspi-report": ROOT / "skills" / "tspi-report",
+    "tspi-email": ROOT / "skills" / "tspi-email",
+}
 
 
 PUBLIC_DOCS = (README, ARCHITECTURE, INSTALLATION, MAINTAINER, ADR)
@@ -107,7 +117,12 @@ def test_public_document_set_covers_install_architecture_and_maintenance() -> No
 
 def test_public_markdown_relative_links_resolve_inside_the_package() -> None:
     link_pattern = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
-    for path in (*PUBLIC_DOCS, SKILL, *sorted(REFERENCES.glob("*.md"))):
+    focused_files = [
+        path
+        for root in FOCUSED_SKILLS.values()
+        for path in (root / "SKILL.md", *sorted((root / "references").glob("*.md")))
+    ]
+    for path in (*PUBLIC_DOCS, SKILL, *sorted(REFERENCES.glob("*.md")), *focused_files):
         for raw_target in link_pattern.findall(path.read_text(encoding="utf-8")):
             target = raw_target.strip().strip("<>")
             if target.startswith("#") or re.match(r"^[a-z][a-z0-9+.-]*:", target, re.IGNORECASE):
@@ -138,7 +153,20 @@ def test_public_docs_state_the_authority_boundary() -> None:
 
 
 def test_normal_runtime_docs_expose_only_current_contracts() -> None:
-    paths = [README, ARCHITECTURE, INSTALLATION, MAINTAINER, SKILL, *sorted(REFERENCES.glob("*.md"))]
+    focused_files = [
+        path
+        for root in FOCUSED_SKILLS.values()
+        for path in (root / "SKILL.md", *sorted((root / "references").glob("*.md")))
+    ]
+    paths = [
+        README,
+        ARCHITECTURE,
+        INSTALLATION,
+        MAINTAINER,
+        SKILL,
+        *sorted(REFERENCES.glob("*.md")),
+        *focused_files,
+    ]
     forbidden = [
         "ts-research-kernel/4",
         "ts-workspace/4",
@@ -193,15 +221,19 @@ def test_skill_routes_details_through_focused_references() -> None:
         "references/state_model.md",
         "references/workspace_contract.md",
         "references/decision_contract.md",
-        "references/candidate_generation.md",
         "references/compute_tools.md",
         "references/pi_agent_adapter.md",
         "references/agent_decision_protocol.md",
         "references/artifact_tools.md",
         "references/package_sources.md",
         "references/remote_contract.md",
-        "references/report_template.md",
     ]:
+        assert ref in text
+    for ref in (
+        "tspi-render/references/render_contract.md",
+        "tspi-report/references/report_template.md",
+        "tspi-email/references/email_delivery.md",
+    ):
         assert ref in text
 
 
@@ -214,12 +246,27 @@ def test_skill_progressive_disclosure_routes_every_reference() -> None:
             assert "## Contents" in lines, path
 
 
-def test_candidate_strategy_remains_root_selected() -> None:
-    skill = SKILL.read_text(encoding="utf-8")
-    candidate = (REFERENCES / "candidate_generation.md").read_text(encoding="utf-8")
-    backend = (REFERENCES / "backend_selection.md").read_text(encoding="utf-8")
+def test_focused_skills_have_bilingual_entrypoints_and_route_their_references() -> None:
+    for name, root in FOCUSED_SKILLS.items():
+        english = root / "SKILL.md"
+        chinese = root / "SKILL.zh-CN.md"
+        assert english.is_file()
+        assert chinese.is_file()
+        assert f"name: {name}" in english.read_text(encoding="utf-8")
+        assert f"name: {name}" in chinese.read_text(encoding="utf-8")
+        skill_text = english.read_text(encoding="utf-8")
+        for reference in root.glob("references/*.md"):
+            assert f"references/{reference.name}" in skill_text, reference
 
-    assert "Do not impose a universal" in skill
+
+def test_candidate_strategy_remains_root_selected() -> None:
+    orchestration = SKILL.read_text(encoding="utf-8")
+    search_skill = (FOCUSED_SKILLS["tspi-transition-state-search"] / "SKILL.md").read_text(encoding="utf-8")
+    candidate = (FOCUSED_SKILLS["tspi-transition-state-search"] / "references" / "candidate_generation.md").read_text(encoding="utf-8")
+    backend = (FOCUSED_SKILLS["tspi-transition-state-search"] / "references" / "backend_selection.md").read_text(encoding="utf-8")
+
+    assert "Load a domain Skill" in orchestration
+    assert "Do not impose a universal" in search_skill
     assert "Choose among chemically informed construction" in candidate
     assert "Before QST2/QST3" in candidate
     assert "The capability catalog is not a priority list" in backend

@@ -10,12 +10,12 @@ from pathlib import Path
 
 import pytest
 
-from scripts.check_package import PACKAGE_FILES
+from scripts.check_package import PACKAGE_FILES, SKILL_ENTRIES
 from tests.runtime_helpers import write_test_runtime_manifest, write_test_suite_manifest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
+SKILL_ROOT = ROOT / "skills" / "tspi-orchestration"
 RUNTIME_ROOT = ROOT / "packages" / "ts-agent-runtime"
 AGENTS_ROOT = RUNTIME_ROOT / "agents"
 PYTHON_PACKAGE = ROOT / "packages" / "ts-agent-kernel" / "ts_agent"
@@ -107,6 +107,26 @@ def test_public_skill_uses_nested_pi_skill_layout() -> None:
     assert not (ROOT / "templates").exists()
 
 
+def test_public_skill_family_has_one_orchestration_five_method_and_three_delivery_skills() -> None:
+    expected = {
+        "tspi-orchestration",
+        "tspi-transition-state-search",
+        "tspi-xtb",
+        "tspi-gaussian",
+        "tspi-qbics",
+        "tspi-connectivity",
+        "tspi-render",
+        "tspi-report",
+        "tspi-email",
+    }
+    actual = {path.name for path in (ROOT / "skills").iterdir() if path.is_dir()}
+    assert actual == expected
+    for name in expected:
+        skill = ROOT / "skills" / name
+        assert (skill / "SKILL.md").is_file()
+        assert (skill / "SKILL.zh-CN.md").is_file()
+
+
 def test_current_sources_do_not_use_generation_branded_language_or_paths() -> None:
     roots = [
         ROOT / "README.md",
@@ -172,9 +192,9 @@ def test_child_agent_sources_do_not_embed_skills_or_artifact_operators() -> None
     assert (SKILL_ROOT / "references" / "artifact_tools.md").is_file()
 
 
-def test_package_manifest_exposes_only_the_public_skill_and_allowlisted_runtime() -> None:
+def test_package_manifest_exposes_the_public_skill_family_and_allowlisted_runtime() -> None:
     manifest = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
-    assert manifest["pi"]["skills"] == ["./skills/transition-state-workflow"]
+    assert manifest["pi"]["skills"] == SKILL_ENTRIES
     assert manifest["pi"]["themes"] == ["./themes/ts-theme.json"]
     assert manifest["files"] == PACKAGE_FILES
     assert manifest["private"] is True
@@ -435,11 +455,11 @@ print(json.dumps({
     assert result["cwd"] == result["workspace"] == str(workspace)
     assert result["notification_config"] is None
     assert result["notification_display"] == "not configured"
-    assert result["runtime_home"] == str(install_root / ".agents" / "runtime" / "transition-state-workflow")
+    assert result["runtime_home"] == str(install_root / ".agents" / "runtime" / "tspi")
     assert result["runtime_manifest"] == str(
-        install_root / ".agents" / "runtime" / "transition-state-workflow" / "env.json"
+        install_root / ".agents" / "runtime" / "tspi" / "env.json"
     )
-    assert result["env_root"] == str(install_root / ".agents" / "envs" / "transition-state-workflow")
+    assert result["env_root"] == str(install_root / ".agents" / "envs" / "tspi")
     assert result["managed_python"] == str(Path(sys.executable).resolve())
     assert Path(result["path_python"]).resolve() == Path(sys.executable).resolve()
     assert Path(result["path_python3"]).resolve().parent == Path(sys.executable).resolve().parent
@@ -460,7 +480,7 @@ print(json.dumps({
 
 def test_tspi_fails_closed_without_managed_runtime_manifest(tmp_path: Path) -> None:
     install_root, launcher = _copy_tspi_install(tmp_path)
-    manifest = install_root / ".agents" / "runtime" / "transition-state-workflow" / "env.json"
+    manifest = install_root / ".agents" / "runtime" / "tspi" / "env.json"
     manifest.unlink()
 
     completed = _run_tspi(launcher, "--workspace", "missing-runtime")

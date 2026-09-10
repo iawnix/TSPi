@@ -14,15 +14,19 @@ from pathlib import Path
 from typing import Any
 
 try:
-    from .package_inventory import PACKAGE_FILES, REQUIRED_TARBALL_FILES
+    from .package_inventory import (
+        PACKAGE_FILES,
+        REQUIRED_TARBALL_FILES,
+        SKILL_ENTRIES,
+        SKILL_ENTRY_FILES,
+    )
 except ImportError:
-    from package_inventory import PACKAGE_FILES, REQUIRED_TARBALL_FILES
+    from package_inventory import PACKAGE_FILES, REQUIRED_TARBALL_FILES, SKILL_ENTRIES, SKILL_ENTRY_FILES
 
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE_NAME = "@iawnix/ts-agent"
 PACKAGE_VERSION = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
-SKILL_ENTRY = "./skills/transition-state-workflow"
 THEME_ENTRIES = ["./themes/ts-theme.json"]
 EXTENSION_ENTRIES = [
     "./extensions/ts-workflow-control",
@@ -104,16 +108,20 @@ def validate_manifest(manifest: dict[str, Any]) -> None:
     if not isinstance(pi, dict):
         errors.append("package pi metadata must be an object")
     else:
-        if pi.get("skills") != [SKILL_ENTRY]:
-            errors.append(f"pi.skills must contain only {SKILL_ENTRY}")
+        if pi.get("skills") != SKILL_ENTRIES:
+            errors.append("pi.skills does not match the maintained Skill inventory")
         if pi.get("themes") != THEME_ENTRIES:
             errors.append("pi.themes does not match the public theme inventory")
         if pi.get("extensions") != EXTENSION_ENTRIES:
             errors.append("pi.extensions does not match the public extension inventory")
 
-    skill_path = ROOT / SKILL_ENTRY.removeprefix("./") / "SKILL.md"
-    if not skill_path.is_file():
-        errors.append(f"registered skill entry is missing SKILL.md: {skill_path.relative_to(ROOT)}")
+    for skill_entry in SKILL_ENTRIES:
+        skill_path = ROOT / skill_entry.removeprefix("./") / "SKILL.md"
+        if not skill_path.is_file():
+            errors.append(f"registered skill entry is missing SKILL.md: {skill_path.relative_to(ROOT)}")
+    for skill_file in SKILL_ENTRY_FILES:
+        if not (ROOT / skill_file).is_file():
+            errors.append(f"required Skill file is missing: {skill_file}")
     for entry in THEME_ENTRIES:
         path = ROOT / entry.removeprefix("./")
         if not path.is_file():

@@ -39,7 +39,7 @@ def test_installed_phone_entrypoints_share_configuration_without_science_or_shel
     config.write_text(f"TS_PHONE_PORT=22555\nTS_PHONE_STATE_DIR='{state}'\n"
         f"PI_CODING_AGENT_DIR='{agent}'\nTSPI_CONFIG_PROBE='$(touch {injected})'\n")
     config.chmod(0o600)
-    (installation / ".agents/runtime/transition-state-workflow/env.json").unlink()
+    (installation / ".agents/runtime/tspi/env.json").unlink()
     environment = {key: value for key, value in os.environ.items()
         if not key.startswith("TS_PHONE_") and key not in {"TS_AGENT_INSTALL_ROOT", "PI_CODING_AGENT_DIR"}}
     result = subprocess.run([str(command), "--help"], cwd=tmp_path, env=environment,

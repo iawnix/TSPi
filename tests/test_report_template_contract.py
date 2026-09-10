@@ -7,7 +7,7 @@ from ts_agent.report import build_final_report
 
 
 ROOT = Path(__file__).resolve().parents[1]
-SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
+SKILL_ROOT = ROOT / "skills" / "tspi-report"
 CONTRACT = SKILL_ROOT / "references" / "report_template.md"
 
 

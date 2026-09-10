@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Reject retired terminology in the public README and Root Skill text."""
+"""Reject retired terminology in the public README and public Skill text."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PUBLIC_PATTERNS = ("README.md", "skills/transition-state-workflow/**/*.md")
+PUBLIC_PATTERNS = ("README.md", "skills/**/*.md")
 RULES = (
     (re.compile(r"\b(?:gate_results|required_gates)\b", re.I),
      "retired fields: describe ProofSpec and ValidationResult contracts"),
@@ -50,8 +50,8 @@ def main() -> int:
     parser.add_argument("--root", type=Path, default=ROOT)
     args = parser.parse_args()
     root = args.root.expanduser().resolve()
-    if not (root / "README.md").is_file() or not (root / "skills/transition-state-workflow/SKILL.md").is_file():
-        parser.error("root must contain README.md and the public Root Skill")
+    if not (root / "README.md").is_file() or not (root / "skills/tspi-orchestration/SKILL.md").is_file():
+        parser.error("root must contain README.md and the orchestration Skill")
     findings = check_public_surface(root)
     if findings:
         print("\n".join(findings))

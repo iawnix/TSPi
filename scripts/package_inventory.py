@@ -23,6 +23,25 @@ CONTRACT_FILES = [
 ]
 
 
+SKILL_NAMES = [
+    "tspi-orchestration",
+    "tspi-transition-state-search",
+    "tspi-xtb",
+    "tspi-gaussian",
+    "tspi-qbics",
+    "tspi-connectivity",
+    "tspi-render",
+    "tspi-report",
+    "tspi-email",
+]
+SKILL_ENTRIES = [f"./skills/{name}" for name in SKILL_NAMES]
+SKILL_ENTRY_FILES = [
+    f"skills/{name}/{filename}"
+    for name in SKILL_NAMES
+    for filename in ("SKILL.md", "SKILL.zh-CN.md")
+]
+
+
 PACKAGE_FILES = [
     "TSPi",
     "README.md",
@@ -121,9 +140,13 @@ REQUIRED_TARBALL_FILES = frozenset(
         "scripts/package_inventory.py",
         "scripts/tspi_host.py",
         "scripts/pi-loader.mjs",
-        "skills/transition-state-workflow/SKILL.md",
-        "skills/transition-state-workflow/SKILL.zh-CN.md",
-        "skills/transition-state-workflow/references/glossary.zh-CN.md",
+        *SKILL_ENTRY_FILES,
+        "skills/README.md",
+        "skills/README.zh-CN.md",
+        "skills/tspi-orchestration/references/glossary.zh-CN.md",
+        "skills/tspi-render/references/render_contract.md",
+        "skills/tspi-report/references/report_template.md",
+        "skills/tspi-email/references/email_delivery.md",
         "themes/ts-theme.json",
         "extensions/shared/tool-catalog.ts",
         "extensions/shared/subagent-status.ts",
@@ -241,9 +264,13 @@ REQUIRED_RUNTIME_FILES = frozenset(
         "apps/host/service.mjs",
         "scripts/ts_compute.py",
         "scripts/ts_web.py",
-        "skills/transition-state-workflow/SKILL.md",
-        "skills/transition-state-workflow/SKILL.zh-CN.md",
-        "skills/transition-state-workflow/references/glossary.zh-CN.md",
+        *SKILL_ENTRY_FILES,
+        "skills/README.md",
+        "skills/README.zh-CN.md",
+        "skills/tspi-orchestration/references/glossary.zh-CN.md",
+        "skills/tspi-render/references/render_contract.md",
+        "skills/tspi-report/references/report_template.md",
+        "skills/tspi-email/references/email_delivery.md",
         "themes/ts-theme.json",
         "extensions/ts-workflow-control/index.ts",
         "extensions/ts-workflow-ui/index.ts",

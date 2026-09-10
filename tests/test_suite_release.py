@@ -221,7 +221,7 @@ def test_failed_guard_upgrade_does_not_publish_release_or_completion(tmp_path: P
         install_package(Path(built["manifest"]), None, installation)
     assert not (installation / ".pi/packages/tspi/current").exists()
     assert not (installation / ".pi/packages/tspi/install-state.json").exists()
-    assert not (installation / ".agents/runtime/transition-state-workflow/env.json").exists()
+    assert not (installation / ".agents/runtime/tspi/env.json").exists()
 
 
 def test_service_template_timeout_is_reported_without_partial_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -265,7 +265,7 @@ def test_runtime_prepare_failure_does_not_select_the_new_release(tmp_path: Path)
     install_root = tmp_path / "install"
     installed = install_package(Path(first["manifest"]), None, install_root)
     current = install_root / ".pi" / "packages" / "tspi" / "current"
-    runtime_manifest = install_root / ".agents" / "runtime" / "transition-state-workflow" / "env.json"
+    runtime_manifest = install_root / ".agents" / "runtime" / "tspi" / "env.json"
     manifest_before = json.loads(runtime_manifest.read_text(encoding="utf-8"))
 
     second_agent, _ = _synthetic_release(tmp_path / "agent-b", marker="runtime-b")
@@ -304,7 +304,7 @@ def test_activation_failure_restores_current_runtime_and_launchers(tmp_path: Pat
     install_root = tmp_path / "install"
     installed = install_package(Path(first["manifest"]), None, install_root)
     current = install_root / ".pi" / "packages" / "tspi" / "current"
-    runtime_manifest = install_root / ".agents" / "runtime" / "transition-state-workflow" / "env.json"
+    runtime_manifest = install_root / ".agents" / "runtime" / "tspi" / "env.json"
     manifest_before = json.loads(runtime_manifest.read_text(encoding="utf-8"))
     launchers_before = {
         name: os.readlink(install_root / name) for name in install_package_module.LAUNCHER_PATHS

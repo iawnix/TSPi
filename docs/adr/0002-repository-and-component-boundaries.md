@@ -8,7 +8,7 @@
 ## Context
 
 TSPi is currently both a product name and a repository/package boundary. The
-repository contains the Root Skill, Pi extensions, the Python research kernel,
+repository contains the TSPi Skill family, Pi extensions, the Python research kernel,
 deterministic compute and report services, the Web implementation, Phone
 integration, release tooling, and user entrypoints. This is workable for one
 release line, but it makes ownership and change cost difficult to see.
@@ -58,7 +58,7 @@ contracts are explicit.
 **TSPi** remains the product and the name of the required core repository.
 The TSPi repository owns:
 
-- the Root Agent integration and public Root Skill;
+- the Root Agent integration and public Skill family, led by `tspi-orchestration`;
 - the deterministic Research Kernel and canonical workspace contract;
 - deterministic compute, artifact, report, remote, and notification mechanisms;
 - the TSPi projection provider for canonical workspace data;

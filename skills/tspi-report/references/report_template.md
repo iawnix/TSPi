@@ -1,9 +1,9 @@
 # Report Contract
 
 Build the standard report from a valid workspace with `ts_report`. The
-authoritative renderer is `packages/ts-agent-kernel/ts_agent/report/builder.py`; there is no fill-in Markdown
-template with a second, drifting report contract. Add any extra narrative as a
-separate report-package asset.
+authoritative renderer is `packages/ts-agent-kernel/ts_agent/report/builder.py`;
+there is no fill-in Markdown template with a second, drifting report contract.
+Add any extra narrative as a separate report-package asset.
 
 ## Required Projection
 
@@ -24,7 +24,7 @@ files:
 9. immutable acceptance history, profile versions, and explicit current/stale
    status;
 10. deterministic activities, activity integrity, unresolved compute controls,
-   pending Review dispositions, and notification state as operational follow-up;
+    pending Review dispositions, and notification state as operational follow-up;
 11. limitations, missing corrections, and open scientific questions.
 
 ## Acceptance Language
@@ -32,13 +32,13 @@ files:
 Do not describe a candidate as accepted from normal termination, convergence,
 one imaginary frequency, a Review opinion, or a Claim status. Cite the actual
 current acceptance record and its profile, ProofSpecs, passing ValidationResults,
-and Finding snapshot. A historical record whose inputs have
-changed must be labeled stale, not used as a current accepted verdict.
+and Finding snapshot. A historical record whose inputs have changed must be
+labeled stale, not used as a current accepted verdict.
 
-For a classical TS, keep stationary-point, reaction-coordinate, and
-connectivity dimensions separate. Add identity, electronic structure,
-state-character, robustness, thermochemistry, or pathway validation when the
-Claim and scientific system require them.
+For a classical TS, keep stationary-point, reaction-coordinate, and connectivity
+dimensions separate. Add identity, electronic structure, state-character,
+robustness, thermochemistry, or pathway validation when the Claim and scientific
+system require them.
 
 ## Numerical Discipline
 
@@ -53,8 +53,7 @@ notification receipts remain operational provenance.
 
 ## Package Integrity
 
-The report builder creates a new no-overwrite directory atomically. Its
-manifest binds `workspace_revision`, `operational_revision`, every file path,
-size, and SHA-256. `activities.json` records the deterministic activity
-projection. A package is usable only when its manifest matches the actual
-regular files.
+The report builder creates a new no-overwrite directory atomically. Its manifest
+binds `workspace_revision`, `operational_revision`, every file path, size, and
+SHA-256. `activities.json` records the deterministic activity projection. A
+package is usable only when its manifest matches the actual regular files.

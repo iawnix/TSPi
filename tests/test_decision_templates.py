@@ -19,7 +19,7 @@ from tests.kernel_helpers import compile_change
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TEMPLATE_DIR = ROOT / "skills" / "transition-state-workflow" / "assets" / "templates" / "decision"
+TEMPLATE_DIR = ROOT / "skills" / "tspi-orchestration" / "assets" / "templates" / "decision"
 PLACEHOLDER_RE = re.compile(r"\$\{([A-Z0-9_]+)\}")
 EXPECTED_FILES = {
     "README.md",
@@ -67,17 +67,17 @@ def test_operation_catalog_groups_public_variants_and_exact_fields() -> None:
     assert catalog["selected_operation"] == "record_observation"
     assert catalog["operations"] == [{
         "op": "record_observation",
-        "template_ref": "skills/transition-state-workflow/assets/templates/decision/record_observation.json",
+        "template_ref": "skills/tspi-orchestration/assets/templates/decision/record_observation.json",
         "variants": [
             {
                 "variant": "direct",
-                "template_ref": "skills/transition-state-workflow/assets/templates/decision/record_observation.json",
+                "template_ref": "skills/tspi-orchestration/assets/templates/decision/record_observation.json",
                 "required_fields": sorted(INPUT_OPERATION_CONTRACTS["record_observation"].required),
                 "optional_fields": sorted(INPUT_OPERATION_CONTRACTS["record_observation"].optional),
             },
             {
                 "variant": "candidate",
-                "template_ref": "skills/transition-state-workflow/assets/templates/decision/record_observation_candidate.json",
+                "template_ref": "skills/tspi-orchestration/assets/templates/decision/record_observation_candidate.json",
                 "required_fields": sorted(INPUT_OPERATION_CONTRACTS["record_observation_candidate"].required),
                 "optional_fields": sorted(INPUT_OPERATION_CONTRACTS["record_observation_candidate"].optional),
             },

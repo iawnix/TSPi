@@ -29,7 +29,7 @@ class OperationContract:
         """Return the packaged operation snippet for this exact variant."""
 
         filename = self.template_name or f"{self.exposed_name(registry_name)}.json"
-        return f"skills/transition-state-workflow/assets/templates/decision/{filename}"
+        return f"skills/tspi-orchestration/assets/templates/decision/{filename}"
 
 
 INPUT_OPERATION_CONTRACTS: dict[str, OperationContract] = {

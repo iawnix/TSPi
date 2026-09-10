@@ -65,8 +65,8 @@ Choose one physical, non-symlink installation root:
     notifications.toml          optional, mode 0600
     runtime-cache/
   .agents/
-    runtime/transition-state-workflow/env.json
-    envs/transition-state-workflow/
+    runtime/tspi/env.json
+    envs/tspi/
       base/<spec-hash>/             shared scientific dependencies
       kernels/<payload-hash>/       exact release ts-agent-kernel
   workspaces/
@@ -187,8 +187,8 @@ export TS_AGENT_SKILL_ROOT=/path/to/TSPi-installation/.pi/packages/tspi/current/
 
 python3 "$TS_AGENT_SKILL_ROOT/scripts/install_env.py" \
   --package-root "$TS_AGENT_SKILL_ROOT" \
-  --runtime-home /path/to/TSPi-installation/.agents/runtime/transition-state-workflow \
-  --env-root /path/to/TSPi-installation/.agents/envs/transition-state-workflow \
+  --runtime-home /path/to/TSPi-installation/.agents/runtime/tspi \
+  --env-root /path/to/TSPi-installation/.agents/envs/tspi \
   --conda-root /path/to/miniforge3 \
   --with-render \
   --json

@@ -287,8 +287,8 @@ def _install_captured_package(
     publish = runtime_publisher or publish_runtime
     prepared_runtime = prepare(
         target / "agent",
-        runtime_home=install_root / ".agents" / "runtime" / "transition-state-workflow",
-        env_root=install_root / ".agents" / "envs" / "transition-state-workflow",
+        runtime_home=install_root / ".agents" / "runtime" / "tspi",
+        env_root=install_root / ".agents" / "envs" / "tspi",
         conda=conda,
         conda_root=conda_root,
         force=force_runtime,
