@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import re
 import subprocess
 import threading
 from importlib.resources import files
@@ -44,6 +45,12 @@ ROOT = Path(__file__).resolve().parents[1]
 def _write(path: Path, value: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(value), encoding="utf-8")
+
+
+def _assert_public_payload(payload: object, private_root: Path) -> None:
+    rendered = json.dumps(payload, ensure_ascii=False)
+    assert "source_root" not in rendered
+    assert str(private_root) not in rendered
 
 
 def _make_workspace(root: Path) -> dict[str, str]:
@@ -450,14 +457,14 @@ def test_workspace_snapshot_normalizes_once(tmp_path: Path, monkeypatch: pytest.
     _make_workspace(workspace)
     row = {"workspace_id": "ws_test", "source_root": str(workspace), "label": "test"}
     calls = 0
-    original = ts_web_server.normalize_workspace
+    original = ts_web_server.projection.normalize_workspace
 
     def counted(source_root, *, label=None):
         nonlocal calls
         calls += 1
         return original(source_root, label=label)
 
-    monkeypatch.setattr("ts_agent.web.normalize.normalize_workspace", counted)
+    monkeypatch.setattr("ts_agent.projection.normalize.normalize_workspace", counted)
     workspace_snapshot(row)
     assert calls == 1
 
@@ -985,6 +992,9 @@ def test_static_ui_exposes_research_map_dependency_dag_and_node_details() -> Non
     assert "Research Files" in html
     assert "Advanced Graphs" not in html + script
     assert "app.css" in html
+    assert "i18n.js" in html
+    assert "/logo.svg" in html
+    assert "/favicon.svg" in html
     assert "app.js" in html
     assert "claim-map.js" in html
     assert "research-tree.js" in html
@@ -1030,7 +1040,7 @@ def test_static_ui_exposes_research_map_dependency_dag_and_node_details() -> Non
     assert 'icon("external")' not in script
     assert 'id="icon-eye"' in html
     assert ".attempt-filter { grid-column: 2; }" in css
-    assert "${latest.intent_id} ${attemptState(latest)}" in tree
+    assert "${latest.intent_id} ${trStatus(attemptState(latest))}" in tree
     assert "...array(state.view.retryable_controls)" in script
     assert "intentIds[0]" in script
     assert "Fix remote configuration, then retry" in script
@@ -1038,6 +1048,24 @@ def test_static_ui_exposes_research_map_dependency_dag_and_node_details() -> Non
     assert "/api/node" not in html + script
     assert "/api/gates" not in html + script
     assert "/api/evidence" not in html + script
+
+
+def test_static_i18n_catalogs_match_and_cover_literal_ui_references() -> None:
+    static = ROOT / "python" / "ts_agent" / "web" / "static"
+    catalog = (static / "i18n.js").read_text(encoding="utf-8")
+    english, chinese = catalog.split("    zh: {", maxsplit=1)
+    key_pattern = re.compile(r'^      "([^"]+)":', re.MULTILINE)
+    english_keys = set(key_pattern.findall(english))
+    chinese_keys = set(key_pattern.findall(chinese))
+
+    sources = "\n".join(path.read_text(encoding="utf-8") for path in static.glob("*.js"))
+    sources += "\n" + (static / "index.html").read_text(encoding="utf-8")
+    literal_references = set(re.findall(r'\btr\(\s*"([^"]+)"', sources))
+    literal_references.update(re.findall(r'data-i18n(?:-aria-label|-title)?="([^"]+)"', sources))
+
+    assert english_keys == chinese_keys
+    assert literal_references <= english_keys
+    assert len(english_keys) >= 400
 
 
 def test_attempt_timeline_filters_and_paginates_families() -> None:
@@ -1191,16 +1219,16 @@ def test_static_ui_refreshes_registry_and_persists_theme() -> None:
     assert "async function loadWorkspaceCatalog()" in script
     assert 'const payload = await api("/api/workspaces")' in script
     assert 'refreshButton.addEventListener("click", refreshExplorer)' in script
-    assert 'refreshStatus.textContent = "Refreshing workspace"' in script
-    assert 'showToast("Workspace refreshed")' in script
+    assert 'tr("action.refreshing", "Refreshing workspace")' in script
+    assert 'showToast(tr("action.refreshed", "Workspace refreshed"))' in script
     assert "const liveRefreshIntervalMs = 5000" in script
     assert "async function pollLiveRefresh()" in script
     assert 'document.addEventListener("visibilitychange"' in script
-    assert 'setHealth("stale", "Stale")' in script
+    assert 'setHealth("stale", tr("health.stale", "Stale"))' in script
     assert "/snapshot?${query}" in script
     assert "renderUnavailableWorkspace(catalogRow)" in script
-    assert 'row.available === false ? " (incompatible)" : ""' in script
-    assert 'textContent = view.workspace.kernel_protocol || "Research workspace"' in script
+    assert 'tr("workspace.incompatibleSuffix", "incompatible")' in script
+    assert 'textContent = view.workspace.kernel_protocol || tr("workspace.fallback", "Research workspace")' in script
     assert "escapeHtml(view.workspace.workspace_id)" not in script
     assert "shortDigest(view.workspace_revision)" not in script
 
@@ -1220,7 +1248,7 @@ def test_research_files_payload_is_a_read_only_locator_projection(tmp_path: Path
 
 
 def test_static_asset_resolves_from_current_package() -> None:
-    for name in ("index.html", "app.css", "app.js", "attempt-timeline.js", "claim-map.js", "research-map.js", "research-tree.js"):
+    for name in ("index.html", "app.css", "app.js", "i18n.js", "logo.svg", "favicon.svg", "attempt-timeline.js", "claim-map.js", "research-map.js", "research-tree.js"):
         expected = files("ts_agent.web").joinpath("static", name).read_bytes()
         assert ts_web_server._static_asset(name).read_bytes() == expected
 
@@ -1389,6 +1417,7 @@ def test_web_catalog_isolates_incompatible_registered_workspace(tmp_path: Path) 
         assert summaries[old_row["workspace_id"]]["available"] is False
         assert summaries[old_row["workspace_id"]]["valid"] is False
         assert "cannot read workspace file" in summaries[old_row["workspace_id"]]["load_error"]
+        _assert_public_payload(payload, incompatible)
         assert _get_text(host, port, f"/api/workspace/{old_row['workspace_id']}")[0] == 400
     finally:
         server.shutdown()
@@ -1480,11 +1509,16 @@ def test_web_server_is_read_only_and_has_no_removed_routes(tmp_path: Path) -> No
         )
         assert large_status == 400
         assert "1 mb" in large_body.lower()
+        assert "source_root" not in binary_body + large_body
+        assert str(source) not in binary_body + large_body
         assert _get_text(host, port, f"{base}/file?path=workspace.json")[0] == 400
         html = _get_text(host, port, "/")[1]
         assert "TS Research Explorer" in html
         assert _get_text(host, port, "/app.css")[0] == 200
         assert _get_text(host, port, "/app.js")[0] == 200
+        assert _get_text(host, port, "/i18n.js")[0] == 200
+        assert _get_text(host, port, "/logo.svg")[0] == 200
+        assert _get_text(host, port, "/favicon.svg")[0] == 200
         assert _get_text(host, port, "/attempt-timeline.js")[0] == 200
         assert _get_text(host, port, "/claim-map.js")[0] == 200
         assert _get_text(host, port, "/research-map.js")[0] == 200
@@ -1492,6 +1526,23 @@ def test_web_server_is_read_only_and_has_no_removed_routes(tmp_path: Path) -> No
         for removed_route in (f"{base}/tree", f"{base}/gates", f"{base}/evidence", "/api/node/n000"):
             assert _get_text(host, port, removed_route)[0] == 404
         assert _get_text(host, port, f"{base}/node/n000")[0] == 400
+        for route in (
+            "/api/workspaces",
+            f"{base}/snapshot",
+            f"{base}/graph",
+            f"{base}/phases",
+            f"{base}/claims",
+            f"{base}/nodes",
+            f"{base}/observations",
+            f"{base}/validation",
+            f"{base}/findings",
+            f"{base}/files",
+            f"{base}/activity",
+            f"{base}/claim/{refs['concerted']}",
+            f"{base}/node/{refs['connectivity']}",
+            f"{base}/file?path=nodes/{refs['connectivity']}/outputs/probe.json",
+        ):
+            _assert_public_payload(_get_json(host, port, route), source)
     finally:
         server.shutdown()
         server.server_close()

@@ -27,6 +27,7 @@ export interface TsSubagentStatus {
   node_refs?: string[];
   claim_refs?: string[];
   target_ref?: string;
+  reviewer_role?: string;
   run_ref?: string;
   wait_reason?: TsSubagentWaitReason;
   failure_kind?: TsSubagentFailureKind;
@@ -39,6 +40,7 @@ type StatusBase = Omit<
 export type TsSubagentStatusUpdate = Partial<Pick<
   TsSubagentStatus,
   "node_refs" | "claim_refs" | "target_ref" | "run_ref" | "wait_reason" | "failure_kind"
+  | "reviewer_role"
 >>;
 
 export type TsSubagentStatusReporter = (
@@ -115,6 +117,7 @@ export function isTsSubagentStatus(value: unknown): value is TsSubagentStatus {
   for (const key of ["target_ref", "run_ref"] as const) {
     if (value[key] !== undefined && !requiredString(value[key])) return false;
   }
+  if (value.reviewer_role !== undefined && !requiredString(value.reviewer_role)) return false;
   if (value.wait_reason !== undefined) {
     if (value.state !== "waiting" || !TS_SUBAGENT_WAIT_REASONS.includes(value.wait_reason as TsSubagentWaitReason)) return false;
   }

@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tspi.iawnix.xyz/schema/ts-web-workspace-snapshot-v1.json",
+  "title": "TS Web workspace snapshot response",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "workspace_id", "changed", "scientific_changed", "operational_changed", "workspace_revision", "operational_revision"],
+  "properties": {
+    "schema_version": { "const": "ts-explorer-workspace-snapshot/1" },
+    "workspace_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$" },
+    "changed": { "type": "boolean" },
+    "scientific_changed": { "type": "boolean" },
+    "operational_changed": { "type": "boolean" },
+    "workspace_revision": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "operational_revision": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "workspace": {
+      "type": "object",
+      "required": ["workspace_id", "label", "available", "load_error"],
+      "properties": {
+        "workspace_id": { "type": "string" },
+        "label": { "type": "string" },
+        "available": { "type": "boolean" },
+        "load_error": { "type": ["string", "null"] }
+      },
+      "not": { "required": ["source_root"] }
+    },
+    "view": {
+      "type": "object",
+      "required": ["schema_version", "workspace_revision", "operational_revision"],
+      "properties": {
+        "schema_version": { "const": "ts-web-workspace/6" },
+        "workspace_revision": { "type": "string" },
+        "operational_revision": { "type": "string" }
+      },
+      "not": { "required": ["source_root"] }
+    },
+    "graph": {
+      "type": "object",
+      "required": ["schema_version", "workspace_revision", "operational_revision"],
+      "properties": {
+        "schema_version": { "const": "ts-explorer-graph/6" },
+        "workspace_revision": { "type": "string" },
+        "operational_revision": { "type": "string" }
+      },
+      "not": { "required": ["source_root"] }
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "changed": { "const": true } }, "required": ["changed"] },
+      "then": { "required": ["workspace", "view", "graph"] },
+      "else": { "not": { "anyOf": [{ "required": ["workspace"] }, { "required": ["view"] }, { "required": ["graph"] }] } }
+    }
+  ]
+}

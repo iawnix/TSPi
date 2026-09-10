@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="icon" href="data:,">
+  <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <title>TS Research Explorer</title>
   <script>
     (() => {
@@ -19,6 +19,7 @@
   <!-- Lucide icon geometry is embedded so the read-only explorer works offline. -->
   <svg class="icon-sprite" aria-hidden="true">
     <symbol id="icon-roadmap" viewBox="0 0 24 24"><path d="m3 6 6-3 6 3 6-3v15l-6 3-6-3-6 3Z"/><path d="M9 3v15M15 6v15"/></symbol>
+    <symbol id="icon-language" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.3 2.5 3.5 5.5 3.5 9S14.3 18.5 12 21M12 3c-2.3 2.5-3.5 5.5-3.5 9S9.7 18.5 12 21"/></symbol>
     <symbol id="icon-conclusions" viewBox="0 0 24 24"><path d="M9 18h6M10 22h4"/><path d="M8.5 14.5A7 7 0 1 1 15.5 14.5c-.9.7-1.5 1.6-1.5 2.5h-4c0-.9-.6-1.8-1.5-2.5Z"/></symbol>
     <symbol id="icon-files" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M9 15l2 2 4-4"/></symbol>
     <symbol id="icon-validation" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V5l8-3 8 3Z"/><path d="m9 12 2 2 4-4"/></symbol>
@@ -46,19 +47,22 @@
 
   <header class="topbar">
     <div class="brand">
-      <div class="brand-mark" aria-hidden="true">TSπ</div>
+      <img class="brand-mark" src="/logo.svg" alt="TSπ">
       <div class="brand-copy">
-        <div class="brand-title">TS Research Explorer</div>
-        <div class="brand-protocol">Research Kernel</div>
+        <div class="brand-title" data-i18n="brand.title">TS Research Explorer</div>
+        <div class="brand-protocol" data-i18n="brand.protocol">Research Kernel</div>
       </div>
     </div>
     <div class="workspace-controls">
-      <label class="sr-only" for="workspace-select">Workspace</label>
+      <label class="sr-only" for="workspace-select" data-i18n="controls.workspace">Workspace</label>
       <select id="workspace-select"></select>
-      <button class="icon-button" id="theme-button" type="button" title="Use dark theme" aria-label="Use dark theme">
+      <button class="icon-button" id="language-button" type="button" title="Switch to Chinese" aria-label="Switch to Chinese" data-i18n-title="controls.language" data-i18n-aria-label="controls.language">
+        <svg class="icon"><use href="#icon-language"/></svg><span class="sr-only">中文 / English</span>
+      </button>
+      <button class="icon-button" id="theme-button" type="button" title="Use dark theme" aria-label="Use dark theme" data-i18n-title="controls.theme.dark" data-i18n-aria-label="controls.theme.dark">
         <svg class="icon" id="theme-icon" aria-hidden="true"><use href="#icon-moon"/></svg>
       </button>
-      <button class="icon-button" id="refresh-button" type="button" title="Refresh workspace" aria-label="Refresh workspace">
+      <button class="icon-button" id="refresh-button" type="button" title="Refresh workspace" aria-label="Refresh workspace" data-i18n-title="controls.refresh" data-i18n-aria-label="controls.refresh">
         <svg class="icon" id="refresh-icon" aria-hidden="true"><use href="#icon-refresh"/></svg>
       </button>
       <span class="sr-only" id="refresh-status" role="status" aria-live="polite"></span>
@@ -67,16 +71,16 @@
   </header>
 
   <div class="app-shell">
-    <nav class="sidebar" id="sidebar" aria-label="Research workspace">
-      <div class="nav-group-label">Research</div>
-      <button class="nav-button active" type="button" data-view="roadmap"><svg class="icon"><use href="#icon-roadmap"/></svg><span>Research Map</span><span class="nav-count" data-count="phases">0</span></button>
-      <button class="nav-button" type="button" data-view="conclusions"><svg class="icon"><use href="#icon-conclusions"/></svg><span>Scientific Conclusions</span><span class="nav-count" data-count="claims">0</span></button>
-      <button class="nav-button" type="button" data-view="files"><svg class="icon"><use href="#icon-files"/></svg><span>Research Files</span></button>
-      <div class="nav-group-label">Assurance</div>
-      <button class="nav-button" type="button" data-view="validation"><svg class="icon"><use href="#icon-validation"/></svg><span>Validation</span><span class="nav-count" data-count="validation">0</span></button>
-      <button class="nav-button" type="button" data-view="findings"><svg class="icon"><use href="#icon-findings"/></svg><span>Findings</span><span class="nav-count" data-count="findings">0</span></button>
-      <div class="nav-group-label">Operations</div>
-      <button class="nav-button" type="button" data-view="activity"><svg class="icon"><use href="#icon-activity"/></svg><span>Activity</span><span class="nav-count" data-count="activity">0</span></button>
+    <nav class="sidebar" id="sidebar" aria-label="Research workspace" data-i18n-aria-label="nav.workspaceAria">
+      <div class="nav-group-label" data-i18n="nav.research">Research</div>
+      <button class="nav-button active" type="button" data-view="roadmap"><svg class="icon"><use href="#icon-roadmap"/></svg><span data-i18n="nav.roadmap">Research Map</span><span class="nav-count" data-count="phases">0</span></button>
+      <button class="nav-button" type="button" data-view="conclusions"><svg class="icon"><use href="#icon-conclusions"/></svg><span data-i18n="nav.conclusions">Scientific Conclusions</span><span class="nav-count" data-count="claims">0</span></button>
+      <button class="nav-button" type="button" data-view="files"><svg class="icon"><use href="#icon-files"/></svg><span data-i18n="nav.files">Research Files</span></button>
+      <div class="nav-group-label" data-i18n="nav.assurance">Assurance</div>
+      <button class="nav-button" type="button" data-view="validation"><svg class="icon"><use href="#icon-validation"/></svg><span data-i18n="nav.validation">Validation</span><span class="nav-count" data-count="validation">0</span></button>
+      <button class="nav-button" type="button" data-view="findings"><svg class="icon"><use href="#icon-findings"/></svg><span data-i18n="nav.findings">Findings</span><span class="nav-count" data-count="findings">0</span></button>
+      <div class="nav-group-label" data-i18n="nav.operations">Operations</div>
+      <button class="nav-button" type="button" data-view="activity"><svg class="icon"><use href="#icon-activity"/></svg><span data-i18n="nav.activity">Activity</span><span class="nav-count" data-count="activity">0</span></button>
       <div class="sidebar-meta" id="sidebar-meta"></div>
     </nav>
 
@@ -85,19 +89,20 @@
     </main>
   </div>
 
-  <button class="inspector-backdrop" id="inspector-backdrop" type="button" aria-label="Close details"></button>
-  <aside class="inspector" id="inspector" aria-label="Record details" aria-hidden="true">
+  <button class="inspector-backdrop" id="inspector-backdrop" type="button" aria-label="Close details" data-i18n-aria-label="detail.close"></button>
+  <aside class="inspector" id="inspector" aria-label="Record details" aria-hidden="true" data-i18n-aria-label="detail.details">
     <div class="inspector-header">
       <div>
-        <div class="inspector-kicker" id="inspector-kicker">Details</div>
-        <h2 id="inspector-title">Record</h2>
+        <div class="inspector-kicker" id="inspector-kicker" data-i18n="detail.details">Details</div>
+        <h2 id="inspector-title" data-i18n="detail.record">Record</h2>
       </div>
-      <button class="icon-button" id="close-inspector" type="button" title="Close details" aria-label="Close details"><svg class="icon"><use href="#icon-close"/></svg></button>
+      <button class="icon-button" id="close-inspector" type="button" title="Close details" aria-label="Close details" data-i18n-title="detail.close" data-i18n-aria-label="detail.close"><svg class="icon"><use href="#icon-close"/></svg></button>
     </div>
     <div class="inspector-body" id="inspector-body"></div>
   </aside>
 
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script src="/i18n.js" defer></script>
   <script src="/research-map.js" defer></script>
   <script src="/research-tree.js" defer></script>
   <script src="/claim-map.js" defer></script>

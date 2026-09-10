@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<mxfile host="app.diagrams.net" modified="2026-09-10T00:00:00.000Z" agent="Codex" version="24.7.17">
+  <diagram id="tspi-architecture" name="TSPi Research Architecture">
+    <mxGraphModel dx="1200" dy="720" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1200" pageHeight="720" background="#FBFCFB">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+        <mxCell id="2" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FBFCFB;strokeColor=#D9E4E6;strokeWidth=2;arcSize=4;" vertex="1" parent="1">
+          <mxGeometry x="20" y="20" width="1160" height="680" as="geometry"/>
+        </mxCell>
+        <mxCell id="3" value="TSPi research architecture" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#12324A;fontSize=28;fontStyle=1;fontFamily=Inter;" vertex="1" parent="1">
+          <mxGeometry x="48" y="36" width="520" height="34" as="geometry"/>
+        </mxCell>
+        <mxCell id="4" value="A provenance-preserving loop from scientific questions to validated, inspectable conclusions" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#567182;fontSize=15;fontFamily=Inter;" vertex="1" parent="1">
+          <mxGeometry x="48" y="70" width="700" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="5" value="decision · next question" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF6F2;strokeColor=none;fontColor=#C0523F;fontSize=14;fontStyle=1;fontFamily=Inter;" vertex="1" parent="1">
+          <mxGeometry x="746" y="93" width="194" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="6" value="SCIENTIFIC DIRECTION" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#5A7382;fontSize=14;fontStyle=1;fontFamily=Inter;" vertex="1" parent="1">
+          <mxGeometry x="48" y="130" width="240" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="7" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#208C86;strokeColor=none;" vertex="1" parent="1">
+          <mxGeometry x="330" y="140" width="72" height="3" as="geometry"/>
+        </mxCell>
+        <mxCell id="8" value="DETERMINISTIC RESEARCH CORE" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#5A7382;fontSize=14;fontStyle=1;fontFamily=Inter;" vertex="1" parent="1">
+          <mxGeometry x="330" y="115" width="285" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="9" value="READ-ONLY PROJECTIONS" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#5A7382;fontSize=14;fontStyle=1;fontFamily=Inter;" vertex="1" parent="1">
+          <mxGeometry x="900" y="130" width="250" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="10" value="CAPABILITY + EVIDENCE PLANE" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#5A7382;fontSize=14;fontStyle=1;fontFamily=Inter;" vertex="1" parent="1">
+          <mxGeometry x="48" y="474" width="300" height="24" as="geometry"/>
+        </mxCell>
+        <mxCell id="11" value="&lt;b style='font-size:18px'&gt;Root Agent&lt;/b&gt;&lt;br&gt;&lt;br&gt;Questions · hypotheses&lt;br&gt;Methods · branches · stop&lt;br&gt;&lt;br&gt;&lt;b&gt;SCIENTIFIC REASONING&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#214F69;gradientColor=#173D58;gradientDirection=north;strokeColor=#173D58;strokeWidth=2;fontColor=#FFFFFF;fontSize=15;fontFamily=Inter;align=left;verticalAlign=top;spacingLeft=18;spacingTop=18;arcSize=13;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="48" y="170" width="210" height="150" as="geometry"/>
+        </mxCell>
+        <mxCell id="12" value="&lt;b style='font-size:18px'&gt;Research Kernel&lt;/b&gt;&lt;br&gt;single workspace · single mutation authority" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E2F2F0;gradientColor=#F4FBFA;gradientDirection=north;strokeColor=#6EB9B3;strokeWidth=2;fontColor=#12324A;fontSize=15;fontFamily=Inter;align=left;verticalAlign=top;spacingLeft=25;spacingTop=18;arcSize=10;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="330" y="145" width="500" height="300" as="geometry"/>
+        </mxCell>
+        <mxCell id="13" value="&lt;b style='font-size:16px'&gt;Research graph&lt;/b&gt;&lt;br&gt;&lt;br&gt;Phase · Node · Claim" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#208C86;strokeWidth=2;fontColor=#12324A;fontSize=14;fontFamily=Inter;align=center;verticalAlign=middle;arcSize=13;" vertex="1" parent="1">
+          <mxGeometry x="365" y="240" width="130" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="14" value="&lt;b style='font-size:16px'&gt;Provenance&lt;/b&gt;&lt;br&gt;&lt;br&gt;Artifacts · ledger" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#6C63A8;strokeWidth=2;fontColor=#12324A;fontSize=14;fontFamily=Inter;align=center;verticalAlign=middle;arcSize=13;" vertex="1" parent="1">
+          <mxGeometry x="515" y="240" width="130" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="15" value="&lt;b style='font-size:16px'&gt;Validation&lt;/b&gt;&lt;br&gt;&lt;br&gt;ProofSpec · results" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#D6654D;strokeWidth=2;fontColor=#12324A;fontSize=14;fontFamily=Inter;align=center;verticalAlign=middle;arcSize=13;" vertex="1" parent="1">
+          <mxGeometry x="665" y="240" width="130" height="112" as="geometry"/>
+        </mxCell>
+        <mxCell id="16" value="●  canonical state · immutable evidence · explicit decisions" style="text;html=1;strokeColor=none;fillColor=none;align=center;verticalAlign=middle;fontColor=#208C86;fontSize=15;fontFamily=Inter;" vertex="1" parent="1">
+          <mxGeometry x="365" y="386" width="430" height="38" as="geometry"/>
+        </mxCell>
+        <mxCell id="17" value="&lt;b style='font-size:18px'&gt;TS Web&lt;/b&gt;&lt;br&gt;Map · claims · proofs&lt;br&gt;&lt;b style='color:#20766F'&gt;READ ONLY&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4F7E91;strokeWidth=2;fontColor=#12324A;fontSize=15;fontFamily=Inter;align=left;verticalAlign=middle;spacingLeft=24;arcSize=16;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="900" y="170" width="250" height="108" as="geometry"/>
+        </mxCell>
+        <mxCell id="18" value="&lt;b style='font-size:18px'&gt;Phone / terminal&lt;/b&gt;&lt;br&gt;Session-scoped clients&lt;br&gt;&lt;b style='color:#20766F'&gt;READ ONLY&lt;/b&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFFFF;strokeColor=#4F7E91;strokeWidth=2;fontColor=#12324A;fontSize=15;fontFamily=Inter;align=left;verticalAlign=middle;spacingLeft=24;arcSize=18;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="900" y="300" width="250" height="100" as="geometry"/>
+        </mxCell>
+        <mxCell id="19" value="&lt;b style='font-size:18px'&gt;Bounded capabilities&lt;/b&gt;&lt;br&gt;typed action adapters&lt;br&gt;&lt;br&gt;G16   xTB   CREST   ASE   SSH   Render" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFFDF8;strokeColor=#D7AC45;strokeWidth=2;fontColor=#12324A;fontSize=14;fontFamily=Inter;align=left;verticalAlign=top;spacingLeft=18;spacingTop=13;arcSize=14;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="48" y="515" width="310" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="20" value="&lt;b style='font-size:18px'&gt;Evidence path&lt;/b&gt;&lt;br&gt;Artifact → Candidate → Observation → Proof&lt;br&gt;&lt;br&gt;○～～○～～○～～●" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#F8FAFD;strokeColor=#6C8FB3;strokeWidth=2;fontColor=#12324A;fontSize=14;fontFamily=Inter;align=left;verticalAlign=top;spacingLeft=18;spacingTop=13;arcSize=14;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="415" y="515" width="325" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="21" value="&lt;b style='font-size:18px'&gt;Scientific outcome&lt;/b&gt;&lt;br&gt;supported · open · blocked · stale&lt;br&gt;&lt;br&gt;●━━╱╲╱╲━━●" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF1EC;gradientColor=#FFFDFC;gradientDirection=north;strokeColor=#D6654D;strokeWidth=2;fontColor=#12324A;fontSize=15;fontFamily=Inter;align=left;verticalAlign=top;spacingLeft=18;spacingTop=13;arcSize=14;shadow=1;" vertex="1" parent="1">
+          <mxGeometry x="800" y="515" width="350" height="130" as="geometry"/>
+        </mxCell>
+        <mxCell id="22" value="typed proposal" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#365B70;strokeWidth=3;endArrow=classic;endFill=1;fontColor=#597384;fontSize=14;fontStyle=1;fontFamily=Inter;" edge="1" parent="1" source="11" target="12">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="23" value="typed action" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#365B70;strokeWidth=3;endArrow=classic;endFill=1;fontColor=#597384;fontSize=14;fontStyle=1;fontFamily=Inter;exitX=0.16;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="12" target="19">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="410" y="475"/><mxPoint x="205" y="475"/></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="24" value="artifacts" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#365B70;strokeWidth=3;endArrow=classic;endFill=1;fontColor=#597384;fontSize=14;fontStyle=1;fontFamily=Inter;" edge="1" parent="1" source="19" target="20">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="25" value="promote" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#208C86;strokeWidth=3;endArrow=classic;endFill=1;fontColor=#208C86;fontSize=14;fontStyle=1;fontFamily=Inter;exitX=0.5;exitY=0;entryX=0.53;entryY=1;" edge="1" parent="1" source="20" target="12">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="26" value="validated state" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#208C86;strokeWidth=3;endArrow=classic;endFill=1;fontColor=#208C86;fontSize=14;fontStyle=1;fontFamily=Inter;exitX=0.85;exitY=1;entryX=0.37;entryY=0;" edge="1" parent="1" source="12" target="21">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="756" y="480"/><mxPoint x="930" y="480"/></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="27" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#208C86;strokeWidth=3;endArrow=classic;endFill=1;exitX=1;exitY=0.22;entryX=0;entryY=0.37;" edge="1" parent="1" source="12" target="17">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="28" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#208C86;strokeWidth=3;endArrow=classic;endFill=1;exitX=1;exitY=0.67;entryX=0;entryY=0.45;" edge="1" parent="1" source="12" target="18">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="29" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=1;html=1;strokeColor=#D6654D;strokeWidth=2;dashed=1;dashPattern=8 7;endArrow=classic;endFill=1;exitX=1;exitY=0.5;entryX=0.49;entryY=0;" edge="1" parent="1" source="21" target="11">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points"><mxPoint x="1162" y="580"/><mxPoint x="1162" y="106"/><mxPoint x="151" y="106"/></Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="30" value="━━▶ actions / artifacts     ━━▶ evidence / projection     - - ▶ decision feedback                                                         TSPi · abstract architecture · 2026" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;fontColor=#597384;fontSize=14;fontFamily=Inter;" vertex="1" parent="1">
+          <mxGeometry x="48" y="657" width="1102" height="28" as="geometry"/>
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

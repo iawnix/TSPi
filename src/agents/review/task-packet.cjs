@@ -13,6 +13,7 @@ const {
   validateArtifactManifest,
   validateArtifactManifestOwnership,
 } = require("./artifact-access.cjs");
+const { loadReviewerRole, validateReviewerRole } = require("./roles.cjs");
 
 const REVIEW_OPERATION = "claim_review";
 const LIMITS = Object.freeze({
@@ -23,12 +24,13 @@ const LIMITS = Object.freeze({
 
 function validateSubagentRequest(request) {
   if (!isPlainObject(request)) throw new Error("Review request must be an object");
-  rejectUnknownKeys(request, ["targetClaimRef", "question", "root", "artifactIds"], "Review request");
+  rejectUnknownKeys(request, ["targetClaimRef", "question", "root", "artifactIds", "reviewerRole"], "Review request");
   return {
     targetClaimRef: requireId(request.targetClaimRef, "targetClaimRef", /^claim_[1-9][0-9]*$/),
     question: requireString(request.question, "question", LIMITS.maxQuestionChars),
     root: typeof request.root === "string" ? request.root : undefined,
     artifactIds: uniqueIds(request.artifactIds || [], "artifactIds", LIMITS.maxArtifactIds, /^art_[0-9a-f]{24}$/),
+    reviewerRole: request.reviewerRole === undefined ? "general" : requireRoleId(request.reviewerRole),
   };
 }
 
@@ -36,6 +38,7 @@ function buildReviewTaskBundle({ runId, workspaceRoot, request, reviewSnapshot, 
   const normalized = validateSubagentRequest(request);
   const root = requireWorkspaceRoot(workspaceRoot);
   const snapshot = validateKernelSnapshot(reviewSnapshot, normalized.targetClaimRef);
+  const reviewerRole = loadReviewerRole(normalized.reviewerRole);
   const artifactManifest = buildArtifactManifest({
     workspaceRoot: root,
     artifactIds: normalized.artifactIds,
@@ -73,11 +76,13 @@ function buildReviewTaskBundle({ runId, workspaceRoot, request, reviewSnapshot, 
     artifact_manifest: artifactManifest,
     basis_allowlist: basisAllowlist,
     omitted: isPlainObject(snapshot.omitted) ? snapshot.omitted : {},
+    reviewer_role: reviewerRole,
   };
   const providerInput = buildProviderTaskPacket({
     task_id: taskSnapshot.task_id,
     objective: normalized.question,
     review_snapshot: taskSnapshot,
+    reviewer_role: reviewerRole,
   });
   const task = {
     schema_version: "ts-agent-task/2",
@@ -158,9 +163,11 @@ function validateTaskSnapshot(value, task) {
     "projection_id", "target_claim_ref", "research_phases", "claims", "claim_relations",
     "research_nodes", "observations", "proof_specs", "validation_results",
     "findings", "acceptances", "dependency_refs", "artifact_manifest",
-    "basis_allowlist", "omitted",
+    "basis_allowlist", "omitted", "reviewer_role",
   ], "Review task snapshot");
   if (value.schema_version !== "ts-review-task-snapshot/3") throw new Error("invalid Review task snapshot schema_version");
+  const reviewerRole = validateReviewerRole(value.reviewer_role);
+  if (reviewerRole.role_id !== value.reviewer_role.role_id) throw new Error("Review reviewer role is invalid");
   if (value.task_id !== task.task_id || value.operation !== task.operation) throw new Error("Review task snapshot identity mismatch");
   if (JSON.stringify(value.scope) !== JSON.stringify(task.scope)) throw new Error("Review task snapshot scope mismatch");
   if (value.workspace_revision !== task.workspace.revision) throw new Error("Review task snapshot revision mismatch");
@@ -189,6 +196,9 @@ function validateTaskSnapshot(value, task) {
 function buildProviderTaskPacket(value) {
   if (!isPlainObject(value) || !isPlainObject(value.review_snapshot)) throw new Error("provider Review input requires a task snapshot");
   const snapshot = value.review_snapshot;
+  const reviewerRole = validateReviewerRole(
+    value.reviewer_role || snapshot.reviewer_role || loadReviewerRole("general"),
+  );
   const targetClaim = snapshot.claims.find((claim) => claim?.claim_id === snapshot.target_claim_ref);
   if (!targetClaim) throw new Error("provider Review input target Claim is missing");
   const packet = {
@@ -199,6 +209,7 @@ function buildProviderTaskPacket(value) {
     scope: snapshot.scope,
     workspace_revision: snapshot.workspace_revision,
     target_claim_ref: snapshot.target_claim_ref,
+    reviewer_role: reviewerRole,
     dossier: {
       target_claim: compactClaim(targetClaim),
       related_claims: snapshot.claims.filter((claim) => claim !== targetClaim).map(compactClaim),
@@ -224,6 +235,13 @@ function validateProviderTaskPacket(value, task, snapshot) {
   if (!isPlainObject(value) || value.schema_version !== "ts-review-provider-input/5") throw new Error("invalid Review provider input schema_version");
   const expected = buildProviderTaskPacket({ task_id: task.task_id, objective: task.objective, review_snapshot: snapshot });
   if (JSON.stringify(value) !== JSON.stringify(expected)) throw new Error("Review provider input differs from its deterministic projection");
+  return value;
+}
+
+function requireRoleId(value) {
+  if (typeof value !== "string" || !/^[a-z][a-z0-9_-]{0,63}$/.test(value)) {
+    throw new Error("reviewerRole is invalid");
+  }
   return value;
 }
 

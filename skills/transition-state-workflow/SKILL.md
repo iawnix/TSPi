@@ -126,6 +126,7 @@ Read only the reference needed for the active decision:
 
 | Need | Reference |
 | --- | --- |
+| meaning and ownership of public terms | `references/glossary.md` |
 | state, identity, DAG, persistence | `references/state_model.md`, `references/pathway_model.md`, `references/workspace_contract.md` |
 | Decision fields and commit discipline | `references/decision_contract.md`, `references/agent_decision_protocol.md` |
 | candidates, backend choice, reflection | `references/candidate_generation.md`, `references/backend_selection.md`, `references/mechanism_reflection.md`, `references/strategy_reflection.md` |

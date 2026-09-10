@@ -56,6 +56,7 @@ export default function (pi: ExtensionAPI) {
     parameters: Type.Object({
       targetClaimRef: Type.String({ minLength: 1, maxLength: 256, description: "Scientific claim that the Review must assess." }),
       question: Type.String({ minLength: 1, maxLength: 4000, description: "Focused scientific or technical review question." }),
+      reviewerRole: Type.Optional(Type.String({ pattern: "^[a-z][a-z0-9_-]{0,63}$", description: "Validated reviewer role. Defaults to general." })),
       root: Type.Optional(Type.String({ description: "Workspace root. Defaults to TS_WORKSPACE_ROOT or nearest workspace ancestor." })),
       artifactIds: Type.Optional(Type.Array(Type.String({ pattern: "^art_[0-9a-f]{24}$" }), { maxItems: 4, uniqueItems: true })),
       timeoutSeconds: Type.Optional(Type.Integer({ minimum: 1, maximum: 180, description: "Host timeout in seconds. Defaults to 90." })),
@@ -67,6 +68,7 @@ export default function (pi: ExtensionAPI) {
       const request = validateSubagentRequest({
         targetClaimRef: params.targetClaimRef,
         question: params.question,
+        reviewerRole: params.reviewerRole,
         root: params.root,
         artifactIds: params.artifactIds,
       });
@@ -78,6 +80,7 @@ export default function (pi: ExtensionAPI) {
         role: "review",
         operation: "claim_review",
         target_ref: params.targetClaimRef,
+        reviewer_role: request.reviewerRole,
       }, onUpdate);
       reportStatus("queued");
       const snapshotArgs = ["--target-claim-ref", request.targetClaimRef];

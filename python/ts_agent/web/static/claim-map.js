@@ -39,25 +39,25 @@
     root.replaceChildren();
     root.classList.add("claim-map");
     if (!allNodes.length) {
-      root.append(element("div", "empty", "No scientific Claims are recorded."));
+      root.append(element("div", "empty", tr("claimMap.noClaims", "No scientific Claims are recorded.")));
       return emptyController();
     }
 
     const toolbar = element("div", "claim-map-toolbar");
     const filterGroup = element("div", "claim-map-filters");
     const statusSelect = filterSelect(
-      "Filter Claim status",
-      [["", "All statuses"], ...uniqueValues(allNodes, "status").map(value => [value, value])],
+      tr("claimMap.filterStatus", "Filter Claim status"),
+      [["", tr("claimMap.allStatuses", "All statuses")], ...uniqueValues(allNodes, "status").map(value => [value, trStatus(value)])],
       filters.status,
     );
     const typeSelect = filterSelect(
-      "Filter Claim type",
-      [["", "All Claim types"], ...uniqueValues(allNodes, "claim_type").map(value => [value, value])],
+      tr("claimMap.filterType", "Filter Claim type"),
+      [["", tr("claimMap.allTypes", "All Claim types")], ...uniqueValues(allNodes, "claim_type").map(value => [value, value])],
       filters.claimType,
     );
     const acceptanceSelect = filterSelect(
-      "Filter acceptance state",
-      [["", "All acceptance"], ["current", "Current acceptance"], ["historical", "Historical acceptance"], ["none", "Not accepted"]],
+      tr("claimMap.filterAcceptance", "Filter acceptance state"),
+      [["", tr("claimMap.allAcceptance", "All acceptance")], ["current", tr("claimMap.currentAcceptance", "Current acceptance")], ["historical", tr("claimMap.historicalAcceptance", "Historical acceptance")], ["none", tr("claimMap.notAccepted", "Not accepted")]],
       filters.acceptance,
     );
     filters = {
@@ -69,20 +69,25 @@
 
     const actions = element("div", "claim-map-actions");
     const stats = element("div", "claim-map-stats");
-    const focusButton = iconButton("focus", "Focus current Claims");
+    const focusButton = iconButton("focus", tr("claimMap.focus", "Focus current Claims"));
     focusButton.disabled = focusIds.size === 0;
-    const zoomOutButton = iconButton("zoom-out", "Zoom out");
-    const zoomInButton = iconButton("zoom-in", "Zoom in");
-    const fitButton = iconButton("fit", "Fit Claim Map");
+    if (focusButton.disabled) {
+      const reason = tr("claimMap.noFocus", "No focused Claims are recorded");
+      focusButton.title = reason;
+      focusButton.setAttribute("aria-label", reason);
+    }
+    const zoomOutButton = iconButton("zoom-out", tr("tree.zoomOut", "Zoom out"));
+    const zoomInButton = iconButton("zoom-in", tr("tree.zoomIn", "Zoom in"));
+    const fitButton = iconButton("fit", tr("claimMap.fit", "Fit Claim Map"));
     actions.append(stats, focusButton, zoomOutButton, zoomInButton, fitButton);
     toolbar.append(filterGroup, actions);
 
     const stage = element("div", "claim-map-stage");
     stage.tabIndex = 0;
     stage.setAttribute("role", "application");
-    stage.setAttribute("aria-label", "Scientific Claim relation map");
+    stage.setAttribute("aria-label", tr("claimMap.aria", "Scientific Claim relation map"));
     const outline = element("div", "claim-map-outline");
-    outline.setAttribute("aria-label", "Scientific Claim relation outline");
+    outline.setAttribute("aria-label", tr("claimMap.outlineAria", "Scientific Claim relation outline"));
     root.append(toolbar, stage, outline);
 
     function renderVisualization({ restoreViewport = false } = {}) {
@@ -98,12 +103,12 @@
       const visibleIds = new Set(currentNodes.map(identifier));
       currentEdges = allEdges.filter(edge => visibleIds.has(edge.source) && visibleIds.has(edge.target));
       layout = computeLayout(currentNodes, currentEdges);
-      stats.textContent = `${currentNodes.length} claims | ${currentEdges.length} relations`;
+      stats.textContent = `${currentNodes.length} ${tr("claimMap.claims", "claims")} | ${currentEdges.length} ${tr("claimMap.relations", "relations")}`;
 
       if (!currentNodes.length) {
         canvas = null;
-        stage.append(element("div", "claim-map-empty", "No Claims match the current filters."));
-        outline.append(element("div", "claim-map-empty", "No Claims match the current filters."));
+        stage.append(element("div", "claim-map-empty", tr("claimMap.noMatch", "No Claims match the current filters.")));
+        outline.append(element("div", "claim-map-empty", tr("claimMap.noMatch", "No Claims match the current filters.")));
         return;
       }
 
@@ -458,7 +463,7 @@
     group.dataset.relationId = String(edge.id || "");
     group.setAttribute("tabindex", "0");
     group.setAttribute("role", "button");
-    group.setAttribute("aria-label", `${edge.source} ${edge.kind || "relates to"} ${edge.target}`);
+    group.setAttribute("aria-label", tr("claimMap.edgeAria", "{{source}} {{relation}} {{target}}", { source: edge.source, relation: edge.kind || tr("claimMap.relation", "relation"), target: edge.target }));
     const route = computeEdgeRoute(source, target, laneIndex);
     const hit = svgElement("path", "claim-map-edge-hit");
     hit.setAttribute("d", route.pathData);
@@ -552,16 +557,16 @@
       element("span", "claim-map-node-id", identifier(node)),
       statusLabel(node.status),
     );
-    const statement = element("div", "claim-map-node-statement", String(node.statement || "No statement recorded."));
+    const statement = element("div", "claim-map-node-statement", String(node.statement || tr("claimMap.noStatement", "No statement recorded.")));
     const meta = element("div", "claim-map-node-meta");
     meta.append(element("span", "claim-map-node-type", String(node.claim_type || "claim")));
     if (String(node.acceptance_state || "none") !== "none") {
-      meta.append(element("span", `claim-map-acceptance ${node.acceptance_state}`, String(node.acceptance_state)));
+      meta.append(element("span", `claim-map-acceptance ${node.acceptance_state}`, trStatus(node.acceptance_state)));
     }
     const counts = element(
       "div",
       "claim-map-node-counts",
-      `${Number(node.observation_count) || 0} obs | ${Number(node.validation_result_count) || 0} checks | ${Number(node.review_run_count) || 0} reviews`,
+      tr("claimMap.counts", "{{observations}} observations · {{checks}} checks · {{reviews}} reviews", { observations: Number(node.observation_count) || 0, checks: Number(node.validation_result_count) || 0, reviews: Number(node.review_run_count) || 0 }),
     );
     button.append(heading, statement, meta, counts);
     button.title = String(node.statement || identifier(node));
@@ -577,15 +582,15 @@
     button.dataset.claimId = identifier(node);
     const heading = element("div", "claim-map-outline-heading");
     heading.append(element("span", "claim-map-node-id", identifier(node)), statusLabel(node.status));
-    const statement = element("div", "claim-map-outline-statement", String(node.statement || "No statement recorded."));
-    const meta = element("div", "claim-map-outline-meta", `${node.claim_type || "claim"} | ${node.acceptance_state || "not accepted"}`);
+    const statement = element("div", "claim-map-outline-statement", String(node.statement || tr("claimMap.noStatement", "No statement recorded.")));
+    const meta = element("div", "claim-map-outline-meta", `${node.claim_type || tr("map.claim", "claim")} | ${node.acceptance_state ? trStatus(node.acceptance_state) : tr("claimMap.notAccepted", "not accepted")}`);
     button.append(heading, statement, meta);
     root.append(button);
     const relationButtons = [];
     if (records(incomingEdges).length) {
       const relations = element("div", "claim-map-outline-relations");
       for (const edge of records(incomingEdges)) {
-        const relation = element("button", `claim-map-outline-relation ${relationTone(edge.kind)}`, `${edge.kind || "relation"} from ${edge.source}`);
+        const relation = element("button", `claim-map-outline-relation ${relationTone(edge.kind)}`, `${edge.kind || tr("claimMap.relation", "relation")} ${tr("claimMap.relationFrom", "from")} ${edge.source}`);
         relation.type = "button";
         relation.dataset.claimInteractive = "relation";
         relation.dataset.relationId = String(edge.id || "");
@@ -595,14 +600,14 @@
       }
       root.append(relations);
     } else {
-      root.append(element("div", "claim-map-outline-root", "Root Claim"));
+      root.append(element("div", "claim-map-outline-root", tr("claimMap.rootClaim", "Root Claim")));
     }
     return { root, claimButton: button, relationButtons };
   }
 
   function statusLabel(value) {
     const target = element("span", "claim-map-node-status");
-    target.append(element("span", "claim-map-status-dot"), document.createTextNode(String(value || "unknown")));
+    target.append(element("span", "claim-map-status-dot"), document.createTextNode(trStatus(value || "unknown")));
     return target;
   }
 
@@ -613,6 +618,14 @@
     for (const [optionValue, optionLabel] of choices) select.append(new Option(optionLabel, optionValue));
     select.value = choices.some(([optionValue]) => optionValue === value) ? value : "";
     return select;
+  }
+
+  function tr(key, fallback = key, variables = null) {
+    return global.TSExplorerI18n?.t(key, fallback, variables) || fallback;
+  }
+
+  function trStatus(value) {
+    return global.TSExplorerI18n?.status(value) || String(value || "unknown");
   }
 
   function iconButton(iconName, label) {

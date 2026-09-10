@@ -7,8 +7,10 @@ place.
 
 Read [Architecture](ARCHITECTURE.md) before changing a cross-module contract,
 [Installation and Operations](INSTALLATION.md) before changing lifecycle or
-configuration, and [ADR 0001](adr/0001-phase-node-research-kernel.md)
-before changing the research graph or validation architecture.
+configuration, [ADR 0001](adr/0001-phase-node-research-kernel.md) before
+changing the research graph or validation architecture, and [ADR 0002](adr/0002-repository-and-component-boundaries.md)
+before changing repository ownership, optional components, public protocols,
+or the source/package layout.
 
 ## Non-Negotiable Boundary
 
@@ -69,6 +71,23 @@ prescriptive stage, Node type, scientific role/layer, or next-action router.
 `scripts/tspi_host.py` and `python/ts_agent/runtime/launcher.py`; do not move release
 selection, config, runtime resolution, bootstrap, locking, or Pi arguments into
 shell.
+
+### Entrypoints And Tools
+
+`scripts/` is a compatibility directory during the staged layout change.
+Its files have three distinct responsibilities:
+
+| Category | Current members | Boundary |
+| --- | --- | --- |
+| User and Pi entrypoints | `TSPi`, `scripts/tspi_host.py`, `scripts/ts_backend.py`, `scripts/ts_compute.py`, `scripts/ts_email.py`, `scripts/ts_render.py`, `scripts/ts_report.py`, `scripts/ts_runtime.py`, `scripts/ts_web.py`, `scripts/ts_workspace.py`, `scripts/pi-loader.mjs` | Parse launch arguments and delegate to `python/ts_agent/`, `src/`, or Pi integration code. Keep these names stable for installed releases. |
+| Release and runtime mechanisms | `scripts/build_package.py`, `scripts/build_release.py`, `scripts/install_env.py`, `scripts/install_package.py`, `scripts/install_release.py`, `scripts/_bootstrap.py`, `scripts/_runtime_install.py`, `scripts/_suite.py`, `scripts/_wheel.py`, `scripts/package_inventory.py` | Own packaging, runtime preparation, archive validation, and installation mechanics. They are not scientific libraries or public Skills. |
+| Developer checks | `scripts/check_package.py`, `scripts/test_fast.py`, `scripts/test_source.py`, `tools/lint_public_surface.py`, `tools/contracts/sync_ts_phone.py` | Validate authored or component boundaries. They are not production runtime entrypoints; package membership is explicit in the release inventory. |
+
+Reusable behavior belongs in `python/ts_agent/`, `src/`, or `extensions/` and
+must be imported by an entrypoint rather than copied into a second script.
+New build, test, transition, or contract tooling goes under `tools/` when it is
+not a stable installed command. Move one responsibility at a time and retain
+the existing wrapper while callers migrate.
 
 ## Public Package Surface
 
@@ -440,6 +459,7 @@ From the authored checkout:
 
 ```bash
 npm ci
+npm run test:fast -- tests/test_readme_contract.py tests/test_report_template_contract.py
 python3 scripts/test_source.py \
   --conda-root /path/to/miniforge3 \
   --with-render \
@@ -450,6 +470,12 @@ The test entrypoint creates or reuses the spec-addressed scientific base,
 builds the current source wheel, installs it into a temporary overlay, clears
 ambient Python path and user-site state, and runs pytest against that installed
 wheel. Its machine-readable record is written under `.runtime/test-results/`.
+For ordinary source feedback, use `npm run test:fast`. It runs pytest directly
+with the authored `python/` source root, using the current interpreter or an
+existing spec-addressed managed base. It does not build a wheel, create an
+overlay, solve an environment, or write a result record unless
+`--result-path` is supplied. The managed command remains the Candidate and
+Release validation boundary.
 Use the standalone installer only to prepare a persistent development runtime:
 
 ```bash
@@ -475,6 +501,16 @@ source.
 
 Run the narrowest relevant check first, then all shared checks for public or
 cross-module changes.
+
+### Fast source feedback
+
+```bash
+npm run test:fast -- tests/test_readme_contract.py tests/test_decision_templates.py
+```
+
+Use this for ordinary Python edits and focused contract checks. It uses the
+current interpreter and installed dependencies, so it does not prove that a
+wheel or clean managed runtime can load the package.
 
 ### Documentation or Skill
 

@@ -53,6 +53,7 @@ def _repository(root: Path) -> Path:
         "pyproject.toml": "[build-system]\nrequires = []\n",
         "scripts/build_release.py": "# build fixture\n",
         "scripts/check_package.py": "# check fixture\n",
+        "scripts/package_inventory.py": "# package fixture\n",
     }
     for relative, content in files.items():
         path = root / relative

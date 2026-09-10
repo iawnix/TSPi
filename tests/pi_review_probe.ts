@@ -8,6 +8,7 @@ import { runScientificReview } from "../src/agents/review/runtime.ts";
 const require = createRequire(import.meta.url);
 const { bindAgentDocument } = require("../src/agent-core/agent-protocol.cjs");
 const { buildProviderTaskPacket } = require("../src/agents/review/task-packet.cjs");
+const { loadReviewerRole } = require("../src/agents/review/roles.cjs");
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("ts-test-review-child", {
@@ -31,6 +32,7 @@ export default function (pi: ExtensionAPI) {
         node_refs: [nodeId],
         claim_refs: [claimId],
       };
+      const reviewerRole = loadReviewerRole("general");
       const reviewSnapshot = {
         schema_version: "ts-review-task-snapshot/3",
         task_id: taskId,
@@ -117,11 +119,13 @@ export default function (pi: ExtensionAPI) {
         }] : [],
         basis_allowlist: [nodeId, claimId, ...(observationId ? [observationId] : []), ...(artifactId ? [artifactId] : [])].sort(),
         omitted: {},
+        reviewer_role: reviewerRole,
       };
       const providerInput = buildProviderTaskPacket({
         task_id: taskId,
         objective: "Assess whether the current bounded graph supports the probe Claim.",
         review_snapshot: reviewSnapshot,
+        reviewer_role: reviewerRole,
       });
       const packet = {
         schema_version: "ts-agent-task/2",

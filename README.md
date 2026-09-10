@@ -59,8 +59,8 @@ The long-lived scientific vocabulary is:
 - **ProofSpec / ValidationResult**: a frozen declarative validation definition
   and its deterministic result over selected Observations.
 
-There is no prescriptive workflow stage, Node type, Evidence role/layer, fixed
-Gate router, or hard-coded research sequence. ResearchPhase, tags, and relation
+There is no prescribed research sequence or automatic next-action policy.
+ResearchPhase, tags, and relation
 labels are navigation or scientific metadata; they never authorize a next
 action.
 
@@ -90,8 +90,13 @@ reproducible:
   rules, tests, release discipline, and documentation ownership.
 - [ADR 0001](docs/adr/0001-phase-node-research-kernel.md): the Phase +
   ResearchNode kernel and declarative-validation decision.
+- [ADR 0002](docs/adr/0002-repository-and-component-boundaries.md): TSPi core,
+  optional Phone/Web components, protocol ownership, repository topology, and
+  implementation sequence.
 - [Root Skill](skills/transition-state-workflow/SKILL.md): concise operating
   policy loaded into each TSPi research session.
+- [Public Glossary](skills/transition-state-workflow/references/glossary.md):
+  stable research, execution, and Review terminology.
 
 ## Quick Install
 
@@ -207,7 +212,7 @@ foundation and Claim-owned hypothesis lanes. Node rows expose the bounded
 objective, upstream Evidence dependencies, Attempt count, and latest
 calculation state. Structured `reaction_path.endpoint_assignment` Observations
 appear as deduplicated connectivity evidence inside the owning lane; this
-display does not imply that a connectivity Gate passed, and the Web does not
+display does not imply that a connectivity ProofSpec passed, and the Web does not
 infer reaction direction from endpoint names. The exact cross-Phase
 ResearchNode dependency DAG remains available as the secondary audit mode with
 pan, zoom, fit, branch, merge, and backtracking lineage.

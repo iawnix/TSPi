@@ -12,17 +12,8 @@ from pathlib import Path
 from typing import Any, Callable, Sequence
 from urllib.parse import parse_qs, unquote, urlparse
 
-from .file_preview import MAX_TEXT_BYTES, read_text_preview
-from .normalize import (
-    claim_payload,
-    graph_payload,
-    list_node_files,
-    node_payload,
-    normalize_workspace,
-    research_files_payload,
-    workspace_snapshot,
-    workspace_summary,
-)
+from ts_agent.projection import file_preview as projection_file_preview
+from ts_agent.projection import normalize as projection
 from .registry import (
     ensure_state_dir,
     find_workspace,
@@ -109,6 +100,7 @@ def _make_handler(state_dir: Path, workspace_roots: Sequence[Path]):
 
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
+            private_paths = [str(state_dir), *(str(root) for root in workspace_roots)]
             try:
                 if parsed.path in {"/", "/index.html"}:
                     self._send_static_file("index.html", "text/html; charset=utf-8")
@@ -118,6 +110,15 @@ def _make_handler(state_dir: Path, workspace_roots: Sequence[Path]):
                     return
                 if parsed.path == "/app.js":
                     self._send_static_file("app.js", "text/javascript; charset=utf-8")
+                    return
+                if parsed.path == "/i18n.js":
+                    self._send_static_file("i18n.js", "text/javascript; charset=utf-8")
+                    return
+                if parsed.path == "/logo.svg":
+                    self._send_static_file("logo.svg", "image/svg+xml")
+                    return
+                if parsed.path == "/favicon.svg":
+                    self._send_static_file("favicon.svg", "image/svg+xml")
                     return
                 if parsed.path == "/research-tree.js":
                     self._send_static_file("research-tree.js", "text/javascript; charset=utf-8")
@@ -141,15 +142,22 @@ def _make_handler(state_dir: Path, workspace_roots: Sequence[Path]):
                 if parsed.path.startswith("/api/workspace/"):
                     workspace_id, rest = _parse_workspace_api_path(parsed.path)
                     row = _workspace_row(state_dir, workspace_id)
+                    if row.get("source_root"):
+                        private_paths.append(str(row["source_root"]))
                     self._send_json(_workspace_route(row, rest, parse_qs(parsed.query)))
                     return
                 raise RouteNotFound(f"unknown route: {parsed.path}")
             except RouteNotFound as exc:
-                self._send_json({"error": str(exc)}, status=HTTPStatus.NOT_FOUND)
+                self._send_error(str(exc), status=HTTPStatus.NOT_FOUND, private_paths=private_paths)
             except ValueError as exc:
-                self._send_json({"error": str(exc)}, status=HTTPStatus.BAD_REQUEST)
+                self._send_error(str(exc), status=HTTPStatus.BAD_REQUEST, private_paths=private_paths)
             except Exception as exc:  # noqa: BLE001
-                self._send_json({"error": str(exc)}, status=HTTPStatus.INTERNAL_SERVER_ERROR)
+                self._send_error(
+                    str(exc),
+                    status=HTTPStatus.INTERNAL_SERVER_ERROR,
+                    private_paths=private_paths,
+                    retryable=True,
+                )
 
         def log_message(self, format: str, *args: Any) -> None:  # noqa: A002
             return
@@ -157,6 +165,23 @@ def _make_handler(state_dir: Path, workspace_roots: Sequence[Path]):
         def _send_json(self, payload: Any, *, status: HTTPStatus = HTTPStatus.OK) -> None:
             body = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True).encode("utf-8")
             self._send_body(body, status=status, content_type="application/json; charset=utf-8")
+
+        def _send_error(
+            self,
+            message: str,
+            *,
+            status: HTTPStatus,
+            private_paths: Sequence[str],
+            retryable: bool = False,
+        ) -> None:
+            sanitized = message[:4000]
+            for private_path in sorted((path for path in private_paths if path), key=len, reverse=True):
+                sanitized = sanitized.replace(private_path, "<workspace>")
+            sanitized = sanitized.replace("source_root", "workspace location")
+            self._send_json(
+                {"schema_version": "ts-web-error/1", "error": sanitized, "retryable": retryable},
+                status=status,
+            )
 
         def _send_static_file(self, name: str, content_type: str) -> None:
             body = _static_asset(name).read_bytes()
@@ -195,17 +220,15 @@ def _workspaces_payload(state_dir: Path) -> dict[str, Any]:
 
 def _workspace_catalog_summary(row: dict[str, Any]) -> dict[str, Any]:
     try:
-        return workspace_summary(row)
+        return projection.workspace_summary(row)
     except Exception as exc:  # noqa: BLE001 - one bad workspace must not break the catalog
         source_root = str(row.get("source_root") or "")
         workspace_id = str(row.get("workspace_id") or "")
         return {
-            **row,
             "workspace_id": workspace_id,
             "label": str(row.get("label") or (Path(source_root).name if source_root else workspace_id)),
-            "source_root": source_root,
             "available": False,
-            "load_error": str(exc),
+            "load_error": str(exc).replace(source_root, "<workspace>") if source_root else str(exc),
             "kernel_protocol": None,
             "workspace_revision": None,
             "valid": False,
@@ -241,34 +264,34 @@ def _workspace_route(row: dict[str, Any], rest: str, query: dict[str, list[str]]
     source_root = row["source_root"]
     label = row.get("label")
     if rest == "":
-        view = normalize_workspace(source_root, label=label)
-        return {"workspace": workspace_summary(row, view=view), "view": view}
+        view = projection.normalize_workspace(source_root, label=label)
+        return {"workspace": projection.workspace_summary(row, view=view), "view": view}
     if rest == "snapshot":
-        return workspace_snapshot(
+        return projection.workspace_snapshot(
             row,
             since_workspace_revision=_first(query.get("workspace_revision")),
             since_operational_revision=_first(query.get("operational_revision")),
         )
     if rest == "graph":
-        return graph_payload(source_root, label=label)
+        return projection.graph_payload(source_root, label=label)
     if rest == "claims":
-        view = normalize_workspace(source_root, label=label)
+        view = projection.normalize_workspace(source_root, label=label)
         return {
             "schema_version": "ts-explorer-claims/1",
             "claims": view["claims"],
             "claim_relations": view["claim_relations"],
         }
     if rest == "phases":
-        view = normalize_workspace(source_root, label=label)
+        view = projection.normalize_workspace(source_root, label=label)
         return {"schema_version": "ts-explorer-research-phases/1", "research_phases": view["research_phases"]}
     if rest == "nodes":
-        view = normalize_workspace(source_root, label=label)
+        view = projection.normalize_workspace(source_root, label=label)
         return {"schema_version": "ts-explorer-research-nodes/1", "research_nodes": view["research_nodes"]}
     if rest == "observations":
-        view = normalize_workspace(source_root, label=label)
+        view = projection.normalize_workspace(source_root, label=label)
         return {"schema_version": "ts-explorer-observations/1", "observations": view["observations"]}
     if rest == "validation":
-        view = normalize_workspace(source_root, label=label)
+        view = projection.normalize_workspace(source_root, label=label)
         return {
             "schema_version": "ts-explorer-validation/1",
             "proof_specs": view["proof_specs"],
@@ -278,12 +301,12 @@ def _workspace_route(row: dict[str, Any], rest: str, query: dict[str, list[str]]
             "acceptance_summary": view["acceptance_summary"],
         }
     if rest == "findings":
-        view = normalize_workspace(source_root, label=label)
+        view = projection.normalize_workspace(source_root, label=label)
         return {"schema_version": "ts-explorer-findings/1", "findings": view["findings"]}
     if rest == "files":
-        return research_files_payload(source_root, _first(query.get("query")) or "")
+        return projection.research_files_payload(source_root, _first(query.get("query")) or "")
     if rest == "activity":
-        view = normalize_workspace(source_root, label=label)
+        view = projection.normalize_workspace(source_root, label=label)
         return {
             "schema_version": "ts-explorer-activity/1",
             "operational_revision": view["operational_revision"],
@@ -303,10 +326,10 @@ def _workspace_route(row: dict[str, Any], rest: str, query: dict[str, list[str]]
         return _read_workspace_file(row, _first(query.get("path")) or "")
     if rest.startswith("claim/"):
         claim_id = _single_detail_id(rest, "claim")
-        return claim_payload(source_root, claim_id, label=label)
+        return projection.claim_payload(source_root, claim_id, label=label)
     if rest.startswith("node/"):
         node_id = _single_detail_id(rest, "node")
-        return node_payload(source_root, node_id, label=label)
+        return projection.node_payload(source_root, node_id, label=label)
     raise RouteNotFound(f"unknown workspace route: {rest}")
 
 
@@ -339,12 +362,12 @@ def _read_workspace_file(row: dict[str, Any], rel_path: str) -> dict[str, Any]:
         raise ValueError("file preview is limited to current ResearchNode files")
     allowed = {
         row["path"]
-        for row in list_node_files(root, parts[1])["files"]
+        for row in projection.list_node_files(root, parts[1])["files"]
         if isinstance(row.get("path"), str)
     }
     if normalized not in allowed:
         raise ValueError("file preview is limited to current ResearchNode files")
-    text = read_text_preview(path)
+    text = projection_file_preview.read_text_preview(path)
     return {
         "path": path.relative_to(root).as_posix(),
         "text": text,

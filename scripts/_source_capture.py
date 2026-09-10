@@ -20,6 +20,7 @@ REQUIRED_SOURCE_PATHS = {
     b"pyproject.toml",
     b"scripts/build_release.py",
     b"scripts/check_package.py",
+    b"scripts/package_inventory.py",
 }
 
 

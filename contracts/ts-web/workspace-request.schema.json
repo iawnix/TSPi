@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tspi.iawnix.xyz/schema/ts-web-workspace-request-v1.json",
+  "title": "TS Web workspace snapshot request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "workspace_id"],
+  "properties": {
+    "schema_version": { "const": "ts-web-workspace-request/1" },
+    "workspace_id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$" },
+    "workspace_revision": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "operational_revision": { "type": "string", "minLength": 1, "maxLength": 256 }
+  }
+}
