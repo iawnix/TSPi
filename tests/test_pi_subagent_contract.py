@@ -9,14 +9,15 @@ from tests.workspace_helpers import accept_research_claim, bootstrap_workspace_f
 
 ROOT = Path(__file__).resolve().parents[1]
 TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
-OUTPUT_SCHEMA = ROOT / "src" / "agents" / "review" / "output-schema.cjs"
-RESULT_TOOL = ROOT / "src" / "agents" / "review" / "result-tool.ts"
-RUNTIME = ROOT / "src" / "agents" / "review" / "runtime.ts"
-TASK_PACKET = ROOT / "src" / "agents" / "review" / "task-packet.cjs"
-COMPUTE_OUTPUT_SCHEMA = ROOT / "src" / "agents" / "compute" / "output-schema.cjs"
-COMPUTE_RESULT_TOOL = ROOT / "src" / "agents" / "compute" / "result-tool.ts"
-COMPUTE_RUNTIME = ROOT / "src" / "agents" / "compute" / "runtime.ts"
-COMPUTE_TASK_PACKET = ROOT / "src" / "agents" / "compute" / "task-packet.cjs"
+RUNTIME_ROOT = ROOT / "packages" / "ts-agent-runtime"
+OUTPUT_SCHEMA = RUNTIME_ROOT / "agents" / "review" / "output-schema.cjs"
+RESULT_TOOL = RUNTIME_ROOT / "agents" / "review" / "result-tool.ts"
+RUNTIME = RUNTIME_ROOT / "agents" / "review" / "runtime.ts"
+TASK_PACKET = RUNTIME_ROOT / "agents" / "review" / "task-packet.cjs"
+COMPUTE_OUTPUT_SCHEMA = RUNTIME_ROOT / "agents" / "compute" / "output-schema.cjs"
+COMPUTE_RESULT_TOOL = RUNTIME_ROOT / "agents" / "compute" / "result-tool.ts"
+COMPUTE_RUNTIME = RUNTIME_ROOT / "agents" / "compute" / "runtime.ts"
+COMPUTE_TASK_PACKET = RUNTIME_ROOT / "agents" / "compute" / "task-packet.cjs"
 
 
 def test_review_task_is_graph_scoped_bounded_and_advisory(tmp_path: Path) -> None:
@@ -146,7 +147,7 @@ process.stdout.write(JSON.stringify(payload));
 
 
 def test_compute_and_review_are_the_only_model_child_runtimes() -> None:
-    agent_root = ROOT / "src" / "agents"
+    agent_root = RUNTIME_ROOT / "agents"
     packaged_namespaces = {
         path.relative_to(agent_root).parts[0]
         for path in agent_root.rglob("*")

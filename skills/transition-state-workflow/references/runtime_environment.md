@@ -13,7 +13,7 @@ copy. Both paths record a digest of all installed modules and package data.
 RDKit and a compatible NumPy range are core dependencies. Before writing the
 runtime manifest, the installer proves NumPy/RDKit imports, SMILES parsing,
 fixed-seed ETKDG embedding, and UFF optimization, recording versions and module
-origins. `python/ts_agent/runtime/launcher.py` accepts the manifest only when
+origins. `packages/ts-agent-kernel/ts_agent/runtime/launcher.py` accepts the manifest only when
 the source and installed distribution digests still match.
 
 Research workspaces contain state and artifacts only; they do not contain the

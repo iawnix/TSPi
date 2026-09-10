@@ -1,5 +1,7 @@
 # Public Glossary
 
+[English](glossary.md) | [简体中文](glossary.zh-CN.md)
+
 Use these names for records and responsibilities. Scientific questions, methods,
 tags, relation labels, and validation dimensions remain open vocabulary; a name
 does not authorize an action.

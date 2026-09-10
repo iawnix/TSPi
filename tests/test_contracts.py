@@ -18,7 +18,7 @@ from tests.kernel_helpers import apply_compiled_change, compile_change
 
 
 ROOT = Path(__file__).resolve().parents[1]
-WORKSPACE_PACKAGE = ROOT / "python" / "ts_agent" / "workspace"
+WORKSPACE_PACKAGE = ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace"
 SCHEMA_FILES = {
     "acceptance_record.schema.json",
     "attempt_intent_projection.schema.json",

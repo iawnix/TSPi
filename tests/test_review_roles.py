@@ -8,9 +8,10 @@ import pytest
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ROLE = ROOT / "src" / "agents" / "review" / "roles" / "general.json"
-ROLES = ROOT / "src" / "agents" / "review" / "roles.cjs"
-AGGREGATOR = ROOT / "src" / "agents" / "review" / "aggregator.cjs"
+REVIEW_ROOT = ROOT / "packages" / "ts-agent-runtime" / "agents" / "review"
+ROLE = REVIEW_ROOT / "roles" / "general.json"
+ROLES = REVIEW_ROOT / "roles.cjs"
+AGGREGATOR = REVIEW_ROOT / "aggregator.cjs"
 
 
 def node_json(source: str) -> dict:

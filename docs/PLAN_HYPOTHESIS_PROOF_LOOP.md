@@ -393,7 +393,7 @@ descriptor is:
 ```
 
 Remove the current `CANDIDATE_STRATEGIES_BY_TASK` table from the machine-facing
-catalog in `python/ts_agent/compute/capabilities.py`. Optional examples such as
+catalog in `packages/ts-agent-kernel/ts_agent/compute/capabilities.py`. Optional examples such as
 "QST2 is often useful when both endpoints are known" belong in human-readable
 recipe/reference material. They are non-authoritative, may be ignored by the
 Agent, and must never become permission or routing metadata.

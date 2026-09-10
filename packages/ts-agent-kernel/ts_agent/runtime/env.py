@@ -30,7 +30,7 @@ BASE_ENV_DIRECTORY = "base"
 KERNEL_ENV_DIRECTORY = "kernels"
 PACKAGE_SKILL_PATH = Path("skills") / SKILL_NAME / "SKILL.md"
 PYTHON_DISTRIBUTION = "ts-agent-kernel"
-PYTHON_SOURCE_ROOT = Path("python")
+PYTHON_SOURCE_ROOT = Path("packages") / "ts-agent-kernel"
 PYTHON_PACKAGE_NAME = "ts_agent"
 PYTHON_PAYLOAD_SUFFIXES = frozenset({".css", ".html", ".js", ".json", ".py", ".svg", ".toml"})
 

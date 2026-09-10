@@ -17,7 +17,7 @@ def test_installed_phone_entrypoints_share_configuration_without_science_or_shel
 ) -> None:
     installation, launcher = _copy_launcher(tmp_path)
     package = launcher.resolve().parent
-    shutil.copytree(ROOT / "src/host", package / "src/host")
+    shutil.copytree(ROOT / "apps/host", package / "apps/host")
     phone = package.parent / "phone"
     dist = phone / "services/server/dist"
     dist.mkdir(parents=True)
@@ -67,7 +67,7 @@ def test_installed_phone_entrypoints_share_configuration_without_science_or_shel
 def test_service_template_has_installation_scoped_paths_and_no_embedded_secrets(tmp_path: Path) -> None:
     installation, launcher = _copy_launcher(tmp_path / "root with spaces%$VAR")
     package = launcher.resolve().parent
-    shutil.copytree(ROOT / "src/host", package / "src/host")
+    shutil.copytree(ROOT / "apps/host", package / "apps/host")
     command = installation / "TSPhoneServer"
     command.symlink_to(".pi/packages/tspi/current/agent/TSPi")
     config = installation / ".pi/ts-phone/server.env"
@@ -108,7 +108,7 @@ def test_service_template_rejects_broad_write_access(tmp_path: Path, directory: 
     config.write_text(f"TS_PHONE_STATE_DIR='{target}'\n")
     config.chmod(0o600)
     environment = {key: value for key, value in os.environ.items() if not key.startswith("TS_PHONE_")}
-    result = subprocess.run(["node", str(ROOT / "src/host/service.mjs"), "--install-root", str(installation)],
+    result = subprocess.run(["node", str(ROOT / "apps/host/service.mjs"), "--install-root", str(installation)],
         env=environment, capture_output=True, text=True, timeout=10)
     assert result.returncode != 0
     assert result.stdout == ""

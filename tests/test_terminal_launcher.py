@@ -15,7 +15,7 @@ from tests.test_ts_phone_integration import _copy_launcher
 def test_thin_launcher_does_not_require_scientific_runtime_or_create_workspace(tmp_path: Path, arguments: list[str]) -> None:
     installation, launcher = _copy_launcher(tmp_path)
     package = (installation / ".pi/packages/tspi/current/agent").resolve()
-    terminal = package / "src/terminal/index.mjs"
+    terminal = package / "apps/terminal/index.mjs"
     terminal.parent.mkdir(parents=True)
     terminal.write_text("// fixture entry\n", encoding="utf-8")
     (installation / ".agents/runtime/transition-state-workflow/env.json").unlink()

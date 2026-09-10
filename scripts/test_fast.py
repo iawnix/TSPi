@@ -84,7 +84,7 @@ def main(argv: list[str] | None = None) -> int:
     environment.pop("PYTEST_ADDOPTS", None)
     environment.pop("PYTEST_PLUGINS", None)
     environment["PYTHONDONTWRITEBYTECODE"] = "1"
-    pythonpath = [str(package_root / "python"), str(package_root)]
+    pythonpath = [str(package_root / "packages" / "ts-agent-kernel"), str(package_root)]
     existing_pythonpath = environment.get("PYTHONPATH")
     if existing_pythonpath:
         pythonpath.append(existing_pythonpath)

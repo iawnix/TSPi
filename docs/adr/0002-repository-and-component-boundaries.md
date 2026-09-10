@@ -1,6 +1,6 @@
 # ADR 0002: Repository And Component Boundaries
 
-- Status: proposed
+- Status: accepted, staged implementation
 - Date: 2026-09-10
 - Scope: TSPi, `ts-phone`, and the future `ts-web` component
 - Related: [Architecture](../ARCHITECTURE.md), [Maintainer Guide](../MAINTAINER_GUIDE.md), [Hypothesis-Proof Loop Plan](../PLAN_HYPOTHESIS_PROOF_LOOP.md)
@@ -16,12 +16,12 @@ release line, but it makes ownership and change cost difficult to see.
 The current problems are:
 
 1. Source libraries, user entrypoints, build tools, release artifacts, and
-   runtime registration are spread across `python/`, `src/`, `extensions/`,
+   runtime registration are spread across `packages/`, `apps/`, `extensions/`,
    `scripts/`, `build/`, and `dist/`.
 2. `ts-phone` is already an independent repository, but the relationship
    between the TSPi product, the required core, and optional clients is not
    expressed as a simple installation contract.
-3. `ts-web` is currently embedded under `python/ts_agent/web/` and imports
+3. `ts-web` is currently embedded under `packages/ts-agent-kernel/ts_agent/web/` and imports
    private TSPi workspace and operational modules directly. It is therefore
    not independently releasable.
 4. The Phone bridge protocol is represented in more than one source tree.
@@ -44,10 +44,10 @@ contracts are explicit.
 | --- | --- | --- |
 | TSPi | Owns the kernel, Pi package, Web implementation, release assembly, and installation boundary | It is the natural required core repository and product release owner |
 | `ts-phone` | Independent repository with API, events, bridge schemas, broker, mobile client, and component release tooling | It can remain independently developed and become an optional installed component |
-| `ts-web` | Python server and static UI under `python/ts_agent/web/`; projection code imports `ts_agent.workspace` and operational modules | Extraction requires a versioned projection boundary first |
+| `ts-web` | Python server and static UI under `packages/ts-agent-kernel/ts_agent/web/`; projection code imports `ts_agent.workspace` and operational modules | Extraction requires a versioned projection boundary first |
 | Phone protocol | `ts-phone` publishes `ts-phone-api/4`, `ts-phone-events/3`, and `ts-phone-bridge/3`; TSPi also contains a hand-written Bridge type/parser | The wire contract currently has duplicate ownership |
 | Release boundary | TSPi already validates `tspi-package-release/2` and a Phone component manifest | The existing release model can be extended before inventing another installer |
-| `cluster_mcp` | No tracked files and no effective source reference were found; only ignored cache residue exists locally | Deletion is cleanup, not an architectural dependency, but remains a destructive action |
+| `cluster_mcp` | No tracked files, source, or cache residue remains after cleanup | It is not an architectural dependency and must stay absent |
 | Review | One isolated advisory Review runtime exists; no reviewer pool, role selection, aggregation, or conflict protocol exists | Improve the contract before adding more reviewer prompts or agents |
 | Testing | `scripts/test_source.py` builds a wheel and temporary overlay before running Python tests | Fast edit feedback and release-backed validation need separate commands |
 
@@ -207,10 +207,12 @@ This is a staged target, not an instruction to move the whole repository now.
 The first implementation should classify and document current paths, then
 move one boundary at a time while retaining stable entrypoint shims.
 
-In particular, `python/` and `src/` are not defects merely because they have
-generic names. The defect is ambiguous ownership and duplicated release
-knowledge. A large rename without contract reduction would increase risk
-without improving the architecture.
+The first staged move places the Python kernel under
+`packages/ts-agent-kernel/` and the TypeScript runtime under
+`packages/ts-agent-runtime/`. Host and Terminal processes live under `apps/`.
+Stable package entrypoints and release manifests now point at these explicit
+locations. The remaining `scripts/` transition is intentionally separate so
+installed command names stay stable while mechanisms move into named tools.
 
 ### 5. Release and package metadata
 
@@ -268,7 +270,7 @@ removing compatibility fixtures.
 
 ### 7. Reviewers and subagent evolution
 
-`src/agents/review/` remains the implementation location for the current
+`packages/ts-agent-runtime/agents/review/` remains the implementation location for the current
 isolated advisory runtime. The next boundary is a contract, not a collection
 of additional prompts.
 
@@ -378,10 +380,9 @@ for local changes.
 
 ### Phase 6: cleanup
 
-After a fresh reference scan and user authorization, remove the untracked
-`cluster_mcp` residue and any other confirmed obsolete generated files. Cleanup
-must be a separate change from protocol and source moves so rollback remains
-simple.
+After each reference scan, remove confirmed obsolete generated files and keep
+them excluded by `.gitignore`. `cluster_mcp` was an untracked cache residue;
+it has been removed and is now explicitly ignored.
 
 ## Non-Goals
 
@@ -392,7 +393,8 @@ simple.
 - It does not rename every internal `stage` field or historical fixture.
 - It does not add multiple model providers merely to create the appearance of
   reviewer independence.
-- It does not delete `cluster_mcp` without explicit authorization.
+- It does not split the TSPi, `ts-phone`, and future `ts-web` repositories in
+  this staged implementation.
 
 ## Acceptance Criteria
 

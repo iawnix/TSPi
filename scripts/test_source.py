@@ -125,6 +125,9 @@ def main(argv: list[str] | None = None) -> int:
 
             environment = _clean_python_environment()
             environment["TS_PACKAGE_ROOT"] = str(package_root)
+            environment["PATH"] = os.pathsep.join(
+                [str(overlay / "bin"), str(base_prefix / "bin"), environment.get("PATH", "")]
+            )
             environment.pop("PYTEST_ADDOPTS", None)
             environment.pop("PYTEST_PLUGINS", None)
             command = [

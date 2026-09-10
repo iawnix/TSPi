@@ -20,7 +20,7 @@ from ts_agent.workspace.validator import validate_workspace
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ACTIVITY_JOURNAL = ROOT / "src" / "agent-core" / "activity-journal.cjs"
+ACTIVITY_JOURNAL = ROOT / "packages" / "ts-agent-runtime" / "agent-core" / "activity-journal.cjs"
 
 
 def _activity_documents(

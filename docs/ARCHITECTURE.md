@@ -74,8 +74,8 @@ release-bound Python runtime, and only then selects exactly one set at:
 Top-level `TSPi`, `TSWeb`, `TSPhoneCtl`, and `TSPhoneServer` symlinks all pass
 through that pointer. The three conversation entrypoints share `agent/TSPi`;
 their invoked name selects terminal, Host, or control CLI. Python validates the
-selected suite before `src/host/entrypoint.mjs` imports its Phone component.
-`src/host/environment.mjs` is the shared private dotenv reader for all three:
+selected suite before `apps/host/entrypoint.mjs` imports its Phone component.
+`apps/host/environment.mjs` is the shared private dotenv reader for all three:
 explicit environment overrides installation configuration, then defaults.
 No shell evaluation, scientific bootstrap, global Pi changes, or credential
 copies occur while starting a UI or the Host. Runtime configuration, model credentials, SSH settings,
@@ -88,7 +88,7 @@ the Android APK.
 The Pi package and Python distribution are separate, coordinated boundaries.
 `package.json` selects the Pi resources and immutable release contents.
 `pyproject.toml` builds the deterministic kernel as `ts-agent-kernel` from the
-single `python/ts_agent/` namespace. Stable `scripts/*.py` files remain Pi and
+single `packages/ts-agent-kernel/ts_agent/` namespace. Stable `scripts/*.py` files remain Pi and
 operator entrypoints; they do not own domain behavior.
 
 `build_release.py` is the internal Agent component builder. It builds the wheel
@@ -527,10 +527,10 @@ mechanism.
 ## TSPi Lifecycle
 
 `TSPi` is a thin shell shim. `scripts/tspi_host.py` and
-`python/ts_agent/runtime/launcher.py` own lifecycle behavior:
+`packages/ts-agent-kernel/ts_agent/runtime/launcher.py` own lifecycle behavior:
 
 The default user route resolves the selected package and executes
-`src/terminal/index.mjs`. This route does not select scientific Python, load
+`apps/terminal/index.mjs`. This route does not select scientific Python, load
 Skills or model credentials, bootstrap a workspace, or acquire writer locks.
 The terminal uses the existing authenticated Host API and Pi TUI components.
 `--phone` aliases this route. `--standalone` explicitly selects native Pi.
@@ -925,23 +925,23 @@ behind the detail view's Audit section.
 | --- | --- |
 | Public tool names and execution classes | `extensions/shared/tool-catalog.ts` |
 | Public call schemas | each `extensions/ts-workflow-*/index.ts` |
-| Agent task/result envelopes | `src/agent-core/agent-protocol.cjs` |
-| Canonical scientific records | `python/ts_agent/workspace/contracts/*.schema.json` |
-| Decision normalization and ID allocation | `python/ts_agent/workspace/decision.py` |
-| Transactional mutation and validation | `python/ts_agent/workspace/engine.py`, `python/ts_agent/workspace/validator.py` |
-| Calculation intent/result binding (dependency-neutral) | `python/ts_agent/calculation_contracts.py` |
-| Attempt lifecycle projection and completion guard | `python/ts_agent/workspace/operational.py` |
-| Public `ts_change` operation vocabulary | `python/ts_agent/workspace/operation_registry.py` |
-| Graph projections and Review snapshot | `python/ts_agent/workspace/context.py` |
-| Predicate registry and ProofSpec compiler | `python/ts_agent/validation/` |
-| Built-in validation policy | `python/ts_agent/validation/templates/`, `python/ts_agent/validation/acceptance_profiles/` |
-| Compute request, intent, and result | `python/ts_agent/compute/contracts/*.schema.json` |
-| Backend capabilities and parsers | `python/ts_agent/compute/capabilities.py`, `python/ts_agent/backends/` |
-| Remote lifecycle | `python/ts_agent/remote/` |
-| Artifact import/catalog/structure-analysis contract | `python/ts_agent/compute/artifacts.py`, `python/ts_agent/compute/cli.py`, `python/ts_agent/structures/` |
-| Render/report request/path contract | `src/artifacts/request-contract.cjs` |
-| Report projection | `python/ts_agent/report/` |
-| Read-only Web projection and UI | `python/ts_agent/web/normalize.py`, `python/ts_agent/web/research_map.py`, `python/ts_agent/web/server.py`, `python/ts_agent/web/static/` |
-| Generic atomic file IO | `python/ts_agent/io.py` |
-| Python distribution boundary | `pyproject.toml`, `python/ts_agent/`, `scripts/_wheel.py`, release and runtime payload digests |
+| Agent task/result envelopes | `packages/ts-agent-runtime/agent-core/agent-protocol.cjs` |
+| Canonical scientific records | `packages/ts-agent-kernel/ts_agent/workspace/contracts/*.schema.json` |
+| Decision normalization and ID allocation | `packages/ts-agent-kernel/ts_agent/workspace/decision.py` |
+| Transactional mutation and validation | `packages/ts-agent-kernel/ts_agent/workspace/engine.py`, `packages/ts-agent-kernel/ts_agent/workspace/validator.py` |
+| Calculation intent/result binding (dependency-neutral) | `packages/ts-agent-kernel/ts_agent/calculation_contracts.py` |
+| Attempt lifecycle projection and completion guard | `packages/ts-agent-kernel/ts_agent/workspace/operational.py` |
+| Public `ts_change` operation vocabulary | `packages/ts-agent-kernel/ts_agent/workspace/operation_registry.py` |
+| Graph projections and Review snapshot | `packages/ts-agent-kernel/ts_agent/workspace/context.py` |
+| Predicate registry and ProofSpec compiler | `packages/ts-agent-kernel/ts_agent/validation/` |
+| Built-in validation policy | `packages/ts-agent-kernel/ts_agent/validation/templates/`, `packages/ts-agent-kernel/ts_agent/validation/acceptance_profiles/` |
+| Compute request, intent, and result | `packages/ts-agent-kernel/ts_agent/compute/contracts/*.schema.json` |
+| Backend capabilities and parsers | `packages/ts-agent-kernel/ts_agent/compute/capabilities.py`, `packages/ts-agent-kernel/ts_agent/backends/` |
+| Remote lifecycle | `packages/ts-agent-kernel/ts_agent/remote/` |
+| Artifact import/catalog/structure-analysis contract | `packages/ts-agent-kernel/ts_agent/compute/artifacts.py`, `packages/ts-agent-kernel/ts_agent/compute/cli.py`, `packages/ts-agent-kernel/ts_agent/structures/` |
+| Render/report request/path contract | `packages/ts-agent-runtime/artifacts/request-contract.cjs` |
+| Report projection | `packages/ts-agent-kernel/ts_agent/report/` |
+| Read-only Web projection and UI | `packages/ts-agent-kernel/ts_agent/web/normalize.py`, `packages/ts-agent-kernel/ts_agent/web/research_map.py`, `packages/ts-agent-kernel/ts_agent/web/server.py`, `packages/ts-agent-kernel/ts_agent/web/static/` |
+| Generic atomic file IO | `packages/ts-agent-kernel/ts_agent/io.py` |
+| Python distribution boundary | `pyproject.toml`, `packages/ts-agent-kernel/ts_agent/`, `scripts/_wheel.py`, release and runtime payload digests |
 | Pi package/release boundary | `package.json`, `scripts/check_package.py`, installer tests |

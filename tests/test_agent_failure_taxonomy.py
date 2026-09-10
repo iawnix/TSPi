@@ -6,7 +6,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TAXONOMY = ROOT / "src" / "agent-core" / "failure-taxonomy.cjs"
+TAXONOMY = ROOT / "packages" / "ts-agent-runtime" / "agent-core" / "failure-taxonomy.cjs"
 
 
 def test_upstream_stream_disconnect_is_not_classified_as_compute_or_program_failure() -> None:

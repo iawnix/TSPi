@@ -28,33 +28,33 @@ def test_python_distribution_metadata_matches_pi_release() -> None:
     validate_python_project()
     validate_version_surfaces()
     assert project["project"]["name"] == "ts-agent-kernel"
-    assert project["tool"]["setuptools"]["package-dir"] == {"": "python"}
+    assert project["tool"]["setuptools"]["package-dir"] == {"": "packages/ts-agent-kernel"}
     assert ts_agent.__version__ == package["version"] == PACKAGE_VERSION
 
 
 def test_python_payload_digest_covers_code_and_runtime_data() -> None:
     original = python_payload_sha256(ROOT)
     expected_paths = {
-        "python/ts_agent/__init__.py",
-        "python/ts_agent/compute/contracts/calculation_request.schema.json",
-        "python/ts_agent/path_safety.py",
-        "python/ts_agent/validation/templates/builtin/classical-ts__1.json",
-        "python/ts_agent/web/static/app.js",
-        "python/ts_agent/web/static/attempt-timeline.js",
-        "python/ts_agent/web/static/claim-map.js",
-        "python/ts_agent/web/static/research-map.js",
-        "python/ts_agent/workspace/artifacts.py",
-        "python/ts_agent/workspace/candidates.py",
-        "python/ts_agent/workspace/claims.py",
-        "python/ts_agent/workspace/contracts/change_request.schema.json",
-        "python/ts_agent/workspace/contracts/attempt_intent_projection.schema.json",
-        "python/ts_agent/workspace/contracts/attempt_result_projection.schema.json",
-        "python/ts_agent/workspace/contracts/observation_candidates.schema.json",
-        "python/ts_agent/workspace/contracts/proof_spec.schema.json",
-        "python/ts_agent/workspace/contracts/workspace.schema.json",
-        "python/ts_agent/workspace/operational.py",
-        "python/ts_agent/workspace/operation_registry.py",
-        "python/ts_agent/workspace/path_safety.py",
+        "packages/ts-agent-kernel/ts_agent/__init__.py",
+        "packages/ts-agent-kernel/ts_agent/compute/contracts/calculation_request.schema.json",
+        "packages/ts-agent-kernel/ts_agent/path_safety.py",
+        "packages/ts-agent-kernel/ts_agent/validation/templates/builtin/classical-ts__1.json",
+        "packages/ts-agent-kernel/ts_agent/web/static/app.js",
+        "packages/ts-agent-kernel/ts_agent/web/static/attempt-timeline.js",
+        "packages/ts-agent-kernel/ts_agent/web/static/claim-map.js",
+        "packages/ts-agent-kernel/ts_agent/web/static/research-map.js",
+        "packages/ts-agent-kernel/ts_agent/workspace/artifacts.py",
+        "packages/ts-agent-kernel/ts_agent/workspace/candidates.py",
+        "packages/ts-agent-kernel/ts_agent/workspace/claims.py",
+        "packages/ts-agent-kernel/ts_agent/workspace/contracts/change_request.schema.json",
+        "packages/ts-agent-kernel/ts_agent/workspace/contracts/attempt_intent_projection.schema.json",
+        "packages/ts-agent-kernel/ts_agent/workspace/contracts/attempt_result_projection.schema.json",
+        "packages/ts-agent-kernel/ts_agent/workspace/contracts/observation_candidates.schema.json",
+        "packages/ts-agent-kernel/ts_agent/workspace/contracts/proof_spec.schema.json",
+        "packages/ts-agent-kernel/ts_agent/workspace/contracts/workspace.schema.json",
+        "packages/ts-agent-kernel/ts_agent/workspace/operational.py",
+        "packages/ts-agent-kernel/ts_agent/workspace/operation_registry.py",
+        "packages/ts-agent-kernel/ts_agent/workspace/path_safety.py",
     }
 
     assert all((ROOT / path).is_file() for path in expected_paths)

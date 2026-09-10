@@ -132,15 +132,15 @@ def validate_python_project() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     metadata = project.get("project")
     setuptools = project.get("tool", {}).get("setuptools", {})
-    version_source = ROOT / "python" / "ts_agent" / "_version.py"
-    namespace = ROOT / "python" / "ts_agent" / "__init__.py"
+    version_source = ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "_version.py"
+    namespace = ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "__init__.py"
     errors: list[str] = []
     if not isinstance(metadata, dict) or metadata.get("name") != "ts-agent-kernel":
         errors.append("pyproject project.name must be ts-agent-kernel")
     if not isinstance(metadata, dict) or metadata.get("dynamic") != ["version"]:
         errors.append("pyproject version must be sourced from ts_agent._version")
-    if setuptools.get("package-dir") != {"": "python"}:
-        errors.append("pyproject must use the python/ source root")
+    if setuptools.get("package-dir") != {"": "packages/ts-agent-kernel"}:
+        errors.append("pyproject must use the packages/ts-agent-kernel source root")
     if not version_source.is_file() or not namespace.is_file():
         errors.append("Python ts_agent namespace or version source is missing")
     else:

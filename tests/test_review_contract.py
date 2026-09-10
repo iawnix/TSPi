@@ -12,7 +12,7 @@ from tests.kernel_helpers import apply_compiled_change
 
 
 REPO = Path(__file__).resolve().parents[1]
-OUTPUT_SCHEMA = REPO / "src" / "agents" / "review" / "output-schema.cjs"
+OUTPUT_SCHEMA = REPO / "packages" / "ts-agent-runtime" / "agents" / "review" / "output-schema.cjs"
 
 
 def _apply(root: Path, operations: list[dict]) -> dict[str, str]:

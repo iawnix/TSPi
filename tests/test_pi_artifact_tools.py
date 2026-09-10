@@ -18,7 +18,7 @@ from ts_agent.report import build_report_package
 
 
 ROOT = Path(__file__).resolve().parents[1]
-CONTRACT = ROOT / "src" / "artifacts" / "request-contract.cjs"
+CONTRACT = ROOT / "packages" / "ts-agent-runtime" / "artifacts" / "request-contract.cjs"
 TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
 ARTIFACT_EXTENSION = ROOT / "extensions" / "ts-workflow-artifacts" / "index.ts"
 

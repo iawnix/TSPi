@@ -20,7 +20,7 @@ import {
   terminalStateForReport,
   terminalStatusForError,
 } from "../shared/subagent-status.ts";
-import { runComputeOperator } from "../../src/agents/compute/runtime.ts";
+import { runComputeOperator } from "../../packages/ts-agent-runtime/agents/compute/runtime.ts";
 
 const require = createRequire(import.meta.url);
 const { toolText } = require("../ts-workflow-control/summary.cjs");
@@ -29,9 +29,9 @@ const {
   completeAgentRun,
   readAgentRunInputs,
   settleFailedAgentRun,
-} = require("../../src/agent-core/run-journal.cjs");
-const { classifyUpstreamModelFailure } = require("../../src/agent-core/failure-taxonomy.cjs");
-const { buildComputeTask } = require("../../src/agents/compute/task-packet.cjs");
+} = require("../../packages/ts-agent-runtime/agent-core/run-journal.cjs");
+const { classifyUpstreamModelFailure } = require("../../packages/ts-agent-runtime/agent-core/failure-taxonomy.cjs");
+const { buildComputeTask } = require("../../packages/ts-agent-runtime/agents/compute/task-packet.cjs");
 const {
   completeAction,
   extractComputeToolResult,

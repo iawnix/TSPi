@@ -52,12 +52,12 @@ def build_wheel(
             if not path.is_file() or path.is_symlink():
                 raise WheelContractError(f"wheel source file is missing or unsafe: {path}")
             shutil.copy2(path, source / name)
-        package_source = root / "python" / PYTHON_PACKAGE_NAME
+        package_source = root / "packages" / "ts-agent-kernel" / PYTHON_PACKAGE_NAME
         if not package_source.is_dir() or package_source.is_symlink():
             raise WheelContractError(f"Python package source is missing or unsafe: {package_source}")
         shutil.copytree(
             package_source,
-            source / "python" / PYTHON_PACKAGE_NAME,
+            source / "packages" / "ts-agent-kernel" / PYTHON_PACKAGE_NAME,
             ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo", "*.egg-info"),
         )
 
@@ -233,7 +233,7 @@ def validate_descriptor_match(expected: dict[str, Any], actual: dict[str, Any]) 
 
 
 def source_payload_sha256(package_root: str | Path) -> str:
-    root = Path(package_root).expanduser().resolve() / "python"
+    root = Path(package_root).expanduser().resolve() / "packages" / "ts-agent-kernel"
     if not root.is_dir():
         raise WheelContractError(f"Python source root is missing: {root}")
     records: list[tuple[str, bytes]] = []

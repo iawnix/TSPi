@@ -20,14 +20,14 @@ import { TS_PUBLIC_TOOL_NAMES } from "../shared/tool-catalog.ts";
 
 const require = createRequire(import.meta.url);
 const { toolText } = require("../ts-workflow-control/summary.cjs");
-const { beginActivity, completeActivity, failActivity } = require("../../src/agent-core/activity-journal.cjs");
+const { beginActivity, completeActivity, failActivity } = require("../../packages/ts-agent-runtime/agent-core/activity-journal.cjs");
 const {
   RENDER_OPERATIONS,
   validateCreatedRenderOutput,
   validateCreatedReportPackage,
   validateRenderRequest,
   validateReportRequest,
-} = require("../../src/artifacts/request-contract.cjs");
+} = require("../../packages/ts-agent-runtime/artifacts/request-contract.cjs");
 
 type ResolvedArtifact = {
   artifact_id: string;

@@ -41,8 +41,8 @@ def _copy_launcher(tmp_path: Path) -> tuple[Path, Path]:
     for name in ("_bootstrap.py", "tspi_host.py", "pi-loader.mjs"):
         shutil.copy2(ROOT / "scripts" / name, package_root / "scripts" / name)
     shutil.copytree(
-        ROOT / "python",
-        package_root / "python",
+        ROOT / "packages" / "ts-agent-kernel",
+        package_root / "packages" / "ts-agent-kernel",
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.egg-info"),
     )
     shutil.copy2(ROOT / "environment.yml", package_root / "environment.yml")

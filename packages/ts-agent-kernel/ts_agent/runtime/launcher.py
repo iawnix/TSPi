@@ -274,7 +274,7 @@ def launch_phone_entrypoint(package_root: Path, install_root: Path, entrypoint: 
     node = shutil.which("node")
     if node is None:
         raise TSPiHostError("Node.js is required to start the Phone Host or control CLI")
-    program = installation.package_root / "src" / "host" / "entrypoint.mjs"
+    program = installation.package_root / "apps" / "host" / "entrypoint.mjs"
     command = [node, str(program), "--install-root", str(installation.root), "--entrypoint", entrypoint, "--", *arguments]
     os.execve(node, command, dict(os.environ))
 
@@ -716,7 +716,7 @@ def launch_terminal(installation: Installation, request: LaunchRequest) -> NoRet
         raise TSPiHostError("invalid workspace name", exit_code=2)
     if request.session_id and (not request.workspace_name or not SESSION_ID.fullmatch(request.session_id)):
         raise TSPiHostError("--session-id requires a workspace and a valid session identity", exit_code=2)
-    entry = installation.package_root / "src" / "terminal" / "index.mjs"
+    entry = installation.package_root / "apps" / "terminal" / "index.mjs"
     if not entry.is_file():
         raise TSPiHostError("selected Package has no terminal client; reinstall the complete TSPi Package")
     command = [*_node_runtime_command(installation.package_root, entry), "--install-root", str(installation.root)]

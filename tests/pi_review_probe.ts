@@ -3,12 +3,12 @@ import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { resolve } from "node:path";
-import { runScientificReview } from "../src/agents/review/runtime.ts";
+import { runScientificReview } from "../packages/ts-agent-runtime/agents/review/runtime.ts";
 
 const require = createRequire(import.meta.url);
-const { bindAgentDocument } = require("../src/agent-core/agent-protocol.cjs");
-const { buildProviderTaskPacket } = require("../src/agents/review/task-packet.cjs");
-const { loadReviewerRole } = require("../src/agents/review/roles.cjs");
+const { bindAgentDocument } = require("../packages/ts-agent-runtime/agent-core/agent-protocol.cjs");
+const { buildProviderTaskPacket } = require("../packages/ts-agent-runtime/agents/review/task-packet.cjs");
+const { loadReviewerRole } = require("../packages/ts-agent-runtime/agents/review/roles.cjs");
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("ts-test-review-child", {

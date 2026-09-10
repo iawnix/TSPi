@@ -7,9 +7,9 @@ import { mkdtemp, mkdir, writeFile, chmod } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { visibleWidth } from "@earendil-works/pi-tui";
-import { HostClient, HostError, hostConnection } from "../src/terminal/host-client.mjs";
-import { TerminalController } from "../src/terminal/controller.mjs";
-import { TerminalView, messageText, safeText } from "../src/terminal/view.mjs";
+import { HostClient, HostError, hostConnection } from "../apps/terminal/host-client.mjs";
+import { TerminalController } from "../apps/terminal/controller.mjs";
+import { TerminalView, messageText, safeText } from "../apps/terminal/view.mjs";
 
 class FixtureClient {
   constructor() {

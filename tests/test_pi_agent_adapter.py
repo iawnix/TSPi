@@ -34,8 +34,8 @@ def test_package_manifest_and_profile_expose_one_skill_five_extensions_one_theme
     assert package["pi"]["skills"] == ["./skills/transition-state-workflow"]
     assert len(package["pi"]["extensions"]) == 5
     assert package["pi"]["themes"] == ["./themes/ts-theme.json"]
-    assert any("src/agents/compute" in item for item in package["files"])
-    assert all("src/agents/artifacts" not in item for item in package["files"])
+    assert any("packages/ts-agent-runtime/agents/compute" in item for item in package["files"])
+    assert all("packages/ts-agent-runtime/agents/artifacts" not in item for item in package["files"])
 
 
 def test_loaded_extension_inventory_has_two_bounded_child_agents_and_direct_host_tools() -> None:

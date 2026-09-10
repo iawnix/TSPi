@@ -54,7 +54,7 @@ def test_package_bootstrap_replaces_an_inherited_package_root(monkeypatch) -> No
 
 def test_package_root_detection_uses_package_markers_with_nested_skill(tmp_path: Path) -> None:
     package = tmp_path / "package"
-    source_file = package / "src" / "agents" / "compute" / "runtime.ts"
+    source_file = package / "packages" / "ts-agent-runtime" / "agents" / "compute" / "runtime.ts"
     source_file.parent.mkdir(parents=True)
     source_file.write_text("export {};\n", encoding="utf-8")
     (package / "scripts").mkdir()
@@ -754,7 +754,7 @@ def _runtime_probe(*, payload_sha256: str | None = None) -> dict[str, object]:
 
 
 def _write_test_python_payload(package: Path) -> str:
-    source = package / "python" / "ts_agent"
+    source = package / "packages" / "ts-agent-kernel" / "ts_agent"
     source.mkdir(parents=True)
     (source / "__init__.py").write_text('"""test payload"""\n', encoding="utf-8")
     (package / "package.json").write_text(

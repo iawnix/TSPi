@@ -16,8 +16,9 @@ from tests.runtime_helpers import write_test_runtime_manifest, write_test_suite_
 
 ROOT = Path(__file__).resolve().parents[1]
 SKILL_ROOT = ROOT / "skills" / "transition-state-workflow"
-AGENTS_ROOT = ROOT / "src" / "agents"
-PYTHON_PACKAGE = ROOT / "python" / "ts_agent"
+RUNTIME_ROOT = ROOT / "packages" / "ts-agent-runtime"
+AGENTS_ROOT = RUNTIME_ROOT / "agents"
+PYTHON_PACKAGE = ROOT / "packages" / "ts-agent-kernel" / "ts_agent"
 THEME_PATH = ROOT / "themes" / "ts-theme.json"
 TSPI_LAUNCHER = ROOT / "TSPi"
 GENERATION_BRAND = re.compile(
@@ -53,8 +54,8 @@ def _copy_tspi_install(tmp_path: Path) -> tuple[Path, Path]:
     for name in ("_bootstrap.py", "tspi_host.py", "ts_compute.py"):
         shutil.copy2(ROOT / "scripts" / name, package_root / "scripts" / name)
     shutil.copytree(
-        ROOT / "python",
-        package_root / "python",
+        ROOT / "packages" / "ts-agent-kernel",
+        package_root / "packages" / "ts-agent-kernel",
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.egg-info"),
     )
     shutil.copy2(ROOT / "pyproject.toml", package_root / "pyproject.toml")
@@ -113,9 +114,10 @@ def test_current_sources_do_not_use_generation_branded_language_or_paths() -> No
         ROOT / "extensions",
         ROOT / "scripts",
         ROOT / "skills",
-        ROOT / "src",
+        RUNTIME_ROOT,
+        ROOT / "apps",
         ROOT / "tests",
-        ROOT / "python",
+        ROOT / "packages" / "ts-agent-kernel",
     ]
     files: set[Path] = set()
     for root in roots:
@@ -143,13 +145,13 @@ def test_agent_sources_have_explicit_ownership_boundaries() -> None:
     assert not (ROOT / "extensions" / "ts-workflow-context").exists()
     assert not (ROOT / "extensions" / "ts-workflow-subagent").exists()
     for name in ("agent-protocol.cjs", "fact-kinds.cjs", "failure-taxonomy.cjs", "run-journal.cjs", "session-lifecycle.cjs"):
-        assert (ROOT / "src" / "agent-core" / name).is_file()
+        assert (RUNTIME_ROOT / "agent-core" / name).is_file()
     assert (AGENTS_ROOT / "review" / "runtime.ts").is_file()
     assert (AGENTS_ROOT / "review" / "prompts" / "core.md").is_file()
     assert (AGENTS_ROOT / "compute" / "runtime.ts").is_file()
     assert (AGENTS_ROOT / "compute" / "prompts" / "core.md").is_file()
     assert {path.name for path in AGENTS_ROOT.iterdir()} == {"compute", "review"}
-    assert (ROOT / "src" / "artifacts" / "request-contract.cjs").is_file()
+    assert (RUNTIME_ROOT / "artifacts" / "request-contract.cjs").is_file()
     assert (PYTHON_PACKAGE / "runtime" / "probe.py").is_file()
     assert (PYTHON_PACKAGE / "structures" / "seed.py").is_file()
     assert (PYTHON_PACKAGE / "validation" / "engine.py").is_file()
@@ -178,8 +180,8 @@ def test_package_manifest_exposes_only_the_public_skill_and_allowlisted_runtime(
     assert manifest["private"] is True
     assert "tests/" not in manifest["files"]
     assert "docs/*.md" in manifest["files"]
-    assert "python/ts_agent/web/static/*.css" in manifest["files"]
-    assert "python/ts_agent/web/static/*.js" in manifest["files"]
+    assert "packages/ts-agent-kernel/ts_agent/web/static/*.css" in manifest["files"]
+    assert "packages/ts-agent-kernel/ts_agent/web/static/*.js" in manifest["files"]
     assert "python-dist/*.whl" in manifest["files"]
     assert "scripts/_runtime_install.py" in manifest["files"]
     assert "scripts/_wheel.py" in manifest["files"]
@@ -187,7 +189,17 @@ def test_package_manifest_exposes_only_the_public_skill_and_allowlisted_runtime(
     assert "dependencies" not in manifest
     for name in ("ARCHITECTURE.md", "INSTALLATION.md", "MAINTAINER_GUIDE.md"):
         assert (ROOT / "docs" / name).is_file()
-    assert all("src/agents" not in entry for entry in manifest["pi"]["skills"])
+    assert all("packages/ts-agent-runtime/agents" not in entry for entry in manifest["pi"]["skills"])
+
+
+def test_repository_layout_has_named_source_boundaries() -> None:
+    assert not (ROOT / "cluster_mcp").exists()
+    assert not (ROOT / "python").exists()
+    assert not (ROOT / "src").exists()
+    assert (ROOT / "packages" / "ts-agent-kernel" / "ts_agent").is_dir()
+    assert (ROOT / "packages" / "ts-agent-runtime").is_dir()
+    assert (ROOT / "apps" / "host").is_dir()
+    assert (ROOT / "apps" / "terminal").is_dir()
 
 
 def test_tspi_shell_is_a_thin_executable_shim() -> None:

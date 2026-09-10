@@ -1,5 +1,7 @@
 # TSPi Package
 
+[English](README.md) | [简体中文](README.zh-CN.md)
+
 This repository owns the `@iawnix/ts-agent` component, its embedded read-only
 Web explorer, and the assembler for the complete TSPi Package. TS Phone remains
 an independently maintained source repository, but distributed releases bind
@@ -97,6 +99,27 @@ reproducible:
   policy loaded into each TSPi research session.
 - [Public Glossary](skills/transition-state-workflow/references/glossary.md):
   stable research, execution, and Review terminology.
+
+## Repository Layout
+
+The source tree follows ownership boundaries rather than language names:
+
+| Path | Responsibility |
+| --- | --- |
+| `contracts/` | Versioned Phone, Web, and component-release contracts |
+| `packages/ts-agent-kernel/ts_agent/` | Python Research Kernel and deterministic scientific services |
+| `packages/ts-agent-runtime/` | Reusable Agent, Compute, Review, and artifact runtime modules |
+| `apps/` | Host and Terminal process entrypoints |
+| `extensions/` | Pi extensions and Phone adapter policy |
+| `skills/` | Public model-facing Skill and focused references |
+| `scripts/` | Stable compatibility entrypoints and thin wrappers |
+| `tools/` | Contract synchronization, checks, and developer tooling |
+| `docs/` | Architecture, operations, maintenance, and ADRs |
+
+`cluster_mcp` is retired and absent from the repository. `build/`, `dist/`,
+`.runtime/`, and other caches are generated locally and excluded from source
+and release boundaries. The Python import namespace remains `ts_agent` even
+though its authored source now lives under the named kernel package directory.
 
 ## Quick Install
 

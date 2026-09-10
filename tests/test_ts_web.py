@@ -977,7 +977,7 @@ def test_web_derives_claim_node_link_from_creator_provenance(tmp_path: Path) -> 
 
 
 def test_static_ui_exposes_research_map_dependency_dag_and_node_details() -> None:
-    static = ROOT / "python" / "ts_agent" / "web" / "static"
+    static = ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static"
     html = (static / "index.html").read_text(encoding="utf-8")
     script = (static / "app.js").read_text(encoding="utf-8")
     claim_map = (static / "claim-map.js").read_text(encoding="utf-8")
@@ -1051,7 +1051,7 @@ def test_static_ui_exposes_research_map_dependency_dag_and_node_details() -> Non
 
 
 def test_static_i18n_catalogs_match_and_cover_literal_ui_references() -> None:
-    static = ROOT / "python" / "ts_agent" / "web" / "static"
+    static = ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static"
     catalog = (static / "i18n.js").read_text(encoding="utf-8")
     english, chinese = catalog.split("    zh: {", maxsplit=1)
     key_pattern = re.compile(r'^      "([^"]+)":', re.MULTILINE)
@@ -1069,7 +1069,7 @@ def test_static_i18n_catalogs_match_and_cover_literal_ui_references() -> None:
 
 
 def test_attempt_timeline_filters_and_paginates_families() -> None:
-    timeline_path = (ROOT / "python" / "ts_agent" / "web" / "static" / "attempt-timeline.js").as_uri()
+    timeline_path = (ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static" / "attempt-timeline.js").as_uri()
     probe = f"""
 globalThis.window = globalThis;
 (async () => {{
@@ -1109,7 +1109,7 @@ globalThis.window = globalThis;
 
 
 def test_research_tree_layout_handles_branch_merge_and_lineage() -> None:
-    tree_path = (ROOT / "python" / "ts_agent" / "web" / "static" / "research-tree.js").as_uri()
+    tree_path = (ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static" / "research-tree.js").as_uri()
     probe = f"""
 globalThis.window = globalThis;
 (async () => {{
@@ -1151,7 +1151,7 @@ globalThis.window = globalThis;
 
 
 def test_claim_map_layout_filters_and_lineage() -> None:
-    map_path = (ROOT / "python" / "ts_agent" / "web" / "static" / "claim-map.js").as_uri()
+    map_path = (ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static" / "claim-map.js").as_uri()
     probe = f"""
 globalThis.window = globalThis;
 (async () => {{
@@ -1206,7 +1206,7 @@ globalThis.window = globalThis;
 
 
 def test_static_ui_refreshes_registry_and_persists_theme() -> None:
-    static = ROOT / "python" / "ts_agent" / "web" / "static"
+    static = ROOT / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static"
     html = (static / "index.html").read_text(encoding="utf-8")
     css = (static / "app.css").read_text(encoding="utf-8")
     script = (static / "app.js").read_text(encoding="utf-8")

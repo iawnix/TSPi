@@ -6,8 +6,8 @@ import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { promisify } from "node:util";
 import { execFile } from "node:child_process";
-import { HostClient } from "../src/terminal/host-client.mjs";
-import { TerminalController } from "../src/terminal/controller.mjs";
+import { HostClient } from "../apps/terminal/host-client.mjs";
+import { TerminalController } from "../apps/terminal/controller.mjs";
 
 const phone = process.env.TS_PHONE_SOURCE;
 if (!phone) throw new Error("Set TS_PHONE_SOURCE to the paired ts-phone source checkout for the package integration test.");
@@ -51,7 +51,7 @@ test("two real terminal controllers, Phone, and a PTY share exactly one isolated
     await second.close();
     await first.refresh();
     assert.equal(first.session.runtimeOwner, "host");
-    const pty = await promisify(execFile)("python3", [resolve("tests/terminal_pty.py"), resolve("src/terminal/index.mjs"), root], {
+    const pty = await promisify(execFile)("python3", [resolve("tests/terminal_pty.py"), resolve("apps/terminal/index.mjs"), root], {
       env: { ...process.env, TS_PHONE_HOST: "127.0.0.1", TS_PHONE_PORT: String(address.port), TS_PHONE_STATE_DIR: config.stateDir },
       timeout: 20_000,
     });

@@ -12,7 +12,7 @@ from types import ModuleType
 
 def load_runtime_environment(package_root: str | Path) -> ModuleType:
     root = Path(package_root).expanduser().resolve()
-    source = root / "python" / "ts_agent" / "runtime" / "env.py"
+    source = root / "packages" / "ts-agent-kernel" / "ts_agent" / "runtime" / "env.py"
     if not source.is_file():
         raise RuntimeError(f"TS Agent runtime bootstrap module is missing: {source}")
     name = f"_ts_agent_runtime_env_{hashlib.sha256(str(source).encode()).hexdigest()[:12]}"
@@ -49,7 +49,7 @@ def bootstrap_python_package(
         runtime.seed_installation_runtime(install_root, authoritative=True)
     python = runtime.ensure_runtime_python(root, required=required)
     if python is None or importlib.util.find_spec("ts_agent") is None:
-        source_root = str(root / "python")
+        source_root = str(root / "packages" / "ts-agent-kernel")
         if source_root not in sys.path:
             sys.path.insert(0, source_root)
     return runtime
@@ -58,6 +58,8 @@ def bootstrap_python_package(
 def activate_source_package(package_root: str | Path) -> None:
     """Expose the authored package only for installer and runtime-control code."""
 
-    source_root = str(Path(package_root).expanduser().resolve() / "python")
+    source_root = str(
+        Path(package_root).expanduser().resolve() / "packages" / "ts-agent-kernel"
+    )
     if source_root not in sys.path:
         sys.path.insert(0, source_root)

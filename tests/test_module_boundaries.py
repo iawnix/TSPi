@@ -16,7 +16,7 @@ from ts_agent.workspace.state import STATE_FILES
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PYTHON_PACKAGE = ROOT / "python" / "ts_agent"
+PYTHON_PACKAGE = ROOT / "packages" / "ts-agent-kernel" / "ts_agent"
 
 
 def test_backend_prepares_command_without_workspace_write() -> None:
@@ -70,7 +70,7 @@ def test_compute_contract_import_does_not_eagerly_load_scientific_backends() -> 
             "print('ts_agent.structures' in sys.modules)",
         ],
         cwd=ROOT,
-        env={**os.environ, "PYTHONPATH": str(ROOT / "python")},
+        env={**os.environ, "PYTHONPATH": str(ROOT / "packages" / "ts-agent-kernel")},
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
@@ -96,7 +96,7 @@ def test_workspace_script_does_not_load_compute_catalog_for_kernel_entrypoint() 
             ),
         ],
         cwd=ROOT,
-        env={**os.environ, "PYTHONPATH": f"{ROOT / 'python'}:{ROOT / 'scripts'}"},
+        env={**os.environ, "PYTHONPATH": f"{ROOT / 'packages' / 'ts-agent-kernel'}:{ROOT / 'scripts'}"},
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,

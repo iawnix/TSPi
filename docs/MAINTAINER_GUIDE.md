@@ -46,29 +46,33 @@ prescriptive stage, Node type, scientific role/layer, or next-action router.
 | `extensions/ts-workflow-artifacts/` | deterministic structure seed/comparison, input import, Render, Report, and notification tools |
 | `extensions/ts-workflow-ui/` | startup, editor/footer, TS Activity, Compute/Review history |
 | `extensions/shared/` | public tool inventory and shared UI/path helpers |
-| `src/agent-core/` | shared task/result validation, provider failure propagation, lifecycle, journals |
-| `src/agents/compute/` | Compute task plan, isolated runtime, result derivation, and private prompt |
-| `src/agents/review/` | Review task projection, prompt, result tool, semantic validation |
-| `src/artifacts/` | deterministic render/report request and path validation |
+| `packages/ts-agent-kernel/` | Python Research Kernel distribution and deterministic scientific services |
+| `packages/ts-agent-runtime/` | reusable TypeScript Agent, Compute, Review, and artifact runtime modules |
+| `apps/terminal/` | Terminal client process and view/controller implementation |
+| `apps/host/` | Host process, environment resolution, and service entrypoint |
+| `packages/ts-agent-runtime/agent-core/` | shared task/result validation, provider failure propagation, lifecycle, journals |
+| `packages/ts-agent-runtime/agents/compute/` | Compute task plan, isolated runtime, result derivation, and private prompt |
+| `packages/ts-agent-runtime/agents/review/` | Review task projection, prompt, result tool, semantic validation |
+| `packages/ts-agent-runtime/artifacts/` | deterministic render/report request and path validation |
 | `pyproject.toml` | `ts-agent-kernel` metadata, dependencies, package discovery, and wheel data |
 | `scripts/_wheel.py` | temporary-copy wheel build, metadata inspection, and release-wheel verification |
 | `scripts/_runtime_install.py` | shared base/overlay preparation, probe, and manifest publication mechanism |
 | `scripts/install_env.py` | thin command-line entrypoint for the managed runtime mechanism |
-| `python/ts_agent/` | the single import namespace for all deterministic Python code |
-| `python/ts_agent/workspace/` | graph state, bootstrap, Decisions, context, validation, transactions |
-| `python/ts_agent/validation/` | ProofSpec compiler, predicate registry, templates, acceptance profiles |
-| `python/ts_agent/compute/` | capabilities, artifact catalog, immutable intents, control, collection |
-| `python/ts_agent/backends/` | deterministic program preparation and parsing |
-| `python/ts_agent/remote/` | OpenSSH/SCP, Torque, transfer, diagnostics, guards, and receipts |
-| `python/ts_agent/runtime/` | runtime resolution, capability probe, and TSPi lifecycle host |
-| `python/ts_agent/render/`, `python/ts_agent/report/`, `python/ts_agent/email/` | deterministic artifact and delivery services |
-| `python/ts_agent/structures/` | molecular comparison plus deterministic RDKit seed generation |
-| `python/ts_agent/web/` | read-only workspace projection and external UI registry |
+| `packages/ts-agent-kernel/ts_agent/` | the single import namespace for all deterministic Python code |
+| `packages/ts-agent-kernel/ts_agent/workspace/` | graph state, bootstrap, Decisions, context, validation, transactions |
+| `packages/ts-agent-kernel/ts_agent/validation/` | ProofSpec compiler, predicate registry, templates, acceptance profiles |
+| `packages/ts-agent-kernel/ts_agent/compute/` | capabilities, artifact catalog, immutable intents, control, collection |
+| `packages/ts-agent-kernel/ts_agent/backends/` | deterministic program preparation and parsing |
+| `packages/ts-agent-kernel/ts_agent/remote/` | OpenSSH/SCP, Torque, transfer, diagnostics, guards, and receipts |
+| `packages/ts-agent-kernel/ts_agent/runtime/` | runtime resolution, capability probe, and TSPi lifecycle host |
+| `packages/ts-agent-kernel/ts_agent/render/`, `packages/ts-agent-kernel/ts_agent/report/`, `packages/ts-agent-kernel/ts_agent/email/` | deterministic artifact and delivery services |
+| `packages/ts-agent-kernel/ts_agent/structures/` | molecular comparison plus deterministic RDKit seed generation |
+| `packages/ts-agent-kernel/ts_agent/web/` | read-only workspace projection and external UI registry |
 | `docs/` | installation, architecture, maintenance, and ADRs |
 | `tests/` | unit, contract, package, and recording-provider regressions |
 
 `TSPi` remains a thin shell shim. Lifecycle logic belongs in
-`scripts/tspi_host.py` and `python/ts_agent/runtime/launcher.py`; do not move release
+`scripts/tspi_host.py` and `packages/ts-agent-kernel/ts_agent/runtime/launcher.py`; do not move release
 selection, config, runtime resolution, bootstrap, locking, or Pi arguments into
 shell.
 
@@ -79,11 +83,11 @@ Its files have three distinct responsibilities:
 
 | Category | Current members | Boundary |
 | --- | --- | --- |
-| User and Pi entrypoints | `TSPi`, `scripts/tspi_host.py`, `scripts/ts_backend.py`, `scripts/ts_compute.py`, `scripts/ts_email.py`, `scripts/ts_render.py`, `scripts/ts_report.py`, `scripts/ts_runtime.py`, `scripts/ts_web.py`, `scripts/ts_workspace.py`, `scripts/pi-loader.mjs` | Parse launch arguments and delegate to `python/ts_agent/`, `src/`, or Pi integration code. Keep these names stable for installed releases. |
+| User and Pi entrypoints | `TSPi`, `scripts/tspi_host.py`, `scripts/ts_backend.py`, `scripts/ts_compute.py`, `scripts/ts_email.py`, `scripts/ts_render.py`, `scripts/ts_report.py`, `scripts/ts_runtime.py`, `scripts/ts_web.py`, `scripts/ts_workspace.py`, `scripts/pi-loader.mjs` | Parse launch arguments and delegate to `packages/ts-agent-kernel/ts_agent/`, `packages/ts-agent-runtime/`, `apps/`, or Pi integration code. Keep these names stable for installed releases. |
 | Release and runtime mechanisms | `scripts/build_package.py`, `scripts/build_release.py`, `scripts/install_env.py`, `scripts/install_package.py`, `scripts/install_release.py`, `scripts/_bootstrap.py`, `scripts/_runtime_install.py`, `scripts/_suite.py`, `scripts/_wheel.py`, `scripts/package_inventory.py` | Own packaging, runtime preparation, archive validation, and installation mechanics. They are not scientific libraries or public Skills. |
 | Developer checks | `scripts/check_package.py`, `scripts/test_fast.py`, `scripts/test_source.py`, `tools/lint_public_surface.py`, `tools/contracts/sync_ts_phone.py` | Validate authored or component boundaries. They are not production runtime entrypoints; package membership is explicit in the release inventory. |
 
-Reusable behavior belongs in `python/ts_agent/`, `src/`, or `extensions/` and
+Reusable behavior belongs in `packages/ts-agent-kernel/ts_agent/`, `packages/ts-agent-runtime/`, `apps/`, or `extensions/` and
 must be imported by an entrypoint rather than copied into a second script.
 New build, test, transition, or contract tooling goes under `tools/` when it is
 not a stable installed command. Move one responsibility at a time and retain
@@ -99,7 +103,7 @@ the existing wrapper while callers migrate.
 
 `ts-phone-bridge` is packaged but loaded only by `TSPi --phone` or a Host-owned
 Phone Worker. Files under
-`src/agents/compute/` and `src/agents/review/` are private child-runtime
+`packages/ts-agent-runtime/agents/compute/` and `packages/ts-agent-runtime/agents/review/` are private child-runtime
 material, not discoverable Skills.
 
 Public names describe authority:
@@ -420,8 +424,8 @@ close.
 | `docs/MAINTAINER_GUIDE.md` | contributor/releaser | source workflow, change matrix, validation, release discipline |
 | Root `SKILL.md` | Root Agent | concise authority rules and operating loop |
 | Skill `references/*.md` | Root Agent on demand | one focused scientific or tool topic |
-| `src/agents/compute/**/*.md` | Compute runtime | minimum private operational policy |
-| `src/agents/review/**/*.md` | Review runtime | minimum private Review policy |
+| `packages/ts-agent-runtime/agents/compute/**/*.md` | Compute runtime | minimum private operational policy |
+| `packages/ts-agent-runtime/agents/review/**/*.md` | Review runtime | minimum private Review policy |
 | JSON/TypeBox schemas | callers and validators | exact fields, enums, limits, identity |
 
 Avoid copying complete field schemas into prose. Use examples where they
@@ -471,7 +475,7 @@ builds the current source wheel, installs it into a temporary overlay, clears
 ambient Python path and user-site state, and runs pytest against that installed
 wheel. Its machine-readable record is written under `.runtime/test-results/`.
 For ordinary source feedback, use `npm run test:fast`. It runs pytest directly
-with the authored `python/` source root, using the current interpreter or an
+with the authored `packages/ts-agent-kernel/` source root, using the current interpreter or an
 existing spec-addressed managed base. It does not build a wheel, create an
 overlay, solve an environment, or write a result record unless
 `--result-path` is supplied. The managed command remains the Candidate and
@@ -599,7 +603,7 @@ Package version metadata currently appears in multiple maintained surfaces. A
 version bump must update and test at least:
 
 - `package.json` and `package-lock.json`;
-- `python/ts_agent/_version.py` (`pyproject.toml` reads this version dynamically);
+- `packages/ts-agent-kernel/ts_agent/_version.py` (`pyproject.toml` reads this version dynamically);
 - `extensions/shared/package-profile.ts`;
 - contract-specific tests and release fixtures.
 

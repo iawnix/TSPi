@@ -1,10 +1,10 @@
 import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { createRequire } from "node:module";
-import { runComputeOperator } from "../src/agents/compute/runtime.ts";
+import { runComputeOperator } from "../packages/ts-agent-runtime/agents/compute/runtime.ts";
 
 const require = createRequire(import.meta.url);
-const { buildComputeTask, COMPUTE_ACTION_TOOL_NAMES } = require("../src/agents/compute/task-packet.cjs");
+const { buildComputeTask, COMPUTE_ACTION_TOOL_NAMES } = require("../packages/ts-agent-runtime/agents/compute/task-packet.cjs");
 
 type ActionLog = { tool: string; result: Record<string, unknown> }[];
 

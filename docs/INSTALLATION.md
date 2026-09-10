@@ -52,7 +52,7 @@ Choose one physical, non-symlink installation root:
       current -> releases/<suite-release-id>
       releases/<suite-release-id>/
         agent/
-          python/ts_agent/           auditable Python source
+          packages/ts-agent-kernel/ts_agent/           auditable Python source
           python-dist/*.whl          manifest-bound runtime artifact
         phone/
           services/server/dist/      TS Phone server
@@ -243,7 +243,7 @@ state, then edit only installation-owned values:
 
 ```bash
 mkdir -p /path/to/TSPi-installation/.pi
-cp "$TS_AGENT_SKILL_ROOT/python/ts_agent/remote/config.example.toml" \
+cp "$TS_AGENT_SKILL_ROOT/packages/ts-agent-kernel/ts_agent/remote/config.example.toml" \
   /path/to/TSPi-installation/.pi/remote.toml
 chmod 600 /path/to/TSPi-installation/.pi/remote.toml
 ```

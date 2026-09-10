@@ -15,9 +15,9 @@ from ts_agent.workspace.operational import operational_snapshot
 
 
 ROOT = Path(__file__).resolve().parents[1]
-JOURNAL = ROOT / "src" / "agent-core" / "run-journal.cjs"
-COMPUTE_TASK = ROOT / "src" / "agents" / "compute" / "task-packet.cjs"
-COMPUTE_OUTPUT = ROOT / "src" / "agents" / "compute" / "output-schema.cjs"
+JOURNAL = ROOT / "packages" / "ts-agent-runtime" / "agent-core" / "run-journal.cjs"
+COMPUTE_TASK = ROOT / "packages" / "ts-agent-runtime" / "agents" / "compute" / "task-packet.cjs"
+COMPUTE_OUTPUT = ROOT / "packages" / "ts-agent-runtime" / "agents" / "compute" / "output-schema.cjs"
 
 
 def test_completed_review_is_claim_scoped_and_changes_only_operational_state(tmp_path: Path) -> None:

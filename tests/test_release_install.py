@@ -54,20 +54,20 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert "docs/ARCHITECTURE.md" in names
     assert "docs/INSTALLATION.md" in names
     assert "docs/MAINTAINER_GUIDE.md" in names
-    assert "python/ts_agent/web/static/claim-map.js" in names
-    assert "python/ts_agent/web/static/research-map.js" in names
-    assert "python/ts_agent/web/static/research-tree.js" in names
-    assert "python/ts_agent/web/static/attempt-timeline.js" in names
-    assert "python/ts_agent/workspace/artifacts.py" in names
-    assert "python/ts_agent/workspace/candidates.py" in names
-    assert "python/ts_agent/workspace/claims.py" in names
-    assert "python/ts_agent/workspace/contracts/change_request.schema.json" in names
-    assert "python/ts_agent/workspace/contracts/observation_candidates.schema.json" in names
-    assert "python/ts_agent/workspace/contracts/proof_spec.schema.json" in names
-    assert "python/ts_agent/workspace/contracts/proof_spec_registry.schema.json" in names
-    assert "python/ts_agent/compute/capabilities.py" in names
-    assert "python/ts_agent/validation/templates/builtin/classical-ts__1.json" in names
-    assert "python/ts_agent/validation/acceptance_profiles/accepted-ts__3.json" in names
+    assert "packages/ts-agent-kernel/ts_agent/web/static/claim-map.js" in names
+    assert "packages/ts-agent-kernel/ts_agent/web/static/research-map.js" in names
+    assert "packages/ts-agent-kernel/ts_agent/web/static/research-tree.js" in names
+    assert "packages/ts-agent-kernel/ts_agent/web/static/attempt-timeline.js" in names
+    assert "packages/ts-agent-kernel/ts_agent/workspace/artifacts.py" in names
+    assert "packages/ts-agent-kernel/ts_agent/workspace/candidates.py" in names
+    assert "packages/ts-agent-kernel/ts_agent/workspace/claims.py" in names
+    assert "packages/ts-agent-kernel/ts_agent/workspace/contracts/change_request.schema.json" in names
+    assert "packages/ts-agent-kernel/ts_agent/workspace/contracts/observation_candidates.schema.json" in names
+    assert "packages/ts-agent-kernel/ts_agent/workspace/contracts/proof_spec.schema.json" in names
+    assert "packages/ts-agent-kernel/ts_agent/workspace/contracts/proof_spec_registry.schema.json" in names
+    assert "packages/ts-agent-kernel/ts_agent/compute/capabilities.py" in names
+    assert "packages/ts-agent-kernel/ts_agent/validation/templates/builtin/classical-ts__1.json" in names
+    assert "packages/ts-agent-kernel/ts_agent/validation/acceptance_profiles/accepted-ts__3.json" in names
     assert distribution == build_result["python_distribution"]
     assert distribution["name"] == "ts-agent-kernel"
     assert distribution["version"] == json.loads((ROOT / "package.json").read_text(encoding="utf-8"))["version"]
@@ -90,15 +90,15 @@ def test_real_release_build_and_install_excludes_development_tree(tmp_path: Path
     assert (package_root / "docs" / "ARCHITECTURE.md").is_file()
     assert (package_root / "docs" / "INSTALLATION.md").is_file()
     assert (package_root / "docs" / "MAINTAINER_GUIDE.md").is_file()
-    assert (package_root / "python" / "ts_agent" / "web" / "static" / "claim-map.js").is_file()
-    assert (package_root / "python" / "ts_agent" / "web" / "static" / "research-map.js").is_file()
-    assert (package_root / "python" / "ts_agent" / "web" / "static" / "research-tree.js").is_file()
-    assert (package_root / "python" / "ts_agent" / "web" / "static" / "attempt-timeline.js").is_file()
-    assert (package_root / "python" / "ts_agent" / "workspace" / "artifacts.py").is_file()
-    assert (package_root / "python" / "ts_agent" / "workspace" / "candidates.py").is_file()
-    assert (package_root / "python" / "ts_agent" / "workspace" / "claims.py").is_file()
-    assert (package_root / "python" / "ts_agent" / "workspace" / "contracts" / "observation_candidates.schema.json").is_file()
-    assert (package_root / "python" / "ts_agent" / "workspace" / "contracts" / "proof_spec.schema.json").is_file()
+    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static" / "claim-map.js").is_file()
+    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static" / "research-map.js").is_file()
+    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static" / "research-tree.js").is_file()
+    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "web" / "static" / "attempt-timeline.js").is_file()
+    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace" / "artifacts.py").is_file()
+    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace" / "candidates.py").is_file()
+    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace" / "claims.py").is_file()
+    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace" / "contracts" / "observation_candidates.schema.json").is_file()
+    assert (package_root / "packages" / "ts-agent-kernel" / "ts_agent" / "workspace" / "contracts" / "proof_spec.schema.json").is_file()
     installed_wheel = package_root / distribution["path"]
     assert installed_wheel.is_file()
     assert inspect_wheel(installed_wheel)["payload_sha256"] == distribution["payload_sha256"]
@@ -365,16 +365,16 @@ def _synthetic_release(
     root.mkdir(parents=True)
     temporary_archive = root / "package.tgz"
     files = {name: b"\n" for name in REQUIRED_RUNTIME_FILES}
-    for name in ("src/host/environment.mjs", "src/host/service.mjs"):
+    for name in ("apps/host/environment.mjs", "apps/host/service.mjs"):
         files[name] = (ROOT / name).read_bytes()
     files["package.json"] = b'{"name":"@iawnix/ts-agent","version":"0.5.0"}\n'
     files["TSPi"] = b"#!/usr/bin/env bash\nexit 0\n"
     files["README.md"] = f"release {marker}\n".encode()
     files.update(extra_files or {})
     python_payload = {
-        normalized.removeprefix("python/"): content
+        normalized.removeprefix("packages/ts-agent-kernel/"): content
         for name, content in files.items()
-        if (normalized := name.removeprefix("package/")).startswith("python/ts_agent/")
+        if (normalized := name.removeprefix("package/")).startswith("packages/ts-agent-kernel/ts_agent/")
     }
     wheel = _synthetic_wheel(root, version="0.5.0", package_files=python_payload)
     wheel_descriptor = inspect_wheel(wheel)

@@ -345,7 +345,7 @@ def prepare_phone_service(install_root: Path, target: Path) -> Path:
         return destination
     try:
         completed = subprocess.run(
-            ["node", str(target / "agent" / "src" / "host" / "service.mjs"), "--install-root", str(install_root)],
+            ["node", str(target / "agent" / "apps" / "host" / "service.mjs"), "--install-root", str(install_root)],
             capture_output=True, text=True, timeout=10, check=False,
         )
     except subprocess.TimeoutExpired as exc:

@@ -6,7 +6,7 @@ import json
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PROTOCOL = ROOT / "src" / "agent-core" / "agent-protocol.cjs"
+PROTOCOL = ROOT / "packages" / "ts-agent-runtime" / "agent-core" / "agent-protocol.cjs"
 
 
 def _binding(ref: str, schema_version: str, marker: str) -> dict[str, object]:

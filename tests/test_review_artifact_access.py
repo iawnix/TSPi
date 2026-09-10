@@ -8,8 +8,8 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-ACCESS = ROOT / "src" / "agents" / "review" / "artifact-access.cjs"
-ARTIFACT_TOOL = ROOT / "src" / "agents" / "review" / "artifact-tool.ts"
+ACCESS = ROOT / "packages" / "ts-agent-runtime" / "agents" / "review" / "artifact-access.cjs"
+ARTIFACT_TOOL = ROOT / "packages" / "ts-agent-runtime" / "agents" / "review" / "artifact-tool.ts"
 TS_LOADER = ROOT / "tests" / "typescript_loader.mjs"
 
 

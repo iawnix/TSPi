@@ -1,7 +1,7 @@
 # ts_web 界面优化与验收报告
 
 日期：2026-09-10
-范围：`python/ts_agent/web/`、`python/ts_agent/web/static/`、`tests/test_ts_web.py`。界面结论来自源码、真实工作区投影和 Chromium/ChromeDriver 走查；截图只用于检查视觉布局。
+范围：`packages/ts-agent-kernel/ts_agent/web/`、`packages/ts-agent-kernel/ts_agent/web/static/`、`tests/test_ts_web.py`。界面结论来自源码、真实工作区投影和 Chromium/ChromeDriver 走查；截图只用于检查视觉布局。
 
 ## 结论
 
@@ -55,8 +55,8 @@
 
 已新增并接入：
 
-- `python/ts_agent/web/static/logo.svg`
-- `python/ts_agent/web/static/favicon.svg`
+- `packages/ts-agent-kernel/ts_agent/web/static/logo.svg`
+- `packages/ts-agent-kernel/ts_agent/web/static/favicon.svg`
 
 Logo 使用深墨底、Teal 的 `TS/π` 几何和 Amber 反应路径，缩小到 favicon 尺寸仍能辨识。网页页眉、favicon 和本轮论文架构图使用同一组深墨、Teal、Amber 配色。
 
